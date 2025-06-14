@@ -1,0 +1,15 @@
+{
+  "cmake.configureOnOpen": true,
+  "cmake.configurePreset": "ninja-debug",
+  "cmake.buildPreset": "ninja-debug",
+  "cmake.exportCompileCommandsFile": true,
+  "cmake.generator": "Ninja",
+  "cmake.buildDirectory": "${workspaceFolder}/build/debug",
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/debug/compile_commands.json",
+  "C_Cpp.default.includePath": [
+    "${workspaceFolder}",
+    "${workspaceFolder}/src"
+  ],
+  "C_Cpp.default.cppStandard": "c++23",
+  "C_Cpp.default.intelliSenseMode": "linux-gcc-x64"
+}
