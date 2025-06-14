@@ -20,9 +20,7 @@ int main() {
 
     std::vector<Person> personsToInsert;
     personsToInsert.emplace_back(40, 60000.0, false);
-    for (int i = 0; i < 10000; i++) {
-        personsToInsert.emplace_back(50, 70000.0, true);
-    }
+    personsToInsert.emplace_back(50, 70000.0, true);
     persons.insert(personsToInsert);
     
     // const auto all_persons = persons.select();
