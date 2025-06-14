@@ -5,6 +5,16 @@
 #include <vector>       // For std::vector
 #include <memory>       // For std::make_shared
 
+void print_all(std::vector<Person> all_persons) {
+    std::cout << "\n=== SELECT ALL Persons ===\n";
+    for (const auto& p : all_persons) {
+        std::cout << "ID: " << p.id << ", " 
+            << "Age: " << p.age 
+            << ", Salary: " << p.salary 
+            << ", Married: " << (p.is_married ? "Yes" : "No") << "\n";
+    }
+}
+
 int main() {
     // Create a Connection to an in-memory SQLite database
     auto conn = std::make_shared<Connection>(":memory:");
@@ -23,14 +33,11 @@ int main() {
     personsToInsert.emplace_back(50, 70000.0, true);
     persons.insert(personsToInsert);
     
-    const auto all_persons = persons.select();
-    std::cout << "\n=== SELECT ALL Persons ===\n";
-    for (const auto& p : all_persons) {
-        std::cout << "ID: " << p.id << ", " 
-            << "Age: " << p.age 
-            << ", Salary: " << p.salary 
-            << ", Married: " << (p.is_married ? "Yes" : "No") << "\n";
-    }
+    p1.age = 31;
+    persons.update(p1);
 
+    print_all(persons.select_all());
+    persons.remove(p1);
+    print_all(persons.select_all());
     return 0;
 }

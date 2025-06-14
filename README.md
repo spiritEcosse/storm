@@ -14,6 +14,22 @@ A lightweight C++ ORM (Object-Relational Mapping) library for SQLite, designed f
 - C++17 or newer compiler
 - [SQLite3](https://www.sqlite.org/index.html)
 
+## Dependencies
+
+Storm ORM requires the following libraries:
+
+- **SQLite3**: For SQLite database support ([link](https://www.sqlite.org/index.html))
+- **PostgreSQL**: For PostgreSQL database support ([link](https://www.postgresql.org/))
+- **refl-cpp**: Header-only C++ reflection library ([link](https://github.com/veselink1/refl-cpp))
+- **fmt**: Fast C++ formatting library ([link](https://github.com/fmtlib/fmt))
+
+Optional (for testing):
+- **GoogleTest**: C++ testing framework ([link](https://github.com/google/googletest))
+
+All dependencies (except for SQLite3 and PostgreSQL client libraries) are automatically managed via [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake) in the build system.
+
+You must have the development files for SQLite3 and PostgreSQL installed on your system for building and linking.
+
 ### Build
 
 ```
@@ -31,12 +47,33 @@ make
 
 Sample output:
 ```
+// The actual Person struct
+struct Person {
+    int age;
+    double salary;
+    bool is_married;
+    int id = 0;
+};
+
+// Register the struct with refl-cpp
+REFL_AUTO(
+    type(Person),
+    field(id),
+    field(age),
+    field(salary), 
+    field(is_married)
+)
+
 Opened database successfully: :memory:
 
 === SQL CREATE TABLE Statement (QuerySet<Person>) ===
 
 === SELECT ALL Persons ===
-ID: 1, Age: 30, Salary: 50000, Married: Yes
+ID: 1, Age: 31, Salary: 50000, Married: Yes
+ID: 2, Age: 40, Salary: 60000, Married: No
+ID: 3, Age: 50, Salary: 70000, Married: Yes
+
+=== SELECT ALL Persons ===
 ID: 2, Age: 40, Salary: 60000, Married: No
 ID: 3, Age: 50, Salary: 70000, Married: Yes
 Closed database connection.
@@ -56,6 +93,8 @@ int main() {
     personsToInsert.emplace_back(40, 60000.0, false);
     personsToInsert.emplace_back(50, 70000.0, true);
     persons.insert(personsToInsert);
+    // Remove a person
+    persons.remove(p1);
     const auto all_persons = persons.select();
     for (const auto& p : all_persons) {
         std::cout << "ID: " << p.id << ", " 
@@ -67,6 +106,11 @@ int main() {
 }
 ```
 
+## Breaking Changes
+
+- The `delete` method in `QuerySet` has been renamed to `remove` to avoid conflict with the C++ `delete` keyword. Update your code to use `remove` instead of `delete` when deleting objects from the database.
+
+
 ## Project Structure
 - `src/` - Source code
 - `main.cpp` - Example usage
@@ -76,4 +120,5 @@ int main() {
 Contributions are welcome! Please open issues and submit pull requests.
 
 ## License
-[MIT License](LICENSE)
+
+This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). See the [LICENSE](LICENSE) file for details.

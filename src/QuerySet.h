@@ -440,6 +440,10 @@ namespace orm {
             
             return field_names;
         }
+
+        std::vector<std::string> get_update_field_names() const {
+            return get_insert_field_names();
+        }
         
         // Helper function to bind object values to statement
         void bind_object_values(Statement& stmt, const T& obj, int& param_index) const {
@@ -546,7 +550,6 @@ namespace orm {
                 }
                 
                 return success;
-                
             } catch (const std::exception& e) {
                 // Consider logging e.what()
                 std::cerr << "Exception in insert: " << e.what() << "\n";
@@ -603,8 +606,51 @@ namespace orm {
                 return false;
             }
         }
+        
+        bool update(const T& obj) {   
+            try {
+                auto field_names = get_update_field_names();
+                if (field_names.empty()) return false;
+                
+                // Build assignments: field1 = ?, field2 = ?, ...
+                std::vector<std::string> assignments;
+                for (const auto& name : field_names) {
+                    assignments.push_back(fmt::format("{} = ?", name));
+                }
+                std::string sql = fmt::format(
+                    "UPDATE {} SET {} WHERE id = ?;",
+                    get_table_name(),
+                    fmt::join(assignments, ", ")
+                );
+                
+                auto stmt = Statement(conn, sql);
+                int param_index = 1;
+                bind_object_values(stmt, obj, param_index);
+                stmt.bind(param_index, obj.id);
+                return stmt.execute();
+            } catch (const std::exception& e) {
+                std::cerr << "Exception in update: " << e.what() << "\n";
+                return false;
+            }
+        }
 
-        std::vector<T> select() {
+        bool remove(const T& obj) {
+            try {
+                std::string sql = fmt::format(
+                    "DELETE FROM {} WHERE id = ?;",
+                    get_table_name()
+                );
+                
+                auto stmt = Statement(conn, sql);
+                stmt.bind(1, obj.id);
+                return stmt.execute();
+            } catch (const std::exception& e) {
+                std::cerr << "Exception in delete: " << e.what() << "\n";
+                return false;
+            }
+        }
+
+        std::vector<T> select_all() {
             std::vector<T> results;
             auto smt_ = Statement(conn, fmt::format("SELECT * FROM {};", get_table_name()) );    
             // Execute query and get all results in a single database operation
