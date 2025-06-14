@@ -23,14 +23,14 @@ int main() {
     personsToInsert.emplace_back(50, 70000.0, true);
     persons.insert(personsToInsert);
     
-    // const auto all_persons = persons.select();
-    // std::cout << "\n=== SELECT ALL Persons ===\n";
-    // for (const auto& p : all_persons) {
-    //     std::cout << "ID: " << p.id << ", " 
-    //         << "Age: " << p.age 
-    //         << ", Salary: " << p.salary 
-    //         << ", Married: " << (p.is_married ? "Yes" : "No") << "\n";
-    // }
+    const auto all_persons = persons.select();
+    std::cout << "\n=== SELECT ALL Persons ===\n";
+    for (const auto& p : all_persons) {
+        std::cout << "ID: " << p.id << ", " 
+            << "Age: " << p.age 
+            << ", Salary: " << p.salary 
+            << ", Married: " << (p.is_married ? "Yes" : "No") << "\n";
+    }
 
     return 0;
 }
