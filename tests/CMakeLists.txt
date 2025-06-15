@@ -1,46 +1,34 @@
 project(storm_tests LANGUAGES CXX)
-file(GLOB_RECURSE RESOURCES CONFIGURE_DEPENDS ../src/*.*  *.cpp *.h)
+file(GLOB_RECURSE RESOURCES CONFIGURE_DEPENDS ../src/*.cpp ../src/*.h *.cpp *.h)
 
-set(CMAKE_CXX_STANDARD 26)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
+# Remove ../src/main.cpp from RESOURCES to avoid multiple definition of main()
+list(REMOVE_ITEM RESOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../src/main.cpp)
 
 add_executable(${PROJECT_NAME} ${RESOURCES})
 include(${CMAKE_CURRENT_SOURCE_DIR}/../envs.cmake)
 include(GoogleTest)
-gtest_add_tests(
-        TARGET ${PROJECT_NAME}
-        TEST_LIST myTests_targets
+
+target_link_libraries(${PROJECT_NAME} PRIVATE 
+    gtest
+    gtest_main
+    gmock
+    gmock_main
+    pthread
+    fmt::fmt
+    refl-cpp
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE gtest
-        gtest_main
-        gmock
-        gmock_main
-        pthread
-        fmt::fmt
-)
-target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if (SQLite3_FOUND)
+    target_link_libraries(${PROJECT_NAME} PRIVATE SQLite::SQLite3)
+else()
+    target_link_libraries(${PROJECT_NAME} PRIVATE sqlite3)
+endif()
 
 target_include_directories(${PROJECT_NAME}
-        PRIVATE
-        ${GTEST_INCLUDE_DIRS}
-        ${GMOCK_INCLUDE_DIRS}
+    PRIVATE
+    ${GTEST_INCLUDE_DIRS}
+    ${GMOCK_INCLUDE_DIRS}
 )
-#
-#execute_process(
-#        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/helper_tests.sh
-#        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-#        RESULT_VARIABLE TEST_RESULT
-#        OUTPUT_VARIABLE TEST_OUTPUT
-#        ERROR_VARIABLE TEST_ERROR
-#)
-#
-#if (TEST_RESULT EQUAL 0)
-#    message(STATUS "Helper tests completed successfully")
-#    message(STATUS "Test output: ${TEST_OUTPUT}")
-#else ()
-#    message(FATAL_ERROR "Helper tests failed with error code ${TEST_RESULT}\n"
-#            "Output: ${TEST_OUTPUT}\n"
-#            "Error: ${TEST_ERROR}")
-#endif ()
+
+# Use gtest_discover_tests instead of gtest_add_tests
+gtest_discover_tests(${PROJECT_NAME})

@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "PsqlTest.h"
+#include "SQLiteTest.h"
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
