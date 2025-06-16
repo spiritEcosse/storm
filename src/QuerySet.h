@@ -491,7 +491,85 @@ namespace orm {
                 }
             });
         }
+        
+        // Build the INSERT SQL statement
+        bool execute_insert(const std::vector<T*>& obj_ptrs, const std::vector<std::string>& field_names) {
+            std::string sql = build_insert_sql(field_names, obj_ptrs.size());
+            if (sql.empty()) return false;
+            
+            auto stmt = Statement(conn, sql);
+            
+            // Bind all values for all objects
+            int param_index = 1;
+            for (T* obj_ptr : obj_ptrs) {
+                bind_object_values(stmt, *obj_ptr, param_index);
+            }
+            
+            bool success = stmt.execute();
+            
+            // Set generated IDs
+            if (success && !obj_ptrs.empty()) {
+                auto first_id = conn->last_insert_id();
+                for (size_t i = 0; i < obj_ptrs.size(); ++i) {
+                    set_generated_id(*obj_ptrs[i], first_id - (obj_ptrs.size() - 1) + i);
+                }
+            }
+            
+            return success;
+        }
 
+        std::string build_insert_sql(const std::vector<std::string>& field_names, size_t num_objects = 1) {
+            if (field_names.empty()) return "";
+            
+            std::vector<std::string> placeholders(field_names.size(), "?");
+            std::string single_group = fmt::format("({})", fmt::join(placeholders, ", "));
+            
+            std::vector<std::string> value_groups(num_objects, single_group);
+            
+            return fmt::format(
+                "INSERT INTO {} ({}) VALUES {};",
+                get_table_name(),
+                fmt::join(field_names, ", "),
+                fmt::join(value_groups, ", ")
+            );
+        }
+
+        // Build the UPDATE SQL statement
+        std::string build_update_sql(const std::vector<std::string>& field_names) {
+            if (field_names.empty()) return "";
+            
+            std::vector<std::string> assignments;
+            for (const auto& name : field_names) {
+                assignments.push_back(fmt::format("{} = ?", name));
+            }
+            
+            return fmt::format(
+                "UPDATE {} SET {} WHERE id = ?;",
+                get_table_name(),
+                fmt::join(assignments, ", ")
+            );
+        }
+
+        bool execute_update(const std::vector<const T*>& obj_ptrs, const std::vector<std::string>& field_names) {
+            std::string sql = build_update_sql(field_names);
+            if (sql.empty()) return false;
+            
+            // For batch updates, we need to execute each update individually
+            // since UPDATE doesn't support batch operations like INSERT
+            for (const T* obj_ptr : obj_ptrs) {
+                auto stmt = Statement(conn, sql);
+                int param_index = 1;
+                bind_object_values(stmt, *obj_ptr, param_index);
+                stmt.bind(param_index, obj_ptr->id);
+                
+                if (!stmt.execute()) {
+                    return false; // Return false on first failure
+                }
+            }
+            
+            return true;
+        }
+    
     public:
         // Constructor
         explicit QuerySet(std::shared_ptr<Connection> conn, const std::string& alias = "") 
@@ -503,26 +581,9 @@ namespace orm {
                 auto field_names = get_insert_field_names();
                 if (field_names.empty()) return false;
                 
-                std::vector<std::string> placeholders(field_names.size(), "?");
-                std::string sql = fmt::format(
-                    "INSERT INTO {} ({}) VALUES ({});",
-                    get_table_name(),
-                    fmt::join(field_names, ", "),
-                    fmt::join(placeholders, ", ")
-                );
+                return execute_insert({&obj}, field_names);
                 
-                auto stmt = Statement(conn, sql);
-                int param_index = 1;
-                bind_object_values(stmt, obj, param_index);
-                
-                bool success = stmt.execute();
-                if (success) {
-                    set_generated_id(obj, conn->last_insert_id());
-                }
-                
-                return success;
             } catch (const std::exception& e) {
-                // Consider logging e.what()
                 std::cerr << "Exception in insert: " << e.what() << "\n";
                 return false;
             }
@@ -536,41 +597,14 @@ namespace orm {
                 auto field_names = get_insert_field_names();
                 if (field_names.empty()) return false;
                 
-                // Create VALUES clause: (?,?), (?,?), ...
-                std::vector<std::string> value_groups;
-                std::vector<std::string> placeholders(field_names.size(), "?");
-                std::string single_group = fmt::format("({})", fmt::join(placeholders, ", "));
-                
-                for (size_t i = 0; i < objs.size(); ++i) {
-                    value_groups.push_back(single_group);
-                }
-                
-                std::string sql = fmt::format(
-                    "INSERT INTO {} ({}) VALUES {};",
-                    get_table_name(),
-                    fmt::join(field_names, ", "),
-                    fmt::join(value_groups, ", ")
-                );
-                
-                auto stmt = Statement(conn, sql);
-                
-                // Bind all values for all objects
-                int param_index = 1;
+                // Convert to pointer vector
+                std::vector<T*> obj_ptrs;
+                obj_ptrs.reserve(objs.size());
                 for (auto& obj : objs) {
-                    bind_object_values(stmt, obj, param_index);
+                    obj_ptrs.push_back(&obj);
                 }
                 
-                bool success = stmt.execute();
-                
-                // Set generated IDs for all objects
-                if (success && !objs.empty()) {
-                    auto first_id = conn->last_insert_id();
-                    for (size_t i = 0; i < objs.size(); ++i) {
-                        set_generated_id(objs[i], first_id - (objs.size() - 1) + i);
-                    }
-                }
-                
-                return success;
+                return execute_insert(obj_ptrs, field_names);
                 
             } catch (const std::exception& e) {
                 std::cerr << "Exception in insert: " << e.what() << "\n";
@@ -578,6 +612,42 @@ namespace orm {
             }
         }
         
+        bool update(T& obj) {
+            try {
+                auto field_names = get_update_field_names();
+                if (field_names.empty()) return false;
+                
+                return execute_update({&obj}, field_names);
+                
+            } catch (const std::exception& e) {
+                std::cerr << "Exception in update: " << e.what() << "\n";
+                return false;
+            }
+        }
+        
+        // Update multiple objects (batch update)
+        bool update(const std::vector<T>& objs) {
+            if (objs.empty()) return true;
+            
+            try {
+                auto field_names = get_update_field_names();
+                if (field_names.empty()) return false;
+                
+                // Convert to pointer vector
+                std::vector<const T*> obj_ptrs;
+                obj_ptrs.reserve(objs.size());
+                for (const auto& obj : objs) {
+                    obj_ptrs.push_back(&obj);
+                }
+                
+                return execute_update(obj_ptrs, field_names);
+                
+            } catch (const std::exception& e) {
+                std::cerr << "Exception in update: " << e.what() << "\n";
+                return false;
+            }
+        }
+
         bool update(const T& obj) {   
             try {
                 auto field_names = get_update_field_names();
