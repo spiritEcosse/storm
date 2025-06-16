@@ -4,33 +4,14 @@
 #include <string_view>
 #include <type_traits>
 
-// Type trait to check if a member is a field
-template <typename T>
-using is_field = refl::trait::is_field<T>;
-
-// Type trait to check if a member is a function
-template <typename T>
-using is_function = refl::trait::is_function<T>;
-
-// Helper to get member type
-template <typename T>
-using member_value_type = typename T::value_type;
-
-// Helper to get member name - now returns string_view for better performance
-template <typename Member>
-constexpr std::string_view get_member_name(const Member& member) noexcept {
-    return member.name;
-}
-
-// Helper to convert string_view to string when needed
-template <typename Member>
-std::string get_member_name_str(const Member& member) {
-    return std::string(member.name);
-}
-
 // Utility functions that should be in a separate utils namespace/header
 namespace utils {
-    std::string to_lower(std::string str) {
+    
+    // Helper to convert string_view to string when needed
+    template <typename Member>
+    static std::string get_member_name_str(const Member& member) {
+        return std::string(member.name);
+    }std::string to_lower(std::string str) {
         std::transform(str.begin(), str.end(), str.begin(), 
                       [](unsigned char c) { return std::tolower(c); });
         return str;
@@ -41,6 +22,18 @@ template<typename T>
 class Reflect {
 public:
     using reflected_type = T;
+    
+    // Type trait to check if a member is a field
+    template <typename U>
+    using is_field = refl::trait::is_field<U>;
+
+    // Type trait to check if a member is a function
+    template <typename U>
+    using is_function = refl::trait::is_function<U>;
+
+    // Helper to get member type
+    template <typename U>
+    using member_value_type = typename U::value_type;
     
     Reflect() = default;
     virtual ~Reflect() = default;
@@ -68,11 +61,6 @@ public:
         return get_reflected_type().members;
     }
     
-    // Get struct name as string_view for better performance
-    static constexpr std::string_view get_struct_name_view() noexcept {
-        return get_reflected_type().name;
-    }
-    
     // Get struct name as lowercase string
     static std::string get_struct_name() {
         return utils::to_lower(std::string(get_reflected_type().name));
@@ -81,6 +69,11 @@ public:
     // Get number of members
     static constexpr std::size_t get_member_count() noexcept {
         return get_reflected_members().size;
+    }
+    
+    template <typename Member>
+    static constexpr std::string get_member_name(const Member& member) noexcept {
+        return std::string(member.name.c_str());
     }
     
     // Check if type has any fields

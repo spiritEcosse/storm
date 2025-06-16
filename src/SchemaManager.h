@@ -10,7 +10,7 @@
 #include <unordered_set>
 #include <fmt/format.h>
 #include "Connection.h"
-#include "ReflectionUtils.h"
+#include "Reflect.h"
 
 class SchemaManager {
 private:
@@ -90,46 +90,17 @@ public:
             std::cout << "No models registered yet." << std::endl;
         }
     }
-    
-    // Drop all registered tables (useful for testing)
-    bool drop_all_tables() {
-        std::cout << "Dropping tables for " << registered_models.size() << " models..." << std::endl;
-        
-        for (const auto& model_name : registered_models) {
-            try {
-                std::string table_name = to_lower(model_name) + "s";
-                std::string sql = fmt::format("DROP TABLE IF EXISTS {}", table_name);
-                std::cout << "Executing: " << sql << std::endl;
-                
-                if (!Statement(conn, sql).execute()) {
-                    std::cerr << "Failed to drop table: " << table_name << std::endl;
-                    return false;
-                }
-                std::cout << "✓ Table " << table_name << " dropped successfully" << std::endl;
-            } catch (const std::exception& e) {
-                std::cerr << "Error dropping table for " << model_name << ": " << e.what() << std::endl;
-                return false;
-            }
-        }
-        
-        created_tables.clear();
-        std::cout << "All tables dropped successfully!" << std::endl;
-        return true;
-    }
 
 private:
     template<typename T>
     std::string get_table_name() const {
-        // Use static method directly - no need for instance
-        return storm::utils::to_lower(std::string(get_reflected_type<T>().name));
+        return utils::to_lower(std::string(Reflect<T>::get_struct_name()));
     }
 
-    // Create table for a specific model type
     template<typename T>
     bool create_table_for_model() {
         std::string table_name = get_table_name<T>();
         
-        // Check if already created in this session
         if (created_tables.find(table_name) != created_tables.end()) {
             std::cout << "Table " << table_name << " already created in this session, skipping..." << std::endl;
             return true;
@@ -146,24 +117,15 @@ private:
         return success;
     }
     
-    // Helper to get reflected type information for T
-    template<typename T>
-    static constexpr auto get_reflected_type() {
-        return storm::reflect::getType<T>();
-    }
-    
-    // Generate the CREATE TABLE SQL for a model
     template<typename T>
     std::string generate_create_table_sql() {
         std::string table_name_str = get_table_name<T>();
         std::vector<std::string> field_definitions;
-        constexpr auto type = get_reflected_type<T>();
-
-        storm::reflect::for_each_member(type.members, [&](auto member) {
-            if constexpr (storm::reflect::is_field<decltype(member)>::value) {
-                std::string field_name = storm::utils::to_lower(storm::reflect::get_member_name(member));
+        
+        Reflect<T>::for_each_member(Reflect<T>::get_reflected_members(), [&](auto member) {
+            if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
+                std::string field_name = utils::to_lower(std::string(Reflect<T>::get_member_name(member)));
                 std::string field_type_sql = get_sql_type<typename decltype(member)::value_type>();
-                // Special handling for 'id' field
                 if (field_name == "id") {
                     field_type_sql = "INTEGER PRIMARY KEY AUTOINCREMENT";
                 }
@@ -181,7 +143,6 @@ private:
                           fmt::join(field_definitions, ",\n"));
     }
     
-    // Map C++ types to SQL types - expanded version
     template<typename T>
     std::string get_sql_type() {
         using BaseType = std::decay_t<T>;
@@ -208,32 +169,6 @@ private:
             // For custom types, default to TEXT and let user handle serialization
             static_assert(sizeof(BaseType) > 0, "Unsupported type for SQL mapping");
             return "TEXT";
-        }
-    }
-    
-    // Utility functions
-    std::string to_lower(const std::string& str) {
-        std::string result = str;
-        std::transform(result.begin(), result.end(), result.begin(), 
-                      [](unsigned char c) { return std::tolower(c); });
-        return result;
-    }
-    
-    // Simple pluralization - you might want a more sophisticated version
-    std::string pluralize(const std::string& word) {
-        if (word.empty()) return word;
-        
-        // Handle some common cases
-        if (word.back() == 'y') {
-            return word.substr(0, word.length() - 1) + "ies";
-        } else if (word.back() == 's' || 
-                   word.ends_with("sh") || 
-                   word.ends_with("ch") ||
-                   word.ends_with("x") ||
-                   word.ends_with("z")) {
-            return word + "es";
-        } else {
-            return word + "s";
         }
     }
 };
