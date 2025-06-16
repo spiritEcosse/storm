@@ -14,8 +14,8 @@ struct Person {
 // Register the struct with refl-cpp
 REFL_AUTO(
     type(Person),
-    field(id),
     field(age),
-    field(salary), 
-    field(is_married)
+    field(salary),
+    field(is_married),
+    field(id)
 )

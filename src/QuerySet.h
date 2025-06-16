@@ -498,35 +498,6 @@ namespace orm {
             : BaseQuerySet<T>(alias.empty() ? get_table_name() : alias, false, true), conn(std::move(conn)) {
         }
 
-        bool create_table() {
-            std::string table_name_str = get_table_name();
-            std::vector<std::string> field_definitions;
-            constexpr auto type = get_reflected_type();
-
-            storm::reflect::for_each_member(type.members, [&](auto member) {
-                if constexpr (storm::reflect::is_field<decltype(member)>::value) {
-                    std::string field_name = storm::utils::to_lower(storm::reflect::get_member_name(member));
-                    std::string field_type_sql = "TEXT"; // Default to TEXT
-                    using FieldType = storm::reflect::member_value_type<decltype(member)>;
-
-                    if constexpr (std::is_same_v<FieldType, int> || std::is_same_v<FieldType, int64_t> || std::is_same_v<FieldType, size_t>) {
-                        field_type_sql = "INTEGER";
-                    } else if constexpr (std::is_same_v<FieldType, double> || std::is_same_v<FieldType, float>) {
-                        field_type_sql = "REAL";
-                    } else if constexpr (std::is_same_v<FieldType, bool>) {
-                        field_type_sql = "INTEGER"; // SQLite uses 0 and 1 for booleans
-                    }
-                    // For simplicity, making 'id' INTEGER PRIMARY KEY AUTOINCREMENT if present
-                    if (field_name == "id") {
-                        field_type_sql = "INTEGER PRIMARY KEY AUTOINCREMENT";
-                    }
-                    field_definitions.push_back(fmt::format("    {} {}", field_name, field_type_sql));
-                }
-            });
-            std::string sql = fmt::format("CREATE TABLE IF NOT EXISTS {} (\n{}\n);", table_name_str, fmt::join(field_definitions, ",\n"));
-            return Statement(conn, sql).execute();
-        }
-
         bool insert(T& obj) {
             try {
                 auto field_names = get_insert_field_names();

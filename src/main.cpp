@@ -1,9 +1,25 @@
 #include "Person.h"
+#include "Post.h"
+#include "Comment.h"
 #include "QuerySet.h" // Defines orm::QuerySet<T>
 #include "Connection.h"
 #include <iostream>     // For std::cout
 #include <vector>       // For std::vector
 #include <memory>       // For std::make_shared
+#include "SchemaManager.h"
+
+// In your main application setup
+void initialize_database(std::shared_ptr<Connection> conn) {
+    SchemaManager schema_manager(conn);
+    
+    // Register all your models
+    schema_manager.register_model<Person>();
+    schema_manager.register_model<Post>();
+    schema_manager.register_model<Comment>();
+    
+    // Create all tables at once
+    schema_manager.create_all_tables();
+}
 
 void print_all(std::vector<Person> all_persons) {
     std::cout << "\n=== SELECT ALL Persons ===\n";
@@ -18,12 +34,9 @@ void print_all(std::vector<Person> all_persons) {
 int main() {
     // Create a Connection to an in-memory SQLite database
     auto conn = std::make_shared<Connection>(":memory:");
+    initialize_database(conn);
 
     orm::QuerySet<Person> persons(conn);
-
-    // Print the generated CREATE TABLE statement
-    std::cout << "\n=== SQL CREATE TABLE Statement (QuerySet<Person>) ===\n";
-    persons.create_table();
 
     Person p1{30, 50000.0, true};
     persons.insert(p1);
