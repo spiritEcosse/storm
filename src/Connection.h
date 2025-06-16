@@ -2,6 +2,7 @@
 #include <sqlite3.h>
 #include <string>
 #include <iostream>
+#include <cstdint>
 
 class Connection {
 public:
@@ -13,6 +14,7 @@ public:
     Connection& operator=(Connection&& other) noexcept;
     sqlite3* get() const;
     bool is_open() const;
+    std::int64_t last_insert_id() const;
 private:
     sqlite3* db;
 

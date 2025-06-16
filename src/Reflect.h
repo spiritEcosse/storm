@@ -7,11 +7,7 @@
 // Utility functions that should be in a separate utils namespace/header
 namespace utils {
     
-    // Helper to convert string_view to string when needed
-    template <typename Member>
-    static std::string get_member_name_str(const Member& member) {
-        return std::string(member.name);
-    }std::string to_lower(std::string str) {
+    static std::string to_lower(std::string str) {
         std::transform(str.begin(), str.end(), str.begin(), 
                       [](unsigned char c) { return std::tolower(c); });
         return str;

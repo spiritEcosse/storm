@@ -37,3 +37,10 @@ sqlite3* Connection::get() const {
 bool Connection::is_open() const {
     return db != nullptr;
 }
+
+std::int64_t Connection::last_insert_id() const {
+    if (!is_open()) {
+        return -1; // Error value
+    }
+    return static_cast<std::int64_t>(sqlite3_last_insert_rowid(db));
+}

@@ -9,114 +9,49 @@
 #include <cctype>
 #include <unordered_set>
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 #include "Connection.h"
 #include "Reflect.h"
 
 class SchemaManager {
 private:
     std::shared_ptr<Connection> conn;
-    std::vector<std::function<bool()>> table_creators;
-    std::vector<std::string> registered_models; // Track model names for debugging
-    std::unordered_set<std::string> created_tables; // Avoid duplicate creation
-    
+    std::vector<std::string> registered_models;
+    std::vector<std::string> create_table_sqls;  // Store SQL strings instead of functions
+    std::unordered_set<std::string> created_tables;
+
 public:
     explicit SchemaManager(std::shared_ptr<Connection> connection) 
         : conn(std::move(connection)) {}
     
-    // Template method to register a model
     template<typename T>
     void register_model() {
         std::string model_name = get_table_name<T>();
         
-        // Avoid duplicate registrations
         if (std::find(registered_models.begin(), registered_models.end(), model_name) 
             != registered_models.end()) {
             std::cout << "Model " << model_name << " already registered, skipping..." << std::endl;
             return;
         }
         
+        // Generate and store SQL during registration
+        std::string sql = generate_create_table_sql<T>();
+        
         registered_models.push_back(model_name);
-        table_creators.push_back([this]() {
-            return create_table_for_model<T>();
-        });
+        create_table_sqls.push_back(sql);
         
         std::cout << "Registered model: " << model_name << std::endl;
     }
-    
-    // Create all registered tables
-    bool create_all_tables() {
-        if (table_creators.empty()) {
-            std::cout << "No models registered for table creation" << std::endl;
-            return true;
-        }
-        
-        std::cout << "Creating tables for " << table_creators.size() << " models..." << std::endl;
-        
-        for (size_t i = 0; i < table_creators.size(); ++i) {
-            const std::string& model_name = registered_models[i];
-            try {
-                if (!table_creators[i]()) {
-                    std::cerr << "Failed to create table for model: " << model_name << std::endl;
-                    return false;
-                }
-                std::cout << "✓ Table for " << model_name << " created successfully" << std::endl;
-            } catch (const std::exception& e) {
-                std::cerr << "Error creating table for " << model_name << ": " << e.what() << std::endl;
-                return false;
-            }
-        }
-        
-        std::cout << "All tables created successfully!" << std::endl;
-        return true;
-    }
-    
-    // Get table creation SQL for a model (useful for debugging)
-    template<typename T>
-    std::string get_create_table_sql() {
-        return generate_create_table_sql<T>();
-    }
-    
-    // Show all table schemas that would be created
-    void show_schemas() {
-        std::cout << "Registered models and their schemas:\n" << std::endl;
-        
-        for (size_t i = 0; i < registered_models.size(); ++i) {
-            std::cout << "Model: " << registered_models[i] << std::endl;
-            // We can't easily get the SQL without the type, but we can show the count
-            std::cout << "  (Use get_create_table_sql<T>() to see the actual schema)\n" << std::endl;
-        }
-        
-        if (registered_models.empty()) {
-            std::cout << "No models registered yet." << std::endl;
-        }
-    }
+
+    bool create_all_tables();
+    void show_schemas();
 
 private:
     template<typename T>
     std::string get_table_name() const {
-        return utils::to_lower(std::string(Reflect<T>::get_struct_name()));
+        return Reflect<T>::get_struct_name();
     }
 
-    template<typename T>
-    bool create_table_for_model() {
-        std::string table_name = get_table_name<T>();
-        
-        if (created_tables.find(table_name) != created_tables.end()) {
-            std::cout << "Table " << table_name << " already created in this session, skipping..." << std::endl;
-            return true;
-        }
-        
-        std::string sql = generate_create_table_sql<T>();
-        std::cout << "Executing: " << sql << std::endl;
-        
-        bool success = Statement(conn, sql).execute();
-        if (success) {
-            created_tables.insert(table_name);
-        }
-        
-        return success;
-    }
-    
     template<typename T>
     std::string generate_create_table_sql() {
         std::string table_name_str = get_table_name<T>();

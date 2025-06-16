@@ -10,10 +10,10 @@
 #include <ranges>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
+#include <cstdint>
 #include "Connection.h"
 #include "Statement.h"
-#include "ReflectionUtils.h"
-#include "StringUtils.h"
+#include "Reflect.h"
 
 inline std::string addExtraQuotes(const std::string& str) {
     std::string result;
@@ -412,7 +412,7 @@ namespace orm {
 
         // Helper to get reflected type information for T
         static constexpr auto get_reflected_type() {
-            return storm::reflect::getType<T>();
+            return Reflect<T>::get_reflected_type();
         }
 
         // Function to get the reflected members of the type
@@ -421,7 +421,7 @@ namespace orm {
         }
         
         static std::string get_table_name() {
-            return storm::utils::to_lower(std::string(get_reflected_type().name));
+            return Reflect<T>::get_struct_name();
         }
 
         // Helper function to get field names (excluding 'id')
@@ -429,9 +429,9 @@ namespace orm {
             constexpr auto type = get_reflected_type();
             std::vector<std::string> field_names;
             
-            storm::reflect::for_each_member(type.members, [&](auto member) {
-                if constexpr (storm::reflect::is_field<decltype(member)>::value) {
-                    std::string field_name = storm::utils::to_lower(storm::reflect::get_member_name(member));
+            Reflect<T>::for_each_member(type.members, [&](auto member) {
+                if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
+                    std::string field_name = Reflect<T>::get_member_name(member);
                     if (field_name != "id") { // Skip auto-generated id
                         field_names.push_back(field_name);
                     }
@@ -449,9 +449,9 @@ namespace orm {
         void bind_object_values(Statement& stmt, const T& obj, int& param_index) const {
             constexpr auto type = get_reflected_type();
             
-            storm::reflect::for_each_member(type.members, [&](auto member) {
-                if constexpr (storm::reflect::is_field<decltype(member)>::value) {
-                    std::string field_name = storm::utils::to_lower(storm::reflect::get_member_name(member));
+            Reflect<T>::for_each_member(type.members, [&](auto member) {
+                if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
+                    std::string field_name = Reflect<T>::get_member_name(member);
                     if (field_name == "id") return; // Skip auto-generated id
                     
                     auto value = member(obj);
@@ -476,12 +476,12 @@ namespace orm {
         }
         
         // Helper function to set auto-generated ID
-        void set_generated_id(T& obj, sqlite3_int64 id) const {
+        void set_generated_id(T& obj, std::int64_t id) const {
             constexpr auto type = get_reflected_type();
             
-            storm::reflect::for_each_member(type.members, [&](auto member) {
-                if constexpr (storm::reflect::is_field<decltype(member)>::value) {
-                    std::string field_name = storm::utils::to_lower(storm::reflect::get_member_name(member));
+            Reflect<T>::for_each_member(type.members, [&](auto member) {
+                if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
+                    std::string field_name = Reflect<T>::get_member_name(member);
                     if (field_name == "id") {
                         using IdType = std::decay_t<decltype(member(obj))>;
                         if constexpr (std::is_integral_v<IdType>) {
@@ -517,7 +517,7 @@ namespace orm {
                 
                 bool success = stmt.execute();
                 if (success) {
-                    set_generated_id(obj, sqlite3_last_insert_rowid(conn->get()));
+                    set_generated_id(obj, conn->last_insert_id());
                 }
                 
                 return success;
@@ -564,7 +564,7 @@ namespace orm {
                 
                 // Set generated IDs for all objects
                 if (success && !objs.empty()) {
-                    auto first_id = sqlite3_last_insert_rowid(conn->get());
+                    auto first_id = conn->last_insert_id();
                     for (size_t i = 0; i < objs.size(); ++i) {
                         set_generated_id(objs[i], first_id - (objs.size() - 1) + i);
                     }
@@ -641,9 +641,9 @@ namespace orm {
                 T obj{};
                 int column_idx = 0;
                 
-                storm::reflect::for_each_member(type.members, [&](auto member) {
-                    if constexpr (storm::reflect::is_field<decltype(member)>::value) {
-                        using FieldType = storm::reflect::member_value_type<decltype(member)>;
+                Reflect<T>::for_each_member(type.members, [&](auto member) {
+                    if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
+                        using FieldType = typename Reflect<T>::template member_value_type<decltype(member)>;
                         
                         if constexpr (std::is_same_v<FieldType, std::string>) {
                             member(obj) = row.get_text(column_idx);

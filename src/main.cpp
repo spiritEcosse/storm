@@ -18,6 +18,7 @@ void initialize_database(std::shared_ptr<Connection> conn) {
     schema_manager.register_model<Comment>();
     
     // Create all tables at once
+    schema_manager.show_schemas();
     schema_manager.create_all_tables();
 }
 
