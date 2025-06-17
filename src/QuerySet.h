@@ -475,46 +475,67 @@ namespace orm {
             });
         }
         
-        // Helper function to set auto-generated ID
-        void set_generated_id(T& obj, std::int64_t id) const {
+        // Helper function to bind a specific field value by name
+        void bind_field_value(Statement& stmt, const T& obj, const std::string& field_name, int& param_index) const {
             constexpr auto type = get_reflected_type();
             
+            bool found = false;
             Reflect<T>::for_each_member(type.members, [&](auto member) {
+                if (found) return; // Skip if we already found the field
+                
                 if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
-                    std::string field_name = Reflect<T>::get_member_name(member);
-                    if (field_name == "id") {
-                        using IdType = std::decay_t<decltype(member(obj))>;
-                        if constexpr (std::is_integral_v<IdType>) {
-                            member(obj) = static_cast<IdType>(id);
+                    std::string member_name = Reflect<T>::get_member_name(member);
+                    if (member_name == field_name) {
+                        found = true;
+                        
+                        auto value = member(obj);
+                        using ValueType = std::decay_t<decltype(value)>;
+                        
+                        if constexpr (std::is_same_v<ValueType, std::string>) {
+                            stmt.bind(param_index, value);
+                        } else if constexpr (std::is_same_v<ValueType, bool>) {
+                            stmt.bind(param_index, value ? 1 : 0);
+                        } else if constexpr (std::is_integral_v<ValueType> && !std::is_same_v<ValueType, bool>) {
+                            stmt.bind(param_index, static_cast<long long>(value));
+                        } else if constexpr (std::is_floating_point_v<ValueType>) {
+                            stmt.bind(param_index, static_cast<double>(value));
+                        } else if constexpr (std::is_null_pointer_v<ValueType>) {
+                            stmt.bind_null(param_index);
+                        } else {
+                            static_assert(sizeof(ValueType) == 0, "Unsupported type for SQLite binding");
                         }
+                        param_index++;
                     }
                 }
             });
         }
         
-        bool execute_insert(const std::vector<T*>& obj_ptrs, const std::vector<std::string>& field_names) {
+        std::vector<int> execute_insert(const std::vector<const T*>& obj_ptrs, const std::vector<std::string>& field_names) {
             std::string sql = build_insert_sql(field_names, obj_ptrs.size());
-            if (sql.empty()) return false;
+            if (sql.empty()) return {};
             
             auto stmt = Statement(conn, sql);
             
             // Bind all values for all objects
             int param_index = 1;
-            for (T* obj_ptr : obj_ptrs) {
+            for (const T* obj_ptr : obj_ptrs) {
                 bind_object_values(stmt, *obj_ptr, param_index);
             }
             
             bool success = stmt.execute();
             
-            // Set generated IDs
+            std::vector<int> generated_ids;
             if (success && !obj_ptrs.empty()) {
-                auto first_id = conn->last_insert_id();
+                auto first_id = conn->last_insert_id(); // TODO: replace auto-generated id with meaningfull id from db
+                
+                // Generate all IDs and return them
                 for (size_t i = 0; i < obj_ptrs.size(); ++i) {
-                    set_generated_id(*obj_ptrs[i], first_id - (obj_ptrs.size() - 1) + i);
+                    int current_id = first_id - (obj_ptrs.size() - 1) + i;
+                    generated_ids.push_back(current_id);
                 }
             }
             
-            return success;
+            return generated_ids;
         }
 
         std::string build_insert_sql(const std::vector<std::string>& field_names, size_t num_objects = 1) {
@@ -533,39 +554,66 @@ namespace orm {
             );
         }
 
-        std::string build_update_sql(const std::vector<std::string>& field_names) {
-            if (field_names.empty()) return "";
+        std::string build_update_sql(const std::vector<std::string>& field_names, size_t num_objects) {
+            if (field_names.empty() || num_objects == 0) return "";
             
-            std::vector<std::string> assignments;
-            for (const auto& name : field_names) {
-                assignments.push_back(fmt::format("{} = ?", name));
+            // For SQLite, use a single UPDATE with CASE expressions for each field
+            // This is more efficient for larger batches
+            std::vector<std::string> set_clauses;
+            
+            // For each field, create a CASE expression
+            for (const auto& field : field_names) {
+                std::string case_expr = fmt::format("{} = CASE id\n", field);
+                
+                // Add WHEN ? THEN ? for each object
+                for (size_t i = 0; i < num_objects; ++i) {
+                    case_expr += "        WHEN ? THEN ?\n";
+                }
+                
+                // Close with ELSE and END
+                case_expr += fmt::format("        ELSE {}\n    END", field);
+                set_clauses.push_back(case_expr);
             }
             
+            // Create placeholders for the WHERE IN clause
+            std::vector<std::string> id_placeholders(num_objects, "?");
             return fmt::format(
-                "UPDATE {} SET {} WHERE id = ?;",
+                "UPDATE {}\nSET\n    {}\nWHERE id IN ({});",
                 get_table_name(),
-                fmt::join(assignments, ", ")
+                fmt::join(set_clauses, ",\n    "),
+                fmt::join(id_placeholders, ", ")
             );
         }
 
         bool execute_update(const std::vector<const T*>& obj_ptrs, const std::vector<std::string>& field_names) {
-            std::string sql = build_update_sql(field_names);
+            if (obj_ptrs.empty()) return true;
+            
+            std::string sql = build_update_sql(field_names, obj_ptrs.size());
             if (sql.empty()) return false;
             
-            // For batch updates, we need to execute each update individually
-            // since UPDATE doesn't support batch operations like INSERT
-            for (const T* obj_ptr : obj_ptrs) {
-                auto stmt = Statement(conn, sql);
-                int param_index = 1;
-                bind_object_values(stmt, *obj_ptr, param_index);
-                stmt.bind(param_index, obj_ptr->id);
-                
-                if (!stmt.execute()) {
-                    return false; // Return false on first failure
+            auto stmt = Statement(conn, sql);
+            
+            // Parameter binding for CASE-based batch update is different:
+            // For each field, we need to bind all object IDs and their values
+            int param_index = 1;
+            
+            // For each field, bind WHEN id THEN value pairs
+            for (const auto& field : field_names) {
+                for (const T* obj_ptr : obj_ptrs) {
+                    // Bind ID for WHEN clause
+                    stmt.bind(param_index++, obj_ptr->id);
+                    
+                    // Bind field value for THEN clause
+                    bind_field_value(stmt, *obj_ptr, field, param_index);
                 }
             }
             
-            return true;
+            // Finally, bind all IDs for the WHERE IN clause
+            for (const T* obj_ptr : obj_ptrs) {
+                stmt.bind(param_index++, obj_ptr->id);
+            }
+            
+            return stmt.execute();
         }
 
         std::string build_delete_sql() {
@@ -610,31 +658,17 @@ namespace orm {
             : BaseQuerySet<T>(alias.empty() ? get_table_name() : alias, false, true), conn(std::move(conn)) {
         }
 
-        bool insert(T& obj) {
-            try {
-                auto field_names = get_insert_field_names();
-                if (field_names.empty()) return false;
-                
-                return execute_insert({&obj}, field_names);
-                
-            } catch (const std::exception& e) {
-                std::cerr << "Exception in insert: " << e.what() << "\n";
-                return false;
-            }
-        }
-        
-        // Insert multiple objects (batch insert)
-        bool insert(std::vector<T>& objs) {
-            if (objs.empty()) return true;
+        std::vector<int> insert(const std::vector<T>& objs) {
+            if (objs.empty()) return {};
             
             try {
                 auto field_names = get_insert_field_names();
-                if (field_names.empty()) return false;
+                if (field_names.empty()) return {};
                 
-                // Convert to pointer vector
-                std::vector<T*> obj_ptrs;
+                // Convert to const pointer vector
+                std::vector<const T*> obj_ptrs;
                 obj_ptrs.reserve(objs.size());
-                for (auto& obj : objs) {
+                for (const auto& obj : objs) {
                     obj_ptrs.push_back(&obj);
                 }
                 
@@ -642,11 +676,26 @@ namespace orm {
                 
             } catch (const std::exception& e) {
                 std::cerr << "Exception in insert: " << e.what() << "\n";
-                return false;
+                return {};
             }
         }
         
-        bool update(T& obj) {
+        // Single insert method
+        int insert(const T& obj) {
+            try {
+                auto field_names = get_insert_field_names();
+                if (field_names.empty()) return -1;
+                
+                auto ids = execute_insert({&obj}, field_names);
+                return ids.empty() ? -1 : ids[0];
+                
+            } catch (const std::exception& e) {
+                std::cerr << "Exception in insert: " << e.what() << "\n";
+                return -1;
+            }
+        }
+        
+        bool update(const T& obj) {
             try {
                 auto field_names = get_update_field_names();
                 if (field_names.empty()) return false;
@@ -660,7 +709,7 @@ namespace orm {
         }
         
         // Update multiple objects (batch update)
-        bool update(std::vector<T>& objs) {
+        bool update(const std::vector<T>& objs) {
             if (objs.empty()) return true;
             
             try {

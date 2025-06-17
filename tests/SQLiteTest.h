@@ -62,10 +62,10 @@ protected:
 TEST_F(ORMTest, InsertSingleObject) {
     Person person("John Doe", 30, "john@example.com");
     
-    bool result = qs->insert(person);
+    int result = qs->insert(person);
     
-    EXPECT_TRUE(result);
-    EXPECT_GT(person.id, 0) << "ID should be set after insert";
+    EXPECT_GT(result, 0) << "Insert should return a valid ID";
+    EXPECT_EQ(person.id, 0) << "Must not be inserted from db";
 }
 
 TEST_F(ORMTest, InsertEmptyFieldNames) {
@@ -73,12 +73,13 @@ TEST_F(ORMTest, InsertEmptyFieldNames) {
     // You might need to mock this behavior
     Person person("Jane Doe", 25, "jane@example.com");
     
-    // If field_names is empty, insert should return false
+    // If field_names is empty, insert should return -1
     // This test depends on your implementation of get_insert_field_names()
-    bool result = qs->insert(person);
+    int result = qs->insert(person);
     
     // Adjust expectation based on your actual implementation
-    EXPECT_TRUE(result || !result); // Placeholder - adjust based on expected behavior
+    // If field_names is empty, result should be -1, otherwise it should be > 0
+    EXPECT_TRUE(result > 0 || result == -1) << "Should return valid ID or -1 if field_names is empty";
 }
 
 TEST_F(ORMTest, InsertMultipleObjects) {
@@ -88,38 +89,33 @@ TEST_F(ORMTest, InsertMultipleObjects) {
         Person("Charlie", 26, "charlie@example.com")
     };
     
-    bool result = qs->insert(people);
+    std::vector<int> ids = qs->insert(people);
     
-    EXPECT_TRUE(result);
+    EXPECT_EQ(ids.size(), people.size()) << "Should return an ID for each inserted object";
     
-    // Check that all objects have IDs assigned
-    for (const auto& person : people) {
-        EXPECT_GT(person.id, 0) << "Each person should have an ID after batch insert";
-    }
-    
-    // Check that IDs are sequential (depends on your ID assignment logic)
-    for (size_t i = 1; i < people.size(); ++i) {
-        EXPECT_EQ(people[i].id, people[i-1].id + 1) << "IDs should be sequential";
+    // Check that all returned IDs are valid
+    for (const auto& id : ids) {
+        EXPECT_GT(id, 0) << "Each ID should be valid (greater than 0)";
     }
 }
 
 TEST_F(ORMTest, InsertEmptyVector) {
     std::vector<Person> empty_people;
     
-    bool result = qs->insert(empty_people);
+    std::vector<int> ids = qs->insert(empty_people);
     
-    EXPECT_TRUE(result) << "Inserting empty vector should return true";
+    EXPECT_TRUE(ids.empty()) << "Inserting empty vector should return empty vector of IDs";
 }
 
 TEST_F(ORMTest, InsertExceptionHandling) {
     // Create a person that might cause an exception (e.g., invalid data)
     Person person("", -1, ""); // Assuming this might cause issues
     
-    // The method should handle exceptions and return false
-    bool result = qs->insert(person);
+    // The method should handle exceptions and return -1
+    int result = qs->insert(person);
     
-    // Should not crash and should return a boolean
-    EXPECT_TRUE(result == true || result == false);
+    // Should not crash and should return either a valid ID or -1
+    EXPECT_TRUE(result > 0 || result == -1) << "Should return valid ID or -1 on error";
 }
 
 // UPDATE TESTS
@@ -127,7 +123,7 @@ TEST_F(ORMTest, UpdateSingleObject) {
     // First insert a person
     Person person("John Doe", 30, "john@example.com");
     ASSERT_TRUE(qs->insert(person));
-    ASSERT_GT(person.id, 0);
+    ASSERT_EQ(person.id, 0);
     
     // Update the person
     person.name = "John Smith";
@@ -144,7 +140,8 @@ TEST_F(ORMTest, UpdateMultipleObjects) {
         Person("Alice", 28, "alice@example.com"),
         Person("Bob", 32, "bob@example.com")
     };
-    ASSERT_TRUE(qs->insert(people));
+    std::vector<int> ids = qs->insert(people);
+    ASSERT_EQ(ids.size(), people.size());
     
     // Update them
     people[0].age = 29;
@@ -178,7 +175,7 @@ TEST_F(ORMTest, RemoveSingleObject) {
     // First insert a person
     Person person("John Doe", 30, "john@example.com");
     ASSERT_TRUE(qs->insert(person));
-    ASSERT_GT(person.id, 0);
+    ASSERT_EQ(person.id, 0);
     
     bool result = qs->remove(person);
     
@@ -192,7 +189,8 @@ TEST_F(ORMTest, RemoveMultipleObjects) {
         Person("Bob", 32, "bob@example.com"),
         Person("Charlie", 26, "charlie@example.com")
     };
-    ASSERT_TRUE(qs->insert(people));
+    std::vector<int> ids = qs->insert(people);
+    ASSERT_EQ(ids.size(), people.size());
     
     bool result = qs->remove(people);
     
@@ -221,8 +219,9 @@ TEST_F(ORMTest, RemoveNonExistentObject) {
 TEST_F(ORMTest, FullCRUDWorkflow) {
     // Create
     Person person("John Doe", 30, "john@example.com");
-    ASSERT_TRUE(qs->insert(person));
-    ASSERT_GT(person.id, 0);
+    int id = qs->insert(person);
+    ASSERT_GT(id, 0);
+    ASSERT_EQ(person.id, 0);
     int original_id = person.id;
     
     // Update
@@ -242,11 +241,12 @@ TEST_F(ORMTest, BatchOperationsWorkflow) {
         Person("Bob", 32, "bob@example.com"),
         Person("Charlie", 26, "charlie@example.com")
     };
-    ASSERT_TRUE(qs->insert(people));
+    std::vector<int> ids = qs->insert(people);
+    ASSERT_EQ(ids.size(), people.size());
     
-    // Verify all have IDs
-    for (const auto& person : people) {
-        ASSERT_GT(person.id, 0);
+    // Verify all returned IDs are valid
+    for (const auto& id : ids) {
+        ASSERT_GT(id, 0);
     }
     
     // Batch update
@@ -262,14 +262,16 @@ TEST_F(ORMTest, BatchOperationsWorkflow) {
 TEST_F(ORMTest, MixedOperations) {
     // Insert single
     Person single_person("Single", 25, "single@example.com");
-    ASSERT_TRUE(qs->insert(single_person));
+    int single_id = qs->insert(single_person);
+    ASSERT_GT(single_id, 0);
     
     // Insert batch
     std::vector<Person> batch_people = {
         Person("Batch1", 30, "batch1@example.com"),
         Person("Batch2", 35, "batch2@example.com")
     };
-    ASSERT_TRUE(qs->insert(batch_people));
+    std::vector<int> batch_ids = qs->insert(batch_people);
+    ASSERT_EQ(batch_ids.size(), batch_people.size());
     
     // Update single
     single_person.age = 26;
