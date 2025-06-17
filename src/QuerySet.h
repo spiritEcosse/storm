@@ -511,7 +511,7 @@ namespace orm {
         }
         
         std::vector<int> execute_insert(const std::vector<const T*>& obj_ptrs, const std::vector<std::string>& field_names) {
-            std::string sql = build_insert_sql(field_names, obj_ptrs.size());
+            std::string sql = build_insert_sql(field_names, obj_ptrs.size(), true); // Use RETURNING id
             if (sql.empty()) return {};
             
             auto stmt = Statement(conn, sql);
@@ -522,23 +522,20 @@ namespace orm {
                 bind_object_values(stmt, *obj_ptr, param_index);
             }
             
-            bool success = stmt.execute();
-            
             std::vector<int> generated_ids;
-            if (success && !obj_ptrs.empty()) {
-                auto first_id = conn->last_insert_id(); // TODO: replace auto-generated id with meaningfull id from db
-                
-                // Generate all IDs and return them
-                for (size_t i = 0; i < obj_ptrs.size(); ++i) {
-                    int current_id = first_id - (obj_ptrs.size() - 1) + i;
-                    generated_ids.push_back(current_id);
-                }
+            
+            // Execute and collect all returned IDs
+            auto rows = stmt.execute_all();
+            
+            // Extract IDs from the returned rows
+            for (const auto& row : rows) {
+                generated_ids.push_back(row.get_int(0)); // ID is in the first column
             }
             
             return generated_ids;
         }
 
-        std::string build_insert_sql(const std::vector<std::string>& field_names, size_t num_objects = 1) {
+        std::string build_insert_sql(const std::vector<std::string>& field_names, size_t num_objects = 1, bool returning_id = false) {
             if (field_names.empty()) return "";
             
             std::vector<std::string> placeholders(field_names.size(), "?");
@@ -546,11 +543,14 @@ namespace orm {
             
             std::vector<std::string> value_groups(num_objects, single_group);
             
+            std::string returning_clause = returning_id ? " RETURNING id" : "";
+            
             return fmt::format(
-                "INSERT INTO {} ({}) VALUES {};",
+                "INSERT INTO {} ({}) VALUES {}{};",
                 get_table_name(),
                 fmt::join(field_names, ", "),
-                fmt::join(value_groups, ", ")
+                fmt::join(value_groups, ", "),
+                returning_clause
             );
         }
 
