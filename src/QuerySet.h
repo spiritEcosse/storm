@@ -492,7 +492,6 @@ namespace orm {
             });
         }
         
-        // Build the INSERT SQL statement
         bool execute_insert(const std::vector<T*>& obj_ptrs, const std::vector<std::string>& field_names) {
             std::string sql = build_insert_sql(field_names, obj_ptrs.size());
             if (sql.empty()) return false;
@@ -534,7 +533,6 @@ namespace orm {
             );
         }
 
-        // Build the UPDATE SQL statement
         std::string build_update_sql(const std::vector<std::string>& field_names) {
             if (field_names.empty()) return "";
             
@@ -568,6 +566,42 @@ namespace orm {
             }
             
             return true;
+        }
+
+        std::string build_delete_sql() {
+            return fmt::format("DELETE FROM {} WHERE id = ?;", get_table_name());
+        }
+        
+        std::string build_batch_delete_sql(size_t count) {
+            std::vector<std::string> placeholders(count, "?");
+            return fmt::format(
+                "DELETE FROM {} WHERE id IN ({});",
+                get_table_name(),
+                fmt::join(placeholders, ", ")
+            );
+        }
+
+        bool execute_delete(const std::vector<const T*>& obj_ptrs) {
+            if (obj_ptrs.empty()) return true;
+            
+            if (obj_ptrs.size() == 1) {
+                // Single delete
+                std::string sql = build_delete_sql();
+                auto stmt = Statement(conn, sql);
+                stmt.bind(1, obj_ptrs[0]->id);
+                return stmt.execute();
+            } else {
+                // Batch delete using IN clause
+                std::string sql = build_batch_delete_sql(obj_ptrs.size());
+                auto stmt = Statement(conn, sql);
+                
+                int param_index = 1;
+                for (const T* obj_ptr : obj_ptrs) {
+                    stmt.bind(param_index++, obj_ptr->id);
+                }
+                
+                return stmt.execute();
+            }
         }
     
     public:
@@ -626,7 +660,7 @@ namespace orm {
         }
         
         // Update multiple objects (batch update)
-        bool update(const std::vector<T>& objs) {
+        bool update(std::vector<T>& objs) {
             if (objs.empty()) return true;
             
             try {
@@ -648,43 +682,28 @@ namespace orm {
             }
         }
 
-        bool update(const T& obj) {   
+        bool remove(const T& obj) {
             try {
-                auto field_names = get_update_field_names();
-                if (field_names.empty()) return false;
-                
-                // Build assignments: field1 = ?, field2 = ?, ...
-                std::vector<std::string> assignments;
-                for (const auto& name : field_names) {
-                    assignments.push_back(fmt::format("{} = ?", name));
-                }
-                std::string sql = fmt::format(
-                    "UPDATE {} SET {} WHERE id = ?;",
-                    get_table_name(),
-                    fmt::join(assignments, ", ")
-                );
-                
-                auto stmt = Statement(conn, sql);
-                int param_index = 1;
-                bind_object_values(stmt, obj, param_index);
-                stmt.bind(param_index, obj.id);
-                return stmt.execute();
+                return execute_delete({&obj});
             } catch (const std::exception& e) {
-                std::cerr << "Exception in update: " << e.what() << "\n";
+                std::cerr << "Exception in delete: " << e.what() << "\n";
                 return false;
             }
         }
-
-        bool remove(const T& obj) {
+        
+        bool remove(const std::vector<T>& objs) {
+            if (objs.empty()) return true;
+            
             try {
-                std::string sql = fmt::format(
-                    "DELETE FROM {} WHERE id = ?;",
-                    get_table_name()
-                );
+                // Convert to pointer vector
+                std::vector<const T*> obj_ptrs;
+                obj_ptrs.reserve(objs.size());
+                for (const auto& obj : objs) {
+                    obj_ptrs.push_back(&obj);
+                }
                 
-                auto stmt = Statement(conn, sql);
-                stmt.bind(1, obj.id);
-                return stmt.execute();
+                return execute_delete(obj_ptrs);
+                
             } catch (const std::exception& e) {
                 std::cerr << "Exception in delete: " << e.what() << "\n";
                 return false;

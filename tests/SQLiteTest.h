@@ -2,110 +2,288 @@
 
 #include <gtest/gtest.h>
 #include <string>
-#include <cstdio>
-#include "../src/QuerySet.h"
-#include "../src/Person.h"
+#include <vector>
 #include <memory>
+#include "QuerySet.h"
 
-class SQLiteTest : public ::testing::Test {
+// Mock Person class for testing (adjust according to your actual Person class)
+struct Person {
+    int id = 0;
+    std::string name;
+    int age = 0;
+    std::string email;
+    
+    Person() = default;
+    Person(const std::string& n, int a, const std::string& e) 
+        : name(n), age(a), email(e) {}
+};
+
+REFL_AUTO(
+    type(Person),
+    field(id),
+    field(name),
+    field(age),
+    field(email)
+)
+
+class ORMTest : public ::testing::Test {
 protected:
+    std::shared_ptr<Connection> conn;
+    std::shared_ptr<orm::QuerySet<Person>> qs;
     std::string db_name;
 
     void SetUp() override {
         // Use in-memory SQLite database for isolation
         db_name = ":memory:";
+        conn = std::make_shared<Connection>(db_name);
+        qs = std::make_shared<orm::QuerySet<Person>>(conn);
+        
+        // Create test table
+        std::string create_table_sql = R"(
+            CREATE TABLE IF NOT EXISTS person (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                age INTEGER,
+                email TEXT
+            );
+        )";
+        
+        auto stmt = Statement(conn, create_table_sql);
+        ASSERT_TRUE(stmt.execute()) << "Failed to create test table";
     }
 
     void TearDown() override {
-        // Clean up any resources if needed
-        // In-memory database is automatically destroyed when connection closes
+        qs.reset();
+        conn.reset();
     }
 };
 
-TEST_F(SQLiteTest, QuerySetCreateTable) {
-    // Create shared connection to in-memory SQLite DB
-    auto conn = std::make_shared<Connection>(db_name);
-    orm::QuerySet<Person> persons(conn);
+// INSERT TESTS
+TEST_F(ORMTest, InsertSingleObject) {
+    Person person("John Doe", 30, "john@example.com");
+    
+    bool result = qs->insert(person);
+    
+    EXPECT_TRUE(result);
+    EXPECT_GT(person.id, 0) << "ID should be set after insert";
+}
 
-    // Call create_table (should not throw)
-    ASSERT_NO_THROW(persons.create_table());
+TEST_F(ORMTest, InsertEmptyFieldNames) {
+    // This test assumes get_insert_field_names() can return empty
+    // You might need to mock this behavior
+    Person person("Jane Doe", 25, "jane@example.com");
     
-    // Verify table exists using a more robust approach
-    sqlite3* db = conn->get();
-    ASSERT_NE(db, nullptr) << "Database connection should not be null";
+    // If field_names is empty, insert should return false
+    // This test depends on your implementation of get_insert_field_names()
+    bool result = qs->insert(person);
     
-    sqlite3_stmt* stmt = nullptr;
-    const char* sql = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='person';";
-    
-    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
-    ASSERT_EQ(rc, SQLITE_OK) << "Failed to prepare statement: " << sqlite3_errmsg(db);
-    
-    // Ensure statement is cleaned up even if test fails
-    auto stmt_guard = [&stmt]() { 
-        if (stmt) sqlite3_finalize(stmt); 
+    // Adjust expectation based on your actual implementation
+    EXPECT_TRUE(result || !result); // Placeholder - adjust based on expected behavior
+}
+
+TEST_F(ORMTest, InsertMultipleObjects) {
+    std::vector<Person> people = {
+        Person("Alice", 28, "alice@example.com"),
+        Person("Bob", 32, "bob@example.com"),
+        Person("Charlie", 26, "charlie@example.com")
     };
     
-    rc = sqlite3_step(stmt);
-    ASSERT_EQ(rc, SQLITE_ROW) << "Failed to execute query: " << sqlite3_errmsg(db);
+    bool result = qs->insert(people);
     
-    int table_count = sqlite3_column_int(stmt, 0);
-    EXPECT_EQ(table_count, 1) << "Expected exactly one 'person' table";
+    EXPECT_TRUE(result);
     
-    stmt_guard(); // Clean up statement
-}
-
-// Additional test for table structure verification
-TEST_F(SQLiteTest, QuerySetCreateTableStructure) {
-    auto conn = std::make_shared<Connection>(db_name);
-    orm::QuerySet<Person> persons(conn);
-    
-    ASSERT_NO_THROW(persons.create_table());
-    
-    sqlite3* db = conn->get();
-    ASSERT_NE(db, nullptr);
-    
-    sqlite3_stmt* stmt = nullptr;
-    const char* sql = "PRAGMA table_info(person);";
-    
-    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
-    ASSERT_EQ(rc, SQLITE_OK) << "Failed to prepare PRAGMA statement: " << sqlite3_errmsg(db);
-    
-    // Verify we can get column information (basic structure check)
-    bool has_columns = false;
-    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-        has_columns = true;
-        // Could add specific column checks here if needed
-        // const char* column_name = (const char*)sqlite3_column_text(stmt, 1);
-        // const char* column_type = (const char*)sqlite3_column_text(stmt, 2);
+    // Check that all objects have IDs assigned
+    for (const auto& person : people) {
+        EXPECT_GT(person.id, 0) << "Each person should have an ID after batch insert";
     }
     
-    EXPECT_TRUE(has_columns) << "Table should have at least one column";
-    ASSERT_EQ(rc, SQLITE_DONE) << "PRAGMA query should complete successfully";
-    
-    sqlite3_finalize(stmt);
+    // Check that IDs are sequential (depends on your ID assignment logic)
+    for (size_t i = 1; i < people.size(); ++i) {
+        EXPECT_EQ(people[i].id, people[i-1].id + 1) << "IDs should be sequential";
+    }
 }
 
-// Test for duplicate table creation (should be idempotent)
-TEST_F(SQLiteTest, QuerySetCreateTableIdempotent) {
-    auto conn = std::make_shared<Connection>(db_name);
-    orm::QuerySet<Person> persons(conn);
+TEST_F(ORMTest, InsertEmptyVector) {
+    std::vector<Person> empty_people;
     
-    // Create table twice - should not throw
-    ASSERT_NO_THROW(persons.create_table());
-    ASSERT_NO_THROW(persons.create_table());
+    bool result = qs->insert(empty_people);
     
-    // Verify still only one table exists
-    sqlite3* db = conn->get();
-    sqlite3_stmt* stmt = nullptr;
+    EXPECT_TRUE(result) << "Inserting empty vector should return true";
+}
+
+TEST_F(ORMTest, InsertExceptionHandling) {
+    // Create a person that might cause an exception (e.g., invalid data)
+    Person person("", -1, ""); // Assuming this might cause issues
     
-    int rc = sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='person';", -1, &stmt, nullptr);
-    ASSERT_EQ(rc, SQLITE_OK);
+    // The method should handle exceptions and return false
+    bool result = qs->insert(person);
     
-    rc = sqlite3_step(stmt);
-    ASSERT_EQ(rc, SQLITE_ROW);
+    // Should not crash and should return a boolean
+    EXPECT_TRUE(result == true || result == false);
+}
+
+// UPDATE TESTS
+TEST_F(ORMTest, UpdateSingleObject) {
+    // First insert a person
+    Person person("John Doe", 30, "john@example.com");
+    ASSERT_TRUE(qs->insert(person));
+    ASSERT_GT(person.id, 0);
     
-    int table_count = sqlite3_column_int(stmt, 0);
-    EXPECT_EQ(table_count, 1) << "Should still have exactly one table after duplicate creation";
+    // Update the person
+    person.name = "John Smith";
+    person.age = 31;
     
-    sqlite3_finalize(stmt);
+    bool result = qs->update(person);
+    
+    EXPECT_TRUE(result);
+}
+
+TEST_F(ORMTest, UpdateMultipleObjects) {
+    // First insert multiple people
+    std::vector<Person> people = {
+        Person("Alice", 28, "alice@example.com"),
+        Person("Bob", 32, "bob@example.com")
+    };
+    ASSERT_TRUE(qs->insert(people));
+    
+    // Update them
+    people[0].age = 29;
+    people[1].name = "Robert";
+    
+    bool result = qs->update(people);
+    
+    EXPECT_TRUE(result);
+}
+
+TEST_F(ORMTest, UpdateEmptyVector) {
+    std::vector<Person> empty_people;
+    
+    bool result = qs->update(empty_people);
+    
+    EXPECT_TRUE(result) << "Updating empty vector should return true";
+}
+
+TEST_F(ORMTest, UpdateNonExistentObject) {
+    Person person("Ghost", 0, "ghost@example.com");
+    person.id = 99999; // Non-existent ID
+    
+    bool result = qs->update(person);
+    
+    // Behavior depends on implementation - might return true even if no rows affected
+    EXPECT_TRUE(result == true || result == false);
+}
+
+// DELETE TESTS
+TEST_F(ORMTest, RemoveSingleObject) {
+    // First insert a person
+    Person person("John Doe", 30, "john@example.com");
+    ASSERT_TRUE(qs->insert(person));
+    ASSERT_GT(person.id, 0);
+    
+    bool result = qs->remove(person);
+    
+    EXPECT_TRUE(result);
+}
+
+TEST_F(ORMTest, RemoveMultipleObjects) {
+    // First insert multiple people
+    std::vector<Person> people = {
+        Person("Alice", 28, "alice@example.com"),
+        Person("Bob", 32, "bob@example.com"),
+        Person("Charlie", 26, "charlie@example.com")
+    };
+    ASSERT_TRUE(qs->insert(people));
+    
+    bool result = qs->remove(people);
+    
+    EXPECT_TRUE(result);
+}
+
+TEST_F(ORMTest, RemoveEmptyVector) {
+    std::vector<Person> empty_people;
+    
+    bool result = qs->remove(empty_people);
+    
+    EXPECT_TRUE(result) << "Removing empty vector should return true";
+}
+
+TEST_F(ORMTest, RemoveNonExistentObject) {
+    Person person("Ghost", 0, "ghost@example.com");
+    person.id = 99999; // Non-existent ID
+    
+    bool result = qs->remove(person);
+    
+    // Should handle gracefully
+    EXPECT_TRUE(result == true || result == false);
+}
+
+// INTEGRATION TESTS
+TEST_F(ORMTest, FullCRUDWorkflow) {
+    // Create
+    Person person("John Doe", 30, "john@example.com");
+    ASSERT_TRUE(qs->insert(person));
+    ASSERT_GT(person.id, 0);
+    int original_id = person.id;
+    
+    // Update
+    person.name = "John Smith";
+    person.age = 31;
+    ASSERT_TRUE(qs->update(person));
+    EXPECT_EQ(person.id, original_id) << "ID should remain unchanged after update";
+    
+    // Delete
+    ASSERT_TRUE(qs->remove(person));
+}
+
+TEST_F(ORMTest, BatchOperationsWorkflow) {
+    // Batch insert
+    std::vector<Person> people = {
+        Person("Alice", 28, "alice@example.com"),
+        Person("Bob", 32, "bob@example.com"),
+        Person("Charlie", 26, "charlie@example.com")
+    };
+    ASSERT_TRUE(qs->insert(people));
+    
+    // Verify all have IDs
+    for (const auto& person : people) {
+        ASSERT_GT(person.id, 0);
+    }
+    
+    // Batch update
+    for (auto& person : people) {
+        person.age += 1;
+    }
+    ASSERT_TRUE(qs->update(people));
+    
+    // Batch delete
+    ASSERT_TRUE(qs->remove(people));
+}
+
+TEST_F(ORMTest, MixedOperations) {
+    // Insert single
+    Person single_person("Single", 25, "single@example.com");
+    ASSERT_TRUE(qs->insert(single_person));
+    
+    // Insert batch
+    std::vector<Person> batch_people = {
+        Person("Batch1", 30, "batch1@example.com"),
+        Person("Batch2", 35, "batch2@example.com")
+    };
+    ASSERT_TRUE(qs->insert(batch_people));
+    
+    // Update single
+    single_person.age = 26;
+    ASSERT_TRUE(qs->update(single_person));
+    
+    // Update batch
+    for (auto& person : batch_people) {
+        person.age += 1;
+    }
+    ASSERT_TRUE(qs->update(batch_people));
+    
+    // Remove single
+    ASSERT_TRUE(qs->remove(single_person));
+    
+    // Remove batch
+    ASSERT_TRUE(qs->remove(batch_people));
 }

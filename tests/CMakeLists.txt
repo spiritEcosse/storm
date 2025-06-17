@@ -28,6 +28,7 @@ target_include_directories(${PROJECT_NAME}
     PRIVATE
     ${GTEST_INCLUDE_DIRS}
     ${GMOCK_INCLUDE_DIRS}
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src"
 )
 
 # Use gtest_discover_tests instead of gtest_add_tests
