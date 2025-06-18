@@ -125,7 +125,8 @@ namespace orm {
         bool _one{};
         bool _doAndCheck{};
         bool _returnInMain{};
-    private:
+        // TODO : fix private
+        
         [[nodiscard]] std::string getAlias() const override {
             return _alias;
         }
@@ -760,11 +761,21 @@ namespace orm {
         }
 
         std::vector<T> select_all() {
-            std::vector<T> results;
-            auto smt_ = Statement(conn, fmt::format("SELECT * FROM {};", get_table_name()) );    
+            auto sql = fmt::format("SELECT {} {} {} * FROM \"{}\" {} {} {} {} {}", // TODO : wise *
+                    this->createDistinctClause(),
+                    this->buildOnlyFields(),
+                    this->buildFunctions(),
+                    this->get_table_name(),
+                    this->generateJoinSQL(),
+                    this->filter_impl(),
+                    this->generateGroupBySQL(),
+                    this->buildOrderFields(),
+                    this->limit_impl());
+            auto smt_ = Statement(conn, sql);    
             // Execute query and get all results in a single database operation
             auto all_rows = smt_.execute_all(); // or handle error appropriately
             
+            std::vector<T> results;
             if (all_rows.empty()) {
                 return results;
             }
