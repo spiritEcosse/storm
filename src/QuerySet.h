@@ -192,7 +192,7 @@ namespace orm {
                               if(fieldAlias.alias.empty()) {
                                   return fieldAlias.field->getFullFieldName();
                               }
-                              return format("{} AS {}", fieldAlias.field->getFullFieldName(), fieldAlias.alias);
+                              return fmt::format("{} AS {}", fieldAlias.field->getFullFieldName(), fieldAlias.alias);
                           }),
                           ", "));
         }

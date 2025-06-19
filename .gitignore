@@ -2,4 +2,3 @@ build
 .idea
 src_old
 *.log
-*.txt

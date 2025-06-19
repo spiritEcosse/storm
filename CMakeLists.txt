@@ -7,23 +7,25 @@ message(STATUS "Using C++23 (standard build)")
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+message(STATUS "CMAKE_CXX_COMPILER: ${CMAKE_CXX_COMPILER}")
+message(STATUS "CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
+message(STATUS "CMAKE_CXX_COMPILER_VERSION: ${CMAKE_CXX_COMPILER_VERSION}")
+
 # Compiler-specific options
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    add_compile_options(-fcoroutines)
-    # Add debug information for metaprogramming
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # Common options for both GNU and Clang
     add_compile_options($<$<CONFIG:Debug>:-ftemplate-backtrace-limit=0>)
-    # Limit the number of errors to 5
-    add_compile_options(-fmax-errors=5)
-    
-    # For Clang specifically
-    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        add_compile_options(-ferror-limit=5)
+
+    # Compiler-specific flags
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+        add_compile_options(-fcoroutines) # Apply only for GNU compilers
+        add_compile_options(-fmax-errors=5)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        # For Clang (including AppleClang) with CMAKE_CXX_STANDARD set to 20 or 23,
+        # C++ coroutines are typically enabled by the standard itself.
+        # The explicit -fcoroutines flag can cause errors with modern Clang.
+        add_compile_options(-ferror-limit=5) # Clang specific error limit
     endif()
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-    add_compile_options(/EHsc /bigobj)
-    # For MSVC, coroutines are enabled by default with C++20 and above
-    # Limit the number of errors to 20
-    add_compile_options(/errorReport:prompt /maxErrors:20)
 endif()
 
 # start src
@@ -100,7 +102,6 @@ if (ENABLE_TESTS)
             VERSION 1.15.2
             OPTIONS
             "INSTALL_GTEST OFF"
-            "gtest_force_shared_crt ON"
     )
     set(GTEST_PARALLEL TRUE)
     # End adding gtest
