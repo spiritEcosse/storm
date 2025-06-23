@@ -2,9 +2,14 @@
 
 #include "BaseClass.h"
 #include "BaseField.h"
+#include "MemberPointerUtils.h"
+#include "Reflect.h"
+
+#include <refl.hpp>
 
 #include <string>
 #include <optional>
+#include <type_traits>
 #include <memory>
 #include <vector>
 #include <sstream>
@@ -46,21 +51,47 @@ namespace orm {
     class WhereClause final : public BaseClass {
     public:
         enum class LogicalType { SINGLE, AND, OR };
-        enum class ValueType { STRING, SPECIAL, FIELD_COMPARISON, RAW_SQL };
+        enum class ValueType { STRING, SPECIAL };
+        
+        // Default constructor
+        WhereClause() : BaseClass(), _fieldName(""), _op(Operator::EQUALS), _valueType(ValueType::STRING), _needsGrouping(false), _type(LogicalType::SINGLE) {}
 
-        WhereClause(const BaseField* field, std::string value, const Operator op = Operator::EQUALS) :
-            BaseClass(), _field(field), _value(std::move(value)), _op(op), _valueType(ValueType::STRING) {}
+        // Runtime constructor for member pointers with arithmetic values (excluding bool)
+        template<typename ClassType, typename FieldType, typename Value,
+        std::enable_if_t<std::is_arithmetic_v<std::decay_t<Value>> && !std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
+        WhereClause(FieldType ClassType::* memberPtr, Value value, const Operator op = Operator::EQUALS) :
+        BaseClass() {
+            std::string tableName = orm::detail::getTableNameFromType<ClassType>();
+            std::string fieldName = orm::detail::getFieldNameFromMemberPtr(memberPtr);
+            _fieldName = fmt::format("{}.{}", tableName, fieldName);
+            _value = std::to_string(value);
+            _op = op;
+            _valueType = ValueType::SPECIAL;
+        }
 
-        WhereClause(const BaseField* field, const std::optional<bool> value, const Operator op = Operator::EQUALS) :
-            BaseClass(), _field(field), _value(value ? boolToString(value.value()) : "NULL"), _op(op),
-            _valueType(ValueType::SPECIAL) {}
+        // Runtime constructor for member pointers with non-arithmetic values (including bool)
+        template<typename ClassType, typename FieldType, typename Value,
+        std::enable_if_t<!std::is_arithmetic_v<std::decay_t<Value>> || std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
+        WhereClause(FieldType ClassType::* memberPtr, Value&& value, const Operator op = Operator::EQUALS) :
+        BaseClass() {
+            std::string tableName = orm::detail::getTableNameFromType<ClassType>();
+            std::string fieldName = orm::detail::getFieldNameFromMemberPtr(memberPtr);
+            _fieldName = fmt::format("{}.{}", tableName, fieldName);
 
-        WhereClause(const BaseField* field1, const BaseField* field2) :
-            BaseClass(), _field(field1), _comparisonField(field2), _op(Operator::EQUALS),
-            _valueType(ValueType::FIELD_COMPARISON) {}
+            if constexpr (std::is_same_v<std::decay_t<Value>, bool>) {
+                _value = boolToString(value);
+            } else {
+                std::ostringstream oss;
+                oss << value;
+                _value = oss.str();
+            }
+
+            _op = op;
+            _valueType = ValueType::STRING;
+        }
 
         WhereClause(LogicalType type, std::vector<WhereClause> subclauses, bool isGrouped = false) :
-            BaseClass(), _field(nullptr), _op(), _valueType(), _needsGrouping(isGrouped), _type(type),
+            BaseClass(), _fieldName(""), _op(), _valueType(), _needsGrouping(isGrouped), _type(type),
             _subclauses(std::move(subclauses)) {}
 
         // Modified group method that creates a new wrapper clause
@@ -70,16 +101,10 @@ namespace orm {
             return WhereClause(LogicalType::SINGLE, std::move(subclauses), true);
         }
 
-        static WhereClause rawSql(const BaseField* field, std::string sql, const Operator op = Operator::EQUALS) {
-            WhereClause clause(field, std::move(sql), op);
-            clause._valueType = ValueType::RAW_SQL;
-            return clause;
-        }
-
         // Modified operator overloads
         friend WhereClause operator&(WhereClause lhs, WhereClause rhs) {
             // If we're already building an AND clause, just append
-            if(lhs._type == LogicalType::AND && lhs._field == nullptr) {
+            if(lhs._type == LogicalType::AND && lhs._fieldName.empty()) {
                 lhs._subclauses.push_back(std::move(rhs));
                 return std::move(lhs);
             }
@@ -93,7 +118,7 @@ namespace orm {
 
         friend WhereClause operator|(WhereClause lhs, WhereClause rhs) {
             // If we're already building an OR clause, just append
-            if(lhs._type == LogicalType::OR && lhs._field == nullptr) {
+            if(lhs._type == LogicalType::OR && lhs._fieldName.empty()) {
                 lhs._subclauses.push_back(std::move(rhs));
                 return std::move(lhs);
             }
@@ -121,7 +146,7 @@ namespace orm {
         // Modified serialization
         void serializeRecursive(std::stringstream& ss) const {
             // If this is a grouping wrapper, just serialize the first subclause with forced parentheses
-            if(_field == nullptr && _type == LogicalType::SINGLE && _subclauses.size() == 1 && _needsGrouping) {
+            if(_fieldName.empty() && _type == LogicalType::SINGLE && _subclauses.size() == 1 && _needsGrouping) {
                 _subclauses[0].serializeRecursive(ss);
                 return;
             }
@@ -134,7 +159,7 @@ namespace orm {
             }
 
             // If this is a logical operator clause
-            if(_field == nullptr) {
+            if(_fieldName.empty()) {
                 if(!_subclauses.empty()) {
                     _subclauses[0].serializeRecursive(ss);
 
@@ -163,28 +188,19 @@ namespace orm {
 
         std::string serializeSingleClause() const {
             switch(_valueType) {
-                case ValueType::FIELD_COMPARISON:
-                    return fmt::format("{} {} {}",
-                                       _field->getFullFieldName(),
-                                       operatorToString(_op),
-                                       _comparisonField->getFullFieldName());
 
                 case ValueType::STRING:
-                    return fmt::format("{} {} '{}'", _field->getFullFieldName(), operatorToString(_op), _value);
-
-                case ValueType::RAW_SQL:
-                    return fmt::format("{} {} {}", _field->getFullFieldName(), operatorToString(_op), _value);
+                    return fmt::format("{} {} '{}'", _fieldName, operatorToString(_op), _value);
 
                 case ValueType::SPECIAL:
-                    return fmt::format("{} {} {}", _field->getFullFieldName(), operatorToString(_op), _value);
+                    return fmt::format("{} {} {}", _fieldName, operatorToString(_op), _value);
 
                 default:
                     return "";
             }
         }
 
-        const BaseField* _field;
-        const BaseField* _comparisonField = nullptr;
+        std::string _fieldName;
         std::string _value;
         Operator _op;
         ValueType _valueType;

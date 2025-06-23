@@ -19,12 +19,12 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # Compiler-specific flags
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
         add_compile_options(-fcoroutines) # Apply only for GNU compilers
-        add_compile_options(-fmax-errors=5)
+        add_compile_options(-fmax-errors=1)
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         # For Clang (including AppleClang) with CMAKE_CXX_STANDARD set to 20 or 23,
         # C++ coroutines are typically enabled by the standard itself.
         # The explicit -fcoroutines flag can cause errors with modern Clang.
-        add_compile_options(-ferror-limit=5) # Clang specific error limit
+        add_compile_options(-ferror-limit=1) # Clang specific error limit
     endif()
 endif()
 

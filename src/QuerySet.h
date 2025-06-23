@@ -14,6 +14,8 @@
 #include "Connection.h"
 #include "Statement.h"
 #include "Reflect.h"
+#include "MemberPointerUtils.h"
+#include <sstream>
 
 inline std::string addExtraQuotes(const std::string& str) {
     std::string result;
@@ -29,12 +31,17 @@ inline std::string addExtraQuotes(const std::string& str) {
 
 namespace orm {
 
-    using FieldOrFunction = std::variant<const BaseField *, Function>;
+    using FieldOrFunction = std::variant<const BaseField *, Function, std::string>;
 
     namespace detail {
         template<typename T>
         std::string getFullFieldName(const T &obj) {
             return obj.getFullFieldName();
+        }
+
+        template<>
+        inline std::string getFullFieldName(const std::string &obj) {
+            return obj;
         }
 
         template<>
@@ -48,7 +55,7 @@ namespace orm {
         }
 
         template<>
-        inline std::string getFullFieldName(const std::variant<const BaseField *, Function> &obj) {
+        inline std::string getFullFieldName(const std::variant<const BaseField *, Function, std::string> &obj) {
             return std::visit(
                 [](const auto &value) {
                     return getFullFieldName(value);
@@ -118,27 +125,56 @@ namespace orm {
         std::vector<FieldAlias> onlyFields;
         std::vector<Function> functionsSet;
         std::vector<std::unique_ptr<BaseQuerySetVirtual>> otherQueries;
-        std::vector<const BaseField *> groupByFields;
+        std::vector<std::string> groupByFieldNames; // For compile-time field names
         int _limit{};
-        std::string _offset;
+        int _offset{};
         std::string _alias;
         bool _one{};
         bool _doAndCheck{};
         bool _returnInMain{};
         // TODO : fix private
-        
+    
+        // Helper to get reflected type information for T
+        template<class U>
+        static constexpr auto get_reflected_type() {
+            return Reflect<U>::get_reflected_type();
+        }
+
+        // Function to get the reflected members of the type
+        template<class U>
+        static constexpr auto get_reflected_members() {
+            return Reflect<U>::get_reflected_type().members;
+        }
+
+        template<class U>
+        static constexpr std::string get_table_name() {
+            return Reflect<U>::get_struct_name();
+        }
+    
         [[nodiscard]] std::string getAlias() const override {
             return _alias;
         }
 
         template<typename U>
         void group_by_impl(U &&u) {
-            groupByFields.emplace_back(std::forward<U>(u));
+            // Extract field name and table name
+            std::string fieldName = u->getFieldName();
+            std::string tableName = u->getTableName();
+            
+            // Format as table.field
+            std::string fullFieldName;
+            if (!tableName.empty()) {
+                fullFieldName = format("\"{}\".\"{}\"", tableName, fieldName);
+            } else {
+                fullFieldName = format("\"{}\"", fieldName);
+            }
+            
+            groupByFieldNames.push_back(fullFieldName);
         }
 
         template<typename U, typename... Args>
         void group_by_impl(U &&u, Args &&...args) {
-            groupByFields.emplace_back(std::forward<U>(u));
+            group_by_impl(std::forward<U>(u));
             group_by_impl(std::forward<Args>(args)...);
         }
 
@@ -168,7 +204,7 @@ namespace orm {
             return format(" ORDER BY {}",
                           fmt::join(orderFields | std::views::transform([](const auto &pair) {
                                         return fmt::format("{} {}",
-                                                           detail::getFullFieldName(pair.first),
+                                                           "", //detail::getFullFieldName(pair.first),
                                                            pair.second ? "ASC" : "DESC");
                                     }),
                                     ", "));
@@ -244,46 +280,72 @@ namespace orm {
             return sql;
         }
 
+        template<typename SourceType, typename TargetType>
+        std::string determine_join_condition() {
+            std::string condition;
+            
+            // Get lowercase table names for foreign key naming convention
+            std::string sourceName = utils::to_lower(get_table_name<SourceType>());
+            std::string targetName = utils::to_lower(get_table_name<TargetType>());
+            
+            // Strategy 1: Look for foreign key in source pointing to target
+            // e.g., author_id in Post pointing to Author.id
+            std::string foreignKeyName = targetName + "_id";
+            bool foundForeignKeyInSource = false;
+            
+            // Check each field in the source type
+            Reflect<SourceType>::for_each_member(get_reflected_members<SourceType>(), [&](auto member) {
+                if constexpr (refl::trait::is_field_v<decltype(member)>) {
+                    std::string fieldName = std::string(member.name.str());
+                    if (utils::to_lower(fieldName) == foreignKeyName) {
+                        condition = fmt::format(R"("{}"."id" = "{}"."{}")",
+                                              get_table_name<TargetType>(), get_table_name<SourceType>(), fieldName);
+                        foundForeignKeyInSource = true;
+                    }
+                }
+            });
+            
+            return foundForeignKeyInSource ? condition : "";
+        }
+
         template<class U>
         void join_impl_core(const std::string &tableReference,
                             std::string &&alias,
                             std::string &&addConditions,
                             JoinInfo::JoinType joinType) {
-            std::string lastJoinTable = joinInfo.joins.empty() ? T::tableName : joinInfo.joins.back().tableName;
-
-            auto mapFields = U::joinMap();
-            auto it = mapFields.find(lastJoinTable);
-            if(it == mapFields.end()) {
-                it = mapFields.find(T::tableName);
+            std::string condition;
+            
+            // Get the target table name (what we're joining to)
+            std::string targetTable = alias.empty() ? tableReference : alias;
+            
+            // Try to automatically determine join condition using reflection
+            condition = determine_join_condition<T, U>();
+            
+            // If we couldn't auto-determine the condition and no additional conditions provided
+            if (condition.empty() && addConditions.empty()) {
+                throw std::runtime_error("Could not determine join condition automatically. Please provide explicit join conditions.");
             }
-
-            if(it == mapFields.end()) {
-                mapFields = T::joinMap();
-                it = mapFields.find(U::tableName);
+            
+            // If we have additional conditions, append them
+            if (!addConditions.empty()) {
+                if (!condition.empty()) {
+                    condition += " " + addConditions;
+                } else {
+                    condition = std::move(addConditions);
+                }
             }
-
-            if(it != mapFields.end()) {
-                const auto &[joinFieldFirstTable, joinFieldSecondField] = it->second;
-
-                const std::string &tableNameStr = joinFieldFirstTable->getTableName();
-                const std::string &effectiveTableName = alias.empty() ? tableNameStr : alias;
-
-                std::string condition = fmt::format(R"("{}"."{}" = {} {})",
-                                                    effectiveTableName,
-                                                    joinFieldFirstTable->getFieldName(),
-                                                    joinFieldSecondField->getFullFieldName(),
-                                                    std::move(addConditions));
-
+            
+            if (!condition.empty()) {
                 joinInfo.joins.emplace_back(std::string(tableReference),
-                                            std::move(alias),
-                                            std::move(condition),
-                                            joinType);
+                                        std::move(alias),
+                                        std::move(condition),
+                                        joinType);
             }
         }
 
         template<class U>
         void join_impl(std::string &&alias, std::string &&addConditions, const JoinInfo::JoinType joinType) {
-            join_impl_core<U>(U::tableName, std::move(alias), std::move(addConditions), joinType);
+            join_impl_core<U>(this->get_table_name<U>(), std::move(alias), std::move(addConditions), joinType);
         }
 
         template<class U>
@@ -341,15 +403,11 @@ namespace orm {
         }
 
         [[nodiscard]] std::string generateGroupBySQL() const {
-            if(groupByFields.empty()) {
+            if(groupByFieldNames.empty()) {
                 return "";
             }
-
-            return format("GROUP BY {}",
-                          fmt::join(groupByFields | std::views::transform([](const auto &field) {
-                                        return field->getFullFieldName();
-                                    }),
-                                    ", "));
+     
+            return fmt::format("GROUP BY {}", fmt::join(groupByFieldNames, ", "));
         }
 
         [[nodiscard]] std::string buildOtherQueries() const {
@@ -382,8 +440,8 @@ namespace orm {
                 return "";
             }
 
-            return !_offset.empty() ? fmt::format(" LIMIT {} OFFSET {}", _limit, _offset)
-                                    : fmt::format(" LIMIT {}", _limit);
+            return _offset ? fmt::format(" LIMIT {} OFFSET {}", _limit, _offset)
+                           : fmt::format(" LIMIT {}", _limit);
         }
 
         [[nodiscard]] std::string filter_impl() const {
@@ -411,26 +469,11 @@ namespace orm {
             return *this;
         }
 
-        // Helper to get reflected type information for T
-        static constexpr auto get_reflected_type() {
-            return Reflect<T>::get_reflected_type();
-        }
-
-        // Function to get the reflected members of the type
-        static constexpr auto get_reflected_members() {
-            return get_reflected_type().members;
-        }
-        
-        static std::string get_table_name() {
-            return Reflect<T>::get_struct_name();
-        }
-
         // Helper function to get field names (excluding 'id')
         std::vector<std::string> get_insert_field_names() const {
-            constexpr auto type = get_reflected_type();
             std::vector<std::string> field_names;
             
-            Reflect<T>::for_each_member(type.members, [&](auto member) {
+            Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
                 if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
                     std::string field_name = Reflect<T>::get_member_name(member);
                     if (field_name != "id") { // Skip auto-generated id
@@ -448,9 +491,7 @@ namespace orm {
         
         // Helper function to bind object values to statement
         void bind_object_values(Statement& stmt, const T& obj, int& param_index) const {
-            constexpr auto type = get_reflected_type();
-            
-            Reflect<T>::for_each_member(type.members, [&](auto member) {
+            Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
                 if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
                     std::string field_name = Reflect<T>::get_member_name(member);
                     if (field_name == "id") return; // Skip auto-generated id
@@ -478,10 +519,8 @@ namespace orm {
         
         // Helper function to bind a specific field value by name
         void bind_field_value(Statement& stmt, const T& obj, const std::string& field_name, int& param_index) const {
-            constexpr auto type = get_reflected_type();
-            
             bool found = false;
-            Reflect<T>::for_each_member(type.members, [&](auto member) {
+            Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
                 if (found) return; // Skip if we already found the field
                 
                 if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
@@ -548,7 +587,7 @@ namespace orm {
             
             return fmt::format(
                 "INSERT INTO {} ({}) VALUES {}{};",
-                get_table_name(),
+                this->template get_table_name<T>(),
                 fmt::join(field_names, ", "),
                 fmt::join(value_groups, ", "),
                 returning_clause
@@ -580,7 +619,7 @@ namespace orm {
             std::vector<std::string> id_placeholders(num_objects, "?");
             return fmt::format(
                 "UPDATE {}\nSET\n    {}\nWHERE id IN ({});",
-                get_table_name(),
+                this->template get_table_name<T>(),
                 fmt::join(set_clauses, ",\n    "),
                 fmt::join(id_placeholders, ", ")
             );
@@ -618,14 +657,14 @@ namespace orm {
         }
 
         std::string build_delete_sql() {
-            return fmt::format("DELETE FROM {} WHERE id = ?;", get_table_name());
+            return fmt::format("DELETE FROM {} WHERE id = ?;", this->template get_table_name<T>());
         }
         
         std::string build_batch_delete_sql(size_t count) {
             std::vector<std::string> placeholders(count, "?");
             return fmt::format(
                 "DELETE FROM {} WHERE id IN ({});",
-                get_table_name(),
+                this->template get_table_name<T>(),
                 fmt::join(placeholders, ", ")
             );
         }
@@ -656,7 +695,7 @@ namespace orm {
     public:
         // Constructor
         explicit QuerySet(std::shared_ptr<Connection> conn, const std::string& alias = "") 
-            : BaseQuerySet<T>(alias.empty() ? get_table_name() : alias, false, true), conn(std::move(conn)) {
+            : BaseQuerySet<T>(alias.empty() ? this->template get_table_name<T>() : alias, false, true), conn(std::move(conn)) {
         }
 
         std::vector<int> insert(const std::vector<T>& objs) {
@@ -765,7 +804,7 @@ namespace orm {
                     this->createDistinctClause(),
                     this->buildOnlyFields(),
                     this->buildFunctions(),
-                    this->get_table_name(),
+                    this->template get_table_name<T>(),
                     this->generateJoinSQL(),
                     this->filter_impl(),
                     this->generateGroupBySQL(),
@@ -783,14 +822,11 @@ namespace orm {
             // Pre-allocate memory for efficiency
             results.reserve(all_rows.size());
             
-            // Process each row into objects
-            constexpr auto type = get_reflected_type();
-            
             for (const auto& row : all_rows) {
                 T obj{};
                 int column_idx = 0;
                 
-                Reflect<T>::for_each_member(type.members, [&](auto member) {
+                Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
                     if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
                         using FieldType = typename Reflect<T>::template member_value_type<decltype(member)>;
                         
@@ -822,35 +858,107 @@ namespace orm {
             return this->_alias;
         }
 
-        template<typename... Args>
-        QuerySet &group_by(Args &&...args) {
-            this->group_by_impl(std::forward<Args>(args)...);
+        // Single-member overload removed to avoid ambiguity; variadic handles all cases.
+        // Helper to process a single member pointer and push its fully qualified name.
+        template<auto MemberPtr>
+        void add_group_by_field() {
+            using ClassType = typename orm::detail::member_pointer_class<decltype(MemberPtr)>::type;
+            std::string fieldName = orm::detail::getFieldNameFromMemberPtr<ClassType, MemberPtr>();
+            std::string tableName = orm::detail::getTableNameFromType<ClassType>();
+            std::string fullFieldName = tableName.empty() ? fmt::format("\"{}\"", fieldName)
+                                                          : fmt::format("\"{}\".\"{}\"", tableName, fieldName);
+            this->groupByFieldNames.push_back(fullFieldName);
+        }
+
+        // Compile-time version for multiple member pointers
+        template<auto MemberPtr, auto... RestMemberPtrs>
+        QuerySet &group_by() {
+            // Add the first (or only) member pointer field
+            // add_group_by_field<MemberPtr>();
+            
+            // Recursively add the rest of the fields
+            if constexpr (sizeof...(RestMemberPtrs) > 0) {
+                group_by<RestMemberPtrs...>();
+            }
+            
+            return *this;
+        }
+        
+        // =============================
+        // Compile-time WHERE overloads using member pointers as NTTPs
+        // =============================
+        // Non-arithmetic values WHERE overload using member pointers
+        template<auto MemberPtr, typename Value,
+                 std::enable_if_t<!std::is_arithmetic_v<Value> || std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
+        QuerySet &where(Value &&value, const Operator op = Operator::EQUALS) {
+            using ClassType = typename orm::detail::member_pointer_class<decltype(MemberPtr)>::type;
+            using FieldType = typename orm::detail::member_pointer_type<decltype(MemberPtr)>::type;
+            
+            // Use the WhereClause constructor directly
+            return addFilter(orm::WhereClause(MemberPtr, std::forward<Value>(value), op));
+        }
+
+        // =============================
+        // =============================
+        // Compile-time ORDER_BY overload using member pointers
+        // =============================
+        template<auto MemberPtr>
+        QuerySet &order_by(bool asc = true) {
+            using ClassType = typename orm::detail::member_pointer_class<decltype(MemberPtr)>::type;
+            std::string fieldName = orm::detail::getFieldNameFromMemberPtr<ClassType, MemberPtr>();
+            std::string tableName = orm::detail::getTableNameFromType<ClassType>();
+            std::string fullFieldName = tableName.empty() ? fmt::format("\"{}\"", fieldName)
+                                                          : fmt::format("\"{}\".\"{}\"", tableName, fieldName);
+            this->orderFields.emplace_back(fullFieldName, asc);
             return *this;
         }
 
-        QuerySet &filter(const BaseField *field, const std::string &value, const Operator op = Operator::EQUALS) {
-            return addFilter(WhereClause(field, value, op));
+        // Compile-time WHERE overloads for arithmetic values using member pointers
+        // =============================
+
+        // New syntax for arithmetic values (excluding bool)
+        template<auto MemberPtr,
+                 typename Value,
+                 std::enable_if_t<std::is_arithmetic_v<std::decay_t<Value>> && !std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
+        QuerySet &where(const Value &value, const Operator op = Operator::EQUALS) {
+            return addFilter(orm::WhereClause(MemberPtr, value, op));
+        }
+        
+        // New syntax for non-arithmetic values (including bool, strings, etc.)
+        template<auto MemberPtr,
+                 typename Value,
+                 std::enable_if_t<!std::is_arithmetic_v<std::decay_t<Value>> || std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
+        QuerySet &where(Value&& value, const Operator op = Operator::EQUALS) {
+            return addFilter(orm::WhereClause(MemberPtr, std::forward<Value>(value), op));
+        }
+        
+        // Backward compatibility overload for arithmetic values
+        // This allows using .where(&Post::author_id, author_id) syntax
+        template<typename ClassType, typename FieldType,
+                 typename Value,
+                 std::enable_if_t<std::is_arithmetic_v<std::decay_t<Value>> && !std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
+        QuerySet &where(FieldType ClassType::* memberPtr, const Value &value, const Operator op = Operator::EQUALS) {
+            return addFilter(orm::WhereClause(memberPtr, value, op));
+        }
+        
+        // Backward compatibility overload for non-arithmetic values (including strings and bool)
+        template<typename ClassType, typename FieldType,
+                 typename Value,
+                 std::enable_if_t<!std::is_arithmetic_v<std::decay_t<Value>> || std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
+        QuerySet &where(FieldType ClassType::* memberPtr, Value&& value, const Operator op = Operator::EQUALS) {
+            return addFilter(orm::WhereClause(memberPtr, std::forward<Value>(value), op));
         }
 
-        QuerySet &filter(const BaseField *field, std::string &&value, const Operator op = Operator::EQUALS) {
-            return addFilter(WhereClause(field, std::move(value), op));
-        }
+        // Removed old dual-field where overload that expected BaseField pointers to prevent
+        // template ambiguity with member pointer based overloads.
+        /*template<typename ModelField1, typename ModelField2>
+        QuerySet &where(const ModelField1 &field1, const ModelField2 &field2) {
+            return addFilter(WhereClause(&field1, &field2));
+        }*/
 
-        QuerySet &
-        filter(const BaseField *field, const std::optional<bool> value, const Operator op = Operator::EQUALS) {
-            return addFilter(WhereClause(field, value, op));
-        }
-
-        QuerySet &filter(const BaseField *field1, const BaseField *field2) {
-            return addFilter(WhereClause(field1, field2));
-        }
-
-        QuerySet &filter(WhereClause &&whereClause) {
-            return addFilter(std::move(whereClause));
-        }
-
-        QuerySet &order_by(const BaseField *field, bool asc = true) {
-            this->orderFields.emplace_back(field, asc);
+        template<typename ModelField>
+        QuerySet &order_by(const ModelField &field, bool asc = true) {
+            this->orderFields.emplace_back(&field, asc);
             return *this;
         }
 
@@ -961,8 +1069,8 @@ namespace orm {
             return *this;
         }
 
-        QuerySet &offset(std::string &&offset) {
-            this->_offset = std::move(offset);
+        QuerySet &offset(int offset) {
+            this->_offset = offset;
             return *this;
         }
 
