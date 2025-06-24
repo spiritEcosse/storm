@@ -108,6 +108,7 @@ namespace orm {
         explicit FieldAlias(const BaseField *f, const std::string_view a = "") : BaseClass(), field(f), alias(a) {}
     };
 
+    template<class T>
     class BaseQuerySet : public BaseQuerySetVirtual {
     public:
         explicit BaseQuerySet(int limit, std::string alias, bool returnInMain = true) :
@@ -307,7 +308,7 @@ namespace orm {
             return foundForeignKeyInSource ? condition : "";
         }
 
-        template<class T, class U>
+        template<class U>
         void join_impl_core(std::string &&alias,
                             std::string &&addConditions,
                             JoinInfo::JoinType joinType) {
@@ -318,11 +319,6 @@ namespace orm {
             
             // Try to automatically determine join condition using reflection
             condition = determine_join_condition<T, U>();
-            
-            if (condition.empty()) {
-                targetTable = alias.empty() ? this->get_table_name<T>() : alias;
-                condition = determine_join_condition<U, T>();
-            }
             
             // If we couldn't auto-determine the condition and no additional conditions provided
             if (condition.empty() && addConditions.empty()) {
@@ -346,9 +342,9 @@ namespace orm {
             }
         }
 
-        template<class T, class U>
+        template<class U>
         void join_impl(std::string &&alias, std::string &&addConditions, const JoinInfo::JoinType joinType) {
-            join_impl_core<T, U>(std::move(alias), std::move(addConditions), joinType);
+            join_impl_core<U>(std::move(alias), std::move(addConditions), joinType);
         }
 
         // template<class T, class U>
@@ -460,7 +456,8 @@ namespace orm {
         }
     };
 
-    class QuerySet : public BaseQuerySet {
+    template<class T>
+    class QuerySet : public BaseQuerySet<T> {
     private:
         std::shared_ptr<Connection> conn;
 
@@ -468,9 +465,8 @@ namespace orm {
             this->filters.push_back(std::move(whereClause));
             return *this;
         }
-
+    
         // Helper function to get field names (excluding 'id')
-        template<class T>
         std::vector<std::string> get_insert_field_names() const {
             std::vector<std::string> field_names;
             
@@ -486,13 +482,11 @@ namespace orm {
             return field_names;
         }
 
-        template<class T>
         std::vector<std::string> get_update_field_names() const {
-            return get_insert_field_names<T>();
+            return get_insert_field_names();
         }
         
         // Helper function to bind object values to statement
-        template<class T>
         void bind_object_values(Statement& stmt, const T& obj, int& param_index) const {
             Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
                 if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
@@ -521,7 +515,6 @@ namespace orm {
         }
         
         // Helper function to bind a specific field value by name
-        template<class T>
         void bind_field_value(Statement& stmt, const T& obj, const std::string& field_name, int& param_index) const {
             bool found = false;
             Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
@@ -554,9 +547,8 @@ namespace orm {
             });
         }
         
-        template<class T>
         std::vector<int> execute_insert(const std::vector<const T*>& obj_ptrs, const std::vector<std::string>& field_names) {
-            std::string sql = build_insert_sql<T>(field_names, obj_ptrs.size(), true); // Use RETURNING id
+            std::string sql = build_insert_sql(field_names, obj_ptrs.size(), true); // Use RETURNING id
             if (sql.empty()) return {};
             
             auto stmt = Statement(conn, sql);
@@ -564,7 +556,7 @@ namespace orm {
             // Bind all values for all objects
             int param_index = 1;
             for (const T* obj_ptr : obj_ptrs) {
-                bind_object_values<T>(stmt, *obj_ptr, param_index);
+                bind_object_values(stmt, *obj_ptr, param_index);
             }
             
             std::vector<int> generated_ids;
@@ -580,7 +572,6 @@ namespace orm {
             return generated_ids;
         }
 
-        template<class T>
         std::string build_insert_sql(const std::vector<std::string>& field_names, size_t num_objects = 1, bool returning_id = false) {
             if (field_names.empty()) return "";
             
@@ -600,7 +591,6 @@ namespace orm {
             );
         }
 
-        template<class T>
         std::string build_update_sql(const std::vector<std::string>& field_names, size_t num_objects) {
             if (field_names.empty() || num_objects == 0) return "";
             
@@ -632,11 +622,10 @@ namespace orm {
             );
         }
 
-        template<class T>
         bool execute_update(const std::vector<const T*>& obj_ptrs, const std::vector<std::string>& field_names) {
             if (obj_ptrs.empty()) return true;
             
-            std::string sql = build_update_sql<T>(field_names, obj_ptrs.size());
+            std::string sql = build_update_sql(field_names, obj_ptrs.size());
             if (sql.empty()) return false;
             
             auto stmt = Statement(conn, sql);
@@ -664,12 +653,10 @@ namespace orm {
             return stmt.execute();
         }
 
-        template<class T>
         std::string build_delete_sql() {
             return fmt::format("DELETE FROM {} WHERE id = ?;", this->template get_table_name<T>());
         }
         
-        template<class T>
         std::string build_batch_delete_sql(size_t count) {
             std::vector<std::string> placeholders(count, "?");
             return fmt::format(
@@ -679,19 +666,18 @@ namespace orm {
             );
         }
 
-        template<class T>
         bool execute_delete(const std::vector<const T*>& obj_ptrs) {
             if (obj_ptrs.empty()) return true;
             
             if (obj_ptrs.size() == 1) {
                 // Single delete
-                std::string sql = build_delete_sql<T>();
+                std::string sql = build_delete_sql();
                 auto stmt = Statement(conn, sql);
                 stmt.bind(1, obj_ptrs[0]->id);
                 return stmt.execute();
             } else {
                 // Batch delete using IN clause
-                std::string sql = build_batch_delete_sql<T>(obj_ptrs.size());
+                std::string sql = build_batch_delete_sql(obj_ptrs.size());
                 auto stmt = Statement(conn, sql);
                 
                 int param_index = 1;
@@ -706,15 +692,14 @@ namespace orm {
     public:
         // Constructor
         explicit QuerySet(std::shared_ptr<Connection> conn, const std::string& alias = "") 
-            : BaseQuerySet(alias, false, true), conn(std::move(conn)) {
+            : BaseQuerySet<T>(alias, false, true), conn(std::move(conn)) {
         }
 
-        template <typename T>
         std::vector<int> insert(const std::vector<T>& objs) {
             if (objs.empty()) return {};
             
             try {
-                auto field_names = get_insert_field_names<T>();
+                auto field_names = get_insert_field_names();
                 if (field_names.empty()) return {};
                 
                 // Convert to const pointer vector
@@ -733,13 +718,12 @@ namespace orm {
         }
         
         // Single insert method
-        template <typename T>
         int insert(const T& obj) {
             try {
-                auto field_names = get_insert_field_names<T>();
+                auto field_names = get_insert_field_names();
                 if (field_names.empty()) return -1;
                 
-                auto ids = execute_insert<T>({&obj}, field_names);
+                auto ids = execute_insert({&obj}, field_names);
                 return ids.empty() ? -1 : ids[0];
                 
             } catch (const std::exception& e) {
@@ -748,13 +732,12 @@ namespace orm {
             }
         }
         
-        template <typename T>
         bool update(const T& obj) {
             try {
-                auto field_names = get_update_field_names<T>();
+                auto field_names = get_update_field_names();
                 if (field_names.empty()) return false;
                 
-                return execute_update<T>({&obj}, field_names);
+                return execute_update({&obj}, field_names);
                 
             } catch (const std::exception& e) {
                 std::cerr << "Exception in update: " << e.what() << "\n";
@@ -763,12 +746,11 @@ namespace orm {
         }
         
         // Update multiple objects (batch update)
-        template <typename T>
         bool update(const std::vector<T>& objs) {
             if (objs.empty()) return true;
             
             try {
-                auto field_names = get_update_field_names<T>();
+                auto field_names = get_update_field_names();
                 if (field_names.empty()) return false;
                 
                 // Convert to pointer vector
@@ -786,17 +768,15 @@ namespace orm {
             }
         }
 
-        template <typename T>
         bool remove(const T& obj) {
             try {
-                return execute_delete<T>({&obj});
+                return execute_delete({&obj});
             } catch (const std::exception& e) {
                 std::cerr << "Exception in delete: " << e.what() << "\n";
                 return false;
             }
         }
         
-        template <typename T>
         bool remove(const std::vector<T>& objs) {
             if (objs.empty()) return true;
             
@@ -808,7 +788,7 @@ namespace orm {
                     obj_ptrs.push_back(&obj);
                 }
                 
-                return execute_delete<T>(obj_ptrs);
+                return execute_delete(obj_ptrs);
                 
             } catch (const std::exception& e) {
                 std::cerr << "Exception in delete: " << e.what() << "\n";
@@ -816,7 +796,6 @@ namespace orm {
             }
         }
 
-        template <typename T>
         std::vector<T> select_all() {
             auto sql = fmt::format("SELECT {} {} {} * FROM \"{}\" {} {} {} {} {}", // TODO : wise *
                     this->createDistinctClause(),
@@ -880,7 +859,7 @@ namespace orm {
         void add_group_by_field() {
             using ClassType = typename orm::detail::member_pointer_class<decltype(MemberPtr)>::type;
             std::string fieldName = orm::detail::getFieldNameFromMemberPtr<ClassType, MemberPtr>();
-            std::string tableName = get_table_name<ClassType>();
+            std::string tableName = this->template get_table_name<ClassType>();
             std::string fullFieldName = tableName.empty() ? fmt::format("\"{}\"", fieldName)
                                                           : fmt::format("\"{}\".\"{}\"", tableName, fieldName);
             this->groupByFieldNames.push_back(fullFieldName);
@@ -922,7 +901,7 @@ namespace orm {
         QuerySet &order_by(bool asc = true) {
             using ClassType = typename orm::detail::member_pointer_class<decltype(MemberPtr)>::type;
             std::string fieldName = orm::detail::getFieldNameFromMemberPtr<ClassType, MemberPtr>();
-            std::string tableName = get_table_name<ClassType>();
+            std::string tableName = this->template get_table_name<ClassType>();
             std::string fullFieldName = tableName.empty() ? fmt::format("\"{}\"", fieldName)
                                                           : fmt::format("\"{}\".\"{}\"", tableName, fieldName);
             this->orderFields.emplace_back(fullFieldName, asc);
@@ -984,9 +963,9 @@ namespace orm {
             return *this;
         }
 
-        template<class T, class U>
+        template<class U>
         QuerySet &join(std::string &&alias = "", std::string &&addConditions = "") {
-            this->template join_impl<T, U>(std::move(alias), std::move(addConditions), JoinInfo::JoinType::INNER);
+            this->template join_impl<U>(std::move(alias), std::move(addConditions), JoinInfo::JoinType::INNER);
             return *this;
         }
 
@@ -1008,9 +987,9 @@ namespace orm {
         //     return *this;
         // }
 
-        template<class T, class U>
+        template<class U>
         QuerySet &left_join(std::string &&alias = "", std::string &&addConditions = "") {
-            this->template join_impl<T, U>(std::move(alias), std::move(addConditions), JoinInfo::JoinType::LEFT);
+            this->template join_impl<U>(std::move(alias), std::move(addConditions), JoinInfo::JoinType::LEFT);
             return *this;
         }
 
@@ -1023,33 +1002,33 @@ namespace orm {
         //     return *this;
         // }
 
-        template<class T, class U>
+        template<class U>
         QuerySet &left_join(std::string &&cte, std::string &&alias = "", std::string &&addConditions = "") {
-            this->template join_impl<T, U>(std::move(cte),
+            this->template join_impl<U>(std::move(cte),
                                         std::move(alias),
                                         std::move(addConditions),
                                         JoinInfo::JoinType::LEFT);
             return *this;
         }
 
-        template<class T, class U>
+        template<class U>
         QuerySet &right_join(std::string &&alias = "", std::string &&addConditions = "") {
-            this->template join_impl<T, U>(std::move(alias), std::move(addConditions), JoinInfo::JoinType::RIGHT);
+            this->template join_impl<U>(std::move(alias), std::move(addConditions), JoinInfo::JoinType::RIGHT);
             return *this;
         }
 
-        template<class T, class U>
+        template<class U>
         QuerySet &right_join(std::string &&cte, std::string &&alias = "", std::string &&addConditions = "") {
-            this->template join_impl<T, U>(std::move(cte),
+            this->template join_impl<U>(std::move(cte),
                                         std::move(alias),
                                         std::move(addConditions),
                                         JoinInfo::JoinType::RIGHT);
             return *this;
         }
 
-        template<class T, class U>
-        QuerySet &right_join(QuerySet &&other, std::string &&alias = "", std::string &&addConditions = "") {
-            this->template join_impl<T, U>(std::move(other),
+        template<class U>
+        QuerySet &right_join(QuerySet<U> &&other, std::string &&alias = "", std::string &&addConditions = "") {
+            this->template join_impl<U>(std::move(other),
                                         std::move(alias),
                                         std::move(addConditions),
                                         JoinInfo::JoinType::RIGHT);
