@@ -61,9 +61,9 @@ namespace orm {
         std::enable_if_t<std::is_arithmetic_v<std::decay_t<Value>> && !std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
         WhereClause(FieldType ClassType::* memberPtr, Value value, const Operator op = Operator::EQUALS) :
         BaseClass() {
-            std::string tableName = orm::detail::getTableNameFromType<ClassType>();
+            std::string tableName = Reflect<ClassType>::get_struct_name();
             std::string fieldName = orm::detail::getFieldNameFromMemberPtr(memberPtr);
-            _fieldName = fmt::format("{}.{}", tableName, fieldName);
+            _fieldName = formatFieldName(tableName, fieldName);
             _value = std::to_string(value);
             _op = op;
             _valueType = ValueType::SPECIAL;
@@ -74,9 +74,9 @@ namespace orm {
         std::enable_if_t<!std::is_arithmetic_v<std::decay_t<Value>> || std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
         WhereClause(FieldType ClassType::* memberPtr, Value&& value, const Operator op = Operator::EQUALS) :
         BaseClass() {
-            std::string tableName = orm::detail::getTableNameFromType<ClassType>();
+            std::string tableName = Reflect<ClassType>::get_struct_name();
             std::string fieldName = orm::detail::getFieldNameFromMemberPtr(memberPtr);
-            _fieldName = fmt::format("{}.{}", tableName, fieldName);
+            _fieldName = formatFieldName(tableName, fieldName);
 
             if constexpr (std::is_same_v<std::decay_t<Value>, bool>) {
                 _value = boolToString(value);
@@ -190,16 +190,20 @@ namespace orm {
             switch(_valueType) {
 
                 case ValueType::STRING:
-                    return fmt::format("{} {} '{}'", _fieldName, operatorToString(_op), _value);
+                    return _fieldName + " " + operatorToString(_op) + " '" + _value + "'";
 
                 case ValueType::SPECIAL:
-                    return fmt::format("{} {} {}", _fieldName, operatorToString(_op), _value);
+                    return _fieldName + " " + operatorToString(_op) + " " + _value;
 
                 default:
                     return "";
             }
         }
-
+        
+        std::string formatFieldName(const std::string& tableName, const std::string& fieldName) const {
+            return fmt::format(R"("{}"."{}")", tableName, fieldName);
+        }
+        
         std::string _fieldName;
         std::string _value;
         Operator _op;

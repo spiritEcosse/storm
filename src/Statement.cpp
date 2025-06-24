@@ -1,7 +1,9 @@
 #include "Statement.h"
 #include "Connection.h"
+#include "SQLExceptions.h"
 #include <stdexcept>
 #include <iostream>
+#include <regex>
 
 Statement::Statement(std::shared_ptr<Connection> conn, const std::string& sql) : conn(std::move(conn)), stmt(nullptr), sql_(sql) {
     if (!this->conn || !this->conn->get()) {
@@ -12,6 +14,15 @@ Statement::Statement(std::shared_ptr<Connection> conn, const std::string& sql) :
         std::string errMsg = sqlite3_errmsg(this->conn->get());
         sqlite3_finalize(stmt); // Finalize stmt if prepare failed but allocated something
         stmt = nullptr; // Ensure stmt is null on failure
+        
+        // Check if this is a "no such column" error
+        std::regex columnRegex("no such column: ([^ ]+)");
+        std::smatch matches;
+        if (std::regex_search(errMsg, matches, columnRegex) && matches.size() > 1) {
+            std::string columnName = matches[1];
+            throw orm::InvalidColumnException(columnName, sql);
+        }
+        
         throw std::runtime_error("Failed to prepare statement: " + sql + " | SQLite Error: " + errMsg);
     }
 }

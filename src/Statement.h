@@ -7,6 +7,12 @@
 #include <atomic>
 #include <memory> // Required for std::shared_ptr
 
+// Forward declarations for exception classes
+namespace orm {
+    class SQLQueryException;
+    class InvalidColumnException;
+}
+
 class Row {
     public:
         Row(sqlite3_stmt* stmt, int column_count);

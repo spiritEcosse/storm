@@ -55,37 +55,5 @@ std::string getFieldNameFromMemberPtr(T C::* memberPtr) {
     return result;
 }
 
-// Helper to get table name from type at compile time
-// For now, we simply use the reflected type name.
-// If you have a custom Table attribute in your project, extend this function accordingly.
-template <typename T>
-std::string getTableNameFromType() {
-    return std::string(refl::reflect<T>().name);
-}
-
-// This is a simplified implementation - in a real system, you'd need a more robust approach
-template <typename C, typename T, auto MemberPtr>
-constexpr std::string getMemberNameFromPtr() {
-    // This is where you'd implement logic to match the member pointer to a name
-    // For now, we'll use a simplified approach that works for the example
-    
-    // Use reflection to find all fields and try to match them
-    std::string result;
-    
-    refl::util::for_each(refl::reflect<C>().members, [&](auto member) {
-        if constexpr (refl::descriptor::is_field(member)) {
-            // In a real implementation, you'd need a way to compare member pointers
-            // This is a placeholder that would need to be replaced with actual logic
-            
-            // For now, just return the first field name as an example
-            if (result.empty()) {
-                result = std::string(member.name);
-            }
-        }
-    });
-    
-    return result;
-}
-
 } // namespace detail
 } // namespace orm
