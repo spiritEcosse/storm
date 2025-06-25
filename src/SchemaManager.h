@@ -13,6 +13,7 @@
 #include "Connection.h"
 #include "Reflect.h"
 
+namespace storm {
 class SchemaManager {
 private:
     std::shared_ptr<Connection> conn;
@@ -107,3 +108,5 @@ private:
         }
     }
 };
+
+}

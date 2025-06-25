@@ -4,7 +4,7 @@
 #include <string>
 #include <regex>
 
-namespace orm {
+namespace storm {
 
 class SQLQueryException : public std::runtime_error {
 public:
@@ -28,4 +28,4 @@ private:
     std::string _columnName;
 };
 
-} // namespace orm
+} // namespace storm

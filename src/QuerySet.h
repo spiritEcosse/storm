@@ -17,19 +17,18 @@
 #include "MemberPointerUtils.h"
 #include <sstream>
 
-inline std::string addExtraQuotes(const std::string& str) {
-    std::string result;
-    for(char c: str) {
-        if(c == '\'') {
-            result += "''";
-        } else {
-            result += c;
+namespace storm {
+    inline std::string addExtraQuotes(const std::string& str) {
+        std::string result;
+        for(char c: str) {
+            if(c == '\'') {
+                result += "''";
+            } else {
+                result += c;
+            }
         }
+        return result;
     }
-    return result;
-}
-
-namespace orm {
 
     using FieldOrFunction = std::variant<const BaseField *, Function, std::string>;
 
@@ -119,7 +118,7 @@ namespace orm {
 
         std::vector<WhereClause> filters;
         JoinInfo joinInfo;
-        std::vector<std::pair<std::variant<const BaseField *, Function>, bool>> orderFields;
+        std::vector<std::pair<std::function<std::string()>, bool>> orderFields;
         DistinctInfo distinctInfo;
         std::string _jsonFields;
         std::vector<FieldAlias> onlyFields;
@@ -201,13 +200,17 @@ namespace orm {
             if(orderFields.empty()) {
                 return "";
             }
-            return format(" ORDER BY {}",
-                          fmt::join(orderFields | std::views::transform([](const auto &pair) {
-                                        return fmt::format("{} {}",
-                                                           "", //detail::getFullFieldName(pair.first),
-                                                           pair.second ? "ASC" : "DESC");
-                                    }),
-                                    ", "));
+            
+            std::vector<std::string> fieldStrings;
+            fieldStrings.reserve(orderFields.size());
+            
+            for(const auto &pair : orderFields) {
+                fieldStrings.push_back(fmt::format("{} {}", 
+                                                 pair.first(), // Call the function to get field name
+                                                 pair.second ? "ASC" : "DESC"));
+            }
+            
+            return fmt::format(" ORDER BY {}", fmt::join(fieldStrings, ", "));
         }
 
         [[nodiscard]] std::string createDistinctClause() const {
@@ -807,6 +810,7 @@ namespace orm {
                     this->generateGroupBySQL(),
                     this->buildOrderFields(),
                     this->limit_impl());
+            std::cout << sql << std::endl;
             auto smt_ = Statement(conn, sql);
             auto all_rows = smt_.execute_all();
             
@@ -855,15 +859,15 @@ namespace orm {
 
         // Single-member overload removed to avoid ambiguity; variadic handles all cases.
         // Helper to process a single member pointer and push its fully qualified name.
-        template<auto MemberPtr>
-        void add_group_by_field() {
-            using ClassType = typename orm::detail::member_pointer_class<decltype(MemberPtr)>::type;
-            std::string fieldName = orm::detail::getFieldNameFromMemberPtr<ClassType, MemberPtr>();
-            std::string tableName = this->template get_table_name<ClassType>();
-            std::string fullFieldName = tableName.empty() ? fmt::format("\"{}\"", fieldName)
-                                                          : fmt::format("\"{}\".\"{}\"", tableName, fieldName);
-            this->groupByFieldNames.push_back(fullFieldName);
-        }
+        // template<auto MemberPtr>
+        // void add_group_by_field() {
+        //     using ClassType = typename detail::member_pointer_class<decltype(MemberPtr)>::type;
+        //     std::string fieldName = detail::getFieldNameFromMemberPtr<ClassType, MemberPtr>();
+        //     std::string tableName = this->template get_table_name<ClassType>();
+        //     std::string fullFieldName = tableName.empty() ? fmt::format("\"{}\"", fieldName)
+        //                                                   : fmt::format("\"{}\".\"{}\"", tableName, fieldName);
+        //     this->groupByFieldNames.push_back(fullFieldName);
+        // }
 
         // Compile-time version for multiple member pointers
         template<auto MemberPtr, auto... RestMemberPtrs>
@@ -879,6 +883,31 @@ namespace orm {
             return *this;
         }
         
+
+        // =============================
+        // =============================
+        // Compile-time ORDER_BY overload using member pointers
+        // =============================
+
+        template<auto... Fields>
+        QuerySet &order_by(bool asc = true) {
+            std::cout << "Order fields: " << sizeof...(Fields) << std::endl;
+            (this->orderFields.emplace_back(createFieldNameGenerator<Fields>(), asc), ...);
+            return *this;
+        }
+        
+        // Helper function to create field name generator
+        template<auto Field>
+        auto createFieldNameGenerator() {
+            return [this]() {
+                using ClassType = typename member_pointer_class<decltype(Field)>::type;
+                std::string fieldName = getFieldNameFromMemberPtr<ClassType, Field>();
+                std::string tableName = this->template get_table_name<ClassType>();
+                return utils::formatFieldName(tableName, fieldName);
+            };
+        }
+        
+        
         // =============================
         // Compile-time WHERE overloads using member pointers as NTTPs
         // =============================
@@ -886,26 +915,11 @@ namespace orm {
         template<auto MemberPtr, typename Value,
                  std::enable_if_t<!std::is_arithmetic_v<Value> || std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
         QuerySet &where(Value &&value, const Operator op = Operator::EQUALS) {
-            using ClassType = typename orm::detail::member_pointer_class<decltype(MemberPtr)>::type;
-            using FieldType = typename orm::detail::member_pointer_type<decltype(MemberPtr)>::type;
+            using ClassType = typename member_pointer_class<decltype(MemberPtr)>::type;
+            using FieldType = typename member_pointer_type<decltype(MemberPtr)>::type;
             
             // Use the WhereClause constructor directly
-            return addFilter(orm::WhereClause(MemberPtr, std::forward<Value>(value), op));
-        }
-
-        // =============================
-        // =============================
-        // Compile-time ORDER_BY overload using member pointers
-        // =============================
-        template<auto MemberPtr>
-        QuerySet &order_by(bool asc = true) {
-            using ClassType = typename orm::detail::member_pointer_class<decltype(MemberPtr)>::type;
-            std::string fieldName = orm::detail::getFieldNameFromMemberPtr<ClassType, MemberPtr>();
-            std::string tableName = this->template get_table_name<ClassType>();
-            std::string fullFieldName = tableName.empty() ? fmt::format("\"{}\"", fieldName)
-                                                          : fmt::format("\"{}\".\"{}\"", tableName, fieldName);
-            this->orderFields.emplace_back(fullFieldName, asc);
-            return *this;
+            return addFilter(WhereClause(MemberPtr, std::forward<Value>(value), op));
         }
 
         // Compile-time WHERE overloads for arithmetic values using member pointers
@@ -916,7 +930,7 @@ namespace orm {
                  typename Value,
                  std::enable_if_t<std::is_arithmetic_v<std::decay_t<Value>> && !std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
         QuerySet &where(const Value &value, const Operator op = Operator::EQUALS) {
-            return addFilter(orm::WhereClause(MemberPtr, value, op));
+            return addFilter(WhereClause(MemberPtr, value, op));
         }
         
         // New syntax for non-arithmetic values (including bool, strings, etc.)
@@ -924,7 +938,7 @@ namespace orm {
                  typename Value,
                  std::enable_if_t<!std::is_arithmetic_v<std::decay_t<Value>> || std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
         QuerySet &where(Value&& value, const Operator op = Operator::EQUALS) {
-            return addFilter(orm::WhereClause(MemberPtr, std::forward<Value>(value), op));
+            return addFilter(WhereClause(MemberPtr, std::forward<Value>(value), op));
         }
         
         // Backward compatibility overload for arithmetic values
@@ -933,7 +947,7 @@ namespace orm {
                  typename Value,
                  std::enable_if_t<std::is_arithmetic_v<std::decay_t<Value>> && !std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
         QuerySet &where(FieldType ClassType::* memberPtr, const Value &value, const Operator op = Operator::EQUALS) {
-            return addFilter(orm::WhereClause(memberPtr, value, op));
+            return addFilter(WhereClause(memberPtr, value, op));
         }
         
         // Backward compatibility overload for non-arithmetic values (including strings and bool)
@@ -941,7 +955,7 @@ namespace orm {
                  typename Value,
                  std::enable_if_t<!std::is_arithmetic_v<std::decay_t<Value>> || std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
         QuerySet &where(FieldType ClassType::* memberPtr, Value&& value, const Operator op = Operator::EQUALS) {
-            return addFilter(orm::WhereClause(memberPtr, std::forward<Value>(value), op));
+            return addFilter(WhereClause(memberPtr, std::forward<Value>(value), op));
         }
 
         // Removed old dual-field where overload that expected BaseField pointers to prevent
@@ -950,12 +964,6 @@ namespace orm {
         QuerySet &where(const ModelField1 &field1, const ModelField2 &field2) {
             return addFilter(WhereClause(&field1, &field2));
         }*/
-
-        template<typename ModelField>
-        QuerySet &order_by(const ModelField &field, bool asc = true) {
-            this->orderFields.emplace_back(&field, asc);
-            return *this;
-        }
 
         template<typename... Args>
         QuerySet &functions(Args &&...args) {

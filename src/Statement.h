@@ -8,10 +8,9 @@
 #include <memory> // Required for std::shared_ptr
 
 // Forward declarations for exception classes
-namespace orm {
+namespace storm {
     class SQLQueryException;
     class InvalidColumnException;
-}
 
 class Row {
     public:
@@ -70,4 +69,5 @@ private:
 inline std::ostream& operator<<(std::ostream& os, const Statement& stmt) {
     os << stmt.get_sql();
     return os;
+}
 }

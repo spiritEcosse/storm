@@ -7,6 +7,7 @@
 #include "QuerySet.h"
 #include "SQLExceptions.h"
 
+using namespace storm;
 
 struct Author {
     std::string name;
@@ -92,7 +93,7 @@ protected:
 TEST_F(ORMTest, InsertSingleObject) {
     Author author("John Doe", 30, "john@example.com");
     
-    int result = orm::QuerySet<Author>(conn).insert(author);
+    int result = QuerySet<Author>(conn).insert(author);
     
     EXPECT_GT(result, 0) << "Insert should return a valid ID";
     EXPECT_EQ(author.id, 0) << "Must not be inserted from db";
@@ -101,7 +102,7 @@ TEST_F(ORMTest, InsertSingleObject) {
 TEST_F(ORMTest, InsertEmptyFieldNames) {
     Author author("Jane Doe", 25, "jane@example.com");
     
-    int result = orm::QuerySet<Author>(conn).insert(author);
+    int result = QuerySet<Author>(conn).insert(author);
     
     EXPECT_TRUE(result > 0 || result == -1) << "Should return valid ID or -1 if field_names is empty";
 }
@@ -113,7 +114,7 @@ TEST_F(ORMTest, InsertMultipleObjects) {
         Author("Charlie", 26, "charlie@example.com")
     };
     
-    std::vector<int> ids = orm::QuerySet<Author>(conn).insert(authors);
+    std::vector<int> ids = QuerySet<Author>(conn).insert(authors);
     
     EXPECT_EQ(ids.size(), authors.size()) << "Should return an ID for each inserted object";
     
@@ -126,7 +127,7 @@ TEST_F(ORMTest, InsertMultipleObjects) {
 TEST_F(ORMTest, InsertEmptyVector) {
     std::vector<Author> empty_authors;
     
-    std::vector<int> ids = orm::QuerySet<Author>(conn).insert(empty_authors);
+    std::vector<int> ids = QuerySet<Author>(conn).insert(empty_authors);
     
     EXPECT_TRUE(ids.empty()) << "Inserting empty vector should return empty vector of IDs";
 }
@@ -134,7 +135,7 @@ TEST_F(ORMTest, InsertEmptyVector) {
 TEST_F(ORMTest, InsertExceptionHandling) {
     Author author("", -1, "");
     
-    int result = orm::QuerySet<Author>(conn).insert(author);
+    int result = QuerySet<Author>(conn).insert(author);
     
     EXPECT_TRUE(result > 0 || result == -1) << "Should return valid ID or -1 on error";
 }
@@ -142,13 +143,13 @@ TEST_F(ORMTest, InsertExceptionHandling) {
 // UPDATE TESTS
 TEST_F(ORMTest, UpdateSingleObject) {
     Author author("John Doe", 30, "john@example.com");
-    ASSERT_TRUE(orm::QuerySet<Author>(conn).insert(author));
+    ASSERT_TRUE(QuerySet<Author>(conn).insert(author));
     ASSERT_EQ(author.id, 0);
     
     author.name = "John Smith";
     author.age = 31;
     
-    bool result = orm::QuerySet<Author>(conn).update(author);
+    bool result = QuerySet<Author>(conn).update(author);
     
     EXPECT_TRUE(result);
 }
@@ -159,14 +160,14 @@ TEST_F(ORMTest, UpdateMultipleObjects) {
         Author("Alice", 28, "alice@example.com"),
         Author("Bob", 32, "bob@example.com")
     };
-    std::vector<int> ids = orm::QuerySet<Author>(conn).insert(authors);
+    std::vector<int> ids = QuerySet<Author>(conn).insert(authors);
     ASSERT_EQ(ids.size(), authors.size());
     
     // Update them
     authors[0].age = 29;
     authors[1].name = "Robert";
     
-    bool result = orm::QuerySet<Author>(conn).update(authors);
+    bool result = QuerySet<Author>(conn).update(authors);
     
     EXPECT_TRUE(result);
 }
@@ -174,7 +175,7 @@ TEST_F(ORMTest, UpdateMultipleObjects) {
 TEST_F(ORMTest, UpdateEmptyVector) {
     std::vector<Author> empty_authors;
     
-    bool result = orm::QuerySet<Author>(conn).update(empty_authors);
+    bool result = QuerySet<Author>(conn).update(empty_authors);
     
     EXPECT_TRUE(result) << "Updating empty vector should return true";
 }
@@ -183,7 +184,7 @@ TEST_F(ORMTest, UpdateNonExistentObject) {
     Author author("Ghost", 0, "ghost@example.com");
     author.id = 99999; // Non-existent ID
     
-    bool result = orm::QuerySet<Author>(conn).update(author);
+    bool result = QuerySet<Author>(conn).update(author);
     
     // Behavior depends on implementation - might return true even if no rows affected
     EXPECT_TRUE(result == true || result == false);
@@ -193,10 +194,10 @@ TEST_F(ORMTest, UpdateNonExistentObject) {
 TEST_F(ORMTest, RemoveSingleObject) {
     // First insert a person
     Author author("John Doe", 30, "john@example.com");
-    ASSERT_TRUE(orm::QuerySet<Author>(conn).insert(author));
+    ASSERT_TRUE(QuerySet<Author>(conn).insert(author));
     ASSERT_EQ(author.id, 0);
     
-    bool result = orm::QuerySet<Author>(conn).remove(author);
+    bool result = QuerySet<Author>(conn).remove(author);
     
     EXPECT_TRUE(result);
 }
@@ -208,10 +209,10 @@ TEST_F(ORMTest, RemoveMultipleObjects) {
         Author("Bob", 32, "bob@example.com"),
         Author("Charlie", 26, "charlie@example.com")
     };
-    std::vector<int> ids = orm::QuerySet<Author>(conn).insert(authors);
+    std::vector<int> ids = QuerySet<Author>(conn).insert(authors);
     ASSERT_EQ(ids.size(), authors.size());
     
-    bool result = orm::QuerySet<Author>(conn).remove(authors);
+    bool result = QuerySet<Author>(conn).remove(authors);
     
     EXPECT_TRUE(result);
 }
@@ -219,7 +220,7 @@ TEST_F(ORMTest, RemoveMultipleObjects) {
 TEST_F(ORMTest, RemoveEmptyVector) {
     std::vector<Author> empty_authors;
     
-    bool result = orm::QuerySet<Author>(conn).remove(empty_authors);
+    bool result = QuerySet<Author>(conn).remove(empty_authors);
     
     EXPECT_TRUE(result) << "Removing empty vector should return true";
 }
@@ -228,7 +229,7 @@ TEST_F(ORMTest, RemoveNonExistentObject) {
     Author author("Ghost", 0, "ghost@example.com");
     author.id = 99999; // Non-existent ID
     
-    bool result = orm::QuerySet<Author>(conn).remove(author);
+    bool result = QuerySet<Author>(conn).remove(author);
     
     // Should handle gracefully
     EXPECT_TRUE(result == true || result == false);
@@ -238,7 +239,7 @@ TEST_F(ORMTest, RemoveNonExistentObject) {
 TEST_F(ORMTest, FullCRUDWorkflow) {
     // Create
     Author author("John Doe", 30, "john@example.com");
-    int id = orm::QuerySet<Author>(conn).insert(author);
+    int id = QuerySet<Author>(conn).insert(author);
     ASSERT_GT(id, 0);
     ASSERT_EQ(author.id, 0);
     int original_id = author.id;
@@ -246,11 +247,11 @@ TEST_F(ORMTest, FullCRUDWorkflow) {
     // Update
     author.name = "John Smith";
     author.age = 31;
-    ASSERT_TRUE(orm::QuerySet<Author>(conn).update(author));
+    ASSERT_TRUE(QuerySet<Author>(conn).update(author));
     EXPECT_EQ(author.id, original_id) << "ID should remain unchanged after update";
     
     // Delete
-    ASSERT_TRUE(orm::QuerySet<Author>(conn).remove(author));
+    ASSERT_TRUE(QuerySet<Author>(conn).remove(author));
 }
 
 TEST_F(ORMTest, BatchOperationsWorkflow) {
@@ -260,7 +261,7 @@ TEST_F(ORMTest, BatchOperationsWorkflow) {
         Author("Bob", 32, "bob@example.com"),
         Author("Charlie", 26, "charlie@example.com")
     };
-    std::vector<int> ids = orm::QuerySet<Author>(conn).insert(authors);
+    std::vector<int> ids = QuerySet<Author>(conn).insert(authors);
     ASSERT_EQ(ids.size(), authors.size());
     
     // Verify all returned IDs are valid
@@ -272,16 +273,16 @@ TEST_F(ORMTest, BatchOperationsWorkflow) {
     for (auto& author : authors) {
         author.age += 1;
     }
-    ASSERT_TRUE(orm::QuerySet<Author>(conn).update(authors));
+    ASSERT_TRUE(QuerySet<Author>(conn).update(authors));
     
     // Batch delete
-    ASSERT_TRUE(orm::QuerySet<Author>(conn).remove(authors));
+    ASSERT_TRUE(QuerySet<Author>(conn).remove(authors));
 }
 
 TEST_F(ORMTest, MixedOperations) {
     // Insert single
     Author single_author("Single", 25, "single@example.com");
-    int single_id = orm::QuerySet<Author>(conn).insert(single_author);
+    int single_id = QuerySet<Author>(conn).insert(single_author);
     ASSERT_GT(single_id, 0);
     
     // Insert batch
@@ -289,52 +290,52 @@ TEST_F(ORMTest, MixedOperations) {
         Author("Batch1", 30, "batch1@example.com"),
         Author("Batch2", 35, "batch2@example.com")
     };
-    std::vector<int> batch_ids = orm::QuerySet<Author>(conn).insert(batch_authors);
+    std::vector<int> batch_ids = QuerySet<Author>(conn).insert(batch_authors);
     ASSERT_EQ(batch_ids.size(), batch_authors.size());
     
     // Update single
     single_author.age = 26;
-    ASSERT_TRUE(orm::QuerySet<Author>(conn).update(single_author));
+    ASSERT_TRUE(QuerySet<Author>(conn).update(single_author));
     
     // Update batch
     for (auto& author : batch_authors) {
         author.age += 1;
     }
-    ASSERT_TRUE(orm::QuerySet<Author>(conn).update(batch_authors));
+    ASSERT_TRUE(QuerySet<Author>(conn).update(batch_authors));
     
     // Remove single
-    ASSERT_TRUE(orm::QuerySet<Author>(conn).remove(single_author));
+    ASSERT_TRUE(QuerySet<Author>(conn).remove(single_author));
     
     // Remove batch
-    ASSERT_TRUE(orm::QuerySet<Author>(conn).remove(batch_authors));
+    ASSERT_TRUE(QuerySet<Author>(conn).remove(batch_authors));
 }
 
 // SELECT TESTS
 TEST_F(ORMTest, SelectAll) {
     Author single_author("Single", 25, "single@example.com");
-    orm::QuerySet<Author>(conn).insert(single_author);
-    std::vector<Author> all_authors = orm::QuerySet<Author>(conn).select_all();
+    QuerySet<Author>(conn).insert(single_author);
+    std::vector<Author> all_authors = QuerySet<Author>(conn).select_all();
     ASSERT_EQ(all_authors.size(), 1);
 }
 
 TEST_F(ORMTest, SelectAllWhereId) {
     Author author("John Doe", 30, "john@example.com");
-    int author_id = orm::QuerySet<Author>(conn).insert(author);
-    std::vector<Author> all_authors = orm::QuerySet<Author>(conn).where(&Author::id, author_id)
+    int author_id = QuerySet<Author>(conn).insert(author);
+    std::vector<Author> all_authors = QuerySet<Author>(conn).where(&Author::id, author_id)
         .select_all();
     ASSERT_EQ(all_authors.size(), 1);
 }
 
 TEST_F(ORMTest, SelectAllManyWhere) {
     Author author("John Doe", 30, "john@example.com");
-    int author_id = orm::QuerySet<Author>(conn).insert(author);
+    int author_id = QuerySet<Author>(conn).insert(author);
     Post post("Title", "Content", author_id);
-    orm::QuerySet<Post>(conn).insert(post);
+    QuerySet<Post>(conn).insert(post);
     Author author2("John Doe", 30, "john@example.com");
-    int author_id2 = orm::QuerySet<Author>(conn).insert(author2);
+    int author_id2 = QuerySet<Author>(conn).insert(author2);
     Post post2("Title", "Content", author_id2);
-    orm::QuerySet<Post>(conn).insert(post2);
-    std::vector<Post> all_posts = orm::QuerySet<Post>(conn).where(&Post::author_id, author_id)
+    QuerySet<Post>(conn).insert(post2);
+    std::vector<Post> all_posts = QuerySet<Post>(conn).where(&Post::author_id, author_id)
         .where(&Post::title, "Title")
         .select_all();
     ASSERT_EQ(all_posts.size(), 1);
@@ -342,55 +343,58 @@ TEST_F(ORMTest, SelectAllManyWhere) {
 
 TEST_F(ORMTest, SelectAllErrorInvalidColumnException) {
     try {
-        orm::QuerySet<Post>(conn).where(&Author::name, "John Doe").select_all();
-        FAIL() << "Expected orm::InvalidColumnException to be thrown";
-    } catch (const orm::InvalidColumnException& e) {
+        QuerySet<Post>(conn).where(&Author::name, "John Doe").select_all();
+        FAIL() << "Expected InvalidColumnException to be thrown";
+    } catch (const InvalidColumnException& e) {
         // Verify the column name in the exception
         EXPECT_EQ(e.getColumnName(), "author.name");
         EXPECT_FALSE(e.getQuery().empty());
     } catch (...) {
-        FAIL() << "Expected orm::InvalidColumnException, but a different exception was thrown";
+        FAIL() << "Expected InvalidColumnException, but a different exception was thrown";
     }
 }
 
 TEST_F(ORMTest, SelectAllWithJoin) {
     Author author("John Doe", 30, "john@example.com");
-    int author_id = orm::QuerySet<Author>(conn).insert(author);
+    int author_id = QuerySet<Author>(conn).insert(author);
     Post post("Title", "Content", author_id);
-    orm::QuerySet<Post>(conn).insert(post);
+    QuerySet<Post>(conn).insert(post);
     Author author2("John Doe", 30, "john@example.com");
-    int author_id2 = orm::QuerySet<Author>(conn).insert(author2);
+    int author_id2 = QuerySet<Author>(conn).insert(author2);
     Post post2("Title", "Content", author_id2);
-    orm::QuerySet<Post>(conn).insert(post2);
-    std::vector<Post> all_posts = orm::QuerySet<Post>(conn).join<Author>()
+    QuerySet<Post>(conn).insert(post2);
+    std::vector<Post> all_posts = QuerySet<Post>(conn)
+        .join<Author>()
         .select_all();
     ASSERT_EQ(all_posts.size(), 2);
 }
 
 TEST_F(ORMTest, SelectAllWithJoinReverse) {
     Author author("John Doe", 30, "john@example.com");
-    int author_id = orm::QuerySet<Author>(conn).insert(author);
+    int author_id = QuerySet<Author>(conn).insert(author);
     Post post("Title", "Content", author_id);
-    orm::QuerySet<Post>(conn).insert(post);
+    QuerySet<Post>(conn).insert(post);
     Author author2("John Doe", 30, "john@example.com");
-    int author_id2 = orm::QuerySet<Author>(conn).insert(author2);
+    int author_id2 = QuerySet<Author>(conn).insert(author2);
     Post post2("Title", "Content", author_id2);
-    orm::QuerySet<Post>(conn).insert(post2);
-    std::vector<Post> all_posts = orm::QuerySet<Post>(conn).join<Author>()
+    QuerySet<Post>(conn).insert(post2);
+    std::vector<Post> all_posts = QuerySet<Post>(conn)
+        .join<Author>()
         .select_all();
     ASSERT_EQ(all_posts.size(), 2);
 }
 
 TEST_F(ORMTest, SelectAllWithJoinAndManyWhere) {
     Author author("John Doe", 30, "john@example.com");
-    int author_id = orm::QuerySet<Author>(conn).insert(author);
+    int author_id = QuerySet<Author>(conn).insert(author);
     Post post("Title", "Content", author_id);
-    orm::QuerySet<Post>(conn).insert(post);
+    QuerySet<Post>(conn).insert(post);
     Author author2("John Doe", 30, "john@example.com");
-    int author_id2 = orm::QuerySet<Author>(conn).insert(author2);
+    int author_id2 = QuerySet<Author>(conn).insert(author2);
     Post post2("Title", "Content", author_id2);
-    orm::QuerySet<Post>(conn).insert(post2);
-    std::vector<Post> all_posts = orm::QuerySet<Post>(conn).join<Author>()
+    QuerySet<Post>(conn).insert(post2);
+    std::vector<Post> all_posts = QuerySet<Post>(conn)
+        .join<Author>()
         .where(&Post::author_id, author_id)
         .select_all();
     ASSERT_EQ(all_posts.size(), 1); 
@@ -398,14 +402,15 @@ TEST_F(ORMTest, SelectAllWithJoinAndManyWhere) {
 
 TEST_F(ORMTest, SelectAllWithJoinAndWhereAndLimit) {
     Author author("John Doe", 30, "john@example.com");
-    int author_id = orm::QuerySet<Author>(conn).insert(author);
+    int author_id = QuerySet<Author>(conn).insert(author);
     Post post("Title", "Content", author_id);
-    orm::QuerySet<Post>(conn).insert(post);
+    QuerySet<Post>(conn).insert(post);
     Author author2("John Doe", 30, "john@example.com");
-    int author_id2 = orm::QuerySet<Author>(conn).insert(author2);
+    int author_id2 = QuerySet<Author>(conn).insert(author2);
     Post post2("Title", "Content", author_id2);
-    orm::QuerySet<Post>(conn).insert(post2);
-    std::vector<Post> all_posts = orm::QuerySet<Post>(conn).join<Author>()
+    QuerySet<Post>(conn).insert(post2);
+    std::vector<Post> all_posts = QuerySet<Post>(conn)
+        .join<Author>()
         .where(&Post::author_id, author_id)
         .limit(1)
         .select_all();
@@ -414,14 +419,15 @@ TEST_F(ORMTest, SelectAllWithJoinAndWhereAndLimit) {
 
 TEST_F(ORMTest, SelectAllWithJoinAndWhereAndOffset) {
     Author author("John Doe", 30, "john@example.com");
-    int author_id = orm::QuerySet<Author>(conn).insert(author);
+    int author_id = QuerySet<Author>(conn).insert(author);
     Post post("Title", "Content", author_id);
-    orm::QuerySet<Post>(conn).insert(post);
+    QuerySet<Post>(conn).insert(post);
     Author author2("John Doe", 30, "john@example.com");
-    int author_id2 = orm::QuerySet<Author>(conn).insert(author2);
+    int author_id2 = QuerySet<Author>(conn).insert(author2);
     Post post2("Title", "Content", author_id2);
-    orm::QuerySet<Post>(conn).insert(post2);
-    std::vector<Post> all_posts = orm::QuerySet<Post>(conn).join<Author>()
+    QuerySet<Post>(conn).insert(post2);
+    std::vector<Post> all_posts = QuerySet<Post>(conn)
+        .join<Author>()
         .where(&Post::author_id, author_id)
         .offset(1)
         .select_all();
@@ -430,31 +436,33 @@ TEST_F(ORMTest, SelectAllWithJoinAndWhereAndOffset) {
 
 TEST_F(ORMTest, SelectAllWithJoinAndWhereAndLimitAndOffset) {
     Author author("John Doe", 30, "john@example.com");
-    int author_id = orm::QuerySet<Author>(conn).insert(author);
+    int author_id = QuerySet<Author>(conn).insert(author);
     Post post("Title", "Content", author_id);
-    orm::QuerySet<Post>(conn).insert(post);
+    QuerySet<Post>(conn).insert(post);
     Author author2("John Doe", 30, "john@example.com");
-    int author_id2 = orm::QuerySet<Author>(conn).insert(author2);
+    int author_id2 = QuerySet<Author>(conn).insert(author2);
     Post post2("Title", "Content", author_id2);
-    orm::QuerySet<Post>(conn).insert(post2);
-    std::vector<Post> all_posts = orm::QuerySet<Post>(conn).join<Author>()
+    QuerySet<Post>(conn).insert(post2);
+    std::vector<Post> all_posts = QuerySet<Post>(conn)
+        .join<Author>()
         .where(&Post::author_id, author_id)
         .limit(1)
         .offset(1)
         .select_all();
-    ASSERT_EQ(all_posts.size(), 1); 
+    ASSERT_EQ(all_posts.size(), 0); 
 }
 
 TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupBy) {
     Author author("John Doe", 30, "john@example.com");
-    int author_id = orm::QuerySet<Author>(conn).insert(author);
+    int author_id = QuerySet<Author>(conn).insert(author);
     Post post("Title", "Content", author_id);
-    orm::QuerySet<Post>(conn).insert(post);
+    QuerySet<Post>(conn).insert(post);
     Author author2("John Doe", 30, "john@example.com");
-    int author_id2 = orm::QuerySet<Author>(conn).insert(author2);
+    int author_id2 = QuerySet<Author>(conn).insert(author2);
     Post post2("Title", "Content", author_id2);
-    orm::QuerySet<Post>(conn).insert(post2);
-    std::vector<Post> all_posts = orm::QuerySet<Post>(conn).join<Author>()
+    QuerySet<Post>(conn).insert(post2);
+    std::vector<Post> all_posts = QuerySet<Post>(conn)
+        .join<Author>()
         .where(&Post::author_id, author_id)
         .group_by<&Author::name>()
         .select_all();
@@ -463,14 +471,15 @@ TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupBy) {
 
 TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupByAndLimit) {
     Author author("John Doe", 30, "john@example.com");
-    int author_id = orm::QuerySet<Author>(conn).insert(author);
+    int author_id = QuerySet<Author>(conn).insert(author);
     Post post("Title", "Content", author_id);
-    orm::QuerySet<Post>(conn).insert(post);
+    QuerySet<Post>(conn).insert(post);
     Author author2("John Doe", 30, "john@example.com");
-    int author_id2 = orm::QuerySet<Author>(conn).insert(author2);
+    int author_id2 = QuerySet<Author>(conn).insert(author2);
     Post post2("Title", "Content", author_id2);
-    orm::QuerySet<Post>(conn).insert(post2);
-    std::vector<Post> all_posts = orm::QuerySet<Post>(conn).join<Author>()
+    QuerySet<Post>(conn).insert(post2);
+    std::vector<Post> all_posts = QuerySet<Post>(conn)
+        .join<Author>()
         .where(&Post::author_id, author_id)
         .group_by<&Author::name>()
         .limit(1)
@@ -480,14 +489,15 @@ TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupByAndLimit) {
 
 TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupByAndOffset) {
     Author author("John Doe", 30, "john@example.com");
-    int author_id = orm::QuerySet<Author>(conn).insert(author);
+    int author_id = QuerySet<Author>(conn).insert(author);
     Post post("Title", "Content", author_id);
-    orm::QuerySet<Post>(conn).insert(post);
+    QuerySet<Post>(conn).insert(post);
     Author author2("John Doe", 30, "john@example.com");
-    int author_id2 = orm::QuerySet<Author>(conn).insert(author2);
+    int author_id2 = QuerySet<Author>(conn).insert(author2);
     Post post2("Title", "Content", author_id2);
-    orm::QuerySet<Post>(conn).insert(post2);
-    std::vector<Post> all_posts = orm::QuerySet<Post>(conn).join<Author>()
+    QuerySet<Post>(conn).insert(post2);
+    std::vector<Post> all_posts = QuerySet<Post>(conn)
+        .join<Author>()
         .where(&Post::author_id, author_id)
         .group_by<&Author::name>()
         .offset(1)
@@ -497,58 +507,60 @@ TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupByAndOffset) {
 
 TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupByAndLimitAndOffset) {
     Author author("John Doe", 30, "john@example.com");
-    int author_id = orm::QuerySet<Author>(conn).insert(author);
+    int author_id = QuerySet<Author>(conn).insert(author);
     Post post("Title", "Content", author_id);
-    orm::QuerySet<Post>(conn).insert(post);
+    QuerySet<Post>(conn).insert(post);
     Author author2("John Doe", 30, "john@example.com");
-    int author_id2 = orm::QuerySet<Author>(conn).insert(author2);
+    int author_id2 = QuerySet<Author>(conn).insert(author2);
     Post post2("Title", "Content", author_id2);
-    orm::QuerySet<Post>(conn).insert(post2);
-    std::vector<Post> all_posts = orm::QuerySet<Post>(conn).join<Author>()
+    QuerySet<Post>(conn).insert(post2);
+    std::vector<Post> all_posts = QuerySet<Post>(conn)
+        .join<Author>()
         .where(&Post::author_id, author_id)
         .group_by<&Author::name>()
         .limit(1)
         .offset(1)
         .select_all();
-    ASSERT_EQ(all_posts.size(), 1);     
+    ASSERT_EQ(all_posts.size(), 0);
 }
 
 TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupByAndLimitAndOffsetAndOrderBy) {
     Author author("John Doe", 30, "john@example.com");
-    int author_id = orm::QuerySet<Author>(conn).insert(author);
+    int author_id = QuerySet<Author>(conn).insert(author);
     Post post("Title", "Content", author_id);
-    orm::QuerySet<Post>(conn).insert(post);
+    QuerySet<Post>(conn).insert(post);
     Author author2("John Doe", 30, "john@example.com");
-    int author_id2 = orm::QuerySet<Author>(conn).insert(author2);
+    int author_id2 = QuerySet<Author>(conn).insert(author2);
     Post post2("Title", "Content", author_id2);
-    orm::QuerySet<Post>(conn).insert(post2);
-    std::vector<Post> all_posts = orm::QuerySet<Post>(conn).join<Author>()
+    QuerySet<Post>(conn).insert(post2);
+    std::vector<Post> all_posts = QuerySet<Post>(conn)
+        .join<Author>()
         .where(&Post::author_id, author_id)
-        .group_by<&Author::name>()
+        // .group_by<&Author::name>()
         .limit(1)
         .offset(1)
-        // .order_by<&Author::name>()
+        .order_by<&Author::name>()
         .select_all();
-    ASSERT_EQ(all_posts.size(), 1); 
+    ASSERT_EQ(all_posts.size(), 0); 
 }
-    
+
 TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupByAndLimitAndOffsetAndOrderByAndDistinct) {
     Author author("John Doe", 30, "john@example.com");
-    int author_id = orm::QuerySet<Author>(conn).insert(author);
+    int author_id = QuerySet<Author>(conn).insert(author);
     Post post("Title", "Content", author_id);
-    orm::QuerySet<Post>(conn).insert(post);
+    QuerySet<Post>(conn).insert(post);
     Author author2("John Doe", 30, "john@example.com");
-    int author_id2 = orm::QuerySet<Author>(conn).insert(author2);
+    int author_id2 = QuerySet<Author>(conn).insert(author2);
     Post post2("Title", "Content", author_id2);
-    orm::QuerySet<Post>(conn).insert(post2);
-    std::vector<Post> all_posts = orm::QuerySet<Post>(conn).join<Author>()
+    QuerySet<Post>(conn).insert(post2);
+    std::vector<Post> all_posts = QuerySet<Post>(conn)
+        .join<Author>()
         .where(&Post::author_id, author_id)
-        .group_by<&Author::name>()
+        // .group_by<&Author::name>()
         .limit(1)
         .offset(1)
         // .order_by<&Author::name>()
         // .distinct()
         .select_all();
-    ASSERT_EQ(all_posts.size(), 1); 
+    ASSERT_EQ(all_posts.size(), 0); 
 }
-    

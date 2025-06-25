@@ -1,6 +1,7 @@
 #include "SchemaManager.h"
 #include "Statement.h"
 
+namespace storm {
 void SchemaManager::show_schemas() {
     if (create_table_sqls.empty()) {
         std::cout << "No models registered yet." << std::endl;
@@ -73,4 +74,5 @@ bool SchemaManager::create_all_tables() {
         std::cerr << "Error during batch table creation: " << e.what() << std::endl;
         return false;
     }
+}
 }

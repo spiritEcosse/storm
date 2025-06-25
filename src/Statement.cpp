@@ -5,6 +5,7 @@
 #include <iostream>
 #include <regex>
 
+namespace storm {
 Statement::Statement(std::shared_ptr<Connection> conn, const std::string& sql) : conn(std::move(conn)), stmt(nullptr), sql_(sql) {
     if (!this->conn || !this->conn->get()) {
         throw std::runtime_error("Database connection is not valid.");
@@ -20,7 +21,7 @@ Statement::Statement(std::shared_ptr<Connection> conn, const std::string& sql) :
         std::smatch matches;
         if (std::regex_search(errMsg, matches, columnRegex) && matches.size() > 1) {
             std::string columnName = matches[1];
-            throw orm::InvalidColumnException(columnName, sql);
+            throw InvalidColumnException(columnName, sql);
         }
         
         throw std::runtime_error("Failed to prepare statement: " + sql + " | SQLite Error: " + errMsg);
@@ -141,4 +142,5 @@ Row::Row(sqlite3_stmt* stmt, int column_count) {
         const unsigned char* text = sqlite3_column_text(stmt, i);
         text_values.push_back(text ? reinterpret_cast<const char*>(text) : std::string());
     }
+}
 }

@@ -4,6 +4,7 @@
 #include "BaseField.h"
 #include "MemberPointerUtils.h"
 #include "Reflect.h"
+#include "StringUtils.h"
 
 #include <refl.hpp>
 
@@ -16,6 +17,7 @@
 #include <iostream>
 #include <fmt/format.h>
 
+namespace storm {
 enum class Operator { EQUALS, NOT_EQUALS, GREATER_THAN, LESS_THAN, GREATER_OR_EQUAL, LESS_OR_EQUAL, LIKE, IS };
 
 inline std::string operatorToString(const Operator op) {
@@ -47,7 +49,6 @@ inline std::string boolToString(const bool value) {
     return value ? "TRUE" : "FALSE";
 }
 
-namespace orm {
     class WhereClause final : public BaseClass {
     public:
         enum class LogicalType { SINGLE, AND, OR };
@@ -62,8 +63,8 @@ namespace orm {
         WhereClause(FieldType ClassType::* memberPtr, Value value, const Operator op = Operator::EQUALS) :
         BaseClass() {
             std::string tableName = Reflect<ClassType>::get_struct_name();
-            std::string fieldName = orm::detail::getFieldNameFromMemberPtr(memberPtr);
-            _fieldName = formatFieldName(tableName, fieldName);
+            std::string fieldName = getFieldNameFromMemberPtr(memberPtr);
+            _fieldName = utils::formatFieldName(tableName, fieldName);
             _value = std::to_string(value);
             _op = op;
             _valueType = ValueType::SPECIAL;
@@ -75,8 +76,8 @@ namespace orm {
         WhereClause(FieldType ClassType::* memberPtr, Value&& value, const Operator op = Operator::EQUALS) :
         BaseClass() {
             std::string tableName = Reflect<ClassType>::get_struct_name();
-            std::string fieldName = orm::detail::getFieldNameFromMemberPtr(memberPtr);
-            _fieldName = formatFieldName(tableName, fieldName);
+            std::string fieldName = getFieldNameFromMemberPtr(memberPtr);
+            _fieldName = utils::formatFieldName(tableName, fieldName);
 
             if constexpr (std::is_same_v<std::decay_t<Value>, bool>) {
                 _value = boolToString(value);
@@ -198,10 +199,6 @@ namespace orm {
                 default:
                     return "";
             }
-        }
-        
-        std::string formatFieldName(const std::string& tableName, const std::string& fieldName) const {
-            return fmt::format(R"("{}"."{}")", tableName, fieldName);
         }
         
         std::string _fieldName;

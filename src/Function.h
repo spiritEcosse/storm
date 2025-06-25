@@ -1,6 +1,6 @@
 #pragma once
 
-namespace orm {
+namespace storm {
 
     class Function final : public BaseClass {
     public:
