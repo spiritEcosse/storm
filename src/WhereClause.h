@@ -1,7 +1,6 @@
 #pragma once
 
 #include "BaseClass.h"
-#include "BaseField.h"
 #include "MemberPointerUtils.h"
 #include "Reflect.h"
 #include "StringUtils.h"
@@ -57,38 +56,29 @@ inline std::string boolToString(const bool value) {
         // Default constructor
         WhereClause() : BaseClass(), _fieldName(""), _op(Operator::EQUALS), _valueType(ValueType::STRING), _needsGrouping(false), _type(LogicalType::SINGLE) {}
 
-        // Runtime constructor for member pointers with arithmetic values (excluding bool)
-        template<typename ClassType, typename FieldType, typename Value,
-        std::enable_if_t<std::is_arithmetic_v<std::decay_t<Value>> && !std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
-        WhereClause(FieldType ClassType::* memberPtr, Value value, const Operator op = Operator::EQUALS) :
-        BaseClass() {
-            std::string tableName = Reflect<ClassType>::get_struct_name();
-            std::string fieldName = getFieldNameFromMemberPtr(memberPtr);
-            _fieldName = utils::formatFieldName(tableName, fieldName);
-            _value = std::to_string(value);
-            _op = op;
-            _valueType = ValueType::SPECIAL;
-        }
-
-        // Runtime constructor for member pointers with non-arithmetic values (including bool)
-        template<typename ClassType, typename FieldType, typename Value,
-        std::enable_if_t<!std::is_arithmetic_v<std::decay_t<Value>> || std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
+        // Single unified constructor using perfect forwarding
+        template<typename ClassType, typename FieldType, typename Value>
         WhereClause(FieldType ClassType::* memberPtr, Value&& value, const Operator op = Operator::EQUALS) :
         BaseClass() {
             std::string tableName = Reflect<ClassType>::get_struct_name();
             std::string fieldName = getFieldNameFromMemberPtr(memberPtr);
             _fieldName = utils::formatFieldName(tableName, fieldName);
-
-            if constexpr (std::is_same_v<std::decay_t<Value>, bool>) {
-                _value = boolToString(value);
+            
+            if constexpr (std::is_arithmetic_v<std::decay_t<Value>>) {
+                if constexpr (std::is_same_v<std::decay_t<Value>, bool>) {
+                    _value = std::forward<Value>(value) ? "1" : "0";  // Convert bool to 1/0
+                } else {
+                    _value = std::to_string(std::forward<Value>(value));
+                }
+                _valueType = ValueType::SPECIAL;
             } else {
                 std::ostringstream oss;
-                oss << value;
+                oss << std::forward<Value>(value);
                 _value = oss.str();
+                _valueType = ValueType::STRING;
             }
-
+            
             _op = op;
-            _valueType = ValueType::STRING;
         }
 
         WhereClause(LogicalType type, std::vector<WhereClause> subclauses, bool isGrouped = false) :
@@ -189,13 +179,12 @@ inline std::string boolToString(const bool value) {
 
         std::string serializeSingleClause() const {
             switch(_valueType) {
-
                 case ValueType::STRING:
-                    return _fieldName + " " + operatorToString(_op) + " '" + _value + "'";
-
+                    return fmt::format("{} {} '{}'", _fieldName, operatorToString(_op), _value);
+        
                 case ValueType::SPECIAL:
-                    return _fieldName + " " + operatorToString(_op) + " " + _value;
-
+                    return fmt::format("{} {} {}", _fieldName, operatorToString(_op), _value);
+        
                 default:
                     return "";
             }

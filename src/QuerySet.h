@@ -888,25 +888,36 @@ namespace storm {
         // =============================
         // Compile-time ORDER_BY overload using member pointers
         // =============================
-
-        template<auto... Fields>
-        QuerySet &order_by(bool asc = true) {
-            std::cout << "Order fields: " << sizeof...(Fields) << std::endl;
-            (this->orderFields.emplace_back(createFieldNameGenerator<Fields>(), asc), ...);
+        template<auto Field, bool Ascending = true, auto... Rest>
+        QuerySet& order_by() {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, 
+                        "Field must be a member pointer");
+            static_assert(sizeof...(Rest) % 2 == 0, 
+                        "Must provide field-direction pairs (field, bool, field, bool, ...)");
+            
+            // Add current field to order criteria
+            this->orderFields.emplace_back(createFieldNameGenerator<Field>(), Ascending);
+            
+            // Recursively process remaining field-direction pairs
+            if constexpr (sizeof...(Rest) > 0) {
+                return order_by<Rest...>();
+            }
+            
             return *this;
         }
-        
-        // Helper function to create field name generator
+
+        // Helper function to create field name generator (compile-time)
         template<auto Field>
-        auto createFieldNameGenerator() {
-            return [this]() {
+        auto createFieldNameGenerator() const {
+            return [this]() -> std::string {
+                static_assert(std::is_member_pointer_v<decltype(Field)>, 
+                            "Field must be a member pointer");
                 using ClassType = typename member_pointer_class<decltype(Field)>::type;
-                std::string fieldName = getFieldNameFromMemberPtr<ClassType, Field>();
+                std::string fieldName = getFieldNameFromMemberPtr<Field>();
                 std::string tableName = this->template get_table_name<ClassType>();
                 return utils::formatFieldName(tableName, fieldName);
             };
         }
-        
         
         // =============================
         // Compile-time WHERE overloads using member pointers as NTTPs
@@ -924,46 +935,15 @@ namespace storm {
 
         // Compile-time WHERE overloads for arithmetic values using member pointers
         // =============================
-
-        // New syntax for arithmetic values (excluding bool)
-        template<auto MemberPtr,
-                 typename Value,
-                 std::enable_if_t<std::is_arithmetic_v<std::decay_t<Value>> && !std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
-        QuerySet &where(const Value &value, const Operator op = Operator::EQUALS) {
-            return addFilter(WhereClause(MemberPtr, value, op));
-        }
-        
-        // New syntax for non-arithmetic values (including bool, strings, etc.)
-        template<auto MemberPtr,
-                 typename Value,
-                 std::enable_if_t<!std::is_arithmetic_v<std::decay_t<Value>> || std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
-        QuerySet &where(Value&& value, const Operator op = Operator::EQUALS) {
-            return addFilter(WhereClause(MemberPtr, std::forward<Value>(value), op));
-        }
         
         // Backward compatibility overload for arithmetic values
         // This allows using .where(&Post::author_id, author_id) syntax
-        template<typename ClassType, typename FieldType,
-                 typename Value,
-                 std::enable_if_t<std::is_arithmetic_v<std::decay_t<Value>> && !std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
-        QuerySet &where(FieldType ClassType::* memberPtr, const Value &value, const Operator op = Operator::EQUALS) {
-            return addFilter(WhereClause(memberPtr, value, op));
-        }
-        
-        // Backward compatibility overload for non-arithmetic values (including strings and bool)
-        template<typename ClassType, typename FieldType,
-                 typename Value,
-                 std::enable_if_t<!std::is_arithmetic_v<std::decay_t<Value>> || std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
+        template<typename ClassType, typename FieldType, typename Value>
         QuerySet &where(FieldType ClassType::* memberPtr, Value&& value, const Operator op = Operator::EQUALS) {
             return addFilter(WhereClause(memberPtr, std::forward<Value>(value), op));
         }
 
-        // Removed old dual-field where overload that expected BaseField pointers to prevent
-        // template ambiguity with member pointer based overloads.
-        /*template<typename ModelField1, typename ModelField2>
-        QuerySet &where(const ModelField1 &field1, const ModelField2 &field2) {
-            return addFilter(WhereClause(&field1, &field2));
-        }*/
+        // FUNCTIONS
 
         template<typename... Args>
         QuerySet &functions(Args &&...args) {

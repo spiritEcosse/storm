@@ -25,15 +25,17 @@ struct member_pointer_type<T C::*> {
 };
 
 // Helper: get field name from member pointer at compile time
-// Helper: get field name from member pointer at compile time
-template <typename C, auto MemberPtr>
+template <auto MemberPtr>
 std::string getFieldNameFromMemberPtr() {
     std::string result;
-    refl::util::for_each(refl::reflect<C>().members, [&](auto member) {
+    using ClassType = typename member_pointer_class<decltype(MemberPtr)>::type;
+
+    refl::util::for_each(refl::reflect<ClassType>().members, [&](auto member) {
         if constexpr (refl::descriptor::is_field(member)) {
-            // Add type check before comparison
-            if constexpr (std::is_same_v<decltype(member.pointer), decltype(MemberPtr)>) {
-                if (member.pointer == MemberPtr) {
+            // Compare the actual member pointer values using std::is_same_v
+            if constexpr (std::is_same_v<std::decay_t<decltype(member.pointer)>, 
+                                       std::decay_t<decltype(MemberPtr)>>) {
+                if constexpr (member.pointer == MemberPtr) {
                     result = std::string(member.name);
                 }
             }
