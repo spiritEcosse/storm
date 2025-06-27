@@ -15,10 +15,14 @@ struct Author {
     std::string email;
     int id;
     bool is_active;
+    double rating;
+    float score;
+    std::string middleName;
+    std::string biography;
 
     Author() = default;
-    Author(const std::string& n, int a, const std::string& e, int id = 0, bool active = true) 
-        : id(id), name(n), age(a), email(e), is_active(active) {}
+    Author(const std::string& n, int a, const std::string& e, int id = 0, bool active = true, double rating = 0.0, float score = 0.0, const std::string& middleName = "", const std::string& biography = "") 
+        : id(id), name(n), age(a), email(e), is_active(active), rating(rating), score(score), middleName(middleName), biography(biography) {}
 };
 
 struct Post {
@@ -38,7 +42,11 @@ REFL_AUTO(
     field(name),
     field(age),
     field(email),
-    field(is_active)
+    field(is_active),
+    field(rating),
+    field(score),
+    field(middleName),
+    field(biography)
 )
 
 REFL_AUTO(
@@ -67,7 +75,11 @@ protected:
                 name TEXT NOT NULL,
                 age INTEGER,
                 email TEXT,
-                is_active BOOLEAN
+                is_active BOOLEAN,
+                rating REAL,
+                score REAL,
+                middleName TEXT,
+                biography TEXT
             );
         )";
         auto author_stmt = Statement(conn, create_author_sql);
@@ -91,10 +103,10 @@ protected:
 
     void setupTestData() {
         // Create authors with different names and ages for testing
-        Author alice("Alice Smith", 25, "alice@example.com");
-        Author bob("Bob Johnson", 35, "bob@example.com");
-        Author charlie("Charlie Brown", 30, "charlie@example.com");
-        Author diana("Diana Prince", 28, "diana@example.com");
+        Author alice("Alice Smith", 25, "alice@example.com", 0, true, 4.5, 85.5, "Alice", "Alice biography");
+        Author bob("Bob Johnson", 35, "bob@example.com", 0, true, 5.0, 90.0, "Bob", "Bob biography");
+        Author charlie("Charlie Brown", 30, "charlie@example.com", 0, true, 4.0, 80.0, "Charlie", "Charlie biography");
+        Author diana("Diana Prince", 28, "diana@example.com", 0, true, 5.5, 95.0, "Diana", "Diana biography");
         
         alice_id = QuerySet<Author>(conn).insert(alice);
         bob_id = QuerySet<Author>(conn).insert(bob);
@@ -359,14 +371,16 @@ TEST_F(ORMTest, SelectAll) {
 
 // WHERE TESTS
 TEST_F(ORMTest, SelectAllWhereId) {
-    std::vector<Author> authors = QuerySet<Author>(conn).where(&Author::id, alice_id)
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(&Author::id, alice_id)
         .select_all();
     ASSERT_EQ(authors.size(), 1);
     EXPECT_EQ(authors[0].name, "Alice Smith");
 }
 
-TEST_F(ORMTest, SelectAllManyWhere) {
-    std::vector<Post> posts = QuerySet<Post>(conn).where(&Post::author_id, alice_id)
+TEST_F(ORMTest, SelectAllWhereMany) {
+    std::vector<Post> posts = QuerySet<Post>(conn)
+        .where(&Post::author_id, alice_id)
         .where(&Post::title, "Post A")
         .select_all();
     ASSERT_EQ(posts.size(), 1);
@@ -375,7 +389,9 @@ TEST_F(ORMTest, SelectAllManyWhere) {
 
 TEST_F(ORMTest, SelectAllErrorInvalidColumnException) {
     try {
-        QuerySet<Post>(conn).where(&Author::name, "Alice Smith").select_all();
+        QuerySet<Post>(conn)
+            .where(&Author::name, "Alice Smith")
+            .select_all();
         FAIL() << "Expected InvalidColumnException to be thrown";
     } catch (const InvalidColumnException& e) {
         // Verify the column name in the exception
@@ -394,7 +410,7 @@ TEST_F(ORMTest, SelectAllWithJoin) {
     ASSERT_EQ(all_posts.size(), 4); // Should have all 4 posts with author data
 }
 
-TEST_F(ORMTest, SelectAllWithJoinAndWhere) {
+TEST_F(ORMTest, SelectAllWithJoinWhere) {
     std::vector<Post> posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
@@ -403,7 +419,7 @@ TEST_F(ORMTest, SelectAllWithJoinAndWhere) {
     EXPECT_EQ(posts[0].title, "Post A");
 }
 
-TEST_F(ORMTest, SelectAllWithJoinAndManyWhere) {
+TEST_F(ORMTest, SelectAllWithJoinWhereMany) {
     std::vector<Post> posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
@@ -413,7 +429,7 @@ TEST_F(ORMTest, SelectAllWithJoinAndManyWhere) {
     EXPECT_EQ(posts[0].title, "Post A");
 }
 
-TEST_F(ORMTest, SelectAllWithJoinAndWhereAndLimit) {
+TEST_F(ORMTest, SelectAllWithJoinWhereLimit) {
     std::vector<Post> posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
@@ -423,7 +439,7 @@ TEST_F(ORMTest, SelectAllWithJoinAndWhereAndLimit) {
     EXPECT_EQ(posts[0].title, "Post A");
 }
 
-TEST_F(ORMTest, SelectAllWithJoinAndWhereAndOffset) {
+TEST_F(ORMTest, SelectAllWithJoinWhereOffset) {
     // First insert another post for Alice to test offset
     Post extra_post("Post A2", "Content A2", alice_id);
     QuerySet<Post>(conn).insert(extra_post);
@@ -436,7 +452,7 @@ TEST_F(ORMTest, SelectAllWithJoinAndWhereAndOffset) {
     ASSERT_EQ(posts.size(), 2);
 }
 
-TEST_F(ORMTest, SelectAllWithJoinAndWhereAndLimitAndOffset) {
+TEST_F(ORMTest, SelectAllWithJoinWhereLimitOffset) {
     std::vector<Post> posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
@@ -446,7 +462,7 @@ TEST_F(ORMTest, SelectAllWithJoinAndWhereAndLimitAndOffset) {
     ASSERT_EQ(posts.size(), 0); // Only one post for Alice, offset 1 means no results
 }
 
-TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupBy) {
+TEST_F(ORMTest, SelectAllWithJoinWhereGroupBy) {
     std::vector<Post> posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
@@ -455,7 +471,7 @@ TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupBy) {
     ASSERT_EQ(posts.size(), 1);
 }
 
-TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupByAndLimit) {
+TEST_F(ORMTest, SelectAllWithJoinWhereGroupByLimit) {
     std::vector<Post> posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
@@ -475,7 +491,7 @@ TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupByAndLimit) {
 //     ASSERT_EQ(posts.size(), 0); // Only one group for Alice, offset 1 means no results
 // }
 
-TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupByAndLimitAndOffset) {
+TEST_F(ORMTest, SelectAllWithJoinWhereGroupByLimitOffset) {
     std::vector<Post> posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
@@ -486,7 +502,8 @@ TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupByAndLimitAndOffset) {
     ASSERT_EQ(posts.size(), 0);
 }
 
-TEST_F(ORMTest, SelectAllWithJoinAndWhereAndLimitAndOffsetAndOrderBy) {
+// ORDER BY TESTS
+TEST_F(ORMTest, SelectAllWithJoinWhereLimitOffsetOrderBy) {
     std::vector<Post> posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
@@ -497,7 +514,6 @@ TEST_F(ORMTest, SelectAllWithJoinAndWhereAndLimitAndOffsetAndOrderBy) {
     ASSERT_EQ(posts.size(), 0);
 }
 
-// ORDER BY TESTS
 TEST_F(ORMTest, OrderBySingleFieldAscendingExplicit) {
     std::vector<Author> authors = QuerySet<Author>(conn)
         .order_by<&Author::name, true>()
@@ -662,4 +678,287 @@ TEST_F(ORMTest, OrderingWithWhereClause) {
     
     ASSERT_EQ(authors.size(), 1);
     EXPECT_EQ(authors[0].name, "Charlie Brown");
+}
+
+// WHERE TESTS
+// MIXED, INT, EQUALS
+TEST_F(ORMTest, WhereClauseEqualsDefault) {
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(WhereClause(&Author::age, 30))  // Only Charlie has age 30
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 1);
+    EXPECT_EQ(authors[0].name, "Charlie Brown");
+}
+
+// MIXED, INT, EQUALS
+TEST_F(ORMTest, WhereClauseEqualsOperator) {
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(WhereClause(&Author::age, 30, Operator::EQUALS))  // Only Charlie has age 30
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 1);
+    EXPECT_EQ(authors[0].name, "Charlie Brown");
+}
+
+// MIXED, INT, EQUALS
+TEST_F(ORMTest, WhereClauseConvenientSyntax) {
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(&Author::age, 30)  // Default to EQUALS
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 1);
+    EXPECT_EQ(authors[0].name, "Charlie Brown");
+}
+
+// MIXED, GREATER_THAN, BOOLEAN, INT, EQUALS
+TEST_F(ORMTest, WhereClauseMultipleConditions) {
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(&Author::age, 25, Operator::GREATER_THAN)
+        .where(&Author::is_active, true)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 3);
+    for (const auto& author : authors) {
+        EXPECT_GT(author.age, 25);
+        EXPECT_TRUE(author.is_active);
+    }
+}
+
+// NTTP, int, EQUALS
+TEST_F(ORMTest, WhereClauseNTTPSyntax) {
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where<&Author::age>(30)  // NTTP syntax - member pointer as template parameter
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 1);
+    EXPECT_EQ(authors[0].name, "Charlie Brown");
+}
+
+// NTTP, string, EQUALS
+TEST_F(ORMTest, WhereClauseNTTPStringComparison) {
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where<&Author::name>(std::string("Alice Smith"), Operator::EQUALS)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 1);
+    EXPECT_EQ(authors[0].name, "Alice Smith");
+    EXPECT_EQ(authors[0].age, 25);
+}
+
+// NTTP, boolean, EQUALS
+TEST_F(ORMTest, WhereClauseNTTPBooleanValue) {
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where<&Author::is_active>(true)  // Boolean using NTTP
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 4);
+    for (const auto& author : authors) {
+        EXPECT_TRUE(author.is_active);
+    }
+}
+
+// NTTP, int, GREATER_THAN
+TEST_F(ORMTest, WhereClauseNTTPWithOperators) {
+    // Test NTTP with GREATER_THAN operator
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where<&Author::age>(25, Operator::GREATER_THAN)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 3);
+    for (const auto& author : authors) {
+        EXPECT_GT(author.age, 25);
+    }
+}
+
+// NTTP, string, LIKE
+TEST_F(ORMTest, WhereClauseNTTPLikeOperator) {
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where<&Author::name>(std::string("A%"), Operator::LIKE)  // Names starting with 'A'
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 1);
+    for (const auto& author : authors) {
+        EXPECT_EQ(author.name[0], 'A');
+    }
+}
+
+// NTTP, GREATER_OR_EQUAL, EQUALS
+TEST_F(ORMTest, WhereClauseNTTPChaining) {
+    // Test chaining NTTP where clauses
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where<&Author::age>(20, Operator::GREATER_OR_EQUAL)
+        .where<&Author::is_active>(true)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 4);
+    for (const auto& author : authors) {
+        EXPECT_GE(author.age, 20);
+        EXPECT_TRUE(author.is_active);
+    }
+}
+
+// MIXED, GREATER_THAN, EQUALS
+TEST_F(ORMTest, WhereClauseMixedSyntax) {
+    // Test mixing traditional and NTTP syntax
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(&Author::age, 25, Operator::GREATER_THAN)  // Traditional syntax
+        .where<&Author::is_active>(true)                   // NTTP syntax
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 3);
+
+    for (const auto& author : authors) {
+        EXPECT_GT(author.age, 25);
+        EXPECT_TRUE(author.is_active);
+    }
+}
+
+// NTTP, const char*, EQUALS
+TEST_F(ORMTest, WhereClauseNTTPConstCharPtr) {
+    // Test NTTP with const char* (C-style string)
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where<&Author::name>("Charlie Brown")  // const char* literal
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 1);
+    EXPECT_EQ(authors[0].name, "Charlie Brown");
+    EXPECT_EQ(authors[0].age, 30);
+}
+
+// NTTP, EQUALS
+TEST_F(ORMTest, WhereClauseNTTPWithArithmeticTypes) {
+    // Test NTTP with various arithmetic types (now works without SFINAE constraint)
+    std::vector<Author> authorsInt = QuerySet<Author>(conn)
+        .where<&Author::age>(30)  // int
+        .select_all();
+    
+    std::vector<Author> authorsDouble = QuerySet<Author>(conn)
+        .where<&Author::rating>(4.5)  // double
+        .select_all();
+    
+    std::vector<Author> authorsFloat = QuerySet<Author>(conn)
+        .where<&Author::score>(85.5f)  // float
+        .select_all();
+    
+    ASSERT_EQ(authorsInt.size(), 1);
+    ASSERT_EQ(authorsDouble.size(), 1);
+    ASSERT_EQ(authorsFloat.size(), 1);
+}
+
+// MIXED, EQUALS
+TEST_F(ORMTest, WhereClauseNTTPComparisonWithTraditional) {
+    // Verify NTTP and traditional syntax produce identical results
+    std::vector<Author> authorsTraditional = QuerySet<Author>(conn)
+        .where(&Author::age, 30, Operator::EQUALS)
+        .select_all();
+    
+    ASSERT_EQ(authorsTraditional.size(), 1);
+    
+    std::vector<Author> authorsNTTP = QuerySet<Author>(conn)
+        .where<&Author::age>(30, Operator::EQUALS)
+        .select_all();
+    
+    ASSERT_EQ(authorsTraditional.size(), authorsNTTP.size());
+    ASSERT_EQ(authorsTraditional.size(), 1);
+    
+    // Both should return the same results
+    for (size_t i = 0; i < authorsTraditional.size(); ++i) {
+        EXPECT_EQ(authorsTraditional[i].name, authorsNTTP[i].name);
+        EXPECT_EQ(authorsTraditional[i].age, authorsNTTP[i].age);
+        EXPECT_EQ(authorsTraditional[i].is_active, authorsNTTP[i].is_active);
+    }
+}
+
+// string, LIKE
+TEST_F(ORMTest, WhereClauseStringComparison) {
+    Author author("John Doe", 30, "john@example.com");
+    int author_id = QuerySet<Author>(conn).insert(author);
+    
+    Author author2("John Doe Smith", 31, "john.smith@example.com");
+    int author_id2 = QuerySet<Author>(conn).insert(author2);
+    
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(&Author::name, std::string("John%"), Operator::LIKE)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 2);
+    for (const auto& author : authors) {
+        EXPECT_TRUE(author.name.substr(0, 4) == "John");
+    }
+}
+
+// int, LESS_OR_EQUAL
+TEST_F(ORMTest, WhereClauseLessOrEqualOperator) {
+    // Test LESS_OR_EQUAL operator
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(&Author::age, 30, Operator::LESS_OR_EQUAL)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 3);
+    for (const auto& author : authors) {
+        EXPECT_LE(author.age, 30);
+    }
+}
+
+// int, GREATER_OR_EQUAL
+TEST_F(ORMTest, WhereClauseGreaterOrEqualOperator) {
+    // Test GREATER_OR_EQUAL operator  
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(&Author::age, 25, Operator::GREATER_OR_EQUAL)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 4);
+    for (const auto& author : authors) {
+        EXPECT_GE(author.age, 25);
+    }
+}
+
+// NTTP, int, LESS_OR_EQUAL
+TEST_F(ORMTest, WhereClauseNTTPLessOrEqual) {
+    // Test LESS_OR_EQUAL with NTTP syntax
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where<&Author::age>(35, Operator::LESS_OR_EQUAL)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 4);
+    for (const auto& author : authors) {
+        EXPECT_LE(author.age, 35);
+    }
+}
+
+// NTTP, double, GREATER_OR_EQUAL
+TEST_F(ORMTest, WhereClauseNTTPGreaterOrEqual) {
+    // Test GREATER_OR_EQUAL with NTTP syntax
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where<&Author::rating>(3.0, Operator::GREATER_OR_EQUAL)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 4);
+    
+    for (const auto& author : authors) {
+        EXPECT_GE(author.rating, 3.0);
+    }
+}
+
+// string, IS
+TEST_F(ORMTest, WhereClauseIsOperator) {
+    Author author("John Doe", 30, "john@example.com");
+    int author_id = QuerySet<Author>(conn).insert(author); // TODO : add NULL value
+    
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(&Author::middleName, "NULL", Operator::IS)  // WHERE middleName IS NULL
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 1);
+}
+
+// NTTP, string, IS
+TEST_F(ORMTest, WhereClauseNTTPIsOperator) {
+    // Test IS operator with NTTP syntax
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where<&Author::biography>("NULL", Operator::IS)  // WHERE biography IS NULL
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 1);
 }

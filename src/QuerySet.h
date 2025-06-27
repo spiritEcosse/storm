@@ -116,7 +116,7 @@ namespace storm {
         explicit BaseQuerySet(const std::string_view &alias, bool doAndCheck = false, bool returnInMain = true) :
             BaseQuerySetVirtual(), _alias(alias), _one(true), _doAndCheck(doAndCheck), _returnInMain(returnInMain) {}
 
-        std::vector<WhereClause> filters;
+        std::vector<WhereClause> _whereClauses;
         JoinInfo joinInfo;
         std::vector<std::pair<std::function<std::string()>, bool>> orderFields;
         DistinctInfo distinctInfo;
@@ -445,11 +445,11 @@ namespace storm {
         }
 
         [[nodiscard]] std::string filter_impl() const {
-            if(filters.empty()) {
+            if(_whereClauses.empty()) {
                 return "";
             }
 
-            auto transformed = filters | std::views::transform([](const WhereClause &filter) {
+            auto transformed = _whereClauses | std::views::transform([](const WhereClause &filter) {
                                    return filter.serialize();
                                });
 
@@ -464,11 +464,7 @@ namespace storm {
     private:
         std::shared_ptr<Connection> conn;
 
-        QuerySet &addFilter(WhereClause &&whereClause) {
-            this->filters.push_back(std::move(whereClause));
-            return *this;
-        }
-    
+    public:
         // Helper function to get field names (excluding 'id')
         std::vector<std::string> get_insert_field_names() const {
             std::vector<std::string> field_names;
@@ -886,8 +882,9 @@ namespace storm {
 
         // =============================
         // =============================
-        // Compile-time ORDER_BY overload using member pointers
+        // ORDER BY
         // =============================
+        // Compile-time version for multiple member pointers
         template<auto Field, bool Ascending = true, auto... Rest>
         QuerySet& order_by() {
             static_assert(std::is_member_pointer_v<decltype(Field)>, 
@@ -918,33 +915,44 @@ namespace storm {
                 return utils::formatFieldName(tableName, fieldName);
             };
         }
+
+        // =============================
+        // =============================
+        // WHERE
+        // =============================
+        // Method 1a: Using WhereClause object directly (const reference - copy)
+        QuerySet& where(const WhereClause& clause) {
+            this->_whereClauses.push_back(clause);
+            return *this;
+        }
         
-        // =============================
-        // Compile-time WHERE overloads using member pointers as NTTPs
-        // =============================
-        // Non-arithmetic values WHERE overload using member pointers
-        template<auto MemberPtr, typename Value,
-                 std::enable_if_t<!std::is_arithmetic_v<Value> || std::is_same_v<std::decay_t<Value>, bool>, int> = 0>
-        QuerySet &where(Value &&value, const Operator op = Operator::EQUALS) {
+        // Method 1b: Using WhereClause object directly (rvalue reference - move)
+        QuerySet& where(WhereClause&& clause) {
+            this->_whereClauses.push_back(std::move(clause));
+            return *this;
+        }
+        
+        // Method 2: Direct member pointer method (more convenient)
+        template<typename ClassType, typename FieldType, typename Value>
+        QuerySet& where(FieldType ClassType::* memberPtr, Value&& value, const Operator op = Operator::EQUALS) {
+            return where(WhereClause(memberPtr, std::forward<Value>(value), op));
+        }
+        
+        // Method 3: Compile-time WHERE using Non-Type Template Parameters (NTTPs)
+        // This allows you to write: querySet.where<&Author::age>(30) instead of querySet.where(&Author::age, 30)
+        template<auto MemberPtr, typename Value>
+        QuerySet& where(Value&& value, const Operator op = Operator::EQUALS) {
             using ClassType = typename member_pointer_class<decltype(MemberPtr)>::type;
             using FieldType = typename member_pointer_type<decltype(MemberPtr)>::type;
             
             // Use the WhereClause constructor directly
-            return addFilter(WhereClause(MemberPtr, std::forward<Value>(value), op));
+            return where(WhereClause(MemberPtr, std::forward<Value>(value), op));
         }
 
-        // Compile-time WHERE overloads for arithmetic values using member pointers
         // =============================
-        
-        // Backward compatibility overload for arithmetic values
-        // This allows using .where(&Post::author_id, author_id) syntax
-        template<typename ClassType, typename FieldType, typename Value>
-        QuerySet &where(FieldType ClassType::* memberPtr, Value&& value, const Operator op = Operator::EQUALS) {
-            return addFilter(WhereClause(memberPtr, std::forward<Value>(value), op));
-        }
-
+        // =============================
         // FUNCTIONS
-
+        // =============================
         template<typename... Args>
         QuerySet &functions(Args &&...args) {
             this->functions_impl(std::forward<Args>(args)...);
