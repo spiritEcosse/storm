@@ -684,7 +684,7 @@ TEST_F(ORMTest, OrderingWithWhereClause) {
 // MIXED, INT, EQUALS
 TEST_F(ORMTest, WhereClauseEqualsDefault) {
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(WhereClause(&Author::age, 30))  // Only Charlie has age 30
+        .where(field(&Author::age) == 30)  // Only Charlie has age 30
         .select_all();
     
     ASSERT_EQ(authors.size(), 1);
@@ -694,7 +694,7 @@ TEST_F(ORMTest, WhereClauseEqualsDefault) {
 // MIXED, INT, EQUALS
 TEST_F(ORMTest, WhereClauseEqualsOperator) {
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(WhereClause(&Author::age, 30, Operator::EQUALS))  // Only Charlie has age 30
+        .where(field(&Author::age) == 30)  // Only Charlie has age 30
         .select_all();
     
     ASSERT_EQ(authors.size(), 1);
@@ -714,7 +714,7 @@ TEST_F(ORMTest, WhereClauseConvenientSyntax) {
 // MIXED, GREATER_THAN, BOOLEAN, INT, EQUALS
 TEST_F(ORMTest, WhereClauseMultipleConditions) {
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(&Author::age, 25, Operator::GREATER_THAN)
+        .where(&Author::age, 25, Op::GT)
         .where(&Author::is_active, true)
         .select_all();
     
@@ -738,7 +738,7 @@ TEST_F(ORMTest, WhereClauseNTTPSyntax) {
 // NTTP, string, EQUALS
 TEST_F(ORMTest, WhereClauseNTTPStringComparison) {
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where<&Author::name>(std::string("Alice Smith"), Operator::EQUALS)
+        .where<&Author::name>(std::string("Alice Smith"), Op::EQ)
         .select_all();
     
     ASSERT_EQ(authors.size(), 1);
@@ -762,7 +762,7 @@ TEST_F(ORMTest, WhereClauseNTTPBooleanValue) {
 TEST_F(ORMTest, WhereClauseNTTPWithOperators) {
     // Test NTTP with GREATER_THAN operator
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where<&Author::age>(25, Operator::GREATER_THAN)
+        .where<&Author::age>(25, Op::GT)
         .select_all();
     
     ASSERT_EQ(authors.size(), 3);
@@ -774,7 +774,7 @@ TEST_F(ORMTest, WhereClauseNTTPWithOperators) {
 // NTTP, string, LIKE
 TEST_F(ORMTest, WhereClauseNTTPLikeOperator) {
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where<&Author::name>(std::string("A%"), Operator::LIKE)  // Names starting with 'A'
+        .where<&Author::name>(std::string("A%"), Op::LIKE)  // Names starting with 'A'
         .select_all();
     
     ASSERT_EQ(authors.size(), 1);
@@ -787,7 +787,7 @@ TEST_F(ORMTest, WhereClauseNTTPLikeOperator) {
 TEST_F(ORMTest, WhereClauseNTTPChaining) {
     // Test chaining NTTP where clauses
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where<&Author::age>(20, Operator::GREATER_OR_EQUAL)
+        .where<&Author::age>(20, Op::GE)
         .where<&Author::is_active>(true)
         .select_all();
     
@@ -802,7 +802,7 @@ TEST_F(ORMTest, WhereClauseNTTPChaining) {
 TEST_F(ORMTest, WhereClauseMixedSyntax) {
     // Test mixing traditional and NTTP syntax
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(&Author::age, 25, Operator::GREATER_THAN)  // Traditional syntax
+        .where(&Author::age, 25, Op::GT)  // Traditional syntax
         .where<&Author::is_active>(true)                   // NTTP syntax
         .select_all();
     
@@ -850,13 +850,13 @@ TEST_F(ORMTest, WhereClauseNTTPWithArithmeticTypes) {
 TEST_F(ORMTest, WhereClauseNTTPComparisonWithTraditional) {
     // Verify NTTP and traditional syntax produce identical results
     std::vector<Author> authorsTraditional = QuerySet<Author>(conn)
-        .where(&Author::age, 30, Operator::EQUALS)
+        .where(&Author::age, 30, Op::EQ)
         .select_all();
     
     ASSERT_EQ(authorsTraditional.size(), 1);
     
     std::vector<Author> authorsNTTP = QuerySet<Author>(conn)
-        .where<&Author::age>(30, Operator::EQUALS)
+        .where<&Author::age>(30, Op::EQ)
         .select_all();
     
     ASSERT_EQ(authorsTraditional.size(), authorsNTTP.size());
@@ -879,7 +879,7 @@ TEST_F(ORMTest, WhereClauseStringComparison) {
     int author_id2 = QuerySet<Author>(conn).insert(author2);
     
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(&Author::name, std::string("John%"), Operator::LIKE)
+        .where(&Author::name, std::string("John%"), Op::LIKE)
         .select_all();
     
     ASSERT_EQ(authors.size(), 2);
@@ -892,7 +892,7 @@ TEST_F(ORMTest, WhereClauseStringComparison) {
 TEST_F(ORMTest, WhereClauseLessOrEqualOperator) {
     // Test LESS_OR_EQUAL operator
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(&Author::age, 30, Operator::LESS_OR_EQUAL)
+        .where(&Author::age, 30, Op::LE)
         .select_all();
     
     ASSERT_EQ(authors.size(), 3);
@@ -905,7 +905,7 @@ TEST_F(ORMTest, WhereClauseLessOrEqualOperator) {
 TEST_F(ORMTest, WhereClauseGreaterOrEqualOperator) {
     // Test GREATER_OR_EQUAL operator  
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(&Author::age, 25, Operator::GREATER_OR_EQUAL)
+        .where(&Author::age, 25, Op::GE)
         .select_all();
     
     ASSERT_EQ(authors.size(), 4);
@@ -918,7 +918,7 @@ TEST_F(ORMTest, WhereClauseGreaterOrEqualOperator) {
 TEST_F(ORMTest, WhereClauseNTTPLessOrEqual) {
     // Test LESS_OR_EQUAL with NTTP syntax
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where<&Author::age>(35, Operator::LESS_OR_EQUAL)
+        .where<&Author::age>(35, Op::LE)
         .select_all();
     
     ASSERT_EQ(authors.size(), 4);
@@ -931,7 +931,7 @@ TEST_F(ORMTest, WhereClauseNTTPLessOrEqual) {
 TEST_F(ORMTest, WhereClauseNTTPGreaterOrEqual) {
     // Test GREATER_OR_EQUAL with NTTP syntax
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where<&Author::rating>(3.0, Operator::GREATER_OR_EQUAL)
+        .where<&Author::rating>(3.0, Op::GE)
         .select_all();
     
     ASSERT_EQ(authors.size(), 4);
@@ -943,22 +943,443 @@ TEST_F(ORMTest, WhereClauseNTTPGreaterOrEqual) {
 
 // string, IS
 TEST_F(ORMTest, WhereClauseIsOperator) {
-    Author author("John Doe", 30, "john@example.com");
-    int author_id = QuerySet<Author>(conn).insert(author); // TODO : add NULL value
+    // TODO: simplify using insert instead raw sql, i need this for now because i dont have mechanism to insert NULL values
+    // Insert an author with NULL biography directly using SQL
+    auto stmt = Statement(conn, "INSERT INTO author (name, age, email, biography) VALUES (?, ?, ?, NULL)");
+    stmt.bind(1, "John Doe");
+    stmt.bind(2, 30);
+    stmt.bind(3, "john@example.com");
+    stmt.execute();
     
+    // Execute the query using our ORM
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(&Author::middleName, "NULL", Operator::IS)  // WHERE middleName IS NULL
+        .where(&Author::biography, std::nullopt, Op::IS)  // WHERE biography IS NULL
         .select_all();
     
+    // Verify we found the author with NULL biography
     ASSERT_EQ(authors.size(), 1);
+    EXPECT_EQ(authors[0].name, "John Doe");
+    EXPECT_EQ(authors[0].age, 30);
+    EXPECT_EQ(authors[0].email, "john@example.com");
 }
 
 // NTTP, string, IS
 TEST_F(ORMTest, WhereClauseNTTPIsOperator) {
     // Test IS operator with NTTP syntax
+    // TODO: simplify using insert instead raw sql, i need this for now because i dont have mechanism to insert NULL values
+    // Insert an author with NULL biography directly using SQL
+    auto stmt = Statement(conn, "INSERT INTO author (name, age, email, biography) VALUES (?, ?, ?, NULL)");
+    stmt.bind(1, "John Doe");
+    stmt.bind(2, 30);
+    stmt.bind(3, "john@example.com");
+    stmt.execute();
+    
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where<&Author::biography>("NULL", Operator::IS)  // WHERE biography IS NULL
+        .where<&Author::biography>(std::nullopt, Op::IS)  // WHERE biography IS NULL
         .select_all();
     
     ASSERT_EQ(authors.size(), 1);
+}
+
+// COMPLEX WHERE CONDITIONS
+// OR
+TEST_F(ORMTest, WhereClauseOrOperator) {
+    // Test: age = 25 OR age = 35 (Alice OR Bob)
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(field(&Author::age) == 25 or field(&Author::age) == 35)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 2);
+    std::set<std::string> names;
+    for (const auto& author : authors) {
+        names.insert(author.name);
+    }
+    EXPECT_TRUE(names.count("Alice Smith"));
+    EXPECT_TRUE(names.count("Bob Johnson"));
+}
+
+// AND
+TEST_F(ORMTest, WhereClauseAndOperator) {
+    // Test: age >= 30 AND rating >= 4.5 (Only Bob - Diana is 28, Charlie is 30 but rating 4.0)
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(field(&Author::age) >= 30 and field(&Author::rating) >= 4.5)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 1);
+    EXPECT_EQ(authors[0].name, "Bob Johnson");
+}
+
+TEST_F(ORMTest, WhereClauseComplexAndOr) {
+    // Test: (age = 25 OR age = 28) AND rating >= 4.5 (Alice AND Diana)
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where((field(&Author::age) == 25 or field(&Author::age) == 28) and field(&Author::rating) >= 4.5)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 2);
+    std::set<std::string> names;
+    for (const auto& author : authors) {
+        names.insert(author.name);
+    }
+    EXPECT_TRUE(names.count("Alice Smith"));
+    EXPECT_TRUE(names.count("Diana Prince"));
+}
+
+TEST_F(ORMTest, WhereClauseComplexOrAnd) {
+    // Test: age = 25 OR (age >= 30 AND rating = 5.0) (Alice OR Bob)
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(field(&Author::age) == 25 or (field(&Author::age) >= 30 and field(&Author::rating) == 5.0))
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 2);
+    std::set<std::string> names;
+    for (const auto& author : authors) {
+        names.insert(author.name);
+    }
+    EXPECT_TRUE(names.count("Alice Smith"));
+    EXPECT_TRUE(names.count("Bob Johnson"));
+}
+
+TEST_F(ORMTest, WhereClauseTripleAnd) {
+    // Test: age >= 25 AND age <= 30 AND rating >= 4.0 (Alice, Charlie, Diana)
+    // Alice: 25, 4.5; Charlie: 30, 4.0; Diana: 28, 5.5
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(field(&Author::age) >= 25 and field(&Author::age) <= 30 and field(&Author::rating) >= 4.0)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 3);
+    std::set<std::string> names;
+    for (const auto& author : authors) {
+        names.insert(author.name);
+    }
+    EXPECT_TRUE(names.count("Alice Smith"));
+    EXPECT_TRUE(names.count("Charlie Brown"));
+    EXPECT_TRUE(names.count("Diana Prince"));
+}
+
+TEST_F(ORMTest, WhereClauseTripleOr) {
+    // Test: age = 25 OR age = 30 OR age = 35 (Alice, Charlie, Bob)
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(field(&Author::age) == 25 or field(&Author::age) == 30 or field(&Author::age) == 35)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 3);
+    std::set<std::string> names;
+    for (const auto& author : authors) {
+        names.insert(author.name);
+    }
+    EXPECT_TRUE(names.count("Alice Smith"));
+    EXPECT_TRUE(names.count("Charlie Brown"));
+    EXPECT_TRUE(names.count("Bob Johnson"));
+}
+
+TEST_F(ORMTest, WhereClauseNestedComplexGrouping) {
+    // Test: (age = 25 OR age = 35) AND (rating >= 4.5 OR score >= 90.0)
+    // Should match: Alice (25, 4.5) and Bob (35, 5.0, 90.0)
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where((field(&Author::age) == 25 or field(&Author::age) == 35) and 
+               (field(&Author::rating) >= 4.5 or field(&Author::score) >= 90.0))
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 2);
+    std::set<std::string> names;
+    for (const auto& author : authors) {
+        names.insert(author.name);
+    }
+    EXPECT_TRUE(names.count("Alice Smith"));
+    EXPECT_TRUE(names.count("Bob Johnson"));
+}
+
+TEST_F(ORMTest, WhereClauseComplexNestedConditions) {
+    // Test: ((age < 30 AND rating > 4.0) OR (age >= 30 AND score >= 85.0)) AND is_active = true
+    // Should match: Alice (25, 4.5, active), Bob (35, 90.0, active), Diana (28, 5.5, 95.0, active)
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(((field(&Author::age) < 30 and field(&Author::rating) > 4.0) or 
+                (field(&Author::age) >= 30 and field(&Author::score) >= 85.0)) and field(&Author::is_active) == true)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 3);
+    std::set<std::string> names;
+    for (const auto& author : authors) {
+        names.insert(author.name);
+    }
+    EXPECT_TRUE(names.count("Alice Smith"));
+    EXPECT_TRUE(names.count("Bob Johnson"));
+    EXPECT_TRUE(names.count("Diana Prince"));
+}
+
+TEST_F(ORMTest, WhereClauseMixedDataTypes) {
+    // Test with different data types: string, int, double, bool
+    // Test: name LIKE 'Alice%' OR (age > 30 AND rating >= 4.0 AND is_active = true)
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(field(&Author::name).like("Alice%") or 
+               (field(&Author::age) > 30 and field(&Author::rating) >= 4.0 and field(&Author::is_active) == true))
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 2);
+    std::set<std::string> names;
+    for (const auto& author : authors) {
+        names.insert(author.name);
+    }
+    EXPECT_TRUE(names.count("Alice Smith"));
+    EXPECT_TRUE(names.count("Bob Johnson"));
+}
+
+TEST_F(ORMTest, WhereClauseGroupMethod) {
+    // Test using the group() method for explicit grouping
+    // Test: (age = 25 OR age = 28) AND rating >= 4.5
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where((field(&Author::age) == 25 or field(&Author::age) == 28) and field(&Author::rating) >= 4.5)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 2);
+    std::set<std::string> names;
+    for (const auto& author : authors) {
+        names.insert(author.name);
+    }
+    EXPECT_TRUE(names.count("Alice Smith"));
+    EXPECT_TRUE(names.count("Diana Prince"));
+}
+
+TEST_F(ORMTest, WhereClauseStringOperations) {
+    // Test string operations with complex conditions
+    // Test: (name LIKE '%Brown' OR email LIKE '%alice%') AND age >= 25
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where((field(&Author::name).like("%Brown") or field(&Author::email).like("%alice%")) and field(&Author::age) >= 25)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 2);
+    std::set<std::string> names;
+    for (const auto& author : authors) {
+        names.insert(author.name);
+    }
+    EXPECT_TRUE(names.count("Alice Smith"));
+    EXPECT_TRUE(names.count("Charlie Brown"));
+}
+
+TEST_F(ORMTest, WhereClauseFloatComparisons) {
+    // Test float/double comparisons with complex logic
+    // Test: (score >= 85.0 AND score <= 90.0) OR rating > 5.0
+    // Should match: Alice (85.5), Bob (90.0), Diana (95.0, 5.5)
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where((field(&Author::score) >= 85.0 and field(&Author::score) <= 90.0) or field(&Author::rating) > 5.0)
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 3);
+    std::set<std::string> names;
+    for (const auto& author : authors) {
+        names.insert(author.name);
+    }
+    EXPECT_TRUE(names.count("Alice Smith"));
+    EXPECT_TRUE(names.count("Bob Johnson"));
+    EXPECT_TRUE(names.count("Diana Prince"));
+}
+
+TEST_F(ORMTest, WhereClauseNotEqualsOperator) {
+    // Test NOT_EQUALS with complex conditions
+    // Test: age != 30 AND (rating >= 4.5 OR score >= 90.0)
+    // Should match: Alice (25, 4.5), Bob (35, 5.0, 90.0), Diana (28, 5.5, 95.0)
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(field(&Author::age) != 30 and (field(&Author::rating) >= 4.5 or field(&Author::score) >= 90.0))
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 3);
+    std::set<std::string> names;
+    for (const auto& author : authors) {
+        names.insert(author.name);
+    }
+    EXPECT_TRUE(names.count("Alice Smith"));
+    EXPECT_TRUE(names.count("Bob Johnson"));
+    EXPECT_TRUE(names.count("Diana Prince"));
+}
+
+TEST_F(ORMTest, WhereClauseComplexChaining) {
+    // Test complex chaining of multiple conditions
+    // Test: (age >= 25 AND age <= 30) OR (rating >= 5.0 AND score >= 90.0) OR name LIKE '%Prince'
+    // Should match: Alice (25), Charlie (30), Diana (28), Bob (5.0, 90.0), Diana (name ends with Prince)
+    // Note: Diana matches multiple conditions
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where((field(&Author::age) >= 25 and field(&Author::age) <= 30) or 
+               (field(&Author::rating) >= 5.0 and field(&Author::score) >= 90.0) or 
+               field(&Author::name).like("%Prince"))
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 4); // All authors should match
+    std::set<std::string> names;
+    for (const auto& author : authors) {
+        names.insert(author.name);
+    }
+    EXPECT_TRUE(names.count("Alice Smith"));
+    EXPECT_TRUE(names.count("Bob Johnson"));
+    EXPECT_TRUE(names.count("Charlie Brown"));
+    EXPECT_TRUE(names.count("Diana Prince"));
+}
+
+TEST_F(ORMTest, WhereClauseBooleanLogic) {
+    // Test boolean field with complex conditions
+    // Test: is_active = true AND ((age < 30 AND rating > 4.0) OR score >= 95.0)
+    // Should match: Alice (active, 25, 4.5), Diana (active, 28, 5.5, 95.0)
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(field(&Author::is_active) == true and 
+               ((field(&Author::age) < 30 and field(&Author::rating) > 4.0) or 
+                field(&Author::score) >= 95.0))
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 2);
+    std::set<std::string> names;
+    for (const auto& author : authors) {
+        names.insert(author.name);
+    }
+    EXPECT_TRUE(names.count("Alice Smith"));
+    EXPECT_TRUE(names.count("Diana Prince"));
+}
+
+TEST_F(ORMTest, WhereClauseEmptyResult) {
+    // Test condition that should return no results
+    // Test: age > 100 OR (rating < 0 AND is_active = false)
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .where(field(&Author::age) > 100 or 
+               (field(&Author::rating) < 0 and field(&Author::is_active) == false))
+        .select_all();
+    
+    ASSERT_EQ(authors.size(), 0);
+}
+
+// Only
+TEST_F(ORMTest, SelectOnlySpecificFields) {
+    // Test selecting only specific fields from the model using NTTP
+    const auto& query = QuerySet<Author>(conn)
+        .only<&Author::name, &Author::age, &Author::email>();
+    
+    // Execute the query
+    std::vector<Author> authors = query.select_all();
+    
+    // Verify results
+    ASSERT_EQ(authors.size(), 4); // Should return all 4 authors
+    
+    // Check that we have the expected fields populated
+    for (const auto& author : authors) {
+        // These fields should be populated
+        EXPECT_FALSE(author.name.empty());
+        EXPECT_GT(author.age, 0);
+        EXPECT_FALSE(author.email.empty());
+        
+        // These fields should have default values since they weren't selected
+        // Note: This is a design choice - some ORMs might leave these fields uninitialized
+        EXPECT_EQ(author.id, 0); // Default value for int
+        EXPECT_EQ(author.rating, 0.0); // Default value for double
+        EXPECT_EQ(author.score, 0.0f); // Default value for float
+        EXPECT_TRUE(author.middleName.empty()); // Default value for string
+        EXPECT_TRUE(author.biography.empty()); // Default value for string
+    }
+}
+
+TEST_F(ORMTest, SelectOnlyWithAlias) {
+    // Test selecting fields with aliases
+    const auto& query = QuerySet<Author>(conn)
+        .only<&Author::name>("author_name")
+        .only<&Author::age>("author_age");
+    
+    // Execute the query
+    std::vector<Author> authors = query.select_all();
+    
+    // Verify results
+    ASSERT_EQ(authors.size(), 4); // Should return all 4 authors
+    
+    // Check that we have the expected fields populated
+    for (const auto& author : authors) {
+        // These fields should be populated
+        EXPECT_FALSE(author.name.empty());
+        EXPECT_GT(author.age, 0);
+        
+        // These fields should have default values
+        EXPECT_TRUE(author.email.empty());
+        EXPECT_EQ(author.id, 0);
+    }
+}
+
+TEST_F(ORMTest, SelectTuple) {
+    // Test the select_tuple method to get only specific fields as tuples
+    auto nameAndAges = QuerySet<Author>(conn)
+        .only<&Author::name, &Author::age>()
+        .select_tuple<std::string, int>();
+    
+    // Verify results
+    ASSERT_EQ(nameAndAges.size(), 4); // Should return all 4 authors
+    
+    // Check each tuple for expected values
+    std::set<std::string> names;
+    std::set<int> ages;
+    
+    for (const auto& [name, age] : nameAndAges) {
+        names.insert(name);
+        ages.insert(age);
+        
+        // Basic validation
+        EXPECT_FALSE(name.empty());
+        EXPECT_GT(age, 0);
+    }
+    
+    // Verify we got all the expected names
+    EXPECT_EQ(names.size(), 4);
+    EXPECT_TRUE(names.count("Alice Smith"));
+    EXPECT_TRUE(names.count("Bob Johnson"));
+    EXPECT_TRUE(names.count("Charlie Brown"));
+    EXPECT_TRUE(names.count("Diana Prince"));
+    
+    // Verify we got all the expected ages
+    EXPECT_EQ(ages.count(25), 1);
+    EXPECT_EQ(ages.count(35), 1);
+    EXPECT_EQ(ages.count(30), 1);
+    EXPECT_EQ(ages.count(28), 1);
+}
+
+TEST_F(ORMTest, SelectProjection) {
+    // Test the select_projection method for strongly-typed partial objects
+    auto projections = QuerySet<Author>(conn)
+        .only<&Author::name, &Author::age, &Author::email>()
+        .select_projection<std::string, int, std::string>();
+    
+    // Verify results
+    ASSERT_EQ(projections.size(), 4); // Should return all 4 authors
+    
+    // Check access pattern using get<index>()
+    for (const auto& proj : projections) {
+        std::string name = proj.get<0>();
+        int age = proj.get<1>();
+        std::string email = proj.get<2>();
+        
+        // Basic validation
+        EXPECT_FALSE(name.empty());
+        EXPECT_GT(age, 0);
+        EXPECT_FALSE(email.empty());
+        EXPECT_TRUE(email.find('@') != std::string::npos);
+    }
+}
+
+TEST_F(ORMTest, SelectValues) {
+    // Test the select_values method for dictionary-like access
+    auto values = QuerySet<Author>(conn)
+        .only<&Author::name, &Author::age, &Author::is_active>()
+        .select_values();
+    
+    // Verify results
+    ASSERT_EQ(values.size(), 4); // Should return all 4 authors
+    
+    // Check each map for expected values and types
+    for (const auto& row : values) {
+        // Check that all expected keys exist
+        ASSERT_TRUE(row.count("name"));
+        ASSERT_TRUE(row.count("age"));
+        ASSERT_TRUE(row.count("is_active"));
+        
+        // Check types and values
+        EXPECT_TRUE(std::holds_alternative<std::string>(row.at("name")));
+        EXPECT_FALSE(std::get<std::string>(row.at("name")).empty());
+        
+        EXPECT_TRUE(std::holds_alternative<int>(row.at("age")));
+        EXPECT_GT(std::get<int>(row.at("age")), 0);
+        
+        EXPECT_TRUE(std::holds_alternative<bool>(row.at("is_active")));
+        EXPECT_TRUE(std::get<bool>(row.at("is_active")));
+    }
 }

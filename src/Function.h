@@ -1,5 +1,8 @@
 #pragma once
 
+#include "BaseClass.h"
+#include <string>
+
 namespace storm {
 
     class Function final : public BaseClass {
