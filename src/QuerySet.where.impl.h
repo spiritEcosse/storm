@@ -42,121 +42,197 @@ namespace storm {
         return result;
     }
 
-    // WHERE methods for QuerySet
+    // Method 1: Accept Storm Where objects directly (most flexible)
     template<typename T>
-    template<auto Field>
-    QuerySet<T>& QuerySet<T>::where(typename member_pointer_traits<decltype(Field)>::type value, Op op) {
-        using ClassType = typename member_pointer_class<decltype(Field)>::type;
-        std::string fieldName = getFieldNameFromMemberPtr<Field>();
-        std::string tableName = this->template get_table_name<ClassType>();
-        auto formattedField = utils::formatFieldName(tableName, fieldName);
-        
-        auto field_obj = WhereField(formattedField);
-        auto condition = this->create_condition(field_obj, std::move(value), op);
-        
-        if (this->_whereExpression.has_value()) {
-            this->_whereExpression = this->_whereExpression.value() && condition;
+    QuerySet<T>& QuerySet<T>::where(const storm::Where& where_clause) {
+        if (this->_whereExpression) {
+            // Combine with existing WHERE using AND
+            this->_whereExpression = *this->_whereExpression && where_clause;
         } else {
-            this->_whereExpression = condition;
+            this->_whereExpression = where_clause;
         }
-        
         return *this;
     }
 
     template<typename T>
-    template<auto Field, typename Value>
-    QuerySet<T>& QuerySet<T>::where_equals(Value&& value) {
-        return this->template where<Field>(std::forward<Value>(value), Op::EQ);
+    QuerySet<T>& QuerySet<T>::where(storm::Where&& where_clause) {
+        if (this->_whereExpression) {
+            this->_whereExpression = *this->_whereExpression && where_clause;
+        } else {
+            this->_whereExpression = std::move(where_clause);
+        }
+        return *this;
+    }
+
+    // Method 2: Convenience method using Storm field helper
+    template<typename T>
+    template<typename ClassType, typename FieldType, typename Value>
+    QuerySet<T>& QuerySet<T>::where(FieldType ClassType::* memberPtr, Value&& value, storm::Op op) {
+        auto field_obj = storm::field(memberPtr, get_field_name<ClassType>(memberPtr));
+        storm::Where condition = create_condition(field_obj, std::forward<Value>(value), op);
+        return where(std::move(condition));
+    }
+
+    // Special methods for complex operators    
+    template<typename T>
+    template<typename ClassType, typename FieldType, typename Container>
+    QuerySet<T>& QuerySet<T>::where_in(FieldType ClassType::* memberPtr, const Container& values) {
+        auto field_obj = storm::field(memberPtr, get_field_name<ClassType>(memberPtr));
+        // For IN operator, we need to create a special condition
+        storm::Where condition = create_in_condition(field_obj, values);
+        return where(std::move(condition));
+    }
+
+    // Where between
+    template<typename T>
+    template<typename ClassType, typename FieldType, typename T1, typename T2>
+    QuerySet<T>& QuerySet<T>::where_between(FieldType ClassType::* memberPtr, T1&& value1, T2&& value2) {
+        auto field_obj = storm::field(memberPtr, get_field_name<ClassType>(memberPtr));
+        storm::Where condition = field_obj.between(std::forward<T1>(value1), std::forward<T2>(value2));
+        return where(std::move(condition));
     }
 
     template<typename T>
-    template<auto Field, typename Value>
-    QuerySet<T>& QuerySet<T>::where_not_equals(Value&& value) {
-        return this->template where<Field>(std::forward<Value>(value), Op::NE);
+    template<typename ClassType, typename FieldType>
+    QuerySet<T>& QuerySet<T>::where_null(FieldType ClassType::* memberPtr) {
+        auto field_obj = storm::field(memberPtr, get_field_name<ClassType>(memberPtr));
+        storm::Where condition = field_obj.is_null();
+        return where(std::move(condition));
     }
 
     template<typename T>
-    template<auto Field, typename Value>
-    QuerySet<T>& QuerySet<T>::where_greater_than(Value&& value) {
-        return this->template where<Field>(std::forward<Value>(value), Op::GT);
+    template<typename ClassType, typename FieldType>
+    QuerySet<T>& QuerySet<T>::where_not_null(FieldType ClassType::* memberPtr) {
+        auto field_obj = storm::field(memberPtr, get_field_name<ClassType>(memberPtr));
+        storm::Where condition = field_obj != std::nullopt;
+        return where(std::move(condition));
     }
 
     template<typename T>
-    template<auto Field, typename Value>
-    QuerySet<T>& QuerySet<T>::where_less_than(Value&& value) {
-        return this->template where<Field>(std::forward<Value>(value), Op::LT);
+    template<typename ClassType, typename FieldType, typename Value>
+    QuerySet<T>& QuerySet<T>::where_like(FieldType ClassType::* memberPtr, Value&& pattern) {
+        auto field_obj = storm::field(memberPtr, get_field_name<ClassType>(memberPtr));
+        storm::Where condition = field_obj.like(std::forward<Value>(pattern));
+        return where(std::move(condition));
     }
 
+    // Method 3: NTTP version (compile-time field specification)
     template<typename T>
-    template<auto Field, typename Value>
-    QuerySet<T>& QuerySet<T>::where_greater_or_equals(Value&& value) {
-        return this->template where<Field>(std::forward<Value>(value), Op::GE);
+    template<auto MemberPtr, typename Value>
+    QuerySet<T>& QuerySet<T>::where(Value&& value, storm::Op op) {
+        // Simpler approach - directly extract class type from member pointer
+        using MemberPtrType = decltype(MemberPtr);
+        using ClassType = typename member_pointer_traits<MemberPtrType>::class_type;
+        
+        auto field_obj = storm::field(MemberPtr, get_field_name<ClassType>(MemberPtr));
+        storm::Where condition = create_condition(field_obj, std::forward<Value>(value), op);
+        return where(std::move(condition));
     }
 
+    // NTTP versions for complex operators
     template<typename T>
-    template<auto Field, typename Value>
-    QuerySet<T>& QuerySet<T>::where_less_or_equals(Value&& value) {
-        return this->template where<Field>(std::forward<Value>(value), Op::LE);
-    }
-
-    template<typename T>
-    template<auto Field, typename Value>
-    QuerySet<T>& QuerySet<T>::where_like(Value&& value) {
-        return this->template where<Field>(std::forward<Value>(value), Op::LIKE);
-    }
-
-    template<typename T>
-    template<auto Field, typename Value>
-    QuerySet<T>& QuerySet<T>::where_is(Value&& value) {
-        return this->template where<Field>(std::forward<Value>(value), Op::IS);
-    }
-
-    template<typename T>
-    template<auto Field, typename Container>
+    template<auto MemberPtr, typename Container>
     QuerySet<T>& QuerySet<T>::where_in(const Container& values) {
-        using ClassType = typename member_pointer_class<decltype(Field)>::type;
-        std::string fieldName = getFieldNameFromMemberPtr<Field>();
-        std::string tableName = this->template get_table_name<ClassType>();
-        auto formattedField = utils::formatFieldName(tableName, fieldName);
-        
-        auto field_obj = WhereField(formattedField);
-        auto condition = this->create_in_condition(field_obj, values);
-        
-        if (this->_whereExpression.has_value()) {
-            this->_whereExpression = this->_whereExpression.value() && condition;
-        } else {
-            this->_whereExpression = condition;
-        }
-        
-        return *this;
-    }
-
-    // Direct WHERE methods
-    template<typename T>
-    QuerySet<T>& QuerySet<T>::where(const storm::Where& condition) {
-        if (this->_whereExpression.has_value()) {
-            this->_whereExpression = this->_whereExpression.value() && condition;
-        } else {
-            this->_whereExpression = condition;
-        }
-        return *this;
+        using ClassType = typename std::remove_reference_t<decltype(*std::declval<std::remove_pointer_t<decltype(std::declval<decltype(MemberPtr)>())>>())>;
+        auto field_obj = storm::field(MemberPtr, get_field_name<ClassType>(MemberPtr));
+        storm::Where condition = create_in_condition(field_obj, values);
+        return where(std::move(condition));
     }
 
     template<typename T>
-    QuerySet<T>& QuerySet<T>::where_raw(const std::string& raw_condition, const std::vector<std::any>& parameters) {
-        storm::Where condition(std::make_unique<storm::RawCondition>(raw_condition, parameters));
-        
-        if (this->_whereExpression.has_value()) {
-            this->_whereExpression = this->_whereExpression.value() && condition;
+    template<auto MemberPtr, typename T1, typename T2>
+    QuerySet<T>& QuerySet<T>::where_between(T1&& value1, T2&& value2) {
+        using ClassType = typename std::remove_reference_t<decltype(*std::declval<std::remove_pointer_t<decltype(std::declval<decltype(MemberPtr)>())>>())>;
+        auto field_obj = storm::field(MemberPtr, get_field_name<ClassType>(MemberPtr));
+        storm::Where condition = field_obj.between(std::forward<T1>(value1), std::forward<T2>(value2));
+        return where(std::move(condition));
+    }
+
+    template<typename T>
+    template<auto MemberPtr>
+    QuerySet<T>& QuerySet<T>::where_null() {
+        using ClassType = typename std::remove_reference_t<decltype(*std::declval<std::remove_pointer_t<decltype(std::declval<decltype(MemberPtr)>())>>())>;
+        auto field_obj = storm::field(MemberPtr, get_field_name<ClassType>(MemberPtr));
+        storm::Where condition = field_obj.is_null();
+        return where(std::move(condition));
+    }
+
+    template<typename T>
+    template<auto MemberPtr, typename Value>
+    QuerySet<T>& QuerySet<T>::where_like(Value&& pattern) {
+        using ClassType = typename std::remove_reference_t<decltype(*std::declval<std::remove_pointer_t<decltype(std::declval<decltype(MemberPtr)>())>>())>;
+        auto field_obj = storm::field(MemberPtr, get_field_name<ClassType>(MemberPtr));
+        storm::Where condition = field_obj.like(std::forward<Value>(pattern));
+        return where(std::move(condition));
+    }
+
+    // Logical combination methods for fluent interface
+    template<typename T>
+    QuerySet<T>& QuerySet<T>::where_and(const storm::Where& condition) {
+        return where(condition); // Uses existing AND logic
+    }
+
+    template<typename T>
+    QuerySet<T>& QuerySet<T>::where_or(const storm::Where& condition) {
+        if (this->_whereExpression) {
+            this->_whereExpression = *this->_whereExpression || condition;
         } else {
             this->_whereExpression = condition;
         }
-        
         return *this;
     }
     
+    // TODO implement
+    // Case-insensitive LIKE (SQLite specific)
+    // template<typename ClassType, typename FieldType, typename Value>
+    // QuerySet& where_ilike(FieldType ClassType::* memberPtr, Value&& pattern) {
+    //     // In SQLite, you might use UPPER() functions or COLLATE NOCASE
+    //     auto field_name = get_field_name<ClassType>(memberPtr);
+    //     auto custom_condition = /* create custom condition with UPPER() */;
+    //     return where(custom_condition);
+    // }
+
+    // Date range queries (if you have date fields)
     template<typename T>
-    bool QuerySet<T>::has_where() const {
+    template<typename ClassType, typename FieldType>
+    QuerySet<T>& QuerySet<T>::where_date_range(FieldType ClassType::* memberPtr, 
+                            const std::string& start_date, 
+                            const std::string& end_date) {
+        return where_between(memberPtr, start_date, end_date);
+    }
+
+    template<typename T>
+    [[nodiscard]] storm::QueryResult QuerySet<T>::get_where_query() const {
+        if (!this->_whereExpression) {
+            // Return empty query result
+            auto binder = std::make_shared<storm::ParameterBinder>();
+            return storm::QueryResult("", binder);
+        }
+        
+        auto query_result = this->_whereExpression->to_query();
+        
+        // Add WHERE prefix
+        if (!query_result.sql.empty()) {
+            query_result.sql = " WHERE " + query_result.sql;
+            
+            if (this->_doAndCheck) {
+                query_result.sql = addExtraQuotes(query_result.sql);
+            }
+        }
+        
+        return query_result;
+    }
+
+    // Helper method to clear WHERE conditions
+    template<typename T>
+    QuerySet<T>& QuerySet<T>::clear_where() {
+        this->_whereExpression.reset();
+        return *this;
+    }
+
+    // Check if WHERE conditions exist
+    template<typename T>
+    bool QuerySet<T>::has_where_conditions() const {
         return this->_whereExpression.has_value();
     }
 

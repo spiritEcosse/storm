@@ -1005,41 +1005,15 @@ namespace storm {
         template<typename ClassType, typename FieldType>
         QuerySet& where_date_range(FieldType ClassType::* memberPtr, 
                                 const std::string& start_date, 
-                                const std::string& end_date) {
-            return where_between(memberPtr, start_date, end_date);
-        }
+                                const std::string& end_date);
 
-        [[nodiscard]] storm::QueryResult get_where_query() const {
-            if (!this->_whereExpression) {
-                // Return empty query result
-                auto binder = std::make_shared<storm::ParameterBinder>();
-                return storm::QueryResult("", binder);
-            }
-            
-            auto query_result = this->_whereExpression->to_query();
-            
-            // Add WHERE prefix
-            if (!query_result.sql.empty()) {
-                query_result.sql = " WHERE " + query_result.sql;
-                
-                if (this->_doAndCheck) {
-                    query_result.sql = addExtraQuotes(query_result.sql);
-                }
-            }
-            
-            return query_result;
-        }
+        [[nodiscard]] storm::QueryResult get_where_query() const;
 
         // Helper method to clear WHERE conditions
-        QuerySet& clear_where() {
-            this->_whereExpression.reset();
-            return *this;
-        }
+        QuerySet& clear_where();
 
         // Check if WHERE conditions exist
-        bool has_where_conditions() const {
-            return this->_whereExpression.has_value();
-        }
+        bool has_where_conditions() const;
 
         // Where conditions
         template<typename FieldType, typename Value>
