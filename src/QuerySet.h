@@ -39,23 +39,6 @@ namespace storm {
         return result;
     }
 
-    namespace detail {
-        template<typename T>
-        std::string getFullFieldName(const T &obj) {
-            return obj.getFullFieldName();
-        }
-
-        template<>
-        inline std::string getFullFieldName(const std::string &obj) {
-            return obj;
-        }
-
-        template<>
-        inline std::string getFullFieldName(const Function &obj) {
-            return obj.getFullFieldName();
-        }
-    }
-
     struct JoinInfo {
         enum class JoinType { INNER, LEFT, RIGHT };
 
@@ -105,16 +88,61 @@ namespace storm {
         virtual std::string getAlias() const = 0;
     };
 
-    struct FieldAlias final : BaseClass {
-        std::string tableName;
-        std::string fieldName;
+    // Base class for type erasure
+    struct FieldAliasBase {
         std::string alias;
-
-        explicit FieldAlias(const std::string& table, const std::string& field, const std::string_view a = "") 
-            : BaseClass(), tableName(table), fieldName(field), alias(a) {}
-            
-        [[nodiscard]] std::string getFullFieldName() const {
+        
+        explicit FieldAliasBase(std::string alias = "") 
+            : alias(std::move(alias)) {}
+        
+        virtual ~FieldAliasBase() = default;
+        virtual std::string getFullFieldName() const = 0;
+        virtual std::string getFieldName() const = 0;
+        virtual std::string getTableName() const = 0;
+        
+        // Type checking methods
+        virtual bool isStringField() const = 0;
+        virtual bool isBoolField() const = 0;
+        virtual bool isNumericField() const = 0;
+    };
+    
+    template<auto MemberPtr>
+    struct FieldAlias : public FieldAliasBase {
+        // Constructor for string literals and std::string
+        explicit FieldAlias(std::string alias = "") 
+            : FieldAliasBase(std::move(alias)) {}
+        
+        ~FieldAlias() = default;
+        
+        std::string getFullFieldName() const override {
+            using ClassType = typename member_pointer_class<decltype(MemberPtr)>::type;
+            const std::string fieldName = getFieldNameFromMemberPtr<MemberPtr>();
+            const std::string tableName = Reflect<ClassType>::get_struct_name();
             return utils::formatFieldName(tableName, fieldName);
+        }
+        
+        std::string getFieldName() const override {
+            return getFieldNameFromMemberPtr<MemberPtr>();
+        }
+        
+        std::string getTableName() const override {
+            using ClassType = typename member_pointer_class<decltype(MemberPtr)>::type;
+            return Reflect<ClassType>::get_struct_name();
+        }
+        
+        bool isStringField() const override {
+            using FieldType = typename member_pointer_traits<decltype(MemberPtr)>::type;
+            return std::is_same_v<FieldType, std::string>;
+        }
+        
+        bool isBoolField() const override {
+            using FieldType = typename member_pointer_traits<decltype(MemberPtr)>::type;
+            return std::is_same_v<FieldType, bool>;
+        }
+        
+        bool isNumericField() const override {
+            using FieldType = typename member_pointer_traits<decltype(MemberPtr)>::type;
+            return std::is_arithmetic_v<FieldType> && !std::is_same_v<FieldType, bool>;
         }
     };
 
@@ -132,7 +160,7 @@ namespace storm {
         std::vector<std::pair<std::function<std::string()>, bool>> orderFields;
         DistinctInfo distinctInfo;
         std::string _jsonFields;
-        std::vector<FieldAlias> onlyFields;
+        std::vector<std::unique_ptr<FieldAliasBase>> onlyFields;
         std::vector<Function> functionsSet;
         std::vector<std::unique_ptr<BaseQuerySetVirtual>> otherQueries;
         std::vector<std::string> groupByFieldNames; // For compile-time field names
@@ -251,15 +279,19 @@ namespace storm {
                 
                 return fmt::format("{}", fmt::join(allFields, ", "));
             }
-            
+
             // Use only the specified fields
-            return fmt::format("{}", fmt::join(onlyFields | std::views::transform([](const auto &fieldAlias) {
-                               if(fieldAlias.alias.empty()) {
-                                   return fieldAlias.getFullFieldName();
-                               }
-                               return fmt::format("{} AS {}", fieldAlias.getFullFieldName(), fieldAlias.alias);
-                           }),
-                           ", "));
+            std::vector<std::string> fieldStrings;
+            fieldStrings.reserve(onlyFields.size());
+
+            std::transform(onlyFields.begin(), onlyFields.end(), std::back_inserter(fieldStrings),
+                [](const auto& fieldAlias) -> std::string {
+                    return fieldAlias->alias.empty() ?
+                        fieldAlias->getFullFieldName() :
+                        fmt::format("{} AS {}", fieldAlias->getFullFieldName(), fieldAlias->alias);
+                });
+            
+            return fmt::format("{}", fmt::join(fieldStrings, ", "));
         }
 
         // NTTP version for distinct
@@ -702,45 +734,7 @@ namespace storm {
                 return stmt.execute();
             }
         }
-    
-        // Where conditions
-        template<typename FieldType, typename Value>
-        storm::Where create_condition(const FieldType& field_obj, Value&& value, storm::Op op) const {
-            switch(op) {
-                case storm::Op::EQ: return field_obj == std::forward<Value>(value);
-                case storm::Op::NE: return field_obj != std::forward<Value>(value);
-                case storm::Op::GT: return field_obj > std::forward<Value>(value);
-                case storm::Op::LT: return field_obj < std::forward<Value>(value);
-                case storm::Op::GE: return field_obj >= std::forward<Value>(value);
-                case storm::Op::LE: return field_obj <= std::forward<Value>(value);
-                case storm::Op::LIKE: return field_obj.like(std::forward<Value>(value));
-                case storm::Op::IS: return field_obj.is(std::forward<Value>(value));
-                default: return field_obj == std::forward<Value>(value);
-            }
-        }
-        
-        // Helper to create IN conditions
-        template<typename FieldType, typename Container>
-        storm::Where create_in_condition(const FieldType& field_obj, const Container& values) const {
-            if (values.empty()) {
-                // Return a condition that's always false for empty IN clause
-                return storm::Where(std::make_unique<storm::Condition>("1", storm::Op::EQ, 0));
-            }
             
-            // For now, we'll create OR conditions for each value
-            // This is a limitation of the current Storm implementation
-            // In a real implementation, you'd want proper IN support
-            auto it = values.begin();
-            storm::Where result = field_obj == *it;
-            ++it;
-            
-            for (; it != values.end(); ++it) {
-                result = result || (field_obj == *it);
-            }
-            
-            return result;
-        }
-        
         // Field name mapping using your reflection system
         template<typename ClassType, typename FieldType>
         std::string get_field_name(FieldType ClassType::* memberPtr) const {
@@ -754,7 +748,6 @@ namespace storm {
             return query;
         }
     
-    public:
         // Constructor
         explicit QuerySet(std::shared_ptr<Connection> conn, const std::string& alias = "") 
             : BaseQuerySet<T>(alias, false, true), conn(std::move(conn)) {
@@ -952,134 +945,56 @@ namespace storm {
         // =============================
     
         // Method 1: Accept Storm Where objects directly (most flexible)
-        QuerySet& where(const storm::Where& where_clause) {
-            if (this->_whereExpression) {
-                // Combine with existing WHERE using AND
-                this->_whereExpression = *this->_whereExpression && where_clause;
-            } else {
-                this->_whereExpression = where_clause;
-            }
-            return *this;
-        }
-
-        QuerySet& where(storm::Where&& where_clause) {
-            if (this->_whereExpression) {
-                this->_whereExpression = *this->_whereExpression && where_clause;
-            } else {
-                this->_whereExpression = std::move(where_clause);
-            }
-            return *this;
-        }
+        QuerySet& where(const storm::Where& where_clause);
+        QuerySet& where(storm::Where&& where_clause);
 
         // Method 2: Convenience method using Storm field helper
         template<typename ClassType, typename FieldType, typename Value>
-        QuerySet& where(FieldType ClassType::* memberPtr, Value&& value, storm::Op op = storm::Op::EQ) {
-            auto field_obj = storm::field(memberPtr, get_field_name<ClassType>(memberPtr));
-            storm::Where condition = create_condition(field_obj, std::forward<Value>(value), op);
-            return where(std::move(condition));
-        }
+        QuerySet& where(FieldType ClassType::* memberPtr, Value&& value, storm::Op op = storm::Op::EQ);
 
         // Special methods for complex operators
         template<typename ClassType, typename FieldType, typename Container>
-        QuerySet& where_in(FieldType ClassType::* memberPtr, const Container& values) {
-            auto field_obj = storm::field(memberPtr, get_field_name<ClassType>(memberPtr));
-            // For IN operator, we need to create a special condition
-            storm::Where condition = create_in_condition(field_obj, values);
-            return where(std::move(condition));
-        }
+        QuerySet& where_in(FieldType ClassType::* memberPtr, const Container& values);
 
         // Where between
         template<typename ClassType, typename FieldType, typename T1, typename T2>
-        QuerySet& where_between(FieldType ClassType::* memberPtr, T1&& value1, T2&& value2) {
-            auto field_obj = storm::field(memberPtr, get_field_name<ClassType>(memberPtr));
-            storm::Where condition = field_obj.between(std::forward<T1>(value1), std::forward<T2>(value2));
-            return where(std::move(condition));
-        }
+        QuerySet& where_between(FieldType ClassType::* memberPtr, T1&& value1, T2&& value2);
 
         template<typename ClassType, typename FieldType>
-        QuerySet& where_null(FieldType ClassType::* memberPtr) {
-            auto field_obj = storm::field(memberPtr, get_field_name<ClassType>(memberPtr));
-            storm::Where condition = field_obj.is_null();
-            return where(std::move(condition));
-        }
+        QuerySet& where_null(FieldType ClassType::* memberPtr);
 
         template<typename ClassType, typename FieldType>
-        QuerySet& where_not_null(FieldType ClassType::* memberPtr) {
-            auto field_obj = storm::field(memberPtr, get_field_name<ClassType>(memberPtr));
-            storm::Where condition = field_obj != std::nullopt;
-            return where(std::move(condition));
-        }
+        QuerySet& where_not_null(FieldType ClassType::* memberPtr);
 
         template<typename ClassType, typename FieldType, typename Value>
-        QuerySet& where_like(FieldType ClassType::* memberPtr, Value&& pattern) {
-            auto field_obj = storm::field(memberPtr, get_field_name<ClassType>(memberPtr));
-            storm::Where condition = field_obj.like(std::forward<Value>(pattern));
-            return where(std::move(condition));
-        }
+        QuerySet& where_like(FieldType ClassType::* memberPtr, Value&& pattern);
 
         // Method 3: NTTP version (compile-time field specification)
         template<auto MemberPtr, typename Value>
-        QuerySet& where(Value&& value, storm::Op op = storm::Op::EQ) {
-            // Simpler approach - directly extract class type from member pointer
-            using MemberPtrType = decltype(MemberPtr);
-            using ClassType = typename member_pointer_traits<MemberPtrType>::class_type;
-            
-            auto field_obj = storm::field(MemberPtr, get_field_name<ClassType>(MemberPtr));
-            storm::Where condition = create_condition(field_obj, std::forward<Value>(value), op);
-            return where(std::move(condition));
-        }
+        QuerySet& where(Value&& value, storm::Op op = storm::Op::EQ);
 
         // NTTP versions for complex operators
         template<auto MemberPtr, typename Container>
-        QuerySet& where_in(const Container& values) {
-            using ClassType = typename std::remove_reference_t<decltype(*std::declval<std::remove_pointer_t<decltype(std::declval<decltype(MemberPtr)>())>>())>;
-            auto field_obj = storm::field(MemberPtr, get_field_name<ClassType>(MemberPtr));
-            storm::Where condition = create_in_condition(field_obj, values);
-            return where(std::move(condition));
-        }
+        QuerySet& where_in(const Container& values);
 
         template<auto MemberPtr, typename T1, typename T2>
-        QuerySet& where_between(T1&& value1, T2&& value2) {
-            using ClassType = typename std::remove_reference_t<decltype(*std::declval<std::remove_pointer_t<decltype(std::declval<decltype(MemberPtr)>())>>())>;
-            auto field_obj = storm::field(MemberPtr, get_field_name<ClassType>(MemberPtr));
-            storm::Where condition = field_obj.between(std::forward<T1>(value1), std::forward<T2>(value2));
-            return where(std::move(condition));
-        }
+        QuerySet& where_between(T1&& value1, T2&& value2);
 
         template<auto MemberPtr>
-        QuerySet& where_null() {
-            using ClassType = typename std::remove_reference_t<decltype(*std::declval<std::remove_pointer_t<decltype(std::declval<decltype(MemberPtr)>())>>())>;
-            auto field_obj = storm::field(MemberPtr, get_field_name<ClassType>(MemberPtr));
-            storm::Where condition = field_obj.is_null();
-            return where(std::move(condition));
-        }
+        QuerySet& where_null();
 
         template<auto MemberPtr, typename Value>
-        QuerySet& where_like(Value&& pattern) {
-            using ClassType = typename std::remove_reference_t<decltype(*std::declval<std::remove_pointer_t<decltype(std::declval<decltype(MemberPtr)>())>>())>;
-            auto field_obj = storm::field(MemberPtr, get_field_name<ClassType>(MemberPtr));
-            storm::Where condition = field_obj.like(std::forward<Value>(pattern));
-            return where(std::move(condition));
-        }
+        QuerySet& where_like(Value&& pattern);
+
+        template<auto MemberPtr>
+        QuerySet& where_not_null();
 
         // Logical combination methods for fluent interface
-        QuerySet& where_and(const storm::Where& condition) {
-            return where(condition); // Uses existing AND logic
-        }
+        QuerySet& where_and(const storm::Where& condition);
+        QuerySet& where_or(const storm::Where& condition);
 
-        QuerySet& where_or(const storm::Where& condition) {
-            if (this->_whereExpression) {
-                this->_whereExpression = *this->_whereExpression || condition;
-            } else {
-                this->_whereExpression = condition;
-            }
-            return *this;
-        }
-        
-        // TODO implement
-        // Case-insensitive LIKE (SQLite specific)
-        // template<typename ClassType, typename FieldType, typename Value>
-        // QuerySet& where_ilike(FieldType ClassType::* memberPtr, Value&& pattern) {
+        // Support for raw SQL WHERE clauses
+        QuerySet& where_raw(const std::string& raw_condition, const std::vector<std::any>& parameters = {});
         //     // In SQLite, you might use UPPER() functions or COLLATE NOCASE
         //     auto field_name = get_field_name<ClassType>(memberPtr);
         //     auto custom_condition = /* create custom condition with UPPER() */;
@@ -1125,6 +1040,14 @@ namespace storm {
         bool has_where_conditions() const {
             return this->_whereExpression.has_value();
         }
+
+        // Where conditions
+        template<typename FieldType, typename Value>
+        storm::Where create_condition(const FieldType& field_obj, Value&& value, storm::Op op) const;
+        
+        // Helper to create IN conditions
+        template<typename FieldType, typename Container>
+        storm::Where create_in_condition(const FieldType& field_obj, const Container& values) const;
 
         // =============================
         // =============================
@@ -1207,23 +1130,20 @@ namespace storm {
         // ONLY
         // =============================
         // Modern compile-time version using NTTP
-        template<auto Field, auto... Rest>
+        template<auto... Fields>
         QuerySet& only() {
-            static_assert(std::is_member_pointer_v<decltype(Field)>, 
-                        "Field must be a member pointer");
+            static_assert((std::is_member_pointer_v<decltype(Fields)> && ...), 
+                        "All fields must be member pointers");
             
-            // Add current field to only fields list
-            using ClassType = typename member_pointer_class<decltype(Field)>::type;
-            std::string fieldName = getFieldNameFromMemberPtr<Field>();
-            std::string tableName = Reflect<ClassType>::get_struct_name();
+            // Reserve capacity
+            this->onlyFields.reserve(sizeof...(Fields));
             
-            // Create a FieldAlias with table name and field name
-            this->onlyFields.emplace_back(tableName, fieldName, "");
+            // Process each field
+            auto addField = [this]<auto Field>() {
+                this->onlyFields.push_back(std::make_unique<FieldAlias<Field>>());
+            };
             
-            // Recursively process remaining fields
-            if constexpr (sizeof...(Rest) > 0) {
-                this->only<Rest...>();
-            }
+            (addField.template operator()<Fields>(), ...);
             
             return *this;
         }
@@ -1240,7 +1160,7 @@ namespace storm {
             std::string tableName = Reflect<ClassType>::get_struct_name();
             
             // Create a FieldAlias with table name, field name, and alias
-            this->onlyFields.emplace_back(tableName, fieldName, alias);
+            this->onlyFields.push_back(std::make_unique<FieldAlias<Field>>(alias));
             
             return *this;
         }
@@ -1430,7 +1350,6 @@ namespace storm {
             
             // Get the where query result
             auto where_query_result = this->get_where_query();
-            
             auto sql = fmt::format("SELECT {} {} {} FROM \"{}\" {} {} {} {} {}", 
                     this->createDistinctClause(),
                     this->buildOnlyFields(),
@@ -1459,27 +1378,37 @@ namespace storm {
             fieldNames.reserve(this->onlyFields.size());
             
             for (const auto& fieldAlias : this->onlyFields) {
-                fieldNames.push_back(fieldAlias.alias.empty() ? 
-                                   fieldAlias.fieldName : 
-                                   fieldAlias.alias);
+                // Use just the field name without table qualifier when no alias is provided
+                fieldNames.push_back(fieldAlias->alias.empty() ? 
+                                    fieldAlias->getFieldName() : 
+                                    fieldAlias->alias);
             }
             
             for (const auto& row : all_rows) {
                 std::map<std::string, ValueVariant> rowDict;
                 
                 for (size_t i = 0; i < fieldNames.size(); ++i) {
-                    // Try to determine the type based on the available methods
-                    // Since we don't have explicit type information, we'll try to infer
-                    try {
-                        // First try to get as integer
-                        rowDict[fieldNames[i]] = row.get_int(i);
-                    } catch (...) {
+                    // Get the field type information from the field alias
+                    const auto& fieldAlias = this->onlyFields[i];
+                    
+                    // Use the field's type information to determine how to retrieve the value
+                    if (fieldAlias->isStringField()) {
+                        // String fields should be retrieved as text
+                        rowDict[fieldNames[i]] = row.get_text(i);
+                    } else if (fieldAlias->isBoolField()) {
+                        // Boolean fields
+                        rowDict[fieldNames[i]] = static_cast<bool>(row.get_int(i));
+                    } else {
+                        // For numeric fields, try integer first, then double
                         try {
-                            // Then try as double
-                            rowDict[fieldNames[i]] = row.get_double(i);
+                            rowDict[fieldNames[i]] = row.get_int(i);
                         } catch (...) {
-                            // Default to text representation
-                            rowDict[fieldNames[i]] = row.get_text(i);
+                            try {
+                                rowDict[fieldNames[i]] = row.get_double(i);
+                            } catch (...) {
+                                // Default to text representation as fallback
+                                rowDict[fieldNames[i]] = row.get_text(i);
+                            }
                         }
                     }
                 }
@@ -1521,27 +1450,62 @@ namespace storm {
                 T obj{};
                 int column_idx = 0;
                 
-                Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
-                    if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
-                        using FieldType = typename Reflect<T>::template member_value_type<decltype(member)>;
-                        
-                        if constexpr (std::is_same_v<FieldType, std::string>) {
-                            member(obj) = row.get_text(column_idx);
-                        } else if constexpr (std::is_same_v<FieldType, bool>) {
-                            member(obj) = row.get_int(column_idx) != 0;
-                        } else if constexpr (std::is_integral_v<FieldType>) {
-                            member(obj) = static_cast<FieldType>(row.get_int(column_idx));
-                        } else if constexpr (std::is_floating_point_v<FieldType>) {
-                            member(obj) = static_cast<FieldType>(row.get_double(column_idx));
-                        } else {
-                            static_assert(std::is_pointer<FieldType>::value == false, "Unsupported pointer type for SQLite binding");
-                            static_assert(std::is_reference<FieldType>::value == false, "Unsupported reference type for SQLite binding");
-                            static_assert(sizeof(FieldType) == 0, "Unsupported type for SQLite binding");
+                if (this->onlyFields.empty()) {
+                    // When no specific fields are selected, populate all fields
+                    Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
+                        if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
+                            using FieldType = typename Reflect<T>::template member_value_type<decltype(member)>;
+                            
+                            if constexpr (std::is_same_v<FieldType, std::string>) {
+                                member(obj) = row.get_text(column_idx);
+                            } else if constexpr (std::is_same_v<FieldType, bool>) {
+                                member(obj) = row.get_int(column_idx) != 0;
+                            } else if constexpr (std::is_integral_v<FieldType>) {
+                                member(obj) = static_cast<FieldType>(row.get_int(column_idx));
+                            } else if constexpr (std::is_floating_point_v<FieldType>) {
+                                member(obj) = static_cast<FieldType>(row.get_double(column_idx));
+                            } else {
+                                static_assert(std::is_pointer<FieldType>::value == false, "Unsupported pointer type for SQLite binding");
+                                static_assert(std::is_reference<FieldType>::value == false, "Unsupported reference type for SQLite binding");
+                                static_assert(sizeof(FieldType) == 0, "Unsupported type for SQLite binding");
+                            }
+                            
+                            column_idx++;
                         }
+                    });
+                } else {
+                    // When specific fields are selected, only populate those fields
+                    for (const auto& fieldAlias : this->onlyFields) {
+                        if (!fieldAlias) continue;
                         
+                        const std::string fieldName = fieldAlias->getFieldName();
+                        
+                        // Find and populate the corresponding field
+                        Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
+                            if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
+                                const std::string memberName = Reflect<T>::get_member_name(member);
+                                if (memberName == fieldName) {
+                                    using FieldType = typename Reflect<T>::template member_value_type<decltype(member)>;
+                                    
+                                    if constexpr (std::is_same_v<FieldType, std::string>) {
+                                        member(obj) = row.get_text(column_idx);
+                                    } else if constexpr (std::is_same_v<FieldType, bool>) {
+                                        member(obj) = row.get_int(column_idx) != 0;
+                                    } else if constexpr (std::is_integral_v<FieldType>) {
+                                        member(obj) = static_cast<FieldType>(row.get_int(column_idx));
+                                    } else if constexpr (std::is_floating_point_v<FieldType>) {
+                                        member(obj) = static_cast<FieldType>(row.get_double(column_idx));
+                                    } else {
+                                        static_assert(std::is_pointer<FieldType>::value == false, "Unsupported pointer type for SQLite binding");
+                                        static_assert(std::is_reference<FieldType>::value == false, "Unsupported reference type for SQLite binding");
+                                        static_assert(sizeof(FieldType) == 0, "Unsupported type for SQLite binding");
+                                    }
+                                }
+                            }
+                        });
                         column_idx++;
                     }
-                });
+                }
                 
                 results.push_back(std::move(obj));
             }
@@ -1582,10 +1546,10 @@ namespace storm {
         // =============================
         // JSON
         // =============================
-        QuerySet &jsonFields(std::string &&jsonFields) {
-            this->_jsonFields = std::move(jsonFields);
-            return *this;
-        }
+        // QuerySet &jsonFields(std::string &&jsonFields) {
+        //     this->_jsonFields = std::move(jsonFields);
+        //     return *this;
+        // }
 
         // =============================
         // =============================
@@ -1638,3 +1602,5 @@ namespace storm {
         }
     };
 }
+
+#include "QuerySet.where.impl.h"

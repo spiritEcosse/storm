@@ -1247,12 +1247,12 @@ TEST_F(ORMTest, WhereClauseEmptyResult) {
 // Only
 TEST_F(ORMTest, SelectOnlySpecificFields) {
     // Test selecting only specific fields from the model using NTTP
-    const auto& query = QuerySet<Author>(conn)
-        .only<&Author::name, &Author::age, &Author::email>();
+    // Execute the query using method chaining
+    std::vector<Author> authors = QuerySet<Author>(conn)
+        .only<&Author::name, &Author::age, &Author::email>()
+        .select_all();
     
-    // Execute the query
-    std::vector<Author> authors = query.select_all();
-    
+    std::cout << " Only fields: " << authors.size() << std::endl;
     // Verify results
     ASSERT_EQ(authors.size(), 4); // Should return all 4 authors
     
@@ -1275,12 +1275,10 @@ TEST_F(ORMTest, SelectOnlySpecificFields) {
 
 TEST_F(ORMTest, SelectOnlyWithAlias) {
     // Test selecting fields with aliases
-    const auto& query = QuerySet<Author>(conn)
+    std::vector<Author> authors = QuerySet<Author>(conn)
         .only<&Author::name>("author_name")
-        .only<&Author::age>("author_age");
-    
-    // Execute the query
-    std::vector<Author> authors = query.select_all();
+        .only<&Author::age>("author_age")
+        .select_all();
     
     // Verify results
     ASSERT_EQ(authors.size(), 4); // Should return all 4 authors

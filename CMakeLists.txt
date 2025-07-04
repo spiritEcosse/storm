@@ -111,9 +111,47 @@ else ()
     message(STATUS "Testing is disabled.")
 endif ()
 
+# Add cmake-scripts for sanitizers and other utilities
+CPMAddPackage(
+    NAME cmake-scripts
+    GITHUB_REPOSITORY StableCoder/cmake-scripts
+    GIT_TAG 24.08.1
+)
+
+# Add sanitizer option
+option(USE_SANITIZER "Compile with sanitizer support. Options: address, leak, undefined, thread, memory, memorywithorigins, cfi" "")
+
+# Configure sanitizer options for memory and memorywithorigins
+# Memory sanitizer is only available in Clang
+
+# Apply sanitizers if any are selected
+if(USE_SANITIZER)
+    message(STATUS "Building with sanitizer: ${USE_SANITIZER}")
+    # Include sanitizer modules only when needed and compatible
+    include(${cmake-scripts_SOURCE_DIR}/sanitizers.cmake)
+    
+    # Check if memory sanitizer is requested but not available
+    if("${USE_SANITIZER}" STREQUAL "memory" OR "${USE_SANITIZER}" STREQUAL "memorywithorigins")
+        message(STATUS "Memory sanitizer options configured")
+        set_sanitizer_options(memory DEFAULT -fno-omit-frame-pointer)
+        set_sanitizer_options(memorywithorigins DEFAULT
+                            SANITIZER memory
+                            -fno-omit-frame-pointer 
+                            -fsanitize-memory-track-origins)
+    else()
+        # This will automatically check if the sanitizers are available and apply them
+        add_sanitizer_support(${USE_SANITIZER})
+        message(STATUS "Sanitizer options configured for ${USE_SANITIZER}")
+    endif()
+    
+    # Make sure we have debug symbols for better error reporting
+    add_compile_options(-g)
+endif()
+
 # Print build configuration summary
 message(STATUS "=== Storm Build Configuration ===")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 message(STATUS "Testing: ${ENABLE_TESTS}")
-message(STATUS "==================================")
+message(STATUS "Sanitizer: ${USE_SANITIZER}")
+message(STATUS "===================================")
