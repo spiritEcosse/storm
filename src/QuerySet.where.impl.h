@@ -230,10 +230,5 @@ namespace storm {
         return *this;
     }
 
-    // Check if WHERE conditions exist
-    template<typename T>
-    bool QuerySet<T>::has_where_conditions() const {
-        return this->_whereExpression.has_value();
-    }
 
 } // namespace storm

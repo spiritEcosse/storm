@@ -82,12 +82,6 @@ namespace storm {
         std::string distinctOn;
     };
 
-    class BaseQuerySetVirtual : public BaseClass {
-    public:
-        virtual std::string buildSelect() const = 0;
-        virtual std::string getAlias() const = 0;
-    };
-
     // Base class for type erasure
     struct FieldAliasBase {
         std::string alias;
@@ -147,14 +141,9 @@ namespace storm {
     };
 
     template<class T>
-    class BaseQuerySet : public BaseQuerySetVirtual {
-    public:
-        explicit BaseQuerySet(int limit, std::string alias, bool returnInMain = true) :
-            BaseQuerySetVirtual(), _limit(limit), _alias(std::move(alias)), _returnInMain(returnInMain) {}
-
-        explicit BaseQuerySet(const std::string_view &alias, bool doAndCheck = false, bool returnInMain = true) :
-            BaseQuerySetVirtual(), _alias(alias), _one(true), _doAndCheck(doAndCheck), _returnInMain(returnInMain) {}
-
+    class QuerySet : public BaseClass {
+    private:
+        std::shared_ptr<Connection> conn;
         std::optional<storm::Where> _whereExpression;
         JoinInfo joinInfo;
         std::vector<std::pair<std::function<std::string()>, bool>> orderFields;
@@ -162,7 +151,6 @@ namespace storm {
         std::string _jsonFields;
         std::vector<std::unique_ptr<FieldAliasBase>> onlyFields;
         std::vector<Function> functionsSet;
-        std::vector<std::unique_ptr<BaseQuerySetVirtual>> otherQueries;
         std::vector<std::string> groupByFieldNames; // For compile-time field names
         int _limit{};
         int _offset{};
@@ -170,9 +158,7 @@ namespace storm {
         bool _one{};
         bool _doAndCheck{};
         bool _returnInMain{};
-        // TODO : fix private
-    
-        // Helper to get reflected type information for T
+
         template<class U>
         static constexpr auto get_reflected_type() {
             return Reflect<U>::get_reflected_type();
@@ -189,31 +175,8 @@ namespace storm {
             return Reflect<U>::get_struct_name();
         }
     
-        [[nodiscard]] std::string getAlias() const override {
+        [[nodiscard]] std::string getAlias() const {
             return _alias;
-        }
-
-        template<typename U>
-        void group_by_impl(U &&u) {
-            // Extract field name and table name
-            std::string fieldName = u->getFieldName();
-            std::string tableName = u->getTableName();
-            
-            // Format as table.field
-            std::string fullFieldName;
-            if (!tableName.empty()) {
-                fullFieldName = format("\"{}\".\"{}\"", tableName, fieldName);
-            } else {
-                fullFieldName = format("\"{}\"", fieldName);
-            }
-            
-            groupByFieldNames.push_back(fullFieldName);
-        }
-
-        template<typename U, typename... Args>
-        void group_by_impl(U &&u, Args &&...args) {
-            group_by_impl(std::forward<U>(u));
-            group_by_impl(std::forward<Args>(args)...);
         }
 
         [[nodiscard]] std::string aliasQueryMain() const {
@@ -225,306 +188,12 @@ namespace storm {
                 query += fmt::format("'{0}', (SELECT * FROM {0} ),", _alias);
             } else {
                 query += fmt::format("'{0}', COALESCE((SELECT json_agg({0}.*) FROM ( SELECT * FROM {0} "
-                                     ") as {0}), '[]'),",
-                                     _alias);
+                                        ") as {0}), '[]'),",
+                                        _alias);
             }
             return query;
         }
 
-        [[nodiscard]] std::string aliasQuery() const {
-            return fmt::format(" {} AS ( {} ),", _alias, buildSelect());
-        }
-
-        [[nodiscard]] std::string buildOrderFields() const {
-            if(orderFields.empty()) {
-                return "";
-            }
-            
-            std::vector<std::string> fieldStrings;
-            fieldStrings.reserve(orderFields.size());
-            
-            for(const auto &pair : orderFields) {
-                fieldStrings.push_back(fmt::format("{} {}", 
-                                                 pair.first(), // Call the function to get field name
-                                                 pair.second ? "ASC" : "DESC"));
-            }
-            
-            return fmt::format(" ORDER BY {}", fmt::join(fieldStrings, ", "));
-        }
-
-        [[nodiscard]] std::string createDistinctClause() const {
-            if(distinctInfo.distinctFields.empty()) {
-                return "";
-            }
-            return format("DISTINCT ON ({}) ",
-                           fmt::join(distinctInfo.distinctFields | std::views::transform([](const auto &field) {
-                                         return field.getFullFieldName();
-                                     }),
-                                     ", "));
-        }
-
-        [[nodiscard]] std::string buildOnlyFields() const {
-            if (onlyFields.empty()) {
-                // When no specific fields requested, explicitly list all fields using reflection
-                std::vector<std::string> allFields;
-                
-                Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
-                    if constexpr (refl::descriptor::is_field(member)) {
-                        std::string tableName = this->template get_table_name<T>();
-                        std::string fieldName = std::string(member.name);
-                        std::string formattedField = utils::formatFieldName(tableName, fieldName);
-                        allFields.push_back(fmt::format(R"({} AS "{}")", formattedField, fieldName));
-                    }
-                });
-                
-                return fmt::format("{}", fmt::join(allFields, ", "));
-            }
-
-            // Use only the specified fields
-            std::vector<std::string> fieldStrings;
-            fieldStrings.reserve(onlyFields.size());
-
-            std::transform(onlyFields.begin(), onlyFields.end(), std::back_inserter(fieldStrings),
-                [](const auto& fieldAlias) -> std::string {
-                    return fieldAlias->alias.empty() ?
-                        fieldAlias->getFullFieldName() :
-                        fmt::format("{} AS {}", fieldAlias->getFullFieldName(), fieldAlias->alias);
-                });
-            
-            return fmt::format("{}", fmt::join(fieldStrings, ", "));
-        }
-
-        // NTTP version for distinct
-        template<auto Field>
-        void distinct_impl() {
-            static_assert(std::is_member_pointer_v<decltype(Field)>, 
-                        "Field must be a member pointer");
-            
-            using ClassType = typename member_pointer_class<decltype(Field)>::type;
-            std::string fieldName = getFieldNameFromMemberPtr<Field>();
-            std::string tableName = Reflect<ClassType>::get_struct_name();
-            
-            distinctInfo.distinctFields.emplace_back(tableName, fieldName);
-        }
-
-        template<auto Field, auto... Rest>
-        void distinct_impl() {
-            distinct_impl<Field>();
-            
-            if constexpr (sizeof...(Rest) > 0) {
-                distinct_impl<Rest...>();
-            }
-        }
-
-        template<typename U>
-        void functions_impl(U &&u) {
-            functionsSet.emplace_back(std::forward<U>(u));
-        }
-
-        template<typename U, typename... Args>
-        void functions_impl(U &&u, Args &&...args) {
-            functionsSet.emplace_back(std::forward<U>(u));
-            functions_impl(std::forward<Args>(args)...);
-        }
-
-        std::string generateJoinSQL() const {
-            std::string sql;
-            for(const auto &[tableName, alias, condition, type]: joinInfo.joins) {
-                if(!tableName.empty()) {
-                    sql += fmt::format(R"( {} JOIN "{}" {} ON {})",
-                                       joinTypeToString(type),
-                                       tableName,
-                                       alias.empty() ? "" : fmt::format(R"( AS "{}")", alias),
-                                       condition);
-                }
-            }
-            return sql;
-        }
-
-        template<typename SourceType, typename TargetType>
-        std::string determine_join_condition() {
-            std::string condition;
-            
-            // Get lowercase table names for foreign key naming convention
-            std::string sourceName = utils::to_lower(get_table_name<SourceType>());
-            std::string targetName = utils::to_lower(get_table_name<TargetType>());
-            
-            // Strategy 1: Look for foreign key in source pointing to target
-            // e.g., author_id in Post pointing to Author.id
-            std::string foreignKeyName = targetName + "_id";
-            bool foundForeignKeyInSource = false;
-            
-            // Check each field in the source type
-            Reflect<SourceType>::for_each_member(get_reflected_members<SourceType>(), [&](auto member) {
-                if constexpr (refl::trait::is_field_v<decltype(member)>) {
-                    std::string fieldName = std::string(member.name.str());
-                    if (utils::to_lower(fieldName) == foreignKeyName) {
-                        condition = fmt::format(R"("{}"."id" = "{}"."{}")",
-                                              get_table_name<TargetType>(), get_table_name<SourceType>(), fieldName);
-                        foundForeignKeyInSource = true;
-                    }
-                }
-            });
-            
-            return foundForeignKeyInSource ? condition : "";
-        }
-
-        template<class U>
-        void join_impl_core(std::string &&alias,
-                            std::string &&addConditions,
-                            JoinInfo::JoinType joinType) {
-            std::string condition;
-            
-            // Get the target table name (what we're joining to)
-            std::string targetTable = alias.empty() ? this->get_table_name<U>() : alias;
-            
-            // Try to automatically determine join condition using reflection
-            condition = determine_join_condition<T, U>();
-            
-            // If we couldn't auto-determine the condition and no additional conditions provided
-            if (condition.empty() && addConditions.empty()) {
-                throw std::runtime_error("Could not determine join condition automatically. Please provide explicit join conditions.");
-            }
-            
-            // If we have additional conditions, append them
-            if (!addConditions.empty()) {
-                if (!condition.empty()) {
-                    condition += " " + addConditions;
-                } else {
-                    condition = std::move(addConditions);
-                }
-            }
-            
-            if (!condition.empty()) {
-                joinInfo.joins.emplace_back(targetTable,
-                                        std::move(alias),
-                                        std::move(condition),
-                                        joinType);
-            }
-        }
-
-        template<class U>
-        void join_impl(std::string &&alias, std::string &&addConditions, const JoinInfo::JoinType joinType) {
-            join_impl_core<U>(std::move(alias), std::move(addConditions), joinType);
-        }
-
-        // template<class T, class U>
-        // void join_impl(std::string &&cte,
-        //                std::string &&alias,
-        //                std::string &&addConditions,
-        //                const JoinInfo::JoinType joinType) {
-        //     join_impl_core<T, U>(std::move(cte), std::move(alias), std::move(addConditions), joinType);
-        // }
-
-        // void join_impl(BaseQuerySet &&querySet,
-        //                std::string &&alias,
-        //                std::string &&addConditions,
-        //                const JoinInfo::JoinType joinType) {
-        //     std::string aliasCTE = querySet.getAlias();
-        //     this->addCTE(std::move(querySet));
-        //     join_impl_core<T, U>(std::move(aliasCTE), std::move(alias), std::move(addConditions), joinType);
-        // }
-
-        [[nodiscard]] std::string buildSelectOne() const {
-        //     return fmt::format("{}{} FROM \"{}\" {}{} LIMIT 1{}",
-        //                        _doAndCheck ? "SELECT do_and_check('SELECT " : "SELECT ",
-        //                        _jsonFields.empty()
-        //                            ? fmt::format("{}{}", buildOnlyFields(), buildFunctions())
-        //                            : fmt::format("json_build_object({} {})", _jsonFields, buildFunctions()),
-        //                        get_table_name(),
-        //                        generateJoinSQL(),
-        //                        filter_impl(),
-        //                        _doAndCheck ? "')" : "");
-            return "";
-        }
-
-        [[nodiscard]] std::string buildSelect() const override {
-        //     if(_one)
-        //         return buildSelectOne();
-
-        //     return fmt::format("{} SELECT {} {} {} FROM \"{}\" {} {} {} {} {}",
-        //                        buildOtherQueries(),
-        //                        createDistinctClause(),
-        //                        buildOnlyFields(),
-        //                        buildFunctions(),
-        //                        get_table_name(),
-        //                        generateJoinSQL(),
-        //                        filter_impl(),
-        //                        generateGroupBySQL(),
-        //                        buildOrderFields(),
-        //                        limit_impl());
-            return "";
-        }
-
-        [[nodiscard]] std::string generateGroupBySQL() const {
-            if(groupByFieldNames.empty()) {
-                return "";
-            }
-     
-            return fmt::format("GROUP BY {}", fmt::join(groupByFieldNames, ", "));
-        }
-
-        [[nodiscard]] std::string buildOtherQueries() const {
-            if(this->otherQueries.empty()) {
-                return "";
-            }
-
-            return format("WITH {}",
-                          fmt::join(otherQueries | std::views::transform([](const auto &query) {
-                                        return fmt::format("{} AS ({})", query->getAlias(), query->buildSelect());
-                                    }),
-                                    ", "));
-        }
-
-        [[nodiscard]] std::string buildFunctions() const {
-            if(functionsSet.empty()) {
-                return "";
-            }
-
-            return format("{}{}",
-                          onlyFields.empty() && _jsonFields.empty() ? "" : ", ",
-                          fmt::join(functionsSet | std::views::transform([](const auto &function) {
-                                        return function.toStr();
-                                    }),
-                                    ", "));
-        }
-
-        [[nodiscard]] std::string limit_impl() const {
-            if(!_limit) {
-                return "";
-            }
-
-            return _offset ? fmt::format(" LIMIT {} OFFSET {}", _limit, _offset)
-                           : fmt::format(" LIMIT {}", _limit);
-        }
-    };
-
-    template<class T>
-    class QuerySet : public BaseQuerySet<T> {
-    private:
-        std::shared_ptr<Connection> conn;
-
-    public:
-        // Helper function to get field names (excluding 'id')
-        std::vector<std::string> get_insert_field_names() const {
-            std::vector<std::string> field_names;
-            
-            Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
-                if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
-                    std::string field_name = Reflect<T>::get_member_name(member);
-                    if (field_name != "id") { // Skip auto-generated id
-                        field_names.push_back(field_name);
-                    }
-                }
-            });
-            
-            return field_names;
-        }
-
-        std::vector<std::string> get_update_field_names() const {
-            return get_insert_field_names();
-        }
-        
         // Helper function to bind any value to a statement
         template<typename ValueType>
         static void bind_sql_value(Statement& stmt, int param_index, const ValueType& value) {
@@ -593,6 +262,70 @@ namespace storm {
             });
         }
 
+        // Field name mapping using your reflection system
+        template<typename ClassType, typename FieldType>
+        std::string get_field_name(FieldType ClassType::* memberPtr) const {
+            std::string tableName = Reflect<ClassType>::get_struct_name();
+            std::string fieldName = getFieldNameFromMemberPtr(memberPtr);
+            return storm::utils::formatFieldName(tableName, fieldName);
+        }
+
+        std::string addExtraQuotes(const std::string& query) const {
+            // Your existing implementation
+            return query;
+        }
+    
+    public:
+        // =============================
+        // =============================
+        // Constructor
+        // =============================
+        explicit QuerySet(std::shared_ptr<Connection> conn, const std::string& alias = "") 
+            : conn(std::move(conn)) {
+        }
+
+        // =============================
+        // =============================
+        // INSERT
+        // =============================
+        std::vector<int> insert(const std::vector<T>& objs) {
+            if (objs.empty()) return {};
+            
+            try {
+                auto field_names = get_insert_field_names();
+                if (field_names.empty()) return {};
+                
+                // Convert to const pointer vector
+                std::vector<const T*> obj_ptrs;
+                obj_ptrs.reserve(objs.size());
+                for (const auto& obj : objs) {
+                    obj_ptrs.push_back(&obj);
+                }
+                
+                return execute_insert(obj_ptrs, field_names);
+                
+            } catch (const std::exception& e) {
+                std::cerr << "Exception in insert: " << e.what() << "\n";
+                return {};
+            }
+        }
+        
+        // Single insert method
+        int insert(const T& obj) {
+            try {
+                auto field_names = get_insert_field_names();
+                if (field_names.empty()) return -1;
+                
+                auto ids = execute_insert({&obj}, field_names);
+                return ids.empty() ? -1 : ids[0];
+                
+            } catch (const std::exception& e) {
+                std::cerr << "Exception in insert: " << e.what() << "\n";
+                return -1;
+            }
+        }
+        
+    private:
         std::vector<int> execute_insert(const std::vector<const T*>& obj_ptrs, const std::vector<std::string>& field_names) {
             std::string sql = build_insert_sql(field_names, obj_ptrs.size(), true); // Use RETURNING id
             if (sql.empty()) return {};
@@ -637,6 +370,64 @@ namespace storm {
             );
         }
 
+        // Helper function to get field names (excluding 'id')
+        std::vector<std::string> get_insert_field_names() const {
+            std::vector<std::string> field_names;
+            
+            Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
+                if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
+                    std::string field_name = Reflect<T>::get_member_name(member);
+                    if (field_name != "id") { // Skip auto-generated id
+                        field_names.push_back(field_name);
+                    }
+                }
+            });
+            
+            return field_names;
+        }
+        
+    public:
+        // =============================
+        // =============================
+        // UPDATE
+        // =============================
+        bool update(const T& obj) {
+            try {
+                auto field_names = get_update_field_names();
+                if (field_names.empty()) return false;
+                
+                return execute_update({&obj}, field_names);
+                
+            } catch (const std::exception& e) {
+                std::cerr << "Exception in update: " << e.what() << "\n";
+                return false;
+            }
+        }
+        
+        // Update multiple objects (batch update)
+        bool update(const std::vector<T>& objs) {
+            if (objs.empty()) return true;
+            
+            try {
+                auto field_names = get_update_field_names();
+                if (field_names.empty()) return false;
+                
+                // Convert to pointer vector
+                std::vector<const T*> obj_ptrs;
+                obj_ptrs.reserve(objs.size());
+                for (const auto& obj : objs) {
+                    obj_ptrs.push_back(&obj);
+                }
+                
+                return execute_update(obj_ptrs, field_names);
+                
+            } catch (const std::exception& e) {
+                std::cerr << "Exception in update: " << e.what() << "\n";
+                return false;
+            }
+        }
+
+    private:
         std::string build_update_sql(const std::vector<std::string>& field_names, size_t num_objects) {
             if (field_names.empty() || num_objects == 0) return "";
             
@@ -698,7 +489,45 @@ namespace storm {
             
             return stmt.execute();
         }
+    
+        std::vector<std::string> get_update_field_names() const {
+            return get_insert_field_names();
+        }
 
+    public:
+        // =============================
+        // =============================
+        // DELETE
+        // =============================
+        bool remove(const T& obj) {
+            try {
+                return execute_delete({&obj});
+            } catch (const std::exception& e) {
+                std::cerr << "Exception in delete: " << e.what() << "\n";
+                return false;
+            }
+        }
+        
+        bool remove(const std::vector<T>& objs) {
+            if (objs.empty()) return true;
+            
+            try {
+                // Convert to pointer vector
+                std::vector<const T*> obj_ptrs;
+                obj_ptrs.reserve(objs.size());
+                for (const auto& obj : objs) {
+                    obj_ptrs.push_back(&obj);
+                }
+                
+                return execute_delete(obj_ptrs);
+                
+            } catch (const std::exception& e) {
+                std::cerr << "Exception in delete: " << e.what() << "\n";
+                return false;
+            }
+        }
+
+    private:
         std::string build_delete_sql() {
             return fmt::format("DELETE FROM {} WHERE id = ?;", this->template get_table_name<T>());
         }
@@ -734,138 +563,8 @@ namespace storm {
                 return stmt.execute();
             }
         }
-            
-        // Field name mapping using your reflection system
-        template<typename ClassType, typename FieldType>
-        std::string get_field_name(FieldType ClassType::* memberPtr) const {
-            std::string tableName = Reflect<ClassType>::get_struct_name();
-            std::string fieldName = getFieldNameFromMemberPtr(memberPtr);
-            return storm::utils::formatFieldName(tableName, fieldName);
-        }
-        
-        std::string addExtraQuotes(const std::string& query) const {
-            // Your existing implementation
-            return query;
-        }
-    
-        // Constructor
-        explicit QuerySet(std::shared_ptr<Connection> conn, const std::string& alias = "") 
-            : BaseQuerySet<T>(alias, false, true), conn(std::move(conn)) {
-        }
 
-        // =============================
-        // =============================
-        // INSERT
-        // =============================
-        std::vector<int> insert(const std::vector<T>& objs) {
-            if (objs.empty()) return {};
-            
-            try {
-                auto field_names = get_insert_field_names();
-                if (field_names.empty()) return {};
-                
-                // Convert to const pointer vector
-                std::vector<const T*> obj_ptrs;
-                obj_ptrs.reserve(objs.size());
-                for (const auto& obj : objs) {
-                    obj_ptrs.push_back(&obj);
-                }
-                
-                return execute_insert(obj_ptrs, field_names);
-                
-            } catch (const std::exception& e) {
-                std::cerr << "Exception in insert: " << e.what() << "\n";
-                return {};
-            }
-        }
-        
-        // Single insert method
-        int insert(const T& obj) {
-            try {
-                auto field_names = get_insert_field_names();
-                if (field_names.empty()) return -1;
-                
-                auto ids = execute_insert({&obj}, field_names);
-                return ids.empty() ? -1 : ids[0];
-                
-            } catch (const std::exception& e) {
-                std::cerr << "Exception in insert: " << e.what() << "\n";
-                return -1;
-            }
-        }
-        
-        // =============================
-        // =============================
-        // UPDATE
-        // =============================
-        bool update(const T& obj) {
-            try {
-                auto field_names = get_update_field_names();
-                if (field_names.empty()) return false;
-                
-                return execute_update({&obj}, field_names);
-                
-            } catch (const std::exception& e) {
-                std::cerr << "Exception in update: " << e.what() << "\n";
-                return false;
-            }
-        }
-        
-        // Update multiple objects (batch update)
-        bool update(const std::vector<T>& objs) {
-            if (objs.empty()) return true;
-            
-            try {
-                auto field_names = get_update_field_names();
-                if (field_names.empty()) return false;
-                
-                // Convert to pointer vector
-                std::vector<const T*> obj_ptrs;
-                obj_ptrs.reserve(objs.size());
-                for (const auto& obj : objs) {
-                    obj_ptrs.push_back(&obj);
-                }
-                
-                return execute_update(obj_ptrs, field_names);
-                
-            } catch (const std::exception& e) {
-                std::cerr << "Exception in update: " << e.what() << "\n";
-                return false;
-            }
-        }
-
-        // =============================
-        // =============================
-        // DELETE
-        // =============================
-        bool remove(const T& obj) {
-            try {
-                return execute_delete({&obj});
-            } catch (const std::exception& e) {
-                std::cerr << "Exception in delete: " << e.what() << "\n";
-                return false;
-            }
-        }
-        
-        bool remove(const std::vector<T>& objs) {
-            if (objs.empty()) return true;
-            
-            try {
-                // Convert to pointer vector
-                std::vector<const T*> obj_ptrs;
-                obj_ptrs.reserve(objs.size());
-                for (const auto& obj : objs) {
-                    obj_ptrs.push_back(&obj);
-                }
-                
-                return execute_delete(obj_ptrs);
-                
-            } catch (const std::exception& e) {
-                std::cerr << "Exception in delete: " << e.what() << "\n";
-                return false;
-            }
-        }
-
+    public:
         // =============================
         // =============================
         // ALIAS
@@ -874,6 +573,7 @@ namespace storm {
             return this->_alias;
         }
 
+    public:
         // =============================
         // =============================
         // GROUP BY
@@ -903,6 +603,39 @@ namespace storm {
             return *this;
         }
 
+    private:
+        [[nodiscard]] std::string generateGroupBySQL() const {
+            if(groupByFieldNames.empty()) {
+                return "";
+            }
+        
+            return fmt::format("GROUP BY {}", fmt::join(groupByFieldNames, ", "));
+        }
+
+        template<typename U>
+        void group_by_impl(U &&u) {
+            // Extract field name and table name
+            std::string fieldName = u->getFieldName();
+            std::string tableName = u->getTableName();
+            
+            // Format as table.field
+            std::string fullFieldName;
+            if (!tableName.empty()) {
+                fullFieldName = format("\"{}\".\"{}\"", tableName, fieldName);
+            } else {
+                fullFieldName = format("\"{}\"", fieldName);
+            }
+            
+            groupByFieldNames.push_back(fullFieldName);
+        }
+
+        template<typename U, typename... Args>
+        void group_by_impl(U &&u, Args &&...args) {
+            group_by_impl(std::forward<U>(u));
+            group_by_impl(std::forward<Args>(args)...);
+        }
+    
+    public:
         // =============================
         // =============================
         // ORDER BY
@@ -938,7 +671,25 @@ namespace storm {
                 return utils::formatFieldName(tableName, fieldName);
             };
         }
-
+    private:
+        [[nodiscard]] std::string buildOrderFields() const {
+            if(orderFields.empty()) {
+                return "";
+            }
+            
+            std::vector<std::string> fieldStrings;
+            fieldStrings.reserve(orderFields.size());
+            
+            for(const auto &pair : orderFields) {
+                fieldStrings.push_back(fmt::format("{} {}", 
+                                                    pair.first(), // Call the function to get field name
+                                                    pair.second ? "ASC" : "DESC"));
+            }
+            
+            return fmt::format(" ORDER BY {}", fmt::join(fieldStrings, ", "));
+        }
+    
+    public:
         // =============================
         // =============================
         // WHERE
@@ -1012,9 +763,7 @@ namespace storm {
         // Helper method to clear WHERE conditions
         QuerySet& clear_where();
 
-        // Check if WHERE conditions exist
-        bool has_where_conditions() const;
-
+    private:
         // Where conditions
         template<typename FieldType, typename Value>
         storm::Where create_condition(const FieldType& field_obj, Value&& value, storm::Op op) const;
@@ -1022,7 +771,8 @@ namespace storm {
         // Helper to create IN conditions
         template<typename FieldType, typename Container>
         storm::Where create_in_condition(const FieldType& field_obj, const Container& values) const;
-
+    
+    public:
         // =============================
         // =============================
         // JOIN
@@ -1033,38 +783,11 @@ namespace storm {
             return *this;
         }
 
-        // template<class T, class U>
-        // QuerySet &join(QuerySet<U> &&other, std::string &&alias = "", std::string &&addConditions = "") {
-        //     this->template join_impl<T, U>(std::move(other),
-        //                                 std::move(alias),
-        //                                 std::move(addConditions),
-        //                                 JoinInfo::JoinType::INNER);
-        //     return *this;
-        // }
-
-        // template<class T, class U>
-        // QuerySet &join(std::string &&cte, std::string &&alias = "", std::string &&addConditions = "") {
-        //     this->template join_impl<T, U>(std::move(cte),
-        //                                 std::move(alias),
-        //                                 std::move(addConditions),
-        //                                 JoinInfo::JoinType::INNER);
-        //     return *this;
-        // }
-
         template<class U>
         QuerySet &left_join(std::string &&alias = "", std::string &&addConditions = "") {
             this->template join_impl<U>(std::move(alias), std::move(addConditions), JoinInfo::JoinType::LEFT);
             return *this;
         }
-
-        // template<class T, class U>
-        // QuerySet &left_join(QuerySet<U> &&other, std::string &&alias = "", std::string &&addConditions = "") {
-        //     this->template join_impl<T, U>(std::move(other),
-        //                                 std::move(alias),
-        //                                 std::move(addConditions),
-        //                                 JoinInfo::JoinType::LEFT);
-        //     return *this;
-        // }
 
         template<class U>
         QuerySet &left_join(std::string &&cte, std::string &&alias = "", std::string &&addConditions = "") {
@@ -1099,6 +822,89 @@ namespace storm {
             return *this;
         }
 
+    private:
+        template<class U>
+        void join_impl_core(std::string &&alias,
+                            std::string &&addConditions,
+                            JoinInfo::JoinType joinType) {
+            std::string condition;
+            
+            // Get the target table name (what we're joining to)
+            std::string targetTable = alias.empty() ? this->get_table_name<U>() : alias;
+            
+            // Try to automatically determine join condition using reflection
+            condition = determine_join_condition<T, U>();
+            
+            // If we couldn't auto-determine the condition and no additional conditions provided
+            if (condition.empty() && addConditions.empty()) {
+                throw std::runtime_error("Could not determine join condition automatically. Please provide explicit join conditions.");
+            }
+            
+            // If we have additional conditions, append them
+            if (!addConditions.empty()) {
+                if (!condition.empty()) {
+                    condition += " " + addConditions;
+                } else {
+                    condition = std::move(addConditions);
+                }
+            }
+            
+            if (!condition.empty()) {
+                joinInfo.joins.emplace_back(targetTable,
+                                        std::move(alias),
+                                        std::move(condition),
+                                        joinType);
+            }
+        }
+
+        template<class U>
+        void join_impl(std::string &&alias, std::string &&addConditions, const JoinInfo::JoinType joinType) {
+            join_impl_core<U>(std::move(alias), std::move(addConditions), joinType);
+        }
+
+        std::string generateJoinSQL() const {
+            std::string sql;
+            for(const auto &[tableName, alias, condition, type]: joinInfo.joins) {
+                if(!tableName.empty()) {
+                    sql += fmt::format(R"( {} JOIN "{}" {} ON {})",
+                                       joinTypeToString(type),
+                                       tableName,
+                                       alias.empty() ? "" : fmt::format(R"( AS "{}")", alias),
+                                       condition);
+                }
+            }
+            return sql;
+        }
+
+        template<typename SourceType, typename TargetType>
+        std::string determine_join_condition() {
+            std::string condition;
+            
+            // Get lowercase table names for foreign key naming convention
+            std::string sourceName = utils::to_lower(get_table_name<SourceType>());
+            std::string targetName = utils::to_lower(get_table_name<TargetType>());
+            
+            // Strategy 1: Look for foreign key in source pointing to target
+            // e.g., author_id in Post pointing to Author.id
+            std::string foreignKeyName = targetName + "_id";
+            bool foundForeignKeyInSource = false;
+            
+            // Check each field in the source type
+            Reflect<SourceType>::for_each_member(get_reflected_members<SourceType>(), [&](auto member) {
+                if constexpr (refl::trait::is_field_v<decltype(member)>) {
+                    std::string fieldName = std::string(member.name.str());
+                    if (utils::to_lower(fieldName) == foreignKeyName) {
+                        condition = fmt::format(R"("{}"."id" = "{}"."{}")",
+                                              get_table_name<TargetType>(), get_table_name<SourceType>(), fieldName);
+                        foundForeignKeyInSource = true;
+                    }
+                }
+            });
+            
+            return foundForeignKeyInSource ? condition : "";
+        }
+
+    public:
         // =============================
         // =============================
         // ONLY
@@ -1138,7 +944,40 @@ namespace storm {
             
             return *this;
         }
-        
+
+    private:
+        [[nodiscard]] std::string buildOnlyFields() const {
+            if (onlyFields.empty()) {
+                // When no specific fields requested, explicitly list all fields using reflection
+                std::vector<std::string> allFields;
+                
+                Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
+                    if constexpr (refl::descriptor::is_field(member)) {
+                        std::string tableName = this->template get_table_name<T>();
+                        std::string fieldName = std::string(member.name);
+                        std::string formattedField = utils::formatFieldName(tableName, fieldName);
+                        allFields.push_back(fmt::format(R"({} AS "{}")", formattedField, fieldName));
+                    }
+                });
+                
+                return fmt::format("{}", fmt::join(allFields, ", "));
+            }
+
+            // Use only the specified fields
+            std::vector<std::string> fieldStrings;
+            fieldStrings.reserve(onlyFields.size());
+
+            std::transform(onlyFields.begin(), onlyFields.end(), std::back_inserter(fieldStrings),
+                [](const auto& fieldAlias) -> std::string {
+                    return fieldAlias->alias.empty() ?
+                        fieldAlias->getFullFieldName() :
+                        fmt::format("{} AS {}", fieldAlias->getFullFieldName(), fieldAlias->alias);
+                });
+            
+            return fmt::format("{}", fmt::join(fieldStrings, ", "));
+        }
+
+    public:
         // =============================
         // =============================
         // SELECT
@@ -1487,6 +1326,7 @@ namespace storm {
             return results;
         }
 
+    public:
         // =============================
         // =============================
         // LIMIT/OFFSET
@@ -1500,7 +1340,17 @@ namespace storm {
             this->_offset = offset;
             return *this;
         }
+    private:
+        [[nodiscard]] std::string limit_impl() const {
+            if(!_limit) {
+                return "";
+            }
 
+            return _offset ? fmt::format(" LIMIT {} OFFSET {}", _limit, _offset)
+                        : fmt::format(" LIMIT {}", _limit);
+        }
+
+    public:
         // =============================
         // =============================
         // DISTINCT
@@ -1524,7 +1374,42 @@ namespace storm {
         //     this->_jsonFields = std::move(jsonFields);
         //     return *this;
         // }
+    
+    private:
+        [[nodiscard]] std::string createDistinctClause() const {
+            if(distinctInfo.distinctFields.empty()) {
+                return "";
+            }
+            return format("DISTINCT ON ({}) ",
+                            fmt::join(distinctInfo.distinctFields | std::views::transform([](const auto &field) {
+                                            return field.getFullFieldName();
+                                        }),
+                                        ", "));
+        }
 
+        // NTTP version for distinct
+        template<auto Field>
+        void distinct_impl() {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, 
+                        "Field must be a member pointer");
+            
+            using ClassType = typename member_pointer_class<decltype(Field)>::type;
+            std::string fieldName = getFieldNameFromMemberPtr<Field>();
+            std::string tableName = Reflect<ClassType>::get_struct_name();
+            
+            distinctInfo.distinctFields.emplace_back(tableName, fieldName);
+        }
+
+        template<auto Field, auto... Rest>
+        void distinct_impl() {
+            distinct_impl<Field>();
+            
+            if constexpr (sizeof...(Rest) > 0) {
+                distinct_impl<Rest...>();
+            }
+        }
+
+    public:
         // =============================
         // =============================
         // FUNCTIONS
@@ -1539,40 +1424,30 @@ namespace storm {
             this->functions_impl(std::forward<Args>(args)...);
             return *this;
         }
-    };
-
-    class BuildComplexQueries final : public BaseClass {
-    public:
-        [[nodiscard]] static std::string removeLastComma(const std::string_view &query) {
-            return std::string(query.substr(0, query.size() - 2));
+    
+    private:
+        template<typename U>
+        void functions_impl(U &&u) {
+            functionsSet.emplace_back(std::forward<U>(u));
         }
 
-        static std::string addQuery_impl() {
-            return "";
+        template<typename U, typename... Args>
+        void functions_impl(U &&u, Args &&...args) {
+            functionsSet.emplace_back(std::forward<U>(u));
+            functions_impl(std::forward<Args>(args)...);
         }
 
-        template<class U, typename... Args>
-        static std::string addQuery_impl(U &&u, Args &&...args) {
-            return fmt::format("{} {}", std::forward<U>(u).aliasQuery(), addQuery_impl(std::forward<Args>(args)...));
-        }
+        [[nodiscard]] std::string buildFunctions() const {
+            if(functionsSet.empty()) {
+                return "";
+            }
 
-        static std::string addQueryMain_impl() {
-            return "";
-        }
-
-        template<class U, typename... Args>
-        static std::string addQueryMain_impl(U &&u, Args &&...args) {
-            return fmt::format("{} {}",
-                               std::forward<U>(u).aliasQueryMain(),
-                               addQueryMain_impl(std::forward<Args>(args)...));
-        }
-
-        template<typename... Args>
-        static std::string buildQuery(Args &&...args) {
-            std::string query = removeLastComma(fmt::format("WITH {}", addQuery_impl(std::forward<Args>(args)...)));
-            return fmt::format(" {} SELECT json_build_object({}) as result",
-                               query,
-                               removeLastComma(addQueryMain_impl(std::forward<Args>(args)...)));
+            return format("{}{}",
+                            onlyFields.empty() && _jsonFields.empty() ? "" : ", ",
+                            fmt::join(functionsSet | std::views::transform([](const auto &function) {
+                                        return function.toStr();
+                                    }),
+                                    ", "));
         }
     };
 }
