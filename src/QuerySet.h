@@ -65,22 +65,7 @@ namespace storm {
         return "INNER";
     }
 
-    struct DistinctField {
-        std::string tableName;
-        std::string fieldName;
-        
-        explicit DistinctField(const std::string& table, const std::string& field) 
-            : tableName(table), fieldName(field) {}
-            
-        [[nodiscard]] std::string getFullFieldName() const {
-            return utils::formatFieldName(tableName, fieldName);
-        }
-    };
-    
-    struct DistinctInfo {
-        std::vector<DistinctField> distinctFields;
-        std::string distinctOn;
-    };
+    // DistinctInfo has been removed and replaced with direct field aliases
 
     // Base class for type erasure
     struct FieldAliasBase {
@@ -90,16 +75,15 @@ namespace storm {
             : alias(std::move(alias)) {}
         
         virtual ~FieldAliasBase() = default;
-        virtual std::string getFullFieldName() const = 0;
-        virtual std::string getFieldName() const = 0;
-        virtual std::string getTableName() const = 0;
-        
-        // Type checking methods
+        [[nodiscard]] virtual std::string getFullFieldName() const = 0;
+        [[nodiscard]] virtual std::string getFieldName() const = 0;
+        [[nodiscard]] virtual std::string getTableName() const = 0;
+        [[nodiscard]] virtual std::string getAlias() const = 0;
         virtual bool isStringField() const = 0;
         virtual bool isBoolField() const = 0;
         virtual bool isNumericField() const = 0;
     };
-    
+
     template<auto MemberPtr>
     struct FieldAlias : public FieldAliasBase {
         // Constructor for string literals and std::string
@@ -110,9 +94,9 @@ namespace storm {
         
         std::string getFullFieldName() const override {
             using ClassType = typename member_pointer_class<decltype(MemberPtr)>::type;
-            const std::string fieldName = getFieldNameFromMemberPtr<MemberPtr>();
-            const std::string tableName = Reflect<ClassType>::get_struct_name();
-            return utils::formatFieldName(tableName, fieldName);
+            std::string fieldName = getFieldNameFromMemberPtr<MemberPtr>();
+            std::string tableName = Reflect<ClassType>::get_struct_name();
+            return fmt::format("\"{}\".\"{}\"" , tableName, fieldName);
         }
         
         std::string getFieldName() const override {
@@ -122,6 +106,10 @@ namespace storm {
         std::string getTableName() const override {
             using ClassType = typename member_pointer_class<decltype(MemberPtr)>::type;
             return Reflect<ClassType>::get_struct_name();
+        }
+        
+        std::string getAlias() const override {
+            return alias;
         }
         
         bool isStringField() const override {
@@ -139,6 +127,45 @@ namespace storm {
             return std::is_arithmetic_v<FieldType> && !std::is_same_v<FieldType, bool>;
         }
     };
+    
+    // String-based field alias for runtime field references
+    class StringFieldAlias : public FieldAliasBase {
+    private:
+        std::string tableName;
+        std::string fieldName;
+        
+    public:
+        // Constructor for string-based field references
+        explicit StringFieldAlias(std::string tableName, std::string fieldName, std::string alias = "") 
+            : FieldAliasBase(std::move(alias)), tableName(std::move(tableName)), fieldName(std::move(fieldName)) {}
+        
+        ~StringFieldAlias() = default;
+        
+        std::string getFullFieldName() const override {
+            return utils::formatFieldName(tableName, fieldName);
+        }
+        
+        std::string getFieldName() const override {
+            return fieldName;
+        }
+        
+        std::string getTableName() const override {
+            return tableName;
+        }
+        
+        // For string-based fields, we assume it could be any type
+        bool isStringField() const override {
+            return true;  // Conservative assumption
+        }
+        
+        bool isBoolField() const override {
+            return false;  // Conservative assumption
+        }
+        
+        bool isNumericField() const override {
+            return false;  // Conservative assumption
+        }
+    };
 
     template<class T>
     class QuerySet : public BaseClass {
@@ -147,7 +174,7 @@ namespace storm {
         std::optional<storm::Where> _whereExpression;
         JoinInfo joinInfo;
         std::vector<std::pair<std::function<std::string()>, bool>> orderFields;
-        DistinctInfo distinctInfo;
+        std::vector<std::unique_ptr<FieldAliasBase>> distinctFields;
         std::string _jsonFields;
         std::vector<std::unique_ptr<FieldAliasBase>> onlyFields;
         std::vector<Function> functionsSet;
@@ -933,46 +960,36 @@ namespace storm {
         QuerySet& only(const std::string& alias) {
             static_assert(std::is_member_pointer_v<decltype(Field)>, 
                         "Field must be a member pointer");
-            
-            // Add current field with alias
-            using ClassType = typename member_pointer_class<decltype(Field)>::type;
-            std::string fieldName = getFieldNameFromMemberPtr<Field>();
-            std::string tableName = Reflect<ClassType>::get_struct_name();
-            
-            // Create a FieldAlias with table name, field name, and alias
             this->onlyFields.push_back(std::make_unique<FieldAlias<Field>>(alias));
-            
             return *this;
         }
 
     private:
         [[nodiscard]] std::string buildOnlyFields() const {
-            if (onlyFields.empty()) {
+            // Start with onlyFields
+            std::vector<std::string> fieldStrings;
+            
+            // If onlyFields is empty, use reflection to get all fields from the primary model
+            if (onlyFields.empty() && distinctFields.empty()) {
                 // When no specific fields requested, explicitly list all fields using reflection
-                std::vector<std::string> allFields;
-                
                 Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
                     if constexpr (refl::descriptor::is_field(member)) {
                         std::string tableName = this->template get_table_name<T>();
                         std::string fieldName = std::string(member.name);
                         std::string formattedField = utils::formatFieldName(tableName, fieldName);
-                        allFields.push_back(fmt::format(R"({} AS "{}")", formattedField, fieldName));
+                        fieldStrings.push_back(fmt::format(R"({} AS "{}")", formattedField, fieldName));
                     }
                 });
-                
-                return fmt::format("{}", fmt::join(allFields, ", "));
+            } else {
+                // Use only the specified fields
+                fieldStrings.reserve(onlyFields.size());
+                std::transform(onlyFields.begin(), onlyFields.end(), std::back_inserter(fieldStrings),
+                    [](const auto& fieldAlias) -> std::string {
+                        return fieldAlias->alias.empty() ?
+                            fieldAlias->getFullFieldName() :
+                            fmt::format("{} AS {}", fieldAlias->getFullFieldName(), fieldAlias->alias);
+                    });
             }
-
-            // Use only the specified fields
-            std::vector<std::string> fieldStrings;
-            fieldStrings.reserve(onlyFields.size());
-
-            std::transform(onlyFields.begin(), onlyFields.end(), std::back_inserter(fieldStrings),
-                [](const auto& fieldAlias) -> std::string {
-                    return fieldAlias->alias.empty() ?
-                        fieldAlias->getFullFieldName() :
-                        fmt::format("{} AS {}", fieldAlias->getFullFieldName(), fieldAlias->alias);
-                });
             
             return fmt::format("{}", fmt::join(fieldStrings, ", "));
         }
@@ -1236,16 +1253,20 @@ namespace storm {
             // Get the where query result
             auto where_query_result = this->get_where_query();
             
-            auto sql = fmt::format("SELECT {} {} {} FROM \"{}\" {} {} {} {} {}", 
+            // Build the SQL query based on whether we have distinct fields
+            std::string sql;
+            
+            sql = fmt::format("SELECT {} {} {} FROM \"{}\" {} {} {} {} {}", 
                 this->createDistinctClause(),
-                this->buildOnlyFields(), // This now provides all fields explicitly when onlyFields is empty
+                this->buildOnlyFields(),
                 this->buildFunctions(),
                 this->template get_table_name<T>(),
                 this->generateJoinSQL(),
-                where_query_result.sql, // Use the SQL string from QueryResult
-                    this->generateGroupBySQL(),
-                    this->buildOrderFields(),
-                    this->limit_impl());
+                where_query_result.sql,
+                this->generateGroupBySQL(),
+                this->buildOrderFields(),
+                this->limit_impl());
+            
             std::cout << sql << std::endl;
             
             auto smt_ = Statement(conn, sql);
@@ -1355,58 +1376,37 @@ namespace storm {
         // =============================
         // DISTINCT
         // =============================
-        // QuerySet &distinct(const std::string &field) {
-        //     this->distinctFields.push_back(field);
-        //     return *this;
-        // }
+        template<auto... Fields>
+        QuerySet& distinct() {
+            static_assert((std::is_member_pointer_v<decltype(Fields)> && ...), 
+                        "All fields must be member pointers");
+            
+            // Reserve capacity
+            this->distinctFields.reserve(sizeof...(Fields));
+            
+            // Process each field
+            auto addField = [this]<auto Field>() {
+                this->distinctFields.push_back(std::make_unique<FieldAlias<Field>>());
+            };
+            
+            (addField.template operator()<Fields>(), ...);
+            
+            return *this;
+        }
         
-        // template<auto... Fields>
-        // QuerySet& distinct() {
-        //     distinct_impl<Fields...>();
-        //     return *this;
-        // }
-
-        // =============================
-        // =============================
-        // JSON
-        // =============================
-        // QuerySet &jsonFields(std::string &&jsonFields) {
-        //     this->_jsonFields = std::move(jsonFields);
-        //     return *this;
-        // }
-    
     private:
         [[nodiscard]] std::string createDistinctClause() const {
-            if(distinctInfo.distinctFields.empty()) {
+            if(distinctFields.empty()) {
                 return "";
             }
-            return format("DISTINCT ON ({}) ",
-                            fmt::join(distinctInfo.distinctFields | std::views::transform([](const auto &field) {
-                                            return field.getFullFieldName();
-                                        }),
-                                        ", "));
-        }
-
-        // NTTP version for distinct
-        template<auto Field>
-        void distinct_impl() {
-            static_assert(std::is_member_pointer_v<decltype(Field)>, 
-                        "Field must be a member pointer");
             
-            using ClassType = typename member_pointer_class<decltype(Field)>::type;
-            std::string fieldName = getFieldNameFromMemberPtr<Field>();
-            std::string tableName = Reflect<ClassType>::get_struct_name();
-            
-            distinctInfo.distinctFields.emplace_back(tableName, fieldName);
-        }
-
-        template<auto Field, auto... Rest>
-        void distinct_impl() {
-            distinct_impl<Field>();
-            
-            if constexpr (sizeof...(Rest) > 0) {
-                distinct_impl<Rest...>();
-            }
+            std::vector<std::string> fieldStrings;
+            fieldStrings.reserve(distinctFields.size());
+            std::transform(distinctFields.begin(), distinctFields.end(), std::back_inserter(fieldStrings),
+                [](const auto& fieldAlias) -> std::string {
+                    return fieldAlias->getFullFieldName();
+                });
+            return fmt::format("DISTINCT {}", fmt::join(fieldStrings, ", "));
         }
 
     public:

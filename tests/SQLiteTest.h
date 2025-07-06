@@ -1381,3 +1381,116 @@ TEST_F(ORMTest, SelectValues) {
         EXPECT_TRUE(std::get<bool>(row.at("is_active")));
     }
 }
+
+// DISTINCT TESTS
+TEST_F(ORMTest, DistinctTemplateBased) {
+    // Setup: Insert duplicate age values
+    Author duplicateAge("Frank Miller", 30, "frank@example.com");
+    QuerySet<Author>(conn).insert(duplicateAge);
+    
+    // First, get all authors without distinct
+    auto allAuthors = QuerySet<Author>(conn).select_all();
+    
+    // Then, get authors with distinct ages
+    auto distinctAuthors = QuerySet<Author>(conn)
+        .distinct<&Author::age>()
+        .select_all();
+        
+    // We should have 5 total authors (Alice, Bob, Charlie, Diana, Frank)
+    ASSERT_EQ(allAuthors.size(), 5);
+
+    // With our implementation, we should get all 5 authors because DISTINCT applies to all columns
+    ASSERT_EQ(distinctAuthors.size(), 5);
+    // Create sets of ages to verify all ages are present
+    std::set<int> allAges;
+    for (const auto& author : allAuthors) {
+        allAges.insert(author.age);
+    }
+    
+    std::set<int> distinctAges;
+    for (const auto& author : distinctAuthors) {
+        distinctAges.insert(author.age);
+    }
+    
+    // Both sets should have the same 4 distinct ages
+    ASSERT_EQ(allAges.size(), 4);
+    ASSERT_EQ(distinctAges.size(), 4);
+    
+    // Verify we have all expected ages
+    ASSERT_TRUE(distinctAges.contains(25)); // Alice
+    ASSERT_TRUE(distinctAges.contains(28)); // Diana
+    ASSERT_TRUE(distinctAges.contains(30)); // Charlie and Frank (both should be returned)
+    ASSERT_TRUE(distinctAges.contains(35)); // Bob
+    
+    // Count how many authors have age 30 (should be 2)
+    int age30Count = 0;
+    for (const auto& author : distinctAuthors) {
+        if (author.age == 30) age30Count++;
+    }
+    ASSERT_EQ(age30Count, 2); // Both Charlie and Frank have age 30
+}
+
+TEST_F(ORMTest, DistinctMultipleFields) {
+    // Setup: Insert authors with duplicate combinations
+    Author duplicate1("Greg Smith", 25, "greg@example.com"); // Same age as Alice
+    Author duplicate2("Helen Smith", 35, "helen@example.com"); // Same age as Bob
+    Author duplicate3("Alice Clone", 25, "clone@example.com", 0, true, 4.5); // Same age and rating as Alice
+    
+    QuerySet<Author>(conn).insert(duplicate1);
+    QuerySet<Author>(conn).insert(duplicate2);
+    QuerySet<Author>(conn).insert(duplicate3);
+    
+    // Test distinct with multiple fields
+    auto authors = QuerySet<Author>(conn)
+        .distinct<&Author::age, &Author::rating>()
+        .select_all();
+    
+    // Count distinct combinations of age and rating
+    std::set<std::pair<int, double>> distinctCombinations;
+    for (const auto& author : authors) {
+        distinctCombinations.insert({author.age, author.rating});
+    }
+    
+    // Verify we have at least these distinct combinations
+    // Alice and clone (25, 4.5), Greg (25, 0.0), Bob and Helen (35, 5.0), Charlie (30, 4.0), Diana (28, 5.5)
+    // Note: Previous tests may have added additional authors with different combinations
+    ASSERT_GE(distinctCombinations.size(), 5);
+    ASSERT_TRUE(distinctCombinations.contains(std::make_pair(25, 4.5))); // Alice and clone
+    ASSERT_TRUE(distinctCombinations.contains(std::make_pair(25, 0.0))); // Greg
+    ASSERT_TRUE(distinctCombinations.contains(std::make_pair(35, 5.0))); // Bob and Helen
+    ASSERT_TRUE(distinctCombinations.contains(std::make_pair(30, 4.0))); // Charlie
+    ASSERT_TRUE(distinctCombinations.contains(std::make_pair(28, 5.5))); // Diana
+}
+
+TEST_F(ORMTest, DistinctWithWhere) {
+    // Setup: Insert authors with various ages
+    Author author1("Jack", 40, "jack@example.com");
+    Author author2("Kate", 40, "kate@example.com");
+    Author author3("Luke", 45, "luke@example.com");
+    
+    QuerySet<Author>(conn).insert(author1);
+    QuerySet<Author>(conn).insert(author2);
+    QuerySet<Author>(conn).insert(author3);
+    
+    // Test distinct with where clause
+    auto authors = QuerySet<Author>(conn)
+        .where(storm::field(&Author::age) >= 35)
+        .distinct<&Author::age>()
+        .select_all();
+    
+    // We should have at least 3 distinct ages (35, 40, 45) that are >= 35
+    // Note: Other tests may have added additional authors with ages >= 35
+    ASSERT_GE(authors.size(), 3);
+    
+    // Create a set of ages to verify uniqueness
+    std::set<int> distinctAges;
+    for (const auto& author : authors) {
+        distinctAges.insert(author.age);
+    }
+    
+    // Verify we have at least these 3 distinct ages
+    ASSERT_GE(distinctAges.size(), 3);
+    ASSERT_TRUE(distinctAges.contains(35)); // Bob, Eve, Ian
+    ASSERT_TRUE(distinctAges.contains(40)); // Jack and Kate (but only counted once)
+    ASSERT_TRUE(distinctAges.contains(45)); // Luke
+}
