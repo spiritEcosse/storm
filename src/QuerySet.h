@@ -47,6 +47,9 @@ namespace storm {
             std::string alias;
             std::string condition;
             JoinType type;
+            
+            JoinEntry(std::string tableName, std::string alias, std::string condition, JoinType type)
+                : tableName(std::move(tableName)), alias(std::move(alias)), condition(std::move(condition)), type(type) {}
         };
 
         std::vector<JoinEntry> joins;
@@ -963,35 +966,10 @@ namespace storm {
             this->onlyFields.push_back(std::make_unique<FieldAlias<Field>>(alias));
             return *this;
         }
-
     private:
         [[nodiscard]] std::string buildOnlyFields() const {
-            // Start with onlyFields
-            std::vector<std::string> fieldStrings;
-            
-            // If onlyFields is empty, use reflection to get all fields from the primary model
-            if (onlyFields.empty() && distinctFields.empty()) {
-                // When no specific fields requested, explicitly list all fields using reflection
-                Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
-                    if constexpr (refl::descriptor::is_field(member)) {
-                        std::string tableName = this->template get_table_name<T>();
-                        std::string fieldName = std::string(member.name);
-                        std::string formattedField = utils::formatFieldName(tableName, fieldName);
-                        fieldStrings.push_back(fmt::format(R"({} AS "{}")", formattedField, fieldName));
-                    }
-                });
-            } else {
-                // Use only the specified fields
-                fieldStrings.reserve(onlyFields.size());
-                std::transform(onlyFields.begin(), onlyFields.end(), std::back_inserter(fieldStrings),
-                    [](const auto& fieldAlias) -> std::string {
-                        return fieldAlias->alias.empty() ?
-                            fieldAlias->getFullFieldName() :
-                            fmt::format("{} AS {}", fieldAlias->getFullFieldName(), fieldAlias->alias);
-                    });
-            }
-            
-            return fmt::format("{}", fmt::join(fieldStrings, ", "));
+            auto [fieldNames, fieldsClause] = this->buildFieldsClause();
+            return fieldsClause;
         }
 
     public:
@@ -999,65 +977,6 @@ namespace storm {
         // =============================
         // SELECT
         // =============================
-        /**
-         * @brief Select only specific fields and return them as tuples
-         * 
-         * This method is more efficient than select_all() when you only need specific fields,
-         * as it doesn't construct complete model objects.
-         * 
-         * @tparam Fields Types of the fields to select (should match the types in the model)
-         * @return std::vector<std::tuple<Fields...>> Vector of tuples containing only selected fields
-         * 
-         * @example
-         *   auto results = QuerySet<Author>(conn)
-         *       .only(field(&Author::name))
-         *       .only(field(&Author::age))
-         *       .select_tuple<std::string, int>();
-         *   // returns: std::vector<std::tuple<std::string, int>>
-         */
-        template<typename... Fields>
-        std::vector<std::tuple<Fields...>> select_tuple() const {
-            static_assert(sizeof...(Fields) > 0, "You must specify at least one field type");
-            
-            // Make sure we have the right number of fields selected
-            if (this->onlyFields.size() != sizeof...(Fields)) {
-                throw std::runtime_error(fmt::format("Number of field types ({}) doesn't match number of selected fields ({})", 
-                                                   sizeof...(Fields), this->onlyFields.size()));
-            }
-            
-            // Get the where query result
-            auto where_query_result = this->get_where_query();
-            
-            auto sql = fmt::format("SELECT {} {} {} FROM \"{}\" {} {} {} {} {}", 
-                    this->createDistinctClause(),
-                    this->buildOnlyFields(), // Use the fields specified with only()
-                    this->buildFunctions(),
-                    this->template get_table_name<T>(),
-                    this->generateJoinSQL(),
-                    where_query_result.sql,
-                    this->generateGroupBySQL(),
-                    this->buildOrderFields(),
-                    this->limit_impl());
-            std::cout << sql << std::endl;
-            
-            auto stmt = Statement(conn, sql);
-            bind_query_parameters(stmt, where_query_result);
-            auto all_rows = stmt.execute_all();
-            
-            std::vector<std::tuple<Fields...>> results;
-            if (all_rows.empty()) {
-                return results;
-            }
-            
-            results.reserve(all_rows.size());
-            
-            for (const auto& row : all_rows) {
-                results.push_back(create_tuple<Fields...>(row));
-            }
-            
-            return results;
-        }
-        
         // Helper function to create tuples from rows
         template<typename... Fields>
         std::tuple<Fields...> create_tuple(const Row& row) const {
@@ -1173,16 +1092,46 @@ namespace storm {
             return results;
         }
         
-        std::vector<std::map<std::string, ValueVariant>> select_values() const {
-            if (this->onlyFields.empty()) {
-                throw std::runtime_error("You must specify at least one field with only() before calling select_values()");
+        /**
+        * @brief Select only specific fields and return them as tuples
+        * 
+        * This method is more efficient than select_all() when you only need specific fields,
+        * as it doesn't construct complete model objects.
+        * 
+        * @tparam Fields Types of the fields to select (should match the types in the model)
+        * @return std::vector<std::tuple<Fields...>> Vector of tuples containing only selected fields
+        * 
+        * @example
+        *   auto results = QuerySet<Author>(conn)
+        *       .only(field(&Author::name))
+        *       .only(field(&Author::age))
+        *       .select_tuple<std::string, int>();
+        *   // returns: std::vector<std::tuple<std::string, int>>
+        */
+
+        
+        template<typename... Fields>
+        std::vector<std::tuple<Fields...>> select_tuple() const {
+            static_assert(sizeof...(Fields) > 0, "You must specify at least one field type");
+            
+            // Check at runtime if we have the right number of fields
+            // This is still needed because the field counts are not known at compile time
+            if (this->onlyFields.empty() && this->distinctFields.empty()) {
+                throw std::runtime_error("You must specify fields with only() or distinct() before calling select_tuple()");
+            } else if (!this->onlyFields.empty() && this->onlyFields.size() != sizeof...(Fields)) {
+                throw std::runtime_error(fmt::format("Number of field types ({}) doesn't match number of selected fields ({})", 
+                                                   sizeof...(Fields), this->onlyFields.size()));
+            } else if (this->onlyFields.empty() && !this->distinctFields.empty() && this->distinctFields.size() != sizeof...(Fields)) {
+                throw std::runtime_error(fmt::format("Number of field types ({}) doesn't match number of distinct fields ({})", 
+                                                   sizeof...(Fields), this->distinctFields.size()));
             }
             
             // Get the where query result
             auto where_query_result = this->get_where_query();
+            
             auto sql = fmt::format("SELECT {} {} {} FROM \"{}\" {} {} {} {} {}", 
                     this->createDistinctClause(),
-                    this->buildOnlyFields(),
+                    this->buildOnlyFields(), // Use the fields specified with only()
                     this->buildFunctions(),
                     this->template get_table_name<T>(),
                     this->generateJoinSQL(),
@@ -1196,6 +1145,52 @@ namespace storm {
             bind_query_parameters(stmt, where_query_result);
             auto all_rows = stmt.execute_all();
             
+            std::vector<std::tuple<Fields...>> results;
+            if (all_rows.empty()) {
+                return results;
+            }
+            
+            results.reserve(all_rows.size());
+            
+            for (const auto& row : all_rows) {
+                results.push_back(create_tuple<Fields...>(row));
+            }
+            
+            return results;
+        }
+ 
+        std::vector<std::map<std::string, ValueVariant>> select_values() const {
+            // Check if we have fields to select
+            if (this->onlyFields.empty() && this->distinctFields.empty()) {
+                throw std::runtime_error("You must specify at least one field with only() or distinct() before calling select_values()");
+            }
+            
+            // Get the where query result
+            auto where_query_result = this->get_where_query();
+            
+            // Get field names and clause for SQL generation
+            auto [fieldNames, fieldsClause] = this->buildFieldsClause();
+            
+            // Generate the SQL query
+            auto sql = fmt::format("SELECT {} {} {} FROM \"{}\" {} {} {} {} {}", 
+                    this->createDistinctClause(),
+                    fieldsClause,
+                    this->buildFunctions(),
+                    this->template get_table_name<T>(),
+                    this->generateJoinSQL(),
+                    where_query_result.sql,
+                    this->generateGroupBySQL(),
+                    this->buildOrderFields(),
+                    this->limit_impl());
+            
+            std::cout << sql << std::endl;
+            
+            // Execute the query
+            auto stmt = Statement(conn, sql);
+            bind_query_parameters(stmt, where_query_result);
+            auto all_rows = stmt.execute_all();
+            
+            // Process the results
             std::vector<std::map<std::string, ValueVariant>> results;
             if (all_rows.empty()) {
                 return results;
@@ -1203,42 +1198,18 @@ namespace storm {
             
             results.reserve(all_rows.size());
             
-            // Build a list of field names from the onlyFields list
-            std::vector<std::string> fieldNames;
-            fieldNames.reserve(this->onlyFields.size());
-            
-            for (const auto& fieldAlias : this->onlyFields) {
-                // Use just the field name without table qualifier when no alias is provided
-                fieldNames.push_back(fieldAlias->alias.empty() ? 
-                                    fieldAlias->getFieldName() : 
-                                    fieldAlias->alias);
-            }
-            
             for (const auto& row : all_rows) {
                 std::map<std::string, ValueVariant> rowDict;
                 
                 for (size_t i = 0; i < fieldNames.size(); ++i) {
-                    // Get the field type information from the field alias
-                    const auto& fieldAlias = this->onlyFields[i];
-                    
-                    // Use the field's type information to determine how to retrieve the value
-                    if (fieldAlias->isStringField()) {
-                        // String fields should be retrieved as text
-                        rowDict[fieldNames[i]] = row.get_text(i);
-                    } else if (fieldAlias->isBoolField()) {
-                        // Boolean fields
-                        rowDict[fieldNames[i]] = static_cast<bool>(row.get_int(i));
-                    } else {
-                        // For numeric fields, try integer first, then double
+                    try {
+                        rowDict[fieldNames[i]] = row.get_int(i);
+                    } catch (...) {
                         try {
-                            rowDict[fieldNames[i]] = row.get_int(i);
+                            rowDict[fieldNames[i]] = row.get_double(i);
                         } catch (...) {
-                            try {
-                                rowDict[fieldNames[i]] = row.get_double(i);
-                            } catch (...) {
-                                // Default to text representation as fallback
-                                rowDict[fieldNames[i]] = row.get_text(i);
-                            }
+                            // Default to text representation as fallback
+                            rowDict[fieldNames[i]] = row.get_text(i);
                         }
                     }
                 }
@@ -1253,12 +1224,13 @@ namespace storm {
             // Get the where query result
             auto where_query_result = this->get_where_query();
             
-            // Build the SQL query based on whether we have distinct fields
-            std::string sql;
+            // Get field names and clause for SQL generation
+            auto [fieldNames, fieldsClause] = this->buildFieldsClause();
             
-            sql = fmt::format("SELECT {} {} {} FROM \"{}\" {} {} {} {} {}", 
+            // Build the SQL query
+            auto sql = fmt::format("SELECT {} {} {} FROM \"{}\" {} {} {} {} {}", 
                 this->createDistinctClause(),
-                this->buildOnlyFields(),
+                fieldsClause,
                 this->buildFunctions(),
                 this->template get_table_name<T>(),
                 this->generateJoinSQL(),
@@ -1394,19 +1366,72 @@ namespace storm {
             return *this;
         }
         
+        // The distinct functionality is now integrated into select_values()
+        
     private:
+        /**
+         * @brief Build the fields clause and field names for SQL queries
+         * 
+         * This method handles both distinct fields and only fields
+         * 
+         * @return std::pair<std::vector<std::string>, std::string> Pair of field names and fields clause
+         */
+        [[nodiscard]] std::pair<std::vector<std::string>, std::string> buildFieldsClause() const {
+            std::vector<std::string> fieldNames;
+            std::string fieldsClause;
+            
+            if (!this->distinctFields.empty() && this->onlyFields.empty()) {
+                // Use distinct fields
+                fieldNames.reserve(distinctFields.size());
+                std::vector<std::string> fieldStrings;
+                fieldStrings.reserve(distinctFields.size());
+                
+                for (const auto& fieldAlias : distinctFields) {
+                    fieldStrings.push_back(fieldAlias->getFullFieldName());
+                    fieldNames.push_back(fieldAlias->getFieldName());
+                }
+                
+                // Build fields string
+                fieldsClause = fmt::format("{}", fmt::join(fieldStrings, ", "));
+            } else if (!this->onlyFields.empty()) {
+                // Use only fields
+                fieldNames.reserve(onlyFields.size());
+                std::vector<std::string> fieldStrings;
+                fieldStrings.reserve(onlyFields.size());
+                
+                for (const auto& fieldAlias : onlyFields) {
+                    fieldNames.push_back(fieldAlias->getFieldName());
+                    fieldStrings.push_back(fieldAlias->alias.empty() ?
+                        fieldAlias->getFullFieldName() :
+                        fmt::format("{} AS {}", fieldAlias->getFullFieldName(), fieldAlias->alias));
+                }
+                
+                fieldsClause = fmt::format("{}", fmt::join(fieldStrings, ", "));
+            } else {
+                // When no specific fields requested, explicitly list all fields using reflection
+                std::vector<std::string> fieldStrings;
+                Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
+                    if constexpr (refl::descriptor::is_field(member)) {
+                        std::string tableName = this->template get_table_name<T>();
+                        std::string fieldName = std::string(member.name);
+                        std::string formattedField = utils::formatFieldName(tableName, fieldName);
+                        fieldNames.push_back(fieldName);
+                        fieldStrings.push_back(fmt::format(R"({} AS "{}")", formattedField, fieldName));
+                    }
+                });
+                
+                fieldsClause = fmt::format("{}", fmt::join(fieldStrings, ", "));
+            }
+            
+            return {fieldNames, fieldsClause};
+        }
+        
         [[nodiscard]] std::string createDistinctClause() const {
             if(distinctFields.empty()) {
                 return "";
             }
             
-            std::vector<std::string> fieldStrings;
-            fieldStrings.reserve(distinctFields.size());
-            std::transform(distinctFields.begin(), distinctFields.end(), std::back_inserter(fieldStrings),
-                [](const auto& fieldAlias) -> std::string {
-                    return fieldAlias->getFullFieldName();
-                });
-            return fmt::format("DISTINCT {}", fmt::join(fieldStrings, ", "));
+            return "DISTINCT ";
         }
 
     public:

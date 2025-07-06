@@ -1391,40 +1391,44 @@ TEST_F(ORMTest, DistinctTemplateBased) {
     // First, get all authors without distinct
     auto allAuthors = QuerySet<Author>(conn).select_all();
     
-    // Then, get authors with distinct ages
-    auto distinctAuthors = QuerySet<Author>(conn)
+    // Then, get distinct ages directly using select_values
+    auto distinctAgeValues = QuerySet<Author>(conn)
         .distinct<&Author::age>()
-        .select_all();
+        .select_values();
         
     // We should have 5 total authors (Alice, Bob, Charlie, Diana, Frank)
     ASSERT_EQ(allAuthors.size(), 5);
 
-    // With our implementation, we should get all 5 authors because DISTINCT applies to all columns
-    ASSERT_EQ(distinctAuthors.size(), 5);
-    // Create sets of ages to verify all ages are present
-    std::set<int> allAges;
+    // With our implementation, we should get 4 distinct ages
+    ASSERT_EQ(distinctAgeValues.size(), 4);
+    
+    // Create a set of all ages to verify all ages are present
+    std::set<int> allAgesSet;
     for (const auto& author : allAuthors) {
-        allAges.insert(author.age);
+        allAgesSet.insert(author.age);
     }
     
-    std::set<int> distinctAges;
-    for (const auto& author : distinctAuthors) {
-        distinctAges.insert(author.age);
+    // Extract the ages from the values and convert to a set
+    std::set<int> distinctAgesSet;
+    for (const auto& row : distinctAgeValues) {
+        ASSERT_TRUE(row.count("age"));
+        ASSERT_TRUE(std::holds_alternative<int>(row.at("age")));
+        distinctAgesSet.insert(std::get<int>(row.at("age")));
     }
     
     // Both sets should have the same 4 distinct ages
-    ASSERT_EQ(allAges.size(), 4);
-    ASSERT_EQ(distinctAges.size(), 4);
+    ASSERT_EQ(allAgesSet.size(), 4);
+    ASSERT_EQ(distinctAgesSet.size(), 4);
     
     // Verify we have all expected ages
-    ASSERT_TRUE(distinctAges.contains(25)); // Alice
-    ASSERT_TRUE(distinctAges.contains(28)); // Diana
-    ASSERT_TRUE(distinctAges.contains(30)); // Charlie and Frank (both should be returned)
-    ASSERT_TRUE(distinctAges.contains(35)); // Bob
+    ASSERT_TRUE(distinctAgesSet.contains(25)); // Alice
+    ASSERT_TRUE(distinctAgesSet.contains(28)); // Diana
+    ASSERT_TRUE(distinctAgesSet.contains(30)); // Charlie and Frank (both should be returned)
+    ASSERT_TRUE(distinctAgesSet.contains(35)); // Bob
     
     // Count how many authors have age 30 (should be 2)
     int age30Count = 0;
-    for (const auto& author : distinctAuthors) {
+    for (const auto& author : allAuthors) {
         if (author.age == 30) age30Count++;
     }
     ASSERT_EQ(age30Count, 2); // Both Charlie and Frank have age 30
@@ -1476,7 +1480,7 @@ TEST_F(ORMTest, DistinctWithWhere) {
     auto authors = QuerySet<Author>(conn)
         .where(storm::field(&Author::age) >= 35)
         .distinct<&Author::age>()
-        .select_all();
+        .select_tuple<int>();
     
     // We should have at least 3 distinct ages (35, 40, 45) that are >= 35
     // Note: Other tests may have added additional authors with ages >= 35
@@ -1484,8 +1488,8 @@ TEST_F(ORMTest, DistinctWithWhere) {
     
     // Create a set of ages to verify uniqueness
     std::set<int> distinctAges;
-    for (const auto& author : authors) {
-        distinctAges.insert(author.age);
+    for (const auto& tuple : authors) {
+        distinctAges.insert(std::get<0>(tuple));
     }
     
     // Verify we have at least these 3 distinct ages
