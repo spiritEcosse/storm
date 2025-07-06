@@ -1466,6 +1466,56 @@ TEST_F(ORMTest, DistinctMultipleFields) {
     ASSERT_TRUE(distinctCombinations.contains(std::make_pair(28, 5.5))); // Diana
 }
 
+TEST_F(ORMTest, DistinctWithOnlyFields) {
+    // Setup: Insert authors with duplicate combinations
+    Author duplicate1("Greg Smith", 25, "greg@example.com"); // Same age as Alice
+    Author duplicate2("Helen Smith", 35, "helen@example.com"); // Same age as Bob
+    Author duplicate3("Alice Clone", 25, "clone@example.com", 0, true, 4.5); // Same age and rating as Alice
+    
+    QuerySet<Author>(conn).insert(duplicate1);
+    QuerySet<Author>(conn).insert(duplicate2);
+    QuerySet<Author>(conn).insert(duplicate3);
+    
+    // Test distinct with only specific fields
+    auto distinctValues = QuerySet<Author>(conn)
+        .distinct<&Author::age>()
+        .only<&Author::age, &Author::name>()
+        .select_values();
+    
+    // When using distinct with only, we get distinct combinations of the fields
+    // So we'll have 7 rows (all unique combinations of age and name)
+    ASSERT_EQ(distinctValues.size(), 7);
+    
+    // Each row should contain only age and name fields
+    for (const auto& row : distinctValues) {
+        // Should have exactly 2 fields
+        ASSERT_EQ(row.size(), 2);
+        
+        // Should have age and name fields
+        ASSERT_TRUE(row.count("age"));
+        ASSERT_TRUE(row.count("name"));
+        
+        // Should not have other fields
+        ASSERT_FALSE(row.count("email"));
+        ASSERT_FALSE(row.count("id"));
+        ASSERT_FALSE(row.count("rating"));
+    }
+    
+    // Extract the ages from the values
+    std::set<int> distinctAgesSet;
+    for (const auto& row : distinctValues) {
+        ASSERT_TRUE(std::holds_alternative<int>(row.at("age")));
+        distinctAgesSet.insert(std::get<int>(row.at("age")));
+    }
+    
+    // Verify we have all expected ages
+    ASSERT_EQ(distinctAgesSet.size(), 4);
+    ASSERT_TRUE(distinctAgesSet.contains(25)); // Alice, Greg, and clone
+    ASSERT_TRUE(distinctAgesSet.contains(28)); // Diana
+    ASSERT_TRUE(distinctAgesSet.contains(30)); // Charlie
+    ASSERT_TRUE(distinctAgesSet.contains(35)); // Bob and Helen
+}
+
 TEST_F(ORMTest, DistinctWithWhere) {
     // Setup: Insert authors with various ages
     Author author1("Jack", 40, "jack@example.com");
