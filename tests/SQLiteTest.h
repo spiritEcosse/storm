@@ -1295,41 +1295,7 @@ TEST_F(ORMTest, SelectOnlyWithAlias) {
     }
 }
 
-TEST_F(ORMTest, SelectTuple) {
-    // Test the select_tuple method to get only specific fields as tuples
-    auto nameAndAges = QuerySet<Author>(conn)
-        .only<&Author::name, &Author::age>()
-        .select_tuple<std::string, int>();
-    
-    // Verify results
-    ASSERT_EQ(nameAndAges.size(), 4); // Should return all 4 authors
-    
-    // Check each tuple for expected values
-    std::set<std::string> names;
-    std::set<int> ages;
-    
-    for (const auto& [name, age] : nameAndAges) {
-        names.insert(name);
-        ages.insert(age);
-        
-        // Basic validation
-        EXPECT_FALSE(name.empty());
-        EXPECT_GT(age, 0);
-    }
-    
-    // Verify we got all the expected names
-    EXPECT_EQ(names.size(), 4);
-    EXPECT_TRUE(names.count("Alice Smith"));
-    EXPECT_TRUE(names.count("Bob Johnson"));
-    EXPECT_TRUE(names.count("Charlie Brown"));
-    EXPECT_TRUE(names.count("Diana Prince"));
-    
-    // Verify we got all the expected ages
-    EXPECT_EQ(ages.count(25), 1);
-    EXPECT_EQ(ages.count(35), 1);
-    EXPECT_EQ(ages.count(30), 1);
-    EXPECT_EQ(ages.count(28), 1);
-}
+
 
 TEST_F(ORMTest, SelectProjection) {
     // Test the select_projection method for strongly-typed partial objects
@@ -1535,19 +1501,29 @@ TEST_F(ORMTest, DistinctWithWhere) {
     QuerySet<Author>(conn).insert(author3);
     
     // Test distinct with where clause
-    auto authors = QuerySet<Author>(conn)
+    auto authorResults = QuerySet<Author>(conn)
         .where(storm::field(&Author::age) >= 35)
         .distinct<&Author::age>()
-        .select_tuple<int>();
+        .select_values();
     
     // We should have at least 3 distinct ages (35, 40, 45) that are >= 35
     // Note: Other tests may have added additional authors with ages >= 35
-    ASSERT_GE(authors.size(), 3);
+    ASSERT_GE(authorResults.size(), 3);
     
     // Create a set of ages to verify uniqueness
     std::set<int> distinctAges;
-    for (const auto& tuple : authors) {
-        distinctAges.insert(std::get<0>(tuple));
+    for (const auto& result : authorResults) {
+        // With select_values, we get a map with field name as key
+        distinctAges.insert(std::visit([](auto&& arg) -> int {
+            using ArgType = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<ArgType, int>) {
+                return arg;
+            } else if constexpr (std::is_arithmetic_v<ArgType>) {
+                return static_cast<int>(arg);
+            } else {
+                throw std::runtime_error("Cannot convert value to int");
+            }
+        }, result.at("age")));
     }
     
     // Verify we have at least these 3 distinct ages

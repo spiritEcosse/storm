@@ -1015,16 +1015,67 @@ namespace storm {
         // =============================
         // =============================
         // SELECT
-        // =============================
-        // Helper function to create tuples from rows
+        // ===========================
+        // These functions were used by select_tuple which has been removed
+        
+        // Define ValueVariant before using it
+        using ValueVariant = std::variant<
+            std::monostate,  // For null values
+            int,             // For integer types
+            double,          // For floating point types
+            bool,            // For boolean values
+            std::string      // For text values
+        >;
+        
+        // Helper function to create a tuple from a map of values
         template<typename... Fields>
-        std::tuple<Fields...> create_tuple(const Row& row) const {
-            return create_tuple_impl<Fields...>(row, std::index_sequence_for<Fields...>{});
+        std::tuple<Fields...> create_tuple_from_map(const std::map<std::string, ValueVariant>& valueMap, 
+                                                   const std::vector<std::string>& fieldNames) const {
+            return create_tuple_from_map_impl<Fields...>(valueMap, fieldNames, std::index_sequence_for<Fields...>{});
         }
         
-        template<typename... Fields, size_t... I>
-        std::tuple<Fields...> create_tuple_impl(const Row& row, std::index_sequence<I...>) const {
-            return std::make_tuple(get_value<Fields>(row, I)...);
+        template<typename... Fields, size_t... Indices>
+        std::tuple<Fields...> create_tuple_from_map_impl(
+            const std::map<std::string, ValueVariant>& valueMap,
+            const std::vector<std::string>& fieldNames,
+            std::index_sequence<Indices...>) const {
+            return std::tuple<Fields...>(
+                convert_map_value<Fields>(valueMap, fieldNames[Indices])...
+            );
+        }
+        
+        // Convert a value from the map to the specified type
+        template<typename ValueType>
+        ValueType convert_map_value(const std::map<std::string, ValueVariant>& valueMap, const std::string& fieldName) const {
+            try {
+                // Extract the field name without any table prefix
+                std::string simpleName = fieldName;
+                size_t dotPos = simpleName.find('.');
+                if (dotPos != std::string::npos) {
+                    simpleName = simpleName.substr(dotPos + 1);
+                }
+                
+                // Try to find the value using both the original field name and simplified name
+                auto it = valueMap.find(fieldName);
+                if (it == valueMap.end()) {
+                    it = valueMap.find(simpleName);
+                    if (it == valueMap.end()) {
+                        throw std::runtime_error(fmt::format("Field '{}' not found in result map", fieldName));
+                    }
+                }
+                
+                // Cast the value to the requested type using std::visit with a visitor lambda
+                return std::visit([](auto&& arg) -> ValueType {
+                    using ArgType = std::decay_t<decltype(arg)>;
+                    if constexpr (std::is_convertible_v<ArgType, ValueType>) {
+                        return static_cast<ValueType>(arg);
+                    } else {
+                        throw std::runtime_error("Cannot convert value to requested type");
+                    }
+                }, it->second);
+            } catch (const std::exception& e) {
+                throw std::runtime_error(fmt::format("Type conversion error for field '{}': {}", fieldName, e.what()));
+            }
         }
         
         template<typename ValueType>
@@ -1044,19 +1095,6 @@ namespace storm {
                 return ValueType{}; // This will never be reached due to the static_assert
             }
         }
-        
-        /**
-         * @brief Value variant type used in the select_values result
-         * 
-         * This variant can store any of the common DB value types
-         */
-        using ValueVariant = std::variant<
-            std::monostate,  // For null values
-            int,             // For integer types
-            double,          // For floating point types
-            bool,            // For boolean values
-            std::string      // For text values
-        >;
         
         /**
          * @brief Select only specific fields and return them as dictionaries
@@ -1116,14 +1154,19 @@ namespace storm {
                                                    sizeof...(Fields), this->onlyFields.size()));
             }
             
-            // Get tuples first using select_tuple
-            auto tuples = select_tuple<Fields...>();
+            // Get values using select_values
+            auto values = select_values();
             
-            // Convert tuples to projections
+            // Convert values to projections
             std::vector<Projection<Fields...>> results;
-            results.reserve(tuples.size());
+            results.reserve(values.size());
             
-            for (auto& tuple : tuples) {
+            // Get field names from onlyFields or distinctFields
+            auto [fieldNames, fieldsClause] = this->buildFieldsClause();
+            
+            for (auto& valueMap : values) {
+                // Create a tuple from the map values
+                std::tuple<Fields...> tuple = create_tuple_from_map<Fields...>(valueMap, fieldNames);
                 Projection<Fields...> proj{std::move(tuple)};
                 results.push_back(std::move(proj));
             }
@@ -1131,73 +1174,6 @@ namespace storm {
             return results;
         }
         
-        /**
-        * @brief Select only specific fields and return them as tuples
-        * 
-        * This method is more efficient than select_all() when you only need specific fields,
-        * as it doesn't construct complete model objects.
-        * 
-        * @tparam Fields Types of the fields to select (should match the types in the model)
-        * @return std::vector<std::tuple<Fields...>> Vector of tuples containing only selected fields
-        * 
-        * @example
-        *   auto results = QuerySet<Author>(conn)
-        *       .only(field(&Author::name))
-        *       .only(field(&Author::age))
-        *       .select_tuple<std::string, int>();
-        *   // returns: std::vector<std::tuple<std::string, int>>
-        */
-
-        
-        template<typename... Fields>
-        std::vector<std::tuple<Fields...>> select_tuple() const {
-            static_assert(sizeof...(Fields) > 0, "You must specify at least one field type");
-            
-            // Check at runtime if we have the right number of fields
-            // This is still needed because the field counts are not known at compile time
-            if (this->onlyFields.empty() && this->distinctFields.empty()) {
-                throw std::runtime_error("You must specify fields with only() or distinct() before calling select_tuple()");
-            } else if (!this->onlyFields.empty() && this->onlyFields.size() != sizeof...(Fields)) {
-                throw std::runtime_error(fmt::format("Number of field types ({}) doesn't match number of selected fields ({})", 
-                                                   sizeof...(Fields), this->onlyFields.size()));
-            } else if (this->onlyFields.empty() && !this->distinctFields.empty() && this->distinctFields.size() != sizeof...(Fields)) {
-                throw std::runtime_error(fmt::format("Number of field types ({}) doesn't match number of distinct fields ({})", 
-                                                   sizeof...(Fields), this->distinctFields.size()));
-            }
-            
-            // Get the where query result
-            auto where_query_result = this->get_where_query();
-            
-            auto sql = fmt::format("SELECT {} {} {} FROM \"{}\" {} {} {} {} {}", 
-                    this->createDistinctClause(),
-                    this->buildOnlyFields(), // Use the fields specified with only()
-                    this->buildFunctions(),
-                    this->template get_table_name<T>(),
-                    this->generateJoinSQL(),
-                    where_query_result.sql,
-                    this->generateGroupBySQL(),
-                    this->buildOrderFields(),
-                    this->limit_impl());
-            std::cout << sql << std::endl;
-            
-            auto stmt = Statement(conn, sql);
-            bind_query_parameters(stmt, where_query_result);
-            auto all_rows = stmt.execute_all();
-            
-            std::vector<std::tuple<Fields...>> results;
-            if (all_rows.empty()) {
-                return results;
-            }
-            
-            results.reserve(all_rows.size());
-            
-            for (const auto& row : all_rows) {
-                results.push_back(create_tuple<Fields...>(row));
-            }
-            
-            return results;
-        }
- 
         std::vector<std::map<std::string, ValueVariant>> select_values() const {
             // Check if we have fields to select
             if (this->onlyFields.empty() && this->distinctFields.empty()) {
@@ -1441,7 +1417,7 @@ namespace storm {
          * 
          * This method handles both distinct fields and only fields
          * 
-         * @return std::pair<std::vector<std::string>, std::string> Pair of field names and fields clause
+         * @return std::pair\<std::vector\<std::string\>, std::string\> Pair of field names and fields clause
          */
         [[nodiscard]] std::pair<std::vector<std::string>, std::string> buildFieldsClause() const {
             std::vector<std::string> fieldNames;
