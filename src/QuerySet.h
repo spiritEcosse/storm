@@ -1027,56 +1027,8 @@ namespace storm {
             std::string      // For text values
         >;
         
-        // Helper function to create a tuple from a map of values
-        template<typename... Fields>
-        std::tuple<Fields...> create_tuple_from_map(const std::map<std::string, ValueVariant>& valueMap, 
-                                                   const std::vector<std::string>& fieldNames) const {
-            return create_tuple_from_map_impl<Fields...>(valueMap, fieldNames, std::index_sequence_for<Fields...>{});
-        }
-        
-        template<typename... Fields, size_t... Indices>
-        std::tuple<Fields...> create_tuple_from_map_impl(
-            const std::map<std::string, ValueVariant>& valueMap,
-            const std::vector<std::string>& fieldNames,
-            std::index_sequence<Indices...>) const {
-            return std::tuple<Fields...>(
-                convert_map_value<Fields>(valueMap, fieldNames[Indices])...
-            );
-        }
-        
-        // Convert a value from the map to the specified type
-        template<typename ValueType>
-        ValueType convert_map_value(const std::map<std::string, ValueVariant>& valueMap, const std::string& fieldName) const {
-            try {
-                // Extract the field name without any table prefix
-                std::string simpleName = fieldName;
-                size_t dotPos = simpleName.find('.');
-                if (dotPos != std::string::npos) {
-                    simpleName = simpleName.substr(dotPos + 1);
-                }
-                
-                // Try to find the value using both the original field name and simplified name
-                auto it = valueMap.find(fieldName);
-                if (it == valueMap.end()) {
-                    it = valueMap.find(simpleName);
-                    if (it == valueMap.end()) {
-                        throw std::runtime_error(fmt::format("Field '{}' not found in result map", fieldName));
-                    }
-                }
-                
-                // Cast the value to the requested type using std::visit with a visitor lambda
-                return std::visit([](auto&& arg) -> ValueType {
-                    using ArgType = std::decay_t<decltype(arg)>;
-                    if constexpr (std::is_convertible_v<ArgType, ValueType>) {
-                        return static_cast<ValueType>(arg);
-                    } else {
-                        throw std::runtime_error("Cannot convert value to requested type");
-                    }
-                }, it->second);
-            } catch (const std::exception& e) {
-                throw std::runtime_error(fmt::format("Type conversion error for field '{}': {}", fieldName, e.what()));
-            }
-        }
+        // Helper functions for tuple creation and value conversion have been removed
+        // since select_projection is no longer used
         
         template<typename ValueType>
         ValueType get_value(const Row& row, size_t idx) const {
@@ -1111,69 +1063,6 @@ namespace storm {
          *       .select_values();
          *   // Access data with: results[0]["name"], results[0]["age"]
          */
-        /**
-         * @brief Projection structure template for strongly-typed partial model access
-         * 
-         * @tparam Fields The field types included in this projection
-         */
-        template <typename... Fields>
-        struct Projection {
-            std::tuple<Fields...> values;
-            
-            // Access helpers by index
-            template <size_t I>
-            auto& get() { return std::get<I>(values); }
-            
-            template <size_t I>
-            const auto& get() const { return std::get<I>(values); }
-        };
-        
-        /**
-         * @brief Select only specific fields and return them as strongly-typed projection objects
-         * 
-         * This provides a balance between efficiency and type safety. The returned objects
-         * contain only the specified fields but with proper typing.
-         * 
-         * @tparam Fields Types of the fields to include in the projection
-         * @return std::vector<Projection<Fields...>> Vector of projection objects
-         * 
-         * @example
-         *   auto results = QuerySet<Author>(conn)
-         *       .only(field(&Author::name))
-         *       .only(field(&Author::age))
-         *       .select_projection<std::string, int>();
-         *   // Access with: results[0].get<0>() for name, results[0].get<1>() for age
-         */
-        template <typename... Fields>
-        std::vector<Projection<Fields...>> select_projection() const {
-            static_assert(sizeof...(Fields) > 0, "You must specify at least one field type");
-            
-            // Make sure we have the right number of fields selected
-            if (this->onlyFields.size() != sizeof...(Fields)) {
-                throw std::runtime_error(fmt::format("Number of field types ({}) doesn't match number of selected fields ({})", 
-                                                   sizeof...(Fields), this->onlyFields.size()));
-            }
-            
-            // Get values using select_values
-            auto values = select_values();
-            
-            // Convert values to projections
-            std::vector<Projection<Fields...>> results;
-            results.reserve(values.size());
-            
-            // Get field names from onlyFields or distinctFields
-            auto [fieldNames, fieldsClause] = this->buildFieldsClause();
-            
-            for (auto& valueMap : values) {
-                // Create a tuple from the map values
-                std::tuple<Fields...> tuple = create_tuple_from_map<Fields...>(valueMap, fieldNames);
-                Projection<Fields...> proj{std::move(tuple)};
-                results.push_back(std::move(proj));
-            }
-            
-            return results;
-        }
-        
         std::vector<std::map<std::string, ValueVariant>> select_values() const {
             // Check if we have fields to select
             if (this->onlyFields.empty() && this->distinctFields.empty()) {
