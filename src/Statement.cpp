@@ -134,8 +134,14 @@ Row::Row(sqlite3_stmt* stmt, int column_count) {
     int_values.reserve(column_count);
     double_values.reserve(column_count);
     text_values.reserve(column_count);
+    column_types.reserve(column_count);
     
     for (int i = 0; i < column_count; ++i) {
+        // Store the column type first
+        int type = sqlite3_column_type(stmt, i);
+        column_types.push_back(type);
+        
+        // Store values based on their types
         int_values.push_back(sqlite3_column_int(stmt, i));
         double_values.push_back(sqlite3_column_double(stmt, i));
         

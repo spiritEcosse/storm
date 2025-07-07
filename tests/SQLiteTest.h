@@ -1444,15 +1444,23 @@ TEST_F(ORMTest, DistinctMultipleFields) {
     QuerySet<Author>(conn).insert(duplicate2);
     QuerySet<Author>(conn).insert(duplicate3);
     
-    // Test distinct with multiple fields
-    auto authors = QuerySet<Author>(conn)
+    // Test distinct with multiple fields - use select_values() instead of select_all()
+    // since distinct queries return only the specified fields, not complete objects
+    auto distinctValues = QuerySet<Author>(conn)
         .distinct<&Author::age, &Author::rating>()
-        .select_all();
+        .select_values();
     
     // Count distinct combinations of age and rating
     std::set<std::pair<int, double>> distinctCombinations;
-    for (const auto& author : authors) {
-        distinctCombinations.insert({author.age, author.rating});
+    for (const auto& row : distinctValues) {
+        // Extract age and rating from the returned values
+        ASSERT_TRUE(row.count("age"));
+        ASSERT_TRUE(row.count("rating"));
+        
+        // With our improved implementation, we should get the correct types
+        int age = std::get<int>(row.at("age"));
+        double rating = std::get<double>(row.at("rating"));
+        distinctCombinations.insert({age, rating});
     }
     
     // Verify we have at least these distinct combinations
@@ -1547,4 +1555,75 @@ TEST_F(ORMTest, DistinctWithWhere) {
     ASSERT_TRUE(distinctAges.contains(35)); // Bob, Eve, Ian
     ASSERT_TRUE(distinctAges.contains(40)); // Jack and Kate (but only counted once)
     ASSERT_TRUE(distinctAges.contains(45)); // Luke
+}
+
+// RAW SQL TESTS
+TEST_F(ORMTest, RawSqlFromStatementInsert) {
+    // Create a new author for testing
+    Author testAuthor("Test Author", 40, "test@example.com");
+    
+    // Get the Statement object without executing it
+    auto stmt = QuerySet<Author>(conn).stmt_insert(testAuthor);
+    
+    // Verify that we can get the raw SQL
+    std::string rawSql = stmt.sql();
+    std::cout << rawSql << std::endl;
+    
+    // Check the exact SQL string format
+    // The SQL should be in the format: INSERT INTO author (name, age, email, is_active, rating, score, middleName, biography) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id;
+    std::string expectedSqlPattern = "INSERT INTO author (";
+    ASSERT_TRUE(rawSql.find(expectedSqlPattern) == 0) << "SQL should start with '" << expectedSqlPattern << "' but got: " << rawSql;
+    
+    // Check for field names in the SQL
+    ASSERT_TRUE(rawSql.find("name") != std::string::npos) << "SQL should contain 'name' field";
+    ASSERT_TRUE(rawSql.find("age") != std::string::npos) << "SQL should contain 'age' field";
+    ASSERT_TRUE(rawSql.find("email") != std::string::npos) << "SQL should contain 'email' field";
+    
+    // Check for VALUES clause
+    ASSERT_TRUE(rawSql.find(") VALUES (") != std::string::npos) << "SQL should contain ') VALUES (' but got: " << rawSql;
+    
+    // Check for placeholders
+    size_t questionMarkCount = 0;
+    for (char c : rawSql) {
+        if (c == '?') questionMarkCount++;
+    }
+    ASSERT_EQ(questionMarkCount, 8) << "Expected 8 placeholders but found " << questionMarkCount;
+    
+    // Check for RETURNING clause
+    ASSERT_TRUE(rawSql.find("RETURNING id") != std::string::npos) << "SQL should contain 'RETURNING id' but got: " << rawSql;
+    
+    // Now execute the insert and verify it worked
+    int authorId = QuerySet<Author>(conn).insert(testAuthor);
+    ASSERT_GT(authorId, 0);
+
+    // Test with multiple objects
+    std::vector<Author> authors = {
+        Author("Multi Author 1", 41, "multi1@example.com"),
+        Author("Multi Author 2", 42, "multi2@example.com")
+    };
+    
+    // Get the Statement object for multiple inserts
+    auto multiStmt = QuerySet<Author>(conn).stmt_insert(authors);
+    
+    // Verify the SQL for multiple inserts
+    std::string multiRawSql = multiStmt.sql();
+    
+    // Check the exact SQL string format for multiple inserts
+    ASSERT_TRUE(multiRawSql.find(expectedSqlPattern) == 0) << "Multi SQL should start with '" << expectedSqlPattern << "' but got: " << multiRawSql;
+    
+    // Check for VALUES with multiple value sets
+    ASSERT_TRUE(multiRawSql.find(") VALUES (?") != std::string::npos) << "SQL should contain ') VALUES (?' but got: " << multiRawSql;
+    
+    // Check for multiple sets of placeholders
+    questionMarkCount = 0;
+    for (char c : multiRawSql) {
+        if (c == '?') questionMarkCount++;
+    }
+    ASSERT_EQ(questionMarkCount, 16) << "Expected 16 placeholders (8 per author) but found " << questionMarkCount;
+    
+    // Execute the multiple inserts and verify
+    auto ids = QuerySet<Author>(conn).insert(authors);
+    ASSERT_EQ(ids.size(), 2);
+    ASSERT_GT(ids[0], 0);
+    ASSERT_GT(ids[1], 0);
 }

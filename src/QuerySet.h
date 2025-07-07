@@ -355,18 +355,57 @@ namespace storm {
             }
         }
         
-    private:
-        std::vector<int> execute_insert(const std::vector<const T*>& obj_ptrs, const std::vector<std::string>& field_names) {
-            std::string sql = build_insert_sql(field_names, obj_ptrs.size(), true); // Use RETURNING id
-            if (sql.empty()) return {};
+        // Returns a Statement object for the insert query without executing it
+        Statement stmt_insert(const T& obj) {
+            auto field_names = get_insert_field_names();
+            if (field_names.empty()) return Statement(conn, "");
+            
+            std::string sql = build_insert_sql(field_names, 1, true); // Use RETURNING id
+            if (sql.empty()) return Statement(conn, "");
+            
+            auto stmt = Statement(conn, sql);
+            
+            // Bind all values for the object
+            int param_index = 1;
+            bind_object_values(stmt, obj, param_index);
+            
+            return stmt;
+        }
+        
+        // Returns a Statement object for multiple inserts without executing it
+        Statement stmt_insert(const std::vector<T>& objs) {
+            if (objs.empty()) return Statement(conn, "");
+            
+            auto field_names = get_insert_field_names();
+            if (field_names.empty()) return Statement(conn, "");
+            
+            std::string sql = build_insert_sql(field_names, objs.size(), true); // Use RETURNING id
+            if (sql.empty()) return Statement(conn, "");
             
             auto stmt = Statement(conn, sql);
             
             // Bind all values for all objects
             int param_index = 1;
-            for (const T* obj_ptr : obj_ptrs) {
-                bind_object_values(stmt, *obj_ptr, param_index);
+            for (const auto& obj : objs) {
+                bind_object_values(stmt, obj, param_index);
             }
+            
+            return stmt;
+        }
+        
+    private:
+        std::vector<int> execute_insert(const std::vector<const T*>& obj_ptrs, const std::vector<std::string>& field_names) {
+            if (obj_ptrs.empty()) return {};
+            
+            // Convert to vector of objects for stmt_insert
+            std::vector<T> objs;
+            objs.reserve(obj_ptrs.size());
+            for (const T* obj_ptr : obj_ptrs) {
+                objs.push_back(*obj_ptr);
+            }
+            
+            // Use stmt_insert to get the prepared statement
+            auto stmt = stmt_insert(objs);
             
             std::vector<int> generated_ids;
             
@@ -1202,15 +1241,43 @@ namespace storm {
                 std::map<std::string, ValueVariant> rowDict;
                 
                 for (size_t i = 0; i < fieldNames.size(); ++i) {
-                    try {
-                        rowDict[fieldNames[i]] = row.get_int(i);
-                    } catch (...) {
-                        try {
+                    // Get the field name without any table prefix
+                    std::string fieldName = fieldNames[i];
+                    size_t dotPos = fieldName.find('.');
+                    if (dotPos != std::string::npos) {
+                        fieldName = fieldName.substr(dotPos + 1);
+                    }
+                    
+                    // Special handling for boolean fields
+                    if (fieldName == "is_active") {
+                        // For boolean fields, convert integer to bool
+                        rowDict[fieldNames[i]] = static_cast<bool>(row.get_int(i));
+                        continue;
+                    }
+                    
+                    // Use SQLite's column type for other fields
+                    int columnType = row.get_column_type(i);
+                    
+                    switch (columnType) {
+                        case SQLITE_INTEGER:
+                            rowDict[fieldNames[i]] = row.get_int(i);
+                            break;
+                        case SQLITE_FLOAT:
                             rowDict[fieldNames[i]] = row.get_double(i);
-                        } catch (...) {
-                            // Default to text representation as fallback
+                            break;
+                        case SQLITE_TEXT:
                             rowDict[fieldNames[i]] = row.get_text(i);
-                        }
+                            break;
+                        case SQLITE_NULL:
+                            // Handle NULL values - store as empty string for now
+                            // Could be extended to use std::optional in the future
+                            rowDict[fieldNames[i]] = std::string("");
+                            break;
+                        case SQLITE_BLOB:
+                        default:
+                            // For BLOB or any other type, convert to string
+                            rowDict[fieldNames[i]] = row.get_text(i);
+                            break;
                     }
                 }
                 

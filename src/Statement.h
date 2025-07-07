@@ -19,11 +19,13 @@ class Row {
         int get_int(int idx) const { return int_values[idx]; }
         double get_double(int idx) const { return double_values[idx]; }
         const std::string& get_text(int idx) const { return text_values[idx]; }
+        int get_column_type(int idx) const { return column_types[idx]; }
         
     private:
         std::vector<int> int_values;
         std::vector<double> double_values;
         std::vector<std::string> text_values;
+        std::vector<int> column_types; // Stores SQLite column types (SQLITE_INTEGER, SQLITE_FLOAT, etc.)
 };
 
 class Statement {
@@ -31,6 +33,9 @@ class Statement {
 public:
     Statement(std::shared_ptr<Connection> conn, const std::string& sql);
     const std::string& get_sql() const { return sql_; }
+    
+    // Returns the raw SQL query string
+    std::string sql() const { return sql_; }
 
     ~Statement();
     Statement(const Statement&) = delete;
