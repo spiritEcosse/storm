@@ -691,10 +691,10 @@ namespace storm {
             std::vector<std::string> fieldStrings;
             fieldStrings.reserve(groupByFields.size());
             
-            for (const auto& field : groupByFields) {
-                fieldStrings.push_back(field->getFullFieldName());
-            }
-            
+            auto fieldNames = groupByFields | std::ranges::views::transform([](const auto& field) {
+                return field->getFullFieldName();
+            });
+            fieldStrings.assign(fieldNames.begin(), fieldNames.end());
             return fmt::format("GROUP BY {}", fmt::join(fieldStrings, ", "));
         }
     
@@ -730,11 +730,12 @@ namespace storm {
             std::vector<std::string> fieldStrings;
             fieldStrings.reserve(orderFields.size());
             
-            for(const auto &pair : orderFields) {
-                fieldStrings.push_back(fmt::format("{} {}", 
-                                                    pair.first(), // Call the function to get field name
-                                                    pair.second ? "ASC" : "DESC"));
-            }
+            auto formattedFields = orderFields | std::ranges::views::transform([](const auto& pair) {
+                return fmt::format("{} {}",
+                                  pair.first(), // Call the function to get field name
+                                  pair.second ? "ASC" : "DESC");
+            });
+            fieldStrings.assign(formattedFields.begin(), formattedFields.end());
             
             return fmt::format(" ORDER BY {}", fmt::join(fieldStrings, ", "));
         }
