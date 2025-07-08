@@ -34,14 +34,16 @@ Statement::~Statement() {
     }
 }
 
-Statement::Statement(Statement&& other) noexcept : conn(other.conn), stmt(other.stmt) {
+Statement::Statement(Statement&& other) noexcept : conn(other.conn), stmt(other.stmt), sql_(std::move(other.sql_)) {
     other.stmt = nullptr;
 }
 
 Statement& Statement::operator=(Statement&& other) noexcept {
     if (this != &other) {
         if (stmt) sqlite3_finalize(stmt);
+        conn = std::move(other.conn);
         stmt = other.stmt;
+        sql_ = std::move(other.sql_);
         other.stmt = nullptr;
     }
     return *this;

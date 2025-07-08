@@ -176,7 +176,12 @@ namespace storm {
         std::shared_ptr<Connection> conn;
         std::optional<storm::Where> _whereExpression;
         JoinInfo joinInfo;
-        std::vector<std::pair<std::function<std::string()>, bool>> orderFields;
+        // Order fields with direction (field, ascending/descending)
+        struct OrderFieldInfo {
+            std::unique_ptr<FieldAliasBase> field;
+            bool ascending;
+        };
+        std::vector<OrderFieldInfo> orderFields;
         std::vector<std::unique_ptr<FieldAliasBase>> distinctFields;
         std::string _jsonFields;
         std::vector<std::unique_ptr<FieldAliasBase>> onlyFields;
@@ -342,7 +347,7 @@ namespace storm {
                 std::vector<const T*> obj_ptrs;
                 obj_ptrs.reserve(objs.size());
                 for (const auto& obj : objs) {
-                    obj_ptrs.push_back(&obj);
+                    obj_ptrs.emplace_back(&obj);
                 }
                 
                 return execute_insert(obj_ptrs, field_names);
@@ -371,10 +376,14 @@ namespace storm {
         // Returns a Statement object for the insert query without executing it
         Statement stmt_insert(const T& obj) {
             auto field_names = get_insert_field_names();
-            if (field_names.empty()) return Statement(conn, "");
+            if (field_names.empty()) {
+                return Statement(conn, "");
+            }
             
             std::string sql = build_insert_sql(field_names, 1, true); // Use RETURNING id
-            if (sql.empty()) return Statement(conn, "");
+            if (sql.empty()) {
+                return Statement(conn, "");
+            }
             
             auto stmt = Statement(conn, sql);
             
@@ -414,7 +423,7 @@ namespace storm {
             std::vector<T> objs;
             objs.reserve(obj_ptrs.size());
             for (const T* obj_ptr : obj_ptrs) {
-                objs.push_back(*obj_ptr);
+                objs.emplace_back(*obj_ptr);
             }
             
             // Use stmt_insert to get the prepared statement
@@ -427,7 +436,7 @@ namespace storm {
             
             // Extract IDs from the returned rows
             for (const auto& row : rows) {
-                generated_ids.push_back(row.get_int(0)); // ID is in the first column
+                generated_ids.emplace_back(row.get_int(0)); // ID is in the first column
             }
             
             return generated_ids;
@@ -460,7 +469,7 @@ namespace storm {
                 if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
                     std::string field_name = Reflect<T>::get_member_name(member);
                     if (field_name != "id") { // Skip auto-generated id
-                        field_names.push_back(field_name);
+                        field_names.emplace_back(field_name);
                     }
                 }
             });
@@ -498,7 +507,7 @@ namespace storm {
                 std::vector<const T*> obj_ptrs;
                 obj_ptrs.reserve(objs.size());
                 for (const auto& obj : objs) {
-                    obj_ptrs.push_back(&obj);
+                    obj_ptrs.emplace_back(&obj);
                 }
                 
                 return execute_update(obj_ptrs, field_names);
@@ -528,7 +537,7 @@ namespace storm {
                 
                 // Close with ELSE and END
                 case_expr += fmt::format("        ELSE {}\n    END", field);
-                set_clauses.push_back(case_expr);
+                set_clauses.emplace_back(case_expr);
             }
             
             // Create placeholders for the WHERE IN clause
@@ -598,7 +607,7 @@ namespace storm {
                 std::vector<const T*> obj_ptrs;
                 obj_ptrs.reserve(objs.size());
                 for (const auto& obj : objs) {
-                    obj_ptrs.push_back(&obj);
+                    obj_ptrs.emplace_back(&obj);
                 }
                 
                 return execute_delete(obj_ptrs);
@@ -673,7 +682,7 @@ namespace storm {
             
             // Process each field using a fold expression
             auto addField = [this]<auto Field>() {
-                this->groupByFields.push_back(std::make_unique<FieldAlias<Field>>());
+                this->groupByFields.emplace_back(std::make_unique<FieldAlias<Field>>());
             };
             
             // Apply the lambda to each field in the parameter pack
@@ -703,25 +712,70 @@ namespace storm {
         // =============================
         // ORDER BY
         // =============================
-        // Compile-time version for multiple member pointers
-        template<auto Field, bool Ascending = true, auto... Rest>
+        // Convenience overload for a single field (defaults to ascending order)
+        template<auto Field>
         QuerySet& order_by() {
             static_assert(std::is_member_pointer_v<decltype(Field)>, 
                         "Field must be a member pointer");
+            
+            // Add field to order criteria with default ascending order (true)
+            this->orderFields.emplace_back(
+                std::make_unique<FieldAlias<Field>>(),
+                true // Default to ascending
+            );
+            
+            return *this;
+        }
+        
+        // Modern compile-time version for multiple field-direction pairs
+        template<auto Field, auto Direction, auto... Rest>
+        QuerySet& order_by() {
+            // Ensure we have valid field-direction pairs
+            static_assert(std::is_member_pointer_v<decltype(Field)>, 
+                        "Field must be a member pointer");
+            static_assert(std::is_same_v<decltype(Direction), bool>, 
+                        "Direction must be a boolean value");
             static_assert(sizeof...(Rest) % 2 == 0, 
                         "Must provide field-direction pairs (field, bool, field, bool, ...)");
             
-            // Add current field to order criteria
-            this->orderFields.emplace_back(createFieldNameGenerator<Field>(), Ascending);
+            // Reserve capacity for all pairs
+            this->orderFields.reserve(this->orderFields.size() + (sizeof...(Rest) / 2 + 1));
             
-            // Recursively process remaining field-direction pairs
+            // Add the first field-direction pair
+            this->orderFields.emplace_back(
+                std::make_unique<FieldAlias<Field>>(),
+                Direction
+            );
+            
+            // Process remaining pairs if any
             if constexpr (sizeof...(Rest) > 0) {
-                return order_by<Rest...>();
+                processOrderByPairs<Rest...>();
             }
             
             return *this;
         }
+                
     private:
+        // Helper to process field-direction pairs recursively
+        template<auto Field, auto Direction, auto... Rest>
+        void processOrderByPairs() {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, 
+                        "Field must be a member pointer");
+            static_assert(std::is_same_v<decltype(Direction), bool>, 
+                        "Direction must be a boolean value");
+            
+            // Add the current field-direction pair
+            this->orderFields.emplace_back(
+                std::make_unique<FieldAlias<Field>>(),
+                Direction
+            );
+            
+            // Process remaining pairs if any
+            if constexpr (sizeof...(Rest) >= 2) {
+                processOrderByPairs<Rest...>();
+            }
+        }
+    
         [[nodiscard]] std::string buildOrderFields() const {
             if(orderFields.empty()) {
                 return "";
@@ -730,10 +784,10 @@ namespace storm {
             std::vector<std::string> fieldStrings;
             fieldStrings.reserve(orderFields.size());
             
-            auto formattedFields = orderFields | std::ranges::views::transform([](const auto& pair) {
+            auto formattedFields = orderFields | std::ranges::views::transform([](const auto& orderInfo) {
                 return fmt::format("{} {}",
-                                  pair.first(), // Call the function to get field name
-                                  pair.second ? "ASC" : "DESC");
+                                  orderInfo.field->getFullFieldName(), // Get field name from FieldAlias
+                                  orderInfo.ascending ? "ASC" : "DESC");
             });
             fieldStrings.assign(formattedFields.begin(), formattedFields.end());
             
@@ -971,7 +1025,7 @@ namespace storm {
             
             // Process each field
             auto addField = [this]<auto Field>() {
-                this->onlyFields.push_back(std::make_unique<FieldAlias<Field>>());
+                this->onlyFields.emplace_back(std::make_unique<FieldAlias<Field>>());
             };
             
             (addField.template operator()<Fields>(), ...);
@@ -984,7 +1038,7 @@ namespace storm {
         QuerySet& only(const std::string& alias) {
             static_assert(std::is_member_pointer_v<decltype(Field)>, 
                         "Field must be a member pointer");
-            this->onlyFields.push_back(std::make_unique<FieldAlias<Field>>(alias));
+            this->onlyFields.emplace_back(std::make_unique<FieldAlias<Field>>(alias));
             return *this;
         }
     private:
@@ -1125,7 +1179,7 @@ namespace storm {
                     }
                 }
                 
-                results.push_back(std::move(rowDict));
+                results.emplace_back(std::move(rowDict));
             }
             
             return results;
@@ -1224,7 +1278,7 @@ namespace storm {
                     }
                 }
                 
-                results.push_back(std::move(obj));
+                results.emplace_back(std::move(obj));
             }
             
             return results;
@@ -1269,7 +1323,7 @@ namespace storm {
             
             // Process each field
             auto addField = [this]<auto Field>() {
-                this->distinctFields.push_back(std::make_unique<FieldAlias<Field>>());
+                this->distinctFields.emplace_back(std::make_unique<FieldAlias<Field>>());
             };
             
             (addField.template operator()<Fields>(), ...);
@@ -1298,8 +1352,8 @@ namespace storm {
                 fieldStrings.reserve(distinctFields.size());
                 
                 for (const auto& fieldAlias : distinctFields) {
-                    fieldStrings.push_back(fieldAlias->getFullFieldName());
-                    fieldNames.push_back(fieldAlias->getFieldName());
+                    fieldStrings.emplace_back(fieldAlias->getFullFieldName());
+                    fieldNames.emplace_back(fieldAlias->getFieldName());
                 }
                 
                 // Build fields string
@@ -1311,8 +1365,8 @@ namespace storm {
                 fieldStrings.reserve(onlyFields.size());
                 
                 for (const auto& fieldAlias : onlyFields) {
-                    fieldNames.push_back(fieldAlias->getFieldName());
-                    fieldStrings.push_back(fieldAlias->alias.empty() ?
+                    fieldNames.emplace_back(fieldAlias->getFieldName());
+                    fieldStrings.emplace_back(fieldAlias->alias.empty() ?
                         fieldAlias->getFullFieldName() :
                         fmt::format("{} AS {}", fieldAlias->getFullFieldName(), fieldAlias->alias));
                 }
@@ -1326,8 +1380,8 @@ namespace storm {
                         std::string tableName = this->template get_table_name<T>();
                         std::string fieldName = std::string(member.name);
                         std::string formattedField = utils::formatFieldName(tableName, fieldName);
-                        fieldNames.push_back(fieldName);
-                        fieldStrings.push_back(fmt::format(R"({} AS "{}")", formattedField, fieldName));
+                        fieldNames.emplace_back(fieldName);
+                        fieldStrings.emplace_back(fmt::format(R"({} AS "{}")", formattedField, fieldName));
                     }
                 });
                 
