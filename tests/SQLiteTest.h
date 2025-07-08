@@ -61,8 +61,11 @@ class ORMTest : public ::testing::Test {
 protected:
     std::shared_ptr<Connection> conn;
     std::string db_name;
-    int alice_id, bob_id, charlie_id, diana_id;
-
+    int alice_id;
+    int bob_id;
+    int charlie_id;
+    int diana_id;
+    
     void SetUp() override {
         // Use in-memory SQLite database for isolation
         db_name = ":memory:";
@@ -873,18 +876,18 @@ TEST_F(ORMTest, WhereClauseNTTPComparisonWithTraditional) {
 // string, LIKE
 TEST_F(ORMTest, WhereClauseStringComparison) {
     Author author("John Doe", 30, "john@example.com");
-    int author_id = QuerySet<Author>(conn).insert(author);
+    QuerySet<Author>(conn).insert(author);
     
     Author author2("John Doe Smith", 31, "john.smith@example.com");
-    int author_id2 = QuerySet<Author>(conn).insert(author2);
+    QuerySet<Author>(conn).insert(author2);
     
     std::vector<Author> authors = QuerySet<Author>(conn)
         .where(&Author::name, std::string("John%"), Op::LIKE)
         .select_all();
     
     ASSERT_EQ(authors.size(), 2);
-    for (const auto& author : authors) {
-        EXPECT_TRUE(author.name.substr(0, 4) == "John");
+    for (const auto& foundAuthor : authors) {
+        EXPECT_TRUE(foundAuthor.name.substr(0, 4) == "John");
     }
 }
 
@@ -990,7 +993,7 @@ TEST_F(ORMTest, WhereClauseOrOperator) {
         .select_all();
     
     ASSERT_EQ(authors.size(), 2);
-    std::set<std::string> names;
+    std::set<std::string, std::less<>> names;
     for (const auto& author : authors) {
         names.insert(author.name);
     }
@@ -1016,7 +1019,7 @@ TEST_F(ORMTest, WhereClauseComplexAndOr) {
         .select_all();
     
     ASSERT_EQ(authors.size(), 2);
-    std::set<std::string> names;
+    std::set<std::string, std::less<>> names;
     for (const auto& author : authors) {
         names.insert(author.name);
     }
@@ -1031,7 +1034,7 @@ TEST_F(ORMTest, WhereClauseComplexOrAnd) {
         .select_all();
     
     ASSERT_EQ(authors.size(), 2);
-    std::set<std::string> names;
+    std::set<std::string, std::less<>> names;
     for (const auto& author : authors) {
         names.insert(author.name);
     }
@@ -1047,7 +1050,7 @@ TEST_F(ORMTest, WhereClauseTripleAnd) {
         .select_all();
     
     ASSERT_EQ(authors.size(), 3);
-    std::set<std::string> names;
+    std::set<std::string, std::less<>> names;
     for (const auto& author : authors) {
         names.insert(author.name);
     }
@@ -1063,7 +1066,7 @@ TEST_F(ORMTest, WhereClauseTripleOr) {
         .select_all();
     
     ASSERT_EQ(authors.size(), 3);
-    std::set<std::string> names;
+    std::set<std::string, std::less<>> names;
     for (const auto& author : authors) {
         names.insert(author.name);
     }
@@ -1081,7 +1084,7 @@ TEST_F(ORMTest, WhereClauseNestedComplexGrouping) {
         .select_all();
     
     ASSERT_EQ(authors.size(), 2);
-    std::set<std::string> names;
+    std::set<std::string, std::less<>> names;
     for (const auto& author : authors) {
         names.insert(author.name);
     }
@@ -1098,7 +1101,7 @@ TEST_F(ORMTest, WhereClauseComplexNestedConditions) {
         .select_all();
     
     ASSERT_EQ(authors.size(), 3);
-    std::set<std::string> names;
+    std::set<std::string, std::less<>> names;
     for (const auto& author : authors) {
         names.insert(author.name);
     }
@@ -1111,12 +1114,12 @@ TEST_F(ORMTest, WhereClauseMixedDataTypes) {
     // Test with different data types: string, int, double, bool
     // Test: name LIKE 'Alice%' OR (age > 30 AND rating >= 4.0 AND is_active = true)
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(field(&Author::name).like("Alice%") or 
+        .where(field(&Author::name).like("Alice%") or // NOSONAR
                (field(&Author::age) > 30 and field(&Author::rating) >= 4.0 and field(&Author::is_active) == true)) // NOSONAR
         .select_all();
     
     ASSERT_EQ(authors.size(), 2);
-    std::set<std::string> names;
+    std::set<std::string, std::less<>> names;
     for (const auto& author : authors) {
         names.insert(author.name);
     }
@@ -1132,7 +1135,7 @@ TEST_F(ORMTest, WhereClauseGroupMethod) {
         .select_all();
     
     ASSERT_EQ(authors.size(), 2);
-    std::set<std::string> names;
+    std::set<std::string, std::less<>> names;
     for (const auto& author : authors) {
         names.insert(author.name);
     }
@@ -1148,7 +1151,7 @@ TEST_F(ORMTest, WhereClauseStringOperations) {
         .select_all();
     
     ASSERT_EQ(authors.size(), 2);
-    std::set<std::string> names;
+    std::set<std::string, std::less<>> names;
     for (const auto& author : authors) {
         names.insert(author.name);
     }
@@ -1165,7 +1168,7 @@ TEST_F(ORMTest, WhereClauseFloatComparisons) {
         .select_all();
     
     ASSERT_EQ(authors.size(), 3);
-    std::set<std::string> names;
+    std::set<std::string, std::less<>> names;
     for (const auto& author : authors) {
         names.insert(author.name);
     }
@@ -1183,7 +1186,7 @@ TEST_F(ORMTest, WhereClauseNotEqualsOperator) {
         .select_all();
     
     ASSERT_EQ(authors.size(), 3);
-    std::set<std::string> names;
+    std::set<std::string, std::less<>> names;
     for (const auto& author : authors) {
         names.insert(author.name);
     }
@@ -1204,7 +1207,7 @@ TEST_F(ORMTest, WhereClauseComplexChaining) {
         .select_all();
     
     ASSERT_EQ(authors.size(), 4); // All authors should match
-    std::set<std::string> names;
+    std::set<std::string, std::less<>> names;
     for (const auto& author : authors) {
         names.insert(author.name);
     }
@@ -1225,7 +1228,7 @@ TEST_F(ORMTest, WhereClauseBooleanLogic) {
         .select_all();
     
     ASSERT_EQ(authors.size(), 2);
-    std::set<std::string> names;
+    std::set<std::string, std::less<>> names;
     for (const auto& author : authors) {
         names.insert(author.name);
     }

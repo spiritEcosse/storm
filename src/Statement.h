@@ -32,8 +32,6 @@ class Statement {
     friend std::ostream& operator<<(std::ostream& os, const Statement& stmt);
 public:
     Statement(std::shared_ptr<Connection> conn, const std::string& sql);
-    const std::string& get_sql() const { return sql_; }
-    
     // Returns the raw SQL query string
     std::string sql() const { return sql_; }
 
@@ -66,9 +64,6 @@ public:
         return sqlite3_bind_parameter_index(stmt, (":" + std::string(param_name)).c_str());
     }
 
-public:
-    std::string to_string() const { return sql_; }
-
 private:
     std::shared_ptr<Connection> conn;
     sqlite3_stmt* stmt;
@@ -77,7 +72,7 @@ private:
 };
 
 inline std::ostream& operator<<(std::ostream& os, const Statement& stmt) {
-    os << stmt.get_sql();
+    os << stmt.sql();
     return os;
 }
 }
