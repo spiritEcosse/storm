@@ -60,6 +60,11 @@ public:
     
     // Get the raw SQLite statement
     sqlite3_stmt* get_stmt() const { return stmt; }
+    
+    // Get the parameter index for a named parameter
+    [[nodiscard]] int get_parameter_index(const std::string_view param_name) const {
+        return sqlite3_bind_parameter_index(stmt, (":" + std::string(param_name)).c_str());
+    }
 
 public:
     std::string to_string() const { return sql_; }

@@ -986,7 +986,7 @@ TEST_F(ORMTest, WhereClauseNTTPIsOperator) {
 TEST_F(ORMTest, WhereClauseOrOperator) {
     // Test: age = 25 OR age = 35 (Alice OR Bob)
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(field(&Author::age) == 25 or field(&Author::age) == 35)
+        .where(field(&Author::age) == 25 or field(&Author::age) == 35) // NOSONAR
         .select_all();
     
     ASSERT_EQ(authors.size(), 2);
@@ -1002,7 +1002,7 @@ TEST_F(ORMTest, WhereClauseOrOperator) {
 TEST_F(ORMTest, WhereClauseAndOperator) {
     // Test: age >= 30 AND rating >= 4.5 (Only Bob - Diana is 28, Charlie is 30 but rating 4.0)
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(field(&Author::age) >= 30 and field(&Author::rating) >= 4.5)
+        .where(field(&Author::age) >= 30 and field(&Author::rating) >= 4.5) // NOSONAR
         .select_all();
     
     ASSERT_EQ(authors.size(), 1);
@@ -1012,7 +1012,7 @@ TEST_F(ORMTest, WhereClauseAndOperator) {
 TEST_F(ORMTest, WhereClauseComplexAndOr) {
     // Test: (age = 25 OR age = 28) AND rating >= 4.5 (Alice AND Diana)
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where((field(&Author::age) == 25 or field(&Author::age) == 28) and field(&Author::rating) >= 4.5)
+        .where((field(&Author::age) == 25 or field(&Author::age) == 28) and field(&Author::rating) >= 4.5) // NOSONAR
         .select_all();
     
     ASSERT_EQ(authors.size(), 2);
@@ -1027,7 +1027,7 @@ TEST_F(ORMTest, WhereClauseComplexAndOr) {
 TEST_F(ORMTest, WhereClauseComplexOrAnd) {
     // Test: age = 25 OR (age >= 30 AND rating = 5.0) (Alice OR Bob)
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(field(&Author::age) == 25 or (field(&Author::age) >= 30 and field(&Author::rating) == 5.0))
+        .where(field(&Author::age) == 25 or (field(&Author::age) >= 30 and field(&Author::rating) == 5.0)) // NOSONAR
         .select_all();
     
     ASSERT_EQ(authors.size(), 2);
@@ -1043,7 +1043,7 @@ TEST_F(ORMTest, WhereClauseTripleAnd) {
     // Test: age >= 25 AND age <= 30 AND rating >= 4.0 (Alice, Charlie, Diana)
     // Alice: 25, 4.5; Charlie: 30, 4.0; Diana: 28, 5.5
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(field(&Author::age) >= 25 and field(&Author::age) <= 30 and field(&Author::rating) >= 4.0)
+        .where(field(&Author::age) >= 25 and field(&Author::age) <= 30 and field(&Author::rating) >= 4.0) // NOSONAR
         .select_all();
     
     ASSERT_EQ(authors.size(), 3);
@@ -1059,7 +1059,7 @@ TEST_F(ORMTest, WhereClauseTripleAnd) {
 TEST_F(ORMTest, WhereClauseTripleOr) {
     // Test: age = 25 OR age = 30 OR age = 35 (Alice, Charlie, Bob)
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(field(&Author::age) == 25 or field(&Author::age) == 30 or field(&Author::age) == 35)
+        .where(field(&Author::age) == 25 or field(&Author::age) == 30 or field(&Author::age) == 35) // NOSONAR
         .select_all();
     
     ASSERT_EQ(authors.size(), 3);
@@ -1076,8 +1076,8 @@ TEST_F(ORMTest, WhereClauseNestedComplexGrouping) {
     // Test: (age = 25 OR age = 35) AND (rating >= 4.5 OR score >= 90.0)
     // Should match: Alice (25, 4.5) and Bob (35, 5.0, 90.0)
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where((field(&Author::age) == 25 or field(&Author::age) == 35) and 
-               (field(&Author::rating) >= 4.5 or field(&Author::score) >= 90.0))
+        .where((field(&Author::age) == 25 or field(&Author::age) == 35) and // NOSONAR
+               (field(&Author::rating) >= 4.5 or field(&Author::score) >= 90.0)) // NOSONAR
         .select_all();
     
     ASSERT_EQ(authors.size(), 2);
@@ -1093,8 +1093,8 @@ TEST_F(ORMTest, WhereClauseComplexNestedConditions) {
     // Test: ((age < 30 AND rating > 4.0) OR (age >= 30 AND score >= 85.0)) AND is_active = true
     // Should match: Alice (25, 4.5, active), Bob (35, 90.0, active), Diana (28, 5.5, 95.0, active)
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(((field(&Author::age) < 30 and field(&Author::rating) > 4.0) or 
-                (field(&Author::age) >= 30 and field(&Author::score) >= 85.0)) and field(&Author::is_active) == true)
+        .where(((field(&Author::age) < 30 and field(&Author::rating) > 4.0) or // NOSONAR
+                (field(&Author::age) >= 30 and field(&Author::score) >= 85.0)) and field(&Author::is_active) == true) // NOSONAR
         .select_all();
     
     ASSERT_EQ(authors.size(), 3);
@@ -1112,7 +1112,7 @@ TEST_F(ORMTest, WhereClauseMixedDataTypes) {
     // Test: name LIKE 'Alice%' OR (age > 30 AND rating >= 4.0 AND is_active = true)
     std::vector<Author> authors = QuerySet<Author>(conn)
         .where(field(&Author::name).like("Alice%") or 
-               (field(&Author::age) > 30 and field(&Author::rating) >= 4.0 and field(&Author::is_active) == true))
+               (field(&Author::age) > 30 and field(&Author::rating) >= 4.0 and field(&Author::is_active) == true)) // NOSONAR
         .select_all();
     
     ASSERT_EQ(authors.size(), 2);
@@ -1128,7 +1128,7 @@ TEST_F(ORMTest, WhereClauseGroupMethod) {
     // Test using the group() method for explicit grouping
     // Test: (age = 25 OR age = 28) AND rating >= 4.5
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where((field(&Author::age) == 25 or field(&Author::age) == 28) and field(&Author::rating) >= 4.5)
+        .where((field(&Author::age) == 25 or field(&Author::age) == 28) and field(&Author::rating) >= 4.5) // NOSONAR
         .select_all();
     
     ASSERT_EQ(authors.size(), 2);
@@ -1143,8 +1143,8 @@ TEST_F(ORMTest, WhereClauseGroupMethod) {
 TEST_F(ORMTest, WhereClauseStringOperations) {
     // Test string operations with complex conditions
     // Test: (name LIKE '%Brown' OR email LIKE '%alice%') AND age >= 25
-    std::vector<Author> authors = QuerySet<Author>(conn)
-        .where((field(&Author::name).like("%Brown") or field(&Author::email).like("%alice%")) and field(&Author::age) >= 25)
+    std::vector<Author> authors = QuerySet<Author>(conn)    
+        .where((field(&Author::name).like("%Brown") or field(&Author::email).like("%alice%")) and field(&Author::age) >= 25) // NOSONAR
         .select_all();
     
     ASSERT_EQ(authors.size(), 2);
@@ -1179,7 +1179,7 @@ TEST_F(ORMTest, WhereClauseNotEqualsOperator) {
     // Test: age != 30 AND (rating >= 4.5 OR score >= 90.0)
     // Should match: Alice (25, 4.5), Bob (35, 5.0, 90.0), Diana (28, 5.5, 95.0)
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(field(&Author::age) != 30 and (field(&Author::rating) >= 4.5 or field(&Author::score) >= 90.0))
+        .where(field(&Author::age) != 30 and (field(&Author::rating) >= 4.5 or field(&Author::score) >= 90.0)) // NOSONAR
         .select_all();
     
     ASSERT_EQ(authors.size(), 3);
@@ -1198,8 +1198,8 @@ TEST_F(ORMTest, WhereClauseComplexChaining) {
     // Should match: Alice (25), Charlie (30), Diana (28), Bob (5.0, 90.0), Diana (name ends with Prince)
     // Note: Diana matches multiple conditions
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where((field(&Author::age) >= 25 and field(&Author::age) <= 30) or 
-               (field(&Author::rating) >= 5.0 and field(&Author::score) >= 90.0) or 
+        .where((field(&Author::age) >= 25 and field(&Author::age) <= 30) or // NOSONAR
+               (field(&Author::rating) >= 5.0 and field(&Author::score) >= 90.0) or // NOSONAR
                field(&Author::name).like("%Prince"))
         .select_all();
     
@@ -1219,8 +1219,8 @@ TEST_F(ORMTest, WhereClauseBooleanLogic) {
     // Test: is_active = true AND ((age < 30 AND rating > 4.0) OR score >= 95.0)
     // Should match: Alice (active, 25, 4.5), Diana (active, 28, 5.5, 95.0)
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(field(&Author::is_active) == true and 
-               ((field(&Author::age) < 30 and field(&Author::rating) > 4.0) or 
+        .where(field(&Author::is_active) == true and // NOSONAR
+               ((field(&Author::age) < 30 and field(&Author::rating) > 4.0) or // NOSONAR
                 field(&Author::score) >= 95.0))
         .select_all();
     
@@ -1237,8 +1237,8 @@ TEST_F(ORMTest, WhereClauseEmptyResult) {
     // Test condition that should return no results
     // Test: age > 100 OR (rating < 0 AND is_active = false)
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where(field(&Author::age) > 100 or 
-               (field(&Author::rating) < 0 and field(&Author::is_active) == false))
+        .where(field(&Author::age) > 100 or // NOSONAR
+               (field(&Author::rating) < 0 and field(&Author::is_active) == false)) // NOSONAR
         .select_all();
     
     ASSERT_EQ(authors.size(), 0);

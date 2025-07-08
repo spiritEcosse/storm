@@ -257,7 +257,7 @@ namespace storm {
             if (query_result.binder) {
                 for (const auto& [param_name, value] : query_result.parameters()) {
                     // Get the parameter index in the SQLite statement
-                    int param_index = sqlite3_bind_parameter_index(stmt.get_stmt(), (":" + param_name).c_str()); // TODO : move to Statement
+                    int param_index = stmt.get_parameter_index(param_name);
                     if (param_index > 0) { // SQLite parameter indices are 1-based
                         bind_sql_value(stmt, param_index, value);
                     }
@@ -313,7 +313,7 @@ namespace storm {
         // Helper function to create field name generator (compile-time)
         template<auto Field>
         auto createFieldNameGenerator() const {
-            return [this]() -> std::string {
+            return [this]() {
                 static_assert(std::is_member_pointer_v<decltype(Field)>, 
                             "Field must be a member pointer");
                 using ClassType = typename member_pointer_class<decltype(Field)>::type;
@@ -328,7 +328,7 @@ namespace storm {
         // =============================
         // Constructor
         // =============================
-        explicit QuerySet(std::shared_ptr<Connection> conn, const std::string& alias = "") 
+        explicit QuerySet(std::shared_ptr<Connection> conn, [[maybe_unused]] const std::string_view alias = "") 
             : conn(std::move(conn)) {
         }
 
@@ -851,11 +851,6 @@ namespace storm {
 
         // Support for raw SQL WHERE clauses
         QuerySet& where_raw(const std::string& raw_condition, const std::vector<std::any>& parameters = {});
-        //     // In SQLite, you might use UPPER() functions or COLLATE NOCASE
-        //     auto field_name = get_field_name<ClassType>(memberPtr);
-        //     auto custom_condition = /* create custom condition with UPPER() */;
-        //     return where(custom_condition);
-        // }
 
         // Date range queries (if you have date fields)
         template<typename ClassType, typename FieldType>
@@ -1074,8 +1069,8 @@ namespace storm {
             } else if constexpr (std::is_floating_point_v<ValueType>) {
                 return static_cast<ValueType>(row.get_double(idx));
             } else {
-                static_assert(std::is_pointer<ValueType>::value == false, "Unsupported pointer type for SQLite binding");
-                static_assert(std::is_reference<ValueType>::value == false, "Unsupported reference type for SQLite binding");
+                static_assert(!std::is_pointer_v<ValueType>, "Unsupported pointer type for SQLite binding");
+                static_assert(!std::is_reference_v<ValueType>, "Unsupported reference type for SQLite binding");
                 static_assert(sizeof(ValueType) == 0, "Unsupported type for SQLite binding");
                 return ValueType{}; // This will never be reached due to the static_assert
             }
