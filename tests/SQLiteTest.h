@@ -1161,7 +1161,7 @@ TEST_F(ORMTest, WhereClauseFloatComparisons) {
     // Test: (score >= 85.0 AND score <= 90.0) OR rating > 5.0
     // Should match: Alice (85.5), Bob (90.0), Diana (95.0, 5.5)
     std::vector<Author> authors = QuerySet<Author>(conn)
-        .where((field(&Author::score) >= 85.0 and field(&Author::score) <= 90.0) or field(&Author::rating) > 5.0)
+        .where((field(&Author::score) >= 85.0 and field(&Author::score) <= 90.0) or field(&Author::rating) > 5.0) // NOSONAR
         .select_all();
     
     ASSERT_EQ(authors.size(), 3);

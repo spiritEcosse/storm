@@ -95,37 +95,37 @@ namespace storm {
         
         ~FieldAlias() = default;
         
-        std::string getFullFieldName() const override {
+        [[nodiscard]] std::string getFullFieldName() const override {
             using ClassType = typename member_pointer_class<decltype(MemberPtr)>::type;
             std::string fieldName = getFieldNameFromMemberPtr<MemberPtr>();
             std::string tableName = Reflect<ClassType>::get_struct_name();
-            return fmt::format("\"{}\".\"{}\"" , tableName, fieldName);
+            return fmt::format(R"("{}"."{}")", tableName, fieldName);
         }
         
-        std::string getFieldName() const override {
+        [[nodiscard]] std::string getFieldName() const override {
             return getFieldNameFromMemberPtr<MemberPtr>();
         }
         
-        std::string getTableName() const override {
+        [[nodiscard]] std::string getTableName() const override {
             using ClassType = typename member_pointer_class<decltype(MemberPtr)>::type;
             return Reflect<ClassType>::get_struct_name();
         }
         
-        std::string getAlias() const override {
+        [[nodiscard]] std::string getAlias() const override {
             return alias;
         }
         
-        bool isStringField() const override {
+        [[nodiscard]] bool isStringField() const override {
             using FieldType = typename member_pointer_traits<decltype(MemberPtr)>::type;
             return std::is_same_v<FieldType, std::string>;
         }
         
-        bool isBoolField() const override {
+        [[nodiscard]] bool isBoolField() const override {
             using FieldType = typename member_pointer_traits<decltype(MemberPtr)>::type;
             return std::is_same_v<FieldType, bool>;
         }
         
-        bool isNumericField() const override {
+        [[nodiscard]] bool isNumericField() const override {
             using FieldType = typename member_pointer_traits<decltype(MemberPtr)>::type;
             return std::is_arithmetic_v<FieldType> && !std::is_same_v<FieldType, bool>;
         }
@@ -142,30 +142,30 @@ namespace storm {
         explicit StringFieldAlias(std::string tableName, std::string fieldName, std::string alias = "") 
             : FieldAliasBase(std::move(alias)), tableName(std::move(tableName)), fieldName(std::move(fieldName)) {}
         
-        ~StringFieldAlias() = default;
+        ~StringFieldAlias() override = default;
         
-        std::string getFullFieldName() const override {
+        [[nodiscard]] std::string getFullFieldName() const override {
             return utils::formatFieldName(tableName, fieldName);
         }
         
-        std::string getFieldName() const override {
+        [[nodiscard]] std::string getFieldName() const override {
             return fieldName;
         }
         
-        std::string getTableName() const override {
+        [[nodiscard]] std::string getTableName() const override {
             return tableName;
         }
         
         // For string-based fields, we assume it could be any type
-        bool isStringField() const override {
+        [[nodiscard]] bool isStringField() const override {
             return true;  // Conservative assumption
         }
         
-        bool isBoolField() const override {
+        [[nodiscard]] bool isBoolField() const override {
             return false;  // Conservative assumption
         }
         
-        bool isNumericField() const override {
+        [[nodiscard]] bool isNumericField() const override {
             return false;  // Conservative assumption
         }
     };
