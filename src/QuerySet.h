@@ -692,7 +692,7 @@ namespace storm {
             fieldStrings.reserve(groupByFields.size());
             
             for (const auto& field : groupByFields) {
-                fieldStrings.push_back(field->getFullyQualifiedName());
+                fieldStrings.push_back(field->getFullFieldName());
             }
             
             return fmt::format("GROUP BY {}", fmt::join(fieldStrings, ", "));
