@@ -466,7 +466,7 @@ TEST_F(ORMTest, SelectAllWithJoinWhereGroupBy) {
     std::vector<Post> posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
-        .group_by<&Author::name>()
+        .template group_by<&Author::name>()
         .select_all();
     ASSERT_EQ(posts.size(), 1);
 }
@@ -475,7 +475,7 @@ TEST_F(ORMTest, SelectAllWithJoinWhereGroupByLimit) {
     std::vector<Post> posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
-        .group_by<&Author::name>()
+        .template group_by<&Author::name>()
         .limit(1)
         .select_all();
     ASSERT_EQ(posts.size(), 1);
@@ -485,7 +485,7 @@ TEST_F(ORMTest, SelectAllWithJoinWhereGroupByLimit) {
 //     std::vector<Post> posts = QuerySet<Post>(conn)
 //         .join<Author>()
 //         .where(&Post::author_id, alice_id)
-//         .group_by<&Author::name>()
+//         .template group_by<&Author::name>()
 //         .offset(1)
 //         .select_all();
 //     ASSERT_EQ(posts.size(), 0); // Only one group for Alice, offset 1 means no results
@@ -495,7 +495,7 @@ TEST_F(ORMTest, SelectAllWithJoinWhereGroupByLimitOffset) {
     std::vector<Post> posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
-        .group_by<&Author::name>()
+        .template group_by<&Author::name>()
         .limit(1)
         .offset(1)
         .select_all();
@@ -1579,4 +1579,144 @@ TEST_F(ORMTest, RawSqlFromStatementInsert) {
     ASSERT_EQ(ids.size(), 2);
     ASSERT_GT(ids[0], 0);
     ASSERT_GT(ids[1], 0);
+}
+
+// GROUP BY TESTS
+TEST_F(ORMTest, GroupByBasic) {
+    // Add more authors with the same age for testing group by
+    Author eve("Eve Johnson", 35, "eve@example.com");
+    Author frank("Frank Miller", 40, "frank@example.com");
+    Author grace("Grace Lee", 25, "grace@example.com");
+    Author henry("Henry Wilson", 40, "henry@example.com");
+    Author ian("Ian Davis", 35, "ian@example.com");
+    
+    QuerySet<Author>(conn).insert(eve);
+    QuerySet<Author>(conn).insert(frank);
+    QuerySet<Author>(conn).insert(grace);
+    QuerySet<Author>(conn).insert(henry);
+    QuerySet<Author>(conn).insert(ian);
+    
+    // Use group_by to get distinct ages
+    auto results = QuerySet<Author>(conn)
+        .group_by<&Author::age>()
+        .select_all();
+    
+    // We should have 4 distinct age groups: 25, 28, 30, 35, 40
+    ASSERT_EQ(results.size(), 5);
+    
+    // Verify the ages are present in the results
+    std::set<int> distinctAges;
+    for (const auto& author : results) {
+        distinctAges.insert(author.age);
+    }
+    
+    ASSERT_EQ(distinctAges.size(), 5);
+    ASSERT_TRUE(distinctAges.contains(25));
+    ASSERT_TRUE(distinctAges.contains(28));
+    ASSERT_TRUE(distinctAges.contains(30));
+    ASSERT_TRUE(distinctAges.contains(35));
+    ASSERT_TRUE(distinctAges.contains(40));
+}
+
+TEST_F(ORMTest, GroupByMultipleFields) {
+    // Add more authors with combinations of age and rating for testing group by
+    Author jack("Jack Thompson", 40, "jack@example.com", 0, true, 4.0);
+    Author kate("Kate Williams", 40, "kate@example.com", 0, true, 4.5);
+    Author luke("Luke Brown", 45, "luke@example.com", 0, true, 4.0);
+    
+    QuerySet<Author>(conn).insert(jack);
+    QuerySet<Author>(conn).insert(kate);
+    QuerySet<Author>(conn).insert(luke);
+    
+    // Group by both age and rating
+    auto results = QuerySet<Author>(conn)
+        .group_by<&Author::age, &Author::rating>()
+        .select_all();
+    
+    // We should have at least these combinations:
+    // (25, 4.5) - Alice
+    // (35, 5.0) - Bob
+    // (30, 4.0) - Charlie
+    // (28, 5.5) - Diana
+    // (40, 4.0) - Jack
+    // (40, 4.5) - Kate
+    // (45, 4.0) - Luke
+    ASSERT_GE(results.size(), 7);
+    
+    // Create a set of age-rating pairs to verify unique combinations
+    std::set<std::pair<int, double>> ageRatingPairs;
+    for (const auto& author : results) {
+        ageRatingPairs.insert({author.age, author.rating});
+    }
+    
+    // Verify specific combinations
+    ASSERT_TRUE(ageRatingPairs.contains({25, 4.5})); // Alice
+    ASSERT_TRUE(ageRatingPairs.contains({35, 5.0})); // Bob
+    ASSERT_TRUE(ageRatingPairs.contains({30, 4.0})); // Charlie
+    ASSERT_TRUE(ageRatingPairs.contains({40, 4.0})); // Jack
+    ASSERT_TRUE(ageRatingPairs.contains({40, 4.5})); // Kate
+    ASSERT_TRUE(ageRatingPairs.contains({45, 4.0})); // Luke
+}
+
+TEST_F(ORMTest, GroupByWithOrderBy) {
+    // Add more authors for testing
+    Author mark("Mark Johnson", 35, "mark@example.com", 0, true, 3.5);
+    Author nancy("Nancy Davis", 40, "nancy@example.com", 0, true, 3.0);
+    
+    QuerySet<Author>(conn).insert(mark);
+    QuerySet<Author>(conn).insert(nancy);
+    
+    // Group by age and order by age descending
+    auto results = QuerySet<Author>(conn)
+        .group_by<&Author::age>()
+        .template order_by<&Author::age, false>()
+        .select_all();
+    
+    // Extract ages to verify ordering
+    std::vector<int> ages;
+    for (const auto& author : results) {
+        ages.push_back(author.age);
+    }
+    
+    // Verify that ages are in descending order
+    ASSERT_FALSE(ages.empty());
+    for (size_t i = 1; i < ages.size(); ++i) {
+        ASSERT_GE(ages[i-1], ages[i]) << "Ages should be in descending order";
+    }
+    
+    // Verify the highest age is first
+    ASSERT_EQ(ages[0], 40); // Nancy has the highest age (40)
+}
+
+TEST_F(ORMTest, GroupByWithJoinAndWhere) {
+    // Add more posts for testing
+    Post post5("Another Post by Alice", "More content from Alice", alice_id);
+    Post post6("Second Post by Bob", "More content from Bob", bob_id);
+    Post post7("Another Post by Charlie", "More content from Charlie", charlie_id);
+    
+    QuerySet<Post>(conn).insert(post5);
+    QuerySet<Post>(conn).insert(post6);
+    QuerySet<Post>(conn).insert(post7);
+    
+    // Group posts by author_id where the author's age is greater than 25
+    auto results = QuerySet<Post>(conn)
+        .join<Author>()
+        .where(&Author::age, 25, Op::GT)
+        .template group_by<&Author::age>()
+        .select_all();
+    
+    // We should have 3 groups: Bob (35), Charlie (30), Diana (28)
+    ASSERT_EQ(results.size(), 3);
+    
+    // Extract author IDs directly from Author objects
+    std::set<int> authorIds;
+    for (const auto& post : results) {
+        authorIds.insert(post.author_id);
+    }
+    
+    // Verify the correct author IDs are present
+    ASSERT_TRUE(authorIds.contains(bob_id));
+    ASSERT_TRUE(authorIds.contains(charlie_id));
+    ASSERT_TRUE(authorIds.contains(diana_id));
+    ASSERT_FALSE(authorIds.contains(alice_id)); // Alice's age is 25, not > 25
 }

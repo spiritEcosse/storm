@@ -181,7 +181,7 @@ namespace storm {
         std::string _jsonFields;
         std::vector<std::unique_ptr<FieldAliasBase>> onlyFields;
         std::vector<Function> functionsSet;
-        std::vector<std::string> groupByFieldNames; // For compile-time field names
+        std::vector<std::unique_ptr<FieldAliasBase>> groupByFields; // For compile-time field names
         int _limit{};
         int _offset{};
         std::string _alias;
@@ -303,6 +303,19 @@ namespace storm {
         std::string addExtraQuotes(const std::string& query) const {
             // Your existing implementation
             return query;
+        }
+
+        // Helper function to create field name generator (compile-time)
+        template<auto Field>
+        auto createFieldNameGenerator() const {
+            return [this]() -> std::string {
+                static_assert(std::is_member_pointer_v<decltype(Field)>, 
+                            "Field must be a member pointer");
+                using ClassType = typename member_pointer_class<decltype(Field)>::type;
+                std::string fieldName = getFieldNameFromMemberPtr<Field>();
+                std::string tableName = this->template get_table_name<ClassType>();
+                return utils::formatFieldName(tableName, fieldName);
+            };
         }
     
     public:
@@ -647,61 +660,42 @@ namespace storm {
         // =============================
         // GROUP BY
         // =============================
-        // Helper to process a single member pointer and push its fully qualified name.
-        // template<auto MemberPtr>
-        // void add_group_by_field() {
-        //     using ClassType = typename detail::member_pointer_class<decltype(MemberPtr)>::type;
-        //     std::string fieldName = detail::getFieldNameFromMemberPtr<ClassType, MemberPtr>();
-        //     std::string tableName = this->template get_table_name<ClassType>();
-        //     std::string fullFieldName = tableName.empty() ? fmt::format("\"{}\"", fieldName)
-        //                                                   : fmt::format("\"{}\".\"{}\"", tableName, fieldName);
-        //     this->groupByFieldNames.push_back(fullFieldName);
-        // }
-
+        
         // Compile-time version for multiple member pointers
-        template<auto MemberPtr, auto... RestMemberPtrs>
-        QuerySet &group_by() {
-            // Add the first (or only) member pointer field
-            // add_group_by_field<MemberPtr>();
+        template<auto... Fields>
+        QuerySet& group_by() {
+            static_assert(sizeof...(Fields) > 0, "Must provide at least one field");
+            static_assert((std::is_member_pointer_v<decltype(Fields)> && ...), 
+                        "All fields must be member pointers");
             
-            // Recursively add the rest of the fields
-            if constexpr (sizeof...(RestMemberPtrs) > 0) {
-                group_by<RestMemberPtrs...>();
-            }
+            // Reserve capacity for efficiency
+            this->groupByFields.reserve(sizeof...(Fields));
+            
+            // Process each field using a fold expression
+            auto addField = [this]<auto Field>() {
+                this->groupByFields.push_back(std::make_unique<FieldAlias<Field>>());
+            };
+            
+            // Apply the lambda to each field in the parameter pack
+            (addField.template operator()<Fields>(), ...);
             
             return *this;
         }
 
     private:
         [[nodiscard]] std::string generateGroupBySQL() const {
-            if(groupByFieldNames.empty()) {
+            if (groupByFields.empty()) {
                 return "";
             }
-        
-            return fmt::format("GROUP BY {}", fmt::join(groupByFieldNames, ", "));
-        }
-
-        template<typename U>
-        void group_by_impl(U &&u) {
-            // Extract field name and table name
-            std::string fieldName = u->getFieldName();
-            std::string tableName = u->getTableName();
             
-            // Format as table.field
-            std::string fullFieldName;
-            if (!tableName.empty()) {
-                fullFieldName = format("\"{}\".\"{}\"", tableName, fieldName);
-            } else {
-                fullFieldName = format("\"{}\"", fieldName);
+            std::vector<std::string> fieldStrings;
+            fieldStrings.reserve(groupByFields.size());
+            
+            for (const auto& field : groupByFields) {
+                fieldStrings.push_back(field->getFullyQualifiedName());
             }
             
-            groupByFieldNames.push_back(fullFieldName);
-        }
-
-        template<typename U, typename... Args>
-        void group_by_impl(U &&u, Args &&...args) {
-            group_by_impl(std::forward<U>(u));
-            group_by_impl(std::forward<Args>(args)...);
+            return fmt::format("GROUP BY {}", fmt::join(fieldStrings, ", "));
         }
     
     public:
@@ -726,19 +720,6 @@ namespace storm {
             }
             
             return *this;
-        }
-
-        // Helper function to create field name generator (compile-time)
-        template<auto Field>
-        auto createFieldNameGenerator() const {
-            return [this]() -> std::string {
-                static_assert(std::is_member_pointer_v<decltype(Field)>, 
-                            "Field must be a member pointer");
-                using ClassType = typename member_pointer_class<decltype(Field)>::type;
-                std::string fieldName = getFieldNameFromMemberPtr<Field>();
-                std::string tableName = this->template get_table_name<ClassType>();
-                return utils::formatFieldName(tableName, fieldName);
-            };
         }
     private:
         [[nodiscard]] std::string buildOrderFields() const {
@@ -1026,9 +1007,6 @@ namespace storm {
             bool,            // For boolean values
             std::string      // For text values
         >;
-        
-        // Helper functions for tuple creation and value conversion have been removed
-        // since select_projection is no longer used
         
         template<typename ValueType>
         ValueType get_value(const Row& row, size_t idx) const {
