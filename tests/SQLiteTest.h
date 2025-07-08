@@ -133,6 +133,12 @@ protected:
     void TearDown() override {
         conn.reset();
     }
+    
+    void clearTestData() {
+        // Clear all data from tables
+        QuerySet<Post>(conn).remove();
+        QuerySet<Author>(conn).remove();
+    }
 };
 
 // INSERT TESTS
@@ -1731,6 +1737,9 @@ TEST_F(ORMTest, GroupByWithJoinAndWhere) {
 // =======================================
 
 TEST_F(ORMTest, BasicTransactionCommit) {
+    // Clear existing test data
+    clearTestData();
+    
     // Start a transaction
     conn->begin_transaction();
     
@@ -1749,6 +1758,9 @@ TEST_F(ORMTest, BasicTransactionCommit) {
 }
 
 TEST_F(ORMTest, BasicTransactionRollback) {
+    // Clear existing test data
+    clearTestData();
+    
     // Start a transaction
     conn->begin_transaction();
     
@@ -1761,10 +1773,13 @@ TEST_F(ORMTest, BasicTransactionRollback) {
     
     // Verify the author was not inserted
     auto results = QuerySet<Author>(conn).select_all();
-    ASSERT_EQ(results.size(), 0);
+    ASSERT_EQ(results.size(), 0); // No authors should exist after rollback
 }
 
 TEST_F(ORMTest, TransactionLevels) {
+    // Clear existing test data
+    clearTestData();
+    
     // Test different transaction isolation levels
     conn->begin_transaction(Connection::TransactionLevel::IMMEDIATE);
     
@@ -1787,6 +1802,9 @@ TEST_F(ORMTest, TransactionLevels) {
 }
 
 TEST_F(ORMTest, NestedTransactionException) {
+    // Clear existing test data
+    clearTestData();
+    
     // Start a transaction
     conn->begin_transaction();
     
@@ -1798,17 +1816,26 @@ TEST_F(ORMTest, NestedTransactionException) {
 }
 
 TEST_F(ORMTest, CommitWithoutTransactionException) {
+    // Clear existing test data
+    clearTestData();
+    
     // Attempt to commit without an active transaction
     ASSERT_THROW(conn->commit(), std::runtime_error);
 }
 
 TEST_F(ORMTest, RollbackWithoutTransactionException) {
+    // Clear existing test data
+    clearTestData();
+    
     // Attempt to rollback without an active transaction
     ASSERT_THROW(conn->rollback(), std::runtime_error);
 }
 
 TEST_F(ORMTest, TransactionRAIIWrapper) {
-    // Use the RAII Transaction wrapper
+    // Clear existing test data
+    clearTestData();
+    
+    // Test the RAII transaction wrapper
     {
         storm::Transaction tx(conn);
         
@@ -1816,16 +1843,19 @@ TEST_F(ORMTest, TransactionRAIIWrapper) {
         Author alice("Alice Smith", 25, "alice@example.com");
         QuerySet<Author>(conn).insert(alice);
         
-        // Transaction will be rolled back when tx goes out of scope
-        // without an explicit commit
+        // Transaction will be rolled back when it goes out of scope
+        // because we don't call commit()
     }
     
     // Verify the author was not inserted (transaction was rolled back)
     auto results = QuerySet<Author>(conn).select_all();
-    ASSERT_EQ(results.size(), 0);
+    ASSERT_EQ(results.size(), 0); // No authors should exist after rollback
 }
 
 TEST_F(ORMTest, TransactionRAIICommit) {
+    // Clear existing test data
+    clearTestData();
+    
     // Use the RAII Transaction wrapper with explicit commit
     {
         storm::Transaction tx(conn);
@@ -1845,7 +1875,10 @@ TEST_F(ORMTest, TransactionRAIICommit) {
 }
 
 TEST_F(ORMTest, TransactionRAIIRollback) {
-    // Use the RAII Transaction wrapper with explicit rollback
+    // Clear existing test data
+    clearTestData();
+    
+    // Test the RAII transaction wrapper with explicit rollback
     {
         storm::Transaction tx(conn);
         
@@ -1859,10 +1892,13 @@ TEST_F(ORMTest, TransactionRAIIRollback) {
     
     // Verify the author was not inserted
     auto results = QuerySet<Author>(conn).select_all();
-    ASSERT_EQ(results.size(), 0);
+    ASSERT_EQ(results.size(), 0); // No authors should exist after rollback
 }
 
 TEST_F(ORMTest, WithTransactionHelper) {
+    // Clear existing test data
+    clearTestData();
+    
     // Test the with_transaction helper function
     bool success = storm::with_transaction(conn, [&]() {
         Author alice("Alice Smith", 25, "alice@example.com");
@@ -1879,6 +1915,9 @@ TEST_F(ORMTest, WithTransactionHelper) {
 }
 
 TEST_F(ORMTest, WithTransactionExceptionRollback) {
+    // Clear existing test data
+    clearTestData();
+    
     // Test that with_transaction rolls back on exception
     try {
         storm::with_transaction(conn, [&]() {
@@ -1900,6 +1939,9 @@ TEST_F(ORMTest, WithTransactionExceptionRollback) {
 }
 
 TEST_F(ORMTest, MultipleOperationsInTransaction) {
+    // Clear existing test data
+    clearTestData();
+    
     // Test multiple database operations in a single transaction
     conn->begin_transaction();
     
@@ -1908,13 +1950,14 @@ TEST_F(ORMTest, MultipleOperationsInTransaction) {
     Author bob("Bob Johnson", 30, "bob@example.com");
     Author charlie("Charlie Brown", 35, "charlie@example.com");
     
-    QuerySet<Author>(conn).insert(alice);
+    int alice_id = QuerySet<Author>(conn).insert(alice);
     QuerySet<Author>(conn).insert(bob);
     QuerySet<Author>(conn).insert(charlie);
     
-    // Update an author
-    alice.age = 26;
-    QuerySet<Author>(conn).where(&Author::name, "Alice Smith").update(alice);
+    // Update an author - first retrieve the current object with the correct ID
+    auto alice_from_db = QuerySet<Author>(conn).where(&Author::id, alice_id).select_one();
+    alice_from_db.age = 26;
+    QuerySet<Author>(conn).update(alice_from_db);
     
     // Delete an author
     QuerySet<Author>(conn).where(&Author::name, "Charlie Brown").remove();
@@ -1930,8 +1973,8 @@ TEST_F(ORMTest, MultipleOperationsInTransaction) {
 }
 
 TEST_F(ORMTest, TransferBetweenAuthorsTransaction) {
-    // This test demonstrates a practical use case for transactions:
-    // transferring a post from one author to another atomically
+    // This test is different as it requires the initial test data
+    // We don't clear the data here because we need alice_id and bob_id from setupTestData
     
     // First, let's create a new post for Alice
     Post alicePost("Alice's Original Post", "This post belongs to Alice", alice_id);

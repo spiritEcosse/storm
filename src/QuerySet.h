@@ -606,10 +606,6 @@ namespace storm {
         // Delete records based on where conditions without requiring an object
         bool remove() {
             try {
-                if (!_whereExpression.has_value()) {
-                    throw std::runtime_error("Cannot delete without where conditions. Use remove(obj) or add where conditions.");
-                }
-                
                 std::string sql = build_delete_by_condition_sql();
                 auto stmt = Statement(conn, sql);
                 
