@@ -4,8 +4,10 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <set>
 #include "QuerySet.h"
 #include "SQLExceptions.h"
+#include "Transaction.h"
 
 using namespace storm;
 
@@ -1722,4 +1724,266 @@ TEST_F(ORMTest, GroupByWithJoinAndWhere) {
     ASSERT_TRUE(authorIds.contains(charlie_id));
     ASSERT_TRUE(authorIds.contains(diana_id));
     ASSERT_FALSE(authorIds.contains(alice_id)); // Alice's age is 25, not > 25
+}
+
+// =======================================
+// TRANSACTION TESTS
+// =======================================
+
+TEST_F(ORMTest, BasicTransactionCommit) {
+    // Start a transaction
+    conn->begin_transaction();
+    
+    // Insert an author within the transaction
+    Author alice("Alice Smith", 25, "alice@example.com");
+    int alice_id = QuerySet<Author>(conn).insert(alice);
+    
+    // Commit the transaction
+    conn->commit();
+    
+    // Verify the author was inserted
+    auto results = QuerySet<Author>(conn).select_all();
+    ASSERT_EQ(results.size(), 1);
+    ASSERT_EQ(results[0].name, "Alice Smith");
+    ASSERT_EQ(results[0].id, alice_id);
+}
+
+TEST_F(ORMTest, BasicTransactionRollback) {
+    // Start a transaction
+    conn->begin_transaction();
+    
+    // Insert an author within the transaction
+    Author alice("Alice Smith", 25, "alice@example.com");
+    QuerySet<Author>(conn).insert(alice);
+    
+    // Rollback the transaction
+    conn->rollback();
+    
+    // Verify the author was not inserted
+    auto results = QuerySet<Author>(conn).select_all();
+    ASSERT_EQ(results.size(), 0);
+}
+
+TEST_F(ORMTest, TransactionLevels) {
+    // Test different transaction isolation levels
+    conn->begin_transaction(Connection::TransactionLevel::IMMEDIATE);
+    
+    Author alice("Alice Smith", 25, "alice@example.com");
+    QuerySet<Author>(conn).insert(alice);
+    
+    conn->commit();
+    
+    // Start another transaction with EXCLUSIVE level
+    conn->begin_transaction(Connection::TransactionLevel::EXCLUSIVE);
+    
+    Author bob("Bob Johnson", 30, "bob@example.com");
+    QuerySet<Author>(conn).insert(bob);
+    
+    conn->commit();
+    
+    // Verify both authors were inserted
+    auto results = QuerySet<Author>(conn).select_all();
+    ASSERT_EQ(results.size(), 2);
+}
+
+TEST_F(ORMTest, NestedTransactionException) {
+    // Start a transaction
+    conn->begin_transaction();
+    
+    // Attempt to start another transaction while one is active
+    ASSERT_THROW(conn->begin_transaction(), std::runtime_error);
+    
+    // Clean up
+    conn->rollback();
+}
+
+TEST_F(ORMTest, CommitWithoutTransactionException) {
+    // Attempt to commit without an active transaction
+    ASSERT_THROW(conn->commit(), std::runtime_error);
+}
+
+TEST_F(ORMTest, RollbackWithoutTransactionException) {
+    // Attempt to rollback without an active transaction
+    ASSERT_THROW(conn->rollback(), std::runtime_error);
+}
+
+TEST_F(ORMTest, TransactionRAIIWrapper) {
+    // Use the RAII Transaction wrapper
+    {
+        storm::Transaction tx(conn);
+        
+        // Insert an author within the transaction
+        Author alice("Alice Smith", 25, "alice@example.com");
+        QuerySet<Author>(conn).insert(alice);
+        
+        // Transaction will be rolled back when tx goes out of scope
+        // without an explicit commit
+    }
+    
+    // Verify the author was not inserted (transaction was rolled back)
+    auto results = QuerySet<Author>(conn).select_all();
+    ASSERT_EQ(results.size(), 0);
+}
+
+TEST_F(ORMTest, TransactionRAIICommit) {
+    // Use the RAII Transaction wrapper with explicit commit
+    {
+        storm::Transaction tx(conn);
+        
+        // Insert an author within the transaction
+        Author alice("Alice Smith", 25, "alice@example.com");
+        QuerySet<Author>(conn).insert(alice);
+        
+        // Explicitly commit the transaction
+        tx.commit();
+    }
+    
+    // Verify the author was inserted
+    auto results = QuerySet<Author>(conn).select_all();
+    ASSERT_EQ(results.size(), 1);
+    ASSERT_EQ(results[0].name, "Alice Smith");
+}
+
+TEST_F(ORMTest, TransactionRAIIRollback) {
+    // Use the RAII Transaction wrapper with explicit rollback
+    {
+        storm::Transaction tx(conn);
+        
+        // Insert an author within the transaction
+        Author alice("Alice Smith", 25, "alice@example.com");
+        QuerySet<Author>(conn).insert(alice);
+        
+        // Explicitly rollback the transaction
+        tx.rollback();
+    }
+    
+    // Verify the author was not inserted
+    auto results = QuerySet<Author>(conn).select_all();
+    ASSERT_EQ(results.size(), 0);
+}
+
+TEST_F(ORMTest, WithTransactionHelper) {
+    // Test the with_transaction helper function
+    bool success = storm::with_transaction(conn, [&]() {
+        Author alice("Alice Smith", 25, "alice@example.com");
+        QuerySet<Author>(conn).insert(alice);
+        return true;
+    });
+    
+    ASSERT_TRUE(success);
+    
+    // Verify the author was inserted
+    auto results = QuerySet<Author>(conn).select_all();
+    ASSERT_EQ(results.size(), 1);
+    ASSERT_EQ(results[0].name, "Alice Smith");
+}
+
+TEST_F(ORMTest, WithTransactionExceptionRollback) {
+    // Test that with_transaction rolls back on exception
+    try {
+        storm::with_transaction(conn, [&]() {
+            Author alice("Alice Smith", 25, "alice@example.com");
+            QuerySet<Author>(conn).insert(alice);
+            
+            // Throw an exception to trigger rollback
+            throw std::runtime_error("Test exception");
+        });
+        
+        FAIL() << "Expected exception was not thrown";
+    } catch (const std::runtime_error& e) {
+        ASSERT_STREQ(e.what(), "Test exception");
+    }
+    
+    // Verify the author was not inserted (transaction was rolled back)
+    auto results = QuerySet<Author>(conn).select_all();
+    ASSERT_EQ(results.size(), 0);
+}
+
+TEST_F(ORMTest, MultipleOperationsInTransaction) {
+    // Test multiple database operations in a single transaction
+    conn->begin_transaction();
+    
+    // Insert multiple authors
+    Author alice("Alice Smith", 25, "alice@example.com");
+    Author bob("Bob Johnson", 30, "bob@example.com");
+    Author charlie("Charlie Brown", 35, "charlie@example.com");
+    
+    QuerySet<Author>(conn).insert(alice);
+    QuerySet<Author>(conn).insert(bob);
+    QuerySet<Author>(conn).insert(charlie);
+    
+    // Update an author
+    alice.age = 26;
+    QuerySet<Author>(conn).where(&Author::name, "Alice Smith").update(alice);
+    
+    // Delete an author
+    QuerySet<Author>(conn).where(&Author::name, "Charlie Brown").remove();
+    
+    conn->commit();
+    
+    // Verify the final state
+    auto results = QuerySet<Author>(conn).order_by<&Author::name>().select_all();
+    ASSERT_EQ(results.size(), 2);
+    ASSERT_EQ(results[0].name, "Alice Smith");
+    ASSERT_EQ(results[0].age, 26);
+    ASSERT_EQ(results[1].name, "Bob Johnson");
+}
+
+TEST_F(ORMTest, TransferBetweenAuthorsTransaction) {
+    // This test demonstrates a practical use case for transactions:
+    // transferring a post from one author to another atomically
+    
+    // First, let's create a new post for Alice
+    Post alicePost("Alice's Original Post", "This post belongs to Alice", alice_id);
+    int postId = QuerySet<Post>(conn).insert(alicePost);
+    
+    // Now let's transfer the post from Alice to Bob using a transaction
+    // to ensure the operation is atomic
+    {
+        storm::Transaction tx(conn);
+        
+        try {
+            // 1. Update the post to belong to Bob
+            Post post = QuerySet<Post>(conn).where(&Post::id, postId).select_one();
+            post.author_id = bob_id;
+            QuerySet<Post>(conn).where(&Post::id, postId).update(post);
+            
+            // 2. Update some metadata about the post (title to reflect new ownership)
+            post.title = "Post Transferred to Bob";
+            QuerySet<Post>(conn).where(&Post::id, postId).update(post);
+            
+            // Commit the transaction - both operations succeed atomically
+            tx.commit();
+        } catch (const std::exception& e) {
+            // Transaction will automatically roll back if not committed
+            std::cerr << "Error during post transfer: " << e.what() << std::endl;
+            FAIL() << "Transaction should not have failed";
+        }
+    }
+    
+    // Verify the post now belongs to Bob
+    Post updatedPost = QuerySet<Post>(conn).where(&Post::id, postId).select_one();
+    ASSERT_EQ(updatedPost.author_id, bob_id);
+    ASSERT_EQ(updatedPost.title, "Post Transferred to Bob");
+    
+    // Demonstrate a failed transaction with automatic rollback
+    {
+        storm::Transaction tx(conn);
+        
+        // 1. Update the post to belong to Charlie
+        Post post = QuerySet<Post>(conn).where(&Post::id, postId).select_one();
+        post.author_id = charlie_id;
+        QuerySet<Post>(conn).where(&Post::id, postId).update(post);
+        
+        // 2. This update will fail because we're using a non-existent author ID
+        // (deliberately causing an error to demonstrate rollback)
+        post.author_id = 9999; // Non-existent author ID
+        
+        // We don't commit, so the transaction will be rolled back
+        // when it goes out of scope
+    }
+    
+    // Verify the post still belongs to Bob (rollback worked)
+    updatedPost = QuerySet<Post>(conn).where(&Post::id, postId).select_one();
+    ASSERT_EQ(updatedPost.author_id, bob_id); // Still Bob's post
 }

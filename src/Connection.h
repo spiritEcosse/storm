@@ -3,9 +3,17 @@
 #include <string>
 #include <iostream>
 #include <cstdint>
+#include <stdexcept>
 
 class Connection {
 public:
+    // Transaction isolation levels
+    enum class TransactionLevel {
+        DEFERRED,  // Default in SQLite, doesn't acquire locks until needed
+        IMMEDIATE, // Acquires write lock immediately, preventing other connections from writing
+        EXCLUSIVE  // Acquires all locks immediately, preventing other connections from reading or writing
+    };
+
     Connection(const std::string& db_name);
     ~Connection();
     Connection(const Connection&) = delete;
@@ -15,8 +23,16 @@ public:
     sqlite3* get() const;
     bool is_open() const;
     std::int64_t last_insert_id() const;
+    
+    // Transaction methods
+    void begin_transaction(TransactionLevel level = TransactionLevel::DEFERRED);
+    void commit();
+    void rollback();
+    bool in_transaction() const;
+
 private:
     sqlite3* db;
+    bool transaction_active = false;
 
 public:
     template<typename N>

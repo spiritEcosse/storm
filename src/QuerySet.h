@@ -180,6 +180,10 @@ namespace storm {
         struct OrderFieldInfo {
             std::unique_ptr<FieldAliasBase> field;
             bool ascending;
+            
+            // Constructor to fix emplace_back issue
+            OrderFieldInfo(std::unique_ptr<FieldAliasBase> f, bool asc) 
+                : field(std::move(f)), ascending(asc) {}
         };
         std::vector<OrderFieldInfo> orderFields;
         std::vector<std::unique_ptr<FieldAliasBase>> distinctFields;
@@ -599,6 +603,29 @@ namespace storm {
             }
         }
         
+        // Delete records based on where conditions without requiring an object
+        bool remove() {
+            try {
+                if (!_whereExpression.has_value()) {
+                    throw std::runtime_error("Cannot delete without where conditions. Use remove(obj) or add where conditions.");
+                }
+                
+                std::string sql = build_delete_by_condition_sql();
+                auto stmt = Statement(conn, sql);
+                
+                // Bind parameters from where expression
+                if (_whereExpression.has_value()) {
+                    auto query_result = _whereExpression.value().to_query();
+                    bind_query_parameters(stmt, query_result);
+                }
+                
+                return stmt.execute();
+            } catch (const std::exception& e) {
+                std::cerr << "Exception in delete by condition: " << e.what() << "\n";
+                return false;
+            }
+        }
+        
         bool remove(const std::vector<T>& objs) {
             if (objs.empty()) return true;
             
@@ -623,6 +650,18 @@ namespace storm {
             return fmt::format("DELETE FROM {} WHERE id = ?;", this->template get_table_name<T>());
         }
         
+        std::string build_delete_by_condition_sql() {
+            std::string sql = fmt::format("DELETE FROM {}", this->template get_table_name<T>());
+            
+            if (_whereExpression.has_value()) {
+                auto query_result = _whereExpression.value().to_query();
+                sql += " WHERE " + query_result.sql;
+            }
+            
+            sql += ";";
+            return sql;
+        }
+
         std::string build_batch_delete_sql(size_t count) {
             std::vector<std::string> placeholders(count, "?");
             return fmt::format(
@@ -1180,6 +1219,100 @@ namespace storm {
             return results;
         }
 
+        T select_one() const {
+            // Build the query with limit 1 to ensure we only get one result
+            // Get the where query result
+            auto where_query_result = this->get_where_query();
+            
+            // Get field names and clause for SQL generation
+            auto [fieldNames, fieldsClause] = this->buildFieldsClause();
+            
+            // Build the SQL query with LIMIT 1
+            auto sql = fmt::format("SELECT {} {} {} FROM \"{}\" {} {} {} {} LIMIT 1;", 
+                this->createDistinctClause(),
+                fieldsClause,
+                this->buildFunctions(),
+                this->template get_table_name<T>(),
+                this->generateJoinSQL(),
+                where_query_result.sql,
+                this->generateGroupBySQL(),
+                this->buildOrderFields());
+            
+            std::cout << sql << std::endl;
+            
+            auto smt_ = Statement(conn, sql);
+            bind_query_parameters(smt_, where_query_result);
+            auto all_rows = smt_.execute_all();
+
+            if (all_rows.empty()) {
+                throw std::runtime_error("No results found for select_one query");
+            }
+            
+            // Process the single row
+            T obj{};
+            const auto& row = all_rows[0];
+            int column_idx = 0;
+            
+            if (this->onlyFields.empty()) {
+                // When no specific fields are selected, populate all fields
+                Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
+                    if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
+                        using FieldType = typename Reflect<T>::template member_value_type<decltype(member)>;
+                        
+                        if constexpr (std::is_same_v<FieldType, std::string>) {
+                            member(obj) = row.get_text(column_idx);
+                        } else if constexpr (std::is_same_v<FieldType, bool>) {
+                            member(obj) = row.get_int(column_idx) != 0;
+                        } else if constexpr (std::is_integral_v<FieldType>) {
+                            member(obj) = static_cast<FieldType>(row.get_int(column_idx));
+                        } else if constexpr (std::is_floating_point_v<FieldType>) {
+                            member(obj) = static_cast<FieldType>(row.get_double(column_idx));
+                        } else {
+                            static_assert(std::is_pointer<FieldType>::value == false, "Unsupported pointer type for SQLite binding");
+                            static_assert(std::is_reference<FieldType>::value == false, "Unsupported reference type for SQLite binding");
+                            static_assert(sizeof(FieldType) == 0, "Unsupported type for SQLite binding");
+                        }
+                        
+                        column_idx++;
+                    }
+                });
+            } else {
+                // When specific fields are selected, only populate those fields
+                for (const auto& fieldAlias : this->onlyFields) {
+                    if (!fieldAlias) continue;
+                    
+                    const std::string fieldName = fieldAlias->getFieldName();
+                    
+                    // Find and populate the corresponding field
+                    Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
+                        if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
+                            const std::string memberName = Reflect<T>::get_member_name(member);
+                            if (memberName == fieldName) {
+                                using FieldType = typename Reflect<T>::template member_value_type<decltype(member)>;
+                                
+                                if constexpr (std::is_same_v<FieldType, std::string>) {
+                                    member(obj) = row.get_text(column_idx);
+                                } else if constexpr (std::is_same_v<FieldType, bool>) {
+                                    member(obj) = row.get_int(column_idx) != 0;
+                                } else if constexpr (std::is_integral_v<FieldType>) {
+                                    member(obj) = static_cast<FieldType>(row.get_int(column_idx));
+                                } else if constexpr (std::is_floating_point_v<FieldType>) {
+                                    member(obj) = static_cast<FieldType>(row.get_double(column_idx));
+                                } else {
+                                    static_assert(std::is_pointer<FieldType>::value == false, "Unsupported pointer type for SQLite binding");
+                                    static_assert(std::is_reference<FieldType>::value == false, "Unsupported reference type for SQLite binding");
+                                    static_assert(sizeof(FieldType) == 0, "Unsupported type for SQLite binding");
+                                }
+                            }
+                        }
+                    });
+                    column_idx++;
+                }
+            }
+            
+            return obj;
+        }
+        
         std::vector<T> select_all() const {
             // Get the where query result
             auto where_query_result = this->get_where_query();
