@@ -297,6 +297,53 @@ TEST_F(ORMTest, RemoveNonExistentObject) {
     EXPECT_TRUE(result == true || result == false);
 }
 
+TEST_F(ORMTest, RemoveAll) {
+    // First count how many authors we have
+    auto authors = QuerySet<Author>(conn).select_all();
+    int initial_count = authors.size();
+    ASSERT_GT(initial_count, 0);
+    
+    // Delete all authors
+    bool result = QuerySet<Author>(conn).remove();
+    EXPECT_TRUE(result);
+    
+    // Verify all authors were deleted
+    authors = QuerySet<Author>(conn).select_all();
+    EXPECT_EQ(authors.size(), 0);
+    
+    // Restore test data for other tests
+    setupTestData();
+}
+
+TEST_F(ORMTest, RemoveByCondition) {
+    // First count how many authors we have
+    auto all_authors = QuerySet<Author>(conn).select_all();
+    int initial_count = all_authors.size();
+    ASSERT_GT(initial_count, 0);
+    
+    // Count authors with age > 30
+    auto older_authors = QuerySet<Author>(conn).where(field(&Author::age) > 30).select_all();
+    int older_count = older_authors.size();
+    ASSERT_GT(older_count, 0);
+    ASSERT_LT(older_count, initial_count);
+    
+    // Delete authors with age > 30
+    bool result = QuerySet<Author>(conn).where(field(&Author::age) > 30).remove();
+    EXPECT_TRUE(result);
+    
+    // Verify only matching authors were deleted
+    auto remaining_authors = QuerySet<Author>(conn).select_all();
+    EXPECT_EQ(remaining_authors.size(), initial_count - older_count);
+    
+    // Verify no remaining authors have age > 30
+    for (const auto& author : remaining_authors) {
+        EXPECT_LE(author.age, 30);
+    }
+    
+    // Restore test data for other tests
+    setupTestData();
+}
+
 // INTEGRATION TESTS
 TEST_F(ORMTest, FullCRUDWorkflow) {
     // Create

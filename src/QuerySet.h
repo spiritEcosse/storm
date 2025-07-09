@@ -1150,8 +1150,6 @@ namespace storm {
                     this->buildOrderFields(),
                     this->limit_impl());
             
-            std::cout << sql << std::endl;
-            
             // Execute the query
             auto stmt = Statement(conn, sql);
             bind_query_parameters(stmt, where_query_result);
@@ -1233,8 +1231,6 @@ namespace storm {
                 where_query_result.sql,
                 this->generateGroupBySQL(),
                 this->buildOrderFields());
-            
-            std::cout << sql << std::endl;
             
             auto smt_ = Statement(conn, sql);
             bind_query_parameters(smt_, where_query_result);
@@ -1327,8 +1323,6 @@ namespace storm {
                 this->generateGroupBySQL(),
                 this->buildOrderFields(),
                 this->limit_impl());
-            
-            std::cout << sql << std::endl;
             
             auto smt_ = Statement(conn, sql);
             bind_query_parameters(smt_, where_query_result);
@@ -1573,4 +1567,4 @@ namespace storm {
     };
 }
 
-#include "QuerySet.where.impl.h"
+#include "QuerySet.where.impl.h" // NOSONAR
