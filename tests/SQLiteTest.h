@@ -341,7 +341,7 @@ TEST_F(ORMTest, RemoveByCondition) {
 // QUERYSET COPY TESTS
 TEST_F(ORMTest, QuerySetCopy) {
     // Create a base query
-    auto baseQuery = QuerySet<Author>(conn).where(field(&Author::is_active) == true);
+    auto baseQuery = QuerySet<Author>(conn).where<&Author::is_active>(true);
     
     // Create two copies and add different conditions
     auto youngAuthorsQuery = baseQuery; // Copy NOSONAR
@@ -373,6 +373,257 @@ TEST_F(ORMTest, QuerySetCopy) {
     
     // Verify that we have the correct number of results
     EXPECT_EQ(youngAuthors.size() + seniorAuthors.size(), activeAuthors.size());
+}
+
+TEST_F(ORMTest, QuerySetCopyConstructorDeepCopy) {
+    // Create a complex query with all possible member variables set
+    auto originalQuery = QuerySet<Author>(conn)
+        .where(field(&Author::is_active) == true)
+        .where(field(&Author::age) > 20)
+        .order_by<&Author::age, false>() // descending
+        .order_by<&Author::name, true>() // ascending
+        .distinct<&Author::age>()
+        .only<&Author::name>("author_name")
+        .only<&Author::age>()
+        .group_by<&Author::is_active>()
+        .limit(10)
+        .offset(5);
+    
+    // Create a copy using the copy constructor
+    auto copiedQuery = originalQuery; // Copy NOSONAR
+    
+    // Verify that both queries produce the same results initially
+    auto originalResults = originalQuery.select_all();
+    auto copiedResults = copiedQuery.select_all();
+    
+    EXPECT_EQ(originalResults.size(), copiedResults.size());
+    
+    // Now modify the copied query
+    copiedQuery.where(field(&Author::rating) > 4.0);
+    
+    // The original query should remain unchanged
+    auto newOriginalResults = originalQuery.select_all();
+    auto newCopiedResults = copiedQuery.select_all();
+    
+    // Original results should be the same as before
+    EXPECT_EQ(originalResults.size(), newOriginalResults.size());
+    
+    // Copied results should be different (filtered further)
+    EXPECT_LE(newCopiedResults.size(), originalResults.size());
+    
+    // Check that all authors in the copied results have rating > 4.0
+    for (const auto& author : newCopiedResults) {
+        EXPECT_GT(author.rating, 4.0);
+    }
+}
+
+TEST_F(ORMTest, QuerySetCopyConstructorMembersVerification) {
+    // Test each member variable individually to ensure proper copying
+    
+    // 1. Test whereExpression copying
+    auto whereQuery = QuerySet<Author>(conn).where(field(&Author::age) > 25); // Greater than
+    auto whereQueryCopy = whereQuery; // Copy NOSONAR
+    
+    // Verify both queries return the same results
+    auto whereResults = whereQuery.select_all();
+    auto whereCopyResults = whereQueryCopy.select_all();
+    EXPECT_EQ(whereResults.size(), whereCopyResults.size());
+    
+    // Modify copy and verify independence
+    whereQueryCopy.where(field(&Author::email) == "alice@example.com"); // Use a specific email to ensure different results
+    EXPECT_NE(whereQuery.select_all().size(), whereQueryCopy.select_all().size());
+    
+    // 2. Test joinInfo copying
+    auto joinQuery = QuerySet<Post>(conn).join<Author>();
+    auto joinQueryCopy = joinQuery; // Copy NOSONAR
+    
+    // Verify both queries can execute successfully
+    EXPECT_NO_THROW(joinQuery.select_all());
+    EXPECT_NO_THROW(joinQueryCopy.select_all());
+    
+    // 3. Test orderFields copying
+    auto orderQuery = QuerySet<Author>(conn).order_by<&Author::age, false>();
+    auto orderQueryCopy = orderQuery; // Copy NOSONAR
+    
+    // Verify both queries return results in the same order
+    auto orderResults = orderQuery.select_all();
+    auto orderCopyResults = orderQueryCopy.select_all();
+    ASSERT_GT(orderResults.size(), 1);
+    EXPECT_EQ(orderResults[0].age, orderCopyResults[0].age);
+    
+    // Modify copy's ordering and verify independence
+    orderQueryCopy.order_by<&Author::name, true>();
+    auto modifiedOrderCopyResults = orderQueryCopy.select_all();
+    
+    // The original order should still be by age descending
+    auto newOrderResults = orderQuery.select_all();
+    EXPECT_EQ(orderResults[0].age, newOrderResults[0].age);
+    
+    // 4. Test distinctFields copying
+    auto distinctQuery = QuerySet<Author>(conn).distinct<&Author::age>();
+    auto distinctQueryCopy = distinctQuery; // Copy NOSONAR
+    
+    // Verify both queries return the same number of distinct results
+    auto distinctResults = distinctQuery.select_all();
+    auto distinctCopyResults = distinctQueryCopy.select_all();
+    EXPECT_EQ(distinctResults.size(), distinctCopyResults.size());
+    
+    // 5. Test onlyFields copying
+    auto onlyQuery = QuerySet<Author>(conn).only<&Author::name>();
+    auto onlyQueryCopy = onlyQuery; // Copy NOSONAR
+    
+    // Both should execute successfully
+    EXPECT_NO_THROW(onlyQuery.select_all());
+    EXPECT_NO_THROW(onlyQueryCopy.select_all());
+    
+    // 6. Test groupByFields copying
+    auto groupQuery = QuerySet<Author>(conn).group_by<&Author::is_active>();
+    auto groupQueryCopy = groupQuery; // Copy NOSONAR
+    
+    // Both should execute successfully
+    EXPECT_NO_THROW(groupQuery.select_all());
+    EXPECT_NO_THROW(groupQueryCopy.select_all());
+    
+    // 7. Test limit and offset copying
+    auto limitQuery = QuerySet<Author>(conn).limit(2).offset(1);
+    auto limitQueryCopy = limitQuery; // Copy NOSONAR
+    
+    // Verify both queries return the same number of results
+    auto limitResults = limitQuery.select_all();
+    auto limitCopyResults = limitQueryCopy.select_all();
+    EXPECT_EQ(limitResults.size(), limitCopyResults.size());
+    EXPECT_EQ(2, limitResults.size()); // Should be limited to 2
+    
+    // Modify copy and verify independence
+    limitQueryCopy.limit(3);
+    EXPECT_EQ(2, limitQuery.select_all().size());
+    EXPECT_EQ(3, limitQueryCopy.select_all().size());
+}
+
+TEST_F(ORMTest, QuerySetCopyAssignmentOperator) {
+    // Create two different queries
+    auto query1 = QuerySet<Author>(conn)
+        .where(field(&Author::age) < 30)
+        .order_by<&Author::name, true>();
+    
+    auto query2 = QuerySet<Author>(conn)
+        .where(field(&Author::rating) > 4.0)
+        .limit(2);
+    
+    // Save the original results
+    auto originalQuery1Results = query1.select_all();
+    auto originalQuery2Results = query2.select_all();
+    
+    // Perform copy assignment
+    query2 = query1; // Copy assignment
+    
+    // Verify query2 now produces the same results as query1
+    auto newQuery2Results = query2.select_all();
+    EXPECT_EQ(originalQuery1Results.size(), newQuery2Results.size());
+    
+    // Modify query2 and verify query1 remains unchanged
+    query2.where(field(&Author::email).like("%alice@example.com"));
+    
+    auto modifiedQuery2Results = query2.select_all();
+    auto finalQuery1Results = query1.select_all();
+    
+    // Original query1 should be unchanged
+    EXPECT_EQ(originalQuery1Results.size(), finalQuery1Results.size());
+    
+    // Modified query2 should have different results
+    EXPECT_NE(originalQuery1Results.size(), modifiedQuery2Results.size());
+    
+    // Self-assignment test
+    query1 = query1; // Self-assignment should be safe
+    auto afterSelfAssignResults = query1.select_all();
+    EXPECT_EQ(originalQuery1Results.size(), afterSelfAssignResults.size());
+}
+
+TEST_F(ORMTest, QuerySetCopyEdgeCases) {
+    // 1. Test copying an empty query
+    auto emptyQuery = QuerySet<Author>(conn);
+    auto emptyQueryCopy = emptyQuery; // Copy NOSONAR
+    
+    // Both should return all authors
+    EXPECT_EQ(emptyQuery.select_all().size(), emptyQueryCopy.select_all().size());
+    
+    // 2. Test copying a query with no results
+    auto noResultsQuery = QuerySet<Author>(conn).where(field(&Author::age) > 100); // No one is that old
+    auto noResultsQueryCopy = noResultsQuery; // Copy NOSONAR
+    
+    // Both should return empty results
+    EXPECT_EQ(0, noResultsQuery.select_all().size());
+    EXPECT_EQ(0, noResultsQueryCopy.select_all().size());
+    
+    // 3. Test complex chained query copying
+    auto complexQuery = QuerySet<Author>(conn)
+        .where<&Author::age>(25, Op::GT)
+        .where<&Author::is_active>(true)
+        .where<&Author::rating>(4.0, Op::GE)
+        .order_by<&Author::age, false>()
+        .order_by<&Author::name, true>()
+        .limit(5)
+        .offset(1);
+    
+    auto complexQueryCopy = complexQuery; // Copy NOSONAR
+    
+    // Both should return the same results
+    auto complexResults = complexQuery.select_all();
+    auto complexCopyResults = complexQueryCopy.select_all();
+    
+    EXPECT_EQ(complexResults.size(), complexCopyResults.size());
+    
+    if (!complexResults.empty() && !complexCopyResults.empty()) {
+        // Check that the first result is the same in both queries
+        EXPECT_EQ(complexResults[0].id, complexCopyResults[0].id);
+        EXPECT_EQ(complexResults[0].name, complexCopyResults[0].name);
+        EXPECT_EQ(complexResults[0].age, complexCopyResults[0].age);
+    }
+    
+    // 4. Test multiple consecutive copies
+    auto baseQuery = QuerySet<Author>(conn).where<&Author::is_active>(true);
+    auto copy1 = baseQuery; // First copy
+    auto copy2 = copy1;     // Copy of a copy
+    auto copy3 = copy2;     // Copy of a copy of a copy
+    
+    // All should return the same results
+    EXPECT_EQ(baseQuery.select_all().size(), copy1.select_all().size());
+    EXPECT_EQ(baseQuery.select_all().size(), copy2.select_all().size());
+    EXPECT_EQ(baseQuery.select_all().size(), copy3.select_all().size());
+    
+    // Modify each copy differently and verify independence
+    copy1.where<&Author::age>(30, Op::LT); // Less than
+    copy2.where<&Author::rating>(4.0, Op::GT); // Greater than
+    copy3.where<&Author::name>("A%", Op::LIKE); // LIKE operator
+    
+    // Each query should now return different results
+    auto baseResults = baseQuery.select_all();
+    auto copy1Results = copy1.select_all();
+    auto copy2Results = copy2.select_all();
+    auto copy3Results = copy3.select_all();
+    
+    // The original should be unchanged
+    for (const auto& author : baseResults) {
+        EXPECT_TRUE(author.is_active);
+    }
+    
+    // Copy1 should have additional age filter
+    for (const auto& author : copy1Results) {
+        EXPECT_TRUE(author.is_active);
+        EXPECT_LT(author.age, 30);
+    }
+    
+    // Copy2 should have additional rating filter
+    for (const auto& author : copy2Results) {
+        EXPECT_TRUE(author.is_active);
+        EXPECT_GT(author.rating, 4.0);
+    }
+    
+    // Copy3 should have name filter (starts with 'A')
+    for (const auto& author : copy3Results) {
+        EXPECT_TRUE(author.is_active);
+        EXPECT_EQ('A', author.name[0]);
+    }
 }
 
 // INTEGRATION TESTS

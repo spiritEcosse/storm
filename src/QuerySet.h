@@ -382,7 +382,7 @@ namespace storm {
         QuerySet(const QuerySet& other)
             : conn(other.conn),
               // _whereExpression is handled separately below to ensure proper deep copying
-              joinInfo(other.joinInfo),
+              // Create an empty joinInfo and manually copy the joins for proper deep copying
               _jsonFields(other._jsonFields),
               functionsSet(other.functionsSet),
               _limit(other._limit),
@@ -391,6 +391,17 @@ namespace storm {
               _one(other._one),
               _doAndCheck(other._doAndCheck),
               _returnInMain(other._returnInMain) {
+              
+            // Deep copy joinInfo.joins
+            joinInfo.joins.reserve(other.joinInfo.joins.size());
+            for (const auto& join : other.joinInfo.joins) {
+                joinInfo.joins.emplace_back(
+                    join.tableName,
+                    join.alias,
+                    join.condition,
+                    join.type
+                );
+            }
               
             // Handle _whereExpression separately to ensure proper deep copying
             if (other._whereExpression) {
@@ -439,7 +450,17 @@ namespace storm {
                 } else {
                     _whereExpression.reset(); // Clear if the other doesn't have a where expression
                 }
-                joinInfo = other.joinInfo;
+                // Deep copy joinInfo.joins
+                joinInfo.joins.clear();
+                joinInfo.joins.reserve(other.joinInfo.joins.size());
+                for (const auto& join : other.joinInfo.joins) {
+                    joinInfo.joins.emplace_back(
+                        join.tableName,
+                        join.alias,
+                        join.condition,
+                        join.type
+                    );
+                }
                 _jsonFields = other._jsonFields;
                 functionsSet = other.functionsSet;
                 _limit = other._limit;
@@ -527,7 +548,6 @@ namespace storm {
                 
                 auto ids = execute_insert({&obj}, field_names);
                 return ids.empty() ? -1 : ids[0];
-                
             } catch (const std::exception& e) {
                 std::cerr << "Exception in insert: " << e.what() << "\n";
                 return -1;
@@ -1142,9 +1162,11 @@ namespace storm {
             }
             
             if (!condition.empty()) {
+                // Don't use std::move on condition to prevent it from being invalidated
+                // This ensures the condition string remains valid for both the original and copied QuerySet
                 joinInfo.joins.emplace_back(targetTable,
                                         std::move(alias),
-                                        std::move(condition),
+                                        condition,  // Don't move the condition
                                         joinType);
             }
         }
@@ -1484,7 +1506,8 @@ namespace storm {
             auto smt_ = Statement(conn, sql);
             bind_query_parameters(smt_, where_query_result);
             auto all_rows = smt_.execute_all();
-
+            
+            // Process the results
             std::vector<T> results;
             if (all_rows.empty()) {
                 return results;
@@ -1496,7 +1519,36 @@ namespace storm {
                 T obj{};
                 int column_idx = 0;
                 
-                if (this->onlyFields.empty()) {
+                if (!this->distinctFields.empty()) {
+                    // When distinct fields are selected, only populate those fields
+                    // and make sure we don't exceed the column count
+                    for (size_t i = 0; i < this->distinctFields.size() && i < fieldNames.size(); ++i) {
+                        const auto& fieldAlias = this->distinctFields[i];
+                        if (!fieldAlias) continue;
+                        
+                        const std::string fieldName = fieldAlias->getFieldName();
+                        
+                        // Find and populate the corresponding field
+                        Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
+                            if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
+                                const std::string memberName = Reflect<T>::get_member_name(member);
+                                if (memberName == fieldName) {
+                                    using FieldType = typename Reflect<T>::template member_value_type<decltype(member)>;
+                                    
+                                    if constexpr (std::is_same_v<FieldType, std::string>) {
+                                        member(obj) = row.get_text(i);
+                                    } else if constexpr (std::is_same_v<FieldType, bool>) {
+                                        member(obj) = row.get_int(i) != 0;
+                                    } else if constexpr (std::is_integral_v<FieldType>) {
+                                        member(obj) = static_cast<FieldType>(row.get_int(i));
+                                    } else if constexpr (std::is_floating_point_v<FieldType>) {
+                                        member(obj) = static_cast<FieldType>(row.get_double(i));
+                                    }
+                                }
+                            }
+                        });
+                    }
+                } else if (this->onlyFields.empty()) {
                     // When no specific fields are selected, populate all fields
                     Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
                         if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
