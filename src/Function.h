@@ -10,6 +10,20 @@ namespace storm {
         using BaseClass::BaseClass;
 
         explicit Function(std::string function) : function(std::move(function)) {}
+        
+        // Virtual destructor to properly handle resource management
+        ~Function() override = default;
+        
+        // Custom copy constructor that doesn't call the base class copy constructor
+        Function(const Function& other) : function(other.function) {}
+        
+        // Custom copy assignment operator that doesn't call the base class assignment operator
+        Function& operator=(const Function& other) {
+            if (this != &other) {
+                function = other.function;
+            }
+            return *this;
+        }
 
         [[nodiscard]] std::string toStr() const {
             return function;

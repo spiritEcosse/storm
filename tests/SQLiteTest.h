@@ -338,6 +338,43 @@ TEST_F(ORMTest, RemoveByCondition) {
     }
 }
 
+// QUERYSET COPY TESTS
+TEST_F(ORMTest, QuerySetCopy) {
+    // Create a base query
+    auto baseQuery = QuerySet<Author>(conn).where(field(&Author::is_active) == true);
+    
+    // Create two copies and add different conditions
+    auto youngAuthorsQuery = baseQuery; // Copy NOSONAR
+    youngAuthorsQuery.where(field(&Author::age) <= 30);
+    
+    auto seniorAuthorsQuery = baseQuery; // Copy NOSONAR
+    seniorAuthorsQuery.where(field(&Author::age) > 30);
+    
+    // Execute the queries
+    auto youngAuthors = youngAuthorsQuery.select_all();
+    auto seniorAuthors = seniorAuthorsQuery.select_all();
+    
+    // Verify the results
+    for (const auto& author : youngAuthors) {
+        EXPECT_TRUE(author.is_active);
+        EXPECT_LE(author.age, 30);
+    }
+    
+    for (const auto& author : seniorAuthors) {
+        EXPECT_TRUE(author.is_active);
+        EXPECT_GT(author.age, 30);
+    }
+    
+    // Verify that the original query is unaffected
+    auto activeAuthors = baseQuery.select_all();
+    for (const auto& author : activeAuthors) {
+        EXPECT_TRUE(author.is_active);
+    }
+    
+    // Verify that we have the correct number of results
+    EXPECT_EQ(youngAuthors.size() + seniorAuthors.size(), activeAuthors.size());
+}
+
 // INTEGRATION TESTS
 TEST_F(ORMTest, FullCRUDWorkflow) {
     // Create

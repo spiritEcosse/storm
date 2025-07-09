@@ -68,8 +68,6 @@ namespace storm {
         return "INNER";
     }
 
-    // DistinctInfo has been removed and replaced with direct field aliases
-
     // Base class for type erasure
     struct FieldAliasBase {
         std::string alias;
@@ -85,6 +83,8 @@ namespace storm {
         virtual bool isStringField() const = 0;
         virtual bool isBoolField() const = 0;
         virtual bool isNumericField() const = 0;
+        // Clone method for polymorphic copying
+        [[nodiscard]] virtual FieldAliasBase* clone() const = 0;
     };
 
     template<auto MemberPtr>
@@ -129,7 +129,19 @@ namespace storm {
             using FieldType = typename member_pointer_traits<decltype(MemberPtr)>::type;
             return std::is_arithmetic_v<FieldType> && !std::is_same_v<FieldType, bool>;
         }
+        
+        [[nodiscard]] FieldAliasBase* clone() const override {
+            return new FieldAlias<MemberPtr>(alias);
+        }
     };
+    
+    // Helper function to create a unique_ptr from a FieldAliasBase using clone
+    template <typename T>
+    std::unique_ptr<FieldAliasBase> make_field_alias_unique(const T& field) {
+        // We can't use std::make_unique directly with FieldAliasBase because it's abstract
+        // Instead, we use the clone method which returns a concrete derived type
+        return std::unique_ptr<FieldAliasBase>(field->clone());
+    }
     
     // String-based field alias for runtime field references
     class StringFieldAlias : public FieldAliasBase {
@@ -156,6 +168,10 @@ namespace storm {
             return tableName;
         }
         
+        [[nodiscard]] std::string getAlias() const override {
+            return alias;
+        }
+        
         // For string-based fields, we assume it could be any type
         [[nodiscard]] bool isStringField() const override {
             return true;  // Conservative assumption
@@ -168,10 +184,14 @@ namespace storm {
         [[nodiscard]] bool isNumericField() const override {
             return false;  // Conservative assumption
         }
+        
+        [[nodiscard]] FieldAliasBase* clone() const override {
+            return new StringFieldAlias(tableName, fieldName, alias);
+        }
     };
 
     template<class T>
-    class QuerySet : public BaseClass {
+    class QuerySet {
     private:
         std::shared_ptr<Connection> conn;
         std::optional<storm::Where> _whereExpression;
@@ -184,6 +204,28 @@ namespace storm {
             // Constructor to fix emplace_back issue
             OrderFieldInfo(std::unique_ptr<FieldAliasBase> f, bool asc) 
                 : field(std::move(f)), ascending(asc) {}
+                
+            // Copy constructor for deep copy of the unique_ptr
+            OrderFieldInfo(const OrderFieldInfo& other)
+                : ascending(other.ascending) {
+                // Clone the field if it exists
+                if (other.field) {
+                    field = std::unique_ptr<FieldAliasBase>(other.field->clone());
+                }
+            }
+            
+            // Copy assignment operator
+            OrderFieldInfo& operator=(const OrderFieldInfo& other) {
+                if (this != &other) {
+                    ascending = other.ascending;
+                    if (other.field) {
+                        field = std::unique_ptr<FieldAliasBase>(other.field->clone());
+                    } else {
+                        field.reset();
+                    }
+                }
+                return *this;
+            }
         };
         std::vector<OrderFieldInfo> orderFields;
         std::vector<std::unique_ptr<FieldAliasBase>> distinctFields;
@@ -330,11 +372,126 @@ namespace storm {
     public:
         // =============================
         // =============================
-        // Constructor
+        // Constructor and Copy/Move Semantics
         // =============================
         explicit QuerySet(std::shared_ptr<Connection> conn, [[maybe_unused]] const std::string_view alias = "") 
             : conn(std::move(conn)) {
         }
+        
+        // Custom copy constructor for proper deep copy of all state
+        QuerySet(const QuerySet& other)
+            : conn(other.conn),
+              // _whereExpression is handled separately below to ensure proper deep copying
+              joinInfo(other.joinInfo),
+              _jsonFields(other._jsonFields),
+              functionsSet(other.functionsSet),
+              _limit(other._limit),
+              _offset(other._offset),
+              _alias(other._alias),
+              _one(other._one),
+              _doAndCheck(other._doAndCheck),
+              _returnInMain(other._returnInMain) {
+              
+            // Handle _whereExpression separately to ensure proper deep copying
+            if (other._whereExpression) {
+                _whereExpression = *other._whereExpression; // This will use Where's copy constructor for deep copying
+            }
+            
+            // Deep copy for orderFields
+            orderFields.reserve(other.orderFields.size());
+            for (const auto& field : other.orderFields) {
+                orderFields.emplace_back(field); // Uses the copy constructor we defined
+            }
+            
+            // Deep copy for distinctFields
+            distinctFields.reserve(other.distinctFields.size());
+            for (const auto& field : other.distinctFields) {
+                if (field) {
+                    distinctFields.push_back(make_field_alias_unique(field));
+                }
+            }
+            
+            // Deep copy for onlyFields
+            onlyFields.reserve(other.onlyFields.size());
+            for (const auto& field : other.onlyFields) {
+                if (field) {
+                    onlyFields.push_back(make_field_alias_unique(field));
+                }
+            }
+            
+            // Deep copy for groupByFields
+            groupByFields.reserve(other.groupByFields.size());
+            for (const auto& field : other.groupByFields) {
+                if (field) {
+                    groupByFields.push_back(make_field_alias_unique(field));
+                }
+            }
+        }
+        
+        // Custom copy assignment operator
+        QuerySet& operator=(const QuerySet& other) {
+            if (this != &other) {
+                // Copy simple members
+                conn = other.conn;
+                // Handle _whereExpression separately to ensure proper deep copying
+                if (other._whereExpression) {
+                    _whereExpression = *other._whereExpression; // This will use Where's copy constructor for deep copying
+                } else {
+                    _whereExpression.reset(); // Clear if the other doesn't have a where expression
+                }
+                joinInfo = other.joinInfo;
+                _jsonFields = other._jsonFields;
+                functionsSet = other.functionsSet;
+                _limit = other._limit;
+                _offset = other._offset;
+                _alias = other._alias;
+                _one = other._one;
+                _doAndCheck = other._doAndCheck;
+                _returnInMain = other._returnInMain;
+                
+                // Clear and deep copy for orderFields
+                orderFields.clear();
+                orderFields.reserve(other.orderFields.size());
+                for (const auto& field : other.orderFields) {
+                    orderFields.emplace_back(field); // Uses the copy constructor we defined
+                }
+                
+                // Clear and deep copy for distinctFields
+                distinctFields.clear();
+                distinctFields.reserve(other.distinctFields.size());
+                for (const auto& field : other.distinctFields) {
+                    if (field) {
+                        distinctFields.push_back(make_field_alias_unique(field));
+                    }
+                }
+                
+                // Clear and deep copy for onlyFields
+                onlyFields.clear();
+                onlyFields.reserve(other.onlyFields.size());
+                for (const auto& field : other.onlyFields) {
+                    if (field) {
+                        onlyFields.push_back(make_field_alias_unique(field));
+                    }
+                }
+                
+                // Clear and deep copy for groupByFields
+                groupByFields.clear();
+                groupByFields.reserve(other.groupByFields.size());
+                for (const auto& field : other.groupByFields) {
+                    if (field) {
+                        groupByFields.push_back(make_field_alias_unique(field));
+                    }   
+                }
+            }
+            return *this;
+        }
+        
+        // Allow moving
+        QuerySet(QuerySet&&) noexcept = default;
+        QuerySet& operator=(QuerySet&&) noexcept = default;
+        
+        // Virtual destructor for proper cleanup
+        virtual ~QuerySet() = default;
 
         // =============================
         // =============================
