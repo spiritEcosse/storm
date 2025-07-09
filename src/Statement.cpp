@@ -8,7 +8,7 @@
 namespace storm {
 Statement::Statement(std::shared_ptr<Connection> conn, const std::string& sql) : conn(std::move(conn)), stmt(nullptr), sql_(sql) {
     if (!this->conn || !this->conn->get()) {
-        throw std::runtime_error("Database connection is not valid.");
+        throw ConnectionNotOpenException();
     }
     int rc = sqlite3_prepare_v2(this->conn->get(), sql.c_str(), -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
@@ -24,7 +24,7 @@ Statement::Statement(std::shared_ptr<Connection> conn, const std::string& sql) :
             throw InvalidColumnException(columnName, sql);
         }
         
-        throw std::runtime_error("Failed to prepare statement: " + sql + " | SQLite Error: " + errMsg);
+        throw StatementPreparationException(errMsg, sql);
     }
 }
 
@@ -75,7 +75,7 @@ void Statement::bind_null(int idx) {
 
 bool Statement::execute() {
     if (!stmt) {
-        throw std::runtime_error("Cannot execute a null statement. Preparation likely failed.");
+        throw NullStatementException(sql_);
     }
     int rc = sqlite3_step(stmt);
     if (rc == SQLITE_DONE) {
@@ -91,7 +91,7 @@ bool Statement::execute() {
     // If we reach here, an error occurred.
     std::string errMsg = sqlite3_errmsg(conn->get());
     sqlite3_reset(stmt); // Reset statement on error to allow potential reuse or proper finalization
-    throw std::runtime_error("Failed to execute statement: " + errMsg);
+    throw storm::StatementExecutionException(errMsg, sql_);
 }
 
 void Statement::reset() {
@@ -126,7 +126,7 @@ std::vector<Row> Statement::execute_all() {
     
     // Check for errors
     if (step_result != SQLITE_DONE) {
-        throw std::runtime_error("Error executing statement: " + std::string(sqlite3_errmsg(conn->get())));
+        throw StatementExecutionException(sqlite3_errmsg(conn->get()), sql_);
     }
     
     return results;

@@ -9,13 +9,13 @@ namespace storm {
 // Base exception class for all Storm-related exceptions
 class StormException : public std::runtime_error {
 public:
-    explicit StormException(const std::string& message) : std::runtime_error(message) {}
+    using std::runtime_error::runtime_error;
 };
 
 // Database connection exceptions
 class ConnectionException : public StormException {
 public:
-    explicit ConnectionException(const std::string& message) : StormException(message) {}
+    using StormException::StormException;
 };
 
 class ConnectionNotOpenException : public ConnectionException {
@@ -26,7 +26,7 @@ public:
 // Transaction exceptions
 class TransactionException : public StormException {
 public:
-    explicit TransactionException(const std::string& message) : StormException(message) {}
+    using StormException::StormException;
 };
 
 class TransactionAlreadyActiveException : public TransactionException {
@@ -90,6 +90,24 @@ public:
 
 private:
     std::string _columnName;
+};
+
+class NullStatementException : public SQLQueryException {
+public:
+    explicit NullStatementException(const std::string& query = "")
+        : SQLQueryException("Cannot execute a null statement. Preparation likely failed.", query) {}
+};
+
+class StatementPreparationException : public SQLQueryException {
+public:
+    explicit StatementPreparationException(const std::string& error, const std::string& query = "")
+        : SQLQueryException("Failed to prepare statement: " + error, query) {}
+};
+
+class StatementExecutionException : public SQLQueryException {
+public:
+    explicit StatementExecutionException(const std::string& error, const std::string& query = "")
+        : SQLQueryException("Error executing statement: " + error, query) {}
 };
 
 } // namespace storm

@@ -1424,12 +1424,19 @@ namespace storm {
         }
     private:
         [[nodiscard]] std::string limit_impl() const {
-            if(!_limit) {
+            if(!_limit && !_offset) {
                 return "";
             }
 
-            return _offset ? fmt::format(" LIMIT {} OFFSET {}", _limit, _offset)
-                        : fmt::format(" LIMIT {}", _limit);
+            if(_limit && _offset) {
+                return fmt::format(" LIMIT {} OFFSET {}", _limit, _offset);
+            } else if(_limit) {
+                return fmt::format(" LIMIT {}", _limit);
+            } else {
+                // SQLite requires LIMIT when using OFFSET
+                // Use LIMIT -1 to get all rows with an offset
+                return fmt::format(" LIMIT -1 OFFSET {}", _offset);
+            }
         }
 
     public:

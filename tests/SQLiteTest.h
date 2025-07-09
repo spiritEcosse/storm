@@ -460,7 +460,7 @@ TEST_F(ORMTest, SelectAllWithJoinWhereOffset) {
         .where(&Post::author_id, alice_id)
         .offset(1)
         .select_all();
-    ASSERT_EQ(posts.size(), 2);
+    ASSERT_EQ(posts.size(), 1); // After offset(1), we should have 1 post remaining
 }
 
 TEST_F(ORMTest, SelectAllWithJoinWhereLimitOffset) {
@@ -492,15 +492,15 @@ TEST_F(ORMTest, SelectAllWithJoinWhereGroupByLimit) {
     ASSERT_EQ(posts.size(), 1);
 }
 
-// TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupByAndOffset) {
-//     std::vector<Post> posts = QuerySet<Post>(conn)
-//         .join<Author>()
-//         .where(&Post::author_id, alice_id)
-//         .template group_by<&Author::name>()
-//         .offset(1)
-//         .select_all();
-//     ASSERT_EQ(posts.size(), 0); // Only one group for Alice, offset 1 means no results
-// }
+TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupByAndOffset) {
+    std::vector<Post> posts = QuerySet<Post>(conn)
+        .join<Author>()
+        .where(&Post::author_id, alice_id)
+        .template group_by<&Author::name>()
+        .offset(1)
+        .select_all();
+    ASSERT_EQ(posts.size(), 0); // Only one group for Alice, offset 1 means no results
+}
 
 TEST_F(ORMTest, SelectAllWithJoinWhereGroupByLimitOffset) {
     std::vector<Post> posts = QuerySet<Post>(conn)
