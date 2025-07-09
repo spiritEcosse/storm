@@ -1900,9 +1900,9 @@ TEST_F(ORMTest, WithTransactionHelper) {
     clearTestData();
     
     // Test the with_transaction helper function
-    bool success = with_transaction(conn, [&]() {
+    bool success = with_transaction(conn, [this]() {
         Author alice("Alice Smith", 25, "alice@example.com");
-        QuerySet<Author>(conn).insert(alice);
+        QuerySet<Author>(this->conn).insert(alice);
         return true;
     }); 
     
@@ -1920,9 +1920,9 @@ TEST_F(ORMTest, WithTransactionExceptionRollback) {
     
     // Test that with_transaction rolls back on exception
     try {
-        with_transaction(conn, [&]() {
+        with_transaction(conn, [this]() {
             Author alice("Alice Smith", 25, "alice@example.com");
-            QuerySet<Author>(conn).insert(alice);
+            QuerySet<Author>(this->conn).insert(alice);
             
             // Throw an exception to trigger rollback
             throw std::runtime_error("Test exception");
