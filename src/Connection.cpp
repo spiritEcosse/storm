@@ -1,4 +1,7 @@
 #include "Connection.h"
+#include "SQLExceptions.h"
+
+using namespace storm;
 
 Connection::Connection(const std::string& db_name) : db(nullptr), transaction_active(false) {
     int rc = sqlite3_open(db_name.c_str(), &db);
@@ -68,11 +71,11 @@ std::int64_t Connection::last_insert_id() const {
 
 void Connection::begin_transaction(TransactionLevel level) {
     if (!is_open()) {
-        throw std::runtime_error("Cannot begin transaction: database connection is not open");
+        throw ConnectionNotOpenException();
     }
     
     if (transaction_active) {
-        throw std::runtime_error("Transaction already in progress");
+        throw TransactionAlreadyActiveException();
     }
     
     std::string transaction_type;
@@ -95,7 +98,7 @@ void Connection::begin_transaction(TransactionLevel level) {
     if (rc != SQLITE_OK) {
         std::string error(error_msg);
         sqlite3_free(error_msg);
-        throw std::runtime_error("Failed to begin transaction: " + error);
+        throw TransactionStartFailedException(error);
     }
     
     transaction_active = true;
@@ -103,11 +106,11 @@ void Connection::begin_transaction(TransactionLevel level) {
 
 void Connection::commit() {
     if (!is_open()) {
-        throw std::runtime_error("Cannot commit transaction: database connection is not open");
+        throw ConnectionNotOpenException();
     }
     
     if (!transaction_active) {
-        throw std::runtime_error("No active transaction to commit");
+        throw TransactionNotActiveException();
     }
     
     char* error_msg = nullptr;
@@ -116,7 +119,7 @@ void Connection::commit() {
     if (rc != SQLITE_OK) {
         std::string error(error_msg);
         sqlite3_free(error_msg);
-        throw std::runtime_error("Failed to commit transaction: " + error);
+        throw TransactionCommitFailedException(error);
     }
     
     transaction_active = false;
@@ -124,11 +127,11 @@ void Connection::commit() {
 
 void Connection::rollback() {
     if (!is_open()) {
-        throw std::runtime_error("Cannot rollback transaction: database connection is not open");
+        throw ConnectionNotOpenException();
     }
     
     if (!transaction_active) {
-        throw std::runtime_error("No active transaction to rollback");
+        throw TransactionNotActiveException();
     }
     
     char* error_msg = nullptr;
@@ -137,7 +140,7 @@ void Connection::rollback() {
     if (rc != SQLITE_OK) {
         std::string error(error_msg);
         sqlite3_free(error_msg);
-        throw std::runtime_error("Failed to rollback transaction: " + error);
+        throw TransactionRollbackFailedException(error);
     }
     
     transaction_active = false;

@@ -1809,7 +1809,7 @@ TEST_F(ORMTest, NestedTransactionException) {
     conn->begin_transaction();
     
     // Attempt to start another transaction while one is active
-    ASSERT_THROW(conn->begin_transaction(), std::runtime_error);
+    ASSERT_THROW(conn->begin_transaction(), TransactionAlreadyActiveException);
     
     // Clean up
     conn->rollback();
@@ -1820,7 +1820,7 @@ TEST_F(ORMTest, CommitWithoutTransactionException) {
     clearTestData();
     
     // Attempt to commit without an active transaction
-    ASSERT_THROW(conn->commit(), std::runtime_error);
+    ASSERT_THROW(conn->commit(), TransactionNotActiveException);
 }
 
 TEST_F(ORMTest, RollbackWithoutTransactionException) {
@@ -1828,7 +1828,7 @@ TEST_F(ORMTest, RollbackWithoutTransactionException) {
     clearTestData();
     
     // Attempt to rollback without an active transaction
-    ASSERT_THROW(conn->rollback(), std::runtime_error);
+    ASSERT_THROW(conn->rollback(), TransactionNotActiveException);
 }
 
 TEST_F(ORMTest, TransactionRAIIWrapper) {
@@ -1837,7 +1837,7 @@ TEST_F(ORMTest, TransactionRAIIWrapper) {
     
     // Test the RAII transaction wrapper
     {
-        storm::Transaction tx(conn);
+        Transaction tx(conn);
         
         // Insert an author within the transaction
         Author alice("Alice Smith", 25, "alice@example.com");
@@ -1858,7 +1858,7 @@ TEST_F(ORMTest, TransactionRAIICommit) {
     
     // Use the RAII Transaction wrapper with explicit commit
     {
-        storm::Transaction tx(conn);
+        Transaction tx(conn);
         
         // Insert an author within the transaction
         Author alice("Alice Smith", 25, "alice@example.com");
@@ -1880,7 +1880,7 @@ TEST_F(ORMTest, TransactionRAIIRollback) {
     
     // Test the RAII transaction wrapper with explicit rollback
     {
-        storm::Transaction tx(conn);
+        Transaction tx(conn);
         
         // Insert an author within the transaction
         Author alice("Alice Smith", 25, "alice@example.com");
@@ -1900,11 +1900,11 @@ TEST_F(ORMTest, WithTransactionHelper) {
     clearTestData();
     
     // Test the with_transaction helper function
-    bool success = storm::with_transaction(conn, [&]() {
+    bool success = with_transaction(conn, [&]() {
         Author alice("Alice Smith", 25, "alice@example.com");
         QuerySet<Author>(conn).insert(alice);
         return true;
-    });
+    }); 
     
     ASSERT_TRUE(success);
     
@@ -1920,7 +1920,7 @@ TEST_F(ORMTest, WithTransactionExceptionRollback) {
     
     // Test that with_transaction rolls back on exception
     try {
-        storm::with_transaction(conn, [&]() {
+        with_transaction(conn, [&]() {
             Author alice("Alice Smith", 25, "alice@example.com");
             QuerySet<Author>(conn).insert(alice);
             
@@ -1983,7 +1983,7 @@ TEST_F(ORMTest, TransferBetweenAuthorsTransaction) {
     // Now let's transfer the post from Alice to Bob using a transaction
     // to ensure the operation is atomic
     {
-        storm::Transaction tx(conn);
+        Transaction tx(conn);
         
         try {
             // 1. Update the post to belong to Bob
@@ -2011,7 +2011,7 @@ TEST_F(ORMTest, TransferBetweenAuthorsTransaction) {
     
     // Demonstrate a failed transaction with automatic rollback
     {
-        storm::Transaction tx(conn);
+        Transaction tx(conn);
         
         // 1. Update the post to belong to Charlie
         Post post = QuerySet<Post>(conn).where(&Post::id, postId).select_one();
