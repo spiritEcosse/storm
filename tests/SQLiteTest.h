@@ -310,9 +310,6 @@ TEST_F(ORMTest, RemoveAll) {
     // Verify all authors were deleted
     authors = QuerySet<Author>(conn).select_all();
     EXPECT_EQ(authors.size(), 0);
-    
-    // Restore test data for other tests
-    setupTestData();
 }
 
 TEST_F(ORMTest, RemoveByCondition) {
@@ -339,9 +336,6 @@ TEST_F(ORMTest, RemoveByCondition) {
     for (const auto& author : remaining_authors) {
         EXPECT_LE(author.age, 30);
     }
-    
-    // Restore test data for other tests
-    setupTestData();
 }
 
 // INTEGRATION TESTS
