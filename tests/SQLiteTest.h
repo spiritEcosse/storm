@@ -1341,7 +1341,6 @@ TEST_F(ORMTest, SelectOnlySpecificFields) {
         .only<&Author::name, &Author::age, &Author::email>()
         .select_all();
     
-    std::cout << " Only fields: " << authors.size() << std::endl;
     // Verify results
     ASSERT_EQ(authors.size(), 4); // Should return all 4 authors
     
@@ -1609,7 +1608,6 @@ TEST_F(ORMTest, RawSqlFromStatementInsert) {
     
     // Verify that we can get the raw SQL
     std::string rawSql = stmt.sql();
-    std::cout << rawSql << std::endl;
     
     // Check the exact SQL string format
     // The SQL should be in the format: INSERT INTO author (name, age, email, is_active, rating, score, middleName, biography) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id;
