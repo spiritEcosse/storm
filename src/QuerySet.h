@@ -1827,11 +1827,6 @@ namespace storm {
         // =============================
         // FUNCTIONS
         // =============================
-        // QuerySet &count(const BaseField *field, std::string_view alias) {
-        //     functions(Function(fmt::format("count({})::integer as {}", field->getFullFieldName(), alias)));
-        //     return *this;
-        // }
-
         // MAX aggregate function
         template<auto Field>
         QuerySet &max(const std::string& alias) {
@@ -1842,23 +1837,15 @@ namespace storm {
             functions(Function(fmt::format("MAX({}) AS {}", field->getFullFieldName(), alias)));
             return *this;
         }
-
+    private:
         template<typename... Args>
         QuerySet &functions(Args &&...args) {
-            this->functions_impl(std::forward<Args>(args)...);
+            // Reserve capacity
+            this->functionsSet.reserve(functionsSet.size() + sizeof...(Args));
+            
+            // Process each function using fold expression
+            (functionsSet.emplace_back(std::forward<Args>(args)), ...);
             return *this;
-        }
-    
-    private:
-        template<typename U>
-        void functions_impl(U &&u) {
-            functionsSet.emplace_back(std::forward<U>(u));
-        }
-
-        template<typename U, typename... Args>
-        void functions_impl(U &&u, Args &&...args) {
-            functionsSet.emplace_back(std::forward<U>(u));
-            functions_impl(std::forward<Args>(args)...);
         }
     };
 }
