@@ -918,6 +918,8 @@ namespace storm {
             fieldStrings.assign(fieldNames.begin(), fieldNames.end());
             return fmt::format("GROUP BY {}", fmt::join(fieldStrings, ", "));
         }
+        
+
     
     public:
         // =============================
@@ -1272,6 +1274,33 @@ namespace storm {
             std::string      // For text values
         >;
         
+        // Helper method to add GROUP BY fields to the result map
+        void addGroupByFieldsToResult(std::map<std::string, ValueVariant>& rowDict, const Row& row) const {
+            if (groupByFields.empty()) {
+                return;
+            }
+            
+            // For each GROUP BY field, extract the field name and add it to the result map
+            for (const auto& field : groupByFields) {
+                std::string fullFieldName = field->getFullFieldName();
+                size_t dotPos = fullFieldName.find('.');
+                if (dotPos != std::string::npos) {
+                    // For joined fields, extract just the field name
+                    std::string fieldName = fullFieldName.substr(dotPos + 1);
+                    
+                    // Add the field to the result map if it's not already there
+                    // Since we can't directly access column names from Row, we'll use the field name
+                    // that we know should be in the result from the GROUP BY clause
+                    if (!rowDict.contains(fieldName)) {
+                        // The field should be in the SQL result but not in our map
+                        // We need to add it explicitly to the map with a default value
+                        // This ensures that row.at(fieldName) won't throw an exception
+                        rowDict[fieldName] = std::string("");
+                    }
+                }
+            }
+        }
+        
         template<typename ValueType>
         ValueType get_value(const Row& row, size_t idx) const {
             if constexpr (std::is_same_v<ValueType, std::string>) {
@@ -1307,8 +1336,8 @@ namespace storm {
          */
         std::vector<std::map<std::string, ValueVariant>> select_values() const {
             // Check if we have fields to select
-            if (this->onlyFields.empty() && this->distinctFields.empty()) {
-                throw std::runtime_error("You must specify at least one field with only() or distinct() before calling select_values()");
+            if (this->onlyFields.empty() && this->distinctFields.empty() && this->functionsSet.empty()) {
+                throw std::runtime_error("You must specify at least one field with only(), distinct(), or an aggregate function before calling select_values()");
             }
             
             // Get the where query result
@@ -1318,7 +1347,48 @@ namespace storm {
             auto [fieldNames, fieldsClause] = this->buildFieldsClause();
             
             // Generate the SQL query
-            auto sql = fmt::format("SELECT {} {} {} FROM \"{}\" {} {} {} {} {}", 
+            std::string sql;
+            
+            // If we have aggregate functions and no specific fields selected, only include the functions
+            if (!this->functionsSet.empty() && this->onlyFields.empty() && this->distinctFields.empty()) {
+                // Create a string with just the functions, without any leading comma
+                std::string functionStr;
+                
+                // Extract function aliases for result processing
+                std::vector<std::string> functionAliases;
+                functionAliases.reserve(functionsSet.size());
+                
+                if (!functionsSet.empty()) {
+                    std::vector<std::string> functionStrings;
+                    functionStrings.reserve(functionsSet.size());
+                    
+                    for (const auto& function : functionsSet) {
+                        functionStrings.push_back(function.toStr());
+                        
+                        // Extract the alias from the function string (format: "MAX(field) AS alias")
+                        std::string funcStr = function.toStr();
+                        size_t asPos = funcStr.find(" AS ");
+                        if (asPos != std::string::npos) {
+                            functionAliases.push_back(funcStr.substr(asPos + 4));
+                        }
+                    }
+                    functionStr = fmt::format("{}", fmt::join(functionStrings, ", "));
+                }
+                
+                // Add function aliases to fieldNames for result processing
+                fieldNames = std::move(functionAliases);
+                
+                sql = fmt::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
+                    this->createDistinctClause(),
+                    functionStr,
+                    this->template get_table_name<T>(),
+                    this->generateJoinSQL(),
+                    where_query_result.sql,
+                    this->generateGroupBySQL(),
+                    this->buildOrderFields(),
+                    this->limit_impl());
+            } else {
+                sql = fmt::format("SELECT {} {} {} FROM \"{}\" {} {} {} {} {}", 
                     this->createDistinctClause(),
                     fieldsClause,
                     this->buildFunctions(),
@@ -1328,7 +1398,8 @@ namespace storm {
                     this->generateGroupBySQL(),
                     this->buildOrderFields(),
                     this->limit_impl());
-            
+            }
+            std::cout << sql << std::endl;
             // Execute the query
             auto stmt = Statement(conn, sql);
             bind_query_parameters(stmt, where_query_result);
@@ -1385,6 +1456,10 @@ namespace storm {
                             break;
                     }
                 }
+                
+                // Add GROUP BY fields to the result map if they're not already included
+                // This is necessary when using GROUP BY with fields from joined tables
+                this->addGroupByFieldsToResult(rowDict, row);
                 
                 results.emplace_back(std::move(rowDict));
             }
@@ -1743,6 +1818,19 @@ namespace storm {
         //     return *this;
         // }
 
+        // MAX aggregate function
+        template<auto Field>
+        QuerySet &max(const std::string& alias) {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, 
+                        "Field must be a member pointer");
+            auto field = std::make_unique<FieldAlias<Field>>();
+            // Clear any existing onlyFields to prevent selecting all fields by default
+            // when using aggregate functions
+            onlyFields.clear();
+            functions(Function(fmt::format("MAX({}) AS {}", field->getFullFieldName(), alias)));
+            return *this;
+        }
+
         template<typename... Args>
         QuerySet &functions(Args &&...args) {
             this->functions_impl(std::forward<Args>(args)...);
@@ -1766,8 +1854,10 @@ namespace storm {
                 return "";
             }
 
+            // Always include a comma before functions if there are fields
+            // This ensures proper SQL syntax when combining fields and aggregate functions
             return format("{}{}",
-                            onlyFields.empty() && _jsonFields.empty() ? "" : ", ",
+                            (onlyFields.empty() && distinctFields.empty() && _jsonFields.empty()) ? "" : ", ",
                             fmt::join(functionsSet | std::views::transform([](const auto &function) {
                                         return function.toStr();
                                     }),

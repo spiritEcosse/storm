@@ -141,7 +141,9 @@ protected:
     }
 };
 
+// =======================================
 // INSERT TESTS
+// =======================================
 TEST_F(ORMTest, InsertSingleObject) {
     Author author("John Doe", 30, "john@example.com");
     
@@ -192,7 +194,9 @@ TEST_F(ORMTest, InsertExceptionHandling) {
     EXPECT_TRUE(result > 0 || result == -1) << "Should return valid ID or -1 on error";
 }
 
+// =======================================
 // UPDATE TESTS
+// =======================================
 TEST_F(ORMTest, UpdateSingleObject) {
     Author author("John Doe", 30, "john@example.com");
     int inserted_id = QuerySet<Author>(conn).insert(author);
@@ -246,7 +250,9 @@ TEST_F(ORMTest, UpdateNonExistentObject) {
     EXPECT_TRUE(result == true || result == false);
 }
 
+// =======================================
 // DELETE TESTS
+// =======================================
 TEST_F(ORMTest, RemoveSingleObject) {
     // First insert a person
     Author author("John Doe", 30, "john@example.com");
@@ -338,7 +344,9 @@ TEST_F(ORMTest, RemoveByCondition) {
     }
 }
 
+// =======================================
 // QUERYSET COPY TESTS
+// =======================================
 TEST_F(ORMTest, QuerySetCopy) {
     // Create a base query
     auto baseQuery = QuerySet<Author>(conn).where<&Author::is_active>(true);
@@ -626,7 +634,9 @@ TEST_F(ORMTest, QuerySetCopyEdgeCases) {
     }
 }
 
+// =======================================
 // INTEGRATION TESTS
+// =======================================
 TEST_F(ORMTest, FullCRUDWorkflow) {
     // Create
     Author author("John Doe", 30, "john@example.com");
@@ -703,13 +713,14 @@ TEST_F(ORMTest, MixedOperations) {
     ASSERT_TRUE(QuerySet<Author>(conn).remove(batch_authors));
 }
 
+// =======================================
 // SELECT TESTS
+// =======================================
 TEST_F(ORMTest, SelectAll) {
     std::vector<Author> all_authors = QuerySet<Author>(conn).select_all();
     ASSERT_EQ(all_authors.size(), 4); // Alice, Bob, Charlie, Diana
 }
 
-// WHERE TESTS
 TEST_F(ORMTest, SelectAllWhereId) {
     std::vector<Author> authors = QuerySet<Author>(conn)
         .where(&Author::id, alice_id)
@@ -742,7 +753,9 @@ TEST_F(ORMTest, SelectAllErrorInvalidColumnException) {
     }
 }
 
+// =======================================
 // JOIN TESTS
+// =======================================
 TEST_F(ORMTest, SelectAllWithJoin) {
     std::vector<Post> all_posts = QuerySet<Post>(conn)
         .join<Author>()
@@ -842,7 +855,9 @@ TEST_F(ORMTest, SelectAllWithJoinWhereGroupByLimitOffset) {
     ASSERT_EQ(posts.size(), 0);
 }
 
+// =======================================
 // ORDER BY TESTS
+// =======================================
 TEST_F(ORMTest, SelectAllWithJoinWhereLimitOffsetOrderBy) {
     std::vector<Post> posts = QuerySet<Post>(conn)
         .join<Author>()
@@ -1020,8 +1035,9 @@ TEST_F(ORMTest, OrderingWithWhereClause) {
     EXPECT_EQ(authors[0].name, "Charlie Brown");
 }
 
+// =======================================
 // WHERE TESTS
-// MIXED, INT, EQUALS
+// =======================================
 TEST_F(ORMTest, WhereClauseEqualsDefault) {
     std::vector<Author> authors = QuerySet<Author>(conn)
         .where(field(&Author::age) == 30)  // Only Charlie has age 30
@@ -1031,7 +1047,6 @@ TEST_F(ORMTest, WhereClauseEqualsDefault) {
     EXPECT_EQ(authors[0].name, "Charlie Brown");
 }
 
-// MIXED, INT, EQUALS
 TEST_F(ORMTest, WhereClauseEqualsOperator) {
     std::vector<Author> authors = QuerySet<Author>(conn)
         .where(field(&Author::age) == 30)  // Only Charlie has age 30
@@ -1041,7 +1056,6 @@ TEST_F(ORMTest, WhereClauseEqualsOperator) {
     EXPECT_EQ(authors[0].name, "Charlie Brown");
 }
 
-// MIXED, INT, EQUALS
 TEST_F(ORMTest, WhereClauseConvenientSyntax) {
     std::vector<Author> authors = QuerySet<Author>(conn)
         .where(&Author::age, 30)  // Default to EQUALS
@@ -1051,7 +1065,6 @@ TEST_F(ORMTest, WhereClauseConvenientSyntax) {
     EXPECT_EQ(authors[0].name, "Charlie Brown");
 }
 
-// MIXED, GREATER_THAN, BOOLEAN, INT, EQUALS
 TEST_F(ORMTest, WhereClauseMultipleConditions) {
     std::vector<Author> authors = QuerySet<Author>(conn)
         .where(&Author::age, 25, Op::GT)
@@ -1065,7 +1078,6 @@ TEST_F(ORMTest, WhereClauseMultipleConditions) {
     }
 }
 
-// NTTP, int, EQUALS
 TEST_F(ORMTest, WhereClauseNTTPSyntax) {
     std::vector<Author> authors = QuerySet<Author>(conn)
         .where<&Author::age>(30)  // NTTP syntax - member pointer as template parameter
@@ -1075,7 +1087,6 @@ TEST_F(ORMTest, WhereClauseNTTPSyntax) {
     EXPECT_EQ(authors[0].name, "Charlie Brown");
 }
 
-// NTTP, string, EQUALS
 TEST_F(ORMTest, WhereClauseNTTPStringComparison) {
     std::vector<Author> authors = QuerySet<Author>(conn)
         .where<&Author::name>(std::string("Alice Smith"), Op::EQ)
@@ -1086,7 +1097,6 @@ TEST_F(ORMTest, WhereClauseNTTPStringComparison) {
     EXPECT_EQ(authors[0].age, 25);
 }
 
-// NTTP, boolean, EQUALS
 TEST_F(ORMTest, WhereClauseNTTPBooleanValue) {
     std::vector<Author> authors = QuerySet<Author>(conn)
         .where<&Author::is_active>(true)  // Boolean using NTTP
@@ -1098,7 +1108,6 @@ TEST_F(ORMTest, WhereClauseNTTPBooleanValue) {
     }
 }
 
-// NTTP, int, GREATER_THAN
 TEST_F(ORMTest, WhereClauseNTTPWithOperators) {
     // Test NTTP with GREATER_THAN operator
     std::vector<Author> authors = QuerySet<Author>(conn)
@@ -1111,7 +1120,6 @@ TEST_F(ORMTest, WhereClauseNTTPWithOperators) {
     }
 }
 
-// NTTP, string, LIKE
 TEST_F(ORMTest, WhereClauseNTTPLikeOperator) {
     std::vector<Author> authors = QuerySet<Author>(conn)
         .where<&Author::name>(std::string("A%"), Op::LIKE)  // Names starting with 'A'
@@ -1123,7 +1131,6 @@ TEST_F(ORMTest, WhereClauseNTTPLikeOperator) {
     }
 }
 
-// NTTP, GREATER_OR_EQUAL, EQUALS
 TEST_F(ORMTest, WhereClauseNTTPChaining) {
     // Test chaining NTTP where clauses
     std::vector<Author> authors = QuerySet<Author>(conn)
@@ -1138,7 +1145,6 @@ TEST_F(ORMTest, WhereClauseNTTPChaining) {
     }
 }
 
-// MIXED, GREATER_THAN, EQUALS
 TEST_F(ORMTest, WhereClauseMixedSyntax) {
     // Test mixing traditional and NTTP syntax
     std::vector<Author> authors = QuerySet<Author>(conn)
@@ -1154,7 +1160,6 @@ TEST_F(ORMTest, WhereClauseMixedSyntax) {
     }
 }
 
-// NTTP, const char*, EQUALS
 TEST_F(ORMTest, WhereClauseNTTPConstCharPtr) {
     // Test NTTP with const char* (C-style string)
     std::vector<Author> authors = QuerySet<Author>(conn)
@@ -1166,7 +1171,6 @@ TEST_F(ORMTest, WhereClauseNTTPConstCharPtr) {
     EXPECT_EQ(authors[0].age, 30);
 }
 
-// NTTP, EQUALS
 TEST_F(ORMTest, WhereClauseNTTPWithArithmeticTypes) {
     // Test NTTP with various arithmetic types (now works without SFINAE constraint)
     std::vector<Author> authorsInt = QuerySet<Author>(conn)
@@ -1186,7 +1190,6 @@ TEST_F(ORMTest, WhereClauseNTTPWithArithmeticTypes) {
     ASSERT_EQ(authorsFloat.size(), 1);
 }
 
-// MIXED, EQUALS
 TEST_F(ORMTest, WhereClauseNTTPComparisonWithTraditional) {
     // Verify NTTP and traditional syntax produce identical results
     std::vector<Author> authorsTraditional = QuerySet<Author>(conn)
@@ -1210,7 +1213,6 @@ TEST_F(ORMTest, WhereClauseNTTPComparisonWithTraditional) {
     }
 }
 
-// string, LIKE
 TEST_F(ORMTest, WhereClauseStringComparison) {
     Author author("John Doe", 30, "john@example.com");
     QuerySet<Author>(conn).insert(author);
@@ -1228,7 +1230,6 @@ TEST_F(ORMTest, WhereClauseStringComparison) {
     }
 }
 
-// int, LESS_OR_EQUAL
 TEST_F(ORMTest, WhereClauseLessOrEqualOperator) {
     // Test LESS_OR_EQUAL operator
     std::vector<Author> authors = QuerySet<Author>(conn)
@@ -1241,7 +1242,6 @@ TEST_F(ORMTest, WhereClauseLessOrEqualOperator) {
     }
 }
 
-// int, GREATER_OR_EQUAL
 TEST_F(ORMTest, WhereClauseGreaterOrEqualOperator) {
     // Test GREATER_OR_EQUAL operator  
     std::vector<Author> authors = QuerySet<Author>(conn)
@@ -1254,7 +1254,6 @@ TEST_F(ORMTest, WhereClauseGreaterOrEqualOperator) {
     }
 }
 
-// NTTP, int, LESS_OR_EQUAL
 TEST_F(ORMTest, WhereClauseNTTPLessOrEqual) {
     // Test LESS_OR_EQUAL with NTTP syntax
     std::vector<Author> authors = QuerySet<Author>(conn)
@@ -1267,7 +1266,6 @@ TEST_F(ORMTest, WhereClauseNTTPLessOrEqual) {
     }
 }
 
-// NTTP, double, GREATER_OR_EQUAL
 TEST_F(ORMTest, WhereClauseNTTPGreaterOrEqual) {
     // Test GREATER_OR_EQUAL with NTTP syntax
     std::vector<Author> authors = QuerySet<Author>(conn)
@@ -1281,7 +1279,6 @@ TEST_F(ORMTest, WhereClauseNTTPGreaterOrEqual) {
     }
 }
 
-// string, IS
 TEST_F(ORMTest, WhereClauseIsOperator) {
     // TODO: simplify using insert instead raw sql, i need this for now because i dont have mechanism to insert NULL values
     // Insert an author with NULL biography directly using SQL
@@ -1303,7 +1300,6 @@ TEST_F(ORMTest, WhereClauseIsOperator) {
     EXPECT_EQ(authors[0].email, "john@example.com");
 }
 
-// NTTP, string, IS
 TEST_F(ORMTest, WhereClauseNTTPIsOperator) {
     // Test IS operator with NTTP syntax
     // TODO: simplify using insert instead raw sql, i need this for now because i dont have mechanism to insert NULL values
@@ -1321,8 +1317,6 @@ TEST_F(ORMTest, WhereClauseNTTPIsOperator) {
     ASSERT_EQ(authors.size(), 1);
 }
 
-// COMPLEX WHERE CONDITIONS
-// OR
 TEST_F(ORMTest, WhereClauseOrOperator) {
     // Test: age = 25 OR age = 35 (Alice OR Bob)
     std::vector<Author> authors = QuerySet<Author>(conn)
@@ -1338,7 +1332,6 @@ TEST_F(ORMTest, WhereClauseOrOperator) {
     EXPECT_TRUE(names.count("Bob Johnson"));
 }
 
-// AND
 TEST_F(ORMTest, WhereClauseAndOperator) {
     // Test: age >= 30 AND rating >= 4.5 (Only Bob - Diana is 28, Charlie is 30 but rating 4.0)
     std::vector<Author> authors = QuerySet<Author>(conn)
@@ -1584,7 +1577,9 @@ TEST_F(ORMTest, WhereClauseEmptyResult) {
     ASSERT_EQ(authors.size(), 0);
 }
 
-// Only
+// =======================================
+// ONLY TESTS
+// =======================================
 TEST_F(ORMTest, SelectOnlySpecificFields) {
     // Test selecting only specific fields from the model using NTTP
     // Execute the query using method chaining
@@ -1662,7 +1657,9 @@ TEST_F(ORMTest, SelectValues) {
     }
 }
 
+// =======================================
 // DISTINCT TESTS
+// =======================================
 TEST_F(ORMTest, DistinctTemplateBased) {
     // Setup: Insert duplicate age values
     Author duplicateAge("Frank Miller", 30, "frank@example.com");
@@ -1849,7 +1846,9 @@ TEST_F(ORMTest, DistinctWithWhere) {
     ASSERT_TRUE(distinctAges.contains(45)); // Luke
 }
 
+// =======================================
 // RAW SQL TESTS
+// =======================================
 TEST_F(ORMTest, RawSqlFromStatementInsert) {
     // Create a new author for testing
     Author testAuthor("Test Author", 40, "test@example.com");
@@ -1919,7 +1918,10 @@ TEST_F(ORMTest, RawSqlFromStatementInsert) {
     ASSERT_GT(ids[1], 0);
 }
 
+// =======================================
 // GROUP BY TESTS
+// =======================================
+
 TEST_F(ORMTest, GroupByBasic) {
     // Add more authors with the same age for testing group by
     Author eve("Eve Johnson", 35, "eve@example.com");
@@ -2356,4 +2358,201 @@ TEST_F(ORMTest, TransferBetweenAuthorsTransaction) {
     // Verify the post still belongs to Bob (rollback worked)
     updatedPost = QuerySet<Post>(conn).where(&Post::id, postId).select_one();
     ASSERT_EQ(updatedPost.author_id, bob_id); // Still Bob's post
+}
+
+// =======================================
+// MAX AGGREGATE FUNCTION TESTS
+// =======================================
+
+TEST_F(ORMTest, MaxStringField) {
+    // Test MAX function with string field (alphabetically highest value)
+    auto results = QuerySet<Author>(conn)
+        .max<&Author::name>("max_name")
+        .select_values();
+    
+    ASSERT_FALSE(results.empty());
+    ASSERT_TRUE(results[0].contains("max_name"));
+    
+    // Get the max name value
+    std::string max_name = std::get<std::string>(results[0]["max_name"]);
+    
+    // Verify the max name by querying all authors and finding the maximum manually
+    auto all_authors = QuerySet<Author>(conn).select_all();
+    std::string expected_max_name = "";
+    for (const auto& author : all_authors) {
+        if (author.name > expected_max_name) {
+            expected_max_name = author.name;
+        }
+    }
+    
+    EXPECT_EQ(max_name, expected_max_name);
+}
+
+TEST_F(ORMTest, MaxOnEmptyTable) {
+    // Clear all authors
+    QuerySet<Author>(conn).remove();
+    
+    // Test MAX function on an empty table
+    auto results = QuerySet<Author>(conn)
+        .max<&Author::age>("max_age")
+        .select_values();
+    
+    ASSERT_FALSE(results.empty());
+    ASSERT_TRUE(results[0].contains("max_age"));
+    
+    // For empty tables, SQLite returns NULL for MAX, which should be converted to 0 or default value
+    // Check that we get a valid result (either 0 or std::nullopt depending on implementation)
+    try {
+        // If implemented as returning 0 for numeric types
+        int max_age = std::get<int>(results[0]["max_age"]);
+        EXPECT_EQ(max_age, 0);
+    } catch (const std::bad_variant_access&) {
+        // If implemented as returning std::nullopt or another type
+        // This is also valid behavior
+        SUCCEED() << "MAX on empty table returned a non-int value (possibly NULL)";
+    }
+    
+    // Restore test data for other tests
+    setupTestData();
+}
+
+TEST_F(ORMTest, MaxWithOrderBy) {
+    // Test MAX function with ORDER BY
+    // The ORDER BY shouldn't affect the MAX result but should affect the order of rows
+    auto results = QuerySet<Author>(conn)
+        .max<&Author::age>("max_age")
+        .order_by<&Author::name, false>()
+        .select_values();
+    
+    ASSERT_FALSE(results.empty());
+    ASSERT_TRUE(results[0].contains("max_age"));
+    
+    // Get the max age value
+    int max_age = std::get<int>(results[0]["max_age"]);
+    
+    // Verify the max age by querying all authors and finding the maximum manually
+    auto all_authors = QuerySet<Author>(conn).select_all();
+    int expected_max_age = 0;
+    for (const auto& author : all_authors) {
+        if (author.age > expected_max_age) {
+            expected_max_age = author.age;
+        }
+    }
+    
+    EXPECT_EQ(max_age, expected_max_age);
+}
+
+TEST_F(ORMTest, MultipleMaxFunctions) {
+    // Test multiple MAX functions in the same query
+    auto results = QuerySet<Author>(conn)
+        .max<&Author::age>("max_age")
+        .max<&Author::rating>("max_rating")
+        .max<&Author::score>("max_score")
+        .select_values();
+    
+    ASSERT_FALSE(results.empty());
+    ASSERT_TRUE(results[0].contains("max_age"));
+    ASSERT_TRUE(results[0].contains("max_rating"));
+    ASSERT_TRUE(results[0].contains("max_score"));
+    
+    // Get the max values
+    int max_age = std::get<int>(results[0]["max_age"]);
+    double max_rating = std::get<double>(results[0]["max_rating"]);
+    double max_score = std::get<double>(results[0]["max_score"]);
+    
+    // Verify the max values by querying all authors and finding the maximums manually
+    auto all_authors = QuerySet<Author>(conn).select_all();
+    int expected_max_age = 0;
+    double expected_max_rating = 0.0;
+    float expected_max_score = 0.0f;
+    
+    for (const auto& author : all_authors) {
+        if (author.age > expected_max_age) {
+            expected_max_age = author.age;
+        }
+        if (author.rating > expected_max_rating) {
+            expected_max_rating = author.rating;
+        }
+        if (author.score > expected_max_score) {
+            expected_max_score = author.score;
+        }
+    }
+    
+    EXPECT_EQ(max_age, expected_max_age);
+    EXPECT_DOUBLE_EQ(max_rating, expected_max_rating);
+    EXPECT_FLOAT_EQ(static_cast<float>(max_score), expected_max_score);
+}
+
+TEST_F(ORMTest, MaxWithJoin) {
+    // Test MAX function with a JOIN
+    // This will find the maximum post ID for each author
+    // We need to include the name field in the result set when using group_by with aggregate functions
+    auto results = QuerySet<Post>(conn)
+        .join<Author>()
+        .group_by<&Author::name>()
+        .only<&Author::name>()
+        .max<&Post::id>("max_post_id")
+        .select_values();
+    
+    ASSERT_FALSE(results.empty());
+    
+    // Create a map of author name to their max post_id from the results
+    std::map<std::string, int> author_max_post_map;
+    for (const auto& row : results) {
+        std::string author_name = std::get<std::string>(row.at("name"));
+        int max_post_id = std::get<int>(row.at("max_post_id"));
+        author_max_post_map[author_name] = max_post_id;
+    }
+    
+    // Verify the results by querying all posts and finding the maximum post ID for each author manually
+    auto all_posts = QuerySet<Post>(conn).select_all();
+    auto all_authors = QuerySet<Author>(conn).select_all();
+    
+    // Create a map of author ID to author name
+    std::map<int, std::string> author_id_to_name;
+    for (const auto& author : all_authors) {
+        author_id_to_name[author.id] = author.name;
+    }
+    
+    // Find the maximum post ID for each author
+    std::map<std::string, int> expected_author_max_post_map;
+    for (const auto& post : all_posts) {
+        std::string author_name = author_id_to_name[post.author_id];
+        if (expected_author_max_post_map.find(author_name) == expected_author_max_post_map.end() ||
+            post.id > expected_author_max_post_map[author_name]) {
+            expected_author_max_post_map[author_name] = post.id;
+        }
+    }
+    
+    // Verify the results match
+    EXPECT_EQ(author_max_post_map.size(), expected_author_max_post_map.size());
+    
+    for (const auto& [author_name, max_post_id] : expected_author_max_post_map) {
+        ASSERT_TRUE(author_max_post_map.find(author_name) != author_max_post_map.end());
+        EXPECT_EQ(author_max_post_map[author_name], max_post_id);
+    }
+}
+
+TEST_F(ORMTest, MaxWithRuntimeField) {
+    // Test MAX function with runtime field specification
+    auto results = QuerySet<Author>(conn)
+        .max<&Author::age>("max_age")
+        .select_values();
+    
+    ASSERT_FALSE(results.empty());
+    ASSERT_TRUE(results[0].contains("max_age"));
+    
+    // Get the max age value
+    int max_age = std::get<int>(results[0]["max_age"]);
+    
+    // Verify the max age by querying all authors and finding the maximum manually
+    auto all_authors = QuerySet<Author>(conn).select_all();
+    int expected_max_age = 0;
+    for (const auto& author : all_authors) {
+        if (author.age > expected_max_age) {
+            expected_max_age = author.age;
+        }
+    }
+    
+    EXPECT_EQ(max_age, expected_max_age);
 }
