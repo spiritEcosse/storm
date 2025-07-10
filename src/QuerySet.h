@@ -1851,6 +1851,22 @@ namespace storm {
             functions(Function(fmt::format("MIN({}) AS {}", field->getFullFieldName(), alias)));
             return *this;
         }
+        
+        // AVG aggregate function
+        template<auto Field>
+        QuerySet &avg(const std::string& alias) {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, 
+                        "Field must be a member pointer");
+            // Only numeric fields should be used with AVG
+            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
+            static_assert(std::is_arithmetic_v<FieldType> && !std::is_same_v<FieldType, bool>,
+                        "AVG can only be used with numeric fields");
+            
+            auto field = std::make_unique<FieldAlias<Field>>();
+            // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
+            functions(Function(fmt::format("AVG({}) AS {}", field->getFullFieldName(), alias)));
+            return *this;
+        }
     private:
         template<typename... Args>
         QuerySet &functions(Args &&...args) {
