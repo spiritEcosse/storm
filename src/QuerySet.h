@@ -1369,8 +1369,6 @@ namespace storm {
             
             results.reserve(all_rows.size());
             
-            // Process field names for the result map
-            
             for (const auto& row : all_rows) {
                 std::map<std::string, ValueVariant> rowDict;
                 
@@ -1443,8 +1441,6 @@ namespace storm {
                 // Add GROUP BY fields to the result map if they're not already included
                 // This is necessary when using GROUP BY with fields from joined tables
                 this->addGroupByFieldsToResult(rowDict, row);
-                
-                
                 results.emplace_back(std::move(rowDict));
             }
             
