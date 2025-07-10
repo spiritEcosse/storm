@@ -1147,6 +1147,10 @@ namespace storm {
             // Try to automatically determine join condition using reflection
             condition = determine_join_condition<T, U>();
             
+            if (condition.empty()) {
+                condition = determine_join_condition<U, T>();
+            }
+            
             // If we couldn't auto-determine the condition and no additional conditions provided
             if (condition.empty() && addConditions.empty()) {
                 throw std::runtime_error("Could not determine join condition automatically. Please provide explicit join conditions.");
@@ -1419,9 +1423,8 @@ namespace storm {
                             break;
                         case SQLITE_NULL:
                             {
-                                // Handle NULL values - store as empty string for now
-                                // Could be extended to use std::optional in the future
-                                ValueVariant nullValue = std::string("");
+                                // Handle NULL values as std::monostate (representing SQL NULL)
+                                ValueVariant nullValue = std::monostate{};
                                 rowDict[fieldNames[i]] = nullValue;
                                 rowDict[fieldName] = nullValue;
                             }
