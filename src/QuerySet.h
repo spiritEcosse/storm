@@ -1147,6 +1147,10 @@ namespace storm {
             // Try to automatically determine join condition using reflection
             condition = determine_join_condition<T, U>();
             
+            if (condition.empty()) {
+                condition = determine_join_condition<U, T>();
+            }
+            
             // If we couldn't auto-determine the condition and no additional conditions provided
             if (condition.empty() && addConditions.empty()) {
                 throw std::runtime_error("Could not determine join condition automatically. Please provide explicit join conditions.");
@@ -1419,9 +1423,8 @@ namespace storm {
                             break;
                         case SQLITE_NULL:
                             {
-                                // Handle NULL values - store as empty string for now
-                                // Could be extended to use std::optional in the future
-                                ValueVariant nullValue = std::string("");
+                                // Handle NULL values as std::monostate (representing SQL NULL)
+                                ValueVariant nullValue = std::monostate{};
                                 rowDict[fieldNames[i]] = nullValue;
                                 rowDict[fieldName] = nullValue;
                             }
@@ -1827,11 +1830,6 @@ namespace storm {
         // =============================
         // FUNCTIONS
         // =============================
-        // QuerySet &count(const BaseField *field, std::string_view alias) {
-        //     functions(Function(fmt::format("count({})::integer as {}", field->getFullFieldName(), alias)));
-        //     return *this;
-        // }
-
         // MAX aggregate function
         template<auto Field>
         QuerySet &max(const std::string& alias) {
@@ -1843,22 +1841,25 @@ namespace storm {
             return *this;
         }
 
-        template<typename... Args>
-        QuerySet &functions(Args &&...args) {
-            this->functions_impl(std::forward<Args>(args)...);
+        // MIN aggregate function
+        template<auto Field>
+        QuerySet &min(const std::string& alias) {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, 
+                        "Field must be a member pointer");
+            auto field = std::make_unique<FieldAlias<Field>>();
+            // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
+            functions(Function(fmt::format("MIN({}) AS {}", field->getFullFieldName(), alias)));
             return *this;
         }
-    
     private:
-        template<typename U>
-        void functions_impl(U &&u) {
-            functionsSet.emplace_back(std::forward<U>(u));
-        }
-
-        template<typename U, typename... Args>
-        void functions_impl(U &&u, Args &&...args) {
-            functionsSet.emplace_back(std::forward<U>(u));
-            functions_impl(std::forward<Args>(args)...);
+        template<typename... Args>
+        QuerySet &functions(Args &&...args) {
+            // Reserve capacity
+            this->functionsSet.reserve(functionsSet.size() + sizeof...(Args));
+            
+            // Process each function using fold expression
+            (functionsSet.emplace_back(std::forward<Args>(args)), ...);
+            return *this;
         }
     };
 }
