@@ -918,8 +918,6 @@ namespace storm {
             fieldStrings.assign(fieldNames.begin(), fieldNames.end());
             return fmt::format("GROUP BY {}", fmt::join(fieldStrings, ", "));
         }
-        
-
     
     public:
         // =============================
@@ -1346,59 +1344,17 @@ namespace storm {
             // Get field names and clause for SQL generation
             auto [fieldNames, fieldsClause] = this->buildFieldsClause();
             
-            // Generate the SQL query
-            std::string sql;
-            
-            // If we have aggregate functions and no specific fields selected, only include the functions
-            if (!this->functionsSet.empty() && this->onlyFields.empty() && this->distinctFields.empty()) {
-                // Create a string with just the functions, without any leading comma
-                std::string functionStr;
-                
-                // Extract function aliases for result processing
-                std::vector<std::string> functionAliases;
-                functionAliases.reserve(functionsSet.size());
-                
-                if (!functionsSet.empty()) {
-                    std::vector<std::string> functionStrings;
-                    functionStrings.reserve(functionsSet.size());
-                    
-                    for (const auto& function : functionsSet) {
-                        functionStrings.push_back(function.toStr());
-                        
-                        // Extract the alias from the function string (format: "MAX(field) AS alias")
-                        std::string funcStr = function.toStr();
-                        size_t asPos = funcStr.find(" AS ");
-                        if (asPos != std::string::npos) {
-                            functionAliases.push_back(funcStr.substr(asPos + 4));
-                        }
-                    }
-                    functionStr = fmt::format("{}", fmt::join(functionStrings, ", "));
-                }
-                
-                // Add function aliases to fieldNames for result processing
-                fieldNames = std::move(functionAliases);
-                
-                sql = fmt::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
-                    this->createDistinctClause(),
-                    functionStr,
-                    this->template get_table_name<T>(),
-                    this->generateJoinSQL(),
-                    where_query_result.sql,
-                    this->generateGroupBySQL(),
-                    this->buildOrderFields(),
-                    this->limit_impl());
-            } else {
-                sql = fmt::format("SELECT {} {} {} FROM \"{}\" {} {} {} {} {}", 
-                    this->createDistinctClause(),
-                    fieldsClause,
-                    this->buildFunctions(),
-                    this->template get_table_name<T>(),
-                    this->generateJoinSQL(),
-                    where_query_result.sql,
-                    this->generateGroupBySQL(),
-                    this->buildOrderFields(),
-                    this->limit_impl());
-            }
+            // Build SQL query with fields clause
+            std::string sql = fmt::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
+                this->createDistinctClause(),
+                fieldsClause,
+                this->template get_table_name<T>(),
+                this->generateJoinSQL(),
+                where_query_result.sql,
+                this->generateGroupBySQL(),
+                this->buildOrderFields(),
+                this->limit_impl()
+            );
             std::cout << sql << std::endl;
             // Execute the query
             auto stmt = Statement(conn, sql);
@@ -1413,6 +1369,8 @@ namespace storm {
             
             results.reserve(all_rows.size());
             
+            // Process field names for the result map
+            
             for (const auto& row : all_rows) {
                 std::map<std::string, ValueVariant> rowDict;
                 
@@ -1424,10 +1382,15 @@ namespace storm {
                         fieldName = fieldName.substr(dotPos + 1);
                     }
                     
+                    // Process field name without table prefix
+                    
                     // Special handling for boolean fields
                     if (fieldName == "is_active") {
                         // For boolean fields, convert integer to bool
-                        rowDict[fieldNames[i]] = static_cast<bool>(row.get_int(i));
+                        ValueVariant boolValue = static_cast<bool>(row.get_int(i));
+                        rowDict[fieldNames[i]] = boolValue;
+                        // Also store with the normalized field name
+                        rowDict[fieldName] = boolValue;
                         continue;
                     }
                     
@@ -1436,23 +1399,43 @@ namespace storm {
                     
                     switch (columnType) {
                         case SQLITE_INTEGER:
-                            rowDict[fieldNames[i]] = row.get_int(i);
+                            {
+                                ValueVariant intValue = row.get_int(i);
+                                rowDict[fieldNames[i]] = intValue;
+                                rowDict[fieldName] = intValue;
+                            }
                             break;
                         case SQLITE_FLOAT:
-                            rowDict[fieldNames[i]] = row.get_double(i);
+                            {
+                                ValueVariant doubleValue = row.get_double(i);
+                                rowDict[fieldNames[i]] = doubleValue;
+                                rowDict[fieldName] = doubleValue;
+                            }
                             break;
                         case SQLITE_TEXT:
-                            rowDict[fieldNames[i]] = row.get_text(i);
+                            {
+                                ValueVariant textValue = row.get_text(i);
+                                rowDict[fieldNames[i]] = textValue;
+                                rowDict[fieldName] = textValue;
+                            }
                             break;
                         case SQLITE_NULL:
-                            // Handle NULL values - store as empty string for now
-                            // Could be extended to use std::optional in the future
-                            rowDict[fieldNames[i]] = std::string("");
+                            {
+                                // Handle NULL values - store as empty string for now
+                                // Could be extended to use std::optional in the future
+                                ValueVariant nullValue = std::string("");
+                                rowDict[fieldNames[i]] = nullValue;
+                                rowDict[fieldName] = nullValue;
+                            }
                             break;
                         case SQLITE_BLOB:
                         default:
-                            // For BLOB or any other type, convert to string
-                            rowDict[fieldNames[i]] = row.get_text(i);
+                            {
+                                // For BLOB or any other type, convert to string
+                                ValueVariant blobValue = row.get_text(i);
+                                rowDict[fieldNames[i]] = blobValue;
+                                rowDict[fieldName] = blobValue;
+                            }
                             break;
                     }
                 }
@@ -1460,6 +1443,7 @@ namespace storm {
                 // Add GROUP BY fields to the result map if they're not already included
                 // This is necessary when using GROUP BY with fields from joined tables
                 this->addGroupByFieldsToResult(rowDict, row);
+                
                 
                 results.emplace_back(std::move(rowDict));
             }
@@ -1476,10 +1460,9 @@ namespace storm {
             auto [fieldNames, fieldsClause] = this->buildFieldsClause();
             
             // Build the SQL query with LIMIT 1
-            auto sql = fmt::format("SELECT {} {} {} FROM \"{}\" {} {} {} {} LIMIT 1;", 
+            auto sql = fmt::format("SELECT {} {} FROM \"{}\" {} {} {} {} LIMIT 1;", 
                 this->createDistinctClause(),
                 fieldsClause,
-                this->buildFunctions(),
                 this->template get_table_name<T>(),
                 this->generateJoinSQL(),
                 where_query_result.sql,
@@ -1567,10 +1550,9 @@ namespace storm {
             auto [fieldNames, fieldsClause] = this->buildFieldsClause();
             
             // Build the SQL query
-            auto sql = fmt::format("SELECT {} {} {} FROM \"{}\" {} {} {} {} {}", 
+            auto sql = fmt::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
                 this->createDistinctClause(),
                 fieldsClause,
-                this->buildFunctions(),
                 this->template get_table_name<T>(),
                 this->generateJoinSQL(),
                 where_query_result.sql,
@@ -1746,17 +1728,31 @@ namespace storm {
         /**
          * @brief Build the fields clause and field names for SQL queries
          * 
-         * This method handles both distinct fields and only fields
+         * This method handles both distinct fields, only fields, and aggregate functions
          * 
-         * @return std::pair\<std::vector\<std::string\>, std::string\> Pair of field names and fields clause
+         * @return std::pair<std::vector<std::string>, std::string> Pair of field names and fields clause
          */
         [[nodiscard]] std::pair<std::vector<std::string>, std::string> buildFieldsClause() const {
+            // Build fields clause based on the available fields and functions
             std::vector<std::string> fieldNames;
             std::string fieldsClause;
             
+            // First, process any function aliases (like MAX, MIN, etc.)
+            std::vector<std::string> functionClauses;
+            for (const auto& func : functionsSet) {
+                // Extract the alias from the function string (assuming format "FUNCTION(...) AS alias")
+                std::string funcStr = func.toStr();
+                size_t asPos = funcStr.find(" AS ");
+                if (asPos != std::string::npos) {
+                    std::string alias = funcStr.substr(asPos + 4); // +4 to skip " AS "
+                    fieldNames.push_back(alias);
+                }
+                functionClauses.push_back(funcStr);
+            }
+            
             if (!this->distinctFields.empty() && this->onlyFields.empty()) {
                 // Use distinct fields
-                fieldNames.reserve(distinctFields.size());
+                fieldNames.reserve(distinctFields.size() + fieldNames.size());
                 std::vector<std::string> fieldStrings;
                 fieldStrings.reserve(distinctFields.size());
                 
@@ -1765,11 +1761,20 @@ namespace storm {
                     fieldNames.emplace_back(fieldAlias->getFieldName());
                 }
                 
-                // Build fields string
-                fieldsClause = fmt::format("{}", fmt::join(fieldStrings, ", "));
+                // Build fields string, including function clauses
+                if (!functionClauses.empty()) {
+                    std::string funcStr = fmt::format("{}", fmt::join(functionClauses, ", "));
+                    if (!fieldStrings.empty()) {
+                        fieldsClause = fmt::format("{}, {}", fmt::join(fieldStrings, ", "), funcStr);
+                    } else {
+                        fieldsClause = funcStr;
+                    }
+                } else {
+                    fieldsClause = fmt::format("{}", fmt::join(fieldStrings, ", "));
+                }
             } else if (!this->onlyFields.empty()) {
                 // Use only fields
-                fieldNames.reserve(onlyFields.size());
+                fieldNames.reserve(onlyFields.size() + fieldNames.size());
                 std::vector<std::string> fieldStrings;
                 fieldStrings.reserve(onlyFields.size());
                 
@@ -1780,7 +1785,20 @@ namespace storm {
                         fmt::format("{} AS {}", fieldAlias->getFullFieldName(), fieldAlias->alias));
                 }
                 
-                fieldsClause = fmt::format("{}", fmt::join(fieldStrings, ", "));
+                // Build fields string, including function clauses
+                if (!functionClauses.empty()) {
+                    std::string funcStr = fmt::format("{}", fmt::join(functionClauses, ", "));
+                    if (!fieldStrings.empty()) {
+                        fieldsClause = fmt::format("{}, {}", fmt::join(fieldStrings, ", "), funcStr);
+                    } else {
+                        fieldsClause = funcStr;
+                    }
+                } else {
+                    fieldsClause = fmt::format("{}", fmt::join(fieldStrings, ", "));
+                }
+            } else if (!functionClauses.empty()) {
+                // Only functions are specified
+                fieldsClause = fmt::format("{}", fmt::join(functionClauses, ", "));
             } else {
                 // When no specific fields requested, explicitly list all fields using reflection
                 std::vector<std::string> fieldStrings;
@@ -1824,9 +1842,7 @@ namespace storm {
             static_assert(std::is_member_pointer_v<decltype(Field)>, 
                         "Field must be a member pointer");
             auto field = std::make_unique<FieldAlias<Field>>();
-            // Clear any existing onlyFields to prevent selecting all fields by default
-            // when using aggregate functions
-            onlyFields.clear();
+            // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
             functions(Function(fmt::format("MAX({}) AS {}", field->getFullFieldName(), alias)));
             return *this;
         }
@@ -1847,21 +1863,6 @@ namespace storm {
         void functions_impl(U &&u, Args &&...args) {
             functionsSet.emplace_back(std::forward<U>(u));
             functions_impl(std::forward<Args>(args)...);
-        }
-
-        [[nodiscard]] std::string buildFunctions() const {
-            if(functionsSet.empty()) {
-                return "";
-            }
-
-            // Always include a comma before functions if there are fields
-            // This ensures proper SQL syntax when combining fields and aggregate functions
-            return format("{}{}",
-                            (onlyFields.empty() && distinctFields.empty() && _jsonFields.empty()) ? "" : ", ",
-                            fmt::join(functionsSet | std::views::transform([](const auto &function) {
-                                        return function.toStr();
-                                    }),
-                                    ", "));
         }
     };
 }
