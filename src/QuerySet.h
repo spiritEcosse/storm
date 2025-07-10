@@ -1837,6 +1837,17 @@ namespace storm {
             functions(Function(fmt::format("MAX({}) AS {}", field->getFullFieldName(), alias)));
             return *this;
         }
+
+        // MIN aggregate function
+        template<auto Field>
+        QuerySet &min(const std::string& alias) {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, 
+                        "Field must be a member pointer");
+            auto field = std::make_unique<FieldAlias<Field>>();
+            // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
+            functions(Function(fmt::format("MIN({}) AS {}", field->getFullFieldName(), alias)));
+            return *this;
+        }
     private:
         template<typename... Args>
         QuerySet &functions(Args &&...args) {

@@ -2564,3 +2564,191 @@ TEST_F(ORMTest, MaxWithRuntimeField) {
     
     EXPECT_EQ(max_age, expected_max_age);
 }
+
+// =======================================
+// MIN AGGREGATE FUNCTION TESTS
+// =======================================
+
+TEST_F(ORMTest, MinStringField) {
+    // Test MIN function with string field (alphabetically lowest value)
+    auto results = QuerySet<Author>(conn)
+        .min<&Author::name>("min_name")
+        .select_values();
+    
+    ASSERT_FALSE(results.empty());
+    ASSERT_TRUE(results[0].contains("min_name"));
+    
+    // Get the min name value
+    std::string min_name = std::get<std::string>(results[0]["min_name"]);
+    
+    // Verify the min name by querying all authors and finding the minimum manually
+    auto all_authors = QuerySet<Author>(conn).select_all();
+    std::string expected_min_name = all_authors[0].name; // Initialize with first author
+    for (const auto& author : all_authors) {
+        if (author.name < expected_min_name) {
+            expected_min_name = author.name;
+        }
+    }
+    
+    EXPECT_EQ(min_name, expected_min_name);
+}
+
+TEST_F(ORMTest, MinOnEmptyTable) {
+    // First, clear the authors table to test MIN on an empty set
+    auto clear_authors = QuerySet<Author>(conn).remove();
+    ASSERT_TRUE(clear_authors);
+    
+    // Test MIN function on empty table
+    auto results = QuerySet<Author>(conn)
+        .min<&Author::age>("min_age")
+        .select_values();
+    
+    ASSERT_FALSE(results.empty());
+    ASSERT_TRUE(results[0].contains("min_age"));
+    
+    // On an empty table, SQLite returns NULL for aggregate functions
+    // In our case, we should get a std::monostate (representing NULL) in the variant
+    EXPECT_TRUE(std::holds_alternative<std::monostate>(results[0]["min_age"]))
+        << "Expected NULL (std::monostate) result for MIN on empty table";
+    
+    // Restore test data for other tests
+    setupTestData();
+    
+    // Verify the test data was restored
+    auto count_after = QuerySet<Author>(conn).select_all();
+    ASSERT_GT(count_after.size(), 0);
+}
+
+TEST_F(ORMTest, MinWithOrderBy) {
+    // Test MIN function with ORDER BY clause
+    auto results = QuerySet<Author>(conn)
+        .min<&Author::age>("min_age")
+        .order_by<&Author::name, false>()
+        .select_values();
+    
+    ASSERT_FALSE(results.empty());
+    ASSERT_TRUE(results[0].contains("min_age"));
+    
+    // Get the min age value
+    int min_age = std::get<int>(results[0]["min_age"]);
+    
+    // Verify the min age by querying all authors and finding the minimum manually
+    auto all_authors = QuerySet<Author>(conn).select_all();
+    int expected_min_age = all_authors[0].age; // Initialize with first author
+    for (const auto& author : all_authors) {
+        if (author.age < expected_min_age) {
+            expected_min_age = author.age;
+        }
+    }
+    
+    EXPECT_EQ(min_age, expected_min_age);
+}
+
+TEST_F(ORMTest, MultipleMinFunctions) {
+    // Test multiple MIN functions in a single query
+    auto results = QuerySet<Author>(conn)
+        .min<&Author::age>("min_age")
+        .min<&Author::rating>("min_rating")
+        .min<&Author::score>("min_score")
+        .select_values();
+    
+    ASSERT_FALSE(results.empty());
+    ASSERT_TRUE(results[0].contains("min_age"));
+    ASSERT_TRUE(results[0].contains("min_rating"));
+    ASSERT_TRUE(results[0].contains("min_score"));
+    
+    // Get the min values
+    int min_age = std::get<int>(results[0]["min_age"]);
+    double min_rating = std::get<double>(results[0]["min_rating"]);
+    double min_score = std::get<double>(results[0]["min_score"]);
+    
+    // Verify the min values by querying all authors and finding the minimums manually
+    auto all_authors = QuerySet<Author>(conn).select_all();
+    int expected_min_age = all_authors[0].age;
+    double expected_min_rating = all_authors[0].rating;
+    double expected_min_score = all_authors[0].score;
+    
+    for (const auto& author : all_authors) {
+        if (author.age < expected_min_age) {
+            expected_min_age = author.age;
+        }
+        if (author.rating < expected_min_rating) {
+            expected_min_rating = author.rating;
+        }
+        if (author.score < expected_min_score) {
+            expected_min_score = author.score;
+        }
+    }
+    
+    EXPECT_EQ(min_age, expected_min_age);
+    EXPECT_DOUBLE_EQ(min_rating, expected_min_rating);
+    EXPECT_DOUBLE_EQ(min_score, expected_min_score);
+}
+
+TEST_F(ORMTest, MinWithJoin) {
+    // Create some posts for testing
+    std::vector<Post> posts = {
+        Post("Post by Alice", "Content 1", alice_id, 1),
+        Post("Post by Bob", "Content 2", bob_id, 2),
+        Post("Another post by Alice", "Content 3", alice_id, 3),
+        Post("Post by Charlie", "Content 4", charlie_id, 4),
+        Post("Another post by Bob", "Content 5", bob_id, 5)
+    };
+    
+    // Insert posts
+    auto insert_result = QuerySet<Post>(conn).insert(posts);
+    ASSERT_FALSE(insert_result.empty());
+    
+    // Test MIN function with JOIN
+    auto results = QuerySet<Author>(conn)
+        .join<Post>()
+        .min<&Author::age>("min_age")
+        .group_by<&Post::author_id>()
+        .select_values();
+    
+    ASSERT_FALSE(results.empty());
+    
+    // Verify the results contain the min age
+    ASSERT_TRUE(results[0].contains("min_age"));
+    
+    // Get the min age from the results
+    int min_age = std::get<int>(results[0]["min_age"]);
+    
+    // Verify the min age by querying authors with posts and finding the minimum manually
+    auto authors_with_posts = QuerySet<Author>(conn)
+        .join<Post>()
+        .select_all();
+    
+    int expected_min_age = authors_with_posts[0].age;
+    for (const auto& author : authors_with_posts) {
+        if (author.age < expected_min_age) {
+            expected_min_age = author.age;
+        }
+    }
+    
+    EXPECT_EQ(min_age, expected_min_age);
+}
+
+TEST_F(ORMTest, MinWithRuntimeField) {
+    // Test MIN function with runtime field reference
+    auto results = QuerySet<Author>(conn)
+        .min<&Author::age>("min_age")
+        .select_values();
+    
+    ASSERT_FALSE(results.empty());
+    ASSERT_TRUE(results[0].contains("min_age"));
+    
+    // Get the min age value
+    int min_age = std::get<int>(results[0]["min_age"]);
+    
+    // Verify the min age by querying all authors and finding the minimum manually
+    auto all_authors = QuerySet<Author>(conn).select_all();
+    int expected_min_age = all_authors[0].age; // Initialize with first author
+    for (const auto& author : all_authors) {
+        if (author.age < expected_min_age) {
+            expected_min_age = author.age;
+        }
+    }
+    
+    EXPECT_EQ(min_age, expected_min_age);
+}
