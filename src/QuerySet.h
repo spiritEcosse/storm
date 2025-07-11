@@ -18,6 +18,10 @@
 #include "MemberPointerUtils.h"
 #include "StringUtils.h"
 #include <sstream>
+#include <expected>
+#include <print>
+#include <ranges>
+#include <string_view>
 
 namespace storm {
     template<typename T>
@@ -1256,11 +1260,6 @@ namespace storm {
             this->onlyFields.emplace_back(std::make_unique<FieldAlias<Field>>(alias));
             return *this;
         }
-    private:
-        [[nodiscard]] std::string buildOnlyFields() const {
-            auto [fieldNames, fieldsClause] = this->buildFieldsClause();
-            return fieldsClause;
-        }
 
     public:
         // =============================
@@ -1336,22 +1335,17 @@ namespace storm {
          *       .only(field(&Author::name))
          *       .only(field(&Author::age))
          *       .select_values();
-         *   // Access data with: results[0]["name"], results[0]["age"]
+         *   Access data with: results[0]["name"], results[0]["age"]
          */
-        std::vector<std::map<std::string, ValueVariant>> select_values() const {
-            // Check if we have fields to select
-            if (this->onlyFields.empty() && this->distinctFields.empty() && this->functionsSet.empty()) {
-                throw std::runtime_error("You must specify at least one field with only(), distinct(), or an aggregate function before calling select_values()");
-            }
-            
+         std::expected<std::vector<std::map<std::string, ValueVariant>>, std::string> select_values() const {            
             // Get the where query result
             auto where_query_result = this->get_where_query();
             
             // Get field names and clause for SQL generation
-            auto [fieldNames, fieldsClause] = this->buildFieldsClause();
+            auto fieldsClause = this->buildFieldsClause();
             
-            // Build SQL query with fields clause
-            std::string sql = fmt::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
+            // Build SQL query with std::format
+            auto sql = std::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
                 this->createDistinctClause(),
                 fieldsClause,
                 this->template get_table_name<T>(),
@@ -1361,148 +1355,23 @@ namespace storm {
                 this->buildOrderFields(),
                 this->limit_impl()
             );
-            std::cout << sql << std::endl;
+            std::print("SQL: {}\n", sql);
+            
             // Execute the query
             auto stmt = Statement(conn, sql);
             bind_query_parameters(stmt, where_query_result);
             auto all_rows = stmt.execute_all();
             
-            // Debug: Print the SQL query and number of rows returned
-            std::cout << "SQL query: " << sql << std::endl;
-            std::cout << "Number of rows returned: " << all_rows.size() << std::endl;
+            // Early return for empty results
+            if (all_rows.empty()) return {};
             
-            // Create a mapping from field names to column indices in the SQLite result
-            std::map<std::string, int> columnIndices;
-            if (!all_rows.empty()) {
-                for (int i = 0; i < all_rows[0].get_column_count(); ++i) {
-                    std::string colName = all_rows[0].get_column_name(i);
-                    columnIndices[colName] = i;
-                    std::cout << "Column " << i << ": " << colName << std::endl;
-                }
-            }
+            // Process results using ranges and views
+            auto results = transform_rows_to_value_maps(all_rows);
             
-            // Process the results
-            std::vector<std::map<std::string, ValueVariant>> results;
-            if (all_rows.empty()) {
-                return results;
-            }
-            
-            results.reserve(all_rows.size());
-            
-            for (const auto& row : all_rows) {
-                std::map<std::string, ValueVariant> rowDict;
-                
-                std::cout << "Field names from SQL: ";
-                for (const auto& name : fieldNames) {
-                    std::cout << name << ", ";
-                }
-                std::cout << std::endl;
-                
-                // Create a mapping of field names to their positions in the query result
-                std::map<std::string, size_t> fieldPositions;
-                for (size_t i = 0; i < fieldNames.size(); ++i) {
-                    fieldPositions[fieldNames[i]] = i;
-                }
-                
-                for (size_t i = 0; i < fieldNames.size(); ++i) {
-                    // Get the field name without any table prefix
-                    std::string fieldName = fieldNames[i];
-                    size_t dotPos = fieldName.find('.');
-                    if (dotPos != std::string::npos) {
-                        fieldName = fieldName.substr(dotPos + 1);
-                    }
-                    
-                    // Process field name without table prefix
-                    
-                    // Special handling for boolean fields
-                    if (fieldName == "is_active") {
-                        // For boolean fields, convert integer to bool
-                        ValueVariant boolValue = static_cast<bool>(row.get_int(i));
-                        rowDict[fieldNames[i]] = boolValue;
-                        // Also store with the normalized field name
-                        rowDict[fieldName] = boolValue;
-                        continue;
-                    }
-                    
-                    // Use SQLite's column type for other fields
-                    int columnType = row.get_column_type(i);
-                    
-                    // Get the correct column index for this field
-                    // In the SQL query: SELECT "author"."age", AVG("author"."rating") AS avg_rating
-                    // The column order is: age, avg_rating
-                    // But in the fieldNames vector, it might be: avg_rating, age
-                    // So we need to use the correct index when accessing the row
-                    
-                    switch (columnType) {
-                        case SQLITE_INTEGER:
-                            {
-                                ValueVariant intValue = row.get_int(i);
-                                // Use the field name from the query, not the position in fieldNames
-                                rowDict[fieldName] = intValue;
-                            }
-                            break;
-                        case SQLITE_FLOAT:
-                            {
-                                ValueVariant doubleValue = row.get_double(i);
-                                // Use the field name from the query, not the position in fieldNames
-                                rowDict[fieldName] = doubleValue;
-                            }
-                            break;
-                        case SQLITE_TEXT:
-                            {
-                                ValueVariant textValue = row.get_text(i);
-                                // Use the field name from the query, not the position in fieldNames
-                                rowDict[fieldName] = textValue;
-                            }
-                            break;
-                        case SQLITE_NULL:
-                            {
-                                // Handle NULL values as std::monostate (representing SQL NULL)
-                                ValueVariant nullValue = std::monostate{};
-                                // Use the field name from the query, not the position in fieldNames
-                                rowDict[fieldName] = nullValue;
-                            }
-                            break;
-                        case SQLITE_BLOB:
-                        default:
-                            {
-                                // For BLOB or any other type, convert to string
-                                ValueVariant blobValue = row.get_text(i);
-                                // Use the field name from the query, not the position in fieldNames
-                                rowDict[fieldName] = blobValue;
-                            }
-                            break;
-                    }
-                }
-                
-                // Add GROUP BY fields to the result map if they're not already included
-                // This is necessary when using GROUP BY with fields from joined tables
+            // Add GROUP BY fields to results if needed
+            for (auto [rowDict, row] : std::views::zip(results, all_rows)) {
                 this->addGroupByFieldsToResult(rowDict, row);
-                // Debug: Print the contents of the row dictionary
-                std::cout << "Debug row values: " << std::endl;
-                for (const auto& [key, value] : rowDict) {
-                    std::cout << "  " << key << " = ";
-                    std::visit([](const auto& v) {
-                        using ValueT = std::decay_t<decltype(v)>;
-                        if constexpr (std::is_same_v<ValueT, std::monostate>) {
-                            std::cout << "NULL";
-                        } else if constexpr (std::is_same_v<ValueT, std::string>) {
-                            std::cout << "\"" << v << "\"";
-                        } else if constexpr (std::is_same_v<ValueT, bool>) {
-                            std::cout << (v ? "true" : "false");
-                        } else {
-                            std::cout << v;
-                        }
-                    }, value);
-                    std::cout << std::endl;
-                }
-                std::cout << "-------------------" << std::endl;
-                
-                results.emplace_back(std::move(rowDict));
             }
-            
-            // Debug: Print the expected values from the test
-            std::cout << "Final results size: " << results.size() << std::endl;
             
             return results;
         }
@@ -1513,7 +1382,7 @@ namespace storm {
             auto where_query_result = this->get_where_query();
             
             // Get field names and clause for SQL generation
-            auto [fieldNames, fieldsClause] = this->buildFieldsClause();
+            auto fieldsClause = this->buildFieldsClause();
             
             // Build the SQL query with LIMIT 1
             auto sql = fmt::format("SELECT {} {} FROM \"{}\" {} {} {} {} LIMIT 1;", 
@@ -1603,7 +1472,7 @@ namespace storm {
             auto where_query_result = this->get_where_query();
             
             // Get field names and clause for SQL generation
-            auto [fieldNames, fieldsClause] = this->buildFieldsClause();
+            auto fieldsClause = this->buildFieldsClause();
             
             // Build the SQL query
             auto sql = fmt::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
@@ -1635,7 +1504,7 @@ namespace storm {
                 if (!this->distinctFields.empty()) {
                     // When distinct fields are selected, only populate those fields
                     // and make sure we don't exceed the column count
-                    for (size_t i = 0; i < this->distinctFields.size() && i < fieldNames.size(); ++i) {
+                    for (size_t i = 0; i < this->distinctFields.size() && i < row.get_column_count(); ++i) {
                         const auto& fieldAlias = this->distinctFields[i];
                         if (!fieldAlias) continue;
                         
@@ -1724,6 +1593,56 @@ namespace storm {
             return results;
         }
 
+    private:
+        /**
+         * @brief Transform a vector of rows into a vector of value maps
+         * 
+         * This helper function processes database rows and converts them into a vector of maps
+         * where each map represents a row with column name -> value mapping.
+         * 
+         * @param rows Vector of Row objects to transform
+         * @return std::vector<std::map<std::string, ValueVariant>> Vector of dictionaries with column name -> value mapping
+         */
+        std::vector<std::map<std::string, ValueVariant>> transform_rows_to_value_maps(const std::vector<Row>& rows) const {
+            return rows 
+                | std::views::transform([](const auto& row) {
+                    std::map<std::string, ValueVariant> rowDict;
+                    
+                    // Process each column using the Row's column information
+                    for (const auto& i : std::views::iota(0, row.get_column_count())) {
+                        // Get column name directly from Row and convert to std::string for map key
+                        std::string column_name{row.get_column_name(i)};
+                        
+                        // Convert SQLite value to ValueVariant using Row's type information
+                        auto value = [&row, i, &column_name]() -> ValueVariant {
+                            int columnType = row.get_column_type(i);
+                            
+                            switch (columnType) {
+                                case SQLITE_INTEGER:
+                                    if (column_name == "is_active") {
+                                        return static_cast<bool>(row.get_int(i));
+                                    }
+                                    return row.get_int(i);
+                                case SQLITE_FLOAT:
+                                    return row.get_double(i);
+                                case SQLITE_TEXT:
+                                    return row.get_text(i);
+                                case SQLITE_NULL:
+                                    return std::monostate{};
+                                case SQLITE_BLOB:
+                                default:
+                                    return row.get_text(i);
+                            }
+                        }();
+                        
+                        rowDict[column_name] = std::move(value);
+                    }
+                    
+                    return rowDict;
+                })
+                | std::ranges::to<std::vector>();
+        }
+    
     public:
         // =============================
         // =============================
@@ -1786,11 +1705,10 @@ namespace storm {
          * 
          * This method handles both distinct fields, only fields, and aggregate functions
          * 
-         * @return std::pair<std::vector<std::string>, std::string> Pair of field names and fields clause
+         * @return std::string Fields clause
          */
-        [[nodiscard]] std::pair<std::vector<std::string>, std::string> buildFieldsClause() const {
+        [[nodiscard]] std::string buildFieldsClause() const {
             // Build fields clause based on the available fields and functions
-            std::vector<std::string> fieldNames;
             std::string fieldsClause;
             
             // First, process any function aliases (like MAX, MIN, etc.)
@@ -1798,23 +1716,16 @@ namespace storm {
             for (const auto& func : functionsSet) {
                 // Extract the alias from the function string (assuming format "FUNCTION(...) AS alias")
                 std::string funcStr = func.toStr();
-                size_t asPos = funcStr.find(" AS ");
-                if (asPos != std::string::npos) {
-                    std::string alias = funcStr.substr(asPos + 4); // +4 to skip " AS "
-                    fieldNames.push_back(alias);
-                }
                 functionClauses.push_back(funcStr);
             }
             
             if (!this->distinctFields.empty() && this->onlyFields.empty()) {
                 // Use distinct fields
-                fieldNames.reserve(distinctFields.size() + fieldNames.size());
                 std::vector<std::string> fieldStrings;
                 fieldStrings.reserve(distinctFields.size());
                 
                 for (const auto& fieldAlias : distinctFields) {
                     fieldStrings.emplace_back(fieldAlias->getFullFieldName());
-                    fieldNames.emplace_back(fieldAlias->getFieldName());
                 }
                 
                 // Build fields string, including function clauses
@@ -1830,12 +1741,10 @@ namespace storm {
                 }
             } else if (!this->onlyFields.empty()) {
                 // Use only fields
-                fieldNames.reserve(onlyFields.size() + fieldNames.size());
                 std::vector<std::string> fieldStrings;
                 fieldStrings.reserve(onlyFields.size());
                 
                 for (const auto& fieldAlias : onlyFields) {
-                    fieldNames.emplace_back(fieldAlias->getFieldName());
                     fieldStrings.emplace_back(fieldAlias->alias.empty() ?
                         fieldAlias->getFullFieldName() :
                         fmt::format("{} AS {}", fieldAlias->getFullFieldName(), fieldAlias->alias));
@@ -1863,7 +1772,6 @@ namespace storm {
                         std::string tableName = this->template get_table_name<T>();
                         std::string fieldName = std::string(member.name);
                         std::string formattedField = utils::formatFieldName(tableName, fieldName);
-                        fieldNames.emplace_back(fieldName);
                         fieldStrings.emplace_back(fmt::format(R"({} AS "{}")", formattedField, fieldName));
                     }
                 });
@@ -1871,7 +1779,7 @@ namespace storm {
                 fieldsClause = fmt::format("{}", fmt::join(fieldStrings, ", "));
             }
             
-            return {fieldNames, fieldsClause};
+            return fieldsClause;
         }
         
         [[nodiscard]] std::string createDistinctClause() const {
