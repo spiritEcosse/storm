@@ -4,6 +4,8 @@
 #include <utility>
 #include <vector>
 #include <variant>
+#include <any>
+#include <map>
 #include "Function.h"
 #include "Where.h"
 #include <ranges>
@@ -1365,6 +1367,20 @@ namespace storm {
             bind_query_parameters(stmt, where_query_result);
             auto all_rows = stmt.execute_all();
             
+            // Debug: Print the SQL query and number of rows returned
+            std::cout << "SQL query: " << sql << std::endl;
+            std::cout << "Number of rows returned: " << all_rows.size() << std::endl;
+            
+            // Create a mapping from field names to column indices in the SQLite result
+            std::map<std::string, int> columnIndices;
+            if (!all_rows.empty()) {
+                for (int i = 0; i < all_rows[0].get_column_count(); ++i) {
+                    std::string colName = all_rows[0].get_column_name(i);
+                    columnIndices[colName] = i;
+                    std::cout << "Column " << i << ": " << colName << std::endl;
+                }
+            }
+            
             // Process the results
             std::vector<std::map<std::string, ValueVariant>> results;
             if (all_rows.empty()) {
@@ -1375,6 +1391,18 @@ namespace storm {
             
             for (const auto& row : all_rows) {
                 std::map<std::string, ValueVariant> rowDict;
+                
+                std::cout << "Field names from SQL: ";
+                for (const auto& name : fieldNames) {
+                    std::cout << name << ", ";
+                }
+                std::cout << std::endl;
+                
+                // Create a mapping of field names to their positions in the query result
+                std::map<std::string, size_t> fieldPositions;
+                for (size_t i = 0; i < fieldNames.size(); ++i) {
+                    fieldPositions[fieldNames[i]] = i;
+                }
                 
                 for (size_t i = 0; i < fieldNames.size(); ++i) {
                     // Get the field name without any table prefix
@@ -1399,25 +1427,31 @@ namespace storm {
                     // Use SQLite's column type for other fields
                     int columnType = row.get_column_type(i);
                     
+                    // Get the correct column index for this field
+                    // In the SQL query: SELECT "author"."age", AVG("author"."rating") AS avg_rating
+                    // The column order is: age, avg_rating
+                    // But in the fieldNames vector, it might be: avg_rating, age
+                    // So we need to use the correct index when accessing the row
+                    
                     switch (columnType) {
                         case SQLITE_INTEGER:
                             {
                                 ValueVariant intValue = row.get_int(i);
-                                rowDict[fieldNames[i]] = intValue;
+                                // Use the field name from the query, not the position in fieldNames
                                 rowDict[fieldName] = intValue;
                             }
                             break;
                         case SQLITE_FLOAT:
                             {
                                 ValueVariant doubleValue = row.get_double(i);
-                                rowDict[fieldNames[i]] = doubleValue;
+                                // Use the field name from the query, not the position in fieldNames
                                 rowDict[fieldName] = doubleValue;
                             }
                             break;
                         case SQLITE_TEXT:
                             {
                                 ValueVariant textValue = row.get_text(i);
-                                rowDict[fieldNames[i]] = textValue;
+                                // Use the field name from the query, not the position in fieldNames
                                 rowDict[fieldName] = textValue;
                             }
                             break;
@@ -1425,7 +1459,7 @@ namespace storm {
                             {
                                 // Handle NULL values as std::monostate (representing SQL NULL)
                                 ValueVariant nullValue = std::monostate{};
-                                rowDict[fieldNames[i]] = nullValue;
+                                // Use the field name from the query, not the position in fieldNames
                                 rowDict[fieldName] = nullValue;
                             }
                             break;
@@ -1434,7 +1468,7 @@ namespace storm {
                             {
                                 // For BLOB or any other type, convert to string
                                 ValueVariant blobValue = row.get_text(i);
-                                rowDict[fieldNames[i]] = blobValue;
+                                // Use the field name from the query, not the position in fieldNames
                                 rowDict[fieldName] = blobValue;
                             }
                             break;
@@ -1444,8 +1478,31 @@ namespace storm {
                 // Add GROUP BY fields to the result map if they're not already included
                 // This is necessary when using GROUP BY with fields from joined tables
                 this->addGroupByFieldsToResult(rowDict, row);
+                // Debug: Print the contents of the row dictionary
+                std::cout << "Debug row values: " << std::endl;
+                for (const auto& [key, value] : rowDict) {
+                    std::cout << "  " << key << " = ";
+                    std::visit([](const auto& v) {
+                        using ValueT = std::decay_t<decltype(v)>;
+                        if constexpr (std::is_same_v<ValueT, std::monostate>) {
+                            std::cout << "NULL";
+                        } else if constexpr (std::is_same_v<ValueT, std::string>) {
+                            std::cout << "\"" << v << "\"";
+                        } else if constexpr (std::is_same_v<ValueT, bool>) {
+                            std::cout << (v ? "true" : "false");
+                        } else {
+                            std::cout << v;
+                        }
+                    }, value);
+                    std::cout << std::endl;
+                }
+                std::cout << "-------------------" << std::endl;
+                
                 results.emplace_back(std::move(rowDict));
             }
+            
+            // Debug: Print the expected values from the test
+            std::cout << "Final results size: " << results.size() << std::endl;
             
             return results;
         }

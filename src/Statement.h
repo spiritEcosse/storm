@@ -20,11 +20,14 @@ class Row {
         double get_double(int idx) const { return double_values[idx]; }
         const std::string& get_text(int idx) const { return text_values[idx]; }
         int get_column_type(int idx) const { return column_types[idx]; }
+        const std::string& get_column_name(int idx) const { return column_names[idx]; }
+        int get_column_count() const { return static_cast<int>(column_types.size()); }
         
     private:
         std::vector<int> int_values;
         std::vector<double> double_values;
         std::vector<std::string> text_values;
+        std::vector<std::string> column_names; // Stores column names
         std::vector<int> column_types; // Stores SQLite column types (SQLITE_INTEGER, SQLITE_FLOAT, etc.)
 };
 

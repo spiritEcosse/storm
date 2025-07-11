@@ -137,9 +137,14 @@ Row::Row(sqlite3_stmt* stmt, int column_count) {
     double_values.reserve(column_count);
     text_values.reserve(column_count);
     column_types.reserve(column_count);
+    column_names.reserve(column_count);
     
     for (int i = 0; i < column_count; ++i) {
-        // Store the column type first
+        // Store the column name
+        const char* name = sqlite3_column_name(stmt, i);
+        column_names.push_back(name ? name : "");
+        
+        // Store the column type
         int type = sqlite3_column_type(stmt, i);
         column_types.push_back(type);
         
