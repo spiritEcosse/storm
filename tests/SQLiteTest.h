@@ -8,6 +8,21 @@
 #include "QuerySet.h"
 #include "SQLExceptions.h"
 #include "Transaction.h"
+#include <sstream>
+#include <iomanip>
+#include <variant>
+#include <ranges>
+#include <print>
+#include <expected>
+#include <string>
+#include <map>
+#include <vector>
+#include <iostream>
+#include <cmath>
+#include <algorithm>
+#include <format>
+#include <optional>
+#include <concepts>
 
 using namespace storm;
 
@@ -163,141 +178,113 @@ protected:
     }
 };
 
-// Define ValueVariant type to match the one in QuerySet.h
-using ValueVariant = std::variant<
-    std::monostate,  // For null values
-    int,             // For integer types
-    double,          // For floating point types
-    bool,            // For boolean values
-    std::string      // For text values
->;
 
-// Helper function to convert a ValueVariant to a string for debugging
-std::string ValueVariantToString(const ValueVariant& variant) {
-    if (std::holds_alternative<std::string>(variant)) {
-        return "'" + std::get<std::string>(variant) + "'";
-    } else if (std::holds_alternative<int>(variant)) {
-        return std::to_string(std::get<int>(variant));
-    } else if (std::holds_alternative<double>(variant)) {
-        return std::to_string(std::get<double>(variant));
-    } else if (std::holds_alternative<bool>(variant)) {
-        return std::get<bool>(variant) ? "true" : "false";
-    } else {
-        return "NULL";
+bool VariantsEqual(const ValueVariant& lhs, const ValueVariant& rhs) {
+    if (lhs.index() != rhs.index()) {
+        return false;
     }
-}
-
-// Helper function to verify variant map structure and values
-template <typename T>
-void AssertVariantEquals(const ValueVariant& variant, const T& expected_value, const std::string& field_name) {
-    ASSERT_TRUE(std::holds_alternative<T>(variant)) 
-        << field_name << " has incorrect type. Expected: " << typeid(T).name();
-    EXPECT_EQ(std::get<T>(variant), expected_value) 
-        << field_name << " has incorrect value";
-}
-
-// Helper function to verify map structure and values
-void AssertMapContains(const std::map<std::string, ValueVariant>& result_map, 
-                      const std::string& key, 
-                      const ValueVariant& expected_value) {
-    ASSERT_TRUE(result_map.contains(key)) << "Map missing key: " << key;
     
-    // Match the variant type and value
-    if (std::holds_alternative<std::string>(expected_value)) {
-        AssertVariantEquals<std::string>(result_map.at(key), std::get<std::string>(expected_value), key);
-    } else if (std::holds_alternative<int>(expected_value)) {
-        AssertVariantEquals<int>(result_map.at(key), std::get<int>(expected_value), key);
-    } else if (std::holds_alternative<double>(expected_value)) {
-        AssertVariantEquals<double>(result_map.at(key), std::get<double>(expected_value), key);
-    } else if (std::holds_alternative<bool>(expected_value)) {
-        AssertVariantEquals<bool>(result_map.at(key), std::get<bool>(expected_value), key);
-    } else if (std::holds_alternative<std::monostate>(expected_value)) {
-        ASSERT_TRUE(std::holds_alternative<std::monostate>(result_map.at(key))) 
-            << key << " should be monostate (NULL)";
-    }
+    return std::visit([](const auto& l, const auto& r) -> bool {
+        using LType = std::decay_t<decltype(l)>;
+        using RType = std::decay_t<decltype(r)>;
+        
+        if constexpr (!std::is_same_v<LType, RType>) {
+            return false;
+        } else if constexpr (std::is_same_v<LType, double>) {
+            // For floating point, use epsilon comparison
+            return std::abs(l - r) < std::numeric_limits<double>::epsilon();
+        } else {
+            return l == r;
+        }
+    }, lhs, rhs);
+}
+
+// Helper function to convert ValueVariant to string for error messages
+std::string ValueVariantToString(const ValueVariant& var) {
+    return std::visit([]<typename T>(const T& val) -> std::string {
+        if constexpr (std::is_same_v<T, std::monostate>) {
+            return "null";
+        } else if constexpr (std::is_same_v<T, int>) {
+            return std::format("{}", val);
+        } else if constexpr (std::is_same_v<T, double>) {
+            return std::format("{}", val);
+        } else if constexpr (std::is_same_v<T, bool>) {
+            return std::format("{}", val);
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            return std::format("\"{}\"", val);
+        }
+        std::unreachable();
+    }, var);
 }
 
 // Helper function to verify an entire vector of result maps
-void AssertResultsMatch(const std::vector<std::map<std::string, ValueVariant>>& actual_results,
-                        const std::vector<std::map<std::string, ValueVariant>>& expected_results) {
-    // Check that the number of results matches
+void AssertResultsMatch(const ExpectedValueVectorMap& actual_result,
+                        const ValueVectorMap& expected_results) {
+    
+    ASSERT_TRUE(actual_result.has_value()) << "failed with error: " << actual_result.error();
+    auto actual_results = actual_result.value();
+
     ASSERT_EQ(actual_results.size(), expected_results.size()) 
-        << "Result count mismatch. Expected " << expected_results.size() 
-        << " results, got " << actual_results.size();
+        << std::format("Result count mismatch. Expected {} results, got {}", 
+                      expected_results.size(), actual_results.size());
+    
+    // Use bitset for tracking matched results
+    std::vector<bool> matched(actual_results.size());
     
     // For each expected result, find a matching actual result
-    for (const auto& expected : expected_results) {
-        bool found_match = false;
-        std::string match_key;
-        ValueVariant match_value;
+    for (auto&& [expected_idx, expected] : expected_results | std::views::enumerate) {
+        ASSERT_FALSE(expected.empty()) 
+            << std::format("Expected result map {} is empty", expected_idx);
         
-        // Find a key-value pair from the expected map to use for matching
-        if (!expected.empty()) {
-            auto it = expected.begin();
-            match_key = it->first;
-            match_value = it->second;
+        auto find_match = [&](const auto& actual_with_idx) -> bool {
+            auto&& [actual_idx, actual] = actual_with_idx;
+            
+            if (matched[actual_idx]) return false;
+            
+            // Check size first for early exit
+            if (actual.size() != expected.size()) return false;
+            
+            // Use ranges algorithms for key-value matching
+            return std::ranges::all_of(expected, [&](const auto& expected_pair) {
+                auto&& [key, expected_val] = expected_pair;
+                return actual.contains(key) && VariantsEqual(actual.at(key), expected_val);
+            });
+        };
+        
+        auto match_it = std::ranges::find_if(
+            actual_results | std::views::enumerate, 
+            find_match
+        );
+        
+        if (match_it != std::ranges::end(actual_results | std::views::enumerate)) {
+            matched[std::get<0>(*match_it)] = true;
         } else {
-            FAIL() << "Expected result map is empty";
-            continue;
-        }
-        
-        // Try to find a matching result in the actual results
-        for (const auto& actual : actual_results) {
-            // Skip if the key doesn't exist or the value doesn't match
-            if (!actual.contains(match_key) || 
-                actual.at(match_key).index() != match_value.index()) {
-                continue;
+            // Build comprehensive error message using ranges
+            auto build_map_string = [](const auto& map) -> std::string {
+                std::string result = "{";
+                bool first = true;
+                for (const auto& [key, val] : map) {
+                    if (!first) result += ", ";
+                    result += std::format("{}: {}", key, ValueVariantToString(val));
+                    first = false;
+                }
+                result += "}";
+                return result;
+            };
+            
+            auto error_msg = std::format(
+                "No matching result found for expected result {}. Expected: {}\n"
+                "Actual results:\n", 
+                expected_idx,
+                build_map_string(expected)
+            );
+            
+            for (const auto& [i, result] : actual_results | std::views::enumerate) {
+                error_msg += std::format("  [{}] {}\n", i, build_map_string(result));
             }
             
-            // Check if the value matches based on its type
-            bool values_match = false;
-            if (std::holds_alternative<std::string>(match_value)) {
-                values_match = std::get<std::string>(actual.at(match_key)) == 
-                              std::get<std::string>(match_value);
-            } else if (std::holds_alternative<int>(match_value)) {
-                values_match = std::get<int>(actual.at(match_key)) == 
-                              std::get<int>(match_value);
-            } else if (std::holds_alternative<double>(match_value)) {
-                values_match = std::get<double>(actual.at(match_key)) == 
-                              std::get<double>(match_value);
-            } else if (std::holds_alternative<bool>(match_value)) {
-                values_match = std::get<bool>(actual.at(match_key)) == 
-                              std::get<bool>(match_value);
-            } else if (std::holds_alternative<std::monostate>(match_value)) {
-                values_match = std::holds_alternative<std::monostate>(actual.at(match_key));
-            }
-            
-            if (values_match) {
-                // Found a potential match, now verify all other key-value pairs
-                bool all_match = true;
-                for (const auto& [key, value] : expected) {
-                    if (!actual.contains(key)) {
-                        all_match = false;
-                        break;
-                    }
-                    
-                    try {
-                        // Use AssertMapContains to check each key-value pair
-                        // but catch any assertion failures
-                        testing::internal::CaptureStdout();
-                        AssertMapContains(actual, key, value);
-                        testing::internal::GetCapturedStdout();
-                    } catch (const std::exception&) {
-                        all_match = false;
-                        break;
-                    }
-                }
-                
-                if (all_match) {
-                    found_match = true;
-                    break;
-                }
-            }
+            ASSERT_TRUE(false) << error_msg;
         }
-        
-        // Verify that we found a match for this expected result
-        ASSERT_TRUE(found_match) << "Could not find a match for expected result with " 
-                                << match_key << " = " << ValueVariantToString(match_value);
     }
 }
 
@@ -892,10 +879,10 @@ TEST_F(ORMTest, SelectAllWhereId) {
 TEST_F(ORMTest, SelectAllWhereMany) {
     std::vector<Post> posts = QuerySet<Post>(conn)
         .where(&Post::author_id, alice_id)
-        .where(&Post::title, "Post A")
+        .where(&Post::title, "Alice's First Post")
         .select_all();
     ASSERT_EQ(posts.size(), 1);
-    EXPECT_EQ(posts[0].title, "Post A");
+    EXPECT_EQ(posts[0].title, "Alice's First Post");
 }
 
 TEST_F(ORMTest, SelectAllErrorInvalidColumnException) {
@@ -908,8 +895,8 @@ TEST_F(ORMTest, SelectAllErrorInvalidColumnException) {
         // Verify the column name in the exception
         EXPECT_EQ(e.getColumnName(), "author.name");
         EXPECT_FALSE(e.getQuery().empty());
-    } catch (...) {
-        FAIL() << "Expected InvalidColumnException, but a different exception was thrown";
+    } catch (const std::exception& e) {
+        FAIL() << "Expected InvalidColumnException, but a different exception was thrown: " << e.what();
     }
 }
 
@@ -2544,197 +2531,100 @@ TEST_F(ORMTest, TransferBetweenAuthorsTransaction) {
 
 TEST_F(ORMTest, MaxStringField) {
     // Test MAX function with string field (alphabetically highest value)
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .max<&Author::name>("max_name")
         .select_values();
     
-    // Check if we got a valid result
-    ASSERT_TRUE(results.has_value()) << "select_values failed with error: " << results.error();
-    
-    // Get the max name value
-    std::string max_name = std::get<std::string>(results.value()[0]["max_name"]);
-    
-    // Verify the max name by querying all authors and finding the maximum manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    std::string expected_max_name = "";
-    for (const auto& author : all_authors) {
-        if (author.name > expected_max_name) {
-            expected_max_name = author.name;
+    ValueVectorMap expected_results = {
+        {
+            {"max_name", "Diana Prince"}
         }
-    }
-    
-    EXPECT_EQ(max_name, expected_max_name);
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, MaxOnEmptyTable) {
     // Clear all authors
-    QuerySet<Author>(conn).remove();
+    auto remove_result = QuerySet<Author>(conn).remove();
+    ASSERT_TRUE(remove_result);
     
     // Test MAX function on an empty table
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .max<&Author::age>("max_age")
         .select_values();
-    
-    ASSERT_FALSE(results.has_value());
-    
-    // For empty tables, SQLite returns NULL for MAX, which should be converted to 0 or default value
-    // Check that we get a valid result (either 0 or std::nullopt depending on implementation)
-    try {
-        // If implemented as returning 0 for numeric types
-        int max_age = std::get<int>(results.value()[0]["max_age"]);
-        EXPECT_EQ(max_age, 0);
-    } catch (const std::bad_variant_access&) {
-        // If implemented as returning std::nullopt or another type
-        // This is also valid behavior
-        SUCCEED() << "MAX on empty table returned a non-int value (possibly NULL)";
-    }
-    
-    // Restore test data for other tests
-    setupTestData();
+
+    ValueVectorMap expected_results = {
+        {
+            {"max_age", 0}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, MaxWithOrderBy) {
     // Test MAX function with ORDER BY
     // The ORDER BY shouldn't affect the MAX result but should affect the order of rows
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .max<&Author::age>("max_age")
         .order_by<&Author::name, false>()
         .select_values();
     
-    ASSERT_TRUE(results.has_value());
-    
-    // Get the max age value
-    int max_age = std::get<int>(results.value()[0]["max_age"]);
-    
-    // Verify the max age by querying all authors and finding the maximum manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    int expected_max_age = 0;
-    for (const auto& author : all_authors) {
-        if (author.age > expected_max_age) {
-            expected_max_age = author.age;
+    ValueVectorMap expected_results = {
+        {
+            {"max_age", 35}
         }
-    }
-    
-    EXPECT_EQ(max_age, expected_max_age);
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, MultipleMaxFunctions) {
     // Test multiple MAX functions in the same query
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .max<&Author::age>("max_age")
         .max<&Author::rating>("max_rating")
         .max<&Author::score>("max_score")
         .select_values();
     
-    ASSERT_TRUE(results.has_value());
-    
-    // Get the max values
-    int max_age = std::get<int>(results.value()[0]["max_age"]);
-    double max_rating = std::get<double>(results.value()[0]["max_rating"]);
-    double max_score = std::get<double>(results.value()[0]["max_score"]);
-    
-    // Verify the max values by querying all authors and finding the maximums manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    int expected_max_age = 0;
-    double expected_max_rating = 0.0;
-    float expected_max_score = 0.0f;
-    
-    for (const auto& author : all_authors) {
-        if (author.age > expected_max_age) {
-            expected_max_age = author.age;
+    ValueVectorMap expected_results = {
+        {
+            {"max_age", 35},
+            {"max_rating", 5.0},
+            {"max_score", 100.0}
         }
-        if (author.rating > expected_max_rating) {
-            expected_max_rating = author.rating;
-        }
-        if (author.score > expected_max_score) {
-            expected_max_score = author.score;
-        }
-    }
-    
-    EXPECT_EQ(max_age, expected_max_age);
-    EXPECT_DOUBLE_EQ(max_rating, expected_max_rating);
-    EXPECT_FLOAT_EQ(static_cast<float>(max_score), expected_max_score);
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, MaxWithJoin) {
     // Test MAX function with a JOIN
     // This will find the maximum post ID for each author
     // We need to include the name field in the result set when using group_by with aggregate functions
-    auto results = QuerySet<Post>(conn)
+    auto result = QuerySet<Post>(conn)
         .join<Author>()
         .group_by<&Author::name>()
         .only<&Author::name>()
         .max<&Post::id>("max_post_id")
         .select_values();
     
-    ASSERT_TRUE(results.has_value());
-    
-    // Create a map of author name to their max post_id from the results
-    std::map<std::string, int> author_max_post_map;
-    for (const auto& row : results.value()) {
-        std::string author_name;
-        int max_post_id = 0;
-        
-        if (std::holds_alternative<std::string>(row.at("max_post_id"))) {
-            author_name = std::get<std::string>(row.at("max_post_id"));
+    ValueVectorMap expected_results = {
+        {
+            {"name", "Alice Smith"},
+            {"max_post_id", 3}
+        },
+        {
+            {"name", "Bob Johnson"},
+            {"max_post_id", 5}
+        },
+        {
+            {"name", "Charlie Brown"},
+            {"max_post_id", 9}
+        },
+        {
+            {"name", "Diana Prince"},
+            {"max_post_id", 11}
         }
-        
-        if (std::holds_alternative<int>(row.at("name"))) {
-            max_post_id = std::get<int>(row.at("name"));
-        }
-        author_max_post_map[author_name] = max_post_id;
-    }
-    
-    // Verify the results by querying all posts and finding the maximum post ID for each author manually
-    auto all_posts = QuerySet<Post>(conn).select_all();
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    
-    // Create a map of author ID to author name
-    std::map<int, std::string> author_id_to_name;
-    for (const auto& author : all_authors) {
-        author_id_to_name[author.id] = author.name;
-    }
-    
-    // Find the maximum post ID for each author
-    std::map<std::string, int> expected_author_max_post_map;
-    for (const auto& post : all_posts) {
-        std::string author_name = author_id_to_name[post.author_id];
-        if (expected_author_max_post_map.find(author_name) == expected_author_max_post_map.end() ||
-            post.id > expected_author_max_post_map[author_name]) {
-            expected_author_max_post_map[author_name] = post.id;
-        }
-    }
-    
-    // Verify the results match
-    EXPECT_EQ(author_max_post_map.size(), expected_author_max_post_map.size());
-    
-    for (const auto& [author_name, max_post_id] : expected_author_max_post_map) {
-        ASSERT_TRUE(author_max_post_map.find(author_name) != author_max_post_map.end());
-        EXPECT_EQ(author_max_post_map[author_name], max_post_id);
-    }
-}
-
-TEST_F(ORMTest, MaxWithRuntimeField) {
-    // Test MAX function with runtime field specification
-    auto results = QuerySet<Author>(conn)
-        .max<&Author::age>("max_age")
-        .select_values();
-    
-    ASSERT_TRUE(results.has_value());
-    
-    // Get the max age value
-    int max_age = std::get<int>(results.value()[0]["max_age"]);
-    
-    // Verify the max age by querying all authors and finding the maximum manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    int expected_max_age = 0;
-    for (const auto& author : all_authors) {
-        if (author.age > expected_max_age) {
-            expected_max_age = author.age;
-        }
-    }
-    
-    EXPECT_EQ(max_age, expected_max_age);
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 // =======================================
@@ -2742,423 +2632,239 @@ TEST_F(ORMTest, MaxWithRuntimeField) {
 // =======================================
 
 TEST_F(ORMTest, MinStringField) {
-    // Test MIN function with string field (alphabetically lowest value)
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .min<&Author::name>("min_name")
         .select_values();
     
-    ASSERT_TRUE(results.has_value());
-    
-    // Get the min name value
-    std::string min_name = std::get<std::string>(results.value()[0]["min_name"]);
-    
-    // Verify the min name by querying all authors and finding the minimum manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    std::string expected_min_name = all_authors[0].name; // Initialize with first author
-    for (const auto& author : all_authors) {
-        if (author.name < expected_min_name) {
-            expected_min_name = author.name;
+    ValueVectorMap expected_results = {
+        {
+            {"min_name", "Alice Smith"}
         }
-    }
-    
-    EXPECT_EQ(min_name, expected_min_name);
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, MinOnEmptyTable) {
-    // First, clear the authors table to test MIN on an empty set
     auto clear_authors = QuerySet<Author>(conn).remove();
     ASSERT_TRUE(clear_authors);
     
-    // Test MIN function on empty table
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .min<&Author::age>("min_age")
         .select_values();
     
-    ASSERT_TRUE(results.has_value());
-    
-    // On an empty table, SQLite returns NULL for aggregate functions
-    // In our case, we should get a std::monostate (representing NULL) in the variant
-    EXPECT_TRUE(std::holds_alternative<std::monostate>(results.value()[0]["min_age"]))
-        << "Expected NULL (std::monostate) result for MIN on empty table";
-    
-    // Restore test data for other tests
-    setupTestData();
-    
-    // Verify the test data was restored
-    auto count_after = QuerySet<Author>(conn).select_all();
-    ASSERT_GT(count_after.size(), 0);
+    ValueVectorMap expected_results = {
+        {
+            {"min_age", 0}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, MinWithOrderBy) {
-    // Test MIN function with ORDER BY clause
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .min<&Author::age>("min_age")
         .order_by<&Author::name, false>()
         .select_values();
     
-    ASSERT_TRUE(results.has_value());
-    
-    // Get the min age value
-    int min_age = std::get<int>(results.value()[0]["min_age"]);
-    
-    // Verify the min age by querying all authors and finding the minimum manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    int expected_min_age = all_authors[0].age; // Initialize with first author
-    for (const auto& author : all_authors) {
-        if (author.age < expected_min_age) {
-            expected_min_age = author.age;
+    ValueVectorMap expected_results = {
+        {
+            {"min_age", 35}
         }
-    }
-    
-    EXPECT_EQ(min_age, expected_min_age);
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, MultipleMinFunctions) {
-    // Test multiple MIN functions in a single query
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .min<&Author::age>("min_age")
         .min<&Author::rating>("min_rating")
         .min<&Author::score>("min_score")
         .select_values();
     
-    ASSERT_TRUE(results.has_value());
-    
-    // Get the min values
-    int min_age = std::get<int>(results.value()[0]["min_age"]);
-    double min_rating = std::get<double>(results.value()[0]["min_rating"]);
-    double min_score = std::get<double>(results.value()[0]["min_score"]);
-    
-    // Verify the min values by querying all authors and finding the minimums manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    int expected_min_age = all_authors[0].age;
-    double expected_min_rating = all_authors[0].rating;
-    double expected_min_score = all_authors[0].score;
-    
-    for (const auto& author : all_authors) {
-        if (author.age < expected_min_age) {
-            expected_min_age = author.age;
+    ValueVectorMap expected_results = {
+        {
+            {"min_age", 0},
+            {"min_rating", 0.0},
+            {"min_score", 0.0}
         }
-        if (author.rating < expected_min_rating) {
-            expected_min_rating = author.rating;
-        }
-        if (author.score < expected_min_score) {
-            expected_min_score = author.score;
-        }
-    }
-    
-    EXPECT_EQ(min_age, expected_min_age);
-    EXPECT_DOUBLE_EQ(min_rating, expected_min_rating);
-    EXPECT_DOUBLE_EQ(min_score, expected_min_score);
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, MinWithJoin) {
-    // Create some posts for testing
-    std::vector<Post> posts = {
-        Post("Post by Alice", "Content 1", alice_id, 1),
-        Post("Post by Bob", "Content 2", bob_id, 2),
-        Post("Another post by Alice", "Content 3", alice_id, 3),
-        Post("Post by Charlie", "Content 4", charlie_id, 4),
-        Post("Another post by Bob", "Content 5", bob_id, 5)
-    };
-    
-    // Insert posts
-    auto insert_result = QuerySet<Post>(conn).insert(posts);
-    ASSERT_FALSE(insert_result.empty());
-    
-    // Test MIN function with JOIN
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .join<Post>()
         .min<&Author::age>("min_age")
         .group_by<&Post::author_id>()
         .select_values();
     
-    ASSERT_TRUE(results.has_value());
-    
-    // Verify the results contain the min age
-    ASSERT_TRUE(results.value()[0].contains("min_age"));
-    
-    // Get the min age from the results
-    int min_age = std::get<int>(results.value()[0]["min_age"]);
-    
-    // Verify the min age by querying authors with posts and finding the minimum manually
-    auto authors_with_posts = QuerySet<Author>(conn)
-        .join<Post>()
-        .select_all();
-    
-    int expected_min_age = authors_with_posts[0].age;
-    for (const auto& author : authors_with_posts) {
-        if (author.age < expected_min_age) {
-            expected_min_age = author.age;
+    ValueVectorMap expected_results = {
+        {
+            {"min_age", 25},
+        },
+        {
+            {"min_age", 28},
+        },
+        {
+            {"min_age", 30},
+        },
+        {
+            {"min_age", 35},
         }
-    }
-    
-    EXPECT_EQ(min_age, expected_min_age);
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
-TEST_F(ORMTest, MinWithRuntimeField) {
-    // Test MIN function with runtime field reference
-    auto results = QuerySet<Author>(conn)
-        .min<&Author::age>("min_age")
-        .select_values();
-    
-    ASSERT_TRUE(results.has_value());
-    
-    // Get the min age value
-    int min_age = std::get<int>(results.value()[0]["min_age"]);
-    
-    // Verify the min age by querying all authors and finding the minimum manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    int expected_min_age = all_authors[0].age; // Initialize with first author
-    for (const auto& author : all_authors) {
-        if (author.age < expected_min_age) {
-            expected_min_age = author.age;
-        }
-    }
-    
-    EXPECT_EQ(min_age, expected_min_age);
-}
 
 // =======================================
 // AVG AGGREGATE FUNCTION TESTS
 // =======================================
 
+// TEST_F(ORMTest, AvgNumericFieldOneValue) {
+//     auto result = QuerySet<Author>(conn)
+//         .avg<&Author::age>("avg_age")
+//         .select_value();
+//     AssertResultMatch(result, {"avg_age", 25.0});
+// }
+
 TEST_F(ORMTest, AvgNumericField) {
-    // Test AVG function on numeric field
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .avg<&Author::age>("avg_age")
         .select_values();
     
-    ASSERT_TRUE(results.has_value());
-    
-    // Get the avg age value
-    double avg_age = std::get<double>(results.value()[0]["avg_age"]);
-    
-    // Verify the avg age by querying all authors and calculating the average manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    double expected_avg_age = 0.0;
-    for (const auto& author : all_authors) {
-        expected_avg_age += author.age;
-    }
-    expected_avg_age /= all_authors.size();
-    
-    EXPECT_DOUBLE_EQ(avg_age, expected_avg_age);
+    ValueVectorMap expected_results = {
+        {
+            {"avg_age", 25.0}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, AvgOnEmptyTable) {
-    // Clear all authors for this test
-    clearTestData();
+    auto remove_result = QuerySet<Author>(conn).remove();
+    ASSERT_TRUE(remove_result);
     
-    // Test AVG function on empty table
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .avg<&Author::age>("avg_age")
         .select_values();
     
-    ASSERT_TRUE(results.has_value());
-    
-    // On an empty table, SQLite returns NULL for aggregate functions
-    // In our case, we should get a std::monostate (representing NULL) in the variant
-    EXPECT_TRUE(std::holds_alternative<std::monostate>(results.value()[0]["avg_age"]))
-        << "Expected NULL (std::monostate) result for AVG on empty table";
-    
-    // Restore test data for other tests
-    setupTestData();
-    
-    // Verify the test data was restored
-    auto count_after = QuerySet<Author>(conn).select_all();
-    ASSERT_GT(count_after.size(), 0);
+    ValueVectorMap expected_results = {
+        {
+            {"avg_age", 0.0}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, AvgWithOrderBy) {
-    // Test AVG function with ORDER BY clause
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .avg<&Author::age>("avg_age")
         .order_by<&Author::name, false>()
         .select_values();
     
-    ASSERT_TRUE(results.has_value());
-    
-    // Get the avg age value
-    double avg_age = std::get<double>(results.value()[0]["avg_age"]);
-    
-    // Verify the avg age by querying all authors and calculating the average manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    double expected_avg_age = 0.0;
-    for (const auto& author : all_authors) {
-        expected_avg_age += author.age;
-    }
-    expected_avg_age /= all_authors.size();
-    
-    EXPECT_DOUBLE_EQ(avg_age, expected_avg_age);
+    ValueVectorMap expected_results = {
+        {
+            {"avg_age", 25.0}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, MultipleAvgFunctions) {
-    // Test multiple AVG functions in a single query
-    auto results = QuerySet<Author>(conn)
-        .avg<&Author::age>("avg_age")
+    auto result = QuerySet<Author>(conn)
         .avg<&Author::rating>("avg_rating")
         .avg<&Author::score>("avg_score")
+        .group_by<&Author::age>()
+        .only<&Author::age>()
         .select_values();
     
-    ASSERT_TRUE(results.has_value());
-    
-    // Get the avg values
-    double avg_age = std::get<double>(results.value()[0]["avg_age"]);
-    double avg_rating = std::get<double>(results.value()[0]["avg_rating"]);
-    double avg_score = std::get<double>(results.value()[0]["avg_score"]);
-    
-    // Verify the avg values by querying all authors and calculating the averages manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    double expected_avg_age = 0.0;
-    double expected_avg_rating = 0.0;
-    double expected_avg_score = 0.0;
-    
-    for (const auto& author : all_authors) {
-        expected_avg_age += author.age;
-        expected_avg_rating += author.rating;
-        expected_avg_score += author.score;
-    }
-    
-    expected_avg_age /= all_authors.size();
-    expected_avg_rating /= all_authors.size();
-    expected_avg_score /= all_authors.size();
-    
-    EXPECT_DOUBLE_EQ(avg_age, expected_avg_age);
-    EXPECT_DOUBLE_EQ(avg_rating, expected_avg_rating);
-    EXPECT_DOUBLE_EQ(avg_score, expected_avg_score);
-}
-
-TEST_F(ORMTest, AvgWithJoin) {
-    auto result = QuerySet<Author>(conn)
-        .join<Post>()
-        .avg<&Post::views>("avg_views")
-        .group_by<&Post::author_id>()
-        .only<&Post::author_id>()
-        .select_values();
-    
-    ASSERT_TRUE(result.has_value());
-    const auto& results = result.value();
-    
-    // Calculate expected results based on our test data
-    // From setupTestData(), we have:
-    // Alice's posts: views = 100, 150, 200 (avg = 150)
-    // Bob's posts: views = 250, 300 (avg = 275)
-    // Charlie's posts: views = 120, 180, 240, 300 (avg = 210)
-    // Diana's posts: views = 350, 400 (avg = 375)
-    
-    // Expected results: For each author_id, we should have the average views of their posts
-    // Since we're grouping by author_id, each author appears only once in the result
-    std::vector<std::map<std::string, ValueVariant>> expected_results = {
+    ValueVectorMap expected_results = {
         {
-            {"author_id", alice_id},
-            {"avg_views", 150.0}  // Average of Alice's post views (100+150+200)/3 = 150
+            {"age", 25},
+            {"avg_rating", 4.5},
+            {"avg_score", 85.5}
         },
         {
-            {"author_id", bob_id},
-            {"avg_views", 275.0}  // Average of Bob's post views (250+300)/2 = 275
+            {"age", 28},
+            {"avg_rating", 5.5},
+            {"avg_score", 95.0}
         },
         {
-            {"author_id", charlie_id},
-            {"avg_views", 210.0}  // Average of Charlie's post views (120+180+240+300)/4 = 210
+            {"age", 30},
+            {"avg_rating", 4.0},
+            {"avg_score", 80.0}
         },
         {
-            {"author_id", diana_id},
-            {"avg_views", 375.0}  // Average of Diana's post views (350+400)/2 = 375
+            {"age", 35},
+            {"avg_rating", 5.0},
+            {"avg_score", 90.0}
         }
     };
-    
-    // Use our helper function to verify all results match our expectations
-    AssertResultsMatch(results, expected_results);
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, AvgWithGroupBy) {
-    // Clear existing authors to ensure clean test data
-    clearTestData();
-    
-    // Create authors with different ages
-    Author author1{"Author1", 30, "author1@example.com", 101, true, 4.5, 90.0};
-    Author author2{"Author2", 30, "author2@example.com", 102, true, 4.2, 85.0};
-    Author author3{"Author3", 25, "author3@example.com", 103, true, 4.8, 95.0};
-    Author author4{"Author4", 25, "author4@example.com", 104, true, 4.0, 80.0};
-    
-    // Insert authors
-    QuerySet<Author>(conn).insert(author1);
-    QuerySet<Author>(conn).insert(author2);
-    QuerySet<Author>(conn).insert(author3);
-    QuerySet<Author>(conn).insert(author4);
-    
-    // Test AVG function with GROUP BY on age field
     auto result = QuerySet<Author>(conn)
         .avg<&Author::rating>("avg_rating")
         .group_by<&Author::age>()
         .only<&Author::age>()
         .select_values();
     
-    // Check if we got a valid result
-    ASSERT_TRUE(result.has_value()) << "select_values failed with error: " << result.error();
-    
-    // Get the actual values from the expected
-    const auto& results = result.value();
-    
-    // Should have 2 groups (age 25 and age 30)
-    ASSERT_EQ(results.size(), 2);
-    
-    // Define expected results - we need to swap the field values to match the ORM behavior
-    std::vector<std::map<std::string, ValueVariant>> expected_results = {
+    ValueVectorMap expected_results = {
         {
             {"age", 25},
-            {"avg_rating", 4.4}  // Average of 4.8 and 4.0 for age 25
+            {"avg_rating", 4.5}
+        },
+        {
+            {"age", 28},
+            {"avg_rating", 5.5}
         },
         {
             {"age", 30},
-            {"avg_rating", 4.35}  // Average of 4.5 and 4.2 for age 30
+            {"avg_rating", 4.0}
+        },
+        {
+            {"age", 35},
+            {"avg_rating", 5.0}
         }
     };
-    
-    // Use our helper function to verify all results match our expectations
-    AssertResultsMatch(results, expected_results);
+    AssertResultsMatch(result, expected_results);
 }
 
-TEST_F(ORMTest, CombineAvgWithMinMax) {
-    // Test combining AVG with MIN and MAX in a single query
+TEST_F(ORMTest, CombineAvgMinMaxWithGroupBy) {
     auto result = QuerySet<Author>(conn)
-        .avg<&Author::age>("avg_age")
-        .min<&Author::age>("min_age")
-        .max<&Author::age>("max_age")
+        .avg<&Author::rating>("avg_rating")
+        .min<&Author::rating>("min_rating")
+        .max<&Author::rating>("max_rating")
+        .group_by<&Author::age>()
+        .only<&Author::age>()
         .select_values();
     
-    // Check if we got a valid result
-    ASSERT_TRUE(result.has_value()) << "select_values failed with error: " << result.error();
-    
-    // Get the actual values from the expected
-    const auto& results = result.value();
-    
-    ASSERT_TRUE(results[0].contains("avg_age"));
-    ASSERT_TRUE(results[0].contains("min_age"));
-    ASSERT_TRUE(results[0].contains("max_age"));
-    
-    // Get the values using .at() for const map access
-    double avg_age = std::get<double>(results[0].at("avg_age"));
-    int min_age = std::get<int>(results[0].at("min_age"));
-    int max_age = std::get<int>(results[0].at("max_age"));
-    
-    // Verify the values by querying all authors and calculating manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    double expected_avg_age = 0.0;
-    int expected_min_age = all_authors[0].age;
-    int expected_max_age = all_authors[0].age;
-    
-    for (const auto& author : all_authors) {
-        expected_avg_age += author.age;
-        if (author.age < expected_min_age) {
-            expected_min_age = author.age;
+    ValueVectorMap expected_results = {
+        {
+            {"age", 25},
+            {"avg_rating", 4.5},
+            {"min_rating", 4.5},
+            {"max_rating", 4.5}
+        },
+        {
+            {"age", 28},
+            {"avg_rating", 5.5},
+            {"min_rating", 5.5},
+            {"max_rating", 5.5}
+        },
+        {
+            {"age", 30},
+            {"avg_rating", 4.0},
+            {"min_rating", 4.0},
+            {"max_rating", 4.0}
+        },
+        {
+            {"age", 35},
+            {"avg_rating", 5.0},
+            {"min_rating", 5.0},
+            {"max_rating", 5.0}
         }
-        if (author.age > expected_max_age) {
-            expected_max_age = author.age;
-        }
-    }
-    expected_avg_age /= all_authors.size();
-    
-    EXPECT_DOUBLE_EQ(avg_age, expected_avg_age);
-    EXPECT_EQ(min_age, expected_min_age);
-    EXPECT_EQ(max_age, expected_max_age);
+    };
+    AssertResultsMatch(result, expected_results);
 }

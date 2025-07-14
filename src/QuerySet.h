@@ -24,6 +24,17 @@
 #include <string_view>
 
 namespace storm {
+    // Define ValueVariant before using it
+    using ValueVariant = std::variant<
+        std::monostate,  // For null values
+        int,             // For integer types
+        double,          // For floating point types
+        bool,            // For boolean values
+        std::string      // For text values
+    >;
+    using ValueVectorMap = std::vector<std::map<std::string, ValueVariant>>;
+    using ExpectedValueVectorMap = std::expected<ValueVectorMap, std::string>;
+
     template<typename T>
     struct member_pointer_traits;
 
@@ -1268,42 +1279,6 @@ namespace storm {
         // ===========================
         // These functions were used by select_tuple which has been removed
         
-        // Define ValueVariant before using it
-        using ValueVariant = std::variant<
-            std::monostate,  // For null values
-            int,             // For integer types
-            double,          // For floating point types
-            bool,            // For boolean values
-            std::string      // For text values
-        >;
-        
-        // Helper method to add GROUP BY fields to the result map
-        void addGroupByFieldsToResult(std::map<std::string, ValueVariant>& rowDict, const Row& row) const {
-            if (groupByFields.empty()) {
-                return;
-            }
-            
-            // For each GROUP BY field, extract the field name and add it to the result map
-            for (const auto& field : groupByFields) {
-                std::string fullFieldName = field->getFullFieldName();
-                size_t dotPos = fullFieldName.find('.');
-                if (dotPos != std::string::npos) {
-                    // For joined fields, extract just the field name
-                    std::string fieldName = fullFieldName.substr(dotPos + 1);
-                    
-                    // Add the field to the result map if it's not already there
-                    // Since we can't directly access column names from Row, we'll use the field name
-                    // that we know should be in the result from the GROUP BY clause
-                    if (!rowDict.contains(fieldName)) {
-                        // The field should be in the SQL result but not in our map
-                        // We need to add it explicitly to the map with a default value
-                        // This ensures that row.at(fieldName) won't throw an exception
-                        rowDict[fieldName] = std::string("");
-                    }
-                }
-            }
-        }
-        
         template<typename ValueType>
         ValueType get_value(const Row& row, size_t idx) const {
             if constexpr (std::is_same_v<ValueType, std::string>) {
@@ -1337,17 +1312,14 @@ namespace storm {
          *       .select_values();
          *   Access data with: results[0]["name"], results[0]["age"]
          */
-         std::expected<std::vector<std::map<std::string, ValueVariant>>, std::string> select_values() const {            
+        ExpectedValueVectorMap select_values() const {            
             // Get the where query result
             auto where_query_result = this->get_where_query();
-            
-            // Get field names and clause for SQL generation
-            auto fieldsClause = this->buildFieldsClause();
             
             // Build SQL query with std::format
             auto sql = std::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
                 this->createDistinctClause(),
-                fieldsClause,
+                this->buildFieldsClause(),
                 this->template get_table_name<T>(),
                 this->generateJoinSQL(),
                 where_query_result.sql,
@@ -1360,20 +1332,32 @@ namespace storm {
             // Execute the query
             auto stmt = Statement(conn, sql);
             bind_query_parameters(stmt, where_query_result);
-            auto all_rows = stmt.execute_all();
-            
-            // Early return for empty results
-            if (all_rows.empty()) return {};
-            
             // Process results using ranges and views
-            auto results = transform_rows_to_value_maps(all_rows);
+            return transform_rows_to_value_maps(stmt.execute_all());
+        }
+        
+        ExpectedValueVectorMap select_value() const {            
+            // Get the where query result
+            auto where_query_result = this->get_where_query();
             
-            // Add GROUP BY fields to results if needed
-            for (auto [rowDict, row] : std::views::zip(results, all_rows)) {
-                this->addGroupByFieldsToResult(rowDict, row);
-            }
+            // Build SQL query with std::format
+            auto sql = std::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
+                this->createDistinctClause(),
+                this->buildFieldsClause(),
+                this->template get_table_name<T>(),
+                this->generateJoinSQL(),
+                where_query_result.sql,
+                this->generateGroupBySQL(),
+                this->buildOrderFields(),
+                this->limit_impl()
+            );
+            std::print("SQL: {}\n", sql);
             
-            return results;
+            // Execute the query
+            auto stmt = Statement(conn, sql);
+            bind_query_parameters(stmt, where_query_result);
+            // Process results using ranges and views
+            return transform_rows_to_value_maps(stmt.execute_all()[0]);
         }
 
         T select_one() const {
@@ -1613,13 +1597,20 @@ namespace storm {
                         // Get column name directly from Row and convert to std::string for map key
                         std::string column_name{row.get_column_name(i)};
                         
+                        // Process column name - remove quotes if present
+                        std::string processed_name = column_name;
+                        if (column_name.size() >= 2 && column_name.front() == '"' && column_name.back() == '"') {
+                            // Remove surrounding quotes
+                            processed_name = column_name.substr(1, column_name.size() - 2);
+                        }
+                        
                         // Convert SQLite value to ValueVariant using Row's type information
-                        auto value = [&row, i, &column_name]() -> ValueVariant {
+                        auto value = [&row, i, &processed_name]() -> ValueVariant {
                             int columnType = row.get_column_type(i);
                             
                             switch (columnType) {
                                 case SQLITE_INTEGER:
-                                    if (column_name == "is_active") {
+                                    if (processed_name == "is_active") {
                                         return static_cast<bool>(row.get_int(i));
                                     }
                                     return row.get_int(i);
@@ -1635,7 +1626,8 @@ namespace storm {
                             }
                         }();
                         
-                        rowDict[column_name] = std::move(value);
+                        // Use the processed name (without quotes) as the key
+                        rowDict[processed_name] = std::move(value);
                     }
                     
                     return rowDict;
