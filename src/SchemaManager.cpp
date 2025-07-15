@@ -19,10 +19,10 @@ void SchemaManager::show_schemas() {
     std::cout << "-- Tables created: " << created_tables.size() << std::endl;
 }
 
-bool SchemaManager::create_all_tables() {
+std::expected<bool, std::string> SchemaManager::create_all_tables() {
     if (create_table_sqls.empty()) {
         std::cout << "No models registered for table creation" << std::endl;
-        return true;
+        return std::unexpected("No models registered for table creation");
     }
     
     std::cout << "Creating " << create_table_sqls.size() << " tables in single batch..." << std::endl;
@@ -46,7 +46,7 @@ bool SchemaManager::create_all_tables() {
     
     if (sql_to_execute.empty()) {
         std::cout << "No new tables to create" << std::endl;
-        return true;
+        return std::unexpected("No new tables to create");
     }
     
     // Create single batch SQL with transaction
@@ -55,9 +55,12 @@ bool SchemaManager::create_all_tables() {
     std::cout << "Executing single database transaction..." << std::endl;
     
     try {
-        bool success = Statement(conn, batch_sql).execute();
-        
-        if (success) {
+        auto success = Statement(conn, batch_sql).execute();
+        if (!success.has_value()) {
+            std::cerr << "Error during batch table creation: " << success.error() << std::endl;
+            return std::unexpected(success.error());
+        }
+        if (success.value()) {
             // Mark all tables as created
             for (const auto& table_name : tables_to_create) {
                 created_tables.insert(table_name);
@@ -66,13 +69,14 @@ bool SchemaManager::create_all_tables() {
                      << " tables created successfully in single database hit!" << std::endl;
         } else {
             std::cerr << "Failed to execute batch table creation" << std::endl;
+            return std::unexpected(success.error());
         }
         
         return success;
         
     } catch (const std::exception& e) {
         std::cerr << "Error during batch table creation: " << e.what() << std::endl;
-        return false;
+        return std::unexpected(e.what());
     }
 }
 }

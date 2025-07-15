@@ -230,6 +230,8 @@ namespace storm {
     template<class T>
     class QuerySet {
     private:
+        using ExpectedT = std::expected<T, std::string>;
+        using ExpectedVectorT = std::expected<std::vector<T>, std::string>;
         std::shared_ptr<Connection> conn;
         std::optional<storm::Where> _whereExpression;
         JoinInfo joinInfo;
@@ -555,7 +557,7 @@ namespace storm {
         // =============================
         // INSERT
         // =============================
-        std::vector<int> insert(const std::vector<T>& objs) {
+        std::expected<std::vector<int>, std::string> insert(const std::vector<T>& objs) {
             if (objs.empty()) return {};
             
             try {
@@ -578,7 +580,7 @@ namespace storm {
         }
         
         // Single insert method
-        int insert(const T& obj) {
+        std::expected<int, std::string> insert(const T& obj) {
             try {
                 auto field_names = get_insert_field_names();
                 if (field_names.empty()) return -1;
@@ -700,7 +702,7 @@ namespace storm {
         // =============================
         // UPDATE
         // =============================
-        bool update(const T& obj) {
+        std::expected<bool, std::string> update(const T& obj) {
             try {
                 auto field_names = get_update_field_names();
                 if (field_names.empty()) return false;
@@ -714,7 +716,7 @@ namespace storm {
         }
         
         // Update multiple objects (batch update)
-        bool update(const std::vector<T>& objs) {
+        std::expected<bool, std::string> update(const std::vector<T>& objs) {
             if (objs.empty()) return true;
             
             try {
@@ -769,12 +771,12 @@ namespace storm {
         }
 
         std::expected<bool, std::string> execute_update(const std::vector<const T*>& obj_ptrs, const std::vector<std::string>& field_names) {
-            if (obj_ptrs.empty()) return true;
+            if (obj_ptrs.empty()) return std::unexpected("Empty object pointers vector");
             
-            std::string sql = build_update_sql(field_names, obj_ptrs.size());
-            if (sql.empty()) return false;
+            auto sql = build_update_sql(field_names, obj_ptrs.size());
+            if (!sql.has_value()) return std::unexpected(sql.error());
             
-            auto stmt = Statement(conn, sql);
+            auto stmt = Statement(conn, sql.value());
             
             // Parameter binding for CASE-based batch update is different:
             // For each field, we need to bind all object IDs and their values
@@ -820,8 +822,10 @@ namespace storm {
         // Delete records based on where conditions without requiring an object
         std::expected<bool, std::string> remove() {
             try {
-                std::string sql = build_delete_by_condition_sql();
-                auto stmt = Statement(conn, sql);
+                auto sql = build_delete_by_condition_sql();
+                if (!sql.has_value()) return std::unexpected(sql.error());
+                
+                auto stmt = Statement(conn, sql.value());
                 
                 // Bind parameters from where expression
                 if (_whereExpression.has_value()) {
@@ -837,7 +841,7 @@ namespace storm {
         }
         
         std::expected<bool, std::string> remove(const std::vector<T>& objs) {
-            if (objs.empty()) return true;
+            if (objs.empty()) return std::unexpected("Empty objects vector");
             
             try {
                 // Convert to pointer vector
@@ -856,11 +860,11 @@ namespace storm {
         }
 
     private:
-        std::string build_delete_sql() {
+        std::expected<std::string, std::string> build_delete_sql() {
             return fmt::format("DELETE FROM {} WHERE id = ?;", this->template get_table_name<T>());
         }
         
-        std::string build_delete_by_condition_sql() {
+        std::expected<std::string, std::string> build_delete_by_condition_sql() {
             std::string sql = fmt::format("DELETE FROM {}", this->template get_table_name<T>());
             
             if (_whereExpression.has_value()) {
@@ -872,7 +876,7 @@ namespace storm {
             return sql;
         }
 
-        std::string build_batch_delete_sql(size_t count) {
+        std::expected<std::string, std::string> build_batch_delete_sql(size_t count) {
             std::vector<std::string> placeholders(count, "?");
             return fmt::format(
                 "DELETE FROM {} WHERE id IN ({});",
@@ -882,18 +886,22 @@ namespace storm {
         }
 
         std::expected<bool, std::string> execute_delete(const std::vector<const T*>& obj_ptrs) {
-            if (obj_ptrs.empty()) return true;
+            if (obj_ptrs.empty()) return std::unexpected("Empty object pointers vector");
             
             if (obj_ptrs.size() == 1) {
                 // Single delete
-                std::string sql = build_delete_sql();
-                auto stmt = Statement(conn, sql);
+                auto sql = build_delete_sql();
+                if (!sql.has_value()) return std::unexpected(sql.error());
+                
+                auto stmt = Statement(conn, sql.value());
                 stmt.bind(1, obj_ptrs[0]->id);
                 return stmt.execute();
             } else {
                 // Batch delete using IN clause
-                std::string sql = build_batch_delete_sql(obj_ptrs.size());
-                auto stmt = Statement(conn, sql);
+                auto sql = build_batch_delete_sql(obj_ptrs.size());
+                if (!sql.has_value()) return std::unexpected(sql.error());
+                
+                auto stmt = Statement(conn, sql.value());
                 
                 int param_index = 1;
                 for (const T* obj_ptr : obj_ptrs) {
@@ -1331,7 +1339,7 @@ namespace storm {
             std::print("SQL: {}\n", sql);
             
             // Execute the query
-            auto stmt = Statement(conn, sql);
+            Statement stmt(conn, sql);
             bind_query_parameters(stmt, where_query_result);
             // Process results using ranges and views
             return transform_rows_to_value_maps(stmt.execute_all());
@@ -1355,13 +1363,13 @@ namespace storm {
             std::print("SQL: {}\n", sql);
             
             // Execute the query
-            auto stmt = Statement(conn, sql);
+            Statement stmt(conn, sql);
             bind_query_parameters(stmt, where_query_result);
             // Process results using ranges and views
             return transform_rows_to_value_maps(stmt.execute_all()[0]);
         }
 
-        T select_one() const {
+        ExpectedT select_one() const {
             // Build the query with limit 1 to ensure we only get one result
             // Get the where query result
             auto where_query_result = this->get_where_query();
@@ -1379,9 +1387,9 @@ namespace storm {
                 this->generateGroupBySQL(),
                 this->buildOrderFields());
             
-            auto smt_ = Statement(conn, sql);
-            bind_query_parameters(smt_, where_query_result);
-            auto all_rows = smt_.execute_all();
+            Statement smt(conn, sql);
+            bind_query_parameters(smt, where_query_result);
+            auto all_rows = smt.execute_all();
 
             if (all_rows.empty()) {
                 throw std::runtime_error("No results found for select_one query");
@@ -1452,7 +1460,7 @@ namespace storm {
             return obj;
         }
         
-        std::vector<T> select_all() const {
+        ExpectedVectorT select_all() const {
             // Get the where query result
             auto where_query_result = this->get_where_query();
             
@@ -1819,19 +1827,21 @@ namespace storm {
             auto tempQuerySet = *this;
             // Clear onlyFields and use only the AVG function
             tempQuerySet.onlyFields.clear();
+            tempQuerySet.distinctFields.clear();
             tempQuerySet.functionsSet.clear();
             tempQuerySet.functionsSet.emplace_back(fmt::format("AVG({}) AS {}", field->getFullFieldName(), avgAlias));
             
-            // Build SQL query with std::format
-            auto sql = std::format(R"(SELECT {} FROM "{}" {} {} {})", 
+            auto where_query_result = tempQuerySet.get_where_query();
+            
+            auto sql = fmt::format(R"(SELECT {} FROM "{}" {})", 
                 tempQuerySet.buildFieldsClause(),
                 tempQuerySet.template get_table_name<T>(),
-                tempQuerySet.generateWhereSQL(),
-                tempQuerySet.generateGroupBySQL()
+                where_query_result.sql
             );
-            
+
             // Execute the query
             Statement stmt(conn, sql);
+            bind_query_parameters(stmt, where_query_result);
             auto execResult = stmt.execute_query();
             if (!execResult.has_value()) {
                 return std::unexpected(execResult.error());
@@ -1843,7 +1853,7 @@ namespace storm {
                 return std::unexpected("Average column not found");
             }
             
-            // Check for NULL result
+            // Check for NULL result. TODO: support NULL values
             if (row.get_column_type(0) == SQLITE_NULL) {
                 return std::unexpected("No rows to average");
             }
