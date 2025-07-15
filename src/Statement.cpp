@@ -73,9 +73,9 @@ void Statement::bind_null(int idx) {
     sqlite3_bind_null(stmt, idx);
 }
 
-bool Statement::execute() {
+std::expected<bool, std::string> Statement::execute() {
     if (!stmt) {
-        throw NullStatementException(sql_);
+        return std::unexpected("Null statement: " + sql_);
     }
     int rc = sqlite3_step(stmt);
     if (rc == SQLITE_DONE) {
@@ -91,7 +91,38 @@ bool Statement::execute() {
     // If we reach here, an error occurred.
     std::string errMsg = sqlite3_errmsg(conn->get());
     sqlite3_reset(stmt); // Reset statement on error to allow potential reuse or proper finalization
-    throw storm::StatementExecutionException(errMsg, sql_);
+    return std::unexpected(errMsg);
+}
+
+std::expected<Row, std::string> Statement::execute_query() {
+    if (!stmt) {
+        return std::unexpected("Null statement: " + sql_);
+    }
+    
+    try {
+        // Reset statement position
+        sqlite3_reset(stmt);
+        
+        // Get column count
+        int column_count = sqlite3_column_count(stmt);
+        
+        // Execute and get the first row
+        int step_result = sqlite3_step(stmt);
+        
+        if (step_result == SQLITE_ROW) {
+            // Found a row, return it
+            return Row(stmt, column_count);
+        } else if (step_result == SQLITE_DONE) {
+            // No row found
+            return std::unexpected("No row returned");
+        } else {
+            // Error occurred
+            return std::unexpected(sqlite3_errmsg(conn->get()));
+        }
+    } catch (const std::exception& e) {
+        sqlite3_reset(stmt); // Reset statement on error
+        return std::unexpected(e.what());
+    }
 }
 
 void Statement::reset() {

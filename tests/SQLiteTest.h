@@ -2720,12 +2720,83 @@ TEST_F(ORMTest, MinWithJoin) {
 // AVG AGGREGATE FUNCTION TESTS
 // =======================================
 
-// TEST_F(ORMTest, AvgNumericFieldOneValue) {
-//     auto result = QuerySet<Author>(conn)
-//         .avg<&Author::age>("avg_age")
-//         .select_value();
-//     AssertResultMatch(result, {"avg_age", 25.0});
-// }
+TEST_F(ORMTest, AvgValueInt) {
+    auto result = QuerySet<Author>(conn)
+        .avg_value<&Author::age>();
+    ASSERT_TRUE(result.has_value()) << "avg failed with error: " << result.error();
+    ASSERT_EQ(result.value(), 25.0);
+}
+
+TEST_F(ORMTest, AvgValueWithFilter) {
+    auto result = QuerySet<Author>(conn)
+        .where<&Author::age>(WhereCondition::GreaterThan, 20)
+        .avg_value<&Author::age>();
+    ASSERT_TRUE(result.has_value()) << "avg with filter failed with error: " << result.error();
+    ASSERT_EQ(result.value(), 30.0); // Average of authors with age > 20
+}
+
+TEST_F(ORMTest, AvgValueFloat) {
+    // First, add some books with ratings
+    Book book1{0, "Book with rating 1", 1, 4.5};
+    Book book2{0, "Book with rating 2", 1, 3.5};
+    Book book3{0, "Book with rating 3", 2, 5.0};
+    
+    ASSERT_TRUE(book1.save(conn));
+    ASSERT_TRUE(book2.save(conn));
+    ASSERT_TRUE(book3.save(conn));
+    
+    auto result = QuerySet<Book>(conn)
+        .avg_value<&Book::rating>();
+    ASSERT_TRUE(result.has_value()) << "avg of float failed with error: " << result.error();
+    ASSERT_NEAR(result.value(), 4.33, 0.01); // Average of 4.5, 3.5, and 5.0
+}
+
+TEST_F(ORMTest, AvgValueNoRows) {
+    // Clear the authors table
+    ASSERT_TRUE(conn.execute("DELETE FROM Author").has_value());
+    
+    auto result = QuerySet<Author>(conn)
+        .avg_value<&Author::age>();
+    ASSERT_FALSE(result.has_value());
+    ASSERT_EQ(result.error(), "No rows to average");
+}
+
+TEST_F(ORMTest, AvgValueWithGroupBy) {
+    // Add some books with different author IDs
+    Book book1{0, "Book 1", 1, 4.0};
+    Book book2{0, "Book 2", 1, 5.0};
+    Book book3{0, "Book 3", 2, 3.0};
+    Book book4{0, "Book 4", 2, 4.0};
+    
+    ASSERT_TRUE(book1.save(conn));
+    ASSERT_TRUE(book2.save(conn));
+    ASSERT_TRUE(book3.save(conn));
+    ASSERT_TRUE(book4.save(conn));
+    
+    // Group by author_id and get average rating
+    auto results = QuerySet<Book>(conn)
+        .group_by<&Book::author_id>()
+        .select<&Book::author_id>()
+        .avg<&Book::rating>("avg_rating")
+        .execute();
+    
+    ASSERT_TRUE(results.has_value()) << "group by with avg failed with error: " << results.error();
+    ASSERT_EQ(results->size(), 2); // Two groups (author_id 1 and 2)
+    
+    // Find the group for author_id 1
+    auto it1 = std::find_if(results->begin(), results->end(), [](const auto& row) {
+        return std::get<int>(row.at("author_id")) == 1;
+    });
+    ASSERT_NE(it1, results->end());
+    ASSERT_NEAR(std::get<double>(it1->at("avg_rating")), 4.5, 0.01);
+    
+    // Find the group for author_id 2
+    auto it2 = std::find_if(results->begin(), results->end(), [](const auto& row) {
+        return std::get<int>(row.at("author_id")) == 2;
+    });
+    ASSERT_NE(it2, results->end());
+    ASSERT_NEAR(std::get<double>(it2->at("avg_rating")), 3.5, 0.01);
+}
 
 TEST_F(ORMTest, AvgNumericField) {
     auto result = QuerySet<Author>(conn)

@@ -5,7 +5,8 @@
 #include <stdexcept>
 #include "Connection.h"
 #include <atomic>
-#include <memory> // Required for std::shared_ptr
+#include <memory>
+#include <expected>
 
 // Forward declarations for exception classes
 namespace storm {
@@ -51,7 +52,10 @@ public:
     void bind(int idx, const char* value);
     void bind_null(int idx);
 
-    bool execute();
+    std::expected<bool, std::string> execute();
+    
+    // Execute a query and return a single row (for SELECT statements expecting one result)
+    std::expected<Row, std::string> execute_query();
     void reset();
     std::vector<Row> execute_all();
 
