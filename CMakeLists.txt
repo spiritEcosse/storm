@@ -150,7 +150,7 @@ endif()
 
 # Check libc++ version
 set(LIBCXX_VERSION_FILE "${CMAKE_BINARY_DIR}/libcxx_version.cpp")
-file(WRITE ${LIBCXX_VERSION_FILE} "#include <iostream>\n#ifdef _LIBCPP_VERSION\n#include <cstdio>\nint main() { printf(\"%d\", _LIBCPP_VERSION); return 0; }\n#else\nint main() { printf(\"0\"); return 0; }\n#endif\n")
+file(WRITE ${LIBCXX_VERSION_FILE} "#include <iostream>\n#include <cstdio>\nint main() {\n#ifdef _LIBCPP_VERSION\n    printf(\"%d\", _LIBCPP_VERSION);\n#else\n    printf(\"Not using libc++\");\n#endif\n    return 0;\n}\n")
 
 try_run(
     LIBCXX_VERSION_RUN_RESULT

@@ -12,6 +12,7 @@
 #include <fmt/ranges.h>
 #include "Connection.h"
 #include "Reflect.h"
+#include <expected>
 
 namespace storm {
 class SchemaManager {
@@ -44,7 +45,7 @@ public:
         std::cout << "Registered model: " << model_name << std::endl;
     }
 
-    bool create_all_tables();
+    std::expected<bool, std::string> create_all_tables();
     void show_schemas();
 
 private:

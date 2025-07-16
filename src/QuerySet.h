@@ -32,27 +32,108 @@ namespace storm {
         bool,            // For boolean values
         std::string      // For text values
     >;
-    
+
+    using ValueNumericVariant = std::variant<
+        int,             // For integer types
+        double           // For floating point types
+    >;
+
     // Utility function to convert Row column value to any type
     template<typename T>
     T to_value(const Row& row, int columnIndex = 0) {
         int columnType = row.get_column_type(columnIndex);
         
+        if constexpr (std::is_same_v<T, int> || std::is_same_v<T, long> || std::is_same_v<T, long long>) {
+            // Integer types
+            switch (columnType) {
+                case SQLITE_INTEGER:
+                    return static_cast<T>(row.get_int(columnIndex));
+                case SQLITE_FLOAT:
+                    return static_cast<T>(row.get_double(columnIndex));
+                case SQLITE_TEXT:
+                    try {
+                        return static_cast<T>(std::stoll(row.get_text(columnIndex)));
+                    } catch (...) {
+                        return T{};
+                    }
+                default:
+                    return T{};
+            }
+        } else if constexpr (std::is_same_v<T, float> || std::is_same_v<T, double>) {
+            // Floating point types
+            switch (columnType) {
+                case SQLITE_INTEGER:
+                    return static_cast<T>(row.get_int(columnIndex));
+                case SQLITE_FLOAT:
+                    return static_cast<T>(row.get_double(columnIndex));
+                case SQLITE_TEXT:
+                    try {
+                        return static_cast<T>(std::stod(row.get_text(columnIndex)));
+                    } catch (...) {
+                        return T{};
+                    }
+                default:
+                    return T{};
+            }
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            // String type
+            switch (columnType) {
+                case SQLITE_INTEGER:
+                    return std::to_string(row.get_int(columnIndex));
+                case SQLITE_FLOAT:
+                    return std::to_string(row.get_double(columnIndex));
+                case SQLITE_TEXT:
+                    return row.get_text(columnIndex);
+                default:
+                    return T{};
+            }
+        } else if constexpr (std::is_same_v<T, bool>) {
+            // Boolean type
+            switch (columnType) {
+                case SQLITE_INTEGER:
+                    return row.get_int(columnIndex) != 0;
+                case SQLITE_TEXT: {
+                    std::string text = row.get_text(columnIndex);
+                    std::transform(text.begin(), text.end(), text.begin(), 
+                                   [](unsigned char c){ return std::tolower(c); });
+                    return text == "true" || text == "1" || text == "yes";
+                }
+                default:
+                    return false;
+            }
+        } else {
+            // Default case for other types
+            return T{};
+        }
+    }
+    
+    // Specialization for ValueVariant to handle different column types
+    template <>
+    ValueVariant to_value<ValueVariant>(const Row& row, int columnIndex) {
+        int columnType = row.get_column_type(columnIndex);
+        
+        // Handle different SQLite column types
         switch (columnType) {
             case SQLITE_INTEGER:
                 return row.get_int(columnIndex);
+                
             case SQLITE_FLOAT:
                 return row.get_double(columnIndex);
+                
             case SQLITE_TEXT:
                 return row.get_text(columnIndex);
+                
             case SQLITE_NULL:
                 return std::monostate{};
+                
             default:
-                return T{};
+                // For any other type, return null (monostate)
+                return std::monostate{};
         }
     }
 
-    using ValueVectorMap = std::vector<std::map<std::string, ValueVariant>>;
+    using ValueMap = std::map<std::string, ValueVariant, std::less<>>;
+    using ValueVectorMap = std::vector<ValueMap>;
     using ExpectedValueVectorMap = std::expected<ValueVectorMap, std::string>;
 
     template<typename T>
@@ -1596,28 +1677,21 @@ namespace storm {
          * @param rows Vector of Row objects to transform
          * @return std::vector<std::map<std::string, ValueVariant>> Vector of dictionaries with column name -> value mapping
          */
-        std::vector<std::map<std::string, ValueVariant>> transform_rows_to_value_maps(const std::vector<Row>& rows) const {
+        ValueVectorMap transform_rows_to_value_maps(const std::vector<Row>& rows) const {
             return rows 
                 | std::views::transform([](const auto& row) {
-                    std::map<std::string, ValueVariant> rowDict;
+                    ValueMap rowDict;
                     
                     // Process each column using the Row's column information
                     for (const auto& i : std::views::iota(0, row.get_column_count())) {
                         // Get column name directly from Row and convert to std::string for map key
                         std::string column_name{row.get_column_name(i)};
-                        
-                        // Process column name - remove quotes if present
-                        std::string processed_name = column_name;
-                        if (column_name.size() >= 2 && column_name.front() == '"' && column_name.back() == '"') {
-                            // Remove surrounding quotes
-                            processed_name = column_name.substr(1, column_name.size() - 2);
-                        }
-                        rowDict[processed_name] = to_value<ValueVariant>(row, i);
+                        rowDict[column_name] = to_value<ValueVariant>(row, i);
                     }
                     
                     return rowDict;
                 })
-                | std::ranges::to<std::vector>();
+                | std::ranges::to<ValueVectorMap>();
         }
     
     public:
@@ -1812,7 +1886,7 @@ namespace storm {
 
         // AVG aggregate function that returns the direct value instead of a QuerySet
         template<auto Field>
-        std::expected<ValueVariant, std::string> avg_value() {
+        std::expected<double, std::string> avg_value() {
             static_assert(std::is_member_pointer_v<decltype(Field)>, 
                         "Field must be a member pointer");
             // Only numeric fields should be used with AVG
@@ -1858,8 +1932,15 @@ namespace storm {
                 return std::unexpected("No rows to average");
             }
             
-            // Convert the value to the requested type
-            return std::expected<FieldType, std::string>(to_value<FieldType>(row));
+            // Always return as double for AVG results, regardless of original field type
+            // This matches SQL's behavior where AVG always returns a floating-point value
+            if (row.get_column_type(0) == SQLITE_INTEGER) {
+                return static_cast<double>(row.get_int(0));
+            } else if (row.get_column_type(0) == SQLITE_FLOAT) {
+                return row.get_double(0);
+            } else {
+                return std::unexpected("Unexpected column type for AVG result");
+            }
         }
         
     private:
