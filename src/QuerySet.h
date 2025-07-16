@@ -1903,7 +1903,8 @@ namespace storm {
             tempQuerySet.onlyFields.clear();
             tempQuerySet.distinctFields.clear();
             tempQuerySet.functionsSet.clear();
-            tempQuerySet.functionsSet.emplace_back(fmt::format("AVG({}) AS {}", field->getFullFieldName(), avgAlias));
+            // Use the existing avg method instead of directly manipulating functionsSet
+            tempQuerySet.template avg<Field>(avgAlias);
             
             auto where_query_result = tempQuerySet.get_where_query();
             
