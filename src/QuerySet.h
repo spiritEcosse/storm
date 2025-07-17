@@ -33,102 +33,40 @@ namespace storm {
         std::string      // For text values
     >;
 
-    using ValueNumericVariant = std::variant<
-        int,             // For integer types
-        double           // For floating point types
-    >;
-
     // Utility function to convert Row column value to any type
     template<typename T>
     T to_value(const Row& row, int columnIndex = 0) {
         int columnType = row.get_column_type(columnIndex);
         
-        if constexpr (std::is_same_v<T, int> || std::is_same_v<T, long> || std::is_same_v<T, long long>) {
-            // Integer types
+        if constexpr (std::is_same_v<T, ValueVariant>) {
+            // Handle ValueVariant specially
             switch (columnType) {
                 case SQLITE_INTEGER:
-                    return static_cast<T>(row.get_int(columnIndex));
+                    return row.get_int(columnIndex);
                 case SQLITE_FLOAT:
-                    return static_cast<T>(row.get_double(columnIndex));
-                case SQLITE_TEXT:
-                    try {
-                        return static_cast<T>(std::stoll(row.get_text(columnIndex)));
-                    } catch (...) {
-                        return T{};
-                    }
-                default:
-                    return T{};
-            }
-        } else if constexpr (std::is_same_v<T, float> || std::is_same_v<T, double>) {
-            // Floating point types
-            switch (columnType) {
-                case SQLITE_INTEGER:
-                    return static_cast<T>(row.get_int(columnIndex));
-                case SQLITE_FLOAT:
-                    return static_cast<T>(row.get_double(columnIndex));
-                case SQLITE_TEXT:
-                    try {
-                        return static_cast<T>(std::stod(row.get_text(columnIndex)));
-                    } catch (...) {
-                        return T{};
-                    }
-                default:
-                    return T{};
-            }
-        } else if constexpr (std::is_same_v<T, std::string>) {
-            // String type
-            switch (columnType) {
-                case SQLITE_INTEGER:
-                    return std::to_string(row.get_int(columnIndex));
-                case SQLITE_FLOAT:
-                    return std::to_string(row.get_double(columnIndex));
+                    return row.get_double(columnIndex);
                 case SQLITE_TEXT:
                     return row.get_text(columnIndex);
+                case SQLITE_NULL:
+                    return std::monostate{};
                 default:
-                    return T{};
+                    return std::monostate{};
             }
-        } else if constexpr (std::is_same_v<T, bool>) {
-            // Boolean type
-            switch (columnType) {
-                case SQLITE_INTEGER:
-                    return row.get_int(columnIndex) != 0;
-                case SQLITE_TEXT: {
-                    std::string text = row.get_text(columnIndex);
-                    std::transform(text.begin(), text.end(), text.begin(), 
-                                   [](unsigned char c){ return std::tolower(c); });
-                    return text == "true" || text == "1" || text == "yes";
-                }
-                default:
-                    return false;
-            }
+        } else if constexpr (std::is_same_v<T, int> || std::is_same_v<T, long> || 
+                      std::is_same_v<T, long long> || std::is_same_v<T, unsigned int> || 
+                      std::is_same_v<T, unsigned long> || std::is_same_v<T, unsigned long long> || 
+                      std::is_same_v<T, bool>) {
+            return static_cast<T>(row.get_int(columnIndex));
+        } else if constexpr (std::is_same_v<T, float> || std::is_same_v<T, double>) {
+            return static_cast<T>(row.get_double(columnIndex));
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            return row.get_text(columnIndex);
+        } else if constexpr (std::is_same_v<T, std::monostate>) {
+            return std::monostate{};
         } else {
-            // Default case for other types
-            return T{};
-        }
-    }
-    
-    // Specialization for ValueVariant to handle different column types
-    template <>
-    ValueVariant to_value<ValueVariant>(const Row& row, int columnIndex) {
-        int columnType = row.get_column_type(columnIndex);
-        
-        // Handle different SQLite column types
-        switch (columnType) {
-            case SQLITE_INTEGER:
-                return row.get_int(columnIndex);
-                
-            case SQLITE_FLOAT:
-                return row.get_double(columnIndex);
-                
-            case SQLITE_TEXT:
-                return row.get_text(columnIndex);
-                
-            case SQLITE_NULL:
-                return std::monostate{};
-                
-            default:
-                // For any other type, return null (monostate)
-                return std::monostate{};
+            // This will cause a compile-time error for unsupported types
+            static_assert(!sizeof(T), "Unsupported type for to_value");
+            return T{}; // This line will never be reached
         }
     }
 
@@ -1848,63 +1786,29 @@ namespace storm {
         // =============================
         // MAX aggregate function
         template<auto Field>
-        QuerySet &max(const std::string& alias) {
-            static_assert(std::is_member_pointer_v<decltype(Field)>, 
-                        "Field must be a member pointer");
+        QuerySet &max(const std::string& alias = "") {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
             auto field = std::make_unique<FieldAlias<Field>>();
+            std::string actual_alias = alias;
+            if(actual_alias.empty()) {
+                actual_alias = fmt::format("max_{}", field->getFieldName());
+            }
             // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
-            functions(Function(fmt::format("MAX({}) AS {}", field->getFullFieldName(), alias)));
+            functions(Function(fmt::format("MAX({}) AS {}", field->getFullFieldName(), actual_alias)));
             return *this;
         }
 
-        // MIN aggregate function
+        // MAX aggregate function that returns the direct value instead of a QuerySet
         template<auto Field>
-        QuerySet &min(const std::string& alias) {
-            static_assert(std::is_member_pointer_v<decltype(Field)>, 
-                        "Field must be a member pointer");
-            auto field = std::make_unique<FieldAlias<Field>>();
-            // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
-            functions(Function(fmt::format("MIN({}) AS {}", field->getFullFieldName(), alias)));
-            return *this;
-        }
-        
-        // AVG aggregate function
-        template<auto Field>
-        QuerySet &avg(const std::string& alias) {
-            static_assert(std::is_member_pointer_v<decltype(Field)>, 
-                        "Field must be a member pointer");
-            // Only numeric fields should be used with AVG
-            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
-            static_assert(std::is_arithmetic_v<FieldType> && !std::is_same_v<FieldType, bool>,
-                        "AVG can only be used with numeric fields");
-            
-            auto field = std::make_unique<FieldAlias<Field>>();
-            // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
-            functions(Function(fmt::format("AVG({}) AS {}", field->getFullFieldName(), alias)));
-            return *this;
-        }
-
-        // AVG aggregate function that returns the direct value instead of a QuerySet
-        template<auto Field>
-        std::expected<double, std::string> avg_value() {
-            static_assert(std::is_member_pointer_v<decltype(Field)>, 
-                        "Field must be a member pointer");
-            // Only numeric fields should be used with AVG
-            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
-            static_assert(std::is_arithmetic_v<FieldType> && !std::is_same_v<FieldType, bool>,
-                        "AVG can only be used with numeric fields");
-            
-            auto field = std::make_unique<FieldAlias<Field>>();
-            const std::string avgAlias = "avg_result";
-            
-            // Create a temporary QuerySet with just the AVG function
+        std::expected<typename member_pointer_traits<decltype(Field)>::type, std::string> max_value(const std::string& alias = "") {
+            // Create a temporary QuerySet with just the MAX function
             auto tempQuerySet = *this;
-            // Clear onlyFields and use only the AVG function
+            // Clear onlyFields and use only the MAX function
             tempQuerySet.onlyFields.clear();
             tempQuerySet.distinctFields.clear();
             tempQuerySet.functionsSet.clear();
-            // Use the existing avg method instead of directly manipulating functionsSet
-            tempQuerySet.template avg<Field>(avgAlias);
+            // Use the existing max method instead of directly manipulating functionsSet
+            tempQuerySet.template max<Field>(alias);
             
             auto where_query_result = tempQuerySet.get_where_query();
             
@@ -1923,12 +1827,130 @@ namespace storm {
             }
             const auto& row = execResult.value();
             
-            // Verify the column exists and has the expected name
-            if (row.get_column_count() == 0 || row.get_column_name(0) != avgAlias) {
-                return std::unexpected("Average column not found");
+            // Verify the column exists
+            if (row.get_column_count() == 0) {
+                return std::unexpected("Maximum column not found");
+            }
+            
+            // Check for NULL result.
+            if (row.get_column_type(0) == SQLITE_NULL) {
+                return std::unexpected("No rows to find maximum value");
+            }
+            
+            // Return the value of the MAX function using the to_value utility function
+            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
+            return to_value<FieldType>(row, 0);
+        }
+        
+        // MIN aggregate function
+        template<auto Field>
+        QuerySet &min(const std::string& alias = "") {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
+            auto field = std::make_unique<FieldAlias<Field>>();
+            std::string actual_alias = alias;
+            if(actual_alias.empty()) {
+                actual_alias = fmt::format("min_{}", field->getFieldName());
+            }
+            // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
+            functions(Function(fmt::format("MIN({}) AS {}", field->getFullFieldName(), actual_alias)));
+            return *this;
+        }
+        
+        template<auto Field>
+        std::expected<typename member_pointer_traits<decltype(Field)>::type, std::string> min_value(const std::string& alias = "") {
+            // Create a temporary QuerySet with just the MIN function
+            auto tempQuerySet = *this;
+            // Clear onlyFields and use only the MIN function
+            tempQuerySet.onlyFields.clear();
+            tempQuerySet.distinctFields.clear();
+            tempQuerySet.functionsSet.clear();
+            // Use the existing min method instead of directly manipulating functionsSet
+            tempQuerySet.template min<Field>(alias);
+            
+            auto where_query_result = tempQuerySet.get_where_query();
+            
+            auto sql = fmt::format(R"(SELECT {} FROM "{}" {})", 
+                tempQuerySet.buildFieldsClause(),
+                tempQuerySet.template get_table_name<T>(),
+                where_query_result.sql
+            );
+
+            // Execute the query
+            Statement stmt(conn, sql);
+            bind_query_parameters(stmt, where_query_result);
+            auto execResult = stmt.execute_query();
+            if (!execResult.has_value()) {
+                return std::unexpected(execResult.error());
+            }
+            const auto& row = execResult.value();
+            
+            // Verify the column exists
+            if (row.get_column_count() == 0) {
+                return std::unexpected("Minimum column not found");
             }
             
             // Check for NULL result. TODO: support NULL values
+            if (row.get_column_type(0) == SQLITE_NULL) {
+                return std::unexpected("No rows to find minimum value");
+            }
+            
+            // Return the value of the MIN function using the to_value utility function
+            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
+            return to_value<FieldType>(row, 0);
+        }
+        
+        // AVG aggregate function
+        template<auto Field>
+        QuerySet &avg(const std::string& alias = "") {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
+            // Only numeric fields should be used with AVG
+            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
+            static_assert(std::is_arithmetic_v<FieldType> && !std::is_same_v<FieldType, bool>, "AVG can only be used with numeric fields");
+            auto field = std::make_unique<FieldAlias<Field>>();
+            std::string actual_alias = alias;
+            if(actual_alias.empty()) {
+                actual_alias = fmt::format("avg_{}", field->getFieldName());
+            }
+            // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
+            functions(Function(fmt::format("AVG({}) AS {}", field->getFullFieldName(), actual_alias)));
+            return *this;
+        }
+
+        // AVG aggregate function that returns the direct value instead of a QuerySet
+        template<auto Field>
+        std::expected<double, std::string> avg_value(const std::string& alias = "") {
+            // Create a temporary QuerySet with just the AVG function
+            auto tempQuerySet = *this;
+            // Clear onlyFields and use only the AVG function
+            tempQuerySet.onlyFields.clear();
+            tempQuerySet.distinctFields.clear();
+            tempQuerySet.functionsSet.clear();
+            // Use the existing avg method instead of directly manipulating functionsSet
+            tempQuerySet.template avg<Field>(alias);
+            
+            auto where_query_result = tempQuerySet.get_where_query();
+            
+            auto sql = fmt::format(R"(SELECT {} FROM "{}" {})", 
+                tempQuerySet.buildFieldsClause(),
+                tempQuerySet.template get_table_name<T>(),
+                where_query_result.sql
+            );
+
+            // Execute the query
+            Statement stmt(conn, sql);
+            bind_query_parameters(stmt, where_query_result);
+            auto execResult = stmt.execute_query();
+            if (!execResult.has_value()) {
+                return std::unexpected(execResult.error());
+            }
+            const auto& row = execResult.value();
+            
+            // Verify the column exists
+            if (row.get_column_count() == 0) {
+                return std::unexpected("Average column not found");
+            }
+            
+            // Check for NULL result.
             if (row.get_column_type(0) == SQLITE_NULL) {
                 return std::unexpected("No rows to average");
             }

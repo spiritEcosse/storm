@@ -182,26 +182,6 @@ protected:
 // Constant for floating-point comparison epsilon
 constexpr double FLOAT_COMPARISON_EPSILON = 0.001;
 
-// Overload for ValueNumericVariant
-template<typename T>
-void AssertValueNumericVariantEqual(const ValueNumericVariant& variant, const T& expected) {
-    if constexpr (std::is_arithmetic_v<T>) {
-        if (std::holds_alternative<double>(variant)) {
-            ASSERT_NEAR(std::get<double>(variant), static_cast<double>(expected), FLOAT_COMPARISON_EPSILON);
-        } else if (std::holds_alternative<int>(variant)) {
-            if constexpr (std::is_integral_v<T>) {
-                ASSERT_EQ(std::get<int>(variant), static_cast<int>(expected));
-            } else {
-                ASSERT_NEAR(static_cast<double>(std::get<int>(variant)), static_cast<double>(expected), FLOAT_COMPARISON_EPSILON);
-            }
-        } else {
-            FAIL() << "ValueNumericVariant does not contain a numeric value";
-        }
-    } else {
-        FAIL() << "Cannot compare ValueNumericVariant with non-numeric type";
-    }
-}
-
 bool VariantsEqual(const ValueVariant& lhs, const ValueVariant& rhs) {
     if (lhs.index() != rhs.index()) {
         // Special case for numeric types: allow comparison between int and double
@@ -2886,6 +2866,53 @@ TEST_F(ORMTest, MaxWithJoin) {
     AssertResultsMatch(result, expected_results);
 }
 
+// MAX VALUE TESTS
+TEST_F(ORMTest, MaxValue) {
+    auto result = QuerySet<Author>(conn)
+        .max_value<&Author::age>();
+    ASSERT_TRUE(result.has_value()) << "max_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 35);
+}
+
+TEST_F(ORMTest, MaxValueWithFilter) {
+    auto result = QuerySet<Author>(conn)
+        .where<&Author::age>(30, Op::GT)
+        .max_value<&Author::age>();
+    ASSERT_TRUE(result.has_value()) << "max_value with filter failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 35);
+}
+
+TEST_F(ORMTest, MaxValueEmptyTable) {
+    auto clear_authors = QuerySet<Author>(conn).remove();
+    ASSERT_TRUE(clear_authors);
+    
+    auto result = QuerySet<Author>(conn)
+        .max_value<&Author::age>();
+    ASSERT_FALSE(result.has_value());
+    ASSERT_EQ(result.error(), "No rows to find maximum value");
+}
+
+TEST_F(ORMTest, MaxValueString) {
+    auto result = QuerySet<Author>(conn)
+        .max_value<&Author::name>();
+    ASSERT_TRUE(result.has_value()) << "max_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), "Diana Prince");
+}
+
+TEST_F(ORMTest, MaxValueDouble) {
+    auto result = QuerySet<Author>(conn)
+        .max_value<&Author::rating>();
+    ASSERT_TRUE(result.has_value()) << "max_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 5.5);
+}
+
+TEST_F(ORMTest, MaxValueFloat) {
+    auto result = QuerySet<Author>(conn)
+        .max_value<&Author::score>();
+    ASSERT_TRUE(result.has_value()) << "max_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 95.0);
+}
+
 // =======================================
 // MIN AGGREGATE FUNCTION TESTS
 // =======================================
@@ -2950,35 +2977,86 @@ TEST_F(ORMTest, MultipleMinFunctions) {
     AssertResultsMatch(result, expected_results);
 }
 
-TEST_F(ORMTest, MinWithJoin) {
+TEST_F(ORMTest, MinWithJoinAndGroupBy) {
     auto result = QuerySet<Author>(conn)
         .join<Post>()
         .min<&Author::age>("min_age")
+        .only<&Post::author_id>()
         .group_by<&Post::author_id>()
         .select_values();
     
     ValueVectorMap expected_results = {
         {
+            {"author_id", 1},
             {"min_age", 25},
         },
         {
-            {"min_age", 28},
+            {"author_id", 2},
+            {"min_age", 35},
         },
         {
+            {"author_id", 3},
             {"min_age", 30},
         },
         {
-            {"min_age", 35},
+            {"author_id", 4},
+            {"min_age", 28},
         }
     };
     AssertResultsMatch(result, expected_results);
 }
 
+// MIN VALUE TESTS
+TEST_F(ORMTest, MinValue) {
+    auto result = QuerySet<Author>(conn)
+        .min_value<&Author::age>();
+    ASSERT_TRUE(result.has_value()) << "min_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 25);
+}
+
+TEST_F(ORMTest, MinValueWithFilter) {
+    auto result = QuerySet<Author>(conn)
+        .where<&Author::age>(30, Op::GT)
+        .min_value<&Author::age>();
+    ASSERT_TRUE(result.has_value()) << "min_value with filter failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 35);
+}
+
+TEST_F(ORMTest, MinValueEmptyTable) {
+    auto clear_authors = QuerySet<Author>(conn).remove();
+    ASSERT_TRUE(clear_authors);
+    
+    auto result = QuerySet<Author>(conn)
+        .min_value<&Author::age>();
+    ASSERT_FALSE(result.has_value());
+    ASSERT_EQ(result.error(), "No rows to find minimum value");
+}
+
+TEST_F(ORMTest, MinValueString) {
+    auto result = QuerySet<Author>(conn)
+        .min_value<&Author::name>();
+    ASSERT_TRUE(result.has_value()) << "min_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), "Alice Smith");
+}
+
+TEST_F(ORMTest, MinValueDouble) {
+    auto result = QuerySet<Author>(conn)
+        .min_value<&Author::rating>();
+    ASSERT_TRUE(result.has_value()) << "min_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 4.0);
+}
+
+TEST_F(ORMTest, MinValueFloat) {
+    auto result = QuerySet<Author>(conn)
+        .min_value<&Author::score>();
+    ASSERT_TRUE(result.has_value()) << "min_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 80.0);
+}
 
 // =======================================
 // AVG AGGREGATE FUNCTION TESTS
 // =======================================
-
+// AVG VALUE TESTS
 TEST_F(ORMTest, AvgValueInt) {
     auto result = QuerySet<Author>(conn)
         .avg_value<&Author::age>();
@@ -2994,11 +3072,18 @@ TEST_F(ORMTest, AvgValueWithFilter) {
     EXPECT_EQ(result.value(), 35.0);
 }
 
-TEST_F(ORMTest, AvgValueFloat) {
+TEST_F(ORMTest, AvgValueDouble) {
     auto result = QuerySet<Author>(conn)
         .avg_value<&Author::rating>();
-    ASSERT_TRUE(result.has_value()) << "avg of float failed with error: " << result.error();
+    ASSERT_TRUE(result.has_value()) << "avg of double failed with error: " << result.error();
     EXPECT_EQ(result.value(), 4.75);
+}
+
+TEST_F(ORMTest, AvgValueFloat) {
+    auto result = QuerySet<Author>(conn)
+        .avg_value<&Author::score>();
+    ASSERT_TRUE(result.has_value()) << "avg of float failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 87.625);
 }
 
 TEST_F(ORMTest, AvgValueNoRows) {
@@ -3010,14 +3095,7 @@ TEST_F(ORMTest, AvgValueNoRows) {
     ASSERT_EQ(result.error(), "No rows to average");
 }
 
-TEST_F(ORMTest, AvgValueWithGroupBy) {
-    auto result = QuerySet<Author>(conn)
-        .group_by<&Author::age>()
-        .avg_value<&Author::rating>();
-    ASSERT_TRUE(result.has_value()) << "avg with group by failed with error: " << result.error();
-    EXPECT_EQ(result.value(), 4.75);
-}
-
+// AVG AGGREGATE FUNCTION TESTS
 TEST_F(ORMTest, AvgNumericField) {
     auto result = QuerySet<Author>(conn)
         .avg<&Author::age>("avg_age")
