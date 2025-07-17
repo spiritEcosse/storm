@@ -1801,45 +1801,8 @@ namespace storm {
         // MAX aggregate function that returns the direct value instead of a QuerySet
         template<auto Field>
         std::expected<typename member_pointer_traits<decltype(Field)>::type, std::string> max_value(const std::string& alias = "") {
-            // Create a temporary QuerySet with just the MAX function
-            auto tempQuerySet = *this;
-            // Clear onlyFields and use only the MAX function
-            tempQuerySet.onlyFields.clear();
-            tempQuerySet.distinctFields.clear();
-            tempQuerySet.functionsSet.clear();
-            // Use the existing max method instead of directly manipulating functionsSet
-            tempQuerySet.template max<Field>(alias);
-            
-            auto where_query_result = tempQuerySet.get_where_query();
-            
-            auto sql = fmt::format(R"(SELECT {} FROM "{}" {})", 
-                tempQuerySet.buildFieldsClause(),
-                tempQuerySet.template get_table_name<T>(),
-                where_query_result.sql
-            );
-
-            // Execute the query
-            Statement stmt(conn, sql);
-            bind_query_parameters(stmt, where_query_result);
-            auto execResult = stmt.execute_query();
-            if (!execResult.has_value()) {
-                return std::unexpected(execResult.error());
-            }
-            const auto& row = execResult.value();
-            
-            // Verify the column exists
-            if (row.get_column_count() == 0) {
-                return std::unexpected("Maximum column not found");
-            }
-            
-            // Check for NULL result.
-            if (row.get_column_type(0) == SQLITE_NULL) {
-                return std::unexpected("No rows to find maximum value");
-            }
-            
-            // Return the value of the MAX function using the to_value utility function
-            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
-            return to_value<FieldType>(row, 0);
+            return aggregate_value<Field>("MAX", "Maximum", "maximum value", alias, 
+                [this](const std::string& alias) -> QuerySet& { return this->template max<Field>(alias); });
         }
         
         // MIN aggregate function
@@ -1856,47 +1819,11 @@ namespace storm {
             return *this;
         }
         
+        // MIN aggregate function that returns the direct value instead of a QuerySet
         template<auto Field>
         std::expected<typename member_pointer_traits<decltype(Field)>::type, std::string> min_value(const std::string& alias = "") {
-            // Create a temporary QuerySet with just the MIN function
-            auto tempQuerySet = *this;
-            // Clear onlyFields and use only the MIN function
-            tempQuerySet.onlyFields.clear();
-            tempQuerySet.distinctFields.clear();
-            tempQuerySet.functionsSet.clear();
-            // Use the existing min method instead of directly manipulating functionsSet
-            tempQuerySet.template min<Field>(alias);
-            
-            auto where_query_result = tempQuerySet.get_where_query();
-            
-            auto sql = fmt::format(R"(SELECT {} FROM "{}" {})", 
-                tempQuerySet.buildFieldsClause(),
-                tempQuerySet.template get_table_name<T>(),
-                where_query_result.sql
-            );
-
-            // Execute the query
-            Statement stmt(conn, sql);
-            bind_query_parameters(stmt, where_query_result);
-            auto execResult = stmt.execute_query();
-            if (!execResult.has_value()) {
-                return std::unexpected(execResult.error());
-            }
-            const auto& row = execResult.value();
-            
-            // Verify the column exists
-            if (row.get_column_count() == 0) {
-                return std::unexpected("Minimum column not found");
-            }
-            
-            // Check for NULL result. TODO: support NULL values
-            if (row.get_column_type(0) == SQLITE_NULL) {
-                return std::unexpected("No rows to find minimum value");
-            }
-            
-            // Return the value of the MIN function using the to_value utility function
-            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
-            return to_value<FieldType>(row, 0);
+            return aggregate_value<Field>("MIN", "Minimum", "minimum value", alias, 
+                [this](const std::string& alias) -> QuerySet& { return this->template min<Field>(alias); });
         }
         
         // AVG aggregate function
@@ -1919,14 +1846,75 @@ namespace storm {
         // AVG aggregate function that returns the direct value instead of a QuerySet
         template<auto Field>
         std::expected<double, std::string> avg_value(const std::string& alias = "") {
-            // Create a temporary QuerySet with just the AVG function
+            // For AVG, we need special handling for the return type conversion
+            return aggregate_value<Field, double>("AVG", "Average", "average", alias, 
+                [this](const std::string& alias) -> QuerySet& { return this->template avg<Field>(alias); },
+                [](const Row& row, int column_index) -> std::expected<double, std::string> {
+                    // Always return as double for AVG results, regardless of original field type
+                    // This matches SQL's behavior where AVG always returns a floating-point value
+                    if (row.get_column_type(column_index) == SQLITE_INTEGER) {
+                        return static_cast<double>(row.get_int(column_index));
+                    } else if (row.get_column_type(column_index) == SQLITE_FLOAT) {
+                        return row.get_double(column_index);
+                    } else {
+                        return std::unexpected("Unexpected column type for AVG result");
+                    }
+                });
+        }
+        
+    private:
+        // Generic helper function for aggregate value operations (min_value, max_value, avg_value)
+        template<auto Field, typename ReturnType = typename member_pointer_traits<decltype(Field)>::type>
+        std::expected<ReturnType, std::string> aggregate_value(
+            const std::string& func_name,
+            const std::string& column_name,
+            const std::string& error_name,
+            const std::string& alias,
+            auto&& apply_function
+        ) {
+            return aggregate_value_impl<Field, ReturnType>(
+                func_name, column_name, error_name, alias, 
+                std::forward<decltype(apply_function)>(apply_function),
+                [](const Row& row, int column_index) -> std::expected<ReturnType, std::string> {
+                    return to_value<ReturnType>(row, column_index);
+                }
+            );
+        }
+        
+        // Overload with custom value extractor
+        template<auto Field, typename ReturnType = typename member_pointer_traits<decltype(Field)>::type>
+        std::expected<ReturnType, std::string> aggregate_value(
+            const std::string& func_name,
+            const std::string& column_name,
+            const std::string& error_name,
+            const std::string& alias,
+            auto&& apply_function,
+            auto&& value_extractor
+        ) {
+            return aggregate_value_impl<Field, ReturnType>(
+                func_name, column_name, error_name, alias, 
+                std::forward<decltype(apply_function)>(apply_function),
+                std::forward<decltype(value_extractor)>(value_extractor)
+            );
+        }
+        
+        // Implementation function that does the actual work
+        template<auto Field, typename ReturnType>
+        std::expected<ReturnType, std::string> aggregate_value_impl(
+            const std::string& func_name,
+            const std::string& column_name,
+            const std::string& error_name,
+            const std::string& alias,
+            auto&& apply_function,
+            auto&& value_extractor
+        ) {
+            // Create a temporary QuerySet with just the aggregate function
             auto tempQuerySet = *this;
-            // Clear onlyFields and use only the AVG function
+            // Clear onlyFields and use only the aggregate function
             tempQuerySet.onlyFields.clear();
             tempQuerySet.distinctFields.clear();
             tempQuerySet.functionsSet.clear();
-            // Use the existing avg method instead of directly manipulating functionsSet
-            tempQuerySet.template avg<Field>(alias);
+            apply_function(alias);
             
             auto where_query_result = tempQuerySet.get_where_query();
             
@@ -1947,26 +1935,18 @@ namespace storm {
             
             // Verify the column exists
             if (row.get_column_count() == 0) {
-                return std::unexpected("Average column not found");
+                return std::unexpected(fmt::format("{} column not found", column_name));
             }
             
-            // Check for NULL result.
+            // Check for NULL result
             if (row.get_column_type(0) == SQLITE_NULL) {
-                return std::unexpected("No rows to average");
+                return std::unexpected(fmt::format("No rows to find {}", error_name));
             }
             
-            // Always return as double for AVG results, regardless of original field type
-            // This matches SQL's behavior where AVG always returns a floating-point value
-            if (row.get_column_type(0) == SQLITE_INTEGER) {
-                return static_cast<double>(row.get_int(0));
-            } else if (row.get_column_type(0) == SQLITE_FLOAT) {
-                return row.get_double(0);
-            } else {
-                return std::unexpected("Unexpected column type for AVG result");
-            }
+            // Extract the value using the provided extractor
+            return value_extractor(row, 0);
         }
         
-    private:
         template<typename... Args>
         QuerySet &functions(Args &&...args) {
             // Reserve capacity
