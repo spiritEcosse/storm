@@ -8,14 +8,29 @@
 #include "QuerySet.h"
 #include "SQLExceptions.h"
 #include "Transaction.h"
+#include <sstream>
+#include <iomanip>
+#include <variant>
+#include <ranges>
+#include <print>
+#include <expected>
+#include <string>
+#include <map>
+#include <vector>
+#include <iostream>
+#include <cmath>
+#include <algorithm>
+#include <format>
+#include <optional>
+#include <concepts>
 
 using namespace storm;
 
 struct Author {
+    int id;
     std::string name;
     int age;
     std::string email;
-    int id;
     bool is_active;
     double rating;
     float score;
@@ -32,10 +47,11 @@ struct Post {
     std::string title;
     std::string content;
     int author_id;
+    int views = 0;
 
     Post() = default;
-    Post(const std::string& t, const std::string& c, int author_id, int id = 0) 
-        : title(t), content(c), author_id(author_id), id(id) {}
+    Post(const std::string& t, const std::string& c, int author_id, int id = 0, int views = 0) 
+        : id(id), title(t), content(c), author_id(author_id), views(views) {}
 };
 
 REFL_AUTO(
@@ -56,7 +72,8 @@ REFL_AUTO(
     field(id),
     field(title),
     field(content),
-    field(author_id)
+    field(author_id),
+    field(views)
 )
 
 class ORMTest : public ::testing::Test {
@@ -96,6 +113,7 @@ protected:
                 title TEXT NOT NULL,
                 content TEXT,
                 author_id INTEGER,
+                views INTEGER,
                 FOREIGN KEY (author_id) REFERENCES author(id)
             );
         )";
@@ -113,21 +131,40 @@ protected:
         Author charlie("Charlie Brown", 30, "charlie@example.com", 0, true, 4.0, 80.0, "Charlie", "Charlie biography");
         Author diana("Diana Prince", 28, "diana@example.com", 0, true, 5.5, 95.0, "Diana", "Diana biography");
         
-        alice_id = QuerySet<Author>(conn).insert(alice);
-        bob_id = QuerySet<Author>(conn).insert(bob);
-        charlie_id = QuerySet<Author>(conn).insert(charlie);
-        diana_id = QuerySet<Author>(conn).insert(diana);
+        alice_id = QuerySet<Author>(conn).insert(alice).value();
+        bob_id = QuerySet<Author>(conn).insert(bob).value();
+        charlie_id = QuerySet<Author>(conn).insert(charlie).value();
+        diana_id = QuerySet<Author>(conn).insert(diana).value();
         
-        // Create posts with different titles
-        Post post1("Post A", "Content A", alice_id);
-        Post post2("Post B", "Content B", bob_id);
-        Post post3("Post C", "Content C", charlie_id);
-        Post post4("Post D", "Content D", diana_id);
+        // Create multiple posts for each author with different view counts
+        // Alice's posts
+        Post alice_post1("Alice's First Post", "Content A1", alice_id, 0, 100);
+        Post alice_post2("Alice's Second Post", "Content A2", alice_id, 0, 150);
+        Post alice_post3("Alice's Third Post", "Content A3", alice_id, 0, 200);
         
-        QuerySet<Post>(conn).insert(post1);
-        QuerySet<Post>(conn).insert(post2);
-        QuerySet<Post>(conn).insert(post3);
-        QuerySet<Post>(conn).insert(post4);
+        // Bob's posts
+        Post bob_post1("Bob's First Post", "Content B1", bob_id, 0, 250);
+        Post bob_post2("Bob's Second Post", "Content B2", bob_id, 0, 300);
+        
+        // Charlie's posts
+        Post charlie_post1("Charlie's First Post", "Content C1", charlie_id, 0, 120);
+        Post charlie_post2("Charlie's Second Post", "Content C2", charlie_id, 0, 180);
+        Post charlie_post3("Charlie's Third Post", "Content C3", charlie_id, 0, 240);
+        Post charlie_post4("Charlie's Fourth Post", "Content C4", charlie_id, 0, 300);
+        
+        // Diana's posts
+        Post diana_post1("Diana's First Post", "Content D1", diana_id, 0, 350);
+        Post diana_post2("Diana's Second Post", "Content D2", diana_id, 0, 400);
+        
+        // Insert all posts using multi-insert
+        std::vector<Post> posts = {
+            alice_post1, alice_post2, alice_post3,
+            bob_post1, bob_post2,
+            charlie_post1, charlie_post2, charlie_post3, charlie_post4,
+            diana_post1, diana_post2
+        };
+        
+        QuerySet<Post>(conn).insert(posts);
     }
 
     void TearDown() override {
@@ -141,24 +178,150 @@ protected:
     }
 };
 
+
+// Constant for floating-point comparison epsilon
+constexpr double FLOAT_COMPARISON_EPSILON = 0.001;
+
+bool VariantsEqual(const ValueVariant& lhs, const ValueVariant& rhs) {
+    if (lhs.index() != rhs.index()) {
+        // Special case for numeric types: allow comparison between int and double
+        if ((std::holds_alternative<int>(lhs) && std::holds_alternative<double>(rhs)) ||
+            (std::holds_alternative<double>(lhs) && std::holds_alternative<int>(rhs))) {
+            double left_val = std::holds_alternative<int>(lhs) ? 
+                static_cast<double>(std::get<int>(lhs)) : std::get<double>(lhs);
+            
+            double right_val = std::holds_alternative<int>(rhs) ? 
+                static_cast<double>(std::get<int>(rhs)) : std::get<double>(rhs);
+            return std::abs(left_val - right_val) < FLOAT_COMPARISON_EPSILON;
+        }
+        return false;
+    }
+    
+    return std::visit([](const auto& l, const auto& r) -> bool {
+        using LType = std::decay_t<decltype(l)>;
+        using RType = std::decay_t<decltype(r)>;
+        
+        if constexpr (!std::is_same_v<LType, RType>) {
+            return false;
+        } else if constexpr (std::is_same_v<LType, double> || std::is_same_v<LType, float>) {
+            // For floating point, use epsilon comparison
+            return std::abs(l - r) < FLOAT_COMPARISON_EPSILON;
+        } else {
+            return l == r;
+        }
+    }, lhs, rhs);
+}
+
+// Helper function to convert ValueVariant to string for error messages
+std::string ValueVariantToString(const ValueVariant& var) {
+    return std::visit([]<typename T>(const T& val) -> std::string {
+        if constexpr (std::is_same_v<T, std::monostate>) {
+            return "null";
+        } else if constexpr (std::is_same_v<T, int>) {
+            return std::format("{}", val);
+        } else if constexpr (std::is_same_v<T, double>) {
+            return std::format("{}", val);
+        } else if constexpr (std::is_same_v<T, bool>) {
+            return std::format("{}", val);
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            return std::format("\"{}\"", val);
+        }
+        std::unreachable();
+    }, var);
+}
+
+// Helper function to verify an entire vector of result maps
+void AssertResultsMatch(const ExpectedValueVectorMap& actual_result,
+                        const ValueVectorMap& expected_results) {
+    
+    ASSERT_TRUE(actual_result.has_value()) << "failed with error: " << actual_result.error();
+    auto actual_results = actual_result.value();
+
+    ASSERT_EQ(actual_results.size(), expected_results.size()) 
+        << std::format("Result count mismatch. Expected {} results, got {}", 
+                      expected_results.size(), actual_results.size());
+    
+    // Use bitset for tracking matched results
+    std::vector<bool> matched(actual_results.size());
+    
+    // For each expected result, find a matching actual result
+    for (auto&& [expected_idx, expected] : expected_results | std::views::enumerate) {
+        ASSERT_FALSE(expected.empty()) 
+            << std::format("Expected result map {} is empty", expected_idx);
+        
+        auto find_match = [&](const auto& actual_with_idx) -> bool {
+            auto&& [actual_idx, actual] = actual_with_idx;
+            
+            if (matched[actual_idx]) return false;
+            
+            // Check size first for early exit
+            if (actual.size() != expected.size()) return false;
+            
+            // Use ranges algorithms for key-value matching
+            return std::ranges::all_of(expected, [&](const auto& expected_pair) {
+                auto&& [key, expected_val] = expected_pair;
+                return actual.contains(key) && VariantsEqual(actual.at(key), expected_val);
+            });
+        };
+        
+        auto match_it = std::ranges::find_if(
+            actual_results | std::views::enumerate, 
+            find_match
+        );
+        
+        if (match_it != std::ranges::end(actual_results | std::views::enumerate)) {
+            matched[std::get<0>(*match_it)] = true;
+        } else {
+            // Build comprehensive error message using ranges
+            auto build_map_string = [](const auto& map) -> std::string {
+                std::string result = "{";
+                bool first = true;
+                for (const auto& [key, val] : map) {
+                    if (!first) result += ", ";
+                    result += std::format("{}: {}", key, ValueVariantToString(val));
+                    first = false;
+                }
+                result += "}";
+                return result;
+            };
+            
+            auto error_msg = std::format(
+                "No matching result found for expected result {}. Expected: {}\n"
+                "Actual results:\n", 
+                expected_idx,
+                build_map_string(expected)
+            );
+            
+            for (const auto& [i, result] : actual_results | std::views::enumerate) {
+                error_msg += std::format("  [{}] {}\n", i, build_map_string(result));
+            }
+            
+            ASSERT_TRUE(false) << error_msg;
+        }
+    }
+}
+
 // =======================================
 // INSERT TESTS
 // =======================================
 TEST_F(ORMTest, InsertSingleObject) {
     Author author("John Doe", 30, "john@example.com");
     
-    int result = QuerySet<Author>(conn).insert(author);
+    auto result = QuerySet<Author>(conn).insert(author);
     
-    EXPECT_GT(result, 0) << "Insert should return a valid ID";
+    EXPECT_TRUE(result.has_value()) << "Insert should return a valid ID" << result.error();
+    EXPECT_GT(result.value(), 0) << "Insert should return a valid ID";
     EXPECT_EQ(author.id, 0) << "Must not be inserted from db";
 }
 
 TEST_F(ORMTest, InsertEmptyFieldNames) {
     Author author("Jane Doe", 25, "jane@example.com");
     
-    int result = QuerySet<Author>(conn).insert(author);
+    auto result = QuerySet<Author>(conn).insert(author);
     
-    EXPECT_TRUE(result > 0 || result == -1) << "Should return valid ID or -1 if field_names is empty";
+    EXPECT_TRUE(result.has_value()) << "Insert should return a valid ID" << result.error();
+    EXPECT_GT(result.value(), 0) << "Insert should return a valid ID";
+    EXPECT_EQ(author.id, 0) << "Must not be inserted from db";
 }
 
 TEST_F(ORMTest, InsertMultipleObjects) {
@@ -168,12 +331,13 @@ TEST_F(ORMTest, InsertMultipleObjects) {
         Author("Grace Wilson", 26, "grace@example.com")
     };
     
-    std::vector<int> ids = QuerySet<Author>(conn).insert(authors);
+    auto ids = QuerySet<Author>(conn).insert(authors);
     
-    EXPECT_EQ(ids.size(), authors.size()) << "Should return an ID for each inserted object";
+    EXPECT_TRUE(ids.has_value()) << "Insert should return a valid ID" << ids.error();
+    EXPECT_EQ(ids.value().size(), authors.size()) << "Should return an ID for each inserted object";
     
     // Check that all returned IDs are valid
-    for (const auto& id : ids) {
+    for (const auto& id : ids.value()) {
         EXPECT_GT(id, 0) << "Each ID should be valid (greater than 0)";
     }
 }
@@ -181,17 +345,17 @@ TEST_F(ORMTest, InsertMultipleObjects) {
 TEST_F(ORMTest, InsertEmptyVector) {
     std::vector<Author> empty_authors;
     
-    std::vector<int> ids = QuerySet<Author>(conn).insert(empty_authors);
+    auto ids = QuerySet<Author>(conn).insert(empty_authors);
     
-    EXPECT_TRUE(ids.empty()) << "Inserting empty vector should return empty vector of IDs";
+    EXPECT_TRUE(ids.has_value()) << "Inserting empty vector should return empty vector of IDs" << ids.error();
 }
 
 TEST_F(ORMTest, InsertExceptionHandling) {
     Author author("", -1, "");
     
-    int result = QuerySet<Author>(conn).insert(author);
+    auto result = QuerySet<Author>(conn).insert(author);
     
-    EXPECT_TRUE(result > 0 || result == -1) << "Should return valid ID or -1 on error";
+    EXPECT_TRUE(result.has_value()) << "Should return valid ID or -1 on error" << result.error();
 }
 
 // =======================================
@@ -199,17 +363,20 @@ TEST_F(ORMTest, InsertExceptionHandling) {
 // =======================================
 TEST_F(ORMTest, UpdateSingleObject) {
     Author author("John Doe", 30, "john@example.com");
-    int inserted_id = QuerySet<Author>(conn).insert(author);
-    ASSERT_GT(inserted_id, 0);
+    auto inserted_id = QuerySet<Author>(conn).insert(author);
+    
+    ASSERT_TRUE(inserted_id.has_value()) << "Insert should return a ID" << inserted_id.error();
+    ASSERT_GT(inserted_id.value(), 0);
     
     // Update the author with the inserted ID
-    author.id = inserted_id;
-    author.name = "John Smith";
+    author.id = inserted_id.value();
+    author.name = "John Smith"; 
     author.age = 31;
     
-    bool result = QuerySet<Author>(conn).update(author);
+    auto result = QuerySet<Author>(conn).update(author);
     
-    EXPECT_TRUE(result);
+    EXPECT_TRUE(result.has_value()) << "Update should return a bool" << result.error();
+    EXPECT_TRUE(result.value());
 }
 
 TEST_F(ORMTest, UpdateMultipleObjects) {
@@ -218,36 +385,41 @@ TEST_F(ORMTest, UpdateMultipleObjects) {
         Author("Eve Adams", 28, "eve@example.com"),
         Author("Frank Miller", 32, "frank@example.com")
     };
-    std::vector<int> ids = QuerySet<Author>(conn).insert(authors);
-    ASSERT_EQ(ids.size(), authors.size());
+    auto ids = QuerySet<Author>(conn).insert(authors);
+    
+    ASSERT_TRUE(ids.has_value()) << "Insert should return a valid ID" << ids.error();
+    ASSERT_EQ(ids.value().size(), authors.size());
     
     // Set the IDs and update them
-    authors[0].id = ids[0];
-    authors[1].id = ids[1];
+    authors[0].id = ids.value()[0];
+    authors[1].id = ids.value()[1];
     authors[0].age = 29;
     authors[1].name = "Robert";
     
-    bool result = QuerySet<Author>(conn).update(authors);
+    auto result = QuerySet<Author>(conn).update(authors);
     
-    EXPECT_TRUE(result);
+    EXPECT_TRUE(result.has_value()) << "Update should return a bool" << result.error();
+    EXPECT_TRUE(result.value());
 }
 
 TEST_F(ORMTest, UpdateEmptyVector) {
     std::vector<Author> empty_authors;
     
-    bool result = QuerySet<Author>(conn).update(empty_authors);
+    auto result = QuerySet<Author>(conn).update(empty_authors);
     
-    EXPECT_TRUE(result) << "Updating empty vector should return true";
+    EXPECT_TRUE(result.has_value()) << "Updating empty vector should return true" << result.error();
+    EXPECT_TRUE(result.value());
 }
 
 TEST_F(ORMTest, UpdateNonExistentObject) {
     Author author("Ghost", 0, "ghost@example.com");
     author.id = 99999; // Non-existent ID
     
-    bool result = QuerySet<Author>(conn).update(author);
+    auto result = QuerySet<Author>(conn).update(author);
     
     // Behavior depends on implementation - might return true even if no rows affected
-    EXPECT_TRUE(result == true || result == false);
+    EXPECT_TRUE(result.has_value()) << "Update should return a bool" << result.error();
+    EXPECT_TRUE(result.value());
 }
 
 // =======================================
@@ -256,13 +428,16 @@ TEST_F(ORMTest, UpdateNonExistentObject) {
 TEST_F(ORMTest, RemoveSingleObject) {
     // First insert a person
     Author author("John Doe", 30, "john@example.com");
-    int inserted_id = QuerySet<Author>(conn).insert(author);
-    ASSERT_GT(inserted_id, 0);
+    auto inserted_id = QuerySet<Author>(conn).insert(author);
     
-    author.id = inserted_id;
-    bool result = QuerySet<Author>(conn).remove(author);
+    ASSERT_TRUE(inserted_id.has_value()) << "Insert should return a valid ID" << inserted_id.error();
+    ASSERT_GT(inserted_id.value(), 0);
     
-    EXPECT_TRUE(result);
+    author.id = inserted_id.value();
+    auto result = QuerySet<Author>(conn).remove(author);
+    
+    EXPECT_TRUE(result.has_value()) << "Remove should return a bool" << result.error();
+    EXPECT_TRUE(result.value());
 }
 
 TEST_F(ORMTest, RemoveMultipleObjects) {
@@ -272,74 +447,88 @@ TEST_F(ORMTest, RemoveMultipleObjects) {
         Author("Frank Miller", 32, "frank@example.com"),
         Author("Grace Wilson", 26, "grace@example.com")
     };
-    std::vector<int> ids = QuerySet<Author>(conn).insert(authors);
-    ASSERT_EQ(ids.size(), authors.size());
+    auto ids = QuerySet<Author>(conn).insert(authors);
+    
+    ASSERT_TRUE(ids.has_value()) << "Insert should return a valid ID" << ids.error();
+    ASSERT_EQ(ids.value().size(), authors.size());
     
     // Set the IDs
     for (size_t i = 0; i < authors.size(); ++i) {
-        authors[i].id = ids[i];
+        authors[i].id = ids.value()[i];
     }
     
-    bool result = QuerySet<Author>(conn).remove(authors);
+    auto result = QuerySet<Author>(conn).remove(authors);
     
-    EXPECT_TRUE(result);
+    EXPECT_TRUE(result.has_value()) << "Remove should return a bool" << result.error();
+    EXPECT_TRUE(result.value());
 }
 
 TEST_F(ORMTest, RemoveEmptyVector) {
     std::vector<Author> empty_authors;
     
-    bool result = QuerySet<Author>(conn).remove(empty_authors);
+    auto result = QuerySet<Author>(conn).remove(empty_authors);
     
-    EXPECT_TRUE(result) << "Removing empty vector should return true";
+    EXPECT_FALSE(result.has_value()) << "Remove should return an error for empty vector";
+    EXPECT_EQ(result.error(), "Empty objects vector");
 }
 
 TEST_F(ORMTest, RemoveNonExistentObject) {
     Author author("Ghost", 0, "ghost@example.com");
     author.id = 99999; // Non-existent ID
     
-    bool result = QuerySet<Author>(conn).remove(author);
+    auto result = QuerySet<Author>(conn).remove(author);
     
     // Should handle gracefully
-    EXPECT_TRUE(result == true || result == false);
+    EXPECT_TRUE(result.has_value()) << "Remove should return a bool" << result.error();
+    EXPECT_TRUE(result.value());
 }
 
 TEST_F(ORMTest, RemoveAll) {
     // First count how many authors we have
-    auto authors = QuerySet<Author>(conn).select_all();
-    int initial_count = authors.size();
+    auto result = QuerySet<Author>(conn).select_all();
+
+    EXPECT_TRUE(result.has_value()) << "Select should return a value" << result.error();
+    int initial_count = result.value().size();
     ASSERT_GT(initial_count, 0);
     
     // Delete all authors
-    bool result = QuerySet<Author>(conn).remove();
-    EXPECT_TRUE(result);
+    auto result2 = QuerySet<Author>(conn).remove();
+    EXPECT_TRUE(result2.has_value()) << "Remove should return a bool" << result2.error();
+    EXPECT_TRUE(result2.value());
     
     // Verify all authors were deleted
-    authors = QuerySet<Author>(conn).select_all();
-    EXPECT_EQ(authors.size(), 0);
+    auto result3 = QuerySet<Author>(conn).select_all();
+    
+    EXPECT_TRUE(result3.has_value()) << "Select should return a value" << result3.error();
+    EXPECT_EQ(result3.value().size(), 0);
 }
 
 TEST_F(ORMTest, RemoveByCondition) {
     // First count how many authors we have
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    int initial_count = all_authors.size();
+    auto result = QuerySet<Author>(conn).select_all();
+    EXPECT_TRUE(result.has_value()) << "Select should return a value" << result.error();
+    int initial_count = result.value().size();
     ASSERT_GT(initial_count, 0);
     
     // Count authors with age > 30
-    auto older_authors = QuerySet<Author>(conn).where(field(&Author::age) > 30).select_all();
-    int older_count = older_authors.size();
+    auto result2 = QuerySet<Author>(conn).where(field(&Author::age) > 30).select_all();
+    EXPECT_TRUE(result2.has_value()) << "Select should return a value" << result2.error();
+    int older_count = result2.value().size();
     ASSERT_GT(older_count, 0);
     ASSERT_LT(older_count, initial_count);
     
     // Delete authors with age > 30
-    bool result = QuerySet<Author>(conn).where(field(&Author::age) > 30).remove();
-    EXPECT_TRUE(result);
+    auto result3 = QuerySet<Author>(conn).where(field(&Author::age) > 30).remove();
+    EXPECT_TRUE(result3.has_value()) << "Remove should return a bool" << result3.error();
+    EXPECT_TRUE(result3.value());
     
     // Verify only matching authors were deleted
-    auto remaining_authors = QuerySet<Author>(conn).select_all();
-    EXPECT_EQ(remaining_authors.size(), initial_count - older_count);
+    auto result4 = QuerySet<Author>(conn).select_all();
+    EXPECT_TRUE(result4.has_value()) << "Select should return a value" << result4.error();
+    EXPECT_EQ(result4.value().size(), initial_count - older_count);
     
     // Verify no remaining authors have age > 30
-    for (const auto& author : remaining_authors) {
+    for (const auto& author : result4.value()) {
         EXPECT_LE(author.age, 30);
     }
 }
@@ -360,27 +549,30 @@ TEST_F(ORMTest, QuerySetCopy) {
     
     // Execute the queries
     auto youngAuthors = youngAuthorsQuery.select_all();
+    ASSERT_TRUE(youngAuthors.has_value()) << "Select should return a value" << youngAuthors.error();
     auto seniorAuthors = seniorAuthorsQuery.select_all();
+    ASSERT_TRUE(seniorAuthors.has_value()) << "Select should return a value" << seniorAuthors.error();
     
     // Verify the results
-    for (const auto& author : youngAuthors) {
+    for (const auto& author : youngAuthors.value()) {
         EXPECT_TRUE(author.is_active);
         EXPECT_LE(author.age, 30);
     }
     
-    for (const auto& author : seniorAuthors) {
+    for (const auto& author : seniorAuthors.value()) {
         EXPECT_TRUE(author.is_active);
         EXPECT_GT(author.age, 30);
     }
     
     // Verify that the original query is unaffected
     auto activeAuthors = baseQuery.select_all();
-    for (const auto& author : activeAuthors) {
+    ASSERT_TRUE(activeAuthors.has_value()) << "Select should return a value" << activeAuthors.error();
+    for (const auto& author : activeAuthors.value()) {
         EXPECT_TRUE(author.is_active);
     }
     
     // Verify that we have the correct number of results
-    EXPECT_EQ(youngAuthors.size() + seniorAuthors.size(), activeAuthors.size());
+    EXPECT_EQ(youngAuthors.value().size() + seniorAuthors.value().size(), activeAuthors.value().size());
 }
 
 TEST_F(ORMTest, QuerySetCopyConstructorDeepCopy) {
@@ -402,25 +594,29 @@ TEST_F(ORMTest, QuerySetCopyConstructorDeepCopy) {
     
     // Verify that both queries produce the same results initially
     auto originalResults = originalQuery.select_all();
+    ASSERT_TRUE(originalResults.has_value()) << "Select should return a value" << originalResults.error();
     auto copiedResults = copiedQuery.select_all();
+    ASSERT_TRUE(copiedResults.has_value()) << "Select should return a value" << copiedResults.error();
     
-    EXPECT_EQ(originalResults.size(), copiedResults.size());
+    EXPECT_EQ(originalResults.value().size(), copiedResults.value().size());
     
     // Now modify the copied query
     copiedQuery.where(field(&Author::rating) > 4.0);
     
     // The original query should remain unchanged
     auto newOriginalResults = originalQuery.select_all();
+    ASSERT_TRUE(newOriginalResults.has_value()) << "Select should return a value" << newOriginalResults.error();
     auto newCopiedResults = copiedQuery.select_all();
+    ASSERT_TRUE(newCopiedResults.has_value()) << "Select should return a value" << newCopiedResults.error();
     
     // Original results should be the same as before
-    EXPECT_EQ(originalResults.size(), newOriginalResults.size());
+    EXPECT_EQ(originalResults.value().size(), newOriginalResults.value().size());
     
     // Copied results should be different (filtered further)
-    EXPECT_LE(newCopiedResults.size(), originalResults.size());
+    EXPECT_LE(newCopiedResults.value().size(), originalResults.value().size());
     
     // Check that all authors in the copied results have rating > 4.0
-    for (const auto& author : newCopiedResults) {
+    for (const auto& author : newCopiedResults.value()) {
         EXPECT_GT(author.rating, 4.0);
     }
 }
@@ -435,11 +631,17 @@ TEST_F(ORMTest, QuerySetCopyConstructorMembersVerification) {
     // Verify both queries return the same results
     auto whereResults = whereQuery.select_all();
     auto whereCopyResults = whereQueryCopy.select_all();
-    EXPECT_EQ(whereResults.size(), whereCopyResults.size());
+    ASSERT_TRUE(whereResults.has_value()) << "Select should return a value" << whereResults.error();
+    ASSERT_TRUE(whereCopyResults.has_value()) << "Select should return a value" << whereCopyResults.error();
+    EXPECT_EQ(whereResults.value().size(), whereCopyResults.value().size());
     
     // Modify copy and verify independence
     whereQueryCopy.where(field(&Author::email) == "alice@example.com"); // Use a specific email to ensure different results
-    EXPECT_NE(whereQuery.select_all().size(), whereQueryCopy.select_all().size());
+    auto whereQueryResults = whereQuery.select_all();
+    auto whereQueryCopyResults = whereQueryCopy.select_all();
+    ASSERT_TRUE(whereQueryResults.has_value()) << "Select should return a value" << whereQueryResults.error();
+    ASSERT_TRUE(whereQueryCopyResults.has_value()) << "Select should return a value" << whereQueryCopyResults.error();
+    EXPECT_NE(whereQueryResults.value().size(), whereQueryCopyResults.value().size());
     
     // 2. Test joinInfo copying
     auto joinQuery = QuerySet<Post>(conn).join<Author>();
@@ -455,17 +657,21 @@ TEST_F(ORMTest, QuerySetCopyConstructorMembersVerification) {
     
     // Verify both queries return results in the same order
     auto orderResults = orderQuery.select_all();
+    ASSERT_TRUE(orderResults.has_value()) << "Select should return a value" << orderResults.error();
     auto orderCopyResults = orderQueryCopy.select_all();
-    ASSERT_GT(orderResults.size(), 1);
-    EXPECT_EQ(orderResults[0].age, orderCopyResults[0].age);
+    ASSERT_TRUE(orderCopyResults.has_value()) << "Select should return a value" << orderCopyResults.error();
+    ASSERT_GT(orderResults.value().size(), 1);
+    EXPECT_EQ(orderResults.value()[0].age, orderCopyResults.value()[0].age);
     
     // Modify copy's ordering and verify independence
     orderQueryCopy.order_by<&Author::name, true>();
     auto modifiedOrderCopyResults = orderQueryCopy.select_all();
+    ASSERT_TRUE(modifiedOrderCopyResults.has_value()) << "Select should return a value" << modifiedOrderCopyResults.error();
     
     // The original order should still be by age descending
     auto newOrderResults = orderQuery.select_all();
-    EXPECT_EQ(orderResults[0].age, newOrderResults[0].age);
+    ASSERT_TRUE(newOrderResults.has_value()) << "Select should return a value" << newOrderResults.error();
+    EXPECT_EQ(orderResults.value()[0].age, newOrderResults.value()[0].age);
     
     // 4. Test distinctFields copying
     auto distinctQuery = QuerySet<Author>(conn).distinct<&Author::age>();
@@ -474,7 +680,9 @@ TEST_F(ORMTest, QuerySetCopyConstructorMembersVerification) {
     // Verify both queries return the same number of distinct results
     auto distinctResults = distinctQuery.select_all();
     auto distinctCopyResults = distinctQueryCopy.select_all();
-    EXPECT_EQ(distinctResults.size(), distinctCopyResults.size());
+    ASSERT_TRUE(distinctResults.has_value()) << "Select should return a value" << distinctResults.error();
+    ASSERT_TRUE(distinctCopyResults.has_value()) << "Select should return a value" << distinctCopyResults.error();
+    EXPECT_EQ(distinctResults.value().size(), distinctCopyResults.value().size());
     
     // 5. Test onlyFields copying
     auto onlyQuery = QuerySet<Author>(conn).only<&Author::name>();
@@ -499,13 +707,15 @@ TEST_F(ORMTest, QuerySetCopyConstructorMembersVerification) {
     // Verify both queries return the same number of results
     auto limitResults = limitQuery.select_all();
     auto limitCopyResults = limitQueryCopy.select_all();
-    EXPECT_EQ(limitResults.size(), limitCopyResults.size());
-    EXPECT_EQ(2, limitResults.size()); // Should be limited to 2
+    ASSERT_TRUE(limitResults.has_value()) << "Select should return a value" << limitResults.error();
+    ASSERT_TRUE(limitCopyResults.has_value()) << "Select should return a value" << limitCopyResults.error();
+    EXPECT_EQ(limitResults.value().size(), limitCopyResults.value().size());
+    EXPECT_EQ(2, limitResults.value().size()); // Should be limited to 2
     
     // Modify copy and verify independence
     limitQueryCopy.limit(3);
-    EXPECT_EQ(2, limitQuery.select_all().size());
-    EXPECT_EQ(3, limitQueryCopy.select_all().size());
+    EXPECT_EQ(2, limitQuery.select_all().value().size());
+    EXPECT_EQ(3, limitQueryCopy.select_all().value().size());
 }
 
 TEST_F(ORMTest, QuerySetCopyAssignmentOperator) {
@@ -527,7 +737,9 @@ TEST_F(ORMTest, QuerySetCopyAssignmentOperator) {
     
     // Verify query2 now produces the same results as query1
     auto newQuery2Results = query2.select_all();
-    EXPECT_EQ(originalQuery1Results.size(), newQuery2Results.size());
+    ASSERT_TRUE(originalQuery1Results.has_value()) << "Select should return a value" << originalQuery1Results.error();
+    ASSERT_TRUE(newQuery2Results.has_value()) << "Select should return a value" << newQuery2Results.error();
+    EXPECT_EQ(originalQuery1Results.value().size(), newQuery2Results.value().size());
     
     // Modify query2 and verify query1 remains unchanged
     query2.where(field(&Author::email).like("%alice@example.com"));
@@ -536,15 +748,18 @@ TEST_F(ORMTest, QuerySetCopyAssignmentOperator) {
     auto finalQuery1Results = query1.select_all();
     
     // Original query1 should be unchanged
-    EXPECT_EQ(originalQuery1Results.size(), finalQuery1Results.size());
+    ASSERT_TRUE(finalQuery1Results.has_value()) << "Select should return a value" << finalQuery1Results.error();
+    EXPECT_EQ(originalQuery1Results.value().size(), finalQuery1Results.value().size());
     
     // Modified query2 should have different results
-    EXPECT_NE(originalQuery1Results.size(), modifiedQuery2Results.size());
+    ASSERT_TRUE(modifiedQuery2Results.has_value()) << "Select should return a value" << modifiedQuery2Results.error();
+    EXPECT_NE(originalQuery1Results.value().size(), modifiedQuery2Results.value().size());
     
     // Self-assignment test
     query1 = query1; // Self-assignment should be safe
     auto afterSelfAssignResults = query1.select_all();
-    EXPECT_EQ(originalQuery1Results.size(), afterSelfAssignResults.size());
+    ASSERT_TRUE(afterSelfAssignResults.has_value()) << "Select should return a value" << afterSelfAssignResults.error();
+    EXPECT_EQ(originalQuery1Results.value().size(), afterSelfAssignResults.value().size());
 }
 
 TEST_F(ORMTest, QuerySetCopyEdgeCases) {
@@ -553,15 +768,22 @@ TEST_F(ORMTest, QuerySetCopyEdgeCases) {
     auto emptyQueryCopy = emptyQuery; // Copy NOSONAR
     
     // Both should return all authors
-    EXPECT_EQ(emptyQuery.select_all().size(), emptyQueryCopy.select_all().size());
+    auto emptyQueryResults = emptyQuery.select_all();
+    auto emptyQueryCopyResults = emptyQueryCopy.select_all();
+    ASSERT_TRUE(emptyQueryResults.has_value()) << "Select should return a value" << emptyQueryResults.error();
+    ASSERT_TRUE(emptyQueryCopyResults.has_value()) << "Select should return a value" << emptyQueryCopyResults.error();
+    EXPECT_EQ(emptyQueryResults.value().size(), emptyQueryCopyResults.value().size());
     
     // 2. Test copying a query with no results
     auto noResultsQuery = QuerySet<Author>(conn).where(field(&Author::age) > 100); // No one is that old
     auto noResultsQueryCopy = noResultsQuery; // Copy NOSONAR
     
     // Both should return empty results
-    EXPECT_EQ(0, noResultsQuery.select_all().size());
-    EXPECT_EQ(0, noResultsQueryCopy.select_all().size());
+    auto noResultsQueryResults = noResultsQuery.select_all();
+    auto noResultsQueryCopyResults = noResultsQueryCopy.select_all();
+    ASSERT_TRUE(noResultsQueryResults.has_value()) << "Select should return a value" << noResultsQueryResults.error();
+    ASSERT_TRUE(noResultsQueryCopyResults.has_value()) << "Select should return a value" << noResultsQueryCopyResults.error();
+    EXPECT_EQ(noResultsQueryResults.value().size(), noResultsQueryCopyResults.value().size());
     
     // 3. Test complex chained query copying
     auto complexQuery = QuerySet<Author>(conn)
@@ -579,13 +801,15 @@ TEST_F(ORMTest, QuerySetCopyEdgeCases) {
     auto complexResults = complexQuery.select_all();
     auto complexCopyResults = complexQueryCopy.select_all();
     
-    EXPECT_EQ(complexResults.size(), complexCopyResults.size());
+    ASSERT_TRUE(complexResults.has_value()) << "Select should return a value" << complexResults.error();
+    ASSERT_TRUE(complexCopyResults.has_value()) << "Select should return a value" << complexCopyResults.error();
+    EXPECT_EQ(complexResults.value().size(), complexCopyResults.value().size());
     
-    if (!complexResults.empty() && !complexCopyResults.empty()) {
+    if (!complexResults.value().empty() && !complexCopyResults.value().empty()) {
         // Check that the first result is the same in both queries
-        EXPECT_EQ(complexResults[0].id, complexCopyResults[0].id);
-        EXPECT_EQ(complexResults[0].name, complexCopyResults[0].name);
-        EXPECT_EQ(complexResults[0].age, complexCopyResults[0].age);
+        EXPECT_EQ(complexResults.value()[0].id, complexCopyResults.value()[0].id);
+        EXPECT_EQ(complexResults.value()[0].name, complexCopyResults.value()[0].name);
+        EXPECT_EQ(complexResults.value()[0].age, complexCopyResults.value()[0].age);
     }
     
     // 4. Test multiple consecutive copies
@@ -595,9 +819,19 @@ TEST_F(ORMTest, QuerySetCopyEdgeCases) {
     auto copy3 = copy2;     // Copy of a copy of a copy
     
     // All should return the same results
-    EXPECT_EQ(baseQuery.select_all().size(), copy1.select_all().size());
-    EXPECT_EQ(baseQuery.select_all().size(), copy2.select_all().size());
-    EXPECT_EQ(baseQuery.select_all().size(), copy3.select_all().size());
+    auto result = baseQuery.select_all();
+    auto copy1Result = copy1.select_all();
+    auto copy2Result = copy2.select_all();
+    auto copy3Result = copy3.select_all();
+    
+    ASSERT_TRUE(result.has_value()) << "Select should return a value" << result.error();
+    ASSERT_TRUE(copy1Result.has_value()) << "Select should return a value" << copy1Result.error();
+    ASSERT_TRUE(copy2Result.has_value()) << "Select should return a value" << copy2Result.error();
+    ASSERT_TRUE(copy3Result.has_value()) << "Select should return a value" << copy3Result.error();
+    
+    EXPECT_EQ(result.value().size(), copy1Result.value().size());
+    EXPECT_EQ(result.value().size(), copy2Result.value().size());
+    EXPECT_EQ(result.value().size(), copy3Result.value().size());
     
     // Modify each copy differently and verify independence
     copy1.where<&Author::age>(30, Op::LT); // Less than
@@ -611,24 +845,29 @@ TEST_F(ORMTest, QuerySetCopyEdgeCases) {
     auto copy3Results = copy3.select_all();
     
     // The original should be unchanged
-    for (const auto& author : baseResults) {
+    ASSERT_TRUE(baseResults.has_value()) << "Select should return a value" << baseResults.error();
+    ASSERT_TRUE(copy1Results.has_value()) << "Select should return a value" << copy1Results.error();
+    for (const auto& author : baseResults.value()) {
         EXPECT_TRUE(author.is_active);
     }
     
     // Copy1 should have additional age filter
-    for (const auto& author : copy1Results) {
+    ASSERT_TRUE(copy1Results.has_value()) << "Select should return a value" << copy1Results.error();
+    for (const auto& author : copy1Results.value()) {
         EXPECT_TRUE(author.is_active);
         EXPECT_LT(author.age, 30);
     }
     
     // Copy2 should have additional rating filter
-    for (const auto& author : copy2Results) {
+    ASSERT_TRUE(copy2Results.has_value()) << "Select should return a value" << copy2Results.error();
+    for (const auto& author : copy2Results.value()) {
         EXPECT_TRUE(author.is_active);
         EXPECT_GT(author.rating, 4.0);
     }
     
     // Copy3 should have name filter (starts with 'A')
-    for (const auto& author : copy3Results) {
+    ASSERT_TRUE(copy3Results.has_value()) << "Select should return a value" << copy3Results.error();
+    for (const auto& author : copy3Results.value()) {
         EXPECT_TRUE(author.is_active);
         EXPECT_EQ('A', author.name[0]);
     }
@@ -640,7 +879,9 @@ TEST_F(ORMTest, QuerySetCopyEdgeCases) {
 TEST_F(ORMTest, FullCRUDWorkflow) {
     // Create
     Author author("John Doe", 30, "john@example.com");
-    int id = QuerySet<Author>(conn).insert(author);
+    auto result = QuerySet<Author>(conn).insert(author);
+    ASSERT_TRUE(result.has_value()) << "Insert should return a value" << result.error();
+    int id = result.value();
     ASSERT_GT(id, 0);
     
     // Update
@@ -661,17 +902,18 @@ TEST_F(ORMTest, BatchOperationsWorkflow) {
         Author("Frank Miller", 32, "frank@example.com"),
         Author("Grace Wilson", 26, "grace@example.com")
     };
-    std::vector<int> ids = QuerySet<Author>(conn).insert(authors);
-    ASSERT_EQ(ids.size(), authors.size());
+    auto result = QuerySet<Author>(conn).insert(authors);
+    ASSERT_TRUE(result.has_value()) << "Insert should return a value" << result.error();
+    ASSERT_EQ(result.value().size(), authors.size());
     
     // Verify all returned IDs are valid
-    for (const auto& id : ids) {
+    for (const auto& id : result.value()) {
         ASSERT_GT(id, 0);
     }
     
     // Set IDs and batch update
     for (size_t i = 0; i < authors.size(); ++i) {
-        authors[i].id = ids[i];
+        authors[i].id = result.value()[i];
         authors[i].age += 1;
     }
     ASSERT_TRUE(QuerySet<Author>(conn).update(authors));
@@ -683,59 +925,75 @@ TEST_F(ORMTest, BatchOperationsWorkflow) {
 TEST_F(ORMTest, MixedOperations) {
     // Insert single
     Author single_author("Single", 25, "single@example.com");
-    int single_id = QuerySet<Author>(conn).insert(single_author);
-    ASSERT_GT(single_id, 0);
+    auto result = QuerySet<Author>(conn).insert(single_author);
+    ASSERT_TRUE(result.has_value()) << "Insert should return a value" << result.error();
+    ASSERT_GT(result.value(), 0);
     
     // Insert batch
     std::vector<Author> batch_authors = {
         Author("Batch1", 30, "batch1@example.com"),
         Author("Batch2", 35, "batch2@example.com")
     };
-    std::vector<int> batch_ids = QuerySet<Author>(conn).insert(batch_authors);
-    ASSERT_EQ(batch_ids.size(), batch_authors.size());
+    auto result2 = QuerySet<Author>(conn).insert(batch_authors);
+    ASSERT_TRUE(result2.has_value()) << "Insert should return a value" << result2.error();
+    auto result2Value = result2.value();
+    ASSERT_EQ(result2Value.size(), batch_authors.size());
     
     // Update single
-    single_author.id = single_id;
+    single_author.id = result.value();
     single_author.age = 26;
-    ASSERT_TRUE(QuerySet<Author>(conn).update(single_author));
+    result = QuerySet<Author>(conn).update(single_author);
+    ASSERT_TRUE(result.has_value()) << "Update should return a value" << result.error();
+    ASSERT_EQ(result.value(), true);
     
     // Update batch
     for (size_t i = 0; i < batch_authors.size(); ++i) {
-        batch_authors[i].id = batch_ids[i];
+        batch_authors[i].id = result2Value[i];
         batch_authors[i].age += 1;
     }
-    ASSERT_TRUE(QuerySet<Author>(conn).update(batch_authors));
+    result = QuerySet<Author>(conn).update(batch_authors);
+    ASSERT_TRUE(result.has_value()) << "Update should return a value" << result.error();
+    ASSERT_EQ(result.value(), true);
     
     // Remove single
-    ASSERT_TRUE(QuerySet<Author>(conn).remove(single_author));
+    result = QuerySet<Author>(conn).remove(single_author);
+    ASSERT_TRUE(result.has_value()) << "Remove should return a value" << result.error();
+    ASSERT_EQ(result.value(), true);
     
     // Remove batch
-    ASSERT_TRUE(QuerySet<Author>(conn).remove(batch_authors));
+    result = QuerySet<Author>(conn).remove(batch_authors);
+    ASSERT_TRUE(result.has_value()) << "Remove should return a value" << result.error();
+    ASSERT_EQ(result.value(), true);
 }
 
 // =======================================
 // SELECT TESTS
 // =======================================
 TEST_F(ORMTest, SelectAll) {
-    std::vector<Author> all_authors = QuerySet<Author>(conn).select_all();
-    ASSERT_EQ(all_authors.size(), 4); // Alice, Bob, Charlie, Diana
+    auto all_authors = QuerySet<Author>(conn).select_all();
+    ASSERT_TRUE(all_authors.has_value()) << "Select should return a value" << all_authors.error();
+    ASSERT_EQ(all_authors.value().size(), 4); // Alice, Bob, Charlie, Diana
 }
 
 TEST_F(ORMTest, SelectAllWhereId) {
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(&Author::id, alice_id)
         .select_all();
-    ASSERT_EQ(authors.size(), 1);
-    EXPECT_EQ(authors[0].name, "Alice Smith");
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 1);
+    auto value = authors.value();
+    EXPECT_EQ(value[0].name, "Alice Smith");
 }
 
 TEST_F(ORMTest, SelectAllWhereMany) {
-    std::vector<Post> posts = QuerySet<Post>(conn)
+    auto posts = QuerySet<Post>(conn)
         .where(&Post::author_id, alice_id)
-        .where(&Post::title, "Post A")
+        .where(&Post::title, "Alice's First Post")
         .select_all();
-    ASSERT_EQ(posts.size(), 1);
-    EXPECT_EQ(posts[0].title, "Post A");
+    ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
+    ASSERT_EQ(posts.value().size(), 1);
+    auto value = posts.value();
+    EXPECT_EQ(value[0].title, "Alice's First Post");
 }
 
 TEST_F(ORMTest, SelectAllErrorInvalidColumnException) {
@@ -748,8 +1006,8 @@ TEST_F(ORMTest, SelectAllErrorInvalidColumnException) {
         // Verify the column name in the exception
         EXPECT_EQ(e.getColumnName(), "author.name");
         EXPECT_FALSE(e.getQuery().empty());
-    } catch (...) {
-        FAIL() << "Expected InvalidColumnException, but a different exception was thrown";
+    } catch (const std::exception& e) {
+        FAIL() << "Expected InvalidColumnException, but a different exception was thrown: " << e.what();
     }
 }
 
@@ -757,389 +1015,413 @@ TEST_F(ORMTest, SelectAllErrorInvalidColumnException) {
 // JOIN TESTS
 // =======================================
 TEST_F(ORMTest, SelectAllWithJoin) {
-    std::vector<Post> all_posts = QuerySet<Post>(conn)
+    auto all_posts = QuerySet<Post>(conn)
         .join<Author>()
         .select_all();
-    ASSERT_EQ(all_posts.size(), 4); // Should have all 4 posts with author data
+    ASSERT_TRUE(all_posts.has_value()) << "Select should return a value" << all_posts.error();
+    ASSERT_EQ(all_posts.value().size(), 11); // Should have all 11 posts with author data
 }
 
 TEST_F(ORMTest, SelectAllWithJoinWhere) {
-    std::vector<Post> posts = QuerySet<Post>(conn)
+    auto posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
         .select_all();
-    ASSERT_EQ(posts.size(), 1);
-    EXPECT_EQ(posts[0].title, "Post A");
+    ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
+    ASSERT_EQ(posts.value().size(), 3);
+    auto value = posts.value();
+    EXPECT_EQ(value[0].title, "Alice's First Post");
 }
 
 TEST_F(ORMTest, SelectAllWithJoinWhereMany) {
-    std::vector<Post> posts = QuerySet<Post>(conn)
+    auto posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
         .where(&Author::is_active, true)
         .select_all();
-    ASSERT_EQ(posts.size(), 1);
-    EXPECT_EQ(posts[0].title, "Post A");
+    ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
+    ASSERT_EQ(posts.value().size(), 3);
+    auto value = posts.value();
+    EXPECT_EQ(value[0].title, "Alice's First Post");
 }
 
 TEST_F(ORMTest, SelectAllWithJoinWhereLimit) {
-    std::vector<Post> posts = QuerySet<Post>(conn)
+    auto posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
         .limit(1)
         .select_all();
-    ASSERT_EQ(posts.size(), 1);
-    EXPECT_EQ(posts[0].title, "Post A");
+    ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
+    ASSERT_EQ(posts.value().size(), 1);
+    EXPECT_EQ(posts.value()[0].title, "Alice's First Post");
 }
 
 TEST_F(ORMTest, SelectAllWithJoinWhereOffset) {
-    // First insert another post for Alice to test offset
-    Post extra_post("Post A2", "Content A2", alice_id);
-    QuerySet<Post>(conn).insert(extra_post);
-    
-    std::vector<Post> posts = QuerySet<Post>(conn)
+    auto posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
         .offset(1)
         .select_all();
-    ASSERT_EQ(posts.size(), 1); // After offset(1), we should have 1 post remaining
+    ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
+    ASSERT_EQ(posts.value().size(), 2); // After offset(1), we should have 2 post remaining
 }
 
 TEST_F(ORMTest, SelectAllWithJoinWhereLimitOffset) {
-    std::vector<Post> posts = QuerySet<Post>(conn)
+    auto posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
         .limit(1)
         .offset(1)
         .select_all();
-    ASSERT_EQ(posts.size(), 0); // Only one post for Alice, offset 1 means no results
+    ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
+    ASSERT_EQ(posts.value().size(), 1); // Only one post for Alice, offset 1 means no results
 }
 
 TEST_F(ORMTest, SelectAllWithJoinWhereGroupBy) {
-    std::vector<Post> posts = QuerySet<Post>(conn)
+    auto posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
         .template group_by<&Author::name>()
         .select_all();
-    ASSERT_EQ(posts.size(), 1);
+    ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
+    ASSERT_EQ(posts.value().size(), 1);
 }
 
 TEST_F(ORMTest, SelectAllWithJoinWhereGroupByLimit) {
-    std::vector<Post> posts = QuerySet<Post>(conn)
+    auto posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
         .template group_by<&Author::name>()
         .limit(1)
         .select_all();
-    ASSERT_EQ(posts.size(), 1);
+    ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
+    ASSERT_EQ(posts.value().size(), 1);
 }
 
 TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupByAndOffset) {
-    std::vector<Post> posts = QuerySet<Post>(conn)
+    auto posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
         .template group_by<&Author::name>()
         .offset(1)
         .select_all();
-    ASSERT_EQ(posts.size(), 0); // Only one group for Alice, offset 1 means no results
+    ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
+    ASSERT_EQ(posts.value().size(), 0); // Only one group for Alice, offset 1 means no results
 }
 
 TEST_F(ORMTest, SelectAllWithJoinWhereGroupByLimitOffset) {
-    std::vector<Post> posts = QuerySet<Post>(conn)
+    auto posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
         .template group_by<&Author::name>()
         .limit(1)
         .offset(1)
         .select_all();
-    ASSERT_EQ(posts.size(), 0);
+    ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
+    ASSERT_EQ(posts.value().size(), 0);
 }
 
 // =======================================
 // ORDER BY TESTS
 // =======================================
 TEST_F(ORMTest, SelectAllWithJoinWhereLimitOffsetOrderBy) {
-    std::vector<Post> posts = QuerySet<Post>(conn)
+    auto posts = QuerySet<Post>(conn)
         .join<Author>()
         .where(&Post::author_id, alice_id)
         .limit(1)
         .offset(1)
         .order_by<&Author::name>()
         .select_all();
-    ASSERT_EQ(posts.size(), 0);
+    ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
+    ASSERT_EQ(posts.value().size(), 1);
+    // Check that we got the second post (offset 1) for Alice
+    EXPECT_EQ(posts.value()[0].title, "Alice's Second Post");
 }
 
 TEST_F(ORMTest, OrderBySingleFieldAscendingExplicit) {
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .order_by<&Author::name, true>()
         .select_all();
     
-    ASSERT_EQ(authors.size(), 4);
-    
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 4);
+    auto value = authors.value();
     // Check ascending order by name: Alice, Bob, Charlie, Diana
-    EXPECT_EQ(authors[0].name, "Alice Smith");
-    EXPECT_EQ(authors[1].name, "Bob Johnson");
-    EXPECT_EQ(authors[2].name, "Charlie Brown");
-    EXPECT_EQ(authors[3].name, "Diana Prince");
+    EXPECT_EQ(value[0].name, "Alice Smith");
+    EXPECT_EQ(value[1].name, "Bob Johnson");
+    EXPECT_EQ(value[2].name, "Charlie Brown");
+    EXPECT_EQ(value[3].name, "Diana Prince");
 }
 
 TEST_F(ORMTest, OrderBySingleFieldDescending) {
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .order_by<&Author::name, false>()
         .select_all();
     
-    ASSERT_EQ(authors.size(), 4);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 4);
+    auto value = authors.value();
     
     // Check descending order by name: Diana, Charlie, Bob, Alice
-    EXPECT_EQ(authors[0].name, "Diana Prince");
-    EXPECT_EQ(authors[1].name, "Charlie Brown");
-    EXPECT_EQ(authors[2].name, "Bob Johnson");
-    EXPECT_EQ(authors[3].name, "Alice Smith");
+    EXPECT_EQ(value[0].name, "Diana Prince");
+    EXPECT_EQ(value[1].name, "Charlie Brown");
+    EXPECT_EQ(value[2].name, "Bob Johnson");
+    EXPECT_EQ(value[3].name, "Alice Smith");
 }
 
 TEST_F(ORMTest, OrderBySingleFieldDefaultAscending) {
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .order_by<&Author::age>()  // Default is ascending
         .select_all();
     
-    ASSERT_EQ(authors.size(), 4);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 4);
+    auto value = authors.value();
     
     // Check ascending order by age: 25, 28, 30, 35
-    EXPECT_EQ(authors[0].age, 25);  // Alice
-    EXPECT_EQ(authors[1].age, 28);  // Diana
-    EXPECT_EQ(authors[2].age, 30);  // Charlie
-    EXPECT_EQ(authors[3].age, 35);  // Bob
+    EXPECT_EQ(value[0].age, 25);  // Alice
+    EXPECT_EQ(value[1].age, 28);  // Diana
+    EXPECT_EQ(value[2].age, 30);  // Charlie
+    EXPECT_EQ(value[3].age, 35);  // Bob
     
-    EXPECT_EQ(authors[0].name, "Alice Smith");
-    EXPECT_EQ(authors[1].name, "Diana Prince");
-    EXPECT_EQ(authors[2].name, "Charlie Brown");
-    EXPECT_EQ(authors[3].name, "Bob Johnson");
+    EXPECT_EQ(value[0].name, "Alice Smith");
+    EXPECT_EQ(value[1].name, "Diana Prince");
+    EXPECT_EQ(value[2].name, "Charlie Brown");
+    EXPECT_EQ(value[3].name, "Bob Johnson");
 }
 
 TEST_F(ORMTest, OrderByMultipleFieldsMixedDirections) {
-    // Add more test data with same ages to test secondary ordering
-    Author author5("Eve Adams", 25, "eve@example.com");  // Same age as Alice
-    Author author6("Frank Miller", 35, "frank@example.com");  // Same age as Bob
-    QuerySet<Author>(conn).insert(author5);
-    QuerySet<Author>(conn).insert(author6);
-    
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .order_by<&Author::age, true, &Author::name, false>()  // Age ASC, Name DESC
         .select_all();
     
-    ASSERT_EQ(authors.size(), 6);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 4);
+    auto authorsValue = authors.value();
     
-    // Check ordering: Age ascending, then name descending within same age
-    // Age 25: Eve Adams, Alice Smith (Eve > Alice alphabetically, DESC)
-    // Age 28: Diana Prince
-    // Age 30: Charlie Brown  
-    // Age 35: Frank Miller, Bob Johnson (Frank > Bob alphabetically, DESC)
+    EXPECT_EQ(authorsValue[0].age, 25);
+    EXPECT_EQ(authorsValue[0].name, "Alice Smith");
     
-    EXPECT_EQ(authors[0].age, 25);
-    EXPECT_EQ(authors[0].name, "Eve Adams");
+    EXPECT_EQ(authorsValue[1].age, 28);
+    EXPECT_EQ(authorsValue[1].name, "Diana Prince");
     
-    EXPECT_EQ(authors[1].age, 25);
-    EXPECT_EQ(authors[1].name, "Alice Smith");
+    EXPECT_EQ(authorsValue[2].age, 30);
+    EXPECT_EQ(authorsValue[2].name, "Charlie Brown");
     
-    EXPECT_EQ(authors[2].age, 28);
-    EXPECT_EQ(authors[2].name, "Diana Prince");
-    
-    EXPECT_EQ(authors[3].age, 30);
-    EXPECT_EQ(authors[3].name, "Charlie Brown");
-    
-    EXPECT_EQ(authors[4].age, 35);
-    EXPECT_EQ(authors[4].name, "Frank Miller");
-    
-    EXPECT_EQ(authors[5].age, 35);
-    EXPECT_EQ(authors[5].name, "Bob Johnson");
+    EXPECT_EQ(authorsValue[3].age, 35);
+    EXPECT_EQ(authorsValue[3].name, "Bob Johnson");
 }
 
 TEST_F(ORMTest, OrderByWithJoin) {
-    std::vector<Post> posts = QuerySet<Post>(conn)
+    auto posts = QuerySet<Post>(conn)
         .join<Author>()
         .order_by<&Author::name, true>()
         .select_all();
     
-    ASSERT_EQ(posts.size(), 4);
+    ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
+    ASSERT_EQ(posts.value().size(), 11);
+    auto postsValue = posts.value();
     
     // Posts should be ordered by their author's name
-    // Since we have posts A,B,C,D for authors Alice,Bob,Charlie,Diana
-    EXPECT_EQ(posts[0].title, "Post A");  // Alice's post
-    EXPECT_EQ(posts[1].title, "Post B");  // Bob's post
-    EXPECT_EQ(posts[2].title, "Post C");  // Charlie's post
-    EXPECT_EQ(posts[3].title, "Post D");  // Diana's post
+    EXPECT_EQ(postsValue[0].title, "Alice's First Post");
+    EXPECT_EQ(postsValue[1].title, "Alice's Second Post");
+    EXPECT_EQ(postsValue[2].title, "Alice's Third Post");
+    EXPECT_EQ(postsValue[3].title, "Bob's First Post");
+    EXPECT_EQ(postsValue[4].title, "Bob's Second Post");
+    EXPECT_EQ(postsValue[5].title, "Charlie's First Post");
+    EXPECT_EQ(postsValue[6].title, "Charlie's Second Post");
+    EXPECT_EQ(postsValue[7].title, "Charlie's Third Post");
+    EXPECT_EQ(postsValue[8].title, "Charlie's Fourth Post");
+    EXPECT_EQ(postsValue[9].title, "Diana's First Post");
+    EXPECT_EQ(postsValue[10].title, "Diana's Second Post");
 }
 
 TEST_F(ORMTest, OrderByAgeDescending) {
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .order_by<&Author::age, false>()
         .select_all();
     
-    ASSERT_EQ(authors.size(), 4);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 4);
+    auto authorsValue = authors.value();
     
     // Should be ordered by age DESC
-    EXPECT_EQ(authors[0].age, 35);  // Bob (highest age)
-    EXPECT_EQ(authors[0].name, "Bob Johnson");
+    EXPECT_EQ(authorsValue[0].age, 35);  // Bob (highest age)
+    EXPECT_EQ(authorsValue[0].name, "Bob Johnson");
     
-    EXPECT_EQ(authors[1].age, 30);  // Charlie
-    EXPECT_EQ(authors[1].name, "Charlie Brown");
+    EXPECT_EQ(authorsValue[1].age, 30);  // Charlie
+    EXPECT_EQ(authorsValue[1].name, "Charlie Brown");
     
-    EXPECT_EQ(authors[2].age, 28);  // Diana
-    EXPECT_EQ(authors[2].name, "Diana Prince");
+    EXPECT_EQ(authorsValue[2].age, 28);  // Diana
+    EXPECT_EQ(authorsValue[2].name, "Diana Prince");
     
-    EXPECT_EQ(authors[3].age, 25);  // Alice (lowest age)
-    EXPECT_EQ(authors[3].name, "Alice Smith");
+    EXPECT_EQ(authorsValue[3].age, 25);  // Alice (lowest age)
+    EXPECT_EQ(authorsValue[3].name, "Alice Smith");
 }
 
 TEST_F(ORMTest, OrderByComplexJoinWithMultipleOrderFields) {
-    // Add more authors and posts for complex testing
-    Author author5("Alice Johnson", 27, "alice.j@example.com");  // Same first name as Alice Smith
-    int author5_id = QuerySet<Author>(conn).insert(author5);
-    Post post5("Post E", "Content E", author5_id);
-    QuerySet<Post>(conn).insert(post5);
-    
-    std::vector<Post> posts = QuerySet<Post>(conn)
+    auto posts = QuerySet<Post>(conn)
         .join<Author>()
         .order_by<&Author::name, true>()
-        .order_by<&Author::age, false>()  // Name ASC, Age DESC
+        .order_by<&Author::age, false>()
         .select_all();
     
-    ASSERT_EQ(posts.size(), 5);
+    ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
+    ASSERT_EQ(posts.value().size(), 11);
+
+    auto postsValue = posts.value();
     
-    // Should order by author name first, then by age DESC within same name
-    // Alice Johnson (27), Alice Smith (25), Bob Johnson (35), Charlie Brown (30), Diana Prince (28)
-    
-    // First Alice (Johnson, higher age comes first due to DESC)
-    EXPECT_EQ(posts[0].title, "Post E");
-    
-    // Second Alice (Smith, lower age)
-    EXPECT_EQ(posts[1].title, "Post A");
-    
-    // Then Bob
-    EXPECT_EQ(posts[2].title, "Post B");
-    
-    // Then Charlie
-    EXPECT_EQ(posts[3].title, "Post C");
-    
-    // Finally Diana
-    EXPECT_EQ(posts[4].title, "Post D");
+    // Posts should be ordered by author name ASC, then age DESC
+    EXPECT_EQ(postsValue[0].title, "Alice's First Post");
+    EXPECT_EQ(postsValue[1].title, "Alice's Second Post");
+    EXPECT_EQ(postsValue[2].title, "Alice's Third Post");
+    EXPECT_EQ(postsValue[3].title, "Bob's First Post");
+    EXPECT_EQ(postsValue[4].title, "Bob's Second Post");
+    EXPECT_EQ(postsValue[5].title, "Charlie's First Post");
+    EXPECT_EQ(postsValue[6].title, "Charlie's Second Post");
+    EXPECT_EQ(postsValue[7].title, "Charlie's Third Post");
+    EXPECT_EQ(postsValue[8].title, "Charlie's Fourth Post");
+    EXPECT_EQ(postsValue[9].title, "Diana's First Post");
+    EXPECT_EQ(postsValue[10].title, "Diana's Second Post");
 }
 
 TEST_F(ORMTest, OrderingWithWhereClause) {
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(&Author::age, 30)  // Only Charlie has age 30
         .order_by<&Author::name, true>()
         .select_all();
     
-    ASSERT_EQ(authors.size(), 1);
-    EXPECT_EQ(authors[0].name, "Charlie Brown");
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 1);
+    auto authorsValue = authors.value();
+    EXPECT_EQ(authorsValue[0].name, "Charlie Brown");
 }
 
 // =======================================
 // WHERE TESTS
 // =======================================
 TEST_F(ORMTest, WhereClauseEqualsDefault) {
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(field(&Author::age) == 30)  // Only Charlie has age 30
         .select_all();
     
-    ASSERT_EQ(authors.size(), 1);
-    EXPECT_EQ(authors[0].name, "Charlie Brown");
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 1);
+    auto authorsValue = authors.value();
+    EXPECT_EQ(authorsValue[0].name, "Charlie Brown");
 }
 
 TEST_F(ORMTest, WhereClauseEqualsOperator) {
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(field(&Author::age) == 30)  // Only Charlie has age 30
         .select_all();
     
-    ASSERT_EQ(authors.size(), 1);
-    EXPECT_EQ(authors[0].name, "Charlie Brown");
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 1);
+    auto authorsValue = authors.value();
+    EXPECT_EQ(authorsValue[0].name, "Charlie Brown");
 }
 
 TEST_F(ORMTest, WhereClauseConvenientSyntax) {
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(&Author::age, 30)  // Default to EQUALS
         .select_all();
     
-    ASSERT_EQ(authors.size(), 1);
-    EXPECT_EQ(authors[0].name, "Charlie Brown");
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 1);
+    auto authorsValue = authors.value();
+    EXPECT_EQ(authorsValue[0].name, "Charlie Brown");
 }
 
 TEST_F(ORMTest, WhereClauseMultipleConditions) {
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(&Author::age, 25, Op::GT)
         .where(&Author::is_active, true)
         .select_all();
     
-    ASSERT_EQ(authors.size(), 3);
-    for (const auto& author : authors) {
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 3);
+    auto authorsValue = authors.value();
+    for (const auto& author : authorsValue) {
         EXPECT_GT(author.age, 25);
         EXPECT_TRUE(author.is_active);
     }
 }
 
 TEST_F(ORMTest, WhereClauseNTTPSyntax) {
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where<&Author::age>(30)  // NTTP syntax - member pointer as template parameter
         .select_all();
     
-    ASSERT_EQ(authors.size(), 1);
-    EXPECT_EQ(authors[0].name, "Charlie Brown");
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 1);
+    auto authorsValue = authors.value();
+    EXPECT_EQ(authorsValue[0].name, "Charlie Brown");
 }
 
 TEST_F(ORMTest, WhereClauseNTTPStringComparison) {
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where<&Author::name>(std::string("Alice Smith"), Op::EQ)
         .select_all();
     
-    ASSERT_EQ(authors.size(), 1);
-    EXPECT_EQ(authors[0].name, "Alice Smith");
-    EXPECT_EQ(authors[0].age, 25);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 1);
+    auto authorsValue = authors.value();
+    EXPECT_EQ(authorsValue[0].name, "Alice Smith");
+    EXPECT_EQ(authorsValue[0].age, 25);
 }
 
 TEST_F(ORMTest, WhereClauseNTTPBooleanValue) {
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where<&Author::is_active>(true)  // Boolean using NTTP
         .select_all();
     
-    ASSERT_EQ(authors.size(), 4);
-    for (const auto& author : authors) {
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 4);
+    auto authorsValue = authors.value();
+    for (const auto& author : authorsValue) {
         EXPECT_TRUE(author.is_active);
     }
 }
 
 TEST_F(ORMTest, WhereClauseNTTPWithOperators) {
     // Test NTTP with GREATER_THAN operator
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where<&Author::age>(25, Op::GT)
         .select_all();
     
-    ASSERT_EQ(authors.size(), 3);
-    for (const auto& author : authors) {
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 3);
+    auto authorsValue = authors.value();
+    for (const auto& author : authorsValue) {
         EXPECT_GT(author.age, 25);
     }
 }
 
 TEST_F(ORMTest, WhereClauseNTTPLikeOperator) {
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where<&Author::name>(std::string("A%"), Op::LIKE)  // Names starting with 'A'
         .select_all();
     
-    ASSERT_EQ(authors.size(), 1);
-    for (const auto& author : authors) {
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 1);
+    auto authorsValue = authors.value();
+    for (const auto& author : authorsValue) {
         EXPECT_EQ(author.name[0], 'A');
     }
 }
 
 TEST_F(ORMTest, WhereClauseNTTPChaining) {
     // Test chaining NTTP where clauses
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where<&Author::age>(20, Op::GE)
         .where<&Author::is_active>(true)
         .select_all();
     
-    ASSERT_EQ(authors.size(), 4);
-    for (const auto& author : authors) {
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 4);
+    auto authorsValue = authors.value();
+    for (const auto& author : authorsValue) {
         EXPECT_GE(author.age, 20);
         EXPECT_TRUE(author.is_active);
     }
@@ -1147,14 +1429,15 @@ TEST_F(ORMTest, WhereClauseNTTPChaining) {
 
 TEST_F(ORMTest, WhereClauseMixedSyntax) {
     // Test mixing traditional and NTTP syntax
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(&Author::age, 25, Op::GT)  // Traditional syntax
         .where<&Author::is_active>(true)                   // NTTP syntax
         .select_all();
     
-    ASSERT_EQ(authors.size(), 3);
-
-    for (const auto& author : authors) {
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 3);
+    auto authorsValue = authors.value();
+    for (const auto& author : authorsValue) {
         EXPECT_GT(author.age, 25);
         EXPECT_TRUE(author.is_active);
     }
@@ -1162,54 +1445,67 @@ TEST_F(ORMTest, WhereClauseMixedSyntax) {
 
 TEST_F(ORMTest, WhereClauseNTTPConstCharPtr) {
     // Test NTTP with const char* (C-style string)
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where<&Author::name>("Charlie Brown")  // const char* literal
         .select_all();
     
-    ASSERT_EQ(authors.size(), 1);
-    EXPECT_EQ(authors[0].name, "Charlie Brown");
-    EXPECT_EQ(authors[0].age, 30);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 1);
+    auto authorsValue = authors.value();
+    EXPECT_EQ(authorsValue[0].name, "Charlie Brown");
+    EXPECT_EQ(authorsValue[0].age, 30);
 }
 
 TEST_F(ORMTest, WhereClauseNTTPWithArithmeticTypes) {
     // Test NTTP with various arithmetic types (now works without SFINAE constraint)
-    std::vector<Author> authorsInt = QuerySet<Author>(conn)
+    auto authorsInt = QuerySet<Author>(conn)
         .where<&Author::age>(30)  // int
         .select_all();
     
-    std::vector<Author> authorsDouble = QuerySet<Author>(conn)
+    auto authorsDouble = QuerySet<Author>(conn)
         .where<&Author::rating>(4.5)  // double
         .select_all();
     
-    std::vector<Author> authorsFloat = QuerySet<Author>(conn)
+    auto authorsFloat = QuerySet<Author>(conn)
         .where<&Author::score>(85.5f)  // float
         .select_all();
     
-    ASSERT_EQ(authorsInt.size(), 1);
-    ASSERT_EQ(authorsDouble.size(), 1);
-    ASSERT_EQ(authorsFloat.size(), 1);
+    ASSERT_TRUE(authorsInt.has_value()) << "Select should return a value" << authorsInt.error();
+    ASSERT_EQ(authorsInt.value().size(), 1);
+    auto authorsIntValue = authorsInt.value();
+    
+    ASSERT_TRUE(authorsDouble.has_value()) << "Select should return a value" << authorsDouble.error();
+    ASSERT_EQ(authorsDouble.value().size(), 1);
+    auto authorsDoubleValue = authorsDouble.value();
+    
+    ASSERT_TRUE(authorsFloat.has_value()) << "Select should return a value" << authorsFloat.error();
+    ASSERT_EQ(authorsFloat.value().size(), 1);
+    auto authorsFloatValue = authorsFloat.value();
 }
 
 TEST_F(ORMTest, WhereClauseNTTPComparisonWithTraditional) {
     // Verify NTTP and traditional syntax produce identical results
-    std::vector<Author> authorsTraditional = QuerySet<Author>(conn)
+    auto authorsTraditional = QuerySet<Author>(conn)
         .where(&Author::age, 30, Op::EQ)
         .select_all();
     
-    ASSERT_EQ(authorsTraditional.size(), 1);
+    ASSERT_TRUE(authorsTraditional.has_value()) << "Select should return a value" << authorsTraditional.error();
+    ASSERT_EQ(authorsTraditional.value().size(), 1);
+    auto authorsTraditionalValue = authorsTraditional.value();
     
-    std::vector<Author> authorsNTTP = QuerySet<Author>(conn)
+    auto authorsNTTP = QuerySet<Author>(conn)
         .where<&Author::age>(30, Op::EQ)
         .select_all();
     
-    ASSERT_EQ(authorsTraditional.size(), authorsNTTP.size());
-    ASSERT_EQ(authorsTraditional.size(), 1);
+    ASSERT_TRUE(authorsNTTP.has_value()) << "Select should return a value" << authorsNTTP.error();
+    ASSERT_EQ(authorsTraditional.value().size(), authorsNTTP.value().size());
+    ASSERT_EQ(authorsTraditional.value().size(), 1);
     
     // Both should return the same results
-    for (size_t i = 0; i < authorsTraditional.size(); ++i) {
-        EXPECT_EQ(authorsTraditional[i].name, authorsNTTP[i].name);
-        EXPECT_EQ(authorsTraditional[i].age, authorsNTTP[i].age);
-        EXPECT_EQ(authorsTraditional[i].is_active, authorsNTTP[i].is_active);
+    for (size_t i = 0; i < authorsTraditional.value().size(); ++i) {
+        EXPECT_EQ(authorsTraditional.value()[i].name, authorsNTTP.value()[i].name);
+        EXPECT_EQ(authorsTraditional.value()[i].age, authorsNTTP.value()[i].age);
+        EXPECT_EQ(authorsTraditional.value()[i].is_active, authorsNTTP.value()[i].is_active);
     }
 }
 
@@ -1220,61 +1516,70 @@ TEST_F(ORMTest, WhereClauseStringComparison) {
     Author author2("John Doe Smith", 31, "john.smith@example.com");
     QuerySet<Author>(conn).insert(author2);
     
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(&Author::name, std::string("John%"), Op::LIKE)
         .select_all();
     
-    ASSERT_EQ(authors.size(), 2);
-    for (const auto& foundAuthor : authors) {
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 2);
+    auto authorsValue = authors.value();
+    for (const auto& foundAuthor : authorsValue) {
         EXPECT_TRUE(foundAuthor.name.substr(0, 4) == "John");
     }
 }
 
 TEST_F(ORMTest, WhereClauseLessOrEqualOperator) {
     // Test LESS_OR_EQUAL operator
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(&Author::age, 30, Op::LE)
         .select_all();
     
-    ASSERT_EQ(authors.size(), 3);
-    for (const auto& author : authors) {
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 3);
+    auto authorsValue = authors.value();
+    for (const auto& author : authorsValue) {
         EXPECT_LE(author.age, 30);
     }
 }
 
 TEST_F(ORMTest, WhereClauseGreaterOrEqualOperator) {
     // Test GREATER_OR_EQUAL operator  
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(&Author::age, 25, Op::GE)
         .select_all();
     
-    ASSERT_EQ(authors.size(), 4);
-    for (const auto& author : authors) {
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 4);
+    auto authorsValue = authors.value();
+    for (const auto& author : authorsValue) {
         EXPECT_GE(author.age, 25);
     }
 }
 
 TEST_F(ORMTest, WhereClauseNTTPLessOrEqual) {
     // Test LESS_OR_EQUAL with NTTP syntax
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where<&Author::age>(35, Op::LE)
         .select_all();
     
-    ASSERT_EQ(authors.size(), 4);
-    for (const auto& author : authors) {
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 4);
+    auto authorsValue = authors.value();
+    for (const auto& author : authorsValue) {
         EXPECT_LE(author.age, 35);
     }
 }
 
 TEST_F(ORMTest, WhereClauseNTTPGreaterOrEqual) {
     // Test GREATER_OR_EQUAL with NTTP syntax
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where<&Author::rating>(3.0, Op::GE)
         .select_all();
     
-    ASSERT_EQ(authors.size(), 4);
-    
-    for (const auto& author : authors) {
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 4);
+    auto authorsValue = authors.value();
+    for (const auto& author : authorsValue) {
         EXPECT_GE(author.rating, 3.0);
     }
 }
@@ -1289,15 +1594,17 @@ TEST_F(ORMTest, WhereClauseIsOperator) {
     stmt.execute();
     
     // Execute the query using our ORM
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(&Author::biography, std::nullopt, Op::IS)  // WHERE biography IS NULL
         .select_all();
     
     // Verify we found the author with NULL biography
-    ASSERT_EQ(authors.size(), 1);
-    EXPECT_EQ(authors[0].name, "John Doe");
-    EXPECT_EQ(authors[0].age, 30);
-    EXPECT_EQ(authors[0].email, "john@example.com");
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 1);
+    auto authorsValue = authors.value();
+    EXPECT_EQ(authorsValue[0].name, "John Doe");
+    EXPECT_EQ(authorsValue[0].age, 30);
+    EXPECT_EQ(authorsValue[0].email, "john@example.com");
 }
 
 TEST_F(ORMTest, WhereClauseNTTPIsOperator) {
@@ -1310,22 +1617,29 @@ TEST_F(ORMTest, WhereClauseNTTPIsOperator) {
     stmt.bind(3, "john@example.com");
     stmt.execute();
     
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where<&Author::biography>(std::nullopt, Op::IS)  // WHERE biography IS NULL
         .select_all();
     
-    ASSERT_EQ(authors.size(), 1);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 1);
+    auto authorsValue = authors.value();
+    EXPECT_EQ(authorsValue[0].name, "John Doe");
+    EXPECT_EQ(authorsValue[0].age, 30);
+    EXPECT_EQ(authorsValue[0].email, "john@example.com");
 }
 
 TEST_F(ORMTest, WhereClauseOrOperator) {
     // Test: age = 25 OR age = 35 (Alice OR Bob)
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(field(&Author::age) == 25 or field(&Author::age) == 35) // NOSONAR
         .select_all();
     
-    ASSERT_EQ(authors.size(), 2);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 2);
+    auto authorsValue = authors.value();
     std::set<std::string, std::less<>> names;
-    for (const auto& author : authors) {
+    for (const auto& author : authorsValue) {
         names.insert(author.name);
     }
     EXPECT_TRUE(names.count("Alice Smith"));
@@ -1334,23 +1648,27 @@ TEST_F(ORMTest, WhereClauseOrOperator) {
 
 TEST_F(ORMTest, WhereClauseAndOperator) {
     // Test: age >= 30 AND rating >= 4.5 (Only Bob - Diana is 28, Charlie is 30 but rating 4.0)
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(field(&Author::age) >= 30 and field(&Author::rating) >= 4.5) // NOSONAR
         .select_all();
     
-    ASSERT_EQ(authors.size(), 1);
-    EXPECT_EQ(authors[0].name, "Bob Johnson");
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 1);
+    auto authorsValue = authors.value();
+    EXPECT_EQ(authorsValue[0].name, "Bob Johnson");
 }
 
 TEST_F(ORMTest, WhereClauseComplexAndOr) {
     // Test: (age = 25 OR age = 28) AND rating >= 4.5 (Alice AND Diana)
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where((field(&Author::age) == 25 or field(&Author::age) == 28) and field(&Author::rating) >= 4.5) // NOSONAR
         .select_all();
     
-    ASSERT_EQ(authors.size(), 2);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 2);
+    auto authorsValue = authors.value();
     std::set<std::string, std::less<>> names;
-    for (const auto& author : authors) {
+    for (const auto& author : authorsValue) {
         names.insert(author.name);
     }
     EXPECT_TRUE(names.count("Alice Smith"));
@@ -1359,13 +1677,15 @@ TEST_F(ORMTest, WhereClauseComplexAndOr) {
 
 TEST_F(ORMTest, WhereClauseComplexOrAnd) {
     // Test: age = 25 OR (age >= 30 AND rating = 5.0) (Alice OR Bob)
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(field(&Author::age) == 25 or (field(&Author::age) >= 30 and field(&Author::rating) == 5.0)) // NOSONAR
         .select_all();
     
-    ASSERT_EQ(authors.size(), 2);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 2);
+    auto authorsValue = authors.value();
     std::set<std::string, std::less<>> names;
-    for (const auto& author : authors) {
+    for (const auto& author : authorsValue  ) {
         names.insert(author.name);
     }
     EXPECT_TRUE(names.count("Alice Smith"));
@@ -1375,13 +1695,15 @@ TEST_F(ORMTest, WhereClauseComplexOrAnd) {
 TEST_F(ORMTest, WhereClauseTripleAnd) {
     // Test: age >= 25 AND age <= 30 AND rating >= 4.0 (Alice, Charlie, Diana)
     // Alice: 25, 4.5; Charlie: 30, 4.0; Diana: 28, 5.5
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(field(&Author::age) >= 25 and field(&Author::age) <= 30 and field(&Author::rating) >= 4.0) // NOSONAR
         .select_all();
     
-    ASSERT_EQ(authors.size(), 3);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 3);
+    auto authorsValue = authors.value();
     std::set<std::string, std::less<>> names;
-    for (const auto& author : authors) {
+    for (const auto& author : authorsValue) {
         names.insert(author.name);
     }
     EXPECT_TRUE(names.count("Alice Smith"));
@@ -1391,13 +1713,15 @@ TEST_F(ORMTest, WhereClauseTripleAnd) {
 
 TEST_F(ORMTest, WhereClauseTripleOr) {
     // Test: age = 25 OR age = 30 OR age = 35 (Alice, Charlie, Bob)
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(field(&Author::age) == 25 or field(&Author::age) == 30 or field(&Author::age) == 35) // NOSONAR
         .select_all();
     
-    ASSERT_EQ(authors.size(), 3);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 3);
+    auto authorsValue = authors.value();
     std::set<std::string, std::less<>> names;
-    for (const auto& author : authors) {
+    for (const auto& author : authorsValue) {
         names.insert(author.name);
     }
     EXPECT_TRUE(names.count("Alice Smith"));
@@ -1408,14 +1732,16 @@ TEST_F(ORMTest, WhereClauseTripleOr) {
 TEST_F(ORMTest, WhereClauseNestedComplexGrouping) {
     // Test: (age = 25 OR age = 35) AND (rating >= 4.5 OR score >= 90.0)
     // Should match: Alice (25, 4.5) and Bob (35, 5.0, 90.0)
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where((field(&Author::age) == 25 or field(&Author::age) == 35) and // NOSONAR
                (field(&Author::rating) >= 4.5 or field(&Author::score) >= 90.0)) // NOSONAR
         .select_all();
     
-    ASSERT_EQ(authors.size(), 2);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 2);
+    auto authorsValue = authors.value();
     std::set<std::string, std::less<>> names;
-    for (const auto& author : authors) {
+    for (const auto& author : authorsValue) {
         names.insert(author.name);
     }
     EXPECT_TRUE(names.count("Alice Smith"));
@@ -1425,14 +1751,16 @@ TEST_F(ORMTest, WhereClauseNestedComplexGrouping) {
 TEST_F(ORMTest, WhereClauseComplexNestedConditions) {
     // Test: ((age < 30 AND rating > 4.0) OR (age >= 30 AND score >= 85.0)) AND is_active = true
     // Should match: Alice (25, 4.5, active), Bob (35, 90.0, active), Diana (28, 5.5, 95.0, active)
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(((field(&Author::age) < 30 and field(&Author::rating) > 4.0) or // NOSONAR
                 (field(&Author::age) >= 30 and field(&Author::score) >= 85.0)) and field(&Author::is_active) == true) // NOSONAR
         .select_all();
     
-    ASSERT_EQ(authors.size(), 3);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 3);
+    auto authorsValue = authors.value();
     std::set<std::string, std::less<>> names;
-    for (const auto& author : authors) {
+    for (const auto& author : authorsValue) {
         names.insert(author.name);
     }
     EXPECT_TRUE(names.count("Alice Smith"));
@@ -1443,14 +1771,16 @@ TEST_F(ORMTest, WhereClauseComplexNestedConditions) {
 TEST_F(ORMTest, WhereClauseMixedDataTypes) {
     // Test with different data types: string, int, double, bool
     // Test: name LIKE 'Alice%' OR (age > 30 AND rating >= 4.0 AND is_active = true)
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(field(&Author::name).like("Alice%") or // NOSONAR
                (field(&Author::age) > 30 and field(&Author::rating) >= 4.0 and field(&Author::is_active) == true)) // NOSONAR
         .select_all();
     
-    ASSERT_EQ(authors.size(), 2);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 2);
+    auto authorsValue = authors.value();
     std::set<std::string, std::less<>> names;
-    for (const auto& author : authors) {
+    for (const auto& author : authorsValue) {
         names.insert(author.name);
     }
     EXPECT_TRUE(names.count("Alice Smith"));
@@ -1460,13 +1790,15 @@ TEST_F(ORMTest, WhereClauseMixedDataTypes) {
 TEST_F(ORMTest, WhereClauseGroupMethod) {
     // Test using the group() method for explicit grouping
     // Test: (age = 25 OR age = 28) AND rating >= 4.5
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where((field(&Author::age) == 25 or field(&Author::age) == 28) and field(&Author::rating) >= 4.5) // NOSONAR
         .select_all();
     
-    ASSERT_EQ(authors.size(), 2);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 2);
+    auto authorsValue = authors.value();
     std::set<std::string, std::less<>> names;
-    for (const auto& author : authors) {
+    for (const auto& author : authorsValue) {
         names.insert(author.name);
     }
     EXPECT_TRUE(names.count("Alice Smith"));
@@ -1476,13 +1808,15 @@ TEST_F(ORMTest, WhereClauseGroupMethod) {
 TEST_F(ORMTest, WhereClauseStringOperations) {
     // Test string operations with complex conditions
     // Test: (name LIKE '%Brown' OR email LIKE '%alice%') AND age >= 25
-    std::vector<Author> authors = QuerySet<Author>(conn)    
+    auto authors = QuerySet<Author>(conn)    
         .where((field(&Author::name).like("%Brown") or field(&Author::email).like("%alice%")) and field(&Author::age) >= 25) // NOSONAR
         .select_all();
     
-    ASSERT_EQ(authors.size(), 2);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 2);
+    auto authorsValue = authors.value();
     std::set<std::string, std::less<>> names;
-    for (const auto& author : authors) {
+    for (const auto& author : authorsValue) {
         names.insert(author.name);
     }
     EXPECT_TRUE(names.count("Alice Smith"));
@@ -1493,13 +1827,15 @@ TEST_F(ORMTest, WhereClauseFloatComparisons) {
     // Test float/double comparisons with complex logic
     // Test: (score >= 85.0 AND score <= 90.0) OR rating > 5.0
     // Should match: Alice (85.5), Bob (90.0), Diana (95.0, 5.5)
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where((field(&Author::score) >= 85.0 and field(&Author::score) <= 90.0) or field(&Author::rating) > 5.0) // NOSONAR
         .select_all();
     
-    ASSERT_EQ(authors.size(), 3);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 3);
+    auto authorsValue = authors.value();
     std::set<std::string, std::less<>> names;
-    for (const auto& author : authors) {
+    for (const auto& author : authorsValue) {
         names.insert(author.name);
     }
     EXPECT_TRUE(names.count("Alice Smith"));
@@ -1511,13 +1847,15 @@ TEST_F(ORMTest, WhereClauseNotEqualsOperator) {
     // Test NOT_EQUALS with complex conditions
     // Test: age != 30 AND (rating >= 4.5 OR score >= 90.0)
     // Should match: Alice (25, 4.5), Bob (35, 5.0, 90.0), Diana (28, 5.5, 95.0)
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(field(&Author::age) != 30 and (field(&Author::rating) >= 4.5 or field(&Author::score) >= 90.0)) // NOSONAR
         .select_all();
     
-    ASSERT_EQ(authors.size(), 3);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 3);
+    auto authorsValue = authors.value();
     std::set<std::string, std::less<>> names;
-    for (const auto& author : authors) {
+    for (const auto& author : authorsValue) {
         names.insert(author.name);
     }
     EXPECT_TRUE(names.count("Alice Smith"));
@@ -1530,15 +1868,17 @@ TEST_F(ORMTest, WhereClauseComplexChaining) {
     // Test: (age >= 25 AND age <= 30) OR (rating >= 5.0 AND score >= 90.0) OR name LIKE '%Prince'
     // Should match: Alice (25), Charlie (30), Diana (28), Bob (5.0, 90.0), Diana (name ends with Prince)
     // Note: Diana matches multiple conditions
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where((field(&Author::age) >= 25 and field(&Author::age) <= 30) or // NOSONAR
                (field(&Author::rating) >= 5.0 and field(&Author::score) >= 90.0) or // NOSONAR
                field(&Author::name).like("%Prince"))
         .select_all();
     
-    ASSERT_EQ(authors.size(), 4); // All authors should match
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 4); // All authors should match
+    auto authorsValue = authors.value();
     std::set<std::string, std::less<>> names;
-    for (const auto& author : authors) {
+    for (const auto& author : authorsValue) {
         names.insert(author.name);
     }
     EXPECT_TRUE(names.count("Alice Smith"));
@@ -1551,15 +1891,17 @@ TEST_F(ORMTest, WhereClauseBooleanLogic) {
     // Test boolean field with complex conditions
     // Test: is_active = true AND ((age < 30 AND rating > 4.0) OR score >= 95.0)
     // Should match: Alice (active, 25, 4.5), Diana (active, 28, 5.5, 95.0)
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(field(&Author::is_active) == true and // NOSONAR
                ((field(&Author::age) < 30 and field(&Author::rating) > 4.0) or // NOSONAR
                 field(&Author::score) >= 95.0))
         .select_all();
     
-    ASSERT_EQ(authors.size(), 2);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 2);
+    auto authorsValue = authors.value();
     std::set<std::string, std::less<>> names;
-    for (const auto& author : authors) {
+    for (const auto& author : authorsValue) {
         names.insert(author.name);
     }
     EXPECT_TRUE(names.count("Alice Smith"));
@@ -1569,12 +1911,13 @@ TEST_F(ORMTest, WhereClauseBooleanLogic) {
 TEST_F(ORMTest, WhereClauseEmptyResult) {
     // Test condition that should return no results
     // Test: age > 100 OR (rating < 0 AND is_active = false)
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .where(field(&Author::age) > 100 or // NOSONAR
                (field(&Author::rating) < 0 and field(&Author::is_active) == false)) // NOSONAR
         .select_all();
     
-    ASSERT_EQ(authors.size(), 0);
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 0);
 }
 
 // =======================================
@@ -1583,15 +1926,16 @@ TEST_F(ORMTest, WhereClauseEmptyResult) {
 TEST_F(ORMTest, SelectOnlySpecificFields) {
     // Test selecting only specific fields from the model using NTTP
     // Execute the query using method chaining
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .only<&Author::name, &Author::age, &Author::email>()
         .select_all();
     
     // Verify results
-    ASSERT_EQ(authors.size(), 4); // Should return all 4 authors
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 4); // Should return all 4 authors
     
     // Check that we have the expected fields populated
-    for (const auto& author : authors) {
+    for (const auto& author : authors.value()) {
         // These fields should be populated
         EXPECT_FALSE(author.name.empty());
         EXPECT_GT(author.age, 0);
@@ -1609,16 +1953,17 @@ TEST_F(ORMTest, SelectOnlySpecificFields) {
 
 TEST_F(ORMTest, SelectOnlyWithAlias) {
     // Test selecting fields with aliases
-    std::vector<Author> authors = QuerySet<Author>(conn)
+    auto authors = QuerySet<Author>(conn)
         .only<&Author::name>("author_name")
         .only<&Author::age>("author_age")
         .select_all();
     
     // Verify results
-    ASSERT_EQ(authors.size(), 4); // Should return all 4 authors
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 4); // Should return all 4 authors
     
     // Check that we have the expected fields populated
-    for (const auto& author : authors) {
+    for (const auto& author : authors.value()) {
         // These fields should be populated
         EXPECT_FALSE(author.name.empty());
         EXPECT_GT(author.age, 0);
@@ -1631,30 +1976,39 @@ TEST_F(ORMTest, SelectOnlyWithAlias) {
 
 TEST_F(ORMTest, SelectValues) {
     // Test the select_values method for dictionary-like access
-    auto values = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .only<&Author::name, &Author::age, &Author::is_active>()
         .select_values();
     
-    // Verify results
-    ASSERT_EQ(values.size(), 4); // Should return all 4 authors
+    // Check if we got a valid result
+    ASSERT_TRUE(result.has_value()) << "select_values failed with error: " << result.error();
     
-    // Check each map for expected values and types
-    for (const auto& row : values) {
-        // Check that all expected keys exist
-        ASSERT_TRUE(row.count("name"));
-        ASSERT_TRUE(row.count("age"));
-        ASSERT_TRUE(row.count("is_active"));
-        
-        // Check types and values
-        EXPECT_TRUE(std::holds_alternative<std::string>(row.at("name")));
-        EXPECT_FALSE(std::get<std::string>(row.at("name")).empty());
-        
-        EXPECT_TRUE(std::holds_alternative<int>(row.at("age")));
-        EXPECT_GT(std::get<int>(row.at("age")), 0);
-        
-        EXPECT_TRUE(std::holds_alternative<bool>(row.at("is_active")));
-        EXPECT_TRUE(std::get<bool>(row.at("is_active")));
-    }
+    // Define expected results
+    ValueVectorMap expected_results = {
+        {
+            {"name", "Alice Smith"},
+            {"age", 25},
+            {"is_active", true}
+        },
+        {
+            {"name", "Bob Johnson"},
+            {"age", 35},
+            {"is_active", true}
+        },
+        {
+            {"name", "Charlie Brown"},
+            {"age", 30},
+            {"is_active", true}
+        },
+        {
+            {"name", "Diana Prince"},
+            {"age", 28},
+            {"is_active", true}
+        }
+    };
+    
+    // Use the AssertResultsMatch helper to verify the results
+    AssertResultsMatch(result, expected_results);
 }
 
 // =======================================
@@ -1672,22 +2026,26 @@ TEST_F(ORMTest, DistinctTemplateBased) {
     auto distinctAgeValues = QuerySet<Author>(conn)
         .distinct<&Author::age>()
         .select_values();
-        
+    
+    // Check if we got a valid result
+    ASSERT_TRUE(distinctAgeValues.has_value()) << "select_values failed with error: " << distinctAgeValues.error();
+
+    ASSERT_TRUE(allAuthors.has_value()) << "select_all failed with error: " << allAuthors.error();
     // We should have 5 total authors (Alice, Bob, Charlie, Diana, Frank)
-    ASSERT_EQ(allAuthors.size(), 5);
+    ASSERT_EQ(allAuthors.value().size(), 5);
 
     // With our implementation, we should get 4 distinct ages
-    ASSERT_EQ(distinctAgeValues.size(), 4);
+    ASSERT_EQ(distinctAgeValues.value().size(), 4);
     
     // Create a set of all ages to verify all ages are present
     std::set<int> allAgesSet;
-    for (const auto& author : allAuthors) {
+    for (const auto& author : allAuthors.value()) {
         allAgesSet.insert(author.age);
     }
     
     // Extract the ages from the values and convert to a set
     std::set<int> distinctAgesSet;
-    for (const auto& row : distinctAgeValues) {
+    for (const auto& row : distinctAgeValues.value()) {
         ASSERT_TRUE(row.count("age"));
         ASSERT_TRUE(std::holds_alternative<int>(row.at("age")));
         distinctAgesSet.insert(std::get<int>(row.at("age")));
@@ -1705,7 +2063,7 @@ TEST_F(ORMTest, DistinctTemplateBased) {
     
     // Count how many authors have age 30 (should be 2)
     int age30Count = 0;
-    for (const auto& author : allAuthors) {
+    for (const auto& author : allAuthors.value()) {
         if (author.age == 30) age30Count++;
     }
     ASSERT_EQ(age30Count, 2); // Both Charlie and Frank have age 30
@@ -1727,9 +2085,12 @@ TEST_F(ORMTest, DistinctMultipleFields) {
         .distinct<&Author::age, &Author::rating>()
         .select_values();
     
+    // Check if we got a valid result
+    ASSERT_TRUE(distinctValues.has_value()) << "select_values failed with error: " << distinctValues.error();
+    
     // Count distinct combinations of age and rating
     std::set<std::pair<int, double>> distinctCombinations;
-    for (const auto& row : distinctValues) {
+    for (const auto& row : distinctValues.value()) {
         // Extract age and rating from the returned values
         ASSERT_TRUE(row.count("age"));
         ASSERT_TRUE(row.count("rating"));
@@ -1767,12 +2128,15 @@ TEST_F(ORMTest, DistinctWithOnlyFields) {
         .only<&Author::age, &Author::name>()
         .select_values();
     
+    // Check if we got a valid result
+    ASSERT_TRUE(distinctValues.has_value()) << "select_values failed with error: " << distinctValues.error();
+    
     // When using distinct with only, we get distinct combinations of the fields
     // So we'll have 7 rows (all unique combinations of age and name)
-    ASSERT_EQ(distinctValues.size(), 7);
+    ASSERT_EQ(distinctValues.value().size(), 7);
     
     // Each row should contain only age and name fields
-    for (const auto& row : distinctValues) {
+    for (const auto& row : distinctValues.value()) {
         // Should have exactly 2 fields
         ASSERT_EQ(row.size(), 2);
         
@@ -1788,7 +2152,7 @@ TEST_F(ORMTest, DistinctWithOnlyFields) {
     
     // Extract the ages from the values
     std::set<int> distinctAgesSet;
-    for (const auto& row : distinctValues) {
+    for (const auto& row : distinctValues.value()) {
         ASSERT_TRUE(std::holds_alternative<int>(row.at("age")));
         distinctAgesSet.insert(std::get<int>(row.at("age")));
     }
@@ -1817,13 +2181,16 @@ TEST_F(ORMTest, DistinctWithWhere) {
         .distinct<&Author::age>()
         .select_values();
     
+    // Check if we got a valid result
+    ASSERT_TRUE(authorResults.has_value()) << "select_values failed with error: " << authorResults.error();
+    
     // We should have at least 3 distinct ages (35, 40, 45) that are >= 35
     // Note: Other tests may have added additional authors with ages >= 35
-    ASSERT_GE(authorResults.size(), 3);
+    ASSERT_GE(authorResults.value().size(), 3);
     
     // Create a set of ages to verify uniqueness
     std::set<int> distinctAges;
-    for (const auto& result : authorResults) {
+    for (const auto& result : authorResults.value()) {
         // With select_values, we get a map with field name as key
         distinctAges.insert(std::visit([](auto&& arg) -> int {
             using ArgType = std::decay_t<decltype(arg)>;
@@ -1883,8 +2250,9 @@ TEST_F(ORMTest, RawSqlFromStatementInsert) {
     ASSERT_TRUE(rawSql.find("RETURNING id") != std::string::npos) << "SQL should contain 'RETURNING id' but got: " << rawSql;
     
     // Now execute the insert and verify it worked
-    int authorId = QuerySet<Author>(conn).insert(testAuthor);
-    ASSERT_GT(authorId, 0);
+    auto authorId = QuerySet<Author>(conn).insert(testAuthor);
+    ASSERT_TRUE(authorId.has_value()) << "insert failed with error: " << authorId.error();
+    ASSERT_GT(authorId.value(), 0);
 
     // Test with multiple objects
     std::vector<Author> authors = {
@@ -1913,9 +2281,10 @@ TEST_F(ORMTest, RawSqlFromStatementInsert) {
     
     // Execute the multiple inserts and verify
     auto ids = QuerySet<Author>(conn).insert(authors);
-    ASSERT_EQ(ids.size(), 2);
-    ASSERT_GT(ids[0], 0);
-    ASSERT_GT(ids[1], 0);
+    ASSERT_TRUE(ids.has_value()) << "insert failed with error: " << ids.error();
+    ASSERT_EQ(ids.value().size(), 2);
+    ASSERT_GT(ids.value()[0], 0);
+    ASSERT_GT(ids.value()[1], 0);
 }
 
 // =======================================
@@ -1942,11 +2311,12 @@ TEST_F(ORMTest, GroupByBasic) {
         .select_all();
     
     // We should have 4 distinct age groups: 25, 28, 30, 35, 40
-    ASSERT_EQ(results.size(), 5);
+    ASSERT_TRUE(results.has_value()) << "query failed with error: " << results.error();
+    ASSERT_EQ(results.value().size(), 5);
     
     // Verify the ages are present in the results
     std::set<int> distinctAges;
-    for (const auto& author : results) {
+    for (const auto& author : results.value()) {
         distinctAges.insert(author.age);
     }
     
@@ -1981,11 +2351,12 @@ TEST_F(ORMTest, GroupByMultipleFields) {
     // (40, 4.0) - Jack
     // (40, 4.5) - Kate
     // (45, 4.0) - Luke
-    ASSERT_GE(results.size(), 7);
+    ASSERT_TRUE(results.has_value()) << "query failed with error: " << results.error();
+    ASSERT_GE(results.value().size(), 7);
     
     // Create a set of age-rating pairs to verify unique combinations
     std::set<std::pair<int, double>> ageRatingPairs;
-    for (const auto& author : results) {
+    for (const auto& author : results.value()) {
         ageRatingPairs.insert({author.age, author.rating});
     }
     
@@ -2014,7 +2385,7 @@ TEST_F(ORMTest, GroupByWithOrderBy) {
     
     // Extract ages to verify ordering
     std::vector<int> ages;
-    for (const auto& author : results) {
+    for (const auto& author : results.value()) {
         ages.push_back(author.age);
     }
     
@@ -2046,11 +2417,12 @@ TEST_F(ORMTest, GroupByWithJoinAndWhere) {
         .select_all();
     
     // We should have 3 groups: Bob (35), Charlie (30), Diana (28)
-    ASSERT_EQ(results.size(), 3);
+    ASSERT_TRUE(results.has_value()) << "query failed with error: " << results.error();
+    ASSERT_EQ(results.value().size(), 3);
     
     // Extract author IDs directly from Author objects
     std::set<int> authorIds;
-    for (const auto& post : results) {
+    for (const auto& post : results.value()) {
         authorIds.insert(post.author_id);
     }
     
@@ -2074,16 +2446,18 @@ TEST_F(ORMTest, BasicTransactionCommit) {
     
     // Insert an author within the transaction
     Author alice("Alice Smith", 25, "alice@example.com");
-    int alice_id = QuerySet<Author>(conn).insert(alice);
+    auto alice_id = QuerySet<Author>(conn).insert(alice);
+    ASSERT_TRUE(alice_id.has_value()) << "query failed with error: " << alice_id.error();
     
     // Commit the transaction
     conn->commit();
     
     // Verify the author was inserted
     auto results = QuerySet<Author>(conn).select_all();
-    ASSERT_EQ(results.size(), 1);
-    ASSERT_EQ(results[0].name, "Alice Smith");
-    ASSERT_EQ(results[0].id, alice_id);
+    ASSERT_TRUE(results.has_value()) << "query failed with error: " << results.error();
+    ASSERT_EQ(results.value().size(), 1);
+    ASSERT_EQ(results.value()[0].name, "Alice Smith");
+    ASSERT_EQ(results.value()[0].id, alice_id.value());
 }
 
 TEST_F(ORMTest, BasicTransactionRollback) {
@@ -2095,14 +2469,16 @@ TEST_F(ORMTest, BasicTransactionRollback) {
     
     // Insert an author within the transaction
     Author alice("Alice Smith", 25, "alice@example.com");
-    QuerySet<Author>(conn).insert(alice);
+    auto alice_id = QuerySet<Author>(conn).insert(alice);
+    ASSERT_TRUE(alice_id.has_value()) << "query failed with error: " << alice_id.error();
     
     // Rollback the transaction
     conn->rollback();
     
     // Verify the author was not inserted
     auto results = QuerySet<Author>(conn).select_all();
-    ASSERT_EQ(results.size(), 0); // No authors should exist after rollback
+    ASSERT_TRUE(results.has_value()) << "query failed with error: " << results.error();
+    ASSERT_EQ(results.value().size(), 0); // No authors should exist after rollback
 }
 
 TEST_F(ORMTest, TransactionLevels) {
@@ -2113,7 +2489,8 @@ TEST_F(ORMTest, TransactionLevels) {
     conn->begin_transaction(Connection::TransactionLevel::IMMEDIATE);
     
     Author alice("Alice Smith", 25, "alice@example.com");
-    QuerySet<Author>(conn).insert(alice);
+    auto alice_id = QuerySet<Author>(conn).insert(alice);
+    ASSERT_TRUE(alice_id.has_value()) << "query failed with error: " << alice_id.error();
     
     conn->commit();
     
@@ -2121,13 +2498,15 @@ TEST_F(ORMTest, TransactionLevels) {
     conn->begin_transaction(Connection::TransactionLevel::EXCLUSIVE);
     
     Author bob("Bob Johnson", 30, "bob@example.com");
-    QuerySet<Author>(conn).insert(bob);
+    auto bob_id = QuerySet<Author>(conn).insert(bob);
+    ASSERT_TRUE(bob_id.has_value()) << "query failed with error: " << bob_id.error();
     
     conn->commit();
     
     // Verify both authors were inserted
     auto results = QuerySet<Author>(conn).select_all();
-    ASSERT_EQ(results.size(), 2);
+    ASSERT_TRUE(results.has_value()) << "query failed with error: " << results.error();
+    ASSERT_EQ(results.value().size(), 2);
 }
 
 TEST_F(ORMTest, NestedTransactionException) {
@@ -2170,7 +2549,8 @@ TEST_F(ORMTest, TransactionRAIIWrapper) {
         
         // Insert an author within the transaction
         Author alice("Alice Smith", 25, "alice@example.com");
-        QuerySet<Author>(conn).insert(alice);
+        auto alice_id = QuerySet<Author>(conn).insert(alice);
+        ASSERT_TRUE(alice_id.has_value()) << "query failed with error: " << alice_id.error();
         
         // Transaction will be rolled back when it goes out of scope
         // because we don't call commit()
@@ -2178,7 +2558,8 @@ TEST_F(ORMTest, TransactionRAIIWrapper) {
     
     // Verify the author was not inserted (transaction was rolled back)
     auto results = QuerySet<Author>(conn).select_all();
-    ASSERT_EQ(results.size(), 0); // No authors should exist after rollback
+    ASSERT_TRUE(results.has_value()) << "query failed with error: " << results.error();
+    ASSERT_EQ(results.value().size(), 0); // No authors should exist after rollback
 }
 
 TEST_F(ORMTest, TransactionRAIICommit) {
@@ -2191,7 +2572,8 @@ TEST_F(ORMTest, TransactionRAIICommit) {
         
         // Insert an author within the transaction
         Author alice("Alice Smith", 25, "alice@example.com");
-        QuerySet<Author>(conn).insert(alice);
+        auto alice_id = QuerySet<Author>(conn).insert(alice);
+        ASSERT_TRUE(alice_id.has_value()) << "query failed with error: " << alice_id.error();
         
         // Explicitly commit the transaction
         tx.commit();
@@ -2199,8 +2581,9 @@ TEST_F(ORMTest, TransactionRAIICommit) {
     
     // Verify the author was inserted
     auto results = QuerySet<Author>(conn).select_all();
-    ASSERT_EQ(results.size(), 1);
-    ASSERT_EQ(results[0].name, "Alice Smith");
+    ASSERT_TRUE(results.has_value()) << "query failed with error: " << results.error();
+    ASSERT_EQ(results.value().size(), 1);
+    ASSERT_EQ(results.value()[0].name, "Alice Smith");
 }
 
 TEST_F(ORMTest, TransactionRAIIRollback) {
@@ -2213,7 +2596,8 @@ TEST_F(ORMTest, TransactionRAIIRollback) {
         
         // Insert an author within the transaction
         Author alice("Alice Smith", 25, "alice@example.com");
-        QuerySet<Author>(conn).insert(alice);
+        auto alice_id = QuerySet<Author>(conn).insert(alice);
+        ASSERT_TRUE(alice_id.has_value()) << "query failed with error: " << alice_id.error();
         
         // Explicitly rollback the transaction
         tx.rollback();
@@ -2221,7 +2605,8 @@ TEST_F(ORMTest, TransactionRAIIRollback) {
     
     // Verify the author was not inserted
     auto results = QuerySet<Author>(conn).select_all();
-    ASSERT_EQ(results.size(), 0); // No authors should exist after rollback
+    ASSERT_TRUE(results.has_value()) << "query failed with error: " << results.error();
+    ASSERT_EQ(results.value().size(), 0); // No authors should exist after rollback
 }
 
 TEST_F(ORMTest, WithTransactionHelper) {
@@ -2229,9 +2614,10 @@ TEST_F(ORMTest, WithTransactionHelper) {
     clearTestData();
     
     // Test the with_transaction helper function
-    bool success = with_transaction(conn, [this]() {
+    bool success = with_transaction(conn, [this]() -> bool {
         Author alice("Alice Smith", 25, "alice@example.com");
-        QuerySet<Author>(this->conn).insert(alice);
+        auto alice_id = QuerySet<Author>(this->conn).insert(alice);
+        EXPECT_TRUE(alice_id.has_value()) << "query failed with error: " << alice_id.error();
         return true;
     }); 
     
@@ -2239,8 +2625,9 @@ TEST_F(ORMTest, WithTransactionHelper) {
     
     // Verify the author was inserted
     auto results = QuerySet<Author>(conn).select_all();
-    ASSERT_EQ(results.size(), 1);
-    ASSERT_EQ(results[0].name, "Alice Smith");
+    ASSERT_TRUE(results.has_value()) << "query failed with error: " << results.error();
+    ASSERT_EQ(results.value().size(), 1);
+    ASSERT_EQ(results.value()[0].name, "Alice Smith");
 }
 
 TEST_F(ORMTest, WithTransactionExceptionRollback) {
@@ -2251,7 +2638,8 @@ TEST_F(ORMTest, WithTransactionExceptionRollback) {
     try {
         with_transaction(conn, [this]() {
             Author alice("Alice Smith", 25, "alice@example.com");
-            QuerySet<Author>(this->conn).insert(alice);
+            auto alice_id = QuerySet<Author>(this->conn).insert(alice);
+            ASSERT_TRUE(alice_id.has_value()) << "query failed with error: " << alice_id.error();
             
             // Throw an exception to trigger rollback
             throw std::runtime_error("Test exception");
@@ -2264,7 +2652,8 @@ TEST_F(ORMTest, WithTransactionExceptionRollback) {
     
     // Verify the author was not inserted (transaction was rolled back)
     auto results = QuerySet<Author>(conn).select_all();
-    ASSERT_EQ(results.size(), 0);
+    ASSERT_TRUE(results.has_value()) << "query failed with error: " << results.error();
+    ASSERT_EQ(results.value().size(), 0);
 }
 
 TEST_F(ORMTest, MultipleOperationsInTransaction) {
@@ -2279,14 +2668,20 @@ TEST_F(ORMTest, MultipleOperationsInTransaction) {
     Author bob("Bob Johnson", 30, "bob@example.com");
     Author charlie("Charlie Brown", 35, "charlie@example.com");
     
-    int alice_id = QuerySet<Author>(conn).insert(alice);
-    QuerySet<Author>(conn).insert(bob);
-    QuerySet<Author>(conn).insert(charlie);
+    auto alice_id = QuerySet<Author>(conn).insert(alice);
+    ASSERT_TRUE(alice_id.has_value()) << "query failed with error: " << alice_id.error();
+    auto bob_id = QuerySet<Author>(conn).insert(bob);
+    ASSERT_TRUE(bob_id.has_value()) << "query failed with error: " << bob_id.error();
+    auto charlie_id = QuerySet<Author>(conn).insert(charlie);
+    ASSERT_TRUE(charlie_id.has_value()) << "query failed with error: " << charlie_id.error();
     
     // Update an author - first retrieve the current object with the correct ID
-    auto alice_from_db = QuerySet<Author>(conn).where(&Author::id, alice_id).select_one();
+    auto result = QuerySet<Author>(conn).where(&Author::id, alice_id.value()).select_one();
+    ASSERT_TRUE(result.has_value()) << "query failed with error: " << result.error();
+    auto alice_from_db = result.value();
     alice_from_db.age = 26;
-    QuerySet<Author>(conn).update(alice_from_db);
+    auto update_result = QuerySet<Author>(conn).update(alice_from_db);
+    ASSERT_TRUE(update_result.has_value()) << "query failed with error: " << update_result.error();
     
     // Delete an author
     QuerySet<Author>(conn).where(&Author::name, "Charlie Brown").remove();
@@ -2295,10 +2690,11 @@ TEST_F(ORMTest, MultipleOperationsInTransaction) {
     
     // Verify the final state
     auto results = QuerySet<Author>(conn).order_by<&Author::name>().select_all();
-    ASSERT_EQ(results.size(), 2);
-    ASSERT_EQ(results[0].name, "Alice Smith");
-    ASSERT_EQ(results[0].age, 26);
-    ASSERT_EQ(results[1].name, "Bob Johnson");
+    ASSERT_TRUE(results.has_value()) << "query failed with error: " << results.error();
+    ASSERT_EQ(results.value().size(), 2);
+    ASSERT_EQ(results.value()[0].name, "Alice Smith");
+    ASSERT_EQ(results.value()[0].age, 26);
+    ASSERT_EQ(results.value()[1].name, "Bob Johnson");
 }
 
 TEST_F(ORMTest, TransferBetweenAuthorsTransaction) {
@@ -2306,8 +2702,10 @@ TEST_F(ORMTest, TransferBetweenAuthorsTransaction) {
     // We don't clear the data here because we need alice_id and bob_id from setupTestData
     
     // First, let's create a new post for Alice
-    Post alicePost("Alice's Original Post", "This post belongs to Alice", alice_id);
-    int postId = QuerySet<Post>(conn).insert(alicePost);
+    Post alicePost("Alice's Original Post", "This post belongs to Alice", alice_id, 0, 100);
+    auto result = QuerySet<Post>(conn).insert(alicePost);
+    ASSERT_TRUE(result.has_value()) << "query failed with error: " << result.error();
+    auto postId = result.value();
     
     // Now let's transfer the post from Alice to Bob using a transaction
     // to ensure the operation is atomic
@@ -2316,13 +2714,15 @@ TEST_F(ORMTest, TransferBetweenAuthorsTransaction) {
         
         try {
             // 1. Update the post to belong to Bob
-            Post post = QuerySet<Post>(conn).where(&Post::id, postId).select_one();
-            post.author_id = bob_id;
-            QuerySet<Post>(conn).where(&Post::id, postId).update(post);
+            auto post = QuerySet<Post>(conn).where(&Post::id, postId).select_one();
+            ASSERT_TRUE(post.has_value()) << "query failed with error: " << post.error();
+            auto postValue = post.value();
+            postValue.author_id = bob_id;
+            QuerySet<Post>(conn).where(&Post::id, postId).update(postValue);
             
             // 2. Update some metadata about the post (title to reflect new ownership)
-            post.title = "Post Transferred to Bob";
-            QuerySet<Post>(conn).where(&Post::id, postId).update(post);
+            postValue.title = "Post Transferred to Bob";
+            QuerySet<Post>(conn).where(&Post::id, postId).update(postValue);
             
             // Commit the transaction - both operations succeed atomically
             tx.commit();
@@ -2334,22 +2734,25 @@ TEST_F(ORMTest, TransferBetweenAuthorsTransaction) {
     }
     
     // Verify the post now belongs to Bob
-    Post updatedPost = QuerySet<Post>(conn).where(&Post::id, postId).select_one();
-    ASSERT_EQ(updatedPost.author_id, bob_id);
-    ASSERT_EQ(updatedPost.title, "Post Transferred to Bob");
+    auto updatedPost = QuerySet<Post>(conn).where(&Post::id, postId).select_one();
+    ASSERT_TRUE(updatedPost.has_value()) << "query failed with error: " << updatedPost.error();
+    ASSERT_EQ(updatedPost.value().author_id, bob_id);
+    ASSERT_EQ(updatedPost.value().title, "Post Transferred to Bob");
     
     // Demonstrate a failed transaction with automatic rollback
     {
         Transaction tx(conn);
         
         // 1. Update the post to belong to Charlie
-        Post post = QuerySet<Post>(conn).where(&Post::id, postId).select_one();
-        post.author_id = charlie_id;
-        QuerySet<Post>(conn).where(&Post::id, postId).update(post);
+        auto post = QuerySet<Post>(conn).where(&Post::id, postId).select_one();
+        ASSERT_TRUE(post.has_value()) << "query failed with error: " << post.error();
+        auto postValue = post.value();
+        postValue.author_id = charlie_id;
+        QuerySet<Post>(conn).where(&Post::id, postId).update(postValue);
         
         // 2. This update will fail because we're using a non-existent author ID
         // (deliberately causing an error to demonstrate rollback)
-        post.author_id = 9999; // Non-existent author ID
+        postValue.author_id = 9999; // Non-existent author ID
         
         // We don't commit, so the transaction will be rolled back
         // when it goes out of scope
@@ -2357,7 +2760,8 @@ TEST_F(ORMTest, TransferBetweenAuthorsTransaction) {
     
     // Verify the post still belongs to Bob (rollback worked)
     updatedPost = QuerySet<Post>(conn).where(&Post::id, postId).select_one();
-    ASSERT_EQ(updatedPost.author_id, bob_id); // Still Bob's post
+    ASSERT_TRUE(updatedPost.has_value()) << "query failed with error: " << updatedPost.error();
+    ASSERT_EQ(updatedPost.value().author_id, bob_id); // Still Bob's post
 }
 
 // =======================================
@@ -2366,203 +2770,147 @@ TEST_F(ORMTest, TransferBetweenAuthorsTransaction) {
 
 TEST_F(ORMTest, MaxStringField) {
     // Test MAX function with string field (alphabetically highest value)
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .max<&Author::name>("max_name")
         .select_values();
     
-    ASSERT_FALSE(results.empty());
-    ASSERT_TRUE(results[0].contains("max_name"));
-    
-    // Get the max name value
-    std::string max_name = std::get<std::string>(results[0]["max_name"]);
-    
-    // Verify the max name by querying all authors and finding the maximum manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    std::string expected_max_name = "";
-    for (const auto& author : all_authors) {
-        if (author.name > expected_max_name) {
-            expected_max_name = author.name;
+    ValueVectorMap expected_results = {
+        {
+            {"max_name", "Diana Prince"}
         }
-    }
-    
-    EXPECT_EQ(max_name, expected_max_name);
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, MaxOnEmptyTable) {
     // Clear all authors
-    QuerySet<Author>(conn).remove();
+    auto remove_result = QuerySet<Author>(conn).remove();
+    ASSERT_TRUE(remove_result);
     
     // Test MAX function on an empty table
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .max<&Author::age>("max_age")
         .select_values();
-    
-    ASSERT_FALSE(results.empty());
-    ASSERT_TRUE(results[0].contains("max_age"));
-    
-    // For empty tables, SQLite returns NULL for MAX, which should be converted to 0 or default value
-    // Check that we get a valid result (either 0 or std::nullopt depending on implementation)
-    try {
-        // If implemented as returning 0 for numeric types
-        int max_age = std::get<int>(results[0]["max_age"]);
-        EXPECT_EQ(max_age, 0);
-    } catch (const std::bad_variant_access&) {
-        // If implemented as returning std::nullopt or another type
-        // This is also valid behavior
-        SUCCEED() << "MAX on empty table returned a non-int value (possibly NULL)";
-    }
-    
-    // Restore test data for other tests
-    setupTestData();
+
+    ValueVectorMap expected_results = {
+        {
+            {"max_age", std::monostate()}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, MaxWithOrderBy) {
     // Test MAX function with ORDER BY
     // The ORDER BY shouldn't affect the MAX result but should affect the order of rows
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .max<&Author::age>("max_age")
         .order_by<&Author::name, false>()
         .select_values();
     
-    ASSERT_FALSE(results.empty());
-    ASSERT_TRUE(results[0].contains("max_age"));
-    
-    // Get the max age value
-    int max_age = std::get<int>(results[0]["max_age"]);
-    
-    // Verify the max age by querying all authors and finding the maximum manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    int expected_max_age = 0;
-    for (const auto& author : all_authors) {
-        if (author.age > expected_max_age) {
-            expected_max_age = author.age;
+    ValueVectorMap expected_results = {
+        {
+            {"max_age", 35}
         }
-    }
-    
-    EXPECT_EQ(max_age, expected_max_age);
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, MultipleMaxFunctions) {
     // Test multiple MAX functions in the same query
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .max<&Author::age>("max_age")
         .max<&Author::rating>("max_rating")
         .max<&Author::score>("max_score")
         .select_values();
     
-    ASSERT_FALSE(results.empty());
-    ASSERT_TRUE(results[0].contains("max_age"));
-    ASSERT_TRUE(results[0].contains("max_rating"));
-    ASSERT_TRUE(results[0].contains("max_score"));
-    
-    // Get the max values
-    int max_age = std::get<int>(results[0]["max_age"]);
-    double max_rating = std::get<double>(results[0]["max_rating"]);
-    double max_score = std::get<double>(results[0]["max_score"]);
-    
-    // Verify the max values by querying all authors and finding the maximums manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    int expected_max_age = 0;
-    double expected_max_rating = 0.0;
-    float expected_max_score = 0.0f;
-    
-    for (const auto& author : all_authors) {
-        if (author.age > expected_max_age) {
-            expected_max_age = author.age;
+    ValueVectorMap expected_results = {
+        {
+            {"max_age", 35},
+            {"max_rating", 5.5},
+            {"max_score", 95}
         }
-        if (author.rating > expected_max_rating) {
-            expected_max_rating = author.rating;
-        }
-        if (author.score > expected_max_score) {
-            expected_max_score = author.score;
-        }
-    }
-    
-    EXPECT_EQ(max_age, expected_max_age);
-    EXPECT_DOUBLE_EQ(max_rating, expected_max_rating);
-    EXPECT_FLOAT_EQ(static_cast<float>(max_score), expected_max_score);
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, MaxWithJoin) {
     // Test MAX function with a JOIN
     // This will find the maximum post ID for each author
     // We need to include the name field in the result set when using group_by with aggregate functions
-    auto results = QuerySet<Post>(conn)
+    auto result = QuerySet<Post>(conn)
         .join<Author>()
         .group_by<&Author::name>()
         .only<&Author::name>()
         .max<&Post::id>("max_post_id")
         .select_values();
     
-    ASSERT_FALSE(results.empty());
-    
-    // Create a map of author name to their max post_id from the results
-    std::map<std::string, int> author_max_post_map;
-    for (const auto& row : results) {
-        std::string author_name;
-        int max_post_id = 0;
-        
-        if (std::holds_alternative<std::string>(row.at("max_post_id"))) {
-            author_name = std::get<std::string>(row.at("max_post_id"));
+    ValueVectorMap expected_results = {
+        {
+            {"name", "Alice Smith"},
+            {"max_post_id", 3}
+        },
+        {
+            {"name", "Bob Johnson"},
+            {"max_post_id", 5}
+        },
+        {
+            {"name", "Charlie Brown"},
+            {"max_post_id", 9}
+        },
+        {
+            {"name", "Diana Prince"},
+            {"max_post_id", 11}
         }
-        
-        if (std::holds_alternative<int>(row.at("name"))) {
-            max_post_id = std::get<int>(row.at("name"));
-        }
-        author_max_post_map[author_name] = max_post_id;
-    }
-    
-    // Verify the results by querying all posts and finding the maximum post ID for each author manually
-    auto all_posts = QuerySet<Post>(conn).select_all();
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    
-    // Create a map of author ID to author name
-    std::map<int, std::string> author_id_to_name;
-    for (const auto& author : all_authors) {
-        author_id_to_name[author.id] = author.name;
-    }
-    
-    // Find the maximum post ID for each author
-    std::map<std::string, int> expected_author_max_post_map;
-    for (const auto& post : all_posts) {
-        std::string author_name = author_id_to_name[post.author_id];
-        if (expected_author_max_post_map.find(author_name) == expected_author_max_post_map.end() ||
-            post.id > expected_author_max_post_map[author_name]) {
-            expected_author_max_post_map[author_name] = post.id;
-        }
-    }
-    
-    // Verify the results match
-    EXPECT_EQ(author_max_post_map.size(), expected_author_max_post_map.size());
-    
-    for (const auto& [author_name, max_post_id] : expected_author_max_post_map) {
-        ASSERT_TRUE(author_max_post_map.find(author_name) != author_max_post_map.end());
-        EXPECT_EQ(author_max_post_map[author_name], max_post_id);
-    }
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
-TEST_F(ORMTest, MaxWithRuntimeField) {
-    // Test MAX function with runtime field specification
-    auto results = QuerySet<Author>(conn)
-        .max<&Author::age>("max_age")
-        .select_values();
+// MAX VALUE TESTS
+TEST_F(ORMTest, MaxValue) {
+    auto result = QuerySet<Author>(conn)
+        .max_value<&Author::age>();
+    ASSERT_TRUE(result.has_value()) << "max_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 35);
+}
+
+TEST_F(ORMTest, MaxValueWithFilter) {
+    auto result = QuerySet<Author>(conn)
+        .where<&Author::age>(30, Op::GT)
+        .max_value<&Author::age>();
+    ASSERT_TRUE(result.has_value()) << "max_value with filter failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 35);
+}
+
+TEST_F(ORMTest, MaxValueEmptyTable) {
+    auto clear_authors = QuerySet<Author>(conn).remove();
+    ASSERT_TRUE(clear_authors);
     
-    ASSERT_FALSE(results.empty());
-    ASSERT_TRUE(results[0].contains("max_age"));
-    
-    // Get the max age value
-    int max_age = std::get<int>(results[0]["max_age"]);
-    
-    // Verify the max age by querying all authors and finding the maximum manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    int expected_max_age = 0;
-    for (const auto& author : all_authors) {
-        if (author.age > expected_max_age) {
-            expected_max_age = author.age;
-        }
-    }
-    
-    EXPECT_EQ(max_age, expected_max_age);
+    auto result = QuerySet<Author>(conn)
+        .max_value<&Author::age>();
+    ASSERT_FALSE(result.has_value());
+    ASSERT_EQ(result.error(), "No rows to find maximum value");
+}
+
+TEST_F(ORMTest, MaxValueString) {
+    auto result = QuerySet<Author>(conn)
+        .max_value<&Author::name>();
+    ASSERT_TRUE(result.has_value()) << "max_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), "Diana Prince");
+}
+
+TEST_F(ORMTest, MaxValueDouble) {
+    auto result = QuerySet<Author>(conn)
+        .max_value<&Author::rating>();
+    ASSERT_TRUE(result.has_value()) << "max_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 5.5);
+}
+
+TEST_F(ORMTest, MaxValueFloat) {
+    auto result = QuerySet<Author>(conn)
+        .max_value<&Author::score>();
+    ASSERT_TRUE(result.has_value()) << "max_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 95.0);
 }
 
 // =======================================
@@ -2570,185 +2918,322 @@ TEST_F(ORMTest, MaxWithRuntimeField) {
 // =======================================
 
 TEST_F(ORMTest, MinStringField) {
-    // Test MIN function with string field (alphabetically lowest value)
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .min<&Author::name>("min_name")
         .select_values();
     
-    ASSERT_FALSE(results.empty());
-    ASSERT_TRUE(results[0].contains("min_name"));
-    
-    // Get the min name value
-    std::string min_name = std::get<std::string>(results[0]["min_name"]);
-    
-    // Verify the min name by querying all authors and finding the minimum manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    std::string expected_min_name = all_authors[0].name; // Initialize with first author
-    for (const auto& author : all_authors) {
-        if (author.name < expected_min_name) {
-            expected_min_name = author.name;
+    ValueVectorMap expected_results = {
+        {
+            {"min_name", "Alice Smith"}
         }
-    }
-    
-    EXPECT_EQ(min_name, expected_min_name);
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, MinOnEmptyTable) {
-    // First, clear the authors table to test MIN on an empty set
     auto clear_authors = QuerySet<Author>(conn).remove();
     ASSERT_TRUE(clear_authors);
     
-    // Test MIN function on empty table
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .min<&Author::age>("min_age")
         .select_values();
     
-    ASSERT_FALSE(results.empty());
-    ASSERT_TRUE(results[0].contains("min_age"));
-    
-    // On an empty table, SQLite returns NULL for aggregate functions
-    // In our case, we should get a std::monostate (representing NULL) in the variant
-    EXPECT_TRUE(std::holds_alternative<std::monostate>(results[0]["min_age"]))
-        << "Expected NULL (std::monostate) result for MIN on empty table";
-    
-    // Restore test data for other tests
-    setupTestData();
-    
-    // Verify the test data was restored
-    auto count_after = QuerySet<Author>(conn).select_all();
-    ASSERT_GT(count_after.size(), 0);
+    ValueVectorMap expected_results = {
+        {
+            {"min_age", std::monostate()}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, MinWithOrderBy) {
-    // Test MIN function with ORDER BY clause
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .min<&Author::age>("min_age")
         .order_by<&Author::name, false>()
         .select_values();
     
-    ASSERT_FALSE(results.empty());
-    ASSERT_TRUE(results[0].contains("min_age"));
-    
-    // Get the min age value
-    int min_age = std::get<int>(results[0]["min_age"]);
-    
-    // Verify the min age by querying all authors and finding the minimum manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    int expected_min_age = all_authors[0].age; // Initialize with first author
-    for (const auto& author : all_authors) {
-        if (author.age < expected_min_age) {
-            expected_min_age = author.age;
+    ValueVectorMap expected_results = {
+        {
+            {"min_age", 25}
         }
-    }
-    
-    EXPECT_EQ(min_age, expected_min_age);
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
 TEST_F(ORMTest, MultipleMinFunctions) {
-    // Test multiple MIN functions in a single query
-    auto results = QuerySet<Author>(conn)
+    auto result = QuerySet<Author>(conn)
         .min<&Author::age>("min_age")
         .min<&Author::rating>("min_rating")
         .min<&Author::score>("min_score")
         .select_values();
     
-    ASSERT_FALSE(results.empty());
-    ASSERT_TRUE(results[0].contains("min_age"));
-    ASSERT_TRUE(results[0].contains("min_rating"));
-    ASSERT_TRUE(results[0].contains("min_score"));
-    
-    // Get the min values
-    int min_age = std::get<int>(results[0]["min_age"]);
-    double min_rating = std::get<double>(results[0]["min_rating"]);
-    double min_score = std::get<double>(results[0]["min_score"]);
-    
-    // Verify the min values by querying all authors and finding the minimums manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    int expected_min_age = all_authors[0].age;
-    double expected_min_rating = all_authors[0].rating;
-    double expected_min_score = all_authors[0].score;
-    
-    for (const auto& author : all_authors) {
-        if (author.age < expected_min_age) {
-            expected_min_age = author.age;
+    ValueVectorMap expected_results = {
+        {
+            {"min_age", 25},
+            {"min_rating", 4.0},
+            {"min_score", 80}
         }
-        if (author.rating < expected_min_rating) {
-            expected_min_rating = author.rating;
-        }
-        if (author.score < expected_min_score) {
-            expected_min_score = author.score;
-        }
-    }
-    
-    EXPECT_EQ(min_age, expected_min_age);
-    EXPECT_DOUBLE_EQ(min_rating, expected_min_rating);
-    EXPECT_DOUBLE_EQ(min_score, expected_min_score);
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
-TEST_F(ORMTest, MinWithJoin) {
-    // Create some posts for testing
-    std::vector<Post> posts = {
-        Post("Post by Alice", "Content 1", alice_id, 1),
-        Post("Post by Bob", "Content 2", bob_id, 2),
-        Post("Another post by Alice", "Content 3", alice_id, 3),
-        Post("Post by Charlie", "Content 4", charlie_id, 4),
-        Post("Another post by Bob", "Content 5", bob_id, 5)
-    };
-    
-    // Insert posts
-    auto insert_result = QuerySet<Post>(conn).insert(posts);
-    ASSERT_FALSE(insert_result.empty());
-    
-    // Test MIN function with JOIN
-    auto results = QuerySet<Author>(conn)
+TEST_F(ORMTest, MinWithJoinAndGroupBy) {
+    auto result = QuerySet<Author>(conn)
         .join<Post>()
         .min<&Author::age>("min_age")
+        .only<&Post::author_id>()
         .group_by<&Post::author_id>()
         .select_values();
     
-    ASSERT_FALSE(results.empty());
-    
-    // Verify the results contain the min age
-    ASSERT_TRUE(results[0].contains("min_age"));
-    
-    // Get the min age from the results
-    int min_age = std::get<int>(results[0]["min_age"]);
-    
-    // Verify the min age by querying authors with posts and finding the minimum manually
-    auto authors_with_posts = QuerySet<Author>(conn)
-        .join<Post>()
-        .select_all();
-    
-    int expected_min_age = authors_with_posts[0].age;
-    for (const auto& author : authors_with_posts) {
-        if (author.age < expected_min_age) {
-            expected_min_age = author.age;
+    ValueVectorMap expected_results = {
+        {
+            {"author_id", 1},
+            {"min_age", 25},
+        },
+        {
+            {"author_id", 2},
+            {"min_age", 35},
+        },
+        {
+            {"author_id", 3},
+            {"min_age", 30},
+        },
+        {
+            {"author_id", 4},
+            {"min_age", 28},
         }
-    }
-    
-    EXPECT_EQ(min_age, expected_min_age);
+    };
+    AssertResultsMatch(result, expected_results);
 }
 
-TEST_F(ORMTest, MinWithRuntimeField) {
-    // Test MIN function with runtime field reference
-    auto results = QuerySet<Author>(conn)
-        .min<&Author::age>("min_age")
+// MIN VALUE TESTS
+TEST_F(ORMTest, MinValue) {
+    auto result = QuerySet<Author>(conn)
+        .min_value<&Author::age>();
+    ASSERT_TRUE(result.has_value()) << "min_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 25);
+}
+
+TEST_F(ORMTest, MinValueWithFilter) {
+    auto result = QuerySet<Author>(conn)
+        .where<&Author::age>(30, Op::GT)
+        .min_value<&Author::age>();
+    ASSERT_TRUE(result.has_value()) << "min_value with filter failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 35);
+}
+
+TEST_F(ORMTest, MinValueEmptyTable) {
+    auto clear_authors = QuerySet<Author>(conn).remove();
+    ASSERT_TRUE(clear_authors);
+    
+    auto result = QuerySet<Author>(conn)
+        .min_value<&Author::age>();
+    ASSERT_FALSE(result.has_value());
+    ASSERT_EQ(result.error(), "No rows to find minimum value");
+}
+
+TEST_F(ORMTest, MinValueString) {
+    auto result = QuerySet<Author>(conn)
+        .min_value<&Author::name>();
+    ASSERT_TRUE(result.has_value()) << "min_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), "Alice Smith");
+}
+
+TEST_F(ORMTest, MinValueDouble) {
+    auto result = QuerySet<Author>(conn)
+        .min_value<&Author::rating>();
+    ASSERT_TRUE(result.has_value()) << "min_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 4.0);
+}
+
+TEST_F(ORMTest, MinValueFloat) {
+    auto result = QuerySet<Author>(conn)
+        .min_value<&Author::score>();
+    ASSERT_TRUE(result.has_value()) << "min_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 80.0);
+}
+
+// =======================================
+// AVG AGGREGATE FUNCTION TESTS
+// =======================================
+// AVG VALUE TESTS
+TEST_F(ORMTest, AvgValueInt) {
+    auto result = QuerySet<Author>(conn)
+        .avg_value<&Author::age>();
+    ASSERT_TRUE(result.has_value()) << "avg failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 29.5);
+}
+
+TEST_F(ORMTest, AvgValueWithFilter) {
+    auto result = QuerySet<Author>(conn)
+        .where<&Author::age>(30, Op::GT)
+        .avg_value<&Author::age>();
+    ASSERT_TRUE(result.has_value()) << "avg with filter failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 35.0);
+}
+
+TEST_F(ORMTest, AvgValueDouble) {
+    auto result = QuerySet<Author>(conn)
+        .avg_value<&Author::rating>();
+    ASSERT_TRUE(result.has_value()) << "avg of double failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 4.75);
+}
+
+TEST_F(ORMTest, AvgValueFloat) {
+    auto result = QuerySet<Author>(conn)
+        .avg_value<&Author::score>();
+    ASSERT_TRUE(result.has_value()) << "avg of float failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 87.625);
+}
+
+TEST_F(ORMTest, AvgValueNoRows) {
+    clearTestData();
+    
+    auto result = QuerySet<Author>(conn)
+        .avg_value<&Author::age>();
+    ASSERT_FALSE(result.has_value());
+    ASSERT_EQ(result.error(), "No rows to average");
+}
+
+// AVG AGGREGATE FUNCTION TESTS
+TEST_F(ORMTest, AvgNumericField) {
+    auto result = QuerySet<Author>(conn)
+        .avg<&Author::age>("avg_age")
         .select_values();
     
-    ASSERT_FALSE(results.empty());
-    ASSERT_TRUE(results[0].contains("min_age"));
-    
-    // Get the min age value
-    int min_age = std::get<int>(results[0]["min_age"]);
-    
-    // Verify the min age by querying all authors and finding the minimum manually
-    auto all_authors = QuerySet<Author>(conn).select_all();
-    int expected_min_age = all_authors[0].age; // Initialize with first author
-    for (const auto& author : all_authors) {
-        if (author.age < expected_min_age) {
-            expected_min_age = author.age;
+    ValueVectorMap expected_results = {
+        {
+            {"avg_age", 29.5}
         }
-    }
+    };
+    AssertResultsMatch(result, expected_results);
+}
+
+TEST_F(ORMTest, AvgOnEmptyTable) {
+    auto remove_result = QuerySet<Author>(conn).remove();
+    ASSERT_TRUE(remove_result);
     
-    EXPECT_EQ(min_age, expected_min_age);
+    auto result = QuerySet<Author>(conn)
+        .avg<&Author::age>("avg_age")
+        .select_values();
+    
+    ValueVectorMap expected_results = {
+        {
+            {"avg_age", std::monostate()}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
+}
+
+TEST_F(ORMTest, AvgWithOrderBy) {
+    auto result = QuerySet<Author>(conn)
+        .avg<&Author::age>("avg_age")
+        .order_by<&Author::name, false>()
+        .select_values();
+    
+    ValueVectorMap expected_results = {
+        {
+            {"avg_age", 29.5}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
+}
+
+TEST_F(ORMTest, MultipleAvgFunctions) {
+    auto result = QuerySet<Author>(conn)
+        .avg<&Author::rating>("avg_rating")
+        .avg<&Author::score>("avg_score")
+        .group_by<&Author::age>()
+        .only<&Author::age>()
+        .select_values();
+    
+    ValueVectorMap expected_results = {
+        {
+            {"age", 25},
+            {"avg_rating", 4.5},
+            {"avg_score", 85.5}
+        },
+        {
+            {"age", 28},
+            {"avg_rating", 5.5},
+            {"avg_score", 95.0}
+        },
+        {
+            {"age", 30},
+            {"avg_rating", 4.0},
+            {"avg_score", 80.0}
+        },
+        {
+            {"age", 35},
+            {"avg_rating", 5.0},
+            {"avg_score", 90.0}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
+}
+
+TEST_F(ORMTest, AvgWithGroupBy) {
+    auto result = QuerySet<Author>(conn)
+        .avg<&Author::rating>("avg_rating")
+        .group_by<&Author::age>()
+        .only<&Author::age>()
+        .select_values();
+    
+    ValueVectorMap expected_results = {
+        {
+            {"age", 25},
+            {"avg_rating", 4.5}
+        },
+        {
+            {"age", 28},
+            {"avg_rating", 5.5}
+        },
+        {
+            {"age", 30},
+            {"avg_rating", 4.0}
+        },
+        {
+            {"age", 35},
+            {"avg_rating", 5.0}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
+}
+
+TEST_F(ORMTest, CombineAvgMinMaxWithGroupBy) {
+    auto result = QuerySet<Author>(conn)
+        .avg<&Author::rating>("avg_rating")
+        .min<&Author::rating>("min_rating")
+        .max<&Author::rating>("max_rating")
+        .group_by<&Author::age>()
+        .only<&Author::age>()
+        .select_values();
+    
+    ValueVectorMap expected_results = {
+        {
+            {"age", 25},
+            {"avg_rating", 4.5},
+            {"min_rating", 4.5},
+            {"max_rating", 4.5}
+        },
+        {
+            {"age", 28},
+            {"avg_rating", 5.5},
+            {"min_rating", 5.5},
+            {"max_rating", 5.5}
+        },
+        {
+            {"age", 30},
+            {"avg_rating", 4.0},
+            {"min_rating", 4.0},
+            {"max_rating", 4.0}
+        },
+        {
+            {"age", 35},
+            {"avg_rating", 5.0},
+            {"min_rating", 5.0},
+            {"max_rating", 5.0}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
 }

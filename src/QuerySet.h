@@ -4,6 +4,8 @@
 #include <utility>
 #include <vector>
 #include <variant>
+#include <any>
+#include <map>
 #include "Function.h"
 #include "Where.h"
 #include <ranges>
@@ -16,8 +18,62 @@
 #include "MemberPointerUtils.h"
 #include "StringUtils.h"
 #include <sstream>
+#include <expected>
+#include <print>
+#include <ranges>
+#include <string_view>
 
 namespace storm {
+    // Define ValueVariant before using it
+    using ValueVariant = std::variant<
+        std::monostate,  // For null values
+        int,             // For integer types
+        double,          // For floating point types
+        bool,            // For boolean values
+        std::string      // For text values
+    >;
+
+    // Utility function to convert Row column value to any type
+    template<typename T>
+    T to_value(const Row& row, int columnIndex = 0) {
+        int columnType = row.get_column_type(columnIndex);
+        
+        if constexpr (std::is_same_v<T, ValueVariant>) {
+            // Handle ValueVariant specially
+            switch (columnType) {
+                case SQLITE_INTEGER:
+                    return row.get_int(columnIndex);
+                case SQLITE_FLOAT:
+                    return row.get_double(columnIndex);
+                case SQLITE_TEXT:
+                    return row.get_text(columnIndex);
+                case SQLITE_NULL:
+                    return std::monostate{};
+                default:
+                    return std::monostate{};
+            }
+        } else if constexpr (std::is_same_v<T, int> || std::is_same_v<T, long> || 
+                      std::is_same_v<T, long long> || std::is_same_v<T, unsigned int> || 
+                      std::is_same_v<T, unsigned long> || std::is_same_v<T, unsigned long long> || 
+                      std::is_same_v<T, bool>) {
+            return static_cast<T>(row.get_int(columnIndex));
+        } else if constexpr (std::is_same_v<T, float> || std::is_same_v<T, double>) {
+            return static_cast<T>(row.get_double(columnIndex));
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            return row.get_text(columnIndex);
+        } else if constexpr (std::is_same_v<T, std::monostate>) {
+            return std::monostate{};
+        } else {
+            // This will cause a compile-time error for unsupported types
+            static_assert(!sizeof(T), "Unsupported type for to_value");
+            return T{}; // This line will never be reached
+        }
+    }
+
+    using ValueMap = std::map<std::string, ValueVariant, std::less<>>;
+    using ValueVectorMap = std::vector<ValueMap>;
+    using ExpectedValueVectorMap = std::expected<ValueVectorMap, std::string>;
+
     template<typename T>
     struct member_pointer_traits;
 
@@ -193,6 +249,8 @@ namespace storm {
     template<class T>
     class QuerySet {
     private:
+        using ExpectedT = std::expected<T, std::string>;
+        using ExpectedVectorT = std::expected<std::vector<T>, std::string>;
         std::shared_ptr<Connection> conn;
         std::optional<storm::Where> _whereExpression;
         JoinInfo joinInfo;
@@ -518,7 +576,7 @@ namespace storm {
         // =============================
         // INSERT
         // =============================
-        std::vector<int> insert(const std::vector<T>& objs) {
+        std::expected<std::vector<int>, std::string> insert(const std::vector<T>& objs) {
             if (objs.empty()) return {};
             
             try {
@@ -541,7 +599,7 @@ namespace storm {
         }
         
         // Single insert method
-        int insert(const T& obj) {
+        std::expected<int, std::string> insert(const T& obj) {
             try {
                 auto field_names = get_insert_field_names();
                 if (field_names.empty()) return -1;
@@ -663,7 +721,7 @@ namespace storm {
         // =============================
         // UPDATE
         // =============================
-        bool update(const T& obj) {
+        std::expected<bool, std::string> update(const T& obj) {
             try {
                 auto field_names = get_update_field_names();
                 if (field_names.empty()) return false;
@@ -677,7 +735,7 @@ namespace storm {
         }
         
         // Update multiple objects (batch update)
-        bool update(const std::vector<T>& objs) {
+        std::expected<bool, std::string> update(const std::vector<T>& objs) {
             if (objs.empty()) return true;
             
             try {
@@ -700,7 +758,7 @@ namespace storm {
         }
 
     private:
-        std::string build_update_sql(const std::vector<std::string>& field_names, size_t num_objects) {
+        std::expected<std::string, std::string> build_update_sql(const std::vector<std::string>& field_names, size_t num_objects) {
             if (field_names.empty() || num_objects == 0) return "";
             
             // For SQLite, use a single UPDATE with CASE expressions for each field
@@ -731,13 +789,13 @@ namespace storm {
             );
         }
 
-        bool execute_update(const std::vector<const T*>& obj_ptrs, const std::vector<std::string>& field_names) {
-            if (obj_ptrs.empty()) return true;
+        std::expected<bool, std::string> execute_update(const std::vector<const T*>& obj_ptrs, const std::vector<std::string>& field_names) {
+            if (obj_ptrs.empty()) return std::unexpected("Empty object pointers vector");
             
-            std::string sql = build_update_sql(field_names, obj_ptrs.size());
-            if (sql.empty()) return false;
+            auto sql = build_update_sql(field_names, obj_ptrs.size());
+            if (!sql.has_value()) return std::unexpected(sql.error());
             
-            auto stmt = Statement(conn, sql);
+            auto stmt = Statement(conn, sql.value());
             
             // Parameter binding for CASE-based batch update is different:
             // For each field, we need to bind all object IDs and their values
@@ -771,7 +829,7 @@ namespace storm {
         // =============================
         // DELETE
         // =============================
-        bool remove(const T& obj) {
+        std::expected<bool, std::string> remove(const T& obj) {
             try {
                 return execute_delete({&obj});
             } catch (const std::exception& e) {
@@ -781,10 +839,12 @@ namespace storm {
         }
         
         // Delete records based on where conditions without requiring an object
-        bool remove() {
+        std::expected<bool, std::string> remove() {
             try {
-                std::string sql = build_delete_by_condition_sql();
-                auto stmt = Statement(conn, sql);
+                auto sql = build_delete_by_condition_sql();
+                if (!sql.has_value()) return std::unexpected(sql.error());
+                
+                auto stmt = Statement(conn, sql.value());
                 
                 // Bind parameters from where expression
                 if (_whereExpression.has_value()) {
@@ -799,8 +859,8 @@ namespace storm {
             }
         }
         
-        bool remove(const std::vector<T>& objs) {
-            if (objs.empty()) return true;
+        std::expected<bool, std::string> remove(const std::vector<T>& objs) {
+            if (objs.empty()) return std::unexpected("Empty objects vector");
             
             try {
                 // Convert to pointer vector
@@ -819,11 +879,11 @@ namespace storm {
         }
 
     private:
-        std::string build_delete_sql() {
+        std::expected<std::string, std::string> build_delete_sql() {
             return fmt::format("DELETE FROM {} WHERE id = ?;", this->template get_table_name<T>());
         }
         
-        std::string build_delete_by_condition_sql() {
+        std::expected<std::string, std::string> build_delete_by_condition_sql() {
             std::string sql = fmt::format("DELETE FROM {}", this->template get_table_name<T>());
             
             if (_whereExpression.has_value()) {
@@ -835,7 +895,7 @@ namespace storm {
             return sql;
         }
 
-        std::string build_batch_delete_sql(size_t count) {
+        std::expected<std::string, std::string> build_batch_delete_sql(size_t count) {
             std::vector<std::string> placeholders(count, "?");
             return fmt::format(
                 "DELETE FROM {} WHERE id IN ({});",
@@ -844,19 +904,23 @@ namespace storm {
             );
         }
 
-        bool execute_delete(const std::vector<const T*>& obj_ptrs) {
-            if (obj_ptrs.empty()) return true;
+        std::expected<bool, std::string> execute_delete(const std::vector<const T*>& obj_ptrs) {
+            if (obj_ptrs.empty()) return std::unexpected("Empty object pointers vector");
             
             if (obj_ptrs.size() == 1) {
                 // Single delete
-                std::string sql = build_delete_sql();
-                auto stmt = Statement(conn, sql);
+                auto sql = build_delete_sql();
+                if (!sql.has_value()) return std::unexpected(sql.error());
+                
+                auto stmt = Statement(conn, sql.value());
                 stmt.bind(1, obj_ptrs[0]->id);
                 return stmt.execute();
             } else {
                 // Batch delete using IN clause
-                std::string sql = build_batch_delete_sql(obj_ptrs.size());
-                auto stmt = Statement(conn, sql);
+                auto sql = build_batch_delete_sql(obj_ptrs.size());
+                if (!sql.has_value()) return std::unexpected(sql.error());
+                
+                auto stmt = Statement(conn, sql.value());
                 
                 int param_index = 1;
                 for (const T* obj_ptr : obj_ptrs) {
@@ -1254,72 +1318,12 @@ namespace storm {
             this->onlyFields.emplace_back(std::make_unique<FieldAlias<Field>>(alias));
             return *this;
         }
-    private:
-        [[nodiscard]] std::string buildOnlyFields() const {
-            auto [fieldNames, fieldsClause] = this->buildFieldsClause();
-            return fieldsClause;
-        }
 
     public:
         // =============================
         // =============================
         // SELECT
         // ===========================
-        // These functions were used by select_tuple which has been removed
-        
-        // Define ValueVariant before using it
-        using ValueVariant = std::variant<
-            std::monostate,  // For null values
-            int,             // For integer types
-            double,          // For floating point types
-            bool,            // For boolean values
-            std::string      // For text values
-        >;
-        
-        // Helper method to add GROUP BY fields to the result map
-        void addGroupByFieldsToResult(std::map<std::string, ValueVariant>& rowDict, const Row& row) const {
-            if (groupByFields.empty()) {
-                return;
-            }
-            
-            // For each GROUP BY field, extract the field name and add it to the result map
-            for (const auto& field : groupByFields) {
-                std::string fullFieldName = field->getFullFieldName();
-                size_t dotPos = fullFieldName.find('.');
-                if (dotPos != std::string::npos) {
-                    // For joined fields, extract just the field name
-                    std::string fieldName = fullFieldName.substr(dotPos + 1);
-                    
-                    // Add the field to the result map if it's not already there
-                    // Since we can't directly access column names from Row, we'll use the field name
-                    // that we know should be in the result from the GROUP BY clause
-                    if (!rowDict.contains(fieldName)) {
-                        // The field should be in the SQL result but not in our map
-                        // We need to add it explicitly to the map with a default value
-                        // This ensures that row.at(fieldName) won't throw an exception
-                        rowDict[fieldName] = std::string("");
-                    }
-                }
-            }
-        }
-        
-        template<typename ValueType>
-        ValueType get_value(const Row& row, size_t idx) const {
-            if constexpr (std::is_same_v<ValueType, std::string>) {
-                return row.get_text(idx);
-            } else if constexpr (std::is_same_v<ValueType, bool>) {
-                return row.get_int(idx) != 0;
-            } else if constexpr (std::is_integral_v<ValueType>) {
-                return static_cast<ValueType>(row.get_int(idx));
-            } else if constexpr (std::is_floating_point_v<ValueType>) {
-                return static_cast<ValueType>(row.get_double(idx));
-            } else {
-                static_assert(!std::is_pointer_v<ValueType>, "Unsupported pointer type for SQLite binding");
-                static_assert(!std::is_reference_v<ValueType>, "Unsupported reference type for SQLite binding");
-                static_assert(sizeof(ValueType) == 0, "Unsupported type for SQLite binding");
-                return ValueType{}; // This will never be reached due to the static_assert
-            }
-        }
         
         /**
          * @brief Select only specific fields and return them as dictionaries
@@ -1334,24 +1338,16 @@ namespace storm {
          *       .only(field(&Author::name))
          *       .only(field(&Author::age))
          *       .select_values();
-         *   // Access data with: results[0]["name"], results[0]["age"]
+         *   Access data with: results[0]["name"], results[0]["age"]
          */
-        std::vector<std::map<std::string, ValueVariant>> select_values() const {
-            // Check if we have fields to select
-            if (this->onlyFields.empty() && this->distinctFields.empty() && this->functionsSet.empty()) {
-                throw std::runtime_error("You must specify at least one field with only(), distinct(), or an aggregate function before calling select_values()");
-            }
-            
+        ExpectedValueVectorMap select_values() const {            
             // Get the where query result
             auto where_query_result = this->get_where_query();
             
-            // Get field names and clause for SQL generation
-            auto [fieldNames, fieldsClause] = this->buildFieldsClause();
-            
-            // Build SQL query with fields clause
-            std::string sql = fmt::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
+            // Build SQL query with std::format
+            auto sql = std::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
                 this->createDistinctClause(),
-                fieldsClause,
+                this->buildFieldsClause(),
                 this->template get_table_name<T>(),
                 this->generateJoinSQL(),
                 where_query_result.sql,
@@ -1359,104 +1355,46 @@ namespace storm {
                 this->buildOrderFields(),
                 this->limit_impl()
             );
-            std::cout << sql << std::endl;
+            std::print("SQL: {}\n", sql);
+            
             // Execute the query
-            auto stmt = Statement(conn, sql);
+            Statement stmt(conn, sql);
             bind_query_parameters(stmt, where_query_result);
-            auto all_rows = stmt.execute_all();
+            // Process results using ranges and views
+            return transform_rows_to_value_maps(stmt.execute_all());
+        }
+        
+        ExpectedValueVectorMap select_value() const {            
+            // Get the where query result
+            auto where_query_result = this->get_where_query();
             
-            // Process the results
-            std::vector<std::map<std::string, ValueVariant>> results;
-            if (all_rows.empty()) {
-                return results;
-            }
+            // Build SQL query with std::format
+            auto sql = std::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
+                this->createDistinctClause(),
+                this->buildFieldsClause(),
+                this->template get_table_name<T>(),
+                this->generateJoinSQL(),
+                where_query_result.sql,
+                this->generateGroupBySQL(),
+                this->buildOrderFields(),
+                this->limit_impl()
+            );
+            std::print("SQL: {}\n", sql);
             
-            results.reserve(all_rows.size());
-            
-            for (const auto& row : all_rows) {
-                std::map<std::string, ValueVariant> rowDict;
-                
-                for (size_t i = 0; i < fieldNames.size(); ++i) {
-                    // Get the field name without any table prefix
-                    std::string fieldName = fieldNames[i];
-                    size_t dotPos = fieldName.find('.');
-                    if (dotPos != std::string::npos) {
-                        fieldName = fieldName.substr(dotPos + 1);
-                    }
-                    
-                    // Process field name without table prefix
-                    
-                    // Special handling for boolean fields
-                    if (fieldName == "is_active") {
-                        // For boolean fields, convert integer to bool
-                        ValueVariant boolValue = static_cast<bool>(row.get_int(i));
-                        rowDict[fieldNames[i]] = boolValue;
-                        // Also store with the normalized field name
-                        rowDict[fieldName] = boolValue;
-                        continue;
-                    }
-                    
-                    // Use SQLite's column type for other fields
-                    int columnType = row.get_column_type(i);
-                    
-                    switch (columnType) {
-                        case SQLITE_INTEGER:
-                            {
-                                ValueVariant intValue = row.get_int(i);
-                                rowDict[fieldNames[i]] = intValue;
-                                rowDict[fieldName] = intValue;
-                            }
-                            break;
-                        case SQLITE_FLOAT:
-                            {
-                                ValueVariant doubleValue = row.get_double(i);
-                                rowDict[fieldNames[i]] = doubleValue;
-                                rowDict[fieldName] = doubleValue;
-                            }
-                            break;
-                        case SQLITE_TEXT:
-                            {
-                                ValueVariant textValue = row.get_text(i);
-                                rowDict[fieldNames[i]] = textValue;
-                                rowDict[fieldName] = textValue;
-                            }
-                            break;
-                        case SQLITE_NULL:
-                            {
-                                // Handle NULL values as std::monostate (representing SQL NULL)
-                                ValueVariant nullValue = std::monostate{};
-                                rowDict[fieldNames[i]] = nullValue;
-                                rowDict[fieldName] = nullValue;
-                            }
-                            break;
-                        case SQLITE_BLOB:
-                        default:
-                            {
-                                // For BLOB or any other type, convert to string
-                                ValueVariant blobValue = row.get_text(i);
-                                rowDict[fieldNames[i]] = blobValue;
-                                rowDict[fieldName] = blobValue;
-                            }
-                            break;
-                    }
-                }
-                
-                // Add GROUP BY fields to the result map if they're not already included
-                // This is necessary when using GROUP BY with fields from joined tables
-                this->addGroupByFieldsToResult(rowDict, row);
-                results.emplace_back(std::move(rowDict));
-            }
-            
-            return results;
+            // Execute the query
+            Statement stmt(conn, sql);
+            bind_query_parameters(stmt, where_query_result);
+            // Process results using ranges and views
+            return transform_rows_to_value_maps(stmt.execute_all()[0]);
         }
 
-        T select_one() const {
+        ExpectedT select_one() const {
             // Build the query with limit 1 to ensure we only get one result
             // Get the where query result
             auto where_query_result = this->get_where_query();
             
             // Get field names and clause for SQL generation
-            auto [fieldNames, fieldsClause] = this->buildFieldsClause();
+            auto fieldsClause = this->buildFieldsClause();
             
             // Build the SQL query with LIMIT 1
             auto sql = fmt::format("SELECT {} {} FROM \"{}\" {} {} {} {} LIMIT 1;", 
@@ -1468,9 +1406,9 @@ namespace storm {
                 this->generateGroupBySQL(),
                 this->buildOrderFields());
             
-            auto smt_ = Statement(conn, sql);
-            bind_query_parameters(smt_, where_query_result);
-            auto all_rows = smt_.execute_all();
+            Statement smt(conn, sql);
+            bind_query_parameters(smt, where_query_result);
+            auto all_rows = smt.execute_all();
 
             if (all_rows.empty()) {
                 throw std::runtime_error("No results found for select_one query");
@@ -1541,12 +1479,12 @@ namespace storm {
             return obj;
         }
         
-        std::vector<T> select_all() const {
+        ExpectedVectorT select_all() const {
             // Get the where query result
             auto where_query_result = this->get_where_query();
             
             // Get field names and clause for SQL generation
-            auto [fieldNames, fieldsClause] = this->buildFieldsClause();
+            auto fieldsClause = this->buildFieldsClause();
             
             // Build the SQL query
             auto sql = fmt::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
@@ -1578,7 +1516,7 @@ namespace storm {
                 if (!this->distinctFields.empty()) {
                     // When distinct fields are selected, only populate those fields
                     // and make sure we don't exceed the column count
-                    for (size_t i = 0; i < this->distinctFields.size() && i < fieldNames.size(); ++i) {
+                    for (size_t i = 0; i < this->distinctFields.size() && i < row.get_column_count(); ++i) {
                         const auto& fieldAlias = this->distinctFields[i];
                         if (!fieldAlias) continue;
                         
@@ -1667,6 +1605,33 @@ namespace storm {
             return results;
         }
 
+    private:
+        /**
+         * @brief Transform a vector of rows into a vector of value maps
+         * 
+         * This helper function processes database rows and converts them into a vector of maps
+         * where each map represents a row with column name -> value mapping.
+         * 
+         * @param rows Vector of Row objects to transform
+         * @return std::vector<std::map<std::string, ValueVariant>> Vector of dictionaries with column name -> value mapping
+         */
+        ValueVectorMap transform_rows_to_value_maps(const std::vector<Row>& rows) const {
+            return rows 
+                | std::views::transform([](const auto& row) {
+                    ValueMap rowDict;
+                    
+                    // Process each column using the Row's column information
+                    for (const auto& i : std::views::iota(0, row.get_column_count())) {
+                        // Get column name directly from Row and convert to std::string for map key
+                        std::string column_name{row.get_column_name(i)};
+                        rowDict[column_name] = to_value<ValueVariant>(row, i);
+                    }
+                    
+                    return rowDict;
+                })
+                | std::ranges::to<ValueVectorMap>();
+        }
+    
     public:
         // =============================
         // =============================
@@ -1729,11 +1694,10 @@ namespace storm {
          * 
          * This method handles both distinct fields, only fields, and aggregate functions
          * 
-         * @return std::pair<std::vector<std::string>, std::string> Pair of field names and fields clause
+         * @return std::string Fields clause
          */
-        [[nodiscard]] std::pair<std::vector<std::string>, std::string> buildFieldsClause() const {
+        [[nodiscard]] std::string buildFieldsClause() const {
             // Build fields clause based on the available fields and functions
-            std::vector<std::string> fieldNames;
             std::string fieldsClause;
             
             // First, process any function aliases (like MAX, MIN, etc.)
@@ -1741,23 +1705,16 @@ namespace storm {
             for (const auto& func : functionsSet) {
                 // Extract the alias from the function string (assuming format "FUNCTION(...) AS alias")
                 std::string funcStr = func.toStr();
-                size_t asPos = funcStr.find(" AS ");
-                if (asPos != std::string::npos) {
-                    std::string alias = funcStr.substr(asPos + 4); // +4 to skip " AS "
-                    fieldNames.push_back(alias);
-                }
                 functionClauses.push_back(funcStr);
             }
             
             if (!this->distinctFields.empty() && this->onlyFields.empty()) {
                 // Use distinct fields
-                fieldNames.reserve(distinctFields.size() + fieldNames.size());
                 std::vector<std::string> fieldStrings;
                 fieldStrings.reserve(distinctFields.size());
                 
                 for (const auto& fieldAlias : distinctFields) {
                     fieldStrings.emplace_back(fieldAlias->getFullFieldName());
-                    fieldNames.emplace_back(fieldAlias->getFieldName());
                 }
                 
                 // Build fields string, including function clauses
@@ -1773,12 +1730,10 @@ namespace storm {
                 }
             } else if (!this->onlyFields.empty()) {
                 // Use only fields
-                fieldNames.reserve(onlyFields.size() + fieldNames.size());
                 std::vector<std::string> fieldStrings;
                 fieldStrings.reserve(onlyFields.size());
                 
                 for (const auto& fieldAlias : onlyFields) {
-                    fieldNames.emplace_back(fieldAlias->getFieldName());
                     fieldStrings.emplace_back(fieldAlias->alias.empty() ?
                         fieldAlias->getFullFieldName() :
                         fmt::format("{} AS {}", fieldAlias->getFullFieldName(), fieldAlias->alias));
@@ -1806,7 +1761,6 @@ namespace storm {
                         std::string tableName = this->template get_table_name<T>();
                         std::string fieldName = std::string(member.name);
                         std::string formattedField = utils::formatFieldName(tableName, fieldName);
-                        fieldNames.emplace_back(fieldName);
                         fieldStrings.emplace_back(fmt::format(R"({} AS "{}")", formattedField, fieldName));
                     }
                 });
@@ -1814,7 +1768,7 @@ namespace storm {
                 fieldsClause = fmt::format("{}", fmt::join(fieldStrings, ", "));
             }
             
-            return {fieldNames, fieldsClause};
+            return fieldsClause;
         }
         
         [[nodiscard]] std::string createDistinctClause() const {
@@ -1832,25 +1786,186 @@ namespace storm {
         // =============================
         // MAX aggregate function
         template<auto Field>
-        QuerySet &max(const std::string& alias) {
-            static_assert(std::is_member_pointer_v<decltype(Field)>, 
-                        "Field must be a member pointer");
+        QuerySet &max(const std::string& alias = "") {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
             auto field = std::make_unique<FieldAlias<Field>>();
+            std::string actual_alias = alias;
+            if(actual_alias.empty()) {
+                actual_alias = fmt::format("max_{}", field->getFieldName());
+            }
             // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
-            functions(Function(fmt::format("MAX({}) AS {}", field->getFullFieldName(), alias)));
+            functions(Function(fmt::format("MAX({}) AS {}", field->getFullFieldName(), actual_alias)));
             return *this;
         }
 
+        // MAX aggregate function that returns the direct value instead of a QuerySet
+        template<auto Field>
+        std::expected<typename member_pointer_traits<decltype(Field)>::type, std::string> max_value(const std::string& alias = "") {
+            // Create a temporary QuerySet with just the MAX function
+            auto tempQuerySet = *this;
+            // Clear onlyFields and use only the MAX function
+            tempQuerySet.onlyFields.clear();
+            tempQuerySet.distinctFields.clear();
+            tempQuerySet.functionsSet.clear();
+            // Use the existing max method instead of directly manipulating functionsSet
+            tempQuerySet.template max<Field>(alias);
+            
+            auto where_query_result = tempQuerySet.get_where_query();
+            
+            auto sql = fmt::format(R"(SELECT {} FROM "{}" {})", 
+                tempQuerySet.buildFieldsClause(),
+                tempQuerySet.template get_table_name<T>(),
+                where_query_result.sql
+            );
+
+            // Execute the query
+            Statement stmt(conn, sql);
+            bind_query_parameters(stmt, where_query_result);
+            auto execResult = stmt.execute_query();
+            if (!execResult.has_value()) {
+                return std::unexpected(execResult.error());
+            }
+            const auto& row = execResult.value();
+            
+            // Verify the column exists
+            if (row.get_column_count() == 0) {
+                return std::unexpected("Maximum column not found");
+            }
+            
+            // Check for NULL result.
+            if (row.get_column_type(0) == SQLITE_NULL) {
+                return std::unexpected("No rows to find maximum value");
+            }
+            
+            // Return the value of the MAX function using the to_value utility function
+            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
+            return to_value<FieldType>(row, 0);
+        }
+        
         // MIN aggregate function
         template<auto Field>
-        QuerySet &min(const std::string& alias) {
-            static_assert(std::is_member_pointer_v<decltype(Field)>, 
-                        "Field must be a member pointer");
+        QuerySet &min(const std::string& alias = "") {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
             auto field = std::make_unique<FieldAlias<Field>>();
+            std::string actual_alias = alias;
+            if(actual_alias.empty()) {
+                actual_alias = fmt::format("min_{}", field->getFieldName());
+            }
             // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
-            functions(Function(fmt::format("MIN({}) AS {}", field->getFullFieldName(), alias)));
+            functions(Function(fmt::format("MIN({}) AS {}", field->getFullFieldName(), actual_alias)));
             return *this;
         }
+        
+        template<auto Field>
+        std::expected<typename member_pointer_traits<decltype(Field)>::type, std::string> min_value(const std::string& alias = "") {
+            // Create a temporary QuerySet with just the MIN function
+            auto tempQuerySet = *this;
+            // Clear onlyFields and use only the MIN function
+            tempQuerySet.onlyFields.clear();
+            tempQuerySet.distinctFields.clear();
+            tempQuerySet.functionsSet.clear();
+            // Use the existing min method instead of directly manipulating functionsSet
+            tempQuerySet.template min<Field>(alias);
+            
+            auto where_query_result = tempQuerySet.get_where_query();
+            
+            auto sql = fmt::format(R"(SELECT {} FROM "{}" {})", 
+                tempQuerySet.buildFieldsClause(),
+                tempQuerySet.template get_table_name<T>(),
+                where_query_result.sql
+            );
+
+            // Execute the query
+            Statement stmt(conn, sql);
+            bind_query_parameters(stmt, where_query_result);
+            auto execResult = stmt.execute_query();
+            if (!execResult.has_value()) {
+                return std::unexpected(execResult.error());
+            }
+            const auto& row = execResult.value();
+            
+            // Verify the column exists
+            if (row.get_column_count() == 0) {
+                return std::unexpected("Minimum column not found");
+            }
+            
+            // Check for NULL result. TODO: support NULL values
+            if (row.get_column_type(0) == SQLITE_NULL) {
+                return std::unexpected("No rows to find minimum value");
+            }
+            
+            // Return the value of the MIN function using the to_value utility function
+            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
+            return to_value<FieldType>(row, 0);
+        }
+        
+        // AVG aggregate function
+        template<auto Field>
+        QuerySet &avg(const std::string& alias = "") {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
+            // Only numeric fields should be used with AVG
+            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
+            static_assert(std::is_arithmetic_v<FieldType> && !std::is_same_v<FieldType, bool>, "AVG can only be used with numeric fields");
+            auto field = std::make_unique<FieldAlias<Field>>();
+            std::string actual_alias = alias;
+            if(actual_alias.empty()) {
+                actual_alias = fmt::format("avg_{}", field->getFieldName());
+            }
+            // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
+            functions(Function(fmt::format("AVG({}) AS {}", field->getFullFieldName(), actual_alias)));
+            return *this;
+        }
+
+        // AVG aggregate function that returns the direct value instead of a QuerySet
+        template<auto Field>
+        std::expected<double, std::string> avg_value(const std::string& alias = "") {
+            // Create a temporary QuerySet with just the AVG function
+            auto tempQuerySet = *this;
+            // Clear onlyFields and use only the AVG function
+            tempQuerySet.onlyFields.clear();
+            tempQuerySet.distinctFields.clear();
+            tempQuerySet.functionsSet.clear();
+            // Use the existing avg method instead of directly manipulating functionsSet
+            tempQuerySet.template avg<Field>(alias);
+            
+            auto where_query_result = tempQuerySet.get_where_query();
+            
+            auto sql = fmt::format(R"(SELECT {} FROM "{}" {})", 
+                tempQuerySet.buildFieldsClause(),
+                tempQuerySet.template get_table_name<T>(),
+                where_query_result.sql
+            );
+
+            // Execute the query
+            Statement stmt(conn, sql);
+            bind_query_parameters(stmt, where_query_result);
+            auto execResult = stmt.execute_query();
+            if (!execResult.has_value()) {
+                return std::unexpected(execResult.error());
+            }
+            const auto& row = execResult.value();
+            
+            // Verify the column exists
+            if (row.get_column_count() == 0) {
+                return std::unexpected("Average column not found");
+            }
+            
+            // Check for NULL result.
+            if (row.get_column_type(0) == SQLITE_NULL) {
+                return std::unexpected("No rows to average");
+            }
+            
+            // Always return as double for AVG results, regardless of original field type
+            // This matches SQL's behavior where AVG always returns a floating-point value
+            if (row.get_column_type(0) == SQLITE_INTEGER) {
+                return static_cast<double>(row.get_int(0));
+            } else if (row.get_column_type(0) == SQLITE_FLOAT) {
+                return row.get_double(0);
+            } else {
+                return std::unexpected("Unexpected column type for AVG result");
+            }
+        }
+        
     private:
         template<typename... Args>
         QuerySet &functions(Args &&...args) {

@@ -148,10 +148,29 @@ if(USE_SANITIZER)
     add_compile_options(-g)
 endif()
 
-# Print build configuration summary
+# Check libc++ version
+set(LIBCXX_VERSION_FILE "${CMAKE_BINARY_DIR}/libcxx_version.cpp")
+file(WRITE ${LIBCXX_VERSION_FILE} "#include <iostream>\n#include <cstdio>\nint main() {\n#ifdef _LIBCPP_VERSION\n    printf(\"%d\", _LIBCPP_VERSION);\n#else\n    printf(\"Not using libc++\");\n#endif\n    return 0;\n}\n")
+
+try_run(
+    LIBCXX_VERSION_RUN_RESULT
+    LIBCXX_VERSION_COMPILE_RESULT
+    ${CMAKE_BINARY_DIR}
+    ${LIBCXX_VERSION_FILE}
+    RUN_OUTPUT_VARIABLE LIBCXX_VERSION_OUTPUT
+)
+
+if(LIBCXX_VERSION_COMPILE_RESULT AND LIBCXX_VERSION_RUN_RESULT EQUAL 0)
+    set(LIBCXX_VERSION ${LIBCXX_VERSION_OUTPUT})
+else()
+    set(LIBCXX_VERSION "Unknown")
+endif()
+
+# Print build configuration
 message(STATUS "=== Storm Build Configuration ===")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
-message(STATUS "Testing: ${ENABLE_TESTS}")
-message(STATUS "Sanitizer: ${USE_SANITIZER}")
+message(STATUS "libc++ Version: ${LIBCXX_VERSION}")
+message(STATUS "Testing: ${STORM_ENABLE_TESTING}")
+message(STATUS "Sanitizer: ${STORM_ENABLE_SANITIZER}")
 message(STATUS "===================================")
