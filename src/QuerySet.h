@@ -1903,6 +1903,41 @@ namespace storm {
                 }
             );
         }
+        
+        // SUM aggregate function
+        template<auto Field>
+        QuerySet &sum(std::string_view alias = "") {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
+            // Only numeric fields should be used with SUM
+            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
+            static_assert(std::is_arithmetic_v<FieldType> && !std::is_same_v<FieldType, bool>, "SUM can only be used with numeric fields");
+            auto field = std::make_unique<FieldAlias<Field>>();
+            std::string actual_alias(alias);
+            if(actual_alias.empty()) {
+                actual_alias = fmt::format("sum_{}", field->getFieldName());
+            }
+            functions(Function(fmt::format("SUM({}) AS {}", field->getFullFieldName(), actual_alias)));
+            return *this;
+        }
+        
+        // SUM aggregate function that returns the direct value instead of a QuerySet
+        template<auto Field>
+        auto sum_value() -> std::expected<double, std::string> {
+            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
+            return execute_aggregate_query<double>(
+                [](auto& qs) { qs.template sum<Field>(); },
+                "sum",
+                [](const auto& row) -> std::expected<double, std::string> {
+                    if (row.get_column_type(0) == SQLITE_INTEGER) {
+                        return static_cast<double>(row.get_int(0));
+                    } else if (row.get_column_type(0) == SQLITE_FLOAT) {
+                        return row.get_double(0);
+                    } else {
+                        return std::unexpected<std::string>("Unexpected column type for SUM result");
+                    }
+                }
+            );
+        }
     
     private:
         // Common helper for executing aggregate queries

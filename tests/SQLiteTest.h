@@ -2883,8 +2883,7 @@ TEST_F(ORMTest, MaxValueWithFilter) {
 }
 
 TEST_F(ORMTest, MaxValueEmptyTable) {
-    auto clear_authors = QuerySet<Author>(conn).remove();
-    ASSERT_TRUE(clear_authors);
+    clearTestData();
     
     auto result = QuerySet<Author>(conn)
         .max_value<&Author::age>();
@@ -2931,8 +2930,7 @@ TEST_F(ORMTest, MinStringField) {
 }
 
 TEST_F(ORMTest, MinOnEmptyTable) {
-    auto clear_authors = QuerySet<Author>(conn).remove();
-    ASSERT_TRUE(clear_authors);
+    clearTestData();
     
     auto result = QuerySet<Author>(conn)
         .min<&Author::age>("min_age")
@@ -3023,8 +3021,7 @@ TEST_F(ORMTest, MinValueWithFilter) {
 }
 
 TEST_F(ORMTest, MinValueEmptyTable) {
-    auto clear_authors = QuerySet<Author>(conn).remove();
-    ASSERT_TRUE(clear_authors);
+    clearTestData();
     
     auto result = QuerySet<Author>(conn)
         .min_value<&Author::age>();
@@ -3079,8 +3076,7 @@ TEST_F(ORMTest, AvgNumericField) {
 }
 
 TEST_F(ORMTest, AvgOnEmptyTable) {
-    auto remove_result = QuerySet<Author>(conn).remove();
-    ASSERT_TRUE(remove_result);
+    clearTestData();
     
     auto result = QuerySet<Author>(conn)
         .avg<&Author::age>("avg_age")
@@ -3255,6 +3251,15 @@ TEST_F(ORMTest, AvgValueWithJoin) {
     EXPECT_EQ(result.value(), 4.0);
 }
 
+TEST_F(ORMTest, AvgValueEmptyTable) {
+    clearTestData();
+    
+    auto result = QuerySet<Author>(conn)
+        .avg_value<&Author::age>();
+    ASSERT_FALSE(result.has_value());
+    ASSERT_EQ(result.error(), "No rows to average");
+}
+
 // =======================================
 // COUNT AGGREGATE FUNCTION TESTS
 // =======================================
@@ -3301,10 +3306,6 @@ TEST_F(ORMTest, CountOnEmptyTable) {
 }
 
 TEST_F(ORMTest, CountWithFilter) {
-    // First reset the data
-    clearTestData();
-    setupTestData();
-    
     auto result = QuerySet<Author>(conn)
         .where<&Author::age>(30, Op::GE)
         .template count<&Author::id>()
@@ -3313,6 +3314,20 @@ TEST_F(ORMTest, CountWithFilter) {
     ValueVectorMap expected_results = {
         {
             {"count_id", 2}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
+}
+
+TEST_F(ORMTest, CountStringSelectValues) {
+    auto result = QuerySet<Author>(conn)
+        .where<&Author::age>(30, Op::GE)
+        .template count<&Author::name>()
+        .select_values();
+    
+    ValueVectorMap expected_results = {
+        {
+            {"count_name", 2}
         }
     };
     AssertResultsMatch(result, expected_results);
@@ -3360,6 +3375,13 @@ TEST_F(ORMTest, CountValue) {
     EXPECT_EQ(result.value(), 4);
 }
 
+TEST_F(ORMTest, CountValueString) {
+    auto result = QuerySet<Post>(conn)
+        .count_value<&Post::title>();
+    ASSERT_TRUE(result.has_value()) << "count_value with join failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 11);
+}
+
 TEST_F(ORMTest, CountValueWithFilter) {
     auto result = QuerySet<Author>(conn)
         .where<&Author::age>(30, Op::GT)
@@ -3373,7 +3395,7 @@ TEST_F(ORMTest, CountValueEmptyTable) {
     
     auto result = QuerySet<Author>(conn)
         .count_value<&Author::id>();
-    ASSERT_TRUE(result.has_value()) << "count_value on empty table failed with error: " << result.error();
+    ASSERT_TRUE(result.has_value()) << "count_value with empty table failed with error: " << result.error();
     EXPECT_EQ(result.value(), 0);
 }
 
@@ -3384,4 +3406,135 @@ TEST_F(ORMTest, CountValueWithJoin) {
         .count_value<&Post::id>();
     ASSERT_TRUE(result.has_value()) << "count_value with join failed with error: " << result.error();
     EXPECT_EQ(result.value(), 4);
+}
+
+// =======================================
+// SUM AGGREGATE FUNCTION TESTS
+// =======================================
+TEST_F(ORMTest, SumField) {
+    auto result = QuerySet<Author>(conn)
+        .sum<&Author::age>()
+        .select_values();
+    
+    // Sum of ages: 25 + 28 + 30 + 35 = 118
+    ValueVectorMap expected_results = {
+        {
+            {"sum_age", 118.0}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
+}
+
+TEST_F(ORMTest, SumWithCustomAlias) {
+    auto result = QuerySet<Author>(conn)
+        .sum<&Author::age>("total_age")
+        .select_values();
+    
+    ValueVectorMap expected_results = {
+        {
+            {"total_age", 118.0}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
+}
+
+TEST_F(ORMTest, SumOnEmptyTable) {
+    auto remove_result = QuerySet<Author>(conn).remove();
+    ASSERT_TRUE(remove_result);
+    
+    auto result = QuerySet<Author>(conn)
+        .sum<&Author::age>()
+        .select_values();
+    
+    ValueVectorMap expected_results = {
+        {
+            {"sum_age", std::monostate{}}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
+}
+
+TEST_F(ORMTest, SumWithFilter) {
+    // First reset the data
+    clearTestData();
+    setupTestData();
+    
+    auto result = QuerySet<Author>(conn)
+        .where<&Author::age>(30, Op::GE)
+        .template sum<&Author::age>()
+        .select_values();
+    
+    // Sum of ages ≥ 30: 30 + 35 = 65
+    ValueVectorMap expected_results = {
+        {
+            {"sum_age", 65.0}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
+}
+
+TEST_F(ORMTest, SumWithGroupBy) {
+    // Insert another author with the same age as an existing one
+    Author duplicate("Duplicate Author", 30, "duplicate@example.com", 0, true, 4.2, 82.0);
+    auto insert_result = QuerySet<Author>(conn).insert(duplicate);
+    ASSERT_TRUE(insert_result);
+    
+    auto result = QuerySet<Author>(conn)
+        .sum<&Author::rating>()
+        .group_by<&Author::age>()
+        .only<&Author::age>()
+        .order_by<&Author::age>()
+        .select_values();
+    
+    ValueVectorMap expected_results = {
+        {
+            {"age", 25},
+            {"sum_rating", 4.5}
+        },
+        {
+            {"age", 28},
+            {"sum_rating", 5.5}
+        },
+        {
+            {"age", 30},
+            {"sum_rating", 8.2}
+        },
+        {
+            {"age", 35},
+            {"sum_rating", 5}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
+}
+
+// SUM VALUE TESTS
+TEST_F(ORMTest, SumValue) {
+    auto result = QuerySet<Author>(conn)
+        .sum_value<&Author::age>();
+    ASSERT_TRUE(result.has_value()) << "sum_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 118); // Including the duplicate author with age 30
+}
+
+TEST_F(ORMTest, SumValueWithFilter) {
+    auto result = QuerySet<Author>(conn)
+        .where<&Author::age>(30, Op::GT)
+        .sum_value<&Author::age>();
+    ASSERT_TRUE(result.has_value()) << "sum_value with filter failed with error: " << result.error();
+    EXPECT_DOUBLE_EQ(result.value(), 35.0);
+}
+
+TEST_F(ORMTest, SumValueEmptyTable) {
+    clearTestData();
+    
+    auto result = QuerySet<Author>(conn)
+        .sum_value<&Author::age>();
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), "No rows to sum");
+}
+
+TEST_F(ORMTest, SumValueDouble) {
+    auto result = QuerySet<Author>(conn)
+        .sum_value<&Author::rating>();
+    ASSERT_TRUE(result.has_value()) << "sum_value with join failed with error: " << result.error();
+    EXPECT_DOUBLE_EQ(result.value(), 19);
 }
