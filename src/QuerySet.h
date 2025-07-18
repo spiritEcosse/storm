@@ -1873,6 +1873,36 @@ namespace storm {
                 }
             );
         }
+        
+        // COUNT aggregate function
+        template<auto Field>
+        QuerySet &count(std::string_view alias = "") {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
+            auto field = std::make_unique<FieldAlias<Field>>();
+            std::string actual_alias(alias);
+            if(actual_alias.empty()) {
+                actual_alias = fmt::format("count_{}", field->getFieldName());
+            }
+            // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
+            functions(Function(fmt::format("COUNT({}) AS {}", field->getFullFieldName(), actual_alias)));
+            return *this;
+        }
+        
+        // COUNT aggregate function that returns the direct value instead of a QuerySet
+        template<auto Field>
+        auto count_value() -> std::expected<int, std::string> {
+            return execute_aggregate_query<int>(
+                [](auto& qs) { qs.template count<Field>(); },
+                "count",
+                [](const auto& row) -> std::expected<int, std::string> {
+                    if (row.get_column_type(0) == SQLITE_INTEGER) {
+                        return row.get_int(0);
+                    } else {
+                        return std::unexpected<std::string>("Unexpected column type for COUNT result");
+                    }
+                }
+            );
+        }
     
     private:
         // Common helper for executing aggregate queries
@@ -1893,9 +1923,10 @@ namespace storm {
             
             // Build and execute query
             auto where_query_result = tempQuerySet.get_where_query();
-            auto sql = fmt::format(R"(SELECT {} FROM "{}" {})", 
+            auto sql = fmt::format(R"(SELECT {} FROM "{}" {} {})", 
                 tempQuerySet.buildFieldsClause(),
                 tempQuerySet.template get_table_name<T>(),
+                this->generateJoinSQL(),
                 where_query_result.sql
             );
 

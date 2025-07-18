@@ -3053,49 +3053,18 @@ TEST_F(ORMTest, MinValueFloat) {
     EXPECT_EQ(result.value(), 80.0);
 }
 
+TEST_F(ORMTest, MinValueWithJoin) {
+    auto result = QuerySet<Post>(conn)
+        .join<Author>()
+        .where<&Author::name>("Charlie Brown", Op::EQ)
+        .min_value<&Author::rating>();
+    ASSERT_TRUE(result.has_value()) << "min_value with join failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 4.0);
+}
+
 // =======================================
 // AVG AGGREGATE FUNCTION TESTS
 // =======================================
-// AVG VALUE TESTS
-TEST_F(ORMTest, AvgValueInt) {
-    auto result = QuerySet<Author>(conn)
-        .avg_value<&Author::age>();
-    ASSERT_TRUE(result.has_value()) << "avg failed with error: " << result.error();
-    EXPECT_EQ(result.value(), 29.5);
-}
-
-TEST_F(ORMTest, AvgValueWithFilter) {
-    auto result = QuerySet<Author>(conn)
-        .where<&Author::age>(30, Op::GT)
-        .avg_value<&Author::age>();
-    ASSERT_TRUE(result.has_value()) << "avg with filter failed with error: " << result.error();
-    EXPECT_EQ(result.value(), 35.0);
-}
-
-TEST_F(ORMTest, AvgValueDouble) {
-    auto result = QuerySet<Author>(conn)
-        .avg_value<&Author::rating>();
-    ASSERT_TRUE(result.has_value()) << "avg of double failed with error: " << result.error();
-    EXPECT_EQ(result.value(), 4.75);
-}
-
-TEST_F(ORMTest, AvgValueFloat) {
-    auto result = QuerySet<Author>(conn)
-        .avg_value<&Author::score>();
-    ASSERT_TRUE(result.has_value()) << "avg of float failed with error: " << result.error();
-    EXPECT_EQ(result.value(), 87.625);
-}
-
-TEST_F(ORMTest, AvgValueNoRows) {
-    clearTestData();
-    
-    auto result = QuerySet<Author>(conn)
-        .avg_value<&Author::age>();
-    ASSERT_FALSE(result.has_value());
-    ASSERT_EQ(result.error(), "No rows to average");
-}
-
-// AVG AGGREGATE FUNCTION TESTS
 TEST_F(ORMTest, AvgNumericField) {
     auto result = QuerySet<Author>(conn)
         .avg<&Author::age>("avg_age")
@@ -3236,4 +3205,183 @@ TEST_F(ORMTest, CombineAvgMinMaxWithGroupBy) {
         }
     };
     AssertResultsMatch(result, expected_results);
+}
+
+// AVG VALUE TESTS
+TEST_F(ORMTest, AvgValueInt) {
+    auto result = QuerySet<Author>(conn)
+        .avg_value<&Author::age>();
+    ASSERT_TRUE(result.has_value()) << "avg failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 29.5);
+}
+
+TEST_F(ORMTest, AvgValueWithFilter) {
+    auto result = QuerySet<Author>(conn)
+        .where<&Author::age>(30, Op::GT)
+        .avg_value<&Author::age>();
+    ASSERT_TRUE(result.has_value()) << "avg with filter failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 35.0);
+}
+
+TEST_F(ORMTest, AvgValueDouble) {
+    auto result = QuerySet<Author>(conn)
+        .avg_value<&Author::rating>();
+    ASSERT_TRUE(result.has_value()) << "avg of double failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 4.75);
+}
+
+TEST_F(ORMTest, AvgValueFloat) {
+    auto result = QuerySet<Author>(conn)
+        .avg_value<&Author::score>();
+    ASSERT_TRUE(result.has_value()) << "avg of float failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 87.625);
+}
+
+TEST_F(ORMTest, AvgValueNoRows) {
+    clearTestData();
+    
+    auto result = QuerySet<Author>(conn)
+        .avg_value<&Author::age>();
+    ASSERT_FALSE(result.has_value());
+    ASSERT_EQ(result.error(), "No rows to average");
+}
+
+TEST_F(ORMTest, AvgValueWithJoin) {
+    auto result = QuerySet<Post>(conn)
+        .join<Author>()
+        .where<&Author::name>("Charlie Brown", Op::EQ)
+        .avg_value<&Author::rating>();
+    ASSERT_TRUE(result.has_value()) << "avg_value with join failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 4.0);
+}
+
+// =======================================
+// COUNT AGGREGATE FUNCTION TESTS
+// =======================================
+TEST_F(ORMTest, CountField) {
+    auto result = QuerySet<Author>(conn)
+        .count<&Author::id>()
+        .select_values();
+    
+    ValueVectorMap expected_results = {
+        {
+            {"count_id", 4}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
+}
+
+TEST_F(ORMTest, CountWithCustomAlias) {
+    auto result = QuerySet<Author>(conn)
+        .count<&Author::id>("author_count")
+        .select_values();
+    
+    ValueVectorMap expected_results = {
+        {
+            {"author_count", 4}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
+}
+
+TEST_F(ORMTest, CountOnEmptyTable) {
+    auto remove_result = QuerySet<Author>(conn).remove();
+    ASSERT_TRUE(remove_result);
+    
+    auto result = QuerySet<Author>(conn)
+        .count<&Author::id>()
+        .select_values();
+    
+    ValueVectorMap expected_results = {
+        {
+            {"count_id", 0}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
+}
+
+TEST_F(ORMTest, CountWithFilter) {
+    // First reset the data
+    clearTestData();
+    setupTestData();
+    
+    auto result = QuerySet<Author>(conn)
+        .where<&Author::age>(30, Op::GE)
+        .template count<&Author::id>()
+        .select_values();
+    
+    ValueVectorMap expected_results = {
+        {
+            {"count_id", 2}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
+}
+
+TEST_F(ORMTest, CountWithGroupBy) {
+    // Insert another author with the same age as an existing one
+    Author duplicate("Duplicate Author", 30, "duplicate@example.com", 0, true, 4.2, 82.0);
+    auto insert_result = QuerySet<Author>(conn).insert(duplicate);
+    ASSERT_TRUE(insert_result);
+    
+    auto result = QuerySet<Author>(conn)
+        .count<&Author::id>()
+        .group_by<&Author::age>()
+        .only<&Author::age>()
+        .order_by<&Author::age>()
+        .select_values();
+    
+    ValueVectorMap expected_results = {
+        {
+            {"age", 25},
+            {"count_id", 1}
+        },
+        {
+            {"age", 28},
+            {"count_id", 1}
+        },
+        {
+            {"age", 30},
+            {"count_id", 2}
+        },
+        {
+            {"age", 35},
+            {"count_id", 1}
+        }
+    };
+    AssertResultsMatch(result, expected_results);
+}
+
+// COUNT VALUE TESTS
+TEST_F(ORMTest, CountValue) {
+    auto result = QuerySet<Author>(conn)
+        .count_value<&Author::id>();
+    ASSERT_TRUE(result.has_value()) << "count_value failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 4);
+}
+
+TEST_F(ORMTest, CountValueWithFilter) {
+    auto result = QuerySet<Author>(conn)
+        .where<&Author::age>(30, Op::GT)
+        .count_value<&Author::id>();
+    ASSERT_TRUE(result.has_value()) << "count_value with filter failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 1);
+}
+
+TEST_F(ORMTest, CountValueEmptyTable) {
+    clearTestData();
+    
+    auto result = QuerySet<Author>(conn)
+        .count_value<&Author::id>();
+    ASSERT_TRUE(result.has_value()) << "count_value on empty table failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 0);
+}
+
+TEST_F(ORMTest, CountValueWithJoin) {
+    auto result = QuerySet<Post>(conn)
+        .join<Author>()
+        .where<&Author::name>("Charlie Brown", Op::EQ)
+        .count_value<&Post::id>();
+    ASSERT_TRUE(result.has_value()) << "count_value with join failed with error: " << result.error();
+    EXPECT_EQ(result.value(), 4);
 }
