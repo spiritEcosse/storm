@@ -75,6 +75,25 @@ enum class Op {
     EQ, NE, GT, LT, GE, LE, LIKE, IS, IN, BETWEEN
 };
 
+// Collation types for string comparisons
+enum class Collation {
+    NONE,    // Default collation
+    BINARY,  // Binary comparison (case-sensitive)
+    NOCASE,  // Case-insensitive comparison
+    RTRIM    // Ignore trailing spaces
+};
+
+// Convert collation enum to SQL string
+inline std::string_view collation_to_sql(Collation collation) {
+    switch (collation) {
+        case Collation::BINARY: return "BINARY";
+        case Collation::NOCASE: return "NOCASE";
+        case Collation::RTRIM: return "RTRIM";
+        case Collation::NONE:
+        default: return "";
+    }
+}
+
 constexpr std::string_view op_to_sql(Op op) {
     switch (op) {
         case Op::EQ: return "=";
@@ -110,19 +129,27 @@ private:
     Op operator_;
     SqlValue value_;
     std::optional<SqlValue> value2_; // For BETWEEN
+    Collation collation_ = Collation::NONE; // Default to no collation
     
 public:
     template<typename T>
-    Condition(std::string field_name, Op op, T&& value) 
-        : field_name_(std::move(field_name)), operator_(op), value_(std::forward<T>(value)) {}
+    Condition(std::string field_name, Op op, T&& value, Collation collation = Collation::NONE) 
+        : field_name_(std::move(field_name)), operator_(op), value_(std::forward<T>(value)), collation_(collation) {}
     
     template<typename T1, typename T2>
-    Condition(std::string field_name, T1&& value1, T2&& value2) // BETWEEN
+    Condition(std::string field_name, T1&& value1, T2&& value2, Collation collation = Collation::NONE) // BETWEEN
         : field_name_(std::move(field_name)), operator_(Op::BETWEEN), 
-          value_(std::forward<T1>(value1)), value2_(std::forward<T2>(value2)) {}
+          value_(std::forward<T1>(value1)), value2_(std::forward<T2>(value2)), collation_(collation) {}
     
     std::string to_sql(ParameterBinder& binder) const override {
-        std::string sql = field_name_ + " " + std::string(op_to_sql(operator_)) + " ";
+        std::string sql = field_name_;
+        
+        // Add collation if specified (for string comparisons)
+        if (collation_ != Collation::NONE) {
+            sql += " COLLATE " + std::string(collation_to_sql(collation_));
+        }
+        
+        sql += " " + std::string(op_to_sql(operator_)) + " ";
         
         if (operator_ == Op::BETWEEN) {
             std::string param1 = value_to_sql_safe(value_, binder);
@@ -141,9 +168,9 @@ public:
     
     std::unique_ptr<Expression> clone() const override {
         if (value2_) {
-            return std::make_unique<Condition>(field_name_, value_, *value2_);
+            return std::make_unique<Condition>(field_name_, value_, *value2_, collation_);
         }
-        return std::make_unique<Condition>(field_name_, operator_, value_);
+        return std::make_unique<Condition>(field_name_, operator_, value_, collation_);
     }
 
 private:
@@ -263,6 +290,7 @@ class Field {
 private:
     FieldType ClassType::* member_ptr_;
     std::string field_name_;
+    Collation collation_ = Collation::NONE;
     
     std::string get_field_name() const {
         if (!field_name_.empty()) return field_name_;
@@ -273,59 +301,73 @@ private:
     }
     
 public:
-    explicit Field(FieldType ClassType::* ptr) : member_ptr_(ptr) {}
-    Field(FieldType ClassType::* ptr, std::string name) 
-        : member_ptr_(ptr), field_name_(std::move(name)) {}
+    explicit Field(FieldType ClassType::* ptr, Collation collation = Collation::NONE) 
+        : member_ptr_(ptr), collation_(collation) {}
+    Field(FieldType ClassType::* ptr, std::string name, Collation collation = Collation::NONE) 
+        : member_ptr_(ptr), field_name_(std::move(name)), collation_(collation) {}
     
     // Comparison operators
     template<typename T>
     Where operator==(T&& value) const {
-        return Where(std::make_unique<Condition>(get_field_name(), Op::EQ, std::forward<T>(value)));
+        return Where(std::make_unique<Condition>(get_field_name(), Op::EQ, std::forward<T>(value), collation_));
     }
     
     template<typename T>
     Where operator!=(T&& value) const {
-        return Where(std::make_unique<Condition>(get_field_name(), Op::NE, std::forward<T>(value)));
+        return Where(std::make_unique<Condition>(get_field_name(), Op::NE, std::forward<T>(value), collation_));
     }
     
     template<typename T>
     Where operator>(T&& value) const {
-        return Where(std::make_unique<Condition>(get_field_name(), Op::GT, std::forward<T>(value)));
+        return Where(std::make_unique<Condition>(get_field_name(), Op::GT, std::forward<T>(value), collation_));
     }
     
     template<typename T>
     Where operator<(T&& value) const {
-        return Where(std::make_unique<Condition>(get_field_name(), Op::LT, std::forward<T>(value)));
+        return Where(std::make_unique<Condition>(get_field_name(), Op::LT, std::forward<T>(value), collation_));
     }
     
     template<typename T>
     Where operator>=(T&& value) const {
-        return Where(std::make_unique<Condition>(get_field_name(), Op::GE, std::forward<T>(value)));
+        return Where(std::make_unique<Condition>(get_field_name(), Op::GE, std::forward<T>(value), collation_));
     }
     
     template<typename T>
     Where operator<=(T&& value) const {
-        return Where(std::make_unique<Condition>(get_field_name(), Op::LE, std::forward<T>(value)));
+        return Where(std::make_unique<Condition>(get_field_name(), Op::LE, std::forward<T>(value), collation_));
     }
     
     // Special operators
     template<typename T>
     Where like(T&& pattern) const {
-        return Where(std::make_unique<Condition>(get_field_name(), Op::LIKE, std::forward<T>(pattern)));
+        return Where(std::make_unique<Condition>(get_field_name(), Op::LIKE, std::forward<T>(pattern), collation_));
     }
     
     Where is_null() const {
-        return Where(std::make_unique<Condition>(get_field_name(), Op::IS, std::nullopt));
+        return Where(std::make_unique<Condition>(get_field_name(), Op::IS, std::nullopt, collation_));
     }
     
     template<typename T>
     Where is(T&& value) const {
-        return Where(std::make_unique<Condition>(get_field_name(), Op::IS, std::forward<T>(value)));
+        return Where(std::make_unique<Condition>(get_field_name(), Op::IS, std::forward<T>(value), collation_));
     }
     
     template<typename T1, typename T2>
     Where between(T1&& value1, T2&& value2) const {
-        return Where(std::make_unique<Condition>(get_field_name(), std::forward<T1>(value1), std::forward<T2>(value2)));
+        return Where(std::make_unique<Condition>(get_field_name(), std::forward<T1>(value1), std::forward<T2>(value2), collation_));
+    }
+    
+    // Collation methods
+    Field<ClassType, FieldType> collate_binary() const {
+        return Field<ClassType, FieldType>(member_ptr_, field_name_, Collation::BINARY);
+    }
+    
+    Field<ClassType, FieldType> collate_nocase() const {
+        return Field<ClassType, FieldType>(member_ptr_, field_name_, Collation::NOCASE);
+    }
+    
+    Field<ClassType, FieldType> collate_rtrim() const {
+        return Field<ClassType, FieldType>(member_ptr_, field_name_, Collation::RTRIM);
     }
 };
 
@@ -339,6 +381,7 @@ template<typename ClassType, typename FieldType>
 Field<ClassType, FieldType> field(FieldType ClassType::* member_ptr, const std::string& name) {
     return Field<ClassType, FieldType>(member_ptr, name);
 }
+
 
 } // namespace storm
 
