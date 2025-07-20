@@ -357,6 +357,47 @@ public:
         return Where(std::make_unique<Condition>(get_field_name(), std::forward<T1>(value1), std::forward<T2>(value2), collation_));
     }
     
+    // IN operator for multiple values
+    template<typename Container>
+    Where in(const Container& values) const {
+        // For simplicity, we'll convert the IN operation to multiple OR conditions
+        // This ensures compatibility with the existing parameter binding system
+        if (values.empty()) {
+            // Empty IN clause should match nothing - use impossible condition
+            return Where(std::make_unique<Condition>(get_field_name(), Op::EQ, "__IMPOSSIBLE_VALUE__", collation_));
+        }
+        
+        auto it = values.begin();
+        Where result = Field<ClassType, FieldType>(member_ptr_, field_name_, collation_) == *it;
+        ++it;
+        
+        for (; it != values.end(); ++it) {
+            Where next_condition = Field<ClassType, FieldType>(member_ptr_, field_name_, collation_) == *it;
+            result = result or next_condition;
+        }
+        
+        return result;
+    }
+    
+    // IN operator for initializer lists (to handle {"alice", "bob", "charlie"})
+    template<typename T>
+    Where in(std::initializer_list<T> values) const {
+        return in(std::vector<T>(values));
+    }
+    
+    // String pattern matching helpers
+    template<typename T>
+    Where startswith(T&& prefix) const {
+        std::string pattern = std::string(prefix) + "%";
+        return Where(std::make_unique<Condition>(get_field_name(), Op::LIKE, std::move(pattern), collation_));
+    }
+    
+    template<typename T>
+    Where endswith(T&& suffix) const {
+        std::string pattern = "%" + std::string(suffix);
+        return Where(std::make_unique<Condition>(get_field_name(), Op::LIKE, std::move(pattern), collation_));
+    }
+    
     // Collation methods
     Field<ClassType, FieldType> collate_binary() const {
         return Field<ClassType, FieldType>(member_ptr_, field_name_, Collation::BINARY);

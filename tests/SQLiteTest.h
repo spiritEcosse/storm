@@ -3539,7 +3539,6 @@ TEST_F(ORMTest, SumValueDouble) {
     EXPECT_DOUBLE_EQ(result.value(), 19);
 }
 
-// =======================================
 // COLLATE TESTS
 // =======================================
 
@@ -3790,4 +3789,105 @@ TEST_F(ORMTest, CollateInWhereAndOrderBy) {
     
     EXPECT_EQ(value[1].name, "ALICE");
     EXPECT_EQ(value[1].age, 28);
+}
+
+// Test multiple collate operations in complex WHERE clauses
+TEST_F(ORMTest, WhereClauseMultipleCollateOperations)
+{
+    clearTestData();
+    
+    // Insert test data following the same pattern as working collate tests
+    Author author1("Alice", 25, "alice@example.com", 1, true, 4.5, 90.0);
+    Author author2("BOB", 28, "bob@example.com", 2, true, 5.5, 85.0);
+    Author author3("charlie ", 30, "charlie@example.com", 3, false, 4.0, 80.0);
+    Author author4("DIANA", 35, "diana@example.com", 4, true, 5.0, 95.0);
+    Author author5("eve", 22, "eve@example.com", 5, false, 3.5, 88.0);
+    
+    QuerySet<Author>(conn).insert(std::vector{author1, author2, author3, author4, author5});
+    
+    // Test 1: NOCASE collation - find "alice" regardless of case
+    const auto &result1 = QuerySet<Author>(conn)
+        .where(Field(&Author::name).collate_nocase() == "alice")
+        .select_all(); 
+   
+    ASSERT_TRUE(result1.has_value()) << "NOCASE collation failed: " << result1.error();
+    const auto &value1 = result1.value();
+    ASSERT_EQ(value1.size(), 1);
+    EXPECT_EQ(value1[0].name, "Alice");
+    
+    // Test 2: RTRIM collation - find "charlie" ignoring trailing spaces
+    const auto &result2 = QuerySet<Author>(conn)
+        .where(Field(&Author::name).collate_rtrim() == "charlie")
+        .select_all();
+    
+    ASSERT_TRUE(result2.has_value()) << "RTRIM collation failed: " << result2.error();
+    const auto &value2 = result2.value();
+    ASSERT_EQ(value2.size(), 1);
+    EXPECT_EQ(value2[0].name, "charlie ");
+    
+    // Test 3: Multiple collate operations with OR condition
+    const auto &result3 = QuerySet<Author>(conn)
+        .where(Field(&Author::name).collate_nocase() == "bob" || 
+               Field(&Author::name).collate_rtrim() == "charlie")
+        .select_all();
+    
+    ASSERT_TRUE(result3.has_value()) << "Multiple collate OR condition failed: " << result3.error();
+    const auto &value3 = result3.value();
+    ASSERT_EQ(value3.size(), 2);
+    
+    // Test 4: Complex condition with different collate types and AND/OR logic
+    const auto &result4 = QuerySet<Author>(conn)
+        .where((Field(&Author::name).collate_nocase() == "alice" && Field(&Author::age) == 25) ||
+               (Field(&Author::name).collate_binary() == "DIANA" && Field(&Author::age) > 30))
+        .select_all();
+    
+    ASSERT_TRUE(result4.has_value()) << "Complex collate condition failed: " << result4.error();
+    const auto &value4 = result4.value();
+    ASSERT_EQ(value4.size(), 2); // Should find Alice and DIANA
+    
+    // Test 5: Multiple collate operations with LIKE patterns
+    const auto &result5 = QuerySet<Author>(conn)
+        .where(Field(&Author::name).collate_nocase().like("%a%") &&
+               Field(&Author::age) >= 25)
+        .select_all();
+    
+    ASSERT_TRUE(result5.has_value()) << "Collate with LIKE pattern failed: " << result5.error();
+    const auto &value5 = result5.value();
+    ASSERT_GE(value5.size(), 1); // Should find Alice and DIANA
+    
+    // Test 6: Chained collate operations with boolean conditions
+    const auto &result6 = QuerySet<Author>(conn)
+        .where((Field(&Author::name).collate_nocase() == "bob" || 
+                Field(&Author::name).collate_nocase() == "diana") &&
+               Field(&Author::is_active) == true)
+        .select_all();
+    
+    ASSERT_TRUE(result6.has_value()) << "Chained collate with boolean failed: " << result6.error();
+    const auto &value6 = result6.value();
+    ASSERT_EQ(value6.size(), 2); // Should find BOB and DIANA (both active)
+
+    // Test 7: Nested conditions with multiple collate operations
+    const auto &result7 = QuerySet<Author>(conn)
+    .where(Field(&Author::name).collate_nocase().in({"alice", "bob", "charlie"}) &&
+            (Field(&Author::name).collate_rtrim().like("%e%") || Field(&Author::age) < 30))
+    .select_all();
+    
+    ASSERT_TRUE(result7.has_value()) << "Nested collate conditions failed: " << result7.error();
+    const auto &value7 = result7.value();
+    ASSERT_GE(value7.size(), 1);
+    EXPECT_EQ(value7[0].name, "Alice");
+    EXPECT_EQ(value7[0].age, 25);
+    
+    // Test 8: Mixed collate operations with different field types
+    const auto &result8 = QuerySet<Author>(conn)
+        .where(Field(&Author::name).collate_nocase().startswith("a") &&
+               Field(&Author::email).collate_nocase().endswith("@EXAMPLE.COM") &&
+               Field(&Author::age) >= 25)
+        .select_all();
+    
+    ASSERT_TRUE(result8.has_value()) << "Mixed collate operations failed: " << result8.error();
+    const auto &value8 = result8.value();
+    ASSERT_GE(value8.size(), 1);
+    EXPECT_EQ(value8[0].name, "Alice");
+    EXPECT_EQ(value8[0].age, 25);
 }
