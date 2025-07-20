@@ -3538,3 +3538,225 @@ TEST_F(ORMTest, SumValueDouble) {
     ASSERT_TRUE(result.has_value()) << "sum_value with join failed with error: " << result.error();
     EXPECT_DOUBLE_EQ(result.value(), 19);
 }
+
+// =======================================
+// COLLATE TESTS
+// =======================================
+
+// Test case-insensitive string comparison with COLLATE NOCASE in WHERE clause
+TEST_F(ORMTest, WhereClauseCollateNocase) {
+    // Insert test data with mixed case names
+    clearTestData();
+    
+    Author author1("Alice", 25, "alice@example.com", 1, true, 4.5, 90.0);
+    Author author2("BOB", 28, "bob@example.com", 2, true, 5.5, 85.0);
+    Author author3("charlie", 30, "charlie@example.com", 3, false, 4.0, 80.0);
+    Author author4("DIANA", 35, "diana@example.com", 4, true, 5.0, 95.0);
+    
+    QuerySet<Author>(conn).insert(std::vector{author1, author2, author3, author4});
+    
+    // Use COLLATE NOCASE to find "bob" regardless of case
+    auto result = QuerySet<Author>(conn)
+        .where(Field(&Author::name).collate_nocase() == "bob")
+        .select_all();
+    
+    ASSERT_TRUE(result.has_value()) << "where clause collate nocase failed with error: " << result.error();
+    auto value = result.value();
+    ASSERT_EQ(value.size(), 1);
+    EXPECT_EQ(value[0].name, "BOB");
+    
+    // Without COLLATE, the case-sensitive search would find nothing
+    auto result_case_sensitive = QuerySet<Author>(conn)
+        .where(&Author::name, "bob")
+        .select_all();
+    
+    ASSERT_TRUE(result_case_sensitive.has_value()) << "where clause collate nocase failed with error: " << result_case_sensitive.error();
+    auto value_case_sensitive = result_case_sensitive.value();
+    EXPECT_EQ(value_case_sensitive.size(), 0);
+}
+
+// Test COLLATE RTRIM in WHERE clause for string comparison ignoring trailing spaces
+TEST_F(ORMTest, WhereClauseCollateRtrim) {
+    clearTestData();
+    
+    Author author1("Alice  ", 25, "alice@example.com", 1, true, 4.5, 90.0);
+    Author author2("Bob", 28, "bob@example.com", 2, true, 5.5, 85.0);
+    
+    QuerySet<Author>(conn).insert(std::vector{author1, author2});
+    
+    // Use COLLATE RTRIM to find "Alice" ignoring trailing spaces
+    auto result = QuerySet<Author>(conn)
+        .where(Field(&Author::name).collate_rtrim() == "Alice")
+        .select_all();
+    
+    ASSERT_TRUE(result.has_value()) << "where clause collate rtrim failed with error: " << result.error();
+    auto value = result.value();
+    ASSERT_EQ(value.size(), 1);
+    EXPECT_EQ(value[0].name, "Alice  ");
+    
+    // Without COLLATE RTRIM, the search would find nothing
+    auto result_without_rtrim = QuerySet<Author>(conn)
+        .where(&Author::name, "Alice")
+        .select_all();
+    
+    ASSERT_TRUE(result_without_rtrim.has_value()) << "where clause collate rtrim failed with error: " << result_without_rtrim.error();
+    auto value_without_rtrim = result_without_rtrim.value();
+    EXPECT_EQ(value_without_rtrim.size(), 0);
+}
+
+// Test COLLATE BINARY in WHERE clause for case-sensitive string comparison
+TEST_F(ORMTest, WhereClauseCollateBinary) {
+    clearTestData();
+    
+    Author author1("Alice", 25, "alice@example.com", 1, true, 4.5, 90.0);
+    Author author2("alice", 28, "alice2@example.com", 2, true, 5.5, 85.0);
+    
+    QuerySet<Author>(conn).insert(std::vector{author1, author2});
+    
+    // Use COLLATE BINARY to ensure case-sensitive comparison
+    auto result = QuerySet<Author>(conn)
+        .where(Field(&Author::name).collate_binary() == "Alice")
+        .select_all();
+    
+    ASSERT_TRUE(result.has_value()) << "where clause collate binary failed with error: " << result.error();
+    auto value = result.value();
+    ASSERT_EQ(value.size(), 1);
+    EXPECT_EQ(value[0].name, "Alice");
+    EXPECT_EQ(value[0].age, 25);
+}
+
+// Test case-insensitive sorting with COLLATE NOCASE in ORDER BY
+TEST_F(ORMTest, OrderByCollateNocase) {
+    clearTestData();
+    
+    // Insert authors with names in different cases to test case-insensitive sorting
+    Author author1("alice", 25, "alice@example.com", 1, true, 4.5, 90.0);
+    Author author2("BOB", 28, "bob@example.com", 2, true, 5.5, 85.0);
+    Author author3("Charlie", 30, "charlie@example.com", 3, false, 4.0, 80.0);
+    Author author4("diana", 35, "diana@example.com", 4, true, 5.0, 95.0);
+    
+    QuerySet<Author>(conn).insert(std::vector{author1, author2, author3, author4});
+    
+    // Sort by name using COLLATE NOCASE (case-insensitive)
+    auto result = QuerySet<Author>(conn)
+        .order_by<&Author::name>(Collation::NOCASE)
+        .select_all();
+    
+    ASSERT_TRUE(result.has_value()) << "order by collate nocase failed with error: " << result.error();
+    auto value = result.value();
+    ASSERT_EQ(value.size(), 4);
+    
+    // Verify case-insensitive alphabetical order: alice, BOB, Charlie, diana
+    EXPECT_EQ(value[0].name, "alice");
+    EXPECT_EQ(value[1].name, "BOB");
+    EXPECT_EQ(value[2].name, "Charlie");
+    EXPECT_EQ(value[3].name, "diana");
+    
+    // Compare with default sorting (BINARY) which would sort by ASCII value
+    // (uppercase letters come before lowercase)
+    auto result_binary = QuerySet<Author>(conn)
+        .order_by<&Author::name>()
+        .select_all();
+    
+    ASSERT_TRUE(result_binary.has_value()) << "order by collate nocase failed with error: " << result_binary.error();
+    auto value_binary = result_binary.value();
+    ASSERT_EQ(value_binary.size(), 4);
+    
+    // With binary collation, uppercase comes before lowercase in ASCII
+    EXPECT_EQ(value_binary[0].name, "BOB");
+    EXPECT_EQ(value_binary[1].name, "Charlie");
+    EXPECT_EQ(value_binary[2].name, "alice");
+    EXPECT_EQ(value_binary[3].name, "diana");
+}
+
+// Test COLLATE RTRIM in ORDER BY clause
+TEST_F(ORMTest, OrderByCollateRtrim) {
+    clearTestData();
+    
+    // Insert authors with names having trailing spaces
+    Author author1("Alice  ", 25, "alice@example.com", 1, true, 4.5, 90.0);
+    Author author2("Bob", 28, "bob@example.com", 2, true, 5.5, 85.0);
+    Author author3("Charlie   ", 30, "charlie@example.com", 3, false, 4.0, 80.0);
+    
+    QuerySet<Author>(conn).insert(std::vector{author1, author2, author3});
+    
+    // Sort by name using COLLATE RTRIM (ignoring trailing spaces)
+    auto result = QuerySet<Author>(conn)
+        .order_by<&Author::name>(Collation::RTRIM)
+        .select_all();
+    
+    ASSERT_TRUE(result.has_value()) << "order by collate rtrim failed with error: " << result.error();
+    auto value = result.value();
+    ASSERT_EQ(value.size(), 3);
+    
+    // Verify alphabetical order ignoring trailing spaces: Alice, Bob, Charlie
+    EXPECT_EQ(value[0].name, "Alice  ");
+    EXPECT_EQ(value[1].name, "Bob");
+    EXPECT_EQ(value[2].name, "Charlie   ");
+}
+
+// Test multiple field ordering with different collations
+TEST_F(ORMTest, OrderByMultipleFieldsWithCollation) {
+    clearTestData();
+    
+    // Insert authors with various combinations of names and emails
+    Author author1("alice", 30, "alice@example.com", 1, true, 4.5, 90.0);
+    Author author2("ALICE", 25, "alice2@example.com", 2, true, 5.5, 85.0);
+    Author author3("bob", 30, "bob@example.com", 3, false, 4.0, 80.0);
+    Author author4("BOB", 25, "bob2@example.com", 4, true, 5.0, 95.0);
+    
+    QuerySet<Author>(conn).insert(std::vector{author1, author2, author3, author4});
+    
+    // Sort by name (case-insensitive) and then by age (descending)
+    auto result = QuerySet<Author>(conn)
+        .order_by_collate<&Author::name, true, Collation::NOCASE, &Author::age, false, Collation::NONE>()
+        .select_all();
+    
+    ASSERT_TRUE(result.has_value()) << "order by collate nocase failed with error: " << result.error();
+    auto value = result.value();
+    ASSERT_EQ(value.size(), 4);
+    
+    // First grouped by name case-insensitively (alice/ALICE, then bob/BOB)
+    // Within each name group, sorted by age in descending order
+    EXPECT_EQ(value[0].name, "alice"); // alice, age 30
+    EXPECT_EQ(value[0].age, 30);
+    
+    EXPECT_EQ(value[1].name, "ALICE"); // ALICE, age 25
+    EXPECT_EQ(value[1].age, 25);
+    
+    EXPECT_EQ(value[2].name, "bob");   // bob, age 30
+    EXPECT_EQ(value[2].age, 30);
+    
+    EXPECT_EQ(value[3].name, "BOB");   // BOB, age 25
+    EXPECT_EQ(value[3].age, 25);
+}
+
+// Test COLLATE in both WHERE and ORDER BY clauses together
+TEST_F(ORMTest, CollateInWhereAndOrderBy) {
+    clearTestData();
+    
+    // Insert authors with names in different cases
+    Author author1("alice", 25, "alice@example.com", 1, true, 4.5, 90.0);
+    Author author2("ALICE", 28, "alice2@example.com", 2, true, 5.5, 85.0);
+    Author author3("bob", 30, "bob@example.com", 3, false, 4.0, 80.0);
+    Author author4("BOB", 35, "bob2@example.com", 4, true, 5.0, 95.0);
+    
+    QuerySet<Author>(conn).insert(std::vector{author1, author2, author3, author4});
+    
+    // Find all authors with name "alice" (case-insensitive) and sort by age
+    auto result = QuerySet<Author>(conn)
+        .where(Field(&Author::name).collate_nocase() == "alice")
+        .order_by<&Author::age>()
+        .select_all();
+    
+    ASSERT_TRUE(result.has_value()) << "collate in where and order by failed with error: " << result.error();
+    auto value = result.value();
+    ASSERT_EQ(value.size(), 2);
+    
+    // Verify results are sorted by age
+    EXPECT_EQ(value[0].name, "alice");
+    EXPECT_EQ(value[0].age, 25);
+    
+    EXPECT_EQ(value[1].name, "ALICE");
+    EXPECT_EQ(value[1].age, 28);
+}

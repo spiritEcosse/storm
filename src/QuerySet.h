@@ -258,14 +258,15 @@ namespace storm {
         struct OrderFieldInfo {
             std::unique_ptr<FieldAliasBase> field;
             bool ascending;
+            Collation collation = Collation::NONE;
             
             // Constructor to fix emplace_back issue
-            OrderFieldInfo(std::unique_ptr<FieldAliasBase> f, bool asc) 
-                : field(std::move(f)), ascending(asc) {}
+            OrderFieldInfo(std::unique_ptr<FieldAliasBase> f, bool asc, Collation coll = Collation::NONE) 
+                : field(std::move(f)), ascending(asc), collation(coll) {}
                 
             // Copy constructor for deep copy of the unique_ptr
             OrderFieldInfo(const OrderFieldInfo& other)
-                : ascending(other.ascending) {
+                : ascending(other.ascending), collation(other.collation) {
                 // Clone the field if it exists
                 if (other.field) {
                     field = std::unique_ptr<FieldAliasBase>(other.field->clone());
@@ -276,6 +277,7 @@ namespace storm {
             OrderFieldInfo& operator=(const OrderFieldInfo& other) {
                 if (this != &other) {
                     ascending = other.ascending;
+                    collation = other.collation;
                     if (other.field) {
                         field = std::unique_ptr<FieldAliasBase>(other.field->clone());
                     } else {
@@ -990,19 +992,10 @@ namespace storm {
         // =============================
         // Convenience overload for a single field (defaults to ascending order)
         template<auto Field>
-        QuerySet& order_by() {
-            static_assert(std::is_member_pointer_v<decltype(Field)>, 
-                        "Field must be a member pointer");
-            
-            // Add field to order criteria with default ascending order (true)
-            this->orderFields.emplace_back(
-                std::make_unique<FieldAlias<Field>>(),
-                true // Default to ascending
-            );
-            
-            return *this;
+        QuerySet& order_by(Collation collation = Collation::NONE) {
+            return add_order_field<Field>(true, collation);
         }
-        
+
         // Modern compile-time version for multiple field-direction pairs
         template<auto Field, auto Direction, auto... Rest>
         QuerySet& order_by() {
@@ -1020,7 +1013,8 @@ namespace storm {
             // Add the first field-direction pair
             this->orderFields.emplace_back(
                 std::make_unique<FieldAlias<Field>>(),
-                Direction
+                Direction,
+                Collation::NONE // Default to no collation
             );
             
             // Process remaining pairs if any
@@ -1030,8 +1024,55 @@ namespace storm {
             
             return *this;
         }
+        
+        // Modern compile-time version with collation support
+        template<auto Field, auto Direction, auto Coll, auto... Rest>
+        QuerySet& order_by_collate() {
+            // Ensure we have valid field-direction-collation triplets
+            static_assert(std::is_member_pointer_v<decltype(Field)>, 
+                        "Field must be a member pointer");
+            static_assert(std::is_same_v<decltype(Direction), bool>, 
+                        "Direction must be a boolean value");
+            static_assert(std::is_same_v<decltype(Coll), Collation>, 
+                        "Collation must be a Collation enum value");
+            static_assert(sizeof...(Rest) % 3 == 0, 
+                        "Must provide field-direction-collation triplets (field, bool, collation, ...)");
+            
+            // Reserve capacity for all triplets
+            this->orderFields.reserve(this->orderFields.size() + (sizeof...(Rest) / 3 + 1));
+            
+            // Add the first field-direction-collation triplet
+            this->orderFields.emplace_back(
+                std::make_unique<FieldAlias<Field>>(),
+                Direction,
+                Coll
+            );
+            
+            // Process remaining triplets if any
+            if constexpr (sizeof...(Rest) > 0) {
+                processOrderByCollationPairs<Rest...>();
+            }
+            
+            return *this;
+        }
                 
     private:
+        // Helper to add an order field with direction and collation
+        template<auto Field>
+        QuerySet& add_order_field(bool ascending, Collation collation) {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, 
+                        "Field must be a member pointer");
+            
+            // Add field to order criteria with specified direction and collation
+            this->orderFields.emplace_back(
+                std::make_unique<FieldAlias<Field>>(),
+                ascending,
+                collation
+            );
+            
+            return *this;
+        }
+        
         // Helper to process field-direction pairs recursively
         template<auto Field, auto Direction, auto... Rest>
         void processOrderByPairs() {
@@ -1040,15 +1081,35 @@ namespace storm {
             static_assert(std::is_same_v<decltype(Direction), bool>, 
                         "Direction must be a boolean value");
             
-            // Add the current field-direction pair
-            this->orderFields.emplace_back(
-                std::make_unique<FieldAlias<Field>>(),
-                Direction
-            );
+            // Add the current field-direction pair using the helper
+            add_order_field<Field>(Direction, Collation::NONE);
             
             // Process remaining pairs if any
-            if constexpr (sizeof...(Rest) >= 2) {
+            if constexpr (sizeof...(Rest) > 0) {
                 processOrderByPairs<Rest...>();
+            }
+        }
+        
+        // Helper to process field-direction-collation triplets recursively
+        template<auto Field, auto Direction, auto Coll, auto... Rest>
+        void processOrderByCollationPairs() {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, 
+                        "Field must be a member pointer");
+            static_assert(std::is_same_v<decltype(Direction), bool>, 
+                        "Direction must be a boolean value");
+            static_assert(std::is_same_v<decltype(Coll), Collation>, 
+                        "Collation must be a Collation enum value");
+            
+            // Add the current field-direction-collation triplet
+            this->orderFields.emplace_back(
+                std::make_unique<FieldAlias<Field>>(),
+                Direction,
+                Coll
+            );
+            
+            // Process remaining triplets if any
+            if constexpr (sizeof...(Rest) > 0) {
+                processOrderByCollationPairs<Rest...>();
             }
         }
     
@@ -1061,9 +1122,16 @@ namespace storm {
             fieldStrings.reserve(orderFields.size());
             
             auto formattedFields = orderFields | std::ranges::views::transform([](const auto& orderInfo) {
-                return fmt::format("{} {}",
-                                  orderInfo.field->getFullFieldName(), // Get field name from FieldAlias
-                                  orderInfo.ascending ? "ASC" : "DESC");
+                std::string fieldName = orderInfo.field->getFullFieldName();
+                std::string direction = orderInfo.ascending ? "ASC" : "DESC";
+                std::string collation = "";
+                
+                // Add collation if specified
+                if (orderInfo.collation != Collation::NONE) {
+                    collation = fmt::format(" COLLATE {}", collation_to_sql(orderInfo.collation));
+                }
+                
+                return fmt::format("{}{} {}", fieldName, collation, direction);
             });
             fieldStrings.assign(formattedFields.begin(), formattedFields.end());
             
