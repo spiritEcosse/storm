@@ -3632,9 +3632,9 @@ TEST_F(ORMTest, OrderByCollateNocase) {
     // Insert authors with names in different cases to test case-insensitive sorting
     Author author1("alice", 25, "alice@example.com", 1, true, 4.5, 90.0);
     Author author2("BOB", 28, "bob@example.com", 2, true, 5.5, 85.0);
-    Author author3("Charlie", 30, "charlie@example.com", 3, false, 4.0, 80.0);
     Author author4("diana", 35, "diana@example.com", 4, true, 5.0, 95.0);
-    
+    Author author3("Charlie", 30, "charlie@example.com", 3, false, 4.0, 80.0);
+
     QuerySet<Author>(conn).insert(std::vector{author1, author2, author3, author4});
     
     // Sort by name using COLLATE NOCASE (case-insensitive)
@@ -3675,9 +3675,9 @@ TEST_F(ORMTest, OrderByCollateRtrim) {
     
     // Insert authors with names having trailing spaces
     Author author1("Alice  ", 25, "alice@example.com", 1, true, 4.5, 90.0);
-    Author author2("Bob", 28, "bob@example.com", 2, true, 5.5, 85.0);
     Author author3("Charlie   ", 30, "charlie@example.com", 3, false, 4.0, 80.0);
-    
+    Author author2("Bob", 28, "bob@example.com", 2, true, 5.5, 85.0);
+
     QuerySet<Author>(conn).insert(std::vector{author1, author2, author3});
     
     // Sort by name using COLLATE RTRIM (ignoring trailing spaces)
@@ -3695,16 +3695,47 @@ TEST_F(ORMTest, OrderByCollateRtrim) {
     EXPECT_EQ(value[2].name, "Charlie   ");
 }
 
+// Test COLLATE BINARY in ORDER BY clause for case-sensitive sorting
+TEST_F(ORMTest, OrderByCollateBinary) {
+    clearTestData();
+    
+    // Insert authors with mixed case names to test case-sensitive sorting
+    Author author1("alice", 25, "alice@example.com", 1, true, 4.5, 90.0);
+    Author author2("BOB", 28, "bob@example.com", 2, true, 5.5, 85.0);
+    Author author3("Charlie", 30, "charlie@example.com", 3, false, 4.0, 80.0);
+    Author author4("diana", 35, "diana@example.com", 4, true, 5.0, 95.0);
+    Author author5("ALICE", 40, "alice2@example.com", 5, true, 3.5, 88.0);
+    
+    QuerySet<Author>(conn).insert(std::vector{author1, author2, author3, author4, author5});
+    
+    // Sort by name using COLLATE BINARY (case-sensitive, ASCII order)
+    auto result = QuerySet<Author>(conn)
+        .order_by<&Author::name>(Collation::BINARY)
+        .select_all();
+    
+    ASSERT_TRUE(result.has_value()) << "order by collate binary failed with error: " << result.error();
+    auto value = result.value();
+    ASSERT_EQ(value.size(), 5);
+    
+    // With BINARY collation, uppercase letters come before lowercase in ASCII order
+    // Expected order: ALICE, BOB, Charlie, alice, diana
+    EXPECT_EQ(value[0].name, "ALICE");
+    EXPECT_EQ(value[1].name, "BOB");
+    EXPECT_EQ(value[2].name, "Charlie");
+    EXPECT_EQ(value[3].name, "alice");
+    EXPECT_EQ(value[4].name, "diana");
+}
+
 // Test multiple field ordering with different collations
 TEST_F(ORMTest, OrderByMultipleFieldsWithCollation) {
     clearTestData();
     
     // Insert authors with various combinations of names and emails
-    Author author1("alice", 30, "alice@example.com", 1, true, 4.5, 90.0);
     Author author2("ALICE", 25, "alice2@example.com", 2, true, 5.5, 85.0);
-    Author author3("bob", 30, "bob@example.com", 3, false, 4.0, 80.0);
+    Author author1("alice", 30, "alice@example.com", 1, true, 4.5, 90.0);
     Author author4("BOB", 25, "bob2@example.com", 4, true, 5.0, 95.0);
-    
+    Author author3("bob", 30, "bob@example.com", 3, false, 4.0, 80.0);
+
     QuerySet<Author>(conn).insert(std::vector{author1, author2, author3, author4});
     
     // Sort by name (case-insensitive) and then by age (descending)
