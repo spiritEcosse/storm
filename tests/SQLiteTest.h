@@ -3971,35 +3971,67 @@ TEST_F(ORMTest, GroupConcatDistinct) {
                               Field(&Post::content) == "Duplicate content").remove();
 }
 
-// Note: The following tests assume you have the ORDER BY overload implemented
-// If you don't have it yet, you'll need to implement it or skip these tests
+TEST_F(ORMTest, GroupConcatOrderByAscending) {
+    // GROUP_CONCAT with ORDER BY (ascending) - requires the ORDER BY overload
+    auto result = QuerySet<Post>(conn)
+        .group_by<&Post::author_id>()
+        .group_concat_order<&Post::id, &Post::title>("", ",", " ", false) // Field = &Post::title, OrderField = &Post::id
+        .only<&Post::author_id>()
+        .select_values();
+    
+    ASSERT_TRUE(result.has_value()) << "GROUP_CONCAT with ORDER BY failed: " << result.error();
+    const auto &value = result.value();
+    ASSERT_EQ(value.size(), 4);
+    
+    // Verify Charlie's posts (he has 4 posts)
+    auto charlieIt = std::ranges::find_if(value, 
+        [this](const auto& row) { return std::get<int>(row.at("author_id")) == charlie_id; });
+    ASSERT_NE(charlieIt, value.end());
+    
+    std::string charliePosts = std::get<std::string>(charlieIt->at("group_concat_title"));
+    
+    // In ascending order by ID, Charlie's First Post should come before Charlie's Fourth Post
+    size_t firstPostPos = charliePosts.find("Charlie's First Post");
+    size_t fourthPostPos = charliePosts.find("Charlie's Fourth Post");
+    ASSERT_NE(firstPostPos, std::string::npos);
+    ASSERT_NE(fourthPostPos, std::string::npos);
+    EXPECT_LT(firstPostPos, fourthPostPos) << "Posts not ordered correctly in ascending order";
+}
 
-// TEST_F(ORMTest, GroupConcatOrderByAscending) {
-//     // GROUP_CONCAT with ORDER BY (ascending) - requires the ORDER BY overload
-//     auto result = QuerySet<Post>(conn)
-//         .group_by<&Post::author_id>()
-//         .group_concat<&Post::title, &Post::id>("", ",", " ", false) // orderField = &Post::id
-//         .only<&Post::author_id>()
-//         .select_values();
-//     
-//     ASSERT_TRUE(result.has_value()) << "GROUP_CONCAT with ORDER BY failed: " << result.error();
-//     const auto &value = result.value();
-//     ASSERT_EQ(value.size(), 4);
-//     
-//     // Verify Charlie's posts (he has 4 posts)
-//     auto charlieIt = std::ranges::find_if(value, 
-//         [this](const auto& row) { return std::get<int>(row.at("author_id")) == charlie_id; });
-//     ASSERT_NE(charlieIt, value.end());
-//     
-//     std::string charliePosts = std::get<std::string>(charlieIt->at("group_concat_title"));
-//     
-//     // In ascending order by ID, Charlie's First Post should come before Charlie's Fourth Post
-//     size_t firstPostPos = charliePosts.find("Charlie's First Post");
-//     size_t fourthPostPos = charliePosts.find("Charlie's Fourth Post");
-//     ASSERT_NE(firstPostPos, std::string::npos);
-//     ASSERT_NE(fourthPostPos, std::string::npos);
-//     EXPECT_LT(firstPostPos, fourthPostPos) << "Posts not ordered correctly in ascending order";
-// }
+// Test group_concat_order with multiple fields
+TEST_F(ORMTest, GroupConcatOrderMultipleFields) {
+    // GROUP_CONCAT with multiple fields and ORDER BY
+    auto result = QuerySet<Post>(conn)
+        .group_by<&Post::author_id>()
+        .group_concat_order<&Post::id, &Post::title, &Post::content>("title_content_by_id", ",", " - ", false) // OrderField = &Post::id, Fields = &Post::title, &Post::content
+        .only<&Post::author_id>()
+        .select_values();
+    
+    ASSERT_TRUE(result.has_value()) << "GROUP_CONCAT with multiple fields and ORDER BY failed: " << result.error();
+    const auto &value = result.value();
+    ASSERT_EQ(value.size(), 4);
+    
+    // Verify Charlie's posts (he has 4 posts)
+    auto charlieIt = std::ranges::find_if(value, 
+        [this](const auto& row) { return std::get<int>(row.at("author_id")) == charlie_id; });
+    ASSERT_NE(charlieIt, value.end());
+    
+    std::string charliePosts = std::get<std::string>(charlieIt->at("title_content_by_id"));
+    
+    // Debug the actual content
+    std::cout << "\nActual concatenated content: [" << charliePosts << "]\n";
+    
+    // Check that we have both title and content in the result
+    ASSERT_NE(charliePosts.find("Charlie's First Post"), std::string::npos);
+    ASSERT_NE(charliePosts.find("Content C1"), std::string::npos);
+    
+    // In ascending order by ID, Charlie's First Post should come before Charlie's Fourth Post
+    size_t firstPostPos = charliePosts.find("Charlie's First Post");
+    size_t fourthPostPos = charliePosts.find("Charlie's Fourth Post");
+    ASSERT_NE(firstPostPos, std::string::npos);
+    ASSERT_NE(fourthPostPos, std::string::npos);
+    EXPECT_LT(firstPostPos, fourthPostPos) << "Posts not ordered correctly in ascending order";
+}
 
 // =======================================
 // MULTI-FIELD GROUP_CONCAT TESTS

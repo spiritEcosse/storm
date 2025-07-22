@@ -1935,101 +1935,19 @@ namespace storm {
 
         template<auto FirstField, auto... RestFields>
         QuerySet &group_concat(std::string_view alias = "", 
-                            std::string_view separator = ",", 
-                            std::string_view fieldSeparator = " ",
-                            bool distinct = false) {
-            static_assert(std::is_member_pointer_v<decltype(FirstField)>, "FirstField must be a member pointer");
-            
-            // Use fold expression with helper function
-            (check_member_pointer<RestFields>(), ...);
-            
-            auto firstField = std::make_unique<FieldAlias<FirstField>>();
-            
-            std::string actual_alias(alias);
-            if(actual_alias.empty()) {
-                actual_alias = fmt::format("group_concat_{}", firstField->getFieldName());
-            }
-            
-            // Build field expression
-            std::string field_expr;
-            if constexpr (sizeof...(RestFields) == 0) {
-                field_expr = firstField->getFullFieldName();
-            } else {
-                field_expr = firstField->getFullFieldName();
-                ([&]<auto Field>() {
-                    auto field = std::make_unique<FieldAlias<Field>>();
-                    field_expr = fmt::format("{}||'{}'||{}", 
-                                        field_expr, fieldSeparator,
-                                        field->getFullFieldName());
-                }.template operator()<RestFields>(), ...);
-            }
-            
-            // Build GROUP_CONCAT function
-            std::string function_str = "GROUP_CONCAT(";
-            
-            if (distinct) {
-                function_str += "DISTINCT ";
-            }
-            
-            function_str += field_expr;
-            
-            // SQLite doesn't allow separator with DISTINCT
-            if (!distinct) {
-                function_str += fmt::format(", '{}'", separator);
-            }
-            
-            function_str += fmt::format(") AS {}", actual_alias);
-            
-            functions(Function(function_str));
-            return *this;
+                              std::string_view separator = ",", 
+                              std::string_view fieldSeparator = " ",
+                              bool distinct = false) {
+            return group_concat_impl<FirstField, RestFields...>(alias, separator, fieldSeparator, distinct);
         }
-
-        // Overload with ORDER BY
-        template<auto FirstField, auto... RestFields, auto OrderField>
-        QuerySet &group_concat(std::string_view alias = "", 
-                            std::string_view separator = ",", 
-                            std::string_view fieldSeparator = " ",
-                            bool distinct = false) {
-            static_assert(std::is_member_pointer_v<decltype(FirstField)>, "FirstField must be a member pointer");
-            
-            // Use fold expression with helper function
-            (check_member_pointer<RestFields>(), ...);
-
-            static_assert(std::is_member_pointer_v<decltype(OrderField)>, "OrderField must be a member pointer");
-            
-            auto firstField = std::make_unique<FieldAlias<FirstField>>();
-            auto orderField = std::make_unique<FieldAlias<OrderField>>();
-            
-            std::string actual_alias(alias);
-            if(actual_alias.empty()) {
-                actual_alias = fmt::format("group_concat_{}", firstField->getFieldName());
-            }
-            
-            // Build field expression
-            std::string field_expr;
-            if constexpr (sizeof...(RestFields) == 0) {
-                field_expr = firstField->getFullFieldName();
-            } else {
-                field_expr = firstField->getFullFieldName();
-                ([&]<auto Field>() {
-                    auto field = std::make_unique<FieldAlias<Field>>();
-                    field_expr = fmt::format("{}||'{}'||{}", 
-                                        field_expr, fieldSeparator,
-                                        field->getFullFieldName());
-                }.template operator()<RestFields>(), ...);
-            }
-            
-            // Build GROUP_CONCAT function with ORDER BY
-            std::string distinct_str = distinct ? "DISTINCT " : "";
-            std::string function_str = fmt::format("GROUP_CONCAT({} ORDER BY {} {}, '{}') AS {}", 
-                                                field_expr,
-                                                orderField->getFullFieldName(),
-                                                distinct_str,
-                                                separator,
-                                                actual_alias);
-            
-            functions(Function(function_str));
-            return *this;
+        
+        // Overload with ORDER BY for multiple fields - requires explicit specification
+        template<auto OrderField, auto FirstField, auto... RestFields>
+        QuerySet &group_concat_order(std::string_view alias = "", 
+                              std::string_view separator = ",", 
+                              std::string_view fieldSeparator = " ",
+                              bool distinct = false) {
+            return group_concat_with_order_impl<OrderField, FirstField, RestFields...>(alias, separator, fieldSeparator, distinct);
         }
 
         // MAX aggregate function that returns the direct value instead of a QuerySet
@@ -2103,6 +2021,97 @@ namespace storm {
         }
         
     private:
+        template<auto FirstField, auto... RestFields>
+        std::pair<std::string, std::string> prepare_group_concat(std::string_view alias, std::string_view fieldSeparator) {
+            // Validate all member pointers
+            static_assert(std::is_member_pointer_v<decltype(FirstField)>, "FirstField must be a member pointer");
+            (check_member_pointer<RestFields>(), ...);
+            
+            auto firstField = std::make_unique<FieldAlias<FirstField>>();
+            
+            // Generate alias
+            std::string actual_alias = alias.empty() ? 
+                fmt::format("group_concat_{}", firstField->getFieldName()) : 
+                std::string(alias);
+            
+            // Build field expression
+            std::string field_expr = build_field_expression<FirstField, RestFields...>(fieldSeparator);
+            
+            return {actual_alias, field_expr};
+        }
+
+        template<auto FirstField, auto... RestFields>
+        std::string build_field_expression(std::string_view fieldSeparator) {
+            auto firstField = std::make_unique<FieldAlias<FirstField>>();
+            
+            if constexpr (sizeof...(RestFields) == 0) {
+                return firstField->getFullFieldName();
+            } else {
+                std::string field_expr = firstField->getFullFieldName();
+                ([&]<auto Field>() {
+                    auto field = std::make_unique<FieldAlias<Field>>();
+                    field_expr = fmt::format("{}||'{}'||{}", 
+                                        field_expr, fieldSeparator,
+                                        field->getFullFieldName());
+                }.template operator()<RestFields>(), ...);
+                return field_expr;
+            }
+        }
+
+        // Implementation without ORDER BY
+        template<auto FirstField, auto... RestFields>
+        QuerySet &group_concat_impl(std::string_view alias, 
+                                std::string_view separator, 
+                                std::string_view fieldSeparator,
+                                bool distinct) {
+            auto [actual_alias, field_expr] = prepare_group_concat<FirstField, RestFields...>(alias, fieldSeparator);
+            
+            std::string function_str = "GROUP_CONCAT(";
+            
+            if (distinct) {
+                function_str += "DISTINCT ";
+            }
+            
+            function_str += field_expr;
+            
+            // SQLite doesn't allow separator with DISTINCT
+            if (!distinct) {
+                function_str += fmt::format(", '{}'", separator);
+            }
+            
+            function_str += fmt::format(") AS {}", actual_alias);
+            
+            functions(Function(function_str));
+            return *this;
+        }
+
+        // Implementation with ORDER BY
+        template<auto OrderField, auto FirstField, auto... RestFields>
+        QuerySet &group_concat_with_order_impl(std::string_view alias, 
+                                            std::string_view separator, 
+                                            std::string_view fieldSeparator,
+                                            bool distinct) {
+            static_assert(std::is_member_pointer_v<decltype(OrderField)>, "OrderField must be a member pointer");
+            
+            auto [actual_alias, field_expr] = prepare_group_concat<FirstField, RestFields...>(alias, fieldSeparator);
+            
+            auto orderField = std::make_unique<FieldAlias<OrderField>>();
+            
+            // Build GROUP_CONCAT function with ORDER BY
+            std::string function_str = "GROUP_CONCAT(";
+            
+            if (distinct) {
+                function_str += "DISTINCT ";
+            }
+            
+            function_str += field_expr;
+            function_str += fmt::format(" ORDER BY {}", orderField->getFullFieldName());
+            function_str += fmt::format(", '{}') AS {}", separator, actual_alias);
+            
+            functions(Function(function_str));
+            return *this;
+        }
+
         // Common helper for executing aggregate queries
         template<typename ReturnType, typename SetupFunction, typename ValueExtractor = std::nullptr_t>
         std::expected<ReturnType, std::string> execute_aggregate_query(
