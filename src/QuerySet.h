@@ -2043,12 +2043,12 @@ namespace storm {
         template<auto FirstField, auto... RestFields>
         std::string build_field_expression(std::string_view fieldSeparator) const {
             auto firstField = std::make_unique<FieldAlias<FirstField>>();
+            std::string field_expr = firstField->getFullFieldName();
             
             if constexpr (sizeof...(RestFields) == 0) {
-                return firstField->getFullFieldName();
+                return field_expr;
             }
 
-            std::string field_expr = firstField->getFullFieldName();
             ([&field_expr, &fieldSeparator]<auto Field>() {
                 auto field = std::make_unique<FieldAlias<Field>>();
                 field_expr = fmt::format("{}||'{}'||{}", 
