@@ -2041,7 +2041,7 @@ namespace storm {
         }
 
         template<auto FirstField, auto... RestFields>
-        std::string build_field_expression(std::string_view fieldSeparator) {
+        std::string build_field_expression(std::string_view fieldSeparator) const {
             auto firstField = std::make_unique<FieldAlias<FirstField>>();
             
             if constexpr (sizeof...(RestFields) == 0) {
