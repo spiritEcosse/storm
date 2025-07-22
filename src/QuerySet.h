@@ -2046,16 +2046,16 @@ namespace storm {
             
             if constexpr (sizeof...(RestFields) == 0) {
                 return firstField->getFullFieldName();
-            } else {
-                std::string field_expr = firstField->getFullFieldName();
-                ([&]<auto Field>() {
-                    auto field = std::make_unique<FieldAlias<Field>>();
-                    field_expr = fmt::format("{}||'{}'||{}", 
-                                        field_expr, fieldSeparator,
-                                        field->getFullFieldName());
-                }.template operator()<RestFields>(), ...);
-                return field_expr;
             }
+
+            std::string field_expr = firstField->getFullFieldName();
+            ([&field_expr, &fieldSeparator]<auto Field>() {
+                auto field = std::make_unique<FieldAlias<Field>>();
+                field_expr = fmt::format("{}||'{}'||{}", 
+                                    field_expr, fieldSeparator,
+                                    field->getFullFieldName());
+            }.template operator()<RestFields>(), ...);
+            return field_expr;
         }
 
         // Implementation without ORDER BY
