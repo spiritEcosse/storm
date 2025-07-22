@@ -1896,52 +1896,6 @@ namespace storm {
             return *this;
         }
 
-        // MAX aggregate function that returns the direct value instead of a QuerySet
-        template<auto Field>
-        auto max_value() -> std::expected<typename member_pointer_traits<decltype(Field)>::type, std::string> {
-            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
-            
-            return execute_aggregate_query<FieldType>(
-                [](auto& qs) { qs.template max<Field>(); },
-                "find maximum value",
-                [](const auto& row) -> std::expected<FieldType, std::string> {
-                    return to_value<FieldType>(row, 0);
-                }
-            );
-        }
-
-        // MIN aggregate function that returns the direct value instead of a QuerySet
-        template<auto Field>
-        auto min_value() -> std::expected<typename member_pointer_traits<decltype(Field)>::type, std::string> {
-            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
-            
-            return execute_aggregate_query<FieldType>(
-                [](auto& qs) { qs.template min<Field>(); },
-                "find minimum value",
-                [](const auto& row) -> std::expected<FieldType, std::string> {
-                    return to_value<FieldType>(row, 0);
-                }
-            );
-        }
-
-        // AVG aggregate function that returns the direct value instead of a QuerySet
-        template<auto Field>
-        auto avg_value() -> std::expected<double, std::string> {
-            return execute_aggregate_query<double>(
-                [](auto& qs) { qs.template avg<Field>(); },
-                "average",
-                [](const auto& row) -> std::expected<double, std::string> {
-                    if (row.get_column_type(0) == SQLITE_INTEGER) {
-                        return static_cast<double>(row.get_int(0));
-                    } else if (row.get_column_type(0) == SQLITE_FLOAT) {
-                        return row.get_double(0);
-                    } else {
-                        return std::unexpected<std::string>("Unexpected column type for AVG result");
-                    }
-                }
-            );
-        }
-        
         // COUNT aggregate function
         template<auto Field>
         QuerySet &count(std::string_view alias = "") {
@@ -1954,22 +1908,6 @@ namespace storm {
             // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
             functions(Function(fmt::format("COUNT({}) AS {}", field->getFullFieldName(), actual_alias)));
             return *this;
-        }
-        
-        // COUNT aggregate function that returns the direct value instead of a QuerySet
-        template<auto Field>
-        auto count_value() -> std::expected<int, std::string> {
-            return execute_aggregate_query<int>(
-                [](auto& qs) { qs.template count<Field>(); },
-                "count",
-                [](const auto& row) -> std::expected<int, std::string> {
-                    if (row.get_column_type(0) == SQLITE_INTEGER) {
-                        return row.get_int(0);
-                    } else {
-                        return std::unexpected<std::string>("Unexpected column type for COUNT result");
-                    }
-                }
-            );
         }
         
         // SUM aggregate function
@@ -1987,6 +1925,70 @@ namespace storm {
             functions(Function(fmt::format("SUM({}) AS {}", field->getFullFieldName(), actual_alias)));
             return *this;
         }
+
+        // Helper function to check member pointer at compile time
+        template<auto Field>
+        static constexpr bool check_member_pointer() {
+            static_assert(std::is_member_pointer_v<decltype(Field)>, "All fields must be member pointers");
+            return true;
+        }
+
+        template<auto FirstField, auto... RestFields>
+        QuerySet &group_concat(std::string_view alias = "", 
+                              std::string_view separator = ",", 
+                              std::string_view fieldSeparator = " ",
+                              bool distinct = false) {
+            return group_concat_impl<FirstField, RestFields...>(alias, separator, fieldSeparator, distinct);
+        }
+        
+        // Overload with ORDER BY for multiple fields - requires explicit specification
+        template<auto OrderField, auto FirstField, auto... RestFields>
+        QuerySet &group_concat_order(std::string_view alias = "", 
+                              std::string_view separator = ",", 
+                              std::string_view fieldSeparator = " ",
+                              bool distinct = false) {
+            return group_concat_with_order_impl<OrderField, FirstField, RestFields...>(alias, separator, fieldSeparator, distinct);
+        }
+
+        // MAX aggregate function that returns the direct value instead of a QuerySet
+        template<auto Field>
+        auto max_value() -> std::expected<typename member_pointer_traits<decltype(Field)>::type, std::string> {
+            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
+            
+            return execute_aggregate_query<FieldType>(
+                [](auto& qs) { qs.template max<Field>(); },
+                "find maximum value"
+            );
+        }
+
+        // MIN aggregate function that returns the direct value instead of a QuerySet
+        template<auto Field>
+        auto min_value() -> std::expected<typename member_pointer_traits<decltype(Field)>::type, std::string> {
+            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
+            
+            return execute_aggregate_query<FieldType>(
+                [](auto& qs) { qs.template min<Field>(); },
+                "find minimum value"
+            );
+        }
+
+        // AVG aggregate function that returns the direct value instead of a QuerySet
+        template<auto Field>
+        auto avg_value() -> std::expected<double, std::string> {
+            return execute_aggregate_query<double>(
+                [](auto& qs) { qs.template avg<Field>(); },
+                "average"
+            );
+        }
+        
+        // COUNT aggregate function that returns the direct value instead of a QuerySet
+        template<auto Field>
+        auto count_value() -> std::expected<int, std::string> {
+            return execute_aggregate_query<int>(
+                [](auto& qs) { qs.template count<Field>(); },
+                "count"
+            );
+        }
         
         // SUM aggregate function that returns the direct value instead of a QuerySet
         template<auto Field>
@@ -1994,26 +1996,128 @@ namespace storm {
             using FieldType = typename member_pointer_traits<decltype(Field)>::type;
             return execute_aggregate_query<double>(
                 [](auto& qs) { qs.template sum<Field>(); },
-                "sum",
-                [](const auto& row) -> std::expected<double, std::string> {
-                    if (row.get_column_type(0) == SQLITE_INTEGER) {
-                        return static_cast<double>(row.get_int(0));
-                    } else if (row.get_column_type(0) == SQLITE_FLOAT) {
-                        return row.get_double(0);
-                    } else {
-                        return std::unexpected<std::string>("Unexpected column type for SUM result");
-                    }
-                }
+                "sum"
             );
         }
-    
+        
+        // GROUP_CONCAT that returns the direct string value
+        template<auto FirstField, auto... RestFields>
+        auto group_concat_value(std::string_view separator = ",", std::string_view fieldSeparator = " ", bool distinct = false) -> std::expected<std::string, std::string> {
+            return execute_aggregate_query<std::string>(
+                [separator, fieldSeparator, distinct](auto& qs) { qs.template group_concat<FirstField, RestFields...>("", separator, fieldSeparator, distinct); },
+                "group_concat"
+            );
+        }
+        
+        // GROUP_CONCAT with ORDER BY that returns the direct string value
+        template<auto FirstField, auto... RestFields, auto OrderField>
+        auto group_concat_value(std::string_view separator = ",", std::string_view fieldSeparator = " ", bool distinct = false) -> std::expected<std::string, std::string> {
+            return execute_aggregate_query<std::string>(
+                [separator, fieldSeparator, distinct](auto& qs) { 
+                    qs.template group_concat<FirstField, RestFields..., OrderField>("", separator, fieldSeparator, distinct); 
+                },
+                "group_concat"
+            );
+        }
+        
     private:
+        template<auto FirstField, auto... RestFields>
+        std::pair<std::string, std::string> prepare_group_concat(std::string_view alias, std::string_view fieldSeparator) {
+            // Validate all member pointers
+            static_assert(std::is_member_pointer_v<decltype(FirstField)>, "FirstField must be a member pointer");
+            (check_member_pointer<RestFields>(), ...);
+            
+            auto firstField = std::make_unique<FieldAlias<FirstField>>();
+            
+            // Generate alias
+            std::string actual_alias = alias.empty() ? 
+                fmt::format("group_concat_{}", firstField->getFieldName()) : 
+                std::string(alias);
+            
+            // Build field expression
+            std::string field_expr = build_field_expression<FirstField, RestFields...>(fieldSeparator);
+            
+            return {actual_alias, field_expr};
+        }
+
+        template<auto FirstField, auto... RestFields>
+        std::string build_field_expression(std::string_view fieldSeparator) const {
+            auto firstField = std::make_unique<FieldAlias<FirstField>>();
+            std::string field_expr = firstField->getFullFieldName();
+            
+            if constexpr (sizeof...(RestFields) == 0) {
+                return field_expr;
+            }
+
+            ([&field_expr, &fieldSeparator]<auto Field>() {
+                auto field = std::make_unique<FieldAlias<Field>>();
+                field_expr = fmt::format("{}||'{}'||{}", 
+                                    field_expr, fieldSeparator,
+                                    field->getFullFieldName());
+            }.template operator()<RestFields>(), ...);
+            return field_expr;
+        }
+
+        // Implementation without ORDER BY
+        template<auto FirstField, auto... RestFields>
+        QuerySet &group_concat_impl(std::string_view alias, 
+                                std::string_view separator, 
+                                std::string_view fieldSeparator,
+                                bool distinct) {
+            auto [actual_alias, field_expr] = prepare_group_concat<FirstField, RestFields...>(alias, fieldSeparator);
+            
+            std::string function_str = "GROUP_CONCAT(";
+            
+            if (distinct) {
+                function_str += "DISTINCT ";
+            }
+            
+            function_str += field_expr;
+            
+            // SQLite doesn't allow separator with DISTINCT
+            if (!distinct) {
+                function_str += fmt::format(", '{}'", separator);
+            }
+            
+            function_str += fmt::format(") AS {}", actual_alias);
+            
+            functions(Function(function_str));
+            return *this;
+        }
+
+        // Implementation with ORDER BY
+        template<auto OrderField, auto FirstField, auto... RestFields>
+        QuerySet &group_concat_with_order_impl(std::string_view alias, 
+                                            std::string_view separator, 
+                                            std::string_view fieldSeparator,
+                                            bool distinct) {
+            static_assert(std::is_member_pointer_v<decltype(OrderField)>, "OrderField must be a member pointer");
+            
+            auto [actual_alias, field_expr] = prepare_group_concat<FirstField, RestFields...>(alias, fieldSeparator);
+            
+            auto orderField = std::make_unique<FieldAlias<OrderField>>();
+            
+            // Build GROUP_CONCAT function with ORDER BY
+            std::string function_str = "GROUP_CONCAT(";
+            
+            if (distinct) {
+                function_str += "DISTINCT ";
+            }
+            
+            function_str += field_expr;
+            function_str += fmt::format(" ORDER BY {}", orderField->getFullFieldName());
+            function_str += fmt::format(", '{}') AS {}", separator, actual_alias);
+            
+            functions(Function(function_str));
+            return *this;
+        }
+
         // Common helper for executing aggregate queries
-        template<typename ReturnType>
+        template<typename ReturnType, typename SetupFunction, typename ValueExtractor = std::nullptr_t>
         std::expected<ReturnType, std::string> execute_aggregate_query(
-            auto setup_function,
+            SetupFunction setup_function,
             std::string_view error_prefix,
-            auto value_extractor
+            ValueExtractor value_extractor = nullptr
         ) {
             // Create temporary QuerySet and clear existing state
             auto tempQuerySet = *this;
@@ -2042,16 +2146,39 @@ namespace storm {
             
             const auto& row = execResult.value();
             
-            // Verify column exists and check for NULL result
+            // Verify column exists
             if (row.get_column_count() == 0) [[unlikely]] {
                 return std::unexpected(fmt::format("{} column not found", error_prefix));
             }
             
+            // For NULL results, return empty value of ReturnType instead of error
             if (row.get_column_type(0) == SQLITE_NULL) [[unlikely]] {
-                return std::unexpected(fmt::format("No rows to {}", error_prefix));
+                if constexpr (std::is_same_v<ReturnType, std::string>) {
+                    return std::string{};
+                } else if constexpr (std::is_same_v<ReturnType, int> || 
+                                   std::is_same_v<ReturnType, int64_t> ||
+                                   std::is_integral_v<ReturnType>) {
+                    return 0;
+                } else if constexpr (std::is_same_v<ReturnType, double> ||
+                                   std::is_floating_point_v<ReturnType>) {
+                    return 0.0;
+                } else {
+                    // For other types, try to default construct
+                    return ReturnType{};
+                }
             }
             
-            return value_extractor(row);
+            // If a custom value extractor is provided, use it
+            if constexpr (!std::is_same_v<decltype(value_extractor), std::nullptr_t>) {
+                return value_extractor(row);
+            } else {
+                // Otherwise use to_value to extract the value based on ReturnType
+                try {
+                    return to_value<ReturnType>(row, 0);
+                } catch(...) {
+                    return std::unexpected<std::string>(fmt::format("Unexpected column type for {} result", error_prefix));
+                }
+            }
         }
 
         template<typename... Args>

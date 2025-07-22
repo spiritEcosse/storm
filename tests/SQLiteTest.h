@@ -2887,8 +2887,8 @@ TEST_F(ORMTest, MaxValueEmptyTable) {
     
     auto result = QuerySet<Author>(conn)
         .max_value<&Author::age>();
-    ASSERT_FALSE(result.has_value());
-    ASSERT_EQ(result.error(), "No rows to find maximum value");
+    ASSERT_TRUE(result.has_value()) << "max_value on empty table should return 0, not an error";
+    ASSERT_EQ(result.value(), 0) << "max_value on empty table should return 0";
 }
 
 TEST_F(ORMTest, MaxValueString) {
@@ -3025,8 +3025,8 @@ TEST_F(ORMTest, MinValueEmptyTable) {
     
     auto result = QuerySet<Author>(conn)
         .min_value<&Author::age>();
-    ASSERT_FALSE(result.has_value());
-    ASSERT_EQ(result.error(), "No rows to find minimum value");
+    ASSERT_TRUE(result.has_value()) << "min_value on empty table should return 0, not an error";
+    ASSERT_EQ(result.value(), 0) << "min_value on empty table should return 0";
 }
 
 TEST_F(ORMTest, MinValueString) {
@@ -3233,15 +3233,6 @@ TEST_F(ORMTest, AvgValueFloat) {
     EXPECT_EQ(result.value(), 87.625);
 }
 
-TEST_F(ORMTest, AvgValueNoRows) {
-    clearTestData();
-    
-    auto result = QuerySet<Author>(conn)
-        .avg_value<&Author::age>();
-    ASSERT_FALSE(result.has_value());
-    ASSERT_EQ(result.error(), "No rows to average");
-}
-
 TEST_F(ORMTest, AvgValueWithJoin) {
     auto result = QuerySet<Post>(conn)
         .join<Author>()
@@ -3256,8 +3247,8 @@ TEST_F(ORMTest, AvgValueEmptyTable) {
     
     auto result = QuerySet<Author>(conn)
         .avg_value<&Author::age>();
-    ASSERT_FALSE(result.has_value());
-    ASSERT_EQ(result.error(), "No rows to average");
+    ASSERT_TRUE(result.has_value()) << "avg_value on empty table should return 0.0, not an error";
+    ASSERT_DOUBLE_EQ(result.value(), 0.0) << "avg_value on empty table should return 0.0";
 }
 
 // =======================================
@@ -3528,8 +3519,8 @@ TEST_F(ORMTest, SumValueEmptyTable) {
     
     auto result = QuerySet<Author>(conn)
         .sum_value<&Author::age>();
-    ASSERT_FALSE(result.has_value());
-    EXPECT_EQ(result.error(), "No rows to sum");
+    ASSERT_TRUE(result.has_value()) << "sum_value on empty table should return 0, not an error";
+    ASSERT_EQ(result.value(), 0) << "sum_value on empty table should return 0";
 }
 
 TEST_F(ORMTest, SumValueDouble) {
@@ -3890,4 +3881,277 @@ TEST_F(ORMTest, WhereClauseMultipleCollateOperations)
     ASSERT_GE(value8.size(), 1);
     EXPECT_EQ(value8[0].name, "Alice");
     EXPECT_EQ(value8[0].age, 25);
+}
+// =======================================
+// GROUP_CONCAT TESTS
+// =======================================
+
+TEST_F(ORMTest, GroupConcatBasic) {
+    // Basic GROUP_CONCAT functionality - concatenate post titles by author
+    auto result = QuerySet<Post>(conn)
+        .group_by<&Post::author_id>()
+        .group_concat<&Post::title>()
+        .only<&Post::author_id>()
+        .select_values();
+    
+    ASSERT_TRUE(result.has_value()) << "Basic GROUP_CONCAT failed: " << result.error();
+    const auto &value = result.value();
+    
+    // We should have results for each author
+    ASSERT_EQ(value.size(), 4); // Alice, Bob, Charlie, Diana
+    
+    // Verify Alice's posts are concatenated
+    auto aliceIt = std::ranges::find_if(value, 
+        [this](const auto& row) { return std::get<int>(row.at("author_id")) == alice_id; });
+    ASSERT_NE(aliceIt, value.end());
+    
+    // Alice has 3 posts, verify they're all in the concatenated string
+    std::string alicePosts = std::get<std::string>(aliceIt->at("group_concat_title"));
+    EXPECT_TRUE(alicePosts.find("Alice's First Post") != std::string::npos);
+    EXPECT_TRUE(alicePosts.find("Alice's Second Post") != std::string::npos);
+    EXPECT_TRUE(alicePosts.find("Alice's Third Post") != std::string::npos);
+}
+
+TEST_F(ORMTest, GroupConcatCustomSeparator) {
+    // GROUP_CONCAT with custom separator
+    auto result = QuerySet<Post>(conn)
+        .group_by<&Post::author_id>()
+        .group_concat<&Post::title>("custom_group_concat_title", " | ")
+        .only<&Post::author_id>()
+        .select_values();
+    
+    ASSERT_TRUE(result.has_value()) << "GROUP_CONCAT with custom separator failed: " << result.error();
+    const auto &value = result.value();
+    ASSERT_EQ(value.size(), 4); // Alice, Bob, Charlie, Diana
+    
+    // Verify Bob's posts are concatenated with the custom separator
+    auto bobIt = std::ranges::find_if(value, 
+        [this](const auto& row) { return std::get<int>(row.at("author_id")) == bob_id; });
+    ASSERT_NE(bobIt, value.end());
+    
+    std::string bobPosts = std::get<std::string>(bobIt->at("custom_group_concat_title"));
+    EXPECT_TRUE(bobPosts.find(" | ") != std::string::npos);
+    EXPECT_EQ(std::count(bobPosts.begin(), bobPosts.end(), '|'), 1); // Bob has 2 posts, so 1 separator
+}
+
+TEST_F(ORMTest, GroupConcatDistinct) {
+    // First insert a duplicate post for testing DISTINCT
+    Post duplicatePost("Alice's First Post", "Duplicate content", alice_id);
+    QuerySet<Post>(conn).insert(duplicatePost);
+    
+    // GROUP_CONCAT with DISTINCT
+    auto result = QuerySet<Post>(conn)
+        .group_by<&Post::author_id>()
+        .group_concat<&Post::title>("", ",", " ", true) // distinct = true
+        .only<&Post::author_id>()
+        .select_values();
+    
+    ASSERT_TRUE(result.has_value()) << "GROUP_CONCAT with DISTINCT failed: " << result.error();
+    const auto &value = result.value();
+    ASSERT_EQ(value.size(), 4);
+    
+    // Verify Alice's posts - the duplicate title should appear only once
+    auto aliceIt = std::ranges::find_if(value, 
+        [this](const auto& row) { return std::get<int>(row.at("author_id")) == alice_id; });
+    ASSERT_NE(aliceIt, value.end());
+    
+    std::string alicePosts = std::get<std::string>(aliceIt->at("group_concat_title"));
+    
+    // Count occurrences of "Alice's First Post" - should be exactly 1 due to DISTINCT
+    std::string searchStr = "Alice's First Post";
+    size_t pos = 0, count = 0;
+    while ((pos = alicePosts.find(searchStr, pos)) != std::string::npos) {
+        count++;
+        pos += searchStr.length();
+    }
+    EXPECT_EQ(count, 1) << "DISTINCT failed to remove duplicate title";
+    
+    // Clean up the duplicate post
+    QuerySet<Post>(conn).where(Field(&Post::title) == "Alice's First Post" && 
+                              Field(&Post::content) == "Duplicate content").remove();
+}
+
+TEST_F(ORMTest, GroupConcatOrderByAscending) {
+    // GROUP_CONCAT with ORDER BY (ascending) - requires the ORDER BY overload
+    auto result = QuerySet<Post>(conn)
+        .group_by<&Post::author_id>()
+        .group_concat_order<&Post::id, &Post::title>("", ",", " ", false) // Field = &Post::title, OrderField = &Post::id
+        .only<&Post::author_id>()
+        .select_values();
+    
+    ASSERT_TRUE(result.has_value()) << "GROUP_CONCAT with ORDER BY failed: " << result.error();
+    const auto &value = result.value();
+    ASSERT_EQ(value.size(), 4);
+    
+    // Verify Charlie's posts (he has 4 posts)
+    auto charlieIt = std::ranges::find_if(value, 
+        [this](const auto& row) { return std::get<int>(row.at("author_id")) == charlie_id; });
+    ASSERT_NE(charlieIt, value.end());
+    
+    std::string charliePosts = std::get<std::string>(charlieIt->at("group_concat_title"));
+    
+    // In ascending order by ID, Charlie's First Post should come before Charlie's Fourth Post
+    size_t firstPostPos = charliePosts.find("Charlie's First Post");
+    size_t fourthPostPos = charliePosts.find("Charlie's Fourth Post");
+    ASSERT_NE(firstPostPos, std::string::npos);
+    ASSERT_NE(fourthPostPos, std::string::npos);
+    EXPECT_LT(firstPostPos, fourthPostPos) << "Posts not ordered correctly in ascending order";
+}
+
+// Test group_concat_order with multiple fields
+TEST_F(ORMTest, GroupConcatOrderMultipleFields) {
+    // GROUP_CONCAT with multiple fields and ORDER BY
+    auto result = QuerySet<Post>(conn)
+        .group_by<&Post::author_id>()
+        .group_concat_order<&Post::id, &Post::title, &Post::content>("title_content_by_id", ",", " - ", false) // OrderField = &Post::id, Fields = &Post::title, &Post::content
+        .only<&Post::author_id>()
+        .select_values();
+    
+    ASSERT_TRUE(result.has_value()) << "GROUP_CONCAT with multiple fields and ORDER BY failed: " << result.error();
+    const auto &value = result.value();
+    ASSERT_EQ(value.size(), 4);
+    
+    // Verify Charlie's posts (he has 4 posts)
+    auto charlieIt = std::ranges::find_if(value, 
+        [this](const auto& row) { return std::get<int>(row.at("author_id")) == charlie_id; });
+    ASSERT_NE(charlieIt, value.end());
+    
+    std::string charliePosts = std::get<std::string>(charlieIt->at("title_content_by_id"));
+    
+    // Debug the actual content
+    std::cout << "\nActual concatenated content: [" << charliePosts << "]\n";
+    
+    // Check that we have both title and content in the result
+    ASSERT_NE(charliePosts.find("Charlie's First Post"), std::string::npos);
+    ASSERT_NE(charliePosts.find("Content C1"), std::string::npos);
+    
+    // In ascending order by ID, Charlie's First Post should come before Charlie's Fourth Post
+    size_t firstPostPos = charliePosts.find("Charlie's First Post");
+    size_t fourthPostPos = charliePosts.find("Charlie's Fourth Post");
+    ASSERT_NE(firstPostPos, std::string::npos);
+    ASSERT_NE(fourthPostPos, std::string::npos);
+    EXPECT_LT(firstPostPos, fourthPostPos) << "Posts not ordered correctly in ascending order";
+}
+
+// =======================================
+// MULTI-FIELD GROUP_CONCAT TESTS
+// =======================================
+
+TEST_F(ORMTest, GroupConcatMultipleFields) {
+    // Test GROUP_CONCAT with multiple fields
+    auto result = QuerySet<Post>(conn)
+        .group_concat<&Post::title, &Post::content>("title_content", ",", " - ")
+        .select_values();
+    
+    ASSERT_TRUE(result.has_value()) << "GROUP_CONCAT with multiple fields failed: " << result.error();
+    const auto &value = result.value();
+    ASSERT_EQ(value.size(), 1);
+    ASSERT_TRUE(value[0].contains("title_content"));
+    
+    std::string concatenated = std::get<std::string>(value[0].at("title_content"));
+    
+    // Verify that both title and content are present with the correct field separator
+    EXPECT_TRUE(concatenated.find("Alice's First Post - ") != std::string::npos);
+    EXPECT_TRUE(concatenated.find("Bob's First Post - ") != std::string::npos);
+    EXPECT_TRUE(concatenated.find("Charlie's First Post - ") != std::string::npos);
+    
+    auto count = QuerySet<Post>(conn).count_value<&Post::id>();
+    ASSERT_TRUE(count.has_value()) << "COUNT failed: " << count.error();
+    // Verify the row separator is correctly applied
+    EXPECT_EQ(std::count(concatenated.begin(), concatenated.end(), ','), count.value() - 1); // Number of posts minus 1
+}
+
+TEST_F(ORMTest, GroupConcatMultipleFieldsWithGroupBy) {
+    // Test GROUP_CONCAT with multiple fields and GROUP BY
+    auto result = QuerySet<Post>(conn)
+        .group_by<&Post::author_id>()
+        .group_concat<&Post::title, &Post::content>("title_content", ",", " - ")
+        .only<&Post::author_id>()
+        .select_values();
+    
+    ASSERT_TRUE(result.has_value()) << "GROUP_CONCAT with multiple fields and GROUP BY failed: " << result.error();
+    const auto &value = result.value();
+    
+    // We should have one row per author
+    ASSERT_EQ(value.size(), 4); // Alice, Bob, Charlie, Diana
+    
+    // Find Alice's row
+    auto aliceIt = std::ranges::find_if(value, 
+        [this](const auto& row) { return std::get<int>(row.at("author_id")) == alice_id; });
+    ASSERT_NE(aliceIt, value.end());
+    
+    std::string alicePosts = std::get<std::string>(aliceIt->at("title_content"));
+    
+    // Verify that Alice's posts are correctly concatenated with both title and content
+    EXPECT_TRUE(alicePosts.find("Alice's First Post - ") != std::string::npos);
+    EXPECT_TRUE(alicePosts.find("Alice's Second Post - ") != std::string::npos);
+    EXPECT_TRUE(alicePosts.find("Alice's Third Post - ") != std::string::npos);
+    
+    // Verify the row separator is correctly applied for Alice's posts
+    EXPECT_EQ(std::count(alicePosts.begin(), alicePosts.end(), ','), 2); // Alice has 3 posts, so 2 commas
+}
+
+TEST_F(ORMTest, GroupConcatDistinctMultipleFields) {
+    // Test GROUP_CONCAT with DISTINCT for multiple fields
+    auto result = QuerySet<Post>(conn)
+        .group_by<&Post::author_id>()
+        .group_concat<&Post::title, &Post::content>("title_content", "", " - ", true) // distinct = true
+        .only<&Post::author_id>()
+        .select_values();
+    
+    ASSERT_TRUE(result.has_value()) << "GROUP_CONCAT DISTINCT with multiple fields failed: " << result.error();
+    const auto &value = result.value();
+    
+    // We should have one row per author
+    ASSERT_EQ(value.size(), 4); // Alice, Bob, Charlie, Diana
+    
+    // Find Alice's row
+    auto aliceIt = std::ranges::find_if(value, 
+        [this](const auto& row) { return std::get<int>(row.at("author_id")) == alice_id; });
+    ASSERT_NE(aliceIt, value.end());
+    
+    std::string alicePosts = std::get<std::string>(aliceIt->at("title_content"));
+    
+    // Verify that Alice's posts are correctly concatenated with both title and content
+    EXPECT_TRUE(alicePosts.find("Alice's First Post - ") != std::string::npos);
+    EXPECT_TRUE(alicePosts.find("Alice's Second Post - ") != std::string::npos);
+    EXPECT_TRUE(alicePosts.find("Alice's Third Post - ") != std::string::npos);
+}
+
+// =======================================
+// SIMPLIFIED TESTS (if you need basic functionality first)
+// =======================================
+
+TEST_F(ORMTest, GroupConcatSingleFieldBasic) {
+    // Most basic test - just concatenate titles
+    auto result = QuerySet<Post>(conn)
+        .group_concat<&Post::title>()
+        .select_values();
+    
+    ASSERT_TRUE(result.has_value()) << "Basic GROUP_CONCAT failed: " << result.error();
+    const auto &value = result.value();
+    ASSERT_EQ(value.size(), 1);
+    ASSERT_TRUE(value[0].contains("group_concat_title"));
+    
+    std::string concatenated = std::get<std::string>(value[0].at("group_concat_title"));
+    EXPECT_FALSE(concatenated.empty());
+    
+    // Should contain all post titles
+    EXPECT_TRUE(concatenated.find("Alice's First Post") != std::string::npos);
+    EXPECT_TRUE(concatenated.find("Bob's First Post") != std::string::npos);
+}
+
+TEST_F(ORMTest, GroupConcatWithCustomAlias) {
+    // Test custom alias
+    auto result = QuerySet<Post>(conn)
+        .group_concat<&Post::title>("my_custom_alias")
+        .select_values();
+    
+    ASSERT_TRUE(result.has_value()) << "GROUP_CONCAT with custom alias failed: " << result.error();
+    const auto &value = result.value();
+    ASSERT_EQ(value.size(), 1);
+    ASSERT_TRUE(value[0].contains("my_custom_alias"));
+    
+    std::string concatenated = std::get<std::string>(value[0].at("my_custom_alias"));
+    EXPECT_FALSE(concatenated.empty());
 }
