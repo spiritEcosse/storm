@@ -3,6 +3,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <ranges>
 
 // Utility functions that should be in a separate utils namespace/header
 namespace utils {

@@ -308,7 +308,7 @@ namespace storm {
         // Function to get the reflected members of the type
         template<class U>
         static constexpr auto get_reflected_members() {
-            return Reflect<U>::get_reflected_type().members;
+            return Reflect<U>::get_reflected_members();
         }
 
         template<class U>
@@ -372,7 +372,7 @@ namespace storm {
         }
         
         void bind_object_values(Statement& stmt, const T& obj, int& param_index) const {
-            Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
+            Reflect<T>::for_each_member(get_reflected_members<T>(), [&](auto member) {
                 if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
                     std::string field_name = Reflect<T>::get_member_name(member);
                     if (field_name == "id") return; // Skip auto-generated id
@@ -387,7 +387,7 @@ namespace storm {
         // Helper function to bind a specific field value by name
         void bind_field_value(Statement& stmt, const T& obj, const std::string& field_name, int& param_index) const {
             bool found = false;
-            Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
+            Reflect<T>::for_each_member(get_reflected_members<T>(), [&](auto member) {
                 if (found) return; // Skip if we already found the field
                 
                 if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
@@ -706,11 +706,11 @@ namespace storm {
         std::vector<std::string> get_insert_field_names() const {
             std::vector<std::string> field_names;
             
-            Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
-                if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
-                    std::string field_name = Reflect<T>::get_member_name(member);
-                    if (field_name != "id") { // Skip auto-generated id
-                        field_names.emplace_back(field_name);
+            Reflect<T>::for_each_member(get_reflected_members<T>(), [&](const auto& member) {
+                if constexpr (Reflect<T>::template is_field<std::decay_t<decltype(member)>>::value) {
+                    auto field_name = std::string{member.name};
+                    if (field_name != "id") [[likely]] { // Skip auto-generated id
+                        field_names.emplace_back(std::move(field_name));
                     }
                 }
             });
@@ -1489,7 +1489,7 @@ namespace storm {
             
             if (this->onlyFields.empty()) {
                 // When no specific fields are selected, populate all fields
-                Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
+                Reflect<T>::for_each_member(get_reflected_members<T>(), [&](auto member) {
                     if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
                         using FieldType = typename Reflect<T>::template member_value_type<decltype(member)>;
                         
@@ -1518,7 +1518,7 @@ namespace storm {
                     const std::string fieldName = fieldAlias->getFieldName();
                     
                     // Find and populate the corresponding field
-                    Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
+                    Reflect<T>::for_each_member(get_reflected_members<T>(), [&](auto member) {
                         if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
                             const std::string memberName = Reflect<T>::get_member_name(member);
                             if (memberName == fieldName) {
@@ -1591,7 +1591,7 @@ namespace storm {
                         const std::string fieldName = fieldAlias->getFieldName();
                         
                         // Find and populate the corresponding field
-                        Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
+                        Reflect<T>::for_each_member(get_reflected_members<T>(), [&](auto member) {
                             if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
                                 const std::string memberName = Reflect<T>::get_member_name(member);
                                 if (memberName == fieldName) {
@@ -1612,7 +1612,7 @@ namespace storm {
                     }
                 } else if (this->onlyFields.empty()) {
                     // When no specific fields are selected, populate all fields
-                    Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
+                    Reflect<T>::for_each_member(get_reflected_members<T>(), [&](auto member) {
                         if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
                             using FieldType = typename Reflect<T>::template member_value_type<decltype(member)>;
                             
@@ -1641,7 +1641,7 @@ namespace storm {
                         const std::string fieldName = fieldAlias->getFieldName();
                         
                         // Find and populate the corresponding field
-                        Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
+                        Reflect<T>::for_each_member(get_reflected_members<T>(), [&](auto member) {
                             if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
                                 const std::string memberName = Reflect<T>::get_member_name(member);
                                 if (memberName == fieldName) {
@@ -1824,7 +1824,7 @@ namespace storm {
             } else {
                 // When no specific fields requested, explicitly list all fields using reflection
                 std::vector<std::string> fieldStrings;
-                Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
+                Reflect<T>::for_each_member(get_reflected_members<T>(), [&](auto member) {
                     if constexpr (refl::descriptor::is_field(member)) {
                         std::string tableName = this->template get_table_name<T>();
                         std::string fieldName = std::string(member.name);
