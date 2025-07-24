@@ -15,7 +15,6 @@
 #include "Connection.h"
 #include "Statement.h"
 #include "Reflect.h"
-#include "MemberPointerUtils.h"
 #include "StringUtils.h"
 #include <sstream>
 #include <expected>
