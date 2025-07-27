@@ -403,10 +403,12 @@ namespace storm {
         }
 
         // Field name mapping using your reflection system
-        template<typename ClassType, typename FieldType>
-        std::string get_field_name(FieldType ClassType::* memberPtr) const {
+        template<auto MemberPtr>
+        requires std::is_member_object_pointer_v<decltype(MemberPtr)>
+        std::string get_field_name() const {
+            using ClassType = typename member_pointer_class<decltype(MemberPtr)>::type;
             std::string tableName = Reflect<ClassType>::get_struct_name();
-            std::string fieldName = getFieldNameFromMemberPtr(memberPtr);
+            std::string fieldName = getFieldNameFromMemberPtr<MemberPtr>();
             return storm::utils::formatFieldName(tableName, fieldName);
         }
 
@@ -1147,46 +1149,30 @@ namespace storm {
         QuerySet& where(const storm::Where& where_clause);
         QuerySet& where(storm::Where&& where_clause);
 
-        // Method 2: Convenience method using Storm field helper
-        template<typename ClassType, typename FieldType, typename Value>
-        QuerySet& where(FieldType ClassType::* memberPtr, Value&& value, storm::Op op = storm::Op::EQ);
-
-        // Special methods for complex operators
-        template<typename ClassType, typename FieldType, typename Container>
-        QuerySet& where_in(FieldType ClassType::* memberPtr, const Container& values);
-
-        // Where between
-        template<typename ClassType, typename FieldType, typename T1, typename T2>
-        QuerySet& where_between(FieldType ClassType::* memberPtr, T1&& value1, T2&& value2);
-
-        template<typename ClassType, typename FieldType>
-        QuerySet& where_null(FieldType ClassType::* memberPtr);
-
-        template<typename ClassType, typename FieldType>
-        QuerySet& where_not_null(FieldType ClassType::* memberPtr);
-
-        template<typename ClassType, typename FieldType, typename Value>
-        QuerySet& where_like(FieldType ClassType::* memberPtr, Value&& pattern);
-
-        // Method 3: NTTP version (compile-time field specification)
+        // Compile-time member pointer version (C++23 NTTP)
         template<auto MemberPtr, typename Value>
         QuerySet& where(Value&& value, storm::Op op = storm::Op::EQ);
 
-        // NTTP versions for complex operators
+        // Special methods for complex operators
+        // Compile-time member pointer version (C++23 NTTP)
         template<auto MemberPtr, typename Container>
         QuerySet& where_in(const Container& values);
 
+        // Where between (compile-time member pointer version - C++23 NTTP)
         template<auto MemberPtr, typename T1, typename T2>
         QuerySet& where_between(T1&& value1, T2&& value2);
 
+        // Where null (compile-time member pointer version - C++23 NTTP)
         template<auto MemberPtr>
         QuerySet& where_null();
 
-        template<auto MemberPtr, typename Value>
-        QuerySet& where_like(Value&& pattern);
-
+        // Where not null (compile-time member pointer version - C++23 NTTP)
         template<auto MemberPtr>
         QuerySet& where_not_null();
+
+        // Where like (compile-time member pointer version - C++23 NTTP)
+        template<auto MemberPtr, typename Value>
+        QuerySet& where_like(Value&& pattern);
 
         // Logical combination methods for fluent interface
         QuerySet& where_and(const storm::Where& condition);
@@ -1195,10 +1181,9 @@ namespace storm {
         // Support for raw SQL WHERE clauses
         QuerySet& where_raw(const std::string& raw_condition, const std::vector<std::any>& parameters = {});
 
-        // Date range queries (if you have date fields)
-        template<typename ClassType, typename FieldType>
-        QuerySet& where_date_range(FieldType ClassType::* memberPtr, 
-                                const std::string& start_date, 
+        // Date range queries (if you have date fields) - C++23 NTTP version
+        template<auto MemberPtr>
+        QuerySet& where_date_range(const std::string& start_date, 
                                 const std::string& end_date);
 
         [[nodiscard]] storm::QueryResult get_where_query() const;
@@ -1563,6 +1548,7 @@ namespace storm {
                 this->generateGroupBySQL(),
                 this->buildOrderFields(),
                 this->limit_impl());
+            std::cout << sql << std::endl;
             
             auto smt_ = Statement(conn, sql);
             bind_query_parameters(smt_, where_query_result);
