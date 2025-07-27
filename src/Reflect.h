@@ -52,21 +52,7 @@ std::string getFieldNameFromMemberPtr() {
     return result;
 }
 
-// Runtime version: get field name from member pointer
-template <typename C, typename T>
-std::string getFieldNameFromMemberPtr(T C::* memberPtr) {
-    std::string result;
-    refl::util::for_each(refl::reflect<C>().members, [&](auto member) {
-        if constexpr (refl::descriptor::is_field(member)) {
-            // Compare the addresses of the member pointers
-            // This is a bit of a hack but should work in most cases
-            if (std::memcmp(&member.pointer, &memberPtr, sizeof(memberPtr)) == 0) {
-                result = std::string(member.name);
-            }
-        }
-    });
-    return result;
-}
+// Note: Runtime version removed in favor of compile-time version
 
 template<typename T>
 class Reflect {

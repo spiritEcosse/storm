@@ -71,7 +71,7 @@ struct QueryResult {
 
 // Compile-time operator types for type safety
 enum class Op {
-    EQ, NE, GT, LT, GE, LE, LIKE, IS, IN, BETWEEN
+    EQ, NE, GT, LT, GE, LE, LIKE, IS, IN, BETWEEN, IS_NOT
 };
 
 // Collation types for string comparisons
@@ -103,6 +103,7 @@ constexpr std::string_view op_to_sql(Op op) {
         case Op::LE: return "<=";
         case Op::LIKE: return "LIKE";
         case Op::IS: return "IS";
+        case Op::IS_NOT: return "IS NOT";
         case Op::IN: return "IN";
         case Op::BETWEEN: return "BETWEEN";
     }
@@ -111,7 +112,7 @@ constexpr std::string_view op_to_sql(Op op) {
 
 // Forward declarations
 class Where;
-template<typename T, typename F> class Field;
+template<auto MemberPtr> requires std::is_member_object_pointer_v<decltype(MemberPtr)> class Field;
 
 // Base expression interface
 class Expression {
@@ -284,10 +285,13 @@ public:
 };
 
 // Field proxy for fluent syntax
-template<typename ClassType, typename FieldType>
+template<auto MemberPtr>
+requires std::is_member_object_pointer_v<decltype(MemberPtr)>
 class Field {
 private:
-    FieldType ClassType::* member_ptr_;
+    using ClassType = typename member_pointer_class<decltype(MemberPtr)>::type;
+    using FieldType = typename member_pointer_type<decltype(MemberPtr)>::type;
+    
     std::string field_name_;
     Collation collation_ = Collation::NONE;
     
@@ -295,15 +299,15 @@ private:
         if (!field_name_.empty()) return field_name_;
         // Use the reflection system to get the proper field name
         std::string tableName = Reflect<ClassType>::get_struct_name();
-        std::string fieldName = getFieldNameFromMemberPtr(member_ptr_);
+        std::string fieldName = getFieldNameFromMemberPtr<MemberPtr>();
         return utils::formatFieldName(tableName, fieldName);
     }
     
 public:
-    explicit Field(FieldType ClassType::* ptr, Collation collation = Collation::NONE) 
-        : member_ptr_(ptr), collation_(collation) {}
-    Field(FieldType ClassType::* ptr, std::string name, Collation collation = Collation::NONE) 
-        : member_ptr_(ptr), field_name_(std::move(name)), collation_(collation) {}
+    explicit Field(Collation collation = Collation::NONE) 
+        : collation_(collation) {}
+    Field(std::string name, Collation collation = Collation::NONE) 
+        : field_name_(std::move(name)), collation_(collation) {}
     
     // Comparison operators
     template<typename T>
@@ -341,11 +345,15 @@ public:
     Where like(T&& pattern) const {
         return Where(std::make_unique<Condition>(get_field_name(), Op::LIKE, std::forward<T>(pattern), collation_));
     }
-    
+
     Where is_null() const {
         return Where(std::make_unique<Condition>(get_field_name(), Op::IS, std::nullopt, collation_));
     }
-    
+
+    Where is_not_null() const {
+        return Where(std::make_unique<Condition>(get_field_name(), Op::IS_NOT, std::nullopt, collation_));
+    }
+
     template<typename T>
     Where is(T&& value) const {
         return Where(std::make_unique<Condition>(get_field_name(), Op::IS, std::forward<T>(value), collation_));
@@ -367,11 +375,11 @@ public:
         }
         
         auto it = values.begin();
-        Where result = Field<ClassType, FieldType>(member_ptr_, field_name_, collation_) == *it;
+        Where result = Field<MemberPtr>(field_name_, collation_) == *it;
         ++it;
         
         for (; it != values.end(); ++it) {
-            Where next_condition = Field<ClassType, FieldType>(member_ptr_, field_name_, collation_) == *it;
+            Where next_condition = Field<MemberPtr>(field_name_, collation_) == *it;
             result = result or next_condition;
         }
         
@@ -398,80 +406,17 @@ public:
     }
     
     // Collation methods
-    Field<ClassType, FieldType> collate_binary() const {
-        return Field<ClassType, FieldType>(member_ptr_, field_name_, Collation::BINARY);
+    Field<MemberPtr> collate_binary() const {
+        return Field<MemberPtr>(field_name_, Collation::BINARY);
     }
     
-    Field<ClassType, FieldType> collate_nocase() const {
-        return Field<ClassType, FieldType>(member_ptr_, field_name_, Collation::NOCASE);
+    Field<MemberPtr> collate_nocase() const {
+        return Field<MemberPtr>(field_name_, Collation::NOCASE);
     }
     
-    Field<ClassType, FieldType> collate_rtrim() const {
-        return Field<ClassType, FieldType>(member_ptr_, field_name_, Collation::RTRIM);
+    Field<MemberPtr> collate_rtrim() const {
+        return Field<MemberPtr>(field_name_, Collation::RTRIM);
     }
 };
-
-// Helper to create field references
-template<typename ClassType, typename FieldType>
-Field<ClassType, FieldType> field(FieldType ClassType::* member_ptr) {
-    return Field<ClassType, FieldType>(member_ptr);
-}
-
-template<typename ClassType, typename FieldType>  
-Field<ClassType, FieldType> field(FieldType ClassType::* member_ptr, const std::string& name) {
-    return Field<ClassType, FieldType>(member_ptr, name);
-}
-
 
 } // namespace storm
-
-/*
-SAFE Usage Examples:
-
-struct Author {
-    std::string name;
-    int age;
-    bool active;
-    std::optional<std::string> email;
-};
-
-// Build query safely
-auto where_clause = field(&Author::name) == "John'; DROP TABLE users; --" and 
-                   field(&Author::age) > 25;
-
-// Get safe SQL with parameters
-auto query = where_clause.to_query();
-
-// Generated SQL: (name = :p0 AND age > :p1)
-// Parameters: {p0: "John'; DROP TABLE users; --", p1: 25}
-
-// Use with your database library:
-// SQLite example:
-sqlite3_stmt* stmt;
-sqlite3_prepare_v2(db, query.sql.c_str(), -1, &stmt, nullptr);
-
-for (const auto& [param_name, value] : query.parameters()) {
-    int param_index = sqlite3_bind_parameter_index(stmt, (":" + param_name).c_str());
-    std::visit([stmt, param_index](const auto& v) {
-        using T = std::decay_t<decltype(v)>;
-        if constexpr (std::is_same_v<T, std::string>) {
-            sqlite3_bind_text(stmt, param_index, v.c_str(), -1, SQLITE_STATIC);
-        } else if constexpr (std::is_integral_v<T>) {
-            sqlite3_bind_int64(stmt, param_index, v);
-        } else if constexpr (std::is_floating_point_v<T>) {
-            sqlite3_bind_double(stmt, param_index, v);
-        }
-        // ... handle other types
-    }, value);
-}
-
-Key Security Features:
-
-1. **Parameter Binding**: All user values are parameterized, never concatenated
-2. **Automatic Escaping**: Database handles escaping through prepared statements  
-3. **Type Safety**: SqlValue variant ensures type correctness
-4. **Clear API**: to_query() returns both SQL and parameters
-5. **Backward Compatibility**: Old to_sql() method is deprecated but still works
-
-This is now completely safe from SQL injection attacks!
-*/

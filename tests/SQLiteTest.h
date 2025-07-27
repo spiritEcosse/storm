@@ -511,14 +511,14 @@ TEST_F(ORMTest, RemoveByCondition) {
     ASSERT_GT(initial_count, 0);
     
     // Count authors with age > 30
-    auto result2 = QuerySet<Author>(conn).where(field(&Author::age) > 30).select_all();
+    auto result2 = QuerySet<Author>(conn).where(Field<&Author::age>() > 30).select_all();
     EXPECT_TRUE(result2.has_value()) << "Select should return a value" << result2.error();
     int older_count = result2.value().size();
     ASSERT_GT(older_count, 0);
     ASSERT_LT(older_count, initial_count);
     
     // Delete authors with age > 30
-    auto result3 = QuerySet<Author>(conn).where(field(&Author::age) > 30).remove();
+    auto result3 = QuerySet<Author>(conn).where(Field<&Author::age>() > 30).remove();
     EXPECT_TRUE(result3.has_value()) << "Remove should return a bool" << result3.error();
     EXPECT_TRUE(result3.value());
     
@@ -542,10 +542,10 @@ TEST_F(ORMTest, QuerySetCopy) {
     
     // Create two copies and add different conditions
     auto youngAuthorsQuery = baseQuery; // Copy NOSONAR
-    youngAuthorsQuery.where(field(&Author::age) <= 30);
+    youngAuthorsQuery.where(Field<&Author::age>() <= 30);
     
     auto seniorAuthorsQuery = baseQuery; // Copy NOSONAR
-    seniorAuthorsQuery.where(field(&Author::age) > 30);
+    seniorAuthorsQuery.where(Field<&Author::age>() > 30);
     
     // Execute the queries
     auto youngAuthors = youngAuthorsQuery.select_all();
@@ -578,8 +578,8 @@ TEST_F(ORMTest, QuerySetCopy) {
 TEST_F(ORMTest, QuerySetCopyConstructorDeepCopy) {
     // Create a complex query with all possible member variables set
     auto originalQuery = QuerySet<Author>(conn)
-        .where(field(&Author::is_active) == true)
-        .where(field(&Author::age) > 20)
+        .where(Field<&Author::is_active>() == true)
+        .where(Field<&Author::age>() > 20)
         .order_by<&Author::age, false>() // descending
         .order_by<&Author::name, true>() // ascending
         .distinct<&Author::age>()
@@ -601,7 +601,7 @@ TEST_F(ORMTest, QuerySetCopyConstructorDeepCopy) {
     EXPECT_EQ(originalResults.value().size(), copiedResults.value().size());
     
     // Now modify the copied query
-    copiedQuery.where(field(&Author::rating) > 4.0);
+    copiedQuery.where(Field<&Author::rating>() > 4.0);
     
     // The original query should remain unchanged
     auto newOriginalResults = originalQuery.select_all();
@@ -625,7 +625,7 @@ TEST_F(ORMTest, QuerySetCopyConstructorMembersVerification) {
     // Test each member variable individually to ensure proper copying
     
     // 1. Test whereExpression copying
-    auto whereQuery = QuerySet<Author>(conn).where(field(&Author::age) > 25); // Greater than
+    auto whereQuery = QuerySet<Author>(conn).where(Field<&Author::age>() > 25); // Greater than
     auto whereQueryCopy = whereQuery; // Copy NOSONAR
     
     // Verify both queries return the same results
@@ -636,7 +636,7 @@ TEST_F(ORMTest, QuerySetCopyConstructorMembersVerification) {
     EXPECT_EQ(whereResults.value().size(), whereCopyResults.value().size());
     
     // Modify copy and verify independence
-    whereQueryCopy.where(field(&Author::email) == "alice@example.com"); // Use a specific email to ensure different results
+    whereQueryCopy.where(Field<&Author::email>() == "alice@example.com"); // Use a specific email to ensure different results
     auto whereQueryResults = whereQuery.select_all();
     auto whereQueryCopyResults = whereQueryCopy.select_all();
     ASSERT_TRUE(whereQueryResults.has_value()) << "Select should return a value" << whereQueryResults.error();
@@ -721,11 +721,11 @@ TEST_F(ORMTest, QuerySetCopyConstructorMembersVerification) {
 TEST_F(ORMTest, QuerySetCopyAssignmentOperator) {
     // Create two different queries
     auto query1 = QuerySet<Author>(conn)
-        .where(field(&Author::age) < 30)
+        .where(Field<&Author::age>() < 30)
         .order_by<&Author::name, true>();
     
     auto query2 = QuerySet<Author>(conn)
-        .where(field(&Author::rating) > 4.0)
+        .where(Field<&Author::rating>() > 4.0)
         .limit(2);
     
     // Save the original results
@@ -742,7 +742,7 @@ TEST_F(ORMTest, QuerySetCopyAssignmentOperator) {
     EXPECT_EQ(originalQuery1Results.value().size(), newQuery2Results.value().size());
     
     // Modify query2 and verify query1 remains unchanged
-    query2.where(field(&Author::email).like("%alice@example.com"));
+    query2.where(Field<&Author::email>().like("%alice@example.com"));
     
     auto modifiedQuery2Results = query2.select_all();
     auto finalQuery1Results = query1.select_all();
@@ -775,7 +775,7 @@ TEST_F(ORMTest, QuerySetCopyEdgeCases) {
     EXPECT_EQ(emptyQueryResults.value().size(), emptyQueryCopyResults.value().size());
     
     // 2. Test copying a query with no results
-    auto noResultsQuery = QuerySet<Author>(conn).where(field(&Author::age) > 100); // No one is that old
+    auto noResultsQuery = QuerySet<Author>(conn).where(Field<&Author::age>() > 100); // No one is that old
     auto noResultsQueryCopy = noResultsQuery; // Copy NOSONAR
     
     // Both should return empty results
@@ -977,7 +977,7 @@ TEST_F(ORMTest, SelectAll) {
 
 TEST_F(ORMTest, SelectAllWhereId) {
     auto authors = QuerySet<Author>(conn)
-        .where(&Author::id, alice_id)
+        .where<&Author::id>(alice_id)
         .select_all();
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
     ASSERT_EQ(authors.value().size(), 1);
@@ -987,8 +987,8 @@ TEST_F(ORMTest, SelectAllWhereId) {
 
 TEST_F(ORMTest, SelectAllWhereMany) {
     auto posts = QuerySet<Post>(conn)
-        .where(&Post::author_id, alice_id)
-        .where(&Post::title, "Alice's First Post")
+        .where<&Post::author_id>(alice_id)
+        .where<&Post::title>("Alice's First Post")
         .select_all();
     ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
     ASSERT_EQ(posts.value().size(), 1);
@@ -999,7 +999,7 @@ TEST_F(ORMTest, SelectAllWhereMany) {
 TEST_F(ORMTest, SelectAllErrorInvalidColumnException) {
     try {
         QuerySet<Post>(conn)
-            .where(&Author::name, "Alice Smith")
+            .where<&Author::name>("Alice Smith")
             .select_all();
         FAIL() << "Expected InvalidColumnException to be thrown";
     } catch (const InvalidColumnException& e) {
@@ -1025,7 +1025,7 @@ TEST_F(ORMTest, SelectAllWithJoin) {
 TEST_F(ORMTest, SelectAllWithJoinWhere) {
     auto posts = QuerySet<Post>(conn)
         .join<Author>()
-        .where(&Post::author_id, alice_id)
+        .where<&Post::author_id>(alice_id)
         .select_all();
     ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
     ASSERT_EQ(posts.value().size(), 3);
@@ -1036,8 +1036,8 @@ TEST_F(ORMTest, SelectAllWithJoinWhere) {
 TEST_F(ORMTest, SelectAllWithJoinWhereMany) {
     auto posts = QuerySet<Post>(conn)
         .join<Author>()
-        .where(&Post::author_id, alice_id)
-        .where(&Author::is_active, true)
+        .where<&Post::author_id>(alice_id)
+        .where<&Author::is_active>(true)
         .select_all();
     ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
     ASSERT_EQ(posts.value().size(), 3);
@@ -1048,7 +1048,7 @@ TEST_F(ORMTest, SelectAllWithJoinWhereMany) {
 TEST_F(ORMTest, SelectAllWithJoinWhereLimit) {
     auto posts = QuerySet<Post>(conn)
         .join<Author>()
-        .where(&Post::author_id, alice_id)
+        .where<&Post::author_id>(alice_id)
         .limit(1)
         .select_all();
     ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
@@ -1059,7 +1059,7 @@ TEST_F(ORMTest, SelectAllWithJoinWhereLimit) {
 TEST_F(ORMTest, SelectAllWithJoinWhereOffset) {
     auto posts = QuerySet<Post>(conn)
         .join<Author>()
-        .where(&Post::author_id, alice_id)
+        .where<&Post::author_id>(alice_id)
         .offset(1)
         .select_all();
     ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
@@ -1069,7 +1069,7 @@ TEST_F(ORMTest, SelectAllWithJoinWhereOffset) {
 TEST_F(ORMTest, SelectAllWithJoinWhereLimitOffset) {
     auto posts = QuerySet<Post>(conn)
         .join<Author>()
-        .where(&Post::author_id, alice_id)
+        .where<&Post::author_id>(alice_id)
         .limit(1)
         .offset(1)
         .select_all();
@@ -1080,7 +1080,7 @@ TEST_F(ORMTest, SelectAllWithJoinWhereLimitOffset) {
 TEST_F(ORMTest, SelectAllWithJoinWhereGroupBy) {
     auto posts = QuerySet<Post>(conn)
         .join<Author>()
-        .where(&Post::author_id, alice_id)
+        .where<&Post::author_id>(alice_id)
         .template group_by<&Author::name>()
         .select_all();
     ASSERT_TRUE(posts.has_value()) << "Select should return a value" << posts.error();
@@ -1090,7 +1090,7 @@ TEST_F(ORMTest, SelectAllWithJoinWhereGroupBy) {
 TEST_F(ORMTest, SelectAllWithJoinWhereGroupByLimit) {
     auto posts = QuerySet<Post>(conn)
         .join<Author>()
-        .where(&Post::author_id, alice_id)
+        .where<&Post::author_id>(alice_id)
         .template group_by<&Author::name>()
         .limit(1)
         .select_all();
@@ -1101,7 +1101,7 @@ TEST_F(ORMTest, SelectAllWithJoinWhereGroupByLimit) {
 TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupByAndOffset) {
     auto posts = QuerySet<Post>(conn)
         .join<Author>()
-        .where(&Post::author_id, alice_id)
+        .where<&Post::author_id>(alice_id)
         .template group_by<&Author::name>()
         .offset(1)
         .select_all();
@@ -1112,7 +1112,7 @@ TEST_F(ORMTest, SelectAllWithJoinAndWhereAndGroupByAndOffset) {
 TEST_F(ORMTest, SelectAllWithJoinWhereGroupByLimitOffset) {
     auto posts = QuerySet<Post>(conn)
         .join<Author>()
-        .where(&Post::author_id, alice_id)
+        .where<&Post::author_id>(alice_id)
         .template group_by<&Author::name>()
         .limit(1)
         .offset(1)
@@ -1127,7 +1127,7 @@ TEST_F(ORMTest, SelectAllWithJoinWhereGroupByLimitOffset) {
 TEST_F(ORMTest, SelectAllWithJoinWhereLimitOffsetOrderBy) {
     auto posts = QuerySet<Post>(conn)
         .join<Author>()
-        .where(&Post::author_id, alice_id)
+        .where<&Post::author_id>(alice_id)
         .limit(1)
         .offset(1)
         .order_by<&Author::name>()
@@ -1287,7 +1287,7 @@ TEST_F(ORMTest, OrderByComplexJoinWithMultipleOrderFields) {
 
 TEST_F(ORMTest, OrderingWithWhereClause) {
     auto authors = QuerySet<Author>(conn)
-        .where(&Author::age, 30)  // Only Charlie has age 30
+        .where<&Author::age>(30)  // Only Charlie has age 30
         .order_by<&Author::name, true>()
         .select_all();
     
@@ -1302,7 +1302,7 @@ TEST_F(ORMTest, OrderingWithWhereClause) {
 // =======================================
 TEST_F(ORMTest, WhereClauseEqualsDefault) {
     auto authors = QuerySet<Author>(conn)
-        .where(field(&Author::age) == 30)  // Only Charlie has age 30
+        .where(Field<&Author::age>() == 30)  // Only Charlie has age 30
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1313,7 +1313,7 @@ TEST_F(ORMTest, WhereClauseEqualsDefault) {
 
 TEST_F(ORMTest, WhereClauseEqualsOperator) {
     auto authors = QuerySet<Author>(conn)
-        .where(field(&Author::age) == 30)  // Only Charlie has age 30
+        .where(Field<&Author::age>() == 30)  // Only Charlie has age 30
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1324,7 +1324,7 @@ TEST_F(ORMTest, WhereClauseEqualsOperator) {
 
 TEST_F(ORMTest, WhereClauseConvenientSyntax) {
     auto authors = QuerySet<Author>(conn)
-        .where(&Author::age, 30)  // Default to EQUALS
+        .where<&Author::age>(30)  // Default to EQUALS
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1335,8 +1335,8 @@ TEST_F(ORMTest, WhereClauseConvenientSyntax) {
 
 TEST_F(ORMTest, WhereClauseMultipleConditions) {
     auto authors = QuerySet<Author>(conn)
-        .where(&Author::age, 25, Op::GT)
-        .where(&Author::is_active, true)
+        .where<&Author::age>(25, Op::GT)
+        .where<&Author::is_active>(true)
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1430,7 +1430,7 @@ TEST_F(ORMTest, WhereClauseNTTPChaining) {
 TEST_F(ORMTest, WhereClauseMixedSyntax) {
     // Test mixing traditional and NTTP syntax
     auto authors = QuerySet<Author>(conn)
-        .where(&Author::age, 25, Op::GT)  // Traditional syntax
+        .where<&Author::age>(25, Op::GT)  // Using compile-time syntax
         .where<&Author::is_active>(true)                   // NTTP syntax
         .select_all();
     
@@ -1486,7 +1486,7 @@ TEST_F(ORMTest, WhereClauseNTTPWithArithmeticTypes) {
 TEST_F(ORMTest, WhereClauseNTTPComparisonWithTraditional) {
     // Verify NTTP and traditional syntax produce identical results
     auto authorsTraditional = QuerySet<Author>(conn)
-        .where(&Author::age, 30, Op::EQ)
+        .where<&Author::age>(30, Op::EQ)
         .select_all();
     
     ASSERT_TRUE(authorsTraditional.has_value()) << "Select should return a value" << authorsTraditional.error();
@@ -1517,7 +1517,7 @@ TEST_F(ORMTest, WhereClauseStringComparison) {
     QuerySet<Author>(conn).insert(author2);
     
     auto authors = QuerySet<Author>(conn)
-        .where(&Author::name, std::string("John%"), Op::LIKE)
+        .where<&Author::name>(std::string("John%"), Op::LIKE)
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1531,7 +1531,7 @@ TEST_F(ORMTest, WhereClauseStringComparison) {
 TEST_F(ORMTest, WhereClauseLessOrEqualOperator) {
     // Test LESS_OR_EQUAL operator
     auto authors = QuerySet<Author>(conn)
-        .where(&Author::age, 30, Op::LE)
+        .where<&Author::age>(30, Op::LE)
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1545,7 +1545,7 @@ TEST_F(ORMTest, WhereClauseLessOrEqualOperator) {
 TEST_F(ORMTest, WhereClauseGreaterOrEqualOperator) {
     // Test GREATER_OR_EQUAL operator  
     auto authors = QuerySet<Author>(conn)
-        .where(&Author::age, 25, Op::GE)
+        .where<&Author::age>(25, Op::GE)
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1595,7 +1595,7 @@ TEST_F(ORMTest, WhereClauseIsOperator) {
     
     // Execute the query using our ORM
     auto authors = QuerySet<Author>(conn)
-        .where(&Author::biography, std::nullopt, Op::IS)  // WHERE biography IS NULL
+        .where<&Author::biography>(std::nullopt, Op::IS)  // WHERE biography IS NULL
         .select_all();
     
     // Verify we found the author with NULL biography
@@ -1629,10 +1629,63 @@ TEST_F(ORMTest, WhereClauseNTTPIsOperator) {
     EXPECT_EQ(authorsValue[0].email, "john@example.com");
 }
 
+TEST_F(ORMTest, WhereNotNull) {
+    // Test where_not_null with NTTP syntax
+    auto authors = QuerySet<Author>(conn)
+        .where_not_null<&Author::biography>()
+        .select_all();
+    
+    // Verify we found only authors with non-NULL biography
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_EQ(authors.value().size(), 4);
+    
+    // Check that all returned authors have non-NULL biography
+    for (const auto& author : authors.value()) {
+        ASSERT_FALSE(author.biography.empty());
+    }
+}
+
+TEST_F(ORMTest, WhereNotNullWithAdditionalConditions) {
+    // Test where_not_null combined with other conditions
+    auto authors = QuerySet<Author>(conn)
+        .where_not_null<&Author::biography>()
+        .where<&Author::age>(30, Op::GE)
+        .select_all();
+    
+    // Verify we found only authors with non-NULL biography AND age >= 30
+    ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
+    ASSERT_GT(authors.value().size(), 0);
+
+    // Check that all returned authors have non-NULL biography and age >= 30
+    for (const auto& author : authors.value()) {
+        ASSERT_FALSE(author.biography.empty());
+        ASSERT_GE(author.age, 30);
+    }
+}
+
+TEST_F(ORMTest, ComparisonWithExplicitCondition) {
+    // Test where_not_null against equivalent explicit condition
+    auto authors1 = QuerySet<Author>(conn)
+        .where_not_null<&Author::biography>()
+        .select_all();
+    
+    auto authors2 = QuerySet<Author>(conn)
+        .where<&Author::biography>(std::nullopt, Op::NE)
+        .select_all();
+    
+    // Both queries should return the same results
+    ASSERT_TRUE(authors1.has_value()) << "First query should return a value" << authors1.error();
+    ASSERT_TRUE(authors2.has_value()) << "Second query should return a value" << authors2.error();
+    ASSERT_GT(authors1.value().size(), 0);
+    
+    // Both should have the same number of results
+    ASSERT_EQ(authors1.value().size(), authors2.value().size());
+}
+
 TEST_F(ORMTest, WhereClauseOrOperator) {
     // Test: age = 25 OR age = 35 (Alice OR Bob)
     auto authors = QuerySet<Author>(conn)
-        .where(field(&Author::age) == 25 or field(&Author::age) == 35) // NOSONAR
+        .where(Field<&Author::age>() == 25 or Field<&Author::age>() == 35) // NOSONAR
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1649,7 +1702,7 @@ TEST_F(ORMTest, WhereClauseOrOperator) {
 TEST_F(ORMTest, WhereClauseAndOperator) {
     // Test: age >= 30 AND rating >= 4.5 (Only Bob - Diana is 28, Charlie is 30 but rating 4.0)
     auto authors = QuerySet<Author>(conn)
-        .where(field(&Author::age) >= 30 and field(&Author::rating) >= 4.5) // NOSONAR
+        .where(Field<&Author::age>() >= 30 and Field<&Author::rating>() >= 4.5) // NOSONAR
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1661,7 +1714,7 @@ TEST_F(ORMTest, WhereClauseAndOperator) {
 TEST_F(ORMTest, WhereClauseComplexAndOr) {
     // Test: (age = 25 OR age = 28) AND rating >= 4.5 (Alice AND Diana)
     auto authors = QuerySet<Author>(conn)
-        .where((field(&Author::age) == 25 or field(&Author::age) == 28) and field(&Author::rating) >= 4.5) // NOSONAR
+        .where((Field<&Author::age>() == 25 or Field<&Author::age>() == 28) and Field<&Author::rating>() >= 4.5) // NOSONAR
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1678,7 +1731,7 @@ TEST_F(ORMTest, WhereClauseComplexAndOr) {
 TEST_F(ORMTest, WhereClauseComplexOrAnd) {
     // Test: age = 25 OR (age >= 30 AND rating = 5.0) (Alice OR Bob)
     auto authors = QuerySet<Author>(conn)
-        .where(field(&Author::age) == 25 or (field(&Author::age) >= 30 and field(&Author::rating) == 5.0)) // NOSONAR
+        .where((Field<&Author::age>() == 25 or (Field<&Author::age>() >= 30 and Field<&Author::rating>() == 5.0))) // NOSONAR
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1696,7 +1749,7 @@ TEST_F(ORMTest, WhereClauseTripleAnd) {
     // Test: age >= 25 AND age <= 30 AND rating >= 4.0 (Alice, Charlie, Diana)
     // Alice: 25, 4.5; Charlie: 30, 4.0; Diana: 28, 5.5
     auto authors = QuerySet<Author>(conn)
-        .where(field(&Author::age) >= 25 and field(&Author::age) <= 30 and field(&Author::rating) >= 4.0) // NOSONAR
+        .where((Field<&Author::age>() >= 25 and Field<&Author::age>() <= 30 and Field<&Author::rating>() >= 4.0)) // NOSONAR
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1714,7 +1767,7 @@ TEST_F(ORMTest, WhereClauseTripleAnd) {
 TEST_F(ORMTest, WhereClauseTripleOr) {
     // Test: age = 25 OR age = 30 OR age = 35 (Alice, Charlie, Bob)
     auto authors = QuerySet<Author>(conn)
-        .where(field(&Author::age) == 25 or field(&Author::age) == 30 or field(&Author::age) == 35) // NOSONAR
+        .where((Field<&Author::age>() == 25 or Field<&Author::age>() == 30 or Field<&Author::age>() == 35)) // NOSONAR
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1733,8 +1786,8 @@ TEST_F(ORMTest, WhereClauseNestedComplexGrouping) {
     // Test: (age = 25 OR age = 35) AND (rating >= 4.5 OR score >= 90.0)
     // Should match: Alice (25, 4.5) and Bob (35, 5.0, 90.0)
     auto authors = QuerySet<Author>(conn)
-        .where((field(&Author::age) == 25 or field(&Author::age) == 35) and // NOSONAR
-               (field(&Author::rating) >= 4.5 or field(&Author::score) >= 90.0)) // NOSONAR
+        .where((Field<&Author::age>() == 25 or Field<&Author::age>() == 35) and // NOSONAR
+               (Field<&Author::rating>() >= 4.5 or Field<&Author::score>() >= 90.0)) // NOSONAR
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1752,8 +1805,8 @@ TEST_F(ORMTest, WhereClauseComplexNestedConditions) {
     // Test: ((age < 30 AND rating > 4.0) OR (age >= 30 AND score >= 85.0)) AND is_active = true
     // Should match: Alice (25, 4.5, active), Bob (35, 90.0, active), Diana (28, 5.5, 95.0, active)
     auto authors = QuerySet<Author>(conn)
-        .where(((field(&Author::age) < 30 and field(&Author::rating) > 4.0) or // NOSONAR
-                (field(&Author::age) >= 30 and field(&Author::score) >= 85.0)) and field(&Author::is_active) == true) // NOSONAR
+        .where(((Field<&Author::age>() < 30 and Field<&Author::rating>() > 4.0) or // NOSONAR
+                (Field<&Author::age>() >= 30 and Field<&Author::score>() >= 85.0)) and Field<&Author::is_active>() == true) // NOSONAR
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1772,8 +1825,8 @@ TEST_F(ORMTest, WhereClauseMixedDataTypes) {
     // Test with different data types: string, int, double, bool
     // Test: name LIKE 'Alice%' OR (age > 30 AND rating >= 4.0 AND is_active = true)
     auto authors = QuerySet<Author>(conn)
-        .where(field(&Author::name).like("Alice%") or // NOSONAR
-               (field(&Author::age) > 30 and field(&Author::rating) >= 4.0 and field(&Author::is_active) == true)) // NOSONAR
+        .where(Field<&Author::name>().like("Alice%") or // NOSONAR
+               (Field<&Author::age>() > 30 and Field<&Author::rating>() >= 4.0 and Field<&Author::is_active>() == true)) // NOSONAR
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1791,7 +1844,7 @@ TEST_F(ORMTest, WhereClauseGroupMethod) {
     // Test using the group() method for explicit grouping
     // Test: (age = 25 OR age = 28) AND rating >= 4.5
     auto authors = QuerySet<Author>(conn)
-        .where((field(&Author::age) == 25 or field(&Author::age) == 28) and field(&Author::rating) >= 4.5) // NOSONAR
+        .where((Field<&Author::age>() == 25 or Field<&Author::age>() == 28) and Field<&Author::rating>() >= 4.5) // NOSONAR
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1809,7 +1862,7 @@ TEST_F(ORMTest, WhereClauseStringOperations) {
     // Test string operations with complex conditions
     // Test: (name LIKE '%Brown' OR email LIKE '%alice%') AND age >= 25
     auto authors = QuerySet<Author>(conn)    
-        .where((field(&Author::name).like("%Brown") or field(&Author::email).like("%alice%")) and field(&Author::age) >= 25) // NOSONAR
+        .where((Field<&Author::name>().like("%Brown") or Field<&Author::email>().like("%alice%")) and Field<&Author::age>() >= 25) // NOSONAR
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1828,7 +1881,7 @@ TEST_F(ORMTest, WhereClauseFloatComparisons) {
     // Test: (score >= 85.0 AND score <= 90.0) OR rating > 5.0
     // Should match: Alice (85.5), Bob (90.0), Diana (95.0, 5.5)
     auto authors = QuerySet<Author>(conn)
-        .where((field(&Author::score) >= 85.0 and field(&Author::score) <= 90.0) or field(&Author::rating) > 5.0) // NOSONAR
+        .where((Field<&Author::score>() >= 85.0 and Field<&Author::score>() <= 90.0) or Field<&Author::rating>() > 5.0) // NOSONAR
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1848,7 +1901,7 @@ TEST_F(ORMTest, WhereClauseNotEqualsOperator) {
     // Test: age != 30 AND (rating >= 4.5 OR score >= 90.0)
     // Should match: Alice (25, 4.5), Bob (35, 5.0, 90.0), Diana (28, 5.5, 95.0)
     auto authors = QuerySet<Author>(conn)
-        .where(field(&Author::age) != 30 and (field(&Author::rating) >= 4.5 or field(&Author::score) >= 90.0)) // NOSONAR
+        .where((Field<&Author::age>() != 30 and (Field<&Author::rating>() >= 4.5 or Field<&Author::score>() >= 90.0))) // NOSONAR
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1869,9 +1922,9 @@ TEST_F(ORMTest, WhereClauseComplexChaining) {
     // Should match: Alice (25), Charlie (30), Diana (28), Bob (5.0, 90.0), Diana (name ends with Prince)
     // Note: Diana matches multiple conditions
     auto authors = QuerySet<Author>(conn)
-        .where((field(&Author::age) >= 25 and field(&Author::age) <= 30) or // NOSONAR
-               (field(&Author::rating) >= 5.0 and field(&Author::score) >= 90.0) or // NOSONAR
-               field(&Author::name).like("%Prince"))
+        .where(((Field<&Author::age>() >= 25 and Field<&Author::age>() <= 30) or // NOSONAR
+               (Field<&Author::rating>() >= 5.0 and Field<&Author::score>() >= 90.0) or // NOSONAR
+               Field<&Author::name>().like("%Prince")))
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1892,9 +1945,9 @@ TEST_F(ORMTest, WhereClauseBooleanLogic) {
     // Test: is_active = true AND ((age < 30 AND rating > 4.0) OR score >= 95.0)
     // Should match: Alice (active, 25, 4.5), Diana (active, 28, 5.5, 95.0)
     auto authors = QuerySet<Author>(conn)
-        .where(field(&Author::is_active) == true and // NOSONAR
-               ((field(&Author::age) < 30 and field(&Author::rating) > 4.0) or // NOSONAR
-                field(&Author::score) >= 95.0))
+        .where((Field<&Author::is_active>() == true and // NOSONAR
+               ((Field<&Author::age>() < 30 and Field<&Author::rating>() > 4.0) or // NOSONAR
+                Field<&Author::score>() >= 95.0)))
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -1912,8 +1965,8 @@ TEST_F(ORMTest, WhereClauseEmptyResult) {
     // Test condition that should return no results
     // Test: age > 100 OR (rating < 0 AND is_active = false)
     auto authors = QuerySet<Author>(conn)
-        .where(field(&Author::age) > 100 or // NOSONAR
-               (field(&Author::rating) < 0 and field(&Author::is_active) == false)) // NOSONAR
+        .where(Field<&Author::age>() > 100 or // NOSONAR
+               (Field<&Author::rating>() < 0 and Field<&Author::is_active>() == false)) // NOSONAR
         .select_all();
     
     ASSERT_TRUE(authors.has_value()) << "Select should return a value" << authors.error();
@@ -2177,7 +2230,7 @@ TEST_F(ORMTest, DistinctWithWhere) {
     
     // Test distinct with where clause
     auto authorResults = QuerySet<Author>(conn)
-        .where(storm::field(&Author::age) >= 35)
+        .where(Field<&Author::age>() >= 35)
         .distinct<&Author::age>()
         .select_values();
     
@@ -2412,7 +2465,7 @@ TEST_F(ORMTest, GroupByWithJoinAndWhere) {
     // Group posts by author_id where the author's age is greater than 25
     auto results = QuerySet<Post>(conn)
         .join<Author>()
-        .where(&Author::age, 25, Op::GT)
+        .where<&Author::age>(25, Op::GT)
         .template group_by<&Author::age>()
         .select_all();
     
@@ -2676,7 +2729,7 @@ TEST_F(ORMTest, MultipleOperationsInTransaction) {
     ASSERT_TRUE(charlie_id.has_value()) << "query failed with error: " << charlie_id.error();
     
     // Update an author - first retrieve the current object with the correct ID
-    auto result = QuerySet<Author>(conn).where(&Author::id, alice_id.value()).select_one();
+    auto result = QuerySet<Author>(conn).where<&Author::id>(alice_id.value()).select_one();
     ASSERT_TRUE(result.has_value()) << "query failed with error: " << result.error();
     auto alice_from_db = result.value();
     alice_from_db.age = 26;
@@ -2684,7 +2737,7 @@ TEST_F(ORMTest, MultipleOperationsInTransaction) {
     ASSERT_TRUE(update_result.has_value()) << "query failed with error: " << update_result.error();
     
     // Delete an author
-    QuerySet<Author>(conn).where(&Author::name, "Charlie Brown").remove();
+    QuerySet<Author>(conn).where<&Author::name>("Charlie Brown").remove();
     
     conn->commit();
     
@@ -2714,15 +2767,15 @@ TEST_F(ORMTest, TransferBetweenAuthorsTransaction) {
         
         try {
             // 1. Update the post to belong to Bob
-            auto post = QuerySet<Post>(conn).where(&Post::id, postId).select_one();
+            auto post = QuerySet<Post>(conn).where<&Post::id>(postId).select_one();
             ASSERT_TRUE(post.has_value()) << "query failed with error: " << post.error();
             auto postValue = post.value();
             postValue.author_id = bob_id;
-            QuerySet<Post>(conn).where(&Post::id, postId).update(postValue);
+            QuerySet<Post>(conn).where<&Post::id>(postId).update(postValue);
             
             // 2. Update some metadata about the post (title to reflect new ownership)
             postValue.title = "Post Transferred to Bob";
-            QuerySet<Post>(conn).where(&Post::id, postId).update(postValue);
+            QuerySet<Post>(conn).where<&Post::id>(postId).update(postValue);
             
             // Commit the transaction - both operations succeed atomically
             tx.commit();
@@ -2734,7 +2787,7 @@ TEST_F(ORMTest, TransferBetweenAuthorsTransaction) {
     }
     
     // Verify the post now belongs to Bob
-    auto updatedPost = QuerySet<Post>(conn).where(&Post::id, postId).select_one();
+    auto updatedPost = QuerySet<Post>(conn).where<&Post::id>(postId).select_one();
     ASSERT_TRUE(updatedPost.has_value()) << "query failed with error: " << updatedPost.error();
     ASSERT_EQ(updatedPost.value().author_id, bob_id);
     ASSERT_EQ(updatedPost.value().title, "Post Transferred to Bob");
@@ -2744,11 +2797,11 @@ TEST_F(ORMTest, TransferBetweenAuthorsTransaction) {
         Transaction tx(conn);
         
         // 1. Update the post to belong to Charlie
-        auto post = QuerySet<Post>(conn).where(&Post::id, postId).select_one();
+        auto post = QuerySet<Post>(conn).where<&Post::id>(postId).select_one();
         ASSERT_TRUE(post.has_value()) << "query failed with error: " << post.error();
         auto postValue = post.value();
         postValue.author_id = charlie_id;
-        QuerySet<Post>(conn).where(&Post::id, postId).update(postValue);
+        QuerySet<Post>(conn).where<&Post::id>(postId).update(postValue);
         
         // 2. This update will fail because we're using a non-existent author ID
         // (deliberately causing an error to demonstrate rollback)
@@ -2759,7 +2812,7 @@ TEST_F(ORMTest, TransferBetweenAuthorsTransaction) {
     }
     
     // Verify the post still belongs to Bob (rollback worked)
-    updatedPost = QuerySet<Post>(conn).where(&Post::id, postId).select_one();
+    updatedPost = QuerySet<Post>(conn).where<&Post::id>(postId).select_one();
     ASSERT_TRUE(updatedPost.has_value()) << "query failed with error: " << updatedPost.error();
     ASSERT_EQ(updatedPost.value().author_id, bob_id); // Still Bob's post
 }
@@ -3547,7 +3600,7 @@ TEST_F(ORMTest, WhereClauseCollateNocase) {
     
     // Use COLLATE NOCASE to find "bob" regardless of case
     auto result = QuerySet<Author>(conn)
-        .where(Field(&Author::name).collate_nocase() == "bob")
+        .where(Field<&Author::name>().collate_nocase() == "bob")
         .select_all();
     
     ASSERT_TRUE(result.has_value()) << "where clause collate nocase failed with error: " << result.error();
@@ -3557,7 +3610,7 @@ TEST_F(ORMTest, WhereClauseCollateNocase) {
     
     // Without COLLATE, the case-sensitive search would find nothing
     auto result_case_sensitive = QuerySet<Author>(conn)
-        .where(&Author::name, "bob")
+        .where<&Author::name>("bob")
         .select_all();
     
     ASSERT_TRUE(result_case_sensitive.has_value()) << "where clause collate nocase failed with error: " << result_case_sensitive.error();
@@ -3576,7 +3629,7 @@ TEST_F(ORMTest, WhereClauseCollateRtrim) {
     
     // Use COLLATE RTRIM to find "Alice" ignoring trailing spaces
     auto result = QuerySet<Author>(conn)
-        .where(Field(&Author::name).collate_rtrim() == "Alice")
+        .where(Field<&Author::name>().collate_rtrim() == "Alice")
         .select_all();
     
     ASSERT_TRUE(result.has_value()) << "where clause collate rtrim failed with error: " << result.error();
@@ -3586,7 +3639,7 @@ TEST_F(ORMTest, WhereClauseCollateRtrim) {
     
     // Without COLLATE RTRIM, the search would find nothing
     auto result_without_rtrim = QuerySet<Author>(conn)
-        .where(&Author::name, "Alice")
+        .where<&Author::name>("Alice")
         .select_all();
     
     ASSERT_TRUE(result_without_rtrim.has_value()) << "where clause collate rtrim failed with error: " << result_without_rtrim.error();
@@ -3605,7 +3658,7 @@ TEST_F(ORMTest, WhereClauseCollateBinary) {
     
     // Use COLLATE BINARY to ensure case-sensitive comparison
     auto result = QuerySet<Author>(conn)
-        .where(Field(&Author::name).collate_binary() == "Alice")
+        .where(Field<&Author::name>().collate_binary() == "Alice")
         .select_all();
     
     ASSERT_TRUE(result.has_value()) << "where clause collate binary failed with error: " << result.error();
@@ -3766,7 +3819,7 @@ TEST_F(ORMTest, CollateInWhereAndOrderBy) {
     
     // Find all authors with name "alice" (case-insensitive) and sort by age
     auto result = QuerySet<Author>(conn)
-        .where(Field(&Author::name).collate_nocase() == "alice")
+        .where(Field<&Author::name>().collate_nocase() == "alice")
         .order_by<&Author::age>()
         .select_all();
     
@@ -3798,7 +3851,7 @@ TEST_F(ORMTest, WhereClauseMultipleCollateOperations)
     
     // Test 1: NOCASE collation - find "alice" regardless of case
     const auto &result1 = QuerySet<Author>(conn)
-        .where(Field(&Author::name).collate_nocase() == "alice")
+        .where(Field<&Author::name>().collate_nocase() == "alice")
         .select_all(); 
    
     ASSERT_TRUE(result1.has_value()) << "NOCASE collation failed: " << result1.error();
@@ -3808,7 +3861,7 @@ TEST_F(ORMTest, WhereClauseMultipleCollateOperations)
     
     // Test 2: RTRIM collation - find "charlie" ignoring trailing spaces
     const auto &result2 = QuerySet<Author>(conn)
-        .where(Field(&Author::name).collate_rtrim() == "charlie")
+        .where(Field<&Author::name>().collate_rtrim() == "charlie")
         .select_all();
     
     ASSERT_TRUE(result2.has_value()) << "RTRIM collation failed: " << result2.error();
@@ -3818,8 +3871,8 @@ TEST_F(ORMTest, WhereClauseMultipleCollateOperations)
     
     // Test 3: Multiple collate operations with OR condition
     const auto &result3 = QuerySet<Author>(conn)
-        .where(Field(&Author::name).collate_nocase() == "bob" || 
-               Field(&Author::name).collate_rtrim() == "charlie")
+        .where(Field<&Author::name>().collate_nocase() == "bob" || 
+               Field<&Author::name>().collate_rtrim() == "charlie")
         .select_all();
     
     ASSERT_TRUE(result3.has_value()) << "Multiple collate OR condition failed: " << result3.error();
@@ -3828,8 +3881,8 @@ TEST_F(ORMTest, WhereClauseMultipleCollateOperations)
     
     // Test 4: Complex condition with different collate types and AND/OR logic
     const auto &result4 = QuerySet<Author>(conn)
-        .where((Field(&Author::name).collate_nocase() == "alice" && Field(&Author::age) == 25) ||
-               (Field(&Author::name).collate_binary() == "DIANA" && Field(&Author::age) > 30))
+        .where((Field<&Author::name>().collate_nocase() == "alice" && Field<&Author::age>() == 25) ||
+               (Field<&Author::name>().collate_binary() == "DIANA" && Field<&Author::age>() > 30))
         .select_all();
     
     ASSERT_TRUE(result4.has_value()) << "Complex collate condition failed: " << result4.error();
@@ -3838,8 +3891,8 @@ TEST_F(ORMTest, WhereClauseMultipleCollateOperations)
     
     // Test 5: Multiple collate operations with LIKE patterns
     const auto &result5 = QuerySet<Author>(conn)
-        .where(Field(&Author::name).collate_nocase().like("%a%") &&
-               Field(&Author::age) >= 25)
+        .where(Field<&Author::name>().collate_nocase().like("%a%") &&
+               Field<&Author::age>() >= 25)
         .select_all();
     
     ASSERT_TRUE(result5.has_value()) << "Collate with LIKE pattern failed: " << result5.error();
@@ -3848,9 +3901,9 @@ TEST_F(ORMTest, WhereClauseMultipleCollateOperations)
     
     // Test 6: Chained collate operations with boolean conditions
     const auto &result6 = QuerySet<Author>(conn)
-        .where((Field(&Author::name).collate_nocase() == "bob" || 
-                Field(&Author::name).collate_nocase() == "diana") &&
-               Field(&Author::is_active) == true)
+        .where((Field<&Author::name>().collate_nocase() == "bob" || 
+                Field<&Author::name>().collate_nocase() == "diana") &&
+               Field<&Author::is_active>() == true)
         .select_all();
     
     ASSERT_TRUE(result6.has_value()) << "Chained collate with boolean failed: " << result6.error();
@@ -3859,8 +3912,8 @@ TEST_F(ORMTest, WhereClauseMultipleCollateOperations)
 
     // Test 7: Nested conditions with multiple collate operations
     const auto &result7 = QuerySet<Author>(conn)
-    .where(Field(&Author::name).collate_nocase().in({"alice", "bob", "charlie"}) &&
-            (Field(&Author::name).collate_rtrim().like("%e%") || Field(&Author::age) < 30))
+    .where(Field<&Author::name>().collate_nocase().in({"alice", "bob", "charlie"}) &&
+            (Field<&Author::name>().collate_rtrim().like("%e%") || Field<&Author::age>() < 30))
     .select_all();
     
     ASSERT_TRUE(result7.has_value()) << "Nested collate conditions failed: " << result7.error();
@@ -3871,9 +3924,9 @@ TEST_F(ORMTest, WhereClauseMultipleCollateOperations)
     
     // Test 8: Mixed collate operations with different field types
     const auto &result8 = QuerySet<Author>(conn)
-        .where(Field(&Author::name).collate_nocase().startswith("a") &&
-               Field(&Author::email).collate_nocase().endswith("@EXAMPLE.COM") &&
-               Field(&Author::age) >= 25)
+        .where(Field<&Author::name>().collate_nocase().startswith("a") &&
+               Field<&Author::email>().collate_nocase().endswith("@EXAMPLE.COM") &&
+               Field<&Author::age>() >= 25)
         .select_all();
     
     ASSERT_TRUE(result8.has_value()) << "Mixed collate operations failed: " << result8.error();
@@ -3967,8 +4020,8 @@ TEST_F(ORMTest, GroupConcatDistinct) {
     EXPECT_EQ(count, 1) << "DISTINCT failed to remove duplicate title";
     
     // Clean up the duplicate post
-    QuerySet<Post>(conn).where(Field(&Post::title) == "Alice's First Post" && 
-                              Field(&Post::content) == "Duplicate content").remove();
+    QuerySet<Post>(conn).where(Field<&Post::title>() == "Alice's First Post" && 
+                              Field<&Post::content>() == "Duplicate content").remove();
 }
 
 TEST_F(ORMTest, GroupConcatOrderByAscending) {
