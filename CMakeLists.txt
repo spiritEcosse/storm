@@ -72,12 +72,6 @@ endif()
 include(${CPM_DOWNLOAD_LOCATION})
 
 CPMAddPackage(
-    NAME refl-cpp
-    GITHUB_REPOSITORY veselink1/refl-cpp
-    VERSION 0.12.4
-)
-
-CPMAddPackage(
     NAME fmt
     GITHUB_REPOSITORY fmtlib/fmt
     GIT_TAG 11.2.0
@@ -87,7 +81,6 @@ target_link_libraries(${PROJECT_NAME}
     PRIVATE
     PostgreSQL::PostgreSQL
     fmt
-    refl-cpp
 )
 
 option(ENABLE_TESTS "Enable testing support" OFF)

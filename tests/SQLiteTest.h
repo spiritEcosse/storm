@@ -54,27 +54,27 @@ struct Post {
         : id(id), title(t), content(c), author_id(author_id), views(views) {}
 };
 
-REFL_AUTO(
-    type(Author),
-    field(id),
-    field(name),
-    field(age),
-    field(email),
-    field(is_active),
-    field(rating),
-    field(score),
-    field(middleName),
-    field(biography)
-)
+SIMPLE_REFLECT(
+    Author,
+    F(id, int),
+    F(name, std::string),
+    F(email, std::string),
+    F(age, int),
+    F(is_active, bool),
+    F(rating, double),
+    F(score, float),
+    F(middleName, std::string),
+    F(biography, std::string)
+);
 
-REFL_AUTO(
-    type(Post),
-    field(id),
-    field(title),
-    field(content),
-    field(author_id),
-    field(views)
-)
+SIMPLE_REFLECT(
+    Post,
+    F(id, int),
+    F(title, std::string),
+    F(content, std::string),
+    F(author_id, int),
+    F(views, int)
+);
 
 class ORMTest : public ::testing::Test {
 protected:

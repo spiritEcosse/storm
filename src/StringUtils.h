@@ -8,10 +8,9 @@
 
 namespace storm::utils {
 
-// Helper to convert a string to lowercase
-inline std::string to_lower(std::string str) {
-    std::transform(str.begin(), str.end(), str.begin(),
-                  [](unsigned char c) { return std::tolower(c); });
+inline auto to_lower(std::string str) -> std::string {
+    std::ranges::transform(str, str.begin(),
+                          [](unsigned char c) { return std::tolower(c); });
     return str;
 }
 

@@ -299,22 +299,6 @@ namespace storm {
         bool _doAndCheck{};
         bool _returnInMain{};
 
-        template<class U>
-        static constexpr auto get_reflected_type() {
-            return Reflect<U>::get_reflected_type();
-        }
-
-        // Function to get the reflected members of the type
-        template<class U>
-        static constexpr auto get_reflected_members() {
-            return Reflect<U>::get_reflected_type().members;
-        }
-
-        template<class U>
-        static constexpr std::string get_table_name() {
-            return Reflect<U>::get_struct_name();
-        }
-    
         [[nodiscard]] std::string getAlias() const {
             return _alias;
         }
@@ -370,36 +354,14 @@ namespace storm {
             }
         }
         
-        void bind_object_values(Statement& stmt, const T& obj, int& param_index) const {
-            Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
-                if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
-                    std::string field_name = Reflect<T>::get_member_name(member);
-                    if (field_name == "id") return; // Skip auto-generated id
-                    
-                    auto value = member(obj);
-                    bind_sql_value(stmt, param_index, value);
-                    param_index++;
-                }
-            });
-        }
-
         // Helper function to bind a specific field value by name
         void bind_field_value(Statement& stmt, const T& obj, const std::string& field_name, int& param_index) const {
-            bool found = false;
-            Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
-                if (found) return; // Skip if we already found the field
-                
-                if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
-                    std::string member_name = Reflect<T>::get_member_name(member);
-                    if (member_name == field_name) {
-                        found = true;
-                        
-                        auto value = member(obj);
-                        bind_sql_value(stmt, param_index, value);
-                        param_index++;
-                    }
-                }
-            });
+            refl::reflect<T>::bind_field_value(stmt, obj, field_name, param_index);
+        }
+
+        // Bind all object values
+        void bind_object_values(Statement& stmt, const T& obj, int& param_index) const {
+            refl::reflect<T>::bind_object_values(stmt, obj, param_index);
         }
 
         // Field name mapping using your reflection system
@@ -407,8 +369,11 @@ namespace storm {
         requires std::is_member_object_pointer_v<decltype(MemberPtr)>
         std::string get_field_name() const {
             using ClassType = typename member_pointer_class<decltype(MemberPtr)>::type;
-            std::string tableName = Reflect<ClassType>::get_struct_name();
-            std::string fieldName = getFieldNameFromMemberPtr<MemberPtr>();
+            
+            // Using new reflection API
+            std::string tableName = refl::reflect<ClassType>::get_struct_name();
+            std::string fieldName = refl::reflect<ClassType>::get_field_name_from_member_ptr<MemberPtr>();
+            
             return storm::utils::formatFieldName(tableName, fieldName);
         }
 
@@ -705,16 +670,10 @@ namespace storm {
 
         // Helper function to get field names (excluding 'id')
         std::vector<std::string> get_insert_field_names() const {
-            std::vector<std::string> field_names;
+            auto field_names = refl::reflect<T>::field_names();
             
-            Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
-                if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
-                    std::string field_name = Reflect<T>::get_member_name(member);
-                    if (field_name != "id") { // Skip auto-generated id
-                        field_names.emplace_back(field_name);
-                    }
-                }
-            });
+            // Remove "id" field if it exists
+            std::erase(field_names, "id");
             
             return field_names;
         }
@@ -1312,30 +1271,25 @@ namespace storm {
 
         template<typename SourceType, typename TargetType>
         std::string determine_join_condition() {
-            std::string condition;
+            auto sourceName = refl::reflect<SourceType>::get_struct_name();
+            auto targetName = refl::reflect<TargetType>::get_struct_name();
+            auto foreignKeyName = targetName + "_id";
             
-            // Get lowercase table names for foreign key naming convention
-            std::string sourceName = utils::to_lower(get_table_name<SourceType>());
-            std::string targetName = utils::to_lower(get_table_name<TargetType>());
+            auto field_names = refl::reflect<SourceType>::field_names();
             
-            // Strategy 1: Look for foreign key in source pointing to target
-            // e.g., author_id in Post pointing to Author.id
-            std::string foreignKeyName = targetName + "_id";
-            bool foundForeignKeyInSource = false;
-            
-            // Check each field in the source type
-            Reflect<SourceType>::for_each_member(get_reflected_members<SourceType>(), [&](auto member) {
-                if constexpr (refl::trait::is_field_v<decltype(member)>) {
-                    std::string fieldName = std::string(member.name.str());
-                    if (utils::to_lower(fieldName) == foreignKeyName) {
-                        condition = fmt::format(R"("{}"."id" = "{}"."{}")",
-                                              get_table_name<TargetType>(), get_table_name<SourceType>(), fieldName);
-                        foundForeignKeyInSource = true;
-                    }
-                }
+            // Find foreign key field
+            auto it = std::ranges::find_if(field_names, [&](const auto& name) {
+                return utils::to_lower(name) == foreignKeyName;
             });
             
-            return foundForeignKeyInSource ? condition : "";
+            if (it != field_names.end()) {
+                return fmt::format(R"("{}"."id" = "{}"."{}")",
+                                  get_table_name<TargetType>(), 
+                                  get_table_name<SourceType>(), 
+                                  *it);
+            }
+            
+            return "";
         }
 
     public:
