@@ -1411,56 +1411,47 @@ namespace storm {
     private:
         // Common SQL execution method
         auto execute_sql_query() const -> ExpectedVectorT {
-            try {
-                auto where_query_result = this->get_where_query();
-                auto fieldsClause = this->buildFieldsClause();
-                
-                auto sql = std::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
-                    this->createDistinctClause(),
-                    fieldsClause,
-                    this->template get_table_name<T>(),
-                    this->generateJoinSQL(),
-                    where_query_result.sql,
-                    this->generateGroupBySQL(),
-                    this->buildOrderFields(),
-                    this->limit_impl());
-                
-                std::print("SQL: {}\n", sql);
-                
-                Statement stmt(conn, sql);
-                bind_query_parameters(stmt, where_query_result);
-                return stmt.execute_all();
-                
-            } catch (const std::exception& e) {
-                return std::unexpected(std::format("Query execution failed: {}", e.what()));
-            }
+            auto where_query_result = this->get_where_query();
+            auto fieldsClause = this->buildFieldsClause();
+            
+            auto sql = std::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
+                this->createDistinctClause(),
+                fieldsClause,
+                this->template get_table_name<T>(),
+                this->generateJoinSQL(),
+                where_query_result.sql,
+                this->generateGroupBySQL(),
+                this->buildOrderFields(),
+                this->limit_impl());
+            
+            std::print("SQL: {}\n", sql);
+            
+            Statement stmt(conn, sql);
+            bind_query_parameters(stmt, where_query_result);
+            return stmt.execute_all();
         }
         
         // Execute SQL for single row queries
         auto execute_sql_query_single() const -> ExpectedVectorT {
-            try {
-                auto where_query_result = this->get_where_query();
-                auto fieldsClause = this->buildFieldsClause();
-                
-                auto sql = std::format("SELECT {} {} FROM \"{}\" {} {} {} {} LIMIT 1", 
-                    this->createDistinctClause(),
-                    fieldsClause,
-                    this->template get_table_name<T>(),
-                    this->generateJoinSQL(),
-                    where_query_result.sql,
-                    this->generateGroupBySQL(),
-                    this->buildOrderFields());
-                
-                std::print("SQL: {}\n", sql);
-                
-                Statement stmt(conn, sql);
-                bind_query_parameters(stmt, where_query_result);
-                return stmt.execute_all();
-                
-            } catch (const std::exception& e) {
-                return std::unexpected(std::format("Query execution failed: {}", e.what()));
-            }
+            auto where_query_result = this->get_where_query();
+            auto fieldsClause = this->buildFieldsClause();
+            
+            auto sql = std::format("SELECT {} {} FROM \"{}\" {} {} {} {} LIMIT 1", 
+                this->createDistinctClause(),
+                fieldsClause,
+                this->template get_table_name<T>(),
+                this->generateJoinSQL(),
+                where_query_result.sql,
+                this->generateGroupBySQL(),
+                this->buildOrderFields());
+            
+            std::print("SQL: {}\n", sql);
+            
+            Statement stmt(conn, sql);
+            bind_query_parameters(stmt, where_query_result);
+            return stmt.execute_all();
         }
+        
     public:
         // =============================
         // =============================

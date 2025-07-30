@@ -90,8 +90,13 @@ struct member_descriptor {
     }
     
     template<typename U>
-    static constexpr void set(class_type& obj, U&& value) {
-        obj.*member_ptr = std::forward<U>(value);
+    static constexpr auto set(class_type& obj, U&& value) -> std::expected<void, std::string> {
+        if constexpr (std::is_assignable_v<member_type&, U>) {
+            obj.*member_ptr = std::forward<U>(value);
+            return {};
+        } else {
+            return std::unexpected{std::format("Cannot assign value to member '{}'", get_name())};
+        }
     }
     
     static constexpr const char* type_name() {
@@ -230,359 +235,21 @@ struct reflect {
         return result;
     }
     
-    template<typename U>
-    static auto set_member_value(T& obj, std::string_view name, U&& value) -> std::expected<void, std::string> {
-        std::expected<void, std::string> result = std::unexpected{"Member not found"};
-        
-        descriptor::for_each_member([&]<size_t I>(auto member) {
-            if (member.get_name() == name) {
-                try {
-                    if constexpr (std::is_same_v<std::decay_t<U>, std::any>) {
-                        using MemberType = typename decltype(member)::member_type;
-                        member.set(obj, std::any_cast<MemberType>(value));
-                    } else {
-                        member.set(obj, std::forward<U>(value));
-                    }
-                    result = {};
-                } catch (const std::exception& e) {
-                    result = std::unexpected{std::format("Failed to set member '{}': {}", name, e.what())};
-                }
-            }
-        });
-        
-        return result;
-    }
-    
-    static auto to_string(const T& obj) -> std::string {
-        std::string result = std::format("{}{{", name());
-        bool first = true;
-        
-        visit_members(obj, [&](std::string_view member_name, const auto& value) {
-            if (!first) result += ", ";
-            result += std::format("{}: ", member_name);
-            
-            using ValueType = std::decay_t<decltype(value)>;
-            if constexpr (std::is_same_v<ValueType, std::string>) {
-                result += std::format("\"{}\"", value);
-            } else if constexpr (std::is_arithmetic_v<ValueType>) {
-                if constexpr (std::is_same_v<ValueType, bool>) {
-                    result += value ? "true" : "false";
-                } else {
-                    result += std::format("{}", value);
-                }
-            } else {
-                result += "[complex type]";
-            }
-            first = false;
-        });
-        
-        result += "}";
-        return result;
-    }
-    
-    template<typename... Args>
-    static constexpr auto make(Args&&... args) -> T {
-        static_assert(sizeof...(Args) == member_count(), "Argument count must match member count");
-        return T{std::forward<Args>(args)...};
-    }
-    
-    static constexpr auto equals(const T& lhs, const T& rhs) -> bool {
-        bool result = true;
-        
-        descriptor::visit_members(lhs, [&](std::string_view name, const auto& lhs_value) {
-            descriptor::visit_members(rhs, [&](std::string_view rhs_name, const auto& rhs_value) {
-                if (name == rhs_name) {
-                    using ValueType = std::decay_t<decltype(lhs_value)>;
-                    if constexpr (std::is_same_v<ValueType, std::decay_t<decltype(rhs_value)>>) {
-                        result = result && (lhs_value == rhs_value);
-                    } else {
-                        result = false;
-                    }
-                }
-            });
-        });
-        
-        return result;
-    }
-    
-    // ============================================================================
-    // DATABASE INTEGRATION METHODS
-    // ============================================================================
-    
-    // Create value map from database row - compile-time version
+    // Bulk optimized creation (when all fields are selected)
     template<typename Row>
-    static auto create_value_map_from_row(const Row& row) -> std::unordered_map<std::string, std::any> {
-        std::unordered_map<std::string, std::any> value_map;
-        
-        descriptor::for_each_member([&]<size_t I>(auto member) {
-            if (I < static_cast<size_t>(row.get_column_count())) {
-                auto name = std::string{member.get_name()};
-                try {
-                    // Try different types in order of preference
-                    try {
-                        value_map[name] = std::make_any<std::string>(row.get_text(static_cast<int>(I)));
-                    } catch (...) {
-                        try {
-                            value_map[name] = std::make_any<int>(row.get_int(static_cast<int>(I)));
-                        } catch (...) {
-                            try {
-                                value_map[name] = std::make_any<double>(row.get_double(static_cast<int>(I)));
-                            } catch (...) {
-                                value_map[name] = std::any{};
-                            }
-                        }
-                    }
-                } catch (...) {
-                    value_map[name] = std::any{};
-                }
-            }
-        });
-        
-        return value_map;
-    }
-    
-    // Create multiple value maps from multiple rows
-    template<typename Row>
-    static auto create_value_maps_from_rows(std::span<const Row> rows) 
-        -> std::vector<std::unordered_map<std::string, std::any>> {
-        
-        return rows 
-            | std::views::transform([](const Row& row) {
-                return create_value_map_from_row(row);
-            })
-            | std::ranges::to<std::vector>();
-    }
-    
-    template<typename Member, typename Row>
-    static void populate_member_from_column(T& obj, Member member, const Row& row, int column_idx) {
-        using MemberType = typename Member::member_type;
-        
-        if constexpr (std::is_same_v<MemberType, std::string>) {
-            member.set(obj, row.get_text(column_idx));
-        } else if constexpr (std::is_integral_v<MemberType>) {
-            if constexpr (std::is_same_v<MemberType, bool>) {
-                // Smart boolean conversion
-                try {
-                    int int_val = row.get_int(column_idx);
-                    member.set(obj, int_val != 0);
-                } catch (...) {
-                    std::string str_val = row.get_text(column_idx);
-                    std::transform(str_val.begin(), str_val.end(), str_val.begin(), ::tolower);
-                    member.set(obj, str_val == "true" || str_val == "1" || str_val == "yes" || str_val == "on");
-                }
-            } else {
-                member.set(obj, static_cast<MemberType>(row.get_int(column_idx)));
-            }
-        } else if constexpr (std::is_floating_point_v<MemberType>) {
-            member.set(obj, static_cast<MemberType>(row.get_double(column_idx)));
-        } else if constexpr (std::is_enum_v<MemberType>) {
-            // Handle enums
-            try {
-                member.set(obj, static_cast<MemberType>(row.get_int(column_idx)));
-            } catch (...) {
-                // Fallback to string-based enum parsing if needed
-                throw std::runtime_error("Enum parsing from string not implemented");
-            }
-        } else {
-            // For custom types, try string conversion or require specialization
-            static_assert(std::is_constructible_v<MemberType, std::string>, 
-                        "Type must be constructible from string or have specialized population");
-            member.set(obj, MemberType{row.get_text(column_idx)});
-        }
-    }
-
-    // Populate object from database row - compile-time version
-    template<typename Row>
-    static auto populate_from_row(T& obj, const Row& row, int start_column = 0) 
-        -> std::expected<void, std::string> {
-        
-        std::string accumulated_errors;
-        int successful_fields = 0;
-        
-        descriptor::for_each_member([&]<size_t I>(auto member) {
-            int column_idx = start_column + static_cast<int>(I);
-            
-            if (column_idx >= row.get_column_count()) {
-                return; // Stop if we run out of columns
-            }
-            
-            try {
-                populate_member_from_column(obj, member, row, column_idx);
-                successful_fields++;
-            } catch (const std::exception& e) {
-                if (!accumulated_errors.empty()) accumulated_errors += "; ";
-                accumulated_errors += std::format("Field '{}' at column {}: {}", 
-                                                 member.get_name(), column_idx, e.what());
-            }
-        });
-        
-        // Return error only if ALL fields failed
-        if (successful_fields == 0 && !accumulated_errors.empty()) {
-            return std::unexpected(accumulated_errors);
-        }
-        
-        return {};
-    }
-    
-    template<typename QueryBuilder>
-    static auto create_objects_from_query(std::span<const Row> rows, const QueryBuilder& query_builder) 
+    static auto create_objects_bulk_optimized(std::span<const Row> rows) 
         -> std::expected<std::vector<T>, std::string> {
         
-        if (rows.empty()) {
-            return std::vector<T>{};
-        }
-        
-        // Let reflection system intelligently handle the query context
-        if (query_builder.should_use_bulk_population()) {
-            // All fields - use optimized bulk creation
-            return create_objects_bulk_optimized(rows);
-        } else {
-            // Partial fields - use context-aware population
-            return create_objects_with_query_context(rows, query_builder);
-        }
+        return create_objects_from_rows(rows);
+    }
+    
+    // Get field names as vector
+    static auto get_field_names() -> std::vector<std::string_view> {
+        auto names = descriptor::get_member_names();
+        return std::vector<std::string_view>(names.begin(), names.end());
     }
 
-    template<typename QueryBuilder>
-    static auto create_object_from_query(const Row& row, const QueryBuilder& query_builder) 
-        -> std::expected<T, std::string> {
-        
-        T obj{};
-        
-        // Delegate population strategy to reflection system
-        auto populate_result = [&]() -> std::expected<void, std::string> {
-            if (!query_builder.distinctFields.empty()) {
-                auto field_mappings = extract_distinct_mappings(query_builder.distinctFields, row);
-                return populate_distinct_fields(obj, row, field_mappings);
-            } else if (!query_builder.onlyFields.empty()) {
-                auto selected_fields = extract_only_field_names(query_builder.onlyFields);
-                return populate_selected_fields(obj, row, std::span{selected_fields});
-            } else {
-                return populate_from_row(obj, row);
-            }
-        }();
-        
-        if (populate_result) {
-            return obj;
-        } else {
-            return std::unexpected(populate_result.error());
-        }
-    }
-
-    // Helper methods for the reflection system
-    template<typename DistinctFields>
-    static auto extract_distinct_mappings(const DistinctFields& distinct_fields, const auto& row) 
-        -> std::vector<std::pair<size_t, std::string>> {
-        return distinct_fields 
-            | std::views::enumerate
-            | std::views::filter([&row](const auto& indexed_field) { 
-                const auto& [idx, fieldAlias] = indexed_field;
-                return fieldAlias != nullptr && idx < static_cast<size_t>(row.get_column_count()); 
-            })
-            | std::views::transform([](const auto& indexed_field) {
-                const auto& [idx, fieldAlias] = indexed_field;
-                return std::pair{static_cast<size_t>(idx), fieldAlias->getFieldName()};
-            })
-            | std::ranges::to<std::vector>();
-    }
-
-    template<typename OnlyFields>
-    static auto extract_only_field_names(const OnlyFields& only_fields) 
-        -> std::vector<std::string> {
-        return only_fields 
-            | std::views::filter([](const auto& field) { return field != nullptr; })
-            | std::views::transform([](const auto& field) { return field->getFieldName(); })
-            | std::ranges::to<std::vector>();
-    }
-
-    template<typename QueryBuilder>
-    static auto create_objects_with_query_context(std::span<const Row> rows, const QueryBuilder& query_builder) 
-        -> std::expected<std::vector<T>, std::string> {
-        
-        std::vector<T> result;
-        result.reserve(rows.size());
-        
-        for (size_t i = 0; i < rows.size(); ++i) {
-            if (auto obj_result = create_object_from_query(rows[i], query_builder); obj_result) {
-                result.emplace_back(std::move(*obj_result));
-            } else {
-                return std::unexpected(std::format("Failed to create object at row {}: {}", 
-                                                i, obj_result.error()));
-            }
-        }
-        
-        return result;
-    }
-
-    // Populate selected fields only
-    template<typename Row>
-    static auto populate_selected_fields(T& obj, const Row& row, std::span<const std::string> selected_fields) 
-        -> std::expected<void, std::string> {
-        
-        if (selected_fields.size() > static_cast<size_t>(row.get_column_count())) {
-            return std::unexpected(std::format("Selected fields count ({}) exceeds row columns ({})", 
-                                            selected_fields.size(), row.get_column_count()));
-        }
-        
-        std::vector<std::string> missing_fields;
-        
-        for (size_t field_idx = 0; field_idx < selected_fields.size(); ++field_idx) {
-            const auto& field_name = selected_fields[field_idx];
-            
-            bool found = false;
-            descriptor::for_each_member([&]<size_t I>(auto member) {
-                if (!found && member.get_name() == field_name) {
-                    found = true;
-                    try {
-                        populate_member_from_column(obj, member, row, static_cast<int>(field_idx));
-                    } catch (const std::exception& e) {
-                        // Log warning but continue
-                        std::print(stderr, "Warning: Failed to populate field '{}': {}\n", 
-                                field_name, e.what());
-                    }
-                }
-            });
-            
-            if (!found) {
-                missing_fields.push_back(field_name);
-            }
-        }
-        
-        if (!missing_fields.empty()) {
-            return std::unexpected(std::format("Fields not found in type: {}", 
-                                            fmt::join(missing_fields, ", ")));
-        }
-        
-        return {};
-    }
-
-    // Helper methods for query context
-    template<typename FieldAliasList>
-    static auto create_field_mappings_from_distinct(const FieldAliasList& distinct_fields, const auto& row) 
-        -> std::vector<std::pair<size_t, std::string>> {
-        
-        return distinct_fields 
-            | std::views::enumerate
-            | std::views::filter([&row](const auto& indexed_field) { 
-                const auto& [idx, fieldAlias] = indexed_field;
-                return fieldAlias != nullptr && idx < static_cast<size_t>(row.get_column_count()); 
-            })
-            | std::views::transform([](const auto& indexed_field) {
-                const auto& [idx, fieldAlias] = indexed_field;
-                return std::pair{static_cast<size_t>(idx), fieldAlias->getFieldName()};
-            })
-            | std::ranges::to<std::vector>();
-    }
-
-    template<typename OnlyFieldsList>
-    static auto extract_field_names_from_only(const OnlyFieldsList& only_fields) 
-        -> std::vector<std::string> {
-        
-        return only_fields 
-            | std::views::filter([](const auto& field) { return field != nullptr; })
-            | std::views::transform([](const auto& field) { return field->getFieldName(); })
-            | std::ranges::to<std::vector>();
-    }
-
+    // Validate field names against type members
     static auto validate_field_names(std::span<const std::string> field_names) 
         -> std::expected<void, std::string> {
         
@@ -600,93 +267,148 @@ struct reflect {
         }
         
         if (!invalid_fields.empty()) {
-            return std::unexpected(std::format("Invalid field names: {}. Valid fields: {}", 
-                                            fmt::join(invalid_fields, ", "),
-                                            fmt::join(valid_names, ", ")));
+            return std::unexpected{std::format("Invalid field names: {}. Valid fields: {}", 
+                                             fmt::join(invalid_fields, ", "),
+                                             fmt::join(valid_names, ", "))};
         }
         
         return {};
     }
 
-    // Populate distinct fields with column mappings
-    template<typename Row>
-    static auto populate_distinct_fields(T& obj, const Row& row, 
-                                       const std::vector<std::pair<size_t, std::string>>& field_mappings) 
-        -> std::expected<void, std::string> {
+    // Convert object to key-value map
+    static auto to_map(const T& obj) -> std::expected<std::unordered_map<std::string, std::any>, std::string> {
+        std::unordered_map<std::string, std::any> result;
         
-        for (const auto& [column_idx, field_name] : field_mappings) {
-            bool found = false;
-            
-            descriptor::for_each_member([&]<size_t I>(auto member) {
-                if (!found && member.get_name() == field_name) {
-                    found = true;
-                    
-                    if (static_cast<int>(column_idx) >= row.get_column_count()) {
-                        return;
-                    }
-                    
-                    try {
-                        using MemberType = typename decltype(member)::member_type;
-                        
-                        if constexpr (std::is_same_v<MemberType, std::string>) {
-                            member.set(obj, row.get_text(static_cast<int>(column_idx)));
-                        } else if constexpr (std::is_same_v<MemberType, int>) {
-                            member.set(obj, row.get_int(static_cast<int>(column_idx)));
-                        } else if constexpr (std::is_same_v<MemberType, double>) {
-                            member.set(obj, row.get_double(static_cast<int>(column_idx)));
-                        } else if constexpr (std::is_same_v<MemberType, bool>) {
-                            try {
-                                int int_val = row.get_int(static_cast<int>(column_idx));
-                                member.set(obj, int_val != 0);
-                            } catch (...) {
-                                std::string str_val = row.get_text(static_cast<int>(column_idx));
-                                std::transform(str_val.begin(), str_val.end(), str_val.begin(), ::tolower);
-                                member.set(obj, str_val == "true" || str_val == "1" || str_val == "yes");
-                            }
-                        }
-                    } catch (const std::exception& e) {
-                        return;
-                    }
-                }
-            });
-            
-            if (!found) {
-                return std::unexpected{std::format("Field '{}' not found in type", field_name)};
-            }
-        }
+        descriptor::visit_members(obj, [&](std::string_view member_name, const auto& value) {
+            result[std::string{member_name}] = std::make_any<std::decay_t<decltype(value)>>(value);
+        });
         
-        return {};
+        return result;
     }
-    
-    // Bulk object creation from rows (optimized for select_all)
-    template<typename Row>
-    static auto create_objects_from_rows(std::span<const Row> rows) 
-        -> std::expected<std::vector<T>, std::string> {
+
+    // Create object from key-value map
+    static auto from_map(const std::unordered_map<std::string, std::any>& value_map) 
+        -> std::expected<T, std::string> {
         
-        if (rows.empty()) {
-            return std::vector<T>{};
+        T obj{};
+        std::vector<std::string> errors;
+        
+        descriptor::for_each_member([&]<size_t I>(auto member) {
+            auto member_name = std::string{member.get_name()};
+            
+            if (auto it = value_map.find(member_name); it != value_map.end()) {
+                using MemberType = typename decltype(member)::member_type;
+                
+                if (auto ptr = std::any_cast<MemberType>(&it->second); ptr) {
+                    if (auto result = member.set(obj, *ptr); !result) {
+                        errors.push_back(std::format("Failed to set member '{}': {}", 
+                                                   member_name, result.error()));
+                    }
+                } else {
+                    errors.push_back(std::format("Type mismatch for member '{}': cannot cast from any", 
+                                               member_name));
+                }
+            }
+            // Missing members are left as default-initialized
+        });
+        
+        if (!errors.empty()) {
+            return std::unexpected{fmt::join(errors, "; ")};
         }
         
-        std::vector<T> result;
-        result.reserve(rows.size());
+        return obj;
+    }
+
+    // Serialize to JSON-like string (basic implementation)
+    static auto to_json_string(const T& obj) -> std::expected<std::string, std::string> {
+        std::string result = "{";
+        bool first = true;
         
-        for (size_t i = 0; i < rows.size(); ++i) {
-            T obj{};
-            if (auto populate_result = populate_from_row(obj, rows[i], 0); populate_result) {
-                result.emplace_back(std::move(obj));
+        descriptor::visit_members(obj, [&](std::string_view member_name, const auto& value) {
+            if (!first) result += ",";
+            result += std::format("\"{}\":", member_name);
+            
+            using ValueType = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<ValueType, std::string>) {
+                result += std::format("\"{}\"", value);
+            } else if constexpr (std::is_same_v<ValueType, bool>) {
+                result += value ? "true" : "false";
+            } else if constexpr (std::is_arithmetic_v<ValueType>) {
+                result += std::format("{}", value);
             } else {
-                return std::unexpected(std::format("Failed to populate object at row {}: {}", 
-                                                 i, populate_result.error()));
+                result += "null";
             }
+            first = false;
+        });
+        
+        result += "}";
+        return result;
+    }
+
+    // Deep copy an object (member by member)
+    static auto deep_copy(const T& source) -> std::expected<T, std::string> {
+        T result{};
+        std::vector<std::string> errors;
+        
+        descriptor::for_each_member([&]<size_t I>(auto member) {
+            const auto& source_value = member.get(source);
+            
+            if (auto set_result = member.set(result, source_value); !set_result) {
+                errors.push_back(std::format("Failed to copy member '{}': {}", 
+                                           member.get_name(), set_result.error()));
+            }
+        });
+        
+        if (!errors.empty()) {
+            return std::unexpected{fmt::join(errors, "; ")};
         }
         
         return result;
     }
-    
-    // Get field names as vector
-    static auto get_field_names() -> std::vector<std::string_view> {
+
+    // Check if object has default values
+    static auto is_default_initialized(const T& obj) -> std::expected<bool, std::string> {
+        if (auto default_obj = make(); !default_obj) {
+            return std::unexpected{std::format("Cannot create default object: {}", default_obj.error())};
+        } else {
+            return equals(obj, *default_obj);
+        }
+    }
+
+    // Get member count at runtime
+    static constexpr size_t runtime_member_count() {
+        return descriptor::get_member_count();
+    }
+
+    // Check if a member exists by name
+    static auto has_member(std::string_view name) -> bool {
         auto names = descriptor::get_member_names();
-        return std::vector<std::string_view>(names.begin(), names.end());
+        return std::ranges::any_of(names, [name](std::string_view member_name) {
+            return member_name == name;
+        });
+    }
+
+    // Get member type information
+    template<size_t I>
+    static auto get_member_type_info() -> std::string {
+        static_assert(I < member_count(), "Member index out of bounds");
+        auto member = descriptor::template get_member<I>();
+        return std::string{member.type_name()};
+    }
+
+    // Visit members with index
+    template<typename F>
+    static constexpr void visit_members_with_index(const T& obj, F&& func) {
+        descriptor::for_each_member([&]<size_t I>(auto member) {
+            func(I, member.get_name(), member.get(obj));
+        });
+    }
+
+    template<typename F>
+    static constexpr void visit_members_with_index(T& obj, F&& func) {
+        descriptor::for_each_member([&]<size_t I>(auto member) {
+            func(I, member.get_name(), member.get(obj));
+        });
     }
 };
 
@@ -743,9 +465,9 @@ struct reflect {
 //     REFL_MEMBER(Author, verified)
 // );
 
-// // ============================================================================
-// // UTILITY FUNCTIONS
-// // ============================================================================
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
 // template<refl::reflectable T>
 // auto print_type_info() -> void {
 //     std::println("=== Type Information ===");
@@ -765,7 +487,11 @@ struct reflect {
 //     std::println("=== Reflection Demo for {} ===", refl::reflect<T>::name());
     
 //     // Print object state
-//     std::println("Object state: {}", refl::reflect<T>::to_string(obj));
+//     if (auto str_result = refl::reflect<T>::to_string(obj); str_result) {
+//         std::println("Object state: {}", *str_result);
+//     } else {
+//         std::println("Failed to convert to string: {}", str_result.error());
+//     }
     
 //     // Visit all members
 //     std::println("Visiting members:");
@@ -799,23 +525,23 @@ struct reflect {
 //         : text_data(texts), int_data(ints), double_data(doubles) {}
     
 //     int get_column_count() const { 
-//         return std::max({text_data.size(), int_data.size(), double_data.size()}); 
+//         return static_cast<int>(std::max({text_data.size(), int_data.size(), double_data.size()})); 
 //     }
     
 //     std::string get_text(int col) const { 
-//         return col < text_data.size() ? text_data[col] : ""; 
+//         return col < static_cast<int>(text_data.size()) ? text_data[col] : ""; 
 //     }
     
 //     int get_int(int col) const { 
-//         return col < int_data.size() ? int_data[col] : 0; 
+//         return col < static_cast<int>(int_data.size()) ? int_data[col] : 0; 
 //     }
     
 //     double get_double(int col) const { 
-//         return col < double_data.size() ? double_data[col] : 0.0; 
+//         return col < static_cast<int>(double_data.size()) ? double_data[col] : 0.0; 
 //     }
 // };
 
-// void demo_database_integration() {
+// auto demo_database_integration() -> void {
 //     std::println("\n=== Database Integration Demo ===");
     
 //     // Create mock database rows
@@ -827,20 +553,22 @@ struct reflect {
     
 //     // Test create_objects_from_rows (like select_all)
 //     std::println("Creating objects from rows...");
-//     auto persons = refl::reflect<Person>::create_objects_from_rows(std::span{rows});
-    
-//     for (const auto& person : persons) {
-//         std::println("  {}", refl::reflect<Person>::to_string(person));
+//     if (auto persons = refl::reflect<Person>::create_objects_from_rows(std::span{rows}); persons) {
+//         for (const auto& person : *persons) {
+//             if (auto str_result = refl::reflect<Person>::to_string(person); str_result) {
+//                 std::println("  {}", *str_result);
+//             }
+//         }
+//     } else {
+//         std::println("Failed to create objects: {}", persons.error());
 //     }
     
 //     // Test create_value_map_from_row (like select_value)
 //     std::println("\nCreating value map from first row...");
-//     auto value_map = refl::reflect<Person>::create_value_map_from_row(rows[0]);
-    
-//     std::println("Value map contents:");
-//     for (const auto& [key, value] : value_map) {
-//         std::print("  {}: ", key);
-//         try {
+//     if (auto value_map = refl::reflect<Person>::create_value_map_from_row(rows[0]); value_map) {
+//         std::println("Value map contents:");
+//         for (const auto& [key, value] : *value_map) {
+//             std::print("  {}: ", key);
 //             if (auto str_val = std::any_cast<std::string>(&value); str_val) {
 //                 std::println("\"{}\"", *str_val);
 //             } else if (auto int_val = std::any_cast<int>(&value); int_val) {
@@ -850,16 +578,18 @@ struct reflect {
 //             } else {
 //                 std::println("[unknown type]");
 //             }
-//         } catch (...) {
-//             std::println("[any_cast failed]");
 //         }
+//     } else {
+//         std::println("Failed to create value map: {}", value_map.error());
 //     }
     
 //     // Test create_value_maps_from_rows (like select_values)
 //     std::println("\nCreating value maps from all rows...");
-//     auto value_maps = refl::reflect<Person>::create_value_maps_from_rows(std::span{rows});
-    
-//     std::println("Created {} value maps", value_maps.size());
+//     if (auto value_maps = refl::reflect<Person>::create_value_maps_from_rows(std::span{rows}); value_maps) {
+//         std::println("Created {} value maps", value_maps->size());
+//     } else {
+//         std::println("Failed to create value maps: {}", value_maps.error());
+//     }
     
 //     // Test populate_selected_fields
 //     std::println("\nTesting populate_selected_fields...");
@@ -868,7 +598,9 @@ struct reflect {
     
 //     if (auto result = refl::reflect<Person>::populate_selected_fields(
 //         partial_person, rows[0], std::span{selected_fields}); result) {
-//         std::println("Partially populated person: {}", refl::reflect<Person>::to_string(partial_person));
+//         if (auto str_result = refl::reflect<Person>::to_string(partial_person); str_result) {
+//             std::println("Partially populated person: {}", *str_result);
+//         }
 //     } else {
 //         std::println("Failed to populate selected fields: {}", result.error());
 //     }
@@ -883,16 +615,55 @@ struct reflect {
     
 //     if (auto result = refl::reflect<Person>::populate_distinct_fields(
 //         distinct_person, rows[0], field_mappings); result) {
-//         std::println("Distinct populated person: {}", refl::reflect<Person>::to_string(distinct_person));
+//         if (auto str_result = refl::reflect<Person>::to_string(distinct_person); str_result) {
+//             std::println("Distinct populated person: {}", *str_result);
+//         }
 //     } else {
 //         std::println("Failed to populate distinct fields: {}", result.error());
 //     }
+    
+//     // Test advanced features
+//     std::println("\n=== Advanced Features Demo ===");
+    
+//     // Test to_map and from_map
+//     Person test_person{"John Doe", 30, 60000.0, true};
+//     if (auto map_result = refl::reflect<Person>::to_map(test_person); map_result) {
+//         std::println("Converted person to map successfully");
+        
+//         if (auto person_result = refl::reflect<Person>::from_map(*map_result); person_result) {
+//             if (auto str_result = refl::reflect<Person>::to_string(*person_result); str_result) {
+//                 std::println("Recreated person from map: {}", *str_result);
+//             }
+//         }
+//     }
+    
+//     // Test JSON serialization
+//     if (auto json_result = refl::reflect<Person>::to_json_string(test_person); json_result) {
+//         std::println("JSON representation: {}", *json_result);
+//     }
+    
+//     // Test deep copy
+//     if (auto copy_result = refl::reflect<Person>::deep_copy(test_person); copy_result) {
+//         if (auto equals_result = refl::reflect<Person>::equals(test_person, *copy_result); equals_result) {
+//             std::println("Deep copy successful, objects are equal: {}", *equals_result);
+//         }
+//     }
+    
+//     // Test default initialization check
+//     Person default_person{};
+//     if (auto is_default_result = refl::reflect<Person>::is_default_initialized(default_person); is_default_result) {
+//         std::println("Default person is default initialized: {}", *is_default_result);
+//     }
+//     if (auto is_default_result = refl::reflect<Person>::is_default_initialized(test_person); is_default_result) {
+//         std::println("Test person is default initialized: {}", *is_default_result);
+//     }
 // }
+
 // ============================================================================
 // MAIN DEMO
 // ============================================================================
 // int main() {
-//     std::println("=== C++26 Style Compile-Time Reflection Demo ===\n");
+//     std::println("=== C++26 Style Exception-Free Reflection Demo ===\n");
     
 //     // Create test objects
 //     Person person{"Alice Johnson", 28, 75000.0, true};
@@ -910,7 +681,9 @@ struct reflect {
 //     std::println("=== Member Access Test ===");
 //     if (auto result = refl::reflect<Person>::set_member_value(person, "age", 29); result) {
 //         std::println("Successfully updated person's age");
-//         std::println("Updated person: {}", refl::reflect<Person>::to_string(person));
+//         if (auto str_result = refl::reflect<Person>::to_string(person); str_result) {
+//             std::println("Updated person: {}", *str_result);
+//         }
 //     } else {
 //         std::println("Failed to update age: {}", result.error());
 //     }
@@ -924,13 +697,22 @@ struct reflect {
 //     Person person2{"Alice Johnson", 29, 75000.0, true};
 //     Person person3{"Bob Smith", 29, 75000.0, true};
     
-//     std::println("person == person2: {}", refl::reflect<Person>::equals(person, person2));
-//     std::println("person == person3: {}", refl::reflect<Person>::equals(person, person3));
+//     if (auto eq1 = refl::reflect<Person>::equals(person, person2); eq1) {
+//         std::println("person == person2: {}", *eq1);
+//     }
+//     if (auto eq2 = refl::reflect<Person>::equals(person, person3); eq2) {
+//         std::println("person == person3: {}", *eq2);
+//     }
     
 //     // Test object creation
 //     std::println("\n=== Object Creation Test ===");
-//     auto created_person = refl::reflect<Person>::make("Charlie Brown", 35, 85000.0, false);
-//     std::println("Created person: {}", refl::reflect<Person>::to_string(created_person));
+//     if (auto created_person = refl::reflect<Person>::make("Charlie Brown", 35, 85000.0, false); created_person) {
+//         if (auto str_result = refl::reflect<Person>::to_string(*created_person); str_result) {
+//             std::println("Created person: {}", *str_result);
+//         }
+//     } else {
+//         std::println("Failed to create person: {}", created_person.error());
+//     }
     
 //     // Compile-time member iteration
 //     std::println("\n=== Compile-Time Member Info ===");
@@ -946,7 +728,7 @@ struct reflect {
 
 /*
 Expected Output:
-=== C++26 Style Compile-Time Reflection Demo ===
+=== C++26 Style Exception-Free Reflection Demo ===
 
 === Type Information ===
 Type: Person
@@ -1001,4 +783,529 @@ Member 0: name (type: NSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE)
 Member 1: age (type: i)
 Member 2: salary (type: d)  
 Member 3: is_active (type: b)
+
+=== Database Integration Demo ===
+Creating objects from rows...
+  Person{name: "Alice Johnson", age: 28, salary: 75000, is_active: true}
+  Person{name: "Bob Smith", age: 35, salary: 82000, is_active: false}
+  Person{name: "Carol Davis", age: 31, salary: 68000, is_active: true}
+
+Creating value map from first row...
+Value map contents:
+  name: "Alice Johnson"
+  age: 28
+  salary: 75000
+  is_active: 1
+
+Created 3 value maps
+
+Partially populated person: Person{name: "Alice Johnson", age: 28, salary: 0, is_active: false}
+Distinct populated person: Person{name: "Alice Johnson", age: 28, salary: 0, is_active: false}
+
+=== Advanced Features Demo ===
+Converted person to map successfully
+Recreated person from map: Person{name: "John Doe", age: 30, salary: 60000, is_active: true}
+JSON representation: {"name":"John Doe","age":30,"salary":60000,"is_active":true}
+Deep copy successful, objects are equal: true
+Default person is default initialized: true
+Test person is default initialized: false
 */
+    
+    // template<typename U>
+    // static auto set_member_value(T& obj, std::string_view name, U&& value) -> std::expected<void, std::string> {
+    //     std::expected<void, std::string> result = std::unexpected{"Member not found"};
+        
+    //     descriptor::for_each_member([&]<size_t I>(auto member) {
+    //         if (member.get_name() == name) {
+    //             if constexpr (std::is_same_v<std::decay_t<U>, std::any>) {
+    //                 using MemberType = typename decltype(member)::member_type;
+    //                 if (auto ptr = std::any_cast<MemberType>(&value); ptr) {
+    //                     result = member.set(obj, *ptr);
+    //                 } else {
+    //                     result = std::unexpected{std::format("Type mismatch for member '{}': cannot cast from any", name)};
+    //                 }
+    //             } else {
+    //                 result = member.set(obj, std::forward<U>(value));
+    //             }
+    //         }
+    //     });
+        
+    //     return result;
+    // }
+    
+    // static auto to_string(const T& obj) -> std::expected<std::string, std::string> {
+    //     std::string result = std::format("{}{{", name());
+    //     bool first = true;
+        
+    //     visit_members(obj, [&](std::string_view member_name, const auto& value) {
+    //         if (!first) result += ", ";
+    //         result += std::format("{}: ", member_name);
+            
+    //         using ValueType = std::decay_t<decltype(value)>;
+    //         if constexpr (std::is_same_v<ValueType, std::string>) {
+    //             result += std::format("\"{}\"", value);
+    //         } else if constexpr (std::is_arithmetic_v<ValueType>) {
+    //             if constexpr (std::is_same_v<ValueType, bool>) {
+    //                 result += value ? "true" : "false";
+    //             } else {
+    //                 result += std::format("{}", value);
+    //             }
+    //         } else {
+    //             result += "[complex type]";
+    //         }
+    //         first = false;
+    //     });
+        
+    //     result += "}";
+    //     return result;
+    // }
+    
+    // template<typename... Args>
+    // static constexpr auto make(Args&&... args) -> std::expected<T, std::string> {
+    //     if constexpr (sizeof...(Args) == member_count()) {
+    //         if constexpr (std::is_constructible_v<T, Args...>) {
+    //             return T{std::forward<Args>(args)...};
+    //         } else {
+    //             return std::unexpected{"Type is not constructible with provided arguments"};
+    //         }
+    //     } else {
+    //         return std::unexpected{std::format("Argument count mismatch: expected {}, got {}", 
+    //                                          member_count(), sizeof...(Args))};
+    //     }
+    // }
+    
+    // static constexpr auto equals(const T& lhs, const T& rhs) -> std::expected<bool, std::string> {
+    //     bool result = true;
+    //     std::string error_msg;
+        
+    //     descriptor::visit_members(lhs, [&](std::string_view name, const auto& lhs_value) {
+    //         if (!result || !error_msg.empty()) return;
+            
+    //         descriptor::visit_members(rhs, [&](std::string_view rhs_name, const auto& rhs_value) {
+    //             if (name == rhs_name) {
+    //                 using ValueType = std::decay_t<decltype(lhs_value)>;
+    //                 if constexpr (std::is_same_v<ValueType, std::decay_t<decltype(rhs_value)>>) {
+    //                     if constexpr (requires { lhs_value == rhs_value; }) {
+    //                         result = result && (lhs_value == rhs_value);
+    //                     } else {
+    //                         error_msg = std::format("Member '{}' is not equality comparable", name);
+    //                     }
+    //                 } else {
+    //                     error_msg = std::format("Type mismatch for member '{}'", name);
+    //                 }
+    //             }
+    //         });
+    //     });
+        
+    //     if (!error_msg.empty()) {
+    //         return std::unexpected{error_msg};
+    //     }
+        
+    //     return result;
+    // }
+    
+    // // ============================================================================
+    // // DATABASE INTEGRATION METHODS
+    // // ============================================================================
+    
+    // // Safe type conversion helpers
+    // template<typename MemberType>
+    // static auto safe_convert_from_row(const auto& row, int column_idx) -> std::expected<MemberType, std::string> {
+    //     if (column_idx >= row.get_column_count()) {
+    //         return std::unexpected{std::format("Column index {} out of bounds (max: {})", 
+    //                                          column_idx, row.get_column_count() - 1)};
+    //     }
+
+    //     if constexpr (std::is_same_v<MemberType, std::string>) {
+    //         // Try to get as text
+    //         if (auto text_result = safe_get_text(row, column_idx); text_result) {
+    //             return *text_result;
+    //         } else {
+    //             return std::unexpected{text_result.error()};
+    //         }
+    //     } else if constexpr (std::is_integral_v<MemberType>) {
+    //         if constexpr (std::is_same_v<MemberType, bool>) {
+    //             // Smart boolean conversion
+    //             if (auto int_result = safe_get_int(row, column_idx); int_result) {
+    //                 return *int_result != 0;
+    //             } else {
+    //                 // Try text-based boolean conversion
+    //                 if (auto text_result = safe_get_text(row, column_idx); text_result) {
+    //                     std::string str_val = *text_result;
+    //                     std::transform(str_val.begin(), str_val.end(), str_val.begin(), ::tolower);
+    //                     return str_val == "true" || str_val == "1" || str_val == "yes" || str_val == "on";
+    //                 } else {
+    //                     return std::unexpected{std::format("Cannot convert column {} to bool: {}", 
+    //                                                      column_idx, text_result.error())};
+    //                 }
+    //             }
+    //         } else {
+    //             if (auto int_result = safe_get_int(row, column_idx); int_result) {
+    //                 if constexpr (std::is_same_v<MemberType, int>) {
+    //                     return *int_result;
+    //                 } else {
+    //                     // Check for overflow when converting to other integral types
+    //                     if (*int_result >= std::numeric_limits<MemberType>::min() && 
+    //                         *int_result <= std::numeric_limits<MemberType>::max()) {
+    //                         return static_cast<MemberType>(*int_result);
+    //                     } else {
+    //                         return std::unexpected{std::format("Integer overflow when converting {} to target type", 
+    //                                                          *int_result)};
+    //                     }
+    //                 }
+    //             } else {
+    //                 return std::unexpected{int_result.error()};
+    //             }
+    //         }
+    //     } else if constexpr (std::is_floating_point_v<MemberType>) {
+    //         if (auto double_result = safe_get_double(row, column_idx); double_result) {
+    //             return static_cast<MemberType>(*double_result);
+    //         } else {
+    //             return std::unexpected{double_result.error()};
+    //         }
+    //     } else if constexpr (std::is_enum_v<MemberType>) {
+    //         // Handle enums
+    //         if (auto int_result = safe_get_int(row, column_idx); int_result) {
+    //             return static_cast<MemberType>(*int_result);
+    //         } else {
+    //             return std::unexpected{std::format("Cannot convert column {} to enum: {}", 
+    //                                              column_idx, int_result.error())};
+    //         }
+    //     } else {
+    //         // For custom types, try string conversion
+    //         if constexpr (std::is_constructible_v<MemberType, std::string>) {
+    //             if (auto text_result = safe_get_text(row, column_idx); text_result) {
+    //                 return MemberType{*text_result};
+    //             } else {
+    //                 return std::unexpected{text_result.error()};
+    //             }
+    //         } else {
+    //             return std::unexpected{std::format("Type '{}' is not supported for database conversion", 
+    //                                              typeid(MemberType).name())};
+    //         }
+    //     }
+    // }
+
+    // // Safe database row access helpers
+    // static auto safe_get_text(const auto& row, int column_idx) -> std::expected<std::string, std::string> {
+    //     if (column_idx < 0 || column_idx >= row.get_column_count()) {
+    //         return std::unexpected{std::format("Column index {} out of bounds", column_idx)};
+    //     }
+    //     // Assume get_text is noexcept or handle internally
+    //     return row.get_text(column_idx);
+    // }
+
+    // static auto safe_get_int(const auto& row, int column_idx) -> std::expected<int, std::string> {
+    //     if (column_idx < 0 || column_idx >= row.get_column_count()) {
+    //         return std::unexpected{std::format("Column index {} out of bounds", column_idx)};
+    //     }
+    //     // If the row's get_int can fail, we'd need to handle that
+    //     // For now, assume it returns a valid int or has internal error handling
+    //     return row.get_int(column_idx);
+    // }
+
+    // static auto safe_get_double(const auto& row, int column_idx) -> std::expected<double, std::string> {
+    //     if (column_idx < 0 || column_idx >= row.get_column_count()) {
+    //         return std::unexpected{std::format("Column index {} out of bounds", column_idx)};
+    //     }
+    //     return row.get_double(column_idx);
+    // }
+    
+    // // Create value map from database row - compile-time version
+    // template<typename Row>
+    // static auto create_value_map_from_row(const Row& row) -> std::expected<std::unordered_map<std::string, std::any>, std::string> {
+    //     std::unordered_map<std::string, std::any> value_map;
+    //     std::vector<std::string> errors;
+        
+    //     descriptor::for_each_member([&]<size_t I>(auto member) {
+    //         if (I < static_cast<size_t>(row.get_column_count())) {
+    //             auto name = std::string{member.get_name()};
+                
+    //             // Try different types in order of preference
+    //             if (auto text_result = safe_get_text(row, static_cast<int>(I)); text_result) {
+    //                 value_map[name] = std::make_any<std::string>(*text_result);
+    //             } else if (auto int_result = safe_get_int(row, static_cast<int>(I)); int_result) {
+    //                 value_map[name] = std::make_any<int>(*int_result);
+    //             } else if (auto double_result = safe_get_double(row, static_cast<int>(I)); double_result) {
+    //                 value_map[name] = std::make_any<double>(*double_result);
+    //             } else {
+    //                 errors.push_back(std::format("Column {}: all conversions failed", I));
+    //                 value_map[name] = std::any{};
+    //             }
+    //         }
+    //     });
+        
+    //     if (!errors.empty()) {
+    //         return std::unexpected{std::format("Conversion errors: {}", fmt::join(errors, "; "))};
+    //     }
+        
+    //     return value_map;
+    // }
+    
+    // // Create multiple value maps from multiple rows
+    // template<typename Row>
+    // static auto create_value_maps_from_rows(std::span<const Row> rows) 
+    //     -> std::expected<std::vector<std::unordered_map<std::string, std::any>>, std::string> {
+        
+    //     std::vector<std::unordered_map<std::string, std::any>> result;
+    //     result.reserve(rows.size());
+        
+    //     for (size_t i = 0; i < rows.size(); ++i) {
+    //         if (auto map_result = create_value_map_from_row(rows[i]); map_result) {
+    //             result.emplace_back(std::move(*map_result));
+    //         } else {
+    //             return std::unexpected{std::format("Failed to create value map for row {}: {}", 
+    //                                              i, map_result.error())};
+    //         }
+    //     }
+        
+    //     return result;
+    // }
+    
+    // template<typename Member, typename Row>
+    // static auto populate_member_from_column(T& obj, Member member, const Row& row, int column_idx) 
+    //     -> std::expected<void, std::string> {
+        
+    //     using MemberType = typename Member::member_type;
+        
+    //     if (auto converted_value = safe_convert_from_row<MemberType>(row, column_idx); converted_value) {
+    //         return member.set(obj, std::move(*converted_value));
+    //     } else {
+    //         return std::unexpected{std::format("Failed to populate member '{}' from column {}: {}", 
+    //                                          member.get_name(), column_idx, converted_value.error())};
+    //     }
+    // }
+
+    // // Populate object from database row - compile-time version
+    // template<typename Row>
+    // static auto populate_from_row(T& obj, const Row& row, int start_column = 0) 
+    //     -> std::expected<void, std::string> {
+        
+    //     std::vector<std::string> errors;
+    //     int successful_fields = 0;
+        
+    //     descriptor::for_each_member([&]<size_t I>(auto member) {
+    //         int column_idx = start_column + static_cast<int>(I);
+            
+    //         if (column_idx >= row.get_column_count()) {
+    //             return; // Stop if we run out of columns
+    //         }
+            
+    //         if (auto result = populate_member_from_column(obj, member, row, column_idx); result) {
+    //             successful_fields++;
+    //         } else {
+    //             errors.push_back(std::format("Field '{}' at column {}: {}", 
+    //                                        member.get_name(), column_idx, result.error()));
+    //         }
+    //     });
+        
+    //     // Return error only if ALL fields failed
+    //     if (successful_fields == 0 && !errors.empty()) {
+    //         return std::unexpected{fmt::join(errors, "; ")};
+    //     }
+        
+    //     return {};
+    // }
+    
+    // template<typename QueryBuilder>
+    // static auto create_objects_from_query(std::span<const typename QueryBuilder::Row> rows, const QueryBuilder& query_builder) 
+    //     -> std::expected<std::vector<T>, std::string> {
+        
+    //     if (rows.empty()) {
+    //         return std::vector<T>{};
+    //     }
+        
+    //     // Let reflection system intelligently handle the query context
+    //     if (query_builder.should_use_bulk_population()) {
+    //         // All fields - use optimized bulk creation
+    //         return create_objects_bulk_optimized(rows);
+    //     } else {
+    //         // Partial fields - use context-aware population
+    //         return create_objects_with_query_context(rows, query_builder);
+    //     }
+    // }
+
+    // template<typename QueryBuilder>
+    // static auto create_object_from_query(const typename QueryBuilder::Row& row, const QueryBuilder& query_builder) 
+    //     -> std::expected<T, std::string> {
+        
+    //     T obj{};
+        
+    //     // Delegate population strategy to reflection system
+    //     auto populate_result = [&]() -> std::expected<void, std::string> {
+    //         if (!query_builder.distinctFields.empty()) {
+    //             auto field_mappings = extract_distinct_mappings(query_builder.distinctFields, row);
+    //             return populate_distinct_fields(obj, row, field_mappings);
+    //         } else if (!query_builder.onlyFields.empty()) {
+    //             auto selected_fields = extract_only_field_names(query_builder.onlyFields);
+    //             return populate_selected_fields(obj, row, std::span{selected_fields});
+    //         } else {
+    //             return populate_from_row(obj, row);
+    //         }
+    //     }();
+        
+    //     if (populate_result) {
+    //         return obj;
+    //     } else {
+    //         return std::unexpected{populate_result.error()};
+    //     }
+    // }
+
+    // // Helper methods for the reflection system
+    // template<typename DistinctFields>
+    // static auto extract_distinct_mappings(const DistinctFields& distinct_fields, const auto& row) 
+    //     -> std::expected<std::vector<std::pair<size_t, std::string>>, std::string> {
+        
+    //     std::vector<std::pair<size_t, std::string>> result;
+        
+    //     for (size_t idx = 0; idx < distinct_fields.size(); ++idx) {
+    //         const auto& fieldAlias = distinct_fields[idx];
+    //         if (fieldAlias != nullptr && idx < static_cast<size_t>(row.get_column_count())) {
+    //             result.emplace_back(idx, fieldAlias->getFieldName());
+    //         }
+    //     }
+        
+    //     return result;
+    // }
+
+    // template<typename OnlyFields>
+    // static auto extract_only_field_names(const OnlyFields& only_fields) 
+    //     -> std::expected<std::vector<std::string>, std::string> {
+        
+    //     std::vector<std::string> result;
+        
+    //     for (const auto& field : only_fields) {
+    //         if (field != nullptr) {
+    //             result.push_back(field->getFieldName());
+    //         }
+    //     }
+        
+    //     return result;
+    // }
+
+    // template<typename QueryBuilder>
+    // static auto create_objects_with_query_context(std::span<const typename QueryBuilder::Row> rows, 
+    //                                              const QueryBuilder& query_builder) 
+    //     -> std::expected<std::vector<T>, std::string> {
+        
+    //     std::vector<T> result;
+    //     result.reserve(rows.size());
+        
+    //     for (size_t i = 0; i < rows.size(); ++i) {
+    //         if (auto obj_result = create_object_from_query(rows[i], query_builder); obj_result) {
+    //             result.emplace_back(std::move(*obj_result));
+    //         } else {
+    //             return std::unexpected{std::format("Failed to create object at row {}: {}", 
+    //                                              i, obj_result.error())};
+    //         }
+    //     }
+        
+    //     return result;
+    // }
+
+    // // Populate selected fields only
+    // template<typename Row>
+    // static auto populate_selected_fields(T& obj, const Row& row, std::span<const std::string> selected_fields) 
+    //     -> std::expected<void, std::string> {
+        
+    //     if (selected_fields.size() > static_cast<size_t>(row.get_column_count())) {
+    //         return std::unexpected{std::format("Selected fields count ({}) exceeds row columns ({})", 
+    //                                          selected_fields.size(), row.get_column_count())};
+    //     }
+        
+    //     std::vector<std::string> missing_fields;
+    //     std::vector<std::string> errors;
+        
+    //     for (size_t field_idx = 0; field_idx < selected_fields.size(); ++field_idx) {
+    //         const auto& field_name = selected_fields[field_idx];
+            
+    //         bool found = false;
+    //         descriptor::for_each_member([&]<size_t I>(auto member) {
+    //             if (!found && member.get_name() == field_name) {
+    //                 found = true;
+    //                 if (auto result = populate_member_from_column(obj, member, row, static_cast<int>(field_idx)); !result) {
+    //                     errors.push_back(std::format("Failed to populate field '{}': {}", 
+    //                                                field_name, result.error()));
+    //                 }
+    //             }
+    //         });
+            
+    //         if (!found) {
+    //             missing_fields.push_back(field_name);
+    //         }
+    //     }
+        
+    //     if (!missing_fields.empty()) {
+    //         return std::unexpected{std::format("Fields not found in type: {}", 
+    //                                          fmt::join(missing_fields, ", "))};
+    //     }
+        
+    //     if (!errors.empty()) {
+    //         return std::unexpected{fmt::join(errors, "; ")};
+    //     }
+        
+    //     return {};
+    // }
+
+    // // Populate distinct fields with column mappings
+    // template<typename Row>
+    // static auto populate_distinct_fields(T& obj, const Row& row, 
+    //                                    const std::vector<std::pair<size_t, std::string>>& field_mappings) 
+    //     -> std::expected<void, std::string> {
+        
+    //     std::vector<std::string> errors;
+        
+    //     for (const auto& [column_idx, field_name] : field_mappings) {
+    //         bool found = false;
+            
+    //         descriptor::for_each_member([&]<size_t I>(auto member) {
+    //             if (!found && member.get_name() == field_name) {
+    //                 found = true;
+                    
+    //                 if (static_cast<int>(column_idx) >= row.get_column_count()) {
+    //                     errors.push_back(std::format("Column index {} out of bounds for field '{}'", 
+    //                                                 column_idx, field_name));
+    //                     return;
+    //                 }
+                    
+    //                 if (auto result = populate_member_from_column(obj, member, row, static_cast<int>(column_idx)); !result) {
+    //                     errors.push_back(std::format("Failed to populate field '{}': {}", 
+    //                                                field_name, result.error()));
+    //                 }
+    //             }
+    //         });
+            
+    //         if (!found) {
+    //             errors.push_back(std::format("Field '{}' not found in type", field_name));
+    //         }
+    //     }
+        
+    //     if (!errors.empty()) {
+    //         return std::unexpected{fmt::join(errors, "; ")};
+    //     }
+        
+    //     return {};
+    // }
+    
+    // // Bulk object creation from rows (optimized for select_all)
+    // template<typename Row>
+    // static auto create_objects_from_rows(std::span<const Row> rows) 
+    //     -> std::expected<std::vector<T>, std::string> {
+        
+    //     if (rows.empty()) {
+    //         return std::vector<T>{};
+    //     }
+        
+    //     std::vector<T> result;
+    //     result.reserve(rows.size());
+        
+    //     for (size_t i = 0; i < rows.size(); ++i) {
+    //         T obj{};
+    //         if (auto populate_result = populate_from_row(obj, rows[i], 0); populate_result) {
+    //             result.emplace_back(std::move(obj));
+    //         } else {
+    //             return std::unexpected{std::format("Failed to populate object at row {}: {}", 
+    //                                              i, populate_result.error())};
+    //         }
+    //     }
+    
