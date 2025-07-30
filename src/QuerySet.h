@@ -1331,314 +1331,136 @@ namespace storm {
         // SELECT
         // ===========================
         
-        /**
-         * @brief Select only specific fields and return them as dictionaries
-         * 
-         * This method provides a dynamic way to access the data when the exact
-         * types are not known at compile time, or when you need to access data by field name.
-         * 
-         * @return std::vector<std::map<std::string, ValueVariant>> Vector of dictionaries with field name -> value mapping
-         * 
-         * @example
-         *   auto results = QuerySet<Author>(conn)
-         *       .only(field(&Author::name))
-         *       .only(field(&Author::age))
-         *       .select_values();
-         *   Access data with: results[0]["name"], results[0]["age"]
-         */
-        ExpectedValueVectorMap select_values() const {            
-            // Get the where query result
-            auto where_query_result = this->get_where_query();
-            
-            // Build SQL query with std::format
-            auto sql = std::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
-                this->createDistinctClause(),
-                this->buildFieldsClause(),
-                this->template get_table_name<T>(),
-                this->generateJoinSQL(),
-                where_query_result.sql,
-                this->generateGroupBySQL(),
-                this->buildOrderFields(),
-                this->limit_impl()
-            );
-            std::print("SQL: {}\n", sql);
-            
-            // Execute the query
-            Statement stmt(conn, sql);
-            bind_query_parameters(stmt, where_query_result);
-            // Process results using ranges and views
-            return transform_rows_to_value_maps(stmt.execute_all());
+        // Method to check if bulk population should be used
+        bool should_use_bulk_population() const {
+            return this->onlyFields.empty() && 
+                this->distinctFields.empty() && 
+                this->functionsSet.empty();
         }
+
+        // ============================================================================
+        // ULTRA-CLEAN QUERY METHODS
+        // ============================================================================
         
-        ExpectedValueVectorMap select_value() const {            
-            // Get the where query result
-            auto where_query_result = this->get_where_query();
+        auto select_all() const -> ExpectedVectorT {
+            auto rows = execute_sql_query();
+            if (!rows) return std::unexpected(rows.error());
             
-            // Build SQL query with std::format
-            auto sql = std::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
-                this->createDistinctClause(),
-                this->buildFieldsClause(),
-                this->template get_table_name<T>(),
-                this->generateJoinSQL(),
-                where_query_result.sql,
-                this->generateGroupBySQL(),
-                this->buildOrderFields(),
-                this->limit_impl()
+            // Single delegation to reflection system!
+            return refl::reflect<T>::create_objects_from_query(std::span{*rows}, *this);
+        }
+
+        auto select_one() const -> ExpectedT {
+            auto rows = execute_sql_query_single();
+            if (!rows) return std::unexpected(rows.error());
+            
+            if (rows->empty()) {
+                return std::unexpected("No results found for select_one query");
+            }
+            
+            // Single delegation to reflection system!
+            return refl::reflect<T>::create_object_from_query((*rows)[0], *this);
+        }
+
+        auto select_values() const -> ExpectedValueMapVectorT {
+            auto rows = execute_sql_query();
+            if (!rows) return std::unexpected(rows.error());
+            
+            // Single delegation to reflection system!
+            return refl::reflect<T>::create_value_maps_from_rows(std::span{*rows});
+        }
+
+        auto select_value() const -> ExpectedValueMapT {
+            auto rows = execute_sql_query_single();
+            if (!rows) return std::unexpected(rows.error());
+            
+            if (rows->empty()) {
+                return std::unexpected("No results found for select_value query");
+            }
+            
+            // Single delegation to reflection system!
+            return refl::reflect<T>::create_value_map_from_row((*rows)[0]);
+        }
+
+        // ============================================================================
+        // BONUS: STREAMING AND BATCHED METHODS
+        // ============================================================================
+
+        template<size_t BatchSize = 1000>
+        auto select_all_batched() const -> ExpectedVectorT {
+            auto rows = execute_sql_query();
+            if (!rows) return std::unexpected(rows.error());
+            
+            // Single delegation with batch processing!
+            return refl::reflect<T>::process_rows_in_batches(
+                std::span{*rows}, 
+                BatchSize,
+                [this](auto batch) { 
+                    return refl::reflect<T>::create_objects_from_query(batch, *this); 
+                }
             );
-            std::print("SQL: {}\n", sql);
-            
-            // Execute the query
-            Statement stmt(conn, sql);
-            bind_query_parameters(stmt, where_query_result);
-            // Process results using ranges and views
-            return transform_rows_to_value_maps(stmt.execute_all()[0]);
         }
 
-        ExpectedT select_one() const {
-            // Build the query with limit 1 to ensure we only get one result
-            // Get the where query result
-            auto where_query_result = this->get_where_query();
+        auto select_stream() const -> ExpectedStreamT {
+            auto rows = execute_sql_query();
+            if (!rows) return std::unexpected(rows.error());
             
-            // Get field names and clause for SQL generation
-            auto fieldsClause = this->buildFieldsClause();
-            
-            // Build the SQL query with LIMIT 1
-            auto sql = fmt::format("SELECT {} {} FROM \"{}\" {} {} {} {} LIMIT 1;", 
-                this->createDistinctClause(),
-                fieldsClause,
-                this->template get_table_name<T>(),
-                this->generateJoinSQL(),
-                where_query_result.sql,
-                this->generateGroupBySQL(),
-                this->buildOrderFields());
-            
-            Statement smt(conn, sql);
-            bind_query_parameters(smt, where_query_result);
-            auto all_rows = smt.execute_all();
-
-            if (all_rows.empty()) {
-                throw std::runtime_error("No results found for select_one query");
-            }
-            
-            // Process the single row
-            T obj{};
-            const auto& row = all_rows[0];
-            int column_idx = 0;
-            
-            if (this->onlyFields.empty()) {
-                // When no specific fields are selected, populate all fields
-                Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
-                    if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
-                        using FieldType = typename Reflect<T>::template member_value_type<decltype(member)>;
-                        
-                        if constexpr (std::is_same_v<FieldType, std::string>) {
-                            member(obj) = row.get_text(column_idx);
-                        } else if constexpr (std::is_same_v<FieldType, bool>) {
-                            member(obj) = row.get_int(column_idx) != 0;
-                        } else if constexpr (std::is_integral_v<FieldType>) {
-                            member(obj) = static_cast<FieldType>(row.get_int(column_idx));
-                        } else if constexpr (std::is_floating_point_v<FieldType>) {
-                            member(obj) = static_cast<FieldType>(row.get_double(column_idx));
-                        } else {
-                            static_assert(std::is_pointer<FieldType>::value == false, "Unsupported pointer type for SQLite binding");
-                            static_assert(std::is_reference<FieldType>::value == false, "Unsupported reference type for SQLite binding");
-                            static_assert(sizeof(FieldType) == 0, "Unsupported type for SQLite binding");
-                        }
-                        
-                        column_idx++;
-                    }
-                });
-            } else {
-                // When specific fields are selected, only populate those fields
-                for (const auto& fieldAlias : this->onlyFields) {
-                    if (!fieldAlias) continue;
-                    
-                    const std::string fieldName = fieldAlias->getFieldName();
-                    
-                    // Find and populate the corresponding field
-                    Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
-                        if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
-                            const std::string memberName = Reflect<T>::get_member_name(member);
-                            if (memberName == fieldName) {
-                                using FieldType = typename Reflect<T>::template member_value_type<decltype(member)>;
-                                
-                                if constexpr (std::is_same_v<FieldType, std::string>) {
-                                    member(obj) = row.get_text(column_idx);
-                                } else if constexpr (std::is_same_v<FieldType, bool>) {
-                                    member(obj) = row.get_int(column_idx) != 0;
-                                } else if constexpr (std::is_integral_v<FieldType>) {
-                                    member(obj) = static_cast<FieldType>(row.get_int(column_idx));
-                                } else if constexpr (std::is_floating_point_v<FieldType>) {
-                                    member(obj) = static_cast<FieldType>(row.get_double(column_idx));
-                                } else {
-                                    static_assert(std::is_pointer<FieldType>::value == false, "Unsupported pointer type for SQLite binding");
-                                    static_assert(std::is_reference<FieldType>::value == false, "Unsupported reference type for SQLite binding");
-                                    static_assert(sizeof(FieldType) == 0, "Unsupported type for SQLite binding");
-                                }
-                            }
-                        }
-                    });
-                    column_idx++;
-                }
-            }
-            
-            return obj;
+            // Single delegation to streaming interface!
+            return refl::reflect<T>::create_object_stream(std::span{*rows});
         }
-        
-        ExpectedVectorT select_all() const {
-            // Get the where query result
-            auto where_query_result = this->get_where_query();
-            
-            // Get field names and clause for SQL generation
-            auto fieldsClause = this->buildFieldsClause();
-            
-            // Build the SQL query
-            auto sql = fmt::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
-                this->createDistinctClause(),
-                fieldsClause,
-                this->template get_table_name<T>(),
-                this->generateJoinSQL(),
-                where_query_result.sql,
-                this->generateGroupBySQL(),
-                this->buildOrderFields(),
-                this->limit_impl());
-            std::cout << sql << std::endl;
-            
-            auto smt_ = Statement(conn, sql);
-            bind_query_parameters(smt_, where_query_result);
-            auto all_rows = smt_.execute_all();
-            
-            // Process the results
-            std::vector<T> results;
-            if (all_rows.empty()) {
-                return results;
-            }
-            
-            results.reserve(all_rows.size());
-            
-            for (const auto& row : all_rows) {
-                T obj{};
-                int column_idx = 0;
-                
-                if (!this->distinctFields.empty()) {
-                    // When distinct fields are selected, only populate those fields
-                    // and make sure we don't exceed the column count
-                    for (size_t i = 0; i < this->distinctFields.size() && i < row.get_column_count(); ++i) {
-                        const auto& fieldAlias = this->distinctFields[i];
-                        if (!fieldAlias) continue;
-                        
-                        const std::string fieldName = fieldAlias->getFieldName();
-                        
-                        // Find and populate the corresponding field
-                        Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
-                            if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
-                                const std::string memberName = Reflect<T>::get_member_name(member);
-                                if (memberName == fieldName) {
-                                    using FieldType = typename Reflect<T>::template member_value_type<decltype(member)>;
-                                    
-                                    if constexpr (std::is_same_v<FieldType, std::string>) {
-                                        member(obj) = row.get_text(i);
-                                    } else if constexpr (std::is_same_v<FieldType, bool>) {
-                                        member(obj) = row.get_int(i) != 0;
-                                    } else if constexpr (std::is_integral_v<FieldType>) {
-                                        member(obj) = static_cast<FieldType>(row.get_int(i));
-                                    } else if constexpr (std::is_floating_point_v<FieldType>) {
-                                        member(obj) = static_cast<FieldType>(row.get_double(i));
-                                    }
-                                }
-                            }
-                        });
-                    }
-                } else if (this->onlyFields.empty()) {
-                    // When no specific fields are selected, populate all fields
-                    Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
-                        if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
-                            using FieldType = typename Reflect<T>::template member_value_type<decltype(member)>;
-                            
-                            if constexpr (std::is_same_v<FieldType, std::string>) {
-                                member(obj) = row.get_text(column_idx);
-                            } else if constexpr (std::is_same_v<FieldType, bool>) {
-                                member(obj) = row.get_int(column_idx) != 0;
-                            } else if constexpr (std::is_integral_v<FieldType>) {
-                                member(obj) = static_cast<FieldType>(row.get_int(column_idx));
-                            } else if constexpr (std::is_floating_point_v<FieldType>) {
-                                member(obj) = static_cast<FieldType>(row.get_double(column_idx));
-                            } else {
-                                static_assert(std::is_pointer<FieldType>::value == false, "Unsupported pointer type for SQLite binding");
-                                static_assert(std::is_reference<FieldType>::value == false, "Unsupported reference type for SQLite binding");
-                                static_assert(sizeof(FieldType) == 0, "Unsupported type for SQLite binding");
-                            }
-                            
-                            column_idx++;
-                        }
-                    });
-                } else {
-                    // When specific fields are selected, only populate those fields
-                    for (const auto& fieldAlias : this->onlyFields) {
-                        if (!fieldAlias) continue;
-                        
-                        const std::string fieldName = fieldAlias->getFieldName();
-                        
-                        // Find and populate the corresponding field
-                        Reflect<T>::for_each_member(this->template get_reflected_members<T>(), [&](auto member) {
-                            if constexpr (Reflect<T>::template is_field<decltype(member)>::value) {
-                                const std::string memberName = Reflect<T>::get_member_name(member);
-                                if (memberName == fieldName) {
-                                    using FieldType = typename Reflect<T>::template member_value_type<decltype(member)>;
-                                    
-                                    if constexpr (std::is_same_v<FieldType, std::string>) {
-                                        member(obj) = row.get_text(column_idx);
-                                    } else if constexpr (std::is_same_v<FieldType, bool>) {
-                                        member(obj) = row.get_int(column_idx) != 0;
-                                    } else if constexpr (std::is_integral_v<FieldType>) {
-                                        member(obj) = static_cast<FieldType>(row.get_int(column_idx));
-                                    } else if constexpr (std::is_floating_point_v<FieldType>) {
-                                        member(obj) = static_cast<FieldType>(row.get_double(column_idx));
-                                    } else {
-                                        static_assert(std::is_pointer<FieldType>::value == false, "Unsupported pointer type for SQLite binding");
-                                        static_assert(std::is_reference<FieldType>::value == false, "Unsupported reference type for SQLite binding");
-                                        static_assert(sizeof(FieldType) == 0, "Unsupported type for SQLite binding");
-                                    }
-                                }
-                            }
-                        });
-                        column_idx++;
-                    }
-                }
-                
-                results.emplace_back(std::move(obj));
-            }
-            
-            return results;
-        }
-
     private:
-        /**
-         * @brief Transform a vector of rows into a vector of value maps
-         * 
-         * This helper function processes database rows and converts them into a vector of maps
-         * where each map represents a row with column name -> value mapping.
-         * 
-         * @param rows Vector of Row objects to transform
-         * @return std::vector<std::map<std::string, ValueVariant>> Vector of dictionaries with column name -> value mapping
-         */
-        ValueVectorMap transform_rows_to_value_maps(const std::vector<Row>& rows) const {
-            return rows 
-                | std::views::transform([](const auto& row) {
-                    ValueMap rowDict;
-                    
-                    // Process each column using the Row's column information
-                    for (const auto& i : std::views::iota(0, row.get_column_count())) {
-                        // Get column name directly from Row and convert to std::string for map key
-                        std::string column_name{row.get_column_name(i)};
-                        rowDict[column_name] = to_value<ValueVariant>(row, i);
-                    }
-                    
-                    return rowDict;
-                })
-                | std::ranges::to<ValueVectorMap>();
+        // Common SQL execution method
+        auto execute_sql_query() const -> ExpectedVectorT {
+            try {
+                auto where_query_result = this->get_where_query();
+                auto fieldsClause = this->buildFieldsClause();
+                
+                auto sql = std::format("SELECT {} {} FROM \"{}\" {} {} {} {} {}", 
+                    this->createDistinctClause(),
+                    fieldsClause,
+                    this->template get_table_name<T>(),
+                    this->generateJoinSQL(),
+                    where_query_result.sql,
+                    this->generateGroupBySQL(),
+                    this->buildOrderFields(),
+                    this->limit_impl());
+                
+                std::print("SQL: {}\n", sql);
+                
+                Statement stmt(conn, sql);
+                bind_query_parameters(stmt, where_query_result);
+                return stmt.execute_all();
+                
+            } catch (const std::exception& e) {
+                return std::unexpected(std::format("Query execution failed: {}", e.what()));
+            }
         }
-    
+        
+        // Execute SQL for single row queries
+        auto execute_sql_query_single() const -> ExpectedVectorT {
+            try {
+                auto where_query_result = this->get_where_query();
+                auto fieldsClause = this->buildFieldsClause();
+                
+                auto sql = std::format("SELECT {} {} FROM \"{}\" {} {} {} {} LIMIT 1", 
+                    this->createDistinctClause(),
+                    fieldsClause,
+                    this->template get_table_name<T>(),
+                    this->generateJoinSQL(),
+                    where_query_result.sql,
+                    this->generateGroupBySQL(),
+                    this->buildOrderFields());
+                
+                std::print("SQL: {}\n", sql);
+                
+                Statement stmt(conn, sql);
+                bind_query_parameters(stmt, where_query_result);
+                return stmt.execute_all();
+                
+            } catch (const std::exception& e) {
+                return std::unexpected(std::format("Query execution failed: {}", e.what()));
+            }
+        }
     public:
         // =============================
         // =============================

@@ -54,26 +54,26 @@ struct Post {
         : id(id), title(t), content(c), author_id(author_id), views(views) {}
 };
 
-SIMPLE_REFLECT(
+REFLECT_TYPE_MOCK(
     Author,
-    F(id, int),
-    F(name, std::string),
-    F(email, std::string),
-    F(age, int),
-    F(is_active, bool),
-    F(rating, double),
-    F(score, float),
-    F(middleName, std::string),
-    F(biography, std::string)
+    REFLECT_REGISTER_MEMBER(Author, id);
+    REFLECT_REGISTER_MEMBER(Author, name);
+    REFLECT_REGISTER_MEMBER(Author, age);
+    REFLECT_REGISTER_MEMBER(Author, email);
+    REFLECT_REGISTER_MEMBER(Author, is_active);
+    REFLECT_REGISTER_MEMBER(Author, rating);
+    REFLECT_REGISTER_MEMBER(Author, score);
+    REFLECT_REGISTER_MEMBER(Author, middleName);
+    REFLECT_REGISTER_MEMBER(Author, biography);
 );
 
-SIMPLE_REFLECT(
+REFLECT_TYPE_MOCK(
     Post,
-    F(id, int),
-    F(title, std::string),
-    F(content, std::string),
-    F(author_id, int),
-    F(views, int)
+    REFLECT_REGISTER_MEMBER(Post, id);
+    REFLECT_REGISTER_MEMBER(Post, title);
+    REFLECT_REGISTER_MEMBER(Post, content);
+    REFLECT_REGISTER_MEMBER(Post, author_id);
+    REFLECT_REGISTER_MEMBER(Post, views);
 );
 
 class ORMTest : public ::testing::Test {
