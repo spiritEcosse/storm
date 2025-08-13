@@ -1,9 +1,21 @@
-#include "Statement.h"
-#include "Connection.h"
-#include "SQLExceptions.h"
-#include <stdexcept>
-#include <iostream>
-#include <regex>
+module;
+
+// Module global fragment
+#include <sqlite3.h>
+
+// Module implementation unit
+module storm.statement;
+
+// Import required modules
+import storm.connection;
+import storm.sql_exceptions;
+import <stdexcept>;
+import <iostream>;
+import <regex>;
+import <vector>;
+import <memory>;
+import <expected>;
+import <string>;
 
 namespace storm {
 Statement::Statement(std::shared_ptr<Connection> conn, const std::string& sql) : conn(std::move(conn)), stmt(nullptr), sql_(sql) {

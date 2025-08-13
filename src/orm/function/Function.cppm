@@ -1,9 +1,17 @@
-#pragma once
+module;
 
-#include "BaseClass.h"
-#include <string>
+// Module global fragment
+// (no legacy standard includes)
 
-namespace storm {
+// Define the module
+export module storm.function;
+
+// Import required modules
+import storm.base_class;
+// Import standard header units
+import <string>;
+
+export namespace storm {
 
     class Function final : public BaseClass {
     public:

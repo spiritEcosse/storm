@@ -1,8 +1,19 @@
-#include "Connection.h"
-#include "SQLExceptions.h"
+module;
 
-using namespace storm;
+// Module global fragment
+#include <sqlite3.h>
 
+// Module implementation unit
+module storm.connection;
+
+// Import required modules
+import storm.sql_exceptions;
+import <string>;
+import <iostream>;
+import <stdexcept>;
+import <cstdint>;
+
+// Constructor implementation
 Connection::Connection(const std::string& db_name) : db(nullptr), transaction_active(false) {
     int rc = sqlite3_open(db_name.c_str(), &db);
     if (rc) {
@@ -71,11 +82,11 @@ std::int64_t Connection::last_insert_id() const {
 
 void Connection::begin_transaction(TransactionLevel level) {
     if (!is_open()) {
-        throw ConnectionNotOpenException();
+        throw storm::ConnectionNotOpenException();
     }
     
     if (transaction_active) {
-        throw TransactionAlreadyActiveException();
+        throw storm::TransactionAlreadyActiveException();
     }
     
     std::string transaction_type;
@@ -98,7 +109,7 @@ void Connection::begin_transaction(TransactionLevel level) {
     if (rc != SQLITE_OK) {
         std::string error(error_msg);
         sqlite3_free(error_msg);
-        throw TransactionStartFailedException(error);
+        throw storm::TransactionStartFailedException(error);
     }
     
     transaction_active = true;
@@ -106,11 +117,11 @@ void Connection::begin_transaction(TransactionLevel level) {
 
 void Connection::commit() {
     if (!is_open()) {
-        throw ConnectionNotOpenException();
+        throw storm::ConnectionNotOpenException();
     }
     
     if (!transaction_active) {
-        throw TransactionNotActiveException();
+        throw storm::TransactionNotActiveException();
     }
     
     char* error_msg = nullptr;
@@ -119,7 +130,7 @@ void Connection::commit() {
     if (rc != SQLITE_OK) {
         std::string error(error_msg);
         sqlite3_free(error_msg);
-        throw TransactionCommitFailedException(error);
+        throw storm::TransactionCommitFailedException(error);
     }
     
     transaction_active = false;
@@ -127,11 +138,11 @@ void Connection::commit() {
 
 void Connection::rollback() {
     if (!is_open()) {
-        throw ConnectionNotOpenException();
+        throw storm::ConnectionNotOpenException();
     }
     
     if (!transaction_active) {
-        throw TransactionNotActiveException();
+        throw storm::TransactionNotActiveException();
     }
     
     char* error_msg = nullptr;
@@ -140,7 +151,7 @@ void Connection::rollback() {
     if (rc != SQLITE_OK) {
         std::string error(error_msg);
         sqlite3_free(error_msg);
-        throw TransactionRollbackFailedException(error);
+        throw storm::TransactionRollbackFailedException(error);
     }
     
     transaction_active = false;

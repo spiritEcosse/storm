@@ -1,10 +1,17 @@
-#pragma once
+module;
 
-#include <stdexcept>
-#include <string>
-#include <regex>
+// Module global fragment
+// (no legacy standard includes)
 
-namespace storm {
+// Define the module
+export module storm.sql_exceptions;
+
+// Import standard header units
+import <stdexcept>;
+import <string>;
+import <regex>;
+
+export namespace storm {
 
 // Base exception class for all Storm-related exceptions
 class StormException : public std::runtime_error {

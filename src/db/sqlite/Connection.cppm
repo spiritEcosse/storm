@@ -1,11 +1,16 @@
-#pragma once
-#include <sqlite3.h>
-#include <string>
-#include <iostream>
-#include <cstdint>
-#include <stdexcept>
+module;
 
-class Connection {
+// Module global fragment
+#include <sqlite3.h>
+
+// Define the module
+export module storm.connection;
+// Import standard header units
+import <string>;
+import <type_traits>;
+import <cstdint>;
+
+export class Connection {
 public:
     // Transaction isolation levels
     enum class TransactionLevel {
@@ -14,7 +19,7 @@ public:
         EXCLUSIVE  // Acquires all locks immediately, preventing other connections from reading or writing
     };
 
-    Connection(const std::string& db_name);
+    explicit Connection(const std::string& db_name);
     ~Connection();
     Connection(const Connection&) = delete;
     Connection& operator=(const Connection&) = delete;

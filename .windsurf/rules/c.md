@@ -112,3 +112,33 @@ Here is a professional **AI instruction prompt template** for a coding assistant
 * **Static analysis**: `cppcheck`, `include-what-you-use`
 
 ---
+
+
+## 🧷 Build Commands and Tooling
+
+### Build Configuration
+```bash
+# Development build with tests and sanitizers
+cmake --preset=ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="address;leak" && cmake --build --preset=ninja-debug
+
+# Run tests with detailed output
+cmake --preset=ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="address;leak" && cmake --build --preset=ninja-debug && (cd build/debug && ctest -j 32 --output-on-failure -V; cd ../../)
+
+# Release build for production
+cmake --preset=ninja-release -DENABLE_TESTS=OFF && cmake --build --preset=ninja-release
+
+# Build with comprehensive sanitizers and tools
+cmake --preset=ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="address;leak;undefined" && cmake --build --preset=ninja-debug
+
+# Build with thread sanitizer (separate build due to incompatibility)
+cmake --preset=ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="thread" && cmake --build --preset=ninja-debug
+
+# Build with memory sanitizer
+cmake --preset=ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="memory" && cmake --build --preset=ninja-debug
+
+# Profile-guided optimization build
+cmake --preset=ninja-pgo -DENABLE_PGO=ON && cmake --build --preset=ninja-pgo
+
+# Build with code coverage
+cmake --preset=ninja-coverage -DENABLE_COVERAGE=ON && cmake --build --preset=ninja-coverage && (cd build/coverage && ctest && lcov --capture --directory . --output-file coverage.info && genhtml coverage.info --output-directory coverage_html; cd ../../)
+```

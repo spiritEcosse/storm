@@ -7,6 +7,10 @@ message(STATUS "Using C++23 (standard build)")
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Enable modules support
+set(CMAKE_EXPERIMENTAL_CXX_MODULE_DYNDEP 1)
+set(CMAKE_EXPERIMENTAL_CXX_MODULE_CMAKE_API "2182bf5c-ef0d-489a-91da-49dbc3090d2a")
+
 message(STATUS "CMAKE_CXX_COMPILER: ${CMAKE_CXX_COMPILER}")
 message(STATUS "CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
 message(STATUS "CMAKE_CXX_COMPILER_VERSION: ${CMAKE_CXX_COMPILER_VERSION}")
@@ -21,28 +25,60 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         add_compile_options(-fcoroutines) # Apply only for GNU compilers
         add_compile_options(-fmax-errors=1)
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        # For Clang (including AppleClang) with CMAKE_CXX_STANDARD set to 20 or 23,
-        # C++ coroutines are typically enabled by the standard itself.
-        # The explicit -fcoroutines flag can cause errors with modern Clang.
-        add_compile_options(-ferror-limit=1) # Clang specific error limit
-    endif()
-endif()
+          # For Clang (including AppleClang) with CMAKE_CXX_STANDARD set to 20 or 23,
+          # C++ coroutines are typically enabled by the standard itself.
+          # The explicit -fcoroutines flag can cause errors with modern Clang.
+          add_compile_options(-ferror-limit=1 -stdlib=libc++) # Clang specific error limit
+          add_link_options(-stdlib=libc++)
+      endif()
+ endif()
+ 
+ # Build the core library (modules-first)
+ add_library(${PROJECT_NAME} STATIC)
+ 
+ # Collect sources automatically
+ file(GLOB_RECURSE STORM_MODULE_UNITS CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm"
+ )
+ file(GLOB_RECURSE STORM_NONMODULE_SOURCES CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+ )
+ # Exclude example/demo mains from the library
+ list(FILTER STORM_NONMODULE_SOURCES EXCLUDE REGEX ".*/main\\.cpp$")
+ 
+ # Declare C++23 module interface and partition sources (all *.cppm)
+ target_sources(${PROJECT_NAME}
+     PUBLIC
+         FILE_SET cxx_modules TYPE CXX_MODULES
+         FILES
+             ${STORM_MODULE_UNITS}
+ )
+ 
+ # Add implementation sources (non-interface units)
+ target_sources(${PROJECT_NAME}
+     PRIVATE
+         ${STORM_NONMODULE_SOURCES}
+ )
 
-# start src
-file(GLOB_RECURSE RESOURCES CONFIGURE_DEPENDS src/*.*)
-add_executable(${PROJECT_NAME} ${RESOURCES})
-
-# Set include directories properly
-# This makes both "#include <File.h>" and "#include "File.h"" work correctly
-target_include_directories(${PROJECT_NAME} 
-    PRIVATE 
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src"
-)
+ # Enable Clang modules and builtin module maps so import <...> works for libc++ headers
+ target_compile_options(${PROJECT_NAME} PRIVATE -fmodules -fbuiltin-module-map)
+ 
+ # Group sources by folder in IDEs
+ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" FILES
+     ${STORM_MODULE_UNITS}
+     ${STORM_NONMODULE_SOURCES}
+ )
+ 
+ # Includes for consumers and internal builds
+ target_include_directories(${PROJECT_NAME}
+     PUBLIC
+         "${CMAKE_CURRENT_SOURCE_DIR}"
+         "${CMAKE_CURRENT_SOURCE_DIR}/src"
+     )
 
 # Ensure compile_commands.json is generated
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-# end src
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/envs.cmake)
 
@@ -71,16 +107,9 @@ endif()
 
 include(${CPM_DOWNLOAD_LOCATION})
 
-CPMAddPackage(
-    NAME fmt
-    GITHUB_REPOSITORY fmtlib/fmt
-    GIT_TAG 11.2.0
-)
-
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
     PostgreSQL::PostgreSQL
-    fmt
 )
 
 option(ENABLE_TESTS "Enable testing support" OFF)

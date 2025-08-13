@@ -1,4 +1,7 @@
-#pragma once
+module;
+
+// Define the module
+export module storm.base_class;
 
 /**
  * @brief Base class for all database-related classes
@@ -6,7 +9,7 @@
  * This class serves as a common base for all database-related classes
  * in the system, providing shared functionality and type information.
  */
-class BaseClass {
+export class BaseClass {
 public:
     BaseClass() = default;
     virtual ~BaseClass() = default;

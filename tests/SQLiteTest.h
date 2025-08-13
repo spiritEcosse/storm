@@ -1,28 +1,34 @@
 #pragma once
 
 #include <gtest/gtest.h>
-#include <string>
-#include <vector>
-#include <memory>
-#include <set>
-#include "QuerySet.h"
-#include "SQLExceptions.h"
-#include "Transaction.h"
-#include <sstream>
-#include <iomanip>
-#include <variant>
-#include <ranges>
-#include <print>
-#include <expected>
-#include <string>
-#include <map>
-#include <vector>
-#include <iostream>
-#include <cmath>
-#include <algorithm>
-#include <format>
-#include <optional>
-#include <concepts>
+import <string>;
+import <vector>;
+import <memory>;
+import <set>;
+import <sstream>;
+import <iomanip>;
+import <variant>;
+import <ranges>;
+import <print>;
+import <expected>;
+import <map>;
+import <iostream>;
+import <cmath>;
+import <algorithm>;
+import <format>;
+import <optional>;
+import <concepts>;
+import <utility>;
+
+// Use Storm C++23 modules (no legacy headers)
+import storm.connection;
+import storm.statement;
+import storm.query_set;
+import storm.field;
+import storm.core_types;
+import storm.sql_exceptions;
+import storm.transaction;
+import storm.reflect;
 
 using namespace storm;
 
@@ -54,27 +60,38 @@ struct Post {
         : id(id), title(t), content(c), author_id(author_id), views(views) {}
 };
 
-REFLECT_TYPE_MOCK(
-    Author,
-    REFLECT_REGISTER_MEMBER(Author, id);
-    REFLECT_REGISTER_MEMBER(Author, name);
-    REFLECT_REGISTER_MEMBER(Author, age);
-    REFLECT_REGISTER_MEMBER(Author, email);
-    REFLECT_REGISTER_MEMBER(Author, is_active);
-    REFLECT_REGISTER_MEMBER(Author, rating);
-    REFLECT_REGISTER_MEMBER(Author, score);
-    REFLECT_REGISTER_MEMBER(Author, middleName);
-    REFLECT_REGISTER_MEMBER(Author, biography);
-);
+// Register reflection metadata for test models using storm.reflect (no macros)
+template<>
+struct ::refl::type_info<Author> {
+    static constexpr bool has_reflection = true;
+    using descriptor = ::refl::meta::type_descriptor<
+        Author,
+        ::refl::detail::fixed_string{"Author"},
+        ::refl::meta::member_descriptor<&Author::id,         ::refl::detail::fixed_string{"id"}>,
+        ::refl::meta::member_descriptor<&Author::name,       ::refl::detail::fixed_string{"name"}>,
+        ::refl::meta::member_descriptor<&Author::age,        ::refl::detail::fixed_string{"age"}>,
+        ::refl::meta::member_descriptor<&Author::email,      ::refl::detail::fixed_string{"email"}>,
+        ::refl::meta::member_descriptor<&Author::is_active,  ::refl::detail::fixed_string{"is_active"}>,
+        ::refl::meta::member_descriptor<&Author::rating,     ::refl::detail::fixed_string{"rating"}>,
+        ::refl::meta::member_descriptor<&Author::score,      ::refl::detail::fixed_string{"score"}>,
+        ::refl::meta::member_descriptor<&Author::middleName, ::refl::detail::fixed_string{"middleName"}>,
+        ::refl::meta::member_descriptor<&Author::biography,  ::refl::detail::fixed_string{"biography"}>
+    >;
+};
 
-REFLECT_TYPE_MOCK(
-    Post,
-    REFLECT_REGISTER_MEMBER(Post, id);
-    REFLECT_REGISTER_MEMBER(Post, title);
-    REFLECT_REGISTER_MEMBER(Post, content);
-    REFLECT_REGISTER_MEMBER(Post, author_id);
-    REFLECT_REGISTER_MEMBER(Post, views);
-);
+template<>
+struct ::refl::type_info<Post> {
+    static constexpr bool has_reflection = true;
+    using descriptor = ::refl::meta::type_descriptor<
+        Post,
+        ::refl::detail::fixed_string{"Post"},
+        ::refl::meta::member_descriptor<&Post::id,         ::refl::detail::fixed_string{"id"}>,
+        ::refl::meta::member_descriptor<&Post::title,      ::refl::detail::fixed_string{"title"}>,
+        ::refl::meta::member_descriptor<&Post::content,    ::refl::detail::fixed_string{"content"}>,
+        ::refl::meta::member_descriptor<&Post::author_id,  ::refl::detail::fixed_string{"author_id"}>,
+        ::refl::meta::member_descriptor<&Post::views,      ::refl::detail::fixed_string{"views"}>
+    >;
+};
 
 class ORMTest : public ::testing::Test {
 protected:
@@ -245,7 +262,7 @@ void AssertResultsMatch(const ExpectedValueVectorMap& actual_result,
     std::vector<bool> matched(actual_results.size());
     
     // For each expected result, find a matching actual result
-    for (auto&& [expected_idx, expected] : expected_results | std::views::enumerate) {
+    for (size_t expected_idx = 0; const auto& expected : expected_results) {
         ASSERT_FALSE(expected.empty()) 
             << std::format("Expected result map {} is empty", expected_idx);
         
@@ -264,14 +281,18 @@ void AssertResultsMatch(const ExpectedValueVectorMap& actual_result,
             });
         };
         
-        auto match_it = std::ranges::find_if(
-            actual_results | std::views::enumerate, 
-            find_match
-        );
+        // Find matching result using traditional approach
+        bool found_match = false;
+        for (size_t actual_idx = 0; const auto& actual : actual_results) {
+            if (find_match(std::make_pair(actual_idx, actual))) {
+                matched[actual_idx] = true;
+                found_match = true;
+                break;
+            }
+            ++actual_idx;
+        }
         
-        if (match_it != std::ranges::end(actual_results | std::views::enumerate)) {
-            matched[std::get<0>(*match_it)] = true;
-        } else {
+        if (!found_match) {
             // Build comprehensive error message using ranges
             auto build_map_string = [](const auto& map) -> std::string {
                 std::string result = "{";
@@ -292,12 +313,14 @@ void AssertResultsMatch(const ExpectedValueVectorMap& actual_result,
                 build_map_string(expected)
             );
             
-            for (const auto& [i, result] : actual_results | std::views::enumerate) {
+            for (size_t i = 0; const auto& result : actual_results) {
                 error_msg += std::format("  [{}] {}\n", i, build_map_string(result));
+                ++i;
             }
             
             ASSERT_TRUE(false) << error_msg;
         }
+        ++expected_idx;
     }
 }
 
