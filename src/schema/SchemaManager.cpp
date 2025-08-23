@@ -3,11 +3,11 @@ module;
 // Module implementation unit
 module storm.schema_manager;
 
-// Import required modules
-import storm.statement;
-import storm.utils;
 import <iostream>;
 import <string>;
+
+// Import required modules
+import storm.utils;
 
 namespace storm {
 void SchemaManager::show_schemas() {

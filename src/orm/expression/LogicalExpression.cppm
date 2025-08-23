@@ -1,18 +1,15 @@
 module;
 
-// Module global fragment - include necessary headers
-// (no legacy standard includes)
-
 // Define the module
 export module storm.logical_expression;
+
+import <vector>;
+import <memory>;
+import <string>;
 
 // Import required modules
 import storm.expression;
 import storm.parameter_binder;
-// Import standard header units
-import <vector>;
-import <memory>;
-import <string>;
 
 export namespace storm {
 

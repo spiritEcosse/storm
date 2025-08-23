@@ -5,6 +5,7 @@ module;
 
 // Define the module
 export module storm.connection;
+
 // Import standard header units
 import <string>;
 import <type_traits>;
@@ -28,6 +29,7 @@ public:
     sqlite3* get() const;
     bool is_open() const;
     std::int64_t last_insert_id() const;
+    int get_affected_rows() const;
     
     // Transaction methods
     void begin_transaction(TransactionLevel level = TransactionLevel::DEFERRED);

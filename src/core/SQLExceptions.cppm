@@ -1,8 +1,5 @@
 module;
 
-// Module global fragment
-// (no legacy standard includes)
-
 // Define the module
 export module storm.sql_exceptions;
 

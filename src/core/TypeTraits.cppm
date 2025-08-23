@@ -1,12 +1,8 @@
 module;
 
-// Module global fragment
-// (no legacy standard includes)
-
 // Define the module
 export module storm.type_traits;
 
-// Import standard header units
 import <type_traits>;
 
 export namespace storm {

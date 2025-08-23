@@ -1,15 +1,10 @@
 module;
 
-// Module global fragment
-// (no legacy standard includes)
-
-// Define the module
 export module storm.function;
 
-// Import required modules
-import storm.base_class;
-// Import standard header units
 import <string>;
+
+import storm.base_class;
 
 export namespace storm {
 

@@ -1,21 +1,18 @@
 module;
 
-// Module global fragment
-// (no legacy standard includes)
-
 // Define the module
 export module storm.expression;
+
+import <string>;
+import <memory>;
+import <expected>;
 
 // Import required modules
 import storm.core_types; // For shared types
 import storm.parameter_binder; // For ParameterBinder
-// Import standard header units
-import <string>;
-import <memory>;
+import storm.reflect; // For bind_variant function
 
 export namespace storm {
-
-// ParameterBinder is now imported from storm.parameter_binder
 
 // Base expression interface
 class Expression {

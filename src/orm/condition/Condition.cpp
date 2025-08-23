@@ -1,20 +1,19 @@
 module;
 
-// Module global fragment
-// (no legacy standard includes)
-
 // Module implementation unit
 module storm.condition;
 
-// Import required modules
-import storm.core_types; // For SqlValue, Op, Collation
-import storm.parameter_binder;
 import <string>;
 import <string_view>;
 import <stdexcept>;
 import <type_traits>;
 import <iostream>;
 import <memory>;
+import <variant>;
+
+// Import required modules
+import storm.core_types; // For SqlValue, Op, Collation
+import storm.parameter_binder;
 
 namespace storm {
 

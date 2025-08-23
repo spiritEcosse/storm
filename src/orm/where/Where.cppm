@@ -1,10 +1,14 @@
 module;
 
-// Module global fragment
- 
-
 // Define the module
 export module storm.where;
+
+import <string>;
+import <memory>;
+import <type_traits>;
+import <concepts>;
+import <span>;
+import <unordered_map>;
 
 // Import required modules
 import storm.reflect;
@@ -14,14 +18,6 @@ import storm.condition;
 import storm.logical_expression;
 import storm.parameter_binder;
 import storm.core_types; // For SqlValue and other core types
-
-// Import standard header units
-import <string>;
-import <memory>;
-import <type_traits>;
-import <concepts>;
-import <span>;
-import <unordered_map>;
 
 export namespace storm {
 
@@ -67,6 +63,11 @@ public:
     
     // SAFE SQL generation with parameter binding
     QueryResult to_query() const;
+    
+    // Get the root expression (for use with statement classes)
+    [[nodiscard]] std::shared_ptr<Expression> get_root() const {
+        return root_ ? std::shared_ptr<Expression>(root_->clone()) : nullptr;
+    }
     
     explicit operator bool() const { return root_ != nullptr; }
 };

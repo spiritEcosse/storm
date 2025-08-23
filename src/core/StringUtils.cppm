@@ -1,7 +1,5 @@
 module;
 
-// Module global fragment (no legacy includes)
-
 // Define the module
 export module storm.utils;
 
@@ -14,6 +12,37 @@ import <ranges>;
 import <string_view>;
 
 export namespace storm::utils {
+
+/**
+ * Compile-time string storage using NTTP (Non-Type Template Parameter)
+ * This is the most reliable way to handle compile-time strings in C++23
+ */
+template<std::size_t N>
+struct fixed_string {
+    std::string data;
+    
+    explicit consteval fixed_string(const char (&str)[N]) {
+        data.reserve(N-1);  // -1 for null terminator
+        for (std::size_t i = 0; i < N-1; ++i) {
+            data.push_back(str[i]);
+        }
+    }
+    
+    explicit consteval fixed_string(std::string_view sv) requires (N == sv.size() + 1) {
+        data.reserve(sv.size());
+        for (std::size_t i = 0; i < sv.size(); ++i) {
+            data.push_back(sv[i]);
+        }
+    }
+    
+    constexpr std::string_view view() const {
+        return std::string_view{data};
+    }
+    
+    constexpr const char* c_str() const {
+        return data.c_str();
+    }
+};
 
 inline auto to_lower(std::string str) -> std::string {
     std::ranges::transform(str, str.begin(),

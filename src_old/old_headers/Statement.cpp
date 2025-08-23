@@ -16,6 +16,7 @@ import <vector>;
 import <memory>;
 import <expected>;
 import <string>;
+import <format>;
 
 namespace storm {
 Statement::Statement(std::shared_ptr<Connection> conn, const std::string& sql) : conn(std::move(conn)), stmt(nullptr), sql_(sql) {
@@ -155,7 +156,7 @@ std::string Statement::column_text(int idx) const {
 }
 
 
-std::vector<Row> Statement::execute_all() {
+std::expected<std::vector<Row>, std::string> Statement::execute_all() {
     std::vector<Row> results;
     
     // Get column count
@@ -169,7 +170,7 @@ std::vector<Row> Statement::execute_all() {
     
     // Check for errors
     if (step_result != SQLITE_DONE) {
-        throw StatementExecutionException(sqlite3_errmsg(conn->get()), sql_);
+        return std::unexpected(std::string(sqlite3_errmsg(conn->get())) + " (SQL: " + sql_ + ")");
     }
     
     return results;

@@ -1,26 +1,25 @@
 module;
 
-// Module global fragment
-// (no legacy standard includes)
-
-// Define the module
 export module storm.core_types;
 
-// Import standard header units
 import <string>;
 import <optional>;
 import <variant>;
 import <string_view>;
+import <cstdint>;
 
 export namespace storm {
 
-// Core value types that can be used in WHERE clauses and other SQL operations
+// Core value types that can be used in both WHERE clauses and database binding
 using SqlValue = std::variant<
     std::string,
-    int, long, long long,
+    int8_t, int16_t, int32_t, int64_t,
+    uint8_t, uint16_t, uint32_t, uint64_t,
     float, double,
     bool,
-    std::nullopt_t
+    std::nullopt_t,
+    std::nullptr_t,
+    std::monostate
 >;
 
 // Compile-time operator types for type safety

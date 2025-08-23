@@ -13,17 +13,21 @@ import storm.function;
 import storm.where;
 import storm.field; // For Field class
 import storm.connection;
-import storm.statement;
+// Import statement modules
+import storm.statement.base;   // For StatementBase
+import storm.statement.remove; // For DeleteStatement
+import storm.statement.insert; // For InsertStatement
+import storm.statement.update; // For UpdateStatement
 import storm.reflect;
 import storm.type_traits;
 import storm.utils;
-// Import standard header units
+
+// Import standard header units in the global module fragment
 import <string>;
 import <utility>;
 import <memory>;
 import <vector>;
 import <expected>;
-import <string>;
 import <unordered_map>;
 import <type_traits>;
 import <variant>;
@@ -31,10 +35,8 @@ import <map>;
 import <ranges>;
 import <cstdint>;
 import <sstream>;
-import <expected>;
 import <print>;
 import <string_view>;
-import <memory>;
 import <optional>;
 import <concepts>;
 import <format>;
@@ -240,7 +242,7 @@ export namespace storm {
         using ExpectedT = std::expected<T, std::string>;
         using ExpectedVectorT = std::expected<std::vector<T>, std::string>;
         std::shared_ptr<Connection> conn;
-        std::optional<storm::Where> _whereExpression;
+        std::shared_ptr<storm::Where> _whereExpression;
         JoinInfo joinInfo;
         // Order fields with direction (field, ascending/descending)
         struct OrderFieldInfo {
@@ -281,6 +283,7 @@ export namespace storm {
         std::vector<std::unique_ptr<FieldAliasBase>> onlyFields;
         std::vector<Function> functionsSet;
         std::vector<std::unique_ptr<FieldAliasBase>> groupByFields; // For compile-time field names
+        
         int _limit{};
         int _offset{};
         std::string _alias;
@@ -456,14 +459,18 @@ export namespace storm {
         
         template<class U>
         QuerySet<T>& left_join(std::string&& alias = "", std::string&& addConditions = "");
-
-        std::expected<int, std::string> remove();
-        std::expected<int, std::string> remove(const T& obj);
-        std::expected<int, std::string> remove(const std::vector<T>& objs);
+                
+        std::expected<bool, std::string> remove(const T& obj);
+        std::expected<bool, std::string> remove(const std::vector<T>& objs);
         
         // UPDATE API (declarations)
+        std::expected<int, std::string> update(T obj);
         std::expected<int, std::string> update(const T& obj);
+        std::expected<int, std::string> update(std::vector<T> objs);
         std::expected<int, std::string> update(const std::vector<T>& objs);
+        std::expected<int, std::string> update(std::span<const T> objects);
+        template <auto MemberPtr, typename Value>
+        std::expected<int, std::string> update(Value&& value);
         
         // SELECT API (declarations)
         std::expected<std::vector<T>, std::string> select_all();
@@ -471,17 +478,36 @@ export namespace storm {
         ExpectedValueVectorMap select_values();
         
         // INSERT API (declarations)
-        std::expected<std::vector<int>, std::string> insert(const std::vector<T>& objs);
+        std::expected<int, std::string> insert(T obj);
         std::expected<int, std::string> insert(const T& obj);
-        Statement stmt_insert(const T& obj);
-        Statement stmt_insert(const std::vector<T>& objs);
+        std::expected<std::vector<int>, std::string> insert(std::vector<T> objs);
+        std::expected<std::vector<int>, std::string> insert(const std::vector<T>& objs);
+        std::expected<std::vector<int>, std::string> insert(std::span<const T> objects);
+        InsertStatement<T> stmt_insert(const T& obj);
+        InsertStatement<T> stmt_insert(const std::vector<T>& objs);
 
     private:
-        [[nodiscard]] std::vector<int> execute_insert(const std::vector<const T*>& obj_ptrs, const std::vector<std::string>& field_names);
-        [[nodiscard]] std::string build_insert_sql(const std::vector<std::string>& field_names, size_t num_objects = 1, bool returning_id = false);
-        [[nodiscard]] std::vector<std::string> get_insert_field_names() const;
-        void bind_object_values(Statement& stmt, const T& obj, int& param_index) const;
+        [[nodiscard]] std::expected<std::vector<int>, std::string> execute_insert(std::span<const T> objects) const noexcept {
+            if (objects.empty()) return std::vector<int>{};
+            return InsertStatement<T>(conn).execute(objects);
+        }
+
+        [[nodiscard]] std::expected<int, std::string> execute_update(std::span<const T> objects) const noexcept {
+            if (objects.empty()) return 0;
+            return UpdateStatement<T>(conn).execute(objects);
+        }
         
+        [[nodiscard]] std::expected<bool, std::string> execute_delete(std::span<const T> objects) const noexcept {
+            if (objects.empty()) return false;
+            return DeleteStatement<T>(conn).execute(objects);
+        }
+        
+        [[nodiscard]] std::expected<bool, std::string> execute_delete() const noexcept {
+            return DeleteStatement<T>(conn).where(_whereExpression).execute();
+        }
+        
+        // END DELETE
+
         template<typename FieldType, typename Value>
         [[nodiscard]] storm::Where create_condition(const FieldType& field_obj, Value&& value, storm::Op op) const {
             switch(op) {
@@ -603,9 +629,8 @@ export namespace storm {
         }
 
         template<typename U>
-        [[nodiscard]] std::string get_table_name() const {
-            static_assert(refl::reflectable<U>, "Type must be reflectable");
-            return std::string{refl::reflect<U>::get_struct_name()};
+        [[nodiscard]] consteval std::string_view get_table_name() {
+            return refl::reflect<U>::get_struct_name();
         }
 
         // Helper to add an order field with direction and collation
@@ -678,7 +703,7 @@ export namespace storm {
         std::string build_field_expression(std::string_view fieldSeparator);
 
         template<auto Field>
-        constexpr void check_member_pointer() {
+        consteval void check_member_pointer() {
             static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
         }
 
@@ -695,9 +720,9 @@ export namespace storm {
     QuerySet<T>& QuerySet<T>::where(const storm::Where& where_clause) {
         if (this->_whereExpression) {
             // Combine with existing WHERE using AND
-            this->_whereExpression = *this->_whereExpression && where_clause;
+            this->_whereExpression = std::make_shared<storm::Where>(*this->_whereExpression && where_clause);
         } else {
-            this->_whereExpression = where_clause;
+            this->_whereExpression = std::make_shared<storm::Where>(where_clause);
         }
         return *this;
     }
@@ -705,9 +730,9 @@ export namespace storm {
     template<typename T>
     QuerySet<T>& QuerySet<T>::where(storm::Where&& where_clause) {
         if (this->_whereExpression) {
-            this->_whereExpression = *this->_whereExpression && where_clause;
+            this->_whereExpression = std::make_shared<storm::Where>(*this->_whereExpression && where_clause);
         } else {
-            this->_whereExpression = std::move(where_clause);
+            this->_whereExpression = std::make_shared<storm::Where>(std::move(where_clause));
         }
         return *this;
     }
@@ -764,237 +789,86 @@ export namespace storm {
         return where(std::move(condition));
     }
 
-    // DELETE/REMOVE implementation
-    template<typename T>
-    std::expected<int, std::string> QuerySet<T>::remove() {
-        if (!conn) {
-            return std::unexpected("No database connection available");
-        }
-
-        try {
-            std::string sql = "DELETE FROM " + get_table_name<T>();
-            
-            // Add WHERE clause if present
-            if (_whereExpression) {
-                auto query_result = _whereExpression->to_query();
-                sql += " WHERE " + query_result.sql;
-            }
-            
-            // Add LIMIT clause if present
-            if (_limit > 0) {
-                sql += " LIMIT " + std::to_string(_limit);
-            }
-
-            // Create statement using Storm ORM API
-            Statement stmt(conn, sql);
-
-            // Bind WHERE parameters if present
-            if (_whereExpression) {
-                auto query_result = _whereExpression->to_query();
-                // Bind parameters from the query result
-                for (const auto& [param_name, param_value] : query_result.parameters()) {
-                    int param_index = stmt.get_parameter_index(param_name);
-                    if (param_index > 0) {
-                        // Use switch on variant index to avoid std::visit compilation issues
-                        switch (param_value.index()) {
-                            case 0: // std::string
-                                stmt.bind(param_index, std::get<std::string>(param_value));
-                                break;
-                            case 1: // int
-                                stmt.bind(param_index, std::get<int>(param_value));
-                                break;
-                            case 2: // long
-                                stmt.bind(param_index, static_cast<long long>(std::get<long>(param_value)));
-                                break;
-                            case 3: // long long
-                                stmt.bind(param_index, std::get<long long>(param_value));
-                                break;
-                            case 4: // float
-                                stmt.bind(param_index, static_cast<double>(std::get<float>(param_value)));
-                                break;
-                            case 5: // double
-                                stmt.bind(param_index, std::get<double>(param_value));
-                                break;
-                            case 6: // bool
-                                stmt.bind(param_index, static_cast<int>(std::get<bool>(param_value)));
-                                break;
-                            case 7: // std::nullopt_t
-                                stmt.bind_null(param_index);
-                                break;
-                        }
-                    }
-                }
-            }
-
-            auto result = stmt.execute();
-            if (!result) {
-                return std::unexpected("Failed to execute DELETE statement: " + result.error());
-            }
-
-            // For DELETE operations, we can use SQLite's changes() function
-            // or return a simple success indicator
-            return 1; // Simplified - indicates successful execution
-        } catch (const std::exception& e) {
-            return std::unexpected(std::string("DELETE operation failed: ") + e.what());
-        }
-    }
-
     // UPDATE implementation
+    // 1. Single object - handles move
+    template<typename T>
+    std::expected<int, std::string> QuerySet<T>::update(T obj) {
+        return execute_update(std::span<const T>{&obj, 1});
+    }
+    
+    // 2. Const ref - keeps user's original object
     template<typename T>
     std::expected<int, std::string> QuerySet<T>::update(const T& obj) {
-        if (!conn) {
-            return std::unexpected("No database connection available");
-        }
-
-        try {
-            std::string sql = "UPDATE " + get_table_name<T>() + " SET ";
-            
-            // Build SET clause using reflection
-            std::vector<std::string> set_clauses;
-            refl::reflect<T>::for_each_member([&](auto member_desc) {
-                std::string field_name = std::string{member_desc.name()};
-                set_clauses.push_back(field_name + " = ?");
-            });
-            
-            // Join SET clauses with commas
-            for (size_t i = 0; const auto& clause : set_clauses) {
-                if (i > 0) sql += ", ";
-                sql += clause;
-                ++i;
-            }
-            
-            // Add WHERE clause if present
-            if (_whereExpression) {
-                auto query_result = _whereExpression->to_query();
-                sql += " WHERE " + query_result.sql;
-            }
-
-            // Create statement using Storm ORM API
-            Statement stmt(conn, sql);
-
-            // Bind object values
-            int param_index = 1;
-            refl::reflect<T>::for_each_member([&](auto member_desc) {
-                auto value = member_desc.get_value(obj);
-                stmt.bind(param_index++, value);
-            });
-
-            // Bind WHERE parameters if present
-            if (_whereExpression) {
-                auto query_result = _whereExpression->to_query();
-                for (const auto& [param_name, param_value] : query_result.parameters()) {
-                    int where_param_index = stmt.get_parameter_index(param_name);
-                    if (where_param_index > 0) {
-                        // Use switch on variant index to avoid std::visit compilation issues
-                        switch (param_value.index()) {
-                            case 0: // std::string
-                                stmt.bind(where_param_index, std::get<std::string>(param_value));
-                                break;
-                            case 1: // int
-                                stmt.bind(where_param_index, std::get<int>(param_value));
-                                break;
-                            case 2: // long
-                                stmt.bind(where_param_index, static_cast<long long>(std::get<long>(param_value)));
-                                break;
-                            case 3: // long long
-                                stmt.bind(where_param_index, std::get<long long>(param_value));
-                                break;
-                            case 4: // float
-                                stmt.bind(where_param_index, static_cast<double>(std::get<float>(param_value)));
-                                break;
-                            case 5: // double
-                                stmt.bind(where_param_index, std::get<double>(param_value));
-                                break;
-                            case 6: // bool
-                                stmt.bind(where_param_index, static_cast<int>(std::get<bool>(param_value)));
-                                break;
-                            case 7: // std::nullopt_t
-                                stmt.bind_null(where_param_index);
-                                break;
-                        }
-                    }
-                }
-            }
-
-            auto result = stmt.execute();
-            if (!result) {
-                return std::unexpected("Failed to execute UPDATE statement: " + result.error());
-            }
-
-            return 1; // Simplified - indicates successful execution
-        } catch (const std::exception& e) {
-            return std::unexpected(std::string("UPDATE operation failed: ") + e.what());
-        }
+        return execute_update(std::span<const T>{&obj, 1});
     }
-
-    // Batch UPDATE implementation
+    
+    // 3. Batch move - takes ownership of vector
+    template<typename T>
+    std::expected<int, std::string> QuerySet<T>::update(std::vector<T> objs) {
+        return execute_update(std::span<const T>{objs});
+    }
+    
+    // 4. Batch const ref - keeps user's original vector
     template<typename T>
     std::expected<int, std::string> QuerySet<T>::update(const std::vector<T>& objs) {
-        if (objs.empty()) {
-            return 0; // No objects to update
-        }
+        return execute_update(std::span<const T>{objs});
+    }
+    
+    // 5. Advanced flexibility - direct span
+    template<typename T>
+    std::expected<int, std::string> QuerySet<T>::update(std::span<const T> objects) {
+        return execute_update(objects);
+    }
 
-        int total_updated = 0;
-        for (const auto& obj : objs) {
-            auto result = update(obj);
-            if (!result) {
-                return result; // Return the error from the failed update
-            }
-            total_updated += result.value();
-        }
-        
-        return total_updated;
+    // INSERT implementation
+    // === MINIMAL NECESSARY OVERLOADS ===
+    
+    // 1. Single object - handles move
+    template<typename T>
+    std::expected<int, std::string> QuerySet<T>::insert(T obj) {
+        return execute_insert(std::span<const T>{&obj, 1})
+            .transform([](const std::vector<int>& ids) -> int {
+                return ids.empty() ? -1 : ids[0];
+            });
+    }
+    
+    // 2. Const ref - keeps user's original object
+    template<typename T>
+    std::expected<int, std::string> QuerySet<T>::insert(const T& obj) {
+        return execute_insert(std::span<const T>{&obj, 1})
+            .transform([](const std::vector<int>& ids) -> int {
+                return ids.empty() ? -1 : ids[0];
+            });
+    }
+    
+    // 3. Batch move - takes ownership of vector
+    template<typename T>
+    std::expected<std::vector<int>, std::string> QuerySet<T>::insert(std::vector<T> objs) {
+        return execute_insert(std::span<const T>{objs});
+    }
+
+    // 4. Batch const ref - keeps user's original vector
+    template<typename T>
+    std::expected<std::vector<int>, std::string> QuerySet<T>::insert(const std::vector<T>& objs) {
+        return execute_insert(std::span<const T>{objs});
+    }
+
+    // 5. Advanced flexibility - direct span
+    template<typename T>
+    std::expected<std::vector<int>, std::string> QuerySet<T>::insert(std::span<const T> objects) {
+        return execute_insert(objects);
     }
 
     // Single object REMOVE implementation
     template<typename T>
-    std::expected<int, std::string> QuerySet<T>::remove(const T& obj) {
-        // Build WHERE clause based on primary key or all fields for exact match
-        std::string sql = "DELETE FROM " + get_table_name<T>() + " WHERE ";
-        std::vector<std::string> conditions;
-        
-        refl::reflect(obj).for_each([&](auto field) {
-            std::string field_name = std::string(field.name);
-            conditions.push_back(field_name + " = ?");
-        });
-        
-        // Join conditions with AND
-        for (size_t i = 0; const auto& condition : conditions) {
-            if (i > 0) sql += " AND ";
-            sql += condition;
-            ++i;
-        }
-        
-        // Create and execute statement
-        Statement stmt(conn, sql);
-        
-        // Bind parameters
-        int param_index = 1;
-        refl::reflect(obj).for_each([&](auto field) {
-            auto value = field.get();
-            stmt.bind(param_index++, value);
-        });
-        
-        return stmt.execute();
+    std::expected<bool, std::string> QuerySet<T>::remove(const T& obj) {
+        return execute_delete(std::span<const T>{&obj, 1});
     }
 
     // Batch REMOVE implementation
     template<typename T>
-    std::expected<int, std::string> QuerySet<T>::remove(const std::vector<T>& objs) {
-        if (objs.empty()) {
-            return 0; // No objects to remove
-        }
-
-        int total_removed = 0;
-        for (const auto& obj : objs) {
-            auto result = remove(obj);
-            if (!result) {
-                return result; // Return the error from the failed remove
-            }
-            total_removed += result.value();
-        }
-        
-        return total_removed;
+    std::expected<bool, std::string> QuerySet<T>::remove(const std::vector<T>& objs) {
+        return execute_delete(std::span<const T>{objs}); 
     }
 
     // Helper for recursive multi-field order_by processing
@@ -1348,99 +1222,99 @@ export namespace storm {
     // SELECT ALL implementation
     template<typename T>
     std::expected<std::vector<T>, std::string> QuerySet<T>::select_all() {
-        try {
-            auto fieldsClause = this->buildFieldsClause();
-            std::string sql = "SELECT " + createDistinctClause() + fieldsClause + " FROM " + get_table_name<T>();
+        // try {
+        //     auto fieldsClause = this->buildFieldsClause();
+        //     std::string sql = "SELECT " + createDistinctClause() + fieldsClause + " FROM " + get_table_name<T>();
             
-            // Add WHERE clause if present
-            if (_whereExpression) {
-                auto query_result = _whereExpression->to_query();
-                sql += " WHERE " + query_result.sql;
-            }
+        //     // Add WHERE clause if present
+        //     if (_whereExpression) {
+        //         auto query_result = _whereExpression->to_query();
+        //         sql += " WHERE " + query_result.sql;
+        //     }
             
-            // Add ORDER BY clause if present
-            if (!orderFields.empty()) {
-                sql += " ORDER BY ";
-                for (size_t i = 0; const auto& order_field : orderFields) {
-                    if (i > 0) sql += ", ";
-                    // Note: This is a simplified implementation
-                    // In a full implementation, you'd extract field name from the FieldAliasBase
-                    sql += "field_name"; // Placeholder - would need proper field name extraction
-                    sql += order_field.ascending ? " ASC" : " DESC";
-                    ++i;
-                }
-            }
+        //     // Add ORDER BY clause if present
+        //     if (!orderFields.empty()) {
+        //         sql += " ORDER BY ";
+        //         for (size_t i = 0; const auto& order_field : orderFields) {
+        //             if (i > 0) sql += ", ";
+        //             // Note: This is a simplified implementation
+        //             // In a full implementation, you'd extract field name from the FieldAliasBase
+        //             sql += "field_name"; // Placeholder - would need proper field name extraction
+        //             sql += order_field.ascending ? " ASC" : " DESC";
+        //             ++i;
+        //         }
+        //     }
             
-            // Add LIMIT clause if present
-            if (_limit > 0) {
-                sql += " LIMIT " + std::to_string(_limit);
-            }
+        //     // Add LIMIT clause if present
+        //     if (_limit > 0) {
+        //         sql += " LIMIT " + std::to_string(_limit);
+        //     }
             
-            // Add OFFSET clause if present
-            if (_offset > 0) {
-                sql += " OFFSET " + std::to_string(_offset);
-            }
+        //     // Add OFFSET clause if present
+        //     if (_offset > 0) {
+        //         sql += " OFFSET " + std::to_string(_offset);
+        //     }
 
-            // Create statement using Storm ORM API
-            Statement stmt(conn, sql);
+        //     // Create statement using Storm ORM API
+        //     Statement stmt(conn, sql);
 
-            // Bind WHERE parameters if present
-            if (_whereExpression) {
-                auto query_result = _whereExpression->to_query();
-                // Bind parameters from the query result
-                for (const auto& [param_name, param_value] : query_result.parameters()) {
-                    int param_index = stmt.get_parameter_index(param_name);
-                    if (param_index > 0) {
-                        // Use switch on variant index to avoid std::visit compilation issues
-                        switch (param_value.index()) {
-                            case 0: // std::string
-                                stmt.bind(param_index, std::get<std::string>(param_value));
-                                break;
-                            case 1: // int
-                                stmt.bind(param_index, std::get<int>(param_value));
-                                break;
-                            case 2: // long
-                                stmt.bind(param_index, static_cast<long long>(std::get<long>(param_value)));
-                                break;
-                            case 3: // long long
-                                stmt.bind(param_index, std::get<long long>(param_value));
-                                break;
-                            case 4: // float
-                                stmt.bind(param_index, static_cast<double>(std::get<float>(param_value)));
-                                break;
-                            case 5: // double
-                                stmt.bind(param_index, std::get<double>(param_value));
-                                break;
-                            case 6: // bool
-                                stmt.bind(param_index, static_cast<int>(std::get<bool>(param_value)));
-                                break;
-                            case 7: // std::nullopt_t
-                                stmt.bind_null(param_index);
-                                break;
-                        }
-                    }
-                }
-            }
+        //     // Bind WHERE parameters if present
+        //     if (_whereExpression) {
+        //         auto query_result = _whereExpression->to_query();
+        //         // Bind parameters from the query result
+        //         for (const auto& [param_name, param_value] : query_result.parameters()) {
+        //             int param_index = stmt.get_parameter_index(param_name);
+        //             if (param_index > 0) {
+        //                 // Use switch on variant index to avoid std::visit compilation issues
+        //                 switch (param_value.index()) {
+        //                     case 0: // std::string
+        //                         stmt.bind(param_index, std::get<std::string>(param_value));
+        //                         break;
+        //                     case 1: // int
+        //                         stmt.bind(param_index, std::get<int>(param_value));
+        //                         break;
+        //                     case 2: // long
+        //                         stmt.bind(param_index, static_cast<long long>(std::get<long>(param_value)));
+        //                         break;
+        //                     case 3: // long long
+        //                         stmt.bind(param_index, std::get<long long>(param_value));
+        //                         break;
+        //                     case 4: // float
+        //                         stmt.bind(param_index, static_cast<double>(std::get<float>(param_value)));
+        //                         break;
+        //                     case 5: // double
+        //                         stmt.bind(param_index, std::get<double>(param_value));
+        //                         break;
+        //                     case 6: // bool
+        //                         stmt.bind(param_index, static_cast<int>(std::get<bool>(param_value)));
+        //                         break;
+        //                     case 7: // std::nullopt_t
+        //                         stmt.bind_null(param_index);
+        //                         break;
+        //                 }
+        //             }
+        //         }
+        //     }
 
-            // Execute query and fetch results
-            auto result = stmt.execute();
-            if (!result) {
-                return std::unexpected("Failed to execute SELECT statement: " + result.error());
-            }
+        //     // Execute query and fetch results
+        //     auto result = stmt.execute();
+        //     if (!result) {
+        //         return std::unexpected("Failed to execute SELECT statement: " + result.error());
+        //     }
 
-            // Note: This is a simplified implementation
-            // In a full implementation, you'd need to:
-            // 1. Fetch rows from the result set
-            // 2. Map columns to T object fields using reflection
-            // 3. Construct T objects from the row data
+        //     // Note: This is a simplified implementation
+        //     // In a full implementation, you'd need to:
+        //     // 1. Fetch rows from the result set
+        //     // 2. Map columns to T object fields using reflection
+        //     // 3. Construct T objects from the row data
             
-            std::vector<T> results;
-            // Placeholder implementation - would need proper result set processing
-            return results;
+        //     std::vector<T> results;
+        //     // Placeholder implementation - would need proper result set processing
+        //     return results;
 
-        } catch (const std::exception& e) {
-            return std::unexpected("Exception in select_all(): " + std::string(e.what()));
-        }
+        // } catch (const std::exception& e) {
+        //     return std::unexpected("Exception in select_all(): " + std::string(e.what()));
+        // }
     }
 
     // SELECT ONE implementation (returns single object)
@@ -1516,87 +1390,87 @@ export namespace storm {
         std::string_view error_prefix,
         ValueExtractor value_extractor
     ) {
-        // Create temporary QuerySet and clear existing state
-        auto tempQuerySet = *this;
-        tempQuerySet.onlyFields.clear();
-        tempQuerySet.distinctFields.clear();
-        tempQuerySet.functionsSet.clear();
+        // // Create temporary QuerySet and clear existing state
+        // auto tempQuerySet = *this;
+        // tempQuerySet.onlyFields.clear();
+        // tempQuerySet.distinctFields.clear();
+        // tempQuerySet.functionsSet.clear();
         
-        // Apply the specific aggregate function
-        setup_function(tempQuerySet);
+        // // Apply the specific aggregate function
+        // setup_function(tempQuerySet);
         
-        // Build and execute query - simplified version for now
-        try {
-            auto fieldsClause = tempQuerySet.buildFieldsClause();
-            std::string sql = "SELECT " + fieldsClause + " FROM " + get_table_name<T>();
+        // // Build and execute query - simplified version for now
+        // try {
+        //     auto fieldsClause = tempQuerySet.buildFieldsClause();
+        //     std::string sql = "SELECT " + fieldsClause + " FROM " + get_table_name<T>();
             
-            // Add WHERE clause if present
-            if (_whereExpression) {
-                auto query_result = _whereExpression->to_query();
-                sql += " WHERE " + query_result.sql;
-            }
+        //     // Add WHERE clause if present
+        //     if (_whereExpression) {
+        //         auto query_result = _whereExpression->to_query();
+        //         sql += " WHERE " + query_result.sql;
+        //     }
 
-            // Create statement using Storm ORM API
-            Statement stmt(conn, sql);
+        //     // Create statement using Storm ORM API
+        //     Statement stmt(conn, sql);
 
-            // Bind WHERE parameters if present
-            if (_whereExpression) {
-                auto query_result = _whereExpression->to_query();
-                // Bind parameters from the query result
-                for (const auto& [param_name, param_value] : query_result.parameters()) {
-                    int param_index = stmt.get_parameter_index(param_name);
-                    if (param_index > 0) {
-                        // Use switch on variant index to avoid std::visit compilation issues
-                        switch (param_value.index()) {
-                            case 0: // std::string
-                                stmt.bind(param_index, std::get<std::string>(param_value));
-                                break;
-                            case 1: // int
-                                stmt.bind(param_index, std::get<int>(param_value));
-                                break;
-                            case 2: // long
-                                stmt.bind(param_index, static_cast<long long>(std::get<long>(param_value)));
-                                break;
-                            case 3: // long long
-                                stmt.bind(param_index, std::get<long long>(param_value));
-                                break;
-                            case 4: // float
-                                stmt.bind(param_index, static_cast<double>(std::get<float>(param_value)));
-                                break;
-                            case 5: // double
-                                stmt.bind(param_index, std::get<double>(param_value));
-                                break;
-                            case 6: // bool
-                                stmt.bind(param_index, static_cast<int>(std::get<bool>(param_value)));
-                                break;
-                            case 7: // std::nullopt_t
-                                stmt.bind_null(param_index);
-                                break;
-                        }
-                    }
-                }
-            }
+        //     // Bind WHERE parameters if present
+        //     if (_whereExpression) {
+        //         auto query_result = _whereExpression->to_query();
+        //         // Bind parameters from the query result
+        //         for (const auto& [param_name, param_value] : query_result.parameters()) {
+        //             int param_index = stmt.get_parameter_index(param_name);
+        //             if (param_index > 0) {
+        //                 // Use switch on variant index to avoid std::visit compilation issues
+        //                 switch (param_value.index()) {
+        //                     case 0: // std::string
+        //                         stmt.bind(param_index, std::get<std::string>(param_value));
+        //                         break;
+        //                     case 1: // int
+        //                         stmt.bind(param_index, std::get<int>(param_value));
+        //                         break;
+        //                     case 2: // long
+        //                         stmt.bind(param_index, static_cast<long long>(std::get<long>(param_value)));
+        //                         break;
+        //                     case 3: // long long
+        //                         stmt.bind(param_index, std::get<long long>(param_value));
+        //                         break;
+        //                     case 4: // float
+        //                         stmt.bind(param_index, static_cast<double>(std::get<float>(param_value)));
+        //                         break;
+        //                     case 5: // double
+        //                         stmt.bind(param_index, std::get<double>(param_value));
+        //                         break;
+        //                     case 6: // bool
+        //                         stmt.bind(param_index, static_cast<int>(std::get<bool>(param_value)));
+        //                         break;
+        //                     case 7: // std::nullopt_t
+        //                         stmt.bind_null(param_index);
+        //                         break;
+        //                 }
+        //             }
+        //         }
+        //     }
 
-            // Execute query and fetch results
-            auto result = stmt.execute();
-            if (!result) {
-                return std::unexpected("Failed to execute aggregate query: " + result.error());
-            }
+        //     // Execute query and fetch results
+        //     auto result = stmt.execute();
+        //     if (!result) {
+        //         return std::unexpected("Failed to execute aggregate query: " + result.error());
+        //     }
 
-            // For now, return a placeholder value based on ReturnType
-            if constexpr (std::is_same_v<ReturnType, std::string>) {
-                return std::string{};
-            } else if constexpr (std::is_same_v<ReturnType, int>) {
-                return 0;
-            } else if constexpr (std::is_same_v<ReturnType, double>) {
-                return 0.0;
-            } else {
-                return ReturnType{};
-            }
+        //     // For now, return a placeholder value based on ReturnType
+        //     if constexpr (std::is_same_v<ReturnType, std::string>) {
+        //         return std::string{};
+        //     } else if constexpr (std::is_same_v<ReturnType, int>) {
+        //         return 0;
+        //     } else if constexpr (std::is_same_v<ReturnType, double>) {
+        //         return 0.0;
+        //     } else {
+        //         return ReturnType{};
+        //     }
 
-        } catch (const std::exception& e) {
-            return std::unexpected("Exception in " + std::string(error_prefix) + ": " + std::string(e.what()));
-        }
+        // } catch (const std::exception& e) {
+        //     return std::unexpected("Exception in " + std::string(error_prefix) + ": " + std::string(e.what()));
+        // }
     }
 
     // MAX aggregate function that returns the direct value instead of a QuerySet
@@ -1654,6 +1528,3 @@ export namespace storm {
     }
 
 } // namespace storm
-
-// Note: Partition export commented out to avoid circular dependency issues
-// export import :where_impl;

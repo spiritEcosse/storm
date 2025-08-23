@@ -1,6 +1,5 @@
 module;
 
-// (no legacy standard includes)
 
 // Module implementation unit
 module storm.logical_expression;

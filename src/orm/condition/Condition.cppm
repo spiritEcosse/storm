@@ -1,22 +1,21 @@
 module;
 
-// Module global fragment
-// (no legacy standard includes)
-
 // Define the module
 export module storm.condition;
 
-// Import required modules
-import storm.core_types; // For SqlValue, Op, Collation
-import storm.expression;
-import storm.parameter_binder; // For ParameterBinder
-// Import standard header units
+import <vector>;
 import <string>;
 import <string_view>;
 import <iostream>;
 import <memory>;
 import <utility>;
-import <variant>; // For std::variant used in SqlValue
+import <variant>;
+import <optional>;
+
+// Import required modules
+import storm.core_types; // For SqlValue, Op, Collation
+import storm.expression;
+import storm.parameter_binder; // For ParameterBinder
 
 export namespace storm {
 

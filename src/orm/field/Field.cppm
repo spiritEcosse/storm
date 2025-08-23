@@ -1,23 +1,9 @@
 module;
 
-// Module global fragment - include necessary headers
-// (no legacy standard includes)
-
 // Define the module
 export module storm.field;
 
-// Import required modules
 import <format>;
-import storm.reflect;
-import storm.utils;
-import storm.expression;
-import storm.condition;
-import storm.logical_expression;
-import storm.parameter_binder;
-import storm.core_types; // For SqlValue, Op, Collation
-import storm.type_traits; // For member_pointer_traits
-import storm.where; // For Where return type in operators
-// Import standard header units
 import <string>;
 import <string_view>;
 import <vector>;
@@ -30,6 +16,17 @@ import <initializer_list>;
 import <ranges>;
 import <utility>;
 import <string_view>;
+
+// Import required modules
+import storm.reflect;
+import storm.utils;
+import storm.expression;
+import storm.condition;
+import storm.logical_expression;
+import storm.parameter_binder;
+import storm.core_types; // For SqlValue, Op, Collation
+import storm.type_traits; // For member_pointer_traits
+import storm.where; // For Where return type in operators
 
 export namespace storm {
 

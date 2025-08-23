@@ -1,20 +1,17 @@
 module;
 
-// Module global fragment - no legacy standard includes
-
 // Module implementation unit
 module storm.parameter_binder;
 
-// Import required modules
-import storm.core_types; // For SqlValue
-
-// Import standard header units
 import <format>;
 import <string>;
 import <unordered_map>;
 import <string_view>;
 import <functional>;
-import <variant>; // For std::variant used in SqlValue
+import <variant>;
+
+// Import required modules
+import storm.core_types; // For SqlValue
 
 namespace storm {
 

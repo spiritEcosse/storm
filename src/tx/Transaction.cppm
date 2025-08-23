@@ -1,16 +1,13 @@
 module;
 
-// Global module fragment
-// (no legacy standard includes)
-
 export module storm.transaction;
 
-import storm.connection;
-// Import standard header units
 import <memory>;
 import <functional>;
 import <stdexcept>;
 import <iostream>;
+
+import storm.connection;
 
 export namespace storm {
 

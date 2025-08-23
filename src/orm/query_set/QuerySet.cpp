@@ -1,12 +1,9 @@
 module;
 
-// Module global fragment - include necessary headers
- 
 
 // Module implementation unit
 module storm.query_set;
 
-// Import required standard header units
 import <string>;
 
 // Import required modules for implementation

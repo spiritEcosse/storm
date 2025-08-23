@@ -1,18 +1,16 @@
 module;
 
-// Module global fragment
-// (no legacy standard includes)
-
 // Module implementation unit
 module storm.where;
+
+import <string>;
+import <memory>;
+import <variant>;
 
 // Import required modules for implementation
 import storm.logical_expression;
 import storm.parameter_binder;
 import storm.core_types; // For SqlValue
-import <string>;
-import <memory>;
-import <variant>; // For std::variant used in SqlValue
 
 namespace storm {
 

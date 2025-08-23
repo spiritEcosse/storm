@@ -70,7 +70,7 @@ export namespace storm {
         // Execute a query and return a single row (for SELECT statements expecting one result)
         std::expected<Row, std::string> execute_query();
         void reset();
-        std::vector<Row> execute_all();
+        std::expected<std::vector<Row>, std::string> execute_all();
 
         int column_int(int idx) const;
         double column_double(int idx) const;

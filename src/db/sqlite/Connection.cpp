@@ -3,15 +3,17 @@ module;
 // Module global fragment
 #include <sqlite3.h>
 
+
 // Module implementation unit
 module storm.connection;
 
-// Import required modules
-import storm.sql_exceptions;
 import <string>;
 import <iostream>;
 import <stdexcept>;
 import <cstdint>;
+
+// Import required modules
+import storm.sql_exceptions;
 
 // Constructor implementation
 Connection::Connection(const std::string& db_name) : db(nullptr), transaction_active(false) {
@@ -78,6 +80,13 @@ std::int64_t Connection::last_insert_id() const {
         return -1; // Error value
     }
     return static_cast<std::int64_t>(sqlite3_last_insert_rowid(db));
+}
+
+int Connection::get_affected_rows() const {
+    if (!is_open()) {
+        return -1; // Error value
+    }
+    return sqlite3_changes(db);
 }
 
 void Connection::begin_transaction(TransactionLevel level) {
