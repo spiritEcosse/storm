@@ -247,11 +247,8 @@ export namespace storm {
         std::expected<std::vector<int>, std::string> insert(std::span<const T> objects);
         InsertStatement<T> stmt_insert(const T& obj);
         InsertStatement<T> stmt_insert(const std::vector<T>& objs);
-
+    
     private:
-        template<auto NextField, bool NextAsc, auto... Rest>
-        QuerySet<T>& order_by_impl();
-
         [[nodiscard]] std::expected<std::vector<int>, std::string> execute_insert(std::span<const T> objects) const noexcept {
             if (objects.empty()) return std::vector<int>{};
             return InsertStatement<T>(conn).execute(objects);
@@ -271,8 +268,6 @@ export namespace storm {
             return DeleteStatement<T>(conn).where(_whereExpression).execute();
         }
         
-        // END DELETE
-
         template<typename FieldType, typename Value>
         [[nodiscard]] storm::Where create_condition(const FieldType& field_obj, Value&& value, storm::Op op) const {
             switch(op) {
@@ -475,7 +470,6 @@ export namespace storm {
         consteval void check_member_pointer() {
             static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
         }
-
         // Common helper for executing aggregate queries
         template<typename ReturnType, typename SetupFunction, typename ValueExtractor = std::nullptr_t>
         std::expected<ReturnType, std::string> execute_aggregate_query(
@@ -632,26 +626,6 @@ export namespace storm {
     template<typename T>
     std::expected<bool, std::string> QuerySet<T>::remove(const std::vector<T>& objs) {
         return execute_delete(std::span<const T>{objs}); 
-    }
-
-    // Helper for recursive multi-field order_by processing
-    template<typename T>
-    template<auto NextField, bool NextAsc, auto... Rest>
-    QuerySet<T>& QuerySet<T>::order_by_impl() {
-        // Store as value-semantic order term
-        auto d = make_field_desc<NextField>();
-        orderTerms.push_back(OrderTerm{
-            d.table,
-            d.field,
-            NextAsc,
-            Collation::NONE
-        });
-        
-        if constexpr (sizeof...(Rest) >= 2) {
-            return order_by_impl<Rest...>();
-        }
-        
-        return *this;
     }
 
     // DISTINCT implementation
