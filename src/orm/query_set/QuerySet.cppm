@@ -21,6 +21,7 @@ import storm.statement.update; // For UpdateStatement
 import storm.reflect;
 import storm.type_traits;
 import storm.utils;
+import storm.field_desc;
 
 // Import standard header units in the global module fragment
 import <string>;
@@ -40,6 +41,8 @@ import <string_view>;
 import <optional>;
 import <concepts>;
 import <format>;
+import <algorithm>;
+import <array>;
 
 export namespace storm {
     // Define ValueVariant before using it
@@ -116,100 +119,10 @@ export namespace storm {
     // Function declaration moved to .cpp
     std::string joinTypeToString(const JoinInfo::JoinType type);
 
-    // Base class for type erasure
-    struct FieldAliasBase {
-        std::string alias;
-        
-        explicit FieldAliasBase(std::string alias = "") 
-            : alias(std::move(alias)) {}
-        
-        virtual ~FieldAliasBase() = default;
-        [[nodiscard]] virtual std::string getFullFieldName() const = 0;
-        [[nodiscard]] virtual std::string getFieldName() const = 0;
-        [[nodiscard]] virtual std::string getTableName() const = 0;
-        [[nodiscard]] virtual std::string getAlias() const = 0;
-        virtual bool isStringField() const = 0;
-        virtual bool isBoolField() const = 0;
-        virtual bool isNumericField() const = 0;
-        // Clone method for polymorphic copying
-        [[nodiscard]] virtual FieldAliasBase* clone() const = 0;
-    };
-
-    template<auto MemberPtr>
-    struct FieldAlias : public FieldAliasBase {
-        using ClassType = typename member_pointer_traits<decltype(MemberPtr)>::class_type;
-        using FieldType = typename member_pointer_traits<decltype(MemberPtr)>::type;
-
-        // Constructor with default empty alias
-        explicit FieldAlias(std::string alias = "")
-            : FieldAliasBase(std::move(alias)) {}
-
-        ~FieldAlias() override = default;
-
-        [[nodiscard]] std::string getFullFieldName() const override {
-            return utils::formatFieldName(getTableName(), getFieldName());
-        }
-
-        [[nodiscard]] std::string getFieldName() const override {
-            // Find the member name using compile-time reflection
-            std::string result;
-            refl::reflect<ClassType>::for_each_member([&]<size_t I>(auto member) {
-                if (member.member_ptr == MemberPtr) {
-                    result = std::string{member.get_name()};
-                }
-            });
-            return result;
-        }
-
-        [[nodiscard]] std::string getTableName() const override {
-            static_assert(refl::reflectable<ClassType>,
-                         "Class must be registered with REFL_DEFINE_TYPE");
-            return refl::reflect<ClassType>::get_struct_name();
-        }
-
-        [[nodiscard]] std::string getAlias() const override {
-            return alias;
-        }
-
-        [[nodiscard]] bool isStringField() const override {
-            return std::is_same_v<FieldType, std::string>;
-        }
-
-        [[nodiscard]] bool isBoolField() const override {
-            return std::is_same_v<FieldType, bool>;
-        }
-
-        [[nodiscard]] bool isNumericField() const override {
-            return (std::integral<FieldType> || std::floating_point<FieldType>) && !std::is_same_v<FieldType, bool>;
-        }
-
-        [[nodiscard]] FieldAliasBase* clone() const override {
-            // Used in make_field_alias_unique which wraps the raw pointer in a unique_ptr
-            return new FieldAlias<MemberPtr>(alias);
-        }
-
-        // Helpful accessors (non-virtual)
-        template<typename Object>
-            requires std::same_as<std::decay_t<Object>, ClassType>
-        [[nodiscard]] const FieldType& getValue(const Object& obj) const {
-            return obj.*MemberPtr;
-        }
-
-        template<typename Object>
-            requires std::same_as<std::decay_t<Object>, ClassType>
-        [[nodiscard]] FieldType& getValue(Object& obj) const {
-            return obj.*MemberPtr;
-        }
-    };
-    
-    // Helper function to create a unique_ptr from a FieldAliasBase using clone
-    template <typename T>
-    std::unique_ptr<FieldAliasBase> make_field_alias_unique(const T& field) {
-        // We can't use std::make_unique directly with FieldAliasBase because it's abstract
-        // Instead, we use the clone method which returns a concrete derived type
-        return std::unique_ptr<FieldAliasBase>(field->clone());
+    [[nodiscard]] inline std::string full_field_name(const FieldDesc& d) {
+        return utils::formatFieldName(d.table, d.field);
     }
-    
+
     template<class T>
     class QuerySet {
     private:
@@ -226,11 +139,11 @@ export namespace storm {
             Collation   collation = Collation::NONE;
         };
         std::vector<OrderTerm> orderTerms;
-        std::vector<std::unique_ptr<FieldAliasBase>> distinctFields;
+        std::vector<FieldDesc> distinctFields;
         std::string _jsonFields;
-        std::vector<std::unique_ptr<FieldAliasBase>> onlyFields;
+        std::vector<FieldDesc> onlyFields;
         std::vector<Function> functionsSet;
-        std::vector<std::unique_ptr<FieldAliasBase>> groupByFields; // For compile-time field names
+        std::vector<FieldDesc> groupByFields; // For compile-time field names
         
         int _limit{};
         int _offset{};
@@ -251,36 +164,10 @@ export namespace storm {
               _jsonFields(other._jsonFields), functionsSet(other.functionsSet),
               _limit(other._limit), _offset(other._offset), _alias(other._alias),
               _one(other._one), _doAndCheck(other._doAndCheck), _returnInMain(other._returnInMain) {
-            
-            // Deep copy distinctFields
-            distinctFields.reserve(other.distinctFields.size());
-            for (const auto& field : other.distinctFields) {
-                if (field) {
-                    distinctFields.emplace_back(std::unique_ptr<FieldAliasBase>(field->clone()));
-                } else {
-                    distinctFields.emplace_back(nullptr);
-                }
-            }
-            
-            // Deep copy onlyFields
-            onlyFields.reserve(other.onlyFields.size());
-            for (const auto& field : other.onlyFields) {
-                if (field) {
-                    onlyFields.emplace_back(std::unique_ptr<FieldAliasBase>(field->clone()));
-                } else {
-                    onlyFields.emplace_back(nullptr);
-                }
-            }
-            
-            // Deep copy groupByFields
-            groupByFields.reserve(other.groupByFields.size());
-            for (const auto& field : other.groupByFields) {
-                if (field) {
-                    groupByFields.emplace_back(std::unique_ptr<FieldAliasBase>(field->clone()));
-                } else {
-                    groupByFields.emplace_back(nullptr);
-                }
-            }
+            // Value semantics: vectors copy directly
+            distinctFields = other.distinctFields;
+            onlyFields = other.onlyFields;
+            groupByFields = other.groupByFields;
         }
         
         // Move constructor
@@ -492,8 +379,8 @@ export namespace storm {
             if (!distinctFields.empty() && onlyFields.empty()) {
                 // Use distinct fields
                 auto field_strings = distinctFields 
-                    | std::views::transform([](const auto& field_alias) { 
-                        return field_alias->getFullFieldName(); 
+                    | std::views::transform([](const auto& desc) { 
+                        return full_field_name(desc); 
                     })
                     | std::ranges::to<std::vector<std::string>>();
                 
@@ -502,10 +389,10 @@ export namespace storm {
             } else if (!onlyFields.empty()) {
                 // Use only fields with optional aliases
                 auto field_strings = onlyFields 
-                    | std::views::transform([](const auto& field_alias) {
-                        return field_alias->alias.empty() 
-                            ? field_alias->getFullFieldName()
-                            : std::format("{} AS {}", field_alias->getFullFieldName(), field_alias->alias);
+                    | std::views::transform([](const auto& desc) {
+                        return desc.alias.empty() 
+                            ? full_field_name(desc)
+                            : std::format("{} AS {}", full_field_name(desc), desc.alias);
                     })
                     | std::ranges::to<std::vector<std::string>>();
                 
@@ -588,10 +475,10 @@ export namespace storm {
                         "Field must be a member pointer");
 
             // Compute names at add-time and store by value
-            FieldAlias<Field> alias;
+            auto d = make_field_desc<Field>();
             this->orderTerms.push_back(OrderTerm{
-                std::string(alias.getTableName()),
-                std::string(alias.getFieldName()),
+                d.table,
+                d.field,
                 ascending,
                 collation
             });
@@ -627,10 +514,10 @@ export namespace storm {
                         "Collation must be a Collation enum value");
             
             // Add the current field-direction-collation triplet as value term
-            FieldAlias<Field> alias;
+            auto d = make_field_desc<Field>();
             this->orderTerms.push_back(OrderTerm{
-                std::string(alias.getTableName()),
-                std::string(alias.getFieldName()),
+                d.table,
+                d.field,
                 Direction,
                 Coll
             });
@@ -822,10 +709,10 @@ export namespace storm {
     template<auto NextField, bool NextAsc, auto... Rest>
     QuerySet<T>& QuerySet<T>::order_by_impl() {
         // Store as value-semantic order term
-        FieldAlias<NextField> alias;
+        auto d = make_field_desc<NextField>();
         orderTerms.push_back(OrderTerm{
-            std::string(alias.getTableName()),
-            std::string(alias.getFieldName()),
+            d.table,
+            d.field,
             NextAsc,
             Collation::NONE
         });
@@ -849,7 +736,7 @@ export namespace storm {
         
         // Process each field
         auto addField = [this]<auto Field>() {
-            this->distinctFields.emplace_back(std::make_unique<FieldAlias<Field>>());
+            this->distinctFields.emplace_back(make_field_desc<Field>());
         };
         
         (addField.template operator()<Fields>(), ...);
@@ -868,9 +755,7 @@ export namespace storm {
         
         // Process each field
         auto addField = [this, &alias]<auto MemberPtr>() {
-            auto field = std::make_unique<Field<MemberPtr>>();
-            // Set alias if provided (simplified - in full implementation would handle per-field aliases)
-            onlyFields.emplace_back(std::move(field));
+            onlyFields.emplace_back(make_field_desc<MemberPtr>(alias));
         };
         
         (addField.template operator()<Fields>(), ...);
@@ -887,8 +772,7 @@ export namespace storm {
         
         // Process each field
         auto addField = [this]<auto MemberPtr>() {
-            auto field = std::make_unique<Field<MemberPtr>>();
-            groupByFields.emplace_back(std::move(field));
+            groupByFields.emplace_back(make_field_desc<MemberPtr>());
         };
         
         (addField.template operator()<Fields>(), ...);
@@ -945,10 +829,10 @@ export namespace storm {
         
         // Add the first field-direction pair
         {
-            FieldAlias<Field> alias;
+            auto d = make_field_desc<Field>();
             this->orderTerms.push_back(OrderTerm{
-                std::string(alias.getTableName()),
-                std::string(alias.getFieldName()),
+                d.table,
+                d.field,
                 Direction,
                 Collation::NONE
             });
@@ -981,10 +865,10 @@ export namespace storm {
         
         // Add the first field-direction-collation triplet
         {
-            FieldAlias<Field> alias;
+            auto d = make_field_desc<Field>();
             this->orderTerms.push_back(OrderTerm{
-                std::string(alias.getTableName()),
-                std::string(alias.getFieldName()),
+                d.table,
+                d.field,
                 Direction,
                 Coll
             });
@@ -1016,11 +900,11 @@ export namespace storm {
         static_assert(std::is_member_pointer_v<decltype(FirstField)>, "FirstField must be a member pointer");
         (check_member_pointer<RestFields>(), ...);
         
-        auto firstField = std::make_unique<FieldAlias<FirstField>>();
+        auto firstDesc = make_field_desc<FirstField>();
         
         // Generate alias
         std::string actual_alias = alias.empty() ? 
-            std::format("group_concat_{}", firstField->getFieldName()) : 
+            std::format("group_concat_{}", firstDesc.field) : 
             std::string(alias);
         
         // Build field expression
@@ -1039,7 +923,7 @@ export namespace storm {
         
         auto [actual_alias, field_expr] = prepare_group_concat<FirstField, RestFields...>(alias, fieldSeparator);
         
-        auto orderField = std::make_unique<FieldAlias<OrderField>>();
+        auto orderDesc = make_field_desc<OrderField>();
         
         // Build GROUP_CONCAT function with ORDER BY
         std::string function_str = "GROUP_CONCAT(";
@@ -1049,8 +933,8 @@ export namespace storm {
         }
         
         function_str += field_expr;
-        function_str += std::format(" ORDER BY {}", orderField->getFullFieldName());
-        function_str += std::format(", '{}') AS {}", separator, actual_alias);
+        function_str += std::format(" ORDER BY {}", full_field_name(orderDesc));
+        function_str += std::format(", '{}' ) AS {}", separator, actual_alias);
         
         functions(Function(function_str));
         return *this;
@@ -1059,18 +943,18 @@ export namespace storm {
     template<typename T>
     template<auto FirstField, auto... RestFields>
     std::string QuerySet<T>::build_field_expression(std::string_view fieldSeparator) {
-        auto firstField = std::make_unique<FieldAlias<FirstField>>();
-        std::string field_expr = firstField->getFullFieldName();
+        auto firstDesc = make_field_desc<FirstField>();
+        std::string field_expr = full_field_name(firstDesc);
         
         if constexpr (sizeof...(RestFields) == 0) {
             return field_expr;
         }
 
         ([&field_expr, &fieldSeparator]<auto Field>() {
-            auto field = std::make_unique<FieldAlias<Field>>();
+            auto d = make_field_desc<Field>();
             field_expr = std::format("{}||'{}'||{}", 
                                 field_expr, fieldSeparator,
-                                field->getFullFieldName());
+                                full_field_name(d));
         }.template operator()<RestFields>(), ...);
         return field_expr;
     }
@@ -1080,13 +964,13 @@ export namespace storm {
     template<auto Field>
     QuerySet<T>& QuerySet<T>::max(std::string_view alias) {
         static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
-        auto field = std::make_unique<FieldAlias<Field>>();
+        auto desc = make_field_desc<Field>();
         std::string actual_alias(alias);
         if(actual_alias.empty()) {
-            actual_alias = std::format("max_{}", field->getFieldName());
+            actual_alias = std::format("max_{}", desc.field);
         }
         // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
-        functionsSet.emplace_back(Function(std::format("MAX({}) AS {}", field->getFullFieldName(), actual_alias)));
+        functionsSet.emplace_back(Function(std::format("MAX({}) AS {}", full_field_name(desc), actual_alias)));
         return *this;
     }
     
@@ -1094,13 +978,13 @@ export namespace storm {
     template<auto Field>
     QuerySet<T>& QuerySet<T>::min(std::string_view alias) {
         static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
-        auto field = std::make_unique<FieldAlias<Field>>();
+        auto desc = make_field_desc<Field>();
         std::string actual_alias(alias);
         if(actual_alias.empty()) {
-            actual_alias = std::format("min_{}", field->getFieldName());
+            actual_alias = std::format("min_{}", desc.field);
         }
         // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
-        functionsSet.emplace_back(Function(std::format("MIN({}) AS {}", field->getFullFieldName(), actual_alias)));
+        functionsSet.emplace_back(Function(std::format("MIN({}) AS {}", full_field_name(desc), actual_alias)));
         return *this;
     }
 
@@ -1111,13 +995,13 @@ export namespace storm {
         // Only numeric fields should be used with AVG
         using FieldType = typename member_pointer_traits<decltype(Field)>::type;
         static_assert(std::is_arithmetic_v<FieldType> && !std::is_same_v<FieldType, bool>, "AVG can only be used with numeric fields");
-        auto field = std::make_unique<FieldAlias<Field>>();
+        auto desc = make_field_desc<Field>();
         std::string actual_alias(alias);
         if(actual_alias.empty()) {
-            actual_alias = std::format("avg_{}", field->getFieldName());
+            actual_alias = std::format("avg_{}", desc.field);
         }
         // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
-        functionsSet.emplace_back(Function(std::format("AVG({}) AS {}", field->getFullFieldName(), actual_alias)));
+        functionsSet.emplace_back(Function(std::format("AVG({}) AS {}", full_field_name(desc), actual_alias)));
         return *this;
     }
 
@@ -1125,13 +1009,13 @@ export namespace storm {
     template<auto Field>
     QuerySet<T>& QuerySet<T>::count(std::string_view alias) {
         static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
-        auto field = std::make_unique<FieldAlias<Field>>();
+        auto desc = make_field_desc<Field>();
         std::string actual_alias(alias);
         if(actual_alias.empty()) {
-            actual_alias = std::format("count_{}", field->getFieldName());
+            actual_alias = std::format("count_{}", desc.field);
         }
         // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
-        functionsSet.emplace_back(Function(std::format("COUNT({}) AS {}", field->getFullFieldName(), actual_alias)));
+        functionsSet.emplace_back(Function(std::format("COUNT({}) AS {}", full_field_name(desc), actual_alias)));
         return *this;
     }
     
@@ -1142,12 +1026,12 @@ export namespace storm {
         // Only numeric fields should be used with SUM
         using FieldType = typename member_pointer_traits<decltype(Field)>::type;
         static_assert(std::is_arithmetic_v<FieldType> && !std::is_same_v<FieldType, bool>, "SUM can only be used with numeric fields");
-        auto field = std::make_unique<FieldAlias<Field>>();
+        auto desc = make_field_desc<Field>();
         std::string actual_alias(alias);
         if(actual_alias.empty()) {
-            actual_alias = std::format("sum_{}", field->getFieldName());
+            actual_alias = std::format("sum_{}", desc.field);
         }
-        functionsSet.emplace_back(Function(std::format("SUM({}) AS {}", field->getFullFieldName(), actual_alias)));
+        functionsSet.emplace_back(Function(std::format("SUM({}) AS {}", full_field_name(desc), actual_alias)));
         return *this;
     }
 
