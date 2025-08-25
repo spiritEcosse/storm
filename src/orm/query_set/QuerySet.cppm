@@ -464,13 +464,13 @@ export namespace storm {
         std::expected<bool, std::string> remove(const std::vector<T>& objs);
         
         // UPDATE API (declarations)
-        std::expected<int, std::string> update(T obj);
-        std::expected<int, std::string> update(const T& obj);
-        std::expected<int, std::string> update(std::vector<T> objs);
-        std::expected<int, std::string> update(const std::vector<T>& objs);
-        std::expected<int, std::string> update(std::span<const T> objects);
+        std::expected<bool, std::string> update(T obj);
+        std::expected<bool, std::string> update(const T& obj);
+        std::expected<bool, std::string> update(std::vector<T> objs);
+        std::expected<bool, std::string> update(const std::vector<T>& objs);
+        std::expected<bool, std::string> update(std::span<const T> objects);
         template <auto MemberPtr, typename Value>
-        std::expected<int, std::string> update(Value&& value);
+        std::expected<bool, std::string> update(Value&& value);
         
         // SELECT API (declarations)
         std::expected<std::vector<T>, std::string> select_all();
@@ -492,8 +492,8 @@ export namespace storm {
             return InsertStatement<T>(conn).execute(objects);
         }
 
-        [[nodiscard]] std::expected<int, std::string> execute_update(std::span<const T> objects) const noexcept {
-            if (objects.empty()) return 0;
+        [[nodiscard]] std::expected<bool, std::string> execute_update(std::span<const T> objects) const noexcept {
+            if (objects.empty()) return false;
             return UpdateStatement<T>(conn).execute(objects);
         }
         
@@ -792,31 +792,31 @@ export namespace storm {
     // UPDATE implementation
     // 1. Single object - handles move
     template<typename T>
-    std::expected<int, std::string> QuerySet<T>::update(T obj) {
+    std::expected<bool, std::string> QuerySet<T>::update(T obj) {
         return execute_update(std::span<const T>{&obj, 1});
     }
     
     // 2. Const ref - keeps user's original object
     template<typename T>
-    std::expected<int, std::string> QuerySet<T>::update(const T& obj) {
+    std::expected<bool, std::string> QuerySet<T>::update(const T& obj) {
         return execute_update(std::span<const T>{&obj, 1});
     }
     
     // 3. Batch move - takes ownership of vector
     template<typename T>
-    std::expected<int, std::string> QuerySet<T>::update(std::vector<T> objs) {
+    std::expected<bool, std::string> QuerySet<T>::update(std::vector<T> objs) {
         return execute_update(std::span<const T>{objs});
     }
     
     // 4. Batch const ref - keeps user's original vector
     template<typename T>
-    std::expected<int, std::string> QuerySet<T>::update(const std::vector<T>& objs) {
+    std::expected<bool, std::string> QuerySet<T>::update(const std::vector<T>& objs) {
         return execute_update(std::span<const T>{objs});
     }
     
     // 5. Advanced flexibility - direct span
     template<typename T>
-    std::expected<int, std::string> QuerySet<T>::update(std::span<const T> objects) {
+    std::expected<bool, std::string> QuerySet<T>::update(std::span<const T> objects) {
         return execute_update(objects);
     }
 
@@ -826,19 +826,13 @@ export namespace storm {
     // 1. Single object - handles move
     template<typename T>
     std::expected<int, std::string> QuerySet<T>::insert(T obj) {
-        return execute_insert(std::span<const T>{&obj, 1})
-            .transform([](const std::vector<int>& ids) -> int {
-                return ids.empty() ? -1 : ids[0];
-            });
+        return execute_insert(std::span<const T>{&obj, 1});
     }
     
     // 2. Const ref - keeps user's original object
     template<typename T>
     std::expected<int, std::string> QuerySet<T>::insert(const T& obj) {
-        return execute_insert(std::span<const T>{&obj, 1})
-            .transform([](const std::vector<int>& ids) -> int {
-                return ids.empty() ? -1 : ids[0];
-            });
+        return execute_insert(std::span<const T>{&obj, 1});
     }
     
     // 3. Batch move - takes ownership of vector

@@ -44,7 +44,7 @@ public:
      * @param objects Span of objects to update
      * @return Number of rows affected or an error message
      */
-    [[nodiscard]] std::expected<int, std::string> execute(std::span<const T> objects) noexcept {
+    [[nodiscard]] std::expected<bool, std::string> execute(std::span<const T> objects) noexcept {
         if (objects.empty()) {
             return 0;
         }
@@ -58,9 +58,6 @@ public:
             })
             .and_then([this]() -> std::expected<Row, std::string> {
                 return this->Base::execute_query();
-            })
-            .transform([](const Row& row) -> int {
-                return row.get_int(0);  // Get affected rows count
             });
     }
     
@@ -121,7 +118,7 @@ private:
      * @return RETURNING COUNT(*) clause as a string_view
      */
     [[nodiscard]] consteval std::string_view get_returning_count_clause() const noexcept {
-        return " RETURNING COUNT(*)";
+        return "";
     }
     
     /**

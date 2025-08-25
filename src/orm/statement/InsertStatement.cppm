@@ -84,22 +84,7 @@ private:
         
         return {};
     }
-    
-    /**
-     * Build SQL for batch insert operation
-     *
-     * @param count Number of objects to insert
-     * @return SQL string or error message
-     */
-    // Check at compile time that we have fields to insert
-    static constexpr bool has_insertable_fields = []() consteval {
-        constexpr auto result = Base::get_filtered_fields();
-        return result.has_value() && !result.value().empty();
-    }();
-    
-    // Ensure we have at least one field to insert
-    static_assert(has_insertable_fields, "No fields to insert after filtering");
-    
+
     [[nodiscard]] std::expected<std::string, std::string> build_sql(size_t num_objects) const noexcept {
         // Use compile-time field filtering
         constexpr auto fields_result = Base::get_filtered_fields();
@@ -131,7 +116,7 @@ private:
                 sql += utils::join(field_names, ", ");
                 sql += ") VALUES ";
                 sql += all_placeholders;
-                sql += get_returning_rowid_clause();
+                sql += get_returning_count_clause();
                 return sql;
             }()};
     }
@@ -141,7 +126,7 @@ private:
      *
      * @return RETURNING rowid clause as a string_view
      */
-    [[nodiscard]] consteval std::string_view get_returning_rowid_clause() const noexcept {
+    [[nodiscard]] consteval std::string_view get_returning_count_clause() const noexcept {
         return " RETURNING rowid";
     }
     
@@ -174,6 +159,15 @@ private:
         
         return sql_string.view();
     }
+
+    // Check at compile time that we have fields to insert
+    static constexpr bool has_insertable_fields = []() consteval {
+        constexpr auto result = Base::get_filtered_fields();
+        return result.has_value() && !result.value().empty();
+    }();
+
+    // Ensure we have at least one field to insert
+    static_assert(has_insertable_fields, "No fields to insert after filtering");
 };
 
 } // namespace storm
