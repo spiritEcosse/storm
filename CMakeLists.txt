@@ -181,15 +181,54 @@ try_run(
 
 if(LIBCXX_VERSION_COMPILE_RESULT AND LIBCXX_VERSION_RUN_RESULT EQUAL 0)
     set(LIBCXX_VERSION ${LIBCXX_VERSION_OUTPUT})
-else()
-    set(LIBCXX_VERSION "Unknown")
-endif()
+ else()
+     set(LIBCXX_VERSION "Unknown")
+ endif()
 
-# Print build configuration
-message(STATUS "=== Storm Build Configuration ===")
-message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
-message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
-message(STATUS "libc++ Version: ${LIBCXX_VERSION}")
-message(STATUS "Testing: ${STORM_ENABLE_TESTING}")
-message(STATUS "Sanitizer: ${STORM_ENABLE_SANITIZER}")
-message(STATUS "===================================")
+ # Clang-Format integration
+ find_program(CLANG_FORMAT_EXE NAMES clang-format)
+ if(CLANG_FORMAT_EXE)
+   # Collect files to format (modules, sources, headers, and tests)
+   file(GLOB_RECURSE CLANG_FORMAT_SOURCES CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.ixx"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h"
+     "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.hpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.h"
+   )
+
+  # Use repo style if present, otherwise fall back to LLVM
+  set(CLANG_FORMAT_STYLE "--style=file")
+  if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.clang-format" AND
+     NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/_clang-format")
+    set(CLANG_FORMAT_STYLE "--style=LLVM")
+  endif()
+
+   add_custom_target(format
+    COMMAND "${CLANG_FORMAT_EXE}" -i ${CLANG_FORMAT_STYLE} ${CLANG_FORMAT_SOURCES}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    COMMENT "Running clang-format on source files"
+    VERBATIM
+  )
+
+   add_custom_target(format-check
+    COMMAND "${CLANG_FORMAT_EXE}" ${CLANG_FORMAT_STYLE} --dry-run --Werror ${CLANG_FORMAT_SOURCES}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    COMMENT "Checking code style with clang-format (fails on diffs)"
+    VERBATIM
+  )
+ else()
+   message(STATUS "clang-format not found; 'format' and 'format-check' targets are disabled")
+ endif()
+
+ # Print build configuration
+ message(STATUS "=== Storm Build Configuration ===")
+ message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
+ message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+ message(STATUS "libc++ Version: ${LIBCXX_VERSION}")
+ message(STATUS "Testing: ${STORM_ENABLE_TESTING}")
+ message(STATUS "Sanitizer: ${STORM_ENABLE_SANITIZER}")
+ message(STATUS "===================================")
