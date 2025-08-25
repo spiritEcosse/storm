@@ -72,10 +72,6 @@ export namespace storm {
     // Function declaration moved to .cpp
     std::string joinTypeToString(const JoinInfo::JoinType type);
 
-    [[nodiscard]] inline std::string full_field_name(const FieldDesc& d) {
-        return utils::formatFieldName(d.table, d.field);
-    }
-
     template<class T>
     class QuerySet {
     private:
@@ -333,7 +329,7 @@ export namespace storm {
                 // Use distinct fields
                 auto field_strings = distinctFields 
                     | std::views::transform([](const auto& desc) { 
-                        return full_field_name(desc); 
+                        return desc.full_name(); 
                     })
                     | std::ranges::to<std::vector<std::string>>();
                 
@@ -344,8 +340,8 @@ export namespace storm {
                 auto field_strings = onlyFields 
                     | std::views::transform([](const auto& desc) {
                         return desc.alias.empty() 
-                            ? full_field_name(desc)
-                            : std::format("{} AS {}", full_field_name(desc), desc.alias);
+                            ? desc.full_name()
+                            : std::format("{} AS {}", desc.full_name(), desc.alias);
                     })
                     | std::ranges::to<std::vector<std::string>>();
                 
@@ -886,7 +882,7 @@ export namespace storm {
         }
         
         function_str += field_expr;
-        function_str += std::format(" ORDER BY {}", full_field_name(orderDesc));
+        function_str += std::format(" ORDER BY {}", orderDesc.full_name());
         function_str += std::format(", '{}' ) AS {}", separator, actual_alias);
         
         functions(Function(function_str));
@@ -897,7 +893,7 @@ export namespace storm {
     template<auto FirstField, auto... RestFields>
     std::string QuerySet<T>::build_field_expression(std::string_view fieldSeparator) {
         auto firstDesc = make_field_desc<FirstField>();
-        std::string field_expr = full_field_name(firstDesc);
+        std::string field_expr = firstDesc.full_name();
         
         if constexpr (sizeof...(RestFields) == 0) {
             return field_expr;
@@ -907,7 +903,7 @@ export namespace storm {
             auto d = make_field_desc<Field>();
             field_expr = std::format("{}||'{}'||{}", 
                                 field_expr, fieldSeparator,
-                                full_field_name(d));
+                                d.full_name());
         }.template operator()<RestFields>(), ...);
         return field_expr;
     }
@@ -923,7 +919,7 @@ export namespace storm {
             actual_alias = std::format("max_{}", desc.field);
         }
         // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
-        functionsSet.emplace_back(Function(std::format("MAX({}) AS {}", full_field_name(desc), actual_alias)));
+        functionsSet.emplace_back(Function(std::format("MAX({}) AS {}", desc.full_name(), actual_alias)));
         return *this;
     }
     
@@ -937,7 +933,7 @@ export namespace storm {
             actual_alias = std::format("min_{}", desc.field);
         }
         // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
-        functionsSet.emplace_back(Function(std::format("MIN({}) AS {}", full_field_name(desc), actual_alias)));
+        functionsSet.emplace_back(Function(std::format("MIN({}) AS {}", desc.full_name(), actual_alias)));
         return *this;
     }
 
@@ -954,7 +950,7 @@ export namespace storm {
             actual_alias = std::format("avg_{}", desc.field);
         }
         // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
-        functionsSet.emplace_back(Function(std::format("AVG({}) AS {}", full_field_name(desc), actual_alias)));
+        functionsSet.emplace_back(Function(std::format("AVG({}) AS {}", desc.full_name(), actual_alias)));
         return *this;
     }
 
@@ -968,7 +964,7 @@ export namespace storm {
             actual_alias = std::format("count_{}", desc.field);
         }
         // We want to keep any existing onlyFields to allow selecting both fields and aggregate functions
-        functionsSet.emplace_back(Function(std::format("COUNT({}) AS {}", full_field_name(desc), actual_alias)));
+        functionsSet.emplace_back(Function(std::format("COUNT({}) AS {}", desc.full_name(), actual_alias)));
         return *this;
     }
     
@@ -984,7 +980,7 @@ export namespace storm {
         if(actual_alias.empty()) {
             actual_alias = std::format("sum_{}", desc.field);
         }
-        functionsSet.emplace_back(Function(std::format("SUM({}) AS {}", full_field_name(desc), actual_alias)));
+        functionsSet.emplace_back(Function(std::format("SUM({}) AS {}", desc.full_name(), actual_alias)));
         return *this;
     }
 

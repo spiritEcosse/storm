@@ -10,6 +10,7 @@ import <utility>;
 // Storm modules
 import storm.reflect;       // for refl::reflect and fixed_string
 import storm.type_traits;   // for member_pointer_traits
+import storm.utils;
 
 export namespace storm {
 
@@ -18,6 +19,10 @@ struct FieldDesc {
     std::string table;
     std::string field;
     std::string alias;
+    
+    [[nodiscard]] inline std::string full_name() const {
+        return utils::formatFieldName(table, field);
+    }
 };
 
 // Compile-time descriptor view and helpers
@@ -25,6 +30,10 @@ struct FieldDescView {
     std::string_view table;
     std::string_view field;
     std::string_view alias;
+    
+    [[nodiscard]] inline std::string full_name() const {
+        return utils::formatFieldName(std::string{table}, std::string{field});
+    }
 };
 
 // Build compile-time descriptor for a member pointer and optional alias
