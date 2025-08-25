@@ -78,7 +78,6 @@ export namespace storm {
         
         int _limit{};
         int _offset{};
-        std::string _alias;
         bool _one{};
         bool _doAndCheck{};
         bool _returnInMain{};
@@ -93,7 +92,7 @@ export namespace storm {
             : conn(other.conn), _whereExpression(other._whereExpression), join_clauses(other.join_clauses),
               orderTerms(other.orderTerms),
               _jsonFields(other._jsonFields), functionsSet(other.functionsSet),
-              _limit(other._limit), _offset(other._offset), _alias(other._alias),
+              _limit(other._limit), _offset(other._offset),
               _one(other._one), _doAndCheck(other._doAndCheck), _returnInMain(other._returnInMain) {
             // Value semantics: vectors copy directly
             distinctFields = other.distinctFields;
@@ -150,19 +149,34 @@ export namespace storm {
         template<auto Field, auto Direction, auto Coll, auto... Rest>
         QuerySet<T>& order_by_collate();
 
-    private:
-        template<auto NextField, bool NextAsc, auto... Rest>
-        QuerySet<T>& order_by_impl();
-
-    public:
+        // DISTINCT API (declarations)
         template<auto... Fields>
         QuerySet<T>& distinct();
 
+        // ONLY API (declarations)
         template<auto... Fields>
         QuerySet<T>& only(const std::string& alias = "");
 
+        // GROUP BY API (declarations)
         template<auto... Fields>
         QuerySet<T>& group_by();
+
+        template<auto FirstField, auto... RestFields>
+        QuerySet<T>& group_concat(std::string_view alias = "", 
+                                 std::string_view separator = ",", 
+                                 std::string_view fieldSeparator = " ", 
+                                 bool distinct = false);
+
+        // Overload with ORDER BY for multiple fields - requires explicit specification
+        template<auto OrderField, auto FirstField, auto... RestFields>
+        QuerySet<T>& group_concat_order(std::string_view alias = "", 
+                                       std::string_view separator = ",", 
+                                       std::string_view fieldSeparator = " ",
+                                       bool distinct = false);
+
+        // LIMIT/OFFSET API (declarations)
+        QuerySet<T>& limit(int limit_value);
+        QuerySet<T>& offset(int offset_value);
 
         // Aggregate functions
         template<auto Field>
@@ -180,19 +194,6 @@ export namespace storm {
         template<auto Field>
         QuerySet<T>& sum(std::string_view alias = "");
         
-        template<auto FirstField, auto... RestFields>
-        QuerySet<T>& group_concat(std::string_view alias = "", 
-                                 std::string_view separator = ",", 
-                                 std::string_view fieldSeparator = " ", 
-                                 bool distinct = false);
-
-        // Overload with ORDER BY for multiple fields - requires explicit specification
-        template<auto OrderField, auto FirstField, auto... RestFields>
-        QuerySet<T>& group_concat_order(std::string_view alias = "", 
-                                       std::string_view separator = ",", 
-                                       std::string_view fieldSeparator = " ",
-                                       bool distinct = false);
-
         // Aggregate value methods that return direct values instead of QuerySet
         template<auto Field>
         std::expected<typename member_pointer_traits<decltype(Field)>::type, std::string> max_value();
@@ -209,19 +210,18 @@ export namespace storm {
         template<auto Field>
         std::expected<double, std::string> sum_value();
 
-        QuerySet<T>& limit(int limit_value);
-        QuerySet<T>& offset(int offset_value);
-
-        // Functions method for adding Function objects
+        // FUNCTIONS API (declarations)
         template<typename... Args>
         QuerySet<T>& functions(Args &&...args);
 
+        // JOIN API (declarations)
         template<class U, auto MemberPtr>
         QuerySet<T>& join();
         
         template<class U, auto MemberPtr>
         QuerySet<T>& left_join();
                 
+        // REMOVE API (declarations)
         std::expected<bool, std::string> remove(const T& obj);
         std::expected<bool, std::string> remove(const std::vector<T>& objs);
         
@@ -249,6 +249,9 @@ export namespace storm {
         InsertStatement<T> stmt_insert(const std::vector<T>& objs);
 
     private:
+        template<auto NextField, bool NextAsc, auto... Rest>
+        QuerySet<T>& order_by_impl();
+
         [[nodiscard]] std::expected<std::vector<int>, std::string> execute_insert(std::span<const T> objects) const noexcept {
             if (objects.empty()) return std::vector<int>{};
             return InsertStatement<T>(conn).execute(objects);
