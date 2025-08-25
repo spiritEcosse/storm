@@ -95,8 +95,6 @@ export namespace storm {
     using ValueVectorMap = std::vector<ValueMap>;
     using ExpectedValueVectorMap = std::expected<ValueVectorMap, std::string>;
 
-    // member_pointer_traits moved to storm.type_traits module
-
     // Function declaration moved to .cpp
     std::string addExtraQuotes(const std::string& str);
 
