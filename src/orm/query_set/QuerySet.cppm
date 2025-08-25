@@ -45,53 +45,8 @@ import <algorithm>;
 import <array>;
 
 export namespace storm {
-    // Define ValueVariant before using it
-    using ValueVariant = std::variant<
-        std::monostate,  // For null values
-        int,             // For integer types
-        double,          // For floating point types
-        bool,            // For boolean values
-        std::string      // For text values
-    >;
-
-    // Utility function to convert Row column value to any type
-    template<typename T>
-    T to_value(const Row& row, int columnIndex = 0) {
-        int columnType = row.get_column_type(columnIndex);
-        
-        if constexpr (std::is_same_v<T, ValueVariant>) {
-            // Handle ValueVariant specially
-            switch (columnType) {
-                case SQLITE_INTEGER:
-                    return row.get_int(columnIndex);
-                case SQLITE_FLOAT:
-                    return row.get_double(columnIndex);
-                case SQLITE_TEXT:
-                    return row.get_text(columnIndex);
-                case SQLITE_NULL:
-                    return std::monostate{};
-                default:
-                    return std::monostate{};
-            }
-        } else if constexpr (std::is_same_v<T, int> || std::is_same_v<T, long> || 
-                      std::is_same_v<T, long long> || std::is_same_v<T, unsigned int> || 
-                      std::is_same_v<T, unsigned long> || std::is_same_v<T, unsigned long long> || 
-                      std::is_same_v<T, bool>) {
-            return static_cast<T>(row.get_int(columnIndex));
-        } else if constexpr (std::is_same_v<T, float> || std::is_same_v<T, double>) {
-            return static_cast<T>(row.get_double(columnIndex));
-        } else if constexpr (std::is_same_v<T, std::string>) {
-            return row.get_text(columnIndex);
-        } else if constexpr (std::is_same_v<T, std::monostate>) {
-            return std::monostate{};
-        } else {
-            // This will cause a compile-time error for unsupported types
-            static_assert(!sizeof(T), "Unsupported type for to_value");
-            return T{}; // This line will never be reached
-        }
-    }
-
-    using ValueMap = std::map<std::string, ValueVariant, std::less<>>;
+    // Use the canonical SqlValue type from storm.core_types to avoid redundancy
+    using ValueMap = std::map<std::string, SqlValue, std::less<>>;
     using ValueVectorMap = std::vector<ValueMap>;
     using ExpectedValueVectorMap = std::expected<ValueVectorMap, std::string>;
 

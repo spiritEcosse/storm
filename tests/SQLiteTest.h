@@ -199,51 +199,78 @@ protected:
 // Constant for floating-point comparison epsilon
 constexpr double FLOAT_COMPARISON_EPSILON = 0.001;
 
-bool VariantsEqual(const ValueVariant& lhs, const ValueVariant& rhs) {
-    if (lhs.index() != rhs.index()) {
-        // Special case for numeric types: allow comparison between int and double
-        if ((std::holds_alternative<int>(lhs) && std::holds_alternative<double>(rhs)) ||
-            (std::holds_alternative<double>(lhs) && std::holds_alternative<int>(rhs))) {
-            double left_val = std::holds_alternative<int>(lhs) ? 
-                static_cast<double>(std::get<int>(lhs)) : std::get<double>(lhs);
-            
-            double right_val = std::holds_alternative<int>(rhs) ? 
-                static_cast<double>(std::get<int>(rhs)) : std::get<double>(rhs);
-            return std::abs(left_val - right_val) < FLOAT_COMPARISON_EPSILON;
+// Treat multiple representations as null for SqlValue
+static inline bool IsNullValue(const ValueVariant& v) {
+    return std::holds_alternative<std::monostate>(v)
+        || std::holds_alternative<std::nullopt_t>(v)
+        || std::holds_alternative<std::nullptr_t>(v);
+}
+
+// If variant holds an arithmetic (non-bool) type, return it as double
+static inline std::optional<double> ToNumeric(const ValueVariant& v) {
+    return std::visit([](const auto& val) -> std::optional<double> {
+        using T = std::decay_t<decltype(val)>;
+        if constexpr (std::is_same_v<T, bool>) {
+            return std::nullopt; // treat bool separately
+        } else if constexpr (std::is_integral_v<T> || std::is_floating_point_v<T>) {
+            return static_cast<double>(val);
+        } else {
+            return std::nullopt;
         }
-        return false;
+    }, v);
+}
+
+bool VariantsEqual(const ValueVariant& lhs, const ValueVariant& rhs) {
+    // Null semantics
+    const bool lhs_null = IsNullValue(lhs);
+    const bool rhs_null = IsNullValue(rhs);
+    if (lhs_null || rhs_null) return lhs_null && rhs_null;
+
+    // Numeric semantics (covers all integral/fp alternatives except bool)
+    auto lnum = ToNumeric(lhs);
+    auto rnum = ToNumeric(rhs);
+    if (lnum && rnum) {
+        return std::abs(*lnum - *rnum) < FLOAT_COMPARISON_EPSILON;
     }
-    
+
+    // Bool semantics
+    if (std::holds_alternative<bool>(lhs) && std::holds_alternative<bool>(rhs)) {
+        return std::get<bool>(lhs) == std::get<bool>(rhs);
+    }
+
+    // String semantics
+    if (std::holds_alternative<std::string>(lhs) && std::holds_alternative<std::string>(rhs)) {
+        return std::get<std::string>(lhs) == std::get<std::string>(rhs);
+    }
+
+    // Fallback to strict same-type comparison
     return std::visit([](const auto& l, const auto& r) -> bool {
         using LType = std::decay_t<decltype(l)>;
         using RType = std::decay_t<decltype(r)>;
-        
-        if constexpr (!std::is_same_v<LType, RType>) {
-            return false;
-        } else if constexpr (std::is_same_v<LType, double> || std::is_same_v<LType, float>) {
-            // For floating point, use epsilon comparison
-            return std::abs(l - r) < FLOAT_COMPARISON_EPSILON;
-        } else {
+        if constexpr (std::is_same_v<LType, RType>) {
             return l == r;
+        } else {
+            return false;
         }
     }, lhs, rhs);
 }
 
 // Helper function to convert ValueVariant to string for error messages
 std::string ValueVariantToString(const ValueVariant& var) {
-    return std::visit([]<typename T>(const T& val) -> std::string {
-        if constexpr (std::is_same_v<T, std::monostate>) {
-            return "null";
-        } else if constexpr (std::is_same_v<T, int>) {
-            return std::format("{}", val);
-        } else if constexpr (std::is_same_v<T, double>) {
-            return std::format("{}", val);
+    if (IsNullValue(var)) return "null";
+
+    return std::visit([](const auto& val) -> std::string {
+        using T = std::decay_t<decltype(val)>;
+        if constexpr (std::is_same_v<T, std::string>) {
+            return std::format("\"{}\"", val);
         } else if constexpr (std::is_same_v<T, bool>) {
             return std::format("{}", val);
-        } else if constexpr (std::is_same_v<T, std::string>) {
-            return std::format("\"{}\"", val);
+        } else if constexpr (std::is_integral_v<T> || std::is_floating_point_v<T>) {
+            return std::format("{}", val);
+        } else {
+            // Should not reach for other alternatives as they were handled above
+            return std::string{"null"};
         }
-        std::unreachable();
     }, var);
 }
 
