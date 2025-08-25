@@ -116,10 +116,6 @@ export namespace storm {
         // Move assignment operator
         QuerySet& operator=(QuerySet&& other) noexcept = default;
         
-        [[nodiscard]] std::string getAlias() const {
-            return _alias;
-        }
-
         // WHERE API (declarations)
         QuerySet<T>& where(const storm::Where& where_clause);
         QuerySet<T>& where(storm::Where&& where_clause);
