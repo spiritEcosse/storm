@@ -10,34 +10,28 @@
 
 /**
  * @brief Fluent interface for building SQL queries
- * 
+ *
  * This class provides a fluent interface for building SQL queries
  * with proper parameter binding for security.
  */
 class QueryBuilder {
-private:
-    std::shared_ptr<AbstractConnection> connection;
-    std::ostringstream query;
+  private:
+    std::shared_ptr<AbstractConnection>       connection;
+    std::ostringstream                        query;
     std::vector<PreparedStatement::Parameter> parameters;
-    
-    enum class QueryType {
-        SELECT,
-        INSERT,
-        UPDATE,
-        DELETE,
-        NONE
-    };
-    
-    QueryType queryType = QueryType::NONE;
-    bool whereAdded = false;
-    
-public:
+
+    enum class QueryType { SELECT, INSERT, UPDATE, DELETE, NONE };
+
+    QueryType queryType  = QueryType::NONE;
+    bool      whereAdded = false;
+
+  public:
     /**
      * @brief Construct a new Query Builder object
      * @param conn AbstractConnection to use for executing queries
      */
     explicit QueryBuilder(std::shared_ptr<AbstractConnection> conn) : connection(std::move(conn)) {}
-    
+
     /**
      * @brief Start a SELECT query
      * @param columns Columns to select, comma-separated
@@ -48,7 +42,7 @@ public:
         query << "SELECT " << columns;
         return *this;
     }
-    
+
     /**
      * @brief Start an INSERT query
      * @param table Table to insert into
@@ -60,7 +54,7 @@ public:
         query << "INSERT INTO " << table << " (" << columns << ")";
         return *this;
     }
-    
+
     /**
      * @brief Start an UPDATE query
      * @param table Table to update
@@ -71,7 +65,7 @@ public:
         query << "UPDATE " << table;
         return *this;
     }
-    
+
     /**
      * @brief Start a DELETE query
      * @return Reference to this builder for method chaining
@@ -81,7 +75,7 @@ public:
         query << "DELETE FROM " << table;
         return *this;
     }
-    
+
     /**
      * @brief Add FROM clause to a SELECT query
      * @param tables Tables to select from, comma-separated
@@ -93,7 +87,7 @@ public:
         }
         return *this;
     }
-    
+
     /**
      * @brief Add WHERE clause to a query
      * @param condition WHERE condition
@@ -106,15 +100,14 @@ public:
         }
         return *this;
     }
-    
+
     /**
      * @brief Add WHERE clause with parameter binding
      * @param condition WHERE condition with ? placeholders
      * @param param Parameter value to bind
      * @return Reference to this builder for method chaining
      */
-    template<typename T>
-    QueryBuilder& where(const std::string& condition, const T& param) {
+    template <typename T> QueryBuilder& where(const std::string& condition, const T& param) {
         if (queryType != QueryType::NONE) {
             query << " WHERE " << condition;
             parameters.push_back(param);
@@ -122,7 +115,7 @@ public:
         }
         return *this;
     }
-    
+
     /**
      * @brief Add AND condition to a WHERE clause
      * @param condition AND condition
@@ -134,22 +127,21 @@ public:
         }
         return *this;
     }
-    
+
     /**
      * @brief Add AND condition with parameter binding
      * @param condition AND condition with ? placeholders
      * @param param Parameter value to bind
      * @return Reference to this builder for method chaining
      */
-    template<typename T>
-    QueryBuilder& andWhere(const std::string& condition, const T& param) {
+    template <typename T> QueryBuilder& andWhere(const std::string& condition, const T& param) {
         if (whereAdded) {
             query << " AND " << condition;
             parameters.push_back(param);
         }
         return *this;
     }
-    
+
     /**
      * @brief Add OR condition to a WHERE clause
      * @param condition OR condition
@@ -161,22 +153,21 @@ public:
         }
         return *this;
     }
-    
+
     /**
      * @brief Add OR condition with parameter binding
      * @param condition OR condition with ? placeholders
      * @param param Parameter value to bind
      * @return Reference to this builder for method chaining
      */
-    template<typename T>
-    QueryBuilder& orWhere(const std::string& condition, const T& param) {
+    template <typename T> QueryBuilder& orWhere(const std::string& condition, const T& param) {
         if (whereAdded) {
             query << " OR " << condition;
             parameters.push_back(param);
         }
         return *this;
     }
-    
+
     /**
      * @brief Add ORDER BY clause to a query
      * @param columns Columns to order by, comma-separated
@@ -188,7 +179,7 @@ public:
         }
         return *this;
     }
-    
+
     /**
      * @brief Add GROUP BY clause to a query
      * @param columns Columns to group by, comma-separated
@@ -200,7 +191,7 @@ public:
         }
         return *this;
     }
-    
+
     /**
      * @brief Add HAVING clause to a query
      * @param condition HAVING condition
@@ -212,7 +203,7 @@ public:
         }
         return *this;
     }
-    
+
     /**
      * @brief Add LIMIT clause to a query
      * @param limit Maximum number of rows to return
@@ -224,7 +215,7 @@ public:
         }
         return *this;
     }
-    
+
     /**
      * @brief Add OFFSET clause to a query
      * @param offset Number of rows to skip
@@ -236,7 +227,7 @@ public:
         }
         return *this;
     }
-    
+
     /**
      * @brief Add VALUES clause to an INSERT query
      * @param values Values to insert, comma-separated
@@ -248,7 +239,7 @@ public:
         }
         return *this;
     }
-    
+
     /**
      * @brief Add SET clause to an UPDATE query
      * @param assignments Column assignments, comma-separated
@@ -260,19 +251,19 @@ public:
         }
         return *this;
     }
-    
+
     /**
      * @brief Execute the query and return results
      * @return ResultSet containing query results
      */
     ResultSet execute() {
         auto stmt = connection->prepareStatement(query.str());
-        
+
         // Bind parameters
         for (size_t i = 0; i < parameters.size(); ++i) {
             stmt->setParameter(i + 1, parameters[i]);
         }
-        
+
         // Execute based on query type
         if (queryType == QueryType::SELECT) {
             return stmt->executeQuery();
@@ -281,7 +272,7 @@ public:
             return ResultSet();
         }
     }
-    
+
     /**
      * @brief Get the constructed SQL query string
      * @return SQL query string

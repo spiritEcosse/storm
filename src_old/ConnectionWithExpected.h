@@ -10,21 +10,21 @@
 
 /**
  * @brief Enhanced connection interface using std::expected for error handling
- * 
+ *
  * This class wraps a regular AbstractConnection and provides methods that return
  * std::expected instead of throwing exceptions.
  */
 class ConnectionWithExpected {
-private:
+  private:
     std::shared_ptr<AbstractConnection> connection;
-    
-public:
+
+  public:
     /**
      * @brief Construct a new Connection With Expected object
      * @param conn Underlying connection to use
      */
     explicit ConnectionWithExpected(std::shared_ptr<AbstractConnection> conn) : connection(std::move(conn)) {}
-    
+
     /**
      * @brief Connect to the database
      * @return std::expected with true on success or DatabaseError on failure
@@ -36,7 +36,7 @@ public:
             return std::unexpected(DatabaseError(-1, "CONN_ERR", e.what()));
         }
     }
-    
+
     /**
      * @brief Disconnect from the database
      * @return std::expected with void on success or DatabaseError on failure
@@ -49,7 +49,7 @@ public:
             return std::unexpected(DatabaseError(-1, "DISC_ERR", e.what()));
         }
     }
-    
+
     /**
      * @brief Check if connected to the database
      * @return true if connected, false otherwise
@@ -57,7 +57,7 @@ public:
     [[nodiscard]] bool isConnected() const {
         return connection->isConnected();
     }
-    
+
     /**
      * @brief Execute a SQL query
      * @param query SQL query to execute
@@ -70,7 +70,7 @@ public:
             return std::unexpected(DatabaseError(-1, "EXEC_ERR", e.what()));
         }
     }
-    
+
     /**
      * @brief Execute a SQL query and return results
      * @param query SQL query to execute
@@ -83,7 +83,7 @@ public:
             return std::unexpected(DatabaseError(-1, "QUERY_ERR", e.what()));
         }
     }
-    
+
     /**
      * @brief Prepare a SQL statement
      * @param query SQL query to prepare
@@ -96,7 +96,7 @@ public:
             return std::unexpected(DatabaseError(-1, "PREP_ERR", e.what()));
         }
     }
-    
+
     /**
      * @brief Begin a database transaction
      * @return std::expected with void on success or DatabaseError on failure
@@ -109,7 +109,7 @@ public:
             return std::unexpected(DatabaseError(-1, "TX_BEGIN_ERR", e.what()));
         }
     }
-    
+
     /**
      * @brief Commit the current transaction
      * @return std::expected with void on success or DatabaseError on failure
@@ -122,7 +122,7 @@ public:
             return std::unexpected(DatabaseError(-1, "TX_COMMIT_ERR", e.what()));
         }
     }
-    
+
     /**
      * @brief Rollback the current transaction
      * @return std::expected with void on success or DatabaseError on failure
@@ -135,7 +135,7 @@ public:
             return std::unexpected(DatabaseError(-1, "TX_ROLLBACK_ERR", e.what()));
         }
     }
-    
+
     /**
      * @brief Get the underlying connection
      * @return Underlying connection

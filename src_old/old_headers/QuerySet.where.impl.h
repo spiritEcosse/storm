@@ -8,47 +8,55 @@ import <utility>;
 
 namespace storm {
 
-    template<typename T>
-    template<typename FieldType, typename Value>
+    template <typename T>
+    template <typename FieldType, typename Value>
     storm::Where QuerySet<T>::create_condition(const FieldType& field_obj, Value&& value, storm::Op op) const {
-        switch(op) {
-            case storm::Op::EQ: return field_obj == std::forward<Value>(value);
-            case storm::Op::NE: return field_obj != std::forward<Value>(value);
-            case storm::Op::GT: return field_obj > std::forward<Value>(value);
-            case storm::Op::LT: return field_obj < std::forward<Value>(value);
-            case storm::Op::GE: return field_obj >= std::forward<Value>(value);
-            case storm::Op::LE: return field_obj <= std::forward<Value>(value);
-            case storm::Op::LIKE: return field_obj.like(std::forward<Value>(value));
-            case storm::Op::IS: return field_obj.is(std::forward<Value>(value));
-            default: return field_obj == std::forward<Value>(value);
+        switch (op) {
+        case storm::Op::EQ:
+            return field_obj == std::forward<Value>(value);
+        case storm::Op::NE:
+            return field_obj != std::forward<Value>(value);
+        case storm::Op::GT:
+            return field_obj > std::forward<Value>(value);
+        case storm::Op::LT:
+            return field_obj < std::forward<Value>(value);
+        case storm::Op::GE:
+            return field_obj >= std::forward<Value>(value);
+        case storm::Op::LE:
+            return field_obj <= std::forward<Value>(value);
+        case storm::Op::LIKE:
+            return field_obj.like(std::forward<Value>(value));
+        case storm::Op::IS:
+            return field_obj.is(std::forward<Value>(value));
+        default:
+            return field_obj == std::forward<Value>(value);
         }
     }
-    
-    template<typename T>
-    template<typename FieldType, typename Container>
+
+    template <typename T>
+    template <typename FieldType, typename Container>
     storm::Where QuerySet<T>::create_in_condition(const FieldType& field_obj, const Container& values) const {
         if (values.empty()) {
             // Return a condition that's always false for empty IN clause
             return storm::Where(std::make_unique<storm::Condition>("1", storm::Op::EQ, 0));
         }
-        
+
         // For now, we'll create OR conditions for each value
         // This is a limitation of the current Storm implementation
         // In a real implementation, you'd want proper IN support
-        auto it = values.begin();
+        auto         it     = values.begin();
         storm::Where result = field_obj == *it;
         ++it;
-        
+
         for (; it != values.end(); ++it) {
             result = result || (field_obj == *it);
         }
-        
+
         return result;
     }
 
     // Method 1: Accept Storm Where objects directly (most flexible)
-    template<typename T>
-    QuerySet<T>& QuerySet<T>::where(const storm::Where& where_clause) {
+    template <typename T> QuerySet<T>& QuerySet<T>::where(const storm::Where& where_clause) {
         if (this->_whereExpression) {
             // Combine with existing WHERE using AND
             this->_whereExpression = *this->_whereExpression && where_clause;
@@ -58,8 +66,7 @@ namespace storm {
         return *this;
     }
 
-    template<typename T>
-    QuerySet<T>& QuerySet<T>::where(storm::Where&& where_clause) {
+    template <typename T> QuerySet<T>& QuerySet<T>::where(storm::Where&& where_clause) {
         if (this->_whereExpression) {
             this->_whereExpression = *this->_whereExpression && where_clause;
         } else {
@@ -67,20 +74,20 @@ namespace storm {
         }
         return *this;
     }
-    
+
     // Compile-time member pointer version (C++23 NTTP)
-    template<typename T>
-    template<auto MemberPtr, typename Value>
+    template <typename T>
+    template <auto MemberPtr, typename Value>
     QuerySet<T>& QuerySet<T>::where(Value&& value, storm::Op op) {
         // Create a field object using the compile-time member pointer
-        auto field_obj = Field<MemberPtr>();
+        auto         field_obj = Field<MemberPtr>();
         storm::Where condition = create_condition(field_obj, std::forward<Value>(value), op);
         return where(std::move(condition));
     }
 
     // Special methods for complex operators - Compile-time member pointer version (C++23 NTTP)
-    template<typename T>
-    template<auto MemberPtr, typename Container>
+    template <typename T>
+    template <auto MemberPtr, typename Container>
     QuerySet<T>& QuerySet<T>::where_in(const Container& values) {
         // Create a field object using the compile-time member pointer
         auto field_obj = Field<MemberPtr>();
@@ -90,8 +97,8 @@ namespace storm {
     }
 
     // Where between (C++23 NTTP)
-    template<typename T>
-    template<auto MemberPtr, typename T1, typename T2>
+    template <typename T>
+    template <auto MemberPtr, typename T1, typename T2>
     QuerySet<T>& QuerySet<T>::where_between(T1&& value1, T2&& value2) {
         // Create a field object using the compile-time member pointer
         auto field_obj = Field<MemberPtr>();
@@ -101,9 +108,7 @@ namespace storm {
     }
 
     // Where not null (compile-time member pointer version - C++23 NTTP)
-    template<typename T>
-    template<auto MemberPtr>
-    QuerySet<T>& QuerySet<T>::where_not_null() {
+    template <typename T> template <auto MemberPtr> QuerySet<T>& QuerySet<T>::where_not_null() {
         // Create a field object using the compile-time member pointer
         auto field_obj = Field<MemberPtr>();
         // Create a condition with IS NOT NULL by negating IS NULL
@@ -112,9 +117,7 @@ namespace storm {
     }
 
     // Where null (compile-time member pointer version - C++23 NTTP)
-    template<typename T>
-    template<auto MemberPtr>
-    QuerySet<T>& QuerySet<T>::where_null() {
+    template <typename T> template <auto MemberPtr> QuerySet<T>& QuerySet<T>::where_null() {
         // Create a field object using the compile-time member pointer
         auto field_obj = Field<MemberPtr>();
         // Use the is_null() method of the Field class
@@ -123,22 +126,20 @@ namespace storm {
     }
 
     // Where like (compile-time member pointer version - C++23 NTTP)
-    template<typename T>
-    template<auto MemberPtr, typename Value>
+    template <typename T>
+    template <auto MemberPtr, typename Value>
     QuerySet<T>& QuerySet<T>::where_like(Value&& pattern) {
-        auto field_obj = Field<MemberPtr>();
+        auto         field_obj = Field<MemberPtr>();
         storm::Where condition = field_obj.like(std::forward<Value>(pattern));
         return where(std::move(condition));
     }
 
     // Logical combination methods for fluent interface
-    template<typename T>
-    QuerySet<T>& QuerySet<T>::where_and(const storm::Where& condition) {
+    template <typename T> QuerySet<T>& QuerySet<T>::where_and(const storm::Where& condition) {
         return where(condition);
     }
 
-    template<typename T>
-    QuerySet<T>& QuerySet<T>::where_or(const storm::Where& condition) {
+    template <typename T> QuerySet<T>& QuerySet<T>::where_or(const storm::Where& condition) {
         if (this->_whereExpression) {
             this->_whereExpression = *this->_whereExpression || condition;
         } else {
@@ -146,7 +147,7 @@ namespace storm {
         }
         return *this;
     }
-    
+
     // TODO implement
     // Case-insensitive LIKE (SQLite specific)
     // template<typename ClassType, typename FieldType, typename Value>
@@ -158,41 +159,37 @@ namespace storm {
     // }
 
     // Date range queries (if you have date fields)
-    template<typename T>
-    template<auto MemberPtr>
-    QuerySet<T>& QuerySet<T>::where_date_range(const std::string& start_date, 
-                            const std::string& end_date) {
+    template <typename T>
+    template <auto MemberPtr>
+    QuerySet<T>& QuerySet<T>::where_date_range(const std::string& start_date, const std::string& end_date) {
         return where_between<MemberPtr>(start_date, end_date);
     }
 
-    template<typename T>
-    [[nodiscard]] storm::QueryResult QuerySet<T>::get_where_query() const {
+    template <typename T> [[nodiscard]] storm::QueryResult QuerySet<T>::get_where_query() const {
         if (!this->_whereExpression) {
             // Return empty query result
             auto binder = std::make_shared<storm::ParameterBinder>();
             return storm::QueryResult("", binder);
         }
-        
+
         auto query_result = this->_whereExpression->to_query();
-        
+
         // Add WHERE prefix
         if (!query_result.sql.empty()) {
             query_result.sql = " WHERE " + query_result.sql;
-            
+
             if (this->_doAndCheck) {
                 query_result.sql = addExtraQuotes(query_result.sql);
             }
         }
-        
+
         return query_result;
     }
 
     // Helper method to clear WHERE conditions
-    template<typename T>
-    QuerySet<T>& QuerySet<T>::clear_where() {
+    template <typename T> QuerySet<T>& QuerySet<T>::clear_where() {
         this->_whereExpression.reset();
         return *this;
     }
-
 
 } // namespace storm

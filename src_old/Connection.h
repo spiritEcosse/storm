@@ -12,16 +12,16 @@ class PreparedStatement;
 
 /**
  * @brief Base abstract class for database connections
- * 
+ *
  * This class defines the interface for all database connections
  * and provides basic functionality for connection management.
  */
 class AbstractConnection {
-protected:
-    bool inUse = false;
+  protected:
+    bool                                  inUse = false;
     std::chrono::steady_clock::time_point lastUsed;
 
-public:
+  public:
     /**
      * @brief Construct a new AbstractConnection object
      */
@@ -54,21 +54,21 @@ public:
      * @param query SQL query to execute
      * @return true if execution successful, false otherwise
      */
-    virtual bool execute(const std::string &query) = 0;
-    
+    virtual bool execute(const std::string& query) = 0;
+
     /**
      * @brief Execute a SQL query and return results
      * @param query SQL query to execute
      * @return ResultSet containing query results
      */
-    virtual ResultSet executeQuery(const std::string &query) = 0;
+    virtual ResultSet executeQuery(const std::string& query) = 0;
 
     /**
      * @brief Prepare a SQL statement
      * @param query SQL query to prepare
      * @return Prepared statement object
      */
-    virtual std::shared_ptr<PreparedStatement> prepareStatement(const std::string &query) = 0;
+    virtual std::shared_ptr<PreparedStatement> prepareStatement(const std::string& query) = 0;
 
     /**
      * @brief Begin a database transaction
@@ -99,11 +99,15 @@ public:
      * @brief Check if the connection is in use
      * @return true if in use, false otherwise
      */
-    [[nodiscard]] bool isInUse() const { return inUse; }
-    
+    [[nodiscard]] bool isInUse() const {
+        return inUse;
+    }
+
     /**
      * @brief Get the time when the connection was last used
      * @return Time point when the connection was last used
      */
-    [[nodiscard]] auto getLastUsedTime() const { return lastUsed; }
+    [[nodiscard]] auto getLastUsedTime() const {
+        return lastUsed;
+    }
 };

@@ -14,12 +14,12 @@ import storm.reflect;          // For bind_variant function
 
 export namespace storm {
 
-// Base expression interface
-class Expression {
-public:
-  virtual ~Expression() = default;
-  virtual std::string to_sql(ParameterBinder &binder) const = 0;
-  virtual std::unique_ptr<Expression> clone() const = 0;
-};
+    // Base expression interface
+    class Expression {
+      public:
+        virtual ~Expression()                                                     = default;
+        virtual std::string                 to_sql(ParameterBinder& binder) const = 0;
+        virtual std::unique_ptr<Expression> clone() const                         = 0;
+    };
 
 } // namespace storm

@@ -10,15 +10,15 @@ export module storm.base_class;
  * in the system, providing shared functionality and type information.
  */
 export class BaseClass {
-public:
-  BaseClass() = default;
-  virtual ~BaseClass() = default;
+  public:
+    BaseClass()          = default;
+    virtual ~BaseClass() = default;
 
-  // Prevent copying
-  BaseClass(const BaseClass &) = delete;
-  BaseClass &operator=(const BaseClass &) = delete;
+    // Prevent copying
+    BaseClass(const BaseClass&)            = delete;
+    BaseClass& operator=(const BaseClass&) = delete;
 
-  // Allow moving
-  BaseClass(BaseClass &&) noexcept = default;
-  BaseClass &operator=(BaseClass &&) noexcept = default;
+    // Allow moving
+    BaseClass(BaseClass&&) noexcept            = default;
+    BaseClass& operator=(BaseClass&&) noexcept = default;
 };

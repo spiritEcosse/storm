@@ -1,0 +1,59 @@
+# Storm C++23 formatting rules
+# Base on LLVM, tuned for readability and modules
+BasedOnStyle: LLVM
+Language: Cpp
+# Use the latest standard so clang-format parses C++23 constructs and modules better
+Standard: Latest
+
+# Line length and indentation
+ColumnLimit: 120
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 8
+
+# Braces and short constructs
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Empty
+
+# Alignment and wrapping
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
+AlignOperands: true
+AlignAfterOpenBracket: BlockIndent
+BinPackParameters: false
+BinPackArguments: false
+PenaltyBreakBeforeFirstCallParameter: 100
+PenaltyBreakString: 1000
+
+# Namespaces and scopes
+NamespaceIndentation: All
+CompactNamespaces: false
+
+# Includes (preserve blocks so module imports remain unaffected)
+SortIncludes: false
+IncludeBlocks: Preserve
+
+# Pointers/references spacing
+PointerAlignment: Left
+ReferenceAlignment: Left
+SpaceBeforeParens: ControlStatements
+SpacesInAngles: Never
+
+# Constructors/init lists
+BreakConstructorInitializers: BeforeComma
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+
+# Comments
+ReflowComments: true
+CommentPragmas: '^ NOLINT'  # leave NOLINT and similar pragmas alone
+
+# Misc
+KeepEmptyLinesAtTheStartOfBlocks: false
+SortUsingDeclarations: true
+
+# Try to keep include-clean order stable across platforms
+IncludeIsMainRegex: '([.]cppm|[.]cpp|[.]cc|[.]cxx)$'

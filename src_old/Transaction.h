@@ -6,17 +6,17 @@
 
 /**
  * @brief RAII wrapper for database transactions
- * 
+ *
  * This class automatically begins a transaction when constructed
  * and rolls it back when destroyed unless commit() is called.
  */
 class Transaction {
-private:
+  private:
     AbstractConnection& connection;
-    bool committed = false;
-    bool rolledBack = false;
+    bool                committed  = false;
+    bool                rolledBack = false;
 
-public:
+  public:
     /**
      * @brief Construct a new Transaction object and begin a transaction
      * @param conn AbstractConnection to use for the transaction
@@ -79,6 +79,6 @@ public:
     }
 
     // Prevent copying and assignment
-    Transaction(const Transaction&) = delete;
+    Transaction(const Transaction&)            = delete;
     Transaction& operator=(const Transaction&) = delete;
 };

@@ -3,7 +3,7 @@
 namespace orm {
 
     class Function final : public BaseClass {
-    public:
+      public:
         using BaseClass::BaseClass;
 
         explicit Function(std::string function) : function(std::move(function)) {}
@@ -18,4 +18,4 @@ namespace orm {
 
         std::string function;
     };
-}
+} // namespace orm

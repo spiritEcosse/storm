@@ -13,9 +13,9 @@ import storm.parameter_binder;
 
 export namespace storm {
 
-// Forward declaration of core classes to break circular dependencies
-class Expression;
-class Condition;
-class LogicalExpression;
+    // Forward declaration of core classes to break circular dependencies
+    class Expression;
+    class Condition;
+    class LogicalExpression;
 
 } // namespace storm

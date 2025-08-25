@@ -3,11 +3,11 @@
 AbstractConnection::AbstractConnection() : lastUsed(std::chrono::steady_clock::now()) {}
 
 void AbstractConnection::markAsUsed() {
-    inUse = true;
+    inUse    = true;
     lastUsed = std::chrono::steady_clock::now();
 }
 
 void AbstractConnection::markAsUnused() {
-    inUse = false;
+    inUse    = false;
     lastUsed = std::chrono::steady_clock::now();
 }

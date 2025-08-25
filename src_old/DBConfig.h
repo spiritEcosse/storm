@@ -9,23 +9,17 @@
 
 struct DBConfig {
     std::string host;
-    uint16_t port;
+    uint16_t    port;
     std::string database;
     std::string username;
     std::string password;
     std::string driver;
 
-    size_t maxConnections = 10;
+    size_t               maxConnections = 10;
     std::chrono::seconds connectionTimeout{30};
     std::chrono::seconds idleTimeout{300};
 
-    DBConfig() :
-        host(DB_HOST),
-        database(DB_DATABASE),
-        username(DB_USERNAME),
-        password(DB_PASSWORD),
-        driver(DB_DRIVER)
-    {
+    DBConfig() : host(DB_HOST), database(DB_DATABASE), username(DB_USERNAME), password(DB_PASSWORD), driver(DB_DRIVER) {
         try {
             port = static_cast<uint16_t>(std::stoi(DB_PORT));
         } catch (const std::exception& e) {
@@ -45,16 +39,10 @@ struct DBConfig {
         std::ostringstream connStr;
 
         if (driver == "postgresql") {
-            connStr << "host=" << host
-                    << " port=" << port
-                    << " dbname=" << database
-                    << " user=" << username
+            connStr << "host=" << host << " port=" << port << " dbname=" << database << " user=" << username
                     << " password=" << password;
         } else if (driver == "mysql") {
-            connStr << "host=" << host
-                    << ";port=" << port
-                    << ";database=" << database
-                    << ";user=" << username
+            connStr << "host=" << host << ";port=" << port << ";database=" << database << ";user=" << username
                     << ";password=" << password;
         }
 

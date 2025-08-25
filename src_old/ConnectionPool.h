@@ -10,13 +10,12 @@
 #include <utility>
 #include "PostgresSQLConnection.h"
 
-
 // Connection Pool Manager
 class ConnectionPool {
-    DBConfig config;
-    std::queue<std::shared_ptr<AbstractConnection>> availableConnections;
+    DBConfig                                         config;
+    std::queue<std::shared_ptr<AbstractConnection>>  availableConnections;
     std::vector<std::shared_ptr<AbstractConnection>> allConnections;
-    std::mutex mutex;
+    std::mutex                                       mutex;
 
     std::shared_ptr<AbstractConnection> createNewConnection() {
         std::shared_ptr<AbstractConnection> conn;
@@ -36,8 +35,8 @@ class ConnectionPool {
         throw std::runtime_error("Failed to create database connection");
     }
 
-public:
-    explicit ConnectionPool(DBConfig  cfg) : config(std::move(cfg)) {
+  public:
+    explicit ConnectionPool(DBConfig cfg) : config(std::move(cfg)) {
         // Initialize with minimum connections
         for (size_t i = 0; i < config.maxConnections / 2; ++i) {
             auto conn = createNewConnection();
@@ -49,12 +48,12 @@ public:
     // RAII wrapper for automatic connection return
     class ConnectionGuard {
         std::shared_ptr<AbstractConnection> conn;
-        ConnectionPool& pool;
+        ConnectionPool&                     pool;
 
-    public:
-        ConnectionGuard(std::shared_ptr<AbstractConnection> c, ConnectionPool& p)
-            : conn(std::move(c)), pool(p) {
-            if (conn) conn->markAsUsed();
+      public:
+        ConnectionGuard(std::shared_ptr<AbstractConnection> c, ConnectionPool& p) : conn(std::move(c)), pool(p) {
+            if (conn)
+                conn->markAsUsed();
         }
 
         ~ConnectionGuard() {
@@ -64,8 +63,12 @@ public:
             }
         }
 
-        AbstractConnection* operator->() { return conn.get(); }
-        const AbstractConnection* operator->() const { return conn.get(); }
+        AbstractConnection* operator->() {
+            return conn.get();
+        }
+        const AbstractConnection* operator->() const {
+            return conn.get();
+        }
     };
 
     ConnectionGuard getConnection() {
@@ -95,7 +98,7 @@ public:
         availableConnections.push(conn);
     }
 
-private:
+  private:
     void cleanIdleConnections() {
         const auto now = std::chrono::steady_clock::now();
 

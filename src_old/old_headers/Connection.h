@@ -8,7 +8,7 @@ import <cstdint>;
 import <stdexcept>;
 
 class Connection {
-public:
+  public:
     // Transaction isolation levels
     enum class TransactionLevel {
         DEFERRED,  // Default in SQLite, doesn't acquire locks until needed
@@ -18,27 +18,26 @@ public:
 
     explicit Connection(const std::string& db_name);
     ~Connection();
-    Connection(const Connection&) = delete;
+    Connection(const Connection&)            = delete;
     Connection& operator=(const Connection&) = delete;
     Connection(Connection&& other) noexcept;
-    Connection& operator=(Connection&& other) noexcept;
-    sqlite3* get() const;
-    bool is_open() const;
+    Connection&  operator=(Connection&& other) noexcept;
+    sqlite3*     get() const;
+    bool         is_open() const;
     std::int64_t last_insert_id() const;
-    
+
     // Transaction methods
     void begin_transaction(TransactionLevel level = TransactionLevel::DEFERRED);
     void commit();
     void rollback();
     bool in_transaction() const;
 
-private:
+  private:
     sqlite3* db;
-    bool transaction_active = false;
+    bool     transaction_active = false;
 
-public:
-    template<typename N>
-    static std::string get_type_name() {
+  public:
+    template <typename N> static std::string get_type_name() {
         if constexpr (std::is_same_v<N, std::string>) {
             return "VARCHAR";
         } else if constexpr (std::is_same_v<N, int>) {
