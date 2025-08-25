@@ -210,32 +210,6 @@ export namespace storm {
         return std::unique_ptr<FieldAliasBase>(field->clone());
     }
     
-    // String-based field alias for runtime field references
-    class StringFieldAlias : public FieldAliasBase {
-    private:
-        std::string tableName;
-        std::string fieldName;
-        
-    public:
-        // Constructor for string-based field references
-        explicit StringFieldAlias(std::string tableName, std::string fieldName, std::string alias = "") 
-            : FieldAliasBase(std::move(alias)), tableName(std::move(tableName)), fieldName(std::move(fieldName)) {}
-        
-        ~StringFieldAlias() override = default;
-        
-        [[nodiscard]] std::string getFullFieldName() const override;
-        [[nodiscard]] std::string getFieldName() const override;
-        [[nodiscard]] std::string getTableName() const override;
-        [[nodiscard]] std::string getAlias() const override;
-        
-        // For string-based fields, we assume it could be any type
-        [[nodiscard]] bool isStringField() const override;
-        [[nodiscard]] bool isBoolField() const override;
-        [[nodiscard]] bool isNumericField() const override;
-        
-        [[nodiscard]] FieldAliasBase* clone() const override;
-    };
-
     template<class T>
     class QuerySet {
     private:
@@ -244,40 +218,14 @@ export namespace storm {
         std::shared_ptr<Connection> conn;
         std::shared_ptr<storm::Where> _whereExpression;
         JoinInfo joinInfo;
-        // Order fields with direction (field, ascending/descending)
-        struct OrderFieldInfo {
-            std::unique_ptr<FieldAliasBase> field;
-            bool ascending;
-            Collation collation = Collation::NONE;
-            
-            // Constructor to fix emplace_back issue
-            OrderFieldInfo(std::unique_ptr<FieldAliasBase> f, bool asc, Collation coll = Collation::NONE) 
-                : field(std::move(f)), ascending(asc), collation(coll) {}
-                
-            // Copy constructor for deep copy of the unique_ptr
-            OrderFieldInfo(const OrderFieldInfo& other)
-                : ascending(other.ascending), collation(other.collation) {
-                // Clone the field if it exists
-                if (other.field) {
-                    field = std::unique_ptr<FieldAliasBase>(other.field->clone());
-                }
-            }
-            
-            // Copy assignment operator
-            OrderFieldInfo& operator=(const OrderFieldInfo& other) {
-                if (this != &other) {
-                    ascending = other.ascending;
-                    collation = other.collation;
-                    if (other.field) {
-                        field = std::unique_ptr<FieldAliasBase>(other.field->clone());
-                    } else {
-                        field.reset();
-                    }
-                }
-                return *this;
-            }
+        // Order terms with value semantics (no polymorphism/heap)
+        struct OrderTerm {
+            std::string table_name;
+            std::string field_name;
+            bool        ascending;
+            Collation   collation = Collation::NONE;
         };
-        std::vector<OrderFieldInfo> orderFields;
+        std::vector<OrderTerm> orderTerms;
         std::vector<std::unique_ptr<FieldAliasBase>> distinctFields;
         std::string _jsonFields;
         std::vector<std::unique_ptr<FieldAliasBase>> onlyFields;
@@ -296,10 +244,10 @@ export namespace storm {
         QuerySet() = default;
         explicit QuerySet(std::shared_ptr<Connection> connection) : conn(std::move(connection)) {}
         
-        // Copy constructor - deep copy unique_ptr members
+        // Copy constructor - deep copy unique_ptr members where needed (value types copy trivially)
         QuerySet(const QuerySet& other) 
             : conn(other.conn), _whereExpression(other._whereExpression), joinInfo(other.joinInfo),
-              orderFields(other.orderFields), // OrderFieldInfo already has proper copy semantics
+              orderTerms(other.orderTerms),
               _jsonFields(other._jsonFields), functionsSet(other.functionsSet),
               _limit(other._limit), _offset(other._offset), _alias(other._alias),
               _one(other._one), _doAndCheck(other._doAndCheck), _returnInMain(other._returnInMain) {
@@ -638,14 +586,16 @@ export namespace storm {
         QuerySet<T>& add_order_field(bool ascending, Collation collation) {
             static_assert(std::is_member_pointer_v<decltype(Field)>, 
                         "Field must be a member pointer");
-            
-            // Add field to order criteria with specified direction and collation
-            this->orderFields.emplace_back(
-                std::make_unique<FieldAlias<Field>>(),
+
+            // Compute names at add-time and store by value
+            FieldAlias<Field> alias;
+            this->orderTerms.push_back(OrderTerm{
+                std::string(alias.getTableName()),
+                std::string(alias.getFieldName()),
                 ascending,
                 collation
-            );
-            
+            });
+
             return *this;
         }
         
@@ -676,12 +626,14 @@ export namespace storm {
             static_assert(std::is_same_v<decltype(Coll), Collation>, 
                         "Collation must be a Collation enum value");
             
-            // Add the current field-direction-collation triplet
-            this->orderFields.emplace_back(
-                std::make_unique<FieldAlias<Field>>(),
+            // Add the current field-direction-collation triplet as value term
+            FieldAlias<Field> alias;
+            this->orderTerms.push_back(OrderTerm{
+                std::string(alias.getTableName()),
+                std::string(alias.getFieldName()),
                 Direction,
                 Coll
-            );
+            });
             
             // Process remaining triplets if any
             if constexpr (sizeof...(Rest) > 0) {
@@ -869,8 +821,14 @@ export namespace storm {
     template<typename T>
     template<auto NextField, bool NextAsc, auto... Rest>
     QuerySet<T>& QuerySet<T>::order_by_impl() {
-        auto field = std::make_unique<Field<NextField>>();
-        orderFields.emplace_back(std::move(field), NextAsc);
+        // Store as value-semantic order term
+        FieldAlias<NextField> alias;
+        orderTerms.push_back(OrderTerm{
+            std::string(alias.getTableName()),
+            std::string(alias.getFieldName()),
+            NextAsc,
+            Collation::NONE
+        });
         
         if constexpr (sizeof...(Rest) >= 2) {
             return order_by_impl<Rest...>();
@@ -983,14 +941,18 @@ export namespace storm {
                     "Must provide field-direction pairs (field, bool, field, bool, ...)");
         
         // Reserve capacity for all pairs
-        this->orderFields.reserve(this->orderFields.size() + (sizeof...(Rest) / 2 + 1));
+        this->orderTerms.reserve(this->orderTerms.size() + (sizeof...(Rest) / 2 + 1));
         
         // Add the first field-direction pair
-        this->orderFields.emplace_back(
-            std::make_unique<FieldAlias<Field>>(),
-            Direction,
-            Collation::NONE // Default to no collation
-        );
+        {
+            FieldAlias<Field> alias;
+            this->orderTerms.push_back(OrderTerm{
+                std::string(alias.getTableName()),
+                std::string(alias.getFieldName()),
+                Direction,
+                Collation::NONE
+            });
+        }
         
         // Process remaining pairs if any
         if constexpr (sizeof...(Rest) > 0) {
@@ -1015,14 +977,18 @@ export namespace storm {
                     "Must provide field-direction-collation triplets (field, bool, collation, ...)");
         
         // Reserve capacity for all triplets
-        this->orderFields.reserve(this->orderFields.size() + (sizeof...(Rest) / 3 + 1));
+        this->orderTerms.reserve(this->orderTerms.size() + (sizeof...(Rest) / 3 + 1));
         
         // Add the first field-direction-collation triplet
-        this->orderFields.emplace_back(
-            std::make_unique<FieldAlias<Field>>(),
-            Direction,
-            Coll
-        );
+        {
+            FieldAlias<Field> alias;
+            this->orderTerms.push_back(OrderTerm{
+                std::string(alias.getTableName()),
+                std::string(alias.getFieldName()),
+                Direction,
+                Coll
+            });
+        }
         
         // Process remaining triplets if any
         if constexpr (sizeof...(Rest) > 0) {
