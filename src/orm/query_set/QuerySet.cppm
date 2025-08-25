@@ -49,28 +49,17 @@ export namespace storm {
     using ValueMap = std::map<std::string, SqlValue, std::less<>>;
     using ValueVectorMap = std::vector<ValueMap>;
     using ExpectedValueVectorMap = std::expected<ValueVectorMap, std::string>;
+    // Simplified JOIN storage: pre-rendered JOIN clauses
+    // We avoid complex state; clauses are appended to FROM during SQL generation
+    using JoinClauses = std::vector<std::string>;
 
-    // Function declaration moved to .cpp
-    std::string addExtraQuotes(const std::string& str);
-
-    struct JoinInfo {
-        enum class JoinType { INNER, LEFT, RIGHT };
-
-        struct JoinEntry {
-            std::string tableName;
-            std::string alias;
-            std::string condition;
-            JoinType type;
-            
-            JoinEntry(std::string tableName, std::string alias, std::string condition, JoinType type)
-                : tableName(std::move(tableName)), alias(std::move(alias)), condition(std::move(condition)), type(type) {}
-        };
-
-        std::vector<JoinEntry> joins;
+    // Order terms with value semantics (no polymorphism/heap)
+    struct OrderTerm {
+        std::string table_name;
+        std::string field_name;
+        bool        ascending;
+        Collation   collation = Collation::NONE;
     };
-
-    // Function declaration moved to .cpp
-    std::string joinTypeToString(const JoinInfo::JoinType type);
 
     template<class T>
     class QuerySet {
@@ -79,14 +68,7 @@ export namespace storm {
         using ExpectedVectorT = std::expected<std::vector<T>, std::string>;
         std::shared_ptr<Connection> conn;
         std::shared_ptr<storm::Where> _whereExpression;
-        JoinInfo joinInfo;
-        // Order terms with value semantics (no polymorphism/heap)
-        struct OrderTerm {
-            std::string table_name;
-            std::string field_name;
-            bool        ascending;
-            Collation   collation = Collation::NONE;
-        };
+        JoinClauses join_clauses; // e.g. "INNER JOIN users ON \"posts\".\"user_id\" = \"users\".\"id\""
         std::vector<OrderTerm> orderTerms;
         std::vector<FieldDesc> distinctFields;
         std::string _jsonFields;
@@ -108,7 +90,7 @@ export namespace storm {
         
         // Copy constructor - deep copy unique_ptr members where needed (value types copy trivially)
         QuerySet(const QuerySet& other) 
-            : conn(other.conn), _whereExpression(other._whereExpression), joinInfo(other.joinInfo),
+            : conn(other.conn), _whereExpression(other._whereExpression), join_clauses(other.join_clauses),
               orderTerms(other.orderTerms),
               _jsonFields(other._jsonFields), functionsSet(other.functionsSet),
               _limit(other._limit), _offset(other._offset), _alias(other._alias),
@@ -238,11 +220,11 @@ export namespace storm {
         template<typename... Args>
         QuerySet<T>& functions(Args &&...args);
 
-        template<class U>
-        QuerySet<T>& join(std::string&& alias = "", std::string&& addConditions = "");
+        template<class U, auto MemberPtr>
+        QuerySet<T>& join();
         
-        template<class U>
-        QuerySet<T>& left_join(std::string&& alias = "", std::string&& addConditions = "");
+        template<class U, auto MemberPtr>
+        QuerySet<T>& left_join();
                 
         std::expected<bool, std::string> remove(const T& obj);
         std::expected<bool, std::string> remove(const std::vector<T>& objs);
@@ -995,20 +977,52 @@ export namespace storm {
         return *this;
     }
 
-    // JOIN implementation
+    // JOIN implementation (compile-time, no raw conditions)
     template<typename T>
-    template<class U>
-    QuerySet<T>& QuerySet<T>::join(std::string&& alias, std::string&& addConditions) {
-        std::string tableName = get_table_name<U>();
-        joinInfo.joins.emplace_back(std::move(tableName), std::move(alias), std::move(addConditions), JoinInfo::JoinType::INNER);
+    template<class U, auto MemberPtr>
+    QuerySet<T>& QuerySet<T>::join() {
+        static_assert(std::is_member_pointer_v<decltype(MemberPtr)>, "MemberPtr must be a member pointer");
+        using MPClass = typename member_pointer_traits<decltype(MemberPtr)>::class_type;
+        static_assert(std::is_same_v<MPClass, U>, "MemberPtr must be a member of U");
+
+        const std::string lhs_table{get_table_name<T>()};
+        const std::string rhs_table{get_table_name<U>()};
+
+        // Right side (joined table field) from MemberPtr
+        constexpr auto rhs_desc = make_field_desc_ct<MemberPtr>();
+        const std::string rhs_field{rhs_desc.field};
+
+        // Left side (current table) inferred by convention: <rhs_table>_<rhs_field>
+        const std::string lhs_field = std::format("{}_{}", storm::utils::to_lower(std::string{rhs_table}), rhs_field);
+
+        const std::string lhs_full = storm::utils::formatFieldName(lhs_table, lhs_field);
+        const std::string rhs_full = storm::utils::formatFieldName(rhs_table, rhs_field);
+
+        join_clauses.emplace_back(std::format("INNER JOIN {} ON {} = {}", rhs_table, lhs_full, rhs_full));
         return *this;
     }
 
     template<typename T>
-    template<class U>
-    QuerySet<T>& QuerySet<T>::left_join(std::string&& alias, std::string&& addConditions) {
-        std::string tableName = get_table_name<U>();
-        joinInfo.joins.emplace_back(std::move(tableName), std::move(alias), std::move(addConditions), JoinInfo::JoinType::LEFT);
+    template<class U, auto MemberPtr>
+    QuerySet<T>& QuerySet<T>::left_join() {
+        static_assert(std::is_member_pointer_v<decltype(MemberPtr)>, "MemberPtr must be a member pointer");
+        using MPClass = typename member_pointer_traits<decltype(MemberPtr)>::class_type;
+        static_assert(std::is_same_v<MPClass, U>, "MemberPtr must be a member of U");
+
+        const std::string lhs_table{get_table_name<T>()};
+        const std::string rhs_table{get_table_name<U>()};
+
+        // Right side (joined table field) from MemberPtr
+        constexpr auto rhs_desc = make_field_desc_ct<MemberPtr>();
+        const std::string rhs_field{rhs_desc.field};
+
+        // Left side (current table) inferred by convention: <rhs_table>_<rhs_field>
+        const std::string lhs_field = std::format("{}_{}", storm::utils::to_lower(std::string{rhs_table}), rhs_field);
+
+        const std::string lhs_full = storm::utils::formatFieldName(lhs_table, lhs_field);
+        const std::string rhs_full = storm::utils::formatFieldName(rhs_table, rhs_field);
+
+        join_clauses.emplace_back(std::format("LEFT JOIN {} ON {} = {}", rhs_table, lhs_full, rhs_full));
         return *this;
     }
 
