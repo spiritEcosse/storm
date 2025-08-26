@@ -80,8 +80,6 @@ export namespace storm {
         int  _limit{};
         int  _offset{};
         bool _one{};
-        bool _doAndCheck{};
-        bool _returnInMain{};
 
       public:
         // Constructors
@@ -99,9 +97,7 @@ export namespace storm {
             , functionsSet(other.functionsSet)
             , _limit(other._limit)
             , _offset(other._offset)
-            , _one(other._one)
-            , _doAndCheck(other._doAndCheck)
-            , _returnInMain(other._returnInMain) {
+            , _one(other._one) {
             // Value semantics: vectors copy directly
             distinctFields = other.distinctFields;
             onlyFields     = other.onlyFields;
