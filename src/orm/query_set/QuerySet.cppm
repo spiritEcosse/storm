@@ -74,9 +74,8 @@ export namespace storm {
         std::vector<Function>       functionsSet;
         std::vector<FieldDesc>      groupByFields;
 
-        int  _limit{};
-        int  _offset{};
-        bool _one{};
+        int _limit{};
+        int _offset{};
 
       public:
         // Constructors
@@ -92,8 +91,7 @@ export namespace storm {
             , orderTerms(other.orderTerms)
             , functionsSet(other.functionsSet)
             , _limit(other._limit)
-            , _offset(other._offset)
-            , _one(other._one) {
+            , _offset(other._offset) {
             // Value semantics: vectors copy directly
             distinctFields = other.distinctFields;
             onlyFields     = other.onlyFields;
@@ -850,7 +848,6 @@ export namespace storm {
         // setup_function(tempQuerySet);
 
         // // Build and execute query - simplified version for now
-        // try {
         //     auto fieldsClause = tempQuerySet.buildFieldsClause();
         //     std::string sql = "SELECT " + fieldsClause + " FROM " +
         //     get_table_name<T>();
@@ -922,11 +919,6 @@ export namespace storm {
         //     } else {
         //         return ReturnType{};
         //     }
-
-        // } catch (const std::exception& e) {
-        //     return std::unexpected("Exception in " + std::string(error_prefix) + ":
-        //     " + std::string(e.what()));
-        // }
     }
 
     // MAX aggregate function that returns the direct value instead of a QuerySet

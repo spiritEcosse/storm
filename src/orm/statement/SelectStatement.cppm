@@ -149,6 +149,18 @@ export namespace storm {
                     .and_then([this](const std::vector<Row>& rows) { return rows_to_value_maps(rows); });
         }
 
+      private:
+        std::vector<std::string>      joins_{};
+        std::string                   fields_clause_{};
+        std::optional<bool>           distinct_override_{};
+        int                           limit_  = 0;
+        int                           offset_ = 0;
+        std::string                   order_by_sql_{};
+        std::string                   group_by_sql_{};
+        const std::vector<FieldDesc>* distinct_fields_ = nullptr;
+        const std::vector<FieldDesc>* only_fields_     = nullptr;
+        const std::vector<Function>*  functions_set_   = nullptr;
+
         // Build the SELECT list (fields/expressions) for type T from QuerySet-like state
         // This centralizes SELECT-list construction in SelectStatement.
         [[nodiscard]] static std::string build_select_list(
@@ -231,18 +243,6 @@ export namespace storm {
             }
             return group_by_sql;
         }
-
-      private:
-        std::vector<std::string>      joins_{};
-        std::string                   fields_clause_{};
-        std::optional<bool>           distinct_override_{};
-        int                           limit_  = 0;
-        int                           offset_ = 0;
-        std::string                   order_by_sql_{};
-        std::string                   group_by_sql_{};
-        const std::vector<FieldDesc>* distinct_fields_ = nullptr;
-        const std::vector<FieldDesc>* only_fields_     = nullptr;
-        const std::vector<Function>*  functions_set_   = nullptr;
 
         [[nodiscard]] std::expected<void, std::string> bind_where_parameters() noexcept {
             if (!this->_where_clause)
