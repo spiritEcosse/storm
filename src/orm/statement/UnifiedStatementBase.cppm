@@ -24,6 +24,7 @@ import <any>;
 import <span>;
 import <format>;
 import <variant>;
+import <optional>;
 
 // Import required modules
 import storm.connection;
@@ -113,10 +114,18 @@ export namespace storm {
         /**
          * Add a WHERE clause to the statement
          *
-         * @param where_clause The WHERE clause to use (shared)
+         * @param where_clause The WHERE clause to use (moved by value)
          * @return Reference to the derived class for method chaining
          */
-        Derived& where(std::shared_ptr<Where> where_clause) {
+        Derived& where(Where where_clause) {
+            _where_clause = std::move(where_clause);
+            return *static_cast<Derived*>(this);
+        }
+
+        /**
+         * Overload to accept an optional WHERE clause (e.g., from a builder)
+         */
+        Derived& where(std::optional<Where> where_clause) {
             _where_clause = std::move(where_clause);
             return *static_cast<Derived*>(this);
         }
@@ -262,7 +271,7 @@ export namespace storm {
         std::shared_ptr<Connection> conn;
         sqlite3_stmt*               stmt;
         std::string                 sql_;
-        std::shared_ptr<Where>      _where_clause;
+        std::optional<Where>        _where_clause;
 
         /**
          * Helper method to bind a value of any supported type to a parameter index

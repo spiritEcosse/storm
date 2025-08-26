@@ -13,6 +13,7 @@ import <expected>;
 import <ranges>;
 import <array>;
 import <memory>;
+import <optional>;
 
 // Import Storm modules
 import storm.statement.base;
@@ -119,7 +120,7 @@ export namespace storm {
          * Generate the DELETE SQL string at compile time
          */
         [[nodiscard]] static consteval std::string_view get_base_delete_sql() noexcept {
-            constexpr auto             table_str = std::string{table_name()};
+            constexpr auto             table_str = std::string{Base::table_name()};
             constexpr std::string_view prefix    = "DELETE FROM ";
 
             // Create compile-time concatenated string

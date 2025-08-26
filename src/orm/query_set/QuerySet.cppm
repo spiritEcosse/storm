@@ -24,6 +24,7 @@ import storm.reflect;
 import storm.type_traits;
 import storm.utils;
 import storm.field_desc;
+import storm.join_utils;
 
 // Import standard header units in the global module fragment
 import <string>;
@@ -48,12 +49,11 @@ import <array>;
 
 export namespace storm {
     // Use the canonical SqlValue type from storm.core_types to avoid redundancy
-    using ValueMap               = std::map<std::string, SqlValue, std::less<>>;
-    using ValueVectorMap         = std::vector<ValueMap>;
-    using ExpectedValueVectorMap = std::expected<ValueVectorMap, std::string>;
-    // Simplified JOIN storage: pre-rendered JOIN clauses
-    // We avoid complex state; clauses are appended to FROM during SQL generation
-    using JoinClauses = std::vector<std::string>;
+    using ValueMap                              = std::map<std::string, SqlValue, std::less<>>;
+    using ValueVectorMap                        = std::vector<ValueMap>;
+    using ExpectedValueVectorMap                = std::expected<ValueVectorMap, std::string>;
+    template <typename T> using ExpectedT       = std::expected<T, std::string>;
+    template <typename T> using ExpectedVectorT = std::expected<std::vector<T>, std::string>;
 
     // Order terms with value semantics (no polymorphism/heap)
     struct OrderTerm {
@@ -65,18 +65,14 @@ export namespace storm {
 
     template <class T> class QuerySet {
       private:
-        using ExpectedT       = std::expected<T, std::string>;
-        using ExpectedVectorT = std::expected<std::vector<T>, std::string>;
         std::shared_ptr<Connection>   conn;
-        std::shared_ptr<storm::Where> _whereExpression;
-        JoinClauses                   join_clauses; // e.g. "INNER JOIN users ON \"posts\".\"user_id\" =
-                                                    // \"users\".\"id\""
-        std::vector<OrderTerm> orderTerms;
-        std::vector<FieldDesc> distinctFields;
-        std::string            _jsonFields;
-        std::vector<FieldDesc> onlyFields;
-        std::vector<Function>  functionsSet;
-        std::vector<FieldDesc> groupByFields; // For compile-time field names
+        std::optional<storm::Where>   _whereExpression;
+        std::vector<std::string>      join_clauses;
+        std::vector<OrderTerm>        orderTerms;
+        std::vector<FieldDesc>        distinctFields;
+        std::vector<FieldDesc>        onlyFields;
+        std::vector<Function>         functionsSet;
+        std::vector<FieldDesc>        groupByFields;
 
         int  _limit{};
         int  _offset{};
@@ -94,7 +90,6 @@ export namespace storm {
             , _whereExpression(other._whereExpression)
             , join_clauses(other.join_clauses)
             , orderTerms(other.orderTerms)
-            , _jsonFields(other._jsonFields)
             , functionsSet(other.functionsSet)
             , _limit(other._limit)
             , _offset(other._offset)
@@ -172,7 +167,6 @@ export namespace storm {
                 bool             distinct       = false
         );
 
-        // LIMIT/OFFSET API (declarations)
         QuerySet<T>& limit(int limit_value);
         QuerySet<T>& offset(int offset_value);
 
@@ -221,9 +215,9 @@ export namespace storm {
         template <auto MemberPtr, typename Value> std::expected<bool, std::string> update(Value&& value);
 
         // SELECT API (declarations)
-        ExpectedVectorT               select_all();
-        std::expected<T, std::string> select_one();
-        ExpectedValueVectorMap        select_values();
+        ExpectedVectorT<T>     select_all();
+        ExpectedT<T>           select_one();
+        ExpectedValueVectorMap select_values();
 
         // INSERT API (declarations)
         std::expected<int, std::string>              insert(T obj);
@@ -254,8 +248,8 @@ export namespace storm {
             return DeleteStatement<T>(conn).execute(objects);
         }
 
-        [[nodiscard]] std::expected<bool, std::string> execute_delete() const noexcept {
-            return DeleteStatement<T>(conn).where(_whereExpression).execute();
+        [[nodiscard]] std::expected<bool, std::string> execute_delete() noexcept {
+            return DeleteStatement<T>(conn).where(std::move(_whereExpression)).execute();
         }
 
         template <typename FieldType, typename Value>
@@ -410,18 +404,18 @@ export namespace storm {
     template <typename T> QuerySet<T>& QuerySet<T>::where(const storm::Where& where_clause) {
         if (this->_whereExpression) {
             // Combine with existing WHERE using AND
-            this->_whereExpression = std::make_shared<storm::Where>(*this->_whereExpression && where_clause);
+            this->_whereExpression = storm::Where{*this->_whereExpression && where_clause};
         } else {
-            this->_whereExpression = std::make_shared<storm::Where>(where_clause);
+            this->_whereExpression = where_clause;
         }
         return *this;
     }
 
     template <typename T> QuerySet<T>& QuerySet<T>::where(storm::Where&& where_clause) {
         if (this->_whereExpression) {
-            this->_whereExpression = std::make_shared<storm::Where>(*this->_whereExpression && where_clause);
+            this->_whereExpression = storm::Where{*this->_whereExpression && where_clause};
         } else {
-            this->_whereExpression = std::make_shared<storm::Where>(std::move(where_clause));
+            this->_whereExpression = std::move(where_clause);
         }
         return *this;
     }
@@ -790,76 +784,17 @@ export namespace storm {
 
     // JOIN implementation (compile-time, no raw conditions)
     template <typename T> template <class U, auto MemberPtr> QuerySet<T>& QuerySet<T>::join() {
-        static_assert(std::is_member_pointer_v<decltype(MemberPtr)>, "MemberPtr must be a member pointer");
-        using MPClass = typename member_pointer_traits<decltype(MemberPtr)>::class_type;
-        static_assert(std::is_same_v<MPClass, U>, "MemberPtr must be a member of U");
-
-        const std::string lhs_table{get_table_name<T>()};
-        const std::string rhs_table{get_table_name<U>()};
-
-        // Right side (joined table field) from MemberPtr
-        constexpr auto    rhs_desc = make_field_desc_ct<MemberPtr>();
-        const std::string rhs_field{rhs_desc.field};
-
-        // Left side (current table) inferred by convention: <rhs_table>_<rhs_field>
-        const std::string lhs_field = std::format("{}_{}", storm::utils::to_lower(std::string{rhs_table}), rhs_field);
-
-        const std::string lhs_full = storm::utils::formatFieldName(lhs_table, lhs_field);
-        const std::string rhs_full = storm::utils::formatFieldName(rhs_table, rhs_field);
-
-        join_clauses.emplace_back(std::format("INNER JOIN {} ON {} = {}", rhs_table, lhs_full, rhs_full));
+        join_clauses.emplace_back(make_join_clause<T, U, MemberPtr>(JoinType::Inner));
         return *this;
     }
 
     template <typename T> template <class U, auto MemberPtr> QuerySet<T>& QuerySet<T>::left_join() {
-        static_assert(std::is_member_pointer_v<decltype(MemberPtr)>, "MemberPtr must be a member pointer");
-        using MPClass = typename member_pointer_traits<decltype(MemberPtr)>::class_type;
-        static_assert(std::is_same_v<MPClass, U>, "MemberPtr must be a member of U");
-
-        const std::string lhs_table{get_table_name<T>()};
-        const std::string rhs_table{get_table_name<U>()};
-
-        // Right side (joined table field) from MemberPtr
-        constexpr auto    rhs_desc = make_field_desc_ct<MemberPtr>();
-        const std::string rhs_field{rhs_desc.field};
-
-        // Left side (current table) inferred by convention: <rhs_table>_<rhs_field>
-        const std::string lhs_field = std::format("{}_{}", storm::utils::to_lower(std::string{rhs_table}), rhs_field);
-
-        const std::string lhs_full = storm::utils::formatFieldName(lhs_table, lhs_field);
-        const std::string rhs_full = storm::utils::formatFieldName(rhs_table, rhs_field);
-
-        join_clauses.emplace_back(std::format("LEFT JOIN {} ON {} = {}", rhs_table, lhs_full, rhs_full));
+        join_clauses.emplace_back(make_join_clause<T, U, MemberPtr>(JoinType::Left));
         return *this;
     }
 
-    // SELECT ALL implementation
-    template <typename T> typename QuerySet<T>::ExpectedVectorT QuerySet<T>::select_all() {
-        // Build ORDER BY SQL
-        std::string order_by_sql = SelectStatement<T>::build_order_by_sql(orderTerms);
-
-        // Build GROUP BY SQL (if any)
-        std::string group_by_sql = SelectStatement<T>::build_group_by_sql(groupByFields);
-
-        // Create and configure SelectStatement
-        SelectStatement<T> stmt(conn);
-        stmt.select_sources(distinctFields, onlyFields, functionsSet)
-                .distinct(!distinctFields.empty())
-                .joins(join_clauses)
-                .order_by_sql(std::move(order_by_sql))
-                .group_by_sql(std::move(group_by_sql))
-                .limit(_limit)
-                .offset(_offset);
-
-        if (_whereExpression) {
-            stmt.where(_whereExpression);
-        }
-
-        return stmt.execute_objects();
-    }
-
     // SELECT ONE implementation (returns single object)
-    template <typename T> std::expected<T, std::string> QuerySet<T>::select_one() {
+    template <typename T> ExpectedT<T> QuerySet<T>::select_one() {
         auto rows = select_all();
         if (!rows)
             return std::unexpected(rows.error());
@@ -872,28 +807,31 @@ export namespace storm {
         return (*rows)[0];
     }
 
+    // SELECT ALL implementation
+    template <typename T> ExpectedVectorT<T> QuerySet<T>::select_all() {
+        // Create and configure SelectStatement
+        return SelectStatement<T>(conn)
+                .select_sources(distinctFields, onlyFields, functionsSet)
+                .joins(std::move(join_clauses))
+                .order_by(std::move(orderTerms))
+                .group_by(std::move(groupByFields))
+                .limit(_limit)
+                .offset(_offset)
+                .where(std::move(_whereExpression))
+                .execute_objects();
+    }
+
     // SELECT VALUES implementation (returns dictionary-like data)
     template <typename T> ExpectedValueVectorMap QuerySet<T>::select_values() {
-        // Build ORDER BY and GROUP BY SQL similarly to select_all
-        std::string order_by_sql = SelectStatement<T>::build_order_by_sql(orderTerms);
-
-        std::string group_by_sql = SelectStatement<T>::build_group_by_sql(groupByFields);
-
-        SelectStatement<T> stmt(conn);
-        stmt.select_sources(distinctFields, onlyFields, functionsSet)
-                .distinct(!distinctFields.empty())
-                .joins(join_clauses)
-                .order_by_sql(std::move(order_by_sql))
-                .group_by_sql(std::move(group_by_sql))
+        return SelectStatement<T>(conn)
+                .select_sources(distinctFields, onlyFields, functionsSet)
+                .joins(std::move(join_clauses))
+                .order_by(std::move(orderTerms))
+                .group_by(std::move(groupByFields))
                 .limit(_limit)
-                .offset(_offset);
-        if (_whereExpression)
-            stmt.where(_whereExpression);
-
-        auto values = stmt.execute_values();
-        if (!values)
-            return std::unexpected(values.error());
-        return *values;
+                .offset(_offset)
+                .where(std::move(_whereExpression))
+                .execute_values();
     }
 
     // Common helper for executing aggregate queries

@@ -73,25 +73,32 @@ export namespace storm {
       public:
         explicit SelectStatement(std::shared_ptr<Connection> conn) : Base(std::move(conn)) {}
 
-        // Configure statement by reference to avoid copies
-        SelectStatement& fields(std::string fields_clause) {
-            fields_clause_ = std::move(fields_clause);
+        SelectStatement& joins(std::vector<std::string>&& joins) {
+            joins_ = std::move(joins);
             return *this;
         }
-        SelectStatement& distinct(bool d) {
-            distinct_ = d;
+        // Convenience: accept ORDER BY terms and build SQL internally
+        template <std::ranges::input_range R> SelectStatement& order_by(R&& terms) {
+            order_by_sql_ = build_order_by_sql(std::forward<R>(terms));
             return *this;
         }
-        SelectStatement& joins(const std::vector<std::string>& joins) {
-            joins_ = &joins;
-            return *this;
-        }
-        SelectStatement& order_by_sql(std::string sql) {
-            order_by_sql_ = std::move(sql);
-            return *this;
-        }
+
         SelectStatement& group_by_sql(std::string sql) {
             group_by_sql_ = std::move(sql);
+            return *this;
+        }
+        // Convenience: accept GROUP BY fields and build SQL internally
+        template <std::ranges::input_range R> SelectStatement& group_by(R&& fields) {
+            group_by_sql_ = build_group_by_sql(std::forward<R>(fields));
+            return *this;
+        }
+        // Convenience overload: accept shared pointer to fields
+        template <typename FieldsRange> SelectStatement& group_by(const std::shared_ptr<FieldsRange>& fields_ptr) {
+            if (fields_ptr) {
+                group_by(*fields_ptr);
+            } else {
+                group_by_sql_.clear();
+            }
             return *this;
         }
         SelectStatement& limit(int v) {
@@ -191,10 +198,10 @@ export namespace storm {
         // Build ORDER BY clause from a generic range of terms with members:
         //   table_name (string or string_view), field_name (string or string_view),
         //   ascending (bool), collation (storm::Collation)
-        template <typename TermsRange> [[nodiscard]] static std::string build_order_by_sql(const TermsRange& terms) {
+        template <std::ranges::input_range R> [[nodiscard]] static std::string build_order_by_sql(R&& terms) {
             std::string order_by_sql;
             bool        first = true;
-            for (const auto& t : terms) {
+            for (auto&& t : terms) {
                 if (!first)
                     order_by_sql += ", ";
                 first = false;
@@ -213,10 +220,10 @@ export namespace storm {
         }
 
         // Build GROUP BY clause from a range of FieldDesc-like items supporting full_name()
-        template <typename FieldsRange> [[nodiscard]] static std::string build_group_by_sql(const FieldsRange& fields) {
+        template <std::ranges::input_range R> [[nodiscard]] static std::string build_group_by_sql(R&& fields) {
             std::string group_by_sql;
             bool        first = true;
-            for (const auto& desc : fields) {
+            for (auto&& desc : fields) {
                 if (!first)
                     group_by_sql += ", ";
                 first = false;
@@ -226,16 +233,16 @@ export namespace storm {
         }
 
       private:
-        const std::vector<std::string>* joins_ = nullptr;
-        std::string                     fields_clause_{};
-        bool                            distinct_ = false;
-        int                             limit_    = 0;
-        int                             offset_   = 0;
-        std::string                     order_by_sql_{};
-        std::string                     group_by_sql_{};
-        const std::vector<FieldDesc>*   distinct_fields_ = nullptr;
-        const std::vector<FieldDesc>*   only_fields_     = nullptr;
-        const std::vector<Function>*    functions_set_   = nullptr;
+        std::vector<std::string>      joins_{};
+        std::string                   fields_clause_{};
+        std::optional<bool>           distinct_override_{};
+        int                           limit_  = 0;
+        int                           offset_ = 0;
+        std::string                   order_by_sql_{};
+        std::string                   group_by_sql_{};
+        const std::vector<FieldDesc>* distinct_fields_ = nullptr;
+        const std::vector<FieldDesc>* only_fields_     = nullptr;
+        const std::vector<Function>*  functions_set_   = nullptr;
 
         [[nodiscard]] std::expected<void, std::string> bind_where_parameters() noexcept {
             if (!this->_where_clause)
@@ -266,8 +273,11 @@ export namespace storm {
             std::string sql;
             sql.reserve(128 + fields_clause_.size());
 
-            // SELECT + DISTINCT + fields
-            if (distinct_) {
+            // SELECT + DISTINCT (auto-infer unless manually overridden) + fields
+            const bool auto_distinct =
+                    (distinct_fields_ && !distinct_fields_->empty()) && (!only_fields_ || only_fields_->empty());
+            const bool use_distinct = distinct_override_.value_or(auto_distinct);
+            if (use_distinct) {
                 std::format_to(
                         std::back_inserter(sql), "SELECT DISTINCT {} FROM {}", fields_clause_, this->table_name()
                 );
@@ -276,8 +286,8 @@ export namespace storm {
             }
 
             // JOINs
-            if (joins_ && !joins_->empty()) {
-                for (const auto& j : *joins_) {
+            if (!joins_.empty()) {
+                for (const auto& j : joins_) {
                     std::format_to(std::back_inserter(sql), " {}", j);
                 }
             }
