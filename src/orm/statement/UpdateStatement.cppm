@@ -126,12 +126,12 @@ export namespace storm {
          * @return The base UPDATE SQL string as a string_view
          */
         [[nodiscard]] static consteval std::string_view get_base_update_sql() noexcept {
-            constexpr auto             table_name = std::string{table_name()};
-            constexpr std::string_view prefix     = "UPDATE ";
-            constexpr std::string_view suffix     = " SET ";
+            constexpr auto             table_str = std::string{table_name()};
+            constexpr std::string_view prefix    = "UPDATE ";
+            constexpr std::string_view suffix    = " SET ";
 
             // Create compile-time concatenated string
-            constexpr std::size_t total_size = prefix.size() + table_name.size() + suffix.size() + 1;
+            constexpr std::size_t total_size = prefix.size() + table_str.size() + suffix.size() + 1;
             constexpr auto        sql_string = [prefix, suffix]() constexpr {
                 utils::fixed_string<total_size> result{""};
 
@@ -141,7 +141,7 @@ export namespace storm {
                 }
 
                 // Append table name
-                for (char c : table_name) {
+                for (char c : table_str) {
                     result.data.push_back(c);
                 }
 

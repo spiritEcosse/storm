@@ -379,7 +379,7 @@ export namespace storm {
         );
 
         template <auto FirstField, auto... RestFields>
-        std::string QuerySet<T>::build_field_expression(std::string_view fieldSeparator) {
+        std::string build_field_expression(std::string_view fieldSeparator) {
             auto        firstDesc  = make_field_desc<FirstField>();
             std::string field_expr = firstDesc.full_name();
 
@@ -834,14 +834,7 @@ export namespace storm {
     }
 
     // SELECT ALL implementation
-    template <typename T> ExpectedVectorT QuerySet<T>::select_all() {
-        // Build SELECT fields
-        const auto fields_clause = SelectStatement<T>::build_select_list(
-                std::span<const FieldDesc>{distinctFields},
-                std::span<const FieldDesc>{onlyFields},
-                std::span<const Function>{functionsSet}
-        );
-
+    template <typename T> typename QuerySet<T>::ExpectedVectorT QuerySet<T>::select_all() {
         // Build ORDER BY SQL
         std::string order_by_sql = SelectStatement<T>::build_order_by_sql(orderTerms);
 
@@ -850,7 +843,7 @@ export namespace storm {
 
         // Create and configure SelectStatement
         SelectStatement<T> stmt(conn);
-        stmt.fields(fields_clause)
+        stmt.select_sources(distinctFields, onlyFields, functionsSet)
                 .distinct(!distinctFields.empty())
                 .joins(join_clauses)
                 .order_by_sql(std::move(order_by_sql))
@@ -881,19 +874,13 @@ export namespace storm {
 
     // SELECT VALUES implementation (returns dictionary-like data)
     template <typename T> ExpectedValueVectorMap QuerySet<T>::select_values() {
-        const auto fields_clause = SelectStatement<T>::build_select_list(
-                std::span<const FieldDesc>{distinctFields},
-                std::span<const FieldDesc>{onlyFields},
-                std::span<const Function>{functionsSet}
-        );
-
         // Build ORDER BY and GROUP BY SQL similarly to select_all
         std::string order_by_sql = SelectStatement<T>::build_order_by_sql(orderTerms);
 
         std::string group_by_sql = SelectStatement<T>::build_group_by_sql(groupByFields);
 
         SelectStatement<T> stmt(conn);
-        stmt.fields(fields_clause)
+        stmt.select_sources(distinctFields, onlyFields, functionsSet)
                 .distinct(!distinctFields.empty())
                 .joins(join_clauses)
                 .order_by_sql(std::move(order_by_sql))

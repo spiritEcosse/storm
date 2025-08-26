@@ -60,11 +60,11 @@ export namespace storm {
             std::vector<std::string> field_strings;
             field_strings.reserve(refl::reflect<U>::member_count());
 
-            constexpr auto table_name = std::string{table_name()};
+            constexpr auto table_name_str = std::string{refl::reflect<U>::get_struct_name()};
 
             refl::reflect<U>::for_each_member([&]<size_t I>(auto member) {
                 const std::string field_name{member.get_name()};
-                field_strings.emplace_back(std::format("{}.{}", table_name, field_name));
+                field_strings.emplace_back(std::format("{}.{}", table_name_str, field_name));
             });
 
             return storm::utils::join(field_strings, ", ");
@@ -100,6 +100,18 @@ export namespace storm {
         }
         SelectStatement& offset(int v) {
             offset_ = v;
+            return *this;
+        }
+
+        // Provide sources to lazily build the SELECT list if fields_clause_ is not set
+        SelectStatement& select_sources(
+                const std::vector<FieldDesc>& distinct_fields,
+                const std::vector<FieldDesc>& only_fields,
+                const std::vector<Function>&  functions_set
+        ) {
+            distinct_fields_ = &distinct_fields;
+            only_fields_     = &only_fields;
+            functions_set_   = &functions_set;
             return *this;
         }
 
@@ -221,6 +233,9 @@ export namespace storm {
         int                             offset_   = 0;
         std::string                     order_by_sql_{};
         std::string                     group_by_sql_{};
+        const std::vector<FieldDesc>*   distinct_fields_ = nullptr;
+        const std::vector<FieldDesc>*   only_fields_     = nullptr;
+        const std::vector<Function>*    functions_set_   = nullptr;
 
         [[nodiscard]] std::expected<void, std::string> bind_where_parameters() noexcept {
             if (!this->_where_clause)
@@ -232,7 +247,18 @@ export namespace storm {
             return {};
         }
 
-        [[nodiscard]] std::expected<std::string, std::string> build_sql() const noexcept {
+        [[nodiscard]] std::expected<std::string, std::string> build_sql() noexcept {
+            // Lazily construct fields clause if not provided
+            if (fields_clause_.empty()) {
+                auto d         = (distinct_fields_ != nullptr) ? std::span<const FieldDesc>{*distinct_fields_}
+                                                               : std::span<const FieldDesc>{};
+                auto o         = (only_fields_ != nullptr) ? std::span<const FieldDesc>{*only_fields_}
+                                                           : std::span<const FieldDesc>{};
+                auto f         = (functions_set_ != nullptr) ? std::span<const Function>{*functions_set_}
+                                                             : std::span<const Function>{};
+                fields_clause_ = build_select_list(d, o, f);
+            }
+
             if (fields_clause_.empty()) {
                 return std::unexpected{"SelectStatement: fields clause is empty"};
             }

@@ -19,10 +19,11 @@ import <format>;
 import <optional>;
 import <concepts>;
 import <utility>;
+import <stdexcept>;
 
 // Use Storm C++23 modules (no legacy headers)
 import storm.connection;
-import storm.statement;
+import storm.statement.base; // use base to craft a simple test Statement shim
 import storm.query_set;
 import storm.field;
 import storm.core_types;
@@ -31,6 +32,28 @@ import storm.transaction;
 import storm.reflect;
 
 using namespace storm;
+
+// Simple Statement shim for tests to run arbitrary SQL using the unified base.
+// We bind it to a model type (Author by default) though DDL doesn't use T.
+template <typename T> class TestStatement : public storm::UnifiedStatementBase<TestStatement<T>, T> {
+  public:
+    using Base = storm::UnifiedStatementBase<TestStatement<T>, T>;
+    explicit TestStatement(std::shared_ptr<Connection> c, const std::string& sql) : Base(std::move(c)) {
+        if (auto r = this->Base::set_sql(sql); !r) {
+            throw std::runtime_error(std::string{"Failed to prepare statement in test: "} + r.error());
+        }
+    }
+
+    using Base::bind;
+    using Base::bind_null;
+    using Base::execute;
+    using Base::execute_query;
+    using Base::get_parameter_index;
+    using Base::reset;
+    using Base::sql;
+};
+
+// Note: alias moved below after Author is defined to ensure complete type
 
 struct Author {
     int         id;
@@ -63,6 +86,9 @@ struct Author {
         , middleName(middleName)
         , biography(biography) {}
 };
+
+// Backwards-compatible alias used in tests (now that Author is defined)
+using Statement = TestStatement<Author>;
 
 struct Post {
     int         id = 0;

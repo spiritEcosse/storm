@@ -135,11 +135,11 @@ export namespace storm {
          * @return The base INSERT SQL string as a string_view
          */
         [[nodiscard]] static consteval std::string_view get_base_insert_sql() noexcept {
-            constexpr auto             table_name = std::string{table_name()};
-            constexpr std::string_view prefix     = "INSERT INTO ";
+            constexpr auto             table_str = std::string{table_name()};
+            constexpr std::string_view prefix    = "INSERT INTO ";
 
             // Create compile-time concatenated string
-            constexpr std::size_t total_size = prefix.size() + table_name.size() + 1;
+            constexpr std::size_t total_size = prefix.size() + table_str.size() + 1;
             constexpr auto        sql_string = [prefix]() constexpr {
                 utils::fixed_string<total_size> result{""};
 
@@ -149,7 +149,7 @@ export namespace storm {
                 }
 
                 // Append table name
-                for (char c : table_name) {
+                for (char c : table_str) {
                     result.data.push_back(c);
                 }
 
