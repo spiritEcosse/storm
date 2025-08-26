@@ -430,10 +430,24 @@ export namespace storm {
             }
         }
 
-        // Helper methods for group_concat_order
         template <auto FirstField, auto... RestFields>
         std::pair<std::string, std::string>
-        prepare_group_concat(std::string_view alias, std::string_view fieldSeparator);
+        prepare_group_concat(std::string_view alias, std::string_view fieldSeparator) {
+            // Validate all member pointers
+            static_assert(std::is_member_pointer_v<decltype(FirstField)>, "FirstField must be a member pointer");
+            (check_member_pointer<RestFields>(), ...);
+
+            auto firstDesc = make_field_desc<FirstField>();
+
+            // Generate alias
+            std::string actual_alias =
+                    alias.empty() ? std::format("group_concat_{}", firstDesc.field) : std::string(alias);
+
+            // Build field expression
+            std::string field_expr = build_field_expression<FirstField, RestFields...>(fieldSeparator);
+
+            return {actual_alias, field_expr};
+        }
 
         template <auto OrderField, auto FirstField, auto... RestFields>
         QuerySet<T>& group_concat_with_order_impl(
@@ -441,7 +455,23 @@ export namespace storm {
         );
 
         template <auto FirstField, auto... RestFields>
-        std::string build_field_expression(std::string_view fieldSeparator);
+        std::string QuerySet<T>::build_field_expression(std::string_view fieldSeparator) {
+            auto        firstDesc  = make_field_desc<FirstField>();
+            std::string field_expr = firstDesc.full_name();
+
+            if constexpr (sizeof...(RestFields) == 0) {
+                return field_expr;
+            }
+
+            (
+                    [&field_expr, &fieldSeparator]<auto Field>() {
+                        auto d     = make_field_desc<Field>();
+                        field_expr = std::format("{}||'{}'||{}", field_expr, fieldSeparator, d.full_name());
+                    }.template operator()<RestFields>(),
+                    ...
+            );
+            return field_expr;
+        }
 
         template <auto Field> consteval void check_member_pointer() {
             static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
@@ -722,26 +752,6 @@ export namespace storm {
         );
     }
 
-    // Helper method implementations for group_concat_order
-    template <typename T>
-    template <auto FirstField, auto... RestFields>
-    std::pair<std::string, std::string>
-    QuerySet<T>::prepare_group_concat(std::string_view alias, std::string_view fieldSeparator) {
-        // Validate all member pointers
-        static_assert(std::is_member_pointer_v<decltype(FirstField)>, "FirstField must be a member pointer");
-        (check_member_pointer<RestFields>(), ...);
-
-        auto firstDesc = make_field_desc<FirstField>();
-
-        // Generate alias
-        std::string actual_alias = alias.empty() ? std::format("group_concat_{}", firstDesc.field) : std::string(alias);
-
-        // Build field expression
-        std::string field_expr = build_field_expression<FirstField, RestFields...>(fieldSeparator);
-
-        return {actual_alias, field_expr};
-    }
-
     template <typename T>
     template <auto OrderField, auto FirstField, auto... RestFields>
     QuerySet<T>& QuerySet<T>::group_concat_with_order_impl(
@@ -766,26 +776,6 @@ export namespace storm {
 
         functions(Function(function_str));
         return *this;
-    }
-
-    template <typename T>
-    template <auto FirstField, auto... RestFields>
-    std::string QuerySet<T>::build_field_expression(std::string_view fieldSeparator) {
-        auto        firstDesc  = make_field_desc<FirstField>();
-        std::string field_expr = firstDesc.full_name();
-
-        if constexpr (sizeof...(RestFields) == 0) {
-            return field_expr;
-        }
-
-        (
-                [&field_expr, &fieldSeparator]<auto Field>() {
-                    auto d     = make_field_desc<Field>();
-                    field_expr = std::format("{}||'{}'||{}", field_expr, fieldSeparator, d.full_name());
-                }.template operator()<RestFields>(),
-                ...
-        );
-        return field_expr;
     }
 
     // AGGREGATE FUNCTIONS implementation
