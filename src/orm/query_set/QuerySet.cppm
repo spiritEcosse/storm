@@ -65,14 +65,14 @@ export namespace storm {
 
     template <class T> class QuerySet {
       private:
-        std::shared_ptr<Connection>   conn;
-        std::optional<storm::Where>   _whereExpression;
-        std::vector<std::string>      join_clauses;
-        std::vector<OrderTerm>        orderTerms;
-        std::vector<FieldDesc>        distinctFields;
-        std::vector<FieldDesc>        onlyFields;
-        std::vector<Function>         functionsSet;
-        std::vector<FieldDesc>        groupByFields;
+        std::shared_ptr<Connection> conn;
+        std::optional<storm::Where> _whereExpression;
+        std::vector<std::string>    join_clauses;
+        std::vector<OrderTerm>      orderTerms;
+        std::vector<FieldDesc>      distinctFields;
+        std::vector<FieldDesc>      onlyFields;
+        std::vector<Function>       functionsSet;
+        std::vector<FieldDesc>      groupByFields;
 
         int  _limit{};
         int  _offset{};
