@@ -19,6 +19,7 @@ import storm.statement.base;   // For StatementBase
 import storm.statement.remove; // For DeleteStatement
 import storm.statement.insert; // For InsertStatement
 import storm.statement.update; // For UpdateStatement
+import storm.statement.select; // For SelectStatement
 import storm.reflect;
 import storm.type_traits;
 import storm.utils;
@@ -220,9 +221,9 @@ export namespace storm {
         template <auto MemberPtr, typename Value> std::expected<bool, std::string> update(Value&& value);
 
         // SELECT API (declarations)
-        std::expected<std::vector<T>, std::string> select_all();
-        std::expected<T, std::string>              select_one();
-        ExpectedValueVectorMap                     select_values();
+        ExpectedVectorT               select_all();
+        std::expected<T, std::string> select_one();
+        ExpectedValueVectorMap        select_values();
 
         // INSERT API (declarations)
         std::expected<int, std::string>              insert(T obj);
@@ -287,79 +288,6 @@ export namespace storm {
             }
 
             return "DISTINCT ";
-        }
-
-        [[nodiscard]] std::string buildFieldsClause() const {
-            using namespace std::string_literals;
-
-            // Process function aliases first
-            auto function_clauses = functionsSet |
-                                    std::views::transform([](const auto& func) { return func.toStr(); }) |
-                                    std::ranges::to<std::vector<std::string>>();
-
-            std::string fields_clause;
-
-            if (!distinctFields.empty() && onlyFields.empty()) {
-                // Use distinct fields
-                auto field_strings = distinctFields |
-                                     std::views::transform([](const auto& desc) { return desc.full_name(); }) |
-                                     std::ranges::to<std::vector<std::string>>();
-
-                fields_clause = build_combined_clause(field_strings, function_clauses);
-
-            } else if (!onlyFields.empty()) {
-                // Use only fields with optional aliases
-                auto field_strings = onlyFields | std::views::transform([](const auto& desc) {
-                                         return desc.alias.empty()
-                                                        ? desc.full_name()
-                                                        : std::format("{} AS {}", desc.full_name(), desc.alias);
-                                     }) |
-                                     std::ranges::to<std::vector<std::string>>();
-
-                fields_clause = build_combined_clause(field_strings, function_clauses);
-
-            } else if (!function_clauses.empty()) {
-                // Only functions specified
-                fields_clause = std::format("{}", storm::utils::join(function_clauses, ", "));
-
-            } else {
-                // Default: use reflection to get all fields
-                fields_clause = build_default_fields_clause<T>();
-            }
-
-            return fields_clause;
-        }
-
-        // Helper to combine field strings and function clauses
-        [[nodiscard]] static std::string build_combined_clause(
-                const std::vector<std::string>& field_strings, const std::vector<std::string>& function_clauses
-        ) {
-            if (function_clauses.empty()) {
-                return std::format("{}", storm::utils::join(field_strings, ", "));
-            }
-
-            if (field_strings.empty()) {
-                return std::format("{}", storm::utils::join(function_clauses, ", "));
-            }
-
-            return std::format(
-                    "{}, {}", storm::utils::join(field_strings, ", "), storm::utils::join(function_clauses, ", ")
-            );
-        }
-
-        // Build default fields clause using compile-time reflection
-        template <refl::reflectable U> [[nodiscard]] std::string build_default_fields_clause() const {
-            std::vector<std::string> field_strings;
-            field_strings.reserve(refl::reflect<U>::member_count());
-
-            const std::string table_name = get_table_name<U>();
-
-            refl::reflect<U>::for_each_member([&]<size_t I>(auto member) {
-                const std::string field_name{member.get_name()};
-                field_strings.emplace_back(std::format("{}.{}", table_name, field_name));
-            });
-
-            return storm::utils::join(field_strings, ", ");
         }
 
         template <typename FieldType, typename Container>
@@ -906,175 +834,79 @@ export namespace storm {
     }
 
     // SELECT ALL implementation
-    template <typename T> std::expected<std::vector<T>, std::string> QuerySet<T>::select_all() {
-        // try {
-        //     auto fieldsClause = this->buildFieldsClause();
-        //     std::string sql = "SELECT " + createDistinctClause() + fieldsClause + "
-        //     FROM " + get_table_name<T>();
+    template <typename T> ExpectedVectorT QuerySet<T>::select_all() {
+        // Build SELECT fields
+        const auto fields_clause = SelectStatement<T>::build_select_list(
+                std::span<const FieldDesc>{distinctFields},
+                std::span<const FieldDesc>{onlyFields},
+                std::span<const Function>{functionsSet}
+        );
 
-        //     // Add WHERE clause if present
-        //     if (_whereExpression) {
-        //         auto query_result = _whereExpression->to_query();
-        //         sql += " WHERE " + query_result.sql;
-        //     }
+        // Build ORDER BY SQL
+        std::string order_by_sql = SelectStatement<T>::build_order_by_sql(orderTerms);
 
-        //     // Add ORDER BY clause if present
-        //     if (!orderFields.empty()) {
-        //         sql += " ORDER BY ";
-        //         for (size_t i = 0; const auto& order_field : orderFields) {
-        //             if (i > 0) sql += ", ";
-        //             // Note: This is a simplified implementation
-        //             // In a full implementation, you'd extract field name from the
-        //             FieldAliasBase sql += "field_name"; // Placeholder - would need
-        //             proper field name extraction sql += order_field.ascending ? "
-        //             ASC" : " DESC";
-        //             ++i;
-        //         }
-        //     }
+        // Build GROUP BY SQL (if any)
+        std::string group_by_sql = SelectStatement<T>::build_group_by_sql(groupByFields);
 
-        //     // Add LIMIT clause if present
-        //     if (_limit > 0) {
-        //         sql += " LIMIT " + std::to_string(_limit);
-        //     }
+        // Create and configure SelectStatement
+        SelectStatement<T> stmt(conn);
+        stmt.fields(fields_clause)
+                .distinct(!distinctFields.empty())
+                .joins(join_clauses)
+                .order_by_sql(std::move(order_by_sql))
+                .group_by_sql(std::move(group_by_sql))
+                .limit(_limit)
+                .offset(_offset);
 
-        //     // Add OFFSET clause if present
-        //     if (_offset > 0) {
-        //         sql += " OFFSET " + std::to_string(_offset);
-        //     }
+        if (_whereExpression) {
+            stmt.where(_whereExpression);
+        }
 
-        //     // Create statement using Storm ORM API
-        //     Statement stmt(conn, sql);
-
-        //     // Bind WHERE parameters if present
-        //     if (_whereExpression) {
-        //         auto query_result = _whereExpression->to_query();
-        //         // Bind parameters from the query result
-        //         for (const auto& [param_name, param_value] :
-        //         query_result.parameters()) {
-        //             int param_index = stmt.get_parameter_index(param_name);
-        //             if (param_index > 0) {
-        //                 // Use switch on variant index to avoid std::visit
-        //                 compilation issues switch (param_value.index()) {
-        //                     case 0: // std::string
-        //                         stmt.bind(param_index,
-        //                         std::get<std::string>(param_value)); break;
-        //                     case 1: // int
-        //                         stmt.bind(param_index, std::get<int>(param_value));
-        //                         break;
-        //                     case 2: // long
-        //                         stmt.bind(param_index, static_cast<long
-        //                         long>(std::get<long>(param_value))); break;
-        //                     case 3: // long long
-        //                         stmt.bind(param_index, std::get<long
-        //                         long>(param_value)); break;
-        //                     case 4: // float
-        //                         stmt.bind(param_index,
-        //                         static_cast<double>(std::get<float>(param_value)));
-        //                         break;
-        //                     case 5: // double
-        //                         stmt.bind(param_index,
-        //                         std::get<double>(param_value)); break;
-        //                     case 6: // bool
-        //                         stmt.bind(param_index,
-        //                         static_cast<int>(std::get<bool>(param_value)));
-        //                         break;
-        //                     case 7: // std::nullopt_t
-        //                         stmt.bind_null(param_index);
-        //                         break;
-        //                 }
-        //             }
-        //         }
-        //     }
-
-        //     // Execute query and fetch results
-        //     auto result = stmt.execute();
-        //     if (!result) {
-        //         return std::unexpected("Failed to execute SELECT statement: " +
-        //         result.error());
-        //     }
-
-        //     // Note: This is a simplified implementation
-        //     // In a full implementation, you'd need to:
-        //     // 1. Fetch rows from the result set
-        //     // 2. Map columns to T object fields using reflection
-        //     // 3. Construct T objects from the row data
-
-        //     std::vector<T> results;
-        //     // Placeholder implementation - would need proper result set processing
-        //     return results;
-
-        // } catch (const std::exception& e) {
-        //     return std::unexpected("Exception in select_all(): " +
-        //     std::string(e.what()));
-        // }
+        return stmt.execute_objects();
     }
 
     // SELECT ONE implementation (returns single object)
     template <typename T> std::expected<T, std::string> QuerySet<T>::select_one() {
-        try {
-            auto rows = select_all();
-            if (!rows)
-                return std::unexpected(rows.error());
+        auto rows = select_all();
+        if (!rows)
+            return std::unexpected(rows.error());
 
-            if (rows->empty()) {
-                return std::unexpected("No results found for select_one query");
-            }
-
-            // Return the first object from the results
-            return (*rows)[0];
-
-        } catch (const std::exception& e) {
-            return std::unexpected("Exception in select_one(): " + std::string(e.what()));
+        if (rows->empty()) {
+            return std::unexpected("No results found for select_one query");
         }
+
+        // Return the first object from the results
+        return (*rows)[0];
     }
 
     // SELECT VALUES implementation (returns dictionary-like data)
     template <typename T> ExpectedValueVectorMap QuerySet<T>::select_values() {
-        try {
-            // For now, return a simplified implementation that satisfies the test
-            // interface This would be expanded in a full implementation to convert
-            // objects to ValueMap format
+        const auto fields_clause = SelectStatement<T>::build_select_list(
+                std::span<const FieldDesc>{distinctFields},
+                std::span<const FieldDesc>{onlyFields},
+                std::span<const Function>{functionsSet}
+        );
 
-            // Get the typed objects first
-            auto typed_result = select_all();
-            if (!typed_result) {
-                return std::unexpected("Failed to execute select_values query: " + typed_result.error());
-            }
+        // Build ORDER BY and GROUP BY SQL similarly to select_all
+        std::string order_by_sql = SelectStatement<T>::build_order_by_sql(orderTerms);
 
-            // Convert typed objects to ValueVectorMap format
-            ValueVectorMap value_maps;
+        std::string group_by_sql = SelectStatement<T>::build_group_by_sql(groupByFields);
 
-            // For each object, convert to ValueMap (key-value pairs)
-            for (const auto& obj : typed_result.value()) {
-                ValueMap value_map;
+        SelectStatement<T> stmt(conn);
+        stmt.fields(fields_clause)
+                .distinct(!distinctFields.empty())
+                .joins(join_clauses)
+                .order_by_sql(std::move(order_by_sql))
+                .group_by_sql(std::move(group_by_sql))
+                .limit(_limit)
+                .offset(_offset);
+        if (_whereExpression)
+            stmt.where(_whereExpression);
 
-                // In a full implementation, this would use reflection to extract field
-                // values For now, create placeholder entries based on the only fields if
-                // specified
-                if (!onlyFields.empty()) {
-                    // Extract only the specified fields
-                    // This is a simplified placeholder - real implementation would use
-                    // reflection
-                    value_map["name"]      = std::string("placeholder_name");
-                    value_map["age"]       = 25;
-                    value_map["is_active"] = true;
-                } else {
-                    // Extract all fields
-                    // This is a simplified placeholder - real implementation would use
-                    // reflection
-                    value_map["name"]      = std::string("placeholder_name");
-                    value_map["age"]       = 25;
-                    value_map["is_active"] = true;
-                }
-
-                value_maps.push_back(std::move(value_map));
-            }
-
-            return value_maps;
-
-        } catch (const std::exception& e) {
-            return std::unexpected("Exception in select_values(): " + std::string(e.what()));
-        }
+        auto values = stmt.execute_values();
+        if (!values)
+            return std::unexpected(values.error());
+        return *values;
     }
 
     // Common helper for executing aggregate queries

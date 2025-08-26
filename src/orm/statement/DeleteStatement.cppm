@@ -119,7 +119,7 @@ export namespace storm {
          * Generate the DELETE SQL string at compile time
          */
         [[nodiscard]] static consteval std::string_view get_base_delete_sql() noexcept {
-            constexpr auto             table_name = refl::reflect<T>::get_struct_name();
+            constexpr auto             table_name = std::string{table_name()};
             constexpr std::string_view prefix     = "DELETE FROM ";
 
             // Create compile-time concatenated string

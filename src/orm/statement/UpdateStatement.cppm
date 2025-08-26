@@ -126,7 +126,7 @@ export namespace storm {
          * @return The base UPDATE SQL string as a string_view
          */
         [[nodiscard]] static consteval std::string_view get_base_update_sql() noexcept {
-            constexpr auto             table_name = refl::reflect<T>::get_struct_name();
+            constexpr auto             table_name = std::string{table_name()};
             constexpr std::string_view prefix     = "UPDATE ";
             constexpr std::string_view suffix     = " SET ";
 
