@@ -20,6 +20,8 @@ import <iterator>;
 import <type_traits>;
 import <optional>;
 import <functional>;
+import <print>;  // C++23
+import <algorithm>;
 
 // Storm modules
 import storm.statement.base;
@@ -33,279 +35,308 @@ import storm.where;
 import storm.function;
 
 export namespace storm {
-    // No dependencies on QuerySet to avoid module cycles.
-
-    // SelectStatement is configured directly by higher-level builders (e.g., QuerySet)
-
-    // Options aggregate to keep SelectStatement's constructor concise
-    struct SelectOptions {
-        std::vector<std::string> joins{};
-        std::vector<FieldDesc>   distinct_fields{};
-        std::vector<FieldDesc>   only_fields{};
-        std::vector<Function>    functions_set{};
-        std::vector<OrderTerm>   order_terms{};
-        std::vector<FieldDesc>   group_by_fields{};
-        int                      limit  = 0;
-        int                      offset = 0;
-        std::optional<Where>     where_clause{};
+    
+    // C++23: constexpr std::string for compile-time SQL construction
+    template<size_t N>
+    struct fixed_string {
+        constexpr fixed_string(const char (&str)[N]) noexcept {
+            std::ranges::copy(str, value);
+        }
+        
+        constexpr std::string_view sv() const noexcept {
+            return {value, N - 1};
+        }
+        
+        char value[N];
+    };
+    
+    template<size_t N>
+    fixed_string(const char (&)[N]) -> fixed_string<N>;
+    
+    // C++23: Compile-time SQL builder with better constexpr evaluation
+    template<typename T>
+    struct CompileTimeSqlBuilder {
+        static constexpr std::string build_select_fields() {
+            std::string result;
+            constexpr auto table_name = refl::reflect<T>::get_struct_name();
+            constexpr auto field_count = refl::reflect<T>::member_count();
+            
+            // Pre-allocate based on estimated size
+            result.reserve(field_count * 20); // rough estimate
+            
+            refl::reflect<T>::for_each_member([&]<size_t I>(auto member) constexpr {
+                if constexpr (I > 0) result += ", ";
+                std::format_to(std::back_inserter(result), "{}.{}", 
+                    table_name, member.get_name());
+            });
+            
+            return result;
+        }
+        
+        static constexpr std::string build_base_query() {
+            constexpr auto fields = build_select_fields();
+            constexpr auto table = refl::reflect<T>::get_struct_name();
+            return std::format("SELECT {} FROM {}", fields, table);
+        }
     };
 
-    template <typename T> class SelectStatement : public UnifiedStatementBase<SelectStatement<T>, T> {
-      private:
+    // C++23: Improved SelectOptions with explicit object parameter
+    struct SelectOptions {
+        std::vector<std::string> joins{};
+        std::vector<FieldDesc> distinct_fields{};
+        std::vector<FieldDesc> only_fields{};
+        std::vector<Function> functions_set{};
+        std::vector<OrderTerm> order_terms{};
+        std::vector<FieldDesc> group_by_fields{};
+        int limit{};
+        int offset{};
+        std::optional<Where> where_clause{};
+        
+        // C++23: Deducing this for perfect forwarding
+        constexpr auto&& with_limit(this auto&& self, int value) noexcept {
+            self.limit = value;
+            return std::forward<decltype(self)>(self);
+        }
+        
+        constexpr auto&& with_offset(this auto&& self, int value) noexcept {
+            self.offset = value;
+            return std::forward<decltype(self)>(self);
+        }
+        
+        constexpr auto&& with_where(this auto&& self, Where clause) noexcept {
+            self.where_clause = std::move(clause);
+            return std::forward<decltype(self)>(self);
+        }
+    };
+
+    template <typename T> 
+    class SelectStatement : public UnifiedStatementBase<SelectStatement<T>, T> {
+    private:
         using Base = UnifiedStatementBase<SelectStatement<T>, T>;
+        
+        // C++23: Cached compile-time SQL strings
+        static constexpr std::string base_sql_ = CompileTimeSqlBuilder<T>::build_base_query();
+        static constexpr std::string default_fields_ = CompileTimeSqlBuilder<T>::build_select_fields();
 
-        // Helper to combine field strings and function clauses
-        [[nodiscard]] static std::string build_combined_clause(
-                const std::vector<std::string>& field_strings, const std::vector<std::string>& function_clauses
-        ) {
-            if (function_clauses.empty()) {
-                return std::format("{}", storm::utils::join(field_strings, ", "));
+        // C++23: constexpr join with better performance
+        template<std::ranges::range R>
+        [[nodiscard]] static constexpr std::string join_range(R&& range, std::string_view delimiter) {
+            if (std::ranges::empty(range)) return {};
+            
+            // Calculate total size for single allocation
+            size_t total_size = 0;
+            size_t count = 0;
+            for (const auto& item : range) {
+                total_size += item.size();
+                ++count;
             }
-
-            if (field_strings.empty()) {
-                return std::format("{}", storm::utils::join(function_clauses, ", "));
+            total_size += (count - 1) * delimiter.size();
+            
+            std::string result;
+            result.reserve(total_size);
+            
+            auto it = std::ranges::begin(range);
+            result += *it;
+            for (++it; it != std::ranges::end(range); ++it) {
+                result += delimiter;
+                result += *it;
             }
-
-            return std::format(
-                    "{}, {}", storm::utils::join(field_strings, ", "), storm::utils::join(function_clauses, ", ")
-            );
+            
+            return result;
         }
 
-        // Build default fields clause using compile-time reflection
-        template <refl::reflectable U> [[nodiscard]] static std::string build_default_fields_clause() {
-            std::vector<std::string> field_strings;
-            field_strings.reserve(refl::reflect<U>::member_count());
-
-            constexpr auto table_name_str = std::string{refl::reflect<U>::get_struct_name()};
-
-            refl::reflect<U>::for_each_member([&]<size_t I>(auto member) {
-                const std::string field_name{member.get_name()};
-                field_strings.emplace_back(std::format("{}.{}", table_name_str, field_name));
-            });
-
-            return storm::utils::join(field_strings, ", ");
-        }
-
-      public:
+    public:
         explicit SelectStatement(std::shared_ptr<Connection> conn) : Base(std::move(conn)) {}
 
-        // Constructor: all options bundled into SelectOptions for consistency
         SelectStatement(std::shared_ptr<Connection> conn, SelectOptions opts)
             : Base(std::move(conn), std::move(opts.where_clause))
             , joins_(std::move(opts.joins))
-            , fields_clause_()
-            , distinct_override_()
             , limit_(opts.limit)
             , offset_(opts.offset)
-            , order_by_sql_(build_order_by_sql(opts.order_terms))
-            , group_by_sql_(build_group_by_sql(opts.group_by_fields))
             , distinct_fields_(std::move(opts.distinct_fields))
             , only_fields_(std::move(opts.only_fields))
-            , functions_set_(std::move(opts.functions_set)) {}
+            , functions_set_(std::move(opts.functions_set))
+            , order_by_sql_(build_order_by_sql(opts.order_terms))
+            , group_by_sql_(build_group_by_sql(opts.group_by_fields)) {}
 
-        // Execute and materialize as objects of T
+        // C++23: Simplified monadic execution
         [[nodiscard]] std::expected<std::vector<T>, std::string> execute_objects() noexcept {
             return build_sql()
-                    .and_then([this](const std::string& sql) -> std::expected<void, std::string> {
-                        return this->set_sql(sql);
-                    })
-                    .and_then([this]() -> std::expected<void, std::string> { return bind_where_parameters(); })
-                    .and_then([this]() -> std::expected<std::vector<Row>, std::string> {
-                        return this->Base::execute_all();
-                    })
-                    .and_then([this](const std::vector<Row>& rows) { return rows_to_objects(rows); });
+                .and_then([this](const std::string& sql) { return this->set_sql(sql); })
+                .and_then([this]() { return bind_where_parameters(); })
+                .and_then([this]() { return this->Base::execute_all(); })
+                .and_then([](const std::vector<Row>& rows) { return rows_to_objects(rows); });
         }
 
-        // Execute and return generic value maps (for select_values)
         using ValueMap = std::map<std::string, SqlValue, std::less<>>;
         [[nodiscard]] std::expected<std::vector<ValueMap>, std::string> execute_values() noexcept {
             return build_sql()
-                    .and_then([this](const std::string& sql) -> std::expected<void, std::string> {
-                        return this->set_sql(sql);
-                    })
-                    .and_then([this]() -> std::expected<void, std::string> { return bind_where_parameters(); })
-                    .and_then([this]() -> std::expected<std::vector<Row>, std::string> {
-                        return this->Base::execute_all();
-                    })
-                    .and_then([this](const std::vector<Row>& rows) { return rows_to_value_maps(rows); });
+                .and_then([this](const std::string& sql) { return this->set_sql(sql); })
+                .and_then([this]() { return bind_where_parameters(); })
+                .and_then([this]() { return this->Base::execute_all(); })
+                .and_then([](const std::vector<Row>& rows) { return rows_to_value_maps(rows); });
         }
 
-      private:
-        std::vector<std::string> joins_{};
-        std::string              fields_clause_{};
-        std::optional<bool>      distinct_override_{};
-        int                      limit_  = 0;
-        int                      offset_ = 0;
-        std::string              order_by_sql_{};
-        std::string              group_by_sql_{};
-        std::vector<FieldDesc>   distinct_fields_{};
-        std::vector<FieldDesc>   only_fields_{};
-        std::vector<Function>    functions_set_{};
+    private:
+        std::vector<std::string> joins_;
+        mutable std::string fields_clause_; // Cache for repeated builds
+        std::optional<bool> distinct_override_;
+        int limit_{};
+        int offset_{};
+        std::vector<FieldDesc> distinct_fields_;
+        std::vector<FieldDesc> only_fields_;
+        std::vector<Function> functions_set_;
+        std::string order_by_sql_;
+        std::string group_by_sql_;
 
-        // Build the SELECT list (fields/expressions) for type T from QuerySet-like state
-        // This centralizes SELECT-list construction in SelectStatement.
+        // C++23: More efficient select list building with views
         [[nodiscard]] static std::string build_select_list(
-                std::span<const FieldDesc> distinct_fields,
-                std::span<const FieldDesc> only_fields,
-                std::span<const Function>  functions_set
+            std::span<const FieldDesc> distinct_fields,
+            std::span<const FieldDesc> only_fields,
+            std::span<const Function> functions_set
         ) {
-            using namespace std::string_literals;
-
-            // Map functions to strings first
-            auto function_clauses = functions_set | std::views::transform([](const auto& f) { return f.toStr(); }) |
-                                    std::ranges::to<std::vector<std::string>>();
-
-            std::string fields_clause;
+            // Use ranges views for lazy evaluation
+            auto function_clauses = functions_set 
+                | std::views::transform([](const Function& f) { return f.toStr(); });
 
             if (!distinct_fields.empty() && only_fields.empty()) {
-                // Use distinct fields
-                auto field_strings = distinct_fields |
-                                     std::views::transform([](const auto& desc) { return desc.full_name(); }) |
-                                     std::ranges::to<std::vector<std::string>>();
-
-                fields_clause = build_combined_clause(field_strings, function_clauses);
-
+                auto field_strings = distinct_fields
+                    | std::views::transform([](const FieldDesc& desc) { return desc.full_name(); });
+                
+                return join_combined_clauses(field_strings, function_clauses);
+                
             } else if (!only_fields.empty()) {
-                // Use only fields with optional aliases
-                auto field_strings = only_fields | std::views::transform([](const auto& desc) {
-                                         return desc.alias.empty()
-                                                        ? desc.full_name()
-                                                        : std::format("{} AS {}", desc.full_name(), desc.alias);
-                                     }) |
-                                     std::ranges::to<std::vector<std::string>>();
-
-                fields_clause = build_combined_clause(field_strings, function_clauses);
-
-            } else if (!function_clauses.empty()) {
-                // Only functions specified
-                fields_clause = std::format("{}", storm::utils::join(function_clauses, ", "));
-
+                auto field_strings = only_fields 
+                    | std::views::transform([](const FieldDesc& desc) {
+                        return desc.alias.empty() 
+                            ? desc.full_name()
+                            : std::format("{} AS {}", desc.full_name(), desc.alias);
+                    });
+                
+                return join_combined_clauses(field_strings, function_clauses);
+                
+            } else if (!std::ranges::empty(function_clauses)) {
+                return join_range(function_clauses, ", ");
             } else {
-                // Default: use reflection to get all fields
-                fields_clause = build_default_fields_clause<T>();
+                return default_fields_;
             }
-
-            return fields_clause;
         }
 
-        // Build ORDER BY clause from OrderTerm vector
-        [[nodiscard]] static std::string build_order_by_sql(const std::vector<OrderTerm>& terms) {
-            if (terms.empty()) {
-                return {};
-            }
-
-            // Constexpr collation mapping for compile-time optimization
-            static constexpr std::array<std::string_view, 4> collation_strings = {"", "BINARY", "NOCASE", "RTRIM"};
-
-            // Estimate string size to minimize reallocations
-            size_t estimated_size = 10; // " ORDER BY "
-            for (const auto& t : terms) {
-                estimated_size += t.table_name.size() + t.field_name.size() + 10; // . space COLLATE space ASC/DESC
-                if (t.collation != Collation::NONE) {
-                    estimated_size += 10 + collation_strings[static_cast<size_t>(t.collation)].size();
-                }
-            }
-            if (!terms.empty()) {
-                estimated_size += (terms.size() - 1) * 2; // ", " separators
-            }
-
-            std::string order_by_sql;
-            order_by_sql.reserve(estimated_size);
-
-            std::format_to(std::back_inserter(order_by_sql), " ORDER BY ");
-            bool first = true;
-            for (const auto& t : terms) {
-                if (!first) {
-                    std::format_to(std::back_inserter(order_by_sql), ", ");
-                }
-                first = false;
-                std::format_to(std::back_inserter(order_by_sql), "{}.{}", t.table_name, t.field_name);
-                auto coll = collation_strings[static_cast<size_t>(t.collation)];
-                if (!coll.empty()) {
-                    std::format_to(std::back_inserter(order_by_sql), " COLLATE {}", coll);
-                }
-                if (t.ascending) {
-                    std::format_to(std::back_inserter(order_by_sql), " ASC");
-                } else {
-                    std::format_to(std::back_inserter(order_by_sql), " DESC");
-                }
-            }
-            return order_by_sql;
+        // Helper for combining field and function clauses
+        template<std::ranges::range R1, std::ranges::range R2>
+        static std::string join_combined_clauses(R1&& fields, R2&& functions) {
+            const bool has_fields = !std::ranges::empty(fields);
+            const bool has_functions = !std::ranges::empty(functions);
+            
+            if (!has_functions) return join_range(fields, ", ");
+            if (!has_fields) return join_range(functions, ", ");
+            
+            return std::format("{}, {}", 
+                join_range(fields, ", "), 
+                join_range(functions, ", "));
         }
 
-        // Build GROUP BY clause from FieldDesc vector
-        [[nodiscard]] static std::string build_group_by_sql(const std::vector<FieldDesc>& fields) {
-            if (fields.empty()) {
-                return {};
-            }
+        // C++23: consteval for compile-time lookup table
+        [[nodiscard]] static consteval auto get_collation_strings() noexcept {
+            return std::to_array<std::string_view>({"", "BINARY", "NOCASE", "RTRIM"});
+        }
 
-            std::string group_by_sql = " GROUP BY ";
-            bool        first        = true;
-            for (const auto& desc : fields) {
-                if (!first)
-                    group_by_sql += ", ";
-                first = false;
-                group_by_sql += desc.full_name();
+        [[nodiscard]] static std::string build_order_by_sql(std::span<const OrderTerm> terms) {
+            if (terms.empty()) return {};
+
+            constexpr auto collation_strings = get_collation_strings();
+            
+            // Better size estimation
+            size_t estimated_size = 10 + terms.size() * 30;
+            std::string result;
+            result.reserve(estimated_size);
+            result += " ORDER BY ";
+            
+            for (size_t i = 0; const auto& term : terms) {
+                if (i++ > 0) result += ", ";
+                
+                std::format_to(std::back_inserter(result), "{}.{}", 
+                    term.table_name, term.field_name);
+                
+                const auto collation = collation_strings[static_cast<size_t>(term.collation)];
+                if (!collation.empty()) {
+                    std::format_to(std::back_inserter(result), " COLLATE {}", collation);
+                }
+                
+                result += term.ascending ? " ASC" : " DESC";
             }
-            return group_by_sql;
+            
+            return result;
+        }
+
+        [[nodiscard]] static std::string build_group_by_sql(std::span<const FieldDesc> fields) {
+            if (fields.empty()) return {};
+
+            auto field_names = fields 
+                | std::views::transform([](const FieldDesc& desc) { return desc.full_name(); });
+            
+            return std::format(" GROUP BY {}", join_range(field_names, ", "));
         }
 
         [[nodiscard]] std::expected<void, std::string> bind_where_parameters() noexcept {
-            if (!this->_where_clause)
-                return {};
-            auto query_result = this->_where_clause->to_query();
-            auto r            = this->bind_parameters(*query_result.binder);
-            if (!r)
-                return std::unexpected(r.error());
-            return {};
+            return this->_where_clause 
+                ? this->_where_clause->to_query()
+                    .and_then([this](const auto& query_result) {
+                        return this->bind_parameters(*query_result.binder);
+                    })
+                : std::expected<void, std::string>{};
         }
 
+        // C++23: Optimized SQL building with compile-time fast path
         [[nodiscard]] std::expected<std::string, std::string> build_sql() noexcept {
-            // Lazily construct fields clause if not provided
             if (fields_clause_.empty()) {
-                fields_clause_ = build_select_list(
-                        std::span<const FieldDesc>{distinct_fields_},
-                        std::span<const FieldDesc>{only_fields_},
-                        std::span<const Function>{functions_set_}
-                );
+                fields_clause_ = build_select_list(distinct_fields_, only_fields_, functions_set_);
             }
 
             if (fields_clause_.empty()) {
                 return std::unexpected{"SelectStatement: fields clause is empty"};
             }
 
-            std::string sql;
-            sql.reserve(128 + fields_clause_.size());
-
-            // SELECT + DISTINCT (auto-infer unless manually overridden) + fields
-            const bool auto_distinct = (!distinct_fields_.empty()) && (only_fields_.empty());
-            const bool use_distinct  = distinct_override_.value_or(auto_distinct);
-            if (use_distinct) {
-                std::format_to(
-                        std::back_inserter(sql), "SELECT DISTINCT {} FROM {}", fields_clause_, this->table_name()
-                );
-            } else {
-                std::format_to(std::back_inserter(sql), "SELECT {} FROM {}", fields_clause_, this->table_name());
+            // Fast path for simple queries using compile-time SQL
+            const bool is_simple_query = 
+                (fields_clause_ == default_fields_) &&
+                joins_.empty() && 
+                !this->_where_clause && 
+                group_by_sql_.empty() && 
+                order_by_sql_.empty() && 
+                limit_ == 0 && 
+                offset_ == 0;
+                
+            if (is_simple_query) {
+                return std::string{base_sql_};
             }
 
-            // JOINs
-            if (!joins_.empty()) {
-                for (const auto& j : joins_) {
-                    std::format_to(std::back_inserter(sql), " {}", j);
+            // Runtime assembly for complex queries
+            const bool auto_distinct = !distinct_fields_.empty() && only_fields_.empty();
+            const bool use_distinct = distinct_override_.value_or(auto_distinct);
+            
+            std::string sql;
+            sql.reserve(512); // Larger default reservation
+            
+            sql = std::format("SELECT{} {} FROM {}", 
+                use_distinct ? " DISTINCT" : "",
+                fields_clause_, 
+                this->table_name());
+
+            // Append clauses efficiently
+            for (const auto& join : joins_) {
+                sql += ' ';
+                sql += join;
+            }
+
+            if (this->_where_clause) {
+                if (auto query_result = this->_where_clause->to_query()) {
+                    std::format_to(std::back_inserter(sql), " WHERE {}", query_result->sql);
                 }
             }
 
-            // WHERE
-            if (this->_where_clause) {
-                auto q = this->_where_clause->to_query();
-                std::format_to(std::back_inserter(sql), " WHERE {}", q.sql);
-            }
-
-            // GROUP BY
-            std::format_to(std::back_inserter(sql), "{}", group_by_sql_);
-
-            // ORDER BY
-            std::format_to(std::back_inserter(sql), "{}", order_by_sql_);
+            sql += group_by_sql_;
+            sql += order_by_sql_;
 
             if (limit_ > 0) {
                 std::format_to(std::back_inserter(sql), " LIMIT {}", limit_);
@@ -317,102 +348,115 @@ export namespace storm {
             return sql;
         }
 
-        [[nodiscard]] static std::expected<std::vector<T>, std::string> rows_to_objects(const std::vector<Row>& rows) {
-            std::vector<T> out;
-            out.reserve(rows.size());
+        // C++23: Simplified type mapping with constexpr
+        template<typename MemberType>
+        static std::expected<void, std::string> set_member_value(
+            T& obj, auto member, const Row& row, int idx, std::string_view name
+        ) noexcept {
+            try {
+                if constexpr (std::same_as<MemberType, std::string>) {
+                    return member.set(obj, row.get_text(idx));
+                } else if constexpr (std::same_as<MemberType, bool>) {
+                    return member.set(obj, row.get_int(idx) != 0);
+                } else if constexpr (std::floating_point<MemberType>) {
+                    return member.set(obj, static_cast<MemberType>(row.get_double(idx)));
+                } else if constexpr (std::integral<MemberType>) {
+                    return member.set(obj, static_cast<MemberType>(row.get_int(idx)));
+                } else if constexpr (std::is_enum_v<MemberType>) {
+                    return member.set(obj, static_cast<MemberType>(row.get_int(idx)));
+                } else {
+                    return std::unexpected{std::format("Unsupported type for field '{}'", name)};
+                }
+            } catch (const std::exception& e) {
+                return std::unexpected{std::format("Failed to set '{}': {}", name, e.what())};
+            }
+        }
+
+        [[nodiscard]] static std::expected<std::vector<T>, std::string> 
+        rows_to_objects(std::span<const Row> rows) {
+            std::vector<T> result;
+            result.reserve(rows.size());
 
             for (const auto& row : rows) {
-                auto obj_res = row_to_object(row);
-                if (!obj_res)
-                    return std::unexpected(obj_res.error());
-                out.emplace_back(std::move(*obj_res));
+                auto obj = row_to_object(row);
+                if (!obj) return std::unexpected{obj.error()};
+                result.emplace_back(std::move(*obj));
             }
-            return out;
+            
+            return result;
         }
 
         [[nodiscard]] static std::expected<T, std::string> row_to_object(const Row& row) {
             T obj{};
-
-            // Build column name -> index map
-            const int                                 col_count = row.get_column_count();
+            
+            const int col_count = row.get_column_count();
             std::unordered_map<std::string_view, int> col_index;
             col_index.reserve(static_cast<size_t>(col_count));
+            
             for (int i = 0; i < col_count; ++i) {
                 col_index.emplace(row.get_column_name(i), i);
             }
 
-            // Assign by member names
             std::vector<std::string> errors;
+            
             refl::reflect<T>::for_each_member([&]<size_t I>(auto member) {
-                const std::string_view name = member.get_name();
+                const auto name = member.get_name();
                 if (auto it = col_index.find(name); it != col_index.end()) {
-                    const int idx    = it->second;
                     using MemberType = typename decltype(member)::member_type;
-                    if constexpr (std::is_same_v<MemberType, std::string>) {
-                        auto res = decltype(member)::set(obj, row.get_text(idx));
-                        if (!res)
-                            errors.push_back(std::format("set '{}' failed: {}", name, res.error()));
-                    } else if constexpr (std::is_same_v<MemberType, bool>) {
-                        auto res = decltype(member)::set(obj, row.get_int(idx) != 0);
-                        if (!res)
-                            errors.push_back(std::format("set '{}' failed: {}", name, res.error()));
-                    } else if constexpr (std::is_floating_point_v<MemberType>) {
-                        auto res = decltype(member)::set(obj, static_cast<MemberType>(row.get_double(idx)));
-                        if (!res)
-                            errors.push_back(std::format("set '{}' failed: {}", name, res.error()));
-                    } else if constexpr (std::is_integral_v<MemberType>) {
-                        auto res = decltype(member)::set(obj, static_cast<MemberType>(row.get_int(idx)));
-                        if (!res)
-                            errors.push_back(std::format("set '{}' failed: {}", name, res.error()));
-                    } else if constexpr (std::is_enum_v<MemberType>) {
-                        auto res = decltype(member)::set(obj, static_cast<MemberType>(row.get_int(idx)));
-                        if (!res)
-                            errors.push_back(std::format("set '{}' failed: {}", name, res.error()));
-                    } else {
-                        // Unsupported type - ignore silently for now
+                    
+                    if (auto result = set_member_value<MemberType>(obj, member, row, it->second, name); 
+                        !result) {
+                        errors.emplace_back(result.error());
                     }
                 }
             });
 
-            if (!errors.empty()) {
-                return std::unexpected(storm::utils::join(errors, "; "));
-            }
-            return obj;
+            return errors.empty() 
+                ? std::expected<T, std::string>{std::move(obj)}
+                : std::unexpected{join_range(errors, "; ")};
         }
 
+        // C++23: constexpr SQLite constants
+        static constexpr int SQLITE_INTEGER = 1;
+        static constexpr int SQLITE_FLOAT = 2;
+        static constexpr int SQLITE_TEXT = 3;
+        static constexpr int SQLITE_NULL = 5;
+
         [[nodiscard]] static std::expected<std::vector<ValueMap>, std::string>
-        rows_to_value_maps(const std::vector<Row>& rows) {
-            std::vector<ValueMap> out;
-            out.reserve(rows.size());
+        rows_to_value_maps(std::span<const Row> rows) {
+            std::vector<ValueMap> result;
+            result.reserve(rows.size());
 
             for (const auto& row : rows) {
-                ValueMap  m;
+                ValueMap map;
                 const int col_count = row.get_column_count();
+
                 for (int i = 0; i < col_count; ++i) {
-                    const std::string& name = row.get_column_name(i);
-                    const int          typ  = row.get_column_type(i);
-                    switch (typ) {
-                    case 1: // SQLITE_INTEGER
-                        m.emplace(name, static_cast<int64_t>(row.get_int(i)));
-                        break;
-                    case 2: // SQLITE_FLOAT
-                        m.emplace(name, row.get_double(i));
-                        break;
-                    case 3: // SQLITE_TEXT
-                        m.emplace(name, row.get_text(i));
-                        break;
-                    case 5: // SQLITE_NULL
-                        m.emplace(name, std::nullopt);
-                        break;
-                    default:
-                        // BLOB and others -> not supported, insert monostate
-                        m.emplace(name, std::monostate{});
-                        break;
+                    const auto& name = row.get_column_name(i);
+                    
+                    // C++23: Simplified switch with structured bindings potential
+                    switch (const int type = row.get_column_type(i)) {
+                        case SQLITE_INTEGER:
+                            map.emplace(name, static_cast<int64_t>(row.get_int(i)));
+                            break;
+                        case SQLITE_FLOAT:
+                            map.emplace(name, row.get_double(i));
+                            break;
+                        case SQLITE_TEXT:
+                            map.emplace(name, row.get_text(i));
+                            break;
+                        case SQLITE_NULL:
+                            map.emplace(name, std::nullopt);
+                            break;
+                        default:
+                            map.emplace(name, std::monostate{});
+                            break;
                     }
                 }
-                out.emplace_back(std::move(m));
+                result.emplace_back(std::move(map));
             }
-            return out;
+            
+            return result;
         }
     };
 
