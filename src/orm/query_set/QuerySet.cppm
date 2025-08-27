@@ -55,14 +55,6 @@ export namespace storm {
     template <typename T> using ExpectedT       = std::expected<T, std::string>;
     template <typename T> using ExpectedVectorT = std::expected<std::vector<T>, std::string>;
 
-    // Order terms with value semantics (no polymorphism/heap)
-    struct OrderTerm {
-        std::string table_name;
-        std::string field_name;
-        bool        ascending;
-        Collation   collation = Collation::NONE;
-    };
-
     template <class T> class QuerySet {
       private:
         std::shared_ptr<Connection> conn;
@@ -247,7 +239,7 @@ export namespace storm {
         }
 
         [[nodiscard]] std::expected<bool, std::string> execute_delete() noexcept {
-            return DeleteStatement<T>(conn).where(std::move(_whereExpression)).execute();
+            return DeleteStatement<T>(conn, std::move(_whereExpression)).execute();
         }
 
         template <typename FieldType, typename Value>
@@ -807,28 +799,40 @@ export namespace storm {
 
     // SELECT ALL implementation
     template <typename T> ExpectedVectorT<T> QuerySet<T>::select_all() {
-        // Create and configure SelectStatement
-        return SelectStatement<T>(conn)
-                .select_sources(distinctFields, onlyFields, functionsSet)
-                .joins(std::move(join_clauses))
-                .order_by(std::move(orderTerms))
-                .group_by(std::move(groupByFields))
-                .limit(_limit)
-                .offset(_offset)
-                .where(std::move(_whereExpression))
+        // Construct SelectStatement directly: it builds ORDER/GROUP/FIELDS internally
+        return SelectStatement<T>(
+                       conn,
+                       SelectOptions{
+                               .joins           = std::move(join_clauses),
+                               .distinct_fields = std::move(distinctFields),
+                               .only_fields     = std::move(onlyFields),
+                               .functions_set   = std::move(functionsSet),
+                               .order_terms     = std::move(orderTerms),
+                               .group_by_fields = std::move(groupByFields),
+                               .limit           = _limit,
+                               .offset          = _offset,
+                               .where_clause    = std::move(_whereExpression),
+                       }
+        )
                 .execute_objects();
     }
 
     // SELECT VALUES implementation (returns dictionary-like data)
     template <typename T> ExpectedValueVectorMap QuerySet<T>::select_values() {
-        return SelectStatement<T>(conn)
-                .select_sources(distinctFields, onlyFields, functionsSet)
-                .joins(std::move(join_clauses))
-                .order_by(std::move(orderTerms))
-                .group_by(std::move(groupByFields))
-                .limit(_limit)
-                .offset(_offset)
-                .where(std::move(_whereExpression))
+        return SelectStatement<T>(
+                       conn,
+                       SelectOptions{
+                               .joins           = std::move(join_clauses),
+                               .distinct_fields = std::move(distinctFields),
+                               .only_fields     = std::move(onlyFields),
+                               .functions_set   = std::move(functionsSet),
+                               .order_terms     = std::move(orderTerms),
+                               .group_by_fields = std::move(groupByFields),
+                               .limit           = _limit,
+                               .offset          = _offset,
+                               .where_clause    = std::move(_whereExpression),
+                       }
+        )
                 .execute_values();
     }
 

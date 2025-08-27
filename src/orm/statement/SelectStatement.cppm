@@ -6,6 +6,7 @@ export module storm.statement.select;
 import <string>;
 import <string_view>;
 import <vector>;
+import <array>;
 import <span>;
 import <format>;
 import <expected>;
@@ -33,6 +34,21 @@ import storm.function;
 
 export namespace storm {
     // No dependencies on QuerySet to avoid module cycles.
+
+    // SelectStatement is configured directly by higher-level builders (e.g., QuerySet)
+
+    // Options aggregate to keep SelectStatement's constructor concise
+    struct SelectOptions {
+        std::vector<std::string> joins{};
+        std::vector<FieldDesc>   distinct_fields{};
+        std::vector<FieldDesc>   only_fields{};
+        std::vector<Function>    functions_set{};
+        std::vector<OrderTerm>   order_terms{};
+        std::vector<FieldDesc>   group_by_fields{};
+        int                      limit  = 0;
+        int                      offset = 0;
+        std::optional<Where>     where_clause{};
+    };
 
     template <typename T> class SelectStatement : public UnifiedStatementBase<SelectStatement<T>, T> {
       private:
@@ -73,54 +89,19 @@ export namespace storm {
       public:
         explicit SelectStatement(std::shared_ptr<Connection> conn) : Base(std::move(conn)) {}
 
-        SelectStatement& joins(std::vector<std::string>&& joins) {
-            joins_ = std::move(joins);
-            return *this;
-        }
-        // Convenience: accept ORDER BY terms and build SQL internally
-        template <std::ranges::input_range R> SelectStatement& order_by(R&& terms) {
-            order_by_sql_ = build_order_by_sql(std::forward<R>(terms));
-            return *this;
-        }
-
-        SelectStatement& group_by_sql(std::string sql) {
-            group_by_sql_ = std::move(sql);
-            return *this;
-        }
-        // Convenience: accept GROUP BY fields and build SQL internally
-        template <std::ranges::input_range R> SelectStatement& group_by(R&& fields) {
-            group_by_sql_ = build_group_by_sql(std::forward<R>(fields));
-            return *this;
-        }
-        // Convenience overload: accept shared pointer to fields
-        template <typename FieldsRange> SelectStatement& group_by(const std::shared_ptr<FieldsRange>& fields_ptr) {
-            if (fields_ptr) {
-                group_by(*fields_ptr);
-            } else {
-                group_by_sql_.clear();
-            }
-            return *this;
-        }
-        SelectStatement& limit(int v) {
-            limit_ = v;
-            return *this;
-        }
-        SelectStatement& offset(int v) {
-            offset_ = v;
-            return *this;
-        }
-
-        // Provide sources to lazily build the SELECT list if fields_clause_ is not set
-        SelectStatement& select_sources(
-                const std::vector<FieldDesc>& distinct_fields,
-                const std::vector<FieldDesc>& only_fields,
-                const std::vector<Function>&  functions_set
-        ) {
-            distinct_fields_ = &distinct_fields;
-            only_fields_     = &only_fields;
-            functions_set_   = &functions_set;
-            return *this;
-        }
+        // Constructor: all options bundled into SelectOptions for consistency
+        SelectStatement(std::shared_ptr<Connection> conn, SelectOptions opts)
+            : Base(std::move(conn), std::move(opts.where_clause))
+            , joins_(std::move(opts.joins))
+            , fields_clause_()
+            , distinct_override_()
+            , limit_(opts.limit)
+            , offset_(opts.offset)
+            , order_by_sql_(build_order_by_sql(opts.order_terms))
+            , group_by_sql_(build_group_by_sql(opts.group_by_fields))
+            , distinct_fields_(std::move(opts.distinct_fields))
+            , only_fields_(std::move(opts.only_fields))
+            , functions_set_(std::move(opts.functions_set)) {}
 
         // Execute and materialize as objects of T
         [[nodiscard]] std::expected<std::vector<T>, std::string> execute_objects() noexcept {
@@ -150,16 +131,16 @@ export namespace storm {
         }
 
       private:
-        std::vector<std::string>      joins_{};
-        std::string                   fields_clause_{};
-        std::optional<bool>           distinct_override_{};
-        int                           limit_  = 0;
-        int                           offset_ = 0;
-        std::string                   order_by_sql_{};
-        std::string                   group_by_sql_{};
-        const std::vector<FieldDesc>* distinct_fields_ = nullptr;
-        const std::vector<FieldDesc>* only_fields_     = nullptr;
-        const std::vector<Function>*  functions_set_   = nullptr;
+        std::vector<std::string> joins_{};
+        std::string              fields_clause_{};
+        std::optional<bool>      distinct_override_{};
+        int                      limit_  = 0;
+        int                      offset_ = 0;
+        std::string              order_by_sql_{};
+        std::string              group_by_sql_{};
+        std::vector<FieldDesc>   distinct_fields_{};
+        std::vector<FieldDesc>   only_fields_{};
+        std::vector<Function>    functions_set_{};
 
         // Build the SELECT list (fields/expressions) for type T from QuerySet-like state
         // This centralizes SELECT-list construction in SelectStatement.
@@ -207,35 +188,60 @@ export namespace storm {
             return fields_clause;
         }
 
-        // Build ORDER BY clause from a generic range of terms with members:
-        //   table_name (string or string_view), field_name (string or string_view),
-        //   ascending (bool), collation (storm::Collation)
-        template <std::ranges::input_range R> [[nodiscard]] static std::string build_order_by_sql(R&& terms) {
-            std::string order_by_sql;
-            bool        first = true;
-            for (auto&& t : terms) {
-                if (!first)
-                    order_by_sql += ", ";
-                first = false;
-                order_by_sql += std::format("{}.{}", t.table_name, t.field_name);
+        // Build ORDER BY clause from OrderTerm vector
+        [[nodiscard]] static std::string build_order_by_sql(const std::vector<OrderTerm>& terms) {
+            if (terms.empty()) {
+                return {};
+            }
+
+            // Constexpr collation mapping for compile-time optimization
+            static constexpr std::array<std::string_view, 4> collation_strings = {"", "BINARY", "NOCASE", "RTRIM"};
+
+            // Estimate string size to minimize reallocations
+            size_t estimated_size = 10; // " ORDER BY "
+            for (const auto& t : terms) {
+                estimated_size += t.table_name.size() + t.field_name.size() + 10; // . space COLLATE space ASC/DESC
                 if (t.collation != Collation::NONE) {
-                    std::string_view coll = (t.collation == Collation::BINARY)   ? "BINARY"
-                                            : (t.collation == Collation::NOCASE) ? "NOCASE"
-                                            : (t.collation == Collation::RTRIM)  ? "RTRIM"
-                                                                                 : "";
-                    if (!coll.empty())
-                        order_by_sql += std::format(" COLLATE {}", coll);
+                    estimated_size += 10 + collation_strings[static_cast<size_t>(t.collation)].size();
                 }
-                order_by_sql += t.ascending ? " ASC" : " DESC";
+            }
+            if (!terms.empty()) {
+                estimated_size += (terms.size() - 1) * 2; // ", " separators
+            }
+
+            std::string order_by_sql;
+            order_by_sql.reserve(estimated_size);
+
+            std::format_to(std::back_inserter(order_by_sql), " ORDER BY ");
+            bool first = true;
+            for (const auto& t : terms) {
+                if (!first) {
+                    std::format_to(std::back_inserter(order_by_sql), ", ");
+                }
+                first = false;
+                std::format_to(std::back_inserter(order_by_sql), "{}.{}", t.table_name, t.field_name);
+                auto coll = collation_strings[static_cast<size_t>(t.collation)];
+                if (!coll.empty()) {
+                    std::format_to(std::back_inserter(order_by_sql), " COLLATE {}", coll);
+                }
+                if (t.ascending) {
+                    std::format_to(std::back_inserter(order_by_sql), " ASC");
+                } else {
+                    std::format_to(std::back_inserter(order_by_sql), " DESC");
+                }
             }
             return order_by_sql;
         }
 
-        // Build GROUP BY clause from a range of FieldDesc-like items supporting full_name()
-        template <std::ranges::input_range R> [[nodiscard]] static std::string build_group_by_sql(R&& fields) {
-            std::string group_by_sql;
-            bool        first = true;
-            for (auto&& desc : fields) {
+        // Build GROUP BY clause from FieldDesc vector
+        [[nodiscard]] static std::string build_group_by_sql(const std::vector<FieldDesc>& fields) {
+            if (fields.empty()) {
+                return {};
+            }
+
+            std::string group_by_sql = " GROUP BY ";
+            bool        first        = true;
+            for (const auto& desc : fields) {
                 if (!first)
                     group_by_sql += ", ";
                 first = false;
@@ -257,13 +263,11 @@ export namespace storm {
         [[nodiscard]] std::expected<std::string, std::string> build_sql() noexcept {
             // Lazily construct fields clause if not provided
             if (fields_clause_.empty()) {
-                auto d         = (distinct_fields_ != nullptr) ? std::span<const FieldDesc>{*distinct_fields_}
-                                                               : std::span<const FieldDesc>{};
-                auto o         = (only_fields_ != nullptr) ? std::span<const FieldDesc>{*only_fields_}
-                                                           : std::span<const FieldDesc>{};
-                auto f         = (functions_set_ != nullptr) ? std::span<const Function>{*functions_set_}
-                                                             : std::span<const Function>{};
-                fields_clause_ = build_select_list(d, o, f);
+                fields_clause_ = build_select_list(
+                        std::span<const FieldDesc>{distinct_fields_},
+                        std::span<const FieldDesc>{only_fields_},
+                        std::span<const Function>{functions_set_}
+                );
             }
 
             if (fields_clause_.empty()) {
@@ -274,9 +278,8 @@ export namespace storm {
             sql.reserve(128 + fields_clause_.size());
 
             // SELECT + DISTINCT (auto-infer unless manually overridden) + fields
-            const bool auto_distinct =
-                    (distinct_fields_ && !distinct_fields_->empty()) && (!only_fields_ || only_fields_->empty());
-            const bool use_distinct = distinct_override_.value_or(auto_distinct);
+            const bool auto_distinct = (!distinct_fields_.empty()) && (only_fields_.empty());
+            const bool use_distinct  = distinct_override_.value_or(auto_distinct);
             if (use_distinct) {
                 std::format_to(
                         std::back_inserter(sql), "SELECT DISTINCT {} FROM {}", fields_clause_, this->table_name()
@@ -298,14 +301,11 @@ export namespace storm {
                 std::format_to(std::back_inserter(sql), " WHERE {}", q.sql);
             }
 
-            if (!group_by_sql_.empty()) {
-                std::format_to(std::back_inserter(sql), " GROUP BY {}", group_by_sql_);
-            }
+            // GROUP BY
+            std::format_to(std::back_inserter(sql), "{}", group_by_sql_);
 
             // ORDER BY
-            if (!order_by_sql_.empty()) {
-                std::format_to(std::back_inserter(sql), " ORDER BY {}", order_by_sql_);
-            }
+            std::format_to(std::back_inserter(sql), "{}", order_by_sql_);
 
             if (limit_ > 0) {
                 std::format_to(std::back_inserter(sql), " LIMIT {}", limit_);

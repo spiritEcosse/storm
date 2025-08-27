@@ -34,4 +34,12 @@ export namespace storm {
     // Collation options for string comparisons
     enum class Collation { NONE, BINARY, NOCASE, RTRIM };
 
+    // Order terms with value semantics (no polymorphism/heap)
+    struct OrderTerm {
+        std::string table_name;
+        std::string field_name;
+        bool        ascending;
+        Collation   collation = Collation::NONE;
+    };
+
 } // namespace storm

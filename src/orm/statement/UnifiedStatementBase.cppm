@@ -91,6 +91,7 @@ export namespace storm {
 
       public:
         UnifiedStatementBase(std::shared_ptr<Connection> conn);
+        UnifiedStatementBase(std::shared_ptr<Connection> conn, std::optional<Where> where_clause);
 
         // Returns the raw SQL query string
         std::string sql() const {
@@ -110,17 +111,6 @@ export namespace storm {
         UnifiedStatementBase& operator=(const UnifiedStatementBase&) = delete;
         UnifiedStatementBase(UnifiedStatementBase&& other) noexcept;
         UnifiedStatementBase& operator=(UnifiedStatementBase&& other) noexcept;
-
-        /**
-         * Add a WHERE clause to the statement
-         *
-         * @param where_clause The WHERE clause to use (moved by value)
-         * @return Reference to the derived class for method chaining
-         */
-        Derived& where(Where where_clause) {
-            _where_clause = std::move(where_clause);
-            return *static_cast<Derived*>(this);
-        }
 
         /**
          * Overload to accept an optional WHERE clause (e.g., from a builder)
@@ -312,6 +302,15 @@ export namespace storm {
     template <typename Derived, typename T>
     UnifiedStatementBase<Derived, T>::UnifiedStatementBase(std::shared_ptr<Connection> conn)
         : conn(std::move(conn)), stmt(nullptr), sql_("") {
+        // Don't prepare statement here - we'll do it when set_sql is called
+        // Connection validity will be checked when set_sql is called
+    }
+
+    template <typename Derived, typename T>
+    UnifiedStatementBase<Derived, T>::UnifiedStatementBase(
+            std::shared_ptr<Connection> conn, std::optional<Where> where_clause
+    )
+        : conn(std::move(conn)), stmt(nullptr), sql_(""), _where_clause(std::move(where_clause)) {
         // Don't prepare statement here - we'll do it when set_sql is called
         // Connection validity will be checked when set_sql is called
     }

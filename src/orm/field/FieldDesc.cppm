@@ -36,6 +36,16 @@ export namespace storm {
         }
     };
 
+    // Compile-time field descriptor for CtSqlBuilder
+    struct CtFieldDesc {
+        std::string_view table;
+        std::string_view field;
+        std::string_view alias;
+
+        consteval CtFieldDesc(std::string_view t, std::string_view f, std::string_view a = "")
+            : table(t), field(f), alias(a) {}
+    };
+
     // Build compile-time descriptor for a member pointer and optional alias
     // Uses the reflection fixed_string already defined in storm.reflect
     // fully qualified to avoid introducing another fixed_string type
@@ -67,6 +77,12 @@ export namespace storm {
     template <auto MemberPtr> [[nodiscard]] inline FieldDesc make_field_desc(std::string alias) {
         constexpr auto v = make_field_desc_ct<MemberPtr>();
         return FieldDesc{std::string(v.table), std::string(v.field), std::move(alias)};
+    }
+
+    // Fully compile-time field descriptor for use with CtSqlBuilder
+    template <auto MemberPtr, ::refl::detail::fixed_string Alias = ""> consteval auto make_ct_field_desc() {
+        constexpr auto v = make_field_desc_ct<MemberPtr, Alias>();
+        return CtFieldDesc{v.table, v.field, std::string_view{Alias}};
     }
 
 } // namespace storm

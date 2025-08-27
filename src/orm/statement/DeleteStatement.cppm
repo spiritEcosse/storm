@@ -21,6 +21,7 @@ import storm.expression;
 import storm.connection;
 import storm.utils;
 import storm.reflect;
+import storm.where;
 
 export namespace storm {
 
@@ -35,6 +36,10 @@ export namespace storm {
 
       public:
         explicit DeleteStatement(std::shared_ptr<Connection> conn) : Base(conn) {}
+
+        // Allow constructing with an initial WHERE clause (passed by optional)
+        explicit DeleteStatement(std::shared_ptr<Connection> conn, std::optional<Where> where_clause)
+            : Base(conn, std::move(where_clause)) {}
 
         /**
          * Execute the DELETE statement with the current configuration
