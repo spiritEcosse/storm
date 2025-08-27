@@ -1,26 +1,30 @@
-module;
-
 export module storm.core_types;
 
+// Standard library imports
 import <string>;
 import <optional>;
 import <variant>;
 import <string_view>;
 import <cstdint>;
 
+// Storm modules - removed reflection dependency to break circular imports
+// import storm.basic_types; // Temporarily removed to test build
+import storm.type_traits;
+
 export namespace storm {
 
     // Core value types that can be used in both WHERE clauses and database binding
+    // These types have no reflection dependencies
     using SqlValue = std::variant<
             std::string,
-            int8_t,
-            int16_t,
-            int32_t,
-            int64_t,
-            uint8_t,
-            uint16_t,
-            uint32_t,
-            uint64_t,
+            std::int8_t,
+            std::int16_t,
+            std::int32_t,
+            std::int64_t,
+            std::uint8_t,
+            std::uint16_t,
+            std::uint32_t,
+            std::uint64_t,
             float,
             double,
             bool,
@@ -33,13 +37,5 @@ export namespace storm {
 
     // Collation options for string comparisons
     enum class Collation { NONE, BINARY, NOCASE, RTRIM };
-
-    // Order terms with value semantics (no polymorphism/heap)
-    struct OrderTerm {
-        std::string table_name;
-        std::string field_name;
-        bool        ascending;
-        Collation   collation = Collation::NONE;
-    };
 
 } // namespace storm

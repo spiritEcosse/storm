@@ -103,7 +103,7 @@ export namespace refl::meta {
     };
 
     // Compile-time member descriptor
-    template <auto MemberPtr, refl::detail::fixed_string Name> struct member_descriptor {
+    template <auto MemberPtr, auto Name> struct member_descriptor {
         static constexpr auto name       = Name;
         static constexpr auto member_ptr = MemberPtr;
 
@@ -139,7 +139,7 @@ export namespace refl::meta {
     };
 
     // Compile-time type descriptor
-    template <typename T, refl::detail::fixed_string TypeName, typename... Members> struct type_descriptor {
+    template <typename T, auto TypeName, typename... Members> struct type_descriptor {
         using type                         = T;
         static constexpr auto name         = TypeName;
         static constexpr auto member_count = sizeof...(Members);

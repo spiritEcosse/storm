@@ -13,18 +13,21 @@ import storm.condition;  // For storm::Condition
 import storm.function;
 import storm.where;
 import storm.field; // For Field class
+import storm.basic_types; // For OrderTerm
+
+// Storm modules
+import storm.statement.base;
+import storm.statement.insert;
+import storm.statement.select;
+import storm.statement.update;
+import storm.statement.remove;
+import storm.expression;
 import storm.connection;
-// Import statement modules
-import storm.statement.base;   // For StatementBase
-import storm.statement.remove; // For DeleteStatement
-import storm.statement.insert; // For InsertStatement
-import storm.statement.update; // For UpdateStatement
-import storm.statement.select; // For SelectStatement
 import storm.reflect;
-import storm.type_traits;
 import storm.utils;
 import storm.field_desc;
 import storm.join_utils;
+import storm.type_traits;
 
 // Import standard header units in the global module fragment
 import <string>;
@@ -61,13 +64,18 @@ export namespace storm {
         std::optional<storm::Where> _whereExpression;
         std::vector<std::string>    join_clauses;
         std::vector<OrderTerm>      orderTerms;
-        std::vector<FieldDesc>      distinctFields;
-        std::vector<FieldDesc>      onlyFields;
+        std::vector<FieldDescView> distinctFields;
+        std::vector<FieldDescView> onlyFields;
         std::vector<Function>       functionsSet;
-        std::vector<FieldDesc>      groupByFields;
+        std::vector<FieldDescView> groupByFields;
 
         int _limit{};
         int _offset{};
+
+        // Helper method to convert compile-time join info to runtime string
+        template <typename JoinInfo> std::string join_info_to_string(const JoinInfo& info) {
+            return JoinInfo::to_string();
+        }
 
       public:
         // Constructors
@@ -187,10 +195,14 @@ export namespace storm {
         // FUNCTIONS API (declarations)
         template <typename... Args> QuerySet<T>& functions(Args&&... args);
 
-        // JOIN API (declarations)
-        template <class U, auto MemberPtr> QuerySet<T>& join();
+        // Compile-time JOIN API (consteval - evaluated at compile time)
+        template <class U, auto MemberPtr> consteval auto join() {
+            return make_join_clause_ct<T, U, MemberPtr, JoinType::Inner>();
+        }
 
-        template <class U, auto MemberPtr> QuerySet<T>& left_join();
+        template <class U, auto MemberPtr> consteval auto left_join() {
+            return make_join_clause_ct<T, U, MemberPtr, JoinType::Left>();
+        }
 
         // REMOVE API (declarations)
         std::expected<bool, std::string> remove(const T& obj);
@@ -301,9 +313,8 @@ export namespace storm {
         template <auto Field> QuerySet<T>& add_order_field(bool ascending, Collation collation) {
             static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
 
-            // Compute names at add-time and store by value
-            auto d = make_field_desc<Field>();
-            this->orderTerms.push_back(OrderTerm{d.table, d.field, ascending, collation});
+            // Compile-time constructor - eliminates runtime string copies
+            this->orderTerms.emplace_back(CtField<Field>::view(), ascending, collation);
 
             return *this;
         }
@@ -330,7 +341,7 @@ export namespace storm {
 
             // Add the current field-direction-collation triplet as value term
             auto d = make_field_desc<Field>();
-            this->orderTerms.push_back(OrderTerm{d.table, d.field, Direction, Coll});
+            this->orderTerms.emplace_back(d, Direction, Coll);
 
             // Process remaining triplets if any
             if constexpr (sizeof...(Rest) > 0) {
@@ -529,8 +540,11 @@ export namespace storm {
         // Reserve capacity
         this->distinctFields.reserve(sizeof...(Fields));
 
-        // Process each field
-        auto addField = [this]<auto Field>() { this->distinctFields.emplace_back(make_field_desc<Field>()); };
+        // Process each field using CtField for compile-time optimization
+        auto addField = [this]<auto Field>() {
+            using CtFieldType = CtField<Field>;
+            this->distinctFields.emplace_back(CtFieldType::view());  // Direct view (no copies!)
+        };
 
         (addField.template operator()<Fields>(), ...);
 
@@ -545,9 +559,13 @@ export namespace storm {
         // Reserve capacity
         onlyFields.reserve(sizeof...(Fields));
 
-        // Process each field
+        // Process each field using CtField for compile-time optimization
         auto addField = [this, &alias]<auto MemberPtr>() {
-            onlyFields.emplace_back(make_field_desc<MemberPtr>(alias));
+            using CtFieldType = CtField<MemberPtr>;
+            // For only(), we need to override the alias from CtField with the runtime alias
+            auto view = CtFieldType::view();
+            // Create a new FieldDescView with the runtime alias
+            onlyFields.emplace_back(view.table, view.field, alias);  // Direct view (no copies!)
         };
 
         (addField.template operator()<Fields>(), ...);
@@ -560,8 +578,11 @@ export namespace storm {
         // Reserve capacity
         groupByFields.reserve(sizeof...(Fields));
 
-        // Process each field
-        auto addField = [this]<auto MemberPtr>() { groupByFields.emplace_back(make_field_desc<MemberPtr>()); };
+        // Process each field using CtField for compile-time optimization
+        auto addField = [this]<auto MemberPtr>() {
+            using CtFieldType = CtField<MemberPtr>;
+            groupByFields.emplace_back(CtFieldType::view());  // Direct view (no copies!)
+        };
 
         (addField.template operator()<Fields>(), ...);
 
@@ -606,8 +627,8 @@ export namespace storm {
 
         // Add the first field-direction pair
         {
-            auto d = make_field_desc<Field>();
-            this->orderTerms.push_back(OrderTerm{d.table, d.field, Direction, Collation::NONE});
+            // Compile-time constructor - eliminates runtime string copies
+            this->orderTerms.emplace_back(CtField<Field>::view(), Direction, Collation::NONE);
         }
 
         // Process remaining pairs if any
@@ -638,7 +659,7 @@ export namespace storm {
         // Add the first field-direction-collation triplet
         {
             auto d = make_field_desc<Field>();
-            this->orderTerms.push_back(OrderTerm{d.table, d.field, Direction, Coll});
+            this->orderTerms.emplace_back(d, Direction, Coll);
         }
 
         // Process remaining triplets if any
@@ -769,17 +790,6 @@ export namespace storm {
     ) {
         // Note: group_concat_impl needs to be implemented - placeholder for now
         // TODO: Implement group_concat_impl method
-        return *this;
-    }
-
-    // JOIN implementation (compile-time, no raw conditions)
-    template <typename T> template <class U, auto MemberPtr> QuerySet<T>& QuerySet<T>::join() {
-        join_clauses.emplace_back(make_join_clause<T, U, MemberPtr>(JoinType::Inner));
-        return *this;
-    }
-
-    template <typename T> template <class U, auto MemberPtr> QuerySet<T>& QuerySet<T>::left_join() {
-        join_clauses.emplace_back(make_join_clause<T, U, MemberPtr>(JoinType::Left));
         return *this;
     }
 

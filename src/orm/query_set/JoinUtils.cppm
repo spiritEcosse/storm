@@ -41,4 +41,27 @@ export namespace storm {
         return std::format("{} {} ON {} = {}", join_kw, rhs_table, lhs_full, rhs_full);
     }
 
+    // Compile-time join information structure
+    template <typename Lhs, typename Rhs, auto MemberPtr, JoinType Type> struct CtJoinInfo {
+        static constexpr JoinType join_type = Type;
+        using LeftType                      = Lhs;
+        using RightType                     = Rhs;
+        static constexpr auto member_ptr    = MemberPtr;
+
+        // Convert to runtime string when needed
+        [[nodiscard]] static std::string to_string() {
+            return make_join_clause<Lhs, Rhs, MemberPtr>(Type);
+        }
+    };
+
+    // Compile-time version that returns join information structure
+    template <typename Lhs, typename Rhs, auto MemberPtr, JoinType Type>
+    [[nodiscard]] consteval auto make_join_clause_ct() {
+        static_assert(std::is_member_pointer_v<decltype(MemberPtr)>, "MemberPtr must be a member pointer");
+        using MPClass = typename member_pointer_traits<decltype(MemberPtr)>::class_type;
+        static_assert(std::is_same_v<MPClass, Rhs>, "MemberPtr must be a member of Rhs");
+
+        return CtJoinInfo<Lhs, Rhs, MemberPtr, Type>{};
+    }
+
 } // namespace storm
