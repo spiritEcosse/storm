@@ -39,8 +39,7 @@ import storm.function;
 export namespace storm {
 
     // Compile-time builders using storm::utils::fixed_string
-    template <typename T>
-    consteval auto build_select_fields_ct() -> storm::utils::fixed_string<2048> {
+    template <typename T> consteval auto build_select_fields_ct() -> storm::utils::fixed_string<2048> {
         storm::utils::fixed_string<2048> result{};
         std::size_t                      pos = 0;
 
@@ -74,8 +73,7 @@ export namespace storm {
         return result;
     }
 
-    template <typename T>
-    consteval auto build_base_query_ct() -> storm::utils::fixed_string<2080> {
+    template <typename T> consteval auto build_base_query_ct() -> storm::utils::fixed_string<2080> {
         storm::utils::fixed_string<2080> result{};
         std::size_t                      pos = 0;
 
@@ -106,21 +104,25 @@ export namespace storm {
 
     // Compile-time SQL builder returning fixed_string
     template <typename T> struct CompileTimeSqlBuilder {
-        static consteval auto build_select_fields() { return build_select_fields_ct<T>(); }
-        static consteval auto build_base_query() { return build_base_query_ct<T>(); }
+        static consteval auto build_select_fields() {
+            return build_select_fields_ct<T>();
+        }
+        static consteval auto build_base_query() {
+            return build_base_query_ct<T>();
+        }
     };
 
     // C++23: Improved SelectOptions with explicit object parameter
     struct SelectOptions {
-        std::vector<std::string> joins{};
+        std::vector<std::string>   joins{};
         std::vector<FieldDescView> distinct_fields{};
         std::vector<FieldDescView> only_fields{};
-        std::vector<Function>    functions_set{};
-        std::vector<OrderTerm>   order_terms{};
+        std::vector<Function>      functions_set{};
+        std::vector<OrderTerm>     order_terms{};
         std::vector<FieldDescView> group_by_fields{};
-        int                      limit{};
-        int                      offset{};
-        std::optional<Where>     where_clause{};
+        int                        limit{};
+        int                        offset{};
+        std::optional<Where>       where_clause{};
 
         // C++23: Deducing this for perfect forwarding
         constexpr auto&& with_limit(this auto&& self, int value) noexcept {
@@ -212,39 +214,38 @@ export namespace storm {
         }
 
       private:
-        std::vector<std::string> joins_;
-        mutable std::string      fields_clause_; // Cache for repeated builds
-        std::optional<bool>      distinct_override_;
-        int                      limit_{};
-        int                      offset_{};
+        std::vector<std::string>   joins_;
+        mutable std::string        fields_clause_; // Cache for repeated builds
+        std::optional<bool>        distinct_override_;
+        int                        limit_{};
+        int                        offset_{};
         std::vector<FieldDescView> distinct_fields_;
         std::vector<FieldDescView> only_fields_;
-        std::vector<Function>    functions_set_;
-        std::string              order_by_sql_;
-        std::string              group_by_sql_;
+        std::vector<Function>      functions_set_;
+        std::string                order_by_sql_;
+        std::string                group_by_sql_;
 
         [[nodiscard]] static std::string build_select_list(
                 std::span<const FieldDescView> distinct_fields,
                 std::span<const FieldDescView> only_fields,
-                std::span<const Function>  functions_set
+                std::span<const Function>      functions_set
         ) {
             // Use ranges views for lazy evaluation
             auto function_clauses = functions_set | std::views::transform([](const Function& f) { return f.toStr(); });
 
             if (!distinct_fields.empty() && only_fields.empty()) {
-                auto field_strings =
-                        distinct_fields | std::views::transform([](const FieldDescView& desc) { 
-                            return std::format("{}.{}", desc.table, desc.field); 
-                        });
+                auto field_strings = distinct_fields | std::views::transform([](const FieldDescView& desc) {
+                                         return std::format("{}.{}", desc.table, desc.field);
+                                     });
 
                 return join_combined_clauses(field_strings, function_clauses);
 
             } else if (!only_fields.empty()) {
-                auto field_strings = only_fields | std::views::transform([](const FieldDescView& desc) {
-                                         return desc.alias.empty()
-                                                        ? std::format("{}.{}", desc.table, desc.field)
-                                                        : std::format("{}.{} AS {}", desc.table, desc.field, desc.alias);
-                                     });
+                auto field_strings =
+                        only_fields | std::views::transform([](const FieldDescView& desc) {
+                            return desc.alias.empty() ? std::format("{}.{}", desc.table, desc.field)
+                                                      : std::format("{}.{} AS {}", desc.table, desc.field, desc.alias);
+                        });
 
                 return join_combined_clauses(field_strings, function_clauses);
 
@@ -307,9 +308,9 @@ export namespace storm {
             if (fields.empty())
                 return {};
 
-            auto field_names = fields | std::views::transform([](const FieldDescView& desc) { 
-                return std::format("{}.{}", desc.table, desc.field); 
-            });
+            auto field_names = fields | std::views::transform([](const FieldDescView& desc) {
+                                   return std::format("{}.{}", desc.table, desc.field);
+                               });
 
             return std::format(" GROUP BY {}", join_range(field_names, ", "));
         }

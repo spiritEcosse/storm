@@ -12,7 +12,7 @@ import storm.core_types; // For SqlValue, Op, Collation
 import storm.condition;  // For storm::Condition
 import storm.function;
 import storm.where;
-import storm.field; // For Field class
+import storm.field;       // For Field class
 import storm.basic_types; // For OrderTerm
 
 // Storm modules
@@ -64,10 +64,10 @@ export namespace storm {
         std::optional<storm::Where> _whereExpression;
         std::vector<std::string>    join_clauses;
         std::vector<OrderTerm>      orderTerms;
-        std::vector<FieldDescView> distinctFields;
-        std::vector<FieldDescView> onlyFields;
+        std::vector<FieldDescView>  distinctFields;
+        std::vector<FieldDescView>  onlyFields;
         std::vector<Function>       functionsSet;
-        std::vector<FieldDescView> groupByFields;
+        std::vector<FieldDescView>  groupByFields;
 
         int _limit{};
         int _offset{};
@@ -543,7 +543,7 @@ export namespace storm {
         // Process each field using CtField for compile-time optimization
         auto addField = [this]<auto Field>() {
             using CtFieldType = CtField<Field>;
-            this->distinctFields.emplace_back(CtFieldType::view());  // Direct view (no copies!)
+            this->distinctFields.emplace_back(CtFieldType::view()); // Direct view (no copies!)
         };
 
         (addField.template operator()<Fields>(), ...);
@@ -565,7 +565,7 @@ export namespace storm {
             // For only(), we need to override the alias from CtField with the runtime alias
             auto view = CtFieldType::view();
             // Create a new FieldDescView with the runtime alias
-            onlyFields.emplace_back(view.table, view.field, alias);  // Direct view (no copies!)
+            onlyFields.emplace_back(view.table, view.field, alias); // Direct view (no copies!)
         };
 
         (addField.template operator()<Fields>(), ...);
@@ -581,7 +581,7 @@ export namespace storm {
         // Process each field using CtField for compile-time optimization
         auto addField = [this]<auto MemberPtr>() {
             using CtFieldType = CtField<MemberPtr>;
-            groupByFields.emplace_back(CtFieldType::view());  // Direct view (no copies!)
+            groupByFields.emplace_back(CtFieldType::view()); // Direct view (no copies!)
         };
 
         (addField.template operator()<Fields>(), ...);

@@ -77,7 +77,7 @@ export namespace storm::utils {
         for (std::size_t i = 0; i < N2 - 1; ++i) {
             result.data[pos++] = fieldName[i];
         }
-        result.data[pos++] = '"';
+        result.data[pos++]          = '"';
         result.data[total_size - 1] = '\0';
 
         return result;
@@ -86,21 +86,23 @@ export namespace storm::utils {
     // Compile-time version that works with string_views (for FieldDescView)
     consteval fixed_string<512> formatFieldName_ct(std::string_view tableName, std::string_view fieldName) {
         fixed_string<512> result{};
-        size_t pos = 0;
-        result.data[pos++] = '"';
+        size_t            pos = 0;
+        result.data[pos++]    = '"';
         for (char c : tableName) {
-            if (pos >= 510) break;
+            if (pos >= 510)
+                break;
             result.data[pos++] = c;
         }
         result.data[pos++] = '"';
         result.data[pos++] = '.';
         result.data[pos++] = '"';
         for (char c : fieldName) {
-            if (pos >= 510) break;
+            if (pos >= 510)
+                break;
             result.data[pos++] = c;
         }
         result.data[pos++] = '"';
-        result.data[511] = '\0'; // Ensure null termination
+        result.data[511]   = '\0'; // Ensure null termination
         return result;
     }
 
