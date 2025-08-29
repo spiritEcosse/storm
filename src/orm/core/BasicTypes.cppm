@@ -28,9 +28,16 @@ export namespace storm {
         // Default constructor
         OrderTerm() = default;
 
-        // Compile-time constructor from FieldDescView
-        OrderTerm(const FieldDescView& desc, bool asc, Collation coll = Collation::NONE)
+        // Compile-time capable constructor from FieldDescView
+        constexpr OrderTerm(FieldDescView desc, bool asc, Collation coll = Collation::NONE)
             : table_name(desc.table), field_name(desc.field), ascending(asc), collation(coll) {}
+
+        // Fully compile-time factory using CtField metadata
+        template <auto MemberPtr, bool Asc, auto Alias = ::refl::detail::fixed_string{""}>
+        static consteval OrderTerm make(Collation coll = Collation::NONE) {
+            constexpr auto v = CtField<MemberPtr, Alias>::view();
+            return OrderTerm(FieldDescView{v.table, v.field, v.alias}, Asc, coll);
+        }
     };
 
 } // namespace storm

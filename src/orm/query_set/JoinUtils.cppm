@@ -96,7 +96,7 @@ export namespace storm {
 
     // Compile-time version that returns join information structure
     template <typename Lhs, typename Rhs, auto MemberPtr, JoinType Type>
-    [[nodiscard]] consteval auto make_join_clause_ct() {
+    [[nodiscard]] consteval auto make_join_clause() {
         static_assert(std::is_member_pointer_v<decltype(MemberPtr)>, "MemberPtr must be a member pointer");
         using MPClass = typename member_pointer_traits<decltype(MemberPtr)>::class_type;
         static_assert(std::is_same_v<MPClass, Rhs>, "MemberPtr must be a member of Rhs");

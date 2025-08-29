@@ -197,13 +197,13 @@ export namespace storm {
 
         // JOIN API: append compile-time clause views and return self
         template <class U, auto MemberPtr> QuerySet<T>& join() {
-            constexpr auto clause = decltype(make_join_clause_ct<T, U, MemberPtr, JoinType::Inner>())::view();
+            constexpr auto clause = decltype(make_join_clause<T, U, MemberPtr, JoinType::Inner>())::view();
             this->join_clauses.emplace_back(clause);
             return *this;
         }
 
         template <class U, auto MemberPtr> QuerySet<T>& left_join() {
-            constexpr auto clause = decltype(make_join_clause_ct<T, U, MemberPtr, JoinType::Left>())::view();
+            constexpr auto clause = decltype(make_join_clause<T, U, MemberPtr, JoinType::Left>())::view();
             this->join_clauses.emplace_back(clause);
             return *this;
         }
