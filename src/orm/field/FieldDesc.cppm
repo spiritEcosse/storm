@@ -50,40 +50,6 @@ export namespace storm {
             return make_field_desc_ct<MemberPtr, Alias>();
         }
 
-        // Compile-time string generation for runtime construction
-        static consteval auto table_str() {
-            constexpr auto                          v = view();
-            utils::fixed_string<v.table.size() + 1> result{};
-            std::size_t                             pos = 0;
-            for (char c : v.table) {
-                result.data[pos++] = c;
-            }
-            result.data[pos] = '\0';
-            return result;
-        }
-
-        static consteval auto field_str() {
-            constexpr auto                          v = view();
-            utils::fixed_string<v.field.size() + 1> result{};
-            std::size_t                             pos = 0;
-            for (char c : v.field) {
-                result.data[pos++] = c;
-            }
-            result.data[pos] = '\0';
-            return result;
-        }
-
-        static consteval auto alias_str() {
-            constexpr auto                          v = view();
-            utils::fixed_string<v.alias.size() + 1> result{};
-            std::size_t                             pos = 0;
-            for (char c : v.alias) {
-                result.data[pos++] = c;
-            }
-            result.data[pos] = '\0';
-            return result;
-        }
-
         static consteval auto full_name() {
             constexpr auto v = view();
             return storm::utils::formatFieldName_ct(v.table, v.field);
