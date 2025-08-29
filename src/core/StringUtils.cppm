@@ -61,6 +61,20 @@ export namespace storm::utils {
         return result;
     }
 
+    // Compile-time lowercase for string_view (into a bounded fixed_string buffer)
+    // Note: Buffer capped at 512 chars (including null); safe for table/field names
+    consteval fixed_string<512> to_lower_ct(std::string_view sv) {
+        fixed_string<512> result{};
+        std::size_t       pos = 0;
+        for (char c : sv) {
+            if (pos + 1 >= sizeof(result.data))
+                break;
+            result.data[pos++] = (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c;
+        }
+        result.data[pos] = '\0';
+        return result;
+    }
+
     template <std::size_t N1, std::size_t N2>
     consteval auto formatFieldName_ct(const char (&tableName)[N1], const char (&fieldName)[N2]) {
         constexpr std::size_t    total_size = N1 + N2 + 4; // ""."" + null terminator

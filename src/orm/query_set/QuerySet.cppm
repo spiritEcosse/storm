@@ -62,7 +62,7 @@ export namespace storm {
       private:
         std::shared_ptr<Connection> conn;
         std::optional<storm::Where> _whereExpression;
-        std::vector<std::string>    join_clauses;
+        std::vector<std::string_view> join_clauses;
         std::vector<OrderTerm>      orderTerms;
         std::vector<FieldDescView>  distinctFields;
         std::vector<FieldDescView>  onlyFields;
@@ -195,13 +195,17 @@ export namespace storm {
         // FUNCTIONS API (declarations)
         template <typename... Args> QuerySet<T>& functions(Args&&... args);
 
-        // Compile-time JOIN API (consteval - evaluated at compile time)
-        template <class U, auto MemberPtr> consteval auto join() {
-            return make_join_clause_ct<T, U, MemberPtr, JoinType::Inner>();
+        // JOIN API: append compile-time clause views and return self
+        template <class U, auto MemberPtr> QuerySet<T>& join() {
+            constexpr auto clause = decltype(make_join_clause_ct<T, U, MemberPtr, JoinType::Inner>())::view();
+            this->join_clauses.emplace_back(clause);
+            return *this;
         }
 
-        template <class U, auto MemberPtr> consteval auto left_join() {
-            return make_join_clause_ct<T, U, MemberPtr, JoinType::Left>();
+        template <class U, auto MemberPtr> QuerySet<T>& left_join() {
+            constexpr auto clause = decltype(make_join_clause_ct<T, U, MemberPtr, JoinType::Left>())::view();
+            this->join_clauses.emplace_back(clause);
+            return *this;
         }
 
         // REMOVE API (declarations)

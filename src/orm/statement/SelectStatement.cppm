@@ -114,7 +114,7 @@ export namespace storm {
 
     // C++23: Improved SelectOptions with explicit object parameter
     struct SelectOptions {
-        std::vector<std::string>   joins{};
+        std::vector<std::string_view> joins{};
         std::vector<FieldDescView> distinct_fields{};
         std::vector<FieldDescView> only_fields{};
         std::vector<Function>      functions_set{};
@@ -214,7 +214,7 @@ export namespace storm {
         }
 
       private:
-        std::vector<std::string>   joins_;
+        std::vector<std::string_view> joins_;
         mutable std::string        fields_clause_; // Cache for repeated builds
         std::optional<bool>        distinct_override_;
         int                        limit_{};
@@ -354,8 +354,8 @@ export namespace storm {
 
             // Append clauses efficiently
             for (const auto& join : joins_) {
-                sql += ' ';
-                sql += join;
+                sql.push_back(' ');
+                sql.append(join);
             }
 
             if (this->_where_clause) {
