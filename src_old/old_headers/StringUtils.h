@@ -16,10 +16,6 @@ namespace storm::utils {
         return str;
     }
 
-    std::string formatFieldName(const std::string& tableName, const std::string& fieldName) {
-        return std::format(R"("{}"."{}")", tableName, fieldName);
-    }
-
     template <typename Range> inline std::string join(const Range& range, std::string_view delim) {
         std::string out;
         bool        first = true;

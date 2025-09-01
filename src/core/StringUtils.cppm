@@ -158,21 +158,21 @@ export namespace storm::utils {
     }
 
     // Factory function for dynamic sizing - improved constant expression handling
-    template <typename... Args> consteval auto make_fixed_string(Args&&... args) {
-        // Pre-convert all arguments to ensure constant expressions
+    template <typename... Args> consteval auto make_fixed_string_v2(Args&&... args) {
         constexpr auto total_length = (ct_string_length(args) + ...);
 
         fixed_string<total_length + 1> result{};
         std::size_t                    pos = 0;
 
-        auto append = [&](const auto& arg) {
-            auto sv = ct_string_view(arg);
-            for (char c : sv) {
-                result.data[pos++] = c;
-            }
-        };
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            auto process_arg = [&](auto&& arg) {
+                auto sv = ct_string_view(arg);
+                std::copy(sv.begin(), sv.end(), result.data + pos);
+                pos += sv.size();
+            };
+            (process_arg(std::get<I>(std::forward_as_tuple(args...))), ...);
+        }(std::index_sequence_for<Args...>{});
 
-        (append(args), ...);
         result.data[pos] = '\0';
         return result;
     }
@@ -205,49 +205,9 @@ export namespace storm::utils {
         return result;
     }
 
-    // Simple compile-time string concatenation without complex length calculations
-    template <std::size_t N1, std::size_t N2, std::size_t N3, std::size_t N4, std::size_t N5>
-    consteval auto concat_5_parts(
-            const char (&s1)[N1],
-            const fixed_string<N2>& s2,
-            const char (&s3)[N3],
-            const fixed_string<N4>& s4,
-            const char (&s5)[N5]
-    ) {
-        constexpr std::size_t   total = (N1 - 1) + (N2 - 1) + (N3 - 1) + (N4 - 1) + (N5 - 1);
-        fixed_string<total + 1> result{};
-
-        std::size_t pos = 0;
-
-        // Copy s1
-        for (std::size_t i = 0; i < N1 - 1; ++i)
-            result.data[pos++] = s1[i];
-
-        // Copy s2
-        auto s2_size = s2.size();
-        for (std::size_t i = 0; i < s2_size; ++i)
-            result.data[pos++] = s2.data[i];
-
-        // Copy s3
-        for (std::size_t i = 0; i < N3 - 1; ++i)
-            result.data[pos++] = s3[i];
-
-        // Copy s4
-        auto s4_size = s4.size();
-        for (std::size_t i = 0; i < s4_size; ++i)
-            result.data[pos++] = s4.data[i];
-
-        // Copy s5
-        for (std::size_t i = 0; i < N5 - 1; ++i)
-            result.data[pos++] = s5[i];
-
-        result.data[pos] = '\0';
-        return result;
-    }
-
     template <typename TableName, typename FieldName>
-    consteval auto formatFieldName_ct(const TableName& tableName, const FieldName& fieldName) {
-        return concat_5_parts("\"", tableName, "\".\"", fieldName, "\"");
+    consteval auto formatFieldName(const TableName& tableName, const FieldName& fieldName) {
+        return make_fixed_string("\"", tableName, "\".\"", fieldName, "\"");
     }
 
     // Generic join helper for ranges of string-like elements

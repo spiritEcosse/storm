@@ -40,7 +40,7 @@ export namespace storm {
     // Returns a fixed_string by value, safe to use in other consteval contexts
     template <auto MemberPtr> consteval auto full_field_name_ct() {
         constexpr auto v = make_field_desc_ct<MemberPtr>();
-        return utils::formatFieldName_ct(v.table, v.field); // returns utils::fixed_string<...>
+        return utils::formatFieldName(v.table, v.field); // returns utils::fixed_string<...>
     }
 
     // Fully compile-time field descriptor type (no runtime strings)
@@ -55,7 +55,7 @@ export namespace storm {
             // Convert to fixed_string if they aren't already
             constexpr auto table_fs = utils::make_fixed_string_ct<v.table>();
             constexpr auto field_fs = utils::make_fixed_string_ct<v.field>();
-            return utils::formatFieldName_ct(table_fs, field_fs);
+            return utils::formatFieldName(table_fs, field_fs);
         }
 
         static consteval std::string_view alias() {

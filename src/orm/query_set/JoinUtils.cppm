@@ -10,7 +10,7 @@ import <type_traits>;
 // Storm modules
 import storm.reflect;     // for refl::reflect
 import storm.field_desc;  // for make_field_desc_ct
-import storm.utils;       // for formatFieldName_ct, to_lower_ct, fixed_string
+import storm.utils;       // for formatFieldName, to_lower_ct, fixed_string
 import storm.type_traits; // for member_pointer_traits
 
 export namespace storm {
@@ -36,8 +36,8 @@ export namespace storm {
             constexpr auto lhs_field = make_fixed_string(rhs_table_lc.view(), "_", rhs_field);
 
             // Create quoted field names
-            const auto lhs_full_q = storm::utils::formatFieldName_ct(lhs_table, lhs_field.view());
-            const auto rhs_full_q = storm::utils::formatFieldName_ct(rhs_table, rhs_field);
+            const auto lhs_full_q = storm::utils::formatFieldName(lhs_table, lhs_field.view());
+            const auto rhs_full_q = storm::utils::formatFieldName(rhs_table, rhs_field);
 
             // Build complete clause
             constexpr auto join_kw = (Type == JoinType::Inner) ? "INNER JOIN" : "LEFT JOIN";
