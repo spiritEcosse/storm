@@ -90,8 +90,41 @@ export namespace storm::utils {
     // Deduction guide for string literals
     template <std::size_t N> fixed_string(const char (&)[N]) -> fixed_string<N>;
 
-    template <auto SV> consteval auto make_fixed_string_ct() {
-        return fixed_string<SV.size() + 1>{SV};
+    // Helper to convert various string types to string_view at compile time
+    template <typename T>
+    constexpr auto ct_string_view(const T& str) {
+        if constexpr (std::is_array_v<std::remove_reference_t<T>>) {
+            return std::string_view{str, sizeof(str) - 1};
+        } else if constexpr (requires { str.view(); }) {
+            return str.view();
+        } else {
+            return std::string_view{str};
+        }
+    }
+
+    // Get compile-time string length
+    template <typename T>
+    constexpr std::size_t ct_string_length(const T& str) {
+        return ct_string_view(str).size();
+    }
+
+    template <typename... Args> consteval auto make_fixed_string(Args&&... args) {
+        constexpr auto total_length = (ct_string_length(args) + ...);
+
+        fixed_string<total_length + 1> result{};
+        std::size_t                    pos = 0;
+
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            auto process_arg = [&](auto&& arg) {
+                auto sv = ct_string_view(arg);
+                std::copy(sv.begin(), sv.end(), result.data + pos);
+                pos += sv.size();
+            };
+            (process_arg(std::get<I>(std::forward_as_tuple(args...))), ...);
+        }(std::index_sequence_for<Args...>{});
+
+        result.data[pos] = '\0';
+        return result;
     }
 
 // Helper macro for creating fixed_string with exact size from string literal
@@ -100,27 +133,9 @@ export namespace storm::utils {
         str                                                                                                            \
     }
 
-    // Specialization for fixed_string
-    template <std::size_t N> consteval std::size_t ct_string_length(const fixed_string<N>& str) {
-        return str.size();
-    }
-
     // Specialization for fixed_string in ct_string_view
     template <std::size_t N> consteval std::string_view ct_string_view(const fixed_string<N>& str) {
         return str.view();
-    }
-
-    // Helper to get compile-time string length - simplified for constant expressions
-    template <typename T> consteval std::size_t ct_string_length(const T& str) {
-        if constexpr (std::is_array_v<std::remove_reference_t<T>>) {
-            // C-string literal
-            return sizeof(str) - 1;
-        } else if constexpr (std::is_convertible_v<T, std::string_view>) {
-            // Convertible to string_view
-            return std::string_view{str}.size();
-        } else {
-            static_assert(false, "Cannot determine string length at compile time");
-        }
     }
 
     // Helper to get string_view from various string types
@@ -154,26 +169,6 @@ export namespace storm::utils {
         (copy_string(strings), ...);
         result.data[pos] = '\0';
 
-        return result;
-    }
-
-    // Factory function for dynamic sizing - improved constant expression handling
-    template <typename... Args> consteval auto make_fixed_string(Args&&... args) {
-        constexpr auto total_length = (ct_string_length(args) + ...);
-
-        fixed_string<total_length + 1> result{};
-        std::size_t                    pos = 0;
-
-        [&]<std::size_t... I>(std::index_sequence<I...>) {
-            auto process_arg = [&](auto&& arg) {
-                auto sv = ct_string_view(arg);
-                std::copy(sv.begin(), sv.end(), result.data + pos);
-                pos += sv.size();
-            };
-            (process_arg(std::get<I>(std::forward_as_tuple(args...))), ...);
-        }(std::index_sequence_for<Args...>{});
-
-        result.data[pos] = '\0';
         return result;
     }
 

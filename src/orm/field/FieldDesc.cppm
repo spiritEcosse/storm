@@ -22,16 +22,42 @@ export namespace storm {
         std::string_view alias;
     };
 
-    template <auto MemberPtr, auto Alias = utils::fixed_string{""}> consteval FieldDescView make_field_desc_ct() {
-        using ClassType = typename member_pointer_traits<decltype(MemberPtr)>::class_type;
-        static_assert(refl::reflectable<ClassType>, "Class must be registered with REFL_DEFINE_TYPE");
+    // Runtime-friendly descriptor that keeps compile-time metadata but exposes
+    // convenient members and a runtime full_name() string. Templated on MemberPtr
+    // so we can compute the qualified name at compile time via reflection.
+    template <auto MemberPtr> struct FieldDescCT {
+        static consteval FieldDescView view() { return make_field_desc_ct<MemberPtr>(); }
 
-        std::string_view field{};
-        refl::reflect<ClassType>::for_each_member([&](auto member) {
-            if (member.member_ptr == MemberPtr) {
-                field = member.get_name();
-            }
-        });
+        // Expose views for existing code paths (e.g., alias generation)
+        std::string_view table = view().table;
+        std::string_view field = view().field;
+        std::string_view alias = view().alias;
+
+        // Build a runtime string from the compile-time fixed_string
+        std::string full_name() const {
+            constexpr auto fs = refl::full_field_name<MemberPtr>();
+            return std::string{fs};
+        }
+    };
+
+    // Factory function preserved for existing call sites in QuerySet
+    template <auto MemberPtr> constexpr auto make_field_desc() {
+        return FieldDescCT<MemberPtr>{};
+    }
+
+    template <auto MemberPtr, auto Alias = utils::fixed_string{""}>
+    consteval FieldDescView make_field_desc_ct() {
+        using ClassType = typename member_pointer_traits<decltype(MemberPtr)>::class_type;
+
+        constexpr std::string_view field = []() consteval {
+            std::string_view result{};
+            refl::reflect<ClassType>::for_each_member([&](auto member) consteval {
+                if (member.member_ptr == MemberPtr) {
+                    result = member.get_name();
+                }
+            });
+            return result;
+        }();
 
         return {refl::reflect<ClassType>::get_struct_name(), field, std::string_view{Alias}};
     }
@@ -51,11 +77,8 @@ export namespace storm {
         }
 
         static consteval auto full_name() {
-            constexpr auto v = view();
-            // Convert to fixed_string if they aren't already
-            constexpr auto table_fs = utils::make_fixed_string_ct<v.table>();
-            constexpr auto field_fs = utils::make_fixed_string_ct<v.field>();
-            return utils::formatFieldName(table_fs, field_fs);
+            // Delegate to reflection utility for fully-qualified name
+            return refl::full_field_name<MemberPtr>();
         }
 
         static consteval std::string_view alias() {
