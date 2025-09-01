@@ -158,7 +158,7 @@ export namespace storm::utils {
     }
 
     // Factory function for dynamic sizing - improved constant expression handling
-    template <typename... Args> consteval auto make_fixed_string_v2(Args&&... args) {
+    template <typename... Args> consteval auto make_fixed_string(Args&&... args) {
         constexpr auto total_length = (ct_string_length(args) + ...);
 
         fixed_string<total_length + 1> result{};
