@@ -53,8 +53,8 @@ export namespace storm {
         static consteval auto full_name() {
             constexpr auto v = view();
             // Convert to fixed_string if they aren't already
-            constexpr auto table_fs = utils::make_fixed_string_ct(v.table);
-            constexpr auto field_fs = utils::make_fixed_string_ct(v.field);
+            constexpr auto table_fs = utils::make_fixed_string_ct<v.table>();
+            constexpr auto field_fs = utils::make_fixed_string_ct<v.field>();
             return utils::formatFieldName_ct(table_fs, field_fs);
         }
 

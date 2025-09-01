@@ -90,9 +90,8 @@ export namespace storm::utils {
     // Deduction guide for string literals
     template <std::size_t N> fixed_string(const char (&)[N]) -> fixed_string<N>;
 
-    // Compile-time factory that creates fixed_string from string_view
-    template <std::size_t MaxLen = 256> consteval auto make_fixed_string_ct(std::string_view sv) {
-        return fixed_string<MaxLen + 1>{sv};
+    template <auto SV> consteval auto make_fixed_string_ct() {
+        return fixed_string<SV.size() + 1>{SV};
     }
 
 // Helper macro for creating fixed_string with exact size from string literal
