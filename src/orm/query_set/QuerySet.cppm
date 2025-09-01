@@ -12,8 +12,7 @@ import storm.core_types; // For SqlValue, Op, Collation
 import storm.condition;  // For storm::Condition
 import storm.function;
 import storm.where;
-import storm.field;       // For Field class
-import storm.basic_types; // For OrderTerm
+import storm.field; // For Field class
 
 // Storm modules
 import storm.statement.base;
@@ -60,14 +59,14 @@ export namespace storm {
 
     template <class T> class QuerySet {
       private:
-        std::shared_ptr<Connection> conn;
-        std::optional<storm::Where> _whereExpression;
+        std::shared_ptr<Connection>   conn;
+        std::optional<storm::Where>   _whereExpression;
         std::vector<std::string_view> join_clauses;
-        std::vector<OrderTerm>      orderTerms;
-        std::vector<FieldDescView>  distinctFields;
-        std::vector<FieldDescView>  onlyFields;
-        std::vector<Function>       functionsSet;
-        std::vector<FieldDescView>  groupByFields;
+        std::vector<OrderTerm>        orderTerms;
+        std::vector<FieldDescView>    distinctFields;
+        std::vector<FieldDescView>    onlyFields;
+        std::vector<Function>         functionsSet;
+        std::vector<FieldDescView>    groupByFields;
 
         int _limit{};
         int _offset{};

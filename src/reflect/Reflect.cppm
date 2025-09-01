@@ -48,48 +48,6 @@ auto bind_variant(Statement& stmt, int param_index, const storm::SqlValue& value
 }
 
 // ============================================================================
-// COMPILE-TIME STRING UTILITIES
-// ============================================================================
-export namespace refl::detail {
-
-    template <size_t N> struct fixed_string {
-        consteval fixed_string(const char (&str)[N]) {
-            std::copy_n(str, N, value);
-        }
-
-        consteval fixed_string(std::string_view sv) {
-            if (sv.size() >= N) {
-                std::copy_n(sv.data(), N - 1, value);
-                value[N - 1] = '\0';
-            } else {
-                std::copy_n(sv.data(), sv.size(), value);
-                value[sv.size()] = '\0';
-            }
-        }
-
-        char value[N];
-
-        consteval operator std::string_view() const {
-            return std::string_view(value);
-        }
-
-        consteval const char* c_str() const {
-            return value;
-        }
-        consteval size_t size() const {
-            return N - 1;
-        }
-
-        consteval bool operator==(const fixed_string& other) const {
-            return std::string_view(*this) == std::string_view(other);
-        }
-    };
-
-    template <size_t N> fixed_string(const char (&)[N]) -> fixed_string<N>;
-
-} // namespace refl::detail
-
-// ============================================================================
 // COMPILE-TIME REFLECTION METADATA
 // ============================================================================
 export namespace refl::meta {
@@ -111,8 +69,8 @@ export namespace refl::meta {
         using class_type  = typename traits::class_type;
         using member_type = typename traits::member_type;
 
-        static consteval std::string_view get_name() {
-            return std::string_view(name);
+        static consteval auto get_name() {
+            return name;
         }
 
         static consteval auto get(const class_type& obj) -> const member_type& {
@@ -145,8 +103,8 @@ export namespace refl::meta {
         static constexpr auto member_count = sizeof...(Members);
         using members_tuple                = std::tuple<Members...>;
 
-        static consteval std::string_view get_name() {
-            return std::string_view(name);
+        static consteval auto get_name() {
+            return name;
         }
 
         static consteval size_t get_member_count() {

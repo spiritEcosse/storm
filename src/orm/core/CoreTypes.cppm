@@ -8,7 +8,6 @@ import <string_view>;
 import <cstdint>;
 
 // Storm modules - removed reflection dependency to break circular imports
-// import storm.basic_types; // Temporarily removed to test build
 import storm.type_traits;
 
 export namespace storm {

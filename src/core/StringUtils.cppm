@@ -13,134 +13,242 @@ import <string_view>;
 
 export namespace storm::utils {
 
-    // Join type enum for compile-time join operations
-    enum class JoinType { Inner, Left };
-
     /**
      * Compile-time string storage using NTTP (Non-Type Template Parameter)
      * This is the most reliable way to handle compile-time strings in C++23
      */
     template <std::size_t N> struct fixed_string {
-        char data[N];
+        static constexpr std::size_t capacity = N;
+        char                         data[N]  = {};
 
-        // Allow default construction in consteval contexts
-        consteval fixed_string() : data{} {}
+        // Default constructor
+        consteval fixed_string() = default;
 
-        explicit consteval fixed_string(const char (&str)[N]) {
+        // C-string constructor
+        consteval fixed_string(const char (&str)[N]) {
             for (std::size_t i = 0; i < N - 1; ++i) {
                 data[i] = str[i];
             }
             data[N - 1] = '\0';
         }
 
-        constexpr std::string_view view() const {
-            return std::string_view{data, N - 1};
+        // Constructor from string_view (with size check)
+        consteval explicit fixed_string(std::string_view sv)
+            requires(N > 0)
+        {
+            if (sv.size() >= N) {
+                throw "String too long for fixed_string";
+            }
+            for (std::size_t i = 0; i < sv.size(); ++i) {
+                data[i] = sv.data()[i];
+            }
+            data[sv.size()] = '\0';
         }
 
-        constexpr const char* c_str() const {
+        // Size without null terminator
+        consteval std::size_t size() const noexcept {
+            for (std::size_t i = 0; i < N; ++i) {
+                if (data[i] == '\0') {
+                    return i;
+                }
+            }
+            return N > 0 ? N - 1 : 0;
+        }
+
+        constexpr std::string_view view() const noexcept {
+            return std::string_view(data, size());
+        }
+
+        constexpr const char* c_str() const noexcept {
             return data;
+        }
+
+        // Conversion to string_view
+        consteval operator std::string_view() const noexcept {
+            return view();
+        }
+
+        // Indexing
+        constexpr char& operator[](std::size_t i) noexcept {
+            return data[i];
+        }
+
+        constexpr char operator[](std::size_t i) const noexcept {
+            return data[i];
+        }
+
+        // Comparison
+        consteval bool operator==(const fixed_string& other) const noexcept {
+            return view() == other.view();
+        }
+
+        consteval bool operator==(std::string_view sv_other) const noexcept {
+            return view() == sv_other;
         }
     };
 
-    inline auto to_lower(std::string str) -> std::string {
-        std::ranges::transform(str, str.begin(), [](unsigned char c) { return std::tolower(c); });
-        return str;
+    // Deduction guide for string literals
+    template <std::size_t N> fixed_string(const char (&)[N]) -> fixed_string<N>;
+
+    // Compile-time factory that creates fixed_string from string_view
+    template <std::size_t MaxLen = 256> consteval auto make_fixed_string_ct(std::string_view sv) {
+        return fixed_string<MaxLen + 1>{sv};
     }
 
-    std::string formatFieldName(const std::string& tableName, const std::string& fieldName) {
-        return std::format(R"("{}"."{}")", tableName, fieldName);
+// Helper macro for creating fixed_string with exact size from string literal
+#define MAKE_FIXED_STRING(str)                                                                                         \
+    ::storm::utils::fixed_string {                                                                                     \
+        str                                                                                                            \
     }
 
-    // Compile-time string utility functions
-    template <std::size_t N> consteval auto to_lower_ct(const char (&str)[N]) {
-        fixed_string<N> result{};
-        for (std::size_t i = 0; i < N - 1; ++i) {
-            result.data[i] = (str[i] >= 'A' && str[i] <= 'Z') ? str[i] + 32 : str[i];
+    // Specialization for fixed_string
+    template <std::size_t N> consteval std::size_t ct_string_length(const fixed_string<N>& str) {
+        return str.size();
+    }
+
+    // Specialization for fixed_string in ct_string_view
+    template <std::size_t N> consteval std::string_view ct_string_view(const fixed_string<N>& str) {
+        return str.view();
+    }
+
+    // Helper to get compile-time string length - simplified for constant expressions
+    template <typename T> consteval std::size_t ct_string_length(const T& str) {
+        if constexpr (std::is_array_v<std::remove_reference_t<T>>) {
+            // C-string literal
+            return sizeof(str) - 1;
+        } else if constexpr (std::is_convertible_v<T, std::string_view>) {
+            // Convertible to string_view
+            return std::string_view{str}.size();
+        } else {
+            static_assert(false, "Cannot determine string length at compile time");
         }
-        result.data[N - 1] = '\0';
+    }
+
+    // Helper to get string_view from various string types
+    template <typename T> consteval std::string_view ct_string_view(const T& str) {
+        if constexpr (requires { str.view(); }) {
+            return str.view();
+        } else if constexpr (std::is_convertible_v<T, std::string_view>) {
+            return std::string_view{str};
+        } else {
+            static_assert(false, "Cannot convert to string_view at compile time");
+        }
+    }
+
+    // Variadic compile-time string concatenation
+    template <typename... Strings> consteval auto concat_ct(const Strings&... strings) {
+        // Calculate total length
+        constexpr std::size_t total_len = (ct_string_length(strings) + ...);
+
+        // Create result buffer
+        fixed_string<total_len + 1> result{};
+        std::size_t                 pos = 0;
+
+        // Copy each string
+        auto copy_string = [&](const auto& str) {
+            auto sv = ct_string_view(str);
+            for (char c : sv) {
+                result.data[pos++] = c;
+            }
+        };
+
+        (copy_string(strings), ...);
+        result.data[pos] = '\0';
+
         return result;
     }
 
-    // Compile-time lowercase for string_view (into a bounded fixed_string buffer)
-    // Note: Buffer capped at 512 chars (including null); safe for table/field names
-    consteval fixed_string<512> to_lower_ct(std::string_view sv) {
-        fixed_string<512> result{};
-        std::size_t       pos = 0;
-        for (char c : sv) {
-            if (pos + 1 >= sizeof(result.data))
-                break;
-            result.data[pos++] = (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c;
-        }
+    // Factory function for dynamic sizing - improved constant expression handling
+    template <typename... Args> consteval auto make_fixed_string(Args&&... args) {
+        // Pre-convert all arguments to ensure constant expressions
+        constexpr auto total_length = (ct_string_length(args) + ...);
+
+        fixed_string<total_length + 1> result{};
+        std::size_t                    pos = 0;
+
+        auto append = [&](const auto& arg) {
+            auto sv = ct_string_view(arg);
+            for (char c : sv) {
+                result.data[pos++] = c;
+            }
+        };
+
+        (append(args), ...);
         result.data[pos] = '\0';
         return result;
     }
 
-    template <std::size_t N1, std::size_t N2>
-    consteval auto formatFieldName_ct(const char (&tableName)[N1], const char (&fieldName)[N2]) {
-        constexpr std::size_t    total_size = N1 + N2 + 4; // ""."" + null terminator
-        fixed_string<total_size> result{};
-
-        std::size_t pos    = 0;
-        result.data[pos++] = '"';
-        for (std::size_t i = 0; i < N1 - 1; ++i) {
-            result.data[pos++] = tableName[i];
-        }
-        result.data[pos++] = '"';
-        result.data[pos++] = '.';
-        result.data[pos++] = '"';
-        for (std::size_t i = 0; i < N2 - 1; ++i) {
-            result.data[pos++] = fieldName[i];
-        }
-        result.data[pos++]          = '"';
-        result.data[total_size - 1] = '\0';
-
+    // Runtime to_lower function
+    inline std::string to_lower(std::string_view sv) {
+        std::string result = std::string(sv);
+        std::transform(result.begin(), result.end(), result.begin(), [](char c) { return std::tolower(c); });
         return result;
     }
 
-    // Compile-time version that works with string_views (for FieldDescView)
-    consteval fixed_string<512> formatFieldName_ct(std::string_view tableName, std::string_view fieldName) {
-        fixed_string<512> result{};
-        size_t            pos = 0;
-        result.data[pos++]    = '"';
-        for (char c : tableName) {
-            if (pos >= 510)
-                break;
-            result.data[pos++] = c;
-        }
-        result.data[pos++] = '"';
-        result.data[pos++] = '.';
-        result.data[pos++] = '"';
-        for (char c : fieldName) {
-            if (pos >= 510)
-                break;
-            result.data[pos++] = c;
-        }
-        result.data[pos++] = '"';
-        result.data[511]   = '\0'; // Ensure null termination
+    // Enhanced version using std::transform and ranges (C++23)
+    template <std::size_t N> consteval auto to_lower_ct(const char (&str)[N]) {
+        fixed_string<N> result{};
+        std::transform(str, str + N - 1, result.data, [](char c) { return (c >= 'A' && c <= 'Z') ? c + 32 : c; });
+        result.data[N - 1] = '\0';
         return result;
     }
 
-    // Constexpr string concatenation helper
-    template <std::size_t N1, std::size_t N2> consteval auto concat_ct(const char (&str1)[N1], const char (&str2)[N2]) {
-        fixed_string<N1 + N2 - 1> result{};
-        std::size_t               pos = 0;
-        for (std::size_t i = 0; i < N1 - 1; ++i) {
-            result.data[pos++] = str1[i];
-        }
-        for (std::size_t i = 0; i < N2 - 1; ++i) {
-            result.data[pos++] = str2[i];
-        }
-        result.data[N1 + N2 - 2] = '\0';
+    // Overload for string_view/fixed_string
+    template <typename T>
+        requires requires(T t) { ct_string_view(t); }
+    consteval auto to_lower_ct(const T& input) {
+        constexpr auto sv  = ct_string_view(input);
+        constexpr auto len = sv.size();
+
+        fixed_string<len + 1> result{};
+        std::transform(sv.begin(), sv.end(), result.data, [](char c) { return (c >= 'A' && c <= 'Z') ? c + 32 : c; });
+        result.data[len] = '\0';
         return result;
     }
 
-    // Constexpr join type to string
-    consteval std::string_view join_type_to_string(JoinType type) {
-        if (type == JoinType::Inner) {
-            return "INNER JOIN";
-        } else {
-            return "LEFT JOIN";
-        }
+    // Simple compile-time string concatenation without complex length calculations
+    template <std::size_t N1, std::size_t N2, std::size_t N3, std::size_t N4, std::size_t N5>
+    consteval auto concat_5_parts(
+            const char (&s1)[N1],
+            const fixed_string<N2>& s2,
+            const char (&s3)[N3],
+            const fixed_string<N4>& s4,
+            const char (&s5)[N5]
+    ) {
+        constexpr std::size_t   total = (N1 - 1) + (N2 - 1) + (N3 - 1) + (N4 - 1) + (N5 - 1);
+        fixed_string<total + 1> result{};
+
+        std::size_t pos = 0;
+
+        // Copy s1
+        for (std::size_t i = 0; i < N1 - 1; ++i)
+            result.data[pos++] = s1[i];
+
+        // Copy s2
+        auto s2_size = s2.size();
+        for (std::size_t i = 0; i < s2_size; ++i)
+            result.data[pos++] = s2.data[i];
+
+        // Copy s3
+        for (std::size_t i = 0; i < N3 - 1; ++i)
+            result.data[pos++] = s3[i];
+
+        // Copy s4
+        auto s4_size = s4.size();
+        for (std::size_t i = 0; i < s4_size; ++i)
+            result.data[pos++] = s4.data[i];
+
+        // Copy s5
+        for (std::size_t i = 0; i < N5 - 1; ++i)
+            result.data[pos++] = s5[i];
+
+        result.data[pos] = '\0';
+        return result;
+    }
+
+    template <typename TableName, typename FieldName>
+    consteval auto formatFieldName_ct(const TableName& tableName, const FieldName& fieldName) {
+        return concat_5_parts("\"", tableName, "\".\"", fieldName, "\"");
     }
 
     // Generic join helper for ranges of string-like elements

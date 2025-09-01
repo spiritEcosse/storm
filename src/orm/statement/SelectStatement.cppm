@@ -31,7 +31,6 @@ import storm.connection;
 import storm.reflect;
 import storm.utils;
 import storm.core_types;
-import storm.basic_types;
 import storm.field_desc;
 import storm.where;
 import storm.function;
@@ -115,14 +114,14 @@ export namespace storm {
     // C++23: Improved SelectOptions with explicit object parameter
     struct SelectOptions {
         std::vector<std::string_view> joins{};
-        std::vector<FieldDescView> distinct_fields{};
-        std::vector<FieldDescView> only_fields{};
-        std::vector<Function>      functions_set{};
-        std::vector<OrderTerm>     order_terms{};
-        std::vector<FieldDescView> group_by_fields{};
-        int                        limit{};
-        int                        offset{};
-        std::optional<Where>       where_clause{};
+        std::vector<FieldDescView>    distinct_fields{};
+        std::vector<FieldDescView>    only_fields{};
+        std::vector<Function>         functions_set{};
+        std::vector<OrderTerm>        order_terms{};
+        std::vector<FieldDescView>    group_by_fields{};
+        int                           limit{};
+        int                           offset{};
+        std::optional<Where>          where_clause{};
 
         // C++23: Deducing this for perfect forwarding
         constexpr auto&& with_limit(this auto&& self, int value) noexcept {
@@ -215,15 +214,15 @@ export namespace storm {
 
       private:
         std::vector<std::string_view> joins_;
-        mutable std::string        fields_clause_; // Cache for repeated builds
-        std::optional<bool>        distinct_override_;
-        int                        limit_{};
-        int                        offset_{};
-        std::vector<FieldDescView> distinct_fields_;
-        std::vector<FieldDescView> only_fields_;
-        std::vector<Function>      functions_set_;
-        std::string                order_by_sql_;
-        std::string                group_by_sql_;
+        mutable std::string           fields_clause_; // Cache for repeated builds
+        std::optional<bool>           distinct_override_;
+        int                           limit_{};
+        int                           offset_{};
+        std::vector<FieldDescView>    distinct_fields_;
+        std::vector<FieldDescView>    only_fields_;
+        std::vector<Function>         functions_set_;
+        std::string                   order_by_sql_;
+        std::string                   group_by_sql_;
 
         [[nodiscard]] static std::string build_select_list(
                 std::span<const FieldDescView> distinct_fields,

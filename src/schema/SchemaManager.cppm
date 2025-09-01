@@ -50,25 +50,25 @@ export namespace storm {
         }
 
         template <typename T> std::string generate_create_table_sql() {
-            std::string              table_name_str = get_table_name<T>();
-            std::vector<std::string> field_definitions;
+            // std::string              table_name_str = get_table_name<T>();
+            // std::vector<std::string> field_definitions;
 
-            refl::reflect<T>::for_each_member([&]<size_t I>(auto member) {
-                std::string field_name     = utils::to_lower(std::string(member.get_name()));
-                std::string field_type_sql = get_sql_type<typename decltype(member)::member_type>();
-                if (field_name == "id") {
-                    field_type_sql = "INTEGER PRIMARY KEY AUTOINCREMENT";
-                }
-                field_definitions.push_back(std::format("    {} {}", field_name, field_type_sql));
-            });
+            // refl::reflect<T>::for_each_member([&]<size_t I>(auto member) {
+            //     std::string field_name     = utils::to_lower_ct(std::string(member.get_name()));
+            //     std::string field_type_sql = get_sql_type<typename decltype(member)::member_type>();
+            //     if (field_name == "id") {
+            //         field_type_sql = "INTEGER PRIMARY KEY AUTOINCREMENT";
+            //     }
+            //     field_definitions.push_back(std::format("    {} {}", field_name, field_type_sql));
+            // });
 
-            if (field_definitions.empty()) {
-                throw std::runtime_error(std::format("No fields found for type {}", table_name_str));
-            }
+            // if (field_definitions.empty()) {
+            //     throw std::runtime_error(std::format("No fields found for type {}", table_name_str));
+            // }
 
-            return std::format(
-                    "CREATE TABLE IF NOT EXISTS {} (\n{}\n);", table_name_str, utils::join(field_definitions, ",\n")
-            );
+            // return std::format(
+            //         "CREATE TABLE IF NOT EXISTS {} (\n{}\n);", table_name_str, utils::join(field_definitions, ",\n")
+            // );
         }
 
       public:
@@ -98,40 +98,40 @@ export namespace storm {
     // Implementation in SchemaManager.cpp
 
     inline std::expected<bool, std::string> SchemaManager::create_all_tables() {
-        if (create_table_sqls.empty()) {
-            std::cout << "No models registered for table creation" << std::endl;
-            return std::unexpected("No models registered for table creation");
-        }
+        // if (create_table_sqls.empty()) {
+        //     std::cout << "No models registered for table creation" << std::endl;
+        //     return std::unexpected("No models registered for table creation");
+        // }
 
-        std::cout << "Creating " << create_table_sqls.size() << " tables in single batch..." << std::endl;
+        // std::cout << "Creating " << create_table_sqls.size() << " tables in single batch..." << std::endl;
 
-        // Filter out already created tables
-        std::vector<std::string> sql_to_execute;
-        std::vector<std::string> tables_to_create;
+        // // Filter out already created tables
+        // std::vector<std::string> sql_to_execute;
+        // std::vector<std::string> tables_to_create;
 
-        for (size_t i = 0; i < registered_models.size(); ++i) {
-            const std::string& model_name = registered_models[i];
-            std::string        table_name = utils::to_lower(model_name);
+        // for (size_t i = 0; i < registered_models.size(); ++i) {
+        //     const std::string& model_name = registered_models[i];
+        //     std::string        table_name = utils::to_lower(model_name);
 
-            if (created_tables.find(table_name) != created_tables.end()) {
-                std::cout << "Table " << table_name << " already created, skipping..." << std::endl;
-                continue;
-            }
+        //     if (created_tables.find(table_name) != created_tables.end()) {
+        //         std::cout << "Table " << table_name << " already created, skipping..." << std::endl;
+        //         continue;
+        //     }
 
-            sql_to_execute.push_back(create_table_sqls[i]);
-            tables_to_create.push_back(table_name);
-        }
+        //     sql_to_execute.push_back(create_table_sqls[i]);
+        //     tables_to_create.push_back(table_name);
+        // }
 
-        if (sql_to_execute.empty()) {
-            std::cout << "No new tables to create" << std::endl;
-            return std::unexpected("No new tables to create");
-        }
+        // if (sql_to_execute.empty()) {
+        //     std::cout << "No new tables to create" << std::endl;
+        //     return std::unexpected("No new tables to create");
+        // }
 
-        // Create single batch SQL without explicit transaction; the caller can manage
-        // transactions
-        std::string batch_sql = utils::join(sql_to_execute, "\n");
+        // // Create single batch SQL without explicit transaction; the caller can manage
+        // // transactions
+        // std::string batch_sql = utils::join(sql_to_execute, "\n");
 
-        std::cout << "Executing single database transaction..." << std::endl;
+        // std::cout << "Executing single database transaction..." << std::endl;
         return true;
         // try {
         //     auto success = Statement(conn, batch_sql).execute();

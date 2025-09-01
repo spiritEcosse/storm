@@ -26,64 +26,22 @@ export namespace storm {
 
         // Compile-time builder for the full JOIN clause
         static consteval auto build_clause() {
-            // Table names
-            constexpr auto lhs_table = refl::reflect<Lhs>::get_struct_name();
-            constexpr auto rhs_table = refl::reflect<Rhs>::get_struct_name();
-
-            // Right side field (from MemberPtr)
-            constexpr auto rhs_desc  = make_field_desc_ct<MemberPtr>();
-            constexpr auto rhs_field = rhs_desc.field;
-
-            // Left side field by convention: <lower(rhs_table)>_<rhs_field>
+            constexpr auto lhs_table    = refl::reflect<Lhs>::get_struct_name();
+            constexpr auto rhs_table    = refl::reflect<Rhs>::get_struct_name();
+            constexpr auto rhs_desc     = make_field_desc_ct<MemberPtr>();
+            constexpr auto rhs_field    = rhs_desc.field;
             constexpr auto rhs_table_lc = storm::utils::to_lower_ct(rhs_table);
 
-            // We'll compose field names manually to avoid dynamic formatting for lhs_field
-            // Compose lhs_field into buffer, then quote
-            storm::utils::fixed_string<512> lhs_field_buf{};
-            std::size_t                     pos = 0;
-            for (char c : rhs_table_lc.view()) {
-                if (pos + 1 >= sizeof(lhs_field_buf.data)) break;
-                lhs_field_buf.data[pos++] = c;
-            }
-            if (pos + 1 < sizeof(lhs_field_buf.data)) lhs_field_buf.data[pos++] = '_';
-            for (char c : rhs_field) {
-                if (pos + 1 >= sizeof(lhs_field_buf.data)) break;
-                lhs_field_buf.data[pos++] = c;
-            }
-            lhs_field_buf.data[pos] = '\0';
+            // Create left field name using factory function
+            constexpr auto lhs_field = make_fixed_string(rhs_table_lc.view(), "_", rhs_field);
 
-            // Quoted sides
-            const auto lhs_full_q = storm::utils::formatFieldName_ct(lhs_table, lhs_field_buf.view());
+            // Create quoted field names
+            const auto lhs_full_q = storm::utils::formatFieldName_ct(lhs_table, lhs_field.view());
             const auto rhs_full_q = storm::utils::formatFieldName_ct(rhs_table, rhs_field);
 
-            // JOIN keyword
-            constexpr std::string_view join_kw = (Type == JoinType::Inner) ? std::string_view{"INNER JOIN"}
-                                                                            : std::string_view{"LEFT JOIN"};
-
-            // Assemble final clause into fixed buffer
-            storm::utils::fixed_string<512> clause{};
-            std::size_t                     cpos = 0;
-            auto append_sv = [&](std::string_view sv) {
-                for (char ch : sv) {
-                    if (cpos + 1 >= sizeof(clause.data)) break;
-                    clause.data[cpos++] = ch;
-                }
-            };
-
-            auto append_char = [&](char ch) {
-                if (cpos + 1 < sizeof(clause.data)) clause.data[cpos++] = ch;
-            };
-
-            append_sv(join_kw);
-            append_char(' ');
-            append_sv(rhs_table);
-            append_sv(" ON ");
-            append_sv(lhs_full_q.view());
-            append_sv(" = ");
-            append_sv(rhs_full_q.view());
-
-            clause.data[cpos] = '\0';
-            return clause;
+            // Build complete clause
+            constexpr auto join_kw = (Type == JoinType::Inner) ? "INNER JOIN" : "LEFT JOIN";
+            return make_fixed_string(join_kw, " ", rhs_table, " ON ", lhs_full_q.view(), " = ", rhs_full_q.view());
         }
 
         inline static constexpr auto clause_ = build_clause();
