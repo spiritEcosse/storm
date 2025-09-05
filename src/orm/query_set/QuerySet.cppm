@@ -32,6 +32,7 @@ import storm.type_traits;
 import <string>;
 import <utility>;
 import <memory>;
+import <any>;
 import <vector>;
 import <expected>;
 import <unordered_map>;
@@ -59,14 +60,14 @@ export namespace storm {
 
     template <class T> class QuerySet {
       private:
-        std::shared_ptr<Connection>   conn;
-        std::optional<storm::Where>   _whereExpression;
-        std::vector<std::string_view> join_clauses;
-        std::vector<OrderTerm>        orderTerms;
-        std::vector<FieldDescView>    distinctFields;
-        std::vector<FieldDescView>    onlyFields;
-        std::vector<Function>         functionsSet;
-        std::vector<FieldDescView>    groupByFields;
+        std::shared_ptr<Connection>                                            conn;
+        std::optional<storm::Where>                                            _whereExpression;
+        std::vector<std::string_view>                                          join_clauses;
+        std::vector<std::tuple<refl::FieldWrapper, bool, Collation>>           orderTerms;
+        std::vector<refl::FieldWrapper>                                        distinctFields;
+        std::vector<std::pair<refl::FieldWrapper, std::optional<std::string>>> onlyFields;
+        std::vector<Function>                                                  functionsSet;
+        std::vector<FieldDescView>                                             groupByFields;
 
         int _limit{};
         int _offset{};
@@ -129,19 +130,23 @@ export namespace storm {
         template <auto MemberPtr> QuerySet<T>& where_is_null();
 
         // ORDER BY API (declarations)
-        template <auto Field> QuerySet<T>& order_by(Collation collation = Collation::NONE);
+        // Single field
+        template <auto Field, Collation CollationType = Collation::NONE> QuerySet<T>& order_by();
 
-        // Modern compile-time version for multiple field-direction pairs
-        template <auto Field, auto Direction, auto... Rest> QuerySet<T>& order_by();
+        // Multiple fields
+        template <auto... Fields> QuerySet<T>& order_by_multiple();
 
-        // Modern compile-time version with collation support
-        template <auto Field, auto Direction, auto Coll, auto... Rest> QuerySet<T>& order_by_collate();
+        // Multiple field-direction pairs
+        template <auto Field, auto Direction, auto... Rest> QuerySet<T>& order_by_mixed();
+
+        // With collation support
+        template <auto Field, auto Direction, auto Coll, auto... Rest> QuerySet<T>& order_by_full();
 
         // DISTINCT API (declarations)
         template <auto... Fields> QuerySet<T>& distinct();
 
         // ONLY API (declarations)
-        template <auto... Fields> QuerySet<T>& only(const std::string& alias = "");
+        template <auto... Fields> QuerySet<T>& only(const std::optional<std::string>& alias = std::nullopt);
 
         // GROUP BY API (declarations)
         template <auto... Fields> QuerySet<T>& group_by();
@@ -310,46 +315,6 @@ export namespace storm {
 
         template <typename U> [[nodiscard]] consteval std::string_view get_table_name() {
             return refl::reflect<U>::get_struct_name();
-        }
-
-        // Helper to add an order field with direction and collation
-        template <auto Field> QuerySet<T>& add_order_field(bool ascending, Collation collation) {
-            static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
-
-            // Compile-time constructor - eliminates runtime string copies
-            this->orderTerms.emplace_back(CtField<Field>::view(), ascending, collation);
-
-            return *this;
-        }
-
-        // Helper to process field-direction pairs recursively
-        template <auto Field, auto Direction, auto... Rest> void processOrderByPairs() {
-            static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
-            static_assert(std::is_same_v<decltype(Direction), bool>, "Direction must be a boolean value");
-
-            // Add the current field-direction pair using the helper
-            add_order_field<Field>(Direction, Collation::NONE);
-
-            // Process remaining pairs if any
-            if constexpr (sizeof...(Rest) > 0) {
-                processOrderByPairs<Rest...>();
-            }
-        }
-
-        // Helper to process field-direction-collation triplets recursively
-        template <auto Field, auto Direction, auto Coll, auto... Rest> void processOrderByCollationPairs() {
-            static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
-            static_assert(std::is_same_v<decltype(Direction), bool>, "Direction must be a boolean value");
-            static_assert(std::is_same_v<decltype(Coll), Collation>, "Collation must be a Collation enum value");
-
-            // Add the current field-direction-collation triplet as value term
-            auto d = make_field_desc<Field>();
-            this->orderTerms.emplace_back(d, Direction, Coll);
-
-            // Process remaining triplets if any
-            if constexpr (sizeof...(Rest) > 0) {
-                processOrderByCollationPairs<Rest...>();
-            }
         }
 
         template <auto FirstField, auto... RestFields>
@@ -538,41 +503,16 @@ export namespace storm {
 
     // DISTINCT implementation
     template <typename T> template <auto... Fields> QuerySet<T>& QuerySet<T>::distinct() {
-        static_assert((std::is_member_pointer_v<decltype(Fields)> && ...), "All fields must be member pointers");
-
-        // Reserve capacity
-        this->distinctFields.reserve(sizeof...(Fields));
-
-        // Process each field using CtField for compile-time optimization
-        auto addField = [this]<auto Field>() {
-            using CtFieldType = CtField<Field>;
-            this->distinctFields.emplace_back(CtFieldType::view()); // Direct view (no copies!)
-        };
-
-        (addField.template operator()<Fields>(), ...);
-
+        distinctFields.reserve(distinctFields.size() + sizeof...(Fields));
+        (distinctFields.emplace_back(Fields), ...);
         return *this;
     }
 
-    // ONLY (Field Selection) implementation
-    template <typename T> template <auto... Fields> QuerySet<T>& QuerySet<T>::only(const std::string& alias) {
-        // Note: static_assert removed due to C++23 modules type_traits visibility
-        // issues
-
-        // Reserve capacity
-        onlyFields.reserve(sizeof...(Fields));
-
-        // Process each field using CtField for compile-time optimization
-        auto addField = [this, &alias]<auto MemberPtr>() {
-            using CtFieldType = CtField<MemberPtr>;
-            // For only(), we need to override the alias from CtField with the runtime alias
-            auto view = CtFieldType::view();
-            // Create a new FieldDescView with the runtime alias
-            onlyFields.emplace_back(view.table, view.field, alias); // Direct view (no copies!)
-        };
-
-        (addField.template operator()<Fields>(), ...);
-
+    template <typename T>
+    template <auto... Fields>
+    QuerySet<T>& QuerySet<T>::only(const std::optional<std::string>& alias) {
+        onlyFields.reserve(onlyFields.size() + sizeof...(Fields));
+        (onlyFields.emplace_back(Fields, alias), ...);
         return *this;
     }
 
@@ -614,40 +554,35 @@ export namespace storm {
     }
 
     // ORDER BY implementations
-    template <typename T> template <auto Field> QuerySet<T>& QuerySet<T>::order_by(Collation collation) {
-        return add_order_field<Field>(true, collation);
+    template <typename T> template <auto Field, Collation CollationType> QuerySet<T>& QuerySet<T>::order_by() {
+        orderTerms.emplace_back(refl::FieldWrapper::create<Field>(), true, CollationType);
+        return *this;
+    }
+
+    template <typename T> template <auto... Fields> QuerySet<T>& QuerySet<T>::order_by_multiple() {
+        orderTerms.reserve(orderTerms.size() + sizeof...(Fields));
+        ((orderTerms.emplace_back(refl::FieldWrapper::create<Fields>(), true, Collation::NONE)), ...);
+        return *this;
     }
 
     // Modern compile-time version for multiple field-direction pairs
-    template <typename T> template <auto Field, auto Direction, auto... Rest> QuerySet<T>& QuerySet<T>::order_by() {
-        // Ensure we have valid field-direction pairs
-        static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
+    template <typename T>
+    template <auto Field, auto Direction, auto... Rest>
+    QuerySet<T>& QuerySet<T>::order_by_mixed() {
         static_assert(std::is_same_v<decltype(Direction), bool>, "Direction must be a boolean value");
-        static_assert(sizeof...(Rest) % 2 == 0, "Must provide field-direction pairs (field, bool, field, bool, ...)");
-
-        // Reserve capacity for all pairs
-        this->orderTerms.reserve(this->orderTerms.size() + (sizeof...(Rest) / 2 + 1));
-
-        // Add the first field-direction pair
-        {
-            // Compile-time constructor - eliminates runtime string copies
-            this->orderTerms.emplace_back(CtField<Field>::view(), Direction, Collation::NONE);
-        }
-
-        // Process remaining pairs if any
+        static_assert(sizeof...(Rest) % 2 == 0, "Must provide field-direction pairs");
+        orderTerms.reserve(orderTerms.size() + (sizeof...(Rest) / 2 + 1));
+        orderTerms.emplace_back(refl::FieldWrapper::create<Field>(), Direction, Collation::NONE);
         if constexpr (sizeof...(Rest) > 0) {
-            processOrderByPairs<Rest...>();
+            order_by_mixed<Rest...>();
         }
-
         return *this;
     }
 
     // Modern compile-time version with collation support
     template <typename T>
     template <auto Field, auto Direction, auto Coll, auto... Rest>
-    QuerySet<T>& QuerySet<T>::order_by_collate() {
-        // Ensure we have valid field-direction-collation triplets
-        static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
+    QuerySet<T>& QuerySet<T>::order_by_full() {
         static_assert(std::is_same_v<decltype(Direction), bool>, "Direction must be a boolean value");
         static_assert(std::is_same_v<decltype(Coll), Collation>, "Collation must be a Collation enum value");
         static_assert(
@@ -656,18 +591,11 @@ export namespace storm {
                 "collation, ...)"
         );
 
-        // Reserve capacity for all triplets
         this->orderTerms.reserve(this->orderTerms.size() + (sizeof...(Rest) / 3 + 1));
+        this->orderTerms.emplace_back(refl::FieldWrapper::create<Field>(), Direction, Coll);
 
-        // Add the first field-direction-collation triplet
-        {
-            auto d = make_field_desc<Field>();
-            this->orderTerms.emplace_back(d, Direction, Coll);
-        }
-
-        // Process remaining triplets if any
         if constexpr (sizeof...(Rest) > 0) {
-            processOrderByCollationPairs<Rest...>();
+            order_by_full<Rest...>();
         }
 
         return *this;

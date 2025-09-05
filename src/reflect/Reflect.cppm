@@ -185,14 +185,14 @@ export namespace refl::meta {
 export namespace refl {
     // Forward declaration of type_info
     template <typename T> struct type_info;
-    
+
     // Concept for reflectable types - forward declaration
     template <typename T>
     concept reflectable = type_info<T>::has_reflection;
-    
+
     // Forward declaration with the same constraint
     template <reflectable T> struct reflect;
-}
+} // namespace refl
 
 // ============================================================================
 // UTILITY FUNCTIONS (OUTSIDE NAMESPACE)
@@ -200,8 +200,47 @@ export namespace refl {
 
 // Forward declaration of full_field_name - implementation will be at the end of the file
 export namespace refl {
-    template <auto MemberPtr>
-    consteval auto full_field_name();
+    template <auto MemberPtr> consteval auto full_field_name();
+}
+
+namespace std::meta {
+
+    // Mock reflection type - represents a reflected entity
+    struct info {
+        const char* name;
+        constexpr info(const char* n) : name(n) {}
+    };
+
+    // Mock name_of function - extracts name from reflection info
+    constexpr std::string_view name_of(info reflected) {
+        return std::string_view(reflected.name);
+    }
+} // namespace std::meta
+
+// Helper function to extract member name from function signature
+constexpr const char* extract_member_name_from_signature(const char* signature) {
+    const char* ptr        = signature;
+    const char* last_colon = nullptr;
+
+    // Find last "::" before the closing bracket/comma
+    while (*ptr) {
+        if (*ptr == ':' && *(ptr + 1) == ':') {
+            last_colon = ptr + 2;
+        }
+        if (*ptr == '>' || *ptr == ']' || *ptr == ')') {
+            break;
+        }
+        ptr++;
+    }
+
+    return last_colon ? last_colon : "unknown_field";
+}
+
+// Mock reflection helper - creates reflection info from member pointer
+template <auto MemberPtr> constexpr std::meta::info make_reflection() {
+    constexpr const char*        func_name   = __PRETTY_FUNCTION__;
+    static constexpr const char* member_name = extract_member_name_from_signature(func_name);
+    return std::meta::info{member_name};
 }
 
 export namespace refl {
@@ -454,6 +493,64 @@ export namespace refl {
         }
     };
 
+    template <auto MemberPtr> consteval std::string_view get_field_name() {
+        // Use make_reflection instead of operator^
+        return std::meta::name_of(make_reflection<MemberPtr>());
+    }
+
+    template <auto MemberPtr> consteval auto get_full_field_name() {
+        // Use make_reflection instead of operator^
+        using ClassType = typename meta::member_pointer_traits<decltype(MemberPtr)>::class_type;
+        return storm::utils::make_fixed_string(reflect<ClassType>::get_struct_name(), ".", get_field_name<MemberPtr>());
+    }
+
+    // FieldMember struct for type-safe member pointer storage
+    template <auto MemberPtr> struct FieldMember {
+        static constexpr auto member_ptr = MemberPtr;
+
+        // Get full field name at compile time
+        static consteval auto get_full_field_name() {
+            return refl::get_full_field_name<MemberPtr>();
+        }
+
+        // Get simple field name at compile time
+        static consteval auto get_field_name() {
+            return refl::get_field_name<MemberPtr>();
+        }
+
+        // Runtime string conversion for SQL generation
+        std::string to_string() const {
+            return std::string{get_full_field_name().view()};
+        }
+
+        // Get simple field name as string
+        std::string simple_name() const {
+            return std::string{get_field_name()};
+        }
+
+        // Type information
+        using member_ptr_type = decltype(MemberPtr);
+        using member_type     = typename meta::member_pointer_traits<member_ptr_type>::member_type;
+        using class_type      = typename meta::member_pointer_traits<member_ptr_type>::class_type;
+    };
+
+    // Type-erased field wrapper that captures field name at compile time
+    struct FieldWrapper {
+        std::function<std::string()> get_field_name;
+        std::any                     field_member;
+
+        template <auto MemberPtr> static FieldWrapper create() {
+            return FieldWrapper{
+                    .get_field_name = []() { return std::string{refl::get_full_field_name<MemberPtr>().view()}; },
+                    .field_member   = FieldMember<MemberPtr>{}
+            };
+        }
+
+        std::string to_string() const {
+            return get_field_name();
+        }
+    };
+
 } // namespace refl
 
 // ============================================================================
@@ -476,15 +573,14 @@ export namespace refl {
 
 // Implementation of full_field_name - must be after reflect is fully defined
 export namespace refl {
-    template <auto MemberPtr>
-    consteval auto full_field_name() {
+    template <auto MemberPtr> consteval auto full_field_name() {
         using ClassType = typename meta::member_pointer_traits<decltype(MemberPtr)>::class_type;
-        
+
         // Use a helper struct to capture the field name at compile time
         struct helper {
             static consteval auto get_field_name() {
                 constexpr auto member_ptr = MemberPtr;
-                constexpr auto found = []() consteval {
+                constexpr auto found      = []() consteval {
                     std::string_view result{};
                     reflect<ClassType>::for_each_member([&](auto member) {
                         if (member.member_ptr == member_ptr) {
@@ -495,18 +591,18 @@ export namespace refl {
                 }();
                 return MAKE_FIXED_STRING(found.data());
             }
-            
+
             static consteval auto get_table_name() {
                 constexpr auto name = reflect<ClassType>::get_struct_name();
                 return MAKE_FIXED_STRING(name.data());
             }
         };
-        
+
         // Use the helper to get compile-time fixed strings
         constexpr auto table_fs = helper::get_table_name();
         constexpr auto field_fs = helper::get_field_name();
-        
+
         // Format as "table"."field"
         return storm::utils::formatFieldName(table_fs, field_fs);
     }
-}
+} // namespace refl

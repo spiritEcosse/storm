@@ -91,8 +91,7 @@ export namespace storm::utils {
     template <std::size_t N> fixed_string(const char (&)[N]) -> fixed_string<N>;
 
     // Helper to convert various string types to string_view at compile time
-    template <typename T>
-    constexpr auto ct_string_view(const T& str) {
+    template <typename T> constexpr auto ct_string_view(const T& str) {
         if constexpr (std::is_array_v<std::remove_reference_t<T>>) {
             return std::string_view{str, sizeof(str) - 1};
         } else if constexpr (requires { str.view(); }) {
@@ -103,8 +102,7 @@ export namespace storm::utils {
     }
 
     // Get compile-time string length
-    template <typename T>
-    constexpr std::size_t ct_string_length(const T& str) {
+    template <typename T> constexpr std::size_t ct_string_length(const T& str) {
         return ct_string_view(str).size();
     }
 

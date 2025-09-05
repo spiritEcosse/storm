@@ -26,7 +26,9 @@ export namespace storm {
     // convenient members and a runtime full_name() string. Templated on MemberPtr
     // so we can compute the qualified name at compile time via reflection.
     template <auto MemberPtr> struct FieldDescCT {
-        static consteval FieldDescView view() { return make_field_desc_ct<MemberPtr>(); }
+        static consteval FieldDescView view() {
+            return make_field_desc_ct<MemberPtr>();
+        }
 
         // Expose views for existing code paths (e.g., alias generation)
         std::string_view table = view().table;
@@ -45,8 +47,7 @@ export namespace storm {
         return FieldDescCT<MemberPtr>{};
     }
 
-    template <auto MemberPtr, auto Alias = utils::fixed_string{""}>
-    consteval FieldDescView make_field_desc_ct() {
+    template <auto MemberPtr, auto Alias = utils::fixed_string{""}> consteval FieldDescView make_field_desc_ct() {
         using ClassType = typename member_pointer_traits<decltype(MemberPtr)>::class_type;
 
         constexpr std::string_view field = []() consteval {

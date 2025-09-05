@@ -23,6 +23,7 @@ import <functional>;
 import <print>; // C++23
 import <algorithm>;
 import <utility>;
+import <any>;
 
 // Storm modules
 import storm.statement.base;
@@ -113,15 +114,15 @@ export namespace storm {
 
     // C++23: Improved SelectOptions with explicit object parameter
     struct SelectOptions {
-        std::vector<std::string_view> joins{};
-        std::vector<FieldDescView>    distinct_fields{};
-        std::vector<FieldDescView>    only_fields{};
-        std::vector<Function>         functions_set{};
-        std::vector<OrderTerm>        order_terms{};
-        std::vector<FieldDescView>    group_by_fields{};
-        int                           limit{};
-        int                           offset{};
-        std::optional<Where>          where_clause{};
+        std::vector<std::string_view>                                          joins{};
+        std::vector<refl::FieldWrapper>                                        distinct_fields{};
+        std::vector<std::pair<refl::FieldWrapper, std::optional<std::string>>> only_fields{};
+        std::vector<Function>                                                  functions_set{};
+        std::vector<std::tuple<refl::FieldWrapper, bool, Collation>>           order_terms{};
+        std::vector<FieldDescView>                                             group_by_fields{};
+        int                                                                    limit{};
+        int                                                                    offset{};
+        std::optional<Where>                                                   where_clause{};
 
         // C++23: Deducing this for perfect forwarding
         constexpr auto&& with_limit(this auto&& self, int value) noexcept {
@@ -213,38 +214,38 @@ export namespace storm {
         }
 
       private:
-        std::vector<std::string_view> joins_;
-        mutable std::string           fields_clause_; // Cache for repeated builds
-        std::optional<bool>           distinct_override_;
-        int                           limit_{};
-        int                           offset_{};
-        std::vector<FieldDescView>    distinct_fields_;
-        std::vector<FieldDescView>    only_fields_;
-        std::vector<Function>         functions_set_;
-        std::string                   order_by_sql_;
-        std::string                   group_by_sql_;
+        std::vector<std::string_view>   joins_;
+        mutable std::string             fields_clause_; // Cache for repeated builds
+        std::optional<bool>             distinct_override_;
+        int                             limit_{};
+        int                             offset_{};
+        std::vector<refl::FieldWrapper> distinct_fields_;
+        std::vector<std::pair<refl::FieldWrapper, std::optional<std::string>>> only_fields_;
+        std::vector<Function>                                                  functions_set_;
+        std::string                                                            order_by_sql_;
+        std::string                                                            group_by_sql_;
 
         [[nodiscard]] static std::string build_select_list(
-                std::span<const FieldDescView> distinct_fields,
-                std::span<const FieldDescView> only_fields,
-                std::span<const Function>      functions_set
+                std::span<const refl::FieldWrapper>                                        distinct_fields,
+                std::span<const std::pair<refl::FieldWrapper, std::optional<std::string>>> only_fields,
+                std::span<const Function>                                                  functions_set
         ) {
             // Use ranges views for lazy evaluation
             auto function_clauses = functions_set | std::views::transform([](const Function& f) { return f.toStr(); });
 
             if (!distinct_fields.empty() && only_fields.empty()) {
-                auto field_strings = distinct_fields | std::views::transform([](const FieldDescView& desc) {
-                                         return std::format("{}.{}", desc.table, desc.field);
+                auto field_strings = distinct_fields | std::views::transform([](const auto& field_wrapper) {
+                                         return field_wrapper.to_string();
                                      });
 
                 return join_combined_clauses(field_strings, function_clauses);
 
             } else if (!only_fields.empty()) {
-                auto field_strings =
-                        only_fields | std::views::transform([](const FieldDescView& desc) {
-                            return desc.alias.empty() ? std::format("{}.{}", desc.table, desc.field)
-                                                      : std::format("{}.{} AS {}", desc.table, desc.field, desc.alias);
-                        });
+                auto field_strings = only_fields | std::views::transform([](const auto& field_pair) {
+                                         const auto& [field_wrapper, alias] = field_pair;
+                                         const std::string field_name       = field_wrapper.to_string();
+                                         return alias ? std::format("{} AS {}", field_name, *alias) : field_name;
+                                     });
 
                 return join_combined_clauses(field_strings, function_clauses);
 
@@ -274,30 +275,58 @@ export namespace storm {
             return std::to_array<std::string_view>({"", "BINARY", "NOCASE", "RTRIM"});
         }
 
-        [[nodiscard]] static std::string build_order_by_sql(std::span<const OrderTerm> terms) {
-            if (terms.empty())
+        [[nodiscard]] static std::string
+        build_order_by_sql(const std::vector<std::tuple<refl::FieldWrapper, bool, Collation>>& terms) {
+            if (std::ranges::empty(terms))
                 return {};
 
             constexpr auto collation_strings = get_collation_strings();
 
-            // Better size estimation
-            size_t      estimated_size = 10 + terms.size() * 30;
+            const size_t total_terms = terms.size();
+            if (total_terms == 0)
+                return {};
+
+            // More precise size estimation using C++23 features
+            constexpr size_t order_by_prefix  = 10; // " ORDER BY "
+            constexpr size_t avg_field_size   = 25; // Average field name + table prefix
+            constexpr size_t collate_overhead = 15; // " COLLATE BINARY"
+            constexpr size_t asc_desc_size    = 5;  // " DESC"
+            constexpr size_t separator_size   = 2;  // ", "
+
+            const size_t estimated_size = order_by_prefix +
+                                          total_terms * (avg_field_size + collate_overhead + asc_desc_size) +
+                                          (total_terms > 1 ? (total_terms - 1) * separator_size : 0);
+
             std::string result;
             result.reserve(estimated_size);
-            result += " ORDER BY ";
+            result.append(" ORDER BY ");
 
-            for (size_t i = 0; const auto& term : terms) {
-                if (i++ > 0)
-                    result += ", ";
+            auto term_strings = terms | std::views::transform([&](const auto& term) {
+                                    const auto& [field_wrapper, ascending, collation] = term;
 
-                std::format_to(std::back_inserter(result), "{}.{}", term.table_name, term.field_name);
+                                    // Build each term as a separate string for optimal joining
+                                    std::string term_str;
+                                    term_str.reserve(avg_field_size + collate_overhead + asc_desc_size);
 
-                const auto collation = collation_strings[static_cast<size_t>(term.collation)];
-                if (!collation.empty()) {
-                    std::format_to(std::back_inserter(result), " COLLATE {}", collation);
+                                    term_str.append(field_wrapper.to_string());
+
+                                    const auto collation_str = collation_strings[static_cast<size_t>(collation)];
+                                    if (!collation_str.empty()) {
+                                        term_str.append(" COLLATE ");
+                                        term_str.append(collation_str);
+                                    }
+
+                                    term_str.append(ascending ? " ASC" : " DESC");
+                                    return term_str;
+                                });
+
+            bool first = true;
+            for (const auto& term_str : term_strings) {
+                if (!first) {
+                    result.append(", ");
                 }
-
-                result += term.ascending ? " ASC" : " DESC";
+                first = false;
+                result.append(term_str);
             }
 
             return result;
