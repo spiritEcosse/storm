@@ -27,8 +27,8 @@ export namespace storm {
         static consteval auto build_clause() {
             constexpr auto lhs_table    = refl::reflect<Lhs>::get_struct_name();
             constexpr auto rhs_table    = refl::reflect<Rhs>::get_struct_name();
-            constexpr auto rhs_desc     = make_field_desc_ct<MemberPtr>();
-            constexpr auto rhs_field    = rhs_desc.field;
+            // Extract simple field name at compile time using reflection utilities
+            constexpr auto rhs_field    = refl::FieldMember<MemberPtr>::get_field_name();
             constexpr auto rhs_table_lc = storm::utils::to_lower_ct(rhs_table);
 
             // Create left field name using factory function
@@ -76,8 +76,8 @@ export namespace storm {
             // Extract individual components at compile time
             static constexpr auto lhs_table_name = refl::reflect<Lhs>::get_struct_name();
             static constexpr auto rhs_table_name = refl::reflect<Rhs>::get_struct_name();
-            static constexpr auto rhs_desc       = make_field_desc_ct<MemberPtr>();
-            static constexpr auto rhs_field_name = rhs_desc.field;
+            // Use FieldMember to get simple field name at compile time
+            static constexpr auto rhs_field_name = refl::FieldMember<MemberPtr>::get_field_name();
             static constexpr auto rhs_table_lc   = storm::utils::to_lower_ct(rhs_table_name);
             static constexpr auto lhs_field_name = make_fixed_string(rhs_table_lc.view(), "_", rhs_field_name);
 

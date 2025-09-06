@@ -235,7 +235,7 @@ export namespace storm {
 
             if (!distinct_fields.empty() && only_fields.empty()) {
                 auto field_strings = distinct_fields | std::views::transform([](const auto& field_wrapper) {
-                                         return field_wrapper.to_string();
+                                         return field_wrapper.view();
                                      });
 
                 return join_combined_clauses(field_strings, function_clauses);
@@ -243,7 +243,7 @@ export namespace storm {
             } else if (!only_fields.empty()) {
                 auto field_strings = only_fields | std::views::transform([](const auto& field_pair) {
                                          const auto& [field_wrapper, alias] = field_pair;
-                                         const std::string field_name       = field_wrapper.to_string();
+                                         const auto field_name       = field_wrapper.view();
                                          return alias ? std::format("{} AS {}", field_name, *alias) : field_name;
                                      });
 

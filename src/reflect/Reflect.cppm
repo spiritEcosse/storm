@@ -513,16 +513,6 @@ export namespace refl {
             return refl::get_field_name<MemberPtr>();
         }
 
-        // Runtime string conversion for SQL generation
-        std::string to_string() const {
-            return std::string{get_full_field_name().view()};
-        }
-
-        // Get simple field name as string
-        std::string simple_name() const {
-            return std::string{get_field_name()};
-        }
-
         // Type information
         using member_ptr_type = decltype(MemberPtr);
         using member_type     = typename meta::member_pointer_traits<member_ptr_type>::member_type;
