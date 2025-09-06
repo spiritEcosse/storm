@@ -550,17 +550,3 @@ export namespace refl {
     };
 
 } // namespace refl
-
-// ============================================================================
-// REGISTRATION MACRO FOR COMPILE-TIME REFLECTION
-// ============================================================================
-
-// Define reflection for a class with members
-#define REFLECT_CLASS(ClassName, ...)                                                                                  \
-    template <> struct refl::type_info<ClassName> {                                                                    \
-        static consteval bool has_reflection = true;                                                                   \
-        using descriptor                     = refl::meta::type_descriptor<ClassName, #ClassName, __VA_ARGS__>;        \
-    };
-
-// Define a member for reflection
-#define REFLECT_MEMBER(Class, Member) refl::meta::member_descriptor<&Class::Member, #Member>
