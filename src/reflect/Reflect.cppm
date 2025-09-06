@@ -531,18 +531,21 @@ export namespace refl {
 
     // Type-erased field wrapper that captures field name at compile time
     struct FieldWrapper {
-        std::function<std::string()> get_field_name;
-        std::any                     field_member;
+        // Store a view to the compile-time fixed string; materialize std::string on demand
+        std::string_view full_name{};
+        std::any         field_member;
 
-        template <auto MemberPtr> static FieldWrapper create() {
-            return FieldWrapper{
-                    .get_field_name = []() { return std::string{refl::get_full_field_name<MemberPtr>().view()}; },
-                    .field_member   = FieldMember<MemberPtr>{}
-            };
+        template <auto MemberPtr>
+            requires std::is_member_pointer_v<decltype(MemberPtr)>
+        static FieldWrapper create() {
+            // Function-scope static constexpr ensures lifetime for the view
+            static constexpr auto fs = FieldMember<MemberPtr>::get_full_field_name();
+            return FieldWrapper{.full_name = fs.view(), .field_member = FieldMember<MemberPtr>{}};
         }
 
-        std::string to_string() const {
-            return get_field_name();
+        // Zero-allocation access to the full field name
+        std::string_view view() const noexcept {
+            return full_name;
         }
     };
 

@@ -307,7 +307,7 @@ export namespace storm {
                                     std::string term_str;
                                     term_str.reserve(avg_field_size + collate_overhead + asc_desc_size);
 
-                                    term_str.append(field_wrapper.to_string());
+                                    term_str.append(field_wrapper.view());
 
                                     const auto collation_str = collation_strings[static_cast<size_t>(collation)];
                                     if (!collation_str.empty()) {
@@ -336,7 +336,7 @@ export namespace storm {
                 return {};
 
             auto field_names =
-                    fields | std::views::transform([](const refl::FieldWrapper& desc) { return desc.to_string(); });
+                    fields | std::views::transform([](const refl::FieldWrapper& desc) { return desc.view(); });
 
             return std::format(" GROUP BY {}", join_range(field_names, ", "));
         }
