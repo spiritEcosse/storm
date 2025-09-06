@@ -9,7 +9,6 @@ import <type_traits>;
 
 // Storm modules
 import storm.reflect;     // for refl::reflect
-import storm.field_desc;  // for make_field_desc_ct
 import storm.utils;       // for formatFieldName, to_lower_ct, fixed_string
 import storm.type_traits; // for member_pointer_traits
 

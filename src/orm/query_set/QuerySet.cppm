@@ -24,7 +24,6 @@ import storm.expression;
 import storm.connection;
 import storm.reflect;
 import storm.utils;
-import storm.field_desc;
 import storm.join_utils;
 import storm.type_traits;
 
@@ -67,7 +66,7 @@ export namespace storm {
         std::vector<refl::FieldWrapper>                                        distinctFields;
         std::vector<std::pair<refl::FieldWrapper, std::optional<std::string>>> onlyFields;
         std::vector<Function>                                                  functionsSet;
-        std::vector<FieldDescView>                                             groupByFields;
+        std::vector<refl::FieldWrapper>                                        groupByFields;
 
         int _limit{};
         int _offset{};
@@ -518,17 +517,8 @@ export namespace storm {
 
     // GROUP BY implementation
     template <typename T> template <auto... Fields> QuerySet<T>& QuerySet<T>::group_by() {
-        // Reserve capacity
-        groupByFields.reserve(sizeof...(Fields));
-
-        // Process each field using CtField for compile-time optimization
-        auto addField = [this]<auto MemberPtr>() {
-            using CtFieldType = CtField<MemberPtr>;
-            groupByFields.emplace_back(CtFieldType::view()); // Direct view (no copies!)
-        };
-
-        (addField.template operator()<Fields>(), ...);
-
+        groupByFields.reserve(groupByFields.size() + sizeof...(Fields));
+        ((groupByFields.emplace_back(refl::FieldWrapper::create<Fields>())), ...);
         return *this;
     }
 

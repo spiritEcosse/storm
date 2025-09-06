@@ -32,7 +32,6 @@ import storm.connection;
 import storm.reflect;
 import storm.utils;
 import storm.core_types;
-import storm.field_desc;
 import storm.where;
 import storm.function;
 
@@ -119,7 +118,7 @@ export namespace storm {
         std::vector<std::pair<refl::FieldWrapper, std::optional<std::string>>> only_fields{};
         std::vector<Function>                                                  functions_set{};
         std::vector<std::tuple<refl::FieldWrapper, bool, Collation>>           order_terms{};
-        std::vector<FieldDescView>                                             group_by_fields{};
+        std::vector<refl::FieldWrapper>                                        group_by_fields{};
         int                                                                    limit{};
         int                                                                    offset{};
         std::optional<Where>                                                   where_clause{};
@@ -332,13 +331,12 @@ export namespace storm {
             return result;
         }
 
-        [[nodiscard]] static std::string build_group_by_sql(std::span<const FieldDescView> fields) {
+        [[nodiscard]] static std::string build_group_by_sql(std::span<const refl::FieldWrapper> fields) {
             if (fields.empty())
                 return {};
 
-            auto field_names = fields | std::views::transform([](const FieldDescView& desc) {
-                                   return std::format("{}.{}", desc.table, desc.field);
-                               });
+            auto field_names =
+                    fields | std::views::transform([](const refl::FieldWrapper& desc) { return desc.to_string(); });
 
             return std::format(" GROUP BY {}", join_range(field_names, ", "));
         }

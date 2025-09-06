@@ -198,11 +198,6 @@ export namespace refl {
 // UTILITY FUNCTIONS (OUTSIDE NAMESPACE)
 // ============================================================================
 
-// Forward declaration of full_field_name - implementation will be at the end of the file
-export namespace refl {
-    template <auto MemberPtr> consteval auto full_field_name();
-}
-
 namespace std::meta {
 
     // Mock reflection type - represents a reflected entity
@@ -566,43 +561,3 @@ export namespace refl {
 
 // Define a member for reflection
 #define REFLECT_MEMBER(Class, Member) refl::meta::member_descriptor<&Class::Member, #Member>
-
-// ============================================================================
-// IMPLEMENTATION OF UTILITY FUNCTIONS
-// ============================================================================
-
-// Implementation of full_field_name - must be after reflect is fully defined
-export namespace refl {
-    template <auto MemberPtr> consteval auto full_field_name() {
-        using ClassType = typename meta::member_pointer_traits<decltype(MemberPtr)>::class_type;
-
-        // Use a helper struct to capture the field name at compile time
-        struct helper {
-            static consteval auto get_field_name() {
-                constexpr auto member_ptr = MemberPtr;
-                constexpr auto found      = []() consteval {
-                    std::string_view result{};
-                    reflect<ClassType>::for_each_member([&](auto member) {
-                        if (member.member_ptr == member_ptr) {
-                            result = member.get_name();
-                        }
-                    });
-                    return result;
-                }();
-                return MAKE_FIXED_STRING(found.data());
-            }
-
-            static consteval auto get_table_name() {
-                constexpr auto name = reflect<ClassType>::get_struct_name();
-                return MAKE_FIXED_STRING(name.data());
-            }
-        };
-
-        // Use the helper to get compile-time fixed strings
-        constexpr auto table_fs = helper::get_table_name();
-        constexpr auto field_fs = helper::get_field_name();
-
-        // Format as "table"."field"
-        return storm::utils::formatFieldName(table_fs, field_fs);
-    }
-} // namespace refl
