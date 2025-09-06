@@ -61,7 +61,7 @@ export namespace storm {
       private:
         std::shared_ptr<Connection>                                            conn;
         std::optional<storm::Where>                                            _whereExpression;
-        std::vector<std::string_view>                                          join_clauses;
+        std::vector<JoinWrapper>                                               join_clauses;
         std::vector<std::tuple<refl::FieldWrapper, bool, Collation>>           orderTerms;
         std::vector<refl::FieldWrapper>                                        distinctFields;
         std::vector<std::pair<refl::FieldWrapper, std::optional<std::string>>> onlyFields;
@@ -200,14 +200,12 @@ export namespace storm {
 
         // JOIN API: append compile-time clause views and return self
         template <class U, auto MemberPtr> QuerySet<T>& join() {
-            constexpr auto clause = decltype(make_join_clause<T, U, MemberPtr, JoinType::Inner>())::view();
-            this->join_clauses.emplace_back(clause);
+            this->join_clauses.emplace_back(JoinWrapper::create<T, U, MemberPtr, JoinType::Inner>());
             return *this;
         }
 
         template <class U, auto MemberPtr> QuerySet<T>& left_join() {
-            constexpr auto clause = decltype(make_join_clause<T, U, MemberPtr, JoinType::Left>())::view();
-            this->join_clauses.emplace_back(clause);
+            this->join_clauses.emplace_back(JoinWrapper::create<T, U, MemberPtr, JoinType::Left>());
             return *this;
         }
 

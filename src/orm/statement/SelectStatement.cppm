@@ -34,6 +34,7 @@ import storm.utils;
 import storm.core_types;
 import storm.where;
 import storm.function;
+import storm.join_utils;
 
 export namespace storm {
 
@@ -113,7 +114,7 @@ export namespace storm {
 
     // C++23: Improved SelectOptions with explicit object parameter
     struct SelectOptions {
-        std::vector<std::string_view>                                          joins{};
+        std::vector<JoinWrapper>                                               joins{};
         std::vector<refl::FieldWrapper>                                        distinct_fields{};
         std::vector<std::pair<refl::FieldWrapper, std::optional<std::string>>> only_fields{};
         std::vector<Function>                                                  functions_set{};
@@ -213,7 +214,7 @@ export namespace storm {
         }
 
       private:
-        std::vector<std::string_view>   joins_;
+        std::vector<JoinWrapper>        joins_;
         mutable std::string             fields_clause_; // Cache for repeated builds
         std::optional<bool>             distinct_override_;
         int                             limit_{};
@@ -381,7 +382,7 @@ export namespace storm {
             // Append clauses efficiently
             for (const auto& join : joins_) {
                 sql.push_back(' ');
-                sql.append(join);
+                sql.append(join.view());
             }
 
             if (this->_where_clause) {
