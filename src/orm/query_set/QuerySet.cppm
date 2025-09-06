@@ -71,11 +71,6 @@ export namespace storm {
         int _limit{};
         int _offset{};
 
-        // Helper method to convert compile-time join info to runtime string
-        template <typename JoinInfo> std::string join_info_to_string(const JoinInfo& info) {
-            return JoinInfo::to_string();
-        }
-
       public:
         // Constructors
         QuerySet() = default;

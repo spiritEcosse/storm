@@ -106,29 +106,29 @@ struct Post {
 template <> struct ::refl::type_info<Author> {
     static constexpr bool has_reflection = true;
     using descriptor                     = ::refl::meta::type_descriptor<
-                            Author,
-                            storm::utils::make_fixed_string("Author"),
-                            ::refl::meta::member_descriptor<&Author::id, storm::utils::make_fixed_string("id")>,
-                            ::refl::meta::member_descriptor<&Author::name, storm::utils::make_fixed_string("name")>,
-                            ::refl::meta::member_descriptor<&Author::age, storm::utils::make_fixed_string("age")>,
-                            ::refl::meta::member_descriptor<&Author::email, storm::utils::make_fixed_string("email")>,
-                            ::refl::meta::member_descriptor<&Author::is_active, storm::utils::make_fixed_string("is_active")>,
-                            ::refl::meta::member_descriptor<&Author::rating, storm::utils::make_fixed_string("rating")>,
-                            ::refl::meta::member_descriptor<&Author::score, storm::utils::make_fixed_string("score")>,
-                            ::refl::meta::member_descriptor<&Author::middleName, storm::utils::make_fixed_string("middleName")>,
-                            ::refl::meta::member_descriptor<&Author::biography, storm::utils::make_fixed_string("biography")>>;
+                                Author,
+                                storm::utils::make_fixed_string("Author"),
+                                ::refl::meta::member_descriptor<&Author::id, storm::utils::make_fixed_string("id")>,
+                                ::refl::meta::member_descriptor<&Author::name, storm::utils::make_fixed_string("name")>,
+                                ::refl::meta::member_descriptor<&Author::age, storm::utils::make_fixed_string("age")>,
+                                ::refl::meta::member_descriptor<&Author::email, storm::utils::make_fixed_string("email")>,
+                                ::refl::meta::member_descriptor<&Author::is_active, storm::utils::make_fixed_string("is_active")>,
+                                ::refl::meta::member_descriptor<&Author::rating, storm::utils::make_fixed_string("rating")>,
+                                ::refl::meta::member_descriptor<&Author::score, storm::utils::make_fixed_string("score")>,
+                                ::refl::meta::member_descriptor<&Author::middleName, storm::utils::make_fixed_string("middleName")>,
+                                ::refl::meta::member_descriptor<&Author::biography, storm::utils::make_fixed_string("biography")>>;
 };
 
 template <> struct ::refl::type_info<Post> {
     static constexpr bool has_reflection = true;
     using descriptor                     = ::refl::meta::type_descriptor<
-                            Post,
-                            storm::utils::make_fixed_string("Post"),
-                            ::refl::meta::member_descriptor<&Post::id, storm::utils::make_fixed_string("id")>,
-                            ::refl::meta::member_descriptor<&Post::title, storm::utils::make_fixed_string("title")>,
-                            ::refl::meta::member_descriptor<&Post::content, storm::utils::make_fixed_string("content")>,
-                            ::refl::meta::member_descriptor<&Post::author_id, storm::utils::make_fixed_string("author_id")>,
-                            ::refl::meta::member_descriptor<&Post::views, storm::utils::make_fixed_string("views")>>;
+                                Post,
+                                storm::utils::make_fixed_string("Post"),
+                                ::refl::meta::member_descriptor<&Post::id, storm::utils::make_fixed_string("id")>,
+                                ::refl::meta::member_descriptor<&Post::title, storm::utils::make_fixed_string("title")>,
+                                ::refl::meta::member_descriptor<&Post::content, storm::utils::make_fixed_string("content")>,
+                                ::refl::meta::member_descriptor<&Post::author_id, storm::utils::make_fixed_string("author_id")>,
+                                ::refl::meta::member_descriptor<&Post::views, storm::utils::make_fixed_string("views")>>;
 };
 
 class ORMTest : public ::testing::Test {

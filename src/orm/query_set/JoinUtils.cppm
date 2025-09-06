@@ -63,33 +63,32 @@ export namespace storm {
 
     // Type-erased join wrapper that captures join metadata at compile time
     struct JoinWrapper {
-        std::string_view sql_clause{};     // Pre-computed SQL
-        std::string_view lhs_table{};      // Semantic info
+        std::string_view sql_clause{}; // Pre-computed SQL
+        std::string_view lhs_table{};  // Semantic info
         std::string_view rhs_table{};
         std::string_view lhs_field{};
         std::string_view rhs_field{};
         JoinType         type{};
 
-        template <typename Lhs, typename Rhs, auto MemberPtr, JoinType Type>
-        static JoinWrapper create() {
+        template <typename Lhs, typename Rhs, auto MemberPtr, JoinType Type> static JoinWrapper create() {
             static constexpr auto join_info = make_join_clause<Lhs, Rhs, MemberPtr, Type>();
-            
+
             // Extract individual components at compile time
             static constexpr auto lhs_table_name = refl::reflect<Lhs>::get_struct_name();
             static constexpr auto rhs_table_name = refl::reflect<Rhs>::get_struct_name();
-            static constexpr auto rhs_desc = make_field_desc_ct<MemberPtr>();
+            static constexpr auto rhs_desc       = make_field_desc_ct<MemberPtr>();
             static constexpr auto rhs_field_name = rhs_desc.field;
-            static constexpr auto rhs_table_lc = storm::utils::to_lower_ct(rhs_table_name);
+            static constexpr auto rhs_table_lc   = storm::utils::to_lower_ct(rhs_table_name);
             static constexpr auto lhs_field_name = make_fixed_string(rhs_table_lc.view(), "_", rhs_field_name);
-            
+
             // Store references to static compile-time strings
             return JoinWrapper{
-                .sql_clause = join_info.view(),
-                .lhs_table = lhs_table_name,
-                .rhs_table = rhs_table_name,
-                .lhs_field = lhs_field_name.view(),
-                .rhs_field = rhs_field_name,
-                .type = Type
+                    .sql_clause = join_info.view(),
+                    .lhs_table  = lhs_table_name,
+                    .rhs_table  = rhs_table_name,
+                    .lhs_field  = lhs_field_name.view(),
+                    .rhs_field  = rhs_field_name,
+                    .type       = Type
             };
         }
 
@@ -99,11 +98,21 @@ export namespace storm {
         }
 
         // Access to semantic components for future flexibility
-        [[nodiscard]] std::string_view get_lhs_table() const noexcept { return lhs_table; }
-        [[nodiscard]] std::string_view get_rhs_table() const noexcept { return rhs_table; }
-        [[nodiscard]] std::string_view get_lhs_field() const noexcept { return lhs_field; }
-        [[nodiscard]] std::string_view get_rhs_field() const noexcept { return rhs_field; }
-        [[nodiscard]] JoinType get_type() const noexcept { return type; }
+        [[nodiscard]] std::string_view get_lhs_table() const noexcept {
+            return lhs_table;
+        }
+        [[nodiscard]] std::string_view get_rhs_table() const noexcept {
+            return rhs_table;
+        }
+        [[nodiscard]] std::string_view get_lhs_field() const noexcept {
+            return lhs_field;
+        }
+        [[nodiscard]] std::string_view get_rhs_field() const noexcept {
+            return rhs_field;
+        }
+        [[nodiscard]] JoinType get_type() const noexcept {
+            return type;
+        }
     };
 
 } // namespace storm
