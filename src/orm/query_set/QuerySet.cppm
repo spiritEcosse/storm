@@ -214,6 +214,7 @@ export namespace storm {
         // REMOVE API (declarations)
         std::expected<bool, std::string> remove(const T& obj);
         std::expected<bool, std::string> remove(const std::vector<T>& objs);
+        std::expected<bool, std::string> remove();
 
         // UPDATE API (declarations)
         std::expected<bool, std::string>                                           update(T obj);
@@ -498,6 +499,10 @@ export namespace storm {
     // Batch REMOVE implementation
     template <typename T> std::expected<bool, std::string> QuerySet<T>::remove(const std::vector<T>& objs) {
         return execute_delete(std::span<const T>{objs});
+    }
+
+    template <typename T> std::expected<bool, std::string> QuerySet<T>::remove() {
+        return execute_delete();
     }
 
     // DISTINCT implementation
