@@ -58,15 +58,36 @@ export namespace storm {
     template <typename T> using ExpectedT       = std::expected<T, std::string>;
     template <typename T> using ExpectedVectorT = std::expected<std::vector<T>, std::string>;
 
-    // Forward declaration for concepts
-    template <class T> class QuerySet;
+    // Compile-time aggregate result type deduction
+    template<AggregateKind K, typename FieldType>
+    struct aggregate_result_type {
+        using type = std::conditional_t<
+            K == AggregateKind::Count,
+            std::int64_t,
+            std::conditional_t<
+                K == AggregateKind::Avg || K == AggregateKind::Sum,
+                double,
+                FieldType  // Max/Min preserve field type
+            >
+        >;
+    };
 
-    // C++23 Concepts for compile-time validation
-    template <typename R>
-    concept AggregateReturnType = std::is_arithmetic_v<R> || std::same_as<R, std::string>;
+    template<AggregateKind K, typename FieldType>
+    using aggregate_result_t = typename aggregate_result_type<K, FieldType>::type;
 
-    template <typename F>
-    concept SimpleFunctionType = std::invocable<F, std::function<void(std::string_view)>>;
+    // Simplified conversion with better compile-time optimization
+    template<typename To, typename From>
+    constexpr auto convert_value(const From& from) -> std::expected<To, std::string> {
+        if constexpr (std::same_as<To, From>) {
+            return from;
+        } else if constexpr (std::convertible_to<From, To>) {
+            return static_cast<To>(from);
+        } else if constexpr (std::same_as<To, std::string>) {
+            return std::format("{}", from);
+        } else {
+            return std::unexpected("Type conversion not supported");
+        }
+    }
 
     template <class T> class QuerySet {
       private:
@@ -189,25 +210,30 @@ export namespace storm {
         template <auto Field> QuerySet<T>& sum(std::string_view alias = "");
 
         // Aggregate value methods that return direct values instead of QuerySet
-        template <auto Field>
-            requires std::is_member_object_pointer_v<decltype(Field)>
-        constexpr std::expected<typename member_pointer_traits<decltype(Field)>::type, std::string> max_value() noexcept;
+        template <auto Field> [[nodiscard]] constexpr auto max_value() noexcept {
+            return execute_aggregate<Field, AggregateKind::Max>();
+        }
 
-        template <auto Field>
-            requires std::is_member_object_pointer_v<decltype(Field)>
-        constexpr std::expected<typename member_pointer_traits<decltype(Field)>::type, std::string> min_value() noexcept;
+        template <auto Field> [[nodiscard]] constexpr auto min_value() noexcept {
+            return execute_aggregate<Field, AggregateKind::Min>();
+        }
 
-        template <auto Field>
-            requires std::is_member_object_pointer_v<decltype(Field)>
-        constexpr std::expected<double, std::string> avg_value() noexcept;
+        template <auto Field> [[nodiscard]] constexpr auto avg_value() noexcept {
+            return execute_aggregate<Field, AggregateKind::Avg>();
+        }
 
-        template <auto Field>
-            requires std::is_member_object_pointer_v<decltype(Field)>
-        constexpr std::expected<long long, std::string> count_value() noexcept;
+        template <auto Field> [[nodiscard]] constexpr auto count_value() noexcept {
+            return execute_aggregate<Field, AggregateKind::Count>();
+        }
 
-        template <auto Field>
-            requires std::is_member_object_pointer_v<decltype(Field)>
-        constexpr std::expected<double, std::string> sum_value() noexcept;
+        template <auto Field> [[nodiscard]] constexpr auto sum_value() noexcept {
+            return execute_aggregate<Field, AggregateKind::Sum>();
+        }
+
+        // Alternative: Generic aggregate with kind as template parameter
+        template <auto Field, AggregateKind Kind> [[nodiscard]] constexpr auto aggregate_value() noexcept {
+            return execute_aggregate<Field, Kind>();
+        }
 
         // FUNCTIONS API (declarations)
         template <typename... Args> QuerySet<T>& functions(Args&&... args);
@@ -375,17 +401,68 @@ export namespace storm {
         template <auto Field> consteval void check_member_pointer() {
             static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
         }
-        // Simplified aggregate query helper with C++23 improvements
-        // Overload A: accept raw SQL for the aggregate function (e.g., "MAX(t.x) AS max_x")
-        template <typename ReturnType>
-        std::expected<ReturnType, std::string>
-        execute_aggregate_query(std::string_view sql_function, std::string_view error_prefix);
 
-        // Overload B: accept a Spec that exposes to_sql() -> std::string (e.g., AggregateSpec)
-        template <typename ReturnType, typename Spec>
-            requires requires(const Spec& s) { { s.to_sql() } -> std::convertible_to<std::string>; }
-        std::expected<ReturnType, std::string>
-        execute_aggregate_query(const Spec& spec, std::string_view error_prefix);
+        // For custom SQL aggregates (GROUP_CONCAT, etc)
+        template <typename ReturnType>
+        [[nodiscard]] auto execute_custom_aggregate(std::string_view sql, std::string_view error_context)
+                -> std::expected<ReturnType, std::string> {
+            SelectOptions opts{.functions_set = {AggregateSpec::custom_sql(sql)}, .where_clause = _whereExpression};
+
+            auto result = SelectStatement<T>(conn, std::move(opts)).execute_values();
+            if (!result) [[unlikely]]
+                return std::unexpected(std::format("{}: {}", error_context, result.error()));
+
+            if (result->empty() || result->front().empty()) [[unlikely]]
+                return std::unexpected(std::format("{}: No results", error_context));
+
+            return std::visit(
+                    [](const auto& val) { return convert_value<ReturnType>(val); }, result->front().begin()->second
+            );
+        }
+
+        template <auto Field, AggregateKind Kind>
+        [[nodiscard]] constexpr auto execute_aggregate() noexcept
+                -> std::expected<aggregate_result_t<Kind, typename member_pointer_traits<decltype(Field)>::type>, std::string> {
+            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
+            using ResultType = aggregate_result_t<Kind, FieldType>;
+
+            // Compile-time validation
+            if constexpr (Kind == AggregateKind::Avg || Kind == AggregateKind::Sum) {
+                static_assert(std::is_arithmetic_v<FieldType>, "AVG/SUM require numeric fields");
+            }
+
+            // Build spec at compile time
+            constexpr auto make_spec = []() {
+                if constexpr (Kind == AggregateKind::Max)
+                    return AggregateSpec::max<Field>();
+                else if constexpr (Kind == AggregateKind::Min)
+                    return AggregateSpec::min<Field>();
+                else if constexpr (Kind == AggregateKind::Avg)
+                    return AggregateSpec::avg<Field>();
+                else if constexpr (Kind == AggregateKind::Count)
+                    return AggregateSpec::count<Field>();
+                else
+                    return AggregateSpec::sum<Field>();
+            };
+
+            // Execute with minimal allocations
+            SelectOptions opts{.functions_set = {make_spec()}, .where_clause = _whereExpression};
+
+            auto result = SelectStatement<T>(conn, std::move(opts)).execute_values();
+            if (!result) [[unlikely]]
+                return std::unexpected(result.error());
+
+            if (result->empty() || result->front().empty()) [[unlikely]]
+                return std::unexpected("No results");
+
+            // Direct variant visitation with compile-time conversion
+            return std::visit(
+                    [](const auto& val) -> std::expected<ResultType, std::string> {
+                        return convert_value<ResultType>(val);
+                    },
+                    result->front().begin()->second
+            );
+        }
     };
 
     template <typename T> QuerySet<T>& QuerySet<T>::where(const storm::Where& where_clause) {
@@ -682,20 +759,30 @@ export namespace storm {
     QuerySet<T>& QuerySet<T>::group_concat(
             std::string_view alias, std::string_view separator, std::string_view fieldSeparator, bool distinct
     ) {
-        // Note: group_concat_impl needs to be implemented - placeholder for now
-        // TODO: Implement group_concat_impl method
+        auto [actual_alias, field_expr] = prepare_group_concat<FirstField, RestFields...>(alias, fieldSeparator);
+
+        // Build GROUP_CONCAT function
+        std::string function_str = "GROUP_CONCAT(";
+
+        if (distinct) {
+            function_str += "DISTINCT ";
+        }
+
+        function_str += field_expr;
+        function_str += std::format(", '{}' ) AS {}", separator, actual_alias);
+
+        functions(AggregateSpec::custom_sql(function_str));
         return *this;
     }
 
     // SELECT ONE implementation (returns single object)
     template <typename T> ExpectedT<T> QuerySet<T>::select_one() {
-        return select_all()
-            .and_then([](const auto& rows) -> ExpectedT<T> {
-                if (rows.empty()) {
-                    return std::unexpected("No results found for select_one query");
-                }
-                return rows[0];
-            });
+        return select_all().and_then([](const auto& rows) -> ExpectedT<T> {
+            if (rows.empty()) {
+                return std::unexpected("No results found for select_one query");
+            }
+            return rows[0];
+        });
     }
 
     // SELECT ALL implementation
@@ -735,127 +822,6 @@ export namespace storm {
                        }
         )
                 .execute_values();
-    }
-
-    // C++23 optimized helper for executing aggregate queries
-    template <typename T>
-    template <typename ReturnType>
-    std::expected<ReturnType, std::string>
-    QuerySet<T>::execute_aggregate_query(std::string_view sql_function, std::string_view error_prefix) {
-        if (sql_function.empty()) [[unlikely]] {
-            return std::unexpected(std::format("{}: No aggregate function specified", error_prefix));
-        }
-
-        // Delegate to Spec-based overload using custom SQL wrapper
-        return execute_aggregate_query<ReturnType>(AggregateSpec::custom_sql(sql_function), error_prefix);
-    }
-
-    template <typename T>
-    template <typename ReturnType, typename Spec>
-        requires requires(const Spec& s) { { s.to_sql() } -> std::convertible_to<std::string>; }
-    std::expected<ReturnType, std::string>
-    QuerySet<T>::execute_aggregate_query(const Spec& spec, std::string_view error_prefix) {
-        static_assert(std::is_arithmetic_v<ReturnType> || std::same_as<ReturnType, std::string>,
-                      "ReturnType must be arithmetic or string");
-
-        // Normalize to AggregateSpec so we can feed SelectOptions
-        AggregateSpec final_spec = [&]() -> AggregateSpec {
-            if constexpr (std::is_same_v<std::decay_t<Spec>, AggregateSpec>) {
-                return spec;
-            } else {
-                return AggregateSpec::custom_sql(spec.to_sql());
-            }
-        }();
-
-        // Build SelectStatement with the aggregate function in functions_set
-        SelectOptions opts{};
-        opts.functions_set.emplace_back(std::move(final_spec));
-        if (_whereExpression) {
-            opts.where_clause = std::move(_whereExpression);
-        }
-
-        auto result = SelectStatement<T>(conn, std::move(opts)).execute_values();
-        if (!result) [[unlikely]] {
-            return std::unexpected(std::format("{}: {}", error_prefix, result.error()));
-        }
-
-        const auto& rows = result.value();
-        if (rows.empty()) [[unlikely]] {
-            return std::unexpected(std::format("{}: No results found", error_prefix));
-        }
-
-        const auto& first_row = rows[0];
-        if (!first_row.empty()) [[likely]] {
-            const auto& value = first_row.begin()->second;
-            return std::visit(
-                []<typename V>(const V& val) -> std::expected<ReturnType, std::string> {
-                    if constexpr (std::same_as<ReturnType, V>) {
-                        return val;
-                    } else if constexpr (std::same_as<ReturnType, std::string> && std::convertible_to<V, std::string>) {
-                        return std::format("{}", val);
-                    } else if constexpr (std::is_arithmetic_v<ReturnType> && std::is_arithmetic_v<V>) {
-                        return static_cast<ReturnType>(val);
-                    } else {
-                        return std::unexpected("Type conversion not supported");
-                    }
-                },
-                value
-            );
-        }
-
-        return std::unexpected(std::format("{}: Invalid result format", error_prefix));
-    }
-
-    // C++23 optimized aggregate functions with compile-time field validation
-    template <typename T>
-    template <auto Field>
-        requires std::is_member_object_pointer_v<decltype(Field)>
-    constexpr std::expected<typename member_pointer_traits<decltype(Field)>::type, std::string> 
-    QuerySet<T>::max_value() noexcept {
-        using FieldType = typename member_pointer_traits<decltype(Field)>::type;
-        static_assert(std::is_arithmetic_v<FieldType> || std::same_as<FieldType, std::string>, 
-                     "MAX can only be used with arithmetic types or strings");
-
-        return execute_aggregate_query<FieldType>(AggregateSpec::max<Field>(), "find maximum value");
-    }
-
-    template <typename T>
-    template <auto Field>
-        requires std::is_member_object_pointer_v<decltype(Field)>
-    constexpr std::expected<typename member_pointer_traits<decltype(Field)>::type, std::string> 
-    QuerySet<T>::min_value() noexcept {
-        using FieldType = typename member_pointer_traits<decltype(Field)>::type;
-        static_assert(std::is_arithmetic_v<FieldType> || std::same_as<FieldType, std::string>, 
-                     "MIN can only be used with arithmetic types or strings");
-
-        return execute_aggregate_query<FieldType>(AggregateSpec::min<Field>(), "find minimum value");
-    }
-
-    template <typename T> 
-    template <auto Field>
-        requires std::is_member_object_pointer_v<decltype(Field)>
-    constexpr std::expected<double, std::string> QuerySet<T>::avg_value() noexcept {
-        using FieldType = typename member_pointer_traits<decltype(Field)>::type;
-        static_assert(std::is_arithmetic_v<FieldType>, "AVG can only be used with arithmetic types");
-
-        return execute_aggregate_query<double>(AggregateSpec::avg<Field>(), "calculate average");
-    }
-
-    template <typename T> 
-    template <auto Field>
-        requires std::is_member_object_pointer_v<decltype(Field)>
-    constexpr std::expected<long long, std::string> QuerySet<T>::count_value() noexcept {
-        return execute_aggregate_query<long long>(AggregateSpec::count<Field>(), "count records");
-    }
-
-    template <typename T> 
-    template <auto Field>
-        requires std::is_member_object_pointer_v<decltype(Field)>
-    constexpr std::expected<double, std::string> QuerySet<T>::sum_value() noexcept {
-        using FieldType = typename member_pointer_traits<decltype(Field)>::type;
-        static_assert(std::is_arithmetic_v<FieldType>, "SUM can only be used with arithmetic types");
-
-        return execute_aggregate_query<double>(AggregateSpec::sum<Field>(), "calculate sum");
     }
 
 } // namespace storm

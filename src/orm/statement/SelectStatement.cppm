@@ -231,7 +231,8 @@ export namespace storm {
                 std::span<const AggregateSpec>                                             functions_set
         ) {
             // Use ranges views for lazy evaluation
-            auto function_clauses = functions_set | std::views::transform([](const AggregateSpec& f) { return f.to_sql(); });
+            auto function_clauses =
+                    functions_set | std::views::transform([](const AggregateSpec& f) { return f.to_sql(); });
 
             if (!distinct_fields.empty() && only_fields.empty()) {
                 auto field_strings = distinct_fields | std::views::transform([](const auto& field_wrapper) {
@@ -243,7 +244,7 @@ export namespace storm {
             } else if (!only_fields.empty()) {
                 auto field_strings = only_fields | std::views::transform([](const auto& field_pair) {
                                          const auto& [field_wrapper, alias] = field_pair;
-                                         const auto field_name       = field_wrapper.view();
+                                         const auto field_name              = field_wrapper.view();
                                          return alias ? std::format("{} AS {}", field_name, *alias) : field_name;
                                      });
 
