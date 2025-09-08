@@ -689,16 +689,13 @@ export namespace storm {
 
     // SELECT ONE implementation (returns single object)
     template <typename T> ExpectedT<T> QuerySet<T>::select_one() {
-        auto rows = select_all();
-        if (!rows)
-            return std::unexpected(rows.error());
-
-        if (rows->empty()) {
-            return std::unexpected("No results found for select_one query");
-        }
-
-        // Return the first object from the results
-        return (*rows)[0];
+        return select_all()
+            .and_then([](const auto& rows) -> ExpectedT<T> {
+                if (rows.empty()) {
+                    return std::unexpected("No results found for select_one query");
+                }
+                return rows[0];
+            });
     }
 
     // SELECT ALL implementation
