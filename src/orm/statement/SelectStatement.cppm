@@ -33,7 +33,7 @@ import storm.reflect;
 import storm.utils;
 import storm.core_types;
 import storm.where;
-import storm.function;
+import storm.aggregate;
 import storm.join_utils;
 
 export namespace storm {
@@ -117,7 +117,7 @@ export namespace storm {
         std::vector<JoinWrapper>                                               joins{};
         std::vector<refl::FieldWrapper>                                        distinct_fields{};
         std::vector<std::pair<refl::FieldWrapper, std::optional<std::string>>> only_fields{};
-        std::vector<Function>                                                  functions_set{};
+        std::vector<AggregateSpec>                                             functions_set{};
         std::vector<std::tuple<refl::FieldWrapper, bool, Collation>>           order_terms{};
         std::vector<refl::FieldWrapper>                                        group_by_fields{};
         int                                                                    limit{};
@@ -221,17 +221,17 @@ export namespace storm {
         int                             offset_{};
         std::vector<refl::FieldWrapper> distinct_fields_;
         std::vector<std::pair<refl::FieldWrapper, std::optional<std::string>>> only_fields_;
-        std::vector<Function>                                                  functions_set_;
+        std::vector<AggregateSpec>                                             functions_set_;
         std::string                                                            order_by_sql_;
         std::string                                                            group_by_sql_;
 
         [[nodiscard]] static std::string build_select_list(
                 std::span<const refl::FieldWrapper>                                        distinct_fields,
                 std::span<const std::pair<refl::FieldWrapper, std::optional<std::string>>> only_fields,
-                std::span<const Function>                                                  functions_set
+                std::span<const AggregateSpec>                                             functions_set
         ) {
             // Use ranges views for lazy evaluation
-            auto function_clauses = functions_set | std::views::transform([](const Function& f) { return f.toStr(); });
+            auto function_clauses = functions_set | std::views::transform([](const AggregateSpec& f) { return f.to_sql(); });
 
             if (!distinct_fields.empty() && only_fields.empty()) {
                 auto field_strings = distinct_fields | std::views::transform([](const auto& field_wrapper) {
