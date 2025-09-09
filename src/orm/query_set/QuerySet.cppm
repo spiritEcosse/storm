@@ -49,10 +49,11 @@ import <format>;
 import <algorithm>;
 import <array>;
 import <functional>;
+import <flat_map>;
 
 export namespace storm {
     // Use the canonical SqlValue type from storm.core_types to avoid redundancy
-    using ValueMap                              = std::map<std::string, SqlValue, std::less<>>;
+    using ValueMap                              = std::flat_map<std::string, SqlValue, std::less<>>;
     using ValueVectorMap                        = std::vector<ValueMap>;
     using ExpectedValueVectorMap                = std::expected<ValueVectorMap, std::string>;
     template <typename T> using ExpectedT       = std::expected<T, std::string>;
@@ -72,6 +73,55 @@ export namespace storm {
 
     template <AggregateKind K, typename FieldType>
     using aggregate_result_t = typename aggregate_result_type<K, FieldType>::type;
+
+    template <typename T, std::size_t N> class compile_time_sql {
+        std::array<char, N> buffer{};
+        std::size_t         pos = 0;
+
+      public:
+        consteval compile_time_sql() = default;
+
+        consteval auto& append(std::string_view str) {
+            for (auto c : str) {
+                if (pos < N)
+                    buffer[pos++] = c;
+            }
+            return *this;
+        }
+
+        consteval auto get() const {
+            return std::string_view(buffer.data(), pos);
+        }
+    };
+
+    template <typename T>
+    concept NumericType = std::is_arithmetic_v<T>;
+
+    template <AggregateKind K, typename FieldType> struct aggregate_result {
+        using type = std::conditional_t<
+                K == AggregateKind::Count,
+                std::int64_t,
+                std::conditional_t<
+                        (K == AggregateKind::Avg || K == AggregateKind::Sum),
+                        std::conditional_t<NumericType<FieldType>, double, FieldType>,
+                        FieldType>>;
+    };
+
+    template <auto MemberPtr> using field_type_t = typename member_pointer_traits<decltype(MemberPtr)>::type;
+
+    template <auto MemberPtr> using class_type_t = typename member_pointer_traits<decltype(MemberPtr)>::class_type;
+
+    // Concepts for better error messages
+    template <typename T>
+    concept Aggregatable = requires {
+        // Use aggregate_result_t in a dependent context to validate availability
+        typename std::type_identity<aggregate_result_t<AggregateKind::Sum, T>>::type;
+    };
+
+    template <typename T>
+    concept Sortable = requires(T a, T b) {
+        { a < b } -> std::convertible_to<bool>;
+    };
 
     // Simplified conversion with better compile-time optimization
     template <typename To, typename From>
@@ -140,8 +190,11 @@ export namespace storm {
         // WHERE API (declarations)
         QuerySet<T>& where(const storm::Where& where_clause);
         QuerySet<T>& where(storm::Where&& where_clause);
+        // WHERE with multiple conditions using fold expressions
+        template<typename Self, typename... Conditions>
+        constexpr auto&& where_all(Self&& self, Conditions&&... conditions);
 
-        template <auto MemberPtr, typename Value> QuerySet<T>& where(Value&& value, storm::Op op = storm::Op::EQ);
+        template <typename Self, auto MemberPtr, typename Value> constexpr auto&& where(Self&& self, Value&& value, storm::Op op = storm::Op::EQ);
 
         template <auto MemberPtr, typename Container> QuerySet<T>& where_in(const Container& values);
 
@@ -158,7 +211,7 @@ export namespace storm {
         template <auto Field, Collation CollationType = Collation::NONE> QuerySet<T>& order_by();
 
         // Multiple fields
-        template <auto... Fields> QuerySet<T>& order_by_multiple();
+        template <typename Self, auto... Fields> QuerySet<T>& order_by_multiple(Self&& self);
 
         // Multiple field-direction pairs
         template <auto Field, auto Direction, auto... Rest> QuerySet<T>& order_by_mixed();
@@ -175,12 +228,12 @@ export namespace storm {
         // GROUP BY API (declarations)
         template <auto... Fields> QuerySet<T>& group_by();
 
-        template <auto FirstField, auto... RestFields>
-        QuerySet<T>& group_concat(
-                std::string_view alias          = "",
-                std::string_view separator      = ",",
-                std::string_view fieldSeparator = " ",
-                bool             distinct       = false
+        template <typename Self, auto... Fields>
+        constexpr auto&& group_concat(
+                Self&& self,
+                utils::fixed_string<32> alias     = utils::fixed_string<32>(std::string_view("")),
+                utils::fixed_string<8>  separator = utils::fixed_string<8>(std::string_view(",")),
+                bool                    distinct  = false
         );
 
         // Overload with ORDER BY for multiple fields - requires explicit
@@ -270,50 +323,57 @@ export namespace storm {
         }
 
         template <auto Field, AggregateKind Kind>
-        [[nodiscard]] constexpr auto execute_aggregate() noexcept -> std::
-                expected<aggregate_result_t<Kind, typename member_pointer_traits<decltype(Field)>::type>, std::string> {
-            using FieldType  = typename member_pointer_traits<decltype(Field)>::type;
-            using ResultType = aggregate_result_t<Kind, FieldType>;
+        [[nodiscard]] constexpr auto execute_aggregate() const
+                -> std::expected<aggregate_result_t<Kind, field_type_t<Field>>, std::string> {
+            using ResultType = aggregate_result_t<Kind, field_type_t<Field>>;
 
             // Compile-time validation
             if constexpr (Kind == AggregateKind::Avg || Kind == AggregateKind::Sum) {
-                static_assert(std::is_arithmetic_v<FieldType>, "AVG/SUM require numeric fields");
+                static_assert(NumericType<field_type_t<Field>>, "AVG/SUM require numeric fields");
             }
 
-            // Build spec at compile time
-            constexpr auto make_spec = []() {
+            // Build spec at compile time with static string
+            constexpr auto spec = []() {
                 if constexpr (Kind == AggregateKind::Max)
-                    return AggregateSpec::max<Field>();
+                    return AggregateSpec::template max<Field>();
                 else if constexpr (Kind == AggregateKind::Min)
-                    return AggregateSpec::min<Field>();
+                    return AggregateSpec::template min<Field>();
                 else if constexpr (Kind == AggregateKind::Avg)
-                    return AggregateSpec::avg<Field>();
+                    return AggregateSpec::template avg<Field>();
                 else if constexpr (Kind == AggregateKind::Count)
-                    return AggregateSpec::count<Field>();
+                    return AggregateSpec::template count<Field>();
                 else
-                    return AggregateSpec::sum<Field>();
-            };
+                    return AggregateSpec::template sum<Field>();
+            }();
 
-            // Execute with minimal allocations
             SelectOptions opts{
-                    .functions_set = {make_spec()},
-                    .where_clause  = std::move(_whereExpression),
+                    .functions_set = {spec},
+                    .where_clause  = _whereExpression,
             };
 
             auto result = SelectStatement<T>(conn, std::move(opts)).execute_values();
             if (!result) [[unlikely]]
                 return std::unexpected(result.error());
 
-            if (result->empty() || result->front().empty()) [[unlikely]]
+            if (result->empty()) [[unlikely]]
                 return std::unexpected("No results");
 
-            // Direct variant visitation with compile-time conversion
-            return std::visit(
-                    [](const auto& val) -> std::expected<ResultType, std::string> {
-                        return convert_value<ResultType>(val);
-                    },
-                    result->front().begin()->second
-            );
+            // Use ranges for cleaner access
+            auto& first_row = result->front();
+            if (auto it = std::ranges::begin(first_row); it != std::ranges::end(first_row)) {
+                return std::visit(
+                        []<typename V>(const V& val) -> std::expected<ResultType, std::string> {
+                            if constexpr (std::convertible_to<V, ResultType>) {
+                                return static_cast<ResultType>(val);
+                            } else {
+                                return std::unexpected("Type conversion failed");
+                            }
+                        },
+                        it->second
+                );
+            }
+
+            return std::unexpected("No data in result");
         }
 
         // FUNCTIONS API (declarations)
@@ -353,11 +413,20 @@ export namespace storm {
         std::expected<int, std::string>              insert(const T& obj);
         std::expected<std::vector<int>, std::string> insert(std::vector<T> objs);
         std::expected<std::vector<int>, std::string> insert(const std::vector<T>& objs);
+        // Generic contiguous range overload (e.g., vector, array, span)
+        template <std::ranges::contiguous_range R>
+            requires std::same_as<std::remove_cvref_t<std::ranges::range_value_t<R>>, T>
+        std::expected<std::vector<int>, std::string> insert(R&& objects);
         std::expected<std::vector<int>, std::string> insert(std::span<const T> objects);
         InsertStatement<T>                           stmt_insert(const T& obj);
         InsertStatement<T>                           stmt_insert(const std::vector<T>& objs);
 
       private:
+        // Deducing this for perfect forwarding
+        template <typename Self> static constexpr decltype(auto) self_cast(Self&& self) {
+            return std::forward<Self>(self);
+        }
+
         [[nodiscard]] std::expected<std::vector<int>, std::string>
         execute_insert(std::span<const T> objects) const noexcept {
             if (objects.empty())
@@ -484,6 +553,16 @@ export namespace storm {
         }
     };
 
+    template<typename T>
+    template<typename Self, typename... Conditions>
+    constexpr auto&& QuerySet<T>::where_all(Self&& self, Conditions&&... conditions) {
+        storm::Where combined = (... && conditions);
+        self._whereExpression = self._whereExpression 
+            ? storm::Where{*self._whereExpression && combined}
+            : std::move(combined);
+        return std::forward<Self>(self);
+    }
+
     template <typename T> QuerySet<T>& QuerySet<T>::where(const storm::Where& where_clause) {
         if (this->_whereExpression) {
             // Combine with existing WHERE using AND
@@ -504,12 +583,13 @@ export namespace storm {
     }
 
     template <typename T>
-    template <auto MemberPtr, typename Value>
-    QuerySet<T>& QuerySet<T>::where(Value&& value, storm::Op op) {
-        // Create a field object using the compile-time member pointer
+    template <typename Self, auto MemberPtr, typename Value>
+    constexpr auto&& QuerySet<T>::where(Self&& self, Value&& value, storm::Op op) {
         auto         field_obj = Field<MemberPtr>();
-        storm::Where condition = create_condition(field_obj, std::forward<Value>(value), op);
-        return where(std::move(condition));
+        storm::Where condition = self.create_condition(field_obj, std::forward<Value>(value), op);
+        self._whereExpression =
+                self._whereExpression.has_value() ? (self._whereExpression.value() && condition) : std::move(condition);
+        return std::forward<Self>(self);
     }
 
     template <typename T>
@@ -605,6 +685,17 @@ export namespace storm {
         return execute_insert(objects);
     }
 
+    // 6. Generic contiguous range - forwards to span<const T>
+    template <typename T>
+    template <std::ranges::contiguous_range R>
+        requires std::same_as<std::remove_cvref_t<std::ranges::range_value_t<R>>, T>
+    std::expected<std::vector<int>, std::string> QuerySet<T>::insert(R&& objects) {
+        if (std::ranges::empty(objects)) {
+            return std::vector<int>{};
+        }
+        return execute_insert(std::span<const T>{std::ranges::data(objects), std::ranges::size(objects)});
+    }
+
     // Single object REMOVE implementation
     template <typename T> std::expected<bool, std::string> QuerySet<T>::remove(const T& obj) {
         return execute_delete(std::span<const T>{&obj, 1});
@@ -668,10 +759,12 @@ export namespace storm {
         return *this;
     }
 
-    template <typename T> template <auto... Fields> QuerySet<T>& QuerySet<T>::order_by_multiple() {
-        orderTerms.reserve(orderTerms.size() + sizeof...(Fields));
-        ((orderTerms.emplace_back(refl::FieldWrapper::create<Fields>(), true, Collation::NONE)), ...);
-        return *this;
+    template <typename T> template <typename Self, auto... Fields> QuerySet<T>& QuerySet<T>::order_by_multiple(Self&& self) {
+        self.orderTerms.reserve(self.orderTerms.size() + sizeof...(Fields));
+        [self]<std::size_t... Is>(std::index_sequence<Is...>) {
+            ((self.orderTerms.emplace_back(refl::FieldWrapper::create<Fields>(), true, Collation::NONE)), ...);
+        }(std::make_index_sequence<sizeof...(Fields)>{});
+        return std::forward<Self>(self);
     }
 
     // Modern compile-time version for multiple field-direction pairs
@@ -748,24 +841,33 @@ export namespace storm {
     }
 
     template <typename T>
-    template <auto FirstField, auto... RestFields>
-    QuerySet<T>& QuerySet<T>::group_concat(
-            std::string_view alias, std::string_view separator, std::string_view fieldSeparator, bool distinct
-    ) {
-        auto [actual_alias, field_expr] = prepare_group_concat<FirstField, RestFields...>(alias, fieldSeparator);
+    template <typename Self, auto... Fields>
+    constexpr auto&&
+    QuerySet<T>::group_concat(Self&& self, utils::fixed_string<32> alias, utils::fixed_string<8> separator, bool distinct) {
+        std::string sql = "GROUP_CONCAT(";
+        if (distinct)
+            sql += "DISTINCT ";
 
-        // Build GROUP_CONCAT function
-        std::string function_str = "GROUP_CONCAT(";
+        // Build field list at compile time
+        auto append_field = [&sql]<auto Field>() {
+            sql += refl::FieldWrapper::create<Field>().full_name();
+        };
 
-        if (distinct) {
-            function_str += "DISTINCT ";
+        auto append_fields = [&]<auto First, auto... Rest>() {
+            append_field.template operator()<First>();
+            if constexpr (sizeof...(Rest) > 0) {
+                ((sql += ", ", append_field.template operator()<Rest>()), ...);
+            }
+        };
+
+        if constexpr (sizeof...(Fields) > 0) {
+            append_fields.template operator()<Fields...>();
         }
 
-        function_str += field_expr;
-        function_str += std::format(", '{}' ) AS {}", separator, actual_alias);
+        sql += ")";
 
-        functions(AggregateSpec::custom_sql(function_str));
-        return *this;
+        self.functionsSet.emplace_back(AggregateSpec::custom_sql(sql));
+        return std::forward<Self>(self);
     }
 
     // SELECT ONE implementation (returns single object)

@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.30)
 project(storm)
 
-set(CMAKE_CXX_STANDARD 23)
-message(STATUS "Using C++23 (standard build)")
+set(CMAKE_CXX_STANDARD 26)
+message(STATUS "Using C++26 (standard build)")
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -22,7 +22,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         add_compile_options(-fcoroutines) # Apply only for GNU compilers
         add_compile_options(-fmax-errors=1)
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-          # For Clang (including AppleClang) with CMAKE_CXX_STANDARD set to 20 or 23,
+          # For Clang (including AppleClang) with CMAKE_CXX_STANDARD set to 26,
           # C++ coroutines are typically enabled by the standard itself.
           # The explicit -fcoroutines flag can cause errors with modern Clang.
           add_compile_options(-ferror-limit=1 -stdlib=libc++) # Clang specific error limit
@@ -43,7 +43,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
  # Exclude example/demo mains from the library
  list(FILTER STORM_NONMODULE_SOURCES EXCLUDE REGEX ".*/main\\.cpp$")
  
- # Declare C++23 module interface and partition sources (all *.cppm)
+ # Declare C++26 module interface and partition sources (all *.cppm)
  target_sources(${PROJECT_NAME}
      PUBLIC
          FILE_SET cxx_modules TYPE CXX_MODULES

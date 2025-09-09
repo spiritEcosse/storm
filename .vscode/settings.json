@@ -10,7 +10,7 @@
     "${workspaceFolder}",
     "${workspaceFolder}/src"
   ],
-  "C_Cpp.default.cppStandard": "c++23",
+  "C_Cpp.default.cppStandard": "c++26",
   "C_Cpp.default.intelliSenseMode": "linux-gcc-x64",
   "sonarlint.pathToCompileCommands": "${workspaceFolder}/build/debug/compile_commands.json"
 }
