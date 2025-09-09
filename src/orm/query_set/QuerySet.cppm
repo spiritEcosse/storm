@@ -250,6 +250,68 @@ export namespace storm {
             return execute_aggregate<Field, Kind>();
         }
 
+        // For custom SQL aggregates (GROUP_CONCAT, etc)
+        template <typename ReturnType>
+        [[nodiscard]] auto execute_custom_aggregate(std::string_view sql, std::string_view error_context)
+                -> std::expected<ReturnType, std::string> {
+            SelectOptions opts{.functions_set = {AggregateSpec::custom_sql(sql)}, .where_clause = _whereExpression};
+
+            auto result = SelectStatement<T>(conn, std::move(opts)).execute_values();
+            if (!result) [[unlikely]]
+                return std::unexpected(std::format("{}: {}", error_context, result.error()));
+
+            if (result->empty() || result->front().empty()) [[unlikely]]
+                return std::unexpected(std::format("{}: No results", error_context));
+
+            return std::visit(
+                    [](const auto& val) { return convert_value<ReturnType>(val); }, result->front().begin()->second
+            );
+        }
+
+        template <auto Field, AggregateKind Kind>
+        [[nodiscard]] constexpr auto execute_aggregate() noexcept
+                -> std::expected<aggregate_result_t<Kind, typename member_pointer_traits<decltype(Field)>::type>, std::string> {
+            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
+            using ResultType = aggregate_result_t<Kind, FieldType>;
+
+            // Compile-time validation
+            if constexpr (Kind == AggregateKind::Avg || Kind == AggregateKind::Sum) {
+                static_assert(std::is_arithmetic_v<FieldType>, "AVG/SUM require numeric fields");
+            }
+
+            // Build spec at compile time
+            constexpr auto make_spec = []() {
+                if constexpr (Kind == AggregateKind::Max)
+                    return AggregateSpec::max<Field>();
+                else if constexpr (Kind == AggregateKind::Min)
+                    return AggregateSpec::min<Field>();
+                else if constexpr (Kind == AggregateKind::Avg)
+                    return AggregateSpec::avg<Field>();
+                else if constexpr (Kind == AggregateKind::Count)
+                    return AggregateSpec::count<Field>();
+                else
+                    return AggregateSpec::sum<Field>();
+            };
+
+            // Execute with minimal allocations
+            SelectOptions opts{.functions_set = {make_spec()}, .where_clause = _whereExpression};
+
+            auto result = SelectStatement<T>(conn, std::move(opts)).execute_values();
+            if (!result) [[unlikely]]
+                return std::unexpected(result.error());
+
+            if (result->empty() || result->front().empty()) [[unlikely]]
+                return std::unexpected("No results");
+
+            // Direct variant visitation with compile-time conversion
+            return std::visit(
+                    [](const auto& val) -> std::expected<ResultType, std::string> {
+                        return convert_value<ResultType>(val);
+                    },
+                    result->front().begin()->second
+            );
+        }
+
         // FUNCTIONS API (declarations)
         template <typename... Args> QuerySet<T>& functions(Args&&... args);
 
@@ -415,68 +477,6 @@ export namespace storm {
 
         template <auto Field> consteval void check_member_pointer() {
             static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
-        }
-
-        // For custom SQL aggregates (GROUP_CONCAT, etc)
-        template <typename ReturnType>
-        [[nodiscard]] auto execute_custom_aggregate(std::string_view sql, std::string_view error_context)
-                -> std::expected<ReturnType, std::string> {
-            SelectOptions opts{.functions_set = {AggregateSpec::custom_sql(sql)}, .where_clause = _whereExpression};
-
-            auto result = SelectStatement<T>(conn, std::move(opts)).execute_values();
-            if (!result) [[unlikely]]
-                return std::unexpected(std::format("{}: {}", error_context, result.error()));
-
-            if (result->empty() || result->front().empty()) [[unlikely]]
-                return std::unexpected(std::format("{}: No results", error_context));
-
-            return std::visit(
-                    [](const auto& val) { return convert_value<ReturnType>(val); }, result->front().begin()->second
-            );
-        }
-
-        template <auto Field, AggregateKind Kind>
-        [[nodiscard]] constexpr auto execute_aggregate() noexcept
-                -> std::expected<aggregate_result_t<Kind, typename member_pointer_traits<decltype(Field)>::type>, std::string> {
-            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
-            using ResultType = aggregate_result_t<Kind, FieldType>;
-
-            // Compile-time validation
-            if constexpr (Kind == AggregateKind::Avg || Kind == AggregateKind::Sum) {
-                static_assert(std::is_arithmetic_v<FieldType>, "AVG/SUM require numeric fields");
-            }
-
-            // Build spec at compile time
-            constexpr auto make_spec = []() {
-                if constexpr (Kind == AggregateKind::Max)
-                    return AggregateSpec::max<Field>();
-                else if constexpr (Kind == AggregateKind::Min)
-                    return AggregateSpec::min<Field>();
-                else if constexpr (Kind == AggregateKind::Avg)
-                    return AggregateSpec::avg<Field>();
-                else if constexpr (Kind == AggregateKind::Count)
-                    return AggregateSpec::count<Field>();
-                else
-                    return AggregateSpec::sum<Field>();
-            };
-
-            // Execute with minimal allocations
-            SelectOptions opts{.functions_set = {make_spec()}, .where_clause = _whereExpression};
-
-            auto result = SelectStatement<T>(conn, std::move(opts)).execute_values();
-            if (!result) [[unlikely]]
-                return std::unexpected(result.error());
-
-            if (result->empty() || result->front().empty()) [[unlikely]]
-                return std::unexpected("No results");
-
-            // Direct variant visitation with compile-time conversion
-            return std::visit(
-                    [](const auto& val) -> std::expected<ResultType, std::string> {
-                        return convert_value<ResultType>(val);
-                    },
-                    result->front().begin()->second
-            );
         }
     };
 
