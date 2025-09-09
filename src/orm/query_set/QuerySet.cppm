@@ -251,12 +251,12 @@ export namespace storm {
         // GROUP BY API (declarations)
         template <auto... Fields> QuerySet<T>& group_by();
 
-        template <typename Self, auto... Fields>
+        // In class declaration:
+        template <typename Self, bool Distinct = false, auto... Fields>
         constexpr auto&& group_concat(
                 Self&&                  self,
                 utils::fixed_string<32> alias     = utils::fixed_string<32>(std::string_view("")),
-                utils::fixed_string<8>  separator = utils::fixed_string<8>(std::string_view(",")),
-                bool                    distinct  = false
+                utils::fixed_string<8>  separator = utils::fixed_string<8>(std::string_view(","))
         );
 
         // Overload with ORDER BY for multiple fields - requires explicit
@@ -877,31 +877,25 @@ export namespace storm {
     }
 
     template <typename T>
-    template <typename Self, auto... Fields>
-    constexpr auto&& QuerySet<T>::group_concat(
-            Self&& self, utils::fixed_string<32> alias, utils::fixed_string<8> separator, bool distinct
-    ) {
-        std::string sql = "GROUP_CONCAT(";
-        if (distinct)
-            sql += "DISTINCT ";
+    template <typename Self, bool Distinct, auto... Fields>
+    constexpr auto&&
+    QuerySet<T>::group_concat(Self&& self, utils::fixed_string<32> alias, utils::fixed_string<8> separator) {
+        // Build complete SQL at compile time
+        constexpr auto sql = []() {
+            constexpr auto fields = []() {
+                if constexpr (sizeof...(Fields) == 0) {
+                    return utils::make_fixed_string("");
+                }
+                return utils::join(Fields..., ", ");
+            }();
 
-        // Build field list at compile time
-        auto append_field = [&sql]<auto Field>() { sql += refl::FieldWrapper::create<Field>().full_name(); };
-
-        auto append_fields = [&]<auto First, auto... Rest>() {
-            append_field.template operator()<First>();
-            if constexpr (sizeof...(Rest) > 0) {
-                ((sql += ", ", append_field.template operator()<Rest>()), ...);
+            if constexpr (Distinct) {
+                return utils::concat_ct("GROUP_CONCAT(DISTINCT ", fields, ")");
             }
-        };
+            return utils::concat_ct("GROUP_CONCAT(", fields, ")");
+        }();
 
-        if constexpr (sizeof...(Fields) > 0) {
-            append_fields.template operator()<Fields...>();
-        }
-
-        sql += ")";
-
-        self.functionsSet.emplace_back(AggregateSpec::custom_sql(sql));
+        self.functionsSet.emplace_back(AggregateSpec::custom_sql(sql.view()));
         return std::forward<Self>(self);
     }
 

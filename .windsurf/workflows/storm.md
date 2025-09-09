@@ -1,5 +1,6 @@
 ---
-trigger: always_on
+description: 
+auto_execution_mode: 1
 ---
 
 # Storm — Modern C++26 ORM (development guidance)
