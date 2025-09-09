@@ -59,24 +59,22 @@ export namespace storm {
     template <typename T> using ExpectedVectorT = std::expected<std::vector<T>, std::string>;
 
     // Compile-time aggregate result type deduction
-    template<AggregateKind K, typename FieldType>
-    struct aggregate_result_type {
+    template <AggregateKind K, typename FieldType> struct aggregate_result_type {
         using type = std::conditional_t<
-            K == AggregateKind::Count,
-            std::int64_t,
-            std::conditional_t<
-                K == AggregateKind::Avg || K == AggregateKind::Sum,
-                double,
-                FieldType  // Max/Min preserve field type
-            >
-        >;
+                K == AggregateKind::Count,
+                std::int64_t,
+                std::conditional_t<
+                        K == AggregateKind::Avg || K == AggregateKind::Sum,
+                        double,
+                        FieldType // Max/Min preserve field type
+                        >>;
     };
 
-    template<AggregateKind K, typename FieldType>
+    template <AggregateKind K, typename FieldType>
     using aggregate_result_t = typename aggregate_result_type<K, FieldType>::type;
 
     // Simplified conversion with better compile-time optimization
-    template<typename To, typename From>
+    template <typename To, typename From>
     constexpr auto convert_value(const From& from) -> std::expected<To, std::string> {
         if constexpr (std::same_as<To, From>) {
             return from;
@@ -269,9 +267,9 @@ export namespace storm {
         }
 
         template <auto Field, AggregateKind Kind>
-        [[nodiscard]] constexpr auto execute_aggregate() noexcept
-                -> std::expected<aggregate_result_t<Kind, typename member_pointer_traits<decltype(Field)>::type>, std::string> {
-            using FieldType = typename member_pointer_traits<decltype(Field)>::type;
+        [[nodiscard]] constexpr auto execute_aggregate() noexcept -> std::
+                expected<aggregate_result_t<Kind, typename member_pointer_traits<decltype(Field)>::type>, std::string> {
+            using FieldType  = typename member_pointer_traits<decltype(Field)>::type;
             using ResultType = aggregate_result_t<Kind, FieldType>;
 
             // Compile-time validation
