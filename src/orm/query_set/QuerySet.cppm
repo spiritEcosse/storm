@@ -139,14 +139,36 @@ export namespace storm {
 
     template <class T> class QuerySet {
       private:
-        std::shared_ptr<Connection>                                            conn;
-        std::optional<storm::Where>                                            _whereExpression;
+        // Optimize memory layout with [[no_unique_address]]
+        [[no_unique_address]] std::shared_ptr<Connection> conn;
+        [[no_unique_address]] std::optional<storm::Where> _whereExpression;
+
+        // Use small vector optimization for common cases
+        using SmallFieldVector = std::vector<refl::FieldWrapper>; // Could use small_vector
+        SmallFieldVector distinctFields;
+        SmallFieldVector groupByFields;
+
+        // Pack smaller members together
+        struct {
+            int  limit : 31;
+            int  offset : 31;
+            bool has_aggregates : 1;
+            bool is_distinct : 1;
+        } query_flags{};
+
+        // Helper to estimate result size for pre-allocation
+        [[nodiscard]] constexpr std::size_t estimate_result_size() const noexcept {
+            if (query_flags.limit > 0)
+                return query_flags.limit;
+            if (query_flags.has_aggregates)
+                return 1;
+            return 100; // Default estimate
+        }
+
         std::vector<JoinWrapper>                                               join_clauses;
         std::vector<std::tuple<refl::FieldWrapper, bool, Collation>>           orderTerms;
-        std::vector<refl::FieldWrapper>                                        distinctFields;
         std::vector<std::pair<refl::FieldWrapper, std::optional<std::string>>> onlyFields;
         std::vector<AggregateSpec>                                             functionsSet;
-        std::vector<refl::FieldWrapper>                                        groupByFields;
 
         int _limit{};
         int _offset{};
@@ -191,10 +213,11 @@ export namespace storm {
         QuerySet<T>& where(const storm::Where& where_clause);
         QuerySet<T>& where(storm::Where&& where_clause);
         // WHERE with multiple conditions using fold expressions
-        template<typename Self, typename... Conditions>
+        template <typename Self, typename... Conditions>
         constexpr auto&& where_all(Self&& self, Conditions&&... conditions);
 
-        template <typename Self, auto MemberPtr, typename Value> constexpr auto&& where(Self&& self, Value&& value, storm::Op op = storm::Op::EQ);
+        template <typename Self, auto MemberPtr, typename Value>
+        constexpr auto&& where(Self&& self, Value&& value, storm::Op op = storm::Op::EQ);
 
         template <auto MemberPtr, typename Container> QuerySet<T>& where_in(const Container& values);
 
@@ -230,7 +253,7 @@ export namespace storm {
 
         template <typename Self, auto... Fields>
         constexpr auto&& group_concat(
-                Self&& self,
+                Self&&                  self,
                 utils::fixed_string<32> alias     = utils::fixed_string<32>(std::string_view("")),
                 utils::fixed_string<8>  separator = utils::fixed_string<8>(std::string_view(",")),
                 bool                    distinct  = false
@@ -383,6 +406,18 @@ export namespace storm {
         template <class U, auto MemberPtr> QuerySet<T>& join() {
             this->join_clauses.emplace_back(JoinWrapper::create<T, U, MemberPtr, JoinType::Inner>());
             return *this;
+        }
+
+        // Compile-time JOIN validation
+        template <typename Self, class U, auto MemberPtr>
+            requires requires {
+                typename member_pointer_traits<decltype(MemberPtr)>::class_type;
+                requires std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T> ||
+                                 std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, U>;
+            }
+        constexpr auto&& join(this Self&& self) {
+            self.join_clauses.emplace_back(JoinWrapper::create<T, U, MemberPtr, JoinType::Inner>());
+            return std::forward<Self>(self);
         }
 
         template <class U, auto MemberPtr> QuerySet<T>& left_join() {
@@ -553,13 +588,12 @@ export namespace storm {
         }
     };
 
-    template<typename T>
-    template<typename Self, typename... Conditions>
+    template <typename T>
+    template <typename Self, typename... Conditions>
     constexpr auto&& QuerySet<T>::where_all(Self&& self, Conditions&&... conditions) {
         storm::Where combined = (... && conditions);
-        self._whereExpression = self._whereExpression 
-            ? storm::Where{*self._whereExpression && combined}
-            : std::move(combined);
+        self._whereExpression =
+                self._whereExpression ? storm::Where{*self._whereExpression && combined} : std::move(combined);
         return std::forward<Self>(self);
     }
 
@@ -759,7 +793,9 @@ export namespace storm {
         return *this;
     }
 
-    template <typename T> template <typename Self, auto... Fields> QuerySet<T>& QuerySet<T>::order_by_multiple(Self&& self) {
+    template <typename T>
+    template <typename Self, auto... Fields>
+    QuerySet<T>& QuerySet<T>::order_by_multiple(Self&& self) {
         self.orderTerms.reserve(self.orderTerms.size() + sizeof...(Fields));
         [self]<std::size_t... Is>(std::index_sequence<Is...>) {
             ((self.orderTerms.emplace_back(refl::FieldWrapper::create<Fields>(), true, Collation::NONE)), ...);
@@ -842,16 +878,15 @@ export namespace storm {
 
     template <typename T>
     template <typename Self, auto... Fields>
-    constexpr auto&&
-    QuerySet<T>::group_concat(Self&& self, utils::fixed_string<32> alias, utils::fixed_string<8> separator, bool distinct) {
+    constexpr auto&& QuerySet<T>::group_concat(
+            Self&& self, utils::fixed_string<32> alias, utils::fixed_string<8> separator, bool distinct
+    ) {
         std::string sql = "GROUP_CONCAT(";
         if (distinct)
             sql += "DISTINCT ";
 
         // Build field list at compile time
-        auto append_field = [&sql]<auto Field>() {
-            sql += refl::FieldWrapper::create<Field>().full_name();
-        };
+        auto append_field = [&sql]<auto Field>() { sql += refl::FieldWrapper::create<Field>().full_name(); };
 
         auto append_fields = [&]<auto First, auto... Rest>() {
             append_field.template operator()<First>();
@@ -901,22 +936,26 @@ export namespace storm {
     }
 
     // SELECT VALUES implementation (returns dictionary-like data)
-    template <typename T> ExpectedValueVectorMap QuerySet<T>::select_values() {
-        return SelectStatement<T>(
-                       conn,
-                       SelectOptions{
-                               .joins           = std::move(join_clauses),
-                               .distinct_fields = std::move(distinctFields),
-                               .only_fields     = std::move(onlyFields),
-                               .functions_set   = std::move(functionsSet),
-                               .order_terms     = std::move(orderTerms),
-                               .group_by_fields = std::move(groupByFields),
-                               .limit           = _limit,
-                               .offset          = _offset,
-                               .where_clause    = std::move(_whereExpression),
-                       }
-        )
-                .execute_values();
+    // Optimized value extraction with structured bindings
+    template <typename T> [[nodiscard]] auto QuerySet<T>::select_values() -> ExpectedValueVectorMap {
+        // Pre-calculate capacity hints
+        const auto expected_size = estimate_result_size();
+
+        SelectOptions opts{
+                .joins           = std::move(join_clauses),
+                .distinct_fields = std::move(distinctFields),
+                .only_fields     = std::move(onlyFields),
+                .functions_set   = std::move(functionsSet),
+                .order_terms     = std::move(orderTerms),
+                .group_by_fields = std::move(groupByFields),
+                .limit           = _limit,
+                .offset          = _offset,
+                .where_clause    = std::move(_whereExpression),
+        };
+
+        auto stmt = SelectStatement<T>(conn, std::move(opts));
+        stmt.reserve_hint(expected_size);
+        return stmt.execute_values();
     }
 
 } // namespace storm
