@@ -252,7 +252,10 @@ export namespace storm {
         template <typename ReturnType>
         [[nodiscard]] auto execute_custom_aggregate(std::string_view sql, std::string_view error_context)
                 -> std::expected<ReturnType, std::string> {
-            SelectOptions opts{.functions_set = {AggregateSpec::custom_sql(sql)}, .where_clause = _whereExpression};
+            SelectOptions opts{
+                    .functions_set = {AggregateSpec::custom_sql(sql)},
+                    .where_clause  = std::move(_whereExpression),
+            };
 
             auto result = SelectStatement<T>(conn, std::move(opts)).execute_values();
             if (!result) [[unlikely]]
@@ -292,7 +295,10 @@ export namespace storm {
             };
 
             // Execute with minimal allocations
-            SelectOptions opts{.functions_set = {make_spec()}, .where_clause = _whereExpression};
+            SelectOptions opts{
+                    .functions_set = {make_spec()},
+                    .where_clause  = std::move(_whereExpression),
+            };
 
             auto result = SelectStatement<T>(conn, std::move(opts)).execute_values();
             if (!result) [[unlikely]]
