@@ -199,15 +199,30 @@ export namespace storm {
         QuerySet<T>& offset(int offset_value);
 
         // Aggregate functions
-        template <auto Field> QuerySet<T>& max(std::string_view alias = "");
+        template <auto Field> QuerySet<T>& max(std::string_view alias = "") noexcept {
+            functionsSet.emplace_back(AggregateSpec::max<Field>(alias));
+            return *this;
+        }
 
-        template <auto Field> QuerySet<T>& min(std::string_view alias = "");
+        template <auto Field> QuerySet<T>& min(std::string_view alias = "") noexcept {
+            functionsSet.emplace_back(AggregateSpec::min<Field>(alias));
+            return *this;
+        }
 
-        template <auto Field> QuerySet<T>& avg(std::string_view alias = "");
+        template <auto Field> QuerySet<T>& avg(std::string_view alias = "") noexcept {
+            functionsSet.emplace_back(AggregateSpec::avg<Field>(alias));
+            return *this;
+        }
 
-        template <auto Field> QuerySet<T>& count(std::string_view alias = "");
+        template <auto Field> QuerySet<T>& count(std::string_view alias = "") noexcept {
+            functionsSet.emplace_back(AggregateSpec::count<Field>(alias));
+            return *this;
+        }
 
-        template <auto Field> QuerySet<T>& sum(std::string_view alias = "");
+        template <auto Field> QuerySet<T>& sum(std::string_view alias = "") noexcept {
+            functionsSet.emplace_back(AggregateSpec::sum<Field>(alias));
+            return *this;
+        }
 
         // Aggregate value methods that return direct values instead of QuerySet
         template <auto Field> [[nodiscard]] constexpr auto max_value() noexcept {
@@ -725,32 +740,6 @@ export namespace storm {
         function_str += std::format(", '{}' ) AS {}", separator, actual_alias);
 
         functions(AggregateSpec::custom_sql(function_str));
-        return *this;
-    }
-
-    // AGGREGATE FUNCTIONS implementation
-    template <typename T> template <auto Field> QuerySet<T>& QuerySet<T>::max(std::string_view alias) {
-        functionsSet.emplace_back(AggregateSpec::max<Field>(alias));
-        return *this;
-    }
-
-    template <typename T> template <auto Field> QuerySet<T>& QuerySet<T>::min(std::string_view alias) {
-        functionsSet.emplace_back(AggregateSpec::min<Field>(alias));
-        return *this;
-    }
-
-    template <typename T> template <auto Field> QuerySet<T>& QuerySet<T>::avg(std::string_view alias) {
-        functionsSet.emplace_back(AggregateSpec::avg<Field>(alias));
-        return *this;
-    }
-
-    template <typename T> template <auto Field> QuerySet<T>& QuerySet<T>::count(std::string_view alias) {
-        functionsSet.emplace_back(AggregateSpec::count<Field>(alias));
-        return *this;
-    }
-
-    template <typename T> template <auto Field> QuerySet<T>& QuerySet<T>::sum(std::string_view alias) {
-        functionsSet.emplace_back(AggregateSpec::sum<Field>(alias));
         return *this;
     }
 
