@@ -29,14 +29,14 @@ export namespace storm {
             constexpr auto rhs_table = refl::reflect<Rhs>::get_struct_name();
             // Extract simple field name at compile time using reflection utilities
             constexpr auto rhs_field    = refl::FieldMember<MemberPtr>::get_field_name();
-            constexpr auto rhs_table_lc = storm::utils::to_lower_ct(rhs_table);
+            constexpr auto rhs_table_lc = rhs_table.transform(utils::transforms::to_lower);
 
             // Create left field name using factory function
             constexpr auto lhs_field = make_fixed_string(rhs_table_lc.view(), "_", rhs_field);
 
             // Create quoted field names
-            const auto lhs_full_q = storm::utils::formatFieldName(lhs_table, lhs_field.view());
-            const auto rhs_full_q = storm::utils::formatFieldName(rhs_table, rhs_field);
+            const auto lhs_full_q = utils::formatFieldName(lhs_table, lhs_field.view());
+            const auto rhs_full_q = utils::formatFieldName(rhs_table, rhs_field);
 
             // Build complete clause
             constexpr auto join_kw = (Type == JoinType::Inner) ? "INNER JOIN" : "LEFT JOIN";
@@ -78,7 +78,7 @@ export namespace storm {
             static constexpr auto rhs_table_name = refl::reflect<Rhs>::get_struct_name();
             // Use FieldMember to get simple field name at compile time
             static constexpr auto rhs_field_name = refl::FieldMember<MemberPtr>::get_field_name();
-            static constexpr auto rhs_table_lc   = storm::utils::to_lower_ct(rhs_table_name);
+            static constexpr auto rhs_table_lc   = rhs_table_name.transform(utils::transforms::to_lower);
             static constexpr auto lhs_field_name = make_fixed_string(rhs_table_lc.view(), "_", rhs_field_name);
 
             // Store references to static compile-time strings

@@ -253,11 +253,7 @@ export namespace storm {
 
         // In class declaration:
         template <typename Self, bool Distinct = false, auto... Fields>
-        consteval auto&& group_concat(
-                Self&&                  self,
-                utils::fixed_string<32> alias     = utils::fixed_string<32>(std::string_view("")),
-                utils::fixed_string<8>  separator = utils::fixed_string<8>(std::string_view(","))
-        );
+        consteval auto&& group_concat(Self&& self, utils::fixed_string<32> alias = "", utils::fixed_string<8> separator = ",");
 
         // Overload with ORDER BY for multiple fields - requires explicit
         // specification
@@ -880,20 +876,26 @@ export namespace storm {
     template <typename Self, bool Distinct, auto... Fields>
     consteval auto&&
     QuerySet<T>::group_concat(Self&& self, utils::fixed_string<32> alias, utils::fixed_string<8> separator) {
-        // Build complete SQL at compile time
-        constexpr auto sql = []() {
-            constexpr auto fields = []() {
-                if constexpr (sizeof...(Fields) == 0) {
-                    return utils::make_fixed_string("");
-                }
-                return utils::join(Fields..., ", ");
-            }();
-
-            if constexpr (Distinct) {
-                return utils::concat_ct("GROUP_CONCAT(DISTINCT ", fields, ")");
-            }
-            return utils::concat_ct("GROUP_CONCAT(", fields, ")");
-        }();
+        constexpr auto sql = utils::make_string_builder<256>()
+                                     .append("GROUP_CONCAT(")
+                                     .append(Distinct ? "DISTINCT " : "")
+                                     .append([]() {
+                                         if constexpr (sizeof...(Fields) == 0) {
+                                             return utils::fixed_string<1>{"*"};
+                                         } else {
+                                             return utils::join_with(", ", utils::formatFieldName("", Fields)...);
+                                         }
+                                     }())
+                                     .append(" SEPARATOR '")
+                                     .append(separator)
+                                     .append("')")
+                                     .and_then([&](auto builder) {
+                                         if (alias.size() > 0) {
+                                             return builder.append(" AS \"").append(alias).append("\"");
+                                         }
+                                         return builder;
+                                     })
+                                     .build();
 
         self.functionsSet.emplace_back(AggregateSpec::custom_sql(sql.view()));
         return std::forward<Self>(self);

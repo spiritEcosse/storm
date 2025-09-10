@@ -496,7 +496,7 @@ export namespace refl {
     template <auto MemberPtr> consteval auto get_full_field_name() {
         // Use make_reflection instead of operator^
         using ClassType = typename meta::member_pointer_traits<decltype(MemberPtr)>::class_type;
-        return storm::utils::make_fixed_string(reflect<ClassType>::get_struct_name(), ".", get_field_name<MemberPtr>());
+        return storm::utils::formatFieldName(reflect<ClassType>::get_struct_name(), get_field_name<MemberPtr>());
     }
 
     // FieldMember struct for type-safe member pointer storage
