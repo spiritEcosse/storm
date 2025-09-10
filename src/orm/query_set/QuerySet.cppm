@@ -253,7 +253,7 @@ export namespace storm {
 
         // In class declaration:
         template <typename Self, bool Distinct = false, auto... Fields>
-        constexpr auto&& group_concat(
+        consteval auto&& group_concat(
                 Self&&                  self,
                 utils::fixed_string<32> alias     = utils::fixed_string<32>(std::string_view("")),
                 utils::fixed_string<8>  separator = utils::fixed_string<8>(std::string_view(","))
@@ -878,7 +878,7 @@ export namespace storm {
 
     template <typename T>
     template <typename Self, bool Distinct, auto... Fields>
-    constexpr auto&&
+    consteval auto&&
     QuerySet<T>::group_concat(Self&& self, utils::fixed_string<32> alias, utils::fixed_string<8> separator) {
         // Build complete SQL at compile time
         constexpr auto sql = []() {
