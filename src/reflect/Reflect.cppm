@@ -5,7 +5,7 @@ export module storm.reflect;
 import storm.utils;
 import storm.core_types;
 
-// Import standard header units
+// Import standard header units (C++26 ready)
 import <vector>;
 import <string>;
 import <string_view>;
@@ -26,6 +26,7 @@ import <array>;
 import <optional>;
 import <format>;
 import <variant>;
+// import <meta>; // C++26 static reflection - not available yet
 
 // ============================================================================
 // CONCEPTS FOR STATEMENT BINDING
@@ -198,44 +199,81 @@ export namespace refl {
 // UTILITY FUNCTIONS (OUTSIDE NAMESPACE)
 // ============================================================================
 
-namespace std::meta {
+// C++26-ready static reflection (transition implementation)
+// TODO: Replace with std::meta when C++26 compilers are available
 
-    // Mock reflection type - represents a reflected entity
+namespace std::meta {
+    // Transition implementation - will be replaced with actual C++26 std::meta
     struct info {
         const char* name;
-        constexpr info(const char* n) : name(n) {}
+        consteval info(const char* n) : name(n) {}
     };
 
-    // Mock name_of function - extracts name from reflection info
-    constexpr std::string_view name_of(info reflected) {
+    // C++26-style API (transition)
+    template <auto MemberPtr> consteval std::string_view extract_field_name_impl() {
+        constexpr std::string_view full_name = __PRETTY_FUNCTION__;
+
+        // C++26 compile-time string parsing for member names
+        constexpr auto find_last_double_colon = [](std::string_view str) constexpr -> std::size_t {
+            std::size_t last_pos = std::string_view::npos;
+            for (std::size_t i = 0; i + 1 < str.size(); ++i) {
+                if (str[i] == ':' && str[i + 1] == ':') {
+                    last_pos = i + 2;
+                }
+            }
+            return last_pos;
+        };
+
+        constexpr std::size_t name_start   = find_last_double_colon(full_name);
+        constexpr std::size_t actual_start = (name_start != std::string_view::npos) ? name_start : 0;
+
+        // Find end of member name (before any template parameters or closing brackets)
+        constexpr auto find_end = [](std::string_view str, std::size_t start) constexpr -> std::size_t {
+            for (std::size_t i = start; i < str.size(); ++i) {
+                if (str[i] == ']' || str[i] == '>' || str[i] == ' ' || str[i] == ')') {
+                    return i;
+                }
+            }
+            return str.size();
+        };
+
+        constexpr std::size_t name_end = find_end(full_name, actual_start);
+        constexpr std::size_t length   = name_end - actual_start;
+
+        if constexpr (actual_start < full_name.size() && length > 0) {
+            return full_name.substr(actual_start, length);
+        } else {
+            return "unknown_field";
+        }
+    }
+
+    consteval std::string_view name_of(info reflected) {
         return std::string_view(reflected.name);
+    }
+
+    // C++26-style API (transition)
+    template <auto MemberPtr> consteval info reflect(auto) {
+        return info{extract_field_name_impl<MemberPtr>()};
+    }
+
+    template <typename T> consteval info reflect_type() {
+        return info{__PRETTY_FUNCTION__}; // Will extract type name
     }
 } // namespace std::meta
 
-// Helper function to extract member name from function signature
-constexpr const char* extract_member_name_from_signature(const char* signature) {
-    const char* ptr        = signature;
-    const char* last_colon = nullptr;
-
-    // Find last "::" before the closing bracket/comma
-    while (*ptr) {
-        if (*ptr == ':' && *(ptr + 1) == ':') {
-            last_colon = ptr + 2;
-        }
-        if (*ptr == '>' || *ptr == ']' || *ptr == ')') {
-            break;
-        }
-        ptr++;
-    }
-
-    return last_colon ? last_colon : "unknown_field";
+// C++26-ready static reflection helpers
+template <auto MemberPtr> consteval std::meta::info make_reflection() {
+    return std::meta::reflect<MemberPtr>(MemberPtr);
 }
 
-// Mock reflection helper - creates reflection info from member pointer
-template <auto MemberPtr> constexpr std::meta::info make_reflection() {
-    constexpr const char*        func_name   = __PRETTY_FUNCTION__;
-    static constexpr const char* member_name = extract_member_name_from_signature(func_name);
-    return std::meta::info{member_name};
+// C++26-ready compile-time field name extraction
+template <auto MemberPtr> consteval std::string_view extract_field_name() {
+    return std::meta::name_of(make_reflection<MemberPtr>());
+}
+
+// C++26-ready compile-time class name extraction
+template <typename T> consteval std::string_view extract_class_name() {
+    return std::meta::name_of(std::meta::reflect_type<T>());
 }
 
 export namespace refl {

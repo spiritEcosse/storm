@@ -14,7 +14,7 @@ import storm.type_traits; // for member_pointer_traits
 
 export namespace storm {
 
-    enum class JoinType { Inner, Left };
+    enum class JoinType { Inner, Left, Right, Full };
 
     // Compile-time join information structure
     template <typename Lhs, typename Rhs, auto MemberPtr, JoinType Type> struct CtJoinInfo {
@@ -38,8 +38,21 @@ export namespace storm {
             const auto lhs_full_q = utils::formatFieldName(lhs_table, lhs_field.view());
             const auto rhs_full_q = utils::formatFieldName(rhs_table, rhs_field);
 
-            // Build complete clause
-            constexpr auto join_kw = (Type == JoinType::Inner) ? "INNER JOIN" : "LEFT JOIN";
+            // Build complete clause with C++26 constexpr switch
+            constexpr auto join_kw = []() constexpr {
+                switch (Type) {
+                case JoinType::Inner:
+                    return "INNER JOIN";
+                case JoinType::Left:
+                    return "LEFT JOIN";
+                case JoinType::Right:
+                    return "RIGHT JOIN";
+                case JoinType::Full:
+                    return "FULL OUTER JOIN";
+                default:
+                    return "INNER JOIN";
+                }
+            }();
             return make_fixed_string(join_kw, " ", rhs_table, " ON ", lhs_full_q.view(), " = ", rhs_full_q.view());
         }
 
