@@ -210,8 +210,8 @@ export namespace storm {
         QuerySet& operator=(QuerySet&& other) noexcept = default;
 
         // WHERE API (declarations)
-        QuerySet<T>& where(const storm::Where& where_clause);
-        QuerySet<T>& where(storm::Where&& where_clause);
+        template <typename Self> auto&& where(this Self&& self, const storm::Where& where_clause);
+        template <typename Self> auto&& where(this Self&& self, storm::Where&& where_clause);
         // WHERE with multiple conditions using fold expressions
         template <typename Self, typename... Conditions>
         constexpr auto&& where_all(Self&& self, Conditions&&... conditions);
@@ -219,37 +219,37 @@ export namespace storm {
         template <typename Self, auto MemberPtr, typename Value>
         constexpr auto&& where(Self&& self, Value&& value, storm::Op op = storm::Op::EQ);
 
-        template <auto MemberPtr, typename Container> QuerySet<T>& where_in(const Container& values);
+        template <typename Self, auto MemberPtr, typename Container> auto&& where_in(this Self&& self, const Container& values);
 
-        template <auto MemberPtr, typename Value> QuerySet<T>& where_like(Value&& pattern);
+        template <typename Self, auto MemberPtr, typename Value> auto&& where_like(this Self&& self, Value&& pattern);
 
-        template <auto MemberPtr, typename T1, typename T2> QuerySet<T>& where_between(T1&& value1, T2&& value2);
+        template <typename Self, auto MemberPtr, typename T1, typename T2> auto&& where_between(this Self&& self, T1&& value1, T2&& value2);
 
-        template <auto MemberPtr> QuerySet<T>& where_not_null();
+        template <typename Self, auto MemberPtr> auto&& where_not_null(this Self&& self);
 
-        template <auto MemberPtr> QuerySet<T>& where_is_null();
+        template <typename Self, auto MemberPtr> auto&& where_is_null(this Self&& self);
 
         // ORDER BY API (declarations)
         // Single field
-        template <auto Field, Collation CollationType = Collation::NONE> QuerySet<T>& order_by();
+        template <typename Self, auto Field, Collation CollationType = Collation::NONE> auto&& order_by(this Self&& self);
 
         // Multiple fields
-        template <typename Self, auto... Fields> QuerySet<T>& order_by_multiple(Self&& self);
+        template <typename Self, auto... Fields> auto&& order_by_multiple(this Self&& self);
 
         // Multiple field-direction pairs
-        template <auto Field, auto Direction, auto... Rest> QuerySet<T>& order_by_mixed();
+        template <typename Self, auto Field, auto Direction, auto... Rest> auto&& order_by_mixed(this Self&& self);
 
-        // With collation support
-        template <auto Field, auto Direction, auto Coll, auto... Rest> QuerySet<T>& order_by_full();
+        // Full control: field-direction-collation triplets
+        template <typename Self, auto Field, auto Direction, auto Coll, auto... Rest> auto&& order_by_full(this Self&& self);
 
         // DISTINCT API (declarations)
-        template <auto... Fields> QuerySet<T>& distinct();
+        template <typename Self, auto... Fields> auto&& distinct(this Self&& self);
 
         // ONLY API (declarations)
-        template <auto... Fields> QuerySet<T>& only(const std::optional<std::string>& alias = std::nullopt);
+        template <typename Self, auto... Fields> auto&& only(this Self&& self, const std::optional<std::string>& alias = std::nullopt);
 
         // GROUP BY API (declarations)
-        template <auto... Fields> QuerySet<T>& group_by();
+        template <typename Self, auto... Fields> auto&& group_by(this Self&& self);
 
         // In class declaration:
         template <typename Self, bool Distinct = false, auto... Fields>
@@ -257,41 +257,42 @@ export namespace storm {
 
         // Overload with ORDER BY for multiple fields - requires explicit
         // specification
-        template <auto OrderField, auto FirstField, auto... RestFields>
-        QuerySet<T>& group_concat_order(
+        template <typename Self, auto OrderField, auto FirstField, auto... RestFields>
+        auto&& group_concat_order(
+                this Self&& self,
                 std::string_view alias          = "",
                 std::string_view separator      = ",",
                 std::string_view fieldSeparator = " ",
                 bool             distinct       = false
         );
 
-        QuerySet<T>& limit(int limit_value);
-        QuerySet<T>& offset(int offset_value);
+        template <typename Self> auto&& limit(this Self&& self, int limit_value);
+        template <typename Self> auto&& offset(this Self&& self, int offset_value);
 
         // Aggregate functions
-        template <auto Field> QuerySet<T>& max(std::string_view alias = "") noexcept {
-            functionsSet.emplace_back(AggregateSpec::max<Field>(alias));
-            return *this;
+        template <typename Self, auto Field> auto&& max(this Self&& self, std::string_view alias = "") noexcept {
+            self.functionsSet.emplace_back(AggregateSpec::max<Field>(alias));
+            return std::forward<Self>(self);
         }
 
-        template <auto Field> QuerySet<T>& min(std::string_view alias = "") noexcept {
-            functionsSet.emplace_back(AggregateSpec::min<Field>(alias));
-            return *this;
+        template <typename Self, auto Field> auto&& min(this Self&& self, std::string_view alias = "") noexcept {
+            self.functionsSet.emplace_back(AggregateSpec::min<Field>(alias));
+            return std::forward<Self>(self);
         }
 
-        template <auto Field> QuerySet<T>& avg(std::string_view alias = "") noexcept {
-            functionsSet.emplace_back(AggregateSpec::avg<Field>(alias));
-            return *this;
+        template <typename Self, auto Field> auto&& avg(this Self&& self, std::string_view alias = "") noexcept {
+            self.functionsSet.emplace_back(AggregateSpec::avg<Field>(alias));
+            return std::forward<Self>(self);
         }
 
-        template <auto Field> QuerySet<T>& count(std::string_view alias = "") noexcept {
-            functionsSet.emplace_back(AggregateSpec::count<Field>(alias));
-            return *this;
+        template <typename Self, auto Field> auto&& count(this Self&& self, std::string_view alias = "") noexcept {
+            self.functionsSet.emplace_back(AggregateSpec::count<Field>(alias));
+            return std::forward<Self>(self);
         }
 
-        template <auto Field> QuerySet<T>& sum(std::string_view alias = "") noexcept {
-            functionsSet.emplace_back(AggregateSpec::sum<Field>(alias));
-            return *this;
+        template <typename Self, auto Field> auto&& sum(this Self&& self, std::string_view alias = "") noexcept {
+            self.functionsSet.emplace_back(AggregateSpec::sum<Field>(alias));
+            return std::forward<Self>(self);
         }
 
         // Aggregate value methods that return direct values instead of QuerySet
@@ -396,12 +397,12 @@ export namespace storm {
         }
 
         // FUNCTIONS API (declarations)
-        template <typename... Args> QuerySet<T>& functions(Args&&... args);
+        template <typename Self, typename... Args> auto&& functions(this Self&& self, Args&&... args);
 
         // JOIN API: append compile-time clause views and return self
-        template <class U, auto MemberPtr> QuerySet<T>& join() {
-            this->join_clauses.emplace_back(JoinWrapper::create<T, U, MemberPtr, JoinType::Inner>());
-            return *this;
+        template <typename Self, class U, auto MemberPtr> auto&& join(this Self&& self) {
+            self.join_clauses.emplace_back(JoinWrapper::create<T, U, MemberPtr, JoinType::Inner>());
+            return std::forward<Self>(self);
         }
 
         // Compile-time JOIN validation
@@ -416,9 +417,9 @@ export namespace storm {
             return std::forward<Self>(self);
         }
 
-        template <class U, auto MemberPtr> QuerySet<T>& left_join() {
-            this->join_clauses.emplace_back(JoinWrapper::create<T, U, MemberPtr, JoinType::Left>());
-            return *this;
+        template <typename Self, class U, auto MemberPtr> auto&& left_join(this Self&& self) {
+            self.join_clauses.emplace_back(JoinWrapper::create<T, U, MemberPtr, JoinType::Left>());
+            return std::forward<Self>(self);
         }
 
         // REMOVE API (declarations)
@@ -555,9 +556,9 @@ export namespace storm {
             return {actual_alias, field_expr};
         }
 
-        template <auto OrderField, auto FirstField, auto... RestFields>
-        QuerySet<T>& group_concat_with_order_impl(
-                std::string_view alias, std::string_view separator, std::string_view fieldSeparator, bool distinct
+        template <typename Self, auto OrderField, auto FirstField, auto... RestFields>
+        auto&& group_concat_with_order_impl(
+                this Self&& self, std::string_view alias, std::string_view separator, std::string_view fieldSeparator, bool distinct
         );
 
         template <auto FirstField, auto... RestFields>
@@ -593,23 +594,17 @@ export namespace storm {
         return std::forward<Self>(self);
     }
 
-    template <typename T> QuerySet<T>& QuerySet<T>::where(const storm::Where& where_clause) {
-        if (this->_whereExpression) {
+    // WHERE API implementation
+    template <typename T> 
+    template <typename Self> 
+    auto&& QuerySet<T>::where(this Self&& self, const storm::Where& where_clause) {
+        if (self._whereExpression) {
             // Combine with existing WHERE using AND
-            this->_whereExpression = storm::Where{*this->_whereExpression && where_clause};
+            self._whereExpression = storm::Where{*self._whereExpression && where_clause};
         } else {
-            this->_whereExpression = where_clause;
+            self._whereExpression = where_clause;
         }
-        return *this;
-    }
-
-    template <typename T> QuerySet<T>& QuerySet<T>::where(storm::Where&& where_clause) {
-        if (this->_whereExpression) {
-            this->_whereExpression = storm::Where{*this->_whereExpression && where_clause};
-        } else {
-            this->_whereExpression = std::move(where_clause);
-        }
-        return *this;
+        return std::forward<Self>(self);
     }
 
     template <typename T>
@@ -623,42 +618,42 @@ export namespace storm {
     }
 
     template <typename T>
-    template <auto MemberPtr, typename Container>
-    QuerySet<T>& QuerySet<T>::where_in(const Container& values) {
+    template <typename Self, auto MemberPtr, typename Container>
+    auto&& QuerySet<T>::where_in(this Self&& self, const Container& values) {
         // Create a field object using the compile-time member pointer
         auto         field_obj = Field<MemberPtr>();
-        storm::Where condition = create_in_condition(field_obj, values);
-        return where(std::move(condition));
+        storm::Where condition = self.create_in_condition(field_obj, values);
+        return self.where(std::move(condition));
     }
 
     template <typename T>
-    template <auto MemberPtr, typename Value>
-    QuerySet<T>& QuerySet<T>::where_like(Value&& pattern) {
+    template <typename Self, auto MemberPtr, typename Value>
+    auto&& QuerySet<T>::where_like(this Self&& self, Value&& pattern) {
         auto         field_obj = Field<MemberPtr>();
         storm::Where condition = field_obj.like(std::forward<Value>(pattern));
-        return where(std::move(condition));
+        return self.where(std::move(condition));
     }
 
     template <typename T>
-    template <auto MemberPtr, typename T1, typename T2>
-    QuerySet<T>& QuerySet<T>::where_between(T1&& value1, T2&& value2) {
+    template <typename Self, auto MemberPtr, typename T1, typename T2>
+    auto&& QuerySet<T>::where_between(this Self&& self, T1&& value1, T2&& value2) {
         // Create a field object using the compile-time member pointer
         auto field_obj = Field<MemberPtr>();
         // Use the between() method of the Field class
         storm::Where condition = field_obj.between(std::forward<T1>(value1), std::forward<T2>(value2));
-        return where(std::move(condition));
+        return self.where(std::move(condition));
     }
 
-    template <typename T> template <auto MemberPtr> QuerySet<T>& QuerySet<T>::where_not_null() {
+    template <typename T> template <typename Self, auto MemberPtr> auto&& QuerySet<T>::where_not_null(this Self&& self) {
         auto         field_obj = Field<MemberPtr>();
         storm::Where condition = field_obj.is_not_null();
-        return where(std::move(condition));
+        return self.where(std::move(condition));
     }
 
-    template <typename T> template <auto MemberPtr> QuerySet<T>& QuerySet<T>::where_is_null() {
+    template <typename T> template <typename Self, auto MemberPtr> auto&& QuerySet<T>::where_is_null(this Self&& self) {
         auto         field_obj = Field<MemberPtr>();
         storm::Where condition = field_obj.is_null();
-        return where(std::move(condition));
+        return self.where(std::move(condition));
     }
 
     // UPDATE implementation
@@ -741,59 +736,59 @@ export namespace storm {
     }
 
     // DISTINCT implementation
-    template <typename T> template <auto... Fields> QuerySet<T>& QuerySet<T>::distinct() {
-        distinctFields.reserve(distinctFields.size() + sizeof...(Fields));
-        (distinctFields.emplace_back(Fields), ...);
-        return *this;
-    }
-
-    template <typename T>
-    template <auto... Fields>
-    QuerySet<T>& QuerySet<T>::only(const std::optional<std::string>& alias) {
-        onlyFields.reserve(onlyFields.size() + sizeof...(Fields));
-        (onlyFields.emplace_back(Fields, alias), ...);
-        return *this;
-    }
-
-    // GROUP BY implementation
-    template <typename T> template <auto... Fields> QuerySet<T>& QuerySet<T>::group_by() {
-        groupByFields.reserve(groupByFields.size() + sizeof...(Fields));
-        ((groupByFields.emplace_back(refl::FieldWrapper::create<Fields>())), ...);
-        return *this;
-    }
-
-    // LIMIT/OFFSET implementation
-    template <typename T> QuerySet<T>& QuerySet<T>::limit(int limit_value) {
-        _limit = limit_value;
-        return *this;
-    }
-
-    template <typename T> QuerySet<T>& QuerySet<T>::offset(int offset_value) {
-        _offset = offset_value;
-        return *this;
-    }
-
-    // Functions method implementation
-    template <typename T> template <typename... Args> QuerySet<T>& QuerySet<T>::functions(Args&&... args) {
-        // Reserve capacity
-        this->functionsSet.reserve(functionsSet.size() + sizeof...(Args));
-
-        // Process each function using fold expression
-        (functionsSet.emplace_back(std::forward<Args>(args)), ...);
-        return *this;
-    }
-
-    // ORDER BY implementations
-    template <typename T> template <auto Field, Collation CollationType> QuerySet<T>& QuerySet<T>::order_by() {
-        orderTerms.emplace_back(refl::FieldWrapper::create<Field>(), true, CollationType);
-        return *this;
+    template <typename T> template <typename Self, auto... Fields> auto&& QuerySet<T>::distinct(this Self&& self) {
+        self.distinctFields.reserve(self.distinctFields.size() + sizeof...(Fields));
+        (self.distinctFields.emplace_back(Fields), ...);
+        return std::forward<Self>(self);
     }
 
     template <typename T>
     template <typename Self, auto... Fields>
-    QuerySet<T>& QuerySet<T>::order_by_multiple(Self&& self) {
+    auto&& QuerySet<T>::only(this Self&& self, const std::optional<std::string>& alias) {
+        self.onlyFields.reserve(self.onlyFields.size() + sizeof...(Fields));
+        (self.onlyFields.emplace_back(Fields, alias), ...);
+        return std::forward<Self>(self);
+    }
+
+    // GROUP BY implementation
+    template <typename T> template <typename Self, auto... Fields> auto&& QuerySet<T>::group_by(this Self&& self) {
+        self.groupByFields.reserve(self.groupByFields.size() + sizeof...(Fields));
+        ((self.groupByFields.emplace_back(refl::FieldWrapper::create<Fields>())), ...);
+        return std::forward<Self>(self);
+    }
+
+    // LIMIT/OFFSET implementation
+    template <typename T> template <typename Self> auto&& QuerySet<T>::limit(this Self&& self, int limit_value) {
+        self._limit = limit_value;
+        return std::forward<Self>(self);
+    }
+
+    template <typename T> template <typename Self> auto&& QuerySet<T>::offset(this Self&& self, int offset_value) {
+        self._offset = offset_value;
+        return std::forward<Self>(self);
+    }
+
+    // Functions method implementation
+    template <typename T> template <typename Self, typename... Args> auto&& QuerySet<T>::functions(this Self&& self, Args&&... args) {
+        // Reserve capacity
+        self.functionsSet.reserve(self.functionsSet.size() + sizeof...(Args));
+
+        // Process each function using fold expression
+        (self.functionsSet.emplace_back(std::forward<Args>(args)), ...);
+        return std::forward<Self>(self);
+    }
+
+    // ORDER BY implementations
+    template <typename T> template <typename Self, auto Field, Collation CollationType> auto&& QuerySet<T>::order_by(this Self&& self) {
+        self.orderTerms.emplace_back(refl::FieldWrapper::create<Field>(), true, CollationType);
+        return std::forward<Self>(self);
+    }
+
+    template <typename T>
+    template <typename Self, auto... Fields>
+    auto&& QuerySet<T>::order_by_multiple(this Self&& self) {
         self.orderTerms.reserve(self.orderTerms.size() + sizeof...(Fields));
-        [self]<std::size_t... Is>(std::index_sequence<Is...>) {
+        [&self]<std::size_t... Is>(std::index_sequence<Is...>) {
             ((self.orderTerms.emplace_back(refl::FieldWrapper::create<Fields>(), true, Collation::NONE)), ...);
         }(std::make_index_sequence<sizeof...(Fields)>{});
         return std::forward<Self>(self);
@@ -801,22 +796,23 @@ export namespace storm {
 
     // Modern compile-time version for multiple field-direction pairs
     template <typename T>
-    template <auto Field, auto Direction, auto... Rest>
-    QuerySet<T>& QuerySet<T>::order_by_mixed() {
+    template <typename Self, auto Field, auto Direction, auto... Rest>
+    auto&& QuerySet<T>::order_by_mixed(this Self&& self) {
         static_assert(std::is_same_v<decltype(Direction), bool>, "Direction must be a boolean value");
         static_assert(sizeof...(Rest) % 2 == 0, "Must provide field-direction pairs");
-        orderTerms.reserve(orderTerms.size() + (sizeof...(Rest) / 2 + 1));
-        orderTerms.emplace_back(refl::FieldWrapper::create<Field>(), Direction, Collation::NONE);
+        self.orderTerms.reserve(self.orderTerms.size() + (sizeof...(Rest) / 2 + 1));
+        self.orderTerms.emplace_back(refl::FieldWrapper::create<Field>(), Direction, Collation::NONE);
         if constexpr (sizeof...(Rest) > 0) {
-            order_by_mixed<Rest...>();
+            return self.template order_by_mixed<Rest...>();
+        } else {
+            return std::forward<Self>(self);
         }
-        return *this;
     }
 
     // Modern compile-time version with collation support
     template <typename T>
-    template <auto Field, auto Direction, auto Coll, auto... Rest>
-    QuerySet<T>& QuerySet<T>::order_by_full() {
+    template <typename Self, auto Field, auto Direction, auto Coll, auto... Rest>
+    auto&& QuerySet<T>::order_by_full(this Self&& self) {
         static_assert(std::is_same_v<decltype(Direction), bool>, "Direction must be a boolean value");
         static_assert(std::is_same_v<decltype(Coll), Collation>, "Collation must be a Collation enum value");
         static_assert(
@@ -825,35 +821,35 @@ export namespace storm {
                 "collation, ...)"
         );
 
-        this->orderTerms.reserve(this->orderTerms.size() + (sizeof...(Rest) / 3 + 1));
-        this->orderTerms.emplace_back(refl::FieldWrapper::create<Field>(), Direction, Coll);
+        self.orderTerms.reserve(self.orderTerms.size() + (sizeof...(Rest) / 3 + 1));
+        self.orderTerms.emplace_back(refl::FieldWrapper::create<Field>(), Direction, Coll);
 
         if constexpr (sizeof...(Rest) > 0) {
-            order_by_full<Rest...>();
+            return self.template order_by_full<Rest...>();
         }
 
-        return *this;
+        return std::forward<Self>(self);
     }
 
     // GROUP_CONCAT_ORDER implementation
     template <typename T>
-    template <auto OrderField, auto FirstField, auto... RestFields>
-    QuerySet<T>& QuerySet<T>::group_concat_order(
-            std::string_view alias, std::string_view separator, std::string_view fieldSeparator, bool distinct
+    template <typename Self, auto OrderField, auto FirstField, auto... RestFields>
+    auto&& QuerySet<T>::group_concat_order(
+            this Self&& self, std::string_view alias, std::string_view separator, std::string_view fieldSeparator, bool distinct
     ) {
-        return group_concat_with_order_impl<OrderField, FirstField, RestFields...>(
+        return self.template group_concat_with_order_impl<OrderField, FirstField, RestFields...>(
                 alias, separator, fieldSeparator, distinct
         );
     }
 
     template <typename T>
-    template <auto OrderField, auto FirstField, auto... RestFields>
-    QuerySet<T>& QuerySet<T>::group_concat_with_order_impl(
-            std::string_view alias, std::string_view separator, std::string_view fieldSeparator, bool distinct
+    template <typename Self, auto OrderField, auto FirstField, auto... RestFields>
+    auto&& QuerySet<T>::group_concat_with_order_impl(
+            this Self&& self, std::string_view alias, std::string_view separator, std::string_view fieldSeparator, bool distinct
     ) {
         static_assert(std::is_member_pointer_v<decltype(OrderField)>, "OrderField must be a member pointer");
 
-        auto [actual_alias, field_expr] = prepare_group_concat<FirstField, RestFields...>(alias, fieldSeparator);
+        auto [actual_alias, field_expr] = self.template prepare_group_concat<FirstField, RestFields...>(alias, fieldSeparator);
 
         auto orderDesc = make_field_desc<OrderField>();
 
@@ -868,8 +864,8 @@ export namespace storm {
         function_str += std::format(" ORDER BY {}", orderDesc.full_name());
         function_str += std::format(", '{}' ) AS {}", separator, actual_alias);
 
-        functions(AggregateSpec::custom_sql(function_str));
-        return *this;
+        self.functions(AggregateSpec::custom_sql(function_str));
+        return std::forward<Self>(self);
     }
 
     template <typename T>
