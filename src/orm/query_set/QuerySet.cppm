@@ -219,11 +219,13 @@ export namespace storm {
         template <typename Self, auto MemberPtr, typename Value>
         constexpr auto&& where(Self&& self, Value&& value, storm::Op op = storm::Op::EQ);
 
-        template <typename Self, auto MemberPtr, typename Container> auto&& where_in(this Self&& self, const Container& values);
+        template <typename Self, auto MemberPtr, typename Container>
+        auto&& where_in(this Self&& self, const Container& values);
 
         template <typename Self, auto MemberPtr, typename Value> auto&& where_like(this Self&& self, Value&& pattern);
 
-        template <typename Self, auto MemberPtr, typename T1, typename T2> auto&& where_between(this Self&& self, T1&& value1, T2&& value2);
+        template <typename Self, auto MemberPtr, typename T1, typename T2>
+        auto&& where_between(this Self&& self, T1&& value1, T2&& value2);
 
         template <typename Self, auto MemberPtr> auto&& where_not_null(this Self&& self);
 
@@ -231,7 +233,8 @@ export namespace storm {
 
         // ORDER BY API (declarations)
         // Single field
-        template <typename Self, auto Field, Collation CollationType = Collation::NONE> auto&& order_by(this Self&& self);
+        template <typename Self, auto Field, Collation CollationType = Collation::NONE>
+        auto&& order_by(this Self&& self);
 
         // Multiple fields
         template <typename Self, auto... Fields> auto&& order_by_multiple(this Self&& self);
@@ -240,30 +243,44 @@ export namespace storm {
         template <typename Self, auto Field, auto Direction, auto... Rest> auto&& order_by_mixed(this Self&& self);
 
         // Full control: field-direction-collation triplets
-        template <typename Self, auto Field, auto Direction, auto Coll, auto... Rest> auto&& order_by_full(this Self&& self);
+        template <typename Self, auto Field, auto Direction, auto Coll, auto... Rest>
+        auto&& order_by_full(this Self&& self);
 
         // DISTINCT API (declarations)
         template <typename Self, auto... Fields> auto&& distinct(this Self&& self);
 
         // ONLY API (declarations)
-        template <typename Self, auto... Fields> auto&& only(this Self&& self, const std::optional<std::string>& alias = std::nullopt);
+        template <typename Self, auto... Fields>
+        auto&& only(this Self&& self, const std::optional<std::string>& alias = std::nullopt);
 
         // GROUP BY API (declarations)
         template <typename Self, auto... Fields> auto&& group_by(this Self&& self);
 
         // In class declaration:
         template <typename Self, bool Distinct = false, auto... Fields>
-        consteval auto&& group_concat(Self&& self, utils::fixed_string<32> alias = "", utils::fixed_string<8> separator = ",");
+        consteval auto&&
+        group_concat(Self&& self, utils::fixed_string<32> alias = "", utils::fixed_string<8> separator = ",");
 
         // Overload with ORDER BY for multiple fields - requires explicit
         // specification
-        template <typename Self, auto OrderField, auto FirstField, auto... RestFields>
-        auto&& group_concat_order(
-                this Self&& self,
-                std::string_view alias          = "",
-                std::string_view separator      = ",",
-                std::string_view fieldSeparator = " ",
-                bool             distinct       = false
+        template <typename Self, auto OrderField, auto FirstField, auto... RestFields, bool Distinct = false>
+        consteval auto&& group_concat_order(
+                this Self&&             self,
+                utils::fixed_string<32> alias          = {},
+                utils::fixed_string<8>  separator      = {","},
+                utils::fixed_string<8>  fieldSeparator = {","}
+        ) {
+            return self.template group_concat_with_order_impl<OrderField, FirstField, RestFields..., Distinct>(
+                    alias, separator, fieldSeparator
+            );
+        }
+
+        template <typename Self, auto OrderField, auto FirstField, auto... RestFields, bool Distinct = false>
+        consteval auto&& group_concat_with_order_impl(
+                this Self&&             self,
+                utils::fixed_string<32> alias          = {},
+                utils::fixed_string<8>  separator      = {","},
+                utils::fixed_string<8>  fieldSeparator = {","}
         );
 
         template <typename Self> auto&& limit(this Self&& self, int limit_value);
@@ -556,11 +573,6 @@ export namespace storm {
             return {actual_alias, field_expr};
         }
 
-        template <typename Self, auto OrderField, auto FirstField, auto... RestFields>
-        auto&& group_concat_with_order_impl(
-                this Self&& self, std::string_view alias, std::string_view separator, std::string_view fieldSeparator, bool distinct
-        );
-
         template <auto FirstField, auto... RestFields>
         std::string build_field_expression(std::string_view fieldSeparator) {
             auto        firstDesc  = make_field_desc<FirstField>();
@@ -595,8 +607,8 @@ export namespace storm {
     }
 
     // WHERE API implementation
-    template <typename T> 
-    template <typename Self> 
+    template <typename T>
+    template <typename Self>
     auto&& QuerySet<T>::where(this Self&& self, const storm::Where& where_clause) {
         if (self._whereExpression) {
             // Combine with existing WHERE using AND
@@ -644,7 +656,9 @@ export namespace storm {
         return self.where(std::move(condition));
     }
 
-    template <typename T> template <typename Self, auto MemberPtr> auto&& QuerySet<T>::where_not_null(this Self&& self) {
+    template <typename T>
+    template <typename Self, auto MemberPtr>
+    auto&& QuerySet<T>::where_not_null(this Self&& self) {
         auto         field_obj = Field<MemberPtr>();
         storm::Where condition = field_obj.is_not_null();
         return self.where(std::move(condition));
@@ -769,7 +783,9 @@ export namespace storm {
     }
 
     // Functions method implementation
-    template <typename T> template <typename Self, typename... Args> auto&& QuerySet<T>::functions(this Self&& self, Args&&... args) {
+    template <typename T>
+    template <typename Self, typename... Args>
+    auto&& QuerySet<T>::functions(this Self&& self, Args&&... args) {
         // Reserve capacity
         self.functionsSet.reserve(self.functionsSet.size() + sizeof...(Args));
 
@@ -779,7 +795,9 @@ export namespace storm {
     }
 
     // ORDER BY implementations
-    template <typename T> template <typename Self, auto Field, Collation CollationType> auto&& QuerySet<T>::order_by(this Self&& self) {
+    template <typename T>
+    template <typename Self, auto Field, Collation CollationType>
+    auto&& QuerySet<T>::order_by(this Self&& self) {
         self.orderTerms.emplace_back(refl::FieldWrapper::create<Field>(), true, CollationType);
         return std::forward<Self>(self);
     }
@@ -833,38 +851,54 @@ export namespace storm {
 
     // GROUP_CONCAT_ORDER implementation
     template <typename T>
-    template <typename Self, auto OrderField, auto FirstField, auto... RestFields>
-    auto&& QuerySet<T>::group_concat_order(
-            this Self&& self, std::string_view alias, std::string_view separator, std::string_view fieldSeparator, bool distinct
-    ) {
-        return self.template group_concat_with_order_impl<OrderField, FirstField, RestFields...>(
-                alias, separator, fieldSeparator, distinct
-        );
-    }
-
-    template <typename T>
-    template <typename Self, auto OrderField, auto FirstField, auto... RestFields>
-    auto&& QuerySet<T>::group_concat_with_order_impl(
-            this Self&& self, std::string_view alias, std::string_view separator, std::string_view fieldSeparator, bool distinct
+    template <typename Self, auto OrderField, auto FirstField, auto... RestFields, bool Distinct>
+    consteval auto&& QuerySet<T>::group_concat_with_order_impl(
+            this Self&&             self,
+            utils::fixed_string<32> alias,
+            utils::fixed_string<8>  separator,
+            utils::fixed_string<8>  fieldSeparator
     ) {
         static_assert(std::is_member_pointer_v<decltype(OrderField)>, "OrderField must be a member pointer");
+        static_assert(std::is_member_pointer_v<decltype(FirstField)>, "FirstField must be a member pointer");
+        // RestFields are validated at instantiation time when used
 
-        auto [actual_alias, field_expr] = self.template prepare_group_concat<FirstField, RestFields...>(alias, fieldSeparator);
+        constexpr auto orderDesc = make_field_desc<OrderField>();
+        constexpr auto firstDesc = make_field_desc<FirstField>();
 
-        auto orderDesc = make_field_desc<OrderField>();
+        // Generate actual alias at compile time
+        constexpr auto actual_alias = [&] {
+            if (alias.size() > 0) {
+                return alias;
+            } else {
+                return utils::make_string_builder<64>().append("group_concat_").append(firstDesc.field).build();
+            }
+        }();
 
-        // Build GROUP_CONCAT function with ORDER BY
-        std::string function_str = "GROUP_CONCAT(";
+        // Build field expression at compile time
+        constexpr auto field_expr = [&] {
+            if constexpr (sizeof...(RestFields) == 0) {
+                return firstDesc.full_name();
+            } else {
+                return utils::join_with(
+                        fieldSeparator.view(), firstDesc.full_name(), make_field_desc<RestFields>().full_name()...
+                );
+            }
+        }();
 
-        if (distinct) {
-            function_str += "DISTINCT ";
-        }
+        // Build complete GROUP_CONCAT SQL at compile time
+        constexpr auto sql = utils::make_string_builder<512>()
+                                     .append("GROUP_CONCAT(")
+                                     .append(Distinct ? "DISTINCT " : "")
+                                     .append(field_expr)
+                                     .append(" ORDER BY ")
+                                     .append(orderDesc.full_name())
+                                     .append(" SEPARATOR '")
+                                     .append(separator)
+                                     .append("') AS ")
+                                     .append(actual_alias)
+                                     .build();
 
-        function_str += field_expr;
-        function_str += std::format(" ORDER BY {}", orderDesc.full_name());
-        function_str += std::format(", '{}' ) AS {}", separator, actual_alias);
-
-        self.functions(AggregateSpec::custom_sql(function_str));
+        self.functions(AggregateSpec::custom_sql(std::string{sql.view()}));
         return std::forward<Self>(self);
     }
 
