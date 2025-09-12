@@ -729,9 +729,6 @@ export namespace storm {
     template <std::ranges::contiguous_range R>
         requires std::same_as<std::remove_cvref_t<std::ranges::range_value_t<R>>, T>
     std::expected<std::vector<int>, std::string> QuerySet<T>::insert(R&& objects) {
-        if (std::ranges::empty(objects)) {
-            return std::vector<int>{};
-        }
         return execute_insert(std::span<const T>{std::ranges::data(objects), std::ranges::size(objects)});
     }
 
