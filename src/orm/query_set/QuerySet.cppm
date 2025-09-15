@@ -221,7 +221,7 @@ export namespace storm {
         template <typename Self, auto MemberPtr, typename Value>
             requires std::is_member_pointer_v<decltype(MemberPtr)> &&
                      std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-        consteval auto&& where(Self&& self, Value&& value, storm::Op op = storm::Op::EQ);
+        consteval auto&& where(this Self&& self, Value&& value, storm::Op op = storm::Op::EQ);
 
         // C++26 compile-time WHERE IN with container concept
         template <typename Self, auto MemberPtr, std::ranges::range Container>
@@ -885,7 +885,7 @@ export namespace storm {
     template <typename Self, auto MemberPtr, typename Value>
         requires std::is_member_pointer_v<decltype(MemberPtr)> &&
                  std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-    consteval auto&& QuerySet<T>::where(Self&& self, Value&& value, storm::Op op) {
+    consteval auto&& QuerySet<T>::where(this Self&& self, Value&& value, storm::Op op) {
         // C++26 compile-time field name extraction
         constexpr auto field_name      = extract_field_name<MemberPtr>();
         constexpr auto full_field_name = extract_class_name<T>() + "." + field_name;
