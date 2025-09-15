@@ -815,7 +815,7 @@ export namespace storm {
         }
 
         template <typename U> [[nodiscard]] consteval std::string_view get_table_name() {
-            return refl::reflect<U>::get_struct_name();
+            return refl::reflect<U>::name();
         }
 
         template <auto FirstField, auto... RestFields>

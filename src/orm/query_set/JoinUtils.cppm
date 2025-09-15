@@ -25,8 +25,8 @@ export namespace storm {
 
         // Compile-time builder for the full JOIN clause
         static consteval auto build_clause() {
-            constexpr auto lhs_table = refl::reflect<Lhs>::get_struct_name();
-            constexpr auto rhs_table = refl::reflect<Rhs>::get_struct_name();
+            constexpr auto lhs_table = refl::reflect<Lhs>::name();
+            constexpr auto rhs_table = refl::reflect<Rhs>::name();
             // Extract simple field name at compile time using reflection utilities
             constexpr auto rhs_field    = refl::FieldMember<MemberPtr>::get_field_name();
             constexpr auto rhs_table_lc = rhs_table.transform(utils::transforms::to_lower);
@@ -87,8 +87,8 @@ export namespace storm {
             static constexpr auto join_info = make_join_clause<Lhs, Rhs, MemberPtr, Type>();
 
             // Extract individual components at compile time
-            static constexpr auto lhs_table_name = refl::reflect<Lhs>::get_struct_name();
-            static constexpr auto rhs_table_name = refl::reflect<Rhs>::get_struct_name();
+            static constexpr auto lhs_table_name = refl::reflect<Lhs>::name();
+            static constexpr auto rhs_table_name = refl::reflect<Rhs>::name();
             // Use FieldMember to get simple field name at compile time
             static constexpr auto rhs_field_name = refl::FieldMember<MemberPtr>::get_field_name();
             static constexpr auto rhs_table_lc   = rhs_table_name.transform(utils::transforms::to_lower);

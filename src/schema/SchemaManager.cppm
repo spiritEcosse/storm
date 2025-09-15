@@ -46,7 +46,7 @@ export namespace storm {
         }
 
         template <typename T> std::string get_table_name() const {
-            return std::string(refl::reflect<T>::get_struct_name());
+            return std::string(refl::reflect<T>::name());
         }
 
         template <typename T> std::string generate_create_table_sql() {

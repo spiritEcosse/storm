@@ -43,7 +43,7 @@ export namespace storm {
         storm::utils::fixed_string<2048> result{};
         std::size_t                      pos = 0;
 
-        constexpr auto table_name = refl::reflect<T>::get_struct_name();
+        constexpr auto table_name = refl::reflect<T>::name();
 
         auto append_sv = [&](std::string_view sv) {
             for (char c : sv) {
@@ -77,7 +77,7 @@ export namespace storm {
         storm::utils::fixed_string<2080> result{};
         std::size_t                      pos = 0;
 
-        constexpr auto table_name = refl::reflect<T>::get_struct_name();
+        constexpr auto table_name = refl::reflect<T>::name();
         constexpr auto fields     = build_select_fields_ct<T>();
 
         auto append_sv = [&](std::string_view sv) constexpr {

@@ -217,9 +217,6 @@ export namespace refl {
         static consteval auto name() {
             return descriptor::get_name();
         }
-        static consteval auto get_struct_name() {
-            return name();
-        }
         static consteval size_t member_count() {
             return descriptor::get_member_count();
         }
@@ -365,7 +362,7 @@ export namespace refl {
 
     template <auto MemberPtr> consteval auto get_full_field_name() {
         using ClassType = typename meta::member_pointer_traits<decltype(MemberPtr)>::class_type;
-        return storm::utils::formatFieldName(reflect<ClassType>::get_struct_name(), get_field_name<MemberPtr>());
+        return storm::utils::formatFieldName(reflect<ClassType>::name(), get_field_name<MemberPtr>());
     }
 
     // FieldMember for type-safe member pointer storage

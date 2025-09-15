@@ -126,7 +126,7 @@ export namespace storm {
          * @return The table name as a string_view
          */
         [[nodiscard]] consteval std::string_view table_name() const noexcept {
-            return refl::reflect<T>::get_struct_name();
+            return refl::reflect<T>::name();
         }
 
         /**
