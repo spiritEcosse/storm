@@ -215,7 +215,7 @@ export namespace storm {
 
         // WHERE with multiple conditions using C++26 fold expressions
         template <typename Self, typename... Conditions>
-        constexpr auto&& where_all(Self&& self, Conditions&&... conditions);
+        constexpr auto&& where_all(this Self&& self, Conditions&&... conditions);
 
         // C++26 compile-time field-based WHERE with static reflection
         template <typename Self, auto MemberPtr, typename Value>
@@ -302,7 +302,7 @@ export namespace storm {
         // In class declaration:
         template <typename Self, bool Distinct = false, auto... Fields>
         consteval auto&&
-        group_concat(Self&& self, utils::fixed_string<32> alias = "", utils::fixed_string<8> separator = ",");
+        group_concat(this Self&& self, utils::fixed_string<32> alias = "", utils::fixed_string<8> separator = ",");
 
         // Overload with ORDER BY for multiple fields - requires explicit
         // specification
@@ -853,7 +853,7 @@ export namespace storm {
     // C++26 WHERE_ALL with fold expressions and perfect forwarding
     template <typename T>
     template <typename Self, typename... Conditions>
-    constexpr auto&& QuerySet<T>::where_all(Self&& self, Conditions&&... conditions) {
+    constexpr auto&& QuerySet<T>::where_all(this Self&& self, Conditions&&... conditions) {
         static_assert(sizeof...(conditions) > 0, "where_all requires at least one condition");
 
         // C++26 fold expression with logical AND
@@ -1411,7 +1411,7 @@ export namespace storm {
     template <typename T>
     template <typename Self, bool Distinct, auto... Fields>
     consteval auto&&
-    QuerySet<T>::group_concat(Self&& self, utils::fixed_string<32> alias, utils::fixed_string<8> separator) {
+    QuerySet<T>::group_concat(this Self&& self, utils::fixed_string<32> alias, utils::fixed_string<8> separator) {
         constexpr auto sql = utils::make_string_builder<256>()
                                      .append("GROUP_CONCAT(")
                                      .append(Distinct ? "DISTINCT " : "")
