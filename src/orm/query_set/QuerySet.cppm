@@ -166,10 +166,10 @@ export namespace storm {
             return 100; // Default estimate
         }
 
-        std::vector<JoinWrapper>                                               join_clauses;
-        std::vector<std::tuple<refl::FieldWrapper, bool, Collation>>           orderTerms;
-        std::vector<std::pair<refl::FieldWrapper, std::optional<std::string>>> onlyFields;
-        std::vector<AggregateSpec>                                             functionsSet;
+        std::vector<JoinWrapper>                                            join_clauses;
+        std::vector<std::tuple<refl::FieldWrapper, bool, Collation>>        orderTerms;
+        std::vector<std::pair<refl::FieldWrapper, utils::fixed_string<32>>> onlyFields;
+        std::vector<AggregateSpec>                                          functionsSet;
 
         int _limit{};
         int _offset{};
@@ -292,7 +292,7 @@ export namespace storm {
         template <typename Self, auto... Fields>
             requires(sizeof...(Fields) > 0) && (std::is_member_pointer_v<decltype(Fields)> && ...) &&
                     (std::same_as<typename member_pointer_traits<decltype(Fields)>::class_type, T> && ...)
-        consteval auto&& only(this Self&& self, const std::optional<std::string>& alias = std::nullopt);
+        consteval auto&& only(this Self&& self, utils::fixed_string<32> alias = {});
 
         // GROUP BY API (C++26 upgraded declarations)
         template <typename Self, auto... Fields>
@@ -334,7 +334,7 @@ export namespace storm {
         template <typename Self, auto Field>
             requires std::is_member_pointer_v<decltype(Field)> &&
                      std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        consteval auto&& max(this Self&& self, std::string_view alias = "") noexcept {
+        consteval auto&& max(this Self&& self, utils::fixed_string<32> alias = {}) noexcept {
             using FieldType = typename member_pointer_traits<decltype(Field)>::member_type;
             static_assert(std::three_way_comparable<FieldType>, "MAX requires comparable field type");
             constexpr auto field_name = extract_field_name<Field>();
@@ -347,7 +347,7 @@ export namespace storm {
         template <typename Self, auto Field>
             requires std::is_member_pointer_v<decltype(Field)> &&
                      std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        consteval auto&& min(this Self&& self, std::string_view alias = "") noexcept {
+        consteval auto&& min(this Self&& self, utils::fixed_string<32> alias = {}) noexcept {
             using FieldType = typename member_pointer_traits<decltype(Field)>::member_type;
             static_assert(std::three_way_comparable<FieldType>, "MIN requires comparable field type");
             constexpr auto field_name = extract_field_name<Field>();
@@ -360,7 +360,7 @@ export namespace storm {
         template <typename Self, auto Field>
             requires std::is_member_pointer_v<decltype(Field)> &&
                      std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        consteval auto&& avg(this Self&& self, std::string_view alias = "") noexcept {
+        consteval auto&& avg(this Self&& self, utils::fixed_string<32> alias = {}) noexcept {
             using FieldType = typename member_pointer_traits<decltype(Field)>::member_type;
             static_assert(NumericType<FieldType>, "AVG requires numeric field type");
             constexpr auto field_name = extract_field_name<Field>();
@@ -373,7 +373,7 @@ export namespace storm {
         template <typename Self, auto Field>
             requires std::is_member_pointer_v<decltype(Field)> &&
                      std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        consteval auto&& count(this Self&& self, std::string_view alias = "") noexcept {
+        consteval auto&& count(this Self&& self, utils::fixed_string<32> alias = {}) noexcept {
             // COUNT works on any field type
             constexpr auto field_name = extract_field_name<Field>();
 
@@ -385,7 +385,7 @@ export namespace storm {
         template <typename Self, auto Field>
             requires std::is_member_pointer_v<decltype(Field)> &&
                      std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        consteval auto&& sum(this Self&& self, std::string_view alias = "") noexcept {
+        consteval auto&& sum(this Self&& self, utils::fixed_string<32> alias = {}) noexcept {
             using FieldType = typename member_pointer_traits<decltype(Field)>::member_type;
             static_assert(NumericType<FieldType>, "SUM requires numeric field type");
             constexpr auto field_name = extract_field_name<Field>();
@@ -820,16 +820,21 @@ export namespace storm {
 
         template <auto FirstField, auto... RestFields>
         std::pair<std::string, std::string>
-        prepare_group_concat(std::string_view alias, std::string_view fieldSeparator) {
+        prepare_group_concat(utils::fixed_string<32> alias, utils::fixed_string<8> fieldSeparator) {
             // Validate all member pointers
             static_assert(std::is_member_pointer_v<decltype(FirstField)>, "FirstField must be a member pointer");
             (check_member_pointer<RestFields>(), ...);
 
             auto firstDesc = make_field_desc<FirstField>();
 
-            // Generate alias
-            std::string actual_alias =
-                    alias.empty() ? std::format("group_concat_{}", firstDesc.field) : std::string(alias);
+            // Generate alias at compile time
+            const auto actual_alias = [&]() {
+                if (alias.c_str()[0] != '\0') {
+                    return alias;
+                } else {
+                    return utils::make_string_builder<64>().append("group_concat_").append(firstDesc.field).build();
+                }
+            }();
 
             // Build field expression
             std::string field_expr = build_field_expression<FirstField, RestFields...>(fieldSeparator);
@@ -1171,7 +1176,7 @@ export namespace storm {
     template <typename Self, auto... Fields>
         requires(sizeof...(Fields) > 0) && (std::is_member_pointer_v<decltype(Fields)> && ...) &&
                 (std::same_as<typename member_pointer_traits<decltype(Fields)>::class_type, T> && ...)
-    consteval auto&& QuerySet<T>::only(this Self&& self, const std::optional<std::string>& alias) {
+    consteval auto&& QuerySet<T>::only(this Self&& self, utils::fixed_string<32> alias) {
         // C++26 compile-time validation
         static_assert(sizeof...(Fields) <= 20, "Too many ONLY fields (max 20 for performance)");
 
