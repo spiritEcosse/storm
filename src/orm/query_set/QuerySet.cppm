@@ -124,6 +124,7 @@ export namespace storm {
     };
 
     // Simplified conversion with better compile-time optimization
+    // TODO: replace with C++26 pattern matching
     template <typename To, typename From>
     constexpr auto convert_value(const From& from) -> std::expected<To, std::string> {
         if constexpr (std::same_as<To, From>) {
