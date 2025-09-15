@@ -136,7 +136,7 @@ export namespace storm {
          */
         // Static predicate for compile-time field filtering using member descriptors
         static constexpr auto field_is_not_primary_key_predicate = [](auto member) consteval {
-            return !refl::reflect<T>::template is_primary_key<member>();
+            return !refl::reflect<T>::is_primary_key(member.get_name());
         };
 
         // Compile-time field filtering function

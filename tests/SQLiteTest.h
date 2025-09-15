@@ -30,6 +30,8 @@ import storm.core_types;
 import storm.sql_exceptions;
 import storm.transaction;
 import storm.reflect;
+import storm.utils;
+import <flat_map>;
 
 using namespace storm;
 
@@ -107,28 +109,28 @@ template <> struct ::refl::type_info<Author> {
     static constexpr bool has_reflection = true;
     using descriptor                     = ::refl::meta::type_descriptor<
                                 Author,
-                                storm::utils::make_fixed_string("Author"),
-                                ::refl::meta::member_descriptor<&Author::id, storm::utils::make_fixed_string("id")>,
-                                ::refl::meta::member_descriptor<&Author::name, storm::utils::make_fixed_string("name")>,
-                                ::refl::meta::member_descriptor<&Author::age, storm::utils::make_fixed_string("age")>,
-                                ::refl::meta::member_descriptor<&Author::email, storm::utils::make_fixed_string("email")>,
-                                ::refl::meta::member_descriptor<&Author::is_active, storm::utils::make_fixed_string("is_active")>,
-                                ::refl::meta::member_descriptor<&Author::rating, storm::utils::make_fixed_string("rating")>,
-                                ::refl::meta::member_descriptor<&Author::score, storm::utils::make_fixed_string("score")>,
-                                ::refl::meta::member_descriptor<&Author::middleName, storm::utils::make_fixed_string("middleName")>,
-                                ::refl::meta::member_descriptor<&Author::biography, storm::utils::make_fixed_string("biography")>>;
+                                storm::utils::fixed_string{"Author"},
+                                ::refl::meta::member_descriptor<&Author::id, storm::utils::fixed_string<16>{"id"}>,
+                                ::refl::meta::member_descriptor<&Author::name, storm::utils::fixed_string<16>{"name"}>,
+                                ::refl::meta::member_descriptor<&Author::age, storm::utils::fixed_string<16>{"age"}>,
+                                ::refl::meta::member_descriptor<&Author::email, storm::utils::fixed_string<16>{"email"}>,
+                                ::refl::meta::member_descriptor<&Author::is_active, storm::utils::fixed_string<16>{"is_active"}>,
+                                ::refl::meta::member_descriptor<&Author::rating, storm::utils::fixed_string<16>{"rating"}>,
+                                ::refl::meta::member_descriptor<&Author::score, storm::utils::fixed_string<16>{"score"}>,
+                                ::refl::meta::member_descriptor<&Author::middleName, storm::utils::fixed_string<16>{"middleName"}>,
+                                ::refl::meta::member_descriptor<&Author::biography, storm::utils::fixed_string<16>{"biography"}>>;
 };
 
 template <> struct ::refl::type_info<Post> {
     static constexpr bool has_reflection = true;
     using descriptor                     = ::refl::meta::type_descriptor<
                                 Post,
-                                storm::utils::make_fixed_string("Post"),
-                                ::refl::meta::member_descriptor<&Post::id, storm::utils::make_fixed_string("id")>,
-                                ::refl::meta::member_descriptor<&Post::title, storm::utils::make_fixed_string("title")>,
-                                ::refl::meta::member_descriptor<&Post::content, storm::utils::make_fixed_string("content")>,
-                                ::refl::meta::member_descriptor<&Post::author_id, storm::utils::make_fixed_string("author_id")>,
-                                ::refl::meta::member_descriptor<&Post::views, storm::utils::make_fixed_string("views")>>;
+                                storm::utils::fixed_string<16>{"Post"},
+                                ::refl::meta::member_descriptor<&Post::id, storm::utils::fixed_string<16>{"id"}>,
+                                ::refl::meta::member_descriptor<&Post::title, storm::utils::fixed_string<16>{"title"}>,
+                                ::refl::meta::member_descriptor<&Post::content, storm::utils::fixed_string<16>{"content"}>,
+                                ::refl::meta::member_descriptor<&Post::author_id, storm::utils::fixed_string<16>{"author_id"}>,
+                                ::refl::meta::member_descriptor<&Post::views, storm::utils::fixed_string<16>{"views"}>>;
 };
 
 class ORMTest : public ::testing::Test {
@@ -243,13 +245,13 @@ class ORMTest : public ::testing::Test {
 constexpr double FLOAT_COMPARISON_EPSILON = 0.001;
 
 // Treat multiple representations as null for SqlValue
-static inline bool IsNullValue(const ValueVariant& v) {
+static inline bool IsNullValue(const storm::SqlValue& v) {
     return std::holds_alternative<std::monostate>(v) || std::holds_alternative<std::nullopt_t>(v) ||
            std::holds_alternative<std::nullptr_t>(v);
 }
 
 // If variant holds an arithmetic (non-bool) type, return it as double
-static inline std::optional<double> ToNumeric(const ValueVariant& v) {
+static inline std::optional<double> ToNumeric(const storm::SqlValue& v) {
     return std::visit(
             [](const auto& val) -> std::optional<double> {
                 using T = std::decay_t<decltype(val)>;
@@ -265,7 +267,7 @@ static inline std::optional<double> ToNumeric(const ValueVariant& v) {
     );
 }
 
-bool VariantsEqual(const ValueVariant& lhs, const ValueVariant& rhs) {
+bool VariantsEqual(const storm::SqlValue& lhs, const storm::SqlValue& rhs) {
     // Null semantics
     const bool lhs_null = IsNullValue(lhs);
     const bool rhs_null = IsNullValue(rhs);
@@ -295,7 +297,11 @@ bool VariantsEqual(const ValueVariant& lhs, const ValueVariant& rhs) {
                 using LType = std::decay_t<decltype(l)>;
                 using RType = std::decay_t<decltype(r)>;
                 if constexpr (std::is_same_v<LType, RType>) {
-                    return l == r;
+                    if constexpr (std::is_same_v<LType, std::nullopt_t>) {
+                        return true; // Two nullopt_t are always equal
+                    } else {
+                        return l == r;
+                    }
                 } else {
                     return false;
                 }
@@ -305,8 +311,8 @@ bool VariantsEqual(const ValueVariant& lhs, const ValueVariant& rhs) {
     );
 }
 
-// Helper function to convert ValueVariant to string for error messages
-std::string ValueVariantToString(const ValueVariant& var) {
+// Helper function to convert storm::SqlValue to string for error messages
+std::string SqlValueToString(const storm::SqlValue& var) {
     if (IsNullValue(var))
         return "null";
 
@@ -380,7 +386,7 @@ void AssertResultsMatch(const ExpectedValueVectorMap& actual_result, const Value
                 for (const auto& [key, val] : map) {
                     if (!first)
                         result += ", ";
-                    result += std::format("{}: {}", key, ValueVariantToString(val));
+                    result += std::format("{}: {}", key, SqlValueToString(val));
                     first = false;
                 }
                 result += "}";

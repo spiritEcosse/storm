@@ -248,7 +248,7 @@ export namespace refl {
 
         // Runtime utilities
 
-        static bool is_primary_key(std::string_view field_name) {
+        static consteval bool is_primary_key(std::string_view field_name) {
             return field_name == "id";
         }
     };
