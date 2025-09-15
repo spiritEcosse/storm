@@ -1485,12 +1485,12 @@ export namespace storm {
         return std::forward<Self>(self);
     }
 
-    // SELECT ONE implementation (returns single object)
+    // SELECT ONE implementation (returns single object with LIMIT 1)
     template <typename T>
     ExpectedT<T> QuerySet<T>::select_one()
         requires refl::reflectable<T>
     {
-        return select_all().and_then([](const auto& rows) -> ExpectedT<T> {
+        return std::move(*this).limit(1).select_all().and_then([](const auto& rows) -> ExpectedT<T> {
             if (rows.empty()) {
                 return std::unexpected("No results found for select_one query");
             }
