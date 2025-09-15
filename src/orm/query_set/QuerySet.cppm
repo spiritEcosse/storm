@@ -675,19 +675,23 @@ export namespace storm {
         }
 
         // C++26 REMOVE API with compile-time validation and constraint checking
-        std::expected<bool, std::string> remove(const T& obj) requires refl::reflectable<T>;
-        std::expected<bool, std::string> remove(const std::vector<T>& objs) 
+        std::expected<bool, std::string> remove(const T& obj)
+            requires refl::reflectable<T>;
+        std::expected<bool, std::string> remove(const std::vector<T>& objs)
             requires refl::reflectable<T> && std::ranges::sized_range<std::vector<T>>;
-        std::expected<bool, std::string> remove() requires refl::reflectable<T>;
+        std::expected<bool, std::string> remove()
+            requires refl::reflectable<T>;
 
         // C++26 UPDATE API with compile-time validation and concepts
-        std::expected<bool, std::string> update(T obj) requires refl::reflectable<T>;
-        std::expected<bool, std::string> update(const T& obj) requires refl::reflectable<T>;
-        std::expected<bool, std::string> update(std::vector<T> objs) 
+        std::expected<bool, std::string> update(T obj)
+            requires refl::reflectable<T>;
+        std::expected<bool, std::string> update(const T& obj)
+            requires refl::reflectable<T>;
+        std::expected<bool, std::string> update(std::vector<T> objs)
             requires refl::reflectable<T> && std::ranges::sized_range<std::vector<T>>;
-        std::expected<bool, std::string> update(const std::vector<T>& objs) 
+        std::expected<bool, std::string> update(const std::vector<T>& objs)
             requires refl::reflectable<T> && std::ranges::sized_range<std::vector<T>>;
-        std::expected<bool, std::string> update(std::span<const T> objects) 
+        std::expected<bool, std::string> update(std::span<const T> objects)
             requires refl::reflectable<T> && std::ranges::contiguous_range<std::span<const T>>;
 
         // C++26 field-specific update with compile-time validation
@@ -698,30 +702,36 @@ export namespace storm {
         std::expected<bool, std::string> update(Value&& value);
 
         // C++26 SELECT API with compile-time query validation and type safety
-        ExpectedVectorT<T> select_all() requires refl::reflectable<T>;
-        ExpectedT<T> select_one() requires refl::reflectable<T>;
-        ExpectedValueVectorMap select_values() requires refl::reflectable<T>;
+        ExpectedVectorT<T> select_all()
+            requires refl::reflectable<T>;
+        ExpectedT<T> select_one()
+            requires refl::reflectable<T>;
+        ExpectedValueVectorMap select_values()
+            requires refl::reflectable<T>;
 
         // C++26 INSERT API with compile-time validation and zero-overhead abstractions
-        std::expected<int, std::string> insert(T obj) requires refl::reflectable<T>;
-        std::expected<int, std::string> insert(const T& obj) requires refl::reflectable<T>;
-        std::expected<std::vector<int>, std::string> insert(std::vector<T> objs) 
+        std::expected<int, std::string> insert(T obj)
+            requires refl::reflectable<T>;
+        std::expected<int, std::string> insert(const T& obj)
+            requires refl::reflectable<T>;
+        std::expected<std::vector<int>, std::string> insert(std::vector<T> objs)
             requires refl::reflectable<T> && std::ranges::sized_range<std::vector<T>>;
-        std::expected<std::vector<int>, std::string> insert(const std::vector<T>& objs) 
+        std::expected<std::vector<int>, std::string> insert(const std::vector<T>& objs)
             requires refl::reflectable<T> && std::ranges::sized_range<std::vector<T>>;
 
         // C++26 generic contiguous range with enhanced type safety
         template <std::ranges::contiguous_range R>
-            requires std::same_as<std::remove_cvref_t<std::ranges::range_value_t<R>>, T> &&
-                     refl::reflectable<T> && std::ranges::sized_range<R>
+            requires std::same_as<std::remove_cvref_t<std::ranges::range_value_t<R>>, T> && refl::reflectable<T> &&
+                     std::ranges::sized_range<R>
         std::expected<std::vector<int>, std::string> insert(R&& objects);
 
-        std::expected<std::vector<int>, std::string> insert(std::span<const T> objects) 
+        std::expected<std::vector<int>, std::string> insert(std::span<const T> objects)
             requires refl::reflectable<T> && std::ranges::contiguous_range<std::span<const T>>;
 
         // C++26 compile-time statement preparation with reflection validation
-        InsertStatement<T> stmt_insert(const T& obj) requires refl::reflectable<T>;
-        InsertStatement<T> stmt_insert(const std::vector<T>& objs) 
+        InsertStatement<T> stmt_insert(const T& obj)
+            requires refl::reflectable<T>;
+        InsertStatement<T> stmt_insert(const std::vector<T>& objs)
             requires refl::reflectable<T> && std::ranges::sized_range<std::vector<T>>;
 
       private:
@@ -1014,30 +1024,42 @@ export namespace storm {
 
     // UPDATE implementation
     // 1. Single object - handles move
-    template <typename T> std::expected<bool, std::string> QuerySet<T>::update(T obj) requires refl::reflectable<T> {
+    template <typename T>
+    std::expected<bool, std::string> QuerySet<T>::update(T obj)
+        requires refl::reflectable<T>
+    {
         return execute_update(std::span<const T>{&obj, 1});
     }
 
     // 2. Const ref - keeps user's original object
-    template <typename T> std::expected<bool, std::string> QuerySet<T>::update(const T& obj) requires refl::reflectable<T> {
+    template <typename T>
+    std::expected<bool, std::string> QuerySet<T>::update(const T& obj)
+        requires refl::reflectable<T>
+    {
         return execute_update(std::span<const T>{&obj, 1});
     }
 
     // 3. Batch move - takes ownership of vector
-    template <typename T> std::expected<bool, std::string> QuerySet<T>::update(std::vector<T> objs) 
-        requires refl::reflectable<T> && std::ranges::sized_range<std::vector<T>> {
+    template <typename T>
+    std::expected<bool, std::string> QuerySet<T>::update(std::vector<T> objs)
+        requires refl::reflectable<T> && std::ranges::sized_range<std::vector<T>>
+    {
         return execute_update(std::span<const T>{objs});
     }
 
     // 4. Batch const ref - keeps user's original vector
-    template <typename T> std::expected<bool, std::string> QuerySet<T>::update(const std::vector<T>& objs) 
-        requires refl::reflectable<T> && std::ranges::sized_range<std::vector<T>> {
+    template <typename T>
+    std::expected<bool, std::string> QuerySet<T>::update(const std::vector<T>& objs)
+        requires refl::reflectable<T> && std::ranges::sized_range<std::vector<T>>
+    {
         return execute_update(std::span<const T>{objs});
     }
 
     // 5. Advanced flexibility - direct span
-    template <typename T> std::expected<bool, std::string> QuerySet<T>::update(std::span<const T> objects) 
-        requires refl::reflectable<T> && std::ranges::contiguous_range<std::span<const T>> {
+    template <typename T>
+    std::expected<bool, std::string> QuerySet<T>::update(std::span<const T> objects)
+        requires refl::reflectable<T> && std::ranges::contiguous_range<std::span<const T>>
+    {
         return execute_update(objects);
     }
 
@@ -1045,54 +1067,74 @@ export namespace storm {
     // === MINIMAL NECESSARY OVERLOADS ===
 
     // 1. Single object - handles move
-    template <typename T> std::expected<int, std::string> QuerySet<T>::insert(T obj) requires refl::reflectable<T> {
+    template <typename T>
+    std::expected<int, std::string> QuerySet<T>::insert(T obj)
+        requires refl::reflectable<T>
+    {
         return execute_insert(std::span<const T>{&obj, 1});
     }
 
     // 2. Const ref - keeps user's original object
-    template <typename T> std::expected<int, std::string> QuerySet<T>::insert(const T& obj) requires refl::reflectable<T> {
+    template <typename T>
+    std::expected<int, std::string> QuerySet<T>::insert(const T& obj)
+        requires refl::reflectable<T>
+    {
         return execute_insert(std::span<const T>{&obj, 1});
     }
 
     // 3. Batch move - takes ownership of vector
-    template <typename T> std::expected<std::vector<int>, std::string> QuerySet<T>::insert(std::vector<T> objs) 
-        requires refl::reflectable<T> && std::ranges::sized_range<std::vector<T>> {
+    template <typename T>
+    std::expected<std::vector<int>, std::string> QuerySet<T>::insert(std::vector<T> objs)
+        requires refl::reflectable<T> && std::ranges::sized_range<std::vector<T>>
+    {
         return execute_insert(std::span<const T>{objs});
     }
 
     // 4. Batch const ref - keeps user's original vector
-    template <typename T> std::expected<std::vector<int>, std::string> QuerySet<T>::insert(const std::vector<T>& objs) 
-        requires refl::reflectable<T> && std::ranges::sized_range<std::vector<T>> {
+    template <typename T>
+    std::expected<std::vector<int>, std::string> QuerySet<T>::insert(const std::vector<T>& objs)
+        requires refl::reflectable<T> && std::ranges::sized_range<std::vector<T>>
+    {
         return execute_insert(std::span<const T>{objs});
     }
 
     // 5. Advanced flexibility - direct span
-    template <typename T> std::expected<std::vector<int>, std::string> QuerySet<T>::insert(std::span<const T> objects) 
-        requires refl::reflectable<T> && std::ranges::contiguous_range<std::span<const T>> {
+    template <typename T>
+    std::expected<std::vector<int>, std::string> QuerySet<T>::insert(std::span<const T> objects)
+        requires refl::reflectable<T> && std::ranges::contiguous_range<std::span<const T>>
+    {
         return execute_insert(objects);
     }
 
     // 6. Generic contiguous range - forwards to span<const T>
     template <typename T>
     template <std::ranges::contiguous_range R>
-        requires std::same_as<std::remove_cvref_t<std::ranges::range_value_t<R>>, T> &&
-                 refl::reflectable<T> && std::ranges::sized_range<R>
+        requires std::same_as<std::remove_cvref_t<std::ranges::range_value_t<R>>, T> && refl::reflectable<T> &&
+                 std::ranges::sized_range<R>
     std::expected<std::vector<int>, std::string> QuerySet<T>::insert(R&& objects) {
         return execute_insert(std::span<const T>{std::ranges::data(objects), std::ranges::size(objects)});
     }
 
     // Single object REMOVE implementation
-    template <typename T> std::expected<bool, std::string> QuerySet<T>::remove(const T& obj) requires refl::reflectable<T> {
+    template <typename T>
+    std::expected<bool, std::string> QuerySet<T>::remove(const T& obj)
+        requires refl::reflectable<T>
+    {
         return execute_delete(std::span<const T>{&obj, 1});
     }
 
     // Batch REMOVE implementation
-    template <typename T> std::expected<bool, std::string> QuerySet<T>::remove(const std::vector<T>& objs) 
-        requires refl::reflectable<T> && std::ranges::sized_range<std::vector<T>> {
+    template <typename T>
+    std::expected<bool, std::string> QuerySet<T>::remove(const std::vector<T>& objs)
+        requires refl::reflectable<T> && std::ranges::sized_range<std::vector<T>>
+    {
         return execute_delete(std::span<const T>{objs});
     }
 
-    template <typename T> std::expected<bool, std::string> QuerySet<T>::remove() requires refl::reflectable<T> {
+    template <typename T>
+    std::expected<bool, std::string> QuerySet<T>::remove()
+        requires refl::reflectable<T>
+    {
         return execute_delete();
     }
 
@@ -1439,7 +1481,10 @@ export namespace storm {
     }
 
     // SELECT ONE implementation (returns single object)
-    template <typename T> ExpectedT<T> QuerySet<T>::select_one() requires refl::reflectable<T> {
+    template <typename T>
+    ExpectedT<T> QuerySet<T>::select_one()
+        requires refl::reflectable<T>
+    {
         return select_all().and_then([](const auto& rows) -> ExpectedT<T> {
             if (rows.empty()) {
                 return std::unexpected("No results found for select_one query");
@@ -1449,7 +1494,10 @@ export namespace storm {
     }
 
     // SELECT ALL implementation
-    template <typename T> ExpectedVectorT<T> QuerySet<T>::select_all() requires refl::reflectable<T> {
+    template <typename T>
+    ExpectedVectorT<T> QuerySet<T>::select_all()
+        requires refl::reflectable<T>
+    {
         // Construct SelectStatement directly: it builds ORDER/GROUP/FIELDS internally
         return SelectStatement<T>(
                        conn,
@@ -1470,7 +1518,10 @@ export namespace storm {
 
     // SELECT VALUES implementation (returns dictionary-like data)
     // Optimized value extraction with structured bindings
-    template <typename T> [[nodiscard]] auto QuerySet<T>::select_values() -> ExpectedValueVectorMap requires refl::reflectable<T> {
+    template <typename T>
+    [[nodiscard]] auto QuerySet<T>::select_values() -> ExpectedValueVectorMap
+        requires refl::reflectable<T>
+    {
         // Pre-calculate capacity hints
         const auto expected_size = estimate_result_size();
 
