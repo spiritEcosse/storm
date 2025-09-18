@@ -221,34 +221,6 @@ export namespace storm {
         template <typename Self, typename... Conditions>
         constexpr auto&& where_all(this Self&& self, Conditions&&... conditions);
 
-        // Macro-based WHERE with compile-time field resolution - Implementation functions
-        // These are called by the where() macro and should not be used directly
-
-        // Basic equality and operator - where(field, value) / where(field, value, op)
-        template <auto MemberPtr, typename Self, typename Value>
-            requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-        constexpr auto&& where_impl(this Self&& self, Value&& value, storm::Op op = storm::Op::EQ);
-
-        // BETWEEN - where(field, value1, value2)
-        template <auto MemberPtr, typename Self, typename T1, typename T2>
-            requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
-                     std::three_way_comparable_with<T1, T2> && (!std::same_as<T2, storm::Op>)
-        constexpr auto&& where_impl(this Self&& self, T1&& value1, T2&& value2);
-
-        // NULL checks - where(field, Op::IS) / where(field, Op::IS_NOT)
-        template <auto MemberPtr, typename Self>
-            requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-        constexpr auto&& where_impl(this Self&& self, storm::Op null_op);
-
-        // IN clause - where(field, container)
-        template <auto MemberPtr, typename Self, std::ranges::range Container>
-            requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
-                     (!std::same_as<Container, storm::Op>)
-        constexpr auto&& where_impl(this Self&& self, const Container& values);
 
         // ORDER BY API (C++26 upgraded declarations)
         // C++26 compile-time multiple field ordering with variadic validation
@@ -884,114 +856,9 @@ export namespace storm {
         return std::forward<Self>(self);
     }
 
-    // Macro-based WHERE implementations with compile-time field resolution
 
-    // Basic equality and operator - where(field, value) / where(field, value, op)
-    template <typename T>
-    template <auto MemberPtr, typename Self, typename Value>
-        requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                 std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-    constexpr auto&& QuerySet<T>::where_impl(this Self&& self, Value&& value, storm::Op op) {
-        // ✅ COMPILE-TIME: Field name resolution using template parameter
-        constexpr auto field_name = extract_field_name<MemberPtr>();
 
-        // Runtime: Create condition with compile-time resolved field name
-        storm::Where condition = storm::Where(
-                std::make_unique<storm::Condition>(std::string(field_name), op, std::forward<Value>(value))
-        );
 
-        // Runtime: Combine with existing WHERE clause
-        self._whereExpression = self._whereExpression.has_value()
-                                        ? storm::Where{*self._whereExpression && std::move(condition)}
-                                        : std::move(condition);
-
-        return std::forward<Self>(self);
-    }
-
-    // BETWEEN - where(field, value1, value2)
-    template <typename T>
-    template <auto MemberPtr, typename Self, typename T1, typename T2>
-        requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                 std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
-                 std::three_way_comparable_with<T1, T2> && (!std::same_as<T2, storm::Op>)
-    constexpr auto&& QuerySet<T>::where_impl(this Self&& self, T1&& value1, T2&& value2) {
-        // ✅ COMPILE-TIME: Field validation and name resolution
-        using FieldType = typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type;
-        static_assert(std::three_way_comparable_with<FieldType, T1>, "Field type must be comparable with value1 type");
-        static_assert(std::three_way_comparable_with<FieldType, T2>, "Field type must be comparable with value2 type");
-        constexpr auto field_name = extract_field_name<MemberPtr>();
-
-        // Runtime: Create BETWEEN condition
-        storm::Where condition = storm::Where(
-                std::make_unique<storm::Condition>(
-                        std::string(field_name), std::forward<T1>(value1), std::forward<T2>(value2)
-                )
-        );
-
-        self._whereExpression = self._whereExpression.has_value()
-                                        ? storm::Where{*self._whereExpression && std::move(condition)}
-                                        : std::move(condition);
-
-        return std::forward<Self>(self);
-    }
-
-    // NULL checks - where(field, Op::IS) / where(field, Op::IS_NOT)
-    template <typename T>
-    template <auto MemberPtr, typename Self>
-        requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                 std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-    constexpr auto&& QuerySet<T>::where_impl(this Self&& self, storm::Op null_op) {
-        // ✅ COMPILE-TIME: Field validation and name resolution
-        using FieldType           = typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type;
-        constexpr auto field_name = extract_field_name<MemberPtr>();
-
-        // Compile-time warning for non-nullable types
-        if constexpr (!std::is_pointer_v<FieldType> &&
-                      !std::is_same_v<FieldType, std::optional<typename FieldType::value_type>>) {
-            // Note: Non-nullable field - NULL check may always be false/true
-        }
-
-        // Runtime: Create NULL condition
-        storm::Where condition =
-                storm::Where(std::make_unique<storm::Condition>(std::string(field_name), null_op, std::nullopt));
-
-        self._whereExpression = self._whereExpression.has_value()
-                                        ? storm::Where{*self._whereExpression && std::move(condition)}
-                                        : std::move(condition);
-
-        return std::forward<Self>(self);
-    }
-
-    // IN clause - where(field, container)
-    template <typename T>
-    template <auto MemberPtr, typename Self, std::ranges::range Container>
-        requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                 std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
-                 (!std::same_as<Container, storm::Op>)
-    constexpr auto&& QuerySet<T>::where_impl(this Self&& self, const Container& values) {
-        // ✅ COMPILE-TIME: Field name resolution
-        constexpr auto field_name = extract_field_name<MemberPtr>();
-
-        // Runtime: Early return for empty containers
-        if (std::ranges::empty(values)) {
-            auto false_condition = storm::Where(std::make_unique<storm::Condition>("1", storm::Op::EQ, 0));
-            return self.where(false_condition);
-        }
-
-        // Runtime: Create IN condition as OR chain
-        auto         it = std::ranges::begin(values);
-        storm::Where condition =
-                storm::Where(std::make_unique<storm::Condition>(std::string(field_name), storm::Op::EQ, *it));
-
-        ++it;
-        for (; it != std::ranges::end(values); ++it) {
-            auto next_condition =
-                    storm::Where(std::make_unique<storm::Condition>(std::string(field_name), storm::Op::EQ, *it));
-            condition = condition || std::move(next_condition);
-        }
-
-        return self.where(std::move(condition));
-    }
 
     // UPDATE implementation
     // 1. Single object - handles move
