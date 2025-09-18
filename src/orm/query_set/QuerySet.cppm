@@ -219,7 +219,7 @@ export namespace storm {
 
         // WHERE with multiple conditions using C++26 fold expressions
         template <typename Self, typename... Conditions>
-        constexpr auto&& where_all(this Self&& self, Conditions&&... conditions);
+        constexpr auto&& where(this Self&& self, Conditions&&... conditions);
 
         // Macro-based WHERE with compile-time field resolution - Implementation functions
         // These are called by the where() macro and should not be used directly
@@ -842,11 +842,11 @@ export namespace storm {
         }
     };
 
-    // C++26 WHERE_ALL with fold expressions and perfect forwarding
+    // C++26 WHERE with fold expressions and perfect forwarding for multiple conditions
     template <typename T>
     template <typename Self, typename... Conditions>
-    constexpr auto&& QuerySet<T>::where_all(this Self&& self, Conditions&&... conditions) {
-        static_assert(sizeof...(conditions) > 0, "where_all requires at least one condition");
+    constexpr auto&& QuerySet<T>::where(this Self&& self, Conditions&&... conditions) {
+        static_assert(sizeof...(conditions) > 0, "where with multiple conditions requires at least one condition");
 
         // C++26 fold expression with logical AND
         storm::Where combined = (... && std::forward<Conditions>(conditions));
