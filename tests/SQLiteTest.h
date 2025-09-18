@@ -3890,7 +3890,7 @@ TEST_F(ORMTest, GroupConcatOrderByAscending) {
     // GROUP_CONCAT with ORDER BY (ascending) - requires the ORDER BY overload
     auto result = QuerySet<Post>(conn)
                           .group_by(field(&Post::author_id))
-                          .group_concat_order(
+                          .group_concat(
                                   field(&Post::id),
                                   field(&Post::title),
                                   "",
@@ -3922,12 +3922,12 @@ TEST_F(ORMTest, GroupConcatOrderByAscending) {
     EXPECT_LT(firstPostPos, fourthPostPos) << "Posts not ordered correctly in ascending order";
 }
 
-// Test group_concat_order with multiple fields
+// Test group_concat with multiple fields and ORDER BY
 TEST_F(ORMTest, GroupConcatOrderMultipleFields) {
     // GROUP_CONCAT with multiple fields and ORDER BY
     auto result = QuerySet<Post>(conn)
                           .group_by(field(&Post::author_id))
-                          .group_concat_order(
+                          .group_concat(
                                   field(&Post::id),
                                   field(&Post::title),
                                   field(&Post::content),
