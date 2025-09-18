@@ -1,5 +1,4 @@
-build
+build/**
 .idea
-src_old
 *.log
 Testing

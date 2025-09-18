@@ -11,7 +11,7 @@ A lightweight C++ ORM (Object-Relational Mapping) library for SQLite, designed f
 ## Quick Start
 
 ### Prerequisites
-- C++17 or newer compiler
+- C++23 compiler with modules support
 - [SQLite3](https://www.sqlite.org/index.html)
 
 ## Dependencies
@@ -21,7 +21,6 @@ Storm ORM requires the following libraries:
 - **SQLite3**: For SQLite database support ([link](https://www.sqlite.org/index.html))
 - **PostgreSQL**: For PostgreSQL database support ([link](https://www.postgresql.org/))
 - **refl-cpp**: Header-only C++ reflection library ([link](https://github.com/veselink1/refl-cpp))
-- **fmt**: Fast C++ formatting library ([link](https://github.com/fmtlib/fmt))
 
 Optional (for testing):
 - **GoogleTest**: C++ testing framework ([link](https://github.com/google/googletest))

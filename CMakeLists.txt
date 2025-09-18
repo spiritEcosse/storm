@@ -1,11 +1,12 @@
 cmake_minimum_required(VERSION 3.30)
 project(storm)
 
-set(CMAKE_CXX_STANDARD 23)
-message(STATUS "Using C++23 (standard build)")
+set(CMAKE_CXX_STANDARD 26)
+message(STATUS "Using C++26 (standard build)")
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
 message(STATUS "CMAKE_CXX_COMPILER: ${CMAKE_CXX_COMPILER}")
 message(STATUS "CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
@@ -21,28 +22,61 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         add_compile_options(-fcoroutines) # Apply only for GNU compilers
         add_compile_options(-fmax-errors=1)
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        # For Clang (including AppleClang) with CMAKE_CXX_STANDARD set to 20 or 23,
-        # C++ coroutines are typically enabled by the standard itself.
-        # The explicit -fcoroutines flag can cause errors with modern Clang.
-        add_compile_options(-ferror-limit=1) # Clang specific error limit
-    endif()
-endif()
+          # For Clang (including AppleClang) with CMAKE_CXX_STANDARD set to 26,
+          # C++ coroutines are typically enabled by the standard itself.
+          # The explicit -fcoroutines flag can cause errors with modern Clang.
+          add_compile_options(-ferror-limit=1 -stdlib=libc++) # Clang specific error limit
+          add_link_options(-stdlib=libc++)
+      endif()
+ endif()
+ 
+ # Build the core library (modules-first)
+ add_library(${PROJECT_NAME} STATIC)
+ 
+ # Collect sources automatically
+ file(GLOB_RECURSE STORM_MODULE_UNITS CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm"
+ )
+ file(GLOB_RECURSE STORM_NONMODULE_SOURCES CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+ )
+ # Exclude example/demo mains from the library
+ list(FILTER STORM_NONMODULE_SOURCES EXCLUDE REGEX ".*/main\\.cpp$")
+ 
+ # Declare C++26 module interface and partition sources (all *.cppm)
+ target_sources(${PROJECT_NAME}
+     PUBLIC
+         FILE_SET cxx_modules TYPE CXX_MODULES
+         FILES
+             ${STORM_MODULE_UNITS}
+ )
+ 
+ # Add implementation sources (non-interface units)
+ target_sources(${PROJECT_NAME}
+     PRIVATE
+         ${STORM_NONMODULE_SOURCES}
+ )
 
-# start src
-file(GLOB_RECURSE RESOURCES CONFIGURE_DEPENDS src/*.*)
-add_executable(${PROJECT_NAME} ${RESOURCES})
-
-# Set include directories properly
-# This makes both "#include <File.h>" and "#include "File.h"" work correctly
-target_include_directories(${PROJECT_NAME} 
-    PRIVATE 
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src"
-)
+ # Enable Clang modules and builtin module maps so import <...> works for libc++ headers
+ target_compile_options(${PROJECT_NAME} PRIVATE -fmodules -fbuiltin-module-map)
+ 
+ # Group sources by folder in IDEs
+ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" FILES
+     ${STORM_MODULE_UNITS}
+     ${STORM_NONMODULE_SOURCES}
+ )
+ 
+ # Includes for consumers and internal builds
+ target_include_directories(${PROJECT_NAME}
+     PUBLIC
+         "${CMAKE_CURRENT_SOURCE_DIR}"
+         "${CMAKE_CURRENT_SOURCE_DIR}/src"
+         "${CMAKE_CURRENT_SOURCE_DIR}/include"
+     )
 
 # Ensure compile_commands.json is generated
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-# end src
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/envs.cmake)
 
@@ -71,23 +105,9 @@ endif()
 
 include(${CPM_DOWNLOAD_LOCATION})
 
-CPMAddPackage(
-    NAME refl-cpp
-    GITHUB_REPOSITORY veselink1/refl-cpp
-    VERSION 0.12.4
-)
-
-CPMAddPackage(
-    NAME fmt
-    GITHUB_REPOSITORY fmtlib/fmt
-    GIT_TAG 11.2.0
-)
-
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
     PostgreSQL::PostgreSQL
-    fmt
-    refl-cpp
 )
 
 option(ENABLE_TESTS "Enable testing support" OFF)
@@ -162,15 +182,54 @@ try_run(
 
 if(LIBCXX_VERSION_COMPILE_RESULT AND LIBCXX_VERSION_RUN_RESULT EQUAL 0)
     set(LIBCXX_VERSION ${LIBCXX_VERSION_OUTPUT})
-else()
-    set(LIBCXX_VERSION "Unknown")
-endif()
+ else()
+     set(LIBCXX_VERSION "Unknown")
+ endif()
 
-# Print build configuration
-message(STATUS "=== Storm Build Configuration ===")
-message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
-message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
-message(STATUS "libc++ Version: ${LIBCXX_VERSION}")
-message(STATUS "Testing: ${STORM_ENABLE_TESTING}")
-message(STATUS "Sanitizer: ${STORM_ENABLE_SANITIZER}")
-message(STATUS "===================================")
+ # Clang-Format integration
+ find_program(CLANG_FORMAT_EXE NAMES clang-format)
+ if(CLANG_FORMAT_EXE)
+   # Collect files to format (modules, sources, headers, and tests)
+   file(GLOB_RECURSE CLANG_FORMAT_SOURCES CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.ixx"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h"
+     "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.hpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.h"
+   )
+
+  # Use repo style if present, otherwise fall back to LLVM
+  set(CLANG_FORMAT_STYLE "--style=file")
+  if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.clang-format" AND
+     NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/_clang-format")
+    set(CLANG_FORMAT_STYLE "--style=LLVM")
+  endif()
+
+   add_custom_target(format
+    COMMAND "${CLANG_FORMAT_EXE}" -i ${CLANG_FORMAT_STYLE} ${CLANG_FORMAT_SOURCES}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    COMMENT "Running clang-format on source files"
+    VERBATIM
+  )
+
+   add_custom_target(format-check
+    COMMAND "${CLANG_FORMAT_EXE}" ${CLANG_FORMAT_STYLE} --dry-run --Werror ${CLANG_FORMAT_SOURCES}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    COMMENT "Checking code style with clang-format (fails on diffs)"
+    VERBATIM
+  )
+ else()
+   message(STATUS "clang-format not found; 'format' and 'format-check' targets are disabled")
+ endif()
+
+ # Print build configuration
+ message(STATUS "=== Storm Build Configuration ===")
+ message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
+ message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+ message(STATUS "libc++ Version: ${LIBCXX_VERSION}")
+ message(STATUS "Testing: ${STORM_ENABLE_TESTING}")
+ message(STATUS "Sanitizer: ${STORM_ENABLE_SANITIZER}")
+ message(STATUS "===================================")
