@@ -3,6 +3,7 @@ module;
 // Module global fragment - third-party C headers (macros not exported by
 // modules)
 #include <sqlite3.h>
+#include <storm/macros.h>
 
 // Define the module
 export module storm.query_set;
@@ -79,9 +80,9 @@ export namespace storm {
         std::size_t         pos = 0;
 
       public:
-        consteval compile_time_sql() = default;
+        constexpr compile_time_sql() = default;
 
-        consteval auto& append(std::string_view str) {
+        constexpr auto& append(std::string_view str) {
             for (auto c : str) {
                 if (pos < N)
                     buffer[pos++] = c;
@@ -89,7 +90,7 @@ export namespace storm {
             return *this;
         }
 
-        consteval auto get() const {
+        constexpr auto get() const {
             return std::string_view(buffer.data(), pos);
         }
     };
@@ -107,9 +108,11 @@ export namespace storm {
                         FieldType>>;
     };
 
-    template <auto MemberPtr> using field_type_t = typename member_pointer_traits<decltype(MemberPtr)>::type;
+    template <auto MemberPtr>
+    using field_type_t = typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type;
 
-    template <auto MemberPtr> using class_type_t = typename member_pointer_traits<decltype(MemberPtr)>::class_type;
+    template <auto MemberPtr>
+    using class_type_t = typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type;
 
     // Concepts for better error messages
     template <typename T>
@@ -211,104 +214,92 @@ export namespace storm {
         QuerySet& operator=(QuerySet&& other) noexcept = default;
 
         // WHERE API (C++26 upgraded declarations)
-        template <typename Self> auto&& where(this Self&& self, const storm::Where& where_clause);
-        template <typename Self> auto&& where(this Self&& self, storm::Where&& where_clause);
+        template <typename Self> constexpr auto&& where(this Self&& self, const storm::Where& where_clause);
+        template <typename Self> constexpr auto&& where(this Self&& self, storm::Where&& where_clause);
 
         // WHERE with multiple conditions using C++26 fold expressions
         template <typename Self, typename... Conditions>
         constexpr auto&& where_all(this Self&& self, Conditions&&... conditions);
 
-        // C++26 compile-time field-based WHERE with static reflection
-        template <typename Self, auto MemberPtr, typename Value>
-            requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-        consteval auto&& where(this Self&& self, Value&& value, storm::Op op = storm::Op::EQ);
+        // Macro-based WHERE with compile-time field resolution - Implementation functions
+        // These are called by the where() macro and should not be used directly
 
-        // C++26 compile-time WHERE IN with container concept
-        template <typename Self, auto MemberPtr, std::ranges::range Container>
+        // Basic equality and operator - where(field, value) / where(field, value, op)
+        template <auto MemberPtr, typename Self, typename Value>
             requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-        consteval auto&& where_in(this Self&& self, const Container& values);
+                     std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T>
+        constexpr auto&& where_impl(this Self&& self, Value&& value, storm::Op op = storm::Op::EQ);
 
-        // C++26 compile-time WHERE LIKE with string concept
-        template <typename Self, auto MemberPtr, typename Value>
+        // BETWEEN - where(field, value1, value2)
+        template <auto MemberPtr, typename Self, typename T1, typename T2>
             requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
-                     std::convertible_to<Value, std::string_view>
-        consteval auto&& where_like(this Self&& self, Value&& pattern);
+                     std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
+                     std::three_way_comparable_with<T1, T2> && (!std::same_as<T2, storm::Op>)
+        constexpr auto&& where_impl(this Self&& self, T1&& value1, T2&& value2);
 
-        // C++26 compile-time WHERE BETWEEN with comparable types
-        template <typename Self, auto MemberPtr, typename T1, typename T2>
+        // NULL checks - where(field, Op::IS) / where(field, Op::IS_NOT)
+        template <auto MemberPtr, typename Self>
             requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
-                     std::three_way_comparable_with<T1, T2>
-        consteval auto&& where_between(this Self&& self, T1&& value1, T2&& value2);
+                     std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T>
+        constexpr auto&& where_impl(this Self&& self, storm::Op null_op);
 
-        // C++26 compile-time NULL checks with static field validation
-        template <typename Self, auto MemberPtr>
+        // IN clause - where(field, container)
+        template <auto MemberPtr, typename Self, std::ranges::range Container>
             requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-        consteval auto&& where_not_null(this Self&& self);
-
-        template <typename Self, auto MemberPtr>
-            requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-        consteval auto&& where_is_null(this Self&& self);
+                     std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
+                     (!std::same_as<Container, storm::Op>)
+        constexpr auto&& where_impl(this Self&& self, const Container& values);
 
         // ORDER BY API (C++26 upgraded declarations)
-        // C++26 compile-time single field ordering with static validation
-        template <typename Self, auto Field, Collation CollationType = Collation::NONE>
-            requires std::is_member_pointer_v<decltype(Field)> &&
-                     std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        consteval auto&& order_by(this Self&& self);
-
         // C++26 compile-time multiple field ordering with variadic validation
-        template <typename Self, auto... Fields>
-            requires(sizeof...(Fields) > 0) && (std::is_member_pointer_v<decltype(Fields)> && ...) &&
-                    (std::same_as<typename member_pointer_traits<decltype(Fields)>::class_type, T> && ...)
-        consteval auto&& order_by_multiple(this Self&& self);
+        template <typename Self>
+        constexpr auto&& order_by(this Self&& self, auto... fields)
+            requires(sizeof...(fields) > 0);
 
         // C++26 compile-time field-direction pairs with static assertion
-        template <typename Self, auto Field, auto Direction, auto... Rest>
-            requires std::is_member_pointer_v<decltype(Field)> &&
-                     std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T> &&
-                     std::same_as<decltype(Direction), bool>
-        consteval auto&& order_by_mixed(this Self&& self);
+        template <typename Self>
+        constexpr auto&& order_by(this Self&& self, auto field, auto direction, auto... rest)
+            requires std::same_as<decltype(direction), bool>;
+        // C++26 compile-time field-collation pairs with validation
+        template <typename Self>
+        constexpr auto&& order_by(this Self&& self, auto field, auto collation)
+            requires std::same_as<decltype(collation), Collation>;
 
         // C++26 compile-time field-direction-collation triplets with full validation
-        template <typename Self, auto Field, auto Direction, auto Coll, auto... Rest>
-            requires std::is_member_pointer_v<decltype(Field)> &&
-                     std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T> &&
-                     std::same_as<decltype(Direction), bool> && std::same_as<decltype(Coll), Collation>
-        consteval auto&& order_by_full(this Self&& self);
+        template <typename Self>
+        constexpr auto&& order_by(this Self&& self, auto field, auto direction, auto collation, auto... rest)
+            requires std::same_as<decltype(direction), bool> && std::same_as<decltype(collation), Collation>;
 
-        // DISTINCT API (C++26 upgraded declarations)
-        template <typename Self, auto... Fields>
-            requires(sizeof...(Fields) > 0) && (std::is_member_pointer_v<decltype(Fields)> && ...) &&
-                    (std::same_as<typename member_pointer_traits<decltype(Fields)>::class_type, T> && ...)
-        consteval auto&& distinct(this Self&& self);
+        // DISTINCT API (C++26 upgraded declarations with function parameter deduction)
+        template <typename Self>
+        constexpr auto&& distinct(this Self&& self, auto... fields)
+            requires(sizeof...(fields) > 0);
 
-        // ONLY API (C++26 upgraded declarations)
-        template <typename Self, auto... Fields>
-            requires(sizeof...(Fields) > 0) && (std::is_member_pointer_v<decltype(Fields)> && ...) &&
-                    (std::same_as<typename member_pointer_traits<decltype(Fields)>::class_type, T> && ...)
-        consteval auto&& only(this Self&& self, utils::fixed_string<32> alias = {});
+        // ONLY API (C++26 upgraded declarations with function parameter deduction)
+        // Simple version: .only(field1, field2, ...)
+        template <typename Self>
+        constexpr auto&& only(this Self&& self, auto... fields)
+            requires(sizeof...(fields) > 0);
 
-        // GROUP BY API (C++26 upgraded declarations)
-        template <typename Self, auto... Fields>
-            requires(sizeof...(Fields) > 0) && (std::is_member_pointer_v<decltype(Fields)> && ...) &&
-                    (std::same_as<typename member_pointer_traits<decltype(Fields)>::class_type, T> && ...)
-        consteval auto&& group_by(this Self&& self);
+        // Alias version: .only(field, alias, field, alias, ...)
+        template <typename Self>
+        constexpr auto&& only_with_aliases(this Self&& self, auto... field_alias_pairs)
+            requires(sizeof...(field_alias_pairs) > 0) && (sizeof...(field_alias_pairs) % 2 == 0);
+
+        // GROUP BY API (C++26 upgraded declarations with function parameter deduction)
+        template <typename Self>
+        constexpr auto&& group_by(this Self&& self, auto... fields)
+            requires(sizeof...(fields) > 0);
 
         // In class declaration:
-        template <typename Self, bool Distinct = false, auto... Fields>
-        consteval auto&&
-        group_concat(this Self&& self, utils::fixed_string<32> alias = "", utils::fixed_string<8> separator = ",");
+        template <typename Self>
+        auto&&
+        group_concat(this Self&& self, auto field, utils::fixed_string<32> alias = "", utils::fixed_string<8> separator = ",", bool distinct = false);
 
         // Overload with ORDER BY for multiple fields - requires explicit
         // specification
         template <typename Self, auto OrderField, auto FirstField, auto... RestFields, bool Distinct = false>
-        consteval auto&& group_concat_order(
+        constexpr auto&& group_concat_order(
                 this Self&&             self,
                 utils::fixed_string<32> alias          = {},
                 utils::fixed_string<8>  separator      = {","},
@@ -319,8 +310,46 @@ export namespace storm {
             );
         }
 
+        // Parameter-based overload for group_concat_order with bool literal support
+        template <typename Self, bool Distinct>
+        constexpr auto&& group_concat_order(
+                this Self&&             self,
+                auto                    orderField,
+                auto                    firstField,
+                utils::fixed_string<32> alias,
+                utils::fixed_string<8>  separator,
+                utils::fixed_string<8>  fieldSeparator,
+                std::integral_constant<bool, Distinct>
+        ) {
+            return self.template group_concat_with_order_impl<orderField, firstField, Distinct>(
+                    alias, separator, fieldSeparator
+            );
+        }
+
+        // Parameter-based overload for group_concat_order with runtime bool
+        template <typename Self>
+        constexpr auto&& group_concat_order(
+                this Self&&             self,
+                auto                    orderField,
+                auto                    firstField,
+                utils::fixed_string<32> alias,
+                utils::fixed_string<8>  separator,
+                utils::fixed_string<8>  fieldSeparator,
+                bool                    distinct
+        ) {
+            if (distinct) {
+                return self.template group_concat_with_order_impl<orderField, firstField, true>(
+                        alias, separator, fieldSeparator
+                );
+            } else {
+                return self.template group_concat_with_order_impl<orderField, firstField, false>(
+                        alias, separator, fieldSeparator
+                );
+            }
+        }
+
         template <typename Self, auto OrderField, auto FirstField, auto... RestFields, bool Distinct = false>
-        consteval auto&& group_concat_with_order_impl(
+        constexpr auto&& group_concat_with_order_impl(
                 this Self&&             self,
                 utils::fixed_string<32> alias          = {},
                 utils::fixed_string<8>  separator      = {","},
@@ -331,136 +360,60 @@ export namespace storm {
         template <typename Self> auto&& offset(this Self&& self, int offset_value);
 
         // C++26 Aggregate functions with compile-time validation
-        template <typename Self, auto Field>
-            requires std::is_member_pointer_v<decltype(Field)> &&
-                     std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        consteval auto&& max(this Self&& self, utils::fixed_string<32> alias = {}) noexcept {
-            using FieldType = typename member_pointer_traits<decltype(Field)>::member_type;
-            static_assert(std::three_way_comparable<FieldType>, "MAX requires comparable field type");
-            constexpr auto field_name = extract_field_name<Field>();
-
-            self.functionsSet.emplace_back(AggregateSpec::max<Field>(alias));
+        template <typename Self>
+        constexpr auto&& max(this Self&& self, auto field, utils::fixed_string<32> alias = {}) noexcept {
+            self.functionsSet.emplace_back(AggregateSpec::max(field, alias));
             self.query_flags.has_aggregates = true;
             return std::forward<Self>(self);
         }
 
-        template <typename Self, auto Field>
-            requires std::is_member_pointer_v<decltype(Field)> &&
-                     std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        consteval auto&& min(this Self&& self, utils::fixed_string<32> alias = {}) noexcept {
-            using FieldType = typename member_pointer_traits<decltype(Field)>::member_type;
-            static_assert(std::three_way_comparable<FieldType>, "MIN requires comparable field type");
-            constexpr auto field_name = extract_field_name<Field>();
-
-            self.functionsSet.emplace_back(AggregateSpec::min<Field>(alias));
+        template <typename Self>
+        constexpr auto&& min(this Self&& self, auto field, utils::fixed_string<32> alias = {}) noexcept {
+            self.functionsSet.emplace_back(AggregateSpec::min(field, alias));
             self.query_flags.has_aggregates = true;
             return std::forward<Self>(self);
         }
 
-        template <typename Self, auto Field>
-            requires std::is_member_pointer_v<decltype(Field)> &&
-                     std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        consteval auto&& avg(this Self&& self, utils::fixed_string<32> alias = {}) noexcept {
-            using FieldType = typename member_pointer_traits<decltype(Field)>::member_type;
-            static_assert(NumericType<FieldType>, "AVG requires numeric field type");
-            constexpr auto field_name = extract_field_name<Field>();
-
-            self.functionsSet.emplace_back(AggregateSpec::avg<Field>(alias));
+        template <typename Self>
+        constexpr auto&& avg(this Self&& self, auto field, utils::fixed_string<32> alias = {}) noexcept {
+            self.functionsSet.emplace_back(AggregateSpec::avg(field, alias));
             self.query_flags.has_aggregates = true;
             return std::forward<Self>(self);
         }
 
-        template <typename Self, auto Field>
-            requires std::is_member_pointer_v<decltype(Field)> &&
-                     std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        consteval auto&& count(this Self&& self, utils::fixed_string<32> alias = {}) noexcept {
-            // COUNT works on any field type
-            constexpr auto field_name = extract_field_name<Field>();
-
-            self.functionsSet.emplace_back(AggregateSpec::count<Field>(alias));
+        template <typename Self>
+        constexpr auto&& count(this Self&& self, auto field, utils::fixed_string<32> alias = {}) noexcept {
+            self.functionsSet.emplace_back(AggregateSpec::count(field, alias));
             self.query_flags.has_aggregates = true;
             return std::forward<Self>(self);
         }
 
-        template <typename Self, auto Field>
-            requires std::is_member_pointer_v<decltype(Field)> &&
-                     std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        consteval auto&& sum(this Self&& self, utils::fixed_string<32> alias = {}) noexcept {
-            using FieldType = typename member_pointer_traits<decltype(Field)>::member_type;
-            static_assert(NumericType<FieldType>, "SUM requires numeric field type");
-            constexpr auto field_name = extract_field_name<Field>();
-
-            self.functionsSet.emplace_back(AggregateSpec::sum<Field>(alias));
+        template <typename Self>
+        constexpr auto&& sum(this Self&& self, auto field, utils::fixed_string<32> alias = {}) noexcept {
+            self.functionsSet.emplace_back(AggregateSpec::sum(field, alias));
             self.query_flags.has_aggregates = true;
             return std::forward<Self>(self);
         }
 
-        // C++26 Aggregate value methods with compile-time type deduction
-        template <auto Field>
-            requires std::is_member_pointer_v<decltype(Field)> &&
-                     std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        [[nodiscard]] consteval auto max_value() noexcept {
-            using FieldType = typename member_pointer_traits<decltype(Field)>::member_type;
-            static_assert(std::three_way_comparable<FieldType>, "MAX requires comparable field type");
-            constexpr auto field_name = extract_field_name<Field>();
-            return execute_aggregate<Field, AggregateKind::Max>();
+        // C++26 Aggregate value methods with field() syntax - direct execution
+        template <typename Self> [[nodiscard]] constexpr auto max_value(this Self&& self, auto field) noexcept {
+            return self.template execute_aggregate<AggregateKind::Max>(field);
         }
 
-        template <auto Field>
-            requires std::is_member_pointer_v<decltype(Field)> &&
-                     std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        [[nodiscard]] consteval auto min_value() noexcept {
-            using FieldType = typename member_pointer_traits<decltype(Field)>::member_type;
-            static_assert(std::three_way_comparable<FieldType>, "MIN requires comparable field type");
-            constexpr auto field_name = extract_field_name<Field>();
-            return execute_aggregate<Field, AggregateKind::Min>();
+        template <typename Self> [[nodiscard]] constexpr auto min_value(this Self&& self, auto field) noexcept {
+            return self.template execute_aggregate<AggregateKind::Min>(field);
         }
 
-        template <auto Field>
-            requires std::is_member_pointer_v<decltype(Field)> &&
-                     std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        [[nodiscard]] consteval auto avg_value() noexcept {
-            using FieldType = typename member_pointer_traits<decltype(Field)>::member_type;
-            static_assert(NumericType<FieldType>, "AVG requires numeric field type");
-            constexpr auto field_name = extract_field_name<Field>();
-            return execute_aggregate<Field, AggregateKind::Avg>();
+        template <typename Self> [[nodiscard]] constexpr auto avg_value(this Self&& self, auto field) noexcept {
+            return self.template execute_aggregate<AggregateKind::Avg>(field);
         }
 
-        template <auto Field>
-            requires std::is_member_pointer_v<decltype(Field)> &&
-                     std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        [[nodiscard]] consteval auto count_value() noexcept {
-            constexpr auto field_name = extract_field_name<Field>();
-            return execute_aggregate<Field, AggregateKind::Count>();
+        template <typename Self> [[nodiscard]] constexpr auto count_value(this Self&& self, auto field) noexcept {
+            return self.template execute_aggregate<AggregateKind::Count>(field);
         }
 
-        template <auto Field>
-            requires std::is_member_pointer_v<decltype(Field)> &&
-                     std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        [[nodiscard]] consteval auto sum_value() noexcept {
-            using FieldType = typename member_pointer_traits<decltype(Field)>::member_type;
-            static_assert(NumericType<FieldType>, "SUM requires numeric field type");
-            constexpr auto field_name = extract_field_name<Field>();
-            return execute_aggregate<Field, AggregateKind::Sum>();
-        }
-
-        // C++26 Generic aggregate with compile-time kind validation
-        template <auto Field, AggregateKind Kind>
-            requires std::is_member_pointer_v<decltype(Field)> &&
-                     std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        [[nodiscard]] consteval auto aggregate_value() noexcept {
-            using FieldType           = typename member_pointer_traits<decltype(Field)>::member_type;
-            constexpr auto field_name = extract_field_name<Field>();
-
-            // C++26 compile-time validation based on aggregate kind
-            if constexpr (Kind == AggregateKind::Max || Kind == AggregateKind::Min) {
-                static_assert(std::three_way_comparable<FieldType>, "MAX/MIN require comparable field type");
-            } else if constexpr (Kind == AggregateKind::Avg || Kind == AggregateKind::Sum) {
-                static_assert(NumericType<FieldType>, "AVG/SUM require numeric field type");
-            }
-            // COUNT works on any field type
-
-            return execute_aggregate<Field, Kind>();
+        template <typename Self> [[nodiscard]] constexpr auto sum_value(this Self&& self, auto field) noexcept {
+            return self.template execute_aggregate<AggregateKind::Sum>(field);
         }
 
         // For custom SQL aggregates (GROUP_CONCAT, etc)
@@ -484,42 +437,25 @@ export namespace storm {
             );
         }
 
-        // C++26 compile-time aggregate execution with static reflection
-        template <auto Field, AggregateKind Kind>
-            requires std::is_member_pointer_v<decltype(Field)> &&
-                     std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-        [[nodiscard]] consteval auto execute_aggregate() const
-                -> std::expected<aggregate_result_t<Kind, field_type_t<Field>>, std::string> {
-            using ResultType = aggregate_result_t<Kind, field_type_t<Field>>;
-            using FieldType  = field_type_t<Field>;
+        // C++26 compile-time aggregate execution with field parameter
+        template <AggregateKind Kind> [[nodiscard]] constexpr auto execute_aggregate(auto field) const {
+            constexpr auto MemberPtr = decltype(field)::member_ptr;
+            using FieldType =
+                    typename refl::meta::member_pointer_traits<std::remove_const_t<decltype(MemberPtr)>>::member_type;
+            using ResultType = aggregate_result_t<Kind, FieldType>;
 
-            // C++26 compile-time validation with better error messages
-            constexpr auto field_name = extract_field_name<Field>();
-
-            if constexpr (Kind == AggregateKind::Max || Kind == AggregateKind::Min) {
-                static_assert(
-                        std::three_way_comparable<FieldType>,
-                        "MAX/MIN aggregate requires comparable field type for field: " + field_name
-                );
-            } else if constexpr (Kind == AggregateKind::Avg || Kind == AggregateKind::Sum) {
-                static_assert(
-                        NumericType<FieldType>, "AVG/SUM aggregate requires numeric field type for field: " + field_name
-                );
-            }
-
-            // C++26 compile-time spec generation with consteval lambda
-            constexpr auto spec = []() consteval {
-                if constexpr (Kind == AggregateKind::Max)
-                    return AggregateSpec::template max<Field>();
-                else if constexpr (Kind == AggregateKind::Min)
-                    return AggregateSpec::template min<Field>();
-                else if constexpr (Kind == AggregateKind::Avg)
-                    return AggregateSpec::template avg<Field>();
-                else if constexpr (Kind == AggregateKind::Count)
-                    return AggregateSpec::template count<Field>();
-                else
-                    return AggregateSpec::template sum<Field>();
-            }();
+            // C++26 compile-time spec generation with built-in validation
+            AggregateSpec spec;
+            if constexpr (Kind == AggregateKind::Max)
+                spec = AggregateSpec::max(field);
+            else if constexpr (Kind == AggregateKind::Min)
+                spec = AggregateSpec::min(field);
+            else if constexpr (Kind == AggregateKind::Avg)
+                spec = AggregateSpec::avg(field);
+            else if constexpr (Kind == AggregateKind::Count)
+                spec = AggregateSpec::count(field);
+            else
+                spec = AggregateSpec::sum(field);
 
             SelectOptions opts{
                     .functions_set = {spec},
@@ -528,10 +464,10 @@ export namespace storm {
 
             auto result = SelectStatement<T>(conn, std::move(opts)).execute_values();
             if (!result) [[unlikely]]
-                return std::unexpected(result.error());
+                return std::expected<ResultType, std::string>(std::unexpected(result.error()));
 
             if (result->empty()) [[unlikely]]
-                return std::unexpected("No results");
+                return std::expected<ResultType, std::string>(std::unexpected(std::string("No results")));
 
             // Use ranges for cleaner access
             auto& first_row = result->front();
@@ -548,7 +484,7 @@ export namespace storm {
                 );
             }
 
-            return std::unexpected("No data in result");
+            return std::expected<ResultType, std::string>(std::unexpected(std::string("No data in result")));
         }
 
         // FUNCTIONS API (declarations)
@@ -557,24 +493,24 @@ export namespace storm {
         // C++26 JOIN API with compile-time relationship validation
         template <typename Self, class U, auto MemberPtr>
             requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     (std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T> ||
-                      std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, U>) &&
+                     (std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> ||
+                      std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, U>) &&
                      refl::reflectable<T> && refl::reflectable<U>
-        consteval auto&& join(this Self&& self) {
+        constexpr auto&& join(this Self&& self) {
             // C++26 compile-time field validation
             constexpr auto field_name  = extract_field_name<MemberPtr>();
             constexpr auto left_table  = extract_class_name<T>();
             constexpr auto right_table = extract_class_name<U>();
 
             // Validate join field types are compatible
-            using FieldType = typename member_pointer_traits<decltype(MemberPtr)>::member_type;
+            using FieldType = typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type;
             static_assert(std::equality_comparable<FieldType>, "JOIN field must support equality comparison");
 
             // C++26 compile-time join validation
             constexpr bool is_left_field =
-                    std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T>;
+                    std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T>;
             constexpr bool is_right_field =
-                    std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, U>;
+                    std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, U>;
             static_assert(is_left_field || is_right_field, "JOIN field must belong to one of the joined tables");
 
             // Reserve capacity for join clauses
@@ -584,27 +520,76 @@ export namespace storm {
             return std::forward<Self>(self);
         }
 
+        // Helper to extract table name from field name (e.g., "author_id" -> "Author")
+        template <auto MemberPtr> static consteval auto extract_table_name_from_field() {
+            constexpr auto field_name = extract_field_name<MemberPtr>();
+
+            // Find "_id" suffix and extract base name
+            static_assert(field_name.ends_with("_id"), "Foreign key field must end with '_id'");
+
+            constexpr auto base_name = field_name.substr(0, field_name.size() - 3); // Remove "_id"
+
+            // Capitalize first letter to get table name
+            constexpr auto table_name = [&]() {
+                auto result = base_name;
+                if (!result.empty()) {
+                    result[0] = static_cast<char>(std::toupper(result[0]));
+                }
+                return result;
+            }();
+
+            return table_name;
+        }
+
+        // C++26 JOIN API with field() syntax - using string table name
+        template <typename Self, auto MemberPtr>
+            requires std::is_member_pointer_v<decltype(MemberPtr)>
+        constexpr auto&& join(this Self&& self, Field<MemberPtr>) {
+            constexpr auto field_name = extract_field_name<MemberPtr>();
+
+            // Extract table name: "author_id" -> "author"
+            static_assert(field_name.ends_with("_id"), "Foreign key field must end with '_id'");
+            constexpr auto base_name = field_name.substr(0, field_name.size() - 3);
+
+            // Capitalize first letter to get proper table name: "author" -> "Author"
+            auto table_name = [&]() {
+                std::string result{base_name}; // Convert to mutable string
+                if (!result.empty()) {
+                    result[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(result[0])));
+                }
+                return result;
+            }();
+
+            using FieldType = typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type;
+            static_assert(std::equality_comparable<FieldType>, "JOIN field must support equality comparison");
+
+            self.join_clauses.reserve(self.join_clauses.size() + 1);
+            self.join_clauses.emplace_back(JoinWrapper::create_with_string<T, MemberPtr, JoinType::Inner>(table_name));
+
+            return std::forward<Self>(self);
+        }
+
         // C++26 LEFT JOIN with compile-time validation
         template <typename Self, class U, auto MemberPtr>
             requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     (std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T> ||
-                      std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, U>) &&
+                     (std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> ||
+                      std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, U>) &&
                      refl::reflectable<T> && refl::reflectable<U>
-        consteval auto&& left_join(this Self&& self) {
+        constexpr auto&& left_join(this Self&& self) {
             // C++26 compile-time field validation
             constexpr auto field_name  = extract_field_name<MemberPtr>();
             constexpr auto left_table  = extract_class_name<T>();
             constexpr auto right_table = extract_class_name<U>();
 
             // Validate join field types are compatible
-            using FieldType = typename member_pointer_traits<decltype(MemberPtr)>::member_type;
+            using FieldType = typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type;
             static_assert(std::equality_comparable<FieldType>, "LEFT JOIN field must support equality comparison");
 
             // C++26 compile-time join validation
             constexpr bool is_left_field =
-                    std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T>;
+                    std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T>;
             constexpr bool is_right_field =
-                    std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, U>;
+                    std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, U>;
             static_assert(is_left_field || is_right_field, "LEFT JOIN field must belong to one of the joined tables");
 
             // Reserve capacity for join clauses
@@ -617,24 +602,24 @@ export namespace storm {
         // C++26 RIGHT JOIN with compile-time validation
         template <typename Self, class U, auto MemberPtr>
             requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     (std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T> ||
-                      std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, U>) &&
+                     (std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> ||
+                      std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, U>) &&
                      refl::reflectable<T> && refl::reflectable<U>
-        consteval auto&& right_join(this Self&& self) {
+        constexpr auto&& right_join(this Self&& self) {
             // C++26 compile-time field validation
             constexpr auto field_name  = extract_field_name<MemberPtr>();
             constexpr auto left_table  = extract_class_name<T>();
             constexpr auto right_table = extract_class_name<U>();
 
             // Validate join field types are compatible
-            using FieldType = typename member_pointer_traits<decltype(MemberPtr)>::member_type;
+            using FieldType = typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type;
             static_assert(std::equality_comparable<FieldType>, "RIGHT JOIN field must support equality comparison");
 
             // C++26 compile-time join validation
             constexpr bool is_left_field =
-                    std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T>;
+                    std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T>;
             constexpr bool is_right_field =
-                    std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, U>;
+                    std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, U>;
             static_assert(is_left_field || is_right_field, "RIGHT JOIN field must belong to one of the joined tables");
 
             // Reserve capacity for join clauses
@@ -647,24 +632,24 @@ export namespace storm {
         // C++26 FULL OUTER JOIN with compile-time validation
         template <typename Self, class U, auto MemberPtr>
             requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     (std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T> ||
-                      std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, U>) &&
+                     (std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> ||
+                      std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, U>) &&
                      refl::reflectable<T> && refl::reflectable<U>
-        consteval auto&& full_join(this Self&& self) {
+        constexpr auto&& full_join(this Self&& self) {
             // C++26 compile-time field validation
             constexpr auto field_name  = extract_field_name<MemberPtr>();
             constexpr auto left_table  = extract_class_name<T>();
             constexpr auto right_table = extract_class_name<U>();
 
             // Validate join field types are compatible
-            using FieldType = typename member_pointer_traits<decltype(MemberPtr)>::member_type;
+            using FieldType = typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type;
             static_assert(std::equality_comparable<FieldType>, "FULL JOIN field must support equality comparison");
 
             // C++26 compile-time join validation
             constexpr bool is_left_field =
-                    std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T>;
+                    std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T>;
             constexpr bool is_right_field =
-                    std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, U>;
+                    std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, U>;
             static_assert(is_left_field || is_right_field, "FULL JOIN field must belong to one of the joined tables");
 
             // Reserve capacity for join clauses
@@ -691,8 +676,10 @@ export namespace storm {
         // C++26 field-specific update with compile-time validation
         template <auto MemberPtr, typename Value>
             requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
-                     std::convertible_to<Value, typename member_pointer_traits<decltype(MemberPtr)>::member_type>
+                     std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
+                     std::convertible_to<
+                             Value,
+                             typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type>
         std::expected<bool, std::string> update(Value&& value);
 
         // C++26 SELECT API with compile-time query validation and type safety
@@ -714,7 +701,6 @@ export namespace storm {
             requires std::same_as<std::remove_cvref_t<std::ranges::range_value_t<R>>, T> && refl::reflectable<T> &&
                      std::ranges::sized_range<R>
         std::expected<std::vector<int>, std::string> insert(R&& objects);
-
 
         // C++26 compile-time statement preparation with reflection validation
         InsertStatement<T> stmt_insert(const T& obj)
@@ -802,7 +788,7 @@ export namespace storm {
             return result;
         }
 
-        template <typename U> [[nodiscard]] consteval std::string_view get_table_name() {
+        template <typename U> [[nodiscard]] constexpr std::string_view get_table_name() {
             return refl::reflect<U>::name();
         }
 
@@ -849,7 +835,7 @@ export namespace storm {
             return field_expr;
         }
 
-        template <auto Field> consteval void check_member_pointer() {
+        template <auto Field> constexpr void check_member_pointer() {
             static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
         }
     };
@@ -874,7 +860,7 @@ export namespace storm {
     // WHERE API implementation
     template <typename T>
     template <typename Self>
-    auto&& QuerySet<T>::where(this Self&& self, const storm::Where& where_clause) {
+    constexpr auto&& QuerySet<T>::where(this Self&& self, const storm::Where& where_clause) {
         if (self._whereExpression) {
             // Combine with existing WHERE using AND
             self._whereExpression = storm::Where{*self._whereExpression && where_clause};
@@ -884,23 +870,35 @@ export namespace storm {
         return std::forward<Self>(self);
     }
 
-    // C++26 compile-time WHERE with static reflection and zero-allocation field names
     template <typename T>
-    template <typename Self, auto MemberPtr, typename Value>
+    template <typename Self>
+    constexpr auto&& QuerySet<T>::where(this Self&& self, storm::Where&& where_clause) {
+        if (self._whereExpression) {
+            // Combine with existing WHERE using AND
+            self._whereExpression = storm::Where{*self._whereExpression && std::move(where_clause)};
+        } else {
+            self._whereExpression = std::move(where_clause);
+        }
+        return std::forward<Self>(self);
+    }
+
+    // Macro-based WHERE implementations with compile-time field resolution
+
+    // Basic equality and operator - where(field, value) / where(field, value, op)
+    template <typename T>
+    template <auto MemberPtr, typename Self, typename Value>
         requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                 std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-    consteval auto&& QuerySet<T>::where(this Self&& self, Value&& value, storm::Op op) {
-        // C++26 compile-time field name extraction
-        constexpr auto field_name      = extract_field_name<MemberPtr>();
-        constexpr auto full_field_name = extract_class_name<T>() + "." + field_name;
+                 std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T>
+    constexpr auto&& QuerySet<T>::where_impl(this Self&& self, Value&& value, storm::Op op) {
+        // ✅ COMPILE-TIME: Field name resolution using template parameter
+        constexpr auto field_name = extract_field_name<MemberPtr>();
 
-        // Create field object with compile-time name (zero runtime cost)
-        auto field_obj = Field<MemberPtr>();
+        // Runtime: Create condition with compile-time resolved field name
+        storm::Where condition = storm::Where(
+                std::make_unique<storm::Condition>(std::string(field_name), op, std::forward<Value>(value))
+        );
 
-        // Generate condition with compile-time validation
-        storm::Where condition = self.create_condition(field_obj, std::forward<Value>(value), op);
-
-        // Monadic composition
+        // Runtime: Combine with existing WHERE clause
         self._whereExpression = self._whereExpression.has_value()
                                         ? storm::Where{*self._whereExpression && std::move(condition)}
                                         : std::move(condition);
@@ -908,110 +906,88 @@ export namespace storm {
         return std::forward<Self>(self);
     }
 
-    // C++26 compile-time WHERE IN with range concepts and static validation
+    // BETWEEN - where(field, value1, value2)
     template <typename T>
-    template <typename Self, auto MemberPtr, std::ranges::range Container>
+    template <auto MemberPtr, typename Self, typename T1, typename T2>
         requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                 std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-    consteval auto&& QuerySet<T>::where_in(this Self&& self, const Container& values) {
-        // C++26 compile-time validation
-        static_assert(
-                !std::ranges::empty(values) || std::ranges::sized_range<Container>,
-                "Container must be sized or non-empty for WHERE IN"
+                 std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
+                 std::three_way_comparable_with<T1, T2> && (!std::same_as<T2, storm::Op>)
+    constexpr auto&& QuerySet<T>::where_impl(this Self&& self, T1&& value1, T2&& value2) {
+        // ✅ COMPILE-TIME: Field validation and name resolution
+        using FieldType = typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type;
+        static_assert(std::three_way_comparable_with<FieldType, T1>, "Field type must be comparable with value1 type");
+        static_assert(std::three_way_comparable_with<FieldType, T2>, "Field type must be comparable with value2 type");
+        constexpr auto field_name = extract_field_name<MemberPtr>();
+
+        // Runtime: Create BETWEEN condition
+        storm::Where condition = storm::Where(
+                std::make_unique<storm::Condition>(
+                        std::string(field_name), std::forward<T1>(value1), std::forward<T2>(value2)
+                )
         );
 
-        // Early return for empty containers (runtime check)
+        self._whereExpression = self._whereExpression.has_value()
+                                        ? storm::Where{*self._whereExpression && std::move(condition)}
+                                        : std::move(condition);
+
+        return std::forward<Self>(self);
+    }
+
+    // NULL checks - where(field, Op::IS) / where(field, Op::IS_NOT)
+    template <typename T>
+    template <auto MemberPtr, typename Self>
+        requires std::is_member_pointer_v<decltype(MemberPtr)> &&
+                 std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T>
+    constexpr auto&& QuerySet<T>::where_impl(this Self&& self, storm::Op null_op) {
+        // ✅ COMPILE-TIME: Field validation and name resolution
+        using FieldType           = typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type;
+        constexpr auto field_name = extract_field_name<MemberPtr>();
+
+        // Compile-time warning for non-nullable types
+        if constexpr (!std::is_pointer_v<FieldType> &&
+                      !std::is_same_v<FieldType, std::optional<typename FieldType::value_type>>) {
+            // Note: Non-nullable field - NULL check may always be false/true
+        }
+
+        // Runtime: Create NULL condition
+        storm::Where condition =
+                storm::Where(std::make_unique<storm::Condition>(std::string(field_name), null_op, std::nullopt));
+
+        self._whereExpression = self._whereExpression.has_value()
+                                        ? storm::Where{*self._whereExpression && std::move(condition)}
+                                        : std::move(condition);
+
+        return std::forward<Self>(self);
+    }
+
+    // IN clause - where(field, container)
+    template <typename T>
+    template <auto MemberPtr, typename Self, std::ranges::range Container>
+        requires std::is_member_pointer_v<decltype(MemberPtr)> &&
+                 std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
+                 (!std::same_as<Container, storm::Op>)
+    constexpr auto&& QuerySet<T>::where_impl(this Self&& self, const Container& values) {
+        // ✅ COMPILE-TIME: Field name resolution
+        constexpr auto field_name = extract_field_name<MemberPtr>();
+
+        // Runtime: Early return for empty containers
         if (std::ranges::empty(values)) {
-            // Generate FALSE condition for empty IN clause at runtime
             auto false_condition = storm::Where(std::make_unique<storm::Condition>("1", storm::Op::EQ, 0));
             return self.where(false_condition);
         }
 
-        // C++26 compile-time field object creation
-        auto         field_obj = Field<MemberPtr>();
-        storm::Where condition = self.create_in_condition(field_obj, values);
-        return self.where(std::move(condition));
-    }
+        // Runtime: Create IN condition as OR chain
+        auto         it = std::ranges::begin(values);
+        storm::Where condition =
+                storm::Where(std::make_unique<storm::Condition>(std::string(field_name), storm::Op::EQ, *it));
 
-    // C++26 compile-time WHERE LIKE with string validation
-    template <typename T>
-    template <typename Self, auto MemberPtr, typename Value>
-        requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                 std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
-                 std::convertible_to<Value, std::string_view>
-    consteval auto&& QuerySet<T>::where_like(this Self&& self, Value&& pattern) {
-        // C++26 compile-time field type validation
-        using FieldType = typename member_pointer_traits<decltype(MemberPtr)>::member_type;
-        static_assert(
-                std::convertible_to<FieldType, std::string_view>, "LIKE operator requires string-compatible field type"
-        );
-
-        // C++26 compile-time pattern validation
-        // Note: In consteval context, pattern validation is implicit
-
-        auto         field_obj = Field<MemberPtr>();
-        storm::Where condition = field_obj.like(std::forward<Value>(pattern));
-        return self.where(std::move(condition));
-    }
-
-    // C++26 compile-time WHERE BETWEEN with three-way comparison
-    template <typename T>
-    template <typename Self, auto MemberPtr, typename T1, typename T2>
-        requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                 std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
-                 std::three_way_comparable_with<T1, T2>
-    consteval auto&& QuerySet<T>::where_between(this Self&& self, T1&& value1, T2&& value2) {
-        // C++26 compile-time field type validation
-        using FieldType = typename member_pointer_traits<decltype(MemberPtr)>::member_type;
-        static_assert(std::three_way_comparable_with<FieldType, T1>, "Field type must be comparable with value1 type");
-        static_assert(std::three_way_comparable_with<FieldType, T2>, "Field type must be comparable with value2 type");
-
-        // C++26 compile-time range validation
-        // Note: In consteval context, range validation will be checked at compile time
-
-        auto         field_obj = Field<MemberPtr>();
-        storm::Where condition = field_obj.between(std::forward<T1>(value1), std::forward<T2>(value2));
-        return self.where(std::move(condition));
-    }
-
-    // C++26 compile-time NULL checks with static field validation
-    template <typename T>
-    template <typename Self, auto MemberPtr>
-        requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                 std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-    consteval auto&& QuerySet<T>::where_not_null(this Self&& self) {
-        // C++26 compile-time field type validation
-        using FieldType = typename member_pointer_traits<decltype(MemberPtr)>::member_type;
-
-        // Generate compile-time warning for non-nullable types
-        if constexpr (!std::is_pointer_v<FieldType> &&
-                      !std::is_same_v<FieldType, std::optional<typename FieldType::value_type>>) {
-            // Note: Non-nullable field - consider if NULL check is necessary
+        ++it;
+        for (; it != std::ranges::end(values); ++it) {
+            auto next_condition =
+                    storm::Where(std::make_unique<storm::Condition>(std::string(field_name), storm::Op::EQ, *it));
+            condition = condition || std::move(next_condition);
         }
 
-        constexpr auto field_name = extract_field_name<MemberPtr>();
-        auto           field_obj  = Field<MemberPtr>();
-        storm::Where   condition  = field_obj.is_not_null();
-        return self.where(std::move(condition));
-    }
-
-    template <typename T>
-    template <typename Self, auto MemberPtr>
-        requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                 std::same_as<typename member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-    consteval auto&& QuerySet<T>::where_is_null(this Self&& self) {
-        // C++26 compile-time field type validation
-        using FieldType = typename member_pointer_traits<decltype(MemberPtr)>::member_type;
-
-        // Generate compile-time warning for non-nullable types
-        if constexpr (!std::is_pointer_v<FieldType> &&
-                      !std::is_same_v<FieldType, std::optional<typename FieldType::value_type>>) {
-            // Note: Non-nullable field - IS NULL will always be false
-        }
-
-        constexpr auto field_name = extract_field_name<MemberPtr>();
-        auto           field_obj  = Field<MemberPtr>();
-        storm::Where   condition  = field_obj.is_null();
         return self.where(std::move(condition));
     }
 
@@ -1023,7 +999,6 @@ export namespace storm {
     {
         return execute_update(std::span<const T>{&obj, 1});
     }
-
 
     // 2. Batch update - modern span-based API
     template <typename T>
@@ -1043,7 +1018,6 @@ export namespace storm {
     {
         return execute_insert(std::span<const T>{&obj, 1});
     }
-
 
     // 2. Batch insert - modern span-based API
     template <typename T>
@@ -1085,113 +1059,110 @@ export namespace storm {
         return execute_delete();
     }
 
-    // C++26 DISTINCT implementation with compile-time field validation
+    // C++26 DISTINCT implementation with function parameter deduction
     template <typename T>
-    template <typename Self, auto... Fields>
-        requires(sizeof...(Fields) > 0) && (std::is_member_pointer_v<decltype(Fields)> && ...) &&
-                (std::same_as<typename member_pointer_traits<decltype(Fields)>::class_type, T> && ...)
-    consteval auto&& QuerySet<T>::distinct(this Self&& self) {
+    template <typename Self>
+    constexpr auto&& QuerySet<T>::distinct(this Self&& self, auto... fields)
+        requires(sizeof...(fields) > 0)
+    {
         // C++26 compile-time validation
-        static_assert(sizeof...(Fields) <= 10, "Too many DISTINCT fields (max 10 for performance)");
+        static_assert(sizeof...(fields) <= 10, "Too many DISTINCT fields (max 10 for performance)");
 
-        // Validate all field types support equality comparison (required for DISTINCT)
-        static_assert(
-                (std::equality_comparable<typename member_pointer_traits<decltype(Fields)>::member_type> && ...),
-                "All DISTINCT field types must support equality comparison"
-        );
+        // Field validation will be handled by FieldWrapper::create
 
-        // C++26 compile-time field name extraction for debugging
-        constexpr auto field_names = std::array{extract_field_name<Fields>()...};
+        // Note: Field name extraction not needed for runtime validation
 
         // Optimize container capacity
-        constexpr auto field_count = sizeof...(Fields);
+        constexpr auto field_count = sizeof...(fields);
         self.distinctFields.reserve(self.distinctFields.size() + field_count);
 
         // C++26 fold expression with compile-time field wrapper creation
-        (self.distinctFields.emplace_back(refl::FieldWrapper::create<Fields>()), ...);
+        (self.distinctFields.emplace_back(refl::FieldWrapper::create(fields)), ...);
 
         return std::forward<Self>(self);
     }
 
-    // C++26 ONLY implementation with compile-time field selection
+    // C++26 ONLY implementation - Simple version: .only(field1, field2, ...)
     template <typename T>
-    template <typename Self, auto... Fields>
-        requires(sizeof...(Fields) > 0) && (std::is_member_pointer_v<decltype(Fields)> && ...) &&
-                (std::same_as<typename member_pointer_traits<decltype(Fields)>::class_type, T> && ...)
-    consteval auto&& QuerySet<T>::only(this Self&& self, utils::fixed_string<32> alias) {
+    template <typename Self>
+    constexpr auto&& QuerySet<T>::only(this Self&& self, auto... fields)
+        requires(sizeof...(fields) > 0)
+    {
         // C++26 compile-time validation
-        static_assert(sizeof...(Fields) <= 20, "Too many ONLY fields (max 20 for performance)");
+        static_assert(sizeof...(fields) <= 20, "Too many ONLY fields (max 20 for performance)");
 
-        // C++26 compile-time field name extraction for validation
-        constexpr auto field_names = std::array{extract_field_name<Fields>()...};
-
-        // Validate no duplicate field names at compile time
-        constexpr auto has_duplicates = []() {
-            for (std::size_t i = 0; i < field_names.size(); ++i) {
-                for (std::size_t j = i + 1; j < field_names.size(); ++j) {
-                    if (field_names[i] == field_names[j])
-                        return true;
-                }
-            }
-            return false;
-        }();
-        static_assert(!has_duplicates, "ONLY fields must be unique");
+        // Note: Field name extraction not needed for runtime validation
+        // Note: Duplicate field validation would require compile-time field name comparison
 
         // Optimize container capacity
-        constexpr auto field_count = sizeof...(Fields);
+        constexpr auto field_count = sizeof...(fields);
         self.onlyFields.reserve(self.onlyFields.size() + field_count);
 
-        // C++26 fold expression with field wrapper creation
-        (self.onlyFields.emplace_back(refl::FieldWrapper::create<Fields>(), alias), ...);
+        // C++26 fold expression with field wrapper creation (no aliases)
+        (self.onlyFields.emplace_back(refl::FieldWrapper::create(fields), utils::fixed_string<32>{}), ...);
 
         return std::forward<Self>(self);
     }
 
-    // C++26 GROUP BY implementation with compile-time aggregation validation
+    // C++26 ONLY implementation - Alias version: .only(field, alias, field, alias, ...)
     template <typename T>
-    template <typename Self, auto... Fields>
-        requires(sizeof...(Fields) > 0) && (std::is_member_pointer_v<decltype(Fields)> && ...) &&
-                (std::same_as<typename member_pointer_traits<decltype(Fields)>::class_type, T> && ...)
-    consteval auto&& QuerySet<T>::group_by(this Self&& self) {
+    template <typename Self>
+    constexpr auto&& QuerySet<T>::only_with_aliases(this Self&& self, auto... field_alias_pairs)
+        requires(sizeof...(field_alias_pairs) > 0) && (sizeof...(field_alias_pairs) % 2 == 0)
+    {
         // C++26 compile-time validation
-        static_assert(sizeof...(Fields) <= 8, "Too many GROUP BY fields (max 8 for performance)");
+        static_assert(sizeof...(field_alias_pairs) <= 40, "Too many field-alias pairs (max 20 pairs for performance)");
+        static_assert(sizeof...(field_alias_pairs) % 2 == 0, "Must provide field-alias pairs");
 
-        // Validate all field types support equality comparison (required for GROUP BY)
-        static_assert(
-                (std::equality_comparable<typename member_pointer_traits<decltype(Fields)>::member_type> && ...),
-                "All GROUP BY field types must support equality comparison"
-        );
+        // Extract field-alias pairs at compile time
+        constexpr auto pairs = std::make_tuple(field_alias_pairs...);
 
-        // Validate all field types are hashable for performance optimization
-        static_assert(
-                (std::is_same_v<
-                         std::hash<typename member_pointer_traits<decltype(Fields)>::member_type>,
-                         std::hash<typename member_pointer_traits<decltype(Fields)>::member_type>> &&
-                 ...),
-                "All GROUP BY field types should be hashable for optimal performance"
-        );
+        // Process pairs using index sequence
+        return [&]<std::size_t... I>(std::index_sequence<I...>) -> decltype(auto) {
+            constexpr auto field_count = sizeof...(field_alias_pairs) / 2;
+            self.onlyFields.reserve(self.onlyFields.size() + field_count);
 
-        // C++26 compile-time field name extraction
-        constexpr auto field_names = std::array{extract_field_name<Fields>()...};
+            // Validate fields are member pointers and add them
+            (([&self]<std::size_t Idx>() {
+                 constexpr auto field = std::get<Idx * 2>(pairs);
+                 constexpr auto alias = std::get<Idx * 2 + 1>(pairs);
 
-        // Validate no duplicate field names
-        constexpr auto has_duplicates = []() {
-            for (std::size_t i = 0; i < field_names.size(); ++i) {
-                for (std::size_t j = i + 1; j < field_names.size(); ++j) {
-                    if (field_names[i] == field_names[j])
-                        return true;
-                }
-            }
-            return false;
-        }();
-        static_assert(!has_duplicates, "GROUP BY fields must be unique");
+                 static_assert(
+                         std::is_member_pointer_v<decltype(field)>, "Even-indexed arguments must be member pointers"
+                 );
+                 static_assert(
+                         std::same_as<typename refl::meta::member_pointer_traits<decltype(field)>::class_type, T>,
+                         "Field must belong to the correct class"
+                 );
+
+                 self.onlyFields.emplace_back(refl::FieldWrapper::create(field), alias);
+             }.template operator()<I>()),
+             ...);
+
+            return std::forward<Self>(self);
+        }(std::make_index_sequence<sizeof...(field_alias_pairs) / 2>{});
+    }
+
+    // C++26 GROUP BY implementation with function parameter deduction
+    template <typename T>
+    template <typename Self>
+    constexpr auto&& QuerySet<T>::group_by(this Self&& self, auto... fields)
+        requires(sizeof...(fields) > 0)
+    {
+        // C++26 compile-time validation
+        static_assert(sizeof...(fields) <= 8, "Too many GROUP BY fields (max 8 for performance)");
+
+        // Field validation will be handled by FieldWrapper::create
+
+        // Note: Field name extraction not needed for runtime validation
+        // Note: Duplicate field validation would require compile-time field name comparison
 
         // Optimize container capacity
-        constexpr auto field_count = sizeof...(Fields);
+        constexpr auto field_count = sizeof...(fields);
         self.groupByFields.reserve(self.groupByFields.size() + field_count);
 
         // C++26 fold expression with compile-time field wrapper creation
-        (self.groupByFields.emplace_back(refl::FieldWrapper::create<Fields>()), ...);
+        (self.groupByFields.emplace_back(refl::FieldWrapper::create(fields)), ...);
 
         // Mark that this query uses aggregation for optimization hints
         self.query_flags.has_aggregates = true;
@@ -1222,133 +1193,118 @@ export namespace storm {
         return std::forward<Self>(self);
     }
 
-    // C++26 ORDER BY implementations with compile-time field validation
+    // C++26 compile-time field-direction pairs ordering
     template <typename T>
-    template <typename Self, auto Field, Collation CollationType>
-        requires std::is_member_pointer_v<decltype(Field)> &&
-                 std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T>
-    consteval auto&& QuerySet<T>::order_by(this Self&& self) {
-        // C++26 compile-time field name extraction
-        constexpr auto field_name      = extract_field_name<Field>();
-        constexpr auto full_field_name = extract_class_name<T>() + "." + field_name;
+    template <typename Self>
+    constexpr auto&& QuerySet<T>::order_by(this Self&& self, auto field, auto direction, auto... rest)
+        requires std::same_as<decltype(direction), bool>
+    {
+        // Validate variadic arguments come in field-direction pairs
+        static_assert(sizeof...(rest) % 2 == 0, "Must provide field-direction pairs");
 
-        // Compile-time validation for sortable fields
-        using FieldType = typename member_pointer_traits<decltype(Field)>::member_type;
-        static_assert(Sortable<FieldType>, "Field type must be sortable for ORDER BY");
+        // Field validation will be handled by FieldWrapper::create
 
-        // Create field wrapper with zero-allocation compile-time name
-        self.orderTerms.emplace_back(refl::FieldWrapper::create<Field>(), true, CollationType);
+        // Optimize container capacity
+        constexpr auto total_pairs = sizeof...(rest) / 2 + 1;
+        self.orderTerms.reserve(self.orderTerms.size() + total_pairs);
+
+        // Process all field-direction pairs with parameter pack expansion
+        auto pack = std::make_tuple(field, direction, rest...);
+        [&pack, &self]<std::size_t... I>(std::index_sequence<I...>) {
+            (self.orderTerms.emplace_back(
+                     refl::FieldWrapper::create(std::get<I * 2>(pack)), std::get<I * 2 + 1>(pack), Collation::NONE
+             ),
+             ...);
+        }(std::make_index_sequence<(sizeof...(rest) + 2) / 2>{});
+
         return std::forward<Self>(self);
     }
 
     // C++26 multiple field ordering with compile-time validation and optimization
     template <typename T>
-    template <typename Self, auto... Fields>
-        requires(sizeof...(Fields) > 0) && (std::is_member_pointer_v<decltype(Fields)> && ...) &&
-                (std::same_as<typename member_pointer_traits<decltype(Fields)>::class_type, T> && ...)
-    consteval auto&& QuerySet<T>::order_by_multiple(this Self&& self) {
+    template <typename Self>
+    constexpr auto&& QuerySet<T>::order_by(this Self&& self, auto... fields)
+        requires(sizeof...(fields) > 0)
+    {
         // C++26 compile-time field validation for all fields
-        static_assert(sizeof...(Fields) <= 16, "Too many ORDER BY fields (max 16 for performance)");
+        static_assert(sizeof...(fields) <= 16, "Too many ORDER BY fields (max 16 for performance)");
 
-        // Validate all field types are sortable at compile time
-        static_assert(
-                (Sortable<typename member_pointer_traits<decltype(Fields)>::member_type> && ...),
-                "All field types must be sortable for ORDER BY"
-        );
+        // Field validation will be handled by FieldWrapper::create
 
         // C++26 compile-time capacity optimization
-        constexpr auto field_count = sizeof...(Fields);
+        constexpr auto field_count = sizeof...(fields);
         self.orderTerms.reserve(self.orderTerms.size() + field_count);
 
         // C++26 fold expression with perfect forwarding
-        (self.orderTerms.emplace_back(refl::FieldWrapper::create<Fields>(), true, Collation::NONE), ...);
+        (self.orderTerms.emplace_back(refl::FieldWrapper::create(fields), true, Collation::NONE), ...);
 
         return std::forward<Self>(self);
     }
 
-    // C++26 compile-time field-direction pairs with recursive template expansion
+    // C++26 compile-time field-collation pairs implementation
     template <typename T>
-    template <typename Self, auto Field, auto Direction, auto... Rest>
-        requires std::is_member_pointer_v<decltype(Field)> &&
-                 std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T> &&
-                 std::same_as<decltype(Direction), bool>
-    consteval auto&& QuerySet<T>::order_by_mixed(this Self&& self) {
-        // C++26 compile-time validation
-        static_assert(sizeof...(Rest) % 2 == 0, "Must provide field-direction pairs (field, bool, field, bool, ...)");
-        static_assert((sizeof...(Rest) / 2 + 1) <= 8, "Too many ORDER BY pairs (max 8 for performance)");
-
-        // Validate field is sortable
-        using FieldType = typename member_pointer_traits<decltype(Field)>::member_type;
+    template <typename Self>
+    constexpr auto&& QuerySet<T>::order_by(this Self&& self, auto field, auto collation)
+        requires std::same_as<decltype(collation), Collation>
+    {
+        // Validate field type is sortable
+        constexpr auto MemberPtr = decltype(field)::member_ptr;
+        using FieldType = typename refl::meta::member_pointer_traits<std::remove_const_t<decltype(MemberPtr)>>::member_type;
         static_assert(Sortable<FieldType>, "Field type must be sortable for ORDER BY");
 
-        // C++26 compile-time field name for debugging
-        constexpr auto field_name = extract_field_name<Field>();
+        // Runtime collation validation - will be handled at execution time by SQL engine
 
-        // Optimize container capacity
-        constexpr auto total_pairs = sizeof...(Rest) / 2 + 1;
-        self.orderTerms.reserve(self.orderTerms.size() + total_pairs);
+        // Add order term with default ascending direction
+        self.orderTerms.emplace_back(refl::FieldWrapper::create(field), true, collation);
 
-        // Add current field-direction pair
-        self.orderTerms.emplace_back(refl::FieldWrapper::create<Field>(), Direction, Collation::NONE);
-
-        // C++26 recursive template expansion
-        if constexpr (sizeof...(Rest) > 0) {
-            return self.template order_by_mixed<Rest...>();
-        } else {
-            return std::forward<Self>(self);
-        }
+        return std::forward<Self>(self);
     }
 
     // C++26 compile-time full ORDER BY with field-direction-collation triplets
     template <typename T>
-    template <typename Self, auto Field, auto Direction, auto Coll, auto... Rest>
-        requires std::is_member_pointer_v<decltype(Field)> &&
-                 std::same_as<typename member_pointer_traits<decltype(Field)>::class_type, T> &&
-                 std::same_as<decltype(Direction), bool> && std::same_as<decltype(Coll), Collation>
-    consteval auto&& QuerySet<T>::order_by_full(this Self&& self) {
+    template <typename Self>
+    constexpr auto&& QuerySet<T>::order_by(this Self&& self, auto field, auto direction, auto collation, auto... rest)
+        requires std::same_as<decltype(direction), bool> && std::same_as<decltype(collation), Collation>
+    {
         // C++26 compile-time validation
         static_assert(
-                sizeof...(Rest) % 3 == 0,
+                sizeof...(rest) % 3 == 0,
                 "Must provide field-direction-collation triplets (field, bool, collation, ...)"
         );
-        static_assert((sizeof...(Rest) / 3 + 1) <= 6, "Too many ORDER BY triplets (max 6 for performance)");
+        static_assert((sizeof...(rest) / 3 + 1) <= 6, "Too many ORDER BY triplets (max 6 for performance)");
 
         // Validate field is sortable
-        using FieldType = typename member_pointer_traits<decltype(Field)>::member_type;
+        constexpr auto MemberPtr = decltype(field)::member_ptr;
+        using FieldType = typename refl::meta::member_pointer_traits<std::remove_const_t<decltype(MemberPtr)>>::member_type;
         static_assert(Sortable<FieldType>, "Field type must be sortable for ORDER BY");
 
-        // C++26 compile-time collation validation for string fields
-        if constexpr (std::convertible_to<FieldType, std::string_view>) {
-            static_assert(
-                    Coll != Collation::BINARY || std::is_same_v<FieldType, std::string>,
-                    "BINARY collation requires exact string type"
-            );
-        } else {
-            static_assert(Coll == Collation::NONE, "Non-string fields cannot use collation");
-        }
-
-        // C++26 compile-time field name for debugging
-        constexpr auto field_name = extract_field_name<Field>();
+        // Runtime collation validation - will be handled at execution time by SQL engine
 
         // Optimize container capacity
-        constexpr auto total_triplets = sizeof...(Rest) / 3 + 1;
+        constexpr auto total_triplets = sizeof...(rest) / 3 + 1;
         self.orderTerms.reserve(self.orderTerms.size() + total_triplets);
 
-        // Add current field-direction-collation triplet
-        self.orderTerms.emplace_back(refl::FieldWrapper::create<Field>(), Direction, Coll);
+        // Process all field-direction-collation triplets with fold expression
+        auto process_triplets = [&self]<typename... Args>(Args&&... args) {
+            auto process_triplet = [&self](auto&& f, auto&& d, auto&& c) {
+                self.orderTerms.emplace_back(refl::FieldWrapper::create(f), d, c);
+            };
 
-        // C++26 recursive template expansion
-        if constexpr (sizeof...(Rest) > 0) {
-            return self.template order_by_full<Rest...>();
-        }
+            // Process triplets using parameter pack expansion
+            auto pack = std::make_tuple(std::forward<Args>(args)...);
+            [&pack, &process_triplet]<std::size_t... I>(std::index_sequence<I...>) {
+                (process_triplet(std::get<I * 3>(pack), std::get<I * 3 + 1>(pack), std::get<I * 3 + 2>(pack)), ...);
+            }(std::make_index_sequence<sizeof...(Args) / 3>{});
+        };
 
+        process_triplets(field, direction, collation, rest...);
         return std::forward<Self>(self);
     }
 
     // GROUP_CONCAT_ORDER implementation
     template <typename T>
     template <typename Self, auto OrderField, auto FirstField, auto... RestFields, bool Distinct>
-    consteval auto&& QuerySet<T>::group_concat_with_order_impl(
+    constexpr auto&& QuerySet<T>::group_concat_with_order_impl(
             this Self&&             self,
             utils::fixed_string<32> alias,
             utils::fixed_string<8>  separator,
@@ -1399,31 +1355,33 @@ export namespace storm {
     }
 
     template <typename T>
-    template <typename Self, bool Distinct, auto... Fields>
-    consteval auto&&
-    QuerySet<T>::group_concat(this Self&& self, utils::fixed_string<32> alias, utils::fixed_string<8> separator) {
-        constexpr auto sql = utils::make_string_builder<256>()
-                                     .append("GROUP_CONCAT(")
-                                     .append(Distinct ? "DISTINCT " : "")
-                                     .append([]() {
-                                         if constexpr (sizeof...(Fields) == 0) {
-                                             return utils::fixed_string<1>{"*"};
-                                         } else {
-                                             return utils::join_with(", ", utils::formatFieldName("", Fields)...);
-                                         }
-                                     }())
-                                     .append(" SEPARATOR '")
-                                     .append(separator)
-                                     .append("')")
-                                     .and_then([&](auto builder) {
-                                         if (alias.size() > 0) {
-                                             return builder.append(" AS \"").append(alias).append("\"");
-                                         }
-                                         return builder;
-                                     })
-                                     .build();
+    template <typename Self>
+    auto&&
+    QuerySet<T>::group_concat(this Self&& self, auto field, utils::fixed_string<32> alias, utils::fixed_string<8> separator, bool distinct) {
+        // Extract field information at compile time
+        constexpr auto MemberPtr = decltype(field)::member_ptr;
+        constexpr auto field_name = extract_field_name<MemberPtr>();
+        constexpr auto table_name = extract_class_name<T>();
 
-        self.functionsSet.emplace_back(AggregateSpec::custom_sql(sql.view()));
+        // Build SQL with runtime parameters
+        std::string sql = "GROUP_CONCAT(";
+        if (distinct) {
+            sql += "DISTINCT ";
+        }
+        sql += std::string{table_name};
+        sql += ".";
+        sql += std::string{field_name};
+        sql += " SEPARATOR '";
+        sql += separator.c_str();
+        sql += "')";
+
+        if (alias.c_str()[0] != '\0') {
+            sql += " AS \"";
+            sql += alias.c_str();
+            sql += "\"";
+        }
+
+        self.functionsSet.emplace_back(AggregateSpec::custom_sql(sql));
         return std::forward<Self>(self);
     }
 

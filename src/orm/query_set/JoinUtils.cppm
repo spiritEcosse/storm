@@ -6,6 +6,7 @@ export module storm.join_utils;
 import <string>;
 import <string_view>;
 import <type_traits>;
+import <algorithm>;
 
 // Storm modules
 import storm.reflect;     // for refl::reflect
@@ -100,6 +101,58 @@ export namespace storm {
                     .lhs_table  = lhs_table_name,
                     .rhs_table  = rhs_table_name,
                     .lhs_field  = lhs_field_name.view(),
+                    .rhs_field  = rhs_field_name,
+                    .type       = Type
+            };
+        }
+
+        // Create JoinWrapper with string-based table name (for field-based joins)
+        template <typename Lhs, auto MemberPtr, JoinType Type>
+        static JoinWrapper create_with_string(std::string_view rhs_table_name) {
+            // Use static storage to ensure string lifetime
+            static thread_local std::string sql_clause_storage;
+            static thread_local std::string lhs_field_storage;
+            static thread_local std::string rhs_table_storage{rhs_table_name};
+
+            // Extract components at compile time
+            static constexpr auto lhs_table_name = refl::reflect<Lhs>::name();
+            static constexpr auto rhs_field_name = refl::FieldMember<MemberPtr>::get_field_name();
+
+            // Create field names using the same convention
+            std::string rhs_table_lc{rhs_table_name};
+            std::transform(rhs_table_lc.begin(), rhs_table_lc.end(), rhs_table_lc.begin(), ::tolower);
+            lhs_field_storage = rhs_table_lc + "_" + std::string{rhs_field_name};
+
+            // Build SQL clause dynamically
+            std::string join_kw;
+            switch (Type) {
+            case JoinType::Inner:
+                join_kw = "INNER JOIN";
+                break;
+            case JoinType::Left:
+                join_kw = "LEFT JOIN";
+                break;
+            case JoinType::Right:
+                join_kw = "RIGHT JOIN";
+                break;
+            case JoinType::Full:
+                join_kw = "FULL OUTER JOIN";
+                break;
+            default:
+                join_kw = "INNER JOIN";
+                break;
+            }
+
+            auto lhs_full_q = utils::formatFieldName(lhs_table_name, lhs_field_storage);
+            auto rhs_full_q = utils::formatFieldName(rhs_table_name, rhs_field_name);
+
+            sql_clause_storage = join_kw + " " + std::string{rhs_table_name} + " ON " + lhs_full_q + " = " + rhs_full_q;
+
+            return JoinWrapper{
+                    .sql_clause = sql_clause_storage,
+                    .lhs_table  = lhs_table_name,
+                    .rhs_table  = rhs_table_storage,
+                    .lhs_field  = lhs_field_storage,
                     .rhs_field  = rhs_field_name,
                     .type       = Type
             };

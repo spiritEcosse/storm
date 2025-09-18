@@ -72,6 +72,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
      PUBLIC
          "${CMAKE_CURRENT_SOURCE_DIR}"
          "${CMAKE_CURRENT_SOURCE_DIR}/src"
+         "${CMAKE_CURRENT_SOURCE_DIR}/include"
      )
 
 # Ensure compile_commands.json is generated

@@ -1,5 +1,7 @@
 module;
 
+#include <storm/macros.h>
+
 // Define the module
 export module storm.field;
 
@@ -54,6 +56,9 @@ export namespace storm {
         Collation collation_ = Collation::NONE;
 
       public:
+        // Expose the member pointer for template deduction
+        static constexpr auto member_ptr = MemberPtr;
+
         // C++23: Default constructor
         constexpr explicit Field(Collation collation = Collation::NONE) noexcept : collation_(collation) {}
 

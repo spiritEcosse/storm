@@ -58,7 +58,7 @@ export namespace storm {
                 result.data[pos++] = c;
         };
 
-        refl::reflect<T>::for_each_member([&]<std::size_t I>(auto member) {
+        refl::reflect<T>::for_each_member_with_index([&]<std::size_t I>(auto member) {
             if constexpr (I > 0) {
                 append_char(',');
                 append_char(' ');
