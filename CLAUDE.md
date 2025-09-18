@@ -131,4 +131,4 @@ TODO:
 - [x] Rename only_with_aliases to overloaded version of only and add tests
 - [x] Rename where_all to overloaded version of where and fix tests
 - [x] Successfully removed all unused where_impl implementations from the codebase!
-
+- [x] Remove the Aggregatable concept definition from QuerySet.cppm

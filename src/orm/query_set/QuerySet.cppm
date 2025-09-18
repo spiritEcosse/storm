@@ -116,12 +116,6 @@ export namespace storm {
 
     // Concepts for better error messages
     template <typename T>
-    concept Aggregatable = requires {
-        // Use aggregate_result_t in a dependent context to validate availability
-        typename std::type_identity<aggregate_result_t<AggregateKind::Sum, T>>::type;
-    };
-
-    template <typename T>
     concept Sortable = requires(T a, T b) {
         { a < b } -> std::convertible_to<bool>;
     };
