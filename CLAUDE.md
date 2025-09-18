@@ -126,3 +126,6 @@ The project follows modern C++26 patterns as defined in `rules.md`:
 - **Reflection macros** are not used - the system uses template metaprogramming
 - **Database connections** should be managed through the Connection abstraction
 - **QuerySet** is the primary interface for all database operations
+
+TODO:
+- [x] Rename only_with_aliases to overloaded version of only and add tests

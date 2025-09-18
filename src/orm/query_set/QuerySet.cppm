@@ -281,10 +281,12 @@ export namespace storm {
         constexpr auto&& only(this Self&& self, auto... fields)
             requires(sizeof...(fields) > 0);
 
-        // Alias version: .only(field, alias, field, alias, ...)
+        // Overloaded version for field-alias pairs: .only(field, alias, field, alias, ...)
         template <typename Self>
-        constexpr auto&& only_with_aliases(this Self&& self, auto... field_alias_pairs)
-            requires(sizeof...(field_alias_pairs) > 0) && (sizeof...(field_alias_pairs) % 2 == 0);
+        constexpr auto&& only(this Self&& self, auto first_field, auto first_alias, auto... rest)
+            requires(sizeof...(rest) % 2 == 0) && std::is_member_pointer_v<decltype(first_field)> &&
+                    (!std::is_member_pointer_v<decltype(first_alias)>);
+
 
         // GROUP BY API (C++26 upgraded declarations with function parameter deduction)
         template <typename Self>
@@ -348,7 +350,7 @@ export namespace storm {
             }
         }
 
-        template <typename Self, auto OrderField, auto FirstField, auto... RestFields, bool Distinct = false>
+        template <typename Self, auto OrderField, auto FirstField, auto... RestFields, bool Distinct>
         constexpr auto&& group_concat_with_order_impl(
                 this Self&&             self,
                 utils::fixed_string<32> alias          = {},
@@ -1104,22 +1106,24 @@ export namespace storm {
         return std::forward<Self>(self);
     }
 
-    // C++26 ONLY implementation - Alias version: .only(field, alias, field, alias, ...)
+    // C++26 ONLY implementation - Overloaded version for field-alias pairs: .only(field, alias, field, alias, ...)
     template <typename T>
     template <typename Self>
-    constexpr auto&& QuerySet<T>::only_with_aliases(this Self&& self, auto... field_alias_pairs)
-        requires(sizeof...(field_alias_pairs) > 0) && (sizeof...(field_alias_pairs) % 2 == 0)
+    constexpr auto&& QuerySet<T>::only(this Self&& self, auto first_field, auto first_alias, auto... rest)
+        requires(sizeof...(rest) % 2 == 0) && std::is_member_pointer_v<decltype(first_field)> &&
+                (!std::is_member_pointer_v<decltype(first_alias)>)
     {
         // C++26 compile-time validation
-        static_assert(sizeof...(field_alias_pairs) <= 40, "Too many field-alias pairs (max 20 pairs for performance)");
-        static_assert(sizeof...(field_alias_pairs) % 2 == 0, "Must provide field-alias pairs");
+        constexpr auto total_pairs = (sizeof...(rest) + 2) / 2;
+        static_assert(total_pairs <= 20, "Too many field-alias pairs (max 20 pairs for performance)");
+        static_assert(sizeof...(rest) % 2 == 0, "Must provide field-alias pairs");
 
         // Extract field-alias pairs at compile time
-        constexpr auto pairs = std::make_tuple(field_alias_pairs...);
+        constexpr auto pairs = std::make_tuple(first_field, first_alias, rest...);
 
         // Process pairs using index sequence
         return [&]<std::size_t... I>(std::index_sequence<I...>) -> decltype(auto) {
-            constexpr auto field_count = sizeof...(field_alias_pairs) / 2;
+            constexpr auto field_count = (sizeof...(rest) + 2) / 2;
             self.onlyFields.reserve(self.onlyFields.size() + field_count);
 
             // Validate fields are member pointers and add them
@@ -1140,7 +1144,7 @@ export namespace storm {
              ...);
 
             return std::forward<Self>(self);
-        }(std::make_index_sequence<sizeof...(field_alias_pairs) / 2>{});
+        }(std::make_index_sequence<(sizeof...(rest) + 2) / 2>{});
     }
 
     // C++26 GROUP BY implementation with function parameter deduction
