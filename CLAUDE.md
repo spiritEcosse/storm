@@ -140,4 +140,4 @@ TODO:
 - [x] Check if i need requires for crud methods
 - [x] Reduce lines of SQLite test file
 - [x] Fix candidate function template not viable: requires 0 arguments, but 1 was provided, static FieldWrapper create() , (self.onlyFields.emplace_back(refl::FieldWrapper::create(fields), utils::fixed_string<32>{}), ...)
-- [ ] Remove all unused code
+- [x] Remove all unused code
