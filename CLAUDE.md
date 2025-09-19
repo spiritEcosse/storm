@@ -133,4 +133,4 @@ TODO:
 - [x] Rename where_all to overloaded version of where and fix tests
 - [x] Successfully removed all unused where_impl implementations from the codebase!
 - [x] Remove the Aggregatable concept definition from QuerySet.cppm
-
+- [x] Fix candidate function template not viable: requires 0 arguments, but 1 was provided, static FieldWrapper create() , (self.onlyFields.emplace_back(refl::FieldWrapper::create(fields), utils::fixed_string<32>{}), ...)

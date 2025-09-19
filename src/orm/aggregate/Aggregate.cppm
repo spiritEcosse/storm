@@ -67,7 +67,7 @@ export namespace storm {
             static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
             using FieldType = typename refl::meta::member_pointer_traits<decltype(Field)>::member_type;
             static_assert(std::three_way_comparable<FieldType>, "MAX requires comparable field type");
-            auto field_wrapper = refl::FieldWrapper::create<Field>();
+            auto field_wrapper = refl::FieldWrapper::create(storm::Field<Field>{});
             return AggregateSpec{
                     .kind = AggregateKind::Max, .field = field_wrapper, .alias = alias, ._custom_sql = std::nullopt
             };
@@ -77,7 +77,7 @@ export namespace storm {
             static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
             using FieldType = typename refl::meta::member_pointer_traits<decltype(Field)>::member_type;
             static_assert(std::three_way_comparable<FieldType>, "MIN requires comparable field type");
-            auto field_wrapper = refl::FieldWrapper::create<Field>();
+            auto field_wrapper = refl::FieldWrapper::create(storm::Field<Field>{});
             return AggregateSpec{
                     .kind = AggregateKind::Min, .field = field_wrapper, .alias = alias, ._custom_sql = std::nullopt
             };
@@ -91,7 +91,7 @@ export namespace storm {
                     std::is_arithmetic_v<FieldType> && !std::is_same_v<FieldType, bool>,
                     "AVG can only be used with numeric fields"
             );
-            auto field_wrapper = refl::FieldWrapper::create<Field>();
+            auto field_wrapper = refl::FieldWrapper::create(storm::Field<Field>{});
             return AggregateSpec{
                     .kind = AggregateKind::Avg, .field = field_wrapper, .alias = alias, ._custom_sql = std::nullopt
             };
@@ -99,7 +99,7 @@ export namespace storm {
 
         template <auto Field> static AggregateSpec count(utils::fixed_string<32> alias = {}) {
             static_assert(std::is_member_pointer_v<decltype(Field)>, "Field must be a member pointer");
-            auto field_wrapper = refl::FieldWrapper::create<Field>();
+            auto field_wrapper = refl::FieldWrapper::create(storm::Field<Field>{});
             return AggregateSpec{
                     .kind = AggregateKind::Count, .field = field_wrapper, .alias = alias, ._custom_sql = std::nullopt
             };
@@ -113,7 +113,7 @@ export namespace storm {
                     std::is_arithmetic_v<FieldType> && !std::is_same_v<FieldType, bool>,
                     "SUM can only be used with numeric fields"
             );
-            auto field_wrapper = refl::FieldWrapper::create<Field>();
+            auto field_wrapper = refl::FieldWrapper::create(storm::Field<Field>{});
             return AggregateSpec{
                     .kind = AggregateKind::Sum, .field = field_wrapper, .alias = alias, ._custom_sql = std::nullopt
             };
@@ -123,7 +123,7 @@ export namespace storm {
         template <auto MemberPtr> static AggregateSpec max(Field<MemberPtr> field, utils::fixed_string<32> alias = {}) {
             using FieldType = typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type;
             static_assert(std::three_way_comparable<FieldType>, "MAX requires comparable field type");
-            auto field_wrapper = refl::FieldWrapper::create<MemberPtr>();
+            auto field_wrapper = refl::FieldWrapper::create(field);
             return AggregateSpec{
                     .kind = AggregateKind::Max, .field = field_wrapper, .alias = alias, ._custom_sql = std::nullopt
             };
@@ -132,7 +132,7 @@ export namespace storm {
         template <auto MemberPtr> static AggregateSpec min(Field<MemberPtr> field, utils::fixed_string<32> alias = {}) {
             using FieldType = typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type;
             static_assert(std::three_way_comparable<FieldType>, "MIN requires comparable field type");
-            auto field_wrapper = refl::FieldWrapper::create<MemberPtr>();
+            auto field_wrapper = refl::FieldWrapper::create(field);
             return AggregateSpec{
                     .kind = AggregateKind::Min, .field = field_wrapper, .alias = alias, ._custom_sql = std::nullopt
             };
@@ -144,7 +144,7 @@ export namespace storm {
                     std::is_arithmetic_v<FieldType> && !std::is_same_v<FieldType, bool>,
                     "AVG can only be used with numeric fields"
             );
-            auto field_wrapper = refl::FieldWrapper::create<MemberPtr>();
+            auto field_wrapper = refl::FieldWrapper::create(field);
             return AggregateSpec{
                     .kind = AggregateKind::Avg, .field = field_wrapper, .alias = alias, ._custom_sql = std::nullopt
             };
@@ -152,7 +152,7 @@ export namespace storm {
 
         template <auto MemberPtr>
         static AggregateSpec count(Field<MemberPtr> field, utils::fixed_string<32> alias = {}) {
-            auto field_wrapper = refl::FieldWrapper::create<MemberPtr>();
+            auto field_wrapper = refl::FieldWrapper::create(field);
             return AggregateSpec{
                     .kind = AggregateKind::Count, .field = field_wrapper, .alias = alias, ._custom_sql = std::nullopt
             };
@@ -164,7 +164,7 @@ export namespace storm {
                     std::is_arithmetic_v<FieldType> && !std::is_same_v<FieldType, bool>,
                     "SUM can only be used with numeric fields"
             );
-            auto field_wrapper = refl::FieldWrapper::create<MemberPtr>();
+            auto field_wrapper = refl::FieldWrapper::create(field);
             return AggregateSpec{
                     .kind = AggregateKind::Sum, .field = field_wrapper, .alias = alias, ._custom_sql = std::nullopt
             };
