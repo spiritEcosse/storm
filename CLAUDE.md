@@ -137,3 +137,5 @@ TODO:
 - [x] Check if i need compile_time_sql
 - [x] Check if i need field_type_t, class_type_t
 - [x] Check if i need requires for crud methods
+- [x] Reduce lines of SQLite test file
+
