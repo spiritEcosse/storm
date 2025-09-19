@@ -3761,6 +3761,7 @@ TEST_F(ORMTest, GroupConcatSingleFieldBasic) {
 // =======================================
 // ONLY() METHOD TESTS - Fields and Aliases
 // =======================================
+
 TEST_F(ORMTest, OnlyFieldsAndAliases) {
     // Test 1: Simple fields backward compatibility
     auto simpleResult = QuerySet<Author>(conn)
@@ -3813,6 +3814,7 @@ TEST_F(ORMTest, OnlyFieldsAndAliases) {
     auto aliceSimple = std::ranges::find_if(simpleResult.value(), [](const auto& row) {
         return std::get<std::string>(row.at("name")) == "Alice Smith";
     });
+
     ASSERT_NE(aliceSimple, simpleResult.value().end());
     EXPECT_EQ(std::get<int>(aliceSimple->at("age")), 25);
 

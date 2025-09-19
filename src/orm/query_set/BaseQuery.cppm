@@ -95,7 +95,7 @@ export namespace storm {
         // Copy assignment operator
         BaseQuery& operator=(const BaseQuery& other) {
             if (this != &other) {
-                BaseQuery temp(other);    // Use copy constructor
+                BaseQuery temp(other);   // Use copy constructor
                 *this = std::move(temp); // Use move assignment
             }
             return *this;
@@ -346,7 +346,8 @@ export namespace storm {
     {
         // Validate field type is sortable
         constexpr auto MemberPtr = decltype(field)::member_ptr;
-        using FieldType = typename refl::meta::member_pointer_traits<std::remove_const_t<decltype(MemberPtr)>>::member_type;
+        using FieldType =
+                typename refl::meta::member_pointer_traits<std::remove_const_t<decltype(MemberPtr)>>::member_type;
         static_assert(Sortable<FieldType>, "Field type must be sortable for ORDER BY");
 
         // Add order term with default ascending direction
@@ -370,7 +371,8 @@ export namespace storm {
 
         // Validate field is sortable
         constexpr auto MemberPtr = decltype(field)::member_ptr;
-        using FieldType = typename refl::meta::member_pointer_traits<std::remove_const_t<decltype(MemberPtr)>>::member_type;
+        using FieldType =
+                typename refl::meta::member_pointer_traits<std::remove_const_t<decltype(MemberPtr)>>::member_type;
         static_assert(Sortable<FieldType>, "Field type must be sortable for ORDER BY");
 
         // Optimize container capacity

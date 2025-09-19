@@ -10,6 +10,9 @@ export module storm.joinable_query;
 // Import required modules
 import storm.aggregate_query;
 import storm.join_utils;
+import storm.reflect;
+import storm.field;
+import storm.statement.select;
 
 // Import standard header units
 import <string>;
@@ -29,9 +32,7 @@ export namespace storm {
         using AggregateQuery<T>::AggregateQuery;
 
         // Copy constructor
-        JoinableQuery(const JoinableQuery& other)
-            : AggregateQuery<T>(other)
-            , join_clauses(other.join_clauses) {}
+        JoinableQuery(const JoinableQuery& other) : AggregateQuery<T>(other), join_clauses(other.join_clauses) {}
 
         // Move constructor
         JoinableQuery(JoinableQuery&& other) noexcept = default;
@@ -221,15 +222,15 @@ export namespace storm {
         // Override AggregateQuery's build_select_options to include join clauses
         [[nodiscard]] SelectOptions build_select_options() const {
             return SelectOptions{
-                .joins           = join_clauses,
-                .distinct_fields = this->distinctFields,
-                .only_fields     = this->onlyFields,
-                .functions_set   = this->functionsSet,
-                .order_terms     = this->orderTerms,
-                .group_by_fields = this->groupByFields,
-                .limit           = this->_limit,
-                .offset          = this->_offset,
-                .where_clause    = this->_whereExpression,
+                    .joins           = join_clauses,
+                    .distinct_fields = this->distinctFields,
+                    .only_fields     = this->onlyFields,
+                    .functions_set   = this->functionsSet,
+                    .order_terms     = this->orderTerms,
+                    .group_by_fields = this->groupByFields,
+                    .limit           = this->_limit,
+                    .offset          = this->_offset,
+                    .where_clause    = this->_whereExpression,
             };
         }
     };
