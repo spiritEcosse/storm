@@ -3603,15 +3603,14 @@ TEST_F(ORMTest, GroupConcatOrderMultipleFields) {
     auto result = QuerySet<Post>(conn)
                           .group_by(field(&Post::author_id))
                           .group_concat(
-                                  field(&Post::id),
-                                  field(&Post::title),
-                                  field(&Post::content),
                                   "title_content_by_id",
                                   ",",
                                   " - ",
-                                  false
-                          ) // OrderField = &Post::id, Fields = &Post::title,
-                            // &Post::content
+                                  false,
+                                  field(&Post::id),
+                                  field(&Post::title),
+                                  field(&Post::content)
+                          ) // alias, field_separator, record_separator, distinct, first_field, other_fields...
                           .only(field(&Post::author_id))
                           .select_values();
 
@@ -3650,7 +3649,7 @@ TEST_F(ORMTest, GroupConcatOrderMultipleFields) {
 TEST_F(ORMTest, GroupConcatMultipleFields) {
     // Test GROUP_CONCAT with multiple fields
     auto result = QuerySet<Post>(conn)
-                          .group_concat(field(&Post::title), field(&Post::content), "title_content", ",", " - ")
+                          .group_concat("title_content", ",", " - ", false, field(&Post::title), field(&Post::content))
                           .select_values();
 
     ASSERT_TRUE(result.has_value()) << "GROUP_CONCAT with multiple fields failed: " << result.error();
@@ -3677,7 +3676,7 @@ TEST_F(ORMTest, GroupConcatMultipleFieldsWithGroupBy) {
     // Test GROUP_CONCAT with multiple fields and GROUP BY
     auto result = QuerySet<Post>(conn)
                           .group_by(field(&Post::author_id))
-                          .group_concat(field(&Post::title), field(&Post::content), "title_content", ",", " - ")
+                          .group_concat("title_content", ",", " - ", false, field(&Post::title), field(&Post::content))
                           .only(field(&Post::author_id))
                           .select_values();
 
@@ -3711,8 +3710,8 @@ TEST_F(ORMTest, GroupConcatDistinctMultipleFields) {
     auto result = QuerySet<Post>(conn)
                           .group_by(field(&Post::author_id))
                           .group_concat(
-                                  field(&Post::title), field(&Post::content), "title_content", "", " - ", true
-                          ) // distinct = true
+                                  "title_content", "", " - ", true, field(&Post::title), field(&Post::content)
+                          ) // alias, field_separator, record_separator, distinct, first_field, other_fields...
                           .only(field(&Post::author_id))
                           .select_values();
 
