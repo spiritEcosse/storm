@@ -158,12 +158,12 @@ export namespace storm {
         template <typename Self, typename... Fields>
         auto&& group_concat(
                 this Self&&             self,
-                auto                    first_field,
-                Fields...               other_fields,
                 utils::fixed_string<32> alias,
                 utils::fixed_string<8>  field_separator,
                 utils::fixed_string<8>  record_separator,
-                bool                    distinct
+                bool                    distinct,
+                auto                    first_field,
+                Fields...               other_fields
         ) requires (sizeof...(Fields) >= 1);
 
         // C++26 Aggregate value methods with field() syntax - direct execution
@@ -411,8 +411,9 @@ export namespace storm {
     template <typename T>
     template <typename Self, typename... Fields>
     auto&& AggregateQuery<T>::group_concat(
-            this Self&& self, auto first_field, Fields... other_fields, utils::fixed_string<32> alias, 
-            utils::fixed_string<8> field_separator, utils::fixed_string<8> record_separator, bool distinct
+            this Self&& self, utils::fixed_string<32> alias,
+            utils::fixed_string<8> field_separator, utils::fixed_string<8> record_separator, bool distinct,
+            auto first_field, Fields... other_fields
     ) requires (sizeof...(Fields) >= 1) {
         constexpr auto table_name = extract_class_name<T>();
         
