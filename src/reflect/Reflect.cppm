@@ -341,19 +341,13 @@ export namespace refl {
         std::string_view full_name{};
         std::any         field_member;
 
-        template <auto MemberPtr>
-            requires std::is_member_pointer_v<decltype(MemberPtr)>
-        static FieldWrapper create() {
-            static constexpr auto fs = FieldMember<MemberPtr>::get_full_field_name();
-            return {.full_name = fs.view(), .field_member = FieldMember<MemberPtr>{}};
-        }
-
         // Overload for storm::Field objects (compile-time only)
         template <typename FieldType>
         static FieldWrapper create(FieldType field)
             requires requires { FieldType::member_ptr; }
         {
-            return create<FieldType::member_ptr>();
+            static constexpr auto fs = FieldMember<FieldType::member_ptr>::get_full_field_name();
+            return {.full_name = fs.view(), .field_member = FieldMember<FieldType::member_ptr>{}};
         }
 
         std::string_view view() const noexcept {

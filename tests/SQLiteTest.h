@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 #include <storm/storm.h> // Main Storm ORM header (includes macros)
 
+import storm.selectable_query;
 import <string>;
 import <vector>;
 import <memory>;
