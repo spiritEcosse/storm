@@ -116,12 +116,6 @@ export namespace storm {
 
     // Concepts for better error messages
     template <typename T>
-    concept Aggregatable = requires {
-        // Use aggregate_result_t in a dependent context to validate availability
-        typename std::type_identity<aggregate_result_t<AggregateKind::Sum, T>>::type;
-    };
-
-    template <typename T>
     concept Sortable = requires(T a, T b) {
         { a < b } -> std::convertible_to<bool>;
     };
@@ -219,36 +213,7 @@ export namespace storm {
 
         // WHERE with multiple conditions using C++26 fold expressions
         template <typename Self, typename... Conditions>
-        constexpr auto&& where_all(this Self&& self, Conditions&&... conditions);
-
-        // Macro-based WHERE with compile-time field resolution - Implementation functions
-        // These are called by the where() macro and should not be used directly
-
-        // Basic equality and operator - where(field, value) / where(field, value, op)
-        template <auto MemberPtr, typename Self, typename Value>
-            requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-        constexpr auto&& where_impl(this Self&& self, Value&& value, storm::Op op = storm::Op::EQ);
-
-        // BETWEEN - where(field, value1, value2)
-        template <auto MemberPtr, typename Self, typename T1, typename T2>
-            requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
-                     std::three_way_comparable_with<T1, T2> && (!std::same_as<T2, storm::Op>)
-        constexpr auto&& where_impl(this Self&& self, T1&& value1, T2&& value2);
-
-        // NULL checks - where(field, Op::IS) / where(field, Op::IS_NOT)
-        template <auto MemberPtr, typename Self>
-            requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-        constexpr auto&& where_impl(this Self&& self, storm::Op null_op);
-
-        // IN clause - where(field, container)
-        template <auto MemberPtr, typename Self, std::ranges::range Container>
-            requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                     std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
-                     (!std::same_as<Container, storm::Op>)
-        constexpr auto&& where_impl(this Self&& self, const Container& values);
+        constexpr auto&& where(this Self&& self, Conditions&&... conditions);
 
         // ORDER BY API (C++26 upgraded declarations)
         // C++26 compile-time multiple field ordering with variadic validation
@@ -281,10 +246,11 @@ export namespace storm {
         constexpr auto&& only(this Self&& self, auto... fields)
             requires(sizeof...(fields) > 0);
 
-        // Alias version: .only(field, alias, field, alias, ...)
+        // Overloaded version for field-alias pairs: .only(field, alias, field, alias, ...)
         template <typename Self>
-        constexpr auto&& only_with_aliases(this Self&& self, auto... field_alias_pairs)
-            requires(sizeof...(field_alias_pairs) > 0) && (sizeof...(field_alias_pairs) % 2 == 0);
+        constexpr auto&& only(this Self&& self, auto first_field, auto first_alias, auto... rest)
+            requires(sizeof...(rest) % 2 == 0) && std::is_member_pointer_v<decltype(first_field)> &&
+                    (!std::is_member_pointer_v<decltype(first_alias)>);
 
         // GROUP BY API (C++26 upgraded declarations with function parameter deduction)
         template <typename Self>
@@ -847,11 +813,11 @@ export namespace storm {
         }
     };
 
-    // C++26 WHERE_ALL with fold expressions and perfect forwarding
+    // C++26 WHERE with fold expressions and perfect forwarding for multiple conditions
     template <typename T>
     template <typename Self, typename... Conditions>
-    constexpr auto&& QuerySet<T>::where_all(this Self&& self, Conditions&&... conditions) {
-        static_assert(sizeof...(conditions) > 0, "where_all requires at least one condition");
+    constexpr auto&& QuerySet<T>::where(this Self&& self, Conditions&&... conditions) {
+        static_assert(sizeof...(conditions) > 0, "where with multiple conditions requires at least one condition");
 
         // C++26 fold expression with logical AND
         storm::Where combined = (... && std::forward<Conditions>(conditions));
@@ -887,115 +853,6 @@ export namespace storm {
             self._whereExpression = std::move(where_clause);
         }
         return std::forward<Self>(self);
-    }
-
-    // Macro-based WHERE implementations with compile-time field resolution
-
-    // Basic equality and operator - where(field, value) / where(field, value, op)
-    template <typename T>
-    template <auto MemberPtr, typename Self, typename Value>
-        requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                 std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-    constexpr auto&& QuerySet<T>::where_impl(this Self&& self, Value&& value, storm::Op op) {
-        // ✅ COMPILE-TIME: Field name resolution using template parameter
-        constexpr auto field_name = extract_field_name<MemberPtr>();
-
-        // Runtime: Create condition with compile-time resolved field name
-        storm::Where condition = storm::Where(
-                std::make_unique<storm::Condition>(std::string(field_name), op, std::forward<Value>(value))
-        );
-
-        // Runtime: Combine with existing WHERE clause
-        self._whereExpression = self._whereExpression.has_value()
-                                        ? storm::Where{*self._whereExpression && std::move(condition)}
-                                        : std::move(condition);
-
-        return std::forward<Self>(self);
-    }
-
-    // BETWEEN - where(field, value1, value2)
-    template <typename T>
-    template <auto MemberPtr, typename Self, typename T1, typename T2>
-        requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                 std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
-                 std::three_way_comparable_with<T1, T2> && (!std::same_as<T2, storm::Op>)
-    constexpr auto&& QuerySet<T>::where_impl(this Self&& self, T1&& value1, T2&& value2) {
-        // ✅ COMPILE-TIME: Field validation and name resolution
-        using FieldType = typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type;
-        static_assert(std::three_way_comparable_with<FieldType, T1>, "Field type must be comparable with value1 type");
-        static_assert(std::three_way_comparable_with<FieldType, T2>, "Field type must be comparable with value2 type");
-        constexpr auto field_name = extract_field_name<MemberPtr>();
-
-        // Runtime: Create BETWEEN condition
-        storm::Where condition = storm::Where(
-                std::make_unique<storm::Condition>(
-                        std::string(field_name), std::forward<T1>(value1), std::forward<T2>(value2)
-                )
-        );
-
-        self._whereExpression = self._whereExpression.has_value()
-                                        ? storm::Where{*self._whereExpression && std::move(condition)}
-                                        : std::move(condition);
-
-        return std::forward<Self>(self);
-    }
-
-    // NULL checks - where(field, Op::IS) / where(field, Op::IS_NOT)
-    template <typename T>
-    template <auto MemberPtr, typename Self>
-        requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                 std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T>
-    constexpr auto&& QuerySet<T>::where_impl(this Self&& self, storm::Op null_op) {
-        // ✅ COMPILE-TIME: Field validation and name resolution
-        using FieldType           = typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type;
-        constexpr auto field_name = extract_field_name<MemberPtr>();
-
-        // Compile-time warning for non-nullable types
-        if constexpr (!std::is_pointer_v<FieldType> &&
-                      !std::is_same_v<FieldType, std::optional<typename FieldType::value_type>>) {
-            // Note: Non-nullable field - NULL check may always be false/true
-        }
-
-        // Runtime: Create NULL condition
-        storm::Where condition =
-                storm::Where(std::make_unique<storm::Condition>(std::string(field_name), null_op, std::nullopt));
-
-        self._whereExpression = self._whereExpression.has_value()
-                                        ? storm::Where{*self._whereExpression && std::move(condition)}
-                                        : std::move(condition);
-
-        return std::forward<Self>(self);
-    }
-
-    // IN clause - where(field, container)
-    template <typename T>
-    template <auto MemberPtr, typename Self, std::ranges::range Container>
-        requires std::is_member_pointer_v<decltype(MemberPtr)> &&
-                 std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
-                 (!std::same_as<Container, storm::Op>)
-    constexpr auto&& QuerySet<T>::where_impl(this Self&& self, const Container& values) {
-        // ✅ COMPILE-TIME: Field name resolution
-        constexpr auto field_name = extract_field_name<MemberPtr>();
-
-        // Runtime: Early return for empty containers
-        if (std::ranges::empty(values)) {
-            auto false_condition = storm::Where(std::make_unique<storm::Condition>("1", storm::Op::EQ, 0));
-            return self.where(false_condition);
-        }
-
-        // Runtime: Create IN condition as OR chain
-        auto         it = std::ranges::begin(values);
-        storm::Where condition =
-                storm::Where(std::make_unique<storm::Condition>(std::string(field_name), storm::Op::EQ, *it));
-
-        ++it;
-        for (; it != std::ranges::end(values); ++it) {
-            auto next_condition =
-                    storm::Where(std::make_unique<storm::Condition>(std::string(field_name), storm::Op::EQ, *it));
-            condition = condition || std::move(next_condition);
-        }
-
-        return self.where(std::move(condition));
     }
 
     // UPDATE implementation
@@ -1118,22 +975,24 @@ export namespace storm {
         return std::forward<Self>(self);
     }
 
-    // C++26 ONLY implementation - Alias version: .only(field, alias, field, alias, ...)
+    // C++26 ONLY implementation - Overloaded version for field-alias pairs: .only(field, alias, field, alias, ...)
     template <typename T>
     template <typename Self>
-    constexpr auto&& QuerySet<T>::only_with_aliases(this Self&& self, auto... field_alias_pairs)
-        requires(sizeof...(field_alias_pairs) > 0) && (sizeof...(field_alias_pairs) % 2 == 0)
+    constexpr auto&& QuerySet<T>::only(this Self&& self, auto first_field, auto first_alias, auto... rest)
+        requires(sizeof...(rest) % 2 == 0) && std::is_member_pointer_v<decltype(first_field)> &&
+                (!std::is_member_pointer_v<decltype(first_alias)>)
     {
         // C++26 compile-time validation
-        static_assert(sizeof...(field_alias_pairs) <= 40, "Too many field-alias pairs (max 20 pairs for performance)");
-        static_assert(sizeof...(field_alias_pairs) % 2 == 0, "Must provide field-alias pairs");
+        constexpr auto total_pairs = (sizeof...(rest) + 2) / 2;
+        static_assert(total_pairs <= 20, "Too many field-alias pairs (max 20 pairs for performance)");
+        static_assert(sizeof...(rest) % 2 == 0, "Must provide field-alias pairs");
 
         // Extract field-alias pairs at compile time
-        constexpr auto pairs = std::make_tuple(field_alias_pairs...);
+        constexpr auto pairs = std::make_tuple(first_field, first_alias, rest...);
 
         // Process pairs using index sequence
         return [&]<std::size_t... I>(std::index_sequence<I...>) -> decltype(auto) {
-            constexpr auto field_count = sizeof...(field_alias_pairs) / 2;
+            constexpr auto field_count = (sizeof...(rest) + 2) / 2;
             self.onlyFields.reserve(self.onlyFields.size() + field_count);
 
             // Validate fields are member pointers and add them
@@ -1154,7 +1013,7 @@ export namespace storm {
              ...);
 
             return std::forward<Self>(self);
-        }(std::make_index_sequence<sizeof...(field_alias_pairs) / 2>{});
+        }(std::make_index_sequence<(sizeof...(rest) + 2) / 2>{});
     }
 
     // C++26 GROUP BY implementation with function parameter deduction
@@ -1422,21 +1281,7 @@ export namespace storm {
         constexpr auto field_name = extract_field_name<MemberPtr>();
         constexpr auto table_name = extract_class_name<T>();
 
-        std::string sql = "GROUP_CONCAT(";
-        if (distinct) {
-            sql += "DISTINCT ";
-        }
-        sql += std::string{table_name};
-        sql += ".";
-        sql += std::string{field_name};
-        sql += " SEPARATOR '";
-        sql += separator.c_str();
-        sql += "')";
-
-        if (alias.c_str()[0] != '\0') {
-            sql += " AS \"";
-            sql += alias.c_str();
-            sql += "\"";
+        // Build SQL with runtime parameters
         } else {
             sql += " AS \"group_concat_";
             sql += std::string{field_name};
@@ -1595,7 +1440,6 @@ export namespace storm {
         self.functionsSet.emplace_back(AggregateSpec::custom_sql(sql));
         return std::forward<Self>(self);
     }
-
 
     // SELECT ONE implementation (returns single object with LIMIT 1)
     template <typename T>
