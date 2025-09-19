@@ -347,8 +347,8 @@ export namespace refl {
             requires requires { FieldType::member_ptr; }
         {
             // Extract the field name at compile time but store at runtime
-            constexpr auto member_ptr = FieldType::member_ptr;
-            static constexpr auto fs = FieldMember<member_ptr>::get_full_field_name();
+            constexpr auto        member_ptr = FieldType::member_ptr;
+            static constexpr auto fs         = FieldMember<member_ptr>::get_full_field_name();
             return {.full_name = fs.view(), .field_member = FieldMember<member_ptr>{}};
         }
 

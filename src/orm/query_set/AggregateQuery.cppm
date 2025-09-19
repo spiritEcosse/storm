@@ -163,8 +163,9 @@ export namespace storm {
                 utils::fixed_string<8>  record_separator,
                 bool                    distinct,
                 auto                    first_field,
-                Fields...               other_fields
-        ) requires (sizeof...(Fields) >= 1);
+                Fields... other_fields
+        )
+            requires(sizeof...(Fields) >= 1);
 
         // C++26 Aggregate value methods with field() syntax - direct execution
         template <typename Self> [[nodiscard]] constexpr auto max_value(this Self&& self, auto field) noexcept {
@@ -411,33 +412,39 @@ export namespace storm {
     template <typename T>
     template <typename Self, typename... Fields>
     auto&& AggregateQuery<T>::group_concat(
-            this Self&& self, utils::fixed_string<32> alias,
-            utils::fixed_string<8> field_separator, utils::fixed_string<8> record_separator, bool distinct,
-            auto first_field, Fields... other_fields
-    ) requires (sizeof...(Fields) >= 1) {
+            this Self&&             self,
+            utils::fixed_string<32> alias,
+            utils::fixed_string<8>  field_separator,
+            utils::fixed_string<8>  record_separator,
+            bool                    distinct,
+            auto                    first_field,
+            Fields... other_fields
+    )
+        requires(sizeof...(Fields) >= 1)
+    {
         constexpr auto table_name = extract_class_name<T>();
-        
+
         std::string sql = "GROUP_CONCAT(";
         if (distinct) {
             sql += "DISTINCT ";
         }
-        
+
         // Build CONCAT expression for multiple fields
         sql += "CONCAT(";
-        
+
         // Add first field
         constexpr auto first_field_name = extract_field_name<decltype(first_field)::member_ptr>();
         sql += std::string{table_name} + "." + std::string{first_field_name};
-        
+
         // Add other fields with field separator
         auto add_field = [&sql, &table_name, &field_separator](auto field) {
             constexpr auto field_name = extract_field_name<decltype(field)::member_ptr>();
             sql += ", '" + std::string{field_separator.c_str()} + "', ";
             sql += std::string{table_name} + "." + std::string{field_name};
         };
-        
+
         (add_field(other_fields), ...);
-        
+
         sql += ") SEPARATOR '" + std::string{record_separator.c_str()} + "')";
 
         if (alias.c_str()[0] != '\0') {

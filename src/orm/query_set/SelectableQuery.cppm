@@ -19,8 +19,6 @@ import <string>;
 import <utility>;
 import <vector>;
 import <expected>;
-import <type_traits>;
-import <ranges>;
 import <flat_map>;
 import <functional>;
 
@@ -33,16 +31,12 @@ export namespace storm {
         std::vector<std::pair<refl::FieldWrapper, std::string_view>> onlyFields;
 
       public:
-        // Inherit constructors
         using BaseQuery<T>::BaseQuery;
 
-        // Copy constructor
         SelectableQuery(const SelectableQuery& other) : BaseQuery<T>(other), onlyFields(other.onlyFields) {}
 
-        // Move constructor
         SelectableQuery(SelectableQuery&& other) noexcept = default;
 
-        // Copy assignment operator
         SelectableQuery& operator=(const SelectableQuery& other) {
             if (this != &other) {
                 BaseQuery<T>::operator=(other);
@@ -51,7 +45,6 @@ export namespace storm {
             return *this;
         }
 
-        // Move assignment operator
         SelectableQuery& operator=(SelectableQuery&& other) noexcept = default;
 
         // ONLY API (C++26 upgraded declarations with function parameter deduction)
@@ -113,24 +106,21 @@ export namespace storm {
                 (!requires { decltype(first_alias)::member_ptr; })
     {
         // Reserve space for all pairs
-        self.onlyFields.reserve(self.onlyFields.size() + (sizeof...(rest) / 2 + 1));
+        const auto pair_count = sizeof...(rest) / 2 + 1;
+        self.onlyFields.reserve(self.onlyFields.size() + pair_count);
 
         // Process first pair
         self.onlyFields.emplace_back(refl::FieldWrapper::create(first_field), first_alias);
 
-        // Process remaining pairs recursively
+        // Process remaining pairs using index sequence
         if constexpr (sizeof...(rest) > 0) {
-            [&self]<typename... Args>(Args... args) {
-                constexpr std::size_t pair_count = sizeof...(args) / 2;
-                auto tuple = std::make_tuple(args...);
-
-                [&self, &tuple]<std::size_t... Is>(std::index_sequence<Is...>) {
-                    ((self.onlyFields.emplace_back(
-                        refl::FieldWrapper::create(std::get<Is * 2>(tuple)),
-                        std::get<Is * 2 + 1>(tuple)
-                    )), ...);
-                }(std::make_index_sequence<pair_count>{});
-            }(rest...);
+            auto args_tuple = std::make_tuple(rest...);
+            [&self, &args_tuple]<std::size_t... Is>(std::index_sequence<Is...>) {
+                ((self.onlyFields.emplace_back(
+                         refl::FieldWrapper::create(std::get<Is * 2>(args_tuple)), std::get<Is * 2 + 1>(args_tuple)
+                 )),
+                 ...);
+            }(std::make_index_sequence<sizeof...(rest) / 2>{});
         }
 
         return std::forward<Self>(self);

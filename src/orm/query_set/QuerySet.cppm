@@ -30,12 +30,13 @@ export namespace storm {
     template <typename R, typename T>
     concept ContiguousRangeOf = std::ranges::contiguous_range<R> && std::ranges::sized_range<R> &&
                                 std::same_as<std::remove_cvref_t<std::ranges::range_value_t<R>>, T>;
-    
+
     // Concept for validating member pointers and convertible values
     template <auto MemberPtr, typename T, typename Value>
-    concept MemberUpdateCompatible = std::is_member_pointer_v<decltype(MemberPtr)> &&
-                                     std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
-                                     std::convertible_to<Value, typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type>;
+    concept MemberUpdateCompatible =
+            std::is_member_pointer_v<decltype(MemberPtr)> &&
+            std::same_as<typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type, T> &&
+            std::convertible_to<Value, typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type>;
 
     template <class T> class QuerySet : public JoinableQuery<T> {
       public:
@@ -163,8 +164,7 @@ export namespace storm {
         return InsertStatement<T>(this->conn);
     }
 
-    template <typename T>
-    InsertStatement<T> QuerySet<T>::stmt_insert(std::span<const T> objs) {
+    template <typename T> InsertStatement<T> QuerySet<T>::stmt_insert(std::span<const T> objs) {
         return InsertStatement<T>(this->conn);
     }
 
