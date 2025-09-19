@@ -252,81 +252,75 @@ export namespace storm {
             requires(sizeof...(rest) % 2 == 0) && std::is_member_pointer_v<decltype(first_field)> &&
                     (!std::is_member_pointer_v<decltype(first_alias)>);
 
+
         // GROUP BY API (C++26 upgraded declarations with function parameter deduction)
         template <typename Self>
         constexpr auto&& group_by(this Self&& self, auto... fields)
             requires(sizeof...(fields) > 0);
 
-        // Unified GROUP_CONCAT API
-
-        // Basic single field group_concat (field only)
+        // In class declaration:
         template <typename Self>
-        auto&& group_concat(
-                this Self&& self,
-                auto field
-        );
+        auto&&
+        group_concat(this Self&& self, auto field, utils::fixed_string<32> alias = "", utils::fixed_string<8> separator = ",", bool distinct = false);
 
-        // Single field group_concat with alias (default separator)
-        template <typename Self>
-        auto&& group_concat(
-                this Self&& self,
-                auto field,
-                utils::fixed_string<32> alias
-        );
+        // Overload with ORDER BY for multiple fields - requires explicit
+        // specification
+        template <typename Self, auto OrderField, auto FirstField, auto... RestFields, bool Distinct = false>
+        constexpr auto&& group_concat_order(
+                this Self&&             self,
+                utils::fixed_string<32> alias          = {},
+                utils::fixed_string<8>  separator      = {","},
+                utils::fixed_string<8>  fieldSeparator = {","}
+        ) {
+            return self.template group_concat_with_order_impl<OrderField, FirstField, RestFields..., Distinct>(
+                    alias, separator, fieldSeparator
+            );
+        }
 
-        // Single field group_concat with alias and separator
-        template <typename Self>
-        auto&& group_concat(
-                this Self&& self,
-                auto field,
+        // Parameter-based overload for group_concat_order with bool literal support
+        template <typename Self, bool Distinct>
+        constexpr auto&& group_concat_order(
+                this Self&&             self,
+                auto                    orderField,
+                auto                    firstField,
                 utils::fixed_string<32> alias,
-                utils::fixed_string<8> separator
-        );
+                utils::fixed_string<8>  separator,
+                utils::fixed_string<8>  fieldSeparator,
+                std::integral_constant<bool, Distinct>
+        ) {
+            return self.template group_concat_with_order_impl<orderField, firstField, Distinct>(
+                    alias, separator, fieldSeparator
+            );
+        }
 
-        // Single field group_concat with alias, separator, and distinct
+        // Parameter-based overload for group_concat_order with runtime bool
         template <typename Self>
-        auto&& group_concat(
-                this Self&& self,
-                auto field,
+        constexpr auto&& group_concat_order(
+                this Self&&             self,
+                auto                    orderField,
+                auto                    firstField,
                 utils::fixed_string<32> alias,
-                utils::fixed_string<8> separator,
-                bool distinct
-        );
+                utils::fixed_string<8>  separator,
+                utils::fixed_string<8>  fieldSeparator,
+                bool                    distinct
+        ) {
+            if (distinct) {
+                return self.template group_concat_with_order_impl<orderField, firstField, true>(
+                        alias, separator, fieldSeparator
+                );
+            } else {
+                return self.template group_concat_with_order_impl<orderField, firstField, false>(
+                        alias, separator, fieldSeparator
+                );
+            }
+        }
 
-        // Multiple fields group_concat without ORDER BY
-        template <typename Self>
-        auto&& group_concat(
-                this Self&& self,
-                auto firstField,
-                auto secondField,
-                utils::fixed_string<32> alias,
-                utils::fixed_string<8> separator,
-                utils::fixed_string<8> fieldSeparator
-        );
-
-        // Single/Multiple field group_concat with ORDER BY (6 params = single field + order)
-        template <typename Self>
-        auto&& group_concat(
-                this Self&& self,
-                auto orderField,  // ORDER BY field
-                auto field,       // data field
-                utils::fixed_string<32> alias,
-                utils::fixed_string<8> separator,
-                utils::fixed_string<8> fieldSeparator,
-                bool distinct
-        );
-
-        // Multiple fields group_concat with ORDER BY (7 params)
-        template <typename Self>
-        auto&& group_concat(
-                this Self&& self,
-                auto orderField,      // ORDER BY field
-                auto firstField,      // first data field
-                auto secondField,     // second data field
-                utils::fixed_string<32> alias,
-                utils::fixed_string<8> separator,
-                utils::fixed_string<8> fieldSeparator,
-                bool distinct
+        template <typename Self, auto OrderField, auto FirstField, auto... RestFields, bool Distinct>
+        constexpr auto&& group_concat_with_order_impl(
+                this Self&&             self,
+                utils::fixed_string<32> alias          = {},
+                utils::fixed_string<8>  separator      = {","},
+                utils::fixed_string<8>  fieldSeparator = {","}
         );
 
         template <typename Self> auto&& limit(this Self&& self, int limit_value);
@@ -880,14 +874,7 @@ export namespace storm {
     std::expected<int, std::string> QuerySet<T>::insert(const T& obj)
         requires refl::reflectable<T>
     {
-        auto result = execute_insert(std::span<const T>{&obj, 1});
-        if (!result) {
-            return std::unexpected(result.error());
-        }
-        if (result->empty()) {
-            return std::unexpected("No ID returned from insert");
-        }
-        return result->front();
+        return execute_insert(std::span<const T>{&obj, 1});
     }
 
     // 2. Batch insert - modern span-based API
@@ -1174,188 +1161,69 @@ export namespace storm {
         return std::forward<Self>(self);
     }
 
-    // Unified GROUP_CONCAT implementations
-
-    // Basic single field group_concat (field only)
+    // GROUP_CONCAT_ORDER implementation
     template <typename T>
-    template <typename Self>
-    auto&& QuerySet<T>::group_concat(
-            this Self&& self,
-            auto field
-    ) {
-        constexpr auto MemberPtr = decltype(field)::member_ptr;
-        constexpr auto field_name = extract_field_name<MemberPtr>();
-        constexpr auto table_name = extract_class_name<T>();
-
-        std::string sql = "GROUP_CONCAT(";
-        sql += std::string{table_name};
-        sql += ".";
-        sql += std::string{field_name};
-        sql += " SEPARATOR ',')";
-        sql += " AS \"group_concat_";
-        sql += std::string{field_name};
-        sql += "\"";
-
-        self.functionsSet.emplace_back(AggregateSpec::custom_sql(sql));
-        return std::forward<Self>(self);
-    }
-
-    // Single field group_concat with alias (default separator)
-    template <typename T>
-    template <typename Self>
-    auto&& QuerySet<T>::group_concat(
-            this Self&& self,
-            auto field,
-            utils::fixed_string<32> alias
-    ) {
-        constexpr auto MemberPtr = decltype(field)::member_ptr;
-        constexpr auto field_name = extract_field_name<MemberPtr>();
-        constexpr auto table_name = extract_class_name<T>();
-
-        std::string sql = "GROUP_CONCAT(";
-        sql += std::string{table_name};
-        sql += ".";
-        sql += std::string{field_name};
-        sql += " SEPARATOR ',')";
-
-        if (alias.c_str()[0] != '\0') {
-            sql += " AS \"";
-            sql += alias.c_str();
-            sql += "\"";
-        } else {
-            sql += " AS \"group_concat_";
-            sql += std::string{field_name};
-            sql += "\"";
-        }
-
-        self.functionsSet.emplace_back(AggregateSpec::custom_sql(sql));
-        return std::forward<Self>(self);
-    }
-
-    // Single field group_concat with alias and separator
-    template <typename T>
-    template <typename Self>
-    auto&& QuerySet<T>::group_concat(
-            this Self&& self,
-            auto field,
+    template <typename Self, auto OrderField, auto FirstField, auto... RestFields, bool Distinct>
+    constexpr auto&& QuerySet<T>::group_concat_with_order_impl(
+            this Self&&             self,
             utils::fixed_string<32> alias,
-            utils::fixed_string<8> separator
+            utils::fixed_string<8>  separator,
+            utils::fixed_string<8>  fieldSeparator
     ) {
-        constexpr auto MemberPtr = decltype(field)::member_ptr;
-        constexpr auto field_name = extract_field_name<MemberPtr>();
-        constexpr auto table_name = extract_class_name<T>();
+        static_assert(std::is_member_pointer_v<decltype(OrderField)>, "OrderField must be a member pointer");
+        static_assert(std::is_member_pointer_v<decltype(FirstField)>, "FirstField must be a member pointer");
+        // RestFields are validated at instantiation time when used
 
-        std::string sql = "GROUP_CONCAT(";
-        sql += std::string{table_name};
-        sql += ".";
-        sql += std::string{field_name};
-        sql += " SEPARATOR '";
-        sql += separator.c_str();
-        sql += "')";
+        constexpr auto orderDesc = make_field_desc<OrderField>();
+        constexpr auto firstDesc = make_field_desc<FirstField>();
 
-        if (alias.c_str()[0] != '\0') {
-            sql += " AS \"";
-            sql += alias.c_str();
-            sql += "\"";
-        } else {
-            sql += " AS \"group_concat_";
-            sql += std::string{field_name};
-            sql += "\"";
-        }
+        // Generate actual alias at compile time
+        constexpr auto actual_alias = [&] {
+            if (alias.size() > 0) {
+                return alias;
+            } else {
+                return utils::make_string_builder<64>().append("group_concat_").append(firstDesc.field).build();
+            }
+        }();
 
-        self.functionsSet.emplace_back(AggregateSpec::custom_sql(sql));
+        // Build field expression at compile time
+        constexpr auto field_expr = [&] {
+            if constexpr (sizeof...(RestFields) == 0) {
+                return firstDesc.full_name();
+            } else {
+                return utils::join_with(
+                        fieldSeparator.view(), firstDesc.full_name(), make_field_desc<RestFields>().full_name()...
+                );
+            }
+        }();
+
+        // Build complete GROUP_CONCAT SQL at compile time
+        constexpr auto sql = utils::make_string_builder<512>()
+                                     .append("GROUP_CONCAT(")
+                                     .append(Distinct ? "DISTINCT " : "")
+                                     .append(field_expr)
+                                     .append(" ORDER BY ")
+                                     .append(orderDesc.full_name())
+                                     .append(" SEPARATOR '")
+                                     .append(separator)
+                                     .append("') AS ")
+                                     .append(actual_alias)
+                                     .build();
+
+        self.functions(AggregateSpec::custom_sql(std::string{sql.view()}));
         return std::forward<Self>(self);
     }
 
-    // Single field group_concat with alias, separator, and distinct
     template <typename T>
     template <typename Self>
-    auto&& QuerySet<T>::group_concat(
-            this Self&& self,
-            auto field,
-            utils::fixed_string<32> alias,
-            utils::fixed_string<8> separator,
-            bool distinct
-    ) {
+    auto&&
+    QuerySet<T>::group_concat(this Self&& self, auto field, utils::fixed_string<32> alias, utils::fixed_string<8> separator, bool distinct) {
+        // Extract field information at compile time
         constexpr auto MemberPtr = decltype(field)::member_ptr;
         constexpr auto field_name = extract_field_name<MemberPtr>();
         constexpr auto table_name = extract_class_name<T>();
 
         // Build SQL with runtime parameters
-        } else {
-            sql += " AS \"group_concat_";
-            sql += std::string{field_name};
-            sql += "\"";
-        }
-
-        self.functionsSet.emplace_back(AggregateSpec::custom_sql(sql));
-        return std::forward<Self>(self);
-    }
-
-    // Multiple fields group_concat without ORDER BY
-    template <typename T>
-    template <typename Self>
-    auto&& QuerySet<T>::group_concat(
-            this Self&& self,
-            auto firstField,
-            auto secondField,
-            utils::fixed_string<32> alias,
-            utils::fixed_string<8> separator,
-            utils::fixed_string<8> fieldSeparator
-    ) {
-        constexpr auto firstMemberPtr = decltype(firstField)::member_ptr;
-        constexpr auto secondMemberPtr = decltype(secondField)::member_ptr;
-        constexpr auto firstFieldName = extract_field_name<firstMemberPtr>();
-        constexpr auto secondFieldName = extract_field_name<secondMemberPtr>();
-        constexpr auto table_name = extract_class_name<T>();
-
-        std::string sql = "GROUP_CONCAT(";
-        sql += std::string{table_name};
-        sql += ".";
-        sql += std::string{firstFieldName};
-        sql += " || '";
-        sql += fieldSeparator.c_str();
-        sql += "' || ";
-        sql += std::string{table_name};
-        sql += ".";
-        sql += std::string{secondFieldName};
-        sql += " SEPARATOR '";
-        sql += separator.c_str();
-        sql += "')";
-
-        if (alias.c_str()[0] != '\0') {
-            sql += " AS \"";
-            sql += alias.c_str();
-            sql += "\"";
-        } else {
-            sql += " AS \"group_concat_";
-            sql += std::string{firstFieldName};
-            sql += "\"";
-        }
-
-        self.functionsSet.emplace_back(AggregateSpec::custom_sql(sql));
-        return std::forward<Self>(self);
-    }
-
-
-    // Single/Multiple field group_concat with ORDER BY (6 params = single field + order)
-    template <typename T>
-    template <typename Self>
-    auto&& QuerySet<T>::group_concat(
-            this Self&& self,
-            auto orderField,  // ORDER BY field
-            auto field,       // data field
-            utils::fixed_string<32> alias,
-            utils::fixed_string<8> separator,
-            utils::fixed_string<8> fieldSeparator,
-            bool distinct
-    ) {
-        constexpr auto orderMemberPtr = decltype(orderField)::member_ptr;
-        constexpr auto fieldMemberPtr = decltype(field)::member_ptr;
-        constexpr auto order_field_name = extract_field_name<orderMemberPtr>();
-        constexpr auto field_name = extract_field_name<fieldMemberPtr>();
-        constexpr auto table_name = extract_class_name<T>();
-
         std::string sql = "GROUP_CONCAT(";
         if (distinct) {
             sql += "DISTINCT ";
@@ -1363,10 +1231,6 @@ export namespace storm {
         sql += std::string{table_name};
         sql += ".";
         sql += std::string{field_name};
-        sql += " ORDER BY ";
-        sql += std::string{table_name};
-        sql += ".";
-        sql += std::string{order_field_name};
         sql += " SEPARATOR '";
         sql += separator.c_str();
         sql += "')";
@@ -1374,66 +1238,6 @@ export namespace storm {
         if (alias.c_str()[0] != '\0') {
             sql += " AS \"";
             sql += alias.c_str();
-            sql += "\"";
-        } else {
-            sql += " AS \"group_concat_";
-            sql += std::string{field_name};
-            sql += "\"";
-        }
-
-        self.functionsSet.emplace_back(AggregateSpec::custom_sql(sql));
-        return std::forward<Self>(self);
-    }
-
-    // Multiple fields group_concat with ORDER BY (7 params)
-    template <typename T>
-    template <typename Self>
-    auto&& QuerySet<T>::group_concat(
-            this Self&& self,
-            auto orderField,      // ORDER BY field
-            auto firstField,      // first data field
-            auto secondField,     // second data field
-            utils::fixed_string<32> alias,
-            utils::fixed_string<8> separator,
-            utils::fixed_string<8> fieldSeparator,
-            bool distinct
-    ) {
-        constexpr auto orderMemberPtr = decltype(orderField)::member_ptr;
-        constexpr auto firstMemberPtr = decltype(firstField)::member_ptr;
-        constexpr auto secondMemberPtr = decltype(secondField)::member_ptr;
-        constexpr auto orderFieldName = extract_field_name<orderMemberPtr>();
-        constexpr auto firstFieldName = extract_field_name<firstMemberPtr>();
-        constexpr auto secondFieldName = extract_field_name<secondMemberPtr>();
-        constexpr auto table_name = extract_class_name<T>();
-
-        std::string sql = "GROUP_CONCAT(";
-        if (distinct) {
-            sql += "DISTINCT ";
-        }
-        sql += std::string{table_name};
-        sql += ".";
-        sql += std::string{firstFieldName};
-        sql += " || '";
-        sql += fieldSeparator.c_str();
-        sql += "' || ";
-        sql += std::string{table_name};
-        sql += ".";
-        sql += std::string{secondFieldName};
-        sql += " ORDER BY ";
-        sql += std::string{table_name};
-        sql += ".";
-        sql += std::string{orderFieldName};
-        sql += " SEPARATOR '";
-        sql += separator.c_str();
-        sql += "')";
-
-        if (alias.c_str()[0] != '\0') {
-            sql += " AS \"";
-            sql += alias.c_str();
-            sql += "\"";
-        } else {
-            sql += " AS \"group_concat_";
-            sql += std::string{firstFieldName};
             sql += "\"";
         }
 

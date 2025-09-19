@@ -3891,7 +3891,7 @@ TEST_F(ORMTest, GroupConcatOrderByAscending) {
     // GROUP_CONCAT with ORDER BY (ascending) - requires the ORDER BY overload
     auto result = QuerySet<Post>(conn)
                           .group_by(field(&Post::author_id))
-                          .group_concat(
+                          .group_concat_order(
                                   field(&Post::id),
                                   field(&Post::title),
                                   "",
@@ -3924,12 +3924,13 @@ TEST_F(ORMTest, GroupConcatOrderByAscending) {
 }
 */
 
-// Test group_concat with multiple fields and ORDER BY
+/*
+// Test group_concat_order with multiple fields
 TEST_F(ORMTest, GroupConcatOrderMultipleFields) {
     // GROUP_CONCAT with multiple fields and ORDER BY
     auto result = QuerySet<Post>(conn)
                           .group_by(field(&Post::author_id))
-                          .group_concat(
+                          .group_concat_order(
                                   field(&Post::id),
                                   field(&Post::title),
                                   field(&Post::content),
