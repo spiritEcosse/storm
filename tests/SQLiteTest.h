@@ -3604,11 +3604,14 @@ TEST_F(ORMTest, GroupConcatWithCustomSeparator) {
     auto result = QuerySet<Post>(conn)
                           .group_by(field(&Post::author_id))
                           .group_concat(
+                                  "title_content_by_id",
+                                  ",",
+                                  " - ",
+                                  false,
+                                  field(&Post::id),
                                   field(&Post::title),
-                                  utils::fixed_string<32>{"grouped_titles"},
-                                  utils::fixed_string<8>{" | "},
-                                  false
-                          )
+                                  field(&Post::content)
+                          ) // alias, field_separator, record_separator, distinct, first_field, other_fields...
                           .only(field(&Post::author_id))
                           .select_values();
 
@@ -3647,7 +3650,7 @@ TEST_F(ORMTest, GroupConcatWithCustomSeparator) {
 TEST_F(ORMTest, GroupConcatSingleField) {
     // Test GROUP_CONCAT with single field
     auto result = QuerySet<Post>(conn)
-                          .group_concat(field(&Post::title), utils::fixed_string<32>{"all_titles"}, utils::fixed_string<8>{", "}, false)
+                          .group_concat("title_content", ",", " - ", false, field(&Post::title), field(&Post::content))
                           .select_values();
 
     ASSERT_TRUE(result.has_value()) << "GROUP_CONCAT with single field failed: " << result.error();
@@ -3674,7 +3677,7 @@ TEST_F(ORMTest, GroupConcatSingleFieldWithGroupBy) {
     // Test GROUP_CONCAT with single field and GROUP BY
     auto result = QuerySet<Post>(conn)
                           .group_by(field(&Post::author_id))
-                          .group_concat(field(&Post::title), utils::fixed_string<32>{"grouped_titles"})
+                          .group_concat("title_content", ",", " - ", false, field(&Post::title), field(&Post::content))
                           .only(field(&Post::author_id))
                           .select_values();
 
@@ -3708,11 +3711,8 @@ TEST_F(ORMTest, GroupConcatDistinctSingleField) {
     auto result = QuerySet<Post>(conn)
                           .group_by(field(&Post::author_id))
                           .group_concat(
-                                  field(&Post::title),
-                                  utils::fixed_string<32>{"distinct_titles"},
-                                  utils::fixed_string<8>{", "},
-                                  true
-                          ) // distinct = true
+                                  "title_content", "", " - ", true, field(&Post::title), field(&Post::content)
+                          ) // alias, field_separator, record_separator, distinct, first_field, other_fields...
                           .only(field(&Post::author_id))
                           .select_values();
 
