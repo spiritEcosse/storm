@@ -133,4 +133,4 @@ TODO:
 - [x] Rename where_all to overloaded version of where and fix tests
 - [x] Successfully removed all unused where_impl implementations from the codebase!
 - [x] Remove the Aggregatable concept definition from QuerySet.cppm
-
+- [x] Check if i need compile_time_sql
