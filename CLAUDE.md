@@ -128,4 +128,4 @@ The project follows modern C++26 patterns as defined in `rules.md`:
 - **QuerySet** is the primary interface for all database operations
 
 TODO:
-- [ ] Overload group_concat , overwrite group_concat_order with overloaded group_concat and fix tests
+- [x] Overload group_concat , overwrite group_concat_order with overloaded group_concat and fix tests
