@@ -75,25 +75,6 @@ export namespace storm {
     template <AggregateKind K, typename FieldType>
     using aggregate_result_t = typename aggregate_result_type<K, FieldType>::type;
 
-    template <typename T, std::size_t N> class compile_time_sql {
-        std::array<char, N> buffer{};
-        std::size_t         pos = 0;
-
-      public:
-        constexpr compile_time_sql() = default;
-
-        constexpr auto& append(std::string_view str) {
-            for (auto c : str) {
-                if (pos < N)
-                    buffer[pos++] = c;
-            }
-            return *this;
-        }
-
-        constexpr auto get() const {
-            return std::string_view(buffer.data(), pos);
-        }
-    };
 
     template <typename T>
     concept NumericType = std::is_arithmetic_v<T>;
