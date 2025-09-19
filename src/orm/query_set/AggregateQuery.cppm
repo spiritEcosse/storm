@@ -12,6 +12,7 @@ import storm.selectable_query;
 import storm.aggregate;
 import storm.utils;
 import storm.statement.select;
+import storm.reflect; // For member_pointer_traits
 
 // Import standard header units
 import <string>;
@@ -21,6 +22,8 @@ import <expected>;
 import <type_traits>;
 import <format>;
 import <variant>;
+import <cstdint>;
+import <concepts>;
 
 export namespace storm {
 
@@ -75,9 +78,7 @@ export namespace storm {
         using SelectableQuery<T>::SelectableQuery;
 
         // Copy constructor
-        AggregateQuery(const AggregateQuery& other)
-            : SelectableQuery<T>(other)
-            , functionsSet(other.functionsSet) {}
+        AggregateQuery(const AggregateQuery& other) : SelectableQuery<T>(other), functionsSet(other.functionsSet) {}
 
         // Move constructor
         AggregateQuery(AggregateQuery&& other) noexcept = default;
@@ -133,25 +134,24 @@ export namespace storm {
         // Simplified GROUP_CONCAT API (reduced from 8 overloads to 4)
 
         // 1. Basic single field group_concat (field only)
-        template <typename Self>
-        auto&& group_concat(this Self&& self, auto field);
+        template <typename Self> auto&& group_concat(this Self&& self, auto field);
 
         // 2. Single field group_concat with alias (default separator)
-        template <typename Self>
-        auto&& group_concat(this Self&& self, auto field, utils::fixed_string<32> alias);
+        template <typename Self> auto&& group_concat(this Self&& self, auto field, utils::fixed_string<32> alias);
 
         // 3. Single field group_concat with alias and separator
         template <typename Self>
-        auto&& group_concat(this Self&& self, auto field, utils::fixed_string<32> alias, utils::fixed_string<8> separator);
+        auto&&
+        group_concat(this Self&& self, auto field, utils::fixed_string<32> alias, utils::fixed_string<8> separator);
 
         // 4. Full-featured group_concat with all options
         template <typename Self>
         auto&& group_concat(
-                this Self&& self,
-                auto field,
+                this Self&&             self,
+                auto                    field,
                 utils::fixed_string<32> alias,
-                utils::fixed_string<8> separator,
-                bool distinct
+                utils::fixed_string<8>  separator,
+                bool                    distinct
         );
 
         // C++26 Aggregate value methods with field() syntax - direct execution
@@ -253,14 +253,14 @@ export namespace storm {
         // Override SelectableQuery's build_select_options to include aggregate functions
         [[nodiscard]] SelectOptions build_select_options() const {
             return SelectOptions{
-                .distinct_fields = this->distinctFields,
-                .only_fields     = this->onlyFields,
-                .functions_set   = functionsSet,
-                .order_terms     = this->orderTerms,
-                .group_by_fields = this->groupByFields,
-                .limit           = this->_limit,
-                .offset          = this->_offset,
-                .where_clause    = this->_whereExpression,
+                    .distinct_fields = this->distinctFields,
+                    .only_fields     = this->onlyFields,
+                    .functions_set   = functionsSet,
+                    .order_terms     = this->orderTerms,
+                    .group_by_fields = this->groupByFields,
+                    .limit           = this->_limit,
+                    .offset          = this->_offset,
+                    .where_clause    = this->_whereExpression,
             };
         }
     };
@@ -283,7 +283,7 @@ export namespace storm {
     template <typename T>
     template <typename Self>
     auto&& AggregateQuery<T>::group_concat(this Self&& self, auto field) {
-        constexpr auto MemberPtr = decltype(field)::member_ptr;
+        constexpr auto MemberPtr  = decltype(field)::member_ptr;
         constexpr auto field_name = extract_field_name<MemberPtr>();
         constexpr auto table_name = extract_class_name<T>();
 
@@ -304,7 +304,7 @@ export namespace storm {
     template <typename T>
     template <typename Self>
     auto&& AggregateQuery<T>::group_concat(this Self&& self, auto field, utils::fixed_string<32> alias) {
-        constexpr auto MemberPtr = decltype(field)::member_ptr;
+        constexpr auto MemberPtr  = decltype(field)::member_ptr;
         constexpr auto field_name = extract_field_name<MemberPtr>();
         constexpr auto table_name = extract_class_name<T>();
 
@@ -332,12 +332,9 @@ export namespace storm {
     template <typename T>
     template <typename Self>
     auto&& AggregateQuery<T>::group_concat(
-            this Self&& self,
-            auto field,
-            utils::fixed_string<32> alias,
-            utils::fixed_string<8> separator
+            this Self&& self, auto field, utils::fixed_string<32> alias, utils::fixed_string<8> separator
     ) {
-        constexpr auto MemberPtr = decltype(field)::member_ptr;
+        constexpr auto MemberPtr  = decltype(field)::member_ptr;
         constexpr auto field_name = extract_field_name<MemberPtr>();
         constexpr auto table_name = extract_class_name<T>();
 
@@ -367,13 +364,9 @@ export namespace storm {
     template <typename T>
     template <typename Self>
     auto&& AggregateQuery<T>::group_concat(
-            this Self&& self,
-            auto field,
-            utils::fixed_string<32> alias,
-            utils::fixed_string<8> separator,
-            bool distinct
+            this Self&& self, auto field, utils::fixed_string<32> alias, utils::fixed_string<8> separator, bool distinct
     ) {
-        constexpr auto MemberPtr = decltype(field)::member_ptr;
+        constexpr auto MemberPtr  = decltype(field)::member_ptr;
         constexpr auto field_name = extract_field_name<MemberPtr>();
         constexpr auto table_name = extract_class_name<T>();
 

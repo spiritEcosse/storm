@@ -12,6 +12,7 @@ import storm.base_query;
 import storm.core_types; // For SqlValue, ValueMap, etc.
 import storm.statement.select;
 import storm.utils;
+import storm.reflect; // For FieldWrapper
 
 // Import standard header units
 import <string>;
@@ -21,6 +22,8 @@ import <expected>;
 import <type_traits>;
 import <utility>;
 import <ranges>;
+import <flat_map>;
+import <functional>;
 
 export namespace storm {
     // Use the canonical SqlValue type from storm.core_types to avoid redundancy
@@ -39,9 +42,7 @@ export namespace storm {
         using BaseQuery<T>::BaseQuery;
 
         // Copy constructor
-        SelectableQuery(const SelectableQuery& other)
-            : BaseQuery<T>(other)
-            , onlyFields(other.onlyFields) {}
+        SelectableQuery(const SelectableQuery& other) : BaseQuery<T>(other), onlyFields(other.onlyFields) {}
 
         // Move constructor
         SelectableQuery(SelectableQuery&& other) noexcept = default;
@@ -82,13 +83,13 @@ export namespace storm {
         // Helper method to build SelectOptions
         [[nodiscard]] SelectOptions build_select_options() const {
             return SelectOptions{
-                .distinct_fields = this->distinctFields,
-                .only_fields     = onlyFields,
-                .order_terms     = this->orderTerms,
-                .group_by_fields = this->groupByFields,
-                .limit           = this->_limit,
-                .offset          = this->_offset,
-                .where_clause    = this->_whereExpression,
+                    .distinct_fields = this->distinctFields,
+                    .only_fields     = onlyFields,
+                    .order_terms     = this->orderTerms,
+                    .group_by_fields = this->groupByFields,
+                    .limit           = this->_limit,
+                    .offset          = this->_offset,
+                    .where_clause    = this->_whereExpression,
             };
         }
     };

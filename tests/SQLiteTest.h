@@ -4104,9 +4104,7 @@ TEST_F(ORMTest, GroupConcatWithCustomAlias) {
 
 TEST_F(ORMTest, OnlySimpleFieldsBackwardCompatibility) {
     // Test that existing simple only() usage still works
-    auto result = QuerySet<Author>(conn)
-                          .only(field(&Author::name), field(&Author::age))
-                          .select_values();
+    auto result = QuerySet<Author>(conn).only(field(&Author::name), field(&Author::age)).select_values();
 
     ASSERT_TRUE(result.has_value()) << "Simple only() backward compatibility failed: " << result.error();
     const auto& value = result.value();
@@ -4135,8 +4133,7 @@ TEST_F(ORMTest, OnlySimpleFieldsBackwardCompatibility) {
 TEST_F(ORMTest, OnlyWithAliasesBasicFunctionality) {
     // Test the new overloaded only() method with field-alias pairs
     auto result = QuerySet<Author>(conn)
-                          .only(field(&Author::name), "author_name",
-                                field(&Author::age), "author_age")
+                          .only(field(&Author::name), "author_name", field(&Author::age), "author_age")
                           .select_values();
 
     ASSERT_TRUE(result.has_value()) << "only() with aliases failed: " << result.error();
@@ -4167,10 +4164,14 @@ TEST_F(ORMTest, OnlyWithAliasesBasicFunctionality) {
 TEST_F(ORMTest, OnlyWithAliasesMultipleFields) {
     // Test with more field-alias pairs
     auto result = QuerySet<Author>(conn)
-                          .only(field(&Author::name), "full_name",
-                                field(&Author::age), "years_old",
-                                field(&Author::email), "email_address",
-                                field(&Author::rating), "user_rating")
+                          .only(field(&Author::name),
+                                "full_name",
+                                field(&Author::age),
+                                "years_old",
+                                field(&Author::email),
+                                "email_address",
+                                field(&Author::rating),
+                                "user_rating")
                           .select_values();
 
     ASSERT_TRUE(result.has_value()) << "only() with multiple aliases failed: " << result.error();
@@ -4206,8 +4207,7 @@ TEST_F(ORMTest, OnlyWithAliasesAndWhere) {
     // Test combining only() with aliases and WHERE clauses
     auto result = QuerySet<Author>(conn)
                           .where(field(&Author::age) > 25)
-                          .only(field(&Author::name), "author_name",
-                                field(&Author::age), "author_age")
+                          .only(field(&Author::name), "author_name", field(&Author::age), "author_age")
                           .select_values();
 
     ASSERT_TRUE(result.has_value()) << "only() with aliases and WHERE failed: " << result.error();
@@ -4226,10 +4226,8 @@ TEST_F(ORMTest, OnlyWithAliasesAndWhere) {
 
 TEST_F(ORMTest, OnlyWithAliasesEmptyAlias) {
     // Test with some empty aliases (should use default field names)
-    auto result = QuerySet<Author>(conn)
-                          .only(field(&Author::name), "",
-                                field(&Author::age), "author_age")
-                          .select_values();
+    auto result =
+            QuerySet<Author>(conn).only(field(&Author::name), "", field(&Author::age), "author_age").select_values();
 
     ASSERT_TRUE(result.has_value()) << "only() with empty alias failed: " << result.error();
     const auto& value = result.value();
