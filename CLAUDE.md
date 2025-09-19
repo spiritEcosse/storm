@@ -134,3 +134,4 @@ TODO:
 - [x] Successfully removed all unused where_impl implementations from the codebase!
 - [x] Remove the Aggregatable concept definition from QuerySet.cppm
 - [x] Check if i need compile_time_sql
+- [x] Check if i need field_type_t, class_type_t

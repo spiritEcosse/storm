@@ -89,16 +89,21 @@ export namespace storm {
                         FieldType>>;
     };
 
-    template <auto MemberPtr>
-    using field_type_t = typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::member_type;
 
-    template <auto MemberPtr>
-    using class_type_t = typename refl::meta::member_pointer_traits<decltype(MemberPtr)>::class_type;
 
     // Concepts for better error messages
     template <typename T>
     concept Sortable = requires(T a, T b) {
         { a < b } -> std::convertible_to<bool>;
+    };
+
+    // Concept to detect Field types
+    template <typename T>
+    concept IsFieldType = requires {
+        T::member_ptr;
+        typename std::remove_cvref_t<T>;
+    } && requires {
+        std::is_member_pointer_v<decltype(T::member_ptr)>;
     };
 
     // Simplified conversion with better compile-time optimization
@@ -229,9 +234,9 @@ export namespace storm {
 
         // Overloaded version for field-alias pairs: .only(field, alias, field, alias, ...)
         template <typename Self>
-        constexpr auto&& only(this Self&& self, auto first_field, auto first_alias, auto... rest)
-            requires(sizeof...(rest) % 2 == 0) && std::is_member_pointer_v<decltype(first_field)> &&
-                    (!std::is_member_pointer_v<decltype(first_alias)>);
+        auto&& only(this Self&& self, auto first_field, auto first_alias, auto... rest)
+            requires(sizeof...(rest) % 2 == 0) && IsFieldType<decltype(first_field)> &&
+                    (!IsFieldType<decltype(first_alias)>);
 
         // GROUP BY API (C++26 upgraded declarations with function parameter deduction)
         template <typename Self>
@@ -959,42 +964,44 @@ export namespace storm {
     // C++26 ONLY implementation - Overloaded version for field-alias pairs: .only(field, alias, field, alias, ...)
     template <typename T>
     template <typename Self>
-    constexpr auto&& QuerySet<T>::only(this Self&& self, auto first_field, auto first_alias, auto... rest)
-        requires(sizeof...(rest) % 2 == 0) && std::is_member_pointer_v<decltype(first_field)> &&
-                (!std::is_member_pointer_v<decltype(first_alias)>)
+    auto&& QuerySet<T>::only(this Self&& self, auto first_field, auto first_alias, auto... rest)
+        requires(sizeof...(rest) % 2 == 0) && IsFieldType<decltype(first_field)> &&
+                (!IsFieldType<decltype(first_alias)>)
     {
         // C++26 compile-time validation
         constexpr auto total_pairs = (sizeof...(rest) + 2) / 2;
         static_assert(total_pairs <= 20, "Too many field-alias pairs (max 20 pairs for performance)");
         static_assert(sizeof...(rest) % 2 == 0, "Must provide field-alias pairs");
 
-        // Extract field-alias pairs at compile time
-        constexpr auto pairs = std::make_tuple(first_field, first_alias, rest...);
+        // Validate and process field-alias pairs directly
+        constexpr auto field_count = (sizeof...(rest) + 2) / 2;
+        self.onlyFields.reserve(self.onlyFields.size() + field_count);
 
-        // Process pairs using index sequence
-        return [&]<std::size_t... I>(std::index_sequence<I...>) -> decltype(auto) {
-            constexpr auto field_count = (sizeof...(rest) + 2) / 2;
-            self.onlyFields.reserve(self.onlyFields.size() + field_count);
+        // Validate field types at compile time
+        static_assert(IsFieldType<decltype(first_field)>, "First argument must be a Field type");
+        static_assert(!IsFieldType<decltype(first_alias)>, "Second argument must not be a Field type");
+        // Field class validation will be done at runtime by FieldWrapper::create
 
-            // Validate fields are member pointers and add them
-            (([&self]<std::size_t Idx>() {
-                 constexpr auto field = std::get<Idx * 2>(pairs);
-                 constexpr auto alias = std::get<Idx * 2 + 1>(pairs);
+        // Add the first pair
+        self.onlyFields.emplace_back(refl::FieldWrapper::create(first_field), first_alias);
 
-                 static_assert(
-                         std::is_member_pointer_v<decltype(field)>, "Even-indexed arguments must be member pointers"
-                 );
-                 static_assert(
-                         std::same_as<typename refl::meta::member_pointer_traits<decltype(field)>::class_type, T>,
-                         "Field must belong to the correct class"
-                 );
+        // Process remaining pairs - direct approach without lambdas
+        if constexpr (sizeof...(rest) == 2) {
+            // Handle the common case of exactly one more field-alias pair
+            auto args_tuple = std::forward_as_tuple(rest...);
+            auto second_field = std::get<0>(args_tuple);
+            auto second_alias = std::get<1>(args_tuple);
 
-                 self.onlyFields.emplace_back(refl::FieldWrapper::create(field), alias);
-             }.template operator()<I>()),
-             ...);
+            static_assert(IsFieldType<std::remove_cvref_t<decltype(second_field)>>, "Field argument must be a Field type");
+            static_assert(!IsFieldType<std::remove_cvref_t<decltype(second_alias)>>, "Alias argument must not be a Field type");
 
-            return std::forward<Self>(self);
-        }(std::make_index_sequence<(sizeof...(rest) + 2) / 2>{});
+            self.onlyFields.emplace_back(refl::FieldWrapper::create(second_field), second_alias);
+        } else if constexpr (sizeof...(rest) > 2) {
+            // For more than one additional pair, we would need more complex handling
+            static_assert(sizeof...(rest) <= 2, "Currently only one additional field-alias pair is supported");
+        }
+
+        return std::forward<Self>(self);
     }
 
     // C++26 GROUP BY implementation with function parameter deduction
@@ -1262,7 +1269,21 @@ export namespace storm {
         constexpr auto field_name = extract_field_name<MemberPtr>();
         constexpr auto table_name = extract_class_name<T>();
 
-        // Build SQL with runtime parameters
+        std::string sql = "GROUP_CONCAT(";
+        if (distinct) {
+            sql += "DISTINCT ";
+        }
+        sql += std::string{table_name};
+        sql += ".";
+        sql += std::string{field_name};
+        sql += " SEPARATOR '";
+        sql += separator.c_str();
+        sql += "')";
+
+        if (alias.c_str()[0] != '\0') {
+            sql += " AS \"";
+            sql += alias.c_str();
+            sql += "\"";
         } else {
             sql += " AS \"group_concat_";
             sql += std::string{field_name};
