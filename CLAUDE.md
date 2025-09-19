@@ -136,3 +136,4 @@ TODO:
 - [x] Simplify QuerySet, because there are too many methods
 - [x] Check if i need compile_time_sql
 - [x] Check if i need field_type_t, class_type_t
+- [ ] Reduce lines of SQLite test file
