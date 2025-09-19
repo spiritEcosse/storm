@@ -3969,7 +3969,6 @@ TEST_F(ORMTest, GroupConcatOrderMultipleFields) {
     ASSERT_NE(fourthPostPos, std::string::npos);
     EXPECT_LT(firstPostPos, fourthPostPos) << "Posts not ordered correctly in ascending order";
 }
-*/
 
 // =======================================
 // MULTI-FIELD GROUP_CONCAT TESTS

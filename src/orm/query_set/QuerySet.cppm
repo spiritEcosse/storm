@@ -24,12 +24,10 @@ import <ranges>;
 import <span>;
 
 export namespace storm {
-
     template <class T> class QuerySet : public JoinableQuery<T> {
       public:
         // Inherit constructors
         using JoinableQuery<T>::JoinableQuery;
-
 
         // C++26 REMOVE API with compile-time validation and constraint checking
         std::expected<bool, std::string> remove(const T& obj)
@@ -180,8 +178,7 @@ export namespace storm {
     {
         return execute_delete();
     }
-
-    // Statement preparation methods
+  
     template <typename T>
     InsertStatement<T> QuerySet<T>::stmt_insert(const T& obj)
         requires refl::reflectable<T>
