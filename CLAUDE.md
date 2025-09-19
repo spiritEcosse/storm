@@ -97,6 +97,36 @@ The project follows modern C++26 patterns as defined in `rules.md`:
 - **Type Safety**: Heavy use of concepts and `std::expected` for error handling
 - **Modern STL**: Uses `std::ranges`, `std::print`, `std::format`, etc.
 - **Memory Safety**: RAII patterns, smart pointers, and `std::span`
+- **DRY (Don't Repeat Yourself)**: 
+  - Extract common logic into reusable templates and concepts
+  - Use template metaprogramming to eliminate code duplication
+  - Leverage compile-time features to reduce runtime redundancy
+  - Consolidate similar implementations using CRTP and mixins
+  - Prefer generic programming over copy-paste implementations
+
+### Modern C++ Principles
+
+Storm embraces cutting-edge C++23/26 features and design patterns:
+
+#### Core Principles
+- **Zero-Cost Abstractions**: All abstractions compile away - no runtime overhead
+- **Value Semantics**: Prefer values over pointers, use move semantics for efficiency
+- **Compile-Time Programming**: `constexpr`, `consteval`, and `if consteval` for compile-time computation
+- **Monadic Composition**: Use `and_then`, `transform`, `or_else` with `std::expected`
+- **SFINAE → Concepts**: Replace old SFINAE patterns with readable C++20 concepts
+
+#### Design Patterns
+- **CRTP**: Static polymorphism without virtual functions (no vtables)
+- **Expression Templates**: Build DSLs with operator overloading for query building
+- **Policy-Based Design**: Customize behavior via template parameters
+- **Ranges & Views**: Lazy evaluation and composable algorithms
+
+#### C++23/26 Features
+- **Static Reflection**: Compile-time type inspection for automatic SQL generation
+- **Coroutines**: Async database operations without callbacks
+- **Deducing `this`**: Simplified member function templates
+- **Pattern Matching**: Structured binding with conditions (C++26)
+- **Contracts**: Pre/post conditions for API contracts (C++26 proposal)
 
 ### Testing Structure
 
