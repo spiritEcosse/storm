@@ -172,3 +172,5 @@ TODO:
 - [x] Fix candidate function template not viable: requires 0 arguments, but 1 was provided, static FieldWrapper create() , (self.onlyFields.emplace_back(refl::FieldWrapper::create(fields), utils::fixed_string<32>{}), ...)
 - [x] The multi-field group_concat function had variadic template parameters (Fields...) followed by fixed parameters, which prevented proper template argument deduction.
 - [x] Remove all unused code
+- [x] Successfully cleaned up Reflect module - removed 97+ lines of unused code
+- [ ] C++26 immediate function evaluation issue in SelectableQuery.only(), Affects field-alias pair functionality in .only(field(&Author::name), "alias") calls. Function parameter usage in constexpr context causing compilation failures. Requires investigation of C++26 immediate function evaluation rules.
