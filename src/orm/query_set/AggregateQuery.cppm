@@ -270,8 +270,8 @@ export namespace storm {
                     .functions_set   = functionsSet,
                     .order_terms     = this->orderTerms,
                     .group_by_fields = this->groupByFields,
-                    .limit           = this->_limit,
-                    .offset          = this->_offset,
+                    .limit           = this->query_flags.limit,
+                    .offset          = this->query_flags.offset,
                     .where_clause    = this->_whereExpression,
             };
         }

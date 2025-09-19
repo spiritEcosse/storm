@@ -60,9 +60,6 @@ export namespace storm {
 
         std::vector<std::tuple<refl::FieldWrapper, bool, Collation>> orderTerms;
 
-        int _limit{};
-        int _offset{};
-
         // Helper to estimate result size for pre-allocation
         [[nodiscard]] constexpr std::size_t estimate_result_size() const noexcept {
             if (query_flags.limit > 0)
@@ -81,9 +78,8 @@ export namespace storm {
         BaseQuery(const BaseQuery& other)
             : conn(other.conn)
             , _whereExpression(other._whereExpression)
-            , orderTerms(other.orderTerms)
-            , _limit(other._limit)
-            , _offset(other._offset) {
+            , query_flags(other.query_flags)
+            , orderTerms(other.orderTerms) {
             // Value semantics: vectors copy directly
             distinctFields = other.distinctFields;
             groupByFields  = other.groupByFields;
@@ -285,12 +281,12 @@ export namespace storm {
 
     // LIMIT/OFFSET implementation
     template <typename T> template <typename Self> auto&& BaseQuery<T>::limit(this Self&& self, int limit_value) {
-        self._limit = limit_value;
+        self.query_flags.limit = limit_value;
         return std::forward<Self>(self);
     }
 
     template <typename T> template <typename Self> auto&& BaseQuery<T>::offset(this Self&& self, int offset_value) {
-        self._offset = offset_value;
+        self.query_flags.offset = offset_value;
         return std::forward<Self>(self);
     }
 

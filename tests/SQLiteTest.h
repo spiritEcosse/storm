@@ -27,6 +27,13 @@ import <flat_map>;
 
 using namespace storm;
 
+// Type aliases for test compatibility
+using ValueMap                              = std::flat_map<std::string, SqlValue, std::less<>>;
+using ValueVectorMap                        = std::vector<ValueMap>;
+using ExpectedValueVectorMap                = std::expected<ValueVectorMap, std::string>;
+template <typename T> using ExpectedT       = std::expected<T, std::string>;
+template <typename T> using ExpectedVectorT = std::expected<std::vector<T>, std::string>;
+
 // Simple Statement shim for tests to run arbitrary SQL using the unified base.
 // We bind it to a model type (Author by default) though DDL doesn't use T.
 template <typename T> class TestStatement : public storm::UnifiedStatementBase<TestStatement<T>, T> {

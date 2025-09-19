@@ -9,6 +9,7 @@ export module storm.statement.base;
 // Import standard header units
 import <string>;
 import <vector>;
+import <array>;
 import <stdexcept>;
 import <atomic>;
 import <memory>;
