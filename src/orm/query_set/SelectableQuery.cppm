@@ -62,14 +62,14 @@ export namespace storm {
         // ONLY API (C++26 upgraded declarations with function parameter deduction)
         // Simple version: .only(field1, field2, ...)
         template <typename Self>
-        constexpr auto&& only(this Self&& self, auto... fields)
-            requires(sizeof...(fields) > 0);
+        auto&& only(this Self&& self, auto... fields)
+            requires(sizeof...(fields) > 0) && (requires { fields.member_ptr; } && ...);
 
         // Overloaded version for field-alias pairs: .only(field, alias, field, alias, ...)
         template <typename Self>
-        constexpr auto&& only(this Self&& self, auto first_field, auto first_alias, auto... rest)
-            requires(sizeof...(rest) % 2 == 0) && std::is_member_pointer_v<decltype(first_field)> &&
-                    (!std::is_member_pointer_v<decltype(first_alias)>);
+        auto&& only(this Self&& self, auto first_field, auto first_alias, auto... rest)
+            requires(sizeof...(rest) % 2 == 0) && requires { first_field.member_ptr; } &&
+                    (!requires { first_alias.member_ptr; });
 
         // C++26 SELECT API with compile-time query validation and type safety
         ExpectedVectorT<T> select_all()
@@ -97,8 +97,8 @@ export namespace storm {
     // C++26 ONLY implementation - Simple version: .only(field1, field2, ...)
     template <typename T>
     template <typename Self>
-    constexpr auto&& SelectableQuery<T>::only(this Self&& self, auto... fields)
-        requires(sizeof...(fields) > 0)
+    auto&& SelectableQuery<T>::only(this Self&& self, auto... fields)
+        requires(sizeof...(fields) > 0) && (requires { fields.member_ptr; } && ...)
     {
         // C++26 compile-time validation
         static_assert(sizeof...(fields) <= 20, "Too many ONLY fields (max 20 for performance)");
@@ -116,42 +116,34 @@ export namespace storm {
     // C++26 ONLY implementation - Overloaded version for field-alias pairs: .only(field, alias, field, alias, ...)
     template <typename T>
     template <typename Self>
-    constexpr auto&& SelectableQuery<T>::only(this Self&& self, auto first_field, auto first_alias, auto... rest)
-        requires(sizeof...(rest) % 2 == 0) && std::is_member_pointer_v<decltype(first_field)> &&
-                (!std::is_member_pointer_v<decltype(first_alias)>)
+    auto&& SelectableQuery<T>::only(this Self&& self, auto first_field, auto first_alias, auto... rest)
+        requires(sizeof...(rest) % 2 == 0) && requires { first_field.member_ptr; } &&
+                (!requires { first_alias.member_ptr; })
     {
         // C++26 compile-time validation
         constexpr auto total_pairs = (sizeof...(rest) + 2) / 2;
         static_assert(total_pairs <= 20, "Too many field-alias pairs (max 20 pairs for performance)");
         static_assert(sizeof...(rest) % 2 == 0, "Must provide field-alias pairs");
 
-        // Extract field-alias pairs at compile time
-        constexpr auto pairs = std::make_tuple(first_field, first_alias, rest...);
+        // Reserve space for field-alias pairs
+        constexpr auto field_count = (sizeof...(rest) + 2) / 2;
+        self.onlyFields.reserve(self.onlyFields.size() + field_count);
 
-        // Process pairs using index sequence
-        return [&]<std::size_t... I>(std::index_sequence<I...>) -> decltype(auto) {
-            constexpr auto field_count = (sizeof...(rest) + 2) / 2;
-            self.onlyFields.reserve(self.onlyFields.size() + field_count);
+        // Handle first pair
+        self.onlyFields.emplace_back(refl::FieldWrapper::create(first_field), first_alias);
 
-            // Validate fields are member pointers and add them
-            (([&self]<std::size_t Idx>() {
-                 constexpr auto field = std::get<Idx * 2>(pairs);
-                 constexpr auto alias = std::get<Idx * 2 + 1>(pairs);
+        // Handle remaining pairs using simple approach
+        if constexpr (sizeof...(rest) > 0) {
+            auto remaining = std::make_tuple(rest...);
+            [&]<std::size_t... I>(std::index_sequence<I...>) {
+                ((self.onlyFields.emplace_back(
+                    refl::FieldWrapper::create(std::get<I * 2>(remaining)),
+                    std::get<I * 2 + 1>(remaining)
+                )), ...);
+            }(std::make_index_sequence<sizeof...(rest) / 2>{});
+        }
 
-                 static_assert(
-                         std::is_member_pointer_v<decltype(field)>, "Even-indexed arguments must be member pointers"
-                 );
-                 static_assert(
-                         std::same_as<typename refl::meta::member_pointer_traits<decltype(field)>::class_type, T>,
-                         "Field must belong to the correct class"
-                 );
-
-                 self.onlyFields.emplace_back(refl::FieldWrapper::create(field), alias);
-             }.template operator()<I>()),
-             ...);
-
-            return std::forward<Self>(self);
-        }(std::make_index_sequence<(sizeof...(rest) + 2) / 2>{});
+        return std::forward<Self>(self);
     }
 
     // SELECT ONE implementation (returns single object with LIMIT 1)
