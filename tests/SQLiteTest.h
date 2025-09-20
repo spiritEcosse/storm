@@ -3539,7 +3539,9 @@ TEST_F(ORMTest, GroupConcatDistinct) {
 
     auto result = QuerySet<Post>(conn)
                           .group_by(field(&Post::author_id))
-                          .group_concat(field(&Post::title), utils::fixed_string<32>{""}, utils::fixed_string<8>{","}, true) // distinct = true
+                          .group_concat(
+                                  field(&Post::title), utils::fixed_string<32>{""}, utils::fixed_string<8>{","}, true
+                          ) // distinct = true
                           .only(field(&Post::author_id))
                           .select_values();
 

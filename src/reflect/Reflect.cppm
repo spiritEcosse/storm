@@ -32,7 +32,6 @@ namespace storm {
     template <auto MemberPtr> struct Field;
 }
 
-
 // ============================================================================
 // COMPILE-TIME REFLECTION METADATA
 // ============================================================================
@@ -112,7 +111,9 @@ export namespace refl::meta {
 
         template <typename Obj, typename F> static consteval void visit_members(Obj&& obj, F&& func) {
             []<size_t... Is>(std::index_sequence<Is...>, auto&& o, auto&& f) {
-                (f(std::get<Is>(members_tuple{}).get_name(), std::get<Is>(members_tuple{}).get(std::forward<decltype(o)>(o))), ...);
+                (f(std::get<Is>(members_tuple{}).get_name(),
+                   std::get<Is>(members_tuple{}).get(std::forward<decltype(o)>(o))),
+                 ...);
             }(std::make_index_sequence<member_count>{}, std::forward<Obj>(obj), std::forward<F>(func));
         }
     };
