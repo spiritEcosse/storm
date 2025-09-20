@@ -344,11 +344,11 @@ export namespace storm {
             return std::format(" GROUP BY {}", join_range(field_names, ", "));
         }
 
-        [[nodiscard]] std::expected<void, std::string> bind_where_parameters() noexcept {
+        [[nodiscard]] std::expected<bool, std::string> bind_where_parameters() noexcept {
             return this->_where_clause ? this->_where_clause->to_query().and_then([this](const auto& query_result) {
                 return this->bind_parameters(*query_result.binder);
             })
-                                       : std::expected<void, std::string>{};
+                                       : std::expected<bool, std::string>{false};
         }
 
         // C++23: Optimized SQL building with compile-time fast path

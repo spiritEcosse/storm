@@ -63,9 +63,9 @@ export namespace storm {
          *
          * @return Success or error message
          */
-        [[nodiscard]] std::expected<void, std::string> bind_where_parameters() noexcept {
+        [[nodiscard]] std::expected<bool, std::string> bind_where_parameters() noexcept {
             if (!this->_where_clause) {
-                return {}; // No WHERE clause, nothing to bind
+                return false; // No WHERE clause, no parameters bound
             }
 
             auto query_result = this->_where_clause->to_query();

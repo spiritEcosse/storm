@@ -66,6 +66,11 @@ export namespace refl::meta {
             return std::forward<Obj>(obj).*member_ptr;
         }
 
+        // Runtime version for C++26 compatibility
+        template <typename Obj> static auto& get_runtime(Obj&& obj) {
+            return std::forward<Obj>(obj).*member_ptr;
+        }
+
         template <typename U>
         static consteval auto set(class_type& obj, U&& value) -> std::expected<void, std::string> {
             if constexpr (std::is_assignable_v<member_type&, U>) {
@@ -104,6 +109,13 @@ export namespace refl::meta {
 
         // Essential member iteration methods
         template <typename F> static constexpr void for_each_member_with_index(F&& func) {
+            []<size_t... Is>(std::index_sequence<Is...>, auto&& f) {
+                (f.template operator()<Is>(std::get<Is>(members_tuple{})), ...);
+            }(std::make_index_sequence<member_count>{}, std::forward<F>(func));
+        }
+
+        // Runtime version without constexpr for C++26 compatibility
+        template <typename F> static void for_each_member_runtime(F&& func) {
             []<size_t... Is>(std::index_sequence<Is...>, auto&& f) {
                 (f.template operator()<Is>(std::get<Is>(members_tuple{})), ...);
             }(std::make_index_sequence<member_count>{}, std::forward<F>(func));
@@ -209,6 +221,11 @@ export namespace refl {
         // Essential member iteration delegates
         template <typename F> static constexpr void for_each_member_with_index(F&& func) {
             descriptor::for_each_member_with_index(std::forward<F>(func));
+        }
+
+        // Runtime version without constexpr for C++26 compatibility
+        template <typename F> static void for_each_member_runtime(F&& func) {
+            descriptor::for_each_member_runtime(std::forward<F>(func));
         }
 
         template <typename Obj, typename F> static constexpr void visit_members(Obj&& obj, F&& func) {

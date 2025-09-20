@@ -91,6 +91,10 @@ export namespace storm {
             return os;
         }
 
+        // Friend declaration for MemberProcessor helper
+        template <typename D, typename U, typename FieldFilter, size_t Index>
+        friend struct MemberProcessor;
+
       public:
         UnifiedStatementBase(std::shared_ptr<Connection> conn);
         UnifiedStatementBase(std::shared_ptr<Connection> conn, std::optional<Where> where_clause);
@@ -131,6 +135,11 @@ export namespace storm {
             return refl::reflect<T>::name();
         }
 
+        // Runtime version for C++26 compatibility
+        [[nodiscard]] static std::string table_name_runtime() noexcept {
+            return std::string{refl::reflect<T>::name()};
+        }
+
         /**
          * Field filter predicate to exclude primary key fields
          *
@@ -154,8 +163,15 @@ export namespace storm {
             return refl::reflect<T>::get_member_name(member);
         }
 
+        void bind(int idx, signed char value);
+        void bind(int idx, short value);
         void bind(int idx, int value);
+        void bind(int idx, long value);
         void bind(int idx, long long value);
+        void bind(int idx, unsigned char value);
+        void bind(int idx, unsigned short value);
+        void bind(int idx, unsigned int value);
+        void bind(int idx, unsigned long value);
         void bind(int idx, double value);
         void bind(int idx, const std::string& value);
         void bind(int idx, const char* value);
@@ -172,6 +188,14 @@ export namespace storm {
         template <typename FieldFilter>
         std::expected<void, std::string>
         bind_fields_with_descriptors(const T& obj, int& param_index, FieldFilter filter);
+
+        // Helper to process all members (implementation avoids C++26 immediate function issues)
+        template <typename FieldFilter>
+        void process_all_members(const T& obj, int& param_index, FieldFilter filter, std::expected<void, std::string>& result);
+
+        // Recursive template function to process members by index (supports unlimited members)
+        template <typename FieldFilter, size_t Index>
+        void process_members_recursive(const T& obj, int& param_index, FieldFilter filter, std::expected<void, std::string>& result);
 
         // Get field value as a variant for dynamic binding
         std::expected<SqlValue, std::string> get_bindable_value(const T& obj, std::string_view field_name);
@@ -378,12 +402,40 @@ export namespace storm {
         return {}; // Success
     }
 
+    template <typename Derived, typename T> void UnifiedStatementBase<Derived, T>::bind(int idx, signed char value) {
+        sqlite3_bind_int(stmt, idx, static_cast<int>(value));
+    }
+
+    template <typename Derived, typename T> void UnifiedStatementBase<Derived, T>::bind(int idx, short value) {
+        sqlite3_bind_int(stmt, idx, static_cast<int>(value));
+    }
+
     template <typename Derived, typename T> void UnifiedStatementBase<Derived, T>::bind(int idx, int value) {
         sqlite3_bind_int(stmt, idx, value);
     }
 
+    template <typename Derived, typename T> void UnifiedStatementBase<Derived, T>::bind(int idx, long value) {
+        sqlite3_bind_int64(stmt, idx, value);
+    }
+
     template <typename Derived, typename T> void UnifiedStatementBase<Derived, T>::bind(int idx, long long value) {
         sqlite3_bind_int64(stmt, idx, value);
+    }
+
+    template <typename Derived, typename T> void UnifiedStatementBase<Derived, T>::bind(int idx, unsigned char value) {
+        sqlite3_bind_int(stmt, idx, static_cast<int>(value));
+    }
+
+    template <typename Derived, typename T> void UnifiedStatementBase<Derived, T>::bind(int idx, unsigned short value) {
+        sqlite3_bind_int(stmt, idx, static_cast<int>(value));
+    }
+
+    template <typename Derived, typename T> void UnifiedStatementBase<Derived, T>::bind(int idx, unsigned int value) {
+        sqlite3_bind_int64(stmt, idx, static_cast<long long>(value));
+    }
+
+    template <typename Derived, typename T> void UnifiedStatementBase<Derived, T>::bind(int idx, unsigned long value) {
+        sqlite3_bind_int64(stmt, idx, static_cast<long long>(value));
     }
 
     template <typename Derived, typename T> void UnifiedStatementBase<Derived, T>::bind(int idx, double value) {
@@ -481,29 +533,61 @@ export namespace storm {
         return bind_value(param_index, value, pk_member.get_name());
     }
 
+    // Helper struct to process members at compile time without template lambdas
+    template <typename Derived, typename T, typename FieldFilter, size_t Index>
+    struct MemberProcessor {
+        static void process(UnifiedStatementBase<Derived, T>* self, const T& obj, int& param_index,
+                          FieldFilter filter, std::expected<void, std::string>& result) {
+            if (!result.has_value()) return;
+
+            using members_tuple = typename refl::reflect<T>::descriptor::members_tuple;
+            constexpr auto member = std::get<Index>(members_tuple{});
+
+            if constexpr (filter(member)) {
+                static constexpr auto name_constexpr = member.get_name();
+                std::string_view member_name{name_constexpr.view()};
+                auto value = member.get_runtime(obj);
+                result = self->bind_value(param_index, value, member_name);
+            }
+        }
+    };
+
+    // Helper to process all members using recursive template approach
+    template <typename Derived, typename T>
+    template <typename FieldFilter>
+    void UnifiedStatementBase<Derived, T>::process_all_members(const T& obj, int& param_index, FieldFilter filter, std::expected<void, std::string>& result) {
+        constexpr auto member_count = refl::reflect<T>::descriptor::member_count;
+
+        // Use recursive template approach to handle unlimited number of members
+        process_members_recursive<FieldFilter, 0>(obj, param_index, filter, result);
+    }
+
+    // Recursive template function to process members by index
+    template <typename Derived, typename T>
+    template <typename FieldFilter, size_t Index>
+    void UnifiedStatementBase<Derived, T>::process_members_recursive(const T& obj, int& param_index, FieldFilter filter, std::expected<void, std::string>& result) {
+        constexpr auto member_count = refl::reflect<T>::descriptor::member_count;
+
+        // Process current member if index is valid and result is still good
+        if constexpr (Index < member_count) {
+            if (result.has_value()) {
+                MemberProcessor<Derived, T, FieldFilter, Index>::process(this, obj, param_index, filter, result);
+
+                // Recursively process next member
+                if constexpr (Index + 1 < member_count) {
+                    process_members_recursive<FieldFilter, Index + 1>(obj, param_index, filter, result);
+                }
+            }
+        }
+    }
+
     // New version of bind_fields that works with member descriptors directly
     template <typename Derived, typename T>
     template <typename FieldFilter>
     std::expected<void, std::string>
     UnifiedStatementBase<Derived, T>::bind_fields_with_descriptors(const T& obj, int& param_index, FieldFilter filter) {
         std::expected<void, std::string> result{};
-
-        [&]<size_t... Is>(std::index_sequence<Is...>) {
-            using members_tuple = typename refl::reflect<T>::descriptor::members_tuple;
-
-            ((result.has_value() &&
-              [&]() {
-                  auto member = std::get<Is>(members_tuple{});
-                  if constexpr (filter(member)) {
-                      constexpr auto member_name = member.get_name();
-                      auto           value       = member.get(obj);
-                      result                     = bind_value(param_index, value, member_name);
-                  }
-                  return result.has_value();
-              }()) &&
-             ...);
-        }(std::make_index_sequence<refl::reflect<T>::descriptor::member_count>{});
-
+        process_all_members<FieldFilter>(obj, param_index, filter, result);
         return result;
     }
 
@@ -541,8 +625,11 @@ export namespace storm {
                 return std::unexpected("Parameter not found in statement: " + param_name);
             }
 
-            // Use the bind_variant function for consistent binding
-            auto bind_result = bind_variant(*static_cast<Derived*>(this), param_index, param_value);
+            // Use the bind_value method for consistent binding
+            auto bind_result = std::visit([&](const auto& value) -> std::expected<void, std::string> {
+                return bind_value(param_index, value, param_name);
+            }, param_value);
+
             if (!bind_result) {
                 return std::unexpected("Failed to bind parameter '" + param_name + "': " + bind_result.error());
             }

@@ -51,8 +51,8 @@ export namespace storm {
                     .and_then([this](const std::string& sql) -> std::expected<void, std::string> {
                         return this->set_sql(sql);
                     })
-                    .and_then([this]() -> std::expected<void, std::string> { return bind_where_parameters(); })
-                    .and_then([this]() -> std::expected<bool, std::string> { return this->Base::execute(); });
+                    .and_then([this]() -> std::expected<bool, std::string> { return bind_where_parameters(); })
+                    .and_then([this](bool) -> std::expected<bool, std::string> { return this->Base::execute(); });
         }
 
         /**
@@ -81,9 +81,9 @@ export namespace storm {
          *
          * @return Success or error message
          */
-        [[nodiscard]] std::expected<void, std::string> bind_where_parameters() noexcept {
+        [[nodiscard]] std::expected<bool, std::string> bind_where_parameters() noexcept {
             if (!this->_where_clause) {
-                return {}; // No WHERE clause, nothing to bind
+                return false; // No WHERE clause, no parameters bound
             }
 
             auto query_result = this->_where_clause->to_query();
@@ -117,35 +117,16 @@ export namespace storm {
          *
          * @return RETURNING COUNT(*) clause as a string_view
          */
-        [[nodiscard]] consteval std::string_view get_returning_count_clause() const noexcept {
+        [[nodiscard]] std::string_view get_returning_count_clause() const noexcept {
             return ""; // DELETE statements don't use RETURNING clause
         }
 
         /**
          * Generate the DELETE SQL string at compile time
          */
-        [[nodiscard]] static consteval std::string_view get_base_delete_sql() noexcept {
-            constexpr auto             table_str = std::string{Base::table_name()};
-            constexpr std::string_view prefix    = "DELETE FROM ";
-
-            // Create compile-time concatenated string
-            constexpr std::size_t total_size = prefix.size() + table_str.size() + 1;
-            constexpr auto        sql_string = [prefix]() constexpr {
-                utils::fixed_string<total_size> result{""};
-
-                // Append prefix
-                for (char c : prefix) {
-                    result.data.push_back(c);
-                }
-
-                // Append table name
-                for (char c : table_str) {
-                    result.data.push_back(c);
-                }
-                return result;
-            }();
-
-            return sql_string.view();
+        [[nodiscard]] std::string get_base_delete_sql() const noexcept {
+            // Use runtime version to avoid C++26 immediate function evaluation issues
+            return std::string{"DELETE FROM "} + Base::table_name_runtime();
         }
 
         /**
