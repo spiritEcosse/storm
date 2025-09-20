@@ -103,13 +103,20 @@ export namespace refl::meta {
         }
 
         // Essential member iteration methods
-        template <typename F> static consteval void for_each_member_with_index(F&& func) {
+        template <typename F> static constexpr void for_each_member_with_index(F&& func) {
             []<size_t... Is>(std::index_sequence<Is...>, auto&& f) {
                 (f.template operator()<Is>(std::get<Is>(members_tuple{})), ...);
             }(std::make_index_sequence<member_count>{}, std::forward<F>(func));
         }
 
-        template <typename Obj, typename F> static consteval void visit_members(Obj&& obj, F&& func) {
+        // Alias for backwards compatibility
+        template <typename F> static consteval void iterate_members(F&& func) {
+            []<size_t... Is>(std::index_sequence<Is...>, auto&& f) {
+                (f(std::get<Is>(members_tuple{})), ...);
+            }(std::make_index_sequence<member_count>{}, std::forward<F>(func));
+        }
+
+        template <typename Obj, typename F> static constexpr void visit_members(Obj&& obj, F&& func) {
             []<size_t... Is>(std::index_sequence<Is...>, auto&& o, auto&& f) {
                 (f(std::get<Is>(members_tuple{}).get_name(),
                    std::get<Is>(members_tuple{}).get(std::forward<decltype(o)>(o))),
@@ -179,18 +186,20 @@ export namespace refl {
             return descriptor::get_member_names();
         }
 
-        template <typename Predicate> static consteval auto get_member_names_if(Predicate&& predicate) {
-            std::array<std::string_view, 16> result{}; // Use a reasonable max size
-            std::size_t                      idx = 0;
-
-            // Iterate over member descriptors and check the predicate
-            descriptor::iterate_members([&](auto member) {
-                if (predicate(member)) {
-                    result[idx++] = member.get_name();
-                }
-            });
-
-            return result;
+        template <typename Predicate>
+        static consteval auto get_member_names_if(Predicate&& predicate) {
+            return []<size_t... Is>(std::index_sequence<Is...>, auto&& pred) consteval {
+                // Create fixed-size array with conditional inclusion
+                // Empty string_view for filtered-out members
+                // Use tuple element type directly instead of creating temporary
+                using tuple_t = typename descriptor::members_tuple;
+                return std::array<std::string_view, sizeof...(Is)>{
+                    (pred(std::tuple_element_t<Is, tuple_t>{})
+                        ? std::tuple_element_t<Is, tuple_t>::name
+                        : std::string_view{})...
+                };
+            }(std::make_index_sequence<descriptor::member_count>{},
+              std::forward<Predicate>(predicate));
         }
 
         template <size_t I> static consteval auto get_member() {
@@ -198,11 +207,11 @@ export namespace refl {
         }
 
         // Essential member iteration delegates
-        template <typename F> static consteval void for_each_member_with_index(F&& func) {
+        template <typename F> static constexpr void for_each_member_with_index(F&& func) {
             descriptor::for_each_member_with_index(std::forward<F>(func));
         }
 
-        template <typename Obj, typename F> static consteval void visit_members(Obj&& obj, F&& func) {
+        template <typename Obj, typename F> static constexpr void visit_members(Obj&& obj, F&& func) {
             descriptor::visit_members(std::forward<Obj>(obj), std::forward<F>(func));
         }
 
