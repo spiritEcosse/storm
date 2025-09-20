@@ -32,21 +32,6 @@ namespace storm {
     template <auto MemberPtr> struct Field;
 }
 
-// ============================================================================
-// CONCEPTS FOR STATEMENT BINDING
-// ============================================================================
-export template <typename Statement>
-concept bindable_statement = requires(Statement& stmt, int idx, int value) {
-    { stmt.bind(idx, value) } -> std::same_as<std::expected<void, std::string>>;
-};
-
-// ============================================================================
-// STATEMENT BINDING
-// ============================================================================
-template <bindable_statement Statement>
-auto bind_variant(Statement& stmt, int param_index, const storm::SqlValue& value) -> std::expected<void, std::string> {
-    return std::visit([&](const auto& v) { return stmt.bind(param_index, v); }, value);
-}
 
 // ============================================================================
 // COMPILE-TIME REFLECTION METADATA
@@ -118,22 +103,7 @@ export namespace refl::meta {
             }(std::make_index_sequence<member_count>{});
         }
 
-        // Generic member iteration
-        template <typename F, typename... Args> static consteval void iterate_members(F&& func, Args&&... args) {
-            []<size_t... Is>(std::index_sequence<Is...>, auto&& f, auto&&... a) {
-                (f(std::get<Is>(members_tuple{}), std::forward<decltype(a)>(a)...), ...);
-            }(std::make_index_sequence<member_count>{}, std::forward<F>(func), std::forward<Args>(args)...);
-        }
-
-        // Simplified visit methods using generic iteration
-        template <typename F> static consteval void for_each_member(F&& func) {
-            iterate_members([&](auto member) { func(member); });
-        }
-
-        template <typename F> static consteval void for_each_member_with_name(F&& func) {
-            iterate_members([&](auto member) { func(member, member.get_name()); });
-        }
-
+        // Essential member iteration methods
         template <typename F> static consteval void for_each_member_with_index(F&& func) {
             []<size_t... Is>(std::index_sequence<Is...>, auto&& f) {
                 (f.template operator()<Is>(std::get<Is>(members_tuple{})), ...);
@@ -141,89 +111,41 @@ export namespace refl::meta {
         }
 
         template <typename Obj, typename F> static consteval void visit_members(Obj&& obj, F&& func) {
-            iterate_members([&](auto member) { func(member.get_name(), member.get(std::forward<Obj>(obj))); });
-        }
-
-        template <typename Obj, typename F> static consteval void visit_members_with_descriptor(Obj&& obj, F&& func) {
-            iterate_members([&](auto member) { func(member, member.get(std::forward<Obj>(obj))); });
-        }
-
-        static consteval auto find_member_index(std::string_view name) -> std::optional<size_t> {
-            auto names = get_member_names();
-            auto it    = std::ranges::find(names, name);
-            return it != names.end() ? std::optional{std::distance(names.begin(), it)} : std::nullopt;
+            []<size_t... Is>(std::index_sequence<Is...>, auto&& o, auto&& f) {
+                (f(std::get<Is>(members_tuple{}).get_name(), std::get<Is>(members_tuple{}).get(std::forward<decltype(o)>(o))), ...);
+            }(std::make_index_sequence<member_count>{}, std::forward<Obj>(obj), std::forward<F>(func));
         }
     };
 
 } // namespace refl::meta
 
 // ============================================================================
-// C++26-READY STATIC REFLECTION (TRANSITION)
+// SIMPLE FIELD NAME EXTRACTION
 // ============================================================================
-namespace std::meta {
-    struct info {
-        std::string_view name;
-        consteval info(std::string_view n) : name(n) {}
-    };
-
-    template <auto MemberPtr> consteval std::string_view extract_field_name_impl() {
-        constexpr std::string_view full_name = __PRETTY_FUNCTION__;
-
-        constexpr auto find_member_name = [](std::string_view str) constexpr {
-            // Find last :: and extract member name
-            auto pos = str.rfind("::");
-            if (pos != std::string_view::npos) {
-                auto start = pos + 2;
-                auto end   = str.find_first_of("]> )", start);
-                return str.substr(start, end - start);
-            }
-            return std::string_view{"unknown_field"};
-        };
-
-        return find_member_name(full_name);
-    }
-
-    consteval std::string_view name_of(info reflected) {
-        return reflected.name;
-    }
-
-    template <auto MemberPtr> consteval info reflect(auto) {
-        return info{extract_field_name_impl<MemberPtr>()};
-    }
-
-    template <typename T> consteval std::string_view extract_class_name_impl() {
-        constexpr std::string_view full_name = __PRETTY_FUNCTION__;
-
-        constexpr auto find_class_name = [](std::string_view str) constexpr {
-            // Find the class name in the pretty function signature
-            auto pos = str.find("T = ");
-            if (pos != std::string_view::npos) {
-                auto start = pos + 4;
-                auto end   = str.find_first_of("]>;", start);
-                return str.substr(start, end - start);
-            }
-            return std::string_view{"unknown_class"};
-        };
-
-        return find_class_name(full_name);
-    }
-
-    template <typename T> consteval info reflect_type() {
-        return info{__PRETTY_FUNCTION__};
-    }
-} // namespace std::meta
-
-// Helper functions
-template <auto MemberPtr> consteval auto make_reflection() {
-    return std::meta::reflect<MemberPtr>(MemberPtr);
-}
-
 export template <auto MemberPtr> consteval std::string_view extract_field_name() {
-    return std::meta::extract_field_name_impl<MemberPtr>();
+    constexpr std::string_view full_name = __PRETTY_FUNCTION__;
+
+    // Find last :: and extract member name
+    auto pos = full_name.rfind("::");
+    if (pos != std::string_view::npos) {
+        auto start = pos + 2;
+        auto end   = full_name.find_first_of("]> )", start);
+        return full_name.substr(start, end - start);
+    }
+    return std::string_view{"unknown_field"};
 }
 
 export template <typename T> consteval std::string_view extract_class_name() {
-    return std::meta::extract_class_name_impl<T>();
+    constexpr std::string_view full_name = __PRETTY_FUNCTION__;
+
+    // Find the class name in the pretty function signature
+    auto pos = full_name.find("T = ");
+    if (pos != std::string_view::npos) {
+        auto start = pos + 4;
+        auto end   = full_name.find_first_of("]>;", start);
+        return full_name.substr(start, end - start);
+    }
+    return std::string_view{"unknown_class"};
 }
 
 // ============================================================================
@@ -274,26 +196,13 @@ export namespace refl {
             return descriptor::template get_member<I>();
         }
 
-        // Member iteration delegates
-        template <typename F> static consteval void for_each_member(F&& func) {
-            descriptor::for_each_member(std::forward<F>(func));
-        }
-
-        template <typename F> static consteval void for_each_member_with_name(F&& func) {
-            descriptor::for_each_member_with_name(std::forward<F>(func));
-        }
-
+        // Essential member iteration delegates
         template <typename F> static consteval void for_each_member_with_index(F&& func) {
             descriptor::for_each_member_with_index(std::forward<F>(func));
         }
 
-        // Visit delegates - unified for const and non-const
         template <typename Obj, typename F> static consteval void visit_members(Obj&& obj, F&& func) {
             descriptor::visit_members(std::forward<Obj>(obj), std::forward<F>(func));
-        }
-
-        template <typename Obj, typename F> static consteval void visit_members_with_descriptor(Obj&& obj, F&& func) {
-            descriptor::visit_members_with_descriptor(std::forward<Obj>(obj), std::forward<F>(func));
         }
 
         // Runtime utilities
@@ -304,18 +213,13 @@ export namespace refl {
     };
 
     // Field member utilities
-    template <typename MemberPtrType>
-        requires std::is_member_pointer_v<MemberPtrType>
-    consteval std::string_view get_field_name(MemberPtrType member_ptr) {
-        return std::meta::name_of(make_reflection(member_ptr));
+    template <auto MemberPtr> consteval std::string_view get_field_name() {
+        return extract_field_name<MemberPtr>();
     }
 
-    // Overload that works with function parameters at compile time
-    template <typename MemberPtrType>
-        requires std::is_member_pointer_v<MemberPtrType>
-    consteval auto get_full_field_name(MemberPtrType member_ptr) {
-        using ClassType = typename meta::member_pointer_traits<MemberPtrType>::class_type;
-        return storm::utils::formatFieldName(reflect<ClassType>::name(), get_field_name(member_ptr));
+    template <auto MemberPtr> consteval auto get_full_field_name() {
+        using ClassType = typename meta::member_pointer_traits<decltype(MemberPtr)>::class_type;
+        return storm::utils::formatFieldName(reflect<ClassType>::name(), get_field_name<MemberPtr>());
     }
 
     // FieldMember for type-safe member pointer storage
@@ -328,11 +232,11 @@ export namespace refl {
         using class_type      = typename traits::class_type;
 
         static consteval auto get_full_field_name() {
-            return refl::get_full_field_name(MemberPtr);
+            return refl::get_full_field_name<MemberPtr>();
         }
 
         static consteval auto get_field_name() {
-            return refl::get_field_name(MemberPtr);
+            return refl::get_field_name<MemberPtr>();
         }
     };
 

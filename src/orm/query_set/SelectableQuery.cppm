@@ -124,6 +124,7 @@ export namespace storm {
         }
 
         return std::forward<Self>(self);
+        return std::forward<Self>(self);
     }
 
     // SELECT ONE implementation (returns single object with LIMIT 1)

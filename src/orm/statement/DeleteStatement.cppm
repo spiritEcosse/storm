@@ -118,7 +118,7 @@ export namespace storm {
          * @return RETURNING COUNT(*) clause as a string_view
          */
         [[nodiscard]] consteval std::string_view get_returning_count_clause() const noexcept {
-            return ""; // TODO: implement
+            return ""; // DELETE statements don't use RETURNING clause
         }
 
         /**
