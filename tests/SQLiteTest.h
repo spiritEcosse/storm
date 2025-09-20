@@ -28,6 +28,13 @@ import <flat_map>;
 
 using namespace storm;
 
+// Type aliases for test compatibility
+using ValueMap                              = std::flat_map<std::string, SqlValue, std::less<>>;
+using ValueVectorMap                        = std::vector<ValueMap>;
+using ExpectedValueVectorMap                = std::expected<ValueVectorMap, std::string>;
+template <typename T> using ExpectedT       = std::expected<T, std::string>;
+template <typename T> using ExpectedVectorT = std::expected<std::vector<T>, std::string>;
+
 // Simple Statement shim for tests to run arbitrary SQL using the unified base.
 // We bind it to a model type (Author by default) though DDL doesn't use T.
 template <typename T> class TestStatement : public storm::UnifiedStatementBase<TestStatement<T>, T> {
@@ -176,34 +183,39 @@ class ORMTest : public ::testing::Test {
 
     void setupTestData() {
         // Create authors with essential test data
-        std::vector<Author> authors = {
-            {"Alice Smith", 25, "alice@example.com", 0, true, 4.5, 85.5, "Alice", "Alice biography"},
-            {"Bob Johnson", 35, "bob@example.com", 0, true, 5.0, 90.0, "Bob", "Bob biography"},
-            {"Charlie Brown", 30, "charlie@example.com", 0, true, 4.0, 80.0, "Charlie", "Charlie biography"},
-            {"Diana Prince", 28, "diana@example.com", 0, true, 5.5, 95.0, "Diana", "Diana biography"}
-        };
+        std::vector<Author> authors =
+                {{"Alice Smith", 25, "alice@example.com", 0, true, 4.5, 85.5, "Alice", "Alice biography"},
+                 {"Bob Johnson", 35, "bob@example.com", 0, true, 5.0, 90.0, "Bob", "Bob biography"},
+                 {"Charlie Brown", 30, "charlie@example.com", 0, true, 4.0, 80.0, "Charlie", "Charlie biography"},
+                 {"Diana Prince", 28, "diana@example.com", 0, true, 5.5, 95.0, "Diana", "Diana biography"}};
 
         auto author_ids = QuerySet<Author>(conn).insert(authors).value();
-        alice_id = author_ids[0]; bob_id = author_ids[1];
-        charlie_id = author_ids[2]; diana_id = author_ids[3];
+        alice_id        = author_ids[0];
+        bob_id          = author_ids[1];
+        charlie_id      = author_ids[2];
+        diana_id        = author_ids[3];
 
         // Create posts with structured data: {author_id, post_count, base_views}
         std::vector<Post> posts;
-        struct {int author_id; int count; int base_views;} postData[] = {
-            {alice_id, 3, 100}, {bob_id, 2, 250}, {charlie_id, 4, 120}, {diana_id, 2, 350}
-        };
+        struct {
+            int author_id;
+            int count;
+            int base_views;
+        } postData[] = {{alice_id, 3, 100}, {bob_id, 2, 250}, {charlie_id, 4, 120}, {diana_id, 2, 350}};
 
         for (const auto& [author_id, count, base_views] : postData) {
-            std::string author_name = (author_id == alice_id) ? "Alice" :
-                                     (author_id == bob_id) ? "Bob" :
-                                     (author_id == charlie_id) ? "Charlie" : "Diana";
+            std::string author_name = (author_id == alice_id)     ? "Alice"
+                                      : (author_id == bob_id)     ? "Bob"
+                                      : (author_id == charlie_id) ? "Charlie"
+                                                                  : "Diana";
             for (int i = 1; i <= count; ++i) {
-                std::string ordinal = (i == 1) ? "First" : (i == 2) ? "Second" :
-                                     (i == 3) ? "Third" : "Fourth";
+                std::string ordinal = (i == 1) ? "First" : (i == 2) ? "Second" : (i == 3) ? "Third" : "Fourth";
                 posts.emplace_back(
-                    author_name + "'s " + ordinal + " Post",
-                    "Content " + author_name.substr(0,1) + std::to_string(i),
-                    author_id, 0, base_views + (i-1) * 50
+                        author_name + "'s " + ordinal + " Post",
+                        "Content " + author_name.substr(0, 1) + std::to_string(i),
+                        author_id,
+                        0,
+                        base_views + (i - 1) * 50
                 );
             }
         }
@@ -397,17 +409,16 @@ void AssertResultsMatch(const ExpectedValueVectorMap& actual_result, const Value
 TEST_F(ORMTest, InsertOperations) {
     // Test single object insert
     Author single("John Doe", 30, "john@example.com");
-    auto singleResult = QuerySet<Author>(conn).insert(single);
+    auto   singleResult = QuerySet<Author>(conn).insert(single);
     EXPECT_TRUE(singleResult.has_value()) << singleResult.error();
     EXPECT_GT(singleResult.value(), 0);
     EXPECT_EQ(single.id, 0); // Original object unchanged
 
     // Test multiple object insert
-    std::vector<Author> multiple = {
-        {"Eve Adams", 28, "eve@example.com"},
-        {"Frank Miller", 32, "frank@example.com"},
-        {"Grace Wilson", 26, "grace@example.com"}
-    };
+    std::vector<Author> multiple =
+            {{"Eve Adams", 28, "eve@example.com"},
+             {"Frank Miller", 32, "frank@example.com"},
+             {"Grace Wilson", 26, "grace@example.com"}};
     auto multipleResult = QuerySet<Author>(conn).insert(multiple);
     EXPECT_TRUE(multipleResult.has_value()) << multipleResult.error();
     EXPECT_EQ(multipleResult.value().size(), multiple.size());
@@ -417,12 +428,12 @@ TEST_F(ORMTest, InsertOperations) {
 
     // Test empty vector insert
     std::vector<Author> empty;
-    auto emptyResult = QuerySet<Author>(conn).insert(empty);
+    auto                emptyResult = QuerySet<Author>(conn).insert(empty);
     EXPECT_TRUE(emptyResult.has_value()) << emptyResult.error();
 
     // Test edge case with unusual data
     Author edgeCase("", -1, "");
-    auto edgeResult = QuerySet<Author>(conn).insert(edgeCase);
+    auto   edgeResult = QuerySet<Author>(conn).insert(edgeCase);
     EXPECT_TRUE(edgeResult.has_value()) << edgeResult.error();
 }
 
@@ -432,37 +443,37 @@ TEST_F(ORMTest, InsertOperations) {
 TEST_F(ORMTest, UpdateOperations) {
     // Test single object update
     Author single("John Doe", 30, "john@example.com");
-    auto insertedId = QuerySet<Author>(conn).insert(single);
+    auto   insertedId = QuerySet<Author>(conn).insert(single);
     ASSERT_TRUE(insertedId.has_value()) << insertedId.error();
 
-    single.id = insertedId.value();
-    single.name = "John Smith";
-    single.age = 31;
+    single.id         = insertedId.value();
+    single.name       = "John Smith";
+    single.age        = 31;
     auto singleResult = QuerySet<Author>(conn).update(single);
     EXPECT_TRUE(singleResult.has_value()) << singleResult.error();
     EXPECT_TRUE(singleResult.value());
 
     // Test multiple object update
-    std::vector<Author> multiple = {{"Eve Adams", 28, "eve@example.com"}, {"Frank Miller", 32, "frank@example.com"}};
-    auto multipleIds = QuerySet<Author>(conn).insert(multiple);
+    std::vector<Author> multiple    = {{"Eve Adams", 28, "eve@example.com"}, {"Frank Miller", 32, "frank@example.com"}};
+    auto                multipleIds = QuerySet<Author>(conn).insert(multiple);
     ASSERT_TRUE(multipleIds.has_value()) << multipleIds.error();
 
     for (size_t i = 0; i < multiple.size(); ++i) {
         multiple[i].id = multipleIds.value()[i];
     }
-    multiple[0].age = 29;
-    multiple[1].name = "Robert";
+    multiple[0].age     = 29;
+    multiple[1].name    = "Robert";
     auto multipleResult = QuerySet<Author>(conn).update(multiple);
     EXPECT_TRUE(multipleResult.has_value()) << multipleResult.error();
     EXPECT_TRUE(multipleResult.value());
 
     // Test empty vector and non-existent object
     std::vector<Author> empty;
-    auto emptyResult = QuerySet<Author>(conn).update(empty);
+    auto                emptyResult = QuerySet<Author>(conn).update(empty);
     EXPECT_TRUE(emptyResult.has_value()) << emptyResult.error();
 
     Author nonExistent("Ghost", 0, "ghost@example.com");
-    nonExistent.id = 99999;
+    nonExistent.id   = 99999;
     auto ghostResult = QuerySet<Author>(conn).update(nonExistent);
     EXPECT_TRUE(ghostResult.has_value()) << ghostResult.error();
 }
@@ -473,17 +484,17 @@ TEST_F(ORMTest, UpdateOperations) {
 TEST_F(ORMTest, RemoveOperations) {
     // Test single object remove
     Author single("John Doe", 30, "john@example.com");
-    auto insertedId = QuerySet<Author>(conn).insert(single);
+    auto   insertedId = QuerySet<Author>(conn).insert(single);
     ASSERT_TRUE(insertedId.has_value()) << insertedId.error();
 
-    single.id = insertedId.value();
+    single.id         = insertedId.value();
     auto singleResult = QuerySet<Author>(conn).remove(single);
     EXPECT_TRUE(singleResult.has_value()) << singleResult.error();
     EXPECT_TRUE(singleResult.value());
 
     // Test multiple object remove
-    std::vector<Author> multiple = {{"Eve Adams", 28, "eve@example.com"}, {"Frank Miller", 32, "frank@example.com"}};
-    auto multipleIds = QuerySet<Author>(conn).insert(multiple);
+    std::vector<Author> multiple    = {{"Eve Adams", 28, "eve@example.com"}, {"Frank Miller", 32, "frank@example.com"}};
+    auto                multipleIds = QuerySet<Author>(conn).insert(multiple);
     ASSERT_TRUE(multipleIds.has_value()) << multipleIds.error();
 
     for (size_t i = 0; i < multiple.size(); ++i) {
@@ -495,12 +506,12 @@ TEST_F(ORMTest, RemoveOperations) {
 
     // Test edge cases: empty vector and non-existent object
     std::vector<Author> empty;
-    auto emptyResult = QuerySet<Author>(conn).remove(empty);
+    auto                emptyResult = QuerySet<Author>(conn).remove(empty);
     EXPECT_FALSE(emptyResult.has_value());
     EXPECT_EQ(emptyResult.error(), "Empty objects vector");
 
     Author nonExistent("Ghost", 0, "ghost@example.com");
-    nonExistent.id = 99999;
+    nonExistent.id   = 99999;
     auto ghostResult = QuerySet<Author>(conn).remove(nonExistent);
     EXPECT_TRUE(ghostResult.has_value()) << ghostResult.error();
 }
@@ -521,7 +532,7 @@ TEST_F(ORMTest, RemoveAllAndByCondition) {
     // Reset data and test conditional remove
     setupTestData();
     auto newInitialCount = QuerySet<Author>(conn).select_all();
-    auto olderAuthors = QuerySet<Author>(conn).where(field(&Author::age) > 30).select_all();
+    auto olderAuthors    = QuerySet<Author>(conn).where(field(&Author::age) > 30).select_all();
     ASSERT_TRUE(newInitialCount.has_value() && olderAuthors.has_value());
     ASSERT_GT(olderAuthors.value().size(), 0);
 
@@ -542,16 +553,16 @@ TEST_F(ORMTest, RemoveAllAndByCondition) {
 // =======================================
 TEST_F(ORMTest, QuerySetCopyAndAssignment) {
     // Test 1: Basic copy construction and modification independence
-    auto baseQuery = QuerySet<Author>(conn).where(field(&Author::is_active) == true);
-    auto youngQuery = baseQuery; // Copy NOSONAR
+    auto baseQuery   = QuerySet<Author>(conn).where(field(&Author::is_active) == true);
+    auto youngQuery  = baseQuery; // Copy NOSONAR
     auto seniorQuery = baseQuery; // Copy NOSONAR
 
     youngQuery.where(field(&Author::age) <= 30);
     seniorQuery.where(field(&Author::age) > 30);
 
-    auto youngResults = youngQuery.select_all();
+    auto youngResults  = youngQuery.select_all();
     auto seniorResults = seniorQuery.select_all();
-    auto baseResults = baseQuery.select_all();
+    auto baseResults   = baseQuery.select_all();
 
     ASSERT_TRUE(youngResults.has_value()) << youngResults.error();
     ASSERT_TRUE(seniorResults.has_value()) << seniorResults.error();
@@ -573,15 +584,15 @@ TEST_F(ORMTest, QuerySetCopyAndAssignment) {
     auto query2 = QuerySet<Author>(conn).where(field(&Author::rating) > 4.0).limit(2);
 
     auto originalQuery1Results = query1.select_all();
-    query2 = query1; // Copy assignment
-    auto newQuery2Results = query2.select_all();
+    query2                     = query1; // Copy assignment
+    auto newQuery2Results      = query2.select_all();
 
     ASSERT_TRUE(originalQuery1Results.has_value()) << originalQuery1Results.error();
     ASSERT_TRUE(newQuery2Results.has_value()) << newQuery2Results.error();
     EXPECT_EQ(originalQuery1Results.value().size(), newQuery2Results.value().size());
 
     // Self-assignment should be safe
-    query1 = query1;
+    query1               = query1;
     auto afterSelfAssign = query1.select_all();
     ASSERT_TRUE(afterSelfAssign.has_value()) << afterSelfAssign.error();
     EXPECT_EQ(originalQuery1Results.value().size(), afterSelfAssign.value().size());
@@ -590,20 +601,21 @@ TEST_F(ORMTest, QuerySetCopyAndAssignment) {
 TEST_F(ORMTest, QuerySetCopyComprehensive) {
     // Test all QuerySet member variables in a single comprehensive test
     auto complexQuery = QuerySet<Author>(conn)
-                               .where(field(&Author::is_active) == true)
-                               .where(field(&Author::age) > 20)
-                               .order_by(field(&Author::age), false)
-                               .order_by(field(&Author::name), true)
-                               .distinct(field(&Author::age))
-                               .only(field(&Author::name), field(&Author::age))
-                               .group_by(field(&Author::is_active))
-                               .limit(10).offset(1);
+                                .where(field(&Author::is_active) == true)
+                                .where(field(&Author::age) > 20)
+                                .order_by(field(&Author::age), false)
+                                .order_by(field(&Author::name), true)
+                                .distinct(field(&Author::age))
+                                .only(field(&Author::name), field(&Author::age))
+                                .group_by(field(&Author::is_active))
+                                .limit(10)
+                                .offset(1);
 
     auto copiedQuery = complexQuery; // Copy NOSONAR
 
     // Both should produce identical results initially
     auto originalResults = complexQuery.select_all();
-    auto copiedResults = copiedQuery.select_all();
+    auto copiedResults   = copiedQuery.select_all();
     ASSERT_TRUE(originalResults.has_value()) << originalResults.error();
     ASSERT_TRUE(copiedResults.has_value()) << copiedResults.error();
     EXPECT_EQ(originalResults.value().size(), copiedResults.value().size());
@@ -611,7 +623,7 @@ TEST_F(ORMTest, QuerySetCopyComprehensive) {
     // Test member independence: modify copy without affecting original
     copiedQuery.where(field(&Author::rating) > 4.0);
     auto newOriginalResults = complexQuery.select_all();
-    auto newCopiedResults = copiedQuery.select_all();
+    auto newCopiedResults   = copiedQuery.select_all();
 
     ASSERT_TRUE(newOriginalResults.has_value()) << newOriginalResults.error();
     ASSERT_TRUE(newCopiedResults.has_value()) << newCopiedResults.error();
@@ -619,9 +631,9 @@ TEST_F(ORMTest, QuerySetCopyComprehensive) {
     EXPECT_LE(newCopiedResults.value().size(), originalResults.value().size());
 
     // Test edge cases: empty query, no results, consecutive copies
-    auto emptyQuery = QuerySet<Author>(conn);
-    auto emptyQueryCopy = emptyQuery;
-    auto emptyResults = emptyQuery.select_all();
+    auto emptyQuery       = QuerySet<Author>(conn);
+    auto emptyQueryCopy   = emptyQuery;
+    auto emptyResults     = emptyQuery.select_all();
     auto emptyCopyResults = emptyQueryCopy.select_all();
     ASSERT_TRUE(emptyResults.has_value()) << emptyResults.error();
     ASSERT_TRUE(emptyCopyResults.has_value()) << emptyCopyResults.error();
@@ -629,15 +641,15 @@ TEST_F(ORMTest, QuerySetCopyComprehensive) {
 
     // Test consecutive copies
     auto activeQuery = QuerySet<Author>(conn).where(field(&Author::is_active) == true);
-    auto copy1 = activeQuery;
-    auto copy2 = copy1;
-    auto copy3 = copy2;
+    auto copy1       = activeQuery;
+    auto copy2       = copy1;
+    auto copy3       = copy2;
 
     copy1.where(field(&Author::age) < 30);
     copy2.where(field(&Author::rating) > 4.0);
     copy3.where(field(&Author::name).like("A%"));
 
-    auto baseRes = activeQuery.select_all();
+    auto baseRes  = activeQuery.select_all();
     auto copy1Res = copy1.select_all();
     auto copy2Res = copy2.select_all();
     auto copy3Res = copy3.select_all();
@@ -645,9 +657,12 @@ TEST_F(ORMTest, QuerySetCopyComprehensive) {
     ASSERT_TRUE(baseRes.has_value() && copy1Res.has_value() && copy2Res.has_value() && copy3Res.has_value());
 
     // Verify each copy has independent filters
-    for (const auto& author : copy1Res.value()) EXPECT_LT(author.age, 30);
-    for (const auto& author : copy2Res.value()) EXPECT_GT(author.rating, 4.0);
-    for (const auto& author : copy3Res.value()) EXPECT_EQ('A', author.name[0]);
+    for (const auto& author : copy1Res.value())
+        EXPECT_LT(author.age, 30);
+    for (const auto& author : copy2Res.value())
+        EXPECT_GT(author.rating, 4.0);
+    for (const auto& author : copy3Res.value())
+        EXPECT_EQ('A', author.name[0]);
 }
 
 // =======================================
@@ -1777,12 +1792,9 @@ TEST_F(ORMTest, WhereClauseEmptyResult) {
 // =======================================
 TEST_F(ORMTest, SelectOnlyFields) {
     // Test selecting only specific fields and verify field filtering
-    auto multiFieldAuthors = QuerySet<Author>(conn)
-                                    .only(field(&Author::name), field(&Author::age), field(&Author::email))
-                                    .select_all();
-    auto twoFieldAuthors = QuerySet<Author>(conn)
-                                  .only(field(&Author::name), field(&Author::age))
-                                  .select_all();
+    auto multiFieldAuthors =
+            QuerySet<Author>(conn).only(field(&Author::name), field(&Author::age), field(&Author::email)).select_all();
+    auto twoFieldAuthors = QuerySet<Author>(conn).only(field(&Author::name), field(&Author::age)).select_all();
 
     // Verify both queries succeed
     ASSERT_TRUE(multiFieldAuthors.has_value()) << multiFieldAuthors.error();
@@ -2950,12 +2962,12 @@ TEST_F(ORMTest, CountField) {
 
 TEST_F(ORMTest, AggregateCustomAliases) {
     // Test COUNT with custom alias
-    auto countResult = QuerySet<Author>(conn).count(field(&Author::id), "author_count").select_values();
+    auto           countResult   = QuerySet<Author>(conn).count(field(&Author::id), "author_count").select_values();
     ValueVectorMap countExpected = {{{"author_count", 4}}};
     AssertResultsMatch(countResult, countExpected);
 
     // Test SUM with custom alias
-    auto sumResult = QuerySet<Author>(conn).sum(field(&Author::age), "total_age").select_values();
+    auto           sumResult   = QuerySet<Author>(conn).sum(field(&Author::age), "total_age").select_values();
     ValueVectorMap sumExpected = {{{"total_age", 118.0}}};
     AssertResultsMatch(sumResult, sumExpected);
 
@@ -3058,7 +3070,6 @@ TEST_F(ORMTest, SumField) {
     ValueVectorMap expected_results = {{{"sum_age", 118.0}}};
     AssertResultsMatch(result, expected_results);
 }
-
 
 TEST_F(ORMTest, SumOnEmptyTable) {
     auto remove_result = QuerySet<Author>(conn).remove();
@@ -3528,7 +3539,9 @@ TEST_F(ORMTest, GroupConcatDistinct) {
 
     auto result = QuerySet<Post>(conn)
                           .group_by(field(&Post::author_id))
-                          .group_concat(field(&Post::title), utils::fixed_string<32>{""}, utils::fixed_string<8>{","}, true) // distinct = true
+                          .group_concat(
+                                  field(&Post::title), utils::fixed_string<32>{""}, utils::fixed_string<8>{","}, true
+                          ) // distinct = true
                           .only(field(&Post::author_id))
                           .select_values();
 
@@ -3758,16 +3771,13 @@ TEST_F(ORMTest, GroupConcatSingleFieldBasic) {
     EXPECT_TRUE(concatenated.find("Bob's First Post") != std::string::npos);
 }
 
-
 // =======================================
 // ONLY() METHOD TESTS - Fields and Aliases
 // =======================================
 
 TEST_F(ORMTest, OnlyFieldsAndAliases) {
     // Test 1: Simple fields backward compatibility
-    auto simpleResult = QuerySet<Author>(conn)
-                               .only(field(&Author::name), field(&Author::age))
-                               .select_values();
+    auto simpleResult = QuerySet<Author>(conn).only(field(&Author::name), field(&Author::age)).select_values();
     ASSERT_TRUE(simpleResult.has_value()) << simpleResult.error();
     ASSERT_EQ(simpleResult.value().size(), 4);
 
@@ -3779,8 +3789,8 @@ TEST_F(ORMTest, OnlyFieldsAndAliases) {
 
     // Test 2: Basic field selection without aliases (aliases functionality appears broken)
     auto aliasResult = QuerySet<Author>(conn)
-                              .only(field(&Author::name), field(&Author::age))
-                              .select_values();
+                               .only(field(&Author::name), "author_name", field(&Author::age), "author_age")
+                               .select_values();
     ASSERT_TRUE(aliasResult.has_value()) << aliasResult.error();
     ASSERT_EQ(aliasResult.value().size(), 4);
 
@@ -3792,9 +3802,16 @@ TEST_F(ORMTest, OnlyFieldsAndAliases) {
 
     // Test 3: Multiple field selection with WHERE clause (aliases functionality broken)
     auto complexResult = QuerySet<Author>(conn)
-                                .where(field(&Author::age) > 25)
-                                .only(field(&Author::name), field(&Author::age), field(&Author::email), field(&Author::rating))
-                                .select_values();
+                                 .where(field(&Author::age) > 25)
+                                 .only(field(&Author::name),
+                                       "full_name",
+                                       field(&Author::age),
+                                       "years_old",
+                                       field(&Author::email),
+                                       "email_address",
+                                       field(&Author::rating),
+                                       "user_rating")
+                                 .select_values();
     ASSERT_TRUE(complexResult.has_value()) << complexResult.error();
     ASSERT_EQ(complexResult.value().size(), 3); // Bob=35, Charlie=30, Diana=28
 

@@ -174,3 +174,4 @@ TODO:
 - [x] Remove all unused code
 - [x] Successfully cleaned up Reflect module - removed 97+ lines of unused code
 - [ ] C++26 immediate function evaluation issue in SelectableQuery.only(), Affects field-alias pair functionality in .only(field(&Author::name), "alias") calls. Function parameter usage in constexpr context causing compilation failures. Requires investigation of C++26 immediate function evaluation rules.
+- [x] Clean up SelectableQuery

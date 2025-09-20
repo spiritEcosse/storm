@@ -32,7 +32,6 @@ namespace storm {
     template <auto MemberPtr> struct Field;
 }
 
-
 // ============================================================================
 // COMPILE-TIME REFLECTION METADATA
 // ============================================================================
@@ -112,7 +111,9 @@ export namespace refl::meta {
 
         template <typename Obj, typename F> static consteval void visit_members(Obj&& obj, F&& func) {
             []<size_t... Is>(std::index_sequence<Is...>, auto&& o, auto&& f) {
-                (f(std::get<Is>(members_tuple{}).get_name(), std::get<Is>(members_tuple{}).get(std::forward<decltype(o)>(o))), ...);
+                (f(std::get<Is>(members_tuple{}).get_name(),
+                   std::get<Is>(members_tuple{}).get(std::forward<decltype(o)>(o))),
+                 ...);
             }(std::make_index_sequence<member_count>{}, std::forward<Obj>(obj), std::forward<F>(func));
         }
     };
@@ -245,13 +246,15 @@ export namespace refl {
         std::string_view full_name{};
         std::any         field_member;
 
-        // Overload for storm::Field objects (runtime only)
+        // Overload for storm::Field objects
         template <typename FieldType>
         static FieldWrapper create(FieldType field)
             requires requires { FieldType::member_ptr; }
         {
-            auto fs = FieldMember<FieldType::member_ptr>::get_full_field_name();
-            return {.full_name = fs.view(), .field_member = FieldMember<FieldType::member_ptr>{}};
+            // Extract the field name at compile time but store at runtime
+            constexpr auto        member_ptr = FieldType::member_ptr;
+            static constexpr auto fs         = FieldMember<member_ptr>::get_full_field_name();
+            return {.full_name = fs.view(), .field_member = FieldMember<member_ptr>{}};
         }
 
         std::string_view view() const noexcept {

@@ -114,15 +114,15 @@ export namespace storm {
 
     // C++23: Improved SelectOptions with explicit object parameter
     struct SelectOptions {
-        std::vector<JoinWrapper>                                            joins{};
-        std::vector<refl::FieldWrapper>                                     distinct_fields{};
-        std::vector<std::pair<refl::FieldWrapper, utils::fixed_string<32>>> only_fields{};
-        std::vector<AggregateSpec>                                          functions_set{};
-        std::vector<std::tuple<refl::FieldWrapper, bool, Collation>>        order_terms{};
-        std::vector<refl::FieldWrapper>                                     group_by_fields{};
-        int                                                                 limit{};
-        int                                                                 offset{};
-        std::optional<Where>                                                where_clause{};
+        std::vector<JoinWrapper>                                     joins{};
+        std::vector<refl::FieldWrapper>                              distinct_fields{};
+        std::vector<std::pair<refl::FieldWrapper, std::string_view>> only_fields{};
+        std::vector<AggregateSpec>                                   functions_set{};
+        std::vector<std::tuple<refl::FieldWrapper, bool, Collation>> order_terms{};
+        std::vector<refl::FieldWrapper>                              group_by_fields{};
+        int                                                          limit{};
+        int                                                          offset{};
+        std::optional<Where>                                         where_clause{};
 
         // C++23: Deducing this for perfect forwarding
         constexpr auto&& with_limit(this auto&& self, int value) noexcept {
@@ -214,21 +214,21 @@ export namespace storm {
         }
 
       private:
-        std::vector<JoinWrapper>                                            joins_;
-        mutable std::string                                                 fields_clause_; // Cache for repeated builds
-        std::optional<bool>                                                 distinct_override_;
-        int                                                                 limit_{};
-        int                                                                 offset_{};
-        std::vector<refl::FieldWrapper>                                     distinct_fields_;
-        std::vector<std::pair<refl::FieldWrapper, utils::fixed_string<32>>> only_fields_;
-        std::vector<AggregateSpec>                                          functions_set_;
-        std::string                                                         order_by_sql_;
-        std::string                                                         group_by_sql_;
+        std::vector<JoinWrapper>                                     joins_;
+        mutable std::string                                          fields_clause_; // Cache for repeated builds
+        std::optional<bool>                                          distinct_override_;
+        int                                                          limit_{};
+        int                                                          offset_{};
+        std::vector<refl::FieldWrapper>                              distinct_fields_;
+        std::vector<std::pair<refl::FieldWrapper, std::string_view>> only_fields_;
+        std::vector<AggregateSpec>                                   functions_set_;
+        std::string                                                  order_by_sql_;
+        std::string                                                  group_by_sql_;
 
         [[nodiscard]] static std::string build_select_list(
-                std::span<const refl::FieldWrapper>                                     distinct_fields,
-                std::span<const std::pair<refl::FieldWrapper, utils::fixed_string<32>>> only_fields,
-                std::span<const AggregateSpec>                                          functions_set
+                std::span<const refl::FieldWrapper>                              distinct_fields,
+                std::span<const std::pair<refl::FieldWrapper, std::string_view>> only_fields,
+                std::span<const AggregateSpec>                                   functions_set
         ) {
             // Use ranges views for lazy evaluation
             auto function_clauses =
@@ -242,13 +242,12 @@ export namespace storm {
                 return join_combined_clauses(field_strings, function_clauses);
 
             } else if (!only_fields.empty()) {
-                auto field_strings = only_fields | std::views::transform([](const auto& field_pair) {
-                                         const auto& [field_wrapper, alias] = field_pair;
-                                         const auto field_name              = field_wrapper.view();
-                                         return alias.view().empty()
-                                                        ? std::string{field_name}
-                                                        : std::format("{} AS {}", field_name, alias.view());
-                                     });
+                auto field_strings =
+                        only_fields | std::views::transform([](const auto& field_pair) {
+                            const auto& [field_wrapper, alias] = field_pair;
+                            const auto field_name              = field_wrapper.view();
+                            return alias.empty() ? std::string{field_name} : std::format("{} AS {}", field_name, alias);
+                        });
 
                 return join_combined_clauses(field_strings, function_clauses);
 
