@@ -34,16 +34,13 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
  add_library(${PROJECT_NAME} STATIC)
  
  # Collect sources automatically
- file(GLOB_RECURSE STORM_MODULE_UNITS CONFIGURE_DEPENDS
-     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm"
- )
- file(GLOB_RECURSE STORM_NONMODULE_SOURCES CONFIGURE_DEPENDS
-     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
- )
- # Exclude example/demo mains from the library
- list(FILTER STORM_NONMODULE_SOURCES EXCLUDE REGEX ".*/main\\.cpp$")
+# Collect all modules automatically from src subdirectories
+file(GLOB_RECURSE STORM_MODULE_UNITS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm"
+)
  
  # Declare C++26 module interface and partition sources (all *.cppm)
+ 
  target_sources(${PROJECT_NAME}
      PUBLIC
          FILE_SET cxx_modules TYPE CXX_MODULES
@@ -51,21 +48,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
              ${STORM_MODULE_UNITS}
  )
  
- # Add implementation sources (non-interface units)
- target_sources(${PROJECT_NAME}
-     PRIVATE
-         ${STORM_NONMODULE_SOURCES}
- )
-
  # Enable Clang modules and builtin module maps so import <...> works for libc++ headers
  target_compile_options(${PROJECT_NAME} PRIVATE -fmodules -fbuiltin-module-map)
  
- # Group sources by folder in IDEs
- set_property(GLOBAL PROPERTY USE_FOLDERS ON)
- source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" FILES
-     ${STORM_MODULE_UNITS}
-     ${STORM_NONMODULE_SOURCES}
- )
+# Group sources by folder in IDEs
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" FILES
+    ${STORM_MODULE_UNITS}
+)
  
  # Includes for consumers and internal builds
  target_include_directories(${PROJECT_NAME}
@@ -168,24 +158,6 @@ if(USE_SANITIZER)
     add_compile_options(-g)
 endif()
 
-# Check libc++ version
-set(LIBCXX_VERSION_FILE "${CMAKE_BINARY_DIR}/libcxx_version.cpp")
-file(WRITE ${LIBCXX_VERSION_FILE} "#include <iostream>\n#include <cstdio>\nint main() {\n#ifdef _LIBCPP_VERSION\n    printf(\"%d\", _LIBCPP_VERSION);\n#else\n    printf(\"Not using libc++\");\n#endif\n    return 0;\n}\n")
-
-try_run(
-    LIBCXX_VERSION_RUN_RESULT
-    LIBCXX_VERSION_COMPILE_RESULT
-    ${CMAKE_BINARY_DIR}
-    ${LIBCXX_VERSION_FILE}
-    RUN_OUTPUT_VARIABLE LIBCXX_VERSION_OUTPUT
-)
-
-if(LIBCXX_VERSION_COMPILE_RESULT AND LIBCXX_VERSION_RUN_RESULT EQUAL 0)
-    set(LIBCXX_VERSION ${LIBCXX_VERSION_OUTPUT})
- else()
-     set(LIBCXX_VERSION "Unknown")
- endif()
-
  # Clang-Format integration
  find_program(CLANG_FORMAT_EXE NAMES clang-format)
  if(CLANG_FORMAT_EXE)
@@ -229,7 +201,6 @@ if(LIBCXX_VERSION_COMPILE_RESULT AND LIBCXX_VERSION_RUN_RESULT EQUAL 0)
  message(STATUS "=== Storm Build Configuration ===")
  message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
  message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
- message(STATUS "libc++ Version: ${LIBCXX_VERSION}")
  message(STATUS "Testing: ${STORM_ENABLE_TESTING}")
  message(STATUS "Sanitizer: ${STORM_ENABLE_SANITIZER}")
  message(STATUS "===================================")
