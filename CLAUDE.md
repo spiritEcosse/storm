@@ -24,7 +24,7 @@ cmake --build --preset ninja-release
 # Build and run tests
 cmake --preset ninja-debug -DENABLE_TESTS=ON
 cmake --build --preset ninja-debug
-cd build/debug && ctest --output-on-failure
+ctest --test-dir build/debug --output-on-failure
 ```
 
 ### Code Quality

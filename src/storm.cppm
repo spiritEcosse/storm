@@ -1,6 +1,9 @@
+module;
+
 export module storm;
 
-#include <meta>
+// Import and re-export storm.meta
+export import storm.meta;
 
 export namespace storm {
     // Storm ORM functionality with reflection support
