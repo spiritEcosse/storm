@@ -1,8 +1,8 @@
 project(storm_tests LANGUAGES CXX)
 
-# Only compile test sources; link against the storm library for implementation
-set(TEST_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
+# Auto-discover all test source files
+file(GLOB TEST_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
 )
 
 add_executable(${PROJECT_NAME} ${TEST_SOURCES})
