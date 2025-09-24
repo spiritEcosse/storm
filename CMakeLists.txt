@@ -12,12 +12,12 @@ message(STATUS "CMAKE_CXX_COMPILER: ${CMAKE_CXX_COMPILER}")
 message(STATUS "CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
 message(STATUS "CMAKE_CXX_COMPILER_VERSION: ${CMAKE_CXX_COMPILER_VERSION}")
 
-# Compiler-specific options
+# Common compiler options - applied to all targets
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    # Common options for both GNU and Clang
+    # Apply template backtrace limit globally for debug builds
     add_compile_options($<$<CONFIG:Debug>:-ftemplate-backtrace-limit=0>)
 
-    # Compiler-specific flags
+    # Compiler-specific global flags
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
         add_compile_options(-fcoroutines) # Apply only for GNU compilers
         add_compile_options(-fmax-errors=1)
@@ -25,11 +25,23 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
           # For Clang (including AppleClang) with CMAKE_CXX_STANDARD set to 26,
           # C++ coroutines are typically enabled by the standard itself.
           # The explicit -fcoroutines flag can cause errors with modern Clang.
-          add_compile_options(-ferror-limit=1 -stdlib=libc++) # Clang specific error limit
-          add_link_options(-stdlib=libc++)
+          add_compile_options(-ferror-limit=1) # Clang specific error limit
+
+          # Add standard libcxx flags for non-custom builds
+          if(NOT DEFINED LIBCXX_ROOT)
+              add_compile_options(-stdlib=libc++)
+              add_link_options(-stdlib=libc++)
+          endif()
       endif()
  endif()
- 
+
+# Configure libcxx paths if LIBCXX_ROOT is provided
+if(DEFINED LIBCXX_ROOT)
+    set(LIBCXX_INCLUDE_DIR "${LIBCXX_ROOT}/build/include/c++/v1")
+    set(LIBCXX_BUILD_INCLUDE_DIR "${LIBCXX_ROOT}/build/include/x86_64-unknown-linux-gnu/c++/v1")
+    message(STATUS "Using custom libcxx from: ${LIBCXX_ROOT}")
+endif()
+
  # Build the core library (modules-first)
  add_library(${PROJECT_NAME} STATIC)
  
@@ -50,6 +62,18 @@ file(GLOB_RECURSE STORM_MODULE_UNITS CONFIGURE_DEPENDS
  
  # Enable Clang modules and builtin module maps so import <...> works for libc++ headers
  target_compile_options(${PROJECT_NAME} PRIVATE -fmodules -fbuiltin-module-map)
+
+ # Add custom libcxx and reflection flags only to Storm library when using custom libcxx
+ if(DEFINED LIBCXX_ROOT AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+     target_compile_options(${PROJECT_NAME} PRIVATE
+         -freflection
+         -fannotation-attributes
+         -nostdinc++
+         -I${LIBCXX_INCLUDE_DIR}
+         -I${LIBCXX_BUILD_INCLUDE_DIR}
+     )
+     message(STATUS "Reflection flags enabled for Storm library")
+ endif()
  
 # Group sources by folder in IDEs
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
