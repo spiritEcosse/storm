@@ -12,34 +12,37 @@ message(STATUS "CMAKE_CXX_COMPILER: ${CMAKE_CXX_COMPILER}")
 message(STATUS "CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
 message(STATUS "CMAKE_CXX_COMPILER_VERSION: ${CMAKE_CXX_COMPILER_VERSION}")
 
-# Common compiler options - applied to all targets
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    # Apply template backtrace limit globally for debug builds
-    add_compile_options($<$<CONFIG:Debug>:-ftemplate-backtrace-limit=0>)
+# Common compiler options - applied to all targets (Clang)
+# Apply template backtrace limit globally for debug builds
+add_compile_options($<$<CONFIG:Debug>:-ftemplate-backtrace-limit=0>)
 
-    # Compiler-specific global flags
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
-        add_compile_options(-fcoroutines) # Apply only for GNU compilers
-        add_compile_options(-fmax-errors=1)
-    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-          # For Clang (including AppleClang) with CMAKE_CXX_STANDARD set to 26,
-          # C++ coroutines are typically enabled by the standard itself.
-          # The explicit -fcoroutines flag can cause errors with modern Clang.
-          add_compile_options(-ferror-limit=1) # Clang specific error limit
+# For Clang (including AppleClang) with CMAKE_CXX_STANDARD set to 26,
+# C++ coroutines are typically enabled by the standard itself.
+# The explicit -fcoroutines flag can cause errors with modern Clang.
+add_compile_options(-ferror-limit=1) # Clang specific error limit
 
-          # Add standard libcxx flags for non-custom builds
-          if(NOT DEFINED LIBCXX_ROOT)
-              add_compile_options(-stdlib=libc++)
-              add_link_options(-stdlib=libc++)
-          endif()
-      endif()
- endif()
+# Add standard libcxx flags for non-custom builds
+if(NOT DEFINED LIBCXX_ROOT)
+    add_compile_options(-stdlib=libc++)
+    add_link_options(-stdlib=libc++)
+endif()
 
 # Configure libcxx paths if LIBCXX_ROOT is provided
 if(DEFINED LIBCXX_ROOT)
     set(LIBCXX_INCLUDE_DIR "${LIBCXX_ROOT}/build/include/c++/v1")
     set(LIBCXX_BUILD_INCLUDE_DIR "${LIBCXX_ROOT}/build/include/x86_64-unknown-linux-gnu/c++/v1")
     message(STATUS "Using custom libcxx from: ${LIBCXX_ROOT}")
+
+    # Add global custom libc++ link options for all executables
+    add_link_options(
+        -nostdlib++
+        -L${LIBCXX_ROOT}/build/lib/x86_64-unknown-linux-gnu
+        -Wl,-rpath,${LIBCXX_ROOT}/build/lib/x86_64-unknown-linux-gnu
+        -lc++
+        -lc++abi
+        -lunwind
+    )
+    message(STATUS "Global custom libc++ linking configured")
 endif()
 
  # Build the core library (modules-first)
@@ -60,20 +63,28 @@ file(GLOB_RECURSE STORM_MODULE_UNITS CONFIGURE_DEPENDS
              ${STORM_MODULE_UNITS}
  )
  
- # Enable Clang modules and builtin module maps so import <...> works for libc++ headers
- target_compile_options(${PROJECT_NAME} PRIVATE -fmodules -fbuiltin-module-map)
 
- # Add custom libcxx and reflection flags only to Storm library when using custom libcxx
- if(DEFINED LIBCXX_ROOT AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-     target_compile_options(${PROJECT_NAME} PRIVATE
-         -freflection
-         -fannotation-attributes
-         -nostdinc++
-         -I${LIBCXX_INCLUDE_DIR}
-         -I${LIBCXX_BUILD_INCLUDE_DIR}
-     )
-     message(STATUS "Reflection flags enabled for Storm library")
- endif()
+# Function to apply Clang-specific flags (modules and reflection) to a target
+function(apply_clang_flags target_name)
+    # Enable Clang modules and builtin module maps
+    target_compile_options(${target_name} PRIVATE -fmodules -fbuiltin-module-map)
+    message(STATUS "Module flags enabled for ${target_name}")
+
+    # Add custom libcxx and reflection flags when using custom libcxx
+    if(DEFINED LIBCXX_ROOT)
+        target_compile_options(${target_name} PRIVATE
+            -freflection
+            -fannotation-attributes
+            -nostdinc++
+            -I${LIBCXX_INCLUDE_DIR}
+            -I${LIBCXX_BUILD_INCLUDE_DIR}
+        )
+        message(STATUS "Reflection flags enabled for ${target_name}")
+    endif()
+endfunction()
+
+ # Add Clang-specific flags (modules and reflection) to Storm library
+ apply_clang_flags(${PROJECT_NAME})
  
 # Group sources by folder in IDEs
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -97,13 +108,18 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/envs.cmake)
 # Find PostgreSQL package
 find_package(PostgreSQL REQUIRED)
 
+# Function to link SQLite to a target
+function(link_sqlite target_name)
+    if (SQLite3_FOUND)
+        target_link_libraries(${target_name} PRIVATE SQLite::SQLite3)
+    else()
+        target_link_libraries(${target_name} PRIVATE sqlite3)
+    endif()
+endfunction()
+
 # Find SQLite3 package and link it
 find_package(SQLite3)
-if (SQLite3_FOUND)
-    target_link_libraries(${PROJECT_NAME} PRIVATE SQLite::SQLite3)
-else()
-    target_link_libraries(${PROJECT_NAME} PRIVATE sqlite3)
-endif()
+link_sqlite(${PROJECT_NAME})
 
 # start CPM.cmake
 set(CPM_DOWNLOAD_VERSION 0.40.5)
@@ -128,6 +144,14 @@ option(ENABLE_TESTS "Enable testing support" OFF)
 
 if (ENABLE_TESTS)
     message(STATUS "Testing is enabled.")
+
+    # Configure GoogleTest with custom libcxx if needed
+    if(DEFINED LIBCXX_ROOT)
+        set(CMAKE_CXX_FLAGS_BACKUP "${CMAKE_CXX_FLAGS}")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc++ -I${LIBCXX_INCLUDE_DIR} -I${LIBCXX_BUILD_INCLUDE_DIR}")
+        message(STATUS "Configuring GoogleTest with custom libcxx")
+    endif()
+
     # Start adding gtest
     CPMAddPackage(
             NAME googletest
@@ -138,6 +162,12 @@ if (ENABLE_TESTS)
             "INSTALL_GTEST OFF"
     )
     set(GTEST_PARALLEL TRUE)
+
+    # Restore original CMAKE_CXX_FLAGS
+    if(DEFINED LIBCXX_ROOT)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS_BACKUP}")
+    endif()
+
     # End adding gtest
     enable_testing()
     add_subdirectory(tests)

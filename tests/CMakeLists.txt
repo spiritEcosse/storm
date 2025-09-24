@@ -1,8 +1,8 @@
 project(storm_tests LANGUAGES CXX)
 
-# Only compile test sources; link against the storm library for implementation
-set(TEST_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
+# Auto-discover all test source files
+file(GLOB TEST_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
 )
 
 add_executable(${PROJECT_NAME} ${TEST_SOURCES})
@@ -17,11 +17,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     pthread
 )
 
-if (SQLite3_FOUND)
-    target_link_libraries(${PROJECT_NAME} PRIVATE SQLite::SQLite3)
-else()
-    target_link_libraries(${PROJECT_NAME} PRIVATE sqlite3)
-endif()
+link_sqlite(${PROJECT_NAME})
 
 target_include_directories(${PROJECT_NAME}
     PRIVATE
@@ -33,5 +29,6 @@ target_include_directories(${PROJECT_NAME}
 # Use gtest_discover_tests instead of gtest_add_tests
 gtest_discover_tests(${PROJECT_NAME})
 
-# Ensure Clang can import standard library headers as header units in tests
-target_compile_options(${PROJECT_NAME} PRIVATE -fmodules -fbuiltin-module-map)
+# Add Clang-specific flags (modules and reflection) to tests (same as Storm library)
+apply_clang_flags(${PROJECT_NAME})
+# Note: Custom libc++ linking now handled by global add_link_options() in main CMakeLists.txt
