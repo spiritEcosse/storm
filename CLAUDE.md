@@ -57,7 +57,7 @@ cmake --build --preset ninja-debug
 The codebase is organized using C++26 modules with a hierarchical structure:
 
 - **`storm.core`**: Core utilities, exceptions, and type traits
-- **`storm.reflect`**: Custom reflection system for C++ objects
+- **`storm.meta`**: Helper meta system for C++ objects
 - **`storm.query_set`**: Main ORM interface (QuerySet class)
 - **`storm.orm.*`**: Sub-modules for ORM functionality:
   - `condition`: WHERE clause conditions
@@ -73,8 +73,8 @@ The codebase is organized using C++26 modules with a hierarchical structure:
    - Supports method chaining for query building
    - Uses compile-time reflection for automatic table mapping
 
-2. **Reflection System** (`src/reflect/`):
-   - Custom reflection implementation using template metaprogramming
+2. **Meta System** (`src/meta/`):
+   - Custom meta system implementation using metaprogramming
    - Automatic field discovery and type mapping
    - SQL DDL generation from C++ structs
 
