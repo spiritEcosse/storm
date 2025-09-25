@@ -8,6 +8,9 @@ import <expected>;
 import <string_view>;
 import <string>;
 import <memory>;
+import <unordered_map>;
+import <unordered_set>;
+import <vector>;
 
 export namespace storm::db::sqlite {
 
@@ -110,6 +113,7 @@ export namespace storm::db::sqlite {
 
     class Connection {
         using SqlitePtr = std::unique_ptr<sqlite3, SqliteDeleter>;
+        using StatementCache = std::unordered_map<std::string, Statement>;
 
       public:
         using Error     = sqlite::Error;
@@ -163,12 +167,83 @@ export namespace storm::db::sqlite {
             return Statement{stmt};
         }
 
-        // Execute SQL with error handling
+        // Prepare statement with caching - reuses statements for identical SQL
+        [[nodiscard]] auto prepare_cached(std::string_view sql) noexcept -> std::expected<Statement*, Error> {
+            if (!is_open()) {
+                return std::unexpected(Error{SQLITE_MISUSE, "Connection not open"});
+            }
+
+            std::string sql_key{sql};
+
+            // Try to find cached statement
+            auto it = statement_cache_.find(sql_key);
+            if (it != statement_cache_.end()) {
+                // Reset cached statement for reuse
+                it->second.reset();
+                return &it->second;
+            }
+
+            // Create new statement and cache it
+            sqlite3_stmt* stmt = nullptr;
+            int           rc   = sqlite3_prepare_v2(db.get(), sql.data(), -1, &stmt, nullptr);
+
+            if (rc != SQLITE_OK) {
+                return std::unexpected(Error{rc, sqlite3_errmsg(db.get())});
+            }
+
+            auto [inserted_it, success] = statement_cache_.emplace(std::move(sql_key), Statement{stmt});
+            if (!success) {
+                return std::unexpected(Error{SQLITE_INTERNAL, "Failed to cache statement"});
+            }
+
+            return &inserted_it->second;
+        }
+
+        // Clear statement cache (useful for memory management)
+        void clear_statement_cache() noexcept {
+            statement_cache_.clear();
+        }
+
+        // Get cache statistics
+        [[nodiscard]] size_t cached_statement_count() const noexcept {
+            return statement_cache_.size();
+        }
+
+        // Pre-populate statement cache with common operations
+        void prepare_common_statements() noexcept {
+            // Common patterns that benefit from pre-compilation
+            static const std::vector<std::string> common_patterns = {
+                "BEGIN TRANSACTION",
+                "COMMIT",
+                "ROLLBACK"
+            };
+
+            for (const auto& sql : common_patterns) {
+                // Pre-populate cache (ignore errors for optional optimization)
+                (void)prepare_cached(sql);
+            }
+        }
+
+        // Execute SQL with error handling (optimized to use cached statements for common operations)
         [[nodiscard]] auto execute(std::string_view sql) noexcept -> std::expected<void, Error> {
             if (!is_open()) {
                 return std::unexpected(Error{SQLITE_MISUSE, "Connection not open"});
             }
 
+            // For common operations, try to use cached prepared statements for better performance
+            static const std::unordered_set<std::string_view> cached_operations = {
+                "BEGIN TRANSACTION", "COMMIT", "ROLLBACK"
+            };
+
+            if (cached_operations.contains(sql)) {
+                auto stmt_result = prepare_cached(sql);
+                if (stmt_result.has_value()) {
+                    return (*stmt_result)->execute();
+                }
+                // Fall through to regular execution if caching fails
+            }
+
+            // Regular execution for non-cached operations
             char* errmsg = nullptr;
             int   rc     = sqlite3_exec(db.get(), sql.data(), nullptr, nullptr, &errmsg);
 
@@ -189,11 +264,13 @@ export namespace storm::db::sqlite {
       private:
         explicit Connection(SqlitePtr db_ptr) : db(std::move(db_ptr)) {}
 
-        SqlitePtr db;
+        SqlitePtr      db;
+        StatementCache statement_cache_;
     };
 
     // Verify concepts are satisfied
     static_assert(storm::db::DatabaseConnection<Connection>);
+    static_assert(storm::db::CachedDatabaseConnection<Connection>);
     static_assert(storm::db::DatabaseStatement<Statement>);
     static_assert(storm::db::DatabaseError<Error>);
 

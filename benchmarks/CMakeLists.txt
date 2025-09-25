@@ -95,4 +95,16 @@ target_include_directories(bench_storm PRIVATE
     "${CMAKE_SOURCE_DIR}/src"
 )
 
-message(STATUS "Benchmark executables: bench_sqlite, bench_sqlite_orm, bench_storm")
+# Storm ORM optimized benchmark (C++26, custom clang, libc++)
+add_executable(bench_storm_optimized "${CMAKE_CURRENT_SOURCE_DIR}/bench_storm_optimized.cpp")
+target_link_libraries(bench_storm_optimized PRIVATE
+    storm
+    pthread
+)
+link_sqlite(bench_storm_optimized)
+apply_clang_flags(bench_storm_optimized)
+target_include_directories(bench_storm_optimized PRIVATE
+    "${CMAKE_SOURCE_DIR}/src"
+)
+
+message(STATUS "Benchmark executables: bench_sqlite, bench_sqlite_orm, bench_storm, bench_storm_optimized")

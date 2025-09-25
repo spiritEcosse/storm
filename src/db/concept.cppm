@@ -4,6 +4,7 @@ export module storm_db_concept;
 import <expected>;
 import <string_view>;
 import <concepts>;
+import <cstddef>;
 
 export namespace storm::db {
 
@@ -27,6 +28,17 @@ export namespace storm::db {
 
         // SQL execution (simple queries)
         { conn.execute(sql) } -> std::same_as<std::expected<void, typename T::Error>>;
+    };
+
+    // Extended database connection concept with caching support
+    template <typename T>
+    concept CachedDatabaseConnection = DatabaseConnection<T> && requires(T& conn, std::string_view sql) {
+        // Cached statement preparation
+        { conn.prepare_cached(sql) } -> std::same_as<std::expected<typename T::Statement*, typename T::Error>>;
+
+        // Cache management
+        { conn.clear_statement_cache() } -> std::same_as<void>;
+        { conn.cached_statement_count() } -> std::same_as<size_t>;
     };
 
     // Database statement concept
