@@ -2,29 +2,45 @@ module;
 
 #include <sqlite3.h>
 
-export module storm_db_sqlite_adapter;
+export module storm_db_sqlite;
 import storm_db_concept;
-import storm_db_sqlite;
-
-import <memory>;
 import <expected>;
-import <string>;
 import <string_view>;
+import <string>;
+import <memory>;
 
 export namespace storm::db::sqlite {
 
-    // Forward declaration
-    class Statement;
+    // Custom deleter for sqlite3
+    struct SqliteDeleter {
+        void operator()(sqlite3* db) const noexcept {
+            if (db)
+                sqlite3_close_v2(db);
+        }
+    };
 
-    // Use the Error type from storm.db.sqlite
-    using Error = storm::db::sqlite::Error;
+    // Error type for database operations
+    struct Error {
+        int         code_;
+        std::string message_;
+
+        [[nodiscard]] constexpr int code() const noexcept {
+            return code_;
+        }
+        [[nodiscard]] constexpr std::string_view message() const noexcept {
+            return message_;
+        }
+    };
+
+    // Forward declaration
+    class Connection;
 
     // RAII wrapper for sqlite3_stmt
     class Statement {
         using StmtPtr = std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)>;
 
       public:
-        using Error = storm::db::sqlite::Error;
+        using Error = sqlite::Error;
 
         explicit Statement(sqlite3_stmt* stmt) : stmt_(stmt, sqlite3_finalize) {}
 
@@ -92,17 +108,44 @@ export namespace storm::db::sqlite {
         StmtPtr stmt_;
     };
 
-    // DatabaseConnection adapter for existing SQLite Connection
-    class ConnectionAdapter {
+    class Connection {
+        using SqlitePtr = std::unique_ptr<sqlite3, SqliteDeleter>;
+
       public:
         using Error     = sqlite::Error;
         using Statement = sqlite::Statement;
 
-        explicit ConnectionAdapter(Connection& conn) : conn_(conn) {}
+        // Factory method with error handling and thread-safe flags
+        [[nodiscard]] static auto open(std::string_view db_path) noexcept -> std::expected<Connection, Error> {
+            sqlite3* raw_db = nullptr;
+            // Add SQLITE_OPEN_FULLMUTEX for serialized mode (thread-safe)
+            int      rc     = sqlite3_open_v2(
+                    db_path.data(), &raw_db,
+                    SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_URI | SQLITE_OPEN_FULLMUTEX,
+                    nullptr
+            );
+
+            if (rc != SQLITE_OK) {
+                auto error = Error{rc, sqlite3_errmsg(raw_db)};
+                if (raw_db)
+                    sqlite3_close_v2(raw_db);
+                return std::unexpected(error);
+            }
+
+            return Connection{SqlitePtr{raw_db}};
+        }
+
+        // Move semantics (smart pointer handles cleanup)
+        Connection(Connection&&)            = default;
+        Connection& operator=(Connection&&) = default;
+
+        // Delete copy operations
+        Connection(const Connection&)            = delete;
+        Connection& operator=(const Connection&) = delete;
 
         // DatabaseConnection concept implementation
         [[nodiscard]] constexpr bool is_open() const noexcept {
-            return conn_.is_open();
+            return static_cast<bool>(db);
         }
 
         [[nodiscard]] auto prepare(std::string_view sql) noexcept -> std::expected<Statement, Error> {
@@ -111,35 +154,46 @@ export namespace storm::db::sqlite {
             }
 
             sqlite3_stmt* stmt = nullptr;
-            int           rc   = sqlite3_prepare_v2(conn_.get(), sql.data(), -1, &stmt, nullptr);
+            int           rc   = sqlite3_prepare_v2(db.get(), sql.data(), -1, &stmt, nullptr);
 
             if (rc != SQLITE_OK) {
-                return std::unexpected(Error{rc, sqlite3_errmsg(conn_.get())});
+                return std::unexpected(Error{rc, sqlite3_errmsg(db.get())});
             }
 
             return Statement{stmt};
         }
 
+        // Execute SQL with error handling
         [[nodiscard]] auto execute(std::string_view sql) noexcept -> std::expected<void, Error> {
-            return conn_.execute(sql).transform_error([](const auto& conn_error) {
-                return Error{conn_error.code(), std::string(conn_error.message())};
-            });
+            if (!is_open()) {
+                return std::unexpected(Error{SQLITE_MISUSE, "Connection not open"});
+            }
+
+            char* errmsg = nullptr;
+            int   rc     = sqlite3_exec(db.get(), sql.data(), nullptr, nullptr, &errmsg);
+
+            if (rc != SQLITE_OK) {
+                Error error{rc, errmsg ? errmsg : "Unknown error"};
+                sqlite3_free(errmsg);
+                return std::unexpected(error);
+            }
+
+            return {};
         }
 
-        // Access underlying connection for compatibility
-        [[nodiscard]] Connection& connection() noexcept {
-            return conn_;
-        }
-        [[nodiscard]] const Connection& connection() const noexcept {
-            return conn_;
+        // Access raw SQLite handle for advanced operations
+        [[nodiscard]] sqlite3* get() const noexcept {
+            return db.get();
         }
 
       private:
-        Connection& conn_;
+        explicit Connection(SqlitePtr db_ptr) : db(std::move(db_ptr)) {}
+
+        SqlitePtr db;
     };
 
     // Verify concepts are satisfied
-    static_assert(storm::db::DatabaseConnection<ConnectionAdapter>);
+    static_assert(storm::db::DatabaseConnection<Connection>);
     static_assert(storm::db::DatabaseStatement<Statement>);
     static_assert(storm::db::DatabaseError<Error>);
 

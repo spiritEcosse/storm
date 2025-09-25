@@ -2,7 +2,6 @@
 #include <sqlite3.h>
 
 import storm;
-import storm_db_manager;
 import <expected>;
 import <string>;
 import <optional>;
@@ -18,18 +17,18 @@ struct Person {
 class QuerySetRemoveTest : public ::testing::Test {
   protected:
     void SetUp() override {
-        // Set up default connection using ConnectionManager
-        auto result = storm::db::ConnectionManager::set_default_connection(":memory:");
+        // Set up default connection using QuerySet
+        auto result = storm::QuerySet<Person>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to set default connection: " << result.error().message();
 
         // Create test table using the default connection
-        auto& default_conn = storm::db::ConnectionManager::get_default_connection();
-        auto create_result = default_conn.execute(
+        auto& default_conn  = storm::QuerySet<Person>::get_default_connection();
+        auto  create_result = default_conn.execute(
                 "CREATE TABLE Person ("
-                "id INTEGER PRIMARY KEY, "
-                "name TEXT NOT NULL, "
-                "age INTEGER NOT NULL"
-                ")"
+                 "id INTEGER PRIMARY KEY, "
+                 "name TEXT NOT NULL, "
+                 "age INTEGER NOT NULL"
+                 ")"
         );
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
@@ -44,15 +43,15 @@ class QuerySetRemoveTest : public ::testing::Test {
     }
 
     void TearDown() override {
-        // Clear all connections from manager
-        storm::db::ConnectionManager::clear_all();
+        // Clear all connections
+        storm::QuerySet<Person>::clear_default_connection();
     }
 
     // Helper function to count records using the default connection
     int countPersons() {
-        auto& conn = storm::db::ConnectionManager::get_default_connection();
+        auto&         conn = storm::QuerySet<Person>::get_default_connection();
         sqlite3_stmt* stmt;
-        int rc = sqlite3_prepare_v2(conn.connection().get(), "SELECT COUNT(*) FROM Person", -1, &stmt, nullptr);
+        int           rc = sqlite3_prepare_v2(conn.get(), "SELECT COUNT(*) FROM Person", -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
             return -1;
 
@@ -65,9 +64,9 @@ class QuerySetRemoveTest : public ::testing::Test {
 
     // Helper function to check if person exists using the default connection
     bool personExists(int id) {
-        auto& conn = storm::db::ConnectionManager::get_default_connection();
+        auto&         conn = storm::QuerySet<Person>::get_default_connection();
         sqlite3_stmt* stmt;
-        int rc = sqlite3_prepare_v2(conn.connection().get(), "SELECT COUNT(*) FROM Person WHERE id = ?", -1, &stmt, nullptr);
+        int rc = sqlite3_prepare_v2(conn.get(), "SELECT COUNT(*) FROM Person WHERE id = ?", -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
             return false;
 
@@ -82,7 +81,7 @@ class QuerySetRemoveTest : public ::testing::Test {
 
 TEST_F(QuerySetRemoveTest, DatabaseSetup) {
     // Verify database was created and populated correctly
-    EXPECT_TRUE(storm::db::ConnectionManager::has_default_connection()) << "Should have default connection";
+    EXPECT_TRUE(storm::QuerySet<Person>::has_default_connection()) << "Should have default connection";
     EXPECT_EQ(countPersons(), 3) << "Should have 3 persons in database";
 
     // Verify specific persons exist
