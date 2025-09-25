@@ -2,6 +2,7 @@
 #include <sqlite3.h>
 
 import storm;
+import storm_db_manager;
 import <expected>;
 import <string>;
 import <optional>;
@@ -17,14 +18,13 @@ struct Person {
 class QuerySetRemoveTest : public ::testing::Test {
   protected:
     void SetUp() override {
-        // Create in-memory SQLite database using Storm's connection
-        auto conn_result = storm::db::sqlite::Connection::open(":memory:");
-        ASSERT_TRUE(conn_result.has_value()) << "Failed to create database: " << conn_result.error().message();
+        // Set up default connection using ConnectionManager
+        auto result = storm::db::ConnectionManager::set_default_connection(":memory:");
+        ASSERT_TRUE(result.has_value()) << "Failed to set default connection: " << result.error().message();
 
-        connection = std::move(conn_result.value());
-
-        // Create test table
-        auto create_result = connection->execute(
+        // Create test table using the default connection
+        auto& default_conn = storm::db::ConnectionManager::get_default_connection();
+        auto create_result = default_conn.execute(
                 "CREATE TABLE Person ("
                 "id INTEGER PRIMARY KEY, "
                 "name TEXT NOT NULL, "
@@ -34,7 +34,7 @@ class QuerySetRemoveTest : public ::testing::Test {
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
         // Insert test data
-        auto insert_result = connection->execute(
+        auto insert_result = default_conn.execute(
                 "INSERT INTO Person (id, name, age) VALUES "
                 "(1, 'Alice', 30), "
                 "(2, 'Bob', 25), "
@@ -44,13 +44,15 @@ class QuerySetRemoveTest : public ::testing::Test {
     }
 
     void TearDown() override {
-        // Connection will be automatically closed by destructor
+        // Clear all connections from manager
+        storm::db::ConnectionManager::clear_all();
     }
 
-    // Helper function to count records in Person table using Storm connection
+    // Helper function to count records using the default connection
     int countPersons() {
+        auto& conn = storm::db::ConnectionManager::get_default_connection();
         sqlite3_stmt* stmt;
-        int           rc = sqlite3_prepare_v2(connection->get(), "SELECT COUNT(*) FROM Person", -1, &stmt, nullptr);
+        int rc = sqlite3_prepare_v2(conn.connection().get(), "SELECT COUNT(*) FROM Person", -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
             return -1;
 
@@ -61,10 +63,11 @@ class QuerySetRemoveTest : public ::testing::Test {
         return count;
     }
 
-    // Helper function to check if person exists using Storm connection
+    // Helper function to check if person exists using the default connection
     bool personExists(int id) {
+        auto& conn = storm::db::ConnectionManager::get_default_connection();
         sqlite3_stmt* stmt;
-        int rc = sqlite3_prepare_v2(connection->get(), "SELECT COUNT(*) FROM Person WHERE id = ?", -1, &stmt, nullptr);
+        int rc = sqlite3_prepare_v2(conn.connection().get(), "SELECT COUNT(*) FROM Person WHERE id = ?", -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
             return false;
 
@@ -75,13 +78,11 @@ class QuerySetRemoveTest : public ::testing::Test {
         sqlite3_finalize(stmt);
         return exists;
     }
-
-    std::optional<storm::db::sqlite::Connection> connection;
 };
 
 TEST_F(QuerySetRemoveTest, DatabaseSetup) {
     // Verify database was created and populated correctly
-    EXPECT_TRUE(connection->is_open()) << "Database connection should be open";
+    EXPECT_TRUE(storm::db::ConnectionManager::has_default_connection()) << "Should have default connection";
     EXPECT_EQ(countPersons(), 3) << "Should have 3 persons in database";
 
     // Verify specific persons exist
@@ -91,9 +92,8 @@ TEST_F(QuerySetRemoveTest, DatabaseSetup) {
 }
 
 TEST_F(QuerySetRemoveTest, RemoveExistingPerson) {
-    // Create connection adapter and QuerySet
-    auto adapter  = storm::db::sqlite::ConnectionAdapter{*connection};
-    auto queryset = storm::QuerySet<Person, storm::db::sqlite::ConnectionAdapter>{adapter};
+    // Create QuerySet using simplified syntax - no explicit connection needed!
+    auto queryset = storm::QuerySet<Person>{};
 
     // Create person object to remove (Alice with id=1)
     Person alice{1, "Alice", 30};
@@ -119,9 +119,8 @@ TEST_F(QuerySetRemoveTest, RemoveExistingPerson) {
 }
 
 TEST_F(QuerySetRemoveTest, RemoveNonExistentPerson) {
-    // Create connection adapter and QuerySet
-    auto adapter  = storm::db::sqlite::ConnectionAdapter{*connection};
-    auto queryset = storm::QuerySet<Person, storm::db::sqlite::ConnectionAdapter>{adapter};
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
 
     // Create person object that doesn't exist in database
     Person nonexistent{999, "NonExistent", 99};
@@ -144,9 +143,8 @@ TEST_F(QuerySetRemoveTest, RemoveNonExistentPerson) {
 }
 
 TEST_F(QuerySetRemoveTest, RemoveMultiplePersonsSequentially) {
-    // Create connection adapter and QuerySet
-    auto adapter  = storm::db::sqlite::ConnectionAdapter{*connection};
-    auto queryset = storm::QuerySet<Person, storm::db::sqlite::ConnectionAdapter>{adapter};
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
 
     // Create person objects to remove
     Person alice{1, "Alice", 30};
@@ -174,9 +172,8 @@ TEST_F(QuerySetRemoveTest, RemoveMultiplePersonsSequentially) {
 }
 
 TEST_F(QuerySetRemoveTest, RemoveWithZeroId) {
-    // Create connection adapter and QuerySet
-    auto adapter  = storm::db::sqlite::ConnectionAdapter{*connection};
-    auto queryset = storm::QuerySet<Person, storm::db::sqlite::ConnectionAdapter>{adapter};
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
 
     // Create person object with id 0 (which doesn't exist)
     Person zero_person{0, "Zero", 0};

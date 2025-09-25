@@ -1,14 +1,15 @@
 module;
 
 #include <sqlite3.h>
-#include <memory>
-#include <expected>
-#include <string>
-#include <string_view>
 
 export module storm_db_sqlite_adapter;
 import storm_db_concept;
 import storm_db_sqlite;
+
+import <memory>;
+import <expected>;
+import <string>;
+import <string_view>;
 
 export namespace storm::db::sqlite {
 
