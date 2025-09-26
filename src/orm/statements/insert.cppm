@@ -31,11 +31,11 @@ export namespace storm::orm::statements {
         static consteval std::string build_field_names() {
             std::string result;
             bool first = true;
-            for (std::meta::info member : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+            for (size_t i = 0; i < Base::field_count_; ++i) {
                 if (!first) {
                     result += ", ";
                 }
-                result += std::meta::identifier_of(member);
+                result += std::meta::identifier_of(Base::all_members_[i]);
                 first = false;
             }
             return result;
@@ -44,7 +44,7 @@ export namespace storm::orm::statements {
         static consteval std::string build_placeholders() {
             std::string result;
             bool first = true;
-            for (std::meta::info member : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+            for (size_t i = 0; i < Base::field_count_; ++i) {
                 if (!first) {
                     result += ", ";
                 }
