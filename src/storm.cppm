@@ -7,6 +7,7 @@ export module storm;
 // Import and re-export all Storm modules
 export import storm_db_concept;
 export import storm_db_sqlite;
+export import storm_orm_statements_base;
 export import storm_orm_queryset;
 import <meta>;
 
@@ -16,8 +17,9 @@ export namespace storm {
 
     // Meta functionality for ORM field attributes and reflection
     namespace meta {
-        // Note: FieldAttr enum is defined in storm_orm_queryset module
+        // Note: FieldAttr enum is defined in storm_orm_statements_base module
         // and re-exported here through the import chain
+        using FieldAttr = orm::statements::meta::FieldAttr;
 
         // Check if member has primary attribute
         consteval bool has_primary_attr(std::meta::info member) {
