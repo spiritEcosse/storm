@@ -16,6 +16,7 @@ import <span>;
 import <concepts>;
 import <format>;
 import <meta>;
+import <type_traits>;
 
 export namespace storm::orm::statements {
 
@@ -99,7 +100,7 @@ export namespace storm::orm::statements {
             bool use_transaction = Base::should_use_transaction(objects);
 
             if (use_transaction) {
-                if (auto result = Base::template begin_transaction<ConnType>(conn_); !result) {
+                if (auto result = Base::begin_transaction(conn_); !result) {
                     return std::unexpected(result.error());
                 }
             }
@@ -111,7 +112,7 @@ export namespace storm::orm::statements {
                 // Bind primary key value using meta reflection
                 if (auto result = bind_primary_key(stmt, obj); !result) {
                     if (use_transaction) {
-                        Base::template rollback_transaction<ConnType>(conn_);
+                        Base::rollback_transaction(conn_);
                     }
                     return std::unexpected(result.error());
                 }
@@ -119,14 +120,14 @@ export namespace storm::orm::statements {
                 // Execute statement
                 if (auto result = stmt.execute(); !result) {
                     if (use_transaction) {
-                        Base::template rollback_transaction<ConnType>(conn_);
+                        Base::rollback_transaction(conn_);
                     }
                     return std::unexpected(result.error());
                 }
             }
 
             if (use_transaction) {
-                if (auto result = Base::template commit_transaction<ConnType>(conn_); !result) {
+                if (auto result = Base::commit_transaction(conn_); !result) {
                     return std::unexpected(result.error());
                 }
             }
@@ -141,7 +142,7 @@ export namespace storm::orm::statements {
             bool use_transaction = Base::should_use_transaction(objects);
 
             if (use_transaction) {
-                if (auto result = Base::template begin_transaction<ConnType>(conn_); !result) {
+                if (auto result = Base::begin_transaction(conn_); !result) {
                     return std::unexpected(result.error());
                 }
             }
@@ -153,7 +154,7 @@ export namespace storm::orm::statements {
                 // Bind primary key value using meta reflection
                 if (auto result = bind_primary_key(stmt, obj); !result) {
                     if (use_transaction) {
-                        Base::template rollback_transaction<ConnType>(conn_);
+                        Base::rollback_transaction(conn_);
                     }
                     return std::unexpected(result.error());
                 }
@@ -161,14 +162,14 @@ export namespace storm::orm::statements {
                 // Execute statement
                 if (auto result = stmt.execute(); !result) {
                     if (use_transaction) {
-                        Base::template rollback_transaction<ConnType>(conn_);
+                        Base::rollback_transaction(conn_);
                     }
                     return std::unexpected(result.error());
                 }
             }
 
             if (use_transaction) {
-                if (auto result = Base::template commit_transaction<ConnType>(conn_); !result) {
+                if (auto result = Base::commit_transaction(conn_); !result) {
                     return std::unexpected(result.error());
                 }
             }
