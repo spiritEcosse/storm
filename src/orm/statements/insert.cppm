@@ -16,6 +16,9 @@ import <concepts>;
 import <format>;
 import <meta>;
 import <array>;
+import <span>;
+import <vector>;
+import <type_traits>;
 
 export namespace storm::orm::statements {
 
@@ -64,6 +67,18 @@ export namespace storm::orm::statements {
             return sql;
         }
 
+        // Generate bulk INSERT SQL with multiple value sets
+        static std::string get_bulk_insert_sql(size_t count) {
+            std::string sql = std::format("INSERT INTO {} ({}) VALUES ", Base::table_name_, field_names_);
+            for (size_t i = 0; i < count; ++i) {
+                if (i > 0) sql += ", ";
+                sql += "(";
+                sql += placeholders_;
+                sql += ")";
+            }
+            return sql;
+        }
+
       public:
         explicit InsertStatement(Connection& conn) : conn_(conn) {}
 
@@ -81,6 +96,31 @@ export namespace storm::orm::statements {
                             return bind_and_execute(std::move(stmt), obj);
                         });
             }
+        }
+
+        // Batch insert operation with optimization strategies
+        [[nodiscard]] auto execute(std::span<const T> objects) noexcept -> std::expected<void, Error> {
+            if (objects.empty()) {
+                return {};
+            }
+
+            // Single object - use regular execute
+            if (objects.size() == 1) {
+                return execute(objects[0]);
+            }
+
+            // For small batches, use bulk INSERT with multiple VALUES
+            // SQLite has SQLITE_MAX_VARIABLE_NUMBER limit (default 999)
+            // With field_count_ fields per object, we can insert up to 999/field_count_ objects
+            constexpr size_t max_bulk_size = 999 / Base::field_count_;
+            constexpr size_t bulk_threshold = std::min(size_t(50), max_bulk_size);
+
+            if (objects.size() <= bulk_threshold) {
+                return execute_bulk(objects);
+            }
+
+            // For large batches, use individual statements with transactions
+            return execute_with_cached_statement(objects);
         }
 
       private:
@@ -152,6 +192,105 @@ export namespace storm::orm::statements {
         [[nodiscard]] auto bind_all_fields(Statement& stmt, const T& obj) noexcept -> std::expected<void, Error> {
             int param_index = 1;
             return bind_fields_recursive<0>(stmt, obj, param_index);
+        }
+
+        // Execute bulk INSERT with multiple VALUES clauses
+        [[nodiscard]] auto execute_bulk(std::span<const T> objects) noexcept -> std::expected<void, Error> {
+            const auto sql = get_bulk_insert_sql(objects.size());
+            bool use_transaction = Base::should_use_transaction(objects);
+
+            if (use_transaction) {
+                if (auto result = Base::begin_transaction(conn_); !result) {
+                    return std::unexpected(result.error());
+                }
+            }
+
+            auto result = conn_.prepare(sql)
+                    .and_then([this, objects](Statement stmt) -> std::expected<void, Error> {
+                        // Bind all parameters for all objects
+                        int param_index = 1;
+                        for (const auto& obj : objects) {
+                            if (auto result = bind_fields_recursive<0>(stmt, obj, param_index); !result) {
+                                return std::unexpected(result.error());
+                            }
+                        }
+
+                        // Execute the bulk insert
+                        if (auto result = stmt.execute(); !result) {
+                            return std::unexpected(result.error());
+                        }
+
+                        return {};
+                    });
+
+            if (use_transaction) {
+                if (!result) {
+                    Base::rollback_transaction(conn_);
+                    return result;
+                }
+
+                if (auto commit_result = Base::commit_transaction(conn_); !commit_result) {
+                    Base::rollback_transaction(conn_);
+                    return std::unexpected(commit_result.error());
+                }
+            }
+
+            return result;
+        }
+
+        // Execute with cached prepared statement for large batches
+        [[nodiscard]] auto execute_with_cached_statement(std::span<const T> objects) noexcept -> std::expected<void, Error> {
+            bool use_transaction = Base::should_use_transaction(objects);
+
+            if (use_transaction) {
+                if (auto result = Base::begin_transaction(conn_); !result) {
+                    return std::unexpected(result.error());
+                }
+            }
+
+            // Use cached prepared statement for better performance
+            auto result = [this, objects]() -> std::expected<void, Error> {
+                if constexpr (requires { conn_.prepare_cached(get_insert_sql()); }) {
+                    return conn_.prepare_cached(get_insert_sql())
+                            .and_then([this, objects](Statement* stmt) -> std::expected<void, Error> {
+                                for (const auto& obj : objects) {
+                                    if (auto result = bind_and_execute_cached(*stmt, obj); !result) {
+                                        return std::unexpected(result.error());
+                                    }
+                                }
+                                return {};
+                            });
+                } else {
+                    // Fallback to regular prepare for non-cached connections
+                    return conn_.prepare(get_insert_sql())
+                            .and_then([this, objects](Statement stmt) -> std::expected<void, Error> {
+                                for (const auto& obj : objects) {
+                                    stmt.reset();
+                                    if (auto result = bind_all_fields(stmt, obj); !result) {
+                                        return std::unexpected(result.error());
+                                    }
+                                    if (auto result = stmt.execute(); !result) {
+                                        return std::unexpected(result.error());
+                                    }
+                                }
+                                return {};
+                            });
+                }
+            }();
+
+            if (use_transaction) {
+                if (!result) {
+                    Base::rollback_transaction(conn_);
+                    return result;
+                }
+
+                if (auto commit_result = Base::commit_transaction(conn_); !commit_result) {
+                    Base::rollback_transaction(conn_);
+                    return std::unexpected(commit_result.error());
+                }
+            }
+
+            return result;
         }
 
         Connection& conn_;

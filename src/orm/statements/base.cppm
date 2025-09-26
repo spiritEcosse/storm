@@ -105,6 +105,66 @@ export namespace storm::orm::statements {
         static constexpr bool should_use_transaction(const ContainerType& container) {
             return container.size() > 1;
         }
+
+        // Unified statement execution logic for cached/non-cached connections
+        template <typename ConnType, typename PrepareFunc, typename BindExecuteFunc>
+        [[nodiscard]] static auto execute_statement(
+                ConnType& conn,
+                const std::string& sql,
+                PrepareFunc&& prepare_func,
+                BindExecuteFunc&& bind_execute_func) noexcept
+                -> decltype(bind_execute_func(std::declval<typename ConnType::Statement>())) {
+
+            // Use cached prepared statement if available
+            if constexpr (requires { conn.prepare_cached(sql); }) {
+                return conn.prepare_cached(sql)
+                        .and_then([bind_execute_func = std::forward<BindExecuteFunc>(bind_execute_func)]
+                                  (auto* stmt) -> decltype(bind_execute_func(std::declval<typename ConnType::Statement>())) {
+                            return bind_execute_func(*stmt);
+                        });
+            } else {
+                // Fallback to regular prepare
+                return conn.prepare(sql)
+                        .and_then([bind_execute_func = std::forward<BindExecuteFunc>(bind_execute_func)]
+                                  (typename ConnType::Statement stmt) -> decltype(bind_execute_func(std::move(stmt))) {
+                            return bind_execute_func(std::move(stmt));
+                        });
+            }
+        }
+
+        // Unified transaction wrapper for batch operations
+        template <typename ConnType, typename Operation, typename Result = std::expected<void, typename ConnType::Error>>
+        [[nodiscard]] static auto execute_with_transaction(
+                ConnType& conn,
+                bool use_transaction,
+                Operation&& op) noexcept -> Result {
+
+            if (!use_transaction) {
+                return op();
+            }
+
+            // Begin transaction
+            if (auto result = begin_transaction(conn); !result) {
+                return std::unexpected(result.error());
+            }
+
+            // Execute operation
+            auto op_result = op();
+
+            if (!op_result) {
+                // Rollback on failure
+                rollback_transaction(conn);
+                return op_result;
+            }
+
+            // Commit transaction
+            if (auto result = commit_transaction(conn); !result) {
+                rollback_transaction(conn);
+                return std::unexpected(result.error());
+            }
+
+            return op_result;
+        }
     };
 
 } // namespace storm::orm::statements
