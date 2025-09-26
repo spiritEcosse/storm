@@ -189,3 +189,27 @@ TEST_F(QuerySetRemoveTest, RemoveWithZeroId) {
     // Verify database state unchanged
     EXPECT_EQ(countPersons(), 3) << "Should still have 3 persons after removal attempt";
 }
+
+// Simple insert test
+TEST_F(QuerySetRemoveTest, InsertSinglePerson) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Create person object to insert
+    Person dave{4, "Dave", 40};
+
+    // Verify Dave doesn't exist initially
+    EXPECT_FALSE(personExists(4)) << "Dave should not exist initially";
+    EXPECT_EQ(countPersons(), 3) << "Should have 3 persons initially";
+
+    // Insert Dave using QuerySet.insert()
+    auto result = queryset.insert(dave);
+
+    // Verify insertion was successful
+    ASSERT_TRUE(result.has_value()) << "Insert operation should succeed: " <<
+        (result.has_value() ? "success" : result.error().message());
+
+    // Verify Dave now exists in database
+    EXPECT_TRUE(personExists(4)) << "Dave should exist after insertion";
+    EXPECT_EQ(countPersons(), 4) << "Should have 4 persons after insertion";
+}
