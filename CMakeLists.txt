@@ -141,6 +141,7 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 option(ENABLE_TESTS "Enable testing support" OFF)
+option(ENABLE_BENCH "Enable benchmarking with sqlite_orm" OFF)
 
 if (ENABLE_TESTS)
     message(STATUS "Testing is enabled.")
@@ -174,6 +175,15 @@ if (ENABLE_TESTS)
 else ()
     message(STATUS "Testing is disabled.")
 endif ()
+
+# Add benchmarks subdirectory if enabled
+if(ENABLE_BENCH)
+    message(STATUS "Benchmarking is enabled")
+    add_subdirectory(benchmarks)
+else()
+    message(STATUS "Benchmarking is disabled")
+endif()
+
 
 # Add cmake-scripts for sanitizers and other utilities
 CPMAddPackage(

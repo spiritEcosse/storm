@@ -4,158 +4,179 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Storm is a modern C++26 ORM (Object-Relational Mapping) library for SQLite and PostgreSQL databases. It leverages cutting-edge C++26 features including modules, reflection, concepts, and coroutines to provide type-safe database operations.
+Storm is a modern C++26 ORM (Object-Relational Mapping) library for SQLite databases. It uses cutting-edge C++26 reflection features to automatically map C++ structs to database tables without macros.
 
 ## Build Commands
 
+### Prerequisites
+- Custom Clang with C++26 reflection support (located at `../clang-p2996/`)
+- SQLite3 development libraries
+- CMake 3.30+
+- Ninja build system
+
 ### Standard Development Build
 ```bash
-# Debug build with ninja
+# Debug build with tests
 cmake --preset ninja-debug -DENABLE_TESTS=ON
 cmake --build --preset ninja-debug
 
-# Release build
+# Run all tests
+ctest --test-dir build/debug --output-on-failure
+
+# Run a single test
+cd build/debug && ./tests/storm_tests --gtest_filter="QuerySetRemoveTest.*"
+```
+
+### Release Build
+```bash
 cmake --preset ninja-release
 cmake --build --preset ninja-release
 ```
 
-### Testing
-```bash
-# Build and run tests
-cmake --preset ninja-debug -DENABLE_TESTS=ON
-cmake --build --preset ninja-debug
-ctest --test-dir build/debug --output-on-failure
-```
-
 ### Code Quality
 ```bash
-# Format code (requires clang-format)
+# Format code
 cmake --build --preset ninja-debug --target format
 
-# Check code formatting
+# Check formatting (CI check)
 cmake --build --preset ninja-debug --target format-check
 ```
 
 ### Sanitizer Builds
 ```bash
-# Address sanitizer
+# Address + Leak sanitizer
 cmake --preset ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="address;leak"
 cmake --build --preset ninja-debug
 
 # Thread sanitizer (separate build)
 cmake --preset ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="thread"
 cmake --build --preset ninja-debug
-
-# Memory sanitizer (Clang only)
-cmake --preset ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="memory"
-cmake --build --preset ninja-debug
 ```
 
-## Architecture Overview
+### Benchmarking
+```bash
+# Build benchmarking infrastructure
+cmake --preset ninja-debug -DENABLE_TESTS=ON -DENABLE_BENCH=ON
+cmake --build --preset ninja-debug
 
-### Module Structure
-The codebase is organized using C++26 modules with a hierarchical structure:
+# Build and run standalone benchmark (due to C++26 module conflicts)
+cd benchmarks
+/usr/bin/clang++ -std=c++20 -stdlib=libstdc++ -DENABLE_BENCH -I../build/debug/_deps/sqliteorm-src/include main.cpp sqlite_orm_wrapper.cpp -lsqlite3 -o main
+./main
+```
 
-- **`storm.core`**: Core utilities, exceptions, and type traits
-- **`storm.reflect`**: Custom reflection system for C++ objects
-- **`storm.query_set`**: Main ORM interface (QuerySet class)
-- **`storm.orm.*`**: Sub-modules for ORM functionality:
-  - `condition`: WHERE clause conditions
-  - `statement`: SQL statement builders (SELECT, INSERT, UPDATE, DELETE)
-  - `field`: Database field representations
-  - `function`: SQL functions and aggregates
-  - `expression`: SQL expression builders
+**Benchmark compares:**
+- **Raw SQLite** (Storm's approach): Direct prepared statements
+- **sqlite_orm**: Popular C++ ORM library
 
-### Key Components
+**Typical results show Storm's approach is ~4x faster for remove operations.**
 
-1. **QuerySet**: The main ORM interface that provides CRUD operations
-   - Template-based for type safety
-   - Supports method chaining for query building
-   - Uses compile-time reflection for automatic table mapping
+## High-Level Architecture
 
-2. **Reflection System** (`src/reflect/`):
-   - Custom reflection implementation using template metaprogramming
-   - Automatic field discovery and type mapping
-   - SQL DDL generation from C++ structs
+### Module Structure (Simplified in Recent Refactor)
+```
+src/
+├── storm.cppm           # Main module with meta functionality
+├── db/
+│   ├── concept.cppm     # Database concepts (DatabaseConnection, DatabaseStatement)
+│   └── sqlite.cppm      # SQLite Connection and Statement implementation
+└── orm/
+    └── queryset.cppm    # QuerySet ORM interface and RemoveStatement
+```
 
-3. **Statement Builders** (`src/orm/statement/`):
-   - Type-safe SQL query construction
-   - Parameter binding with compile-time validation
-   - Support for complex queries with joins, aggregations, etc.
+### Key Design Decisions
 
-4. **Database Connections** (`src/db/`):
-   - Abstract connection interface
-   - SQLite and PostgreSQL implementations
-   - Connection pooling and transaction management
+#### 1. **C++26 Reflection-Based ORM**
+The system uses compile-time reflection (`std::meta`) to automatically:
+- Find primary key fields marked with `[[=storm::meta::FieldAttr::primary]]`
+- Generate SQL statements from struct definitions
+- Bind struct fields to database columns
 
-### Code Conventions
+Example struct:
+```cpp
+struct Person {
+    [[=storm::meta::FieldAttr::primary]] int id;
+    std::string name;
+    int age;
+};
+```
 
-The project follows modern C++26 patterns as defined in `rules.md`:
+#### 2. **Concept-Based Database Abstraction**
+- `DatabaseConnection` concept defines interface for any database
+- `DatabaseStatement` concept for prepared statements
+- SQLite implementation satisfies these concepts
+- Allows future PostgreSQL/MySQL support without changing ORM code
 
-- **C++26 Standard**: Uses modules, concepts, ranges, and other cutting-edge features
-- **Module Organization**: Each major component is a module (`*.cppm` files)
-- **Type Safety**: Heavy use of concepts and `std::expected` for error handling
-- **Modern STL**: Uses `std::ranges`, `std::print`, `std::format`, etc.
-- **Memory Safety**: RAII patterns, smart pointers, and `std::span`
-- **DRY (Don't Repeat Yourself)**: 
-  - Extract common logic into reusable templates and concepts
-  - Use template metaprogramming to eliminate code duplication
-  - Leverage compile-time features to reduce runtime redundancy
-  - Consolidate similar implementations using CRTP and mixins
-  - Prefer generic programming over copy-paste implementations
+#### 3. **Connection Management**
+- Default static connection for simple use cases
+- Explicit connection passing for multi-database scenarios
+- **Thread Safety**: SQLite opened with `SQLITE_OPEN_FULLMUTEX` for serialized mode
+- **WARNING**: Connection management layer is NOT thread-safe due to compiler limitations with std::mutex in C++26 modules
 
-### Modern C++ Principles
+#### 4. **Module Organization Changes**
+Recent simplification (56% file reduction):
+- Merged `meta` functionality into main `storm` module
+- Consolidated `RemoveStatement` into `queryset` module
+- Removed unnecessary `ConnectionAdapter` indirection
+- Flattened directory structure (no single-file directories)
 
-Storm embraces cutting-edge C++23/26 features and design patterns:
+### Cross-Module Dependencies
 
-#### Core Principles
-- **Zero-Cost Abstractions**: All abstractions compile away - no runtime overhead
-- **Value Semantics**: Prefer values over pointers, use move semantics for efficiency
-- **Compile-Time Programming**: `constexpr`, `consteval`, and `if consteval` for compile-time computation
-- **Monadic Composition**: Use `and_then`, `transform`, `or_else` with `std::expected`
-- **SFINAE → Concepts**: Replace old SFINAE patterns with readable C++20 concepts
+The import hierarchy:
+```
+storm (main module)
+├── storm_db_concept
+├── storm_db_sqlite
+│   └── storm_db_concept
+└── storm_orm_queryset
+    ├── storm_db_concept
+    └── storm_db_sqlite
+```
 
-#### Design Patterns
-- **CRTP**: Static polymorphism without virtual functions (no vtables)
-- **Expression Templates**: Build DSLs with operator overloading for query building
-- **Policy-Based Design**: Customize behavior via template parameters
-- **Ranges & Views**: Lazy evaluation and composable algorithms
+### Thread Safety Considerations
 
-#### C++23/26 Features
-- **Static Reflection**: Compile-time type inspection for automatic SQL generation
-- **Coroutines**: Async database operations without callbacks
-- **Deducing `this`**: Simplified member function templates
-- **Pattern Matching**: Structured binding with conditions (C++26)
-- **Contracts**: Pre/post conditions for API contracts (C++26 proposal)
+1. **SQLite Level**: Thread-safe with `SQLITE_OPEN_FULLMUTEX` flag
+2. **Connection Management**: NOT thread-safe - requires external synchronization
+3. **Recommended Patterns**:
+   - Per-thread connections for best performance
+   - External mutex around shared connection for simplicity
+   - Future: Connection pooling implementation
 
-### Testing Structure
+### Compiler-Specific Requirements
 
-- **GoogleTest Framework**: Uses GTest with module support
-- **Test Location**: `tests/` directory with corresponding CMakeLists.txt
-- **Coverage**: Comprehensive tests for ORM operations and SQL generation
-- **Sanitizers**: Full sanitizer support for memory safety validation
+This project requires the experimental Clang fork with C++26 reflection:
+- Located at `../clang-p2996/`
+- Custom libcxx with reflection support
+- Module scanning with `clang-scan-deps`
+- Reflection flags: `-freflection -fannotation-attributes`
 
-### Database Support
+### Testing Strategy
 
-- **SQLite**: Primary database backend with full feature support
-- **PostgreSQL**: Secondary backend with connection pooling
-- **Schema Management**: Automatic table creation and migration support
+- **GoogleTest** with C++26 module support
+- Tests in `tests/` directory
+- Test database uses SQLite in-memory (`:memory:`)
+- Each test creates fresh tables and data
+- Comprehensive sanitizer support in CI
 
-## Development Workflow
+## Important Implementation Notes
 
-1. **Code Style**: The project uses clang-format with repository-specific configuration
-2. **Module Dependencies**: Always import required modules in the correct order
-3. **Error Handling**: Use `std::expected` for recoverable errors, exceptions for programming errors
-4. **Reflection**: Use the custom reflection system for automatic ORM mapping
-5. **Testing**: Write comprehensive tests for all public APIs
+- **No REFL-CPP**: Despite README mentioning it, the project now uses native C++26 reflection
+- **Module Naming**: Uses underscores (`storm_db_sqlite`) not dots due to compiler limitations
+- **Circular Dependencies**: Avoided by duplicating `FieldAttr` enum definition
+- **Compiler Crashes**: std::mutex in modules causes segfaults in current Clang build
+- **SQL Generation**: Runtime std::format (not constexpr yet)
+- **Primary Key Access**: Uses reflection splice operator `obj.[:primary_key_:]`
 
-## Important Notes
+## Common Development Tasks
 
-- This is a **C++26 project** - use the most modern features available
-- **Module imports** are required instead of traditional includes for Storm components
-- **Reflection macros** are not used - the system uses template metaprogramming
-- **Database connections** should be managed through the Connection abstraction
-- **QuerySet** is the primary interface for all database operations
+### Adding a New Database Operation
+1. Add method to `QuerySet` class
+2. Create corresponding statement class in `queryset.cppm`
+3. Use reflection to generate SQL and bind parameters
+4. Add comprehensive tests in `tests/test_sqlite.cpp`
 
-TODO:
-
+### Adding PostgreSQL Support
+1. Create `src/db/postgresql.cppm` implementing concepts
+2. Add PostgreSQL-specific statement implementations
+3. Update `ConnectionManager` to support multiple backends
+4. Ensure concepts properly abstract differences

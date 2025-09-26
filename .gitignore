@@ -2,3 +2,9 @@ build/**
 .idea
 *.log
 Testing
+
+# Benchmark executables
+benchmarks/bench_sqlite
+benchmarks/bench_sqlite_orm
+benchmarks/bench_storm
+benchmarks/bench_storm_optimized
