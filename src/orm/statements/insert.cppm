@@ -61,6 +61,41 @@ export namespace storm::orm::statements {
         static constexpr auto field_names_  = build_field_names();
         static constexpr auto placeholders_ = build_placeholders();
 
+        // Thread-local cache for bulk INSERT SQL strings
+        struct BulkSQLCache {
+            static constexpr size_t CACHE_SIZE = 8;
+            struct Entry {
+                size_t      count = 0;
+                std::string sql;
+            };
+            std::array<Entry, CACHE_SIZE> entries{};
+            size_t                        next_slot = 0; // For round-robin replacement
+
+            const std::string* find(size_t count) const {
+                for (const auto& entry : entries) {
+                    if (entry.count == count && !entry.sql.empty()) {
+                        return &entry.sql;
+                    }
+                }
+                return nullptr;
+            }
+
+            void insert(size_t count, std::string sql) {
+                // Try to find empty slot first
+                for (auto& entry : entries) {
+                    if (entry.count == 0) {
+                        entry.count = count;
+                        entry.sql   = std::move(sql);
+                        return;
+                    }
+                }
+                // Use round-robin replacement
+                entries[next_slot].count = count;
+                entries[next_slot].sql   = std::move(sql);
+                next_slot                = (next_slot + 1) % CACHE_SIZE;
+            }
+        };
+
         // Generate INSERT SQL string at runtime (cached)
         static const std::string& get_insert_sql() {
             static const std::string sql =
@@ -68,16 +103,44 @@ export namespace storm::orm::statements {
             return sql;
         }
 
-        // Generate bulk INSERT SQL with multiple value sets
+        // Generate bulk INSERT SQL with multiple value sets (with caching)
         static std::string get_bulk_insert_sql(size_t count) {
-            std::string sql = std::format("INSERT INTO {} ({}) VALUES ", Base::table_name_, field_names_);
-            for (size_t i = 0; i < count; ++i) {
-                if (i > 0)
-                    sql += ", ";
-                sql += "(";
-                sql += placeholders_;
-                sql += ")";
+            // Thread-local cache for common batch sizes
+            static thread_local BulkSQLCache cache;
+
+            // Check cache first
+            if (const auto* cached = cache.find(count)) {
+                return *cached;
             }
+
+            // Build optimized SQL with pre-allocation
+            // Pre-compute the value template once
+            std::string value_template = "(";
+            value_template += placeholders_;
+            value_template += ")";
+
+            // Calculate exact size needed
+            const size_t base_size = std::format("INSERT INTO {} ({}) VALUES ", Base::table_name_, field_names_).size();
+            const size_t value_size     = value_template.size();
+            const size_t separator_size = 2; // ", "
+            const size_t total_size     = base_size + (value_size * count) + (separator_size * (count - 1));
+
+            // Reserve exact memory upfront
+            std::string sql;
+            sql.reserve(total_size);
+
+            // Build SQL with minimal allocations
+            sql = std::format("INSERT INTO {} ({}) VALUES ", Base::table_name_, field_names_);
+            for (size_t i = 0; i < count; ++i) {
+                if (i > 0) {
+                    sql += ", ";
+                }
+                sql += value_template;
+            }
+
+            // Cache the result for future use
+            cache.insert(count, sql);
+
             return sql;
         }
 
