@@ -21,9 +21,9 @@ import <type_traits>;
 export namespace storm::orm::statements {
 
     // Statement class for ORM remove operations
-    template <typename T, storm::db::DatabaseConnection ConnType>
-    class RemoveStatement : private BaseStatement<T> {
-        using Base = BaseStatement<T>;
+    template <typename T, storm::db::DatabaseConnection ConnType> class RemoveStatement : private BaseStatement<T> {
+        friend class BaseStatement<T>; // Allow BaseStatement to access protected/private members
+        using Base       = BaseStatement<T>;
         using Connection = ConnType;
         using Error      = typename ConnType::Error;
         using Statement  = typename ConnType::Statement;
@@ -61,120 +61,40 @@ export namespace storm::orm::statements {
                 return true;
             }
 
-            // For small batches, use bulk IN clause for better performance
-            if (objects.size() <= 50) {  // SQLite has SQLITE_MAX_VARIABLE_NUMBER limit (default 999)
-                return execute_bulk(objects);
-            }
-
-            // For large batches, use individual statements with transactions
-            // Use cached prepared statement for better performance
-            if constexpr (requires { conn_.prepare_cached(get_delete_sql()); }) {
-                return conn_.prepare_cached(get_delete_sql())
-                        .and_then([this, objects](Statement* stmt) -> std::expected<bool, Error> {
-                            return bind_and_execute_cached(*stmt, objects);
-                        });
-            } else {
-                // Fallback to regular prepare for non-cached connections
-                return conn_.prepare(get_delete_sql())
-                        .and_then([this, objects](Statement stmt) -> std::expected<bool, Error> {
-                            return bind_and_execute(std::move(stmt), objects);
-                        });
-            }
+            // Use BaseStatement's generic batch execution
+            return Base::execute_standard_batch(*this, objects, 1); // 1 variable per object (primary key)
         }
 
         // Bulk execute using IN clause for better performance on small batches
         [[nodiscard]] auto execute_bulk(std::span<const T> objects) noexcept -> std::expected<bool, Error> {
             auto bulk_sql = get_bulk_delete_sql(objects.size());
 
-            return conn_.prepare(bulk_sql)
-                    .and_then([this, objects](Statement stmt) -> std::expected<bool, Error> {
-                        return bind_and_execute_bulk(std::move(stmt), objects);
-                    });
+            return conn_.prepare(bulk_sql).and_then([this, objects](Statement stmt) -> std::expected<bool, Error> {
+                return bind_and_execute_bulk(std::move(stmt), objects);
+            });
         }
 
-      private:
-        // Bind primary keys and execute for all objects (with transaction wrapping for batches)
-        [[nodiscard]] auto bind_and_execute(Statement stmt, std::span<const T> objects) noexcept
-                -> std::expected<bool, Error> {
-            // Use transaction for batch operations to improve performance
-            bool use_transaction = Base::should_use_transaction(objects);
-
-            if (use_transaction) {
-                if (auto result = Base::begin_transaction(conn_); !result) {
-                    return std::unexpected(result.error());
-                }
-            }
-
-            for (const auto& obj : objects) {
-                // Reset statement for reuse
-                stmt.reset();
-
-                // Bind primary key value using meta reflection
-                if (auto result = bind_primary_key(stmt, obj); !result) {
-                    if (use_transaction) {
-                        Base::rollback_transaction(conn_);
+      protected: // Changed to protected so BaseStatement can access
+        // Execute individual deletes for large batches (with transaction)
+        [[nodiscard]] auto execute_individual_batch(std::span<const T> objects) noexcept -> std::expected<bool, Error> {
+            return Base::template execute_with_transaction<ConnType>(
+                    conn_, Base::should_use_transaction(objects), [this, objects]() -> std::expected<bool, Error> {
+                        return Base::template execute_with_statement<ConnType>(
+                                conn_, get_delete_sql(), [this, objects](auto& stmt) -> std::expected<bool, Error> {
+                                    for (const auto& obj : objects) {
+                                        // Monadic composition: reset → bind → execute
+                                        if (auto result = Base::reset_bind_and_execute(
+                                                    stmt, [this, &obj](auto& s) { return bind_primary_key(s, obj); }
+                                            );
+                                            !result) {
+                                            return std::unexpected(result.error());
+                                        }
+                                    }
+                                    return true;
+                                }
+                        );
                     }
-                    return std::unexpected(result.error());
-                }
-
-                // Execute statement
-                if (auto result = stmt.execute(); !result) {
-                    if (use_transaction) {
-                        Base::rollback_transaction(conn_);
-                    }
-                    return std::unexpected(result.error());
-                }
-            }
-
-            if (use_transaction) {
-                if (auto result = Base::commit_transaction(conn_); !result) {
-                    return std::unexpected(result.error());
-                }
-            }
-
-            return true;
-        }
-
-        // Optimized version for cached statements
-        [[nodiscard]] auto bind_and_execute_cached(Statement& stmt, std::span<const T> objects) noexcept
-                -> std::expected<bool, Error> {
-            // Use transaction for batch operations to improve performance
-            bool use_transaction = Base::should_use_transaction(objects);
-
-            if (use_transaction) {
-                if (auto result = Base::begin_transaction(conn_); !result) {
-                    return std::unexpected(result.error());
-                }
-            }
-
-            for (const auto& obj : objects) {
-                // Reset statement for reuse
-                stmt.reset();
-
-                // Bind primary key value using meta reflection
-                if (auto result = bind_primary_key(stmt, obj); !result) {
-                    if (use_transaction) {
-                        Base::rollback_transaction(conn_);
-                    }
-                    return std::unexpected(result.error());
-                }
-
-                // Execute statement
-                if (auto result = stmt.execute(); !result) {
-                    if (use_transaction) {
-                        Base::rollback_transaction(conn_);
-                    }
-                    return std::unexpected(result.error());
-                }
-            }
-
-            if (use_transaction) {
-                if (auto result = Base::commit_transaction(conn_); !result) {
-                    return std::unexpected(result.error());
-                }
-            }
-
-            return true;
+            );
         }
 
         // Bind and execute bulk operation (single statement, multiple parameters)
