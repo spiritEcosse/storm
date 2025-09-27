@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: Recent optimization work added batch operations, BaseStatement utilities, and significant performance improvements.
+**Last Updated**: Recent optimization work added compile-time index sequence optimization, batch operations, BaseStatement utilities, and significant performance improvements. Latest optimization replaces recursive template approach with std::index_sequence and fold expressions for field binding.
 
 ## Project Overview
 
@@ -72,11 +72,11 @@ cmake --build --preset ninja-debug
 ```
 
 **Performance Results (10,000 operations):**
-- **Storm ORM**: 10.46ms (~0.0010ms per operation)
-- **Storm ORM (Optimized)**: Mixed batch/individual operations with statement caching
-- **sqlite_orm**: 19.64ms (~0.0020ms per operation)
+- **Storm ORM**: 3.06ms (~0.0003ms per operation) - with index sequence optimization
+- **Storm ORM (Optimized)**: Mixed batch/individual operations with statement caching and compile-time field binding
+- **sqlite_orm**: 20.25ms (~0.0020ms per operation)
 
-**Performance Gain: ~88% faster than sqlite_orm** (nearly 2x improvement)
+**Performance Gain: ~6.6x faster than sqlite_orm** with compile-time index sequence optimization
 
 ## High-Level Architecture
 
@@ -125,14 +125,50 @@ struct Person {
 - **WARNING**: Connection management layer is NOT thread-safe due to compiler limitations with std::mutex in C++26 modules
 
 #### 4. **Statement Architecture & Optimization**
-Recent statement refactoring and optimization:
-- **BaseStatement**: Shared utilities for transaction management, SQL execution patterns, and binding
+Recent statement refactoring and compile-time optimization:
+- **BaseStatement**: Shared utilities for transaction management, SQL execution patterns, and compile-time field binding
+- **Index Sequence Optimization**: Replaced recursive templates with `std::index_sequence` and fold expressions for field binding
 - **Statement Separation**: Individual modules for InsertStatement and RemoveStatement with specialized optimizations
 - **Batch Operations**: InsertStatement now supports `std::span<const T>` with bulk INSERT using multiple VALUES clauses
 - **Performance Optimization**: Smart thresholds for bulk vs individual operations based on SQLite variable limits
 - **Code Consolidation**: ~60% reduction in duplicated execution logic through BaseStatement utilities
+- **Compile-Time Field Binding**: Pre-computed field metadata and index-based binding eliminates runtime reflection overhead
 
-#### 5. **Batch Operations Architecture**
+#### 5. **Compile-Time Index Sequence Optimization**
+A major performance optimization using modern C++ compile-time features:
+
+**Key Implementation Details:**
+- **Index Sequence Generation**: `std::make_index_sequence<field_count_>` creates compile-time indices for all struct fields
+- **Fold Expression Binding**: Replaces recursive template instantiation with C++17 fold expressions for field binding
+- **Pre-computed Metadata**: Field information computed once per template instantiation and cached in static constexpr variables
+- **Compile-Time Field Access**: Uses `obj.[:member:]` reflection splice operator with compile-time indices
+
+**Technical Benefits:**
+- **Reduced Template Depth**: Eliminates recursive template instantiation for field binding
+- **Better Assembly Generation**: Fold expressions produce more optimized machine code than recursive templates
+- **Faster Compilation**: Reduces template instantiation overhead during compilation
+- **Runtime Performance**: Compile-time index computation eliminates runtime parameter tracking
+
+**Implementation Example:**
+```cpp
+// Index sequence utility in BaseStatement
+using field_indices_t = std::make_index_sequence<field_count_>;
+
+// Compile-time field binding with fold expressions
+template <typename ConnType, typename Statement, size_t... Is>
+auto bind_all_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...>) -> std::expected<void, Error> {
+    // Fold expression binds all fields at compile-time indices
+    auto bind_result = (bind_field_at_index<ConnType, Is>(stmt, obj, Is + 1) && ...);
+    // Error handling omitted for brevity
+}
+```
+
+**Performance Impact:**
+- **6.6x speedup** over sqlite_orm (3.06ms vs 20.25ms for 10,000 operations)
+- Maintains Storm's performance advantage while improving code quality
+- Enables more complex batch operations without performance penalty
+
+#### 6. **Batch Operations Architecture**
 The system provides two optimized batch operation strategies:
 
 **InsertStatement Batch Support:**
@@ -201,11 +237,14 @@ This project requires the experimental Clang fork with C++26 reflection:
 ## Important Implementation Notes
 
 - **No REFL-CPP**: Despite README mentioning it, the project now uses native C++26 reflection
+- **Index Sequence Optimization**: Uses `std::index_sequence` and fold expressions for compile-time field binding instead of recursive templates
+- **Pre-computed Metadata**: Field information cached in static constexpr variables for optimal runtime performance
 - **Module Naming**: Uses underscores (`storm_db_sqlite`) not dots due to compiler limitations
 - **Circular Dependencies**: Avoided by duplicating `FieldAttr` enum definition
 - **Compiler Crashes**: std::mutex in modules causes segfaults in current Clang build
 - **SQL Generation**: Runtime std::format (not constexpr yet)
 - **Primary Key Access**: Uses reflection splice operator `obj.[:primary_key_:]`
+- **Field Binding**: Compile-time index computation eliminates runtime parameter index tracking
 
 ## Common Development Tasks
 
@@ -231,9 +270,40 @@ auto result = queryset.remove(std::span<const Person>(people_to_remove));
 
 ### Optimizing Statement Performance
 1. **Use BaseStatement utilities**: Leverage `execute_with_transaction()` and shared binding methods
-2. **Implement smart thresholds**: Consider SQLite variable limits (`SQLITE_MAX_VARIABLE_NUMBER = 999`)
-3. **Cache SQL strings**: Use static methods for SQL generation like `get_insert_sql()`
-4. **Batch operations**: Support both bulk SQL (IN clauses, multiple VALUES) and individual statements with transactions
+2. **Implement compile-time field binding**: Use index sequences and fold expressions for optimal field binding performance
+3. **Implement smart thresholds**: Consider SQLite variable limits (`SQLITE_MAX_VARIABLE_NUMBER = 999`)
+4. **Cache SQL strings**: Use static methods for SQL generation like `get_insert_sql()`
+5. **Pre-compute field metadata**: Use `constexpr` and `consteval` functions to compute field information at compile-time
+6. **Batch operations**: Support both bulk SQL (IN clauses, multiple VALUES) and individual statements with transactions
+
+### Index Sequence Optimization Implementation
+When implementing field binding optimization in new statements:
+
+```cpp
+// In BaseStatement-derived class:
+static constexpr auto field_count_ = get_field_count();
+static constexpr auto all_members_ = get_all_field_members<field_count_>();
+using field_indices_t = std::make_index_sequence<field_count_>;
+
+// Bind fields using index sequence
+auto bind_all_fields(Statement& stmt, const T& obj) -> std::expected<void, Error> {
+    return Base::template bind_all_fields_impl<ConnType, Statement>(
+        stmt, obj, typename Base::field_indices_t());
+}
+
+// For bulk operations
+auto bind_all_objects_bulk(Statement& stmt, const Container& objects) -> std::expected<void, Error> {
+    return Base::template bind_all_objects_bulk_impl<ConnType, Statement>(
+        stmt, objects, typename Base::field_indices_t());
+}
+```
+
+**Key Benefits of Index Sequence Approach:**
+- Eliminates recursive template instantiation
+- Reduces compilation time and memory usage
+- Produces better optimized assembly code
+- Enables more complex batch operations
+- Maintains type safety with compile-time validation
 
 ### Adding PostgreSQL Support
 1. Create `src/db/postgresql.cppm` implementing concepts

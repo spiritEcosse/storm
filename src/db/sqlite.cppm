@@ -112,7 +112,7 @@ export namespace storm::db::sqlite {
     };
 
     class Connection {
-        using SqlitePtr = std::unique_ptr<sqlite3, SqliteDeleter>;
+        using SqlitePtr      = std::unique_ptr<sqlite3, SqliteDeleter>;
         using StatementCache = std::unordered_map<std::string, Statement>;
 
       public:
@@ -123,8 +123,9 @@ export namespace storm::db::sqlite {
         [[nodiscard]] static auto open(std::string_view db_path) noexcept -> std::expected<Connection, Error> {
             sqlite3* raw_db = nullptr;
             // Add SQLITE_OPEN_FULLMUTEX for serialized mode (thread-safe)
-            int      rc     = sqlite3_open_v2(
-                    db_path.data(), &raw_db,
+            int rc = sqlite3_open_v2(
+                    db_path.data(),
+                    &raw_db,
                     SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_URI | SQLITE_OPEN_FULLMUTEX,
                     nullptr
             );
@@ -212,11 +213,7 @@ export namespace storm::db::sqlite {
         // Pre-populate statement cache with common operations
         void prepare_common_statements() noexcept {
             // Common patterns that benefit from pre-compilation
-            static const std::vector<std::string> common_patterns = {
-                "BEGIN TRANSACTION",
-                "COMMIT",
-                "ROLLBACK"
-            };
+            static const std::vector<std::string> common_patterns = {"BEGIN TRANSACTION", "COMMIT", "ROLLBACK"};
 
             for (const auto& sql : common_patterns) {
                 // Pre-populate cache (ignore errors for optional optimization)
@@ -231,9 +228,8 @@ export namespace storm::db::sqlite {
             }
 
             // For common operations, try to use cached prepared statements for better performance
-            static const std::unordered_set<std::string_view> cached_operations = {
-                "BEGIN TRANSACTION", "COMMIT", "ROLLBACK"
-            };
+            static const std::unordered_set<std::string_view> cached_operations =
+                    {"BEGIN TRANSACTION", "COMMIT", "ROLLBACK"};
 
             if (cached_operations.contains(sql)) {
                 auto stmt_result = prepare_cached(sql);
