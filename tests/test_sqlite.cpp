@@ -206,8 +206,8 @@ TEST_F(QuerySetRemoveTest, InsertSinglePerson) {
     auto result = queryset.insert(dave);
 
     // Verify insertion was successful
-    ASSERT_TRUE(result.has_value()) << "Insert operation should succeed: " <<
-        (result.has_value() ? "success" : result.error().message());
+    ASSERT_TRUE(result.has_value()) << "Insert operation should succeed: "
+                                    << (result.has_value() ? "success" : result.error().message());
 
     // Verify Dave now exists in database
     EXPECT_TRUE(personExists(4)) << "Dave should exist after insertion";

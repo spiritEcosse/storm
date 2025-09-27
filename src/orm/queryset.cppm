@@ -29,12 +29,10 @@ export namespace storm {
         }
     } // namespace detail
 
-    template <class T, storm::db::DatabaseConnection ConnType = storm::db::sqlite::Connection>
-    class QuerySet {
+    template <class T, storm::db::DatabaseConnection ConnType = storm::db::sqlite::Connection> class QuerySet {
         using Error = typename ConnType::Error;
 
       public:
-
         // Default constructor using default connection
         QuerySet()
             requires std::same_as<ConnType, storm::db::sqlite::Connection>
@@ -92,7 +90,7 @@ export namespace storm {
         }
 
         [[nodiscard]] std::expected<void, Error> execute_insert(const T& obj) const noexcept {
-            return orm::statements::InsertStatement<T, ConnType>(conn_).execute(obj);
+            return orm::statements::InsertStatement<T, ConnType>(conn_).execute(std::span<const T>{&obj, 1});
         }
 
         ConnType& conn_;
@@ -102,6 +100,5 @@ export namespace storm {
     template <typename T> [[nodiscard]] auto make_queryset() -> QuerySet<T> {
         return QuerySet<T>{};
     }
-
 
 } // namespace storm
