@@ -10,10 +10,9 @@ import <utility>;
 export namespace storm::orm::utilities {
 
     // Compile-time string utility for SQL generation
-    template<size_t N>
-    struct ConstexprString {
+    template <size_t N> struct ConstexprString {
         std::array<char, N> data{};
-        size_t len = 0;
+        size_t              len = 0;
 
         consteval ConstexprString() = default;
 
@@ -23,7 +22,7 @@ export namespace storm::orm::utilities {
                 data[i] = str[i];
                 ++i;
             }
-            len = i;
+            len       = i;
             data[len] = '\0';
         }
 
@@ -54,8 +53,7 @@ export namespace storm::orm::utilities {
     };
 
     // Generic thread-local SQL cache template
-    template<typename KeyType = size_t, size_t CACHE_SIZE = 8>
-    struct SQLCache {
+    template <typename KeyType = size_t, size_t CACHE_SIZE = 8> struct SQLCache {
         struct Entry {
             KeyType     key{};
             std::string sql;
@@ -101,8 +99,7 @@ export namespace storm::orm::utilities {
     using BulkSQLCache = SQLCache<size_t, 8>;
 
     // Helper function for building SQL placeholders at compile-time
-    template<size_t N>
-    consteval ConstexprString<N> build_placeholders_string(size_t count) {
+    template <size_t N> consteval ConstexprString<N> build_placeholders_string(size_t count) {
         ConstexprString<N> result;
 
         for (size_t i = 0; i < count; ++i) {
@@ -117,13 +114,13 @@ export namespace storm::orm::utilities {
 
     // Helper function for calculating placeholder string size
     consteval size_t calculate_placeholders_size(size_t count) {
-        if (count == 0) return 1; // Null terminator
+        if (count == 0)
+            return 1;                               // Null terminator
         return (count * 1) + ((count - 1) * 2) + 1; // count * "?" + (count-1) * ", " + null terminator
     }
 
     // Helper function for building SQL IN clause placeholders
-    template<size_t N>
-    consteval ConstexprString<N> build_in_clause_string(size_t count) {
+    template <size_t N> consteval ConstexprString<N> build_in_clause_string(size_t count) {
         ConstexprString<N> result;
         result.append("(");
 
@@ -140,7 +137,8 @@ export namespace storm::orm::utilities {
 
     // Helper function for calculating IN clause size
     consteval size_t calculate_in_clause_size(size_t count) {
-        if (count == 0) return 3; // "()" + null terminator
+        if (count == 0)
+            return 3;                                   // "()" + null terminator
         return 2 + (count * 1) + ((count - 1) * 1) + 1; // "()" + count * "?" + (count-1) * "," + null terminator
     }
 
