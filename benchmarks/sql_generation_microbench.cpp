@@ -1,36 +1,12 @@
-#include <chrono>
-#include <iostream>
-#include <vector>
-#include <iomanip>
-#include <string>
+#include "benchmark_utils.hpp"
 
 import storm;
 import <span>;
 import <expected>;
 
-class MicroBenchmarkTimer {
-public:
-    MicroBenchmarkTimer() : start_(std::chrono::high_resolution_clock::now()) {}
+using namespace storm::benchmark;
 
-    double elapsed_ns() const {
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start_);
-        return duration.count();
-    }
-
-    double elapsed_us() const {
-        return elapsed_ns() / 1000.0;
-    }
-
-    void reset() {
-        start_ = std::chrono::high_resolution_clock::now();
-    }
-
-private:
-    std::chrono::high_resolution_clock::time_point start_;
-};
-
-// Test struct for Storm ORM
+// Define the actual Person struct with Storm imports
 struct Person {
     [[= storm::meta::FieldAttr::primary]] int id;
     std::string name;
@@ -51,13 +27,7 @@ void benchmark_sql_generation() {
     }
 
     auto& conn = storm::QuerySet<Person>::get_default_connection();
-    auto create_result = conn.execute(
-        "CREATE TABLE Person ("
-        "id INTEGER PRIMARY KEY, "
-        "name TEXT NOT NULL, "
-        "age INTEGER NOT NULL"
-        ")"
-    );
+    auto create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
 
     // Create QuerySet to trigger template instantiation
     auto queryset = storm::QuerySet<Person>{};
@@ -77,11 +47,7 @@ void benchmark_sql_generation() {
         // Measure SQL generation time
         // Note: We can't access the static method directly, so we simulate the workload
         // by creating a person vector and calling the insert operation
-        std::vector<Person> persons;
-        persons.reserve(batch_size);
-        for (size_t i = 0; i < batch_size; ++i) {
-            persons.push_back({static_cast<int>(i + 1), "Test" + std::to_string(i), 25});
-        }
+        std::vector<Person> persons = data_utils::generate_test_data_range<Person>(batch_size, 1);
 
         timer.reset();
 
@@ -121,11 +87,7 @@ void benchmark_sql_generation() {
         std::vector<double> times;
         times.reserve(iterations);
 
-        std::vector<Person> persons;
-        persons.reserve(batch_size);
-        for (size_t i = 0; i < batch_size; ++i) {
-            persons.push_back({static_cast<int>(i + 1), "Test" + std::to_string(i), 25});
-        }
+        std::vector<Person> persons = data_utils::generate_test_data_range<Person>(batch_size, 1);
 
         for (int i = 0; i < iterations; ++i) {
             // Update IDs to avoid conflicts
