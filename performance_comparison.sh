@@ -181,7 +181,7 @@ fi
 
 # Build Storm benchmarks (may need individual building due to clang-scan-deps issues)
 print_step "Building Storm ORM benchmarks..."
-if cmake --build --preset ninja-debug --target bench_storm --target bench_storm_optimized; then
+if cmake --build --preset ninja-debug --target bench_storm; then
     print_success "Storm ORM benchmarks built successfully"
 else
     print_warning "Building Storm benchmarks individually due to potential clang-scan-deps issues..."
@@ -192,17 +192,11 @@ else
     # Clean temporary files that might cause issues
     rm -f build/debug/benchmarks/CMakeFiles/bench_storm*/bench_storm*.cpp.o.ddi.tmp 2>/dev/null || true
 
-    # Build each Storm benchmark individually
+    # Build Storm benchmark
     if cmake --build --preset ninja-debug --target bench_storm; then
         print_success "bench_storm built successfully"
     else
         print_error "Failed to build bench_storm"
-    fi
-
-    if cmake --build --preset ninja-debug --target bench_storm_optimized; then
-        print_success "bench_storm_optimized built successfully"
-    else
-        print_error "Failed to build bench_storm_optimized"
     fi
 fi
 
@@ -210,7 +204,7 @@ echo ""
 
 # Step 3: Verify all executables exist
 print_step "Step 3: Verifying benchmark executables..."
-EXECUTABLES=("bench_sqlite" "bench_sqlite_orm" "bench_storm" "bench_storm_optimized")
+EXECUTABLES=("bench_sqlite" "bench_sqlite_orm" "bench_storm")
 MISSING_EXECUTABLES=()
 
 for exe in "${EXECUTABLES[@]}"; do
@@ -360,56 +354,6 @@ else
     bulk_deletes+=("")
 fi
 
-# Storm ORM Optimized metrics
-if [[ -x "build/debug/benchmarks/bench_storm_optimized" ]]; then
-    STORM_OPT_OUTPUT=$(./build/debug/benchmarks/bench_storm_optimized)
-
-    # Extract INSERT operations
-    STORM_OPT_SINGLE=$(echo "$STORM_OPT_OUTPUT" | grep -A4 "Storm ORM - Single INSERT 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
-    STORM_OPT_BATCH=$(echo "$STORM_OPT_OUTPUT" | grep -A7 "Storm ORM - Batch INSERT 10000 records" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
-
-    # Extract DELETE operations - try throughput format first
-    STORM_OPT_DELETE_SINGLE=$(echo "$STORM_OPT_OUTPUT" | grep -A4 "Storm ORM - Single DELETE 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
-    STORM_OPT_DELETE_BULK=$(echo "$STORM_OPT_OUTPUT" | grep -A7 "Storm ORM - Batch DELETE 10000 records" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
-
-    # If throughput format not found, try time-based format and convert
-    if [[ -z "$STORM_OPT_DELETE_SINGLE" ]]; then
-        STORM_OPT_DELETE_SINGLE_TIME=$(echo "$STORM_OPT_OUTPUT" | grep -A10 "Remove 10000 records:" | grep "Individual removes" -A2 | grep "Average per remove:" | sed 's/.*Average per remove: //' | sed 's/ ms//' | head -1)
-        if [[ -n "$STORM_OPT_DELETE_SINGLE_TIME" ]] && [[ "$STORM_OPT_DELETE_SINGLE_TIME" != "0" ]]; then
-            STORM_OPT_DELETE_SINGLE=$(echo "1000 / $STORM_OPT_DELETE_SINGLE_TIME" | bc -l | cut -d. -f1)
-        fi
-    fi
-
-    if [[ -z "$STORM_OPT_DELETE_BULK" ]]; then
-        STORM_OPT_DELETE_BULK_TIME=$(echo "$STORM_OPT_OUTPUT" | grep -A10 "Remove 10000 records:" | grep "Batch removes" -A2 | grep "Average per remove:" | sed 's/.*Average per remove: //' | sed 's/ ms//' | head -1)
-        if [[ -n "$STORM_OPT_DELETE_BULK_TIME" ]] && [[ "$STORM_OPT_DELETE_BULK_TIME" != "0" ]]; then
-            STORM_OPT_DELETE_BULK=$(echo "1000 / $STORM_OPT_DELETE_BULK_TIME" | bc -l | cut -d. -f1)
-        fi
-    fi
-
-    # Calculate performance percentage
-    STORM_OPT_PERCENTAGE=$(calculate_percentage "$STORM_OPT_SINGLE" "$BASELINE_SINGLE_INSERT")
-
-    # Debug output
-    if [[ -n "$DEBUG_MODE" ]]; then
-        echo "DEBUG Storm ORM Optimized - Single: '$STORM_OPT_SINGLE', Batch: '$STORM_OPT_BATCH', Delete Single: '$STORM_OPT_DELETE_SINGLE', Delete Bulk: '$STORM_OPT_DELETE_BULK'" >&2
-    fi
-
-    # Store Storm ORM Optimized results
-    benchmark_names+=("Storm ORM (Optimized)")
-    performance_percentages+=("$STORM_OPT_PERCENTAGE")
-    single_inserts+=("$STORM_OPT_SINGLE")
-    batch_inserts+=("$STORM_OPT_BATCH")
-    single_deletes+=("$STORM_OPT_DELETE_SINGLE")
-    bulk_deletes+=("$STORM_OPT_DELETE_BULK")
-else
-    benchmark_names+=("Storm ORM (Optimized)")
-    performance_percentages+=("0")
-    single_inserts+=("")
-    batch_inserts+=("")
-    single_deletes+=("")
-    bulk_deletes+=("")
-fi
 
 # Now that baseline is set, calculate Raw SQLite percentage
 if [[ -n "$SQLITE_SINGLE" && -n "$BASELINE_SINGLE_INSERT" ]]; then
@@ -519,8 +463,7 @@ echo "To re-run individual benchmarks (without rebuilding):"
 echo "  ./build/debug/benchmarks/bench_sqlite          # Raw SQLite baseline"
 echo "  ./build/debug/benchmarks/bench_sqlite_orm      # sqlite_orm comparison"
 echo "  ./build/debug/benchmarks/bench_storm           # Storm ORM standard"
-echo "  ./build/debug/benchmarks/bench_storm_optimized # Storm ORM with optimizations"
-echo "  ./build/debug/benchmarks/bench_insert_optimization # Cache optimization analysis"
 echo ""
-echo "For detailed batch performance analysis:"
-echo "  ./build/debug/benchmarks/bench_insert_optimization"
+echo "For detailed optimization analysis:"
+echo "  ./build/debug/benchmarks/bench_storm --mode=cache-analysis      # SQL cache performance testing"
+echo "  ./build/debug/benchmarks/bench_storm --mode=optimization-test   # Comprehensive optimization testing"
