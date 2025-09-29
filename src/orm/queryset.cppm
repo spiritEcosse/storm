@@ -47,6 +47,11 @@ export namespace storm {
             return execute_insert(obj);
         }
 
+        // Bulk insert operations
+        std::expected<void, Error> insert(std::span<const T> objects) {
+            return execute_insert_batch(objects);
+        }
+
         // Static methods for connection management
         // NOTE: These methods are NOT thread-safe. For multi-threaded use:
         // 1. Use external synchronization (mutex/lock) around these calls, OR
@@ -91,6 +96,10 @@ export namespace storm {
 
         [[nodiscard]] std::expected<void, Error> execute_insert(const T& obj) const noexcept {
             return orm::statements::InsertStatement<T, ConnType>(conn_).execute(std::span<const T>{&obj, 1});
+        }
+
+        [[nodiscard]] std::expected<void, Error> execute_insert_batch(std::span<const T> objects) const noexcept {
+            return orm::statements::InsertStatement<T, ConnType>(conn_).execute(objects);
         }
 
         ConnType& conn_;

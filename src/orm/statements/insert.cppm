@@ -24,8 +24,8 @@ import <type_traits>;
 export namespace storm::orm::statements {
 
     // Import utilities for code convenience
-    using storm::orm::utilities::ConstexprString;
     using storm::orm::utilities::BulkSQLCache;
+    using storm::orm::utilities::ConstexprString;
 
     // Statement class for ORM insert operations
     template <typename T, storm::db::DatabaseConnection ConnType> class InsertStatement : private BaseStatement<T> {
@@ -69,30 +69,30 @@ export namespace storm::orm::statements {
         // Compile-time SQL size calculation
         static consteval size_t calculate_insert_sql_size() {
             size_t size = 0;
-            size += 12;  // "INSERT INTO "
+            size += 12; // "INSERT INTO "
 
             // Table name length
             size += Base::table_name_.size();
 
-            size += 2;   // " ("
+            size += 2; // " ("
 
             // Field names length
             size += field_names_.size();
 
-            size += 10;  // ") VALUES ("
+            size += 10; // ") VALUES ("
 
             // Placeholders length
             size += placeholders_.size();
 
-            size += 1;   // ")"
-            size += 1;   // null terminator
+            size += 1; // ")"
+            size += 1; // null terminator
 
             return size;
         }
 
         // Build INSERT SQL at compile-time using ConstexprString
         static consteval auto build_insert_sql_array() {
-            constexpr size_t sql_size = calculate_insert_sql_size() + 100; // Add buffer for safety
+            constexpr size_t          sql_size = calculate_insert_sql_size() + 100; // Add buffer for safety
             ConstexprString<sql_size> result;
 
             result.append("INSERT INTO ");
@@ -107,8 +107,40 @@ export namespace storm::orm::statements {
         }
 
         // Pre-computed INSERT SQL generated at compile-time
-        static constexpr auto insert_sql_array = build_insert_sql_array();
+        static constexpr auto           insert_sql_array  = build_insert_sql_array();
         static inline const std::string insert_sql_string = std::string(insert_sql_array);
+
+        // Compile-time bulk INSERT prefix calculation
+        static consteval size_t calculate_bulk_insert_prefix_size() {
+            size_t size = 0;
+            size += 12; // "INSERT INTO "
+            size += Base::table_name_.size();
+            size += 2; // " ("
+            size += field_names_.size();
+            size += 10; // ") VALUES "
+            size += 1;  // null terminator
+            return size;
+        }
+
+        // Build bulk INSERT prefix at compile-time using ConstexprString
+        static consteval auto build_bulk_insert_prefix() {
+            constexpr size_t prefix_size = calculate_bulk_insert_prefix_size() + 50; // Add buffer for safety
+            ConstexprString<prefix_size> result;
+
+            result.append("INSERT INTO ");
+            result.append(Base::table_name_);
+            result.append(" (");
+            result.append(field_names_);
+            result.append(") VALUES ");
+
+            return result;
+        }
+
+        // Pre-computed bulk INSERT prefix generated at compile-time
+        static constexpr auto           bulk_insert_prefix_array = build_bulk_insert_prefix();
+        static inline const std::string bulk_insert_prefix       = std::string(bulk_insert_prefix_array);
+        static constexpr size_t         bulk_insert_prefix_size =
+                calculate_bulk_insert_prefix_size() - 1; // Exclude null terminator
 
         // Generate INSERT SQL string (compile-time computed, runtime accessible)
         static const std::string& get_insert_sql() {
@@ -131,18 +163,17 @@ export namespace storm::orm::statements {
             value_template += placeholders_;
             value_template += ")";
 
-            // Calculate exact size needed
-            const size_t base_size = std::format("INSERT INTO {} ({}) VALUES ", Base::table_name_, field_names_).size();
+            // Calculate exact size needed using pre-computed prefix size
             const size_t value_size     = value_template.size();
             const size_t separator_size = 2; // ", "
-            const size_t total_size     = base_size + (value_size * count) + (separator_size * (count - 1));
+            const size_t total_size = bulk_insert_prefix_size + (value_size * count) + (separator_size * (count - 1));
 
             // Reserve exact memory upfront
             std::string sql;
             sql.reserve(total_size);
 
-            // Build SQL with minimal allocations
-            sql = std::format("INSERT INTO {} ({}) VALUES ", Base::table_name_, field_names_);
+            // Build SQL with minimal allocations using pre-computed prefix
+            sql = bulk_insert_prefix;
             for (size_t i = 0; i < count; ++i) {
                 if (i > 0) {
                     sql += ", ";

@@ -213,3 +213,106 @@ TEST_F(QuerySetRemoveTest, InsertSinglePerson) {
     EXPECT_TRUE(personExists(4)) << "Dave should exist after insertion";
     EXPECT_EQ(countPersons(), 4) << "Should have 4 persons after insertion";
 }
+
+// Bulk insert tests to verify compile-time SQL prefix optimization
+TEST_F(QuerySetRemoveTest, InsertSmallBatch) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Create a small batch (should use bulk INSERT with VALUES)
+    std::vector<Person> small_batch = {
+        {4, "Dave", 40},
+        {5, "Eve", 35},
+        {6, "Frank", 45}
+    };
+
+    // Verify initial state
+    EXPECT_EQ(countPersons(), 3) << "Should have 3 persons initially";
+
+    // Insert batch using QuerySet.insert() with span
+    auto result = queryset.insert(std::span<const Person>(small_batch));
+
+    // Verify batch insertion was successful
+    ASSERT_TRUE(result.has_value()) << "Batch insert operation should succeed: "
+                                    << (result.has_value() ? "success" : result.error().message());
+
+    // Verify all persons now exist in database
+    EXPECT_EQ(countPersons(), 6) << "Should have 6 persons after batch insertion";
+    EXPECT_TRUE(personExists(4)) << "Dave should exist after batch insertion";
+    EXPECT_TRUE(personExists(5)) << "Eve should exist after batch insertion";
+    EXPECT_TRUE(personExists(6)) << "Frank should exist after batch insertion";
+}
+
+TEST_F(QuerySetRemoveTest, InsertMediumBatch) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Create a medium batch (25 objects - should still use bulk INSERT)
+    std::vector<Person> medium_batch;
+    for (int i = 4; i <= 28; ++i) {
+        medium_batch.push_back({i, "Person" + std::to_string(i), 20 + (i % 30)});
+    }
+
+    // Verify initial state
+    EXPECT_EQ(countPersons(), 3) << "Should have 3 persons initially";
+
+    // Insert batch using QuerySet.insert() with span
+    auto result = queryset.insert(std::span<const Person>(medium_batch));
+
+    // Verify batch insertion was successful
+    ASSERT_TRUE(result.has_value()) << "Medium batch insert operation should succeed: "
+                                    << (result.has_value() ? "success" : result.error().message());
+
+    // Verify all persons now exist in database
+    EXPECT_EQ(countPersons(), 28) << "Should have 28 persons after medium batch insertion";
+    EXPECT_TRUE(personExists(4)) << "First inserted person should exist";
+    EXPECT_TRUE(personExists(28)) << "Last inserted person should exist";
+    EXPECT_TRUE(personExists(15)) << "Middle inserted person should exist";
+}
+
+TEST_F(QuerySetRemoveTest, InsertLargeBatch) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Create a large batch (60 objects - should use individual inserts with transaction)
+    std::vector<Person> large_batch;
+    for (int i = 4; i <= 63; ++i) {
+        large_batch.push_back({i, "Person" + std::to_string(i), 20 + (i % 30)});
+    }
+
+    // Verify initial state
+    EXPECT_EQ(countPersons(), 3) << "Should have 3 persons initially";
+
+    // Insert batch using QuerySet.insert() with span
+    auto result = queryset.insert(std::span<const Person>(large_batch));
+
+    // Verify batch insertion was successful
+    ASSERT_TRUE(result.has_value()) << "Large batch insert operation should succeed: "
+                                    << (result.has_value() ? "success" : result.error().message());
+
+    // Verify all persons now exist in database
+    EXPECT_EQ(countPersons(), 63) << "Should have 63 persons after large batch insertion";
+    EXPECT_TRUE(personExists(4)) << "First inserted person should exist";
+    EXPECT_TRUE(personExists(63)) << "Last inserted person should exist";
+    EXPECT_TRUE(personExists(30)) << "Middle inserted person should exist";
+}
+
+TEST_F(QuerySetRemoveTest, InsertEmptyBatch) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Create an empty batch
+    std::vector<Person> empty_batch;
+
+    // Verify initial state
+    EXPECT_EQ(countPersons(), 3) << "Should have 3 persons initially";
+
+    // Insert empty batch using QuerySet.insert() with span
+    auto result = queryset.insert(std::span<const Person>(empty_batch));
+
+    // Verify operation succeeds for empty batch
+    ASSERT_TRUE(result.has_value()) << "Empty batch insert operation should succeed";
+
+    // Verify database state unchanged
+    EXPECT_EQ(countPersons(), 3) << "Should still have 3 persons after empty batch insertion";
+}
