@@ -61,7 +61,8 @@ export namespace storm::orm::statements {
             std::string sql;
 
             // Pre-calculate size for efficient allocation
-            const size_t base_size = std::format("DELETE FROM {} WHERE {} IN ()", Base::table_name_, Base::pk_name_).size();
+            const size_t base_size =
+                    std::format("DELETE FROM {} WHERE {} IN ()", Base::table_name_, Base::pk_name_).size();
             const size_t placeholders_size = (count * 1) + ((count - 1) * 1); // count * "?" + (count-1) * ","
             sql.reserve(base_size + placeholders_size);
 
