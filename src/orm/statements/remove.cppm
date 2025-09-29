@@ -84,9 +84,9 @@ export namespace storm::orm::statements {
       public:
         explicit RemoveStatement(Connection& conn) : conn_(conn) {}
 
-        [[nodiscard]] auto execute(std::span<const T> objects) noexcept -> std::expected<bool, Error> {
+        [[nodiscard]] auto execute(std::span<const T> objects) noexcept -> std::expected<void, Error> {
             if (objects.empty()) {
-                return true;
+                return {};
             }
 
             // Use BaseStatement's generic batch execution
@@ -94,21 +94,21 @@ export namespace storm::orm::statements {
         }
 
         // Bulk execute using IN clause for better performance on small batches
-        [[nodiscard]] auto execute_bulk(std::span<const T> objects) noexcept -> std::expected<bool, Error> {
+        [[nodiscard]] auto execute_bulk(std::span<const T> objects) noexcept -> std::expected<void, Error> {
             auto bulk_sql = get_bulk_delete_sql(objects.size());
 
-            return conn_.prepare(bulk_sql).and_then([this, objects](Statement stmt) -> std::expected<bool, Error> {
+            return conn_.prepare(bulk_sql).and_then([this, objects](Statement stmt) -> std::expected<void, Error> {
                 return bind_and_execute_bulk(std::move(stmt), objects);
             });
         }
 
       protected: // Changed to protected so BaseStatement can access
         // Execute individual deletes for large batches (with transaction)
-        [[nodiscard]] auto execute_individual_batch(std::span<const T> objects) noexcept -> std::expected<bool, Error> {
+        [[nodiscard]] auto execute_individual_batch(std::span<const T> objects) noexcept -> std::expected<void, Error> {
             return Base::template execute_with_transaction<ConnType>(
-                    conn_, Base::should_use_transaction(objects), [this, objects]() -> std::expected<bool, Error> {
+                    conn_, Base::should_use_transaction(objects), [this, objects]() -> std::expected<void, Error> {
                         return Base::template execute_with_statement<ConnType>(
-                                conn_, get_delete_sql(), [this, objects](auto& stmt) -> std::expected<bool, Error> {
+                                conn_, get_delete_sql(), [this, objects](auto& stmt) -> std::expected<void, Error> {
                                     for (const auto& obj : objects) {
                                         // Monadic composition: reset → bind → execute
                                         if (auto result = Base::reset_bind_and_execute(
@@ -118,7 +118,7 @@ export namespace storm::orm::statements {
                                             return std::unexpected(result.error());
                                         }
                                     }
-                                    return true;
+                                    return {};
                                 }
                         );
                     }
@@ -127,7 +127,7 @@ export namespace storm::orm::statements {
 
         // Bind and execute bulk operation (single statement, multiple parameters)
         [[nodiscard]] auto bind_and_execute_bulk(Statement stmt, std::span<const T> objects) noexcept
-                -> std::expected<bool, Error> {
+                -> std::expected<void, Error> {
             // Bind all primary key values
             int param_index = 1;
             for (const auto& obj : objects) {
@@ -142,7 +142,7 @@ export namespace storm::orm::statements {
                 return std::unexpected(result.error());
             }
 
-            return true;
+            return {};
         }
 
         // Bind primary key value at specific parameter index
