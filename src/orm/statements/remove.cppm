@@ -6,6 +6,7 @@ module;
 export module storm_orm_statements_remove;
 
 import storm_orm_statements_base;
+import storm_orm_utilities;
 import storm_db_concept;
 import storm_db_sqlite;
 
@@ -19,6 +20,9 @@ import <meta>;
 import <type_traits>;
 
 export namespace storm::orm::statements {
+
+    // Import utilities for code convenience
+    using storm::orm::utilities::BulkSQLCache;
 
     // Statement class for ORM remove operations
     template <typename T, storm::db::DatabaseConnection ConnType> class RemoveStatement : private BaseStatement<T> {
@@ -45,12 +49,35 @@ export namespace storm::orm::statements {
                 return get_delete_sql();
             }
 
-            std::string placeholders = "?";
-            for (size_t i = 1; i < count; ++i) {
-                placeholders += ",?";
+            // Thread-local cache for common batch sizes
+            static thread_local BulkSQLCache cache;
+
+            // Check cache first
+            if (auto* cached = cache.find(count)) {
+                return *cached;
             }
 
-            return std::format("DELETE FROM {} WHERE {} IN ({})", Base::table_name_, Base::pk_name_, placeholders);
+            // Cache miss - generate SQL with optimized string building
+            std::string sql;
+
+            // Pre-calculate size for efficient allocation
+            const size_t base_size = std::format("DELETE FROM {} WHERE {} IN ()", Base::table_name_, Base::pk_name_).size();
+            const size_t placeholders_size = (count * 1) + ((count - 1) * 1); // count * "?" + (count-1) * ","
+            sql.reserve(base_size + placeholders_size);
+
+            // Build SQL efficiently
+            sql = std::format("DELETE FROM {} WHERE {} IN (", Base::table_name_, Base::pk_name_);
+            for (size_t i = 0; i < count; ++i) {
+                if (i > 0) {
+                    sql += ",";
+                }
+                sql += "?";
+            }
+            sql += ")";
+
+            // Store in cache
+            cache.insert(count, sql);
+            return sql;
         }
 
       public:
