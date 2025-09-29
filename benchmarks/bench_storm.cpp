@@ -252,7 +252,7 @@ void benchmark_storm_orm_single_delete(int num_records, const BenchmarkConfig& c
         auto result = queryset.remove(person);
         double elapsed = timer.elapsed_ms();
 
-        if (result.has_value() && result.value()) {
+        if (result.has_value()) {
             successful_deletes++;
             total_time += elapsed;
         }
@@ -334,7 +334,7 @@ void benchmark_storm_orm_batch_delete(int num_records, const BenchmarkConfig& co
             bool batch_success = true;
             for (size_t j = i; j < end_idx; ++j) {
                 auto result = queryset.remove(persons[j]);
-                if (!result.has_value() || !result.value()) {
+                if (!result.has_value()) {
                     batch_success = false;
                     break;
                 }
@@ -419,7 +419,7 @@ void benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& co
         auto result = queryset.remove(persons[i]);
         double elapsed = timer.elapsed_ms();
 
-        if (result.has_value() && result.value()) {
+        if (result.has_value()) {
             successful_removes_individual++;
             total_time_individual += elapsed;
         }
@@ -440,7 +440,7 @@ void benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& co
         size_t end_idx = std::min(i + batch_size, remaining_persons.size());
         for (size_t j = i; j < end_idx; ++j) {
             auto result = queryset.remove(remaining_persons[j]);
-            if (result.has_value() && result.value()) {
+            if (result.has_value()) {
                 successful_removes_batch++;
             }
         }
