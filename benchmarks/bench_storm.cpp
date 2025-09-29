@@ -6,6 +6,7 @@
 
 import storm;
 import <expected>;
+import <span>;
 
 class BenchmarkTimer {
 public:
@@ -32,7 +33,9 @@ struct Person {
     int age;
 };
 
-void benchmark_storm_orm_remove(int num_records) {
+void benchmark_storm_orm_single_insert(int num_records) {
+    std::cout << "=== Storm ORM Single INSERT Benchmark ===\n";
+
     // Setup Storm ORM connection
     auto result = storm::QuerySet<Person>::set_default_connection(":memory:");
     if (!result.has_value()) {
@@ -57,57 +60,139 @@ void benchmark_storm_orm_remove(int num_records) {
     // Prepare data
     std::vector<Person> persons;
     persons.reserve(num_records);
-
-    // Insert test data
-    (void)conn.execute("BEGIN TRANSACTION");
     for (int i = 1; i <= num_records; ++i) {
         persons.push_back({i, "Person" + std::to_string(i), 20 + (i % 50)});
-        (void)conn.execute(
-            "INSERT INTO Person (id, name, age) VALUES (" +
-            std::to_string(i) + ", 'Person" + std::to_string(i) + "', " +
-            std::to_string(20 + (i % 50)) + ")"
-        );
     }
-    (void)conn.execute("COMMIT");
 
     // Create QuerySet
     auto queryset = storm::QuerySet<Person>{};
 
-    // Benchmark removal
+    // Benchmark single INSERT operations
     BenchmarkTimer timer;
     double total_time = 0;
-    int successful_removes = 0;
+    int successful_inserts = 0;
 
     for (const auto& person : persons) {
         timer.reset();
-        auto result = queryset.remove(person);
+        auto result = queryset.insert(person);
         double elapsed = timer.elapsed_ms();
 
-        if (result.has_value() && result.value()) {
-            successful_removes++;
+        if (result.has_value()) {
+            successful_inserts++;
             total_time += elapsed;
         }
     }
 
     // Report results
-    std::cout << "Storm ORM - Remove " << num_records << " records:\n";
+    std::cout << "Storm ORM - Single INSERT " << num_records << " records:\n";
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms\n";
-    std::cout << "  Average per remove: " << std::fixed << std::setprecision(4)
-              << (total_time / successful_removes) << " ms\n";
-    std::cout << "  Successful removes: " << successful_removes << "/" << num_records << "\n";
+    std::cout << "  Average per insert: " << std::fixed << std::setprecision(4)
+              << (total_time / successful_inserts) << " ms\n";
+    std::cout << "  Successful inserts: " << successful_inserts << "/" << num_records << "\n";
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+              << (successful_inserts / (total_time / 1000.0)) << " inserts/sec\n";
 
     // Cleanup
     storm::QuerySet<Person>::clear_default_connection();
 }
 
+void benchmark_storm_orm_batch_insert(int num_records) {
+    std::cout << "=== Storm ORM Batch INSERT Benchmark ===\n";
+
+    // Test different batch sizes to find optimal performance
+    const std::vector<size_t> batch_sizes = {1, 10, 25, 50, 100, 500, 1000};
+
+    for (size_t batch_size : batch_sizes) {
+        if (batch_size > static_cast<size_t>(num_records)) continue;
+
+        std::cout << "\n--- Batch size: " << batch_size << " ---\n";
+
+        // Setup Storm ORM connection
+        auto result = storm::QuerySet<Person>::set_default_connection(":memory:");
+        if (!result.has_value()) {
+            std::cerr << "Failed to set Storm connection: " << result.error().message() << std::endl;
+            continue;
+        }
+
+        // Create table
+        auto& conn = storm::QuerySet<Person>::get_default_connection();
+        auto create_result = conn.execute(
+            "CREATE TABLE Person ("
+            "id INTEGER PRIMARY KEY, "
+            "name TEXT NOT NULL, "
+            "age INTEGER NOT NULL"
+            ")"
+        );
+        if (!create_result.has_value()) {
+            std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
+            storm::QuerySet<Person>::clear_default_connection();
+            continue;
+        }
+
+        // Prepare data
+        std::vector<Person> persons;
+        persons.reserve(num_records);
+        for (int i = 1; i <= num_records; ++i) {
+            persons.push_back({i, "Person" + std::to_string(i), 20 + (i % 50)});
+        }
+
+        // Create QuerySet
+        auto queryset = storm::QuerySet<Person>{};
+
+        // Benchmark batch INSERT operations
+        BenchmarkTimer timer;
+        double total_time = 0;
+        int successful_inserts = 0;
+        int batch_count = 0;
+
+        for (size_t i = 0; i < persons.size(); i += batch_size) {
+            size_t end_idx = std::min(i + batch_size, persons.size());
+            std::span<const Person> batch(persons.data() + i, end_idx - i);
+
+            timer.reset();
+            auto result = queryset.insert(batch);
+            double elapsed = timer.elapsed_ms();
+
+            if (result.has_value()) {
+                successful_inserts += batch.size();
+                total_time += elapsed;
+                batch_count++;
+            }
+        }
+
+        // Report results
+        std::cout << "Storm ORM - Batch INSERT " << num_records << " records (batch size " << batch_size << "):\n";
+        std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms\n";
+        std::cout << "  Average per insert: " << std::fixed << std::setprecision(4)
+                  << (total_time / successful_inserts) << " ms\n";
+        std::cout << "  Average per batch: " << std::fixed << std::setprecision(4)
+                  << (total_time / batch_count) << " ms\n";
+        std::cout << "  Successful inserts: " << successful_inserts << "/" << num_records << "\n";
+        std::cout << "  Batch count: " << batch_count << "\n";
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+                  << (successful_inserts / (total_time / 1000.0)) << " inserts/sec\n";
+
+        // Cleanup
+        storm::QuerySet<Person>::clear_default_connection();
+    }
+}
+
 int main() {
-    std::cout << "=== Storm ORM Benchmark ===\n\n";
+    std::cout << "=== Storm ORM INSERT Benchmark ===\n\n";
 
     const std::vector<int> test_sizes = {1000, 5000, 10000};
 
     for (int size : test_sizes) {
-        std::cout << "--- Testing with " << size << " records ---\n";
-        benchmark_storm_orm_remove(size);
+        std::cout << "========================================\n";
+        std::cout << "Testing with " << size << " records\n";
+        std::cout << "========================================\n\n";
+
+        // Test single INSERT operations
+        benchmark_storm_orm_single_insert(size);
+        std::cout << "\n\n";
+
+        // Test batch INSERT operations with different batch sizes
+        benchmark_storm_orm_batch_insert(size);
         std::cout << "\n\n";
     }
 

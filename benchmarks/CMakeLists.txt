@@ -46,65 +46,53 @@ target_compile_options(sqlite_orm_wrapper PRIVATE
 )
 target_link_options(sqlite_orm_wrapper PRIVATE -stdlib=libstdc++)
 
+# Helper function for C++20 benchmarks with system clang
+function(add_system_clang_benchmark target_name source_file)
+    add_executable(${target_name} "${CMAKE_CURRENT_SOURCE_DIR}/${source_file}")
+    link_sqlite(${target_name})
+    set_target_properties(${target_name} PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+        CXX_COMPILER /usr/bin/clang++
+        LINK_OPTIONS "-stdlib=libstdc++"
+    )
+    target_compile_options(${target_name} PRIVATE
+        -fno-modules
+        -stdlib=libstdc++
+    )
+    target_link_libraries(${target_name} PRIVATE pthread)
+endfunction()
+
+# Helper function for Storm ORM benchmarks with custom clang
+function(add_storm_benchmark target_name source_file)
+    add_executable(${target_name} "${CMAKE_CURRENT_SOURCE_DIR}/${source_file}")
+    target_link_libraries(${target_name} PRIVATE
+        storm
+        pthread
+    )
+    link_sqlite(${target_name})
+    apply_clang_flags(${target_name})
+    target_include_directories(${target_name} PRIVATE
+        "${CMAKE_SOURCE_DIR}/src"
+    )
+endfunction()
+
 # Build separate benchmark executables to avoid module conflicts
 
 # SQLite-only benchmark (C++20, system clang, libstdc++)
-add_executable(bench_sqlite "${CMAKE_CURRENT_SOURCE_DIR}/bench_sqlite.cpp")
-link_sqlite(bench_sqlite)
-set_target_properties(bench_sqlite PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-    CXX_COMPILER /usr/bin/clang++
-    LINK_OPTIONS "-stdlib=libstdc++"
-)
-target_compile_options(bench_sqlite PRIVATE
-    -fno-modules
-    -stdlib=libstdc++
-)
+add_system_clang_benchmark(bench_sqlite "bench_sqlite.cpp")
 
 # sqlite_orm benchmark (C++20, system clang, libstdc++)
-add_executable(bench_sqlite_orm "${CMAKE_CURRENT_SOURCE_DIR}/bench_sqlite_orm.cpp")
-target_link_libraries(bench_sqlite_orm PRIVATE
-    sqlite_orm_wrapper
-    pthread
-)
-link_sqlite(bench_sqlite_orm)
-set_target_properties(bench_sqlite_orm PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-    CXX_COMPILER /usr/bin/clang++
-    LINK_OPTIONS "-stdlib=libstdc++"
-)
-target_compile_options(bench_sqlite_orm PRIVATE
-    -fno-modules
-    -stdlib=libstdc++
-)
+add_system_clang_benchmark(bench_sqlite_orm "bench_sqlite_orm.cpp")
+target_link_libraries(bench_sqlite_orm PRIVATE sqlite_orm_wrapper)
 target_include_directories(bench_sqlite_orm PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"  # For sqlite_orm_wrapper.h
 )
 
-# Storm ORM benchmark (C++26, custom clang, libc++)
-add_executable(bench_storm "${CMAKE_CURRENT_SOURCE_DIR}/bench_storm.cpp")
-target_link_libraries(bench_storm PRIVATE
-    storm
-    pthread
-)
-link_sqlite(bench_storm)
-apply_clang_flags(bench_storm)
-target_include_directories(bench_storm PRIVATE
-    "${CMAKE_SOURCE_DIR}/src"
-)
+# Storm ORM benchmarks (C++26, custom clang, libc++)
+add_storm_benchmark(bench_storm "bench_storm.cpp")
+add_storm_benchmark(bench_storm_optimized "bench_storm_optimized.cpp")
+add_storm_benchmark(bench_insert_optimization "benchmark_insert_optimization.cpp")
+add_storm_benchmark(sql_generation_microbench "sql_generation_microbench.cpp")
 
-# Storm ORM optimized benchmark (C++26, custom clang, libc++)
-add_executable(bench_storm_optimized "${CMAKE_CURRENT_SOURCE_DIR}/bench_storm_optimized.cpp")
-target_link_libraries(bench_storm_optimized PRIVATE
-    storm
-    pthread
-)
-link_sqlite(bench_storm_optimized)
-apply_clang_flags(bench_storm_optimized)
-target_include_directories(bench_storm_optimized PRIVATE
-    "${CMAKE_SOURCE_DIR}/src"
-)
-
-message(STATUS "Benchmark executables: bench_sqlite, bench_sqlite_orm, bench_storm, bench_storm_optimized")
+message(STATUS "Benchmark executables: bench_sqlite, bench_sqlite_orm, bench_storm, bench_storm_optimized, bench_insert_optimization, sql_generation_microbench")
