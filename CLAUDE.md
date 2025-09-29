@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: Latest optimization work implements compile-time SQL prefix generation, bulk INSERT operations with ConstexprString, enhanced benchmarking infrastructure, and comprehensive performance validation. New features include compile-time SQL size calculation, pre-computed bulk INSERT prefixes, and specialized micro-benchmarks for cache performance analysis.
+**Last Updated**: Latest optimization work implements a dedicated SQL generation performance analysis tool, compile-time SQL prefix generation, bulk INSERT operations with ConstexprString, enhanced benchmarking infrastructure, and comprehensive performance validation. New features include compile-time SQL size calculation, pre-computed bulk INSERT prefixes, specialized micro-benchmarks for cache performance analysis, and a fully formatted SQL generation performance analysis script.
 
 ## Project Overview
 
@@ -63,6 +63,9 @@ cmake --build --preset ninja-debug
 
 # Run comprehensive performance comparison (recommended)
 ./performance_comparison.sh    # Builds and runs all benchmarks with formatted results
+
+# Run specialized analysis tools
+./sql_generation_analysis.sh   # Detailed SQL generation performance analysis with formatted tables
 
 # Or run individual benchmarks
 ./build/debug/benchmarks/bench_storm              # Storm ORM with comprehensive INSERT/DELETE tests
@@ -280,12 +283,23 @@ Comprehensive performance testing and validation framework:
 - **bench_insert_optimization**: Specialized INSERT optimization analysis with cache performance testing
 - **sql_generation_microbench**: Micro-benchmark for SQL generation performance and cache effectiveness
 - **performance_comparison.sh**: Enhanced script with colored output, performance percentages, and comprehensive metrics
+- **sql_generation_analysis.sh**: Specialized SQL generation analysis tool with detailed cache performance metrics
 
 **Benchmark Features:**
 - **Color-Coded Performance**: Visual indicators for performance tiers (Excellent/Good/Acceptable/Poor)
 - **Comprehensive Metrics**: Single INSERT, batch INSERT, single DELETE, and bulk DELETE performance
 - **Cache Analysis**: Detailed testing of thread-local SQL cache effectiveness
 - **Cross-Platform Results**: Formatted tables with proper ANSI escape code handling
+
+**SQL Generation Analysis Features (sql_generation_analysis.sh):**
+- **Batch Size Performance Analysis**: Detailed timing analysis for different batch sizes with color-coded results
+- **Cache Effectiveness Testing**: 100-iteration tests showing average/min/max timing and speedup calculations
+- **Cache Hit/Miss Visualization**: Visual indicators showing cache effectiveness for common batch sizes
+- **Optimization Impact Analysis**: Summary of implemented optimizations with checkmarks
+- **Performance Tier Color Coding**: Time ranges color-coded from excellent (<50μs) to slow (>200μs)
+- **Standalone Operation**: Runs independently without cross-ORM comparisons, focusing purely on internal performance
+- **Auto-Build Integration**: Automatically builds sql_generation_microbench if not present
+- **Formatted Table Output**: Professional formatting with ANSI escape code handling and proper column alignment
 
 **Performance Validation:**
 - **Reproducible Results**: Consistent methodology across all benchmark runs
@@ -583,10 +597,13 @@ cmake --build --preset ninja-debug
 # 2. Run comprehensive performance comparison
 ./performance_comparison.sh
 
-# 3. Analyze specific optimizations
+# 3. Analyze SQL generation performance with detailed formatting
+./sql_generation_analysis.sh
+
+# 4. Analyze specific optimizations
 ./build/debug/benchmarks/bench_insert_optimization
 
-# 4. Test SQL generation performance
+# 5. Test SQL generation performance (raw output)
 ./build/debug/benchmarks/sql_generation_microbench
 ```
 
@@ -603,6 +620,53 @@ cmake --build --preset ninja-debug
 - **Batch Operations**: 2-3M operations/sec with proper caching and bulk SQL
 - **Cache Hit Rate**: >90% for common batch sizes (1, 10, 25, 50)
 - **Memory Efficiency**: Zero unnecessary allocations during SQL generation
+
+### Analyzing SQL Generation Performance
+The `sql_generation_analysis.sh` script provides detailed insights into SQL generation performance and cache effectiveness:
+
+```bash
+# Run comprehensive SQL generation analysis
+./sql_generation_analysis.sh
+```
+
+**Key Analysis Features:**
+- **Batch Size Performance**: Shows timing for different batch sizes (1, 10, 25, 50, 100, 200, 500, 1000)
+- **Cache Hit/Miss Analysis**: Visual indicators for cache effectiveness with green checkmarks for hits
+- **Performance Color Coding**:
+  - Green (<50μs): Excellent performance (likely cache hit)
+  - Blue (50-100μs): Good performance (optimized generation)
+  - Yellow (100-200μs): Acceptable performance (cache miss, small batch)
+  - Red (>200μs): Slow performance (large batch generation)
+- **Cache Effectiveness Testing**: 100-iteration tests showing average/min/max timing and speedup calculations
+- **Optimization Impact Summary**: Visual checklist of implemented optimizations
+
+**When to Use SQL Generation Analysis:**
+- Validating cache performance improvements
+- Testing new batch size optimizations
+- Debugging SQL generation bottlenecks
+- Documenting performance characteristics for new features
+- Regression testing after optimization changes
+
+**Sample Analysis Output:**
+```
+▶ BATCH SIZE PERFORMANCE ANALYSIS
+┌────────────┬─────────────────────┬─────────────────┬──────────────┐
+│ Batch Size │ SQL Gen Time (μs)   │ Cache Status    │ SQL Length   │
+├────────────┼─────────────────────┼─────────────────┼──────────────┤
+│         1  │            0.016 μs │  ✓ Cache Hit    │        47    │
+│        10  │            0.018 μs │  ✓ Cache Hit    │       119    │
+│        25  │            0.021 μs │  ✓ Cache Hit    │       236    │
+│        50  │            0.028 μs │  ✓ Cache Hit    │       452    │
+│       100  │          195.234 μs │  ✗ Cache Miss   │       893    │
+└────────────┴─────────────────────┴─────────────────┴──────────────┘
+```
+
+**Performance Optimization Workflow:**
+1. Run `./sql_generation_analysis.sh` to establish baseline
+2. Implement optimizations (caching, compile-time generation, etc.)
+3. Re-run analysis to measure improvement
+4. Focus on batch sizes showing "Cache Miss" status
+5. Validate that common batch sizes (1, 10, 25, 50) show excellent performance
 
 ### Adding PostgreSQL Support
 1. Create `src/db/postgresql.cppm` implementing concepts
