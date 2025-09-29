@@ -38,7 +38,7 @@ export namespace storm {
             requires std::same_as<ConnType, storm::db::sqlite::Connection>
             : conn_(get_default_connection()) {}
 
-        std::expected<bool, Error> remove(const T& obj) {
+        std::expected<void, Error> remove(const T& obj) {
             return execute_remove(std::span<const T>{&obj, 1});
         }
 
@@ -90,7 +90,7 @@ export namespace storm {
         }
 
       private:
-        [[nodiscard]] std::expected<bool, Error> execute_remove(std::span<const T> objects) const noexcept {
+        [[nodiscard]] std::expected<void, Error> execute_remove(std::span<const T> objects) const noexcept {
             return orm::statements::RemoveStatement<T, ConnType>(conn_).execute(objects);
         }
 
