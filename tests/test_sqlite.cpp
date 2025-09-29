@@ -106,7 +106,7 @@ TEST_F(QuerySetRemoveTest, RemoveExistingPerson) {
 
     // Verify removal was successful
     ASSERT_TRUE(result.has_value()) << "Remove operation should succeed for existing person";
-    EXPECT_TRUE(result.value()) << "Remove should return true for successful operation";
+    // No need to check result.value() for void std::expected - success is indicated by has_value()
 
     // Verify Alice no longer exists
     EXPECT_FALSE(personExists(1)) << "Alice should not exist after removal";
@@ -155,13 +155,13 @@ TEST_F(QuerySetRemoveTest, RemoveMultiplePersonsSequentially) {
     // Remove Alice using QuerySet.remove()
     auto result1 = queryset.remove(alice);
     ASSERT_TRUE(result1.has_value()) << "First remove should succeed";
-    EXPECT_TRUE(result1.value()) << "First remove should return true";
+    // No need to check result1.value() for void std::expected - success is indicated by has_value()
     EXPECT_EQ(countPersons(), 2) << "Should have 2 persons after first removal";
 
     // Remove Bob using QuerySet.remove()
     auto result2 = queryset.remove(bob);
     ASSERT_TRUE(result2.has_value()) << "Second remove should succeed";
-    EXPECT_TRUE(result2.value()) << "Second remove should return true";
+    // No need to check result2.value() for void std::expected - success is indicated by has_value()
     EXPECT_EQ(countPersons(), 1) << "Should have 1 person after second removal";
 
     // Verify only Charlie remains
@@ -220,11 +220,7 @@ TEST_F(QuerySetRemoveTest, InsertSmallBatch) {
     auto queryset = storm::QuerySet<Person>{};
 
     // Create a small batch (should use bulk INSERT with VALUES)
-    std::vector<Person> small_batch = {
-        {4, "Dave", 40},
-        {5, "Eve", 35},
-        {6, "Frank", 45}
-    };
+    std::vector<Person> small_batch = {{4, "Dave", 40}, {5, "Eve", 35}, {6, "Frank", 45}};
 
     // Verify initial state
     EXPECT_EQ(countPersons(), 3) << "Should have 3 persons initially";
