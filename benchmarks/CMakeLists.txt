@@ -74,6 +74,7 @@ function(add_storm_benchmark target_name source_file)
     apply_clang_flags(${target_name})
     target_include_directories(${target_name} PRIVATE
         "${CMAKE_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/common"  # Common benchmark utilities
     )
 endfunction()
 
@@ -91,8 +92,6 @@ target_include_directories(bench_sqlite_orm PRIVATE
 
 # Storm ORM benchmarks (C++26, custom clang, libc++)
 add_storm_benchmark(bench_storm "bench_storm.cpp")
-add_storm_benchmark(bench_storm_optimized "bench_storm_optimized.cpp")
-add_storm_benchmark(bench_insert_optimization "benchmark_insert_optimization.cpp")
 add_storm_benchmark(sql_generation_microbench "sql_generation_microbench.cpp")
 
-message(STATUS "Benchmark executables: bench_sqlite, bench_sqlite_orm, bench_storm, bench_storm_optimized, bench_insert_optimization, sql_generation_microbench")
+message(STATUS "Benchmark executables: bench_sqlite, bench_sqlite_orm, bench_storm, sql_generation_microbench")
