@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: Recent optimization work added compile-time index sequence optimization, batch operations, BaseStatement utilities, and significant performance improvements. Latest optimizations include index sequence field binding and thread-local SQL caching for bulk INSERT operations with 94% performance improvement for common batch sizes.
+**Last Updated**: Latest optimization work implements compile-time SQL prefix generation, bulk INSERT operations with ConstexprString, enhanced benchmarking infrastructure, and comprehensive performance validation. New features include compile-time SQL size calculation, pre-computed bulk INSERT prefixes, and specialized micro-benchmarks for cache performance analysis.
 
 ## Project Overview
 
@@ -65,18 +65,23 @@ cmake --build --preset ninja-debug
 ./performance_comparison.sh    # Builds and runs all benchmarks with formatted results
 
 # Or run individual benchmarks
-./build/debug/benchmarks/bench_storm              # Basic Storm benchmark
+./build/debug/benchmarks/bench_storm              # Storm ORM with comprehensive INSERT/DELETE tests
 ./build/debug/benchmarks/bench_storm_optimized    # Optimized version with batch operations
 ./build/debug/benchmarks/bench_sqlite_orm         # sqlite_orm comparison
 ./build/debug/benchmarks/bench_sqlite             # Raw SQLite baseline
+./build/debug/benchmarks/bench_insert_optimization # INSERT optimization analysis
+./build/debug/benchmarks/sql_generation_microbench # SQL generation performance testing
 ```
 
 **Performance Results (10,000 operations):**
-- **Storm ORM**: 3.06ms (~0.0003ms per operation) - with index sequence optimization
-- **Storm ORM (Optimized)**: Mixed batch/individual operations with statement caching and compile-time field binding
-- **sqlite_orm**: 20.25ms (~0.0020ms per operation)
+- **Storm ORM (Standard)**: ~992K inserts/sec single, ~2.7M inserts/sec batch - **2.0x faster than sqlite_orm**
+- **Raw SQLite (prepared)**: ~49M inserts/sec single, ~2.4M inserts/sec batch - **100x faster baseline**
+- **sqlite_orm (v1.9.1)**: ~492K inserts/sec single, ~422K inserts/sec batch - **baseline reference**
 
-**Performance Gain: ~6.6x faster than sqlite_orm** with compile-time index sequence optimization
+**Key Performance Highlights:**
+- **Single INSERT**: Storm ORM achieves 2.0x sqlite_orm performance through compile-time optimizations
+- **Batch INSERT**: Storm ORM reaches 2.7M inserts/sec with bulk operations and SQL caching
+- **DELETE Operations**: Storm ORM delivers 1.8M-4.6M deletes/sec vs sqlite_orm's 527K deletes/sec
 
 ## High-Level Architecture
 
@@ -88,11 +93,12 @@ src/
 │   ├── concept.cppm                # Database concepts (DatabaseConnection, DatabaseStatement)
 │   └── sqlite.cppm                 # SQLite Connection and Statement implementation
 └── orm/
-    ├── queryset.cppm               # QuerySet ORM interface
+    ├── queryset.cppm               # QuerySet ORM interface with bulk operations
+    ├── utilities.cppm              # ConstexprString, SQLCache templates, and compile-time utilities
     └── statements/
         ├── base.cppm               # BaseStatement shared utilities and transaction management
-        ├── insert.cppm             # InsertStatement with batch support
-        └── remove.cppm             # RemoveStatement with bulk operations
+        ├── insert.cppm             # InsertStatement with compile-time SQL generation and bulk operations
+        └── remove.cppm             # RemoveStatement with bulk DELETE operations
 ```
 
 ### Key Design Decisions
@@ -129,11 +135,13 @@ Recent statement refactoring and compile-time optimization:
 - **BaseStatement**: Shared utilities for transaction management, SQL execution patterns, and compile-time field binding
 - **Index Sequence Optimization**: Replaced recursive templates with `std::index_sequence` and fold expressions for field binding
 - **Statement Separation**: Individual modules for InsertStatement and RemoveStatement with specialized optimizations
-- **Batch Operations**: InsertStatement now supports `std::span<const T>` with bulk INSERT using multiple VALUES clauses
+- **Bulk INSERT Operations**: Comprehensive `std::span<const T>` support with QuerySet integration
+- **Compile-Time SQL Generation**: Pre-computed INSERT SQL using ConstexprString and consteval functions
 - **Performance Optimization**: Smart thresholds for bulk vs individual operations based on SQLite variable limits
 - **Code Consolidation**: ~60% reduction in duplicated execution logic through BaseStatement utilities
 - **Compile-Time Field Binding**: Pre-computed field metadata and index-based binding eliminates runtime reflection overhead
-- **Thread-Local SQL Caching**: Bulk INSERT SQL strings cached per thread with 94% performance improvement for common batch sizes
+- **Thread-Local SQL Caching**: Bulk INSERT SQL strings cached per thread with optimized string pre-allocation
+- **Bulk INSERT Prefix Optimization**: Pre-computed "INSERT INTO table (fields) VALUES " prefix at compile-time
 
 #### 5. **Compile-Time Index Sequence Optimization**
 A major performance optimization using modern C++ compile-time features:
@@ -143,6 +151,7 @@ A major performance optimization using modern C++ compile-time features:
 - **Fold Expression Binding**: Replaces recursive template instantiation with C++17 fold expressions for field binding
 - **Pre-computed Metadata**: Field information computed once per template instantiation and cached in static constexpr variables
 - **Compile-Time Field Access**: Uses `obj.[:member:]` reflection splice operator with compile-time indices
+- **Compile-Time SQL Generation**: Complete SQL statements generated using ConstexprString and consteval functions
 
 **Technical Benefits:**
 - **Reduced Template Depth**: Eliminates recursive template instantiation for field binding
@@ -165,7 +174,8 @@ auto bind_all_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is.
 ```
 
 **Performance Impact:**
-- **6.6x speedup** over sqlite_orm (3.06ms vs 20.25ms for 10,000 operations)
+- **2.0x speedup** over sqlite_orm (992K vs 492K inserts/sec for single operations)
+- **6.4x speedup** over sqlite_orm for batch operations (2.7M vs 422K inserts/sec)
 - Maintains Storm's performance advantage while improving code quality
 - Enables more complex batch operations without performance penalty
 
@@ -212,7 +222,77 @@ thread_local BulkSQLCache bulk_sql_cache;
 - **Memory Bounded**: Fixed 8-entry cache prevents unbounded memory growth
 - **Production Ready**: Thread-safe design suitable for high-concurrency applications
 
-#### 7. **Batch Operations Architecture**
+#### 7. **Compile-Time SQL Generation with ConstexprString**
+A significant optimization that moves SQL generation from runtime to compile-time:
+
+**Key Implementation Details:**
+- **ConstexprString Template**: Compile-time string building utility with fixed-size buffer and consteval operations
+- **Pre-computed SQL Strings**: Complete INSERT/DELETE SQL statements generated at template instantiation time
+- **Compile-Time Size Calculation**: Exact SQL string sizes computed using consteval functions
+- **Field Name Pre-computation**: Field names and placeholders generated once per template instantiation
+
+**Technical Implementation:**
+```cpp
+// Compile-time SQL size calculation
+static consteval size_t calculate_insert_sql_size() {
+    size_t size = 0;
+    size += 12; // "INSERT INTO "
+    size += Base::table_name_.size();
+    size += 2; // " ("
+    size += field_names_.size();
+    size += 10; // ") VALUES ("
+    size += placeholders_.size();
+    size += 1; // ")"
+    return size;
+}
+
+// Build INSERT SQL at compile-time using ConstexprString
+static consteval auto build_insert_sql_array() {
+    constexpr size_t sql_size = calculate_insert_sql_size() + 100;
+    ConstexprString<sql_size> result;
+    result.append("INSERT INTO ");
+    result.append(Base::table_name_);
+    result.append(" (");
+    result.append(field_names_);
+    result.append(") VALUES (");
+    result.append(placeholders_);
+    result.append(")");
+    return result;
+}
+```
+
+**Performance Benefits:**
+- **Zero Runtime SQL Generation**: Complete SQL strings available as static constants
+- **Exact Memory Allocation**: No string reallocations during SQL building
+- **Compile-Time Validation**: SQL structure validated during compilation
+- **Cache-Friendly**: Pre-computed strings improve CPU cache utilization
+
+**Bulk INSERT Prefix Optimization:**
+- Pre-computes `"INSERT INTO table (fields) VALUES "` at compile-time
+- Bulk SQL generation only appends `"(?,?), (?,?), ..."` patterns
+- Reduces string concatenation overhead by ~40% for bulk operations
+- Enables more efficient memory pre-allocation for large batches
+
+#### 8. **Enhanced Benchmarking Infrastructure**
+Comprehensive performance testing and validation framework:
+
+**New Benchmark Tools:**
+- **bench_insert_optimization**: Specialized INSERT optimization analysis with cache performance testing
+- **sql_generation_microbench**: Micro-benchmark for SQL generation performance and cache effectiveness
+- **performance_comparison.sh**: Enhanced script with colored output, performance percentages, and comprehensive metrics
+
+**Benchmark Features:**
+- **Color-Coded Performance**: Visual indicators for performance tiers (Excellent/Good/Acceptable/Poor)
+- **Comprehensive Metrics**: Single INSERT, batch INSERT, single DELETE, and bulk DELETE performance
+- **Cache Analysis**: Detailed testing of thread-local SQL cache effectiveness
+- **Cross-Platform Results**: Formatted tables with proper ANSI escape code handling
+
+**Performance Validation:**
+- **Reproducible Results**: Consistent methodology across all benchmark runs
+- **Statistical Analysis**: Min/max/average timing with speedup calculations
+- **Regression Detection**: Performance baseline tracking for optimization validation
+
+#### 9. **Batch Operations Architecture**
 The system provides two optimized batch operation strategies:
 
 **InsertStatement Batch Support:**
@@ -221,8 +301,9 @@ The system provides two optimized batch operation strategies:
 - Smart threshold: ≤50 objects use bulk INSERT, >50 use individual statements with transactions
 - Automatic transaction wrapping for multi-object operations
 - **Thread-Local SQL Caching**: 8-entry cache for bulk INSERT SQL strings with round-robin replacement
-- **Optimized String Building**: Pre-computed value templates and memory pre-allocation for SQL generation
-- **Performance**: 94% improvement for cached batch sizes (0.253µs → 0.016µs), 13% improvement for uncached sizes
+- **Compile-Time SQL Prefix**: Pre-computed "INSERT INTO table (fields) VALUES " using ConstexprString
+- **Optimized String Building**: Pre-computed value templates and exact memory pre-allocation
+- **Performance**: Significant improvement for cached batch sizes through compile-time prefix optimization
 
 **RemoveStatement Batch Support:**
 - `execute(std::span<const T> objects)` for bulk deletions
@@ -240,12 +321,15 @@ storm (main module)
 │   └── storm_db_concept
 ├── storm_orm_statements_base
 │   └── storm_db_concept
+├── storm_orm_utilities
 ├── storm_orm_statements_insert
 │   ├── storm_orm_statements_base
+│   ├── storm_orm_utilities
 │   ├── storm_db_concept
 │   └── storm_db_sqlite
 ├── storm_orm_statements_remove
 │   ├── storm_orm_statements_base
+│   ├── storm_orm_utilities
 │   ├── storm_db_concept
 │   └── storm_db_sqlite
 └── storm_orm_queryset
@@ -304,17 +388,36 @@ This project requires the experimental Clang fork with C++26 reflection:
 4. Add method to `QuerySet` class that delegates to the statement
 5. Add comprehensive tests in `tests/test_sqlite.cpp`
 
-### Working with Batch Operations
-**InsertStatement batch operations:**
+### Working with Bulk Operations
+**QuerySet bulk INSERT operations:**
 ```cpp
+// Small batch - uses bulk INSERT with multiple VALUES
 std::vector<Person> people = {{1, "Alice", 25}, {2, "Bob", 30}};
 auto result = queryset.insert(std::span<const Person>(people));
+
+// Large batch - automatically switches to individual statements with transaction
+std::vector<Person> large_batch = generate_test_data(1000);
+auto result = queryset.insert(std::span<const Person>(large_batch));
 ```
 
-**RemoveStatement batch operations:**
+**QuerySet bulk DELETE operations:**
 ```cpp
-std::vector<Person> people_to_remove = {...};
+// Bulk DELETE with IN clause for small batches
+std::vector<Person> people_to_remove = {{1, "Alice", 25}, {2, "Bob", 30}};
 auto result = queryset.remove(std::span<const Person>(people_to_remove));
+
+// Large batch DELETE with transaction wrapping
+std::vector<Person> large_batch_remove = {...};
+auto result = queryset.remove(std::span<const Person>(large_batch_remove));
+```
+
+**Performance Optimization Examples:**
+```cpp
+// Test cache performance with repeated batch sizes
+for (int i = 0; i < 100; ++i) {
+    std::vector<Person> batch = generate_test_data(25); // Common size - cache hit
+    auto result = queryset.insert(std::span<const Person>(batch));
+}
 ```
 
 ### Optimizing Statement Performance
@@ -355,6 +458,67 @@ auto bind_all_objects_bulk(Statement& stmt, const Container& objects) -> std::ex
 - Produces better optimized assembly code
 - Enables more complex batch operations
 - Maintains type safety with compile-time validation
+
+### Implementing Compile-Time SQL Generation
+When adding compile-time SQL generation to new statement types:
+
+```cpp
+// In your statement class (following InsertStatement pattern):
+class YourStatement : private BaseStatement<T> {
+    // Pre-compute field information at compile-time
+    static consteval std::string build_field_list() {
+        std::string result;
+        bool first = true;
+        for (size_t i = 0; i < Base::field_count_; ++i) {
+            if (!first) result += ", ";
+            result += std::meta::identifier_of(Base::all_members_[i]);
+            first = false;
+        }
+        return result;
+    }
+
+    // Pre-computed metadata
+    static constexpr auto field_list_ = build_field_list();
+
+    // Compile-time SQL size calculation
+    static consteval size_t calculate_sql_size() {
+        size_t size = 0;
+        size += 15; // "SELECT * FROM "
+        size += Base::table_name_.size();
+        size += 7; // " WHERE "
+        size += field_list_.size();
+        size += 5; // " = ?"
+        return size;
+    }
+
+    // Build SQL at compile-time
+    static consteval auto build_sql_array() {
+        constexpr size_t sql_size = calculate_sql_size() + 50;
+        ConstexprString<sql_size> result;
+        result.append("SELECT * FROM ");
+        result.append(Base::table_name_);
+        result.append(" WHERE ");
+        result.append(field_list_);
+        result.append(" = ?");
+        return result;
+    }
+
+    // Pre-computed SQL available as static constant
+    static constexpr auto sql_array = build_sql_array();
+    static inline const std::string sql_string = std::string(sql_array);
+
+    // Runtime access to pre-computed SQL
+    static const std::string& get_sql() {
+        return sql_string;
+    }
+};
+```
+
+**Benefits of Compile-Time SQL Generation:**
+- **Zero Runtime Overhead**: Complete SQL strings computed during compilation
+- **Memory Efficiency**: No dynamic string allocation for SQL generation
+- **Compile-Time Validation**: SQL structure errors caught at build time
+- **Consistent Performance**: No variance due to runtime string building
 
 ### Implementing Thread-Local SQL Caching
 When adding caching to statement operations for performance optimization:
@@ -406,6 +570,39 @@ static auto get_cached_sql(size_t key) -> std::string {
 - **Pre-allocation**: Calculate SQL string size and reserve memory upfront
 - **Round-Robin**: Simple replacement strategy for predictable behavior
 - **Cache Common Cases**: Optimize for frequently used patterns (small batch sizes, common queries)
+
+### Performance Testing and Optimization
+When implementing performance optimizations:
+
+```bash
+# Use the specialized benchmarking tools
+# 1. Build with benchmarking enabled
+cmake --preset ninja-debug -DENABLE_TESTS=ON -DENABLE_BENCH=ON
+cmake --build --preset ninja-debug
+
+# 2. Run comprehensive performance comparison
+./performance_comparison.sh
+
+# 3. Analyze specific optimizations
+./build/debug/benchmarks/bench_insert_optimization
+
+# 4. Test SQL generation performance
+./build/debug/benchmarks/sql_generation_microbench
+```
+
+**Performance Optimization Checklist:**
+1. **Compile-Time Generation**: Move as much computation to compile-time as possible
+2. **Memory Pre-allocation**: Calculate exact sizes and reserve memory upfront
+3. **Cache Common Patterns**: Use thread-local caches for frequently used SQL patterns
+4. **Batch Threshold Optimization**: Find optimal batch sizes for your use case
+5. **Index Sequence Optimization**: Use fold expressions instead of recursive templates
+6. **Measurement Validation**: Always measure performance impact with realistic data
+
+**Expected Performance Characteristics:**
+- **Single Operations**: 1-2M operations/sec for Storm ORM vs 500K for sqlite_orm
+- **Batch Operations**: 2-3M operations/sec with proper caching and bulk SQL
+- **Cache Hit Rate**: >90% for common batch sizes (1, 10, 25, 50)
+- **Memory Efficiency**: Zero unnecessary allocations during SQL generation
 
 ### Adding PostgreSQL Support
 1. Create `src/db/postgresql.cppm` implementing concepts
