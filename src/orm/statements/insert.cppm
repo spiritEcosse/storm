@@ -6,6 +6,7 @@ module;
 export module storm_orm_statements_insert;
 
 import storm_orm_statements_base;
+import storm_orm_utilities;
 import storm_db_concept;
 import storm_db_sqlite;
 
@@ -21,6 +22,10 @@ import <vector>;
 import <type_traits>;
 
 export namespace storm::orm::statements {
+
+    // Import utilities for code convenience
+    using storm::orm::utilities::ConstexprString;
+    using storm::orm::utilities::BulkSQLCache;
 
     // Statement class for ORM insert operations
     template <typename T, storm::db::DatabaseConnection ConnType> class InsertStatement : private BaseStatement<T> {
@@ -61,46 +66,53 @@ export namespace storm::orm::statements {
         static constexpr auto field_names_  = build_field_names();
         static constexpr auto placeholders_ = build_placeholders();
 
-        // Thread-local cache for bulk INSERT SQL strings
-        struct BulkSQLCache {
-            static constexpr size_t CACHE_SIZE = 8;
-            struct Entry {
-                size_t      count = 0;
-                std::string sql;
-            };
-            std::array<Entry, CACHE_SIZE> entries{};
-            size_t                        next_slot = 0; // For round-robin replacement
+        // Compile-time SQL size calculation
+        static consteval size_t calculate_insert_sql_size() {
+            size_t size = 0;
+            size += 12;  // "INSERT INTO "
 
-            const std::string* find(size_t count) const {
-                for (const auto& entry : entries) {
-                    if (entry.count == count && !entry.sql.empty()) {
-                        return &entry.sql;
-                    }
-                }
-                return nullptr;
-            }
+            // Table name length
+            size += Base::table_name_.size();
 
-            void insert(size_t count, std::string sql) {
-                // Try to find empty slot first
-                for (auto& entry : entries) {
-                    if (entry.count == 0) {
-                        entry.count = count;
-                        entry.sql   = std::move(sql);
-                        return;
-                    }
-                }
-                // Use round-robin replacement
-                entries[next_slot].count = count;
-                entries[next_slot].sql   = std::move(sql);
-                next_slot                = (next_slot + 1) % CACHE_SIZE;
-            }
-        };
+            size += 2;   // " ("
 
-        // Generate INSERT SQL string at runtime (cached)
+            // Field names length
+            size += field_names_.size();
+
+            size += 10;  // ") VALUES ("
+
+            // Placeholders length
+            size += placeholders_.size();
+
+            size += 1;   // ")"
+            size += 1;   // null terminator
+
+            return size;
+        }
+
+        // Build INSERT SQL at compile-time using ConstexprString
+        static consteval auto build_insert_sql_array() {
+            constexpr size_t sql_size = calculate_insert_sql_size() + 100; // Add buffer for safety
+            ConstexprString<sql_size> result;
+
+            result.append("INSERT INTO ");
+            result.append(Base::table_name_);
+            result.append(" (");
+            result.append(field_names_);
+            result.append(") VALUES (");
+            result.append(placeholders_);
+            result.append(")");
+
+            return result;
+        }
+
+        // Pre-computed INSERT SQL generated at compile-time
+        static constexpr auto insert_sql_array = build_insert_sql_array();
+        static inline const std::string insert_sql_string = std::string(insert_sql_array);
+
+        // Generate INSERT SQL string (compile-time computed, runtime accessible)
         static const std::string& get_insert_sql() {
-            static const std::string sql =
-                    std::format("INSERT INTO {} ({}) VALUES ({})", Base::table_name_, field_names_, placeholders_);
-            return sql;
+            return insert_sql_string;
         }
 
         // Generate bulk INSERT SQL with multiple value sets (with caching)
