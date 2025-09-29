@@ -30,6 +30,133 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Function to format numbers in human-readable format
+format_number() {
+    local num=$1
+    local operation_type="${2:-inserts}"  # Default to "inserts", can be "deletes"
+
+    # Handle empty or non-numeric input (including decimal numbers)
+    if [[ -z "$num" ]] || ! [[ "$num" =~ ^[0-9]+\.?[0-9]*$ ]]; then
+        echo "$num"
+        return
+    fi
+
+    # Convert to integer for comparison (handle both int and float)
+    local int_num=${num%.*}
+
+    if [[ $int_num -ge 1000000000 ]]; then
+        # For billions, use 2 decimal places
+        local billions=$((int_num / 10000000))  # Get first 4 digits
+        local decimal=$((billions % 100))      # Last 2 digits for decimal
+        local whole=$((billions / 100))        # Whole part
+        printf "%d.%02dB %s/sec" "$whole" "$decimal" "$operation_type"
+    elif [[ $int_num -ge 1000000 ]]; then
+        # For millions, use 2 decimal places - use arithmetic for locale independence
+        local millions=$((int_num / 10000))  # Get first 4 digits
+        local decimal=$((millions % 100))    # Get last 2 digits for decimal
+        local whole=$((millions / 100))      # Get whole part
+        printf "%d.%02dM %s/sec" "$whole" "$decimal" "$operation_type"
+    elif [[ $int_num -ge 1000 ]]; then
+        # For thousands - use 1 decimal place for better precision
+        local thousands=$((int_num / 100))   # Get first 3-4 digits
+        local decimal=$((thousands % 10))    # Last digit for decimal
+        local whole=$((thousands / 10))      # Whole part
+        if [[ $whole -ge 1000 ]]; then
+            # If rounding pushes us to 1000K, convert to millions
+            printf "1.00M %s/sec" "$operation_type"
+        else
+            printf "%d.%01dK %s/sec" "$whole" "$decimal" "$operation_type"
+        fi
+    else
+        # Less than 1000, show as-is
+        printf "%d %s/sec" "$int_num" "$operation_type"
+    fi
+}
+
+# Function to format numbers with color-coded performance indicators
+format_number_with_color() {
+    local num=$1
+    local operation_type="${2:-inserts}"  # Default to "inserts", can be "deletes"
+    local formatted=$(format_number "$num" "$operation_type")
+
+    # Color code based on performance tiers
+    if [[ $num -ge 10000000 ]]; then      # 10M+ = Excellent (Green)
+        echo -e "${GREEN}$formatted${NC}"
+    elif [[ $num -ge 1000000 ]]; then     # 1M+ = Good (Blue)
+        echo -e "${BLUE}$formatted${NC}"
+    elif [[ $num -ge 500000 ]]; then      # 500K+ = Acceptable (Yellow)
+        echo -e "${YELLOW}$formatted${NC}"
+    else                                  # <500K = Poor (Red)
+        echo -e "${RED}$formatted${NC}"
+    fi
+}
+
+# Function to get visible length of string (without ANSI escape codes)
+get_visible_length() {
+    local str="$1"
+    # Remove ANSI escape sequences using proper escape sequence patterns
+    # Handle both \033[...m and \e[...m formats for actual rendered sequences
+    # Also handle literal escape sequences in the string
+    local clean_str
+    # First handle literal \033 sequences, then actual escape sequences
+    clean_str=$(printf '%s' "$str" | sed -r 's/\\033\[[0-9;]*m//g' | sed -r 's/\x1b\[[0-9;]*m//g')
+    echo "${#clean_str}"
+}
+
+# Function to pad string to specific width, accounting for ANSI escape codes
+pad_string() {
+    local string="$1"
+    local width="$2"
+    local visible_length=$(get_visible_length "$string")
+    local padding_needed=$((width - visible_length))
+
+    if [[ $padding_needed -gt 0 ]]; then
+        printf "%s%*s" "$string" "$padding_needed" ""
+    else
+        printf "%s" "$string"
+    fi
+}
+
+# Function to calculate percentage relative to baseline
+calculate_percentage() {
+    local value=$1
+    local baseline=$2
+
+    if [[ -n "$value" && -n "$baseline" && "$baseline" != "0" ]]; then
+        # Use bc for floating-point arithmetic, then round to nearest integer
+        echo "scale=2; ($value * 100) / $baseline" | bc | awk '{printf "%.0f", $1}'
+    else
+        echo "0"
+    fi
+}
+
+# Function to run benchmark and format throughput output in real-time
+run_and_format_benchmark() {
+    local executable="$1"
+    local benchmark_name="$2"
+    local use_color="${3:-false}"
+
+    if [[ -x "$executable" ]]; then
+        echo -e "${BLUE}$benchmark_name:${NC}"
+        "$executable" | while IFS= read -r line; do
+            if [[ "$line" =~ ^[[:space:]]*Throughput:[[:space:]]*([0-9]+)[[:space:]]*inserts/sec ]]; then
+                local raw_number="${BASH_REMATCH[1]}"
+                if [[ "$use_color" == "true" ]]; then
+                    local formatted="$(format_number_with_color "$raw_number")"
+                else
+                    local formatted="$(format_number "$raw_number")"
+                fi
+                echo "${line/Throughput: $raw_number inserts\/sec/Throughput: $formatted}"
+            else
+                echo "$line"
+            fi
+        done
+        echo ""
+    else
+        print_error "$executable not available"
+    fi
+}
+
 # Step 1: Configure CMake with benchmarking enabled
 print_step "Step 1: Configuring build with benchmarking enabled..."
 if cmake --preset ninja-debug -DENABLE_TESTS=ON -DENABLE_BENCH=ON; then
@@ -106,163 +233,277 @@ print_step "Step 4: Running performance benchmarks..."
 echo ""
 
 echo "=== STORM ORM PERFORMANCE COMPARISON RESULTS ==="
-echo "Testing database INSERT operations with different approaches:"
-echo ""
-
-# Run Raw SQLite benchmark
-if [[ -x "build/debug/benchmarks/bench_sqlite" ]]; then
-    echo -e "${BLUE}1. Raw SQLite (prepared statements) - Performance Baseline:${NC}"
-    ./build/debug/benchmarks/bench_sqlite | grep -A4 "Raw SQLite (prepared statements) - Single INSERT 10000 records:" | head -5
-    echo ""
-else
-    print_error "bench_sqlite not available"
-fi
-
-# Run sqlite_orm benchmark
-if [[ -x "build/debug/benchmarks/bench_sqlite_orm" ]]; then
-    echo -e "${BLUE}2. sqlite_orm (v1.9.1) - Industry Standard ORM:${NC}"
-    ./build/debug/benchmarks/bench_sqlite_orm | grep -A4 "sqlite_orm - Single INSERT 10000 records:" | head -5
-    echo ""
-else
-    print_error "bench_sqlite_orm not available"
-fi
-
-# Run Storm ORM benchmark
-if [[ -x "build/debug/benchmarks/bench_storm" ]]; then
-    echo -e "${BLUE}3. Storm ORM (Standard) - C++26 Reflection ORM:${NC}"
-    ./build/debug/benchmarks/bench_storm | grep -A4 "Storm ORM - Single INSERT 10000 records:" | head -5
-    echo ""
-else
-    print_error "bench_storm not available"
-fi
-
-# Run Storm ORM Optimized benchmark
-if [[ -x "build/debug/benchmarks/bench_storm_optimized" ]]; then
-    echo -e "${BLUE}4. Storm ORM (Optimized) - With Advanced Optimizations:${NC}"
-    ./build/debug/benchmarks/bench_storm_optimized | grep -A4 "Storm ORM - Single INSERT 10000 records:" | head -5
-    echo ""
-else
-    print_error "bench_storm_optimized not available"
-fi
-
-# Step 5: Detailed Performance Comparison
-echo ""
-echo "=== DETAILED PERFORMANCE COMPARISON ==="
+echo "Testing database operations with different approaches:"
 echo ""
 
 # Extract and display performance metrics from all benchmarks
-echo -e "${YELLOW}Extracting performance metrics for 10,000 INSERT operations...${NC}"
+echo -e "${YELLOW}Extracting performance metrics for 10,000 operations...${NC}"
 echo ""
 
-# Create a summary table
-echo "┌─────────────────────────────────────┬────────────────────┬─────────────────────┐"
-echo "│ Benchmark                           │ Single INSERT      │ Best Batch INSERT   │"
-echo "├─────────────────────────────────────┼────────────────────┼─────────────────────┤"
+# Add debug mode (uncomment the following line to enable debug output)
+# DEBUG_MODE=1
+
+# Store benchmark results in arrays for sorting
+declare -a benchmark_names
+declare -a performance_percentages
+declare -a single_inserts
+declare -a batch_inserts
+declare -a single_deletes
+declare -a bulk_deletes
+
+# Store baseline (sqlite_orm) performance for percentage calculation
+BASELINE_SINGLE_INSERT=""
 
 # Raw SQLite metrics
 if [[ -x "build/debug/benchmarks/bench_sqlite" ]]; then
-    SQLITE_SINGLE=$(./build/debug/benchmarks/bench_sqlite | grep -A4 "Raw SQLite (prepared statements) - Single INSERT 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//')
-    SQLITE_BATCH=$(./build/debug/benchmarks/bench_sqlite | grep "Throughput:" | grep "10000 records" | tail -1 | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//')
-    printf "│ %-35s │ %18s │ %19s │\n" "Raw SQLite (prepared)" "${SQLITE_SINGLE:-N/A} inserts/sec" "${SQLITE_BATCH:-N/A} inserts/sec"
+    SQLITE_OUTPUT=$(./build/debug/benchmarks/bench_sqlite)
+
+    SQLITE_SINGLE=$(echo "$SQLITE_OUTPUT" | grep -A4 "Raw SQLite (prepared statements) - Single INSERT 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
+    SQLITE_BATCH=$(echo "$SQLITE_OUTPUT" | grep -A7 "Raw SQLite - Batch INSERT 10000 records (batch size 1000)" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
+    SQLITE_DELETE_SINGLE=$(echo "$SQLITE_OUTPUT" | grep -A4 "Raw SQLite (prepared statements) - Single DELETE 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
+    SQLITE_DELETE_BULK=$(echo "$SQLITE_OUTPUT" | grep -A7 "Raw SQLite - Batch DELETE 10000 records" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
+
+    # Raw SQLite is not used as baseline due to timing precision issues
+
+    # Debug output
+    if [[ -n "$DEBUG_MODE" ]]; then
+        echo "DEBUG Raw SQLite - Single: '$SQLITE_SINGLE', Batch: '$SQLITE_BATCH', Delete Single: '$SQLITE_DELETE_SINGLE', Delete Bulk: '$SQLITE_DELETE_BULK'" >&2
+    fi
+
+    # Raw SQLite percentage calculated later after sqlite_orm baseline is set
+    SQLITE_PERCENTAGE=""
+
+    # Store Raw SQLite results
+    benchmark_names+=("Raw SQLite (prepared)")
+    performance_percentages+=("$SQLITE_PERCENTAGE")
+    single_inserts+=("$SQLITE_SINGLE")
+    batch_inserts+=("$SQLITE_BATCH")
+    single_deletes+=("$SQLITE_DELETE_SINGLE")
+    bulk_deletes+=("$SQLITE_DELETE_BULK")
 else
-    printf "│ %-35s │ %18s │ %19s │\n" "Raw SQLite (prepared)" "Not available" "Not available"
+    benchmark_names+=("Raw SQLite (prepared)")
+    performance_percentages+=("0")
+    single_inserts+=("")
+    batch_inserts+=("")
+    single_deletes+=("")
+    bulk_deletes+=("")
 fi
 
 # sqlite_orm metrics
 if [[ -x "build/debug/benchmarks/bench_sqlite_orm" ]]; then
-    SQLITEORM_SINGLE=$(./build/debug/benchmarks/bench_sqlite_orm | grep -A4 "sqlite_orm - Single INSERT 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//')
-    SQLITEORM_BATCH=$(./build/debug/benchmarks/bench_sqlite_orm | grep "Throughput:" | grep "10000 records" | tail -1 | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//')
-    printf "│ %-35s │ %18s │ %19s │\n" "sqlite_orm (v1.9.1)" "${SQLITEORM_SINGLE:-N/A} inserts/sec" "${SQLITEORM_BATCH:-N/A} inserts/sec"
+    SQLITEORM_OUTPUT=$(./build/debug/benchmarks/bench_sqlite_orm)
+
+    SQLITEORM_SINGLE=$(echo "$SQLITEORM_OUTPUT" | grep -A4 "sqlite_orm - Single INSERT 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
+    SQLITEORM_BATCH=$(echo "$SQLITEORM_OUTPUT" | grep -A7 "sqlite_orm - Batch INSERT 10000 records (batch size 100)" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
+    SQLITEORM_DELETE_SINGLE=$(echo "$SQLITEORM_OUTPUT" | grep -A4 "sqlite_orm - Single DELETE 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
+    SQLITEORM_DELETE_BULK=$(echo "$SQLITEORM_OUTPUT" | grep -A7 "sqlite_orm - Batch DELETE 10000 records" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
+
+    # Set sqlite_orm as baseline for ORM comparison
+    if [[ -n "$SQLITEORM_SINGLE" && "$SQLITEORM_SINGLE" =~ ^[0-9]+$ ]]; then
+        BASELINE_SINGLE_INSERT="$SQLITEORM_SINGLE"
+    fi
+
+    # sqlite_orm is the baseline (100%)
+    SQLITEORM_PERCENTAGE="100"
+
+    # Debug output
+    if [[ -n "$DEBUG_MODE" ]]; then
+        echo "DEBUG sqlite_orm - Single: '$SQLITEORM_SINGLE', Batch: '$SQLITEORM_BATCH', Delete Single: '$SQLITEORM_DELETE_SINGLE', Delete Bulk: '$SQLITEORM_DELETE_BULK'" >&2
+    fi
+
+    # Store sqlite_orm results
+    benchmark_names+=("sqlite_orm (v1.9.1)")
+    performance_percentages+=("$SQLITEORM_PERCENTAGE")
+    single_inserts+=("$SQLITEORM_SINGLE")
+    batch_inserts+=("$SQLITEORM_BATCH")
+    single_deletes+=("$SQLITEORM_DELETE_SINGLE")
+    bulk_deletes+=("$SQLITEORM_DELETE_BULK")
 else
-    printf "│ %-35s │ %18s │ %19s │\n" "sqlite_orm (v1.9.1)" "Not available" "Not available"
+    benchmark_names+=("sqlite_orm (v1.9.1)")
+    performance_percentages+=("0")
+    single_inserts+=("")
+    batch_inserts+=("")
+    single_deletes+=("")
+    bulk_deletes+=("")
 fi
 
 # Storm ORM metrics
 if [[ -x "build/debug/benchmarks/bench_storm" ]]; then
-    STORM_SINGLE=$(./build/debug/benchmarks/bench_storm | grep -A4 "Storm ORM - Single INSERT 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//')
-    STORM_BATCH=$(./build/debug/benchmarks/bench_storm | grep "Throughput:" | grep "10000 records" | tail -1 | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//')
-    printf "│ %-35s │ %18s │ %19s │\n" "Storm ORM (Standard)" "${STORM_SINGLE:-N/A} inserts/sec" "${STORM_BATCH:-N/A} inserts/sec"
+    STORM_OUTPUT=$(./build/debug/benchmarks/bench_storm)
+
+    STORM_SINGLE=$(echo "$STORM_OUTPUT" | grep -A4 "Storm ORM - Single INSERT 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
+    STORM_BATCH=$(echo "$STORM_OUTPUT" | grep -A7 "Storm ORM - Batch INSERT 10000 records (batch size 1000)" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
+    STORM_DELETE_SINGLE=$(echo "$STORM_OUTPUT" | grep -A4 "Storm ORM - Single DELETE 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
+    STORM_DELETE_BULK=$(echo "$STORM_OUTPUT" | grep -A7 "Storm ORM - Batch DELETE 10000 records" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
+
+    # Calculate performance percentage
+    STORM_PERCENTAGE=$(calculate_percentage "$STORM_SINGLE" "$BASELINE_SINGLE_INSERT")
+
+    # Debug output
+    if [[ -n "$DEBUG_MODE" ]]; then
+        echo "DEBUG Storm ORM - Single: '$STORM_SINGLE', Batch: '$STORM_BATCH', Delete Single: '$STORM_DELETE_SINGLE', Delete Bulk: '$STORM_DELETE_BULK'" >&2
+    fi
+
+    # Store Storm ORM results
+    benchmark_names+=("Storm ORM (Standard)")
+    performance_percentages+=("$STORM_PERCENTAGE")
+    single_inserts+=("$STORM_SINGLE")
+    batch_inserts+=("$STORM_BATCH")
+    single_deletes+=("$STORM_DELETE_SINGLE")
+    bulk_deletes+=("$STORM_DELETE_BULK")
 else
-    printf "│ %-35s │ %18s │ %19s │\n" "Storm ORM (Standard)" "Not available" "Not available"
+    benchmark_names+=("Storm ORM (Standard)")
+    performance_percentages+=("0")
+    single_inserts+=("")
+    batch_inserts+=("")
+    single_deletes+=("")
+    bulk_deletes+=("")
 fi
 
 # Storm ORM Optimized metrics
 if [[ -x "build/debug/benchmarks/bench_storm_optimized" ]]; then
-    STORM_OPT_SINGLE=$(./build/debug/benchmarks/bench_storm_optimized | grep -A4 "Storm ORM - Single INSERT 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//')
-    STORM_OPT_BATCH=$(./build/debug/benchmarks/bench_storm_optimized | grep "Throughput:" | grep "10000 records" | tail -1 | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//')
-    printf "│ %-35s │ %18s │ %19s │\n" "Storm ORM (Optimized)" "${STORM_OPT_SINGLE:-N/A} inserts/sec" "${STORM_OPT_BATCH:-N/A} inserts/sec"
+    STORM_OPT_OUTPUT=$(./build/debug/benchmarks/bench_storm_optimized)
+
+    # Extract INSERT operations
+    STORM_OPT_SINGLE=$(echo "$STORM_OPT_OUTPUT" | grep -A4 "Storm ORM - Single INSERT 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
+    STORM_OPT_BATCH=$(echo "$STORM_OPT_OUTPUT" | grep -A7 "Storm ORM - Batch INSERT 10000 records" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
+
+    # Extract DELETE operations - try throughput format first
+    STORM_OPT_DELETE_SINGLE=$(echo "$STORM_OPT_OUTPUT" | grep -A4 "Storm ORM - Single DELETE 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
+    STORM_OPT_DELETE_BULK=$(echo "$STORM_OPT_OUTPUT" | grep -A7 "Storm ORM - Batch DELETE 10000 records" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
+
+    # If throughput format not found, try time-based format and convert
+    if [[ -z "$STORM_OPT_DELETE_SINGLE" ]]; then
+        STORM_OPT_DELETE_SINGLE_TIME=$(echo "$STORM_OPT_OUTPUT" | grep -A10 "Remove 10000 records:" | grep "Individual removes" -A2 | grep "Average per remove:" | sed 's/.*Average per remove: //' | sed 's/ ms//' | head -1)
+        if [[ -n "$STORM_OPT_DELETE_SINGLE_TIME" ]] && [[ "$STORM_OPT_DELETE_SINGLE_TIME" != "0" ]]; then
+            STORM_OPT_DELETE_SINGLE=$(echo "1000 / $STORM_OPT_DELETE_SINGLE_TIME" | bc -l | cut -d. -f1)
+        fi
+    fi
+
+    if [[ -z "$STORM_OPT_DELETE_BULK" ]]; then
+        STORM_OPT_DELETE_BULK_TIME=$(echo "$STORM_OPT_OUTPUT" | grep -A10 "Remove 10000 records:" | grep "Batch removes" -A2 | grep "Average per remove:" | sed 's/.*Average per remove: //' | sed 's/ ms//' | head -1)
+        if [[ -n "$STORM_OPT_DELETE_BULK_TIME" ]] && [[ "$STORM_OPT_DELETE_BULK_TIME" != "0" ]]; then
+            STORM_OPT_DELETE_BULK=$(echo "1000 / $STORM_OPT_DELETE_BULK_TIME" | bc -l | cut -d. -f1)
+        fi
+    fi
+
+    # Calculate performance percentage
+    STORM_OPT_PERCENTAGE=$(calculate_percentage "$STORM_OPT_SINGLE" "$BASELINE_SINGLE_INSERT")
+
+    # Debug output
+    if [[ -n "$DEBUG_MODE" ]]; then
+        echo "DEBUG Storm ORM Optimized - Single: '$STORM_OPT_SINGLE', Batch: '$STORM_OPT_BATCH', Delete Single: '$STORM_OPT_DELETE_SINGLE', Delete Bulk: '$STORM_OPT_DELETE_BULK'" >&2
+    fi
+
+    # Store Storm ORM Optimized results
+    benchmark_names+=("Storm ORM (Optimized)")
+    performance_percentages+=("$STORM_OPT_PERCENTAGE")
+    single_inserts+=("$STORM_OPT_SINGLE")
+    batch_inserts+=("$STORM_OPT_BATCH")
+    single_deletes+=("$STORM_OPT_DELETE_SINGLE")
+    bulk_deletes+=("$STORM_OPT_DELETE_BULK")
 else
-    printf "│ %-35s │ %18s │ %19s │\n" "Storm ORM (Optimized)" "Not available" "Not available"
+    benchmark_names+=("Storm ORM (Optimized)")
+    performance_percentages+=("0")
+    single_inserts+=("")
+    batch_inserts+=("")
+    single_deletes+=("")
+    bulk_deletes+=("")
 fi
 
-echo "└─────────────────────────────────────┴────────────────────┴─────────────────────┘"
-echo ""
-
-# Step 6: Performance Analysis Summary
-echo "=== PERFORMANCE ANALYSIS SUMMARY ==="
-echo ""
-echo -e "${GREEN}Storm ORM Optimizations Implemented:${NC}"
-echo "✓ Compile-time index sequence optimization for field binding"
-echo "✓ Thread-local SQL caching with 8-entry cache (94% improvement)"
-echo "✓ Bulk INSERT operations with multiple VALUES clauses"
-echo "✓ Smart thresholds (≤50 bulk SQL, >50 individual + transaction)"
-echo "✓ Memory pre-allocation for SQL string generation"
-echo "✓ BaseStatement utilities for transaction management"
-echo ""
-
-echo -e "${GREEN}Actual Performance Results (10,000 INSERT operations):${NC}"
-echo "• Raw SQLite (prepared): ~988K inserts/sec - Theoretical maximum"
-echo "• Storm ORM Single: ~923K inserts/sec (2.9x faster than sqlite_orm)"
-echo "• Storm ORM Batch: ~1.9M inserts/sec (4.4x faster than sqlite_orm)"
-echo "• sqlite_orm Single: ~318K inserts/sec - Industry standard baseline"
-echo "• sqlite_orm Batch: ~430K inserts/sec - Modest batch improvement"
-echo ""
-
-echo -e "${GREEN}Key Performance Insights:${NC}"
-echo "• Storm has only 5% overhead vs raw SQLite (vs sqlite_orm's 67%)"
-echo "• C++26 reflection enables zero-overhead compile-time field binding"
-echo "• Thread-local SQL caching provides 94% improvement for common batch sizes"
-echo "• Index sequence optimization eliminates recursive template overhead"
-echo "• Smart batching strategies maximize SQLite's bulk operation capabilities"
-echo ""
-
-# Step 7: Performance Advantages Summary
-echo "=== STORM ORM PERFORMANCE ADVANTAGES ==="
-echo ""
-echo -e "${GREEN}Storm vs sqlite_orm Comparison:${NC}"
-if [[ -x "build/debug/benchmarks/bench_storm" && -x "build/debug/benchmarks/bench_sqlite_orm" ]]; then
-    echo "• Single INSERT operations: Storm is typically 2.9x faster"
-    echo "• Batch INSERT operations: Storm is typically 4.4x faster"
-    echo "• Memory efficiency: Storm has minimal heap allocations during operations"
-    echo "• Compile-time safety: All SQL generation happens at compile-time with C++26 reflection"
-else
-    echo "• Performance comparison requires both Storm and sqlite_orm benchmarks"
+# Now that baseline is set, calculate Raw SQLite percentage
+if [[ -n "$SQLITE_SINGLE" && -n "$BASELINE_SINGLE_INSERT" ]]; then
+    SQLITE_PERCENTAGE=$(calculate_percentage "$SQLITE_SINGLE" "$BASELINE_SINGLE_INSERT")
+    # Update the Raw SQLite entry (index 0)
+    performance_percentages[0]="$SQLITE_PERCENTAGE"
 fi
+
+# Sort results by performance percentage (highest to lowest)
+# Create array of indices sorted by performance percentage
+declare -a sorted_indices
+for i in "${!performance_percentages[@]}"; do
+    sorted_indices+=("$i")
+done
+
+# Simple bubble sort by performance percentage (descending)
+for (( i = 0; i < ${#sorted_indices[@]} - 1; i++ )); do
+    for (( j = 0; j < ${#sorted_indices[@]} - i - 1; j++ )); do
+        idx1=${sorted_indices[j]}
+        idx2=${sorted_indices[j+1]}
+        if [[ ${performance_percentages[idx1]} -lt ${performance_percentages[idx2]} ]]; then
+            # Swap indices
+            temp=${sorted_indices[j]}
+            sorted_indices[j]=${sorted_indices[j+1]}
+            sorted_indices[j+1]=$temp
+        fi
+    done
+done
+
+# Create and display the sorted table
+echo "┌─────────────────────────────────────┬──────────────────┬────────────────────┬─────────────────────┬────────────────────┬─────────────────────┐"
+echo "│ Benchmark                           │ Performance %    │ Single INSERT      │ Best Batch INSERT   │ Single DELETE      │ Bulk DELETE         │"
+echo "├─────────────────────────────────────┼──────────────────┼────────────────────┼─────────────────────┼────────────────────┼─────────────────────┤"
+
+# Display sorted results
+for idx in "${sorted_indices[@]}"; do
+    name="${benchmark_names[idx]}"
+    percentage="${performance_percentages[idx]}"
+    single_insert="${single_inserts[idx]}"
+    batch_insert="${batch_inserts[idx]}"
+    single_delete="${single_deletes[idx]}"
+    bulk_delete="${bulk_deletes[idx]}"
+
+    # Format values for display
+    if [[ -n "$percentage" && "$percentage" != "0" ]]; then
+        if [[ "$percentage" == "100" && "$name" == "sqlite_orm (v1.9.1)" ]]; then
+            percentage_display="${GREEN}100% (baseline)${NC}"
+        else
+            percentage_display="${BLUE}${percentage}%${NC}"
+        fi
+    else
+        percentage_display="N/A"
+    fi
+
+    if [[ -n "$single_insert" && "$single_insert" =~ ^[0-9]+$ ]]; then
+        single_insert_display="$(format_number_with_color "$single_insert" "inserts")"
+    else
+        single_insert_display="Not available"
+    fi
+
+    if [[ -n "$batch_insert" && "$batch_insert" =~ ^[0-9]+$ ]]; then
+        batch_insert_display="$(format_number_with_color "$batch_insert" "inserts")"
+    else
+        batch_insert_display="Not available"
+    fi
+
+    if [[ -n "$single_delete" && "$single_delete" =~ ^[0-9]+$ ]]; then
+        single_delete_display="$(format_number_with_color "$single_delete" "deletes")"
+    else
+        single_delete_display="Not available"
+    fi
+
+    if [[ -n "$bulk_delete" && "$bulk_delete" =~ ^[0-9]+$ ]]; then
+        bulk_delete_display="$(format_number_with_color "$bulk_delete" "deletes")"
+    else
+        bulk_delete_display="Not available"
+    fi
+
+    # Format table row with proper ANSI code handling
+    # Use pad_string for all columns to handle ANSI escape codes consistently
+    name_padded=$(pad_string "$name" 35)
+    percentage_padded=$(pad_string "$percentage_display" 16)
+    single_insert_padded=$(pad_string "$single_insert_display" 18)
+    batch_insert_padded=$(pad_string "$batch_insert_display" 19)
+    single_delete_padded=$(pad_string "$single_delete_display" 18)
+    bulk_delete_padded=$(pad_string "$bulk_delete_display" 19)
+
+    echo -e "│ ${name_padded} │ ${percentage_padded} │ ${single_insert_padded} │ ${batch_insert_padded} │ ${single_delete_padded} │ ${bulk_delete_padded} │"
+done
+
+echo "└─────────────────────────────────────┴──────────────────┴────────────────────┴─────────────────────┴────────────────────┴─────────────────────┘"
 echo ""
 
-echo -e "${GREEN}Storm vs Raw SQLite Overhead Analysis:${NC}"
-if [[ -x "build/debug/benchmarks/bench_storm" && -x "build/debug/benchmarks/bench_sqlite" ]]; then
-    echo "• Storm ORM overhead: Only ~5% slower than raw SQLite prepared statements"
-    echo "• sqlite_orm overhead: ~67% slower than raw SQLite (13x more overhead than Storm)"
-    echo "• Near-zero abstraction cost: C++26 reflection eliminates runtime metaprogramming"
-    echo "• Type safety: Full compile-time validation with minimal runtime cost"
-else
-    echo "• Overhead analysis requires both Storm and SQLite benchmarks"
-fi
-echo ""
-
-echo -e "${GREEN}Advanced INSERT Optimization Analysis:${NC}"
-if [[ -x "build/debug/benchmarks/bench_insert_optimization" ]]; then
-    echo "✓ Thread-local SQL caching available - run detailed optimization benchmark:"
-    echo "  ./build/debug/benchmarks/bench_insert_optimization"
-    echo "✓ Cache provides 94% improvement for common batch sizes (1, 10, 25, 50)"
-    echo "✓ Memory pre-allocation eliminates string reallocations during SQL generation"
-else
-    echo "⚠ Insert optimization benchmark not available (bench_insert_optimization)"
-fi
-echo ""
-
-print_success "Comprehensive INSERT performance benchmark suite completed successfully!"
+print_success "Comprehensive performance benchmark suite completed successfully!"
 
 # Step 8: Build time information
 echo ""
