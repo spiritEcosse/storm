@@ -190,6 +190,30 @@ export namespace storm::orm::statements {
       public:
         explicit InsertStatement(Connection& conn) : conn_(conn) {}
 
+        // Single insert operation - optimized fast path for single object
+        [[nodiscard]] auto execute_single(const T& obj) noexcept -> std::expected<int64_t, Error> {
+            // Fast path: directly prepare and execute for single object
+            const auto& sql = get_insert_sql();
+
+            // Use execute_with_statement for statement caching
+            return Base::template execute_with_statement<ConnType>(
+                    conn_, sql, [this, &obj](auto& stmt) -> std::expected<int64_t, Error> {
+                        // Bind all fields
+                        if (auto bind_result = bind_all_fields(stmt, obj); !bind_result) {
+                            return std::unexpected(bind_result.error());
+                        }
+
+                        // Execute the insert
+                        if (auto exec_result = stmt.execute(); !exec_result) {
+                            return std::unexpected(exec_result.error());
+                        }
+
+                        // Return the generated ID
+                        return conn_.last_insert_rowid();
+                    }
+            );
+        }
+
         // Batch insert operation with optimization strategies
         [[nodiscard]] auto execute(std::span<const T> objects) noexcept -> std::expected<std::vector<int64_t>, Error> {
             return Base::execute_standard_batch(*this, objects, Base::field_count_);
@@ -204,7 +228,8 @@ export namespace storm::orm::statements {
         }
 
         // Execute bulk INSERT with multiple VALUES clauses
-        [[nodiscard]] auto execute_bulk(std::span<const T> objects) noexcept -> std::expected<std::vector<int64_t>, Error> {
+        [[nodiscard]] auto execute_bulk(std::span<const T> objects) noexcept
+                -> std::expected<std::vector<int64_t>, Error> {
             const auto sql = get_bulk_insert_sql(objects.size());
 
             return Base::template execute_with_transaction<ConnType>(
@@ -228,9 +253,9 @@ export namespace storm::orm::statements {
                                     }
 
                                     // Get the last inserted row ID
-                                    // For bulk INSERT with multiple VALUES, last_insert_rowid() returns the ID of the LAST row
-                                    // We need to calculate the first ID by subtracting the count
-                                    int64_t last_id = conn_.last_insert_rowid();
+                                    // For bulk INSERT with multiple VALUES, last_insert_rowid() returns the ID of the
+                                    // LAST row We need to calculate the first ID by subtracting the count
+                                    int64_t last_id  = conn_.last_insert_rowid();
                                     int64_t first_id = last_id - static_cast<int64_t>(objects.size()) + 1;
 
                                     // Generate consecutive IDs for bulk insert
@@ -247,7 +272,8 @@ export namespace storm::orm::statements {
         }
 
         // Execute individual inserts for large batches (with transaction)
-        [[nodiscard]] auto execute_individual_batch(std::span<const T> objects) noexcept -> std::expected<std::vector<int64_t>, Error> {
+        [[nodiscard]] auto execute_individual_batch(std::span<const T> objects) noexcept
+                -> std::expected<std::vector<int64_t>, Error> {
             std::vector<int64_t> ids;
             ids.reserve(objects.size());
 

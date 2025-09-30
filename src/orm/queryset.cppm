@@ -101,16 +101,12 @@ export namespace storm {
         }
 
         [[nodiscard]] std::expected<int64_t, Error> execute_insert(const T& obj) const noexcept {
-            return orm::statements::InsertStatement<T, ConnType>(conn_).execute(std::span<const T>{&obj, 1})
-                .and_then([](auto ids) -> std::expected<int64_t, Error> {
-                    if (ids.empty()) {
-                        return std::unexpected(Error{.code_ = -1, .message_ = "No ID generated from insert"});
-                    }
-                    return ids[0];
-                });
+            // Use optimized single insert path to avoid .and_then() overhead
+            return orm::statements::InsertStatement<T, ConnType>(conn_).execute_single(obj);
         }
 
-        [[nodiscard]] std::expected<std::vector<int64_t>, Error> execute_insert_batch(std::span<const T> objects) const noexcept {
+        [[nodiscard]] std::expected<std::vector<int64_t>, Error>
+        execute_insert_batch(std::span<const T> objects) const noexcept {
             return orm::statements::InsertStatement<T, ConnType>(conn_).execute(objects);
         }
 
