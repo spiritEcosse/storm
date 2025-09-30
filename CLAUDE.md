@@ -883,6 +883,7 @@ if (result) {
 
 // Batch UPDATE - modifies multiple records
 std::vector<Person> people = {{1, "Alice", 26}, {2, "Bob", 31}, {3, "Charlie", 41}};
+// Modify all ages
 for (auto& person : people) {
     person.age += 1;
     person.name += "_updated";
@@ -891,6 +892,13 @@ auto result = queryset.update(std::span<const Person>(people));
 if (result) {
     std::cout << "Updated " << people.size() << " records\n";
 }
+
+// Large batch UPDATE with automatic transaction wrapping
+std::vector<Person> large_batch_update = generate_existing_data(1000);
+for (auto& person : large_batch_update) {
+    person.age += 1;  // Increment all ages
+}
+auto result = queryset.update(std::span<const Person>(large_batch_update));
 ```
 
 **QuerySet bulk DELETE operations:**
