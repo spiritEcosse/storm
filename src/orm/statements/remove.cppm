@@ -203,16 +203,6 @@ export namespace storm::orm::statements {
             return {};
         }
 
-        // Standard fast path for single DELETE
-        [[nodiscard]] auto execute_single(const T& obj) noexcept -> std::expected<void, Error> {
-            return Base::template execute_with_statement<ConnType>(
-                    conn_, get_delete_sql(), [this, &obj](auto& stmt) -> std::expected<void, Error> {
-                        // Direct bind and execute - no loops, minimal abstraction
-                        return bind_primary_key(stmt, obj).and_then([&stmt]() { return stmt.execute(); });
-                    }
-            );
-        }
-
         // Bulk execute using IN clause for better performance on small batches
         [[nodiscard]] auto execute_bulk(std::span<const T> objects) noexcept -> std::expected<void, Error> {
             auto bulk_sql = get_bulk_delete_sql(objects.size());

@@ -130,6 +130,53 @@ calculate_percentage() {
     fi
 }
 
+# Function to calculate overall performance percentage across all metrics
+calculate_overall_percentage() {
+    local single_insert=$1
+    local batch_insert=$2
+    local single_delete=$3
+    local bulk_delete=$4
+    local baseline_single_insert=$5
+    local baseline_batch_insert=$6
+    local baseline_single_delete=$7
+    local baseline_bulk_delete=$8
+
+    local count=0
+    local total_percentage=0
+
+    # Only include metrics that are available for both benchmark and baseline
+    if [[ -n "$single_insert" && "$single_insert" =~ ^[0-9]+$ && -n "$baseline_single_insert" && "$baseline_single_insert" != "0" ]]; then
+        local pct=$(calculate_percentage "$single_insert" "$baseline_single_insert")
+        total_percentage=$((total_percentage + pct))
+        count=$((count + 1))
+    fi
+
+    if [[ -n "$batch_insert" && "$batch_insert" =~ ^[0-9]+$ && -n "$baseline_batch_insert" && "$baseline_batch_insert" != "0" ]]; then
+        local pct=$(calculate_percentage "$batch_insert" "$baseline_batch_insert")
+        total_percentage=$((total_percentage + pct))
+        count=$((count + 1))
+    fi
+
+    if [[ -n "$single_delete" && "$single_delete" =~ ^[0-9]+$ && -n "$baseline_single_delete" && "$baseline_single_delete" != "0" ]]; then
+        local pct=$(calculate_percentage "$single_delete" "$baseline_single_delete")
+        total_percentage=$((total_percentage + pct))
+        count=$((count + 1))
+    fi
+
+    if [[ -n "$bulk_delete" && "$bulk_delete" =~ ^[0-9]+$ && -n "$baseline_bulk_delete" && "$baseline_bulk_delete" != "0" ]]; then
+        local pct=$(calculate_percentage "$bulk_delete" "$baseline_bulk_delete")
+        total_percentage=$((total_percentage + pct))
+        count=$((count + 1))
+    fi
+
+    # Calculate average percentage
+    if [[ $count -gt 0 ]]; then
+        echo $((total_percentage / count))
+    else
+        echo "0"
+    fi
+}
+
 # Function to run benchmark and format throughput output in real-time
 run_and_format_benchmark() {
     local executable="$1"
@@ -245,8 +292,11 @@ declare -a batch_inserts
 declare -a single_deletes
 declare -a bulk_deletes
 
-# Store baseline (sqlite_orm) performance for percentage calculation
+# Store baseline (sqlite_orm) performance for percentage calculation - all 4 metrics
 BASELINE_SINGLE_INSERT=""
+BASELINE_BATCH_INSERT=""
+BASELINE_SINGLE_DELETE=""
+BASELINE_BULK_DELETE=""
 
 # Raw SQLite metrics
 if [[ -x "build/debug/benchmarks/bench_sqlite" ]]; then
@@ -292,9 +342,18 @@ if [[ -x "build/debug/benchmarks/bench_sqlite_orm" ]]; then
     SQLITEORM_DELETE_SINGLE=$(echo "$SQLITEORM_OUTPUT" | grep -A4 "sqlite_orm - Single DELETE 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
     SQLITEORM_DELETE_BULK=$(echo "$SQLITEORM_OUTPUT" | grep -A7 "sqlite_orm - Batch DELETE 10000 records" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
 
-    # Set sqlite_orm as baseline for ORM comparison
+    # Set sqlite_orm as baseline for ORM comparison - all 4 metrics
     if [[ -n "$SQLITEORM_SINGLE" && "$SQLITEORM_SINGLE" =~ ^[0-9]+$ ]]; then
         BASELINE_SINGLE_INSERT="$SQLITEORM_SINGLE"
+    fi
+    if [[ -n "$SQLITEORM_BATCH" && "$SQLITEORM_BATCH" =~ ^[0-9]+$ ]]; then
+        BASELINE_BATCH_INSERT="$SQLITEORM_BATCH"
+    fi
+    if [[ -n "$SQLITEORM_DELETE_SINGLE" && "$SQLITEORM_DELETE_SINGLE" =~ ^[0-9]+$ ]]; then
+        BASELINE_SINGLE_DELETE="$SQLITEORM_DELETE_SINGLE"
+    fi
+    if [[ -n "$SQLITEORM_DELETE_BULK" && "$SQLITEORM_DELETE_BULK" =~ ^[0-9]+$ ]]; then
+        BASELINE_BULK_DELETE="$SQLITEORM_DELETE_BULK"
     fi
 
     # sqlite_orm is the baseline (100%)
@@ -330,8 +389,10 @@ if [[ -x "build/debug/benchmarks/bench_storm" ]]; then
     STORM_DELETE_SINGLE=$(echo "$STORM_OUTPUT" | grep -A4 "Storm ORM - Single DELETE 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
     STORM_DELETE_BULK=$(echo "$STORM_OUTPUT" | grep -A7 "Storm ORM - Batch DELETE 10000 records" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
 
-    # Calculate performance percentage
-    STORM_PERCENTAGE=$(calculate_percentage "$STORM_SINGLE" "$BASELINE_SINGLE_INSERT")
+    # Calculate overall performance percentage across all 4 metrics
+    STORM_PERCENTAGE=$(calculate_overall_percentage \
+        "$STORM_SINGLE" "$STORM_BATCH" "$STORM_DELETE_SINGLE" "$STORM_DELETE_BULK" \
+        "$BASELINE_SINGLE_INSERT" "$BASELINE_BATCH_INSERT" "$BASELINE_SINGLE_DELETE" "$BASELINE_BULK_DELETE")
 
     # Debug output
     if [[ -n "$DEBUG_MODE" ]]; then
@@ -355,9 +416,11 @@ else
 fi
 
 
-# Now that baseline is set, calculate Raw SQLite percentage
-if [[ -n "$SQLITE_SINGLE" && -n "$BASELINE_SINGLE_INSERT" ]]; then
-    SQLITE_PERCENTAGE=$(calculate_percentage "$SQLITE_SINGLE" "$BASELINE_SINGLE_INSERT")
+# Now that baseline is set, calculate Raw SQLite overall percentage across all 4 metrics
+if [[ -n "$BASELINE_SINGLE_INSERT" ]]; then
+    SQLITE_PERCENTAGE=$(calculate_overall_percentage \
+        "$SQLITE_SINGLE" "$SQLITE_BATCH" "$SQLITE_DELETE_SINGLE" "$SQLITE_DELETE_BULK" \
+        "$BASELINE_SINGLE_INSERT" "$BASELINE_BATCH_INSERT" "$BASELINE_SINGLE_DELETE" "$BASELINE_BULK_DELETE")
     # Update the Raw SQLite entry (index 0)
     performance_percentages[0]="$SQLITE_PERCENTAGE"
 fi
@@ -385,7 +448,7 @@ done
 
 # Create and display the sorted table
 echo "┌─────────────────────────────────────┬──────────────────┬────────────────────┬─────────────────────┬────────────────────┬─────────────────────┐"
-echo "│ Benchmark                           │ Performance %    │ Single INSERT      │ Best Batch INSERT   │ Single DELETE      │ Bulk DELETE         │"
+echo "│ Benchmark                           │ Overall Perf %   │ Single INSERT      │ Best Batch INSERT   │ Single DELETE      │ Bulk DELETE         │"
 echo "├─────────────────────────────────────┼──────────────────┼────────────────────┼─────────────────────┼────────────────────┼─────────────────────┤"
 
 # Display sorted results
