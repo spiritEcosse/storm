@@ -12,6 +12,8 @@ void benchmark_raw_sqlite_batch_insert(int num_records);
 void benchmark_pure_sqlite_single_delete(int num_records);
 void benchmark_raw_sqlite_single_delete(int num_records);
 void benchmark_raw_sqlite_batch_delete(int num_records);
+void benchmark_raw_sqlite_single_update(int num_records);
+void benchmark_raw_sqlite_batch_update(int num_records);
 void benchmark_raw_sqlite_select(int num_records);
 void benchmark_raw_sqlite_single_update(int num_records);
 void benchmark_raw_sqlite_batch_update(int num_records);

@@ -87,6 +87,11 @@ export namespace storm {
             return get_select_statement().execute_optimized();
         }
 
+        // Select operations - returns all rows (optimized with statement caching)
+        std::expected<std::vector<T>, Error> select() {
+            return get_select_statement().execute_optimized();
+        }
+
         // Update operations
         std::expected<void, Error> update(const T& obj) {
             // Use cached UpdateStatement instance for optimal performance
@@ -176,6 +181,14 @@ export namespace storm {
                 update_stmt_ = std::make_unique<orm::statements::UpdateStatement<T, ConnType>>(conn_);
             }
             return *update_stmt_;
+        }
+
+        // Lazy-initialize and return cached SelectStatement for optimal performance
+        auto get_select_statement() const -> orm::statements::SelectStatement<T, ConnType>& {
+            if (!select_stmt_) {
+                select_stmt_ = std::make_unique<orm::statements::SelectStatement<T, ConnType>>(conn_);
+            }
+            return *select_stmt_;
         }
 
         ConnType&                                                              conn_;
