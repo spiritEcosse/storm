@@ -11,6 +11,7 @@ import <memory>;
 import <unordered_map>;
 import <unordered_set>;
 import <vector>;
+import <cstdint>;
 
 export namespace storm::db::sqlite {
 
@@ -255,6 +256,11 @@ export namespace storm::db::sqlite {
         // Access raw SQLite handle for advanced operations
         [[nodiscard]] sqlite3* get() const noexcept {
             return db.get();
+        }
+
+        // Get the row ID of the most recent successful INSERT
+        [[nodiscard]] int64_t last_insert_rowid() const noexcept {
+            return sqlite3_last_insert_rowid(db.get());
         }
 
       private:

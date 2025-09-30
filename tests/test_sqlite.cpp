@@ -25,7 +25,7 @@ class QuerySetRemoveTest : public ::testing::Test {
         auto& default_conn  = storm::QuerySet<Person>::get_default_connection();
         auto  create_result = default_conn.execute(
                 "CREATE TABLE Person ("
-                 "id INTEGER PRIMARY KEY, "
+                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                  "name TEXT NOT NULL, "
                  "age INTEGER NOT NULL"
                  ")"
@@ -195,22 +195,25 @@ TEST_F(QuerySetRemoveTest, InsertSinglePerson) {
     // Create QuerySet using simplified syntax
     auto queryset = storm::QuerySet<Person>{};
 
-    // Create person object to insert
+    // Create person object to insert (with explicit ID)
     Person dave{4, "Dave", 40};
 
-    // Verify Dave doesn't exist initially
-    EXPECT_FALSE(personExists(4)) << "Dave should not exist initially";
+    // Verify initially have 3 persons
     EXPECT_EQ(countPersons(), 3) << "Should have 3 persons initially";
 
     // Insert Dave using QuerySet.insert()
     auto result = queryset.insert(dave);
 
-    // Verify insertion was successful
+    // Verify insertion was successful and ID was returned
     ASSERT_TRUE(result.has_value()) << "Insert operation should succeed: "
                                     << (result.has_value() ? "success" : result.error().message());
 
+    int64_t returned_id = result.value();
+    EXPECT_GT(returned_id, 0) << "Returned ID should be positive";
+    EXPECT_EQ(returned_id, 4) << "Returned ID should be 4";
+
     // Verify Dave now exists in database
-    EXPECT_TRUE(personExists(4)) << "Dave should exist after insertion";
+    EXPECT_TRUE(personExists(returned_id)) << "Dave should exist after insertion";
     EXPECT_EQ(countPersons(), 4) << "Should have 4 persons after insertion";
 }
 
@@ -219,7 +222,7 @@ TEST_F(QuerySetRemoveTest, InsertSmallBatch) {
     // Create QuerySet using simplified syntax
     auto queryset = storm::QuerySet<Person>{};
 
-    // Create a small batch (should use bulk INSERT with VALUES)
+    // Create a small batch with explicit IDs
     std::vector<Person> small_batch = {{4, "Dave", 40}, {5, "Eve", 35}, {6, "Frank", 45}};
 
     // Verify initial state
@@ -228,15 +231,23 @@ TEST_F(QuerySetRemoveTest, InsertSmallBatch) {
     // Insert batch using QuerySet.insert() with span
     auto result = queryset.insert(std::span<const Person>(small_batch));
 
-    // Verify batch insertion was successful
+    // Verify batch insertion was successful and IDs were returned
     ASSERT_TRUE(result.has_value()) << "Batch insert operation should succeed: "
                                     << (result.has_value() ? "success" : result.error().message());
 
+    const auto& ids = result.value();
+    ASSERT_EQ(ids.size(), 3) << "Should have 3 returned IDs";
+
+    // Verify IDs are sequential starting from 4
+    EXPECT_EQ(ids[0], 4) << "First ID should be 4";
+    EXPECT_EQ(ids[1], 5) << "Second ID should be 5";
+    EXPECT_EQ(ids[2], 6) << "Third ID should be 6";
+
     // Verify all persons now exist in database
     EXPECT_EQ(countPersons(), 6) << "Should have 6 persons after batch insertion";
-    EXPECT_TRUE(personExists(4)) << "Dave should exist after batch insertion";
-    EXPECT_TRUE(personExists(5)) << "Eve should exist after batch insertion";
-    EXPECT_TRUE(personExists(6)) << "Frank should exist after batch insertion";
+    EXPECT_TRUE(personExists(ids[0])) << "Dave should exist after batch insertion";
+    EXPECT_TRUE(personExists(ids[1])) << "Eve should exist after batch insertion";
+    EXPECT_TRUE(personExists(ids[2])) << "Frank should exist after batch insertion";
 }
 
 TEST_F(QuerySetRemoveTest, InsertMediumBatch) {
@@ -259,11 +270,18 @@ TEST_F(QuerySetRemoveTest, InsertMediumBatch) {
     ASSERT_TRUE(result.has_value()) << "Medium batch insert operation should succeed: "
                                     << (result.has_value() ? "success" : result.error().message());
 
+    const auto& ids = result.value();
+    ASSERT_EQ(ids.size(), 25) << "Should have 25 returned IDs";
+
+    // Verify IDs are sequential starting from 4
+    EXPECT_EQ(ids[0], 4) << "First ID should be 4";
+    EXPECT_EQ(ids[24], 28) << "Last ID should be 28";
+
     // Verify all persons now exist in database
     EXPECT_EQ(countPersons(), 28) << "Should have 28 persons after medium batch insertion";
-    EXPECT_TRUE(personExists(4)) << "First inserted person should exist";
-    EXPECT_TRUE(personExists(28)) << "Last inserted person should exist";
-    EXPECT_TRUE(personExists(15)) << "Middle inserted person should exist";
+    EXPECT_TRUE(personExists(ids[0])) << "First inserted person should exist";
+    EXPECT_TRUE(personExists(ids[24])) << "Last inserted person should exist";
+    EXPECT_TRUE(personExists(ids[12])) << "Middle inserted person should exist";
 }
 
 TEST_F(QuerySetRemoveTest, InsertLargeBatch) {
@@ -286,11 +304,18 @@ TEST_F(QuerySetRemoveTest, InsertLargeBatch) {
     ASSERT_TRUE(result.has_value()) << "Large batch insert operation should succeed: "
                                     << (result.has_value() ? "success" : result.error().message());
 
+    const auto& ids = result.value();
+    ASSERT_EQ(ids.size(), 60) << "Should have 60 returned IDs";
+
+    // Verify IDs are sequential starting from 4
+    EXPECT_EQ(ids[0], 4) << "First ID should be 4";
+    EXPECT_EQ(ids[59], 63) << "Last ID should be 63";
+
     // Verify all persons now exist in database
     EXPECT_EQ(countPersons(), 63) << "Should have 63 persons after large batch insertion";
-    EXPECT_TRUE(personExists(4)) << "First inserted person should exist";
-    EXPECT_TRUE(personExists(63)) << "Last inserted person should exist";
-    EXPECT_TRUE(personExists(30)) << "Middle inserted person should exist";
+    EXPECT_TRUE(personExists(ids[0])) << "First inserted person should exist";
+    EXPECT_TRUE(personExists(ids[59])) << "Last inserted person should exist";
+    EXPECT_TRUE(personExists(ids[30])) << "Middle inserted person should exist";
 }
 
 TEST_F(QuerySetRemoveTest, InsertEmptyBatch) {
@@ -308,6 +333,9 @@ TEST_F(QuerySetRemoveTest, InsertEmptyBatch) {
 
     // Verify operation succeeds for empty batch
     ASSERT_TRUE(result.has_value()) << "Empty batch insert operation should succeed";
+
+    const auto& ids = result.value();
+    EXPECT_EQ(ids.size(), 0) << "Empty batch should return empty ID vector";
 
     // Verify database state unchanged
     EXPECT_EQ(countPersons(), 3) << "Should still have 3 persons after empty batch insertion";

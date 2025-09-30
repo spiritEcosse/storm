@@ -43,7 +43,7 @@ void benchmark_pure_sqlite_single_insert(int num_records) {
     }
 
     // Create table
-    const char* create_sql = "CREATE TABLE Person (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER NOT NULL)";
+    const char* create_sql = "CREATE TABLE Person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER NOT NULL)";
     rc = sqlite3_exec(db, create_sql, nullptr, nullptr, nullptr);
     if (rc != SQLITE_OK) {
         std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
@@ -96,7 +96,7 @@ void benchmark_raw_sqlite_single_insert(int num_records) {
     }
 
     // Create table
-    const char* create_sql = "CREATE TABLE Person (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER NOT NULL)";
+    const char* create_sql = "CREATE TABLE Person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER NOT NULL)";
     rc = sqlite3_exec(db, create_sql, nullptr, nullptr, nullptr);
     if (rc != SQLITE_OK) {
         std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
@@ -166,7 +166,7 @@ void benchmark_raw_sqlite_batch_insert(int num_records) {
         }
 
         // Create table
-        const char* create_sql = "CREATE TABLE Person (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER NOT NULL)";
+        const char* create_sql = "CREATE TABLE Person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER NOT NULL)";
         rc = sqlite3_exec(db, create_sql, nullptr, nullptr, nullptr);
         if (rc != SQLITE_OK) {
             std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
@@ -279,7 +279,7 @@ void benchmark_pure_sqlite_single_delete(int num_records) {
     }
 
     // Create table
-    const char* create_sql = "CREATE TABLE Person (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER NOT NULL)";
+    const char* create_sql = "CREATE TABLE Person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER NOT NULL)";
     rc = sqlite3_exec(db, create_sql, nullptr, nullptr, nullptr);
     if (rc != SQLITE_OK) {
         std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
@@ -340,7 +340,7 @@ void benchmark_raw_sqlite_single_delete(int num_records) {
     }
 
     // Create table
-    const char* create_sql = "CREATE TABLE Person (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER NOT NULL)";
+    const char* create_sql = "CREATE TABLE Person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER NOT NULL)";
     rc = sqlite3_exec(db, create_sql, nullptr, nullptr, nullptr);
     if (rc != SQLITE_OK) {
         std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
@@ -422,7 +422,7 @@ void benchmark_raw_sqlite_batch_delete(int num_records) {
         }
 
         // Create table
-        const char* create_sql = "CREATE TABLE Person (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER NOT NULL)";
+        const char* create_sql = "CREATE TABLE Person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER NOT NULL)";
         rc = sqlite3_exec(db, create_sql, nullptr, nullptr, nullptr);
         if (rc != SQLITE_OK) {
             std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;

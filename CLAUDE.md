@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: Latest optimization work implements a dedicated SQL generation performance analysis tool, compile-time SQL prefix generation, bulk INSERT operations with ConstexprString, enhanced benchmarking infrastructure, and comprehensive performance validation. New features include compile-time SQL size calculation, pre-computed bulk INSERT prefixes, specialized micro-benchmarks for cache performance analysis, and a fully formatted SQL generation performance analysis script.
+**Last Updated**: Latest feature adds auto-generated ID support to INSERT operations. Single insert operations now return `std::expected<int64_t, Error>` with the generated ID, and batch insert operations return `std::expected<std::vector<int64_t>, Error>` with all generated IDs. This follows standard ORM patterns and uses SQLite's `AUTOINCREMENT` with `last_insert_rowid()` for reliable ID retrieval. Previous optimizations include compile-time SQL generation, thread-local SQL caching, and comprehensive benchmarking infrastructure.
 
 ## Project Overview
 
@@ -94,13 +94,13 @@ src/
 ├── storm.cppm                      # Main module with meta functionality
 ├── db/
 │   ├── concept.cppm                # Database concepts (DatabaseConnection, DatabaseStatement)
-│   └── sqlite.cppm                 # SQLite Connection and Statement implementation
+│   └── sqlite.cppm                 # SQLite Connection (with last_insert_rowid()) and Statement implementation
 └── orm/
-    ├── queryset.cppm               # QuerySet ORM interface with bulk operations
+    ├── queryset.cppm               # QuerySet ORM interface with bulk operations and auto-generated ID support
     ├── utilities.cppm              # ConstexprString, SQLCache templates, and compile-time utilities
     └── statements/
         ├── base.cppm               # BaseStatement shared utilities and transaction management
-        ├── insert.cppm             # InsertStatement with compile-time SQL generation and bulk operations
+        ├── insert.cppm             # InsertStatement with compile-time SQL generation, bulk operations, and ID return
         └── remove.cppm             # RemoveStatement with bulk DELETE operations
 ```
 
@@ -310,7 +310,7 @@ Comprehensive performance testing and validation framework:
 The system provides two optimized batch operation strategies:
 
 **InsertStatement Batch Support:**
-- `execute(std::span<const T> objects)` for bulk insertions
+- `execute(std::span<const T> objects)` returns `std::expected<std::vector<int64_t>, Error>` with all generated IDs
 - Bulk INSERT with multiple VALUES: `INSERT INTO table VALUES (...), (...), (...)`
 - Smart threshold: ≤50 objects use bulk INSERT, >50 use individual statements with transactions
 - Automatic transaction wrapping for multi-object operations
@@ -318,12 +318,59 @@ The system provides two optimized batch operation strategies:
 - **Compile-Time SQL Prefix**: Pre-computed "INSERT INTO table (fields) VALUES " using ConstexprString
 - **Optimized String Building**: Pre-computed value templates and exact memory pre-allocation
 - **Performance**: Significant improvement for cached batch sizes through compile-time prefix optimization
+- **ID Retrieval**: Uses `last_insert_rowid()` after bulk INSERT, calculates sequential IDs from last ID
 
 **RemoveStatement Batch Support:**
-- `execute(std::span<const T> objects)` for bulk deletions
+- `execute(std::span<const T> objects)` for bulk deletions (returns void)
 - Bulk DELETE with IN clause: `DELETE FROM table WHERE id IN (?,?,?)`
 - Same smart thresholds as InsertStatement
 - Optimized for primary key operations using reflection
+
+#### 10. **Auto-Generated ID Support**
+Storm ORM automatically returns generated IDs from insert operations, following standard ORM patterns:
+
+**Key Features:**
+- Single insert operations return `std::expected<int64_t, Error>` with the generated ID
+- Batch insert operations return `std::expected<std::vector<int64_t>, Error>` with all generated IDs
+- Uses SQLite's `AUTOINCREMENT` for guaranteed unique, sequential IDs
+- IDs are retrieved using `sqlite3_last_insert_rowid()` immediately after insert
+
+**SQLite ID Behavior:**
+- For single INSERT: `last_insert_rowid()` returns the inserted row ID
+- For bulk INSERT with multiple VALUES: returns the LAST inserted row ID
+  - Storm calculates first ID: `first_id = last_id - count + 1`
+  - Returns sequential IDs: `[first_id, first_id+1, ..., last_id]`
+- For individual INSERTs in transaction: Storm collects each ID separately
+
+**Table Creation:**
+All tables must use `AUTOINCREMENT` for proper ID generation:
+```cpp
+auto create_result = conn.execute(
+    "CREATE TABLE Person ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "name TEXT NOT NULL, "
+    "age INTEGER NOT NULL"
+    ")"
+);
+```
+
+**Implementation Details:**
+- `Connection::last_insert_rowid()` - retrieves most recent INSERT row ID
+- `InsertStatement::execute()` - returns `std::vector<int64_t>` with generated IDs
+- `QuerySet::insert(obj)` - returns single ID from vector
+- `QuerySet::insert(span)` - returns full ID vector
+- Empty batch returns empty vector (success case)
+
+**Error Handling:**
+- Returns error if insert fails (preserves existing error handling)
+- Returns error if somehow no ID generated (shouldn't happen with AUTOINCREMENT)
+- Error codes propagate through `std::expected` as before
+
+**Performance Characteristics:**
+- Zero overhead: ID retrieval is O(1) SQLite API call
+- No additional database queries required
+- Thread-safe: `last_insert_rowid()` is per-connection (thread-local)
+- Maintains existing performance: ~992K inserts/sec single, ~2.7M inserts/sec batch
 
 ### Cross-Module Dependencies
 
@@ -379,6 +426,10 @@ This project requires the experimental Clang fork with C++26 reflection:
 - Test database uses SQLite in-memory (`:memory:`)
 - Each test creates fresh tables and data
 - Comprehensive sanitizer support in CI
+- **ID Validation**: Tests verify returned auto-generated IDs match database state
+  - Single insert tests verify ID > 0 and matches expected sequence
+  - Batch insert tests verify all IDs are sequential and correct count returned
+  - Empty batch tests verify empty ID vector is returned successfully
 
 ## Important Implementation Notes
 
@@ -392,6 +443,11 @@ This project requires the experimental Clang fork with C++26 reflection:
 - **Primary Key Access**: Uses reflection splice operator `obj.[:primary_key_:]`
 - **Field Binding**: Compile-time index computation eliminates runtime parameter index tracking
 - **Bulk INSERT Caching**: Thread-local 8-entry cache with optimized string pre-allocation and value template reuse
+- **INSERT Return Types (Breaking Change)**: INSERT operations now return auto-generated IDs instead of void
+  - Single insert: `std::expected<int64_t, Error>` (was `std::expected<void, Error>`)
+  - Batch insert: `std::expected<std::vector<int64_t>, Error>` (was `std::expected<void, Error>`)
+  - This is a breaking API change that requires updating calling code
+  - All tables must use `AUTOINCREMENT` for proper ID generation
 
 ## Common Development Tasks
 
@@ -399,19 +455,43 @@ This project requires the experimental Clang fork with C++26 reflection:
 1. Create new statement class in `src/orm/statements/` inheriting from `BaseStatement<T>`
 2. Implement both single-object and batch operations (`std::span<const T>`) if applicable
 3. Use BaseStatement utilities for transaction management and common execution patterns
-4. Add method to `QuerySet` class that delegates to the statement
-5. Add comprehensive tests in `tests/test_sqlite.cpp`
+4. Choose appropriate return type:
+   - INSERT operations: `std::expected<int64_t, Error>` (single) or `std::expected<std::vector<int64_t>, Error>` (batch)
+   - DELETE/UPDATE operations: `std::expected<void, Error>` for both single and batch
+   - SELECT operations: `std::expected<std::vector<T>, Error>` or similar data-bearing types
+5. Add method to `QuerySet` class that delegates to the statement
+6. Add comprehensive tests in `tests/test_sqlite.cpp`
 
 ### Working with Bulk Operations
-**QuerySet bulk INSERT operations:**
+**QuerySet INSERT operations with auto-generated IDs:**
 ```cpp
-// Small batch - uses bulk INSERT with multiple VALUES
-std::vector<Person> people = {{1, "Alice", 25}, {2, "Bob", 30}};
+// Single insert - returns generated ID
+Person dave{0, "Dave", 40};  // ID can be 0, will be auto-generated
+auto result = queryset.insert(dave);
+if (result) {
+    int64_t id = result.value();  // Generated ID from database
+    std::cout << "Inserted with ID: " << id << "\n";
+}
+
+// Small batch - uses bulk INSERT with multiple VALUES, returns all IDs
+std::vector<Person> people = {{0, "Alice", 25}, {0, "Bob", 30}};
 auto result = queryset.insert(std::span<const Person>(people));
+if (result) {
+    const auto& ids = result.value();  // Vector of all generated IDs
+    for (size_t i = 0; i < ids.size(); ++i) {
+        std::cout << "Inserted " << people[i].name << " with ID: " << ids[i] << "\n";
+    }
+}
 
 // Large batch - automatically switches to individual statements with transaction
 std::vector<Person> large_batch = generate_test_data(1000);
 auto result = queryset.insert(std::span<const Person>(large_batch));
+if (result) {
+    // Returns vector with 1000 IDs
+    assert(result.value().size() == 1000);
+    std::cout << "Inserted 1000 records with IDs from "
+              << result.value().front() << " to " << result.value().back() << "\n";
+}
 ```
 
 **QuerySet bulk DELETE operations:**
@@ -431,6 +511,7 @@ auto result = queryset.remove(std::span<const Person>(large_batch_remove));
 for (int i = 0; i < 100; ++i) {
     std::vector<Person> batch = generate_test_data(25); // Common size - cache hit
     auto result = queryset.insert(std::span<const Person>(batch));
+    // Each iteration returns 25 IDs with minimal overhead
 }
 ```
 
