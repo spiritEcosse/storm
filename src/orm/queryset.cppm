@@ -170,6 +170,14 @@ export namespace storm {
             return *select_stmt_;
         }
 
+        // Lazy-initialize and return cached UpdateStatement for optimal performance
+        auto get_update_statement() const -> orm::statements::UpdateStatement<T, ConnType>& {
+            if (!update_stmt_) {
+                update_stmt_ = std::make_unique<orm::statements::UpdateStatement<T, ConnType>>(conn_);
+            }
+            return *update_stmt_;
+        }
+
         ConnType&                                                              conn_;
         // Lazy-initialize and return cached SelectStatement for optimal performance
         auto get_select_statement() const -> orm::statements::SelectStatement<T, ConnType>& {
