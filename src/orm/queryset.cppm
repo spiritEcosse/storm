@@ -10,6 +10,7 @@ import storm_db_sqlite;
 import storm_orm_statements_base;
 import storm_orm_statements_remove;
 import storm_orm_statements_insert;
+import storm_orm_statements_select;
 import storm_orm_statements_update;
 import storm_orm_statements_select;
 import storm_orm_statements_update;
@@ -35,6 +36,7 @@ export namespace storm {
 
     template <class T, storm::db::DatabaseConnection ConnType = storm::db::sqlite::Connection> class QuerySet {
         using Error     = typename ConnType::Error;
+        using Error     = typename ConnType::Error;
         using Statement = typename ConnType::Statement;
 
       public:
@@ -56,11 +58,17 @@ export namespace storm {
         // Insert operations
         std::expected<int64_t, Error> insert(const T& obj) {
             return execute_insert(std::span<const T>{&obj, 1}).transform([](const auto& ids) { return ids[0]; });
+            return execute_insert(std::span<const T>{&obj, 1}).transform([](const auto& ids) { return ids[0]; });
         }
 
         // Bulk insert operations
         std::expected<std::vector<int64_t>, Error> insert(std::span<const T> objects) {
             return execute_insert(objects);
+        }
+
+        // Select operations - returns all rows (optimized with statement caching)
+        std::expected<std::vector<T>, Error> select() {
+            return get_select_statement().execute_optimized();
         }
 
         // Update operations
@@ -162,6 +170,15 @@ export namespace storm {
             return *select_stmt_;
         }
 
+        ConnType&                                                              conn_;
+        // Lazy-initialize and return cached SelectStatement for optimal performance
+        auto get_select_statement() const -> orm::statements::SelectStatement<T, ConnType>& {
+            if (!select_stmt_) {
+                select_stmt_ = std::make_unique<orm::statements::SelectStatement<T, ConnType>>(conn_);
+            }
+            return *select_stmt_;
+        }
+
         // Lazy-initialize and return cached UpdateStatement for optimal performance
         auto get_update_statement() const -> orm::statements::UpdateStatement<T, ConnType>& {
             if (!update_stmt_) {
@@ -180,6 +197,7 @@ export namespace storm {
 
         ConnType&                                                              conn_;
         mutable std::unique_ptr<orm::statements::RemoveStatement<T, ConnType>> remove_stmt_;
+        mutable std::unique_ptr<orm::statements::SelectStatement<T, ConnType>> select_stmt_;
         mutable std::unique_ptr<orm::statements::UpdateStatement<T, ConnType>> update_stmt_;
         mutable std::unique_ptr<orm::statements::SelectStatement<T, ConnType>> select_stmt_;
         mutable std::unique_ptr<orm::statements::UpdateStatement<T, ConnType>> update_stmt_;

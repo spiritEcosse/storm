@@ -10,6 +10,7 @@ void benchmark_sqlite_orm_single_insert(int num_records);
 void benchmark_sqlite_orm_batch_insert(int num_records);
 void benchmark_sqlite_orm_single_delete(int num_records);
 void benchmark_sqlite_orm_batch_delete(int num_records);
+void benchmark_sqlite_orm_select(int num_records);
 void benchmark_sqlite_orm_single_update(int num_records);
 void benchmark_sqlite_orm_batch_update(int num_records);
 void benchmark_sqlite_orm_select(int num_records);
@@ -226,6 +227,10 @@ int main() {
 
         // Test batch DELETE operations with different batch sizes
         benchmark_sqlite_orm_batch_delete(size);
+        std::cout << "\n\n";
+
+        // Test SELECT operations
+        benchmark_sqlite_orm_select(size);
         std::cout << "\n\n";
 
         // Test single UPDATE operations
