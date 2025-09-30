@@ -136,6 +136,12 @@ calculate_overall_percentage() {
     local batch_insert=$2
     local single_delete=$3
     local bulk_delete=$4
+    local single_update=$5
+    local baseline_single_insert=$6
+    local baseline_batch_insert=$7
+    local baseline_single_delete=$8
+    local baseline_bulk_delete=$9
+    local baseline_single_update=${10}
     local select=$5
     local baseline_single_insert=$6
     local baseline_batch_insert=$7
@@ -167,6 +173,12 @@ calculate_overall_percentage() {
 
     if [[ -n "$bulk_delete" && "$bulk_delete" =~ ^[0-9]+$ && -n "$baseline_bulk_delete" && "$baseline_bulk_delete" != "0" ]]; then
         local pct=$(calculate_percentage "$bulk_delete" "$baseline_bulk_delete")
+        total_percentage=$((total_percentage + pct))
+        count=$((count + 1))
+    fi
+
+    if [[ -n "$single_update" && "$single_update" =~ ^[0-9]+$ && -n "$baseline_single_update" && "$baseline_single_update" != "0" ]]; then
+        local pct=$(calculate_percentage "$single_update" "$baseline_single_update")
         total_percentage=$((total_percentage + pct))
         count=$((count + 1))
     fi
@@ -299,13 +311,16 @@ declare -a single_inserts
 declare -a batch_inserts
 declare -a single_deletes
 declare -a bulk_deletes
+declare -a single_updates
 declare -a selects
 
+# Store baseline (sqlite_orm) performance for percentage calculation - all 5 metrics
 # Store baseline (sqlite_orm) performance for percentage calculation - all 5 metrics
 BASELINE_SINGLE_INSERT=""
 BASELINE_BATCH_INSERT=""
 BASELINE_SINGLE_DELETE=""
 BASELINE_BULK_DELETE=""
+BASELINE_SINGLE_UPDATE=""
 BASELINE_SELECT=""
 
 # Raw SQLite metrics
@@ -316,12 +331,14 @@ if [[ -x "build/debug/benchmarks/bench_sqlite" ]]; then
     SQLITE_BATCH=$(echo "$SQLITE_OUTPUT" | grep -A7 "Raw SQLite - Batch INSERT 10000 records (batch size 1000)" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
     SQLITE_DELETE_SINGLE=$(echo "$SQLITE_OUTPUT" | grep -A4 "Raw SQLite (prepared statements) - Single DELETE 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
     SQLITE_DELETE_BULK=$(echo "$SQLITE_OUTPUT" | grep -A7 "Raw SQLite - Batch DELETE 10000 records" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
+    SQLITE_UPDATE_SINGLE=$(echo "$SQLITE_OUTPUT" | grep -A4 "Raw SQLite (prepared statements) - Single UPDATE 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ updates\/sec//' | head -1)
     SQLITE_SELECT=$(echo "$SQLITE_OUTPUT" | grep -A4 "Raw SQLite - SELECT 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ rows\/sec//' | head -1)
 
     # Raw SQLite is not used as baseline due to timing precision issues
 
     # Debug output
     if [[ -n "$DEBUG_MODE" ]]; then
+        echo "DEBUG Raw SQLite - Single: '$SQLITE_SINGLE', Batch: '$SQLITE_BATCH', Delete Single: '$SQLITE_DELETE_SINGLE', Delete Bulk: '$SQLITE_DELETE_BULK', Update Single: '$SQLITE_UPDATE_SINGLE'" >&2
         echo "DEBUG Raw SQLite - Single: '$SQLITE_SINGLE', Batch: '$SQLITE_BATCH', Delete Single: '$SQLITE_DELETE_SINGLE', Delete Bulk: '$SQLITE_DELETE_BULK', Select: '$SQLITE_SELECT'" >&2
     fi
 
@@ -335,6 +352,7 @@ if [[ -x "build/debug/benchmarks/bench_sqlite" ]]; then
     batch_inserts+=("$SQLITE_BATCH")
     single_deletes+=("$SQLITE_DELETE_SINGLE")
     bulk_deletes+=("$SQLITE_DELETE_BULK")
+    single_updates+=("$SQLITE_UPDATE_SINGLE")
     selects+=("$SQLITE_SELECT")
 else
     benchmark_names+=("Raw SQLite (prepared)")
@@ -343,6 +361,7 @@ else
     batch_inserts+=("")
     single_deletes+=("")
     bulk_deletes+=("")
+    single_updates+=("")
     selects+=("")
 fi
 
@@ -354,8 +373,10 @@ if [[ -x "build/debug/benchmarks/bench_sqlite_orm" ]]; then
     SQLITEORM_BATCH=$(echo "$SQLITEORM_OUTPUT" | grep -A7 "sqlite_orm - Batch INSERT 10000 records (batch size 100)" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
     SQLITEORM_DELETE_SINGLE=$(echo "$SQLITEORM_OUTPUT" | grep -A4 "sqlite_orm - Single DELETE 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
     SQLITEORM_DELETE_BULK=$(echo "$SQLITEORM_OUTPUT" | grep -A7 "sqlite_orm - Batch DELETE 10000 records" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
+    SQLITEORM_UPDATE_SINGLE=$(echo "$SQLITEORM_OUTPUT" | grep -A4 "sqlite_orm - Single UPDATE 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ updates\/sec//' | head -1)
     SQLITEORM_SELECT=$(echo "$SQLITEORM_OUTPUT" | grep -A4 "sqlite_orm - SELECT 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ rows\/sec//' | head -1)
 
+    # Set sqlite_orm as baseline for ORM comparison - all 5 metrics
     # Set sqlite_orm as baseline for ORM comparison - all 5 metrics
     if [[ -n "$SQLITEORM_SINGLE" && "$SQLITEORM_SINGLE" =~ ^[0-9]+$ ]]; then
         BASELINE_SINGLE_INSERT="$SQLITEORM_SINGLE"
@@ -369,6 +390,9 @@ if [[ -x "build/debug/benchmarks/bench_sqlite_orm" ]]; then
     if [[ -n "$SQLITEORM_DELETE_BULK" && "$SQLITEORM_DELETE_BULK" =~ ^[0-9]+$ ]]; then
         BASELINE_BULK_DELETE="$SQLITEORM_DELETE_BULK"
     fi
+    if [[ -n "$SQLITEORM_UPDATE_SINGLE" && "$SQLITEORM_UPDATE_SINGLE" =~ ^[0-9]+$ ]]; then
+        BASELINE_SINGLE_UPDATE="$SQLITEORM_UPDATE_SINGLE"
+    fi
     if [[ -n "$SQLITEORM_SELECT" && "$SQLITEORM_SELECT" =~ ^[0-9]+$ ]]; then
         BASELINE_SELECT="$SQLITEORM_SELECT"
     fi
@@ -378,6 +402,7 @@ if [[ -x "build/debug/benchmarks/bench_sqlite_orm" ]]; then
 
     # Debug output
     if [[ -n "$DEBUG_MODE" ]]; then
+        echo "DEBUG sqlite_orm - Single: '$SQLITEORM_SINGLE', Batch: '$SQLITEORM_BATCH', Delete Single: '$SQLITEORM_DELETE_SINGLE', Delete Bulk: '$SQLITEORM_DELETE_BULK', Update Single: '$SQLITEORM_UPDATE_SINGLE'" >&2
         echo "DEBUG sqlite_orm - Single: '$SQLITEORM_SINGLE', Batch: '$SQLITEORM_BATCH', Delete Single: '$SQLITEORM_DELETE_SINGLE', Delete Bulk: '$SQLITEORM_DELETE_BULK', Select: '$SQLITEORM_SELECT'" >&2
     fi
 
@@ -388,6 +413,7 @@ if [[ -x "build/debug/benchmarks/bench_sqlite_orm" ]]; then
     batch_inserts+=("$SQLITEORM_BATCH")
     single_deletes+=("$SQLITEORM_DELETE_SINGLE")
     bulk_deletes+=("$SQLITEORM_DELETE_BULK")
+    single_updates+=("$SQLITEORM_UPDATE_SINGLE")
     selects+=("$SQLITEORM_SELECT")
 else
     benchmark_names+=("sqlite_orm (v1.9.1)")
@@ -396,6 +422,7 @@ else
     batch_inserts+=("")
     single_deletes+=("")
     bulk_deletes+=("")
+    single_updates+=("")
     selects+=("")
 fi
 
@@ -407,15 +434,20 @@ if [[ -x "build/debug/benchmarks/bench_storm" ]]; then
     STORM_BATCH=$(echo "$STORM_OUTPUT" | grep -A7 "Storm ORM - Batch INSERT 10000 records (batch size 1000)" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
     STORM_DELETE_SINGLE=$(echo "$STORM_OUTPUT" | grep -A4 "Storm ORM - Single DELETE 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
     STORM_DELETE_BULK=$(echo "$STORM_OUTPUT" | grep -A7 "Storm ORM - Batch DELETE 10000 records" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ deletes\/sec//' | head -1)
+    STORM_UPDATE_SINGLE=$(echo "$STORM_OUTPUT" | grep -A4 "Storm ORM - Single UPDATE 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ updates\/sec//' | head -1)
     STORM_SELECT=$(echo "$STORM_OUTPUT" | grep -A4 "Storm ORM - SELECT 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ rows\/sec//' | head -1)
 
     # Calculate overall performance percentage across all 5 metrics
+    # Calculate overall performance percentage across all 5 metrics
     STORM_PERCENTAGE=$(calculate_overall_percentage \
+        "$STORM_SINGLE" "$STORM_BATCH" "$STORM_DELETE_SINGLE" "$STORM_DELETE_BULK" "$STORM_UPDATE_SINGLE" \
+        "$BASELINE_SINGLE_INSERT" "$BASELINE_BATCH_INSERT" "$BASELINE_SINGLE_DELETE" "$BASELINE_BULK_DELETE" "$BASELINE_SINGLE_UPDATE")
         "$STORM_SINGLE" "$STORM_BATCH" "$STORM_DELETE_SINGLE" "$STORM_DELETE_BULK" "$STORM_SELECT" \
         "$BASELINE_SINGLE_INSERT" "$BASELINE_BATCH_INSERT" "$BASELINE_SINGLE_DELETE" "$BASELINE_BULK_DELETE" "$BASELINE_SELECT")
 
     # Debug output
     if [[ -n "$DEBUG_MODE" ]]; then
+        echo "DEBUG Storm ORM - Single: '$STORM_SINGLE', Batch: '$STORM_BATCH', Delete Single: '$STORM_DELETE_SINGLE', Delete Bulk: '$STORM_DELETE_BULK', Update Single: '$STORM_UPDATE_SINGLE'" >&2
         echo "DEBUG Storm ORM - Single: '$STORM_SINGLE', Batch: '$STORM_BATCH', Delete Single: '$STORM_DELETE_SINGLE', Delete Bulk: '$STORM_DELETE_BULK', Select: '$STORM_SELECT'" >&2
     fi
 
@@ -426,6 +458,7 @@ if [[ -x "build/debug/benchmarks/bench_storm" ]]; then
     batch_inserts+=("$STORM_BATCH")
     single_deletes+=("$STORM_DELETE_SINGLE")
     bulk_deletes+=("$STORM_DELETE_BULK")
+    single_updates+=("$STORM_UPDATE_SINGLE")
     selects+=("$STORM_SELECT")
 else
     benchmark_names+=("Storm ORM (Standard)")
@@ -434,13 +467,17 @@ else
     batch_inserts+=("")
     single_deletes+=("")
     bulk_deletes+=("")
+    single_updates+=("")
     selects+=("")
 fi
 
 
 # Now that baseline is set, calculate Raw SQLite overall percentage across all 5 metrics
+# Now that baseline is set, calculate Raw SQLite overall percentage across all 5 metrics
 if [[ -n "$BASELINE_SINGLE_INSERT" ]]; then
     SQLITE_PERCENTAGE=$(calculate_overall_percentage \
+        "$SQLITE_SINGLE" "$SQLITE_BATCH" "$SQLITE_DELETE_SINGLE" "$SQLITE_DELETE_BULK" "$SQLITE_UPDATE_SINGLE" \
+        "$BASELINE_SINGLE_INSERT" "$BASELINE_BATCH_INSERT" "$BASELINE_SINGLE_DELETE" "$BASELINE_BULK_DELETE" "$BASELINE_SINGLE_UPDATE")
         "$SQLITE_SINGLE" "$SQLITE_BATCH" "$SQLITE_DELETE_SINGLE" "$SQLITE_DELETE_BULK" "$SQLITE_SELECT" \
         "$BASELINE_SINGLE_INSERT" "$BASELINE_BATCH_INSERT" "$BASELINE_SINGLE_DELETE" "$BASELINE_BULK_DELETE" "$BASELINE_SELECT")
     # Update the Raw SQLite entry (index 0)
@@ -469,6 +506,9 @@ for (( i = 0; i < ${#sorted_indices[@]} - 1; i++ )); do
 done
 
 # Create and display the sorted table
+echo "┌─────────────────────────────────────┬──────────────────┬────────────────────┬─────────────────────┬────────────────────┬────────────────────┬─────────────────────┐"
+echo "│ Benchmark                           │ Overall Perf %   │ Single INSERT      │ Best Batch INSERT   │ Single UPDATE      │ Single DELETE      │ Bulk DELETE         │"
+echo "├─────────────────────────────────────┼──────────────────┼────────────────────┼─────────────────────┼────────────────────┼────────────────────┼─────────────────────┤"
 echo "┌─────────────────────────────────────┬──────────────────┬────────────────────┬─────────────────────┬────────────────────┬─────────────────────┬─────────────────────┐"
 echo "│ Benchmark                           │ Overall Perf %   │ Single INSERT      │ Best Batch INSERT   │ Single DELETE      │ Bulk DELETE         │ SELECT              │"
 echo "├─────────────────────────────────────┼──────────────────┼────────────────────┼─────────────────────┼────────────────────┼─────────────────────┼─────────────────────┤"
@@ -481,6 +521,7 @@ for idx in "${sorted_indices[@]}"; do
     batch_insert="${batch_inserts[idx]}"
     single_delete="${single_deletes[idx]}"
     bulk_delete="${bulk_deletes[idx]}"
+    single_update="${single_updates[idx]}"
     select="${selects[idx]}"
 
     # Format values for display
@@ -504,6 +545,12 @@ for idx in "${sorted_indices[@]}"; do
         batch_insert_display="$(format_number_with_color "$batch_insert" "inserts")"
     else
         batch_insert_display="Not available"
+    fi
+
+    if [[ -n "$single_update" && "$single_update" =~ ^[0-9]+$ ]]; then
+        single_update_display="$(format_number_with_color "$single_update" "updates")"
+    else
+        single_update_display="Not available"
     fi
 
     if [[ -n "$single_delete" && "$single_delete" =~ ^[0-9]+$ ]]; then
@@ -530,13 +577,16 @@ for idx in "${sorted_indices[@]}"; do
     percentage_padded=$(pad_string "$percentage_display" 16)
     single_insert_padded=$(pad_string "$single_insert_display" 18)
     batch_insert_padded=$(pad_string "$batch_insert_display" 19)
+    single_update_padded=$(pad_string "$single_update_display" 18)
     single_delete_padded=$(pad_string "$single_delete_display" 18)
     bulk_delete_padded=$(pad_string "$bulk_delete_display" 19)
     select_padded=$(pad_string "$select_display" 19)
 
+    echo -e "│ ${name_padded} │ ${percentage_padded} │ ${single_insert_padded} │ ${batch_insert_padded} │ ${single_update_padded} │ ${single_delete_padded} │ ${bulk_delete_padded} │"
     echo -e "│ ${name_padded} │ ${percentage_padded} │ ${single_insert_padded} │ ${batch_insert_padded} │ ${single_delete_padded} │ ${bulk_delete_padded} │ ${select_padded} │"
 done
 
+echo "└─────────────────────────────────────┴──────────────────┴────────────────────┴─────────────────────┴────────────────────┴────────────────────┴─────────────────────┘"
 echo "└─────────────────────────────────────┴──────────────────┴────────────────────┴─────────────────────┴────────────────────┴─────────────────────┴─────────────────────┘"
 echo ""
 
