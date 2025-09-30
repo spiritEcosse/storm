@@ -32,6 +32,7 @@ export namespace storm {
 
     template <class T, storm::db::DatabaseConnection ConnType = storm::db::sqlite::Connection> class QuerySet {
         using Error = typename ConnType::Error;
+        using Statement = typename ConnType::Statement;
 
       public:
         // Default constructor using default connection
@@ -40,12 +41,46 @@ export namespace storm {
             : conn_(get_default_connection()) {}
 
         std::expected<void, Error> remove(const T& obj) {
-            return execute_remove(std::span<const T>{&obj, 1});
+            // Ultra-optimized fast path - inline DELETE with cached statement
+            if (!cached_delete_stmt_) {
+                // Get DELETE SQL from RemoveStatement
+                auto delete_sql = orm::statements::RemoveStatement<T, ConnType>::get_delete_sql_static();
+                auto stmt_result = conn_.prepare_cached(delete_sql);
+                if (!stmt_result) {
+                    return std::unexpected(stmt_result.error());
+                }
+                cached_delete_stmt_ = *stmt_result;
+            }
+
+            // Inline bind and execute - minimal overhead
+            using Base = orm::statements::BaseStatement<T>;
+            auto pk_value = obj.[:Base::get_primary_key():];
+
+            // Direct bind without abstraction
+            std::expected<void, Error> bind_result;
+            if constexpr (std::is_same_v<decltype(pk_value), int>) {
+                bind_result = cached_delete_stmt_->bind_int(1, pk_value);
+            } else if constexpr (std::is_convertible_v<decltype(pk_value), std::string_view>) {
+                bind_result = cached_delete_stmt_->bind_text(1, std::string_view{pk_value});
+            }
+
+            if (!bind_result) {
+                return std::unexpected(bind_result.error());
+            }
+
+            auto exec_result = cached_delete_stmt_->execute();
+            if (!exec_result) {
+                cached_delete_stmt_->reset();
+                return std::unexpected(exec_result.error());
+            }
+
+            cached_delete_stmt_->reset();
+            return {};
         }
 
         // Bulk remove operations
         std::expected<void, Error> remove(std::span<const T> objects) {
-            return execute_remove(objects);
+            return orm::statements::RemoveStatement<T, ConnType>(conn_).execute(objects);
         }
 
         // Insert operations
@@ -97,16 +132,13 @@ export namespace storm {
         }
 
       private:
-        [[nodiscard]] std::expected<void, Error> execute_remove(std::span<const T> objects) const noexcept {
-            return orm::statements::RemoveStatement<T, ConnType>(conn_).execute(objects);
-        }
-
         [[nodiscard]] std::expected<std::vector<int64_t>, Error>
         execute_insert(std::span<const T> objects) const noexcept {
             return orm::statements::InsertStatement<T, ConnType>(conn_).execute(objects);
         }
 
         ConnType& conn_;
+        mutable Statement* cached_delete_stmt_ = nullptr; // Cached statement for ultra-fast single DELETE
     };
 
     // Factory function for convenient QuerySet creation with default connection

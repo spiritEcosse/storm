@@ -1,7 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Bash:*",
+      "Bash(cmake:*)",
+      "Read(//home/ihor/projects/storm/storm_develop/build/debug/benchmarks/**)",
+      "Read(//home/ihor/projects/storm/storm_develop/**)",
+      "Bash(./build/debug/benchmarks/bench_storm:*)",
+      "Bash(./build/debug/benchmarks/bench_sqlite:*)",
+      "Bash(git stash:*)",
+      "Bash(./build/debug/tests/storm_tests:*)",
+      "Bash(git add:*)",
+      "Bash(git diff:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(cat:*)",
       "Read",
       "Write",
       "Edit",

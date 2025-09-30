@@ -63,6 +63,13 @@ export namespace storm::orm::statements {
         static constexpr auto           delete_sql_array  = build_delete_sql_array();
         static inline const std::string delete_sql_string = std::string(delete_sql_array);
 
+      public:
+        // Public access to DELETE SQL for QuerySet optimization
+        static const std::string& get_delete_sql_static() {
+            return delete_sql_string;
+        }
+
+      private:
         // Compile-time bulk DELETE prefix calculation
         static consteval size_t calculate_bulk_delete_prefix_size() {
             size_t size = 0;
@@ -150,8 +157,60 @@ export namespace storm::orm::statements {
                 return {};
             }
 
-            // Use BaseStatement's generic batch execution
+            // Fast path for single delete - bypass all batch machinery
+            if (objects.size() == 1) {
+                return execute_single_optimized(objects[0]);
+            }
+
+            // Use BaseStatement's generic batch execution for multiple objects
             return Base::execute_standard_batch(*this, objects, 1); // 1 variable per object (primary key)
+        }
+
+        // Ultra-optimized single DELETE - pre-cached statement, inlined execution
+        [[nodiscard]] auto execute_single_optimized(const T& obj) noexcept -> std::expected<void, Error> {
+            // Get or cache the prepared statement
+            if (!cached_delete_stmt_) {
+                auto stmt_result = conn_.prepare_cached(get_delete_sql());
+                if (!stmt_result) {
+                    return std::unexpected(stmt_result.error());
+                }
+                cached_delete_stmt_ = *stmt_result;
+            }
+
+            // Direct inline bind and execute - minimal overhead
+            auto pk_value = obj.[:Base::primary_key_:];
+
+            // Inline bind without template dispatch
+            std::expected<void, Error> bind_result;
+            if constexpr (std::is_same_v<decltype(pk_value), int>) {
+                bind_result = cached_delete_stmt_->bind_int(1, pk_value);
+            } else if constexpr (std::is_convertible_v<decltype(pk_value), std::string_view>) {
+                bind_result = cached_delete_stmt_->bind_text(1, std::string_view{pk_value});
+            }
+
+            if (!bind_result) {
+                return std::unexpected(bind_result.error());
+            }
+
+            // Execute and reset for next use
+            auto exec_result = cached_delete_stmt_->execute();
+            if (!exec_result) {
+                cached_delete_stmt_->reset();
+                return std::unexpected(exec_result.error());
+            }
+
+            cached_delete_stmt_->reset();
+            return {};
+        }
+
+        // Standard fast path for single DELETE
+        [[nodiscard]] auto execute_single(const T& obj) noexcept -> std::expected<void, Error> {
+            return Base::template execute_with_statement<ConnType>(
+                    conn_, get_delete_sql(), [this, &obj](auto& stmt) -> std::expected<void, Error> {
+                        // Direct bind and execute - no loops, minimal abstraction
+                        return bind_primary_key(stmt, obj).and_then([&stmt]() { return stmt.execute(); });
+                    }
+            );
         }
 
         // Bulk execute using IN clause for better performance on small batches
@@ -222,6 +281,7 @@ export namespace storm::orm::statements {
         }
 
         Connection& conn_;
+        mutable Statement* cached_delete_stmt_ = nullptr; // Cached statement for optimized single DELETE
     };
 
 } // namespace storm::orm::statements
