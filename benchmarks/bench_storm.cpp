@@ -18,7 +18,7 @@ struct Person {
 
 // Configuration structure
 struct BenchmarkConfig {
-    enum Mode { COMPREHENSIVE, DELETE_FOCUS, INSERT_ONLY, DELETE_ONLY, CACHE_ANALYSIS, OPTIMIZATION_TEST };
+    enum Mode { COMPREHENSIVE, DELETE_FOCUS, INSERT_ONLY, DELETE_ONLY, SELECT_ONLY, CACHE_ANALYSIS, OPTIMIZATION_TEST };
     Mode mode = COMPREHENSIVE;
     std::vector<int> test_sizes = {1000, 5000, 10000};
     bool verbose = false;
@@ -33,6 +33,7 @@ void benchmark_storm_orm_single_update(int num_records, const BenchmarkConfig& c
 void benchmark_storm_orm_batch_update(int num_records, const BenchmarkConfig& config);
 void benchmark_storm_orm_single_delete(int num_records, const BenchmarkConfig& config);
 void benchmark_storm_orm_batch_delete(int num_records, const BenchmarkConfig& config);
+void benchmark_storm_orm_select(int num_records, const BenchmarkConfig& config);
 void benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& config);
 void benchmark_cache_analysis(int num_records, const BenchmarkConfig& config);
 void benchmark_optimization_test(int num_records, const BenchmarkConfig& config);
@@ -536,6 +537,71 @@ void benchmark_storm_orm_batch_delete(int num_records, const BenchmarkConfig& co
     }
 }
 
+void benchmark_storm_orm_select(int num_records, const BenchmarkConfig& config) {
+    std::cout << "=== Storm ORM SELECT Benchmark ===" << std::endl;
+
+    // Setup Storm ORM connection
+    auto result = storm::QuerySet<Person>::set_default_connection(":memory:");
+    if (!result.has_value()) {
+        std::cerr << "Failed to set Storm connection: " << result.error().message() << std::endl;
+        return;
+    }
+
+    // Create table
+    auto& conn = storm::QuerySet<Person>::get_default_connection();
+    auto create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+    if (!create_result.has_value()) {
+        std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
+        return;
+    }
+
+    // Prepare and insert test data
+    std::vector<Person> persons;
+    if (config.realistic_data) {
+        persons = generate_realistic_test_data(num_records);
+    } else {
+        persons = data_utils::generate_simple_test_data<Person>(num_records);
+    }
+
+    // Create QuerySet
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Insert test data
+    for (const auto& person : persons) {
+        auto insert_result = queryset.insert(person);
+        if (!insert_result.has_value()) {
+            std::cerr << "Failed to insert test data: " << insert_result.error().message() << std::endl;
+            return;
+        }
+    }
+
+    // Benchmark SELECT operation (fetching all rows)
+    BenchmarkTimer timer;
+    timer.reset();
+    auto select_result = queryset.select();
+    double elapsed = timer.elapsed_ms();
+
+    if (select_result.has_value()) {
+        const auto& selected_persons = select_result.value();
+        std::cout << "Storm ORM - SELECT " << num_records << " records:" << std::endl;
+        std::cout << "  Total time: " << std::fixed << std::setprecision(2) << elapsed << " ms" << std::endl;
+        std::cout << "  Rows fetched: " << selected_persons.size() << std::endl;
+        std::cout << "  Average per row: " << std::fixed << std::setprecision(4)
+                  << (elapsed / selected_persons.size()) << " ms" << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+                  << (selected_persons.size() / (elapsed / 1000.0)) << " rows/sec" << std::endl;
+
+        if (config.show_cache_stats) {
+            std::cout << "  Statement cache size: " << conn.cached_statement_count() << std::endl;
+        }
+    } else {
+        std::cerr << "SELECT failed: " << select_result.error().message() << std::endl;
+    }
+
+    // Cleanup
+    storm::QuerySet<Person>::clear_default_connection();
+}
+
 void benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& config) {
     // Setup Storm ORM connection
     auto result = storm::QuerySet<Person>::set_default_connection(":memory:");
@@ -731,6 +797,8 @@ int main(int argc, char* argv[]) {
         std::cout << "=== Storm ORM INSERT Only Benchmark ===" << std::endl << std::endl;
     } else if (config.mode == BenchmarkConfig::DELETE_ONLY) {
         std::cout << "=== Storm ORM DELETE Only Benchmark ===" << std::endl << std::endl;
+    } else if (config.mode == BenchmarkConfig::SELECT_ONLY) {
+        std::cout << "=== Storm ORM SELECT Only Benchmark ===" << std::endl << std::endl;
     } else if (config.mode == BenchmarkConfig::CACHE_ANALYSIS) {
         std::cout << "=== Storm ORM Cache Analysis Benchmark ===" << std::endl << std::endl;
         std::cout << "Features tested:" << std::endl;
@@ -793,6 +861,12 @@ int main(int argc, char* argv[]) {
                 benchmark_storm_orm_batch_delete(size, config);
                 std::cout << std::endl << std::endl;
             }
+
+            if (config.mode == BenchmarkConfig::COMPREHENSIVE || config.mode == BenchmarkConfig::SELECT_ONLY) {
+                // Test SELECT operations
+                benchmark_storm_orm_select(size, config);
+                std::cout << std::endl << std::endl;
+            }
         }
     }
 
@@ -812,6 +886,8 @@ BenchmarkConfig parse_arguments(int argc, char* argv[]) {
             config.mode = BenchmarkConfig::INSERT_ONLY;
         } else if (strcmp(argv[i], "--mode=delete-only") == 0) {
             config.mode = BenchmarkConfig::DELETE_ONLY;
+        } else if (strcmp(argv[i], "--mode=select-only") == 0) {
+            config.mode = BenchmarkConfig::SELECT_ONLY;
         } else if (strcmp(argv[i], "--mode=cache-analysis") == 0) {
             config.mode = BenchmarkConfig::CACHE_ANALYSIS;
             config.show_cache_stats = true;
@@ -851,10 +927,11 @@ BenchmarkConfig parse_arguments(int argc, char* argv[]) {
 void print_usage(const char* program_name) {
     std::cout << "Usage: " << program_name << " [options]" << std::endl;
     std::cout << std::endl << "Options:" << std::endl;
-    std::cout << "  --mode=comprehensive       Run all INSERT and DELETE benchmarks (default)" << std::endl;
+    std::cout << "  --mode=comprehensive       Run all INSERT, DELETE, and SELECT benchmarks (default)" << std::endl;
     std::cout << "  --mode=delete-focus        Focus on DELETE operations with cache analysis" << std::endl;
     std::cout << "  --mode=insert-only         Run only INSERT benchmarks" << std::endl;
     std::cout << "  --mode=delete-only         Run only DELETE benchmarks" << std::endl;
+    std::cout << "  --mode=select-only         Run only SELECT benchmarks" << std::endl;
     std::cout << "  --mode=cache-analysis      Test SQL cache performance and effectiveness" << std::endl;
     std::cout << "  --mode=optimization-test   Comprehensive optimization testing with feature summary" << std::endl;
     std::cout << "  --realistic-data           Use random test data instead of predictable patterns" << std::endl;

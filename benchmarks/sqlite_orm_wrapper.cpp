@@ -83,6 +83,28 @@ void sqlite_orm_update_person(sqlite_orm_storage_t storage, int id, const char* 
     }
 }
 
+int sqlite_orm_select_all_persons(sqlite_orm_storage_t storage) {
+    if (!storage) return 0;
+
+    auto* wrapper = static_cast<StorageWrapper*>(storage);
+    try {
+        auto persons = wrapper->storage.get_all<PersonSqliteOrm>();
+        // Process all persons to simulate full row extraction
+        int count = 0;
+        for (const auto& person : persons) {
+            // Prevent compiler optimization
+            (void)person.id;
+            (void)person.name;
+            (void)person.age;
+            count++;
+        }
+        return count;
+    } catch (...) {
+        // Silently ignore errors for benchmark simplicity
+        return 0;
+    }
+}
+
 void sqlite_orm_cleanup(sqlite_orm_storage_t storage) {
     if (!storage) return;
 

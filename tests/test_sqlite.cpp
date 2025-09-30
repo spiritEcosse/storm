@@ -548,10 +548,10 @@ class QuerySetUpdateTest : public ::testing::Test {
         auto& default_conn  = storm::QuerySet<Person>::get_default_connection();
         auto  create_result = default_conn.execute(
                 "CREATE TABLE Person ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "name TEXT NOT NULL, "
-                "age INTEGER NOT NULL"
-                ")"
+                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                 "name TEXT NOT NULL, "
+                 "age INTEGER NOT NULL"
+                 ")"
         );
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
@@ -595,14 +595,13 @@ class QuerySetUpdateTest : public ::testing::Test {
 
         sqlite3_bind_int(stmt, 1, id);
         rc = sqlite3_step(stmt);
-        
+
         std::optional<Person> result;
         if (rc == SQLITE_ROW) {
-            result = Person{
-                sqlite3_column_int(stmt, 0),
-                std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))),
-                sqlite3_column_int(stmt, 2)
-            };
+            result =
+                    Person{sqlite3_column_int(stmt, 0),
+                           std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))),
+                           sqlite3_column_int(stmt, 2)};
         }
 
         sqlite3_finalize(stmt);
@@ -650,7 +649,7 @@ TEST_F(QuerySetUpdateTest, UpdateExistingPerson) {
 
     // Update Alice's information
     Person updated_alice{1, "Alice Smith", 31};
-    auto result = queryset.update(updated_alice);
+    auto   result = queryset.update(updated_alice);
 
     // Verify update was successful
     ASSERT_TRUE(result.has_value()) << "Update operation should succeed";
@@ -681,7 +680,7 @@ TEST_F(QuerySetUpdateTest, UpdateNonExistingPerson) {
 
     // Attempt to update non-existing person
     Person non_existing{999, "Ghost Person", 99};
-    auto result = queryset.update(non_existing);
+    auto   result = queryset.update(non_existing);
 
     // Verify operation completes without error (UPDATE of non-existing row is not an error in SQL)
     ASSERT_TRUE(result.has_value()) << "Update of non-existing person should not error";
@@ -697,7 +696,7 @@ TEST_F(QuerySetUpdateTest, UpdateMultipleTimes) {
 
     // Update Alice multiple times
     Person alice_v1{1, "Alice A", 31};
-    auto result1 = queryset.update(alice_v1);
+    auto   result1 = queryset.update(alice_v1);
     ASSERT_TRUE(result1.has_value()) << "First update should succeed";
 
     auto check1 = getPerson(1);
@@ -706,7 +705,7 @@ TEST_F(QuerySetUpdateTest, UpdateMultipleTimes) {
     EXPECT_EQ(check1->age, 31);
 
     Person alice_v2{1, "Alice B", 32};
-    auto result2 = queryset.update(alice_v2);
+    auto   result2 = queryset.update(alice_v2);
     ASSERT_TRUE(result2.has_value()) << "Second update should succeed";
 
     auto check2 = getPerson(1);
@@ -715,7 +714,7 @@ TEST_F(QuerySetUpdateTest, UpdateMultipleTimes) {
     EXPECT_EQ(check2->age, 32);
 
     Person alice_v3{1, "Alice C", 33};
-    auto result3 = queryset.update(alice_v3);
+    auto   result3 = queryset.update(alice_v3);
     ASSERT_TRUE(result3.has_value()) << "Third update should succeed";
 
     auto check3 = getPerson(1);
@@ -732,11 +731,8 @@ TEST_F(QuerySetUpdateTest, UpdateBatchSmall) {
     EXPECT_EQ(countPersons(), 3) << "Should have 3 persons initially";
 
     // Create small batch of persons to update
-    std::vector<Person> batch_to_update = {
-        {1, "Alice Updated", 31},
-        {2, "Bob Updated", 26},
-        {3, "Charlie Updated", 36}
-    };
+    std::vector<Person> batch_to_update =
+            {{1, "Alice Updated", 31}, {2, "Bob Updated", 26}, {3, "Charlie Updated", 36}};
 
     // Update batch using batch API
     auto result = queryset.update(std::span<const Person>(batch_to_update));
@@ -883,7 +879,7 @@ TEST_F(QuerySetUpdateTest, UpdateBatchEmpty) {
 
     // Verify database state unchanged
     EXPECT_EQ(countPersons(), 3) << "Should still have 3 persons after empty batch update";
-    
+
     auto alice = getPerson(1);
     ASSERT_TRUE(alice.has_value());
     EXPECT_EQ(alice->name, "Alice");
@@ -899,11 +895,11 @@ TEST_F(QuerySetUpdateTest, UpdateBatchPartialExist) {
 
     // Create batch with mix of existing and non-existing persons
     std::vector<Person> mixed_batch = {
-            {1, "Alice New", 31},      // exists
-            {999, "Ghost1", 99},       // doesn't exist
-            {2, "Bob New", 26},        // exists
-            {1000, "Ghost2", 100},     // doesn't exist
-            {3, "Charlie New", 36}     // exists
+            {1, "Alice New", 31},  // exists
+            {999, "Ghost1", 99},   // doesn't exist
+            {2, "Bob New", 26},    // exists
+            {1000, "Ghost2", 100}, // doesn't exist
+            {3, "Charlie New", 36} // exists
     };
 
     // Update mixed batch
@@ -914,7 +910,7 @@ TEST_F(QuerySetUpdateTest, UpdateBatchPartialExist) {
 
     // Verify only existing persons were updated
     EXPECT_EQ(countPersons(), 3) << "Should still have 3 persons";
-    
+
     auto alice = getPerson(1);
     ASSERT_TRUE(alice.has_value());
     EXPECT_EQ(alice->name, "Alice New");
@@ -942,7 +938,7 @@ TEST_F(QuerySetUpdateTest, UpdateCachedStatementReuse) {
     // Perform multiple updates to verify statement caching works correctly
     for (int i = 0; i < 10; ++i) {
         Person updated_alice{1, "Alice V" + std::to_string(i), 30 + i};
-        auto result = queryset.update(updated_alice);
+        auto   result = queryset.update(updated_alice);
         ASSERT_TRUE(result.has_value()) << "Update iteration " << i << " should succeed";
 
         auto alice = getPerson(1);

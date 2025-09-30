@@ -20,6 +20,15 @@ void sqlite_orm_remove_person(sqlite_orm_storage_t storage, int id);
 // Update a person by id
 void sqlite_orm_update_person(sqlite_orm_storage_t storage, int id, const char* name, int age);
 
+// Select all persons - returns count of rows fetched
+int sqlite_orm_select_all_persons(sqlite_orm_storage_t storage);
+
+// Update a person by id
+void sqlite_orm_update_person(sqlite_orm_storage_t storage, int id, const char* name, int age);
+
+// Select all persons - returns count of rows fetched
+int sqlite_orm_select_all_persons(sqlite_orm_storage_t storage);
+
 // Cleanup
 void sqlite_orm_cleanup(sqlite_orm_storage_t storage);
 

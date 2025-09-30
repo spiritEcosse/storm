@@ -27,9 +27,15 @@ export namespace storm::orm::statements {
     template <typename T> class BaseStatement {
       public:
         // Public accessors for optimization
-        static constexpr auto get_primary_key() { return primary_key_; }
-        static constexpr auto get_pk_name() { return pk_name_; }
-        static constexpr auto get_table_name() { return table_name_; }
+        static constexpr auto get_primary_key() {
+            return primary_key_;
+        }
+        static constexpr auto get_pk_name() {
+            return pk_name_;
+        }
+        static constexpr auto get_table_name() {
+            return table_name_;
+        }
 
       protected:
         // Helper to find primary key using storm::meta attributes
