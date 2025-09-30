@@ -288,11 +288,6 @@ export namespace storm::orm::statements {
             }
         }
 
-        // Wrapper for extract_columns_impl using field indices
-        [[nodiscard]] static auto extract_all_columns_inline(sqlite3_stmt* stmt, T& obj) noexcept -> bool {
-            return extract_columns_impl(stmt, obj, typename Base::field_indices_t{});
-        }
-
         // OPTIMIZATION: Fast extraction wrapper with fold expression
         template <size_t... Is>
         __attribute__((always_inline)) static inline void
