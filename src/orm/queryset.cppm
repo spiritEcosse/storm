@@ -50,12 +50,13 @@ export namespace storm {
 
         // Insert operations
         std::expected<int64_t, Error> insert(const T& obj) {
-            return execute_insert(obj);
+            return execute_insert(std::span<const T>{&obj, 1})
+                .transform([](const auto& ids) { return ids[0]; });
         }
 
         // Bulk insert operations
         std::expected<std::vector<int64_t>, Error> insert(std::span<const T> objects) {
-            return execute_insert_batch(objects);
+            return execute_insert(objects);
         }
 
         // Static methods for connection management
@@ -100,13 +101,8 @@ export namespace storm {
             return orm::statements::RemoveStatement<T, ConnType>(conn_).execute(objects);
         }
 
-        [[nodiscard]] std::expected<int64_t, Error> execute_insert(const T& obj) const noexcept {
-            // Use optimized single insert path to avoid .and_then() overhead
-            return orm::statements::InsertStatement<T, ConnType>(conn_).execute_single(obj);
-        }
-
         [[nodiscard]] std::expected<std::vector<int64_t>, Error>
-        execute_insert_batch(std::span<const T> objects) const noexcept {
+        execute_insert(std::span<const T> objects) const noexcept {
             return orm::statements::InsertStatement<T, ConnType>(conn_).execute(objects);
         }
 
