@@ -29,6 +29,8 @@ struct BenchmarkConfig {
 // Forward declarations (Person defined later)
 void benchmark_storm_orm_single_insert(int num_records, const BenchmarkConfig& config);
 void benchmark_storm_orm_batch_insert(int num_records, const BenchmarkConfig& config);
+void benchmark_storm_orm_single_update(int num_records, const BenchmarkConfig& config);
+void benchmark_storm_orm_batch_update(int num_records, const BenchmarkConfig& config);
 void benchmark_storm_orm_single_delete(int num_records, const BenchmarkConfig& config);
 void benchmark_storm_orm_batch_delete(int num_records, const BenchmarkConfig& config);
 void benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& config);
@@ -194,6 +196,174 @@ void benchmark_storm_orm_batch_insert(int num_records, const BenchmarkConfig& co
         std::cout << "  Batch count: " << batch_count << std::endl;
         std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
                   << (successful_inserts / (total_time / 1000.0)) << " inserts/sec" << std::endl;
+
+        if (config.show_cache_stats) {
+            std::cout << "  Statement cache size: " << conn.cached_statement_count() << std::endl;
+        }
+
+        // Cleanup
+        storm::QuerySet<Person>::clear_default_connection();
+    }
+}
+
+void benchmark_storm_orm_single_update(int num_records, const BenchmarkConfig& config) {
+    std::cout << "=== Storm ORM Single UPDATE Benchmark ===" << std::endl;
+
+    // Setup Storm ORM connection
+    auto result = storm::QuerySet<Person>::set_default_connection(":memory:");
+    if (!result.has_value()) {
+        std::cerr << "Failed to set Storm connection: " << result.error().message() << std::endl;
+        return;
+    }
+
+    // Create table
+    auto& conn = storm::QuerySet<Person>::get_default_connection();
+    auto create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+    if (!create_result.has_value()) {
+        std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
+        return;
+    }
+
+    // Prepare data
+    std::vector<Person> persons;
+    if (config.realistic_data) {
+        persons = generate_realistic_test_data(num_records);
+    } else {
+        persons = data_utils::generate_simple_test_data<Person>(num_records);
+    }
+
+    // Create QuerySet
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Insert test data first for update
+    for (const auto& person : persons) {
+        auto insert_result = queryset.insert(person);
+        if (!insert_result.has_value()) {
+            std::cerr << "Failed to insert test data: " << insert_result.error().message() << std::endl;
+            return;
+        }
+    }
+
+    // Modify data for update
+    for (auto& person : persons) {
+        person.age += 1;  // Increment age
+        person.name += "_updated";  // Modify name
+    }
+
+    // Benchmark single UPDATE operations
+    BenchmarkTimer timer;
+    double total_time = 0;
+    int successful_updates = 0;
+
+    for (const auto& person : persons) {
+        timer.reset();
+        auto result = queryset.update(person);
+        double elapsed = timer.elapsed_ms();
+
+        if (result.has_value()) {
+            successful_updates++;
+            total_time += elapsed;
+        }
+    }
+
+    // Report results
+    std::cout << "Storm ORM - Single UPDATE " << num_records << " records:" << std::endl;
+    std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
+    std::cout << "  Average per update: " << std::fixed << std::setprecision(4)
+              << (total_time / successful_updates) << " ms" << std::endl;
+    std::cout << "  Successful updates: " << successful_updates << "/" << num_records << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+              << (successful_updates / (total_time / 1000.0)) << " updates/sec" << std::endl;
+
+    if (config.show_cache_stats) {
+        std::cout << "  Statement cache size: " << conn.cached_statement_count() << std::endl;
+    }
+
+    // Cleanup
+    storm::QuerySet<Person>::clear_default_connection();
+}
+
+void benchmark_storm_orm_batch_update(int num_records, const BenchmarkConfig& config) {
+    std::cout << "=== Storm ORM Batch UPDATE Benchmark ===" << std::endl;
+
+    // Test different batch sizes to find optimal performance
+    const std::vector<size_t> batch_sizes = {1, 10, 25, 50, 100, 500, 1000};
+
+    for (size_t batch_size : batch_sizes) {
+        if (batch_size > static_cast<size_t>(num_records)) continue;
+
+        std::cout << std::endl << "--- Batch size: " << batch_size << " ---" << std::endl;
+
+        // Setup Storm ORM connection
+        auto result = storm::QuerySet<Person>::set_default_connection(":memory:");
+        if (!result.has_value()) {
+            std::cerr << "Failed to set Storm connection: " << result.error().message() << std::endl;
+            continue;
+        }
+
+        // Create table
+        auto& conn = storm::QuerySet<Person>::get_default_connection();
+        auto create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+        if (!create_result.has_value()) {
+            std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
+            storm::QuerySet<Person>::clear_default_connection();
+            continue;
+        }
+
+        // Prepare data
+        std::vector<Person> persons = data_utils::generate_simple_test_data<Person>(num_records);
+
+        // Create QuerySet
+        auto queryset = storm::QuerySet<Person>{};
+
+        // Insert test data first for update
+        for (const auto& person : persons) {
+            auto insert_result = queryset.insert(person);
+            if (!insert_result.has_value()) {
+                std::cerr << "Failed to insert test data: " << insert_result.error().message() << std::endl;
+                storm::QuerySet<Person>::clear_default_connection();
+                return;
+            }
+        }
+
+        // Modify data for update
+        for (auto& person : persons) {
+            person.age += 1;
+            person.name += "_updated";
+        }
+
+        // Benchmark batch UPDATE operations
+        BenchmarkTimer timer;
+        double total_time = 0;
+        int successful_updates = 0;
+        int batch_count = 0;
+
+        for (size_t i = 0; i < persons.size(); i += batch_size) {
+            size_t end_idx = std::min(i + batch_size, persons.size());
+            std::span<const Person> batch(persons.data() + i, end_idx - i);
+
+            timer.reset();
+            auto result = queryset.update(batch);
+            double elapsed = timer.elapsed_ms();
+
+            if (result.has_value()) {
+                successful_updates += batch.size();
+                total_time += elapsed;
+                batch_count++;
+            }
+        }
+
+        // Report results
+        std::cout << "Storm ORM - Batch UPDATE " << num_records << " records (batch size " << batch_size << "):" << std::endl;
+        std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
+        std::cout << "  Average per update: " << std::fixed << std::setprecision(4)
+                  << (total_time / successful_updates) << " ms" << std::endl;
+        std::cout << "  Average per batch: " << std::fixed << std::setprecision(4)
+                  << (total_time / batch_count) << " ms" << std::endl;
+        std::cout << "  Successful updates: " << successful_updates << "/" << num_records << std::endl;
+        std::cout << "  Batch count: " << batch_count << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+                  << (successful_updates / (total_time / 1000.0)) << " updates/sec" << std::endl;
 
         if (config.show_cache_stats) {
             std::cout << "  Statement cache size: " << conn.cached_statement_count() << std::endl;
@@ -601,6 +771,16 @@ int main(int argc, char* argv[]) {
 
                 // Test batch INSERT operations with different batch sizes
                 benchmark_storm_orm_batch_insert(size, config);
+                std::cout << std::endl << std::endl;
+            }
+
+            if (config.mode == BenchmarkConfig::COMPREHENSIVE) {
+                // Test single UPDATE operations
+                benchmark_storm_orm_single_update(size, config);
+                std::cout << std::endl << std::endl;
+
+                // Test batch UPDATE operations with different batch sizes
+                benchmark_storm_orm_batch_update(size, config);
                 std::cout << std::endl << std::endl;
             }
 

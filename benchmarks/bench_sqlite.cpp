@@ -12,6 +12,8 @@ void benchmark_raw_sqlite_batch_insert(int num_records);
 void benchmark_pure_sqlite_single_delete(int num_records);
 void benchmark_raw_sqlite_single_delete(int num_records);
 void benchmark_raw_sqlite_batch_delete(int num_records);
+void benchmark_raw_sqlite_single_update(int num_records);
+void benchmark_raw_sqlite_batch_update(int num_records);
 
 class BenchmarkTimer {
 public:
@@ -262,6 +264,14 @@ int main() {
         // Test batch DELETE operations with different batch sizes
         benchmark_raw_sqlite_batch_delete(size);
         std::cout << "\n\n";
+
+        // Test prepared statement UPDATE operations
+        benchmark_raw_sqlite_single_update(size);
+        std::cout << "\n\n";
+
+        // Test batch UPDATE operations with different batch sizes
+        benchmark_raw_sqlite_batch_update(size);
+        std::cout << "\n\n";
     }
 
     return 0;
@@ -492,6 +502,183 @@ void benchmark_raw_sqlite_batch_delete(int num_records) {
         std::cout << "  Batch count: " << batch_count << "\n";
         std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
                   << (successful_deletes / (total_time / 1000.0)) << " deletes/sec\n";
+
+        sqlite3_close(db);
+    }
+}
+
+// Benchmark using raw SQLite with prepared statements for UPDATE operations
+void benchmark_raw_sqlite_single_update(int num_records) {
+    std::cout << "=== Raw SQLite Single UPDATE Benchmark (prepared statements) ===\n";
+
+    sqlite3* db;
+    int rc = sqlite3_open(":memory:", &db);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Cannot open database: " << sqlite3_errmsg(db) << std::endl;
+        return;
+    }
+
+    // Create table
+    const char* create_sql = "CREATE TABLE Person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER NOT NULL)";
+    rc = sqlite3_exec(db, create_sql, nullptr, nullptr, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_close(db);
+        return;
+    }
+
+    // Insert test data first with transaction for setup
+    rc = sqlite3_exec(db, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
+    sqlite3_stmt* insert_stmt;
+    sqlite3_prepare_v2(db, "INSERT INTO Person (id, name, age) VALUES (?, ?, ?)", -1, &insert_stmt, nullptr);
+    for (int i = 1; i <= num_records; ++i) {
+        sqlite3_bind_int(insert_stmt, 1, i);
+        std::string name = "Person" + std::to_string(i);
+        sqlite3_bind_text(insert_stmt, 2, name.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(insert_stmt, 3, 20 + (i % 50));
+        sqlite3_step(insert_stmt);
+        sqlite3_reset(insert_stmt);
+    }
+    sqlite3_finalize(insert_stmt);
+    sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr);
+
+    // Prepare UPDATE statement
+    sqlite3_stmt* update_stmt;
+    sqlite3_prepare_v2(db, "UPDATE Person SET name=?, age=? WHERE id=?", -1, &update_stmt, nullptr);
+
+    // Benchmark UPDATE operations
+    BenchmarkTimer timer;
+    double total_time = 0;
+    int successful_updates = 0;
+
+    for (int i = 1; i <= num_records; ++i) {
+        timer.reset();
+
+        std::string new_name = "Person" + std::to_string(i) + "_updated";
+        int new_age = 21 + (i % 50);
+        sqlite3_bind_text(update_stmt, 1, new_name.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(update_stmt, 2, new_age);
+        sqlite3_bind_int(update_stmt, 3, i);
+        rc = sqlite3_step(update_stmt);
+
+        double elapsed = timer.elapsed_ms();
+
+        if (rc == SQLITE_DONE) {
+            successful_updates++;
+            total_time += elapsed;
+        }
+
+        sqlite3_reset(update_stmt);
+    }
+
+    sqlite3_finalize(update_stmt);
+
+    // Report results
+    std::cout << "Raw SQLite (prepared statements) - Single UPDATE " << num_records << " records:\n";
+    std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms\n";
+    std::cout << "  Average per update: " << std::fixed << std::setprecision(4)
+              << (total_time / successful_updates) << " ms\n";
+    std::cout << "  Successful updates: " << successful_updates << "/" << num_records << "\n";
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+              << (successful_updates / (total_time / 1000.0)) << " updates/sec\n";
+
+    sqlite3_close(db);
+}
+
+// Benchmark using raw SQLite with batch UPDATE operations
+void benchmark_raw_sqlite_batch_update(int num_records) {
+    std::cout << "=== Raw SQLite Batch UPDATE Benchmark ===\n";
+
+    // Test different batch sizes to find optimal performance
+    const std::vector<size_t> batch_sizes = {1, 10, 25, 50, 100, 500, 1000};
+
+    for (size_t batch_size : batch_sizes) {
+        if (batch_size > static_cast<size_t>(num_records)) continue;
+
+        std::cout << "\n--- Batch size: " << batch_size << " ---\n";
+
+        sqlite3* db;
+        int rc = sqlite3_open(":memory:", &db);
+        if (rc != SQLITE_OK) {
+            std::cerr << "Cannot open database: " << sqlite3_errmsg(db) << std::endl;
+            continue;
+        }
+
+        // Create table
+        const char* create_sql = "CREATE TABLE Person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER NOT NULL)";
+        rc = sqlite3_exec(db, create_sql, nullptr, nullptr, nullptr);
+        if (rc != SQLITE_OK) {
+            std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
+            sqlite3_close(db);
+            continue;
+        }
+
+        // Insert test data first with transaction for setup
+        rc = sqlite3_exec(db, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
+        sqlite3_stmt* insert_stmt;
+        sqlite3_prepare_v2(db, "INSERT INTO Person (id, name, age) VALUES (?, ?, ?)", -1, &insert_stmt, nullptr);
+        for (int i = 1; i <= num_records; ++i) {
+            sqlite3_bind_int(insert_stmt, 1, i);
+            std::string name = "Person" + std::to_string(i);
+            sqlite3_bind_text(insert_stmt, 2, name.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(insert_stmt, 3, 20 + (i % 50));
+            sqlite3_step(insert_stmt);
+            sqlite3_reset(insert_stmt);
+        }
+        sqlite3_finalize(insert_stmt);
+        sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr);
+
+        // Benchmark batch UPDATE operations using transactions
+        BenchmarkTimer timer;
+        double total_time = 0;
+        int successful_updates = 0;
+        int batch_count = 0;
+
+        sqlite3_stmt* update_stmt;
+        sqlite3_prepare_v2(db, "UPDATE Person SET name=?, age=? WHERE id=?", -1, &update_stmt, nullptr);
+
+        for (size_t i = 0; i < static_cast<size_t>(num_records); i += batch_size) {
+            size_t end_idx = std::min(i + batch_size, static_cast<size_t>(num_records));
+            size_t current_batch_size = end_idx - i;
+
+            timer.reset();
+
+            // Begin transaction for batch
+            sqlite3_exec(db, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
+
+            for (size_t j = i; j < end_idx; ++j) {
+                int id = static_cast<int>(j + 1);
+                std::string new_name = "Person" + std::to_string(id) + "_updated";
+                int new_age = 21 + (id % 50);
+                sqlite3_bind_text(update_stmt, 1, new_name.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_int(update_stmt, 2, new_age);
+                sqlite3_bind_int(update_stmt, 3, id);
+                sqlite3_step(update_stmt);
+                sqlite3_reset(update_stmt);
+            }
+
+            // Commit transaction
+            sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr);
+
+            double elapsed = timer.elapsed_ms();
+            successful_updates += current_batch_size;
+            total_time += elapsed;
+            batch_count++;
+        }
+
+        sqlite3_finalize(update_stmt);
+
+        // Report results
+        std::cout << "Raw SQLite - Batch UPDATE " << num_records << " records (batch size " << batch_size << "):\n";
+        std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms\n";
+        std::cout << "  Average per update: " << std::fixed << std::setprecision(4)
+                  << (total_time / successful_updates) << " ms\n";
+        std::cout << "  Average per batch: " << std::fixed << std::setprecision(4)
+                  << (total_time / batch_count) << " ms\n";
+        std::cout << "  Successful updates: " << successful_updates << "/" << num_records << "\n";
+        std::cout << "  Batch count: " << batch_count << "\n";
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+                  << (successful_updates / (total_time / 1000.0)) << " updates/sec\n";
 
         sqlite3_close(db);
     }
