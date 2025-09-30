@@ -2,10 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: Storm ORM now features **complete CRUD operations** with UpdateStatement and SelectStatement implementations. UpdateStatement achieves **~2M updates/sec sustained** (12M peak) through compile-time field binding and statement caching, representing **6x faster than sqlite_orm** and **1.8x faster than raw SQLite**. SelectStatement delivers **13.07M rows/sec** (74% of raw SQLite) with optimized row extraction using resize() pre-allocation (1.7x faster) and direct string construction (2.2x faster). Storm ORM now provides full CREATE-READ-UPDATE-DELETE functionality: INSERT (992K/sec), SELECT (13.07M rows/sec), UPDATE (2M/sec sustained), DELETE (21.6M/sec), maintaining consistent 1.5-6x performance advantage over sqlite_orm across all operations.
-**Last Updated**: Latest optimization implements **SelectStatement** with statement caching and optimized row extraction, achieving **13.07M rows/sec** in Release builds (74% of raw SQLite performance). The implementation mirrors RemoveStatement's caching pattern with QuerySet-level instance caching, inlined bind/execute path, and compile-time type dispatch for column reading. Key optimizations include resize() pre-allocation (1.7x faster than reserve() + push_back()), direct string construction (2.2x faster than assign()), and compiler hints for hot paths. SELECT completes Storm ORM's core CRUD operations (INSERT: 992K/sec, DELETE: 21.6M/sec, SELECT: 13.07M/sec) with consistent 1.5-2.0x performance advantage over sqlite_orm across all operations.
-**Last Updated**: UpdateStatement implementation with fully inlined binding achieves **~2M updates/sec sustained** (12M peak) through compile-time field binding and statement caching. Batch UPDATE operations deliver **2-3M updates/sec** using individual statements in transactions. UpdateStatement supports int, int64_t, double, and string types with compile-time type dispatch, updating all non-primary-key fields automatically. This represents **6x faster than sqlite_orm** and **1.8x faster than raw SQLite** in normal operation. Previous optimizations include RemoveStatement caching (23M single deletes/sec), auto-generated ID support, compile-time SQL generation, thread-local SQL caching, and comprehensive benchmarking infrastructure.
-**Last Updated**: Storm ORM now features **complete CRUD operations** with UpdateStatement and SelectStatement implementations. UpdateStatement achieves **~2M updates/sec sustained** (12M peak) through compile-time field binding and statement caching, representing **6x faster than sqlite_orm** and **1.8x faster than raw SQLite**. SelectStatement delivers **13.07M rows/sec** (74% of raw SQLite) with optimized row extraction using resize() pre-allocation (1.7x faster) and direct string construction (2.2x faster). Storm ORM now provides full CREATE-READ-UPDATE-DELETE functionality: INSERT (992K/sec), SELECT (13.07M rows/sec), UPDATE (2M/sec sustained), DELETE (21.6M/sec), maintaining consistent 1.5-6x performance advantage over sqlite_orm across all operations.
+**Last Updated**: Storm ORM now features **complete CRUD operations** with UpdateStatement and SelectStatement implementations. Storm ORM delivers full CREATE-READ-UPDATE-DELETE functionality maintaining consistent 1.5-6x performance advantage over sqlite_orm across all operations:
+- **INSERT**: 992K/sec single, 2.7M/sec batch (2.0x faster than sqlite_orm)
+- **SELECT**: 13.07M rows/sec (74% of raw SQLite, 1.51x faster than sqlite_orm)
+- **UPDATE**: 2M/sec sustained, 12M peak (6x faster than sqlite_orm, 1.8x faster than raw SQLite)
+- **DELETE**: 21.6M/sec single, 3.9M/sec batch (73% of raw SQLite performance)
+
+Key innovations: compile-time SQL generation, statement-level caching, thread-local SQL caching, optimized row extraction with resize() pre-allocation (1.7x faster) and direct string construction (2.2x faster), and fully inlined field binding.
 
 ## Project Overview
 
@@ -81,50 +84,24 @@ cmake --build --preset ninja-debug
 ```
 
 **Performance Results (10,000 operations):**
-- **Storm ORM INSERT**: ~992K inserts/sec single, ~2.7M inserts/sec batch - **2.0x faster than sqlite_orm**
-- **Storm ORM SELECT**: ~13.07M rows/sec (Release), ~5.28M rows/sec (Debug) - **1.51x faster than sqlite_orm**
-- **Storm ORM UPDATE**: ~2M updates/sec sustained (12M peak), ~2-3M updates/sec batch - **6x faster than sqlite_orm**
-- **Storm ORM DELETE**: ~21.6M deletes/sec single, ~3.9M deletes/sec batch - **73% of raw SQLite performance**
-- **Raw SQLite (prepared)**: ~49M inserts/sec single, ~17.67M rows/sec SELECT, ~1.09M updates/sec single, ~29.4M deletes/sec single - **baseline**
-- **sqlite_orm (v1.9.1)**: ~492K inserts/sec single, ~8.66M rows/sec SELECT, ~333K updates/sec single, ~589K deletes/sec single - **comparison reference**
-- **Raw SQLite (prepared)**: ~49M inserts/sec single, ~29.4M deletes/sec single, ~17.67M rows/sec SELECT - **optimal baseline**
-- **sqlite_orm (v1.9.1)**: ~492K inserts/sec single, ~422K inserts/sec batch, ~8.66M rows/sec SELECT - **comparison reference**
-- **Storm ORM INSERT**: ~930K inserts/sec single, ~1.65M inserts/sec batch - **1.9x faster than sqlite_orm**
-- **Storm ORM UPDATE**: ~2M updates/sec sustained (12M peak), ~2-3M updates/sec batch - **6x faster than sqlite_orm**
-- **Storm ORM DELETE**: ~23M deletes/sec single, ~23M deletes/sec batch - **39x faster than sqlite_orm**
-- **Raw SQLite (prepared)**: ~984K inserts/sec single, ~1.09M updates/sec single, ~31.8M deletes/sec single - **baseline**
-- **sqlite_orm (v1.9.1)**: ~495K inserts/sec single, ~333K updates/sec single, ~589K deletes/sec single - **comparison reference**
-- **Storm ORM INSERT**: ~992K inserts/sec single, ~2.7M inserts/sec batch - **2.0x faster than sqlite_orm**
-- **Storm ORM SELECT**: ~13.07M rows/sec (Release), ~5.28M rows/sec (Debug) - **1.51x faster than sqlite_orm**
-- **Storm ORM UPDATE**: ~2M updates/sec sustained (12M peak), ~2-3M updates/sec batch - **6x faster than sqlite_orm**
-- **Storm ORM DELETE**: ~21.6M deletes/sec single, ~3.9M deletes/sec batch - **73% of raw SQLite performance**
-- **Raw SQLite (prepared)**: ~49M inserts/sec single, ~17.67M rows/sec SELECT, ~1.09M updates/sec single, ~29.4M deletes/sec single - **baseline**
-- **sqlite_orm (v1.9.1)**: ~492K inserts/sec single, ~8.66M rows/sec SELECT, ~333K updates/sec single, ~589K deletes/sec single - **comparison reference**
 
-**Key Performance Highlights:**
-- **Single INSERT**: Storm ORM achieves 2.0x sqlite_orm performance through compile-time SQL generation
-- **Single UPDATE**: Storm ORM achieves **6x sqlite_orm** and **1.8x raw SQLite** via fully inlined binding and statement caching (peak: 12M/sec)
-- **Single DELETE**: Storm ORM reaches 21.6M deletes/sec (73% of raw SQLite) via QuerySet-level statement caching
-- **SELECT All Rows**: Storm ORM achieves 13.07M rows/sec (74% of raw SQLite) with statement caching and optimized row extraction
-- **Batch INSERT**: Storm ORM delivers 2.7M inserts/sec with bulk operations and thread-local SQL caching
-- **Batch UPDATE**: Storm ORM delivers 2-3M updates/sec with individual statements in transactions
-- **Batch DELETE**: Storm ORM achieves 3.9M deletes/sec with IN clause optimization
-- **Overall Performance**: Storm ORM is **1.5-6x faster than sqlite_orm** across all CRUD operations
-- **Single INSERT**: Storm ORM achieves 1.9x sqlite_orm performance through compile-time SQL generation
-- **Single UPDATE**: Storm ORM achieves **6x sqlite_orm** and **1.8x raw SQLite** via fully inlined binding and statement caching (peak: 12M/sec)
-- **Single DELETE**: Storm ORM reaches 23M deletes/sec (39x sqlite_orm) via QuerySet-level statement caching
-- **Batch INSERT**: Storm ORM delivers 1.65M inserts/sec with bulk operations and thread-local SQL caching
-- **Batch UPDATE**: Storm ORM delivers 2-3M updates/sec with individual statements in transactions
-- **Batch DELETE**: Storm ORM achieves 23M deletes/sec with IN clause optimization
-- **Overall Performance**: Storm ORM is **24x faster than sqlite_orm** across all operations
-- **Single INSERT**: Storm ORM achieves 2.0x sqlite_orm performance through compile-time SQL generation
-- **Single UPDATE**: Storm ORM achieves **6x sqlite_orm** and **1.8x raw SQLite** via fully inlined binding and statement caching (peak: 12M/sec)
-- **Single DELETE**: Storm ORM reaches 21.6M deletes/sec (73% of raw SQLite) via QuerySet-level statement caching
-- **SELECT All Rows**: Storm ORM achieves 13.07M rows/sec (74% of raw SQLite) with statement caching and optimized row extraction
-- **Batch INSERT**: Storm ORM delivers 2.7M inserts/sec with bulk operations and thread-local SQL caching
-- **Batch UPDATE**: Storm ORM delivers 2-3M updates/sec with individual statements in transactions
-- **Batch DELETE**: Storm ORM achieves 3.9M deletes/sec with IN clause optimization
-- **Overall Performance**: Storm ORM is **1.5-6x faster than sqlite_orm** across all CRUD operations
+| Operation | Storm ORM | Raw SQLite | sqlite_orm | Storm vs sqlite_orm |
+|-----------|-----------|------------|------------|---------------------|
+| INSERT (single) | 992K/sec | 49M/sec | 492K/sec | 2.0x faster |
+| INSERT (batch) | 2.7M/sec | - | 422K/sec | 6.4x faster |
+| SELECT (all rows) | 13.07M/sec | 17.67M/sec | 8.66M/sec | 1.51x faster |
+| UPDATE (single) | 2M/sec (12M peak) | 1.09M/sec | 333K/sec | 6x faster |
+| UPDATE (batch) | 2-3M/sec | - | - | - |
+| DELETE (single) | 21.6M/sec | 29.4M/sec | 589K/sec | 36.6x faster |
+| DELETE (batch) | 3.9M/sec | - | - | - |
+
+**Key Performance Optimizations:**
+- Compile-time SQL generation eliminates runtime string building overhead
+- Statement-level caching (RemoveStatement, SelectStatement, UpdateStatement) reduces preparation costs
+- Thread-local SQL caching for bulk INSERT operations (8-entry cache, 94% improvement for cached sizes)
+- Index sequence optimization with fold expressions replaces recursive templates
+- Optimized row extraction: resize() pre-allocation (1.7x faster), direct string construction (2.2x faster)
+- Fully inlined field binding with compile-time type dispatch via `if constexpr`
 
 ## High-Level Architecture
 
@@ -141,12 +118,6 @@ src/
     └── statements/
         ├── base.cppm               # BaseStatement shared utilities and transaction management
         ├── insert.cppm             # InsertStatement with compile-time SQL generation, bulk operations, and ID return
-        ├── select.cppm             # SelectStatement with statement caching and optimized row extraction
-        ├── update.cppm             # UpdateStatement with compile-time SQL generation and statement caching
-        └── remove.cppm             # RemoveStatement with bulk DELETE operations
-        ├── remove.cppm             # RemoveStatement with bulk DELETE operations
-        └── select.cppm             # SelectStatement with statement caching and optimized row extraction
-        ├── update.cppm             # UpdateStatement with compile-time SQL generation and statement caching
         ├── select.cppm             # SelectStatement with statement caching and optimized row extraction
         ├── update.cppm             # UpdateStatement with compile-time SQL generation and statement caching
         └── remove.cppm             # RemoveStatement with bulk DELETE operations
@@ -746,357 +717,6 @@ template <typename T> class SelectStatement {
 - **Consistent with InsertStatement**: Uses compile-time SQL generation and field metadata
 - **Future Enhancement**: Consider caching strategy for all statement types (INSERT, UPDATE, DELETE, SELECT)
 
-#### 12. **UpdateStatement with Compile-Time SQL Generation and Statement Caching**
-A comprehensive UPDATE implementation following RemoveStatement's proven caching pattern:
-
-**Key Implementation Details:**
-- **UpdateStatement-Level Caching**: `cached_update_stmt_` pointer stored in UpdateStatement instance
-- **QuerySet Delegates to UpdateStatement**: Maintains cached UpdateStatement via `std::unique_ptr`
-- **Compile-Time SQL Generation**: Pre-computed "UPDATE table SET field1=?, field2=? WHERE id=?" using ConstexprString
-- **Updates All Non-Primary-Key Fields**: Automatically identifies and updates all fields except primary key
-- **Inlined Execution Path**: Direct bind and execute operations in `execute_single_optimized()`
-- **Batch Strategy**: Individual UPDATEs wrapped in transactions (no bulk SQL for UPDATE operations)
-- **Return Type**: `std::expected<void, Error>` (UPDATE doesn't generate IDs)
-
-**Architecture Overview:**
-```cpp
-// QuerySet maintains cached UpdateStatement instance
-template <class T> class QuerySet {
-    mutable std::unique_ptr<UpdateStatement<T, ConnType>> update_stmt_;
-
-    std::expected<void, Error> update(const T& obj) {
-        // Delegate to cached UpdateStatement
-        return get_update_statement().execute_single_optimized(obj);
-    }
-
-    std::expected<void, Error> update(std::span<const T> objects) {
-        // Batch updates with transaction
-        return get_update_statement().execute(objects);
-    }
-
-    auto get_update_statement() const -> UpdateStatement<T, ConnType>& {
-        if (!update_stmt_) {
-            update_stmt_ = std::make_unique<UpdateStatement<T, ConnType>>(conn_);
-        }
-        return *update_stmt_;
-    }
-};
-
-// UpdateStatement handles caching and execution
-template <typename T> class UpdateStatement {
-    mutable Statement* cached_update_stmt_ = nullptr;
-
-    // Compile-time SQL generation
-    static constexpr auto update_sql_array = build_update_sql_array();
-    static inline const std::string update_sql_string = std::string(update_sql_array);
-
-    auto execute_single_optimized(const T& obj) -> std::expected<void, Error> {
-        // Cache statement on first use
-        if (!cached_update_stmt_) {
-            cached_update_stmt_ = *conn_.prepare_cached(get_update_sql());
-        }
-
-        // Bind all non-PK fields + PK
-        bind_update_fields_inline(*cached_update_stmt_, obj);
-
-        cached_update_stmt_->execute();
-        cached_update_stmt_->reset();
-    }
-};
-```
-
-**SQL Generation Example:**
-For `struct Person { int id; std::string name; int age; }`:
-```sql
-UPDATE Person SET name=?, age=? WHERE id=?
-```
-**Parameter binding order**: `name`, `age`, `id` (non-PK fields first, PK last)
-
-**Supported Field Types:**
-UpdateStatement provides compile-time type dispatch with inline binding for:
-- **int**: 32-bit signed integers
-- **int64_t**: 64-bit signed integers (including SQLite INTEGER)
-- **double**: IEEE 754 floating-point numbers
-- **std::string / string-like**: Any type convertible to std::string_view (std::string, const char*, etc.)
-
-Each type uses direct SQLite binding methods:
-```cpp
-if constexpr (std::is_same_v<decltype(value), int>) {
-    stmt->bind_int(param_index, value);
-} else if constexpr (std::is_same_v<decltype(value), int64_t>) {
-    stmt->bind_int64(param_index, value);
-} else if constexpr (std::is_same_v<decltype(value), double>) {
-    stmt->bind_double(param_index, value);
-} else if constexpr (std::is_convertible_v<decltype(value), std::string_view>) {
-    stmt->bind_text(param_index, std::string_view{value});
-}
-```
-
-**Performance Characteristics:**
-- **Single UPDATE**: ~2M updates/sec sustained (12M peak under optimal cache conditions)
-- **Batch UPDATE**: 2-3M updates/sec (transaction overhead + multiple statements)
-- **First update**: ~0.050ms (prepare + bind + execute)
-- **Cached updates**: ~0.0005ms (bind + execute only - fully inlined)
-- **Speedup**: 100x improvement for repeated operations on same QuerySet
-- **vs sqlite_orm**: 6x faster in normal operation
-- **vs Raw SQLite**: 1.8x faster due to inline binding optimization
-
-**Technical Benefits:**
-- **Persistent Cache**: Statement pointer survives across multiple `update()` calls
-- **Compile-Time SQL**: Zero runtime overhead for SQL generation
-- **Clean Encapsulation**: All UPDATE logic contained in UpdateStatement
-- **Minimal Memory**: ~16-32 bytes per QuerySet for UpdateStatement instance
-- **Thread-Safe Design**: Each QuerySet/connection has its own cached UpdateStatement
-
-**Batch Operation Strategy:**
-- **No Bulk SQL**: SQL UPDATE doesn't support efficient bulk operations like INSERT/DELETE
-- **Transaction Wrapping**: All batch operations use transactions for atomicity and performance
-- **Individual Statements**: Each object updated separately within transaction (10-100x speedup vs individual commits)
-- **Simple and Reliable**: One code path for all batch sizes
-
-**Caching Architecture:**
-- **Level 1**: QuerySet caches UpdateStatement instance (`std::unique_ptr<UpdateStatement>`)
-- **Level 2**: UpdateStatement caches prepared statement (`Statement* cached_update_stmt_`)
-- **Level 3**: Connection may cache statements via `prepare_cached()` (implementation-specific)
-- **Benefit**: Amortizes both object construction and statement preparation costs
-
-#### 12. **UpdateStatement with Compile-Time SQL Generation and Statement Caching**
-A comprehensive UPDATE implementation following RemoveStatement's proven caching pattern:
-
-**Key Implementation Details:**
-- **UpdateStatement-Level Caching**: `cached_update_stmt_` pointer stored in UpdateStatement instance
-- **QuerySet Delegates to UpdateStatement**: Maintains cached UpdateStatement via `std::unique_ptr`
-- **Compile-Time SQL Generation**: Pre-computed "UPDATE table SET field1=?, field2=? WHERE id=?" using ConstexprString
-- **Updates All Non-Primary-Key Fields**: Automatically identifies and updates all fields except primary key
-- **Inlined Execution Path**: Direct bind and execute operations in `execute_single_optimized()`
-- **Batch Strategy**: Individual UPDATEs wrapped in transactions (no bulk SQL for UPDATE operations)
-- **Return Type**: `std::expected<void, Error>` (UPDATE doesn't generate IDs)
-
-**Architecture Overview:**
-```cpp
-// QuerySet maintains cached UpdateStatement instance
-template <class T> class QuerySet {
-    mutable std::unique_ptr<UpdateStatement<T, ConnType>> update_stmt_;
-
-    std::expected<void, Error> update(const T& obj) {
-        // Delegate to cached UpdateStatement
-        return get_update_statement().execute_single_optimized(obj);
-    }
-
-    std::expected<void, Error> update(std::span<const T> objects) {
-        // Batch updates with transaction
-        return get_update_statement().execute(objects);
-    }
-
-    auto get_update_statement() const -> UpdateStatement<T, ConnType>& {
-        if (!update_stmt_) {
-            update_stmt_ = std::make_unique<UpdateStatement<T, ConnType>>(conn_);
-        }
-        return *update_stmt_;
-    }
-};
-
-// UpdateStatement handles caching and execution
-template <typename T> class UpdateStatement {
-    mutable Statement* cached_update_stmt_ = nullptr;
-
-    // Compile-time SQL generation
-    static constexpr auto update_sql_array = build_update_sql_array();
-    static inline const std::string update_sql_string = std::string(update_sql_array);
-
-    auto execute_single_optimized(const T& obj) -> std::expected<void, Error> {
-        // Cache statement on first use
-        if (!cached_update_stmt_) {
-            cached_update_stmt_ = *conn_.prepare_cached(get_update_sql());
-        }
-
-        // Bind all non-PK fields + PK
-        bind_update_fields_inline(*cached_update_stmt_, obj);
-
-        cached_update_stmt_->execute();
-        cached_update_stmt_->reset();
-    }
-};
-```
-
-**SQL Generation Example:**
-For `struct Person { int id; std::string name; int age; }`:
-```sql
-UPDATE Person SET name=?, age=? WHERE id=?
-```
-**Parameter binding order**: `name`, `age`, `id` (non-PK fields first, PK last)
-
-**Supported Field Types:**
-UpdateStatement provides compile-time type dispatch with inline binding for:
-- **int**: 32-bit signed integers
-- **int64_t**: 64-bit signed integers (including SQLite INTEGER)
-- **double**: IEEE 754 floating-point numbers
-- **std::string / string-like**: Any type convertible to std::string_view (std::string, const char*, etc.)
-
-Each type uses direct SQLite binding methods:
-```cpp
-if constexpr (std::is_same_v<decltype(value), int>) {
-    stmt->bind_int(param_index, value);
-} else if constexpr (std::is_same_v<decltype(value), int64_t>) {
-    stmt->bind_int64(param_index, value);
-} else if constexpr (std::is_same_v<decltype(value), double>) {
-    stmt->bind_double(param_index, value);
-} else if constexpr (std::is_convertible_v<decltype(value), std::string_view>) {
-    stmt->bind_text(param_index, std::string_view{value});
-}
-```
-
-**Performance Characteristics:**
-- **Single UPDATE**: ~2M updates/sec sustained (12M peak under optimal cache conditions)
-- **Batch UPDATE**: 2-3M updates/sec (transaction overhead + multiple statements)
-- **First update**: ~0.050ms (prepare + bind + execute)
-- **Cached updates**: ~0.0005ms (bind + execute only - fully inlined)
-- **Speedup**: 100x improvement for repeated operations on same QuerySet
-- **vs sqlite_orm**: 6x faster in normal operation
-- **vs Raw SQLite**: 1.8x faster due to inline binding optimization
-
-**Technical Benefits:**
-- **Persistent Cache**: Statement pointer survives across multiple `update()` calls
-- **Compile-Time SQL**: Zero runtime overhead for SQL generation
-- **Clean Encapsulation**: All UPDATE logic contained in UpdateStatement
-- **Minimal Memory**: ~16-32 bytes per QuerySet for UpdateStatement instance
-- **Thread-Safe Design**: Each QuerySet/connection has its own cached UpdateStatement
-
-**Batch Operation Strategy:**
-- **No Bulk SQL**: SQL UPDATE doesn't support efficient bulk operations like INSERT/DELETE
-- **Transaction Wrapping**: All batch operations use transactions for atomicity and performance
-- **Individual Statements**: Each object updated separately within transaction (10-100x speedup vs individual commits)
-- **Simple and Reliable**: One code path for all batch sizes
-
-**Caching Architecture:**
-- **Level 1**: QuerySet caches UpdateStatement instance (`std::unique_ptr<UpdateStatement>`)
-- **Level 2**: UpdateStatement caches prepared statement (`Statement* cached_update_stmt_`)
-- **Level 3**: Connection may cache statements via `prepare_cached()` (implementation-specific)
-- **Benefit**: Amortizes both object construction and statement preparation costs
-
-#### 13. **SelectStatement with Optimized Row Extraction**
-A comprehensive SELECT implementation achieving 74% of raw SQLite performance through statement caching and optimized row extraction:
-
-**Key Implementation Details:**
-- **Statement-Level Caching**: `cached_select_stmt_` pointer stored in SelectStatement instance (mirrors RemoveStatement pattern)
-- **QuerySet Delegates to SelectStatement**: Maintains cached SelectStatement via `std::unique_ptr`
-- **Compile-Time SQL Generation**: Pre-computed "SELECT field1, field2, ... FROM table" using ConstexprString
-- **Optimized Row Extraction**: Inline column extraction with compile-time type dispatch eliminates runtime branching
-- **resize() Pre-allocation Strategy**: Pre-constructs objects in vector for 1.7x faster performance than reserve() + push_back()
-- **Direct String Construction**: Constructs std::string directly from sqlite3_column_text() for 2.2x faster performance than assign()
-- **Compiler Optimization Hints**: `__attribute__((hot))`, `__attribute__((flatten))`, and `__attribute__((always_inline))` for critical paths
-
-**Architecture Overview:**
-```cpp
-// QuerySet maintains cached SelectStatement instance
-template <class T> class QuerySet {
-    mutable std::unique_ptr<SelectStatement<T, ConnType>> select_stmt_;
-
-    std::expected<std::vector<T>, Error> select() {
-        // Delegate to cached SelectStatement
-        return get_select_statement().execute_optimized();
-    }
-
-    auto get_select_statement() const -> SelectStatement<T, ConnType>& {
-        if (!select_stmt_) {
-            select_stmt_ = std::make_unique<SelectStatement<T, ConnType>>(conn_);
-        }
-        return *select_stmt_;
-    }
-};
-
-// SelectStatement handles caching and optimized row extraction
-template <typename T> class SelectStatement {
-    mutable Statement* cached_select_stmt_ = nullptr;
-
-    auto execute_optimized() -> std::expected<std::vector<T>, Error> {
-        // Cache statement on first use
-        if (!cached_select_stmt_) {
-            cached_select_stmt_ = *conn_.prepare_cached(get_select_sql());
-        }
-
-        // OPTIMIZATION: resize() pre-allocation (1.7x faster than reserve())
-        std::vector<T> results;
-        results.resize(10000);  // Pre-construct objects
-
-        // Inline row extraction loop with direct SQLite calls
-        sqlite3_stmt* stmt_handle = cached_select_stmt_->handle();
-        int step_result;
-        size_t row_count = 0;
-
-        while ((step_result = sqlite3_step(stmt_handle)) == SQLITE_ROW
-               && row_count < results.size()) {
-            // Write directly into pre-constructed object
-            T& obj = results[row_count];
-            extract_all_columns_inline_fast(stmt_handle, obj);
-            row_count++;
-        }
-
-        results.resize(row_count);
-        cached_select_stmt_->reset();
-        return results;
-    }
-
-    // Compile-time type dispatch for column extraction
-    template <size_t Index>
-    static void extract_column_inline_fast(sqlite3_stmt* stmt, T& obj) {
-        constexpr auto member = Base::all_members_[Index];
-        using FieldType = std::remove_cvref_t<decltype(obj.[:member:])>;
-
-        if constexpr (std::is_same_v<FieldType, int>) {
-            obj.[:member:] = sqlite3_column_int(stmt, Index);
-        } else if constexpr (std::is_same_v<FieldType, std::string>) {
-            const unsigned char* text = sqlite3_column_text(stmt, Index);
-            if (text) {
-                // Direct construction is 2.2x faster than assign()
-                obj.[:member:] = std::string(reinterpret_cast<const char*>(text));
-            }
-        }
-    }
-};
-```
-
-**Performance Impact:**
-- **Release Build**: 13.07M rows/sec (74% of raw SQLite's 17.67M rows/sec)
-- **Debug Build**: 5.28M rows/sec (maintains good performance without optimizations)
-- **vs sqlite_orm**: 1.51x faster (13.07M vs 8.66M rows/sec)
-- **Optimization Breakdown**:
-  - resize() pre-allocation: 1.7x speedup (6.08M vs 3.60M rows/sec)
-  - Direct string construction: 2.2x speedup (9.05M vs 4.10M rows/sec)
-  - Statement caching: Eliminates prepare overhead on repeated calls
-
-**Technical Benefits:**
-- **Persistent Cache**: Statement pointer survives across multiple `select()` calls on same QuerySet
-- **Zero Runtime Type Dispatch**: `if constexpr` column extraction compiled away at build time
-- **Minimal Memory Overhead**: ~16-32 bytes per QuerySet for SelectStatement instance
-- **Thread-Safe Design**: Each QuerySet/connection has its own cached SelectStatement
-- **Compile-Time SQL Validation**: Complete SELECT SQL computed during compilation
-
-**Caching Architecture:**
-- **Level 1**: QuerySet caches SelectStatement instance (`std::unique_ptr<SelectStatement>`)
-- **Level 2**: SelectStatement caches prepared statement (`Statement* cached_select_stmt_`)
-- **Level 3**: Connection may cache statements via `prepare_cached()` (implementation-specific)
-- **Benefit**: Amortizes both object construction and statement preparation costs across multiple SELECT calls
-
-**Row Extraction Optimizations:**
-- **Pre-allocation Strategy**: Uses `resize(10000)` to pre-construct objects in vector memory
-  - Avoids repeated `push_back()` calls and vector reallocations
-  - Direct writes into existing objects are significantly faster than move construction
-- **String Optimization**: Direct construction `std::string(text)` vs two-step `assign()`
-  - Direct construction creates string with correct size immediately
-  - assign() requires default construction + assignment operation
-- **Inline Extraction**: All column extraction inlined with compiler hints
-  - `__attribute__((always_inline))` forces inlining of extraction functions
-  - Eliminates function call overhead in tight loop
-- **Compile-Time Type Dispatch**: `if constexpr` eliminates runtime branching
-  - Each field type resolved at compilation time
-  - Zero runtime overhead for type checking
-
-**Architectural Consistency:**
-- **Mirrors RemoveStatement Pattern**: Same caching strategy for consistency across DELETE/SELECT operations
-- **Consistent with InsertStatement**: Uses compile-time SQL generation and field metadata
-- **Future Enhancement**: Consider caching strategy for all statement types (INSERT, UPDATE, DELETE, SELECT)
-
 ### Cross-Module Dependencies
 
 The import hierarchy:
@@ -1109,11 +729,6 @@ storm (main module)
 │   └── storm_db_concept
 ├── storm_orm_utilities
 ├── storm_orm_statements_insert
-│   ├── storm_orm_statements_base
-│   ├── storm_orm_utilities
-│   ├── storm_db_concept
-│   └── storm_db_sqlite
-├── storm_orm_statements_update
 │   ├── storm_orm_statements_base
 │   ├── storm_orm_utilities
 │   ├── storm_db_concept
@@ -1136,7 +751,6 @@ storm (main module)
 └── storm_orm_queryset
     ├── storm_orm_statements_base
     ├── storm_orm_statements_insert
-    ├── storm_orm_statements_update
     ├── storm_orm_statements_update
     ├── storm_orm_statements_remove
     ├── storm_orm_statements_select
@@ -1269,7 +883,6 @@ if (result) {
 
 // Batch UPDATE - modifies multiple records
 std::vector<Person> people = {{1, "Alice", 26}, {2, "Bob", 31}, {3, "Charlie", 41}};
-// Modify all ages
 for (auto& person : people) {
     person.age += 1;
     person.name += "_updated";
@@ -1278,44 +891,6 @@ auto result = queryset.update(std::span<const Person>(people));
 if (result) {
     std::cout << "Updated " << people.size() << " records\n";
 }
-
-// Large batch UPDATE with automatic transaction wrapping
-std::vector<Person> large_batch_update = generate_existing_data(1000);
-for (auto& person : large_batch_update) {
-    person.age += 1;  // Increment all ages
-}
-auto result = queryset.update(std::span<const Person>(large_batch_update));
-```
-
-**QuerySet UPDATE operations:**
-```cpp
-// Single update - updates all non-primary-key fields
-Person person{1, "Alice", 25};  // Existing record with ID=1
-person.age = 26;  // Modify fields
-person.name = "Alice Updated";
-auto result = queryset.update(person);
-if (result) {
-    std::cout << "Updated person with ID: " << person.id << "\n";
-}
-
-// Batch UPDATE - modifies multiple records
-std::vector<Person> people = {{1, "Alice", 26}, {2, "Bob", 31}, {3, "Charlie", 41}};
-// Modify all ages
-for (auto& person : people) {
-    person.age += 1;
-    person.name += "_updated";
-}
-auto result = queryset.update(std::span<const Person>(people));
-if (result) {
-    std::cout << "Updated " << people.size() << " records\n";
-}
-
-// Large batch UPDATE with automatic transaction wrapping
-std::vector<Person> large_batch_update = generate_existing_data(1000);
-for (auto& person : large_batch_update) {
-    person.age += 1;  // Increment all ages
-}
-auto result = queryset.update(std::span<const Person>(large_batch_update));
 ```
 
 **QuerySet bulk DELETE operations:**
@@ -1615,6 +1190,51 @@ The `sql_generation_analysis.sh` script provides detailed insights into SQL gene
 3. Re-run analysis to measure improvement
 4. Focus on batch sizes showing "Cache Miss" status
 5. Validate that common batch sizes (1, 10, 25, 50) show excellent performance
+
+### Git Rebase Workflow
+
+**Important**: When rebasing feature branches, follow these steps carefully to avoid introducing duplicate code:
+
+1. **Start the rebase**:
+   ```bash
+   git fetch origin
+   git rebase origin/develop
+   ```
+
+2. **If conflicts occur**:
+   - Resolve conflicts in your editor
+   - **CRITICAL**: After resolving conflicts, stage the changes:
+     ```bash
+     git add .
+     ```
+   - Continue the rebase:
+     ```bash
+     git rebase --continue
+     ```
+
+3. **Common rebase mistakes to avoid**:
+   - ❌ **Forgetting `git add .` after fixing conflicts** - This is the most common mistake that leads to duplicate code
+   - ❌ Resolving the same conflict multiple times without staging
+   - ❌ Using `git rebase --skip` without understanding what it does
+   - ❌ Not reviewing the final diff before pushing
+
+4. **After successful rebase**:
+   - Build and test: `cmake --build --preset ninja-debug && ctest --test-dir build/debug`
+   - Check for duplications: Review modified files for duplicate imports, functions, or declarations
+   - Run code quality checks: `cmake --build --preset ninja-debug --target format-check`
+   - Force push (if already pushed): `git push --force-with-lease`
+
+5. **If you introduced duplications**:
+   - Use `git diff origin/develop` to identify duplicate code blocks
+   - Remove duplicates manually in your editor
+   - Commit the cleanup: `git add . && git commit -m "fix: remove duplicate code from rebase"`
+   - Push: `git push`
+
+**Best Practices:**
+- Always rebase from a clean working directory (`git status` should show no changes)
+- Consider using `git rebase -i` (interactive) for complex rebases to review each commit
+- Keep feature branches short-lived to minimize rebase conflicts
+- If rebase becomes too complex, consider creating a fresh branch and cherry-picking commits
 
 ### Adding PostgreSQL Support
 1. Create `src/db/postgresql.cppm` implementing concepts
