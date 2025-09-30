@@ -103,24 +103,20 @@ export namespace storm::orm::statements {
         }
 
       protected: // Changed to protected so BaseStatement can access
-        // Execute individual deletes for large batches (with transaction)
+        // Execute individual deletes for large batches (caller handles transaction)
         [[nodiscard]] auto execute_individual_batch(std::span<const T> objects) noexcept -> std::expected<void, Error> {
-            return Base::template execute_with_transaction<ConnType>(
-                    conn_, Base::should_use_transaction(objects), [this, objects]() -> std::expected<void, Error> {
-                        return Base::template execute_with_statement<ConnType>(
-                                conn_, get_delete_sql(), [this, objects](auto& stmt) -> std::expected<void, Error> {
-                                    for (const auto& obj : objects) {
-                                        // Monadic composition: reset → bind → execute
-                                        if (auto result = Base::reset_bind_and_execute(
-                                                    stmt, [this, &obj](auto& s) { return bind_primary_key(s, obj); }
-                                            );
-                                            !result) {
-                                            return std::unexpected(result.error());
-                                        }
-                                    }
-                                    return {};
-                                }
-                        );
+            return Base::template execute_with_statement<ConnType>(
+                    conn_, get_delete_sql(), [this, objects](auto& stmt) -> std::expected<void, Error> {
+                        for (const auto& obj : objects) {
+                            // Monadic composition: reset → bind → execute
+                            if (auto result = Base::reset_bind_and_execute(
+                                        stmt, [this, &obj](auto& s) { return bind_primary_key(s, obj); }
+                                );
+                                !result) {
+                                return std::unexpected(result.error());
+                            }
+                        }
+                        return {};
                     }
             );
         }
