@@ -41,46 +41,13 @@ export namespace storm {
             : conn_(get_default_connection()) {}
 
         std::expected<void, Error> remove(const T& obj) {
-            // Ultra-optimized fast path - inline DELETE with cached statement
-            if (!cached_delete_stmt_) {
-                // Get DELETE SQL from RemoveStatement
-                auto delete_sql = orm::statements::RemoveStatement<T, ConnType>::get_delete_sql_static();
-                auto stmt_result = conn_.prepare_cached(delete_sql);
-                if (!stmt_result) {
-                    return std::unexpected(stmt_result.error());
-                }
-                cached_delete_stmt_ = *stmt_result;
-            }
-
-            // Inline bind and execute - minimal overhead
-            using Base = orm::statements::BaseStatement<T>;
-            auto pk_value = obj.[:Base::get_primary_key():];
-
-            // Direct bind without abstraction
-            std::expected<void, Error> bind_result;
-            if constexpr (std::is_same_v<decltype(pk_value), int>) {
-                bind_result = cached_delete_stmt_->bind_int(1, pk_value);
-            } else if constexpr (std::is_convertible_v<decltype(pk_value), std::string_view>) {
-                bind_result = cached_delete_stmt_->bind_text(1, std::string_view{pk_value});
-            }
-
-            if (!bind_result) {
-                return std::unexpected(bind_result.error());
-            }
-
-            auto exec_result = cached_delete_stmt_->execute();
-            if (!exec_result) {
-                cached_delete_stmt_->reset();
-                return std::unexpected(exec_result.error());
-            }
-
-            cached_delete_stmt_->reset();
-            return {};
+            // Use cached RemoveStatement instance for optimal performance
+            return get_remove_statement().execute_single_optimized(obj);
         }
 
         // Bulk remove operations
         std::expected<void, Error> remove(std::span<const T> objects) {
-            return orm::statements::RemoveStatement<T, ConnType>(conn_).execute(objects);
+            return get_remove_statement().execute(objects);
         }
 
         // Insert operations
@@ -137,8 +104,16 @@ export namespace storm {
             return orm::statements::InsertStatement<T, ConnType>(conn_).execute(objects);
         }
 
+        // Lazy-initialize and return cached RemoveStatement for optimal performance
+        auto get_remove_statement() const -> orm::statements::RemoveStatement<T, ConnType>& {
+            if (!remove_stmt_) {
+                remove_stmt_ = std::make_unique<orm::statements::RemoveStatement<T, ConnType>>(conn_);
+            }
+            return *remove_stmt_;
+        }
+
         ConnType& conn_;
-        mutable Statement* cached_delete_stmt_ = nullptr; // Cached statement for ultra-fast single DELETE
+        mutable std::unique_ptr<orm::statements::RemoveStatement<T, ConnType>> remove_stmt_;
     };
 
     // Factory function for convenient QuerySet creation with default connection
