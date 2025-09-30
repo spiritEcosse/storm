@@ -190,8 +190,26 @@ export namespace storm::orm::statements {
       public:
         explicit InsertStatement(Connection& conn) : conn_(conn) {}
 
-        // Single insert operation - optimized fast path for single object
-        [[nodiscard]] auto execute_single(const T& obj) noexcept -> std::expected<int64_t, Error> {
+        // Unified insert operation - handles both single and batch operations
+        [[nodiscard]] auto execute(std::span<const T> objects) noexcept -> std::expected<std::vector<int64_t>, Error> {
+            if (objects.empty()) {
+                return std::vector<int64_t>{};
+            }
+
+            // Fast path for single object
+            if (objects.size() == 1) {
+                return execute_single_optimized(objects[0]).transform([](int64_t id) {
+                    return std::vector<int64_t>{id};
+                });
+            }
+
+            // Batch path
+            return Base::execute_standard_batch(*this, objects, Base::field_count_);
+        }
+
+      private:
+        // Private optimized implementation for single insert
+        [[nodiscard]] auto execute_single_optimized(const T& obj) noexcept -> std::expected<int64_t, Error> {
             // Fast path: directly prepare and execute for single object
             const auto& sql = get_insert_sql();
 
@@ -212,11 +230,6 @@ export namespace storm::orm::statements {
                         return conn_.last_insert_rowid();
                     }
             );
-        }
-
-        // Batch insert operation with optimization strategies
-        [[nodiscard]] auto execute(std::span<const T> objects) noexcept -> std::expected<std::vector<int64_t>, Error> {
-            return Base::execute_standard_batch(*this, objects, Base::field_count_);
         }
 
       protected: // Changed to protected so BaseStatement can access
