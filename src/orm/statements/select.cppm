@@ -176,46 +176,6 @@ export namespace storm::orm::statements {
       public:
         explicit SelectStatement(Connection& conn) : conn_(conn) {}
 
-        // Execute SELECT and return all rows (old version, kept for compatibility)
-        [[nodiscard]] auto execute() noexcept -> std::expected<std::vector<T>, Error> {
-            const auto& sql = get_select_sql();
-
-            std::vector<T> results;
-
-            // Use execute_with_statement for statement caching
-            auto exec_result = Base::template execute_with_statement<ConnType>(
-                    conn_, sql, [this, &results](auto& stmt) -> std::expected<void, Error> {
-                        // Iterate through all rows
-                        while (true) {
-                            auto step_result = stmt.step();
-                            if (!step_result) {
-                                return std::unexpected(step_result.error());
-                            }
-
-                            // No more rows
-                            if (!step_result.value()) {
-                                break;
-                            }
-
-                            // Extract current row
-                            auto row_result = extract_row(stmt);
-                            if (!row_result) {
-                                return std::unexpected(row_result.error());
-                            }
-
-                            results.push_back(std::move(row_result.value()));
-                        }
-                        return {};
-                    }
-            );
-
-            if (!exec_result) {
-                return std::unexpected(exec_result.error());
-            }
-
-            return results;
-        }
-
         // Optimized SELECT execution with statement caching and inlined row extraction
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_optimized() noexcept
                 -> std::expected<std::vector<T>, Error> {
