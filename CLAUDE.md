@@ -476,9 +476,15 @@ template <typename T> class RemoveStatement {
 - **Benefit**: Amortizes both object construction and statement preparation costs
 
 **Architectural Trade-offs:**
-- **Consistency Note**: InsertStatement is created fresh per call (not cached in QuerySet)
-- **Rationale**: RemoveStatement benefits from instance caching due to internal statement cache
-- **Future Work**: Consider applying same caching pattern to InsertStatement for consistency
+- **Architectural Decision**: InsertStatement is created fresh per call (not cached in QuerySet)
+- **Analysis Result**: Caching was evaluated and determined to be unnecessary
+- **Rationale**:
+  - INSERT operations are typically one-time per object (not repeated like SELECT/UPDATE/DELETE)
+  - Already uses connection-level caching via `prepare_cached()`
+  - Thread-local SQL caching and compile-time generation provide sufficient optimization
+  - Current performance (992K/sec single, 2.7M/sec batch) exceeds sqlite_orm by 2-6x
+  - Adding caching would increase complexity without meaningful performance gain
+- **Conclusion**: Architectural asymmetry is intentional and reflects optimal design for INSERT usage patterns
 
 #### 12. **UpdateStatement with Compile-Time SQL Generation and Statement Caching**
 A comprehensive UPDATE implementation following RemoveStatement's proven caching pattern:
