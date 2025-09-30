@@ -17,6 +17,7 @@ import <string_view>;
 import <span>;
 import <concepts>;
 import <memory>;
+import <vector>;
 
 export namespace storm {
 
@@ -43,12 +44,12 @@ export namespace storm {
         }
 
         // Insert operations
-        std::expected<void, Error> insert(const T& obj) {
+        std::expected<int64_t, Error> insert(const T& obj) {
             return execute_insert(obj);
         }
 
         // Bulk insert operations
-        std::expected<void, Error> insert(std::span<const T> objects) {
+        std::expected<std::vector<int64_t>, Error> insert(std::span<const T> objects) {
             return execute_insert_batch(objects);
         }
 
@@ -94,11 +95,17 @@ export namespace storm {
             return orm::statements::RemoveStatement<T, ConnType>(conn_).execute(objects);
         }
 
-        [[nodiscard]] std::expected<void, Error> execute_insert(const T& obj) const noexcept {
-            return orm::statements::InsertStatement<T, ConnType>(conn_).execute(std::span<const T>{&obj, 1});
+        [[nodiscard]] std::expected<int64_t, Error> execute_insert(const T& obj) const noexcept {
+            return orm::statements::InsertStatement<T, ConnType>(conn_).execute(std::span<const T>{&obj, 1})
+                .and_then([](auto ids) -> std::expected<int64_t, Error> {
+                    if (ids.empty()) {
+                        return std::unexpected(Error{.code_ = -1, .message_ = "No ID generated from insert"});
+                    }
+                    return ids[0];
+                });
         }
 
-        [[nodiscard]] std::expected<void, Error> execute_insert_batch(std::span<const T> objects) const noexcept {
+        [[nodiscard]] std::expected<std::vector<int64_t>, Error> execute_insert_batch(std::span<const T> objects) const noexcept {
             return orm::statements::InsertStatement<T, ConnType>(conn_).execute(objects);
         }
 

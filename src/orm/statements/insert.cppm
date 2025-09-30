@@ -191,7 +191,7 @@ export namespace storm::orm::statements {
         explicit InsertStatement(Connection& conn) : conn_(conn) {}
 
         // Batch insert operation with optimization strategies
-        [[nodiscard]] auto execute(std::span<const T> objects) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] auto execute(std::span<const T> objects) noexcept -> std::expected<std::vector<int64_t>, Error> {
             return Base::execute_standard_batch(*this, objects, Base::field_count_);
         }
 
@@ -204,15 +204,15 @@ export namespace storm::orm::statements {
         }
 
         // Execute bulk INSERT with multiple VALUES clauses
-        [[nodiscard]] auto execute_bulk(std::span<const T> objects) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] auto execute_bulk(std::span<const T> objects) noexcept -> std::expected<std::vector<int64_t>, Error> {
             const auto sql = get_bulk_insert_sql(objects.size());
 
             return Base::template execute_with_transaction<ConnType>(
                     conn_,
                     Base::should_use_transaction(objects),
-                    [this, &sql, objects]() -> std::expected<void, Error> {
+                    [this, &sql, objects]() -> std::expected<std::vector<int64_t>, Error> {
                         return conn_.prepare(sql).and_then(
-                                [this, objects](Statement stmt) -> std::expected<void, Error> {
+                                [this, objects](Statement stmt) -> std::expected<std::vector<int64_t>, Error> {
                                     // Bind all parameters for all objects using index sequence optimization
                                     if (auto result = Base::template bind_all_objects_bulk_impl<ConnType, Statement>(
                                                 stmt, objects, typename Base::field_indices_t()
@@ -222,7 +222,24 @@ export namespace storm::orm::statements {
                                     }
 
                                     // Execute the bulk insert
-                                    return stmt.execute();
+                                    auto exec_result = stmt.execute();
+                                    if (!exec_result) {
+                                        return std::unexpected(exec_result.error());
+                                    }
+
+                                    // Get the last inserted row ID
+                                    // For bulk INSERT with multiple VALUES, last_insert_rowid() returns the ID of the LAST row
+                                    // We need to calculate the first ID by subtracting the count
+                                    int64_t last_id = conn_.last_insert_rowid();
+                                    int64_t first_id = last_id - static_cast<int64_t>(objects.size()) + 1;
+
+                                    // Generate consecutive IDs for bulk insert
+                                    std::vector<int64_t> ids(objects.size());
+                                    for (size_t i = 0; i < objects.size(); ++i) {
+                                        ids[i] = first_id + static_cast<int64_t>(i);
+                                    }
+
+                                    return ids;
                                 }
                         );
                     }
@@ -230,9 +247,12 @@ export namespace storm::orm::statements {
         }
 
         // Execute individual inserts for large batches (with transaction)
-        [[nodiscard]] auto execute_individual_batch(std::span<const T> objects) noexcept -> std::expected<void, Error> {
-            return Base::template execute_with_statement<ConnType>(
-                    conn_, get_insert_sql(), [this, objects](auto& stmt) -> std::expected<void, Error> {
+        [[nodiscard]] auto execute_individual_batch(std::span<const T> objects) noexcept -> std::expected<std::vector<int64_t>, Error> {
+            std::vector<int64_t> ids;
+            ids.reserve(objects.size());
+
+            auto result = Base::template execute_with_statement<ConnType>(
+                    conn_, get_insert_sql(), [this, objects, &ids](auto& stmt) -> std::expected<void, Error> {
                         for (const auto& obj : objects) {
                             // Monadic composition: reset → bind → execute
                             if (auto result = Base::reset_bind_and_execute(
@@ -241,10 +261,18 @@ export namespace storm::orm::statements {
                                 !result) {
                                 return std::unexpected(result.error());
                             }
+                            // Get the generated ID after each insert
+                            ids.push_back(conn_.last_insert_rowid());
                         }
                         return {};
                     }
             );
+
+            if (!result) {
+                return std::unexpected(result.error());
+            }
+
+            return ids;
         }
 
         Connection& conn_;

@@ -51,7 +51,7 @@ namespace db_utils {
 // Standard Person table creation SQL
 constexpr const char* PERSON_TABLE_SQL =
     "CREATE TABLE Person ("
-    "id INTEGER PRIMARY KEY, "
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
     "name TEXT NOT NULL, "
     "age INTEGER NOT NULL"
     ")";
