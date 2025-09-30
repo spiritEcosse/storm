@@ -90,89 +90,6 @@ export namespace storm::orm::statements {
             return select_sql_string;
         }
 
-        // Helper to read column value based on field type
-        template <typename FieldType>
-        [[nodiscard]] static auto read_column_value(sqlite3_stmt* stmt, int column_index) noexcept
-                -> std::expected<FieldType, Error> {
-            if constexpr (std::is_same_v<FieldType, int>) {
-                return sqlite3_column_int(stmt, column_index);
-            } else if constexpr (std::is_same_v<FieldType, std::string>) {
-                const unsigned char* text = sqlite3_column_text(stmt, column_index);
-                if (text) {
-                    return std::string(reinterpret_cast<const char*>(text));
-                }
-                return std::string{}; // Empty string for NULL values
-            } else {
-                static_assert(
-                        std::is_same_v<FieldType, int> || std::is_same_v<FieldType, std::string>,
-                        "Unsupported field type for reading"
-                );
-                return std::unexpected(Error{-1, "Unsupported field type"});
-            }
-        }
-
-        // Helper to extract a single column at compile-time index
-        template <size_t Index>
-        [[nodiscard]] static auto extract_column_at_index(sqlite3_stmt* stmt, T& obj) noexcept
-                -> std::expected<void, Error> {
-            if constexpr (Index < Base::field_count_) {
-                constexpr auto member = Base::all_members_[Index];
-                using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
-
-                auto value_result = read_column_value<FieldType>(stmt, Index);
-                if (!value_result) {
-                    return std::unexpected(value_result.error());
-                }
-
-                obj.[:member:] = std::move(value_result.value());
-            }
-            return {};
-        }
-
-        // Helper to extract all columns using index sequence
-        template <size_t... Is>
-        [[nodiscard]] static auto
-        extract_all_columns_impl(sqlite3_stmt* stmt, T& obj, std::index_sequence<Is...>) noexcept
-                -> std::expected<void, Error> {
-            // Use fold expression to extract all columns at compile-time indices
-            auto extract_result = (extract_column_at_index<Is>(stmt, obj) && ...);
-            if (!extract_result) {
-                // Find which column failed
-                return get_first_extract_error<Is...>(stmt, obj);
-            }
-            return {};
-        }
-
-        // Helper to get the first extraction error when fold expression fails
-        template <size_t... Is>
-        [[nodiscard]] static auto get_first_extract_error(sqlite3_stmt* stmt, T& obj) noexcept
-                -> std::expected<void, Error> {
-            // Try each column individually to find the first error
-            auto try_extract = [&stmt, &obj](auto index_constant) -> std::expected<void, Error> {
-                constexpr size_t Index = decltype(index_constant)::value;
-                return extract_column_at_index<Index>(stmt, obj);
-            };
-
-            // Try each column to find the first error
-            std::expected<void, Error> first_error{};
-            ((first_error = try_extract(std::integral_constant<size_t, Is>{}), first_error.has_value()) && ...);
-            return first_error;
-        }
-
-        // Extract a single row from the current statement position
-        [[nodiscard]] auto extract_row(Statement& stmt) noexcept -> std::expected<T, Error> {
-            T obj{};
-
-            // Use index sequence to extract all columns
-            auto extract_result = extract_all_columns_impl(stmt.handle(), obj, typename Base::field_indices_t());
-
-            if (!extract_result) {
-                return std::unexpected(extract_result.error());
-            }
-
-            return obj;
-        }
-
       public:
         explicit SelectStatement(Connection& conn) : conn_(conn) {}
 
@@ -235,36 +152,6 @@ export namespace storm::orm::statements {
         }
 
       private:
-        // Inline column extraction helper using compile-time type dispatch
-        template <size_t... Is>
-        [[nodiscard]] static auto extract_columns_impl(sqlite3_stmt* stmt, T& obj, std::index_sequence<Is...>) noexcept
-                -> bool {
-            return (extract_column_inline<Is>(stmt, obj) && ...);
-        }
-
-        // Inline single column extraction with compile-time type dispatch
-        template <size_t Index>
-        [[nodiscard]] static auto extract_column_inline(sqlite3_stmt* stmt, T& obj) noexcept -> bool {
-            if constexpr (Index < Base::field_count_) {
-                constexpr auto member = Base::all_members_[Index];
-                using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
-
-                // Compile-time type dispatch (no runtime branching per column)
-                if constexpr (std::is_same_v<FieldType, int>) {
-                    obj.[:member:] = sqlite3_column_int(stmt, Index);
-                } else if constexpr (std::is_same_v<FieldType, std::string>) {
-                    const unsigned char* text = sqlite3_column_text(stmt, Index);
-                    if (text) {
-                        obj.[:member:] = std::string(reinterpret_cast<const char*>(text));
-                    } else {
-                        obj.[:member:] = std::string{}; // NULL value
-                    }
-                }
-                return true;
-            }
-            return true;
-        }
-
         // OPTIMIZATION: Fast column extraction without error checking
         template <size_t Index>
         __attribute__((always_inline)) static inline void
