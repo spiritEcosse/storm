@@ -42,6 +42,11 @@ export namespace storm {
             return execute_remove(std::span<const T>{&obj, 1});
         }
 
+        // Bulk remove operations
+        std::expected<void, Error> remove(std::span<const T> objects) {
+            return execute_remove(objects);
+        }
+
         // Insert operations
         std::expected<void, Error> insert(const T& obj) {
             return execute_insert(obj);

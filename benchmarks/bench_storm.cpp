@@ -328,21 +328,17 @@ void benchmark_storm_orm_batch_delete(int num_records, const BenchmarkConfig& co
             size_t end_idx = std::min(i + batch_size, persons.size());
             size_t current_batch_size = end_idx - i;
 
+            // Create batch span for this chunk
+            std::span<const Person> batch_span(&persons[i], current_batch_size);
+
             timer.reset();
 
-            // Use individual removes in batches with timing per batch
-            bool batch_success = true;
-            for (size_t j = i; j < end_idx; ++j) {
-                auto result = queryset.remove(persons[j]);
-                if (!result.has_value()) {
-                    batch_success = false;
-                    break;
-                }
-            }
+            // Use new batch remove API
+            auto result = queryset.remove(batch_span);
 
             double elapsed = timer.elapsed_ms();
 
-            if (batch_success) {
+            if (result.has_value()) {
                 successful_deletes += current_batch_size;
                 total_time += elapsed;
                 batch_count++;

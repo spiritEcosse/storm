@@ -5,6 +5,10 @@ import storm;
 import <expected>;
 import <string>;
 import <optional>;
+import <span>;
+import <chrono>;
+import <iostream>;
+import <iomanip>;
 
 // Test struct with proper Storm attribute syntax
 struct Person {
@@ -188,6 +192,197 @@ TEST_F(QuerySetRemoveTest, RemoveWithZeroId) {
 
     // Verify database state unchanged
     EXPECT_EQ(countPersons(), 3) << "Should still have 3 persons after removal attempt";
+}
+
+TEST_F(QuerySetRemoveTest, RemoveBatchSmall) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Add more test data for batch testing
+    auto& conn = storm::QuerySet<Person>::get_default_connection();
+    for (int i = 4; i <= 12; i++) {
+        auto insert_result = conn.execute(
+                "INSERT INTO Person (id, name, age) VALUES (" + std::to_string(i) + ", 'Person" + std::to_string(i) +
+                "', " + std::to_string(20 + i) + ")"
+        );
+        ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
+    }
+
+    // Verify initial state - should have 12 persons (3 original + 9 new)
+    EXPECT_EQ(countPersons(), 12) << "Should have 12 persons initially";
+
+    // Create batch of persons to remove (batch size ~10)
+    std::vector<Person> batch_to_remove;
+    for (int i = 1; i <= 10; i++) {
+        batch_to_remove.push_back({i, "Person" + std::to_string(i), 20 + i});
+    }
+
+    // Remove batch using new batch API
+    auto result = queryset.remove(std::span<const Person>(batch_to_remove));
+
+    // Verify removal was successful
+    ASSERT_TRUE(result.has_value()) << "Batch remove operation should succeed";
+
+    // Verify correct number of persons removed
+    EXPECT_EQ(countPersons(), 2) << "Should have 2 persons after batch removal";
+
+    // Verify specific persons were removed
+    for (int i = 1; i <= 10; i++) {
+        EXPECT_FALSE(personExists(i)) << "Person " << i << " should be removed";
+    }
+
+    // Verify remaining persons still exist
+    EXPECT_TRUE(personExists(11)) << "Person 11 should still exist";
+    EXPECT_TRUE(personExists(12)) << "Person 12 should still exist";
+}
+
+TEST_F(QuerySetRemoveTest, RemoveBatchLarge) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Add many test records for large batch testing
+    auto& conn = storm::QuerySet<Person>::get_default_connection();
+    for (int i = 4; i <= 103; i++) {
+        auto insert_result = conn.execute(
+                "INSERT INTO Person (id, name, age) VALUES (" + std::to_string(i) + ", 'Person" + std::to_string(i) +
+                "', " + std::to_string(20 + (i % 60)) + ")"
+        );
+        ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
+    }
+
+    // Verify initial state - should have 103 persons (3 original + 100 new)
+    EXPECT_EQ(countPersons(), 103) << "Should have 103 persons initially";
+
+    // Create large batch of persons to remove (batch size ~100)
+    std::vector<Person> large_batch;
+    for (int i = 1; i <= 100; i++) {
+        large_batch.push_back({i, "Person" + std::to_string(i), 20 + (i % 60)});
+    }
+
+    // Remove large batch - should use individual statements with transaction
+    auto result = queryset.remove(std::span<const Person>(large_batch));
+
+    // Verify removal was successful
+    if (!result.has_value()) {
+        std::cout << "Error: " << result.error().message() << std::endl;
+    }
+    ASSERT_TRUE(result.has_value()) << "Large batch remove operation should succeed: "
+                                    << (result.has_value() ? "" : result.error().message());
+
+    // Verify correct number of persons removed
+    EXPECT_EQ(countPersons(), 3) << "Should have 3 persons after large batch removal";
+
+    // Verify specific persons were removed
+    for (int i = 1; i <= 100; i++) {
+        EXPECT_FALSE(personExists(i)) << "Person " << i << " should be removed";
+    }
+
+    // Verify remaining persons still exist
+    EXPECT_TRUE(personExists(101)) << "Person 101 should still exist";
+    EXPECT_TRUE(personExists(102)) << "Person 102 should still exist";
+    EXPECT_TRUE(personExists(103)) << "Person 103 should still exist";
+}
+
+TEST_F(QuerySetRemoveTest, RemoveBatchEmpty) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Verify initial state
+    EXPECT_EQ(countPersons(), 3) << "Should have 3 persons initially";
+
+    // Create empty batch
+    std::vector<Person> empty_batch;
+
+    // Attempt to remove empty batch
+    auto result = queryset.remove(std::span<const Person>(empty_batch));
+
+    // Verify operation completes without error
+    ASSERT_TRUE(result.has_value()) << "Empty batch remove should not error";
+
+    // Verify database state unchanged
+    EXPECT_EQ(countPersons(), 3) << "Should still have 3 persons after empty batch removal";
+    EXPECT_TRUE(personExists(1)) << "Alice should still exist";
+    EXPECT_TRUE(personExists(2)) << "Bob should still exist";
+    EXPECT_TRUE(personExists(3)) << "Charlie should still exist";
+}
+
+TEST_F(QuerySetRemoveTest, RemoveBatchPartialExist) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Verify initial state
+    EXPECT_EQ(countPersons(), 3) << "Should have 3 persons initially";
+
+    // Create batch with mix of existing and non-existing persons
+    std::vector<Person> mixed_batch = {
+            {1, "Alice", 30},      // exists
+            {999, "Ghost1", 99},   // doesn't exist
+            {2, "Bob", 25},        // exists
+            {1000, "Ghost2", 100}, // doesn't exist
+            {3, "Charlie", 35}     // exists
+    };
+
+    // Remove mixed batch
+    auto result = queryset.remove(std::span<const Person>(mixed_batch));
+
+    // Verify operation completes successfully (non-existing deletes are not errors)
+    ASSERT_TRUE(result.has_value()) << "Mixed batch remove should succeed";
+
+    // Verify only existing persons were removed
+    EXPECT_EQ(countPersons(), 0) << "All existing persons should be removed";
+    EXPECT_FALSE(personExists(1)) << "Alice should be removed";
+    EXPECT_FALSE(personExists(2)) << "Bob should be removed";
+    EXPECT_FALSE(personExists(3)) << "Charlie should be removed";
+}
+
+TEST_F(QuerySetRemoveTest, RemoveBatchPerformance) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Add test data for performance comparison
+    auto&     conn        = storm::QuerySet<Person>::get_default_connection();
+    const int num_records = 1000;
+    for (int i = 4; i <= num_records; i++) {
+        auto insert_result = conn.execute(
+                "INSERT INTO Person (id, name, age) VALUES (" + std::to_string(i) + ", 'Person" + std::to_string(i) +
+                "', " + std::to_string(20 + (i % 60)) + ")"
+        );
+        ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
+    }
+
+    // Measure individual removes
+    auto start_individual = std::chrono::steady_clock::now();
+    for (int i = 1; i <= 50; i++) {
+        Person p{i, "Person" + std::to_string(i), 20 + (i % 60)};
+        auto   result = queryset.remove(p);
+        ASSERT_TRUE(result.has_value()) << "Individual remove should succeed";
+    }
+    auto end_individual = std::chrono::steady_clock::now();
+    auto duration_individual =
+            std::chrono::duration_cast<std::chrono::microseconds>(end_individual - start_individual).count();
+
+    // Prepare batch for batch remove
+    std::vector<Person> batch;
+    for (int i = 51; i <= 100; i++) {
+        batch.push_back({i, "Person" + std::to_string(i), 20 + (i % 60)});
+    }
+
+    // Measure batch remove
+    auto start_batch = std::chrono::steady_clock::now();
+    auto result      = queryset.remove(std::span<const Person>(batch));
+    ASSERT_TRUE(result.has_value()) << "Batch remove should succeed";
+    auto end_batch      = std::chrono::steady_clock::now();
+    auto duration_batch = std::chrono::duration_cast<std::chrono::microseconds>(end_batch - start_batch).count();
+
+    // Log performance comparison (batch should be faster)
+    std::cout << "\nPerformance Comparison (50 deletes):" << std::endl;
+    std::cout << "  Individual removes: " << duration_individual << " μs" << std::endl;
+    std::cout << "  Batch remove: " << duration_batch << " μs" << std::endl;
+    std::cout << "  Speedup: " << std::fixed << std::setprecision(2)
+              << static_cast<double>(duration_individual) / duration_batch << "x" << std::endl;
+
+    // Verify correct deletions
+    EXPECT_EQ(countPersons(), num_records - 100) << "Should have correct number of persons after removes";
 }
 
 // Simple insert test
