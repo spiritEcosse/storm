@@ -78,11 +78,6 @@ export namespace storm {
             return get_update_statement().execute(objects);
         }
 
-        // Select operations - returns all rows (optimized with statement caching)
-        std::expected<std::vector<T>, Error> select() {
-            return get_select_statement().execute_optimized();
-        }
-
         // Static methods for connection management
         // NOTE: These methods are NOT thread-safe. For multi-threaded use:
         // 1. Use external synchronization (mutex/lock) around these calls, OR
@@ -132,14 +127,6 @@ export namespace storm {
                 remove_stmt_ = std::make_unique<orm::statements::RemoveStatement<T, ConnType>>(conn_);
             }
             return *remove_stmt_;
-        }
-
-        // Lazy-initialize and return cached SelectStatement for optimal performance
-        auto get_select_statement() const -> orm::statements::SelectStatement<T, ConnType>& {
-            if (!select_stmt_) {
-                select_stmt_ = std::make_unique<orm::statements::SelectStatement<T, ConnType>>(conn_);
-            }
-            return *select_stmt_;
         }
 
         // Lazy-initialize and return cached UpdateStatement for optimal performance
