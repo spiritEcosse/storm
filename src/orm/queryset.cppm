@@ -10,6 +10,7 @@ import storm_db_sqlite;
 import storm_orm_statements_base;
 import storm_orm_statements_remove;
 import storm_orm_statements_insert;
+import storm_orm_statements_update;
 
 import <expected>;
 import <string>;
@@ -59,6 +60,17 @@ export namespace storm {
         // Bulk insert operations
         std::expected<std::vector<int64_t>, Error> insert(std::span<const T> objects) {
             return execute_insert(objects);
+        }
+
+        // Update operations
+        std::expected<void, Error> update(const T& obj) {
+            // Use cached UpdateStatement instance for optimal performance
+            return get_update_statement().execute_single_optimized(obj);
+        }
+
+        // Bulk update operations
+        std::expected<void, Error> update(std::span<const T> objects) {
+            return get_update_statement().execute(objects);
         }
 
         // Static methods for connection management
@@ -112,8 +124,17 @@ export namespace storm {
             return *remove_stmt_;
         }
 
+        // Lazy-initialize and return cached UpdateStatement for optimal performance
+        auto get_update_statement() const -> orm::statements::UpdateStatement<T, ConnType>& {
+            if (!update_stmt_) {
+                update_stmt_ = std::make_unique<orm::statements::UpdateStatement<T, ConnType>>(conn_);
+            }
+            return *update_stmt_;
+        }
+
         ConnType& conn_;
         mutable std::unique_ptr<orm::statements::RemoveStatement<T, ConnType>> remove_stmt_;
+        mutable std::unique_ptr<orm::statements::UpdateStatement<T, ConnType>> update_stmt_;
     };
 
     // Factory function for convenient QuerySet creation with default connection

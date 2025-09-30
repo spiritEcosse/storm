@@ -71,6 +71,18 @@ void sqlite_orm_remove_person(sqlite_orm_storage_t storage, int id) {
     }
 }
 
+void sqlite_orm_update_person(sqlite_orm_storage_t storage, int id, const char* name, int age) {
+    if (!storage) return;
+
+    auto* wrapper = static_cast<StorageWrapper*>(storage);
+    try {
+        PersonSqliteOrm person{id, std::string(name), age};
+        wrapper->storage.update(person);
+    } catch (...) {
+        // Silently ignore errors for benchmark simplicity
+    }
+}
+
 void sqlite_orm_cleanup(sqlite_orm_storage_t storage) {
     if (!storage) return;
 

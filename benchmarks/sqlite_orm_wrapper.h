@@ -17,6 +17,9 @@ void sqlite_orm_insert_person(sqlite_orm_storage_t storage, int id, const char* 
 // Remove a person by id
 void sqlite_orm_remove_person(sqlite_orm_storage_t storage, int id);
 
+// Update a person by id
+void sqlite_orm_update_person(sqlite_orm_storage_t storage, int id, const char* name, int age);
+
 // Cleanup
 void sqlite_orm_cleanup(sqlite_orm_storage_t storage);
 

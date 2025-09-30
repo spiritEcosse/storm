@@ -1,0 +1,312 @@
+module;
+
+#include <sqlite3.h>
+
+export module storm_orm_statements_update;
+
+import storm_orm_statements_base;
+import storm_orm_utilities;
+import storm_db_concept;
+import storm_db_sqlite;
+
+import <expected>;
+import <string>;
+import <string_view>;
+import <span>;
+import <concepts>;
+import <format>;
+import <meta>;
+import <type_traits>;
+import <array>;
+import <utility>;
+
+export namespace storm::orm::statements {
+
+    // Import utilities for code convenience
+    using storm::orm::utilities::ConstexprString;
+
+    // Statement class for ORM update operations
+    template <typename T, storm::db::DatabaseConnection ConnType> class UpdateStatement : private BaseStatement<T> {
+        friend class BaseStatement<T>; // Allow BaseStatement to access protected/private members
+        using Base       = BaseStatement<T>;
+        using Connection = ConnType;
+        using Error      = typename ConnType::Error;
+        using Statement  = typename ConnType::Statement;
+
+        // Helper to get non-primary-key field count
+        static consteval size_t get_updatable_field_count() {
+            size_t count = 0;
+            for (const auto& member : Base::all_members_) {
+                if (member != Base::primary_key_) {
+                    ++count;
+                }
+            }
+            return count;
+        }
+
+        static constexpr size_t updatable_field_count_ = get_updatable_field_count();
+
+        // Helper to build field assignments string for UPDATE SQL
+        static consteval auto build_field_assignments() {
+            // Get all members directly
+            auto members = std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked());
+            auto pk = Base::primary_key_;
+
+            ConstexprString<1024> result;
+            bool first = true;
+
+            for (const auto& member : members) {
+                if (member != pk) {
+                    if (!first) {
+                        result.append(", ");
+                    }
+                    result.append(std::meta::identifier_of(member));
+                    result.append("=?");
+                    first = false;
+                }
+            }
+
+            return result;
+        }
+
+        static constexpr auto field_assignments_ = build_field_assignments();
+
+        // Compile-time UPDATE SQL size calculation
+        static consteval size_t calculate_update_sql_size() {
+            size_t size = 0;
+            size += 7;  // "UPDATE "
+            size += Base::table_name_.size();
+            size += 5;  // " SET "
+            size += field_assignments_.len;
+            size += 7;  // " WHERE "
+            size += Base::pk_name_.size();
+            size += 4;  // " = ?"
+            size += 1;  // null terminator
+            return size;
+        }
+
+        // Build UPDATE SQL at compile-time using ConstexprString
+        static consteval auto build_update_sql_array() {
+            constexpr size_t sql_size = calculate_update_sql_size() + 50; // Add buffer for safety
+            ConstexprString<sql_size> result;
+
+            result.append("UPDATE ");
+            result.append(Base::table_name_);
+            result.append(" SET ");
+            result.append(std::string_view(field_assignments_.data.data(), field_assignments_.len));
+            result.append(" WHERE ");
+            result.append(Base::pk_name_);
+            result.append(" = ?");
+
+            return result;
+        }
+
+        // Pre-computed UPDATE SQL generated at compile-time
+        static constexpr auto           update_sql_array  = build_update_sql_array();
+        static inline const std::string update_sql_string = std::string(update_sql_array);
+
+      public:
+        // Public access to UPDATE SQL for QuerySet optimization
+        static const std::string& get_update_sql_static() {
+            return update_sql_string;
+        }
+
+      private:
+        // Generate UPDATE SQL string (compile-time computed, runtime accessible)
+        static const std::string& get_update_sql() {
+            return update_sql_string;
+        }
+
+      public:
+        explicit UpdateStatement(Connection& conn) : conn_(conn) {}
+
+        [[nodiscard]] auto execute(std::span<const T> objects) noexcept -> std::expected<void, Error> {
+            if (objects.empty()) {
+                return {};
+            }
+
+            // Fast path for single update - use optimized execution
+            if (objects.size() == 1) {
+                return execute_single_optimized(objects[0]);
+            }
+
+            // Multiple updates - use transaction wrapper with individual statements
+            return Base::template execute_with_transaction<ConnType>(
+                conn_,
+                true, // Always use transaction for batch updates
+                [this, objects]() -> std::expected<void, Error> {
+                    return execute_individual_batch(objects);
+                }
+            );
+        }
+
+        // Helper template for inline binding at compile-time index
+        template <size_t Index>
+        [[nodiscard]] static constexpr auto inline_bind_field_if_not_pk(Statement* stmt, const T& obj, int& param_index) noexcept -> std::expected<void, Error> {
+            if constexpr (Index < Base::field_count_) {
+                constexpr auto member = Base::all_members_[Index];
+                if constexpr (member != Base::primary_key_) {
+                    auto value = obj.[:member:];
+
+                    // Inline type dispatch - eliminates virtual function call overhead
+                    if constexpr (std::is_same_v<decltype(value), int>) {
+                        if (auto r = stmt->bind_int(param_index, value); !r) {
+                            return std::unexpected(r.error());
+                        }
+                    } else if constexpr (std::is_same_v<decltype(value), int64_t>) {
+                        if (auto r = stmt->bind_int64(param_index, value); !r) {
+                            return std::unexpected(r.error());
+                        }
+                    } else if constexpr (std::is_same_v<decltype(value), double>) {
+                        if (auto r = stmt->bind_double(param_index, value); !r) {
+                            return std::unexpected(r.error());
+                        }
+                    } else if constexpr (std::is_convertible_v<decltype(value), std::string_view>) {
+                        if (auto r = stmt->bind_text(param_index, std::string_view{value}); !r) {
+                            return std::unexpected(r.error());
+                        }
+                    }
+                    ++param_index;
+                }
+            }
+            return {};
+        }
+
+        // Helper to unroll inline binding for all fields
+        template <size_t... Is>
+        [[nodiscard]] static auto inline_bind_all_fields(Statement* stmt, const T& obj, std::index_sequence<Is...>) noexcept -> std::expected<void, Error> {
+            int param_index = 1;
+
+            // Unroll all field bindings at compile time
+            std::expected<void, Error> result{};
+            ((result = inline_bind_field_if_not_pk<Is>(stmt, obj, param_index), result.has_value()) && ...);
+
+            if (!result) {
+                return result;
+            }
+
+            // Bind primary key last - fully inlined
+            auto pk_value = obj.[:Base::primary_key_:];
+            if constexpr (std::is_same_v<decltype(pk_value), int>) {
+                if (auto r = stmt->bind_int(param_index, pk_value); !r) {
+                    return std::unexpected(r.error());
+                }
+            } else if constexpr (std::is_same_v<decltype(pk_value), int64_t>) {
+                if (auto r = stmt->bind_int64(param_index, pk_value); !r) {
+                    return std::unexpected(r.error());
+                }
+            } else if constexpr (std::is_same_v<decltype(pk_value), double>) {
+                if (auto r = stmt->bind_double(param_index, pk_value); !r) {
+                    return std::unexpected(r.error());
+                }
+            } else if constexpr (std::is_convertible_v<decltype(pk_value), std::string_view>) {
+                if (auto r = stmt->bind_text(param_index, std::string_view{pk_value}); !r) {
+                    return std::unexpected(r.error());
+                }
+            }
+
+            return {};
+        }
+
+        // Ultra-optimized single UPDATE - pre-cached statement, fully inlined binding
+        [[nodiscard]] auto execute_single_optimized(const T& obj) noexcept -> std::expected<void, Error> {
+            // Get or cache the prepared statement
+            if (!cached_update_stmt_) {
+                auto stmt_result = conn_.prepare_cached(get_update_sql());
+                if (!stmt_result) {
+                    return std::unexpected(stmt_result.error());
+                }
+                cached_update_stmt_ = *stmt_result;
+            }
+
+            // FULLY INLINED BINDING - all compile-time dispatched, no function calls
+            auto bind_result = inline_bind_all_fields(cached_update_stmt_, obj, typename Base::field_indices_t{});
+            if (!bind_result) {
+                return std::unexpected(bind_result.error());
+            }
+
+            // Execute and reset for next use
+            auto exec_result = cached_update_stmt_->execute();
+            if (!exec_result) {
+                cached_update_stmt_->reset();
+                return std::unexpected(exec_result.error());
+            }
+
+            cached_update_stmt_->reset();
+            return {};
+        }
+
+      private:
+        // Helper template to bind field at compile-time index
+        template <size_t Index>
+        [[nodiscard]] auto bind_field_if_not_pk(Statement& stmt, const T& obj, int& param_index) noexcept -> std::expected<void, Error> {
+            if constexpr (Index < Base::field_count_) {
+                constexpr auto member = Base::all_members_[Index];
+                if constexpr (member != Base::primary_key_) {
+                    auto field_value = obj.[:member:];
+                    auto bind_result = Base::template bind_value_by_type<ConnType>(stmt, param_index, field_value);
+                    if (!bind_result) {
+                        return std::unexpected(bind_result.error());
+                    }
+                    ++param_index;
+                }
+            }
+            return {};
+        }
+
+        // Helper to bind all updatable fields using index sequence
+        template <size_t... Is>
+        [[nodiscard]] auto bind_updatable_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...>) noexcept -> std::expected<void, Error> {
+            int param_index = 1;
+
+            // Bind all non-primary-key fields using fold expression
+            auto bind_result = (bind_field_if_not_pk<Is>(stmt, obj, param_index) && ...);
+            if (!bind_result) {
+                // Find which field failed
+                std::expected<void, Error> first_error{};
+                ((first_error = bind_field_if_not_pk<Is>(stmt, obj, param_index), first_error.has_value()) && ...);
+                return first_error;
+            }
+
+            // Bind primary key as the last parameter
+            auto pk_value = obj.[:Base::primary_key_:];
+            return Base::template bind_value_by_type<ConnType>(stmt, param_index, pk_value);
+        }
+
+        // Helper to bind all updatable fields (non-primary-key fields) and primary key
+        [[nodiscard]] auto bind_updatable_fields(Statement& stmt, const T& obj) noexcept -> std::expected<void, Error> {
+            return bind_updatable_fields_impl(stmt, obj, typename Base::field_indices_t());
+        }
+
+      protected:
+        // Execute individual updates for batch operations (caller handles transaction)
+        [[nodiscard]] auto execute_individual_batch(std::span<const T> objects) noexcept -> std::expected<void, Error> {
+            return Base::template execute_with_statement<ConnType>(
+                conn_,
+                get_update_sql(),
+                [this, objects](auto& stmt) -> std::expected<void, Error> {
+                    for (const auto& obj : objects) {
+                        // Reset and bind all fields
+                        stmt.reset();
+
+                        auto bind_result = bind_updatable_fields(stmt, obj);
+                        if (!bind_result) {
+                            return std::unexpected(bind_result.error());
+                        }
+
+                        // Execute this update
+                        auto exec_result = stmt.execute();
+                        if (!exec_result) {
+                            return std::unexpected(exec_result.error());
+                        }
+                    }
+                    return {};
+                }
+            );
+        }
+
+        Connection& conn_;
+        mutable Statement* cached_update_stmt_ = nullptr; // Cached statement for optimized single UPDATE
+    };
+
+} // namespace storm::orm::statements

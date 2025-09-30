@@ -535,3 +535,425 @@ TEST_F(QuerySetRemoveTest, InsertEmptyBatch) {
     // Verify database state unchanged
     EXPECT_EQ(countPersons(), 3) << "Should still have 3 persons after empty batch insertion";
 }
+
+// Test QuerySet.update() functionality
+class QuerySetUpdateTest : public ::testing::Test {
+  protected:
+    void SetUp() override {
+        // Set up default connection using QuerySet
+        auto result = storm::QuerySet<Person>::set_default_connection(":memory:");
+        ASSERT_TRUE(result.has_value()) << "Failed to set default connection: " << result.error().message();
+
+        // Create test table using the default connection
+        auto& default_conn  = storm::QuerySet<Person>::get_default_connection();
+        auto  create_result = default_conn.execute(
+                "CREATE TABLE Person ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "name TEXT NOT NULL, "
+                "age INTEGER NOT NULL"
+                ")"
+        );
+        ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
+
+        // Insert test data
+        auto insert_result = default_conn.execute(
+                "INSERT INTO Person (id, name, age) VALUES "
+                "(1, 'Alice', 30), "
+                "(2, 'Bob', 25), "
+                "(3, 'Charlie', 35)"
+        );
+        ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data: " << insert_result.error().message();
+    }
+
+    void TearDown() override {
+        // Clear all connections
+        storm::QuerySet<Person>::clear_default_connection();
+    }
+
+    // Helper function to count records using the default connection
+    int countPersons() {
+        auto&         conn = storm::QuerySet<Person>::get_default_connection();
+        sqlite3_stmt* stmt;
+        int           rc = sqlite3_prepare_v2(conn.get(), "SELECT COUNT(*) FROM Person", -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+            return -1;
+
+        rc        = sqlite3_step(stmt);
+        int count = (rc == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : -1;
+
+        sqlite3_finalize(stmt);
+        return count;
+    }
+
+    // Helper function to get person by ID
+    std::optional<Person> getPerson(int id) {
+        auto&         conn = storm::QuerySet<Person>::get_default_connection();
+        sqlite3_stmt* stmt;
+        int rc = sqlite3_prepare_v2(conn.get(), "SELECT id, name, age FROM Person WHERE id = ?", -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+            return std::nullopt;
+
+        sqlite3_bind_int(stmt, 1, id);
+        rc = sqlite3_step(stmt);
+        
+        std::optional<Person> result;
+        if (rc == SQLITE_ROW) {
+            result = Person{
+                sqlite3_column_int(stmt, 0),
+                std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))),
+                sqlite3_column_int(stmt, 2)
+            };
+        }
+
+        sqlite3_finalize(stmt);
+        return result;
+    }
+
+    // Helper function to check if person exists
+    bool personExists(int id) {
+        return getPerson(id).has_value();
+    }
+};
+
+TEST_F(QuerySetUpdateTest, DatabaseSetup) {
+    // Verify database was created and populated correctly
+    EXPECT_TRUE(storm::QuerySet<Person>::has_default_connection()) << "Should have default connection";
+    EXPECT_EQ(countPersons(), 3) << "Should have 3 persons in database";
+
+    // Verify specific persons exist with correct values
+    auto alice = getPerson(1);
+    ASSERT_TRUE(alice.has_value()) << "Alice should exist";
+    EXPECT_EQ(alice->name, "Alice");
+    EXPECT_EQ(alice->age, 30);
+
+    auto bob = getPerson(2);
+    ASSERT_TRUE(bob.has_value()) << "Bob should exist";
+    EXPECT_EQ(bob->name, "Bob");
+    EXPECT_EQ(bob->age, 25);
+
+    auto charlie = getPerson(3);
+    ASSERT_TRUE(charlie.has_value()) << "Charlie should exist";
+    EXPECT_EQ(charlie->name, "Charlie");
+    EXPECT_EQ(charlie->age, 35);
+}
+
+TEST_F(QuerySetUpdateTest, UpdateExistingPerson) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Verify initial state
+    EXPECT_EQ(countPersons(), 3) << "Should have 3 persons initially";
+    auto alice_before = getPerson(1);
+    ASSERT_TRUE(alice_before.has_value());
+    EXPECT_EQ(alice_before->name, "Alice");
+    EXPECT_EQ(alice_before->age, 30);
+
+    // Update Alice's information
+    Person updated_alice{1, "Alice Smith", 31};
+    auto result = queryset.update(updated_alice);
+
+    // Verify update was successful
+    ASSERT_TRUE(result.has_value()) << "Update operation should succeed";
+
+    // Verify count unchanged
+    EXPECT_EQ(countPersons(), 3) << "Should still have 3 persons";
+
+    // Verify Alice was updated
+    auto alice_after = getPerson(1);
+    ASSERT_TRUE(alice_after.has_value()) << "Alice should still exist";
+    EXPECT_EQ(alice_after->name, "Alice Smith") << "Name should be updated";
+    EXPECT_EQ(alice_after->age, 31) << "Age should be updated";
+
+    // Verify other persons unchanged
+    auto bob = getPerson(2);
+    ASSERT_TRUE(bob.has_value());
+    EXPECT_EQ(bob->name, "Bob");
+    EXPECT_EQ(bob->age, 25);
+}
+
+TEST_F(QuerySetUpdateTest, UpdateNonExistingPerson) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Verify initial state
+    EXPECT_EQ(countPersons(), 3) << "Should have 3 persons initially";
+    EXPECT_FALSE(personExists(999)) << "Person 999 should not exist";
+
+    // Attempt to update non-existing person
+    Person non_existing{999, "Ghost Person", 99};
+    auto result = queryset.update(non_existing);
+
+    // Verify operation completes without error (UPDATE of non-existing row is not an error in SQL)
+    ASSERT_TRUE(result.has_value()) << "Update of non-existing person should not error";
+
+    // Verify database state unchanged
+    EXPECT_EQ(countPersons(), 3) << "Should still have 3 persons";
+    EXPECT_FALSE(personExists(999)) << "Person 999 should still not exist";
+}
+
+TEST_F(QuerySetUpdateTest, UpdateMultipleTimes) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Update Alice multiple times
+    Person alice_v1{1, "Alice A", 31};
+    auto result1 = queryset.update(alice_v1);
+    ASSERT_TRUE(result1.has_value()) << "First update should succeed";
+
+    auto check1 = getPerson(1);
+    ASSERT_TRUE(check1.has_value());
+    EXPECT_EQ(check1->name, "Alice A");
+    EXPECT_EQ(check1->age, 31);
+
+    Person alice_v2{1, "Alice B", 32};
+    auto result2 = queryset.update(alice_v2);
+    ASSERT_TRUE(result2.has_value()) << "Second update should succeed";
+
+    auto check2 = getPerson(1);
+    ASSERT_TRUE(check2.has_value());
+    EXPECT_EQ(check2->name, "Alice B");
+    EXPECT_EQ(check2->age, 32);
+
+    Person alice_v3{1, "Alice C", 33};
+    auto result3 = queryset.update(alice_v3);
+    ASSERT_TRUE(result3.has_value()) << "Third update should succeed";
+
+    auto check3 = getPerson(1);
+    ASSERT_TRUE(check3.has_value());
+    EXPECT_EQ(check3->name, "Alice C");
+    EXPECT_EQ(check3->age, 33);
+}
+
+TEST_F(QuerySetUpdateTest, UpdateBatchSmall) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Verify initial state
+    EXPECT_EQ(countPersons(), 3) << "Should have 3 persons initially";
+
+    // Create small batch of persons to update
+    std::vector<Person> batch_to_update = {
+        {1, "Alice Updated", 31},
+        {2, "Bob Updated", 26},
+        {3, "Charlie Updated", 36}
+    };
+
+    // Update batch using batch API
+    auto result = queryset.update(std::span<const Person>(batch_to_update));
+
+    // Verify update was successful
+    ASSERT_TRUE(result.has_value()) << "Batch update operation should succeed";
+
+    // Verify correct number of persons still in database
+    EXPECT_EQ(countPersons(), 3) << "Should still have 3 persons";
+
+    // Verify all persons were updated
+    auto alice = getPerson(1);
+    ASSERT_TRUE(alice.has_value());
+    EXPECT_EQ(alice->name, "Alice Updated");
+    EXPECT_EQ(alice->age, 31);
+
+    auto bob = getPerson(2);
+    ASSERT_TRUE(bob.has_value());
+    EXPECT_EQ(bob->name, "Bob Updated");
+    EXPECT_EQ(bob->age, 26);
+
+    auto charlie = getPerson(3);
+    ASSERT_TRUE(charlie.has_value());
+    EXPECT_EQ(charlie->name, "Charlie Updated");
+    EXPECT_EQ(charlie->age, 36);
+}
+
+TEST_F(QuerySetUpdateTest, UpdateBatchMedium) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Add more test data for batch testing
+    auto& conn = storm::QuerySet<Person>::get_default_connection();
+    for (int i = 4; i <= 25; i++) {
+        auto insert_result = conn.execute(
+                "INSERT INTO Person (id, name, age) VALUES (" + std::to_string(i) + ", 'Person" + std::to_string(i) +
+                "', " + std::to_string(20 + i) + ")"
+        );
+        ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
+    }
+
+    // Verify initial state - should have 25 persons
+    EXPECT_EQ(countPersons(), 25) << "Should have 25 persons initially";
+
+    // Create batch of persons to update (batch size ~20)
+    std::vector<Person> batch_to_update;
+    for (int i = 1; i <= 20; i++) {
+        batch_to_update.push_back({i, "Updated" + std::to_string(i), 100 + i});
+    }
+
+    // Update batch
+    auto result = queryset.update(std::span<const Person>(batch_to_update));
+
+    // Verify update was successful
+    ASSERT_TRUE(result.has_value()) << "Batch update operation should succeed";
+
+    // Verify correct number of persons in database
+    EXPECT_EQ(countPersons(), 25) << "Should still have 25 persons";
+
+    // Verify updated persons have new values
+    for (int i = 1; i <= 20; i++) {
+        auto person = getPerson(i);
+        ASSERT_TRUE(person.has_value()) << "Person " << i << " should exist";
+        EXPECT_EQ(person->name, "Updated" + std::to_string(i)) << "Person " << i << " name should be updated";
+        EXPECT_EQ(person->age, 100 + i) << "Person " << i << " age should be updated";
+    }
+
+    // Verify non-updated persons have original values
+    for (int i = 21; i <= 25; i++) {
+        auto person = getPerson(i);
+        ASSERT_TRUE(person.has_value()) << "Person " << i << " should exist";
+        EXPECT_EQ(person->name, "Person" + std::to_string(i)) << "Person " << i << " should not be updated";
+        EXPECT_EQ(person->age, 20 + i) << "Person " << i << " age should not be updated";
+    }
+}
+
+TEST_F(QuerySetUpdateTest, UpdateBatchLarge) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Add many test records for large batch testing
+    auto& conn = storm::QuerySet<Person>::get_default_connection();
+    for (int i = 4; i <= 103; i++) {
+        auto insert_result = conn.execute(
+                "INSERT INTO Person (id, name, age) VALUES (" + std::to_string(i) + ", 'Person" + std::to_string(i) +
+                "', " + std::to_string(20 + (i % 60)) + ")"
+        );
+        ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
+    }
+
+    // Verify initial state - should have 103 persons
+    EXPECT_EQ(countPersons(), 103) << "Should have 103 persons initially";
+
+    // Create large batch of persons to update (batch size ~100)
+    std::vector<Person> large_batch;
+    for (int i = 1; i <= 100; i++) {
+        large_batch.push_back({i, "LargeUpdate" + std::to_string(i), 200 + i});
+    }
+
+    // Update large batch - should use individual statements with transaction
+    auto result = queryset.update(std::span<const Person>(large_batch));
+
+    // Verify update was successful
+    if (!result.has_value()) {
+        std::cout << "Error: " << result.error().message() << std::endl;
+    }
+    ASSERT_TRUE(result.has_value()) << "Large batch update operation should succeed: "
+                                    << (result.has_value() ? "" : result.error().message());
+
+    // Verify correct number of persons in database
+    EXPECT_EQ(countPersons(), 103) << "Should still have 103 persons";
+
+    // Verify updated persons have new values
+    for (int i = 1; i <= 100; i++) {
+        auto person = getPerson(i);
+        ASSERT_TRUE(person.has_value()) << "Person " << i << " should exist";
+        EXPECT_EQ(person->name, "LargeUpdate" + std::to_string(i)) << "Person " << i << " name should be updated";
+        EXPECT_EQ(person->age, 200 + i) << "Person " << i << " age should be updated";
+    }
+
+    // Verify non-updated persons have original values
+    for (int i = 101; i <= 103; i++) {
+        auto person = getPerson(i);
+        ASSERT_TRUE(person.has_value()) << "Person " << i << " should exist";
+        EXPECT_EQ(person->name, "Person" + std::to_string(i)) << "Person " << i << " should not be updated";
+    }
+}
+
+TEST_F(QuerySetUpdateTest, UpdateBatchEmpty) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Verify initial state
+    EXPECT_EQ(countPersons(), 3) << "Should have 3 persons initially";
+
+    // Create empty batch
+    std::vector<Person> empty_batch;
+
+    // Attempt to update empty batch
+    auto result = queryset.update(std::span<const Person>(empty_batch));
+
+    // Verify operation completes without error
+    ASSERT_TRUE(result.has_value()) << "Empty batch update should not error";
+
+    // Verify database state unchanged
+    EXPECT_EQ(countPersons(), 3) << "Should still have 3 persons after empty batch update";
+    
+    auto alice = getPerson(1);
+    ASSERT_TRUE(alice.has_value());
+    EXPECT_EQ(alice->name, "Alice");
+    EXPECT_EQ(alice->age, 30);
+}
+
+TEST_F(QuerySetUpdateTest, UpdateBatchPartialExist) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Verify initial state
+    EXPECT_EQ(countPersons(), 3) << "Should have 3 persons initially";
+
+    // Create batch with mix of existing and non-existing persons
+    std::vector<Person> mixed_batch = {
+            {1, "Alice New", 31},      // exists
+            {999, "Ghost1", 99},       // doesn't exist
+            {2, "Bob New", 26},        // exists
+            {1000, "Ghost2", 100},     // doesn't exist
+            {3, "Charlie New", 36}     // exists
+    };
+
+    // Update mixed batch
+    auto result = queryset.update(std::span<const Person>(mixed_batch));
+
+    // Verify operation completes successfully (non-existing updates are not errors)
+    ASSERT_TRUE(result.has_value()) << "Mixed batch update should succeed";
+
+    // Verify only existing persons were updated
+    EXPECT_EQ(countPersons(), 3) << "Should still have 3 persons";
+    
+    auto alice = getPerson(1);
+    ASSERT_TRUE(alice.has_value());
+    EXPECT_EQ(alice->name, "Alice New");
+    EXPECT_EQ(alice->age, 31);
+
+    auto bob = getPerson(2);
+    ASSERT_TRUE(bob.has_value());
+    EXPECT_EQ(bob->name, "Bob New");
+    EXPECT_EQ(bob->age, 26);
+
+    auto charlie = getPerson(3);
+    ASSERT_TRUE(charlie.has_value());
+    EXPECT_EQ(charlie->name, "Charlie New");
+    EXPECT_EQ(charlie->age, 36);
+
+    // Non-existing persons should not be created
+    EXPECT_FALSE(personExists(999));
+    EXPECT_FALSE(personExists(1000));
+}
+
+TEST_F(QuerySetUpdateTest, UpdateCachedStatementReuse) {
+    // Create QuerySet using simplified syntax - this creates cached UpdateStatement
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Perform multiple updates to verify statement caching works correctly
+    for (int i = 0; i < 10; ++i) {
+        Person updated_alice{1, "Alice V" + std::to_string(i), 30 + i};
+        auto result = queryset.update(updated_alice);
+        ASSERT_TRUE(result.has_value()) << "Update iteration " << i << " should succeed";
+
+        auto alice = getPerson(1);
+        ASSERT_TRUE(alice.has_value());
+        EXPECT_EQ(alice->name, "Alice V" + std::to_string(i));
+        EXPECT_EQ(alice->age, 30 + i);
+    }
+
+    // Verify final state
+    auto final_alice = getPerson(1);
+    ASSERT_TRUE(final_alice.has_value());
+    EXPECT_EQ(final_alice->name, "Alice V9");
+    EXPECT_EQ(final_alice->age, 39);
+}
