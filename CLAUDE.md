@@ -63,27 +63,44 @@ cmake --build --preset ninja-debug
 ```
 
 ### Benchmarking
+
+**⚠️ IMPORTANT: Always use Release builds for accurate performance measurements!**
+
+Debug builds are 2-3x slower than Release builds, especially for SELECT operations which involve heavy object construction. The performance figures documented below are from Release builds.
+
+#### Release Mode Benchmarks (Recommended)
 ```bash
-# Build benchmarking infrastructure
+# Build and run optimized Release benchmarks (RECOMMENDED for accurate measurements)
+./performance_comparison_release.sh    # Builds with ninja-release and runs all benchmarks
+
+# Or build manually and run individual benchmarks
+cmake --preset ninja-release -DENABLE_TESTS=ON -DENABLE_BENCH=ON
+cmake --build --preset ninja-release
+
+./build/release/benchmarks/bench_storm              # Storm ORM with comprehensive CRUD tests
+./build/release/benchmarks/bench_sqlite_orm         # sqlite_orm comparison
+./build/release/benchmarks/bench_sqlite             # Raw SQLite baseline
+./build/release/benchmarks/sql_generation_microbench # SQL generation performance testing
+```
+
+#### Debug Mode Benchmarks (Development/Testing Only)
+```bash
+# Debug builds for development and testing (NOT for performance measurements)
+./performance_comparison.sh    # Builds with ninja-debug (2-3x slower than Release)
+
+# Or build manually
 cmake --preset ninja-debug -DENABLE_TESTS=ON -DENABLE_BENCH=ON
 cmake --build --preset ninja-debug
 
-# Run comprehensive performance comparison (recommended)
-./performance_comparison.sh    # Builds and runs all benchmarks with formatted results
-
-# Run specialized analysis tools
-./sql_generation_analysis.sh   # Detailed SQL generation performance analysis with formatted tables
-
-# Or run individual benchmarks
-./build/debug/benchmarks/bench_storm              # Storm ORM with comprehensive INSERT/DELETE tests
-./build/debug/benchmarks/bench_storm_optimized    # Optimized version with batch operations
-./build/debug/benchmarks/bench_sqlite_orm         # sqlite_orm comparison
-./build/debug/benchmarks/bench_sqlite             # Raw SQLite baseline
-./build/debug/benchmarks/bench_insert_optimization # INSERT optimization analysis
-./build/debug/benchmarks/sql_generation_microbench # SQL generation performance testing
+./build/debug/benchmarks/bench_storm              # Storm ORM Debug build
 ```
 
-**Performance Results (10,000 operations):**
+#### Performance Analysis Tools
+```bash
+./sql_generation_analysis.sh   # Detailed SQL generation performance analysis with formatted tables
+```
+
+**Performance Results (10,000 operations, Release builds):**
 
 | Operation | Storm ORM | Raw SQLite | sqlite_orm | Storm vs sqlite_orm |
 |-----------|-----------|------------|------------|---------------------|
@@ -94,6 +111,10 @@ cmake --build --preset ninja-debug
 | UPDATE (batch) | 2-3M/sec | - | - | - |
 | DELETE (single) | 21.6M/sec | 29.4M/sec | 589K/sec | 36.6x faster |
 | DELETE (batch) | 3.9M/sec | - | - | - |
+
+**Note**: These figures are from **Release builds** (`-O2` or higher optimization). Debug builds show significantly lower performance:
+- **Debug SELECT**: ~5M rows/sec (vs 13M in Release) - 2.6x slower
+- **Debug performance** is useful for development but does NOT represent production capabilities
 
 **Key Performance Optimizations:**
 - Compile-time SQL generation eliminates runtime string building overhead

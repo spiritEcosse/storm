@@ -2,13 +2,9 @@
 
 set -e  # Exit on any error
 
-echo "=== STORM ORM PERFORMANCE BENCHMARK SUITE (DEBUG MODE) ==="
+echo "=== STORM ORM PERFORMANCE BENCHMARK SUITE (RELEASE MODE) ==="
 echo "Building and running comprehensive CRUD operation performance tests"
-echo ""
-echo -e "${YELLOW}⚠ WARNING: This benchmark runs in DEBUG mode for development/testing purposes.${NC}"
-echo -e "${YELLOW}           Debug builds are 2-3x slower than optimized Release builds.${NC}"
-echo -e "${YELLOW}           For accurate production performance measurements, use:${NC}"
-echo -e "${YELLOW}           ./performance_comparison_release.sh${NC}"
+echo "Using optimized Release build for accurate production performance measurements"
 echo ""
 
 # Colors for output formatting
@@ -233,44 +229,44 @@ run_and_format_benchmark() {
     fi
 }
 
-# Step 1: Configure CMake with benchmarking enabled
-print_step "Step 1: Configuring build with benchmarking enabled..."
-if cmake --preset ninja-debug -DENABLE_TESTS=ON -DENABLE_BENCH=ON; then
-    print_success "CMake configuration completed"
+# Step 1: Configure CMake with benchmarking enabled (Release mode)
+print_step "Step 1: Configuring Release build with benchmarking enabled..."
+if cmake --preset ninja-release -DENABLE_TESTS=ON -DENABLE_BENCH=ON; then
+    print_success "CMake Release configuration completed"
 else
-    print_error "CMake configuration failed"
+    print_error "CMake Release configuration failed"
     exit 1
 fi
 
 echo ""
 
-# Step 2: Build benchmark infrastructure
-print_step "Step 2: Building benchmark executables..."
+# Step 2: Build benchmark infrastructure (Release mode)
+print_step "Step 2: Building optimized benchmark executables..."
 
 # Build SQLite benchmarks (these usually work without issues)
-print_step "Building SQLite and sqlite_orm benchmarks..."
-if cmake --build --preset ninja-debug --target bench_sqlite --target bench_sqlite_orm; then
-    print_success "SQLite benchmarks built successfully"
+print_step "Building SQLite and sqlite_orm benchmarks (Release)..."
+if cmake --build --preset ninja-release --target bench_sqlite --target bench_sqlite_orm; then
+    print_success "SQLite benchmarks built successfully (optimized)"
 else
     print_warning "Some SQLite benchmarks may have failed to build"
 fi
 
 # Build Storm benchmarks (may need individual building due to clang-scan-deps issues)
-print_step "Building Storm ORM benchmarks..."
-if cmake --build --preset ninja-debug --target bench_storm; then
-    print_success "Storm ORM benchmarks built successfully"
+print_step "Building Storm ORM benchmarks (Release)..."
+if cmake --build --preset ninja-release --target bench_storm; then
+    print_success "Storm ORM benchmarks built successfully (optimized)"
 else
     print_warning "Building Storm benchmarks individually due to potential clang-scan-deps issues..."
 
     # Try building Storm library first
-    cmake --build --preset ninja-debug --target storm || true
+    cmake --build --preset ninja-release --target storm || true
 
     # Clean temporary files that might cause issues
-    rm -f build/debug/benchmarks/CMakeFiles/bench_storm*/bench_storm*.cpp.o.ddi.tmp 2>/dev/null || true
+    rm -f build/release/benchmarks/CMakeFiles/bench_storm*/bench_storm*.cpp.o.ddi.tmp 2>/dev/null || true
 
     # Build Storm benchmark
-    if cmake --build --preset ninja-debug --target bench_storm; then
-        print_success "bench_storm built successfully"
+    if cmake --build --preset ninja-release --target bench_storm; then
+        print_success "bench_storm built successfully (optimized)"
     else
         print_error "Failed to build bench_storm"
     fi
@@ -279,13 +275,13 @@ fi
 echo ""
 
 # Step 3: Verify all executables exist
-print_step "Step 3: Verifying benchmark executables..."
+print_step "Step 3: Verifying Release benchmark executables..."
 EXECUTABLES=("bench_sqlite" "bench_sqlite_orm" "bench_storm")
 MISSING_EXECUTABLES=()
 
 for exe in "${EXECUTABLES[@]}"; do
-    if [[ -x "build/debug/benchmarks/$exe" ]]; then
-        print_success "$exe: Ready"
+    if [[ -x "build/release/benchmarks/$exe" ]]; then
+        print_success "$exe: Ready (optimized)"
     else
         print_error "$exe: Missing or not executable"
         MISSING_EXECUTABLES+=("$exe")
@@ -334,8 +330,8 @@ BASELINE_BATCH_UPDATE=""
 BASELINE_SELECT=""
 
 # Raw SQLite metrics
-if [[ -x "build/debug/benchmarks/bench_sqlite" ]]; then
-    SQLITE_OUTPUT=$(./build/debug/benchmarks/bench_sqlite)
+if [[ -x "build/release/benchmarks/bench_sqlite" ]]; then
+    SQLITE_OUTPUT=$(./build/release/benchmarks/bench_sqlite)
 
     SQLITE_SINGLE=$(echo "$SQLITE_OUTPUT" | grep -A4 "Raw SQLite (prepared statements) - Single INSERT 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
     SQLITE_BATCH=$(echo "$SQLITE_OUTPUT" | grep -A7 "Raw SQLite - Batch INSERT 10000 records (batch size 1000)" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
@@ -378,8 +374,8 @@ else
 fi
 
 # sqlite_orm metrics
-if [[ -x "build/debug/benchmarks/bench_sqlite_orm" ]]; then
-    SQLITEORM_OUTPUT=$(./build/debug/benchmarks/bench_sqlite_orm)
+if [[ -x "build/release/benchmarks/bench_sqlite_orm" ]]; then
+    SQLITEORM_OUTPUT=$(./build/release/benchmarks/bench_sqlite_orm)
 
     SQLITEORM_SINGLE=$(echo "$SQLITEORM_OUTPUT" | grep -A4 "sqlite_orm - Single INSERT 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
     SQLITEORM_BATCH=$(echo "$SQLITEORM_OUTPUT" | grep -A7 "sqlite_orm - Batch INSERT 10000 records (batch size 100)" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
@@ -443,8 +439,8 @@ else
 fi
 
 # Storm ORM metrics
-if [[ -x "build/debug/benchmarks/bench_storm" ]]; then
-    STORM_OUTPUT=$(./build/debug/benchmarks/bench_storm)
+if [[ -x "build/release/benchmarks/bench_storm" ]]; then
+    STORM_OUTPUT=$(./build/release/benchmarks/bench_storm)
 
     STORM_SINGLE=$(echo "$STORM_OUTPUT" | grep -A4 "Storm ORM - Single INSERT 10000 records:" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
     STORM_BATCH=$(echo "$STORM_OUTPUT" | grep -A7 "Storm ORM - Batch INSERT 10000 records (batch size 1000)" | grep "Throughput:" | sed 's/.*Throughput: //' | sed 's/ inserts\/sec//' | head -1)
@@ -612,21 +608,20 @@ echo ""
 echo "=== BUILD INFORMATION ==="
 echo "Compiler: $(${CMAKE_CXX_COMPILER:-/home/ihor/projects/storm/clang-p2996/build/bin/clang++} --version | head -1)"
 echo "C++ Standard: C++26 with reflection support"
-echo -e "Build Type: ${YELLOW}Debug (Unoptimized - for development/testing only)${NC}"
-echo "CMake Preset: ninja-debug"
+echo "Build Type: Release (Optimized)"
+echo "CMake Preset: ninja-release"
 echo "Enabled Features: Tests, Benchmarks"
+echo "Optimization Level: -O2 or higher"
 echo ""
-echo -e "${YELLOW}⚠ IMPORTANT: Debug build performance does NOT represent production performance!${NC}"
-echo -e "${YELLOW}              SELECT operations are 2-3x slower in Debug builds.${NC}"
-echo -e "${YELLOW}              For accurate performance measurements, use:${NC}"
-echo -e "${YELLOW}              ./performance_comparison_release.sh${NC}"
+echo "NOTE: These are production-grade performance measurements."
+echo "      For development/debugging, use performance_comparison.sh (Debug build)"
 echo ""
 
 echo "To re-run individual benchmarks (without rebuilding):"
-echo "  ./build/debug/benchmarks/bench_sqlite          # Raw SQLite baseline"
-echo "  ./build/debug/benchmarks/bench_sqlite_orm      # sqlite_orm comparison"
-echo "  ./build/debug/benchmarks/bench_storm           # Storm ORM standard"
+echo "  ./build/release/benchmarks/bench_sqlite          # Raw SQLite baseline"
+echo "  ./build/release/benchmarks/bench_sqlite_orm      # sqlite_orm comparison"
+echo "  ./build/release/benchmarks/bench_storm           # Storm ORM standard"
 echo ""
 echo "For detailed optimization analysis:"
-echo "  ./build/debug/benchmarks/bench_storm --mode=cache-analysis      # SQL cache performance testing"
-echo "  ./build/debug/benchmarks/bench_storm --mode=optimization-test   # Comprehensive optimization testing"
+echo "  ./build/release/benchmarks/bench_storm --mode=cache-analysis      # SQL cache performance testing"
+echo "  ./build/release/benchmarks/bench_storm --mode=optimization-test   # Comprehensive optimization testing"
