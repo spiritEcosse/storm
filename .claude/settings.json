@@ -8,6 +8,7 @@
       "Bash(./build/debug/benchmarks/bench_sqlite:*)",
       "Bash(git stash:*)",
       "Bash(./build/debug/tests/storm_tests:*)",
+      "Bash(./tests/storm_tests:*)",
       "Bash(git add:*)",
       "Bash(git diff:*)",
       "Bash(git commit:*)",
