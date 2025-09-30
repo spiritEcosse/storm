@@ -65,10 +65,12 @@ export namespace storm::orm::statements {
             return result;
         }
 
-        // Pre-computed field information
+      public:
+        // Pre-computed field information - made public for QuerySet optimization
         static constexpr auto field_count_ = get_field_count();
         static constexpr auto all_members_ = get_all_field_members<field_count_>();
 
+      protected:
         // Index sequence utilities for compile-time field binding
         using field_indices_t = std::make_index_sequence<field_count_>;
 

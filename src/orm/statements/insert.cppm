@@ -110,6 +110,13 @@ export namespace storm::orm::statements {
         static constexpr auto           insert_sql_array  = build_insert_sql_array();
         static inline const std::string insert_sql_string = std::string(insert_sql_array);
 
+      public:
+        // Public access to INSERT SQL for QuerySet optimization
+        static const std::string& get_insert_sql_static() {
+            return insert_sql_string;
+        }
+
+      private:
         // Compile-time bulk INSERT prefix calculation
         static consteval size_t calculate_bulk_insert_prefix_size() {
             size_t size = 0;
@@ -198,7 +205,7 @@ export namespace storm::orm::statements {
 
             // Fast path for single object
             if (objects.size() == 1) {
-                return execute_single_optimized(objects[0]).transform([](int64_t id) {
+                return execute_single(objects[0]).transform([](int64_t id) {
                     return std::vector<int64_t>{id};
                 });
             }
@@ -207,9 +214,8 @@ export namespace storm::orm::statements {
             return Base::execute_standard_batch(*this, objects, Base::field_count_);
         }
 
-      private:
-        // Private optimized implementation for single insert
-        [[nodiscard]] auto execute_single_optimized(const T& obj) noexcept -> std::expected<int64_t, Error> {
+        // Public fast path for single insert - optimized for minimal overhead
+        [[nodiscard]] auto execute_single(const T& obj) noexcept -> std::expected<int64_t, Error> {
             // Fast path: directly prepare and execute for single object
             const auto& sql = get_insert_sql();
 
@@ -314,6 +320,7 @@ export namespace storm::orm::statements {
             return ids;
         }
 
+      private:
         Connection& conn_;
     };
 
