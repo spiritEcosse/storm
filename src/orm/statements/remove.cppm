@@ -23,6 +23,7 @@ export namespace storm::orm::statements {
 
     // Import utilities for code convenience
     using storm::orm::utilities::BulkSQLCache;
+    using storm::orm::utilities::ConstexprString;
 
     // Statement class for ORM remove operations
     template <typename T, storm::db::DatabaseConnection ConnType> class RemoveStatement : private BaseStatement<T> {
@@ -32,18 +33,74 @@ export namespace storm::orm::statements {
         using Error      = typename ConnType::Error;
         using Statement  = typename ConnType::Statement;
 
-        // Pre-compute DELETE SQL string template at compile-time
-        static consteval std::string_view get_delete_sql_template() {
-            return "DELETE FROM {} WHERE {} = ?";
+        // Compile-time DELETE SQL size calculation
+        static consteval size_t calculate_delete_sql_size() {
+            size_t size = 0;
+            size += 12; // "DELETE FROM "
+            size += Base::table_name_.size();
+            size += 7; // " WHERE "
+            size += Base::pk_name_.size();
+            size += 4; // " = ?"
+            size += 1; // null terminator
+            return size;
         }
 
-        // Generate DELETE SQL string at runtime (cached)
+        // Build DELETE SQL at compile-time using ConstexprString
+        static consteval auto build_delete_sql_array() {
+            constexpr size_t          sql_size = calculate_delete_sql_size() + 50; // Add buffer for safety
+            ConstexprString<sql_size> result;
+
+            result.append("DELETE FROM ");
+            result.append(Base::table_name_);
+            result.append(" WHERE ");
+            result.append(Base::pk_name_);
+            result.append(" = ?");
+
+            return result;
+        }
+
+        // Pre-computed DELETE SQL generated at compile-time
+        static constexpr auto           delete_sql_array  = build_delete_sql_array();
+        static inline const std::string delete_sql_string = std::string(delete_sql_array);
+
+        // Compile-time bulk DELETE prefix calculation
+        static consteval size_t calculate_bulk_delete_prefix_size() {
+            size_t size = 0;
+            size += 12; // "DELETE FROM "
+            size += Base::table_name_.size();
+            size += 7; // " WHERE "
+            size += Base::pk_name_.size();
+            size += 5; // " IN ("
+            size += 1; // null terminator
+            return size;
+        }
+
+        // Build bulk DELETE prefix at compile-time using ConstexprString
+        static consteval auto build_bulk_delete_prefix() {
+            constexpr size_t prefix_size = calculate_bulk_delete_prefix_size() + 50; // Add buffer for safety
+            ConstexprString<prefix_size> result;
+
+            result.append("DELETE FROM ");
+            result.append(Base::table_name_);
+            result.append(" WHERE ");
+            result.append(Base::pk_name_);
+            result.append(" IN (");
+
+            return result;
+        }
+
+        // Pre-computed bulk DELETE prefix generated at compile-time
+        static constexpr auto           bulk_delete_prefix_array = build_bulk_delete_prefix();
+        static inline const std::string bulk_delete_prefix       = std::string(bulk_delete_prefix_array);
+        static constexpr size_t         bulk_delete_prefix_size =
+                calculate_bulk_delete_prefix_size() - 1; // Exclude null terminator
+
+        // Generate DELETE SQL string (compile-time computed, runtime accessible)
         static const std::string& get_delete_sql() {
-            static const std::string sql = std::format(get_delete_sql_template(), Base::table_name_, Base::pk_name_);
-            return sql;
+            return delete_sql_string;
         }
 
-        // Generate bulk DELETE SQL string for IN clause (size-specific)
+        // Generate bulk DELETE SQL string for IN clause (size-specific, with caching)
         static std::string get_bulk_delete_sql(size_t count) {
             if (count == 1) {
                 return get_delete_sql();
@@ -53,21 +110,24 @@ export namespace storm::orm::statements {
             static thread_local BulkSQLCache cache;
 
             // Check cache first
-            if (auto* cached = cache.find(count)) {
+            if (const auto* cached = cache.find(count)) {
                 return *cached;
             }
 
             // Cache miss - generate SQL with optimized string building
+            // Calculate exact size needed using pre-computed prefix size
+            const size_t placeholder_size = 1; // "?"
+            const size_t separator_size   = 1; // ","
+            const size_t closing_paren    = 1; // ")"
+            const size_t total_size       = bulk_delete_prefix_size + (placeholder_size * count) +
+                                      (separator_size * (count - 1)) + closing_paren;
+
+            // Reserve exact memory upfront
             std::string sql;
+            sql.reserve(total_size);
 
-            // Pre-calculate size for efficient allocation
-            const size_t base_size =
-                    std::format("DELETE FROM {} WHERE {} IN ()", Base::table_name_, Base::pk_name_).size();
-            const size_t placeholders_size = (count * 1) + ((count - 1) * 1); // count * "?" + (count-1) * ","
-            sql.reserve(base_size + placeholders_size);
-
-            // Build SQL efficiently
-            sql = std::format("DELETE FROM {} WHERE {} IN (", Base::table_name_, Base::pk_name_);
+            // Build SQL with minimal allocations using pre-computed prefix
+            sql = bulk_delete_prefix;
             for (size_t i = 0; i < count; ++i) {
                 if (i > 0) {
                     sql += ",";
@@ -76,8 +136,9 @@ export namespace storm::orm::statements {
             }
             sql += ")";
 
-            // Store in cache
+            // Cache the result for future use
             cache.insert(count, sql);
+
             return sql;
         }
 
