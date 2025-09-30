@@ -217,8 +217,8 @@ export namespace storm::orm::statements {
         }
 
         // Optimized SELECT execution with statement caching and inlined row extraction
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten))
-        auto execute_optimized() noexcept -> std::expected<std::vector<T>, Error> {
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_optimized() noexcept
+                -> std::expected<std::vector<T>, Error> {
             // Cache statement on first use (RemoveStatement pattern)
             if (!cached_select_stmt_) {
                 auto prepare_result = conn_.prepare_cached(get_select_sql());
@@ -237,7 +237,7 @@ export namespace storm::orm::statements {
             sqlite3_stmt* stmt_handle = cached_select_stmt_->handle();
 
             // OPTIMIZATION: Simplified loop with direct SQLITE_ROW check
-            int step_result;
+            int    step_result;
             size_t row_count = 0;
             while ((step_result = sqlite3_step(stmt_handle)) == SQLITE_ROW && row_count < results.size()) {
                 // OPTIMIZATION: Write directly into pre-constructed object
@@ -277,7 +277,8 @@ export namespace storm::orm::statements {
       private:
         // Inline column extraction helper using compile-time type dispatch
         template <size_t... Is>
-        [[nodiscard]] static auto extract_columns_impl(sqlite3_stmt* stmt, T& obj, std::index_sequence<Is...>) noexcept -> bool {
+        [[nodiscard]] static auto extract_columns_impl(sqlite3_stmt* stmt, T& obj, std::index_sequence<Is...>) noexcept
+                -> bool {
             return (extract_column_inline<Is>(stmt, obj) && ...);
         }
 
@@ -286,7 +287,7 @@ export namespace storm::orm::statements {
         [[nodiscard]] static auto extract_column_inline(sqlite3_stmt* stmt, T& obj) noexcept -> bool {
             if constexpr (Index < Base::field_count_) {
                 constexpr auto member = Base::all_members_[Index];
-                using FieldType = std::remove_cvref_t<decltype(obj.[:member:])>;
+                using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
 
                 // Compile-time type dispatch (no runtime branching per column)
                 if constexpr (std::is_same_v<FieldType, int>) {
@@ -306,10 +307,11 @@ export namespace storm::orm::statements {
 
         // OPTIMIZATION: Fast column extraction without error checking
         template <size_t Index>
-        __attribute__((always_inline)) static inline void extract_column_inline_fast(sqlite3_stmt* stmt, T& obj) noexcept {
+        __attribute__((always_inline)) static inline void
+        extract_column_inline_fast(sqlite3_stmt* stmt, T& obj) noexcept {
             if constexpr (Index < Base::field_count_) {
                 constexpr auto member = Base::all_members_[Index];
-                using FieldType = std::remove_cvref_t<decltype(obj.[:member:])>;
+                using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
 
                 if constexpr (std::is_same_v<FieldType, int>) {
                     obj.[:member:] = sqlite3_column_int(stmt, Index);
@@ -333,18 +335,19 @@ export namespace storm::orm::statements {
 
         // OPTIMIZATION: Fast extraction wrapper with fold expression
         template <size_t... Is>
-        __attribute__((always_inline)) static inline void extract_all_columns_inline_fast_impl(
-            sqlite3_stmt* stmt, T& obj, std::index_sequence<Is...>) noexcept {
+        __attribute__((always_inline)) static inline void
+        extract_all_columns_inline_fast_impl(sqlite3_stmt* stmt, T& obj, std::index_sequence<Is...>) noexcept {
             // Direct extraction without error checking using comma operator fold
             ((extract_column_inline_fast<Is>(stmt, obj)), ...);
         }
 
         // OPTIMIZATION: Fast extraction entry point
-        __attribute__((always_inline)) static inline void extract_all_columns_inline_fast(sqlite3_stmt* stmt, T& obj) noexcept {
+        __attribute__((always_inline)) static inline void
+        extract_all_columns_inline_fast(sqlite3_stmt* stmt, T& obj) noexcept {
             extract_all_columns_inline_fast_impl(stmt, obj, typename Base::field_indices_t{});
         }
 
-        Connection& conn_;
+        Connection&        conn_;
         mutable Statement* cached_select_stmt_ = nullptr; // RemoveStatement-style statement caching
     };
 
