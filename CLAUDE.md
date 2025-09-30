@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: Latest optimization achieves **21.6M single deletes/sec** (73% of raw SQLite performance). Single DELETE operations now use QuerySet-level statement caching with inlined bind/execute path, eliminating hash map lookups and template dispatch overhead. This 22.8x improvement over the previous 947K deletes/sec brings Storm ORM within 27% of raw SQLite performance. Previous optimizations include auto-generated ID support, compile-time SQL generation, thread-local SQL caching, and comprehensive benchmarking infrastructure.
+**Last Updated**: Latest optimization achieves **21.6M single deletes/sec** (73% of raw SQLite performance). Single DELETE operations use RemoveStatement-level statement caching with inlined bind/execute path, eliminating hash map lookups and template dispatch overhead. QuerySet maintains cached RemoveStatement instances for optimal performance and clean separation of concerns. This 22.8x improvement over the previous 947K deletes/sec brings Storm ORM within 27% of raw SQLite performance. Previous optimizations include auto-generated ID support, compile-time SQL generation, thread-local SQL caching, and comprehensive benchmarking infrastructure.
 
 ## Project Overview
 
@@ -374,34 +374,52 @@ auto create_result = conn.execute(
 - Thread-safe: `last_insert_rowid()` is per-connection (thread-local)
 - Maintains existing performance: ~992K inserts/sec single, ~2.7M inserts/sec batch
 
-#### 11. **QuerySet-Level Statement Caching for Ultra-Fast Single Operations**
+#### 11. **RemoveStatement-Level Statement Caching for Ultra-Fast Single Operations**
 A breakthrough optimization that achieves 73% of raw SQLite performance for single DELETE operations:
 
 **Key Implementation Details:**
-- **Per-QuerySet Statement Cache**: Mutable cached statement pointer stored directly in QuerySet instance
-- **Inlined Execution Path**: Direct bind and execute operations without abstraction layers
+- **RemoveStatement-Level Caching**: `cached_delete_stmt_` pointer stored in RemoveStatement instance
+- **QuerySet Delegates to RemoveStatement**: Maintains cached RemoveStatement via `std::unique_ptr`
+- **Inlined Execution Path**: Direct bind and execute operations in `execute_single_optimized()`
 - **Eliminates Hash Map Lookups**: Statement cached after first use, no repeated `prepare_cached()` calls
 - **Type-Based Compile-Time Binding**: `if constexpr` eliminates template dispatch overhead at compile time
-- **Zero-Cost Abstraction Violation**: Trades some abstraction for 22.8x performance improvement
+- **Clean Architecture**: DELETE logic fully encapsulated in RemoveStatement for separation of concerns
 
-**Optimization Strategy:**
+**Architecture Overview:**
 ```cpp
+// QuerySet maintains cached RemoveStatement instance
 template <class T> class QuerySet {
-    mutable Statement* cached_delete_stmt_ = nullptr;  // Statement cache
+    mutable std::unique_ptr<RemoveStatement<T, ConnType>> remove_stmt_;
 
     std::expected<void, Error> remove(const T& obj) {
-        // One-time statement preparation
+        // Delegate to cached RemoveStatement
+        return get_remove_statement().execute_single_optimized(obj);
+    }
+
+    auto get_remove_statement() const -> RemoveStatement<T, ConnType>& {
+        if (!remove_stmt_) {
+            remove_stmt_ = std::make_unique<RemoveStatement<T, ConnType>>(conn_);
+        }
+        return *remove_stmt_;
+    }
+};
+
+// RemoveStatement handles caching and execution
+template <typename T> class RemoveStatement {
+    mutable Statement* cached_delete_stmt_ = nullptr;
+
+    auto execute_single_optimized(const T& obj) -> std::expected<void, Error> {
+        // Cache statement on first use
         if (!cached_delete_stmt_) {
-            cached_delete_stmt_ = *conn_.prepare_cached(DELETE_SQL);
+            cached_delete_stmt_ = *conn_.prepare_cached(get_delete_sql());
         }
 
         // Inline bind with compile-time type dispatch
-        auto pk_value = obj.[:BaseStatement<T>::get_primary_key():];
+        auto pk_value = obj.[:Base::primary_key_:];
         if constexpr (std::is_same_v<decltype(pk_value), int>) {
             cached_delete_stmt_->bind_int(1, pk_value);
         }
 
-        // Direct execution
         cached_delete_stmt_->execute();
         cached_delete_stmt_->reset();
     }
@@ -417,13 +435,20 @@ template <class T> class QuerySet {
 **Technical Benefits:**
 - **Persistent Cache**: Statement pointer survives across multiple `remove()` calls on same QuerySet
 - **Compile-Time Optimization**: `if constexpr` binding compiled away at build time
-- **Minimal Memory**: Single pointer per QuerySet (8 bytes on 64-bit)
-- **Thread-Safe Design**: Each QuerySet/connection has its own cached statement
+- **Clean Encapsulation**: All DELETE logic contained in RemoveStatement, not QuerySet
+- **Minimal Memory**: ~16-32 bytes per QuerySet for RemoveStatement instance
+- **Thread-Safe Design**: Each QuerySet/connection has its own cached RemoveStatement
 
-**Trade-offs:**
-- **Abstraction Cost**: Inlines logic that was previously in RemoveStatement
-- **Code Duplication**: QuerySet now has direct SQLite binding knowledge
-- **Justified**: 22.8x performance improvement validates the abstraction cost
+**Caching Architecture:**
+- **Level 1**: QuerySet caches RemoveStatement instance (`std::unique_ptr<RemoveStatement>`)
+- **Level 2**: RemoveStatement caches prepared statement (`Statement* cached_delete_stmt_`)
+- **Level 3**: Connection may cache statements via `prepare_cached()` (implementation-specific)
+- **Benefit**: Amortizes both object construction and statement preparation costs
+
+**Architectural Trade-offs:**
+- **Consistency Note**: InsertStatement is created fresh per call (not cached in QuerySet)
+- **Rationale**: RemoveStatement benefits from instance caching due to internal statement cache
+- **Future Work**: Consider applying same caching pattern to InsertStatement for consistency
 
 ### Cross-Module Dependencies
 
