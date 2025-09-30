@@ -205,9 +205,7 @@ export namespace storm::orm::statements {
 
             // Fast path for single object
             if (objects.size() == 1) {
-                return execute_single(objects[0]).transform([](int64_t id) {
-                    return std::vector<int64_t>{id};
-                });
+                return execute_single(objects[0]).transform([](int64_t id) { return std::vector<int64_t>{id}; });
             }
 
             // Batch path

@@ -270,7 +270,7 @@ export namespace storm::orm::statements {
             return Base::template bind_value_by_type<ConnType>(stmt, 1, pk_value);
         }
 
-        Connection& conn_;
+        Connection&        conn_;
         mutable Statement* cached_delete_stmt_ = nullptr; // Cached statement for optimized single DELETE
     };
 
