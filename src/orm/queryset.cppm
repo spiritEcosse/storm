@@ -12,6 +12,7 @@ import storm_orm_statements_remove;
 import storm_orm_statements_insert;
 import storm_orm_statements_select;
 import storm_orm_statements_update;
+// import storm_orm_statements_join;  // Temporarily disabled - compiler crashes
 
 import <expected>;
 import <string>;
@@ -66,6 +67,15 @@ export namespace storm {
         std::expected<std::vector<T>, Error> select() {
             return get_select_statement().execute_optimized();
         }
+
+        // JOIN operations - returns rows with fully populated FK objects
+        // Usage: message_qs.join<&Message::sender>()
+        // Temporarily disabled - compiler crashes with complex reflection
+        // template <auto FKFieldPtr>
+        // auto join() -> orm::statements::JoinStatement<T, FKFieldPtr, ConnType> {
+        //     // Return JOIN statement instance (statement caching happens internally)
+        //     return orm::statements::JoinStatement<T, FKFieldPtr, ConnType>(conn_);
+        // }
 
         // Update operations
         std::expected<void, Error> update(const T& obj) {

@@ -9,6 +9,7 @@ export import storm_db_concept;
 export import storm_db_sqlite;
 export import storm_orm_statements_base;
 export import storm_orm_statements_select;
+// export import storm_orm_statements_join;  // Temporarily disabled - compiler crashes
 export import storm_orm_queryset;
 import <meta>;
 
