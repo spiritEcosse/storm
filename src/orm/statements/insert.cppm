@@ -206,18 +206,9 @@ export namespace storm::orm::statements {
             // Use execute_with_statement for statement caching
             return Base::template execute_with_statement<ConnType>(
                     conn_, sql, [this, &obj](auto& stmt) -> std::expected<int64_t, Error> {
-                        // Bind all fields
-                        if (auto bind_result = bind_all_fields(stmt, obj); !bind_result) {
-                            return std::unexpected(bind_result.error());
-                        }
-
-                        // Execute the insert
-                        if (auto exec_result = stmt.execute(); !exec_result) {
-                            return std::unexpected(exec_result.error());
-                        }
-
-                        // Return the generated ID
-                        return conn_.last_insert_rowid();
+                        return bind_all_fields(stmt, obj)
+                                .and_then([&stmt]() { return stmt.execute(); })
+                                .transform([this]() { return conn_.last_insert_rowid(); });
                     }
             );
         }
@@ -241,33 +232,26 @@ export namespace storm::orm::statements {
                     [this, &sql, objects]() -> std::expected<std::vector<int64_t>, Error> {
                         return conn_.prepare(sql).and_then(
                                 [this, objects](Statement stmt) -> std::expected<std::vector<int64_t>, Error> {
-                                    // Bind all parameters for all objects using index sequence optimization
-                                    if (auto result = Base::template bind_all_objects_bulk_impl<ConnType, Statement>(
-                                                stmt, objects, typename Base::field_indices_t()
-                                        );
-                                        !result) {
-                                        return std::unexpected(result.error());
-                                    }
+                                    return Base::template bind_all_objects_bulk_impl<ConnType, Statement>(
+                                                   stmt, objects, typename Base::field_indices_t()
+                                           )
+                                            .and_then([&stmt]() { return stmt.execute(); })
+                                            .transform([this, objects]() {
+                                                // Get the last inserted row ID
+                                                // For bulk INSERT with multiple VALUES, last_insert_rowid() returns the
+                                                // ID of the LAST row We need to calculate the first ID by subtracting
+                                                // the count
+                                                int64_t last_id  = conn_.last_insert_rowid();
+                                                int64_t first_id = last_id - static_cast<int64_t>(objects.size()) + 1;
 
-                                    // Execute the bulk insert
-                                    auto exec_result = stmt.execute();
-                                    if (!exec_result) {
-                                        return std::unexpected(exec_result.error());
-                                    }
+                                                // Generate consecutive IDs for bulk insert
+                                                std::vector<int64_t> ids(objects.size());
+                                                for (size_t i = 0; i < objects.size(); ++i) {
+                                                    ids[i] = first_id + static_cast<int64_t>(i);
+                                                }
 
-                                    // Get the last inserted row ID
-                                    // For bulk INSERT with multiple VALUES, last_insert_rowid() returns the ID of the
-                                    // LAST row We need to calculate the first ID by subtracting the count
-                                    int64_t last_id  = conn_.last_insert_rowid();
-                                    int64_t first_id = last_id - static_cast<int64_t>(objects.size()) + 1;
-
-                                    // Generate consecutive IDs for bulk insert
-                                    std::vector<int64_t> ids(objects.size());
-                                    for (size_t i = 0; i < objects.size(); ++i) {
-                                        ids[i] = first_id + static_cast<int64_t>(i);
-                                    }
-
-                                    return ids;
+                                                return ids;
+                                            });
                                 }
                         );
                     }
