@@ -115,10 +115,20 @@ struct Person {
 ```
 
 #### 2. **Supported Field Types**
-Storm ORM currently supports 2 basic types through compile-time type dispatch in `BaseStatement::bind_value_by_type()` (src/orm/statements/base.cppm:195-211):
+Storm ORM supports all standard SQLite types through compile-time type dispatch in `BaseStatement::bind_value_by_type()` (src/orm/statements/base.cppm) and `SelectStatement::extract_column_inline_fast()` (src/orm/statements/select.cppm):
 
 **Integer types:**
 - `int` - Bound using `bind_int()`
+- `int64_t`, `long`, `long long` - Bound using `bind_int64()`
+- `uint64_t`, `unsigned long`, `unsigned long long` - Bound using `bind_int64()` (cast)
+- `short`, `unsigned short`, `unsigned int` - Bound using `bind_int()` (cast)
+
+**Floating point types:**
+- `double` - Bound using `bind_double()`
+- `float` - Bound using `bind_double()` (cast)
+
+**Boolean type:**
+- `bool` - Stored as INTEGER (0/1), bound using `bind_int()`
 
 **String types:**
 - `std::string` - Bound using `bind_text()`
@@ -126,7 +136,26 @@ Storm ORM currently supports 2 basic types through compile-time type dispatch in
 - `std::string_view` - Bound using `bind_text()`
 - Any type convertible to `std::string_view`
 
-The binding uses compile-time `if constexpr` type dispatch to select the appropriate SQLite binding function. Additional types (e.g., `int64_t`, `double`, `bool`, `std::optional<T>`, BLOB types) can be added by extending the `bind_value_by_type()` template function.
+**Optional types (NULL support):**
+- `std::optional<T>` for any supported type T - Binds NULL when std::nullopt, otherwise recursively binds the contained value
+- Examples: `std::optional<int>`, `std::optional<std::string>`, etc.
+
+**BLOB types (binary data):**
+- `std::vector<uint8_t>` - Bound using `bind_blob()`
+- `std::vector<unsigned char>` - Bound using `bind_blob()`
+
+**SQLite Type Mapping:**
+| C++ Type | SQLite Type | Binding Method | Extraction Method |
+|----------|-------------|----------------|-------------------|
+| int, short, unsigned | INTEGER | bind_int() | extract_int() |
+| int64_t, long, uint64_t | INTEGER | bind_int64() | extract_int64() |
+| float, double | REAL | bind_double() | extract_double() / extract_float() |
+| bool | INTEGER | bind_int() | extract_bool() |
+| std::string, const char* | TEXT | bind_text() | extract_text_ptr() |
+| std::optional<T> | NULL / T's type | bind_null() / recursive | is_null() check |
+| std::vector<uint8_t> | BLOB | bind_blob() | extract_blob() |
+
+The binding uses compile-time `if constexpr` type dispatch to select the appropriate SQLite binding function with zero runtime overhead.
 
 #### 3. **Concept-Based Database Abstraction**
 - `DatabaseConnection` concept defines interface for any database

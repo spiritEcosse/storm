@@ -75,6 +75,38 @@ export namespace storm::db::sqlite {
             return {};
         }
 
+        [[nodiscard]] auto bind_int64(int index, int64_t value) noexcept -> std::expected<void, Error> {
+            int rc = sqlite3_bind_int64(stmt_.get(), index, value);
+            if (rc != SQLITE_OK) {
+                return std::unexpected(Error{rc, "Failed to bind int64 parameter"});
+            }
+            return {};
+        }
+
+        [[nodiscard]] auto bind_double(int index, double value) noexcept -> std::expected<void, Error> {
+            int rc = sqlite3_bind_double(stmt_.get(), index, value);
+            if (rc != SQLITE_OK) {
+                return std::unexpected(Error{rc, "Failed to bind double parameter"});
+            }
+            return {};
+        }
+
+        [[nodiscard]] auto bind_null(int index) noexcept -> std::expected<void, Error> {
+            int rc = sqlite3_bind_null(stmt_.get(), index);
+            if (rc != SQLITE_OK) {
+                return std::unexpected(Error{rc, "Failed to bind null parameter"});
+            }
+            return {};
+        }
+
+        [[nodiscard]] auto bind_blob(int index, const void* data, size_t size) noexcept -> std::expected<void, Error> {
+            int rc = sqlite3_bind_blob(stmt_.get(), index, data, static_cast<int>(size), SQLITE_TRANSIENT);
+            if (rc != SQLITE_OK) {
+                return std::unexpected(Error{rc, "Failed to bind blob parameter"});
+            }
+            return {};
+        }
+
         [[nodiscard]] auto execute() noexcept -> std::expected<void, Error> {
             int rc = sqlite3_step(stmt_.get());
             if (rc != SQLITE_DONE) {
@@ -145,6 +177,30 @@ export namespace storm::db::sqlite {
                 return std::string_view(reinterpret_cast<const char*>(text), len);
             }
             return {};
+        }
+
+        [[nodiscard]] __attribute__((always_inline)) inline auto extract_bool(int col_index) const noexcept -> bool {
+            return sqlite3_column_int(stmt_.get(), col_index) != 0;
+        }
+
+        [[nodiscard]] __attribute__((always_inline)) inline auto extract_float(int col_index) const noexcept -> float {
+            return static_cast<float>(sqlite3_column_double(stmt_.get(), col_index));
+        }
+
+        [[nodiscard]] __attribute__((always_inline)) inline auto extract_blob(int col_index) const noexcept
+                -> std::pair<const void*, int> {
+            const void* blob = sqlite3_column_blob(stmt_.get(), col_index);
+            int         size = sqlite3_column_bytes(stmt_.get(), col_index);
+            return {blob, size};
+        }
+
+        [[nodiscard]] __attribute__((always_inline)) inline auto extract_column_type(int col_index) const noexcept
+                -> int {
+            return sqlite3_column_type(stmt_.get(), col_index);
+        }
+
+        [[nodiscard]] __attribute__((always_inline)) inline auto is_null(int col_index) const noexcept -> bool {
+            return sqlite3_column_type(stmt_.get(), col_index) == SQLITE_NULL;
         }
 
         // Error message extraction

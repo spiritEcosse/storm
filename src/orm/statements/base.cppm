@@ -15,6 +15,9 @@ import <format>;
 import <meta>;
 import <array>;
 import <utility>;
+import <optional>;
+import <vector>;
+import <cstdint>;
 
 export namespace storm::orm::statements {
 
@@ -191,21 +194,86 @@ export namespace storm::orm::statements {
         static constexpr size_t BATCH_THRESHOLD      = 50;
         static constexpr size_t MAX_SQLITE_VARIABLES = 999;
 
+        // Helper to detect if a type is std::optional
+        template <typename TValue>
+        struct is_optional : std::false_type {};
+
+        template <typename TValue>
+        struct is_optional<std::optional<TValue>> : std::true_type {};
+
+        template <typename TValue>
+        static constexpr bool is_optional_v = is_optional<TValue>::value;
+
         // Common binding utilities for different types
         template <typename ConnType>
         [[nodiscard]] static auto
         bind_value_by_type(typename ConnType::Statement& stmt, int param_index, const auto& value) noexcept
                 -> std::expected<void, typename ConnType::Error> {
-            // Bind based on type - database-agnostic binding
-            if constexpr (std::is_same_v<std::decay_t<decltype(value)>, int>) {
+            using ValueType = std::decay_t<decltype(value)>;
+
+            // Handle std::optional types first
+            if constexpr (is_optional_v<ValueType>) {
+                if (value.has_value()) {
+                    // Recursively bind the contained value
+                    return bind_value_by_type<ConnType>(stmt, param_index, *value);
+                } else {
+                    // Bind NULL for std::nullopt
+                    return stmt.bind_null(param_index);
+                }
+            }
+            // Boolean type (stored as INTEGER 0/1)
+            else if constexpr (std::is_same_v<ValueType, bool>) {
+                return stmt.bind_int(param_index, value ? 1 : 0);
+            }
+            // Integer types
+            else if constexpr (std::is_same_v<ValueType, int>) {
                 return stmt.bind_int(param_index, value);
-            } else if constexpr (std::is_convertible_v<std::decay_t<decltype(value)>, std::string_view>) {
+            }
+            else if constexpr (std::is_same_v<ValueType, int64_t> ||
+                              std::is_same_v<ValueType, long> ||
+                              std::is_same_v<ValueType, long long>) {
+                return stmt.bind_int64(param_index, static_cast<int64_t>(value));
+            }
+            else if constexpr (std::is_same_v<ValueType, uint64_t> ||
+                              std::is_same_v<ValueType, unsigned long> ||
+                              std::is_same_v<ValueType, unsigned long long>) {
+                return stmt.bind_int64(param_index, static_cast<int64_t>(value));
+            }
+            else if constexpr (std::is_same_v<ValueType, short> ||
+                              std::is_same_v<ValueType, unsigned short> ||
+                              std::is_same_v<ValueType, unsigned int>) {
+                return stmt.bind_int(param_index, static_cast<int>(value));
+            }
+            // Floating point types
+            else if constexpr (std::is_same_v<ValueType, double>) {
+                return stmt.bind_double(param_index, value);
+            }
+            else if constexpr (std::is_same_v<ValueType, float>) {
+                return stmt.bind_double(param_index, static_cast<double>(value));
+            }
+            // BLOB types (std::vector<uint8_t>)
+            else if constexpr (std::is_same_v<ValueType, std::vector<uint8_t>> ||
+                              std::is_same_v<ValueType, std::vector<unsigned char>>) {
+                if (value.empty()) {
+                    return stmt.bind_blob(param_index, nullptr, 0);
+                }
+                return stmt.bind_blob(param_index, value.data(), value.size());
+            }
+            // String types (must be last to avoid matching everything)
+            else if constexpr (std::is_convertible_v<ValueType, std::string_view>) {
                 return stmt.bind_text(param_index, std::string_view{value});
-            } else {
+            }
+            else {
                 static_assert(
-                        std::is_same_v<std::decay_t<decltype(value)>, int> ||
-                                std::is_convertible_v<std::decay_t<decltype(value)>, std::string_view>,
-                        "Unsupported field type for binding"
+                        std::is_same_v<ValueType, int> ||
+                        std::is_same_v<ValueType, int64_t> ||
+                        std::is_same_v<ValueType, double> ||
+                        std::is_same_v<ValueType, bool> ||
+                        std::is_convertible_v<ValueType, std::string_view>,
+                        "Unsupported field type for binding. Supported types: "
+                        "int, int64_t, long, short, unsigned variants, "
+                        "float, double, bool, std::string, std::string_view, "
+                        "std::optional<T>, std::vector<uint8_t>"
                 );
             }
         }
