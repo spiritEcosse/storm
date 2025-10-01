@@ -148,23 +148,10 @@ export namespace storm::orm::statements {
                 if constexpr (member != Base::primary_key_) {
                     auto value = obj.[:member:];
 
-                    // Inline type dispatch - eliminates virtual function call overhead
-                    if constexpr (std::is_same_v<decltype(value), int>) {
-                        if (auto r = stmt->bind_int(param_index, value); !r) {
-                            return std::unexpected(r.error());
-                        }
-                    } else if constexpr (std::is_same_v<decltype(value), int64_t>) {
-                        if (auto r = stmt->bind_int64(param_index, value); !r) {
-                            return std::unexpected(r.error());
-                        }
-                    } else if constexpr (std::is_same_v<decltype(value), double>) {
-                        if (auto r = stmt->bind_double(param_index, value); !r) {
-                            return std::unexpected(r.error());
-                        }
-                    } else if constexpr (std::is_convertible_v<decltype(value), std::string_view>) {
-                        if (auto r = stmt->bind_text(param_index, std::string_view{value}); !r) {
-                            return std::unexpected(r.error());
-                        }
+                    // Inline type dispatch for all supported types - use BaseStatement for consistency
+                    auto bind_result = Base::template bind_value_by_type<ConnType>(*stmt, param_index, value);
+                    if (!bind_result) {
+                        return std::unexpected(bind_result.error());
                     }
                     ++param_index;
                 }
@@ -185,27 +172,9 @@ export namespace storm::orm::statements {
                 return result;
             }
 
-            // Bind primary key last - fully inlined
+            // Bind primary key last - use BaseStatement for all types
             auto pk_value = obj.[:Base::primary_key_:];
-            if constexpr (std::is_same_v<decltype(pk_value), int>) {
-                if (auto r = stmt->bind_int(param_index, pk_value); !r) {
-                    return std::unexpected(r.error());
-                }
-            } else if constexpr (std::is_same_v<decltype(pk_value), int64_t>) {
-                if (auto r = stmt->bind_int64(param_index, pk_value); !r) {
-                    return std::unexpected(r.error());
-                }
-            } else if constexpr (std::is_same_v<decltype(pk_value), double>) {
-                if (auto r = stmt->bind_double(param_index, pk_value); !r) {
-                    return std::unexpected(r.error());
-                }
-            } else if constexpr (std::is_convertible_v<decltype(pk_value), std::string_view>) {
-                if (auto r = stmt->bind_text(param_index, std::string_view{pk_value}); !r) {
-                    return std::unexpected(r.error());
-                }
-            }
-
-            return {};
+            return Base::template bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
         }
 
         // Ultra-optimized single UPDATE - pre-cached statement, fully inlined binding
