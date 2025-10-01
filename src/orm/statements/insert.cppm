@@ -63,7 +63,7 @@ export namespace storm::orm::statements {
             size += 2; // " ("
 
             // Field names length
-            size += Base::field_names_.size();
+            size += Base::calculate_field_names_size();
 
             size += 10; // ") VALUES ("
 
@@ -84,7 +84,7 @@ export namespace storm::orm::statements {
             result.append("INSERT INTO ");
             result.append(Base::table_name_);
             result.append(" (");
-            result.append(Base::field_names_);
+            result.append(Base::build_all_field_names_list());
             result.append(") VALUES (");
             result.append(placeholders_);
             result.append(")");
@@ -109,7 +109,7 @@ export namespace storm::orm::statements {
             size += 12; // "INSERT INTO "
             size += Base::table_name_.size();
             size += 2; // " ("
-            size += Base::field_names_.size();
+            size += Base::calculate_field_names_size();
             size += 10; // ") VALUES "
             size += 1;  // null terminator
             return size;
@@ -123,7 +123,7 @@ export namespace storm::orm::statements {
             result.append("INSERT INTO ");
             result.append(Base::table_name_);
             result.append(" (");
-            result.append(Base::field_names_);
+            result.append(Base::build_all_field_names_list());
             result.append(") VALUES ");
 
             return result;

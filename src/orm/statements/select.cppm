@@ -39,7 +39,7 @@ export namespace storm::orm::statements {
         static consteval size_t calculate_select_sql_size() {
             size_t size = 0;
             size += 7; // "SELECT "
-            size += Base::field_names_.size();
+            size += Base::calculate_field_names_size();
             size += 6; // " FROM "
             size += Base::table_name_.size();
             size += 1; // null terminator
@@ -52,7 +52,7 @@ export namespace storm::orm::statements {
             ConstexprString<sql_size> result;
 
             result.append("SELECT ");
-            result.append(Base::field_names_);
+            result.append(Base::build_all_field_names_list());
             result.append(" FROM ");
             result.append(Base::table_name_);
 
@@ -153,8 +153,23 @@ export namespace storm::orm::statements {
                 constexpr auto member = Base::all_members_[Index];
                 using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
 
-                // Handle std::optional types first
-                if constexpr (is_optional_type_v<FieldType>) {
+                // Handle FK fields - populate only the primary key
+                if constexpr (Base::is_fk_field(member)) {
+                    constexpr auto fk_pk_member = Base::template find_fk_primary_key<FieldType>();
+                    using PKType = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
+
+                    // Extract PK value based on its type
+                    if constexpr (std::is_same_v<PKType, int>) {
+                        obj.[:member:].[:fk_pk_member:] = stmt->extract_int(Index);
+                    } else if constexpr (std::is_same_v<PKType, int64_t>) {
+                        obj.[:member:].[:fk_pk_member:] = stmt->extract_int64(Index);
+                    } else if constexpr (std::is_same_v<PKType, long> || std::is_same_v<PKType, long long>) {
+                        obj.[:member:].[:fk_pk_member:] = static_cast<PKType>(stmt->extract_int64(Index));
+                    }
+                    // Other fields remain default-initialized
+                }
+                // Handle std::optional types
+                else if constexpr (is_optional_type_v<FieldType>) {
                     if (stmt->is_null(Index)) {
                         obj.[:member:] = std::nullopt;
                     } else {

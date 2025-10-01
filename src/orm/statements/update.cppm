@@ -60,8 +60,16 @@ export namespace storm::orm::statements {
                     if (!first) {
                         result.append(", ");
                     }
-                    result.append(std::meta::identifier_of(member));
-                    result.append("=?");
+                    // Check if this is a FK field
+                    auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
+                    if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
+                        // FK field: use field_name_id
+                        result.append(std::meta::identifier_of(member));
+                        result.append("_id=?");
+                    } else {
+                        result.append(std::meta::identifier_of(member));
+                        result.append("=?");
+                    }
                     first = false;
                 }
             }
@@ -146,12 +154,23 @@ export namespace storm::orm::statements {
             if constexpr (Index < Base::field_count_) {
                 constexpr auto member = Base::all_members_[Index];
                 if constexpr (member != Base::primary_key_) {
-                    auto value = obj.[:member:];
-
-                    // Inline type dispatch for all supported types - use BaseStatement for consistency
-                    auto bind_result = Base::template bind_value_by_type<ConnType>(*stmt, param_index, value);
-                    if (!bind_result) {
-                        return std::unexpected(bind_result.error());
+                    // Check if this is a FK field - if so, extract and bind the PK value
+                    if constexpr (Base::is_fk_field(member)) {
+                        auto fk_object = obj.[:member:];
+                        using FKType = std::remove_cvref_t<decltype(fk_object)>;
+                        constexpr auto fk_pk_member = Base::template find_fk_primary_key<FKType>();
+                        auto pk_value = fk_object.[:fk_pk_member:];
+                        auto bind_result = Base::template bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
+                        if (!bind_result) {
+                            return std::unexpected(bind_result.error());
+                        }
+                    } else {
+                        auto value = obj.[:member:];
+                        // Inline type dispatch for all supported types - use BaseStatement for consistency
+                        auto bind_result = Base::template bind_value_by_type<ConnType>(*stmt, param_index, value);
+                        if (!bind_result) {
+                            return std::unexpected(bind_result.error());
+                        }
                     }
                     ++param_index;
                 }
@@ -173,8 +192,17 @@ export namespace storm::orm::statements {
             }
 
             // Bind primary key last - use BaseStatement for all types
-            auto pk_value = obj.[:Base::primary_key_:];
-            return Base::template bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
+            // Note: PK should never be a FK field, but handle it anyway for safety
+            if constexpr (Base::is_fk_field(Base::primary_key_)) {
+                auto fk_object = obj.[:Base::primary_key_:];
+                using FKType = std::remove_cvref_t<decltype(fk_object)>;
+                constexpr auto fk_pk_member = Base::template find_fk_primary_key<FKType>();
+                auto pk_value = fk_object.[:fk_pk_member:];
+                return Base::template bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
+            } else {
+                auto pk_value = obj.[:Base::primary_key_:];
+                return Base::template bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
+            }
         }
 
         // Ultra-optimized single UPDATE - pre-cached statement, fully inlined binding

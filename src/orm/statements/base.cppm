@@ -23,7 +23,7 @@ export namespace storm::orm::statements {
 
     // Mirror of meta::FieldAttr from storm module - must match exactly
     namespace meta {
-        enum class FieldAttr { primary, indexed, unique };
+        enum class FieldAttr { primary, indexed, unique, fk };
     }
 
     // Shared reflection utilities for all statement types
@@ -53,6 +53,31 @@ export namespace storm::orm::statements {
             throw "Model must have exactly one field marked with [[=storm::meta::FieldAttr::primary]]";
         }
 
+        // FK field detection utilities
+        static consteval bool is_fk_field(std::meta::info member) {
+            auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
+            return field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk;
+        }
+
+        // Get database column name for FK field: User sender → "sender_id"
+        static consteval std::string get_fk_column_name(std::meta::info member) {
+            std::string field_name(std::meta::identifier_of(member));
+            return field_name + "_id";
+        }
+
+        // Find primary key of a FK type
+        template<typename FKType>
+        static consteval std::meta::info find_fk_primary_key() {
+            for (std::meta::info member :
+                 std::meta::nonstatic_data_members_of(^^FKType, std::meta::access_context::unchecked())) {
+                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
+                if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::primary) {
+                    return member;
+                }
+            }
+            throw "FK type must have exactly one field marked with [[=storm::meta::FieldAttr::primary]]";
+        }
+
         // Common reflection data - computed once per template instantiation
         static constexpr auto primary_key_ = find_primary_key_impl();
         static constexpr auto pk_name_     = std::meta::identifier_of(primary_key_);
@@ -74,7 +99,29 @@ export namespace storm::orm::statements {
             return result;
         }
 
+        // Calculate size of field names string at compile-time (for constexpr SQL size calculations)
+        static consteval size_t calculate_field_names_size() {
+            size_t size = 0;
+            bool first = true;
+            for (size_t i = 0; i < field_count_; ++i) {
+                if (!first) {
+                    size += 2; // ", "
+                }
+                // Check if this is a FK field
+                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
+                if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
+                    // FK field: field_name + "_id"
+                    size += std::meta::identifier_of(all_members_[i]).size() + 3; // +3 for "_id"
+                } else {
+                    size += std::meta::identifier_of(all_members_[i]).size();
+                }
+                first = false;
+            }
+            return size;
+        }
+
         // Build comma-separated list of all field names (for SELECT and INSERT statements)
+        // FK fields are mapped to their column names (User sender → sender_id)
         static consteval std::string build_all_field_names_list() {
             std::string result;
             bool        first = true;
@@ -82,7 +129,15 @@ export namespace storm::orm::statements {
                 if (!first) {
                     result += ", ";
                 }
-                result += std::meta::identifier_of(all_members_[i]);
+                // Check if this is a FK field
+                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
+                if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
+                    // FK field: append field_name + "_id"
+                    result += std::meta::identifier_of(all_members_[i]);
+                    result += "_id";
+                } else {
+                    result += std::meta::identifier_of(all_members_[i]);
+                }
                 first = false;
             }
             return result;
@@ -92,7 +147,7 @@ export namespace storm::orm::statements {
         // Pre-computed field information - made public for QuerySet optimization
         static constexpr auto field_count_ = get_field_count();
         static constexpr auto all_members_ = get_all_field_members<field_count_>();
-        static constexpr auto field_names_ = build_all_field_names_list();
+        static inline const std::string field_names_ = build_all_field_names_list();
 
       protected:
         // Index sequence utilities for compile-time field binding
@@ -118,10 +173,21 @@ export namespace storm::orm::statements {
         [[nodiscard]] static auto
         bind_field_at_index(typename ConnType::Statement& stmt, const T& obj, int param_index) noexcept -> bool {
             if constexpr (Index < field_count_) {
-                constexpr auto member      = all_members_[Index];
-                auto           field_value = obj.[:member:];
-                auto           result      = bind_value_by_type<ConnType>(stmt, param_index, field_value);
-                return result.has_value();
+                constexpr auto member = all_members_[Index];
+
+                // Check if this is a FK field - if so, extract and bind the PK value
+                if constexpr (is_fk_field(member)) {
+                    auto fk_object = obj.[:member:];
+                    using FKType = std::remove_cvref_t<decltype(fk_object)>;
+                    constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
+                    auto pk_value = fk_object.[:fk_pk_member:];
+                    auto result = bind_value_by_type<ConnType>(stmt, param_index, pk_value);
+                    return result.has_value();
+                } else {
+                    auto field_value = obj.[:member:];
+                    auto result      = bind_value_by_type<ConnType>(stmt, param_index, field_value);
+                    return result.has_value();
+                }
             }
             return true;
         }
@@ -134,9 +200,18 @@ export namespace storm::orm::statements {
             auto try_bind = [&stmt, &obj](auto index_constant) -> std::expected<void, typename ConnType::Error> {
                 constexpr size_t Index = decltype(index_constant)::value;
                 if constexpr (Index < field_count_) {
-                    constexpr auto member      = all_members_[Index];
-                    auto           field_value = obj.[:member:];
-                    return bind_value_by_type<ConnType>(stmt, Index + 1, field_value);
+                    constexpr auto member = all_members_[Index];
+                    // Handle FK fields
+                    if constexpr (is_fk_field(member)) {
+                        auto fk_object = obj.[:member:];
+                        using FKType = std::remove_cvref_t<decltype(fk_object)>;
+                        constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
+                        auto pk_value = fk_object.[:fk_pk_member:];
+                        return bind_value_by_type<ConnType>(stmt, Index + 1, pk_value);
+                    } else {
+                        auto field_value = obj.[:member:];
+                        return bind_value_by_type<ConnType>(stmt, Index + 1, field_value);
+                    }
                 }
                 return {};
             };
@@ -177,9 +252,18 @@ export namespace storm::orm::statements {
                              base_param_index](auto index_constant) -> std::expected<void, typename ConnType::Error> {
                 constexpr size_t Index = decltype(index_constant)::value;
                 if constexpr (Index < field_count_) {
-                    constexpr auto member      = all_members_[Index];
-                    auto           field_value = obj.[:member:];
-                    return bind_value_by_type<ConnType>(stmt, base_param_index + Index, field_value);
+                    constexpr auto member = all_members_[Index];
+                    // Handle FK fields
+                    if constexpr (is_fk_field(member)) {
+                        auto fk_object = obj.[:member:];
+                        using FKType = std::remove_cvref_t<decltype(fk_object)>;
+                        constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
+                        auto pk_value = fk_object.[:fk_pk_member:];
+                        return bind_value_by_type<ConnType>(stmt, base_param_index + Index, pk_value);
+                    } else {
+                        auto field_value = obj.[:member:];
+                        return bind_value_by_type<ConnType>(stmt, base_param_index + Index, field_value);
+                    }
                 }
                 return {};
             };
