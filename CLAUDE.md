@@ -114,19 +114,33 @@ struct Person {
 };
 ```
 
-#### 2. **Concept-Based Database Abstraction**
+#### 2. **Supported Field Types**
+Storm ORM currently supports 2 basic types through compile-time type dispatch in `BaseStatement::bind_value_by_type()` (src/orm/statements/base.cppm:195-211):
+
+**Integer types:**
+- `int` - Bound using `bind_int()`
+
+**String types:**
+- `std::string` - Bound using `bind_text()`
+- `const char*` - Bound using `bind_text()`
+- `std::string_view` - Bound using `bind_text()`
+- Any type convertible to `std::string_view`
+
+The binding uses compile-time `if constexpr` type dispatch to select the appropriate SQLite binding function. Additional types (e.g., `int64_t`, `double`, `bool`, `std::optional<T>`, BLOB types) can be added by extending the `bind_value_by_type()` template function.
+
+#### 3. **Concept-Based Database Abstraction**
 - `DatabaseConnection` concept defines interface for any database
 - `DatabaseStatement` concept for prepared statements
 - SQLite implementation satisfies these concepts
 - Allows future PostgreSQL/MySQL support without changing ORM code
 
-#### 3. **Connection Management**
+#### 4. **Connection Management**
 - Default static connection for simple use cases
 - Explicit connection passing for multi-database scenarios
 - **Thread Safety**: SQLite opened with `SQLITE_OPEN_FULLMUTEX`
 - **WARNING**: Connection management layer NOT thread-safe due to compiler limitations with std::mutex in C++26 modules
 
-#### 4. **Statement Architecture & Optimization**
+#### 5. **Statement Architecture & Optimization**
 - **BaseStatement**: Shared utilities for transaction management, SQL execution patterns, compile-time field binding
 - **Index Sequence Optimization**: `std::index_sequence` and fold expressions replace recursive templates
 - **Statement Separation**: Individual modules with specialized optimizations
@@ -135,7 +149,7 @@ struct Person {
 - **Thread-Local SQL Caching**: 8-entry cache for bulk INSERT SQL strings
 - **Statement-Level Caching**: RemoveStatement, SelectStatement, UpdateStatement use statement caching pattern
 
-#### 5. **Compile-Time Index Sequence Optimization**
+#### 6. **Compile-Time Index Sequence Optimization**
 Major performance optimization using modern C++ compile-time features:
 
 **Key Implementation:**
@@ -155,7 +169,7 @@ auto bind_all_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is.
 
 **Benefits**: Reduced template depth, better assembly, faster compilation, zero runtime overhead.
 
-#### 6. **Thread-Local SQL Caching**
+#### 7. **Thread-Local SQL Caching**
 Runtime optimization for bulk INSERT performance:
 
 ```cpp
@@ -169,7 +183,7 @@ thread_local BulkSQLCache bulk_sql_cache;
 
 **Performance**: 94% improvement (0.253µs → 0.016µs) for cached sizes, thread-safe, zero synchronization overhead.
 
-#### 7. **Compile-Time SQL Generation with ConstexprString**
+#### 8. **Compile-Time SQL Generation with ConstexprString**
 Moves SQL generation from runtime to compile-time:
 
 ```cpp
@@ -185,7 +199,7 @@ static consteval auto build_insert_sql_array() {
 
 **Benefits**: Zero runtime SQL generation, exact memory allocation, compile-time validation, cache-friendly.
 
-#### 8. **Batch Operations Architecture**
+#### 9. **Batch Operations Architecture**
 Two optimized batch operation strategies:
 
 **InsertStatement**:
@@ -205,7 +219,7 @@ Two optimized batch operation strategies:
 - Direct string construction (2.2x faster than assign())
 - Inline column extraction with compiler hints
 
-#### 9. **Auto-Generated ID Support**
+#### 10. **Auto-Generated ID Support**
 Returns generated IDs from insert operations:
 - Single insert: `std::expected<int64_t, Error>`
 - Batch insert: `std::expected<std::vector<int64_t>, Error>`
@@ -219,7 +233,7 @@ conn.execute("CREATE TABLE Person ("
     "name TEXT NOT NULL, age INTEGER NOT NULL)");
 ```
 
-#### 10. **Statement-Level Caching Pattern**
+#### 11. **Statement-Level Caching Pattern**
 Unified caching pattern across UPDATE/DELETE/SELECT operations achieves near-raw SQLite performance:
 
 **Architecture (applies to RemoveStatement, UpdateStatement, SelectStatement):**
