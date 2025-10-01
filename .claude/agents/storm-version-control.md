@@ -1,7 +1,7 @@
 ---
 name: storm-version-control
 description: Use this agent when you need to commit changes to the Storm C++26 ORM project repository. This includes preparing commit messages, running pre-commit checks, staging files, and ensuring version control best practices are followed. Examples:\n\n<example>\nContext: The user has just implemented a new batch insert feature for the ORM.\nuser: "I've finished implementing the batch insert operations. Can you help me commit these changes?"\nassistant: "I'll use the storm-version-control agent to prepare and commit your changes with proper checks."\n<commentary>\nSince the user needs to commit ORM changes, use the Task tool to launch the storm-version-control agent to handle the version control workflow.\n</commentary>\n</example>\n\n<example>\nContext: The user has fixed a bug in the reflection-based SQL generation.\nuser: "The SQL generation bug is fixed. Time to commit."\nassistant: "Let me use the storm-version-control agent to run pre-commit checks and create an appropriate commit."\n<commentary>\nThe user wants to commit a bug fix, so use the storm-version-control agent to ensure proper commit format and run all necessary checks.\n</commentary>\n</example>\n\n<example>\nContext: The user has refactored the statement architecture to use BaseStatement.\nuser: "Statement refactoring complete. Please prepare this for commit."\nassistant: "I'll invoke the storm-version-control agent to handle the commit process with all required checks."\n<commentary>\nSince this involves committing refactored code, use the storm-version-control agent to manage the version control workflow.\n</commentary>\n</example>
-model: haiku
+model: sonnet
 color: yellow
 ---
 

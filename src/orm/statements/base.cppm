@@ -71,10 +71,25 @@ export namespace storm::orm::statements {
             return result;
         }
 
+        // Build comma-separated list of all field names (for SELECT and INSERT statements)
+        static consteval std::string build_all_field_names_list() {
+            std::string result;
+            bool        first = true;
+            for (size_t i = 0; i < field_count_; ++i) {
+                if (!first) {
+                    result += ", ";
+                }
+                result += std::meta::identifier_of(all_members_[i]);
+                first = false;
+            }
+            return result;
+        }
+
       public:
         // Pre-computed field information - made public for QuerySet optimization
         static constexpr auto field_count_ = get_field_count();
         static constexpr auto all_members_ = get_all_field_members<field_count_>();
+        static constexpr auto field_names_ = build_all_field_names_list();
 
       protected:
         // Index sequence utilities for compile-time field binding

@@ -1226,50 +1226,37 @@ The `sql_generation_analysis.sh` script provides detailed insights into SQL gene
 4. Focus on batch sizes showing "Cache Miss" status
 5. Validate that common batch sizes (1, 10, 25, 50) show excellent performance
 
-### Git Rebase Workflow
+### Git Merge Workflow
 
-**Important**: When rebasing feature branches, follow these steps carefully to avoid introducing duplicate code:
+**Recommended Approach**: Use merge instead of rebase to avoid duplicate code and simplify the workflow.
 
-1. **Start the rebase**:
+1. **Update feature branch with latest develop**:
    ```bash
    git fetch origin
-   git rebase origin/develop
+   git merge origin/develop
    ```
 
 2. **If conflicts occur**:
    - Resolve conflicts in your editor
-   - **CRITICAL**: After resolving conflicts, stage the changes:
+   - Stage the resolved files:
      ```bash
      git add .
      ```
-   - Continue the rebase:
+   - Complete the merge:
      ```bash
-     git rebase --continue
+     git commit
      ```
 
-3. **Common rebase mistakes to avoid**:
-   - ❌ **Forgetting `git add .` after fixing conflicts** - This is the most common mistake that leads to duplicate code
-   - ❌ Resolving the same conflict multiple times without staging
-   - ❌ Using `git rebase --skip` without understanding what it does
-   - ❌ Not reviewing the final diff before pushing
-
-4. **After successful rebase**:
+3. **After successful merge**:
    - Build and test: `cmake --build --preset ninja-debug && ctest --test-dir build/debug`
-   - Check for duplications: Review modified files for duplicate imports, functions, or declarations
    - Run code quality checks: `cmake --build --preset ninja-debug --target format-check`
-   - Force push (if already pushed): `git push --force-with-lease`
-
-5. **If you introduced duplications**:
-   - Use `git diff origin/develop` to identify duplicate code blocks
-   - Remove duplicates manually in your editor
-   - Commit the cleanup: `git add . && git commit -m "fix: remove duplicate code from rebase"`
    - Push: `git push`
 
 **Best Practices:**
-- Always rebase from a clean working directory (`git status` should show no changes)
-- Consider using `git rebase -i` (interactive) for complex rebases to review each commit
-- Keep feature branches short-lived to minimize rebase conflicts
-- If rebase becomes too complex, consider creating a fresh branch and cherry-picking commits
+- Always merge from a clean working directory (`git status` should show no changes)
+- Keep feature branches short-lived to minimize merge conflicts
+- Test thoroughly after merging to ensure no regressions
+- Use descriptive commit messages for merge commits
 
 ### Adding PostgreSQL Support
 1. Create `src/db/postgresql.cppm` implementing concepts

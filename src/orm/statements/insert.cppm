@@ -35,20 +35,7 @@ export namespace storm::orm::statements {
         using Error      = typename ConnType::Error;
         using Statement  = typename ConnType::Statement;
 
-        // Pre-compute field names at template instantiation time (like RemoveStatement does with primary key)
-        static consteval std::string build_field_names() {
-            std::string result;
-            bool        first = true;
-            for (size_t i = 0; i < Base::field_count_; ++i) {
-                if (!first) {
-                    result += ", ";
-                }
-                result += std::meta::identifier_of(Base::all_members_[i]);
-                first = false;
-            }
-            return result;
-        }
-
+        // Pre-compute placeholders for SQL VALUES clause
         static consteval std::string build_placeholders() {
             std::string result;
             bool        first = true;
@@ -62,8 +49,7 @@ export namespace storm::orm::statements {
             return result;
         }
 
-        // Pre-computed field information (use Base class utilities)
-        static constexpr auto field_names_  = build_field_names();
+        // Pre-computed placeholders (field names come from Base class)
         static constexpr auto placeholders_ = build_placeholders();
 
         // Compile-time SQL size calculation
@@ -77,7 +63,7 @@ export namespace storm::orm::statements {
             size += 2; // " ("
 
             // Field names length
-            size += field_names_.size();
+            size += Base::field_names_.size();
 
             size += 10; // ") VALUES ("
 
@@ -98,7 +84,7 @@ export namespace storm::orm::statements {
             result.append("INSERT INTO ");
             result.append(Base::table_name_);
             result.append(" (");
-            result.append(field_names_);
+            result.append(Base::field_names_);
             result.append(") VALUES (");
             result.append(placeholders_);
             result.append(")");
@@ -123,7 +109,7 @@ export namespace storm::orm::statements {
             size += 12; // "INSERT INTO "
             size += Base::table_name_.size();
             size += 2; // " ("
-            size += field_names_.size();
+            size += Base::field_names_.size();
             size += 10; // ") VALUES "
             size += 1;  // null terminator
             return size;
@@ -137,7 +123,7 @@ export namespace storm::orm::statements {
             result.append("INSERT INTO ");
             result.append(Base::table_name_);
             result.append(" (");
-            result.append(field_names_);
+            result.append(Base::field_names_);
             result.append(") VALUES ");
 
             return result;
