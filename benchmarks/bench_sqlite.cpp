@@ -125,6 +125,10 @@ void benchmark_raw_sqlite_single_insert(int num_records) {
         sqlite3_bind_int(insert_stmt, 3, 20 + (i % 50));
         rc = sqlite3_step(insert_stmt);
 
+        // Retrieve auto-generated ID (matching Storm ORM behavior)
+        sqlite3_int64 last_id = sqlite3_last_insert_rowid(db);
+        (void)last_id; // Prevent compiler optimization
+
         double elapsed = timer.elapsed_ms();
 
         if (rc == SQLITE_DONE) {
