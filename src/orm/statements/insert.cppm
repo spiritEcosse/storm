@@ -189,28 +189,48 @@ export namespace storm::orm::statements {
                 return std::vector<int64_t>{};
             }
 
-            // Fast path for single object
+            // Fast path for single object - use optimized cached statement
             if (objects.size() == 1) {
-                return execute_single(objects[0]).transform([](int64_t id) { return std::vector<int64_t>{id}; });
+                return execute_single_optimized(objects[0]).transform([](int64_t id) { return std::vector<int64_t>{id}; });
             }
 
             // Batch path
             return Base::execute_standard_batch(*this, objects, Base::field_count_);
         }
 
-        // Public fast path for single insert - optimized for minimal overhead
-        [[nodiscard]] auto execute_single(const T& obj) noexcept -> std::expected<int64_t, Error> {
-            // Fast path: directly prepare and execute for single object
-            const auto& sql = get_insert_sql();
+        // Ultra-optimized single INSERT - pre-cached statement, inlined execution
+        [[nodiscard]] auto execute_single_optimized(const T& obj) noexcept -> std::expected<int64_t, Error> {
+            // Get or cache the prepared statement
+            if (!cached_insert_stmt_) {
+                auto stmt_result = conn_.prepare_cached(get_insert_sql());
+                if (!stmt_result) {
+                    return std::unexpected(stmt_result.error());
+                }
+                cached_insert_stmt_ = *stmt_result;
+            }
 
-            // Use execute_with_statement for statement caching
-            return Base::template execute_with_statement<ConnType>(
-                    conn_, sql, [this, &obj](auto& stmt) -> std::expected<int64_t, Error> {
-                        return bind_all_fields(stmt, obj)
-                                .and_then([&stmt]() { return stmt.execute(); })
-                                .transform([this]() { return conn_.last_insert_rowid(); });
-                    }
+            // Bind all fields using compile-time index sequence
+            auto bind_result = Base::template bind_all_fields_impl<ConnType, Statement>(
+                    *cached_insert_stmt_, obj, typename Base::field_indices_t()
             );
+
+            if (!bind_result) {
+                return std::unexpected(bind_result.error());
+            }
+
+            // Execute and get the generated ID
+            auto exec_result = cached_insert_stmt_->execute();
+            if (!exec_result) {
+                cached_insert_stmt_->reset();
+                return std::unexpected(exec_result.error());
+            }
+
+            int64_t id = conn_.last_insert_rowid();
+
+            // Reset for next use
+            cached_insert_stmt_->reset();
+
+            return id;
         }
 
       protected: // Changed to protected so BaseStatement can access
@@ -289,7 +309,8 @@ export namespace storm::orm::statements {
         }
 
       private:
-        Connection& conn_;
+        Connection&        conn_;
+        mutable Statement* cached_insert_stmt_ = nullptr; // Cached statement for optimized single INSERT
     };
 
 } // namespace storm::orm::statements

@@ -116,9 +116,17 @@ export namespace storm {
         }
 
       private:
+        // Lazy-initialize and return cached InsertStatement for optimal performance
+        auto get_insert_statement() const -> orm::statements::InsertStatement<T, ConnType>& {
+            if (!insert_stmt_) {
+                insert_stmt_ = std::make_unique<orm::statements::InsertStatement<T, ConnType>>(conn_);
+            }
+            return *insert_stmt_;
+        }
+
         [[nodiscard]] std::expected<std::vector<int64_t>, Error>
         execute_insert(std::span<const T> objects) const noexcept {
-            return orm::statements::InsertStatement<T, ConnType>(conn_).execute(objects);
+            return get_insert_statement().execute(objects);
         }
 
         // Lazy-initialize and return cached RemoveStatement for optimal performance
@@ -146,6 +154,7 @@ export namespace storm {
         }
 
         ConnType&                                                              conn_;
+        mutable std::unique_ptr<orm::statements::InsertStatement<T, ConnType>> insert_stmt_;
         mutable std::unique_ptr<orm::statements::RemoveStatement<T, ConnType>> remove_stmt_;
         mutable std::unique_ptr<orm::statements::SelectStatement<T, ConnType>> select_stmt_;
         mutable std::unique_ptr<orm::statements::UpdateStatement<T, ConnType>> update_stmt_;
