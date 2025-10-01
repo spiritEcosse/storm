@@ -199,7 +199,7 @@ export namespace storm::orm::statements {
         }
 
         // Ultra-optimized single INSERT - pre-cached statement, inlined execution
-        [[nodiscard]] auto execute_single_optimized(const T& obj) noexcept -> std::expected<int64_t, Error> {
+        [[nodiscard]] __attribute__((hot)) auto execute_single_optimized(const T& obj) noexcept -> std::expected<int64_t, Error> {
             // Get or cache the prepared statement
             if (!cached_insert_stmt_) {
                 auto stmt_result = conn_.prepare_cached(get_insert_sql());
@@ -242,7 +242,7 @@ export namespace storm::orm::statements {
         }
 
         // Execute bulk INSERT with multiple VALUES clauses
-        [[nodiscard]] auto execute_bulk(std::span<const T> objects) noexcept
+        [[nodiscard]] __attribute__((hot)) auto execute_bulk(std::span<const T> objects) noexcept
                 -> std::expected<std::vector<int64_t>, Error> {
             const auto sql = get_bulk_insert_sql(objects.size());
 

@@ -142,7 +142,7 @@ export namespace storm::orm::statements {
 
         // Helper template for inline binding at compile-time index
         template <size_t Index>
-        [[nodiscard]] static constexpr auto inline_bind_field_if_not_pk(Statement* stmt, const T& obj, int& param_index) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] __attribute__((always_inline)) static constexpr auto inline_bind_field_if_not_pk(Statement* stmt, const T& obj, int& param_index) noexcept -> std::expected<void, Error> {
             if constexpr (Index < Base::field_count_) {
                 constexpr auto member = Base::all_members_[Index];
                 if constexpr (member != Base::primary_key_) {
@@ -174,7 +174,7 @@ export namespace storm::orm::statements {
 
         // Helper to unroll inline binding for all fields
         template <size_t... Is>
-        [[nodiscard]] static auto inline_bind_all_fields(Statement* stmt, const T& obj, std::index_sequence<Is...>) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] __attribute__((always_inline)) static auto inline_bind_all_fields(Statement* stmt, const T& obj, std::index_sequence<Is...>) noexcept -> std::expected<void, Error> {
             int param_index = 1;
 
             // Unroll all field bindings at compile time
@@ -209,7 +209,7 @@ export namespace storm::orm::statements {
         }
 
         // Ultra-optimized single UPDATE - pre-cached statement, fully inlined binding
-        [[nodiscard]] auto execute_single_optimized(const T& obj) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] __attribute__((hot)) auto execute_single_optimized(const T& obj) noexcept -> std::expected<void, Error> {
             // Get or cache the prepared statement
             if (!cached_update_stmt_) {
                 auto stmt_result = conn_.prepare_cached(get_update_sql());
