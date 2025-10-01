@@ -82,10 +82,10 @@ export namespace storm::orm::statements {
             // Cache statement on first use (RemoveStatement pattern)
             if (!cached_select_stmt_) {
                 auto prepare_result = conn_.prepare_cached(get_select_sql());
-                if (!prepare_result) {
+                if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
                 }
-                cached_select_stmt_ = prepare_result.value();
+                cached_select_stmt_ = *prepare_result;
             }
 
             // OPTIMIZATION: Use resize() instead of reserve() + emplace_back()
