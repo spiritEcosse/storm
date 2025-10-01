@@ -108,6 +108,54 @@ export namespace storm::db::sqlite {
             return stmt_.get();
         }
 
+        // === High-Performance Abstraction Layer ===
+        // These methods provide database-agnostic interface while maintaining
+        // zero-cost abstraction through aggressive inlining
+
+        // Step with raw return value (no std::expected overhead in hot loop)
+        [[nodiscard]] __attribute__((always_inline)) inline auto step_raw() noexcept -> int {
+            return sqlite3_step(stmt_.get());
+        }
+
+        // Column extraction methods - fully inlined for zero overhead
+        [[nodiscard]] __attribute__((always_inline)) inline auto extract_int(int col_index) const noexcept -> int {
+            return sqlite3_column_int(stmt_.get(), col_index);
+        }
+
+        [[nodiscard]] __attribute__((always_inline)) inline auto extract_int64(int col_index) const noexcept
+                -> int64_t {
+            return sqlite3_column_int64(stmt_.get(), col_index);
+        }
+
+        [[nodiscard]] __attribute__((always_inline)) inline auto extract_double(int col_index) const noexcept
+                -> double {
+            return sqlite3_column_double(stmt_.get(), col_index);
+        }
+
+        [[nodiscard]] __attribute__((always_inline)) inline auto extract_text_ptr(int col_index) const noexcept
+                -> const unsigned char* {
+            return sqlite3_column_text(stmt_.get(), col_index);
+        }
+
+        [[nodiscard]] __attribute__((always_inline)) inline auto extract_text_view(int col_index) const noexcept
+                -> std::string_view {
+            const unsigned char* text = sqlite3_column_text(stmt_.get(), col_index);
+            if (text) {
+                int len = sqlite3_column_bytes(stmt_.get(), col_index);
+                return std::string_view(reinterpret_cast<const char*>(text), len);
+            }
+            return {};
+        }
+
+        // Error message extraction
+        [[nodiscard]] inline auto get_error_message() const noexcept -> const char* {
+            return sqlite3_errmsg(sqlite3_db_handle(stmt_.get()));
+        }
+
+        // Constants for return codes (make them constexpr for compile-time checks)
+        static constexpr int ROW_AVAILABLE = SQLITE_ROW;
+        static constexpr int NO_MORE_ROWS  = SQLITE_DONE;
+
       private:
         StmtPtr stmt_;
     };

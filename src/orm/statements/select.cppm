@@ -93,39 +93,37 @@ export namespace storm::orm::statements {
             std::vector<T> results;
             results.resize(10000); // Pre-allocate with default-constructed objects
 
-            // Inline row extraction loop for maximum performance
-            sqlite3_stmt* stmt_handle = cached_select_stmt_->handle();
-
-            // OPTIMIZATION: Simplified loop with direct SQLITE_ROW check
+            // OPTIMIZATION: Simplified loop with direct row check using abstracted interface
             int    step_result;
             size_t row_count = 0;
-            while ((step_result = sqlite3_step(stmt_handle)) == SQLITE_ROW && row_count < results.size()) {
+            while ((step_result = cached_select_stmt_->step_raw()) == Statement::ROW_AVAILABLE
+                   && row_count < results.size()) {
                 // OPTIMIZATION: Write directly into pre-constructed object
                 T& obj = results[row_count];
 
                 // OPTIMIZATION: Direct column extraction without error checking
                 // This is safe because we know the statement and table structure at compile time
-                extract_all_columns_inline_fast(stmt_handle, obj);
+                extract_all_columns_inline_fast(cached_select_stmt_, obj);
 
                 row_count++;
             }
 
             // Handle case where we got more rows than pre-allocated
-            while (step_result == SQLITE_ROW) {
+            while (step_result == Statement::ROW_AVAILABLE) {
                 results.emplace_back();
                 T& obj = results.back();
-                extract_all_columns_inline_fast(stmt_handle, obj);
+                extract_all_columns_inline_fast(cached_select_stmt_, obj);
                 row_count++;
-                step_result = sqlite3_step(stmt_handle);
+                step_result = cached_select_stmt_->step_raw();
             }
 
             // Trim vector to actual size
             results.resize(row_count);
 
             // Check for errors only after loop completes
-            if (step_result != SQLITE_DONE) {
+            if (step_result != Statement::NO_MORE_ROWS) {
                 cached_select_stmt_->reset();
-                return std::unexpected(Error{step_result, sqlite3_errmsg(sqlite3_db_handle(stmt_handle))});
+                return std::unexpected(Error{step_result, cached_select_stmt_->get_error_message()});
             }
 
             // Reset statement for next use
@@ -135,18 +133,18 @@ export namespace storm::orm::statements {
         }
 
       private:
-        // OPTIMIZATION: Fast column extraction without error checking
+        // OPTIMIZATION: Fast column extraction without error checking using abstracted interface
         template <size_t Index>
         __attribute__((always_inline)) static inline void
-        extract_column_inline_fast(sqlite3_stmt* stmt, T& obj) noexcept {
+        extract_column_inline_fast(Statement* stmt, T& obj) noexcept {
             if constexpr (Index < Base::field_count_) {
                 constexpr auto member = Base::all_members_[Index];
                 using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
 
                 if constexpr (std::is_same_v<FieldType, int>) {
-                    obj.[:member:] = sqlite3_column_int(stmt, Index);
+                    obj.[:member:] = stmt->extract_int(Index);
                 } else if constexpr (std::is_same_v<FieldType, std::string>) {
-                    const unsigned char* text = sqlite3_column_text(stmt, Index);
+                    const unsigned char* text = stmt->extract_text_ptr(Index);
                     if (text) {
                         // OPTIMIZATION: Direct string construction is 2.2x faster than assign()
                         // 9.05M rows/sec vs 4.10M rows/sec in benchmarks
@@ -161,14 +159,14 @@ export namespace storm::orm::statements {
         // OPTIMIZATION: Fast extraction wrapper with fold expression
         template <size_t... Is>
         __attribute__((always_inline)) static inline void
-        extract_all_columns_inline_fast_impl(sqlite3_stmt* stmt, T& obj, std::index_sequence<Is...>) noexcept {
+        extract_all_columns_inline_fast_impl(Statement* stmt, T& obj, std::index_sequence<Is...>) noexcept {
             // Direct extraction without error checking using comma operator fold
             ((extract_column_inline_fast<Is>(stmt, obj)), ...);
         }
 
         // OPTIMIZATION: Fast extraction entry point
         __attribute__((always_inline)) static inline void
-        extract_all_columns_inline_fast(sqlite3_stmt* stmt, T& obj) noexcept {
+        extract_all_columns_inline_fast(Statement* stmt, T& obj) noexcept {
             extract_all_columns_inline_fast_impl(stmt, obj, typename Base::field_indices_t{});
         }
 
