@@ -35,11 +35,15 @@ export namespace storm::orm::statements {
         using Error      = typename ConnType::Error;
         using Statement  = typename ConnType::Statement;
 
-        // Pre-compute placeholders for SQL VALUES clause
+        // Pre-compute placeholders for SQL VALUES clause (excluding PK for auto-increment)
         static consteval std::string build_placeholders() {
             std::string result;
             bool        first = true;
             for (size_t i = 0; i < Base::field_count_; ++i) {
+                // Skip primary key
+                if (Base::all_members_[i] == Base::primary_key_) {
+                    continue;
+                }
                 if (!first) {
                     result += ", ";
                 }
@@ -49,7 +53,7 @@ export namespace storm::orm::statements {
             return result;
         }
 
-        // Pre-computed placeholders (field names come from Base class)
+        // Pre-computed placeholders (excludes PK for auto-increment)
         static constexpr auto placeholders_ = build_placeholders();
 
         // Compile-time SQL size calculation
@@ -84,7 +88,7 @@ export namespace storm::orm::statements {
             result.append("INSERT INTO ");
             result.append(Base::table_name_);
             result.append(" (");
-            result.append(Base::build_all_field_names_list());
+            result.append(Base::build_non_pk_field_names_list());
             result.append(") VALUES (");
             result.append(placeholders_);
             result.append(")");
@@ -123,7 +127,7 @@ export namespace storm::orm::statements {
             result.append("INSERT INTO ");
             result.append(Base::table_name_);
             result.append(" (");
-            result.append(Base::build_all_field_names_list());
+            result.append(Base::build_non_pk_field_names_list());
             result.append(") VALUES ");
 
             return result;
@@ -209,8 +213,8 @@ export namespace storm::orm::statements {
                 cached_insert_stmt_ = *stmt_result;
             }
 
-            // Bind all fields using compile-time index sequence
-            auto bind_result = Base::template bind_all_fields_impl<ConnType, Statement>(
+            // Bind non-PK fields using compile-time index sequence (skips PK for auto-increment)
+            auto bind_result = Base::template bind_non_pk_fields_impl<ConnType, Statement>(
                     *cached_insert_stmt_, obj, typename Base::field_indices_t()
             );
 
@@ -234,9 +238,9 @@ export namespace storm::orm::statements {
         }
 
       protected: // Changed to protected so BaseStatement can access
-        // Bind all fields of an object using compile-time index sequence optimization
+        // Bind non-PK fields for INSERT (skips primary key for auto-increment)
         [[nodiscard]] auto bind_all_fields(Statement& stmt, const T& obj) noexcept -> std::expected<void, Error> {
-            return Base::template bind_all_fields_impl<ConnType, Statement>(
+            return Base::template bind_non_pk_fields_impl<ConnType, Statement>(
                     stmt, obj, typename Base::field_indices_t()
             );
         }
@@ -252,7 +256,7 @@ export namespace storm::orm::statements {
                     [this, &sql, objects]() -> std::expected<std::vector<int64_t>, Error> {
                         return conn_.prepare(sql).and_then(
                                 [this, objects](Statement stmt) -> std::expected<std::vector<int64_t>, Error> {
-                                    return Base::template bind_all_objects_bulk_impl<ConnType, Statement>(
+                                    return Base::template bind_non_pk_objects_bulk_impl<ConnType, Statement>(
                                                    stmt, objects, typename Base::field_indices_t()
                                            )
                                             .and_then([&stmt]() { return stmt.execute(); })

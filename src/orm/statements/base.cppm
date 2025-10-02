@@ -78,11 +78,6 @@ export namespace storm::orm::statements {
             throw "FK type must have exactly one field marked with [[=storm::meta::FieldAttr::primary]]";
         }
 
-        // Common reflection data - computed once per template instantiation
-        static constexpr auto primary_key_ = find_primary_key_impl();
-        static constexpr auto pk_name_     = std::meta::identifier_of(primary_key_);
-        static constexpr auto table_name_  = std::meta::identifier_of(^^T);
-
         // Helper to get the number of fields
         static consteval size_t get_field_count() {
             return std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()).size();
@@ -120,7 +115,7 @@ export namespace storm::orm::statements {
             return size;
         }
 
-        // Build comma-separated list of all field names (for SELECT and INSERT statements)
+        // Build comma-separated list of all field names (for SELECT statements)
         // FK fields are mapped to their column names (User sender → sender_id)
         static consteval std::string build_all_field_names_list() {
             std::string result;
@@ -143,11 +138,44 @@ export namespace storm::orm::statements {
             return result;
         }
 
+        // Build comma-separated list of NON-PRIMARY KEY fields (for INSERT statements)
+        // Excludes primary key to allow auto-increment
+        static consteval std::string build_non_pk_field_names_list() {
+            std::string result;
+            bool        first = true;
+            for (size_t i = 0; i < field_count_; ++i) {
+                // Skip primary key field
+                if (all_members_[i] == primary_key_) {
+                    continue;
+                }
+
+                if (!first) {
+                    result += ", ";
+                }
+                // Check if this is a FK field
+                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
+                if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
+                    // FK field: append field_name + "_id"
+                    result += std::meta::identifier_of(all_members_[i]);
+                    result += "_id";
+                } else {
+                    result += std::meta::identifier_of(all_members_[i]);
+                }
+                first = false;
+            }
+            return result;
+        }
+
       public:
-        // Pre-computed field information - made public for QuerySet optimization
+        // Pre-computed field information - made public for QuerySet and JOIN optimization
         static constexpr auto field_count_ = get_field_count();
         static constexpr auto all_members_ = get_all_field_members<field_count_>();
         static inline const std::string field_names_ = build_all_field_names_list();
+
+        // Reflection data - made public for JOIN statement access
+        static constexpr auto primary_key_ = find_primary_key_impl();
+        static constexpr auto pk_name_     = std::meta::identifier_of(primary_key_);
+        static constexpr auto table_name_  = std::meta::identifier_of(^^T);
 
       protected:
         // Index sequence utilities for compile-time field binding
@@ -164,6 +192,32 @@ export namespace storm::orm::statements {
             if (!bind_result) {
                 // Find which field failed (this could be optimized further if needed)
                 return get_first_bind_error<ConnType, Statement, Is...>(stmt, obj);
+            }
+            return {};
+        }
+
+        // Helper template for INSERT binding (skips primary key for auto-increment)
+        template <typename ConnType, typename Statement, size_t... Is>
+        [[nodiscard]] static auto
+        bind_non_pk_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...>) noexcept
+                -> std::expected<void, typename ConnType::Error> {
+            int param_index = 1;
+            bool bind_ok = true;
+
+            // Bind each field, skipping the PK
+            ((bind_ok = bind_ok && [&]() {
+                if constexpr (Is < field_count_) {
+                    if (all_members_[Is] != primary_key_) {
+                        bool result = bind_field_at_index<ConnType, Is>(stmt, obj, param_index);
+                        param_index++;
+                        return result;
+                    }
+                }
+                return true;
+            }()), ...);
+
+            if (!bind_ok) {
+                return std::unexpected(typename ConnType::Error{-1, "Field binding failed"});
             }
             return {};
         }
@@ -238,6 +292,39 @@ export namespace storm::orm::statements {
                     return get_bulk_bind_error<ConnType, Statement, Is...>(stmt, obj, param_index);
                 }
                 param_index += field_count_; // Move to next object's parameter range
+            }
+            return {};
+        }
+
+        // Helper for bulk INSERT binding (skips PK for auto-increment)
+        template <typename ConnType, typename Statement, typename ContainerType, size_t... Is>
+        [[nodiscard]] static auto
+        bind_non_pk_objects_bulk_impl(Statement& stmt, const ContainerType& objects, std::index_sequence<Is...>) noexcept
+                -> std::expected<void, typename ConnType::Error> {
+            int param_index = 1;
+            constexpr size_t non_pk_count = field_count_ - 1;
+
+            // Bind each object's non-PK fields sequentially
+            for (const auto& obj : objects) {
+                int field_param = param_index;
+                bool bind_ok = true;
+
+                // Bind fields skipping PK
+                ((bind_ok = bind_ok && [&]() {
+                    if constexpr (Is < field_count_) {
+                        if (all_members_[Is] != primary_key_) {
+                            bool result = bind_field_at_index<ConnType, Is>(stmt, obj, field_param);
+                            field_param++;
+                            return result;
+                        }
+                    }
+                    return true;
+                }()), ...);
+
+                if (!bind_ok) {
+                    return std::unexpected(typename ConnType::Error{-1, "Bulk bind failed"});
+                }
+                param_index += non_pk_count; // Move to next object's parameter range
             }
             return {};
         }
