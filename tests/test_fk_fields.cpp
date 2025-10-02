@@ -375,3 +375,44 @@ TEST_F(FKFieldTest, JoinFullyPopulatesFKObject) {
     EXPECT_EQ(messages[0].receiver.name, "") << "Without JOIN, receiver name should be empty";
     EXPECT_EQ(messages[0].receiver.age, 0) << "Without JOIN, receiver age should be 0";
 }
+
+// Test: Phase 3 - Multi-JOIN populates multiple FK objects fully
+TEST_F(FKFieldTest, JoinMultipleFKFields) {
+    QuerySet<User>    user_qs;
+    QuerySet<Message> message_qs;
+
+    // Insert users
+    User alice{0, "Alice", 30};
+    User bob{0, "Bob", 25};
+    auto alice_result = user_qs.insert(alice);
+    auto bob_result = user_qs.insert(bob);
+    ASSERT_TRUE(alice_result.has_value());
+    ASSERT_TRUE(bob_result.has_value());
+    int64_t alice_id = alice_result.value();
+    int64_t bob_id = bob_result.value();
+
+    // Insert message from Alice to Bob
+    Message msg{0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Hello from multi-JOIN!"};
+    auto    msg_result = message_qs.insert(msg);
+    ASSERT_TRUE(msg_result.has_value());
+
+    // Phase 3: Multi-JOIN to get BOTH sender and receiver fully populated
+    auto join_result = message_qs.join<&Message::sender, &Message::receiver>().execute();
+    ASSERT_TRUE(join_result.has_value()) << "Multi-JOIN failed: " << join_result.error().message();
+
+    const auto& messages = join_result.value();
+    ASSERT_EQ(messages.size(), 1);
+
+    // Verify message fields
+    EXPECT_EQ(messages[0].text, "Hello from multi-JOIN!");
+
+    // Verify sender FK object is FULLY populated
+    EXPECT_EQ(messages[0].sender.id, alice_id);
+    EXPECT_EQ(messages[0].sender.name, "Alice") << "Multi-JOIN should populate sender FK object's name!";
+    EXPECT_EQ(messages[0].sender.age, 30) << "Multi-JOIN should populate sender FK object's age!";
+
+    // Verify receiver FK object is ALSO FULLY populated (Phase 3 improvement!)
+    EXPECT_EQ(messages[0].receiver.id, bob_id);
+    EXPECT_EQ(messages[0].receiver.name, "Bob") << "Multi-JOIN should populate receiver FK object's name!";
+    EXPECT_EQ(messages[0].receiver.age, 25) << "Multi-JOIN should populate receiver FK object's age!";
+}

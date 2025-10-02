@@ -69,11 +69,22 @@ export namespace storm {
         }
 
         // JOIN operations - returns rows with fully populated FK objects
+
+        // Phase 2: Single FK JOIN
         // Usage: message_qs.join<&Message::sender>()
         template <auto FKFieldPtr>
         auto join() -> orm::statements::JoinStatement<T, FKFieldPtr, ConnType> {
             // Return JOIN statement instance (statement caching happens internally)
             return orm::statements::JoinStatement<T, FKFieldPtr, ConnType>(conn_);
+        }
+
+        // Phase 3: Multiple FK JOIN
+        // Usage: message_qs.join<&Message::sender, &Message::receiver>()
+        template <auto... FKFieldPtrs>
+            requires (sizeof...(FKFieldPtrs) > 1)
+        auto join() -> orm::statements::MultiJoinStatement<T, ConnType, FKFieldPtrs...> {
+            // Return multi-JOIN statement instance
+            return orm::statements::MultiJoinStatement<T, ConnType, FKFieldPtrs...>(conn_);
         }
 
         // Update operations
