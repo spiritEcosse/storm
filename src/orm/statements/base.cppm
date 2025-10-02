@@ -6,6 +6,7 @@ module;
 export module storm_orm_statements_base;
 
 import storm_db_concept;
+import storm_orm_utilities;
 
 import <expected>;
 import <string>;
@@ -20,6 +21,9 @@ import <vector>;
 import <cstdint>;
 
 export namespace storm::orm::statements {
+
+    // Import utilities for compile-time string building
+    using storm::orm::utilities::ConstexprString;
 
     // Mirror of meta::FieldAttr from storm module - must match exactly
     namespace meta {
@@ -115,23 +119,49 @@ export namespace storm::orm::statements {
             return size;
         }
 
+        // Calculate size of non-PK field names string at compile-time
+        static consteval size_t calculate_non_pk_field_names_size() {
+            size_t size = 0;
+            bool first = true;
+            for (size_t i = 0; i < field_count_; ++i) {
+                // Skip primary key field
+                if (all_members_[i] == primary_key_) {
+                    continue;
+                }
+                if (!first) {
+                    size += 2; // ", "
+                }
+                // Check if this is a FK field
+                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
+                if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
+                    // FK field: field_name + "_id"
+                    size += std::meta::identifier_of(all_members_[i]).size() + 3; // +3 for "_id"
+                } else {
+                    size += std::meta::identifier_of(all_members_[i]).size();
+                }
+                first = false;
+            }
+            return size;
+        }
+
         // Build comma-separated list of all field names (for SELECT statements)
         // FK fields are mapped to their column names (User sender → sender_id)
-        static consteval std::string build_all_field_names_list() {
-            std::string result;
+        static consteval auto build_all_field_names_list() {
+            constexpr size_t size = calculate_field_names_size() + 10; // Add buffer
+            ConstexprString<size> result;
             bool        first = true;
             for (size_t i = 0; i < field_count_; ++i) {
                 if (!first) {
-                    result += ", ";
+                    result.append(", ");
                 }
                 // Check if this is a FK field
                 auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
                 if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
                     // FK field: append field_name + "_id"
-                    result += std::meta::identifier_of(all_members_[i]);
-                    result += "_id";
+                    result.append(std::meta::identifier_of(all_members_[i]));
+                    result.append("_id");
                 } else {
-                    result += std::meta::identifier_of(all_members_[i]);
+                    result.append(std::meta::identifier_of(all_members_[i]));
                 }
                 first = false;
             }
@@ -140,8 +170,9 @@ export namespace storm::orm::statements {
 
         // Build comma-separated list of NON-PRIMARY KEY fields (for INSERT statements)
         // Excludes primary key to allow auto-increment
-        static consteval std::string build_non_pk_field_names_list() {
-            std::string result;
+        static consteval auto build_non_pk_field_names_list() {
+            constexpr size_t size = calculate_non_pk_field_names_size() + 10; // Add buffer
+            ConstexprString<size> result;
             bool        first = true;
             for (size_t i = 0; i < field_count_; ++i) {
                 // Skip primary key field
@@ -150,16 +181,16 @@ export namespace storm::orm::statements {
                 }
 
                 if (!first) {
-                    result += ", ";
+                    result.append(", ");
                 }
                 // Check if this is a FK field
                 auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
                 if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
                     // FK field: append field_name + "_id"
-                    result += std::meta::identifier_of(all_members_[i]);
-                    result += "_id";
+                    result.append(std::meta::identifier_of(all_members_[i]));
+                    result.append("_id");
                 } else {
-                    result += std::meta::identifier_of(all_members_[i]);
+                    result.append(std::meta::identifier_of(all_members_[i]));
                 }
                 first = false;
             }
@@ -170,7 +201,8 @@ export namespace storm::orm::statements {
         // Pre-computed field information - made public for QuerySet and JOIN optimization
         static constexpr auto field_count_ = get_field_count();
         static constexpr auto all_members_ = get_all_field_members<field_count_>();
-        static inline const std::string field_names_ = build_all_field_names_list();
+        static constexpr auto field_names_array_ = build_all_field_names_list();
+        static inline const std::string field_names_ = std::string(field_names_array_);
 
         // Reflection data - made public for JOIN statement access
         static constexpr auto primary_key_ = find_primary_key_impl();

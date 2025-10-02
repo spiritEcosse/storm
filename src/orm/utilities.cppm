@@ -46,6 +46,16 @@ export namespace storm::orm::utilities {
             data[len] = '\0';
         }
 
+        // Append another ConstexprString
+        template <size_t M>
+        consteval void append(const ConstexprString<M>& other) {
+            for (size_t i = 0; i < other.len && len < N - 1; ++i) {
+                data[len] = other.data[i];
+                ++len;
+            }
+            data[len] = '\0';
+        }
+
         // Runtime conversion to std::string
         operator std::string() const {
             return std::string(data.data(), len);
