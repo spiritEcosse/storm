@@ -21,6 +21,9 @@ import <span>;
 import <concepts>;
 import <memory>;
 import <vector>;
+import <variant>;
+import <optional>;
+import <functional>;
 
 export namespace storm {
 
@@ -64,27 +67,47 @@ export namespace storm {
         }
 
         // Select operations - returns all rows (optimized with statement caching)
+        // If join() was called, executes JOIN; otherwise executes normal SELECT
         std::expected<std::vector<T>, Error> select() {
+            // Check if join was configured
+            if (join_executor_) {
+                // Execute JOIN and clear join state
+                auto result = (*join_executor_)();
+                join_executor_.reset();  // Clear join state after execution
+                return result;
+            }
+            // Normal SELECT without JOIN
             return get_select_statement().execute_optimized();
         }
 
-        // JOIN operations - returns rows with fully populated FK objects
+        // JOIN operations - configures QuerySet to perform JOIN when select() is called
+        // Uses deducing this pattern for efficient method chaining
 
         // Phase 2: Single FK JOIN
-        // Usage: message_qs.join<&Message::sender>()
+        // Usage: message_qs.join<&Message::sender>().select()
         template <auto FKFieldPtr>
-        auto join() -> orm::statements::JoinStatement<T, FKFieldPtr, ConnType> {
-            // Return JOIN statement instance (statement caching happens internally)
-            return orm::statements::JoinStatement<T, FKFieldPtr, ConnType>(conn_);
+        constexpr auto&& join(this auto&& self) {
+            // Store join executor that captures FK field pointer and connection
+            self.join_executor_ = [&conn = self.conn_]() -> std::expected<std::vector<T>, Error> {
+                // Create JoinStatement and execute
+                orm::statements::JoinStatement<T, FKFieldPtr, ConnType> join_stmt(conn);
+                return join_stmt.execute();
+            };
+            return self_cast(std::forward<decltype(self)>(self));
         }
 
         // Phase 3: Multiple FK JOIN
-        // Usage: message_qs.join<&Message::sender, &Message::receiver>()
+        // Usage: message_qs.join<&Message::sender, &Message::receiver>().select()
         template <auto... FKFieldPtrs>
             requires (sizeof...(FKFieldPtrs) > 1)
-        auto join() -> orm::statements::MultiJoinStatement<T, ConnType, FKFieldPtrs...> {
-            // Return multi-JOIN statement instance
-            return orm::statements::MultiJoinStatement<T, ConnType, FKFieldPtrs...>(conn_);
+        constexpr auto&& join(this auto&& self) {
+            // Store join executor for multi-FK join
+            self.join_executor_ = [&conn = self.conn_]() -> std::expected<std::vector<T>, Error> {
+                // Create MultiJoinStatement and execute
+                orm::statements::MultiJoinStatement<T, ConnType, FKFieldPtrs...> join_stmt(conn);
+                return join_stmt.execute();
+            };
+            return self_cast(std::forward<decltype(self)>(self));
         }
 
         // Update operations
@@ -136,6 +159,12 @@ export namespace storm {
         }
 
       private:
+        // Helper for perfect forwarding in method chaining (deducing this pattern)
+        template <typename Self>
+        static constexpr decltype(auto) self_cast(Self&& self) {
+            return std::forward<Self>(self);
+        }
+
         // Lazy-initialize and return cached InsertStatement for optimal performance
         auto get_insert_statement() const -> orm::statements::InsertStatement<T, ConnType>& {
             if (!insert_stmt_) {
@@ -178,6 +207,11 @@ export namespace storm {
         mutable std::unique_ptr<orm::statements::RemoveStatement<T, ConnType>> remove_stmt_;
         mutable std::unique_ptr<orm::statements::SelectStatement<T, ConnType>> select_stmt_;
         mutable std::unique_ptr<orm::statements::UpdateStatement<T, ConnType>> update_stmt_;
+
+        // Join state: stores executor function for JOIN operations
+        // When join() is called, it captures FK field pointers in a lambda and stores it here
+        // When select() is called, it executes this instead of normal select if present
+        mutable std::optional<std::function<std::expected<std::vector<T>, Error>()>> join_executor_;
     };
 
     // Factory function for convenient QuerySet creation with default connection

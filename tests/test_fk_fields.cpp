@@ -355,7 +355,7 @@ TEST_F(FKFieldTest, JoinFullyPopulatesFKObject) {
     ASSERT_TRUE(msg_result.has_value());
 
     // Phase 2: JOIN to get fully populated sender
-    auto join_result = message_qs.join<&Message::sender>().execute();
+    auto join_result = message_qs.join<&Message::sender>().select();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -397,7 +397,7 @@ TEST_F(FKFieldTest, JoinMultipleFKFields) {
     ASSERT_TRUE(msg_result.has_value());
 
     // Phase 3: Multi-JOIN to get BOTH sender and receiver fully populated
-    auto join_result = message_qs.join<&Message::sender, &Message::receiver>().execute();
+    auto join_result = message_qs.join<&Message::sender, &Message::receiver>().select();
     ASSERT_TRUE(join_result.has_value()) << "Multi-JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
