@@ -22,11 +22,6 @@ export namespace storm::orm::statements {
 
     using storm::orm::utilities::ConstexprString;
 
-    // Forward declaration
-    template <typename T, storm::db::DatabaseConnection ConnType, auto... FKFieldPtrs>
-        requires (sizeof...(FKFieldPtrs) >= 1)
-    class JoinStatement;
-
     // Abstract interface for type erasure in QuerySet
     class IJoinStatement {
       public:
