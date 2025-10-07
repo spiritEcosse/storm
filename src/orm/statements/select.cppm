@@ -87,12 +87,10 @@ export namespace storm::orm::statements {
         }
 
         // Optimized SELECT execution with JOIN (move semantics)
+        // NOTE: join_stmt is guaranteed non-null by QuerySet::select() dispatch
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
         execute_optimized(std::unique_ptr<orm::statements::IJoinStatement> join_stmt) noexcept
                 -> std::expected<std::vector<T>, Error> {
-            if (!join_stmt) [[unlikely]] {
-                return execute_simple_select();
-            }
             return execute_with_join_impl(std::move(join_stmt));
         }
 
