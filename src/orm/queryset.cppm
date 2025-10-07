@@ -145,7 +145,7 @@ export namespace storm {
 
         // Lazy-initialize and return cached InsertStatement for optimal performance
         auto get_insert_statement() const -> orm::statements::InsertStatement<T, ConnType>& {
-            if (!insert_stmt_) {
+            if (!insert_stmt_) [[unlikely]] {
                 insert_stmt_ = std::make_unique<orm::statements::InsertStatement<T, ConnType>>(conn_);
             }
             return *insert_stmt_;
@@ -158,7 +158,7 @@ export namespace storm {
 
         // Lazy-initialize and return cached RemoveStatement for optimal performance
         auto get_remove_statement() const -> orm::statements::RemoveStatement<T, ConnType>& {
-            if (!remove_stmt_) {
+            if (!remove_stmt_) [[unlikely]] {
                 remove_stmt_ = std::make_unique<orm::statements::RemoveStatement<T, ConnType>>(conn_);
             }
             return *remove_stmt_;
@@ -166,7 +166,7 @@ export namespace storm {
 
         // Lazy-initialize and return cached UpdateStatement for optimal performance
         auto get_update_statement() const -> orm::statements::UpdateStatement<T, ConnType>& {
-            if (!update_stmt_) {
+            if (!update_stmt_) [[unlikely]] {
                 update_stmt_ = std::make_unique<orm::statements::UpdateStatement<T, ConnType>>(conn_);
             }
             return *update_stmt_;
@@ -174,7 +174,7 @@ export namespace storm {
 
         // Lazy-initialize and return cached SelectStatement for optimal performance
         auto get_select_statement() const -> orm::statements::SelectStatement<T, ConnType>& {
-            if (!select_stmt_) {
+            if (!select_stmt_) [[unlikely]] {
                 select_stmt_ = std::make_unique<orm::statements::SelectStatement<T, ConnType>>(conn_);
             }
             return *select_stmt_;
