@@ -85,7 +85,7 @@ export namespace storm {
         constexpr auto&& join(this auto&& self) {
             // Create and store JoinStatement
             self.join_stmt_ = std::make_unique<orm::statements::JoinStatement<T, ConnType, FKFieldPtrs...>>();
-            return self_cast(std::forward<decltype(self)>(self));
+            return self_cast(self);
         }
 
         // Update operations
