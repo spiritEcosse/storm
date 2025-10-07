@@ -6,6 +6,7 @@ module;
 export module storm_orm_statements_select;
 
 import storm_orm_statements_base;
+import storm_orm_statements_join;
 import storm_orm_utilities;
 import storm_db_concept;
 import storm_db_sqlite;
@@ -21,6 +22,7 @@ import <vector>;
 import <type_traits>;
 import <optional>;
 import <cstdint>;
+import <memory>;
 
 export namespace storm::orm::statements {
 
@@ -78,8 +80,25 @@ export namespace storm::orm::statements {
       public:
         explicit SelectStatement(Connection& conn) : conn_(conn) {}
 
-        // Optimized SELECT execution with statement caching and inlined row extraction
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_optimized() noexcept
+        // Optimized SELECT execution without JOIN
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
+        execute_optimized() noexcept -> std::expected<std::vector<T>, Error> {
+            return execute_simple_select();
+        }
+
+        // Optimized SELECT execution with JOIN (move semantics)
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
+        execute_optimized(std::unique_ptr<orm::statements::IJoinStatement> join_stmt) noexcept
+                -> std::expected<std::vector<T>, Error> {
+            if (!join_stmt) [[unlikely]] {
+                return execute_simple_select();
+            }
+            return execute_with_join_impl(std::move(join_stmt));
+        }
+
+      private:
+        // Simple SELECT execution (original logic)
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_simple_select() noexcept
                 -> std::expected<std::vector<T>, Error> {
             // Cache statement on first use (RemoveStatement pattern)
             if (!cached_select_stmt_) {
@@ -131,6 +150,65 @@ export namespace storm::orm::statements {
             // Reset statement for next use
             cached_select_stmt_->reset();
 
+            return results;
+        }
+
+        // JOIN execution with dynamic SQL building (accepts ownership via move)
+        [[nodiscard]] __attribute__((hot)) auto
+        execute_with_join_impl(std::unique_ptr<orm::statements::IJoinStatement> join_stmt) noexcept
+                -> std::expected<std::vector<T>, Error> {
+            // Build JOIN SQL: SELECT t1.*, t2.* FROM table t1 INNER JOIN fk_table t2 ON ...
+            std::string join_sql;
+            join_sql.reserve(1000);
+            join_sql += "SELECT ";
+            join_sql += join_stmt->build_qualified_select_fields();
+            join_sql += " FROM ";
+            join_sql += Base::table_name_;
+            join_sql += " t1";
+            join_sql += join_stmt->to_sql();
+
+            // Cache JOIN statement separately (different SQL than simple SELECT)
+            if (!cached_join_stmt_) {
+                auto prepare_result = conn_.prepare_cached(join_sql);
+                if (!prepare_result) [[unlikely]] {
+                    return std::unexpected(prepare_result.error());
+                }
+                cached_join_stmt_ = *prepare_result;
+            }
+
+            std::vector<T> results;
+            results.resize(10000); // Pre-allocate
+
+            int step_result;
+            size_t row_count = 0;
+            while ((step_result = cached_join_stmt_->step_raw()) == Statement::ROW_AVAILABLE
+                   && row_count < results.size()) {
+                T& obj = results[row_count];
+
+                // Use JoinStatement's extraction logic via virtual method
+                join_stmt->extract_row(cached_join_stmt_, &obj);
+
+                row_count++;
+            }
+
+            // Handle overflow
+            while (step_result == Statement::ROW_AVAILABLE) {
+                results.emplace_back();
+                T& obj = results.back();
+                join_stmt->extract_row(cached_join_stmt_, &obj);
+                row_count++;
+                step_result = cached_join_stmt_->step_raw();
+            }
+
+            results.resize(row_count);
+
+            if (step_result != Statement::NO_MORE_ROWS) {
+                cached_join_stmt_->reset();
+                return std::unexpected(Error{step_result, cached_join_stmt_->get_error_message()});
+            }
+
+            cached_join_stmt_->reset();
+            // join_stmt automatically destroyed here (move semantics)
             return results;
         }
 
@@ -269,7 +347,8 @@ export namespace storm::orm::statements {
         }
 
         Connection&        conn_;
-        mutable Statement* cached_select_stmt_ = nullptr; // RemoveStatement-style statement caching
+        mutable Statement* cached_select_stmt_ = nullptr; // Statement caching for simple SELECT
+        mutable Statement* cached_join_stmt_ = nullptr;   // Separate cache for JOIN queries
     };
 
 } // namespace storm::orm::statements

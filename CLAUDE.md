@@ -2,13 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: Storm ORM features **complete CRUD operations** maintaining consistent 1.5-6x performance advantage over sqlite_orm:
+**Last Updated**: Storm ORM features **complete CRUD operations + JOIN support** maintaining consistent 1.5-6x performance advantage over sqlite_orm:
 - **INSERT**: 992K/sec single, 2.7M/sec batch (2.0x faster)
 - **SELECT**: 13.07M rows/sec (74% of raw SQLite, 1.51x faster)
 - **UPDATE**: 2M/sec sustained, 12M peak (6x faster, 1.8x faster than raw SQLite)
 - **DELETE**: 21.6M/sec single, 3.9M/sec batch (73% of raw SQLite)
+- **JOIN**: Single & multi FK support with full object population
 
-Key innovations: compile-time SQL generation, statement-level caching, thread-local SQL caching, optimized row extraction (resize() pre-allocation 1.7x faster, direct string construction 2.2x faster), fully inlined field binding.
+Key innovations: compile-time SQL generation, statement-level caching, thread-local SQL caching, optimized row extraction (resize() pre-allocation 1.7x faster, direct string construction 2.2x faster), fully inlined field binding, abstract base class pattern for type-erased JOIN operations.
 
 ## Project Overview
 
@@ -93,9 +94,10 @@ src/
     └── statements/
         ├── base.cppm               # BaseStatement utilities
         ├── insert.cppm             # InsertStatement
-        ├── select.cppm             # SelectStatement
+        ├── select.cppm             # SelectStatement (with JOIN support)
         ├── update.cppm             # UpdateStatement
-        └── remove.cppm             # RemoveStatement
+        ├── remove.cppm             # RemoveStatement
+        └── join.cppm               # JoinStatement (SQL builder for FK JOINs)
 ```
 
 ### Key Design Decisions
@@ -315,6 +317,77 @@ template <typename T> class XStatement {
 - Thread-local SQL caching provides sufficient optimization
 - Current performance (992K/sec single, 2.7M/sec batch) exceeds sqlite_orm by 2-6x
 
+#### 12. **JOIN Architecture (Type-Erased SQL Builder Pattern)**
+Enables single and multi-FK JOIN operations without `std::function` (which causes linker issues with custom libc++):
+
+**Architecture:**
+```cpp
+// Abstract base for type erasure
+class IJoinStatement {
+    virtual std::string to_sql() const = 0;
+    virtual std::string build_qualified_select_fields() const = 0;
+    virtual void extract_row(void* stmt, void* obj) const = 0;
+};
+
+// Unified variadic template (single + multi FK)
+template <typename T, ConnType, auto... FKFieldPtrs>
+class JoinStatement : public IJoinStatement {
+    // Pure SQL builder - no execute(), no caching
+    // Generates: " INNER JOIN table t2 ON t2.id = t1.fk_id"
+};
+```
+
+**QuerySet Storage:**
+```cpp
+template <class T> class QuerySet {
+    mutable std::unique_ptr<IJoinStatement> join_stmt_;  // Type-erased storage
+
+    template <auto... FKFieldPtrs>
+    auto&& join(this auto&& self) {
+        self.join_stmt_ = std::make_unique<JoinStatement<T, ConnType, FKFieldPtrs...>>();
+        return self;
+    }
+
+    auto select() {
+        if (join_stmt_) {
+            return get_select_statement().execute_optimized(join_stmt_.get());
+        }
+        return get_select_statement().execute_optimized();
+    }
+};
+```
+
+**SelectStatement Integration:**
+```cpp
+template <typename JoinStmt = void>
+auto execute_optimized(JoinStmt* join_stmt = nullptr) {
+    if constexpr (!std::is_void_v<JoinStmt>) {
+        // Build: SELECT t1.*, t2.* FROM table t1 + join_stmt->to_sql()
+        // Extract: join_stmt->extract_row(stmt, obj)
+        // Separate statement cache for JOIN queries
+    } else {
+        // Simple SELECT without JOIN
+    }
+}
+```
+
+**Usage:**
+```cpp
+// Single FK - populates sender fully
+auto result = message_qs.join<&Message::sender>().select();
+
+// Multi FK - populates both sender and receiver
+auto result = message_qs.join<&Message::sender, &Message::receiver>().select();
+```
+
+**Key Benefits:**
+- ✅ No `std::function` - avoids custom libc++ linker errors
+- ✅ Single variadic template (not separate Single/Multi classes)
+- ✅ Abstract base class for type erasure
+- ✅ Compile-time SQL generation with fold expressions
+- ✅ Zero runtime overhead with `if constexpr` dispatch
+- ✅ Separate statement caching for JOIN vs simple SELECT
+
 ### Cross-Module Dependencies
 ```
 storm (main module)
@@ -322,7 +395,7 @@ storm (main module)
 ├── storm_db_sqlite
 ├── storm_orm_statements_base
 ├── storm_orm_utilities
-├── storm_orm_statements_{insert,update,remove,select}
+├── storm_orm_statements_{insert,update,remove,select,join}
 └── storm_orm_queryset
 ```
 
@@ -339,12 +412,38 @@ Experimental Clang fork with C++26 reflection:
 - Module scanning with `clang-scan-deps`
 - Reflection flags: `-freflection -fannotation-attributes`
 
+**Known Compiler Issues & Workarounds:**
+
+1. **Module Cache Corruption (clang-p2996)**
+   - **Symptom**: Build fails with error: `module '_Builtin_stdint' is defined in both [same_path] and [same_path]`
+   - **Cause**: Module cache corruption in experimental P2996 compiler with C++26 modules + GoogleTest + custom libc++
+   - **Workaround**: **Simply run the build command again** - second attempt usually succeeds
+   - **Why it works**: First build attempt populates module cache, second build uses it correctly
+   - **When it happens**: Most commonly when building tests after clean or cache clear
+   - **Quick fix**:
+     ```bash
+     # If build fails with module cache error:
+     ninja storm_tests  # Will fail
+     ninja storm_tests  # Will succeed on second try
+     ```
+   - **Nuclear option**: Clear cache completely if repeated attempts fail:
+     ```bash
+     rm -rf ~/.cache/clang/ModuleCache
+     ninja storm_tests  # Then retry
+     ```
+
+2. **std::mutex Segfaults**
+   - Using `std::mutex` in C++26 modules causes compiler crashes
+   - Workaround: Avoid mutex in module code, use external synchronization
+
 ### Testing Strategy
 - **GoogleTest** with C++26 module support
 - Tests in `tests/` directory, in-memory database (`:memory:`)
 - Comprehensive sanitizer support
 - **ID Validation**: Tests verify returned auto-generated IDs
 - **SELECT Testing**: Empty table, single/multiple rows, field types, large datasets, statement caching, integration tests
+- **JOIN Testing**: Single FK and multi-FK JOINs with full object population verification (`tests/test_fk_fields.cpp`)
+- **FK Field Testing**: INSERT/UPDATE/DELETE with FK fields, batch operations with FKs
 
 ## Important Implementation Notes
 
@@ -354,8 +453,10 @@ Experimental Clang fork with C++26 reflection:
 - **Module Naming**: Uses underscores (`storm_db_sqlite`) due to compiler limitations
 - **Circular Dependencies**: Avoided by duplicating `FieldAttr` enum
 - **Compiler Crashes**: std::mutex in modules causes segfaults
+- **std::function Linker Errors**: Avoid `std::function` with custom libc++ - use abstract base classes instead (see JOIN architecture)
 - **Primary Key Access**: Uses reflection splice operator `obj.[:primary_key_:]`
 - **Bulk INSERT Caching**: Thread-local 8-entry cache with optimized string pre-allocation
+- **JOIN Implementation**: Abstract base class (`IJoinStatement`) + variadic template for type erasure without `std::function`
 - **INSERT Return Types (Breaking Change)**:
   - Single: `std::expected<int64_t, Error>` (was void)
   - Batch: `std::expected<std::vector<int64_t>, Error>` (was void)

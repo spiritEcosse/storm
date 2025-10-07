@@ -106,7 +106,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include(${CMAKE_CURRENT_SOURCE_DIR}/envs.cmake)
 
 # Find PostgreSQL package
-find_package(PostgreSQL REQUIRED)
+# find_package(PostgreSQL REQUIRED)
 
 # Function to link SQLite to a target
 function(link_sqlite target_name)
@@ -135,10 +135,10 @@ endif()
 
 include(${CPM_DOWNLOAD_LOCATION})
 
-target_link_libraries(${PROJECT_NAME}
-    PRIVATE
-    PostgreSQL::PostgreSQL
-)
+# target_link_libraries(${PROJECT_NAME}
+#     PRIVATE
+#     PostgreSQL::PostgreSQL
+# )
 
 option(ENABLE_TESTS "Enable testing support" OFF)
 option(ENABLE_BENCH "Enable benchmarking with sqlite_orm" OFF)
