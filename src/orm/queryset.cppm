@@ -186,7 +186,6 @@ export namespace storm {
         mutable std::unique_ptr<orm::statements::SelectStatement<T, ConnType>> select_stmt_;
         mutable std::unique_ptr<orm::statements::UpdateStatement<T, ConnType>> update_stmt_;
 
-        // Join state: abstract base class for type erasure (no std::function!)
         mutable std::unique_ptr<orm::statements::IJoinStatement> join_stmt_;
     };
 

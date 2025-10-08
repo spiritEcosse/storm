@@ -33,9 +33,6 @@ export namespace storm::orm::statements {
         // Generate SELECT field list with table aliases
         virtual std::string build_qualified_select_fields() const = 0;
 
-        // Get number of FK fields being joined
-        virtual size_t get_fk_count() const = 0;
-
         // Extract joined row - must be virtual for polymorphic access
         virtual void extract_row(void* stmt, void* obj) const = 0;
     };
@@ -211,10 +208,6 @@ export namespace storm::orm::statements {
 
         std::string build_qualified_select_fields() const override {
             return build_select_fields_impl(std::make_index_sequence<fk_count_>{});
-        }
-
-        size_t get_fk_count() const override {
-            return fk_count_;
         }
 
         // Virtual extraction method for polymorphic access
