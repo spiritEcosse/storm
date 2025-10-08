@@ -57,23 +57,24 @@ export namespace storm::orm::statements {
         template <auto FKPtr>
         using FK_type = std::remove_cvref_t<decltype(std::declval<T>().*FKPtr)>;
 
-        // Get BaseStatement type for FK at index
-        template <size_t Idx, auto... Ptrs>
-        struct FK_base_at_helper;
+        // Generic parameter pack element access (DRY - used for both types and values)
+        template <size_t Idx, auto... Pack>
+        struct pack_element_at;
 
         template <auto First, auto... Rest>
-        struct FK_base_at_helper<0, First, Rest...> {
-            using type = BaseStatement<FK_type<First>>;
+        struct pack_element_at<0, First, Rest...> {
+            static constexpr auto value = First;
         };
 
         template <size_t Idx, auto First, auto... Rest>
             requires (Idx > 0)
-        struct FK_base_at_helper<Idx, First, Rest...> {
-            using type = typename FK_base_at_helper<Idx - 1, Rest...>::type;
+        struct pack_element_at<Idx, First, Rest...> {
+            static constexpr auto value = pack_element_at<Idx - 1, Rest...>::value;
         };
 
+        // Get BaseStatement type for FK at index
         template <size_t Idx>
-        using FKBase_at = typename FK_base_at_helper<Idx, FKFieldPtrs...>::type;
+        using FKBase_at = BaseStatement<FK_type<pack_element_at<Idx, FKFieldPtrs...>::value>>;
 
         // Calculate column offsets for each FK table
         template <size_t... Is>
@@ -120,6 +121,11 @@ export namespace storm::orm::statements {
             return fk_field_names_[idx];
         }
 
+        // Helper to generate table alias (DRY - used in multiple places)
+        static std::string table_alias(size_t idx) {
+            return "t" + std::to_string(idx);
+        }
+
         // Build qualified field list with table alias (e.g., "t1.id, t1.name")
         static std::string build_qualified_fields(std::string_view fields, std::string_view alias) {
             std::string result;
@@ -150,10 +156,10 @@ export namespace storm::orm::statements {
             // INNER JOIN clauses for each FK
             ((sql += " INNER JOIN ",
               sql += FKBase_at<Is>::table_name_,
-              sql += " t",
-              sql += std::to_string(Is + 2),
-              sql += " ON t",
-              sql += std::to_string(Is + 2),
+              sql += " ",
+              sql += table_alias(Is + 2),
+              sql += " ON ",
+              sql += table_alias(Is + 2),
               sql += ".",
               sql += FKBase_at<Is>::pk_name_,
               sql += " = t1.",
@@ -175,28 +181,14 @@ export namespace storm::orm::statements {
             // FK table fields
             ((fields += ", ",
               fields += build_qualified_fields(FKBase_at<Is>::field_names_,
-                                              "t" + std::to_string(Is + 2))), ...);
+                                              table_alias(Is + 2))), ...);
 
             return fields;
         }
 
-        // Helper to get FK pointer at index
-        template <size_t Idx, auto... Ptrs>
-        struct get_ptr_at_helper;
-
-        template <auto First, auto... Rest>
-        struct get_ptr_at_helper<0, First, Rest...> {
-            static constexpr auto value = First;
-        };
-
-        template <size_t Idx, auto First, auto... Rest>
-            requires (Idx > 0)
-        struct get_ptr_at_helper<Idx, First, Rest...> {
-            static constexpr auto value = get_ptr_at_helper<Idx - 1, Rest...>::value;
-        };
-
+        // Get FK pointer at index (reuses pack_element_at)
         template <size_t Idx>
-        static constexpr auto get_fk_ptr_at = get_ptr_at_helper<Idx, FKFieldPtrs...>::value;
+        static constexpr auto get_fk_ptr_at = pack_element_at<Idx, FKFieldPtrs...>::value;
 
       public:
         JoinStatement() = default;
@@ -224,6 +216,22 @@ export namespace storm::orm::statements {
             ((extract_column_at<Is>(stmt, obj, Is)), ...);
         }
 
+        // Extract field value based on type - DRY helper shared by T and FK extraction
+        template <typename FieldType>
+        __attribute__((always_inline)) static void
+        extract_typed_field(Statement* stmt, FieldType& field, int col_idx) noexcept {
+            if constexpr (std::is_same_v<FieldType, int>) {
+                field = stmt->extract_int(col_idx);
+            } else if constexpr (std::is_same_v<FieldType, int64_t>) {
+                field = stmt->extract_int64(col_idx);
+            } else if constexpr (std::is_same_v<FieldType, std::string>) {
+                const unsigned char* text = stmt->extract_text_ptr(col_idx);
+                if (text) {
+                    field = std::string(reinterpret_cast<const char*>(text));
+                }
+            }
+        }
+
         // Extract single column for T (skip FK fields - they're populated separately)
         template <size_t MemberIdx>
         __attribute__((always_inline)) static void
@@ -234,18 +242,7 @@ export namespace storm::orm::statements {
                 if constexpr (Base::is_fk_field(member)) {
                     return; // FK fields populated by extract_all_fks
                 } else {
-                    using FieldType = std::remove_cvref_t<decltype(obj.[:member:])>;
-
-                    if constexpr (std::is_same_v<FieldType, int>) {
-                        obj.[:member:] = stmt->extract_int(col_idx);
-                    } else if constexpr (std::is_same_v<FieldType, int64_t>) {
-                        obj.[:member:] = stmt->extract_int64(col_idx);
-                    } else if constexpr (std::is_same_v<FieldType, std::string>) {
-                        const unsigned char* text = stmt->extract_text_ptr(col_idx);
-                        if (text) {
-                            obj.[:member:] = std::string(reinterpret_cast<const char*>(text));
-                        }
-                    }
+                    extract_typed_field(stmt, obj.[:member:], col_idx);
                 }
             }
         }
@@ -259,24 +256,13 @@ export namespace storm::orm::statements {
             ((extract_fk_field_at<FKBase, FieldIs>(stmt, fk_obj, col_offset + FieldIs)), ...);
         }
 
-        // Extract single FK field
+        // Extract single FK field (reuses extract_typed_field)
         template <typename FKBase, size_t FieldIdx>
         __attribute__((always_inline)) static void
         extract_fk_field_at(Statement* stmt, auto& fk_obj, int col_idx) noexcept {
             if constexpr (FieldIdx < FKBase::field_count_) {
                 constexpr auto member = FKBase::all_members_[FieldIdx];
-                using FieldType = std::remove_cvref_t<decltype(fk_obj.[:member:])>;
-
-                if constexpr (std::is_same_v<FieldType, int>) {
-                    fk_obj.[:member:] = stmt->extract_int(col_idx);
-                } else if constexpr (std::is_same_v<FieldType, int64_t>) {
-                    fk_obj.[:member:] = stmt->extract_int64(col_idx);
-                } else if constexpr (std::is_same_v<FieldType, std::string>) {
-                    const unsigned char* text = stmt->extract_text_ptr(col_idx);
-                    if (text) {
-                        fk_obj.[:member:] = std::string(reinterpret_cast<const char*>(text));
-                    }
-                }
+                extract_typed_field(stmt, fk_obj.[:member:], col_idx);
             }
         }
 
