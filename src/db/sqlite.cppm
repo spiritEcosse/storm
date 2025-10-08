@@ -164,8 +164,8 @@ export namespace storm::db::sqlite {
             return sqlite3_column_double(stmt_.get(), col_index);
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_text_ptr(int col_index) const noexcept
-                -> const unsigned char* {
+        [[nodiscard]] __attribute__((always_inline)) inline auto extract_text_ptr(int col_index) const noexcept -> const
+                unsigned char* {
             return sqlite3_column_text(stmt_.get(), col_index);
         }
 

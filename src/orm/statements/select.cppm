@@ -81,8 +81,8 @@ export namespace storm::orm::statements {
         explicit SelectStatement(Connection& conn) : conn_(conn) {}
 
         // Optimized SELECT execution without JOIN
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
-        execute_optimized() noexcept -> std::expected<std::vector<T>, Error> {
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_optimized() noexcept
+                -> std::expected<std::vector<T>, Error> {
             return execute_simple_select();
         }
 
@@ -115,8 +115,8 @@ export namespace storm::orm::statements {
             // OPTIMIZATION: Simplified loop with direct row check using abstracted interface
             int    step_result;
             size_t row_count = 0;
-            while ((step_result = cached_select_stmt_->step_raw()) == Statement::ROW_AVAILABLE
-                   && row_count < results.size()) {
+            while ((step_result = cached_select_stmt_->step_raw()) == Statement::ROW_AVAILABLE &&
+                   row_count < results.size()) {
                 // OPTIMIZATION: Write directly into pre-constructed object
                 T& obj = results[row_count];
 
@@ -177,10 +177,10 @@ export namespace storm::orm::statements {
             std::vector<T> results;
             results.resize(10000); // Pre-allocate
 
-            int step_result;
+            int    step_result;
             size_t row_count = 0;
-            while ((step_result = cached_join_stmt_->step_raw()) == Statement::ROW_AVAILABLE
-                   && row_count < results.size()) {
+            while ((step_result = cached_join_stmt_->step_raw()) == Statement::ROW_AVAILABLE &&
+                   row_count < results.size()) {
                 T& obj = results[row_count];
 
                 // Use JoinStatement's extraction logic via virtual method
@@ -212,19 +212,15 @@ export namespace storm::orm::statements {
 
       private:
         // Helper to detect if a type is std::optional
-        template <typename T2>
-        struct is_optional_type : std::false_type {};
+        template <typename T2> struct is_optional_type : std::false_type {};
 
-        template <typename T2>
-        struct is_optional_type<std::optional<T2>> : std::true_type {};
+        template <typename T2> struct is_optional_type<std::optional<T2>> : std::true_type {};
 
-        template <typename T2>
-        static constexpr bool is_optional_type_v = is_optional_type<T2>::value;
+        template <typename T2> static constexpr bool is_optional_type_v = is_optional_type<T2>::value;
 
         // OPTIMIZATION: Fast column extraction without error checking using abstracted interface
         template <size_t Index>
-        __attribute__((always_inline)) static inline void
-        extract_column_inline_fast(Statement* stmt, T& obj) noexcept {
+        __attribute__((always_inline)) static inline void extract_column_inline_fast(Statement* stmt, T& obj) noexcept {
             if constexpr (Index < Base::field_count_) {
                 constexpr auto member = Base::all_members_[Index];
                 using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
@@ -232,7 +228,7 @@ export namespace storm::orm::statements {
                 // Handle FK fields - populate only the primary key
                 if constexpr (Base::is_fk_field(member)) {
                     constexpr auto fk_pk_member = Base::template find_fk_primary_key<FieldType>();
-                    using PKType = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
+                    using PKType                = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
 
                     // Extract PK value based on its type
                     if constexpr (std::is_same_v<PKType, int>) {
@@ -282,36 +278,29 @@ export namespace storm::orm::statements {
                 // Integer types
                 else if constexpr (std::is_same_v<FieldType, int>) {
                     obj.[:member:] = stmt->extract_int(Index);
-                }
-                else if constexpr (std::is_same_v<FieldType, int64_t> ||
-                                  std::is_same_v<FieldType, long> ||
-                                  std::is_same_v<FieldType, long long>) {
+                } else if constexpr (std::is_same_v<FieldType, int64_t> || std::is_same_v<FieldType, long> ||
+                                     std::is_same_v<FieldType, long long>) {
                     obj.[:member:] = static_cast<FieldType>(stmt->extract_int64(Index));
-                }
-                else if constexpr (std::is_same_v<FieldType, uint64_t> ||
-                                  std::is_same_v<FieldType, unsigned long> ||
-                                  std::is_same_v<FieldType, unsigned long long>) {
+                } else if constexpr (std::is_same_v<FieldType, uint64_t> || std::is_same_v<FieldType, unsigned long> ||
+                                     std::is_same_v<FieldType, unsigned long long>) {
                     obj.[:member:] = static_cast<FieldType>(stmt->extract_int64(Index));
-                }
-                else if constexpr (std::is_same_v<FieldType, short> ||
-                                  std::is_same_v<FieldType, unsigned short> ||
-                                  std::is_same_v<FieldType, unsigned int>) {
+                } else if constexpr (std::is_same_v<FieldType, short> || std::is_same_v<FieldType, unsigned short> ||
+                                     std::is_same_v<FieldType, unsigned int>) {
                     obj.[:member:] = static_cast<FieldType>(stmt->extract_int(Index));
                 }
                 // Floating point types
                 else if constexpr (std::is_same_v<FieldType, double>) {
                     obj.[:member:] = stmt->extract_double(Index);
-                }
-                else if constexpr (std::is_same_v<FieldType, float>) {
+                } else if constexpr (std::is_same_v<FieldType, float>) {
                     obj.[:member:] = stmt->extract_float(Index);
                 }
                 // BLOB types
                 else if constexpr (std::is_same_v<FieldType, std::vector<uint8_t>> ||
-                                  std::is_same_v<FieldType, std::vector<unsigned char>>) {
+                                   std::is_same_v<FieldType, std::vector<unsigned char>>) {
                     auto [blob_ptr, blob_size] = stmt->extract_blob(Index);
                     if (blob_ptr && blob_size > 0) {
                         const uint8_t* data = static_cast<const uint8_t*>(blob_ptr);
-                        obj.[:member:] = std::vector<uint8_t>(data, data + blob_size);
+                        obj.[:member:]      = std::vector<uint8_t>(data, data + blob_size);
                     } else {
                         obj.[:member:].clear();
                     }
@@ -346,7 +335,7 @@ export namespace storm::orm::statements {
 
         Connection&        conn_;
         mutable Statement* cached_select_stmt_ = nullptr; // Statement caching for simple SELECT
-        mutable Statement* cached_join_stmt_ = nullptr;   // Separate cache for JOIN queries
+        mutable Statement* cached_join_stmt_   = nullptr; // Separate cache for JOIN queries
     };
 
 } // namespace storm::orm::statements

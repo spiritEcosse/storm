@@ -50,10 +50,10 @@ export namespace storm::orm::statements {
         static consteval auto build_field_assignments() {
             // Get all members directly
             auto members = std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked());
-            auto pk = Base::primary_key_;
+            auto pk      = Base::primary_key_;
 
             ConstexprString<1024> result;
-            bool first = true;
+            bool                  first = true;
 
             for (const auto& member : members) {
                 if (member != pk) {
@@ -82,20 +82,20 @@ export namespace storm::orm::statements {
         // Compile-time UPDATE SQL size calculation
         static consteval size_t calculate_update_sql_size() {
             size_t size = 0;
-            size += 7;  // "UPDATE "
+            size += 7; // "UPDATE "
             size += Base::table_name_.size();
-            size += 5;  // " SET "
+            size += 5; // " SET "
             size += field_assignments_.len;
-            size += 7;  // " WHERE "
+            size += 7; // " WHERE "
             size += Base::pk_name_.size();
-            size += 4;  // " = ?"
-            size += 1;  // null terminator
+            size += 4; // " = ?"
+            size += 1; // null terminator
             return size;
         }
 
         // Build UPDATE SQL at compile-time using ConstexprString
         static consteval auto build_update_sql_array() {
-            constexpr size_t sql_size = calculate_update_sql_size() + 50; // Add buffer for safety
+            constexpr size_t          sql_size = calculate_update_sql_size() + 50; // Add buffer for safety
             ConstexprString<sql_size> result;
 
             result.append("UPDATE ");
@@ -140,26 +140,26 @@ export namespace storm::orm::statements {
 
             // Multiple updates - use transaction wrapper with individual statements
             return Base::template execute_with_transaction<ConnType>(
-                conn_,
-                true, // Always use transaction for batch updates
-                [this, objects]() -> std::expected<void, Error> {
-                    return execute_individual_batch(objects);
-                }
+                    conn_,
+                    true, // Always use transaction for batch updates
+                    [this, objects]() -> std::expected<void, Error> { return execute_individual_batch(objects); }
             );
         }
 
         // Helper template for inline binding at compile-time index
         template <size_t Index>
-        [[nodiscard]] __attribute__((always_inline)) static constexpr auto inline_bind_field_if_not_pk(Statement* stmt, const T& obj, int& param_index) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] __attribute__((always_inline)) static constexpr auto
+        inline_bind_field_if_not_pk(Statement* stmt, const T& obj, int& param_index) noexcept
+                -> std::expected<void, Error> {
             if constexpr (Index < Base::field_count_) {
                 constexpr auto member = Base::all_members_[Index];
                 if constexpr (member != Base::primary_key_) {
                     // Check if this is a FK field - if so, extract and bind the PK value
                     if constexpr (Base::is_fk_field(member)) {
-                        auto fk_object = obj.[:member:];
-                        using FKType = std::remove_cvref_t<decltype(fk_object)>;
+                        auto fk_object              = obj.[:member:];
+                        using FKType                = std::remove_cvref_t<decltype(fk_object)>;
                         constexpr auto fk_pk_member = Base::template find_fk_primary_key<FKType>();
-                        auto pk_value = fk_object.[:fk_pk_member:];
+                        auto           pk_value     = fk_object.[:fk_pk_member:];
                         auto bind_result = Base::template bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
                         if (!bind_result) {
                             return std::unexpected(bind_result.error());
@@ -180,7 +180,9 @@ export namespace storm::orm::statements {
 
         // Helper to unroll inline binding for all fields
         template <size_t... Is>
-        [[nodiscard]] __attribute__((always_inline)) static auto inline_bind_all_fields(Statement* stmt, const T& obj, std::index_sequence<Is...>) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] __attribute__((always_inline)) static auto
+        inline_bind_all_fields(Statement* stmt, const T& obj, std::index_sequence<Is...>) noexcept
+                -> std::expected<void, Error> {
             int param_index = 1;
 
             // Unroll all field bindings at compile time
@@ -194,10 +196,10 @@ export namespace storm::orm::statements {
             // Bind primary key last - use BaseStatement for all types
             // Note: PK should never be a FK field, but handle it anyway for safety
             if constexpr (Base::is_fk_field(Base::primary_key_)) {
-                auto fk_object = obj.[:Base::primary_key_:];
-                using FKType = std::remove_cvref_t<decltype(fk_object)>;
+                auto fk_object              = obj.[:Base::primary_key_:];
+                using FKType                = std::remove_cvref_t<decltype(fk_object)>;
                 constexpr auto fk_pk_member = Base::template find_fk_primary_key<FKType>();
-                auto pk_value = fk_object.[:fk_pk_member:];
+                auto           pk_value     = fk_object.[:fk_pk_member:];
                 return Base::template bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
             } else {
                 auto pk_value = obj.[:Base::primary_key_:];
@@ -206,7 +208,8 @@ export namespace storm::orm::statements {
         }
 
         // Ultra-optimized single UPDATE - pre-cached statement, fully inlined binding
-        [[nodiscard]] __attribute__((hot)) auto execute_single_optimized(const T& obj) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] __attribute__((hot)) auto execute_single_optimized(const T& obj) noexcept
+                -> std::expected<void, Error> {
             // Get or cache the prepared statement
             if (!cached_update_stmt_) {
                 auto stmt_result = conn_.prepare_cached(get_update_sql());
@@ -236,7 +239,8 @@ export namespace storm::orm::statements {
       private:
         // Helper template to bind field at compile-time index
         template <size_t Index>
-        [[nodiscard]] auto bind_field_if_not_pk(Statement& stmt, const T& obj, int& param_index) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] auto bind_field_if_not_pk(Statement& stmt, const T& obj, int& param_index) noexcept
+                -> std::expected<void, Error> {
             if constexpr (Index < Base::field_count_) {
                 constexpr auto member = Base::all_members_[Index];
                 if constexpr (member != Base::primary_key_) {
@@ -253,7 +257,9 @@ export namespace storm::orm::statements {
 
         // Helper to bind all updatable fields using index sequence
         template <size_t... Is>
-        [[nodiscard]] auto bind_updatable_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...>) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] auto
+        bind_updatable_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...>) noexcept
+                -> std::expected<void, Error> {
             int param_index = 1;
 
             // Bind all non-primary-key fields using fold expression
@@ -279,30 +285,28 @@ export namespace storm::orm::statements {
         // Execute individual updates for batch operations (caller handles transaction)
         [[nodiscard]] auto execute_individual_batch(std::span<const T> objects) noexcept -> std::expected<void, Error> {
             return Base::template execute_with_statement<ConnType>(
-                conn_,
-                get_update_sql(),
-                [this, objects](auto& stmt) -> std::expected<void, Error> {
-                    for (const auto& obj : objects) {
-                        // Reset and bind all fields
-                        stmt.reset();
+                    conn_, get_update_sql(), [this, objects](auto& stmt) -> std::expected<void, Error> {
+                        for (const auto& obj : objects) {
+                            // Reset and bind all fields
+                            stmt.reset();
 
-                        auto bind_result = bind_updatable_fields(stmt, obj);
-                        if (!bind_result) {
-                            return std::unexpected(bind_result.error());
-                        }
+                            auto bind_result = bind_updatable_fields(stmt, obj);
+                            if (!bind_result) {
+                                return std::unexpected(bind_result.error());
+                            }
 
-                        // Execute this update
-                        auto exec_result = stmt.execute();
-                        if (!exec_result) {
-                            return std::unexpected(exec_result.error());
+                            // Execute this update
+                            auto exec_result = stmt.execute();
+                            if (!exec_result) {
+                                return std::unexpected(exec_result.error());
+                            }
                         }
+                        return {};
                     }
-                    return {};
-                }
             );
         }
 
-        Connection& conn_;
+        Connection&        conn_;
         mutable Statement* cached_update_stmt_ = nullptr; // Cached statement for optimized single UPDATE
     };
 

@@ -15,10 +15,10 @@ struct User {
 };
 
 struct Message {
-    [[= storm::meta::FieldAttr::primary]] int  id;
-    [[= storm::meta::FieldAttr::fk]] User      sender;
-    [[= storm::meta::FieldAttr::fk]] User      receiver;
-    std::string                                text;
+    [[= storm::meta::FieldAttr::primary]] int id;
+    [[= storm::meta::FieldAttr::fk]] User     sender;
+    [[= storm::meta::FieldAttr::fk]] User     receiver;
+    std::string                               text;
 };
 
 // Test fixture for FK field operations
@@ -69,16 +69,21 @@ TEST_F(FKFieldTest, InsertWithFKField) {
     User alice{0, "Alice", 30};
     User bob{0, "Bob", 25};
     auto alice_result = user_qs.insert(alice);
-    auto bob_result = user_qs.insert(bob);
+    auto bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value()) << "Alice INSERT failed: " << alice_result.error().message();
     ASSERT_TRUE(bob_result.has_value()) << "Bob INSERT failed: " << bob_result.error().message();
 
     int64_t alice_id = alice_result.value();
-    int64_t bob_id = bob_result.value();
+    int64_t bob_id   = bob_result.value();
 
     // Insert a message with FK to Alice (sender) and Bob (receiver)
     // Only sender.id and receiver.id are used, name and age are ignored
-    Message msg{0, User{static_cast<int>(alice_id), "ignored", 0}, User{static_cast<int>(bob_id), "ignored", 0}, "Hello World"};
+    Message msg{
+            0,
+            User{static_cast<int>(alice_id), "ignored", 0},
+            User{static_cast<int>(bob_id), "ignored", 0},
+            "Hello World"
+    };
 
     auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value()) << "Message INSERT failed: " << msg_result.error().message();
@@ -97,7 +102,7 @@ TEST_F(FKFieldTest, InsertWithFKField) {
     int step_result = stmt.step_raw();
     ASSERT_EQ(step_result, decltype(stmt)::ROW_AVAILABLE);
 
-    int64_t stored_sender_id = stmt.extract_int64(0);
+    int64_t stored_sender_id   = stmt.extract_int64(0);
     int64_t stored_receiver_id = stmt.extract_int64(1);
     EXPECT_EQ(stored_sender_id, alice_id) << "Sender FK value should match Alice ID";
     EXPECT_EQ(stored_receiver_id, bob_id) << "Receiver FK value should match Bob ID";
@@ -111,11 +116,11 @@ TEST_F(FKFieldTest, SelectWithFKFieldPartialPopulation) {
     // Insert users
     User bob{0, "Bob", 25};
     User charlie{0, "Charlie", 35};
-    auto bob_result = user_qs.insert(bob);
+    auto bob_result     = user_qs.insert(bob);
     auto charlie_result = user_qs.insert(charlie);
     ASSERT_TRUE(bob_result.has_value());
     ASSERT_TRUE(charlie_result.has_value());
-    int64_t bob_id = bob_result.value();
+    int64_t bob_id     = bob_result.value();
     int64_t charlie_id = charlie_result.value();
 
     // Insert a message from Bob to Charlie
@@ -135,13 +140,11 @@ TEST_F(FKFieldTest, SelectWithFKFieldPartialPopulation) {
 
     // Verify FK fields: only PK should be populated
     EXPECT_EQ(messages[0].sender.id, bob_id) << "Sender FK PK should be populated";
-    EXPECT_EQ(messages[0].sender.name, "")
-            << "Sender FK non-PK fields should remain default (empty string)";
+    EXPECT_EQ(messages[0].sender.name, "") << "Sender FK non-PK fields should remain default (empty string)";
     EXPECT_EQ(messages[0].sender.age, 0) << "Sender FK non-PK fields should remain default (0)";
 
     EXPECT_EQ(messages[0].receiver.id, charlie_id) << "Receiver FK PK should be populated";
-    EXPECT_EQ(messages[0].receiver.name, "")
-            << "Receiver FK non-PK fields should remain default (empty string)";
+    EXPECT_EQ(messages[0].receiver.name, "") << "Receiver FK non-PK fields should remain default (empty string)";
     EXPECT_EQ(messages[0].receiver.age, 0) << "Receiver FK non-PK fields should remain default (0)";
 }
 
@@ -151,15 +154,21 @@ TEST_F(FKFieldTest, BatchInsertWithFKFields) {
     QuerySet<Message> message_qs;
 
     // Insert users
-    std::vector<User> users = {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Charlie", 35}, {4, "Dave", 40}};
+    std::vector<User> users       = {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Charlie", 35}, {4, "Dave", 40}};
     auto              user_result = user_qs.insert(std::span<const User>(users));
     ASSERT_TRUE(user_result.has_value());
     const auto& user_ids = user_result.value();
 
     // Insert messages with FK references (Alice to Bob, Charlie to Dave)
-    std::vector<Message> messages = {
-            {1, User{static_cast<int>(user_ids[0]), "", 0}, User{static_cast<int>(user_ids[1]), "", 0}, "Message from Alice to Bob"},
-            {2, User{static_cast<int>(user_ids[2]), "", 0}, User{static_cast<int>(user_ids[3]), "", 0}, "Message from Charlie to Dave"}};
+    std::vector<Message> messages =
+            {{1,
+              User{static_cast<int>(user_ids[0]), "", 0},
+              User{static_cast<int>(user_ids[1]), "", 0},
+              "Message from Alice to Bob"},
+             {2,
+              User{static_cast<int>(user_ids[2]), "", 0},
+              User{static_cast<int>(user_ids[3]), "", 0},
+              "Message from Charlie to Dave"}};
 
     auto msg_result = message_qs.insert(std::span<const Message>(messages));
     ASSERT_TRUE(msg_result.has_value()) << "Batch INSERT failed: " << msg_result.error().message();
@@ -192,20 +201,20 @@ TEST_F(FKFieldTest, UpdateWithFKField) {
     User charlie{0, "Charlie", 35};
     User dave{0, "Dave", 40};
 
-    auto alice_result = user_qs.insert(alice);
-    auto bob_result   = user_qs.insert(bob);
+    auto alice_result   = user_qs.insert(alice);
+    auto bob_result     = user_qs.insert(bob);
     auto charlie_result = user_qs.insert(charlie);
-    auto dave_result = user_qs.insert(dave);
+    auto dave_result    = user_qs.insert(dave);
 
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     ASSERT_TRUE(charlie_result.has_value());
     ASSERT_TRUE(dave_result.has_value());
 
-    int64_t alice_id = alice_result.value();
-    int64_t bob_id   = bob_result.value();
+    int64_t alice_id   = alice_result.value();
+    int64_t bob_id     = bob_result.value();
     int64_t charlie_id = charlie_result.value();
-    int64_t dave_id = dave_result.value();
+    int64_t dave_id    = dave_result.value();
 
     // Insert message from Alice to Bob
     Message msg{0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Original message"};
@@ -216,7 +225,11 @@ TEST_F(FKFieldTest, UpdateWithFKField) {
 
     // Update message: change sender to Charlie, receiver to Dave, and text
     Message updated_msg{
-            static_cast<int>(msg_id), User{static_cast<int>(charlie_id), "", 0}, User{static_cast<int>(dave_id), "", 0}, "Updated message"};
+            static_cast<int>(msg_id),
+            User{static_cast<int>(charlie_id), "", 0},
+            User{static_cast<int>(dave_id), "", 0},
+            "Updated message"
+    };
 
     auto update_result = message_qs.update(updated_msg);
     ASSERT_TRUE(update_result.has_value()) << "UPDATE failed: " << update_result.error().message();
@@ -243,23 +256,28 @@ TEST_F(FKFieldTest, DeleteWithFKField) {
     User alice{0, "Alice", 30};
     User bob{0, "Bob", 25};
     auto alice_result = user_qs.insert(alice);
-    auto bob_result = user_qs.insert(bob);
+    auto bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t alice_id = alice_result.value();
-    int64_t bob_id = bob_result.value();
+    int64_t bob_id   = bob_result.value();
 
     // Insert messages from Alice to Bob
-    std::vector<Message> messages = {
-            {1, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Message 1"},
-            {2, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Message 2"}};
+    std::vector<Message> messages =
+            {{1, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Message 1"},
+             {2, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Message 2"}};
 
     auto msg_result = message_qs.insert(std::span<const Message>(messages));
     ASSERT_TRUE(msg_result.has_value());
     const auto& msg_ids = msg_result.value();
 
     // Delete first message
-    Message to_delete{static_cast<int>(msg_ids[0]), User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, ""};
+    Message to_delete{
+            static_cast<int>(msg_ids[0]),
+            User{static_cast<int>(alice_id), "", 0},
+            User{static_cast<int>(bob_id), "", 0},
+            ""
+    };
 
     auto delete_result = message_qs.remove(to_delete);
     ASSERT_TRUE(delete_result.has_value()) << "DELETE failed: " << delete_result.error().message();
@@ -278,24 +296,24 @@ TEST_F(FKFieldTest, DeleteWithFKField) {
 TEST_F(FKFieldTest, MultipleFKFieldsToSameType) {
     // Create a conversation struct with two FK fields to User
     struct Conversation {
-        [[= storm::meta::FieldAttr::primary]] int  id;
-        [[= storm::meta::FieldAttr::fk]] User      sender;
-        [[= storm::meta::FieldAttr::fk]] User      receiver;
-        std::string                                message;
+        [[= storm::meta::FieldAttr::primary]] int id;
+        [[= storm::meta::FieldAttr::fk]] User     sender;
+        [[= storm::meta::FieldAttr::fk]] User     receiver;
+        std::string                               message;
     };
 
     QuerySet<User>         user_qs;
     QuerySet<Conversation> conv_qs;
 
     // Create conversation table
-    auto& conn         = QuerySet<User>::get_default_connection();
+    auto& conn               = QuerySet<User>::get_default_connection();
     auto  create_conv_result = conn.execute(
             "CREATE TABLE Conversation ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-            "sender_id INTEGER NOT NULL, "
-            "receiver_id INTEGER NOT NULL, "
-            "message TEXT NOT NULL"
-            ")"
+             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+             "sender_id INTEGER NOT NULL, "
+             "receiver_id INTEGER NOT NULL, "
+             "message TEXT NOT NULL"
+             ")"
     );
     ASSERT_TRUE(create_conv_result.has_value());
 
@@ -313,11 +331,7 @@ TEST_F(FKFieldTest, MultipleFKFieldsToSameType) {
     int64_t bob_id   = bob_result.value();
 
     // Insert conversation from Alice to Bob
-    Conversation conv{
-            0,
-            User{static_cast<int>(alice_id), "", 0},
-            User{static_cast<int>(bob_id), "", 0},
-            "Hello Bob!"};
+    Conversation conv{0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Hello Bob!"};
 
     auto conv_result = conv_qs.insert(conv);
     ASSERT_TRUE(conv_result.has_value()) << "Conversation INSERT failed: " << conv_result.error().message();
@@ -343,11 +357,11 @@ TEST_F(FKFieldTest, JoinFullyPopulatesFKObject) {
     User alice{0, "Alice", 30};
     User bob{0, "Bob", 25};
     auto alice_result = user_qs.insert(alice);
-    auto bob_result = user_qs.insert(bob);
+    auto bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t alice_id = alice_result.value();
-    int64_t bob_id = bob_result.value();
+    int64_t bob_id   = bob_result.value();
 
     // Insert message from Alice to Bob
     Message msg{0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Hello from JOIN!"};
@@ -385,15 +399,17 @@ TEST_F(FKFieldTest, JoinMultipleFKFields) {
     User alice{0, "Alice", 30};
     User bob{0, "Bob", 25};
     auto alice_result = user_qs.insert(alice);
-    auto bob_result = user_qs.insert(bob);
+    auto bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t alice_id = alice_result.value();
-    int64_t bob_id = bob_result.value();
+    int64_t bob_id   = bob_result.value();
 
     // Insert message from Alice to Bob
-    Message msg{0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Hello from multi-JOIN!"};
-    auto    msg_result = message_qs.insert(msg);
+    Message msg{
+            0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Hello from multi-JOIN!"
+    };
+    auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
 
     // Phase 3: Multi-JOIN to get BOTH sender and receiver fully populated

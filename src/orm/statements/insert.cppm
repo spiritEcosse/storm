@@ -195,7 +195,9 @@ export namespace storm::orm::statements {
 
             // Fast path for single object - use optimized cached statement
             if (objects.size() == 1) {
-                return execute_single_optimized(objects[0]).transform([](int64_t id) { return std::vector<int64_t>{id}; });
+                return execute_single_optimized(objects[0]).transform([](int64_t id) {
+                    return std::vector<int64_t>{id};
+                });
             }
 
             // Batch path
@@ -203,7 +205,8 @@ export namespace storm::orm::statements {
         }
 
         // Ultra-optimized single INSERT - pre-cached statement, inlined execution
-        [[nodiscard]] __attribute__((hot)) auto execute_single_optimized(const T& obj) noexcept -> std::expected<int64_t, Error> {
+        [[nodiscard]] __attribute__((hot)) auto execute_single_optimized(const T& obj) noexcept
+                -> std::expected<int64_t, Error> {
             // Get or cache the prepared statement
             if (!cached_insert_stmt_) {
                 auto stmt_result = conn_.prepare_cached(get_insert_sql());
@@ -258,7 +261,7 @@ export namespace storm::orm::statements {
                                 [this, objects](Statement stmt) -> std::expected<std::vector<int64_t>, Error> {
                                     return Base::template bind_non_pk_objects_bulk_impl<ConnType, Statement>(
                                                    stmt, objects, typename Base::field_indices_t()
-                                           )
+                                    )
                                             .and_then([&stmt]() { return stmt.execute(); })
                                             .transform([this, objects]() {
                                                 // Get the last inserted row ID

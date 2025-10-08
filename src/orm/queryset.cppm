@@ -81,7 +81,7 @@ export namespace storm {
         //   Single FK: message_qs.join<&Message::sender>().select()
         //   Multi FK:  message_qs.join<&Message::sender, &Message::receiver>().select()
         template <auto... FKFieldPtrs>
-            requires (sizeof...(FKFieldPtrs) >= 1)
+            requires(sizeof...(FKFieldPtrs) >= 1)
         constexpr auto&& join(this auto&& self) {
             // Create and store JoinStatement
             self.join_stmt_ = std::make_unique<orm::statements::JoinStatement<T, ConnType, FKFieldPtrs...>>();
@@ -138,8 +138,7 @@ export namespace storm {
 
       private:
         // Helper for perfect forwarding in method chaining (deducing this pattern)
-        template <typename Self>
-        static constexpr decltype(auto) self_cast(Self&& self) {
+        template <typename Self> static constexpr decltype(auto) self_cast(Self&& self) {
             return std::forward<Self>(self);
         }
 

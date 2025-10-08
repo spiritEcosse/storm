@@ -167,7 +167,8 @@ export namespace storm::orm::statements {
         }
 
         // Ultra-optimized single DELETE - pre-cached statement, inlined execution
-        [[nodiscard]] __attribute__((hot)) auto execute_single_optimized(const T& obj) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] __attribute__((hot)) auto execute_single_optimized(const T& obj) noexcept
+                -> std::expected<void, Error> {
             // Get or cache the prepared statement
             if (!cached_delete_stmt_) {
                 auto stmt_result = conn_.prepare_cached(get_delete_sql());
@@ -204,7 +205,8 @@ export namespace storm::orm::statements {
         }
 
         // Bulk execute using IN clause for better performance on small batches
-        [[nodiscard]] __attribute__((hot)) auto execute_bulk(std::span<const T> objects) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] __attribute__((hot)) auto execute_bulk(std::span<const T> objects) noexcept
+                -> std::expected<void, Error> {
             auto bulk_sql = get_bulk_delete_sql(objects.size());
 
             return conn_.prepare(bulk_sql).and_then([this, objects](Statement stmt) -> std::expected<void, Error> {

@@ -70,8 +70,7 @@ export namespace storm::orm::statements {
         }
 
         // Find primary key of a FK type
-        template<typename FKType>
-        static consteval std::meta::info find_fk_primary_key() {
+        template <typename FKType> static consteval std::meta::info find_fk_primary_key() {
             for (std::meta::info member :
                  std::meta::nonstatic_data_members_of(^^FKType, std::meta::access_context::unchecked())) {
                 auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
@@ -100,8 +99,8 @@ export namespace storm::orm::statements {
 
         // Calculate size of field names string at compile-time (for constexpr SQL size calculations)
         static consteval size_t calculate_field_names_size() {
-            size_t size = 0;
-            bool first = true;
+            size_t size  = 0;
+            bool   first = true;
             for (size_t i = 0; i < field_count_; ++i) {
                 if (!first) {
                     size += 2; // ", "
@@ -121,8 +120,8 @@ export namespace storm::orm::statements {
 
         // Calculate size of non-PK field names string at compile-time
         static consteval size_t calculate_non_pk_field_names_size() {
-            size_t size = 0;
-            bool first = true;
+            size_t size  = 0;
+            bool   first = true;
             for (size_t i = 0; i < field_count_; ++i) {
                 // Skip primary key field
                 if (all_members_[i] == primary_key_) {
@@ -147,9 +146,9 @@ export namespace storm::orm::statements {
         // Build comma-separated list of all field names (for SELECT statements)
         // FK fields are mapped to their column names (User sender → sender_id)
         static consteval auto build_all_field_names_list() {
-            constexpr size_t size = calculate_field_names_size() + 10; // Add buffer
+            constexpr size_t      size = calculate_field_names_size() + 10; // Add buffer
             ConstexprString<size> result;
-            bool        first = true;
+            bool                  first = true;
             for (size_t i = 0; i < field_count_; ++i) {
                 if (!first) {
                     result.append(", ");
@@ -171,9 +170,9 @@ export namespace storm::orm::statements {
         // Build comma-separated list of NON-PRIMARY KEY fields (for INSERT statements)
         // Excludes primary key to allow auto-increment
         static consteval auto build_non_pk_field_names_list() {
-            constexpr size_t size = calculate_non_pk_field_names_size() + 10; // Add buffer
+            constexpr size_t      size = calculate_non_pk_field_names_size() + 10; // Add buffer
             ConstexprString<size> result;
-            bool        first = true;
+            bool                  first = true;
             for (size_t i = 0; i < field_count_; ++i) {
                 // Skip primary key field
                 if (all_members_[i] == primary_key_) {
@@ -199,10 +198,10 @@ export namespace storm::orm::statements {
 
       public:
         // Pre-computed field information - made public for QuerySet and JOIN optimization
-        static constexpr auto field_count_ = get_field_count();
-        static constexpr auto all_members_ = get_all_field_members<field_count_>();
-        static constexpr auto field_names_array_ = build_all_field_names_list();
-        static inline const std::string field_names_ = std::string(field_names_array_);
+        static constexpr auto           field_count_       = get_field_count();
+        static constexpr auto           all_members_       = get_all_field_members<field_count_>();
+        static constexpr auto           field_names_array_ = build_all_field_names_list();
+        static inline const std::string field_names_       = std::string(field_names_array_);
 
         // Reflection data - made public for JOIN statement access
         static constexpr auto primary_key_ = find_primary_key_impl();
@@ -233,20 +232,22 @@ export namespace storm::orm::statements {
         [[nodiscard]] static auto
         bind_non_pk_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...>) noexcept
                 -> std::expected<void, typename ConnType::Error> {
-            int param_index = 1;
-            bool bind_ok = true;
+            int  param_index = 1;
+            bool bind_ok     = true;
 
             // Bind each field, skipping the PK
-            ((bind_ok = bind_ok && [&]() {
-                if constexpr (Is < field_count_) {
-                    if (all_members_[Is] != primary_key_) {
-                        bool result = bind_field_at_index<ConnType, Is>(stmt, obj, param_index);
-                        param_index++;
-                        return result;
-                    }
-                }
-                return true;
-            }()), ...);
+            ((bind_ok = bind_ok &&
+                        [&]() {
+                            if constexpr (Is < field_count_) {
+                                if (all_members_[Is] != primary_key_) {
+                                    bool result = bind_field_at_index<ConnType, Is>(stmt, obj, param_index);
+                                    param_index++;
+                                    return result;
+                                }
+                            }
+                            return true;
+                        }()),
+             ...);
 
             if (!bind_ok) {
                 return std::unexpected(typename ConnType::Error{-1, "Field binding failed"});
@@ -263,11 +264,11 @@ export namespace storm::orm::statements {
 
                 // Check if this is a FK field - if so, extract and bind the PK value
                 if constexpr (is_fk_field(member)) {
-                    auto fk_object = obj.[:member:];
-                    using FKType = std::remove_cvref_t<decltype(fk_object)>;
+                    auto fk_object              = obj.[:member:];
+                    using FKType                = std::remove_cvref_t<decltype(fk_object)>;
                     constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
-                    auto pk_value = fk_object.[:fk_pk_member:];
-                    auto result = bind_value_by_type<ConnType>(stmt, param_index, pk_value);
+                    auto           pk_value     = fk_object.[:fk_pk_member:];
+                    auto           result       = bind_value_by_type<ConnType>(stmt, param_index, pk_value);
                     return result.has_value();
                 } else {
                     auto field_value = obj.[:member:];
@@ -289,10 +290,10 @@ export namespace storm::orm::statements {
                     constexpr auto member = all_members_[Index];
                     // Handle FK fields
                     if constexpr (is_fk_field(member)) {
-                        auto fk_object = obj.[:member:];
-                        using FKType = std::remove_cvref_t<decltype(fk_object)>;
+                        auto fk_object              = obj.[:member:];
+                        using FKType                = std::remove_cvref_t<decltype(fk_object)>;
                         constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
-                        auto pk_value = fk_object.[:fk_pk_member:];
+                        auto           pk_value     = fk_object.[:fk_pk_member:];
                         return bind_value_by_type<ConnType>(stmt, Index + 1, pk_value);
                     } else {
                         auto field_value = obj.[:member:];
@@ -330,28 +331,30 @@ export namespace storm::orm::statements {
 
         // Helper for bulk INSERT binding (skips PK for auto-increment)
         template <typename ConnType, typename Statement, typename ContainerType, size_t... Is>
-        [[nodiscard]] static auto
-        bind_non_pk_objects_bulk_impl(Statement& stmt, const ContainerType& objects, std::index_sequence<Is...>) noexcept
-                -> std::expected<void, typename ConnType::Error> {
-            int param_index = 1;
+        [[nodiscard]] static auto bind_non_pk_objects_bulk_impl(
+                Statement& stmt, const ContainerType& objects, std::index_sequence<Is...>
+        ) noexcept -> std::expected<void, typename ConnType::Error> {
+            int              param_index  = 1;
             constexpr size_t non_pk_count = field_count_ - 1;
 
             // Bind each object's non-PK fields sequentially
             for (const auto& obj : objects) {
-                int field_param = param_index;
-                bool bind_ok = true;
+                int  field_param = param_index;
+                bool bind_ok     = true;
 
                 // Bind fields skipping PK
-                ((bind_ok = bind_ok && [&]() {
-                    if constexpr (Is < field_count_) {
-                        if (all_members_[Is] != primary_key_) {
-                            bool result = bind_field_at_index<ConnType, Is>(stmt, obj, field_param);
-                            field_param++;
-                            return result;
-                        }
-                    }
-                    return true;
-                }()), ...);
+                ((bind_ok = bind_ok &&
+                            [&]() {
+                                if constexpr (Is < field_count_) {
+                                    if (all_members_[Is] != primary_key_) {
+                                        bool result = bind_field_at_index<ConnType, Is>(stmt, obj, field_param);
+                                        field_param++;
+                                        return result;
+                                    }
+                                }
+                                return true;
+                            }()),
+                 ...);
 
                 if (!bind_ok) {
                     return std::unexpected(typename ConnType::Error{-1, "Bulk bind failed"});
@@ -374,10 +377,10 @@ export namespace storm::orm::statements {
                     constexpr auto member = all_members_[Index];
                     // Handle FK fields
                     if constexpr (is_fk_field(member)) {
-                        auto fk_object = obj.[:member:];
-                        using FKType = std::remove_cvref_t<decltype(fk_object)>;
+                        auto fk_object              = obj.[:member:];
+                        using FKType                = std::remove_cvref_t<decltype(fk_object)>;
                         constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
-                        auto pk_value = fk_object.[:fk_pk_member:];
+                        auto           pk_value     = fk_object.[:fk_pk_member:];
                         return bind_value_by_type<ConnType>(stmt, base_param_index + Index, pk_value);
                     } else {
                         auto field_value = obj.[:member:];
@@ -398,14 +401,11 @@ export namespace storm::orm::statements {
         static constexpr size_t MAX_SQLITE_VARIABLES = 999;
 
         // Helper to detect if a type is std::optional
-        template <typename TValue>
-        struct is_optional : std::false_type {};
+        template <typename TValue> struct is_optional : std::false_type {};
 
-        template <typename TValue>
-        struct is_optional<std::optional<TValue>> : std::true_type {};
+        template <typename TValue> struct is_optional<std::optional<TValue>> : std::true_type {};
 
-        template <typename TValue>
-        static constexpr bool is_optional_v = is_optional<TValue>::value;
+        template <typename TValue> static constexpr bool is_optional_v = is_optional<TValue>::value;
 
         // Common binding utilities for different types
         template <typename ConnType>
@@ -431,32 +431,25 @@ export namespace storm::orm::statements {
             // Integer types
             else if constexpr (std::is_same_v<ValueType, int>) {
                 return stmt.bind_int(param_index, value);
-            }
-            else if constexpr (std::is_same_v<ValueType, int64_t> ||
-                              std::is_same_v<ValueType, long> ||
-                              std::is_same_v<ValueType, long long>) {
+            } else if constexpr (std::is_same_v<ValueType, int64_t> || std::is_same_v<ValueType, long> ||
+                                 std::is_same_v<ValueType, long long>) {
                 return stmt.bind_int64(param_index, static_cast<int64_t>(value));
-            }
-            else if constexpr (std::is_same_v<ValueType, uint64_t> ||
-                              std::is_same_v<ValueType, unsigned long> ||
-                              std::is_same_v<ValueType, unsigned long long>) {
+            } else if constexpr (std::is_same_v<ValueType, uint64_t> || std::is_same_v<ValueType, unsigned long> ||
+                                 std::is_same_v<ValueType, unsigned long long>) {
                 return stmt.bind_int64(param_index, static_cast<int64_t>(value));
-            }
-            else if constexpr (std::is_same_v<ValueType, short> ||
-                              std::is_same_v<ValueType, unsigned short> ||
-                              std::is_same_v<ValueType, unsigned int>) {
+            } else if constexpr (std::is_same_v<ValueType, short> || std::is_same_v<ValueType, unsigned short> ||
+                                 std::is_same_v<ValueType, unsigned int>) {
                 return stmt.bind_int(param_index, static_cast<int>(value));
             }
             // Floating point types
             else if constexpr (std::is_same_v<ValueType, double>) {
                 return stmt.bind_double(param_index, value);
-            }
-            else if constexpr (std::is_same_v<ValueType, float>) {
+            } else if constexpr (std::is_same_v<ValueType, float>) {
                 return stmt.bind_double(param_index, static_cast<double>(value));
             }
             // BLOB types (std::vector<uint8_t>)
             else if constexpr (std::is_same_v<ValueType, std::vector<uint8_t>> ||
-                              std::is_same_v<ValueType, std::vector<unsigned char>>) {
+                               std::is_same_v<ValueType, std::vector<unsigned char>>) {
                 if (value.empty()) {
                     return stmt.bind_blob(param_index, nullptr, 0);
                 }
@@ -465,14 +458,11 @@ export namespace storm::orm::statements {
             // String types (must be last to avoid matching everything)
             else if constexpr (std::is_convertible_v<ValueType, std::string_view>) {
                 return stmt.bind_text(param_index, std::string_view{value});
-            }
-            else {
+            } else {
                 static_assert(
-                        std::is_same_v<ValueType, int> ||
-                        std::is_same_v<ValueType, int64_t> ||
-                        std::is_same_v<ValueType, double> ||
-                        std::is_same_v<ValueType, bool> ||
-                        std::is_convertible_v<ValueType, std::string_view>,
+                        std::is_same_v<ValueType, int> || std::is_same_v<ValueType, int64_t> ||
+                                std::is_same_v<ValueType, double> || std::is_same_v<ValueType, bool> ||
+                                std::is_convertible_v<ValueType, std::string_view>,
                         "Unsupported field type for binding. Supported types: "
                         "int, int64_t, long, short, unsigned variants, "
                         "float, double, bool, std::string, std::string_view, "

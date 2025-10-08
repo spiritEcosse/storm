@@ -47,8 +47,7 @@ export namespace storm::orm::utilities {
         }
 
         // Append another ConstexprString
-        template <size_t M>
-        consteval void append(const ConstexprString<M>& other) {
+        template <size_t M> consteval void append(const ConstexprString<M>& other) {
             for (size_t i = 0; i < other.len && len < N - 1; ++i) {
                 data[len] = other.data[i];
                 ++len;
