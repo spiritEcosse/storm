@@ -42,58 +42,49 @@ export namespace storm::orm::statements {
     //   Single FK: JoinStatement<Message, ConnType, &Message::sender>
     //   Multi FK:  JoinStatement<Message, ConnType, &Message::sender, &Message::receiver>
     template <typename T, storm::db::DatabaseConnection ConnType, auto... FKFieldPtrs>
-        requires (sizeof...(FKFieldPtrs) >= 1)
+        requires(sizeof...(FKFieldPtrs) >= 1)
     class JoinStatement : public IJoinStatement, private BaseStatement<T> {
         friend class BaseStatement<T>;
-        using Base = BaseStatement<T>;
+        using Base       = BaseStatement<T>;
         using Connection = ConnType;
-        using Error = typename ConnType::Error;
-        using Statement = typename ConnType::Statement;
+        using Error      = typename ConnType::Error;
+        using Statement  = typename ConnType::Statement;
 
         // Number of FK fields to join
         static constexpr size_t fk_count_ = sizeof...(FKFieldPtrs);
 
         // Extract FK type from member pointer at compile-time
-        template <auto FKPtr>
-        using FK_type = std::remove_cvref_t<decltype(std::declval<T>().*FKPtr)>;
+        template <auto FKPtr> using FK_type = std::remove_cvref_t<decltype(std::declval<T>().*FKPtr)>;
 
         // Generic parameter pack element access (DRY - used for both types and values)
-        template <size_t Idx, auto... Pack>
-        struct pack_element_at;
+        template <size_t Idx, auto... Pack> struct pack_element_at;
 
-        template <auto First, auto... Rest>
-        struct pack_element_at<0, First, Rest...> {
+        template <auto First, auto... Rest> struct pack_element_at<0, First, Rest...> {
             static constexpr auto value = First;
         };
 
         template <size_t Idx, auto First, auto... Rest>
-            requires (Idx > 0)
+            requires(Idx > 0)
         struct pack_element_at<Idx, First, Rest...> {
             static constexpr auto value = pack_element_at<Idx - 1, Rest...>::value;
         };
 
         // Get BaseStatement type for FK at index
-        template <size_t Idx>
-        using FKBase_at = BaseStatement<FK_type<pack_element_at<Idx, FKFieldPtrs...>::value>>;
+        template <size_t Idx> using FKBase_at = BaseStatement<FK_type<pack_element_at<Idx, FKFieldPtrs...>::value>>;
 
         // Calculate column offsets for each FK table
-        template <size_t... Is>
-        static constexpr auto calculate_column_offsets(std::index_sequence<Is...>) {
+        template <size_t... Is> static constexpr auto calculate_column_offsets(std::index_sequence<Is...>) {
             std::array<size_t, fk_count_> offsets{};
-            size_t current_offset = Base::field_count_;
+            size_t                        current_offset = Base::field_count_;
 
-            auto get_fk_field_count = []<size_t I>() constexpr {
-                return FKBase_at<I>::field_count_;
-            };
+            auto get_fk_field_count = []<size_t I>() constexpr { return FKBase_at<I>::field_count_; };
 
-            ((offsets[Is] = current_offset,
-              current_offset += get_fk_field_count.template operator()<Is>()), ...);
+            ((offsets[Is] = current_offset, current_offset += get_fk_field_count.template operator()<Is>()), ...);
 
             return offsets;
         }
 
-        static constexpr auto column_offsets_ =
-            calculate_column_offsets(std::make_index_sequence<fk_count_>{});
+        static constexpr auto column_offsets_ = calculate_column_offsets(std::make_index_sequence<fk_count_>{});
 
         // Build FK field names at compile time
         template <size_t MemberIdx, size_t FKIdx>
@@ -129,7 +120,7 @@ export namespace storm::orm::statements {
         // Build qualified field list with table alias (e.g., "t1.id, t1.name")
         static std::string build_qualified_fields(std::string_view fields, std::string_view alias) {
             std::string result;
-            size_t pos = 0;
+            size_t      pos = 0;
             while (pos < fields.size()) {
                 result += alias;
                 result += '.';
@@ -148,8 +139,7 @@ export namespace storm::orm::statements {
         }
 
         // Build multi-JOIN SQL (works for single FK too)
-        template <size_t... Is>
-        std::string build_join_sql_impl(std::index_sequence<Is...>) const {
+        template <size_t... Is> std::string build_join_sql_impl(std::index_sequence<Is...>) const {
             std::string sql;
             sql.reserve(500 * fk_count_); // Pre-allocate
 
@@ -164,14 +154,14 @@ export namespace storm::orm::statements {
               sql += FKBase_at<Is>::pk_name_,
               sql += " = t1.",
               sql += get_fk_field_name_at(Is),
-              sql += "_id"), ...);
+              sql += "_id"),
+             ...);
 
             return sql;
         }
 
         // Build qualified SELECT fields for all tables
-        template <size_t... Is>
-        std::string build_select_fields_impl(std::index_sequence<Is...>) const {
+        template <size_t... Is> std::string build_select_fields_impl(std::index_sequence<Is...>) const {
             std::string fields;
             fields.reserve(1000);
 
@@ -179,16 +169,13 @@ export namespace storm::orm::statements {
             fields += build_qualified_fields(Base::field_names_, "t1");
 
             // FK table fields
-            ((fields += ", ",
-              fields += build_qualified_fields(FKBase_at<Is>::field_names_,
-                                              table_alias(Is + 2))), ...);
+            ((fields += ", ", fields += build_qualified_fields(FKBase_at<Is>::field_names_, table_alias(Is + 2))), ...);
 
             return fields;
         }
 
         // Get FK pointer at index (reuses pack_element_at)
-        template <size_t Idx>
-        static constexpr auto get_fk_ptr_at = pack_element_at<Idx, FKFieldPtrs...>::value;
+        template <size_t Idx> static constexpr auto get_fk_ptr_at = pack_element_at<Idx, FKFieldPtrs...>::value;
 
       public:
         JoinStatement() = default;
@@ -205,7 +192,7 @@ export namespace storm::orm::statements {
         // Virtual extraction method for polymorphic access
         void extract_row(void* stmt_ptr, void* obj_ptr) const override {
             auto* stmt = static_cast<Statement*>(stmt_ptr);
-            auto* obj = static_cast<T*>(obj_ptr);
+            auto* obj  = static_cast<T*>(obj_ptr);
             extract_joined_row(stmt, *obj);
         }
 
@@ -234,8 +221,7 @@ export namespace storm::orm::statements {
 
         // Extract single column for T (skip FK fields - they're populated separately)
         template <size_t MemberIdx>
-        __attribute__((always_inline)) static void
-        extract_column_at(Statement* stmt, T& obj, int col_idx) noexcept {
+        __attribute__((always_inline)) static void extract_column_at(Statement* stmt, T& obj, int col_idx) noexcept {
             if constexpr (MemberIdx < Base::field_count_) {
                 constexpr auto member = Base::all_members_[MemberIdx];
 
@@ -249,9 +235,9 @@ export namespace storm::orm::statements {
 
         // Extract FK fields for FK at index FKIdx
         template <size_t FKIdx, auto FKPtr, size_t... FieldIs>
-        __attribute__((always_inline)) static void
-        extract_fk_fields_impl(Statement* stmt, FK_type<FKPtr>& fk_obj,
-                               size_t col_offset, std::index_sequence<FieldIs...>) noexcept {
+        __attribute__((always_inline)) static void extract_fk_fields_impl(
+                Statement* stmt, FK_type<FKPtr>& fk_obj, size_t col_offset, std::index_sequence<FieldIs...>
+        ) noexcept {
             using FKBase = FKBase_at<FKIdx>;
             ((extract_fk_field_at<FKBase, FieldIs>(stmt, fk_obj, col_offset + FieldIs)), ...);
         }
@@ -268,13 +254,11 @@ export namespace storm::orm::statements {
 
         // Extract FK at specific index
         template <size_t Idx>
-        __attribute__((always_inline)) static void
-        extract_fk_at(Statement* stmt, T& obj) noexcept {
-            constexpr auto FKPtr = get_fk_ptr_at<Idx>;
-            auto& fk_obj = obj.*FKPtr;
+        __attribute__((always_inline)) static void extract_fk_at(Statement* stmt, T& obj) noexcept {
+            constexpr auto FKPtr  = get_fk_ptr_at<Idx>;
+            auto&          fk_obj = obj.*FKPtr;
             extract_fk_fields_impl<Idx, FKPtr>(
-                stmt, fk_obj, column_offsets_[Idx],
-                std::make_index_sequence<FKBase_at<Idx>::field_count_>{}
+                    stmt, fk_obj, column_offsets_[Idx], std::make_index_sequence<FKBase_at<Idx>::field_count_>{}
             );
         }
 
