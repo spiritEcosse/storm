@@ -2,6 +2,14 @@
 
 set -e  # Exit on any error
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Change to project root (two levels up from scripts/bench/)
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
+
+# Source table drawing library
+source "${PROJECT_ROOT}/scripts/table_utils.sh"
+
 echo "=== STORM ORM PERFORMANCE BENCHMARK SUITE (RELEASE MODE) ==="
 echo "Building and running comprehensive CRUD operation performance tests"
 echo "Using optimized Release build for accurate production performance measurements"
@@ -89,32 +97,6 @@ format_number_with_color() {
         echo -e "${YELLOW}$formatted${NC}"
     else                                  # <500K = Poor (Red)
         echo -e "${RED}$formatted${NC}"
-    fi
-}
-
-# Function to get visible length of string (without ANSI escape codes)
-get_visible_length() {
-    local str="$1"
-    # Remove ANSI escape sequences using proper escape sequence patterns
-    # Handle both \033[...m and \e[...m formats for actual rendered sequences
-    # Also handle literal escape sequences in the string
-    local clean_str
-    # First handle literal \033 sequences, then actual escape sequences
-    clean_str=$(printf '%s' "$str" | sed -r 's/\\033\[[0-9;]*m//g' | sed -r 's/\x1b\[[0-9;]*m//g')
-    echo "${#clean_str}"
-}
-
-# Function to pad string to specific width, accounting for ANSI escape codes
-pad_string() {
-    local string="$1"
-    local width="$2"
-    local visible_length=$(get_visible_length "$string")
-    local padding_needed=$((width - visible_length))
-
-    if [[ $padding_needed -gt 0 ]]; then
-        printf "%s%*s" "$string" "$padding_needed" ""
-    else
-        printf "%s" "$string"
     fi
 }
 

@@ -2,6 +2,14 @@
 
 set -e  # Exit on any error
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Change to project root (two levels up from scripts/bench/)
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
+
+# Source table drawing library
+source "${PROJECT_ROOT}/scripts/table_utils.sh"
+
 echo "=== STORM ORM SQL GENERATION PERFORMANCE ANALYSIS ==="
 echo "Analyzing compile-time SQL generation and cache optimization performance"
 echo ""
@@ -30,38 +38,6 @@ print_warning() {
 
 print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# Function to get visible length of string (without ANSI escape codes)
-get_visible_length() {
-    local str="$1"
-    # Remove ANSI escape sequences
-    local clean_str
-    clean_str=$(printf '%s' "$str" | sed -r 's/\\033\[[0-9;]*m//g' | sed -r 's/\x1b\[[0-9;]*m//g')
-    echo "${#clean_str}"
-}
-
-# Function to pad string to specific width, accounting for ANSI escape codes
-pad_string() {
-    local string="$1"
-    local width="$2"
-    local align="${3:-left}"  # Default to left alignment
-    local visible_length=$(get_visible_length "$string")
-    local padding_needed=$((width - visible_length))
-
-    if [[ $padding_needed -gt 0 ]]; then
-        if [[ "$align" == "right" ]]; then
-            printf "%*s%s" "$padding_needed" "" "$string"
-        elif [[ "$align" == "center" ]]; then
-            local left_pad=$((padding_needed / 2))
-            local right_pad=$((padding_needed - left_pad))
-            printf "%*s%s%*s" "$left_pad" "" "$string" "$right_pad" ""
-        else
-            printf "%s%*s" "$string" "$padding_needed" ""
-        fi
-    else
-        printf "%s" "$string"
-    fi
 }
 
 # Function to colorize cache hit status

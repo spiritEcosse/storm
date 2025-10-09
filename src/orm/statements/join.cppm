@@ -220,12 +220,12 @@ export namespace storm::orm::statements {
 
         // Lazy initialization to avoid duplicate storage
         static const std::string& get_join_sql_cached() {
-            static const std::string str{join_sql_array.data.data(), join_sql_array.len};
+            static const std::string str{join_sql_array.data(), join_sql_array.size()};
             return str;
         }
 
         static const std::string& get_select_fields_cached() {
-            static const std::string str{select_fields_array.data.data(), select_fields_array.len};
+            static const std::string str{select_fields_array.data(), select_fields_array.size()};
             return str;
         }
 
@@ -327,7 +327,7 @@ export namespace storm::orm::statements {
                 ((expected_cols += FKBase_at<Is>::field_count_), ...);
             }(std::make_index_sequence<fk_count_>{});
 
-            assert(sqlite3_column_count(stmt->handle()) == static_cast<int>(expected_cols) && "Column count mismatch");
+            assert(stmt->column_count() == expected_cols && "Column count mismatch");
             #endif
 
             extract_t_fields(stmt, obj, typename Base::field_indices_t{});
