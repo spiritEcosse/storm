@@ -151,8 +151,8 @@ export namespace storm::orm::statements {
         }
 
         // JOIN execution with compile-time SQL (type-erased wrapper)
-        [[nodiscard]] __attribute__((hot)) auto
-        execute_with_join_impl(JoinStatementWrapper join_wrapper) noexcept -> std::expected<std::vector<T>, Error> {
+        [[nodiscard]] __attribute__((hot)) auto execute_with_join_impl(JoinStatementWrapper join_wrapper) noexcept
+                -> std::expected<std::vector<T>, Error> {
             // Build JOIN SQL: SELECT t1.*, t2.* FROM table t1 INNER JOIN fk_table t2 ON ...
             // Note: join_wrapper returns compile-time generated SQL strings (no runtime generation)
             std::string join_sql;

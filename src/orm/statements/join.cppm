@@ -53,9 +53,9 @@ export namespace storm::orm::statements {
         requires(sizeof...(FKFieldPtrs) >= 1)
     class JoinStatement : private BaseStatement<T> {
         friend class BaseStatement<T>;
-        using Base       = BaseStatement<T>;
-        using Error      = typename ConnType::Error;
-        using Statement  = typename ConnType::Statement;
+        using Base      = BaseStatement<T>;
+        using Error     = typename ConnType::Error;
+        using Statement = typename ConnType::Statement;
 
         // Number of FK fields to join
         static constexpr size_t fk_count_ = sizeof...(FKFieldPtrs);
@@ -191,15 +191,15 @@ export namespace storm::orm::statements {
 
             // Base table fields: "t1.field1, t1.field2, ..." (skip FK fields)
             auto calc_base_fields = []<size_t... Is>(std::index_sequence<Is...>) constexpr {
-                size_t size = 0;
+                size_t size        = 0;
                 size_t field_count = 0;
-                ((
-                    Base::is_fk_field(Base::all_members_[Is]) ? (void)0 :
-                    ((void)(size += (field_count > 0 ? 2 : 0)),  // ", " separator
-                     (void)(size += 3),                           // "t1."
-                     (void)(size += std::meta::identifier_of(Base::all_members_[Is]).size()),
-                     (void)(field_count++))
-                ), ...);
+                ((Base::is_fk_field(Base::all_members_[Is])
+                          ? (void)0
+                          : ((void)(size += (field_count > 0 ? 2 : 0)), // ", " separator
+                             (void)(size += 3),                         // "t1."
+                             (void)(size += std::meta::identifier_of(Base::all_members_[Is]).size()),
+                             (void)(field_count++))),
+                 ...);
                 return size;
             };
 
@@ -207,18 +207,18 @@ export namespace storm::orm::statements {
 
             // FK table fields using fold expressions
             auto calc_fk_fields = []<size_t I, size_t... FieldIs>(std::index_sequence<FieldIs...>) constexpr {
-                size_t size = 2; // ", " before FK fields
-                ((size += (FieldIs > 0 ? 2 : 0),  // ", " separator
-                  size += 2,                       // "tN."
-                  size += 1,                       // digit
+                size_t size = 2;                 // ", " before FK fields
+                ((size += (FieldIs > 0 ? 2 : 0), // ", " separator
+                  size += 2,                     // "tN."
+                  size += 1,                     // digit
                   size += std::meta::identifier_of(FKBase_at<I>::all_members_[FieldIs]).size()),
                  ...);
                 return size;
             };
 
             [&]<size_t... Is>(std::index_sequence<Is...>) {
-                ((total += calc_fk_fields.template operator()<Is>(
-                          std::make_index_sequence<FKBase_at<Is>::field_count_>{})),
+                ((total +=
+                  calc_fk_fields.template operator()<Is>(std::make_index_sequence<FKBase_at<Is>::field_count_>{})),
                  ...);
             }(std::make_index_sequence<fk_count_>{});
 
@@ -227,47 +227,49 @@ export namespace storm::orm::statements {
 
         // Build SELECT fields at compile-time
         static consteval auto build_select_fields_array() {
-            constexpr size_t          fields_size = calculate_select_fields_size();
+            constexpr size_t             fields_size = calculate_select_fields_size();
             ConstexprString<fields_size> result;
 
             // Base table fields (t1.field1, t1.field2, ...) - skip FK fields
             [&]<size_t... Is>(std::index_sequence<Is...>) {
                 bool first = true;
-                ((
-                    Base::is_fk_field(Base::all_members_[Is]) ? (void)0 :
-                    ((void)(first ? (void)0 : (void)result.append(", ")),
-                     (void)result.append("t1."),
-                     (void)result.append(std::meta::identifier_of(Base::all_members_[Is])),
-                     (void)(first = false))
-                ), ...);
+                ((Base::is_fk_field(Base::all_members_[Is])
+                          ? (void)0
+                          : ((void)(first ? (void)0 : (void)result.append(", ")),
+                             (void)result.append("t1."),
+                             (void)result.append(std::meta::identifier_of(Base::all_members_[Is])),
+                             (void)(first = false))),
+                 ...);
             }(std::make_index_sequence<Base::field_count_>{});
 
             // FK table fields - iterate over all FK tables
             [&]<size_t... Is>(std::index_sequence<Is...>) {
-                ([&]<size_t I>() {
-                    result.append(", ");
-                    [&]<size_t... FieldIs>(std::index_sequence<FieldIs...>) {
-                        bool first_in_table = true;
-                        ((
-                            (first_in_table ? (void)0 : result.append(", ")),
-                            result.append("t"),
-                            result.append_digit(I + 2),
-                            result.append("."),
-                            result.append(std::meta::identifier_of(FKBase_at<I>::all_members_[FieldIs])),
-                            first_in_table = false
-                        ), ...);
-                    }(std::make_index_sequence<FKBase_at<I>::field_count_>{});
-                }.template operator()<Is>(), ...);
+                (
+                        [&]<size_t I>() {
+                            result.append(", ");
+                            [&]<size_t... FieldIs>(std::index_sequence<FieldIs...>) {
+                                bool first_in_table = true;
+                                (((first_in_table ? (void)0 : result.append(", ")),
+                                  result.append("t"),
+                                  result.append_digit(I + 2),
+                                  result.append("."),
+                                  result.append(std::meta::identifier_of(FKBase_at<I>::all_members_[FieldIs])),
+                                  first_in_table = false),
+                                 ...);
+                            }(std::make_index_sequence<FKBase_at<I>::field_count_>{});
+                        }.template operator()<Is>(),
+                        ...
+                );
             }(std::make_index_sequence<fk_count_>{});
 
             return result;
         }
 
         // Pre-computed SQL strings (compile-time generated, static storage)
-        static constexpr auto           join_sql_array        = build_join_sql_array();
-        static constexpr auto           select_fields_array   = build_select_fields_array();
-        static inline const std::string join_sql_string       = std::string(join_sql_array);
-        static inline const std::string select_fields_string  = std::string(select_fields_array);
+        static constexpr auto           join_sql_array       = build_join_sql_array();
+        static constexpr auto           select_fields_array  = build_select_fields_array();
+        static inline const std::string join_sql_string      = std::string(join_sql_array);
+        static inline const std::string select_fields_string = std::string(select_fields_array);
 
       public:
         // Static accessors returning compile-time generated SQL (called via function pointers)
@@ -378,10 +380,9 @@ export namespace storm::orm::statements {
                 +[]() -> const std::string& { return JS::get_join_sql(); },
                 +[]() -> const std::string& { return JS::get_select_fields(); },
                 +[](void* stmt, void* obj) {
-                    JS::extract_joined_row(
-                            static_cast<typename ConnType::Statement*>(stmt), *static_cast<T*>(obj)
-                    );
-                }};
+                    JS::extract_joined_row(static_cast<typename ConnType::Statement*>(stmt), *static_cast<T*>(obj));
+                }
+        };
     }
 
 } // namespace storm::orm::statements
