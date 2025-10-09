@@ -436,6 +436,30 @@ Experimental Clang fork with C++26 reflection:
    - Using `std::mutex` in C++26 modules causes compiler crashes
    - Workaround: Avoid mutex in module code, use external synchronization
 
+3. **std::inplace_vector Not Available**
+   - **Symptom**: Build fails with error: `header file <inplace_vector> cannot be imported`
+   - **Cause**: C++26 `std::inplace_vector` not implemented in custom libc++ yet
+   - **Workaround**: Use `std::array` instead for compile-time fixed-size storage
+   - **Example**: Replace `std::inplace_vector<T, N>` with `std::array<T, N>` and manual index tracking
+
+4. **C Headers Cannot Be Imported as Modules**
+   - **Symptom**: Build fails with error: `header file <cassert> (aka '...cassert') cannot be imported because it is not known to be a header unit`
+   - **Cause**: C headers like `<cassert>`, `<cstring>`, etc. cannot be imported with `import` in modules
+   - **Workaround**: Include C headers in the module preamble (before `export module`) using `#include`
+   - **Example**: Move `#include <cassert>` before `export module` instead of using `import <cassert>`
+
+5. **Most Vexing Parse with ConstexprString**
+   - **Symptom**: Build fails with error: `type 'const std::array<char, N>' does not provide a call operator`
+   - **Cause**: Parentheses initialization `std::string str(array.data(), array.size())` interpreted as function declaration
+   - **Workaround**: Use braced initialization `std::string str{array.data(), array.size()}` or direct member access
+   - **ConstexprString specific**: Access string data via `.data.data()` and `.len` members
+
+6. **Missing Statement Methods**
+   - **Symptom**: Build fails with error: `no member named 'column_count' in 'storm::db::sqlite::Statement'`
+   - **Cause**: Custom Statement wrapper doesn't expose all SQLite functions
+   - **Workaround**: Use raw SQLite handle via `stmt->handle()` and call SQLite C API directly
+   - **Example**: `sqlite3_column_count(stmt->handle())` instead of `stmt->column_count()`
+
 ### Testing Strategy
 - **GoogleTest** with C++26 module support
 - Tests in `tests/` directory, in-memory database (`:memory:`)

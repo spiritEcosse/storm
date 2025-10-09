@@ -93,9 +93,10 @@ target_include_directories(bench_sqlite_orm PRIVATE
 # Storm ORM benchmarks (C++26, custom clang, libc++)
 add_storm_benchmark(bench_storm "bench_storm.cpp")
 add_storm_benchmark(sql_generation_microbench "sql_generation_microbench.cpp")
+add_storm_benchmark(join_performance_microbench "join_performance_microbench.cpp")
 add_storm_benchmark(bench_select_comparison "bench_select_comparison.cpp")
 
 # SELECT performance analysis (C++20, system clang, libstdc++)
 add_system_clang_benchmark(bench_select_analysis "bench_select_analysis.cpp")
 
-message(STATUS "Benchmark executables: bench_sqlite, bench_sqlite_orm, bench_storm, sql_generation_microbench, bench_select_analysis")
+message(STATUS "Benchmark executables: bench_sqlite, bench_sqlite_orm, bench_storm, sql_generation_microbench, join_performance_microbench, bench_select_analysis")
