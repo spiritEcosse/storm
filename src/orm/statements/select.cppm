@@ -86,12 +86,11 @@ export namespace storm::orm::statements {
             return execute_simple_select();
         }
 
-        // Optimized SELECT execution with JOIN (move semantics)
-        // NOTE: join_stmt is guaranteed non-null by QuerySet::select() dispatch
+        // Optimized SELECT execution with JOIN (type-erased wrapper with compile-time SQL)
+        // NOTE: join_wrapper is passed by value (lightweight - just 3 function pointers)
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
-        execute_optimized(std::unique_ptr<orm::statements::IJoinStatement> join_stmt) noexcept
-                -> std::expected<std::vector<T>, Error> {
-            return execute_with_join_impl(std::move(join_stmt));
+        execute_optimized(JoinStatementWrapper join_wrapper) noexcept -> std::expected<std::vector<T>, Error> {
+            return execute_with_join_impl(join_wrapper);
         }
 
       private:
@@ -151,19 +150,19 @@ export namespace storm::orm::statements {
             return results;
         }
 
-        // JOIN execution with dynamic SQL building (accepts ownership via move)
+        // JOIN execution with compile-time SQL (type-erased wrapper)
         [[nodiscard]] __attribute__((hot)) auto
-        execute_with_join_impl(std::unique_ptr<orm::statements::IJoinStatement> join_stmt) noexcept
-                -> std::expected<std::vector<T>, Error> {
+        execute_with_join_impl(JoinStatementWrapper join_wrapper) noexcept -> std::expected<std::vector<T>, Error> {
             // Build JOIN SQL: SELECT t1.*, t2.* FROM table t1 INNER JOIN fk_table t2 ON ...
+            // Note: join_wrapper returns compile-time generated SQL strings (no runtime generation)
             std::string join_sql;
             join_sql.reserve(1000);
             join_sql += "SELECT ";
-            join_sql += join_stmt->build_qualified_select_fields();
+            join_sql += join_wrapper.build_qualified_select_fields();
             join_sql += " FROM ";
             join_sql += Base::table_name_;
             join_sql += " t1";
-            join_sql += join_stmt->to_sql();
+            join_sql += join_wrapper.to_sql();
 
             // Cache JOIN statement separately (different SQL than simple SELECT)
             if (!cached_join_stmt_) {
@@ -183,8 +182,8 @@ export namespace storm::orm::statements {
                    row_count < results.size()) {
                 T& obj = results[row_count];
 
-                // Use JoinStatement's extraction logic via virtual method
-                join_stmt->extract_row(cached_join_stmt_, &obj);
+                // Use JoinStatement's extraction logic via function pointer
+                join_wrapper.extract_row(cached_join_stmt_, &obj);
 
                 row_count++;
             }
@@ -193,7 +192,7 @@ export namespace storm::orm::statements {
             while (step_result == Statement::ROW_AVAILABLE) {
                 results.emplace_back();
                 T& obj = results.back();
-                join_stmt->extract_row(cached_join_stmt_, &obj);
+                join_wrapper.extract_row(cached_join_stmt_, &obj);
                 row_count++;
                 step_result = cached_join_stmt_->step_raw();
             }
@@ -206,7 +205,6 @@ export namespace storm::orm::statements {
             }
 
             cached_join_stmt_->reset();
-            // join_stmt automatically destroyed here (move semantics)
             return results;
         }
 

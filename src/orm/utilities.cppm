@@ -55,6 +55,15 @@ export namespace storm::orm::utilities {
             data[len] = '\0';
         }
 
+        // Append a single digit (0-9) for compile-time number formatting
+        consteval void append_digit(size_t digit) {
+            if (digit <= 9 && len < N - 1) {
+                data[len] = '0' + static_cast<char>(digit);
+                ++len;
+                data[len] = '\0';
+            }
+        }
+
         // Runtime conversion to std::string
         operator std::string() const {
             return std::string(data.data(), len);

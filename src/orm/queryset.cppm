@@ -69,8 +69,11 @@ export namespace storm {
         // Select operations - returns all rows (optimized with statement caching)
         std::expected<std::vector<T>, Error> select() {
             if (join_stmt_) {
-                // Move ownership to SelectStatement - cleaner than reset()
-                return get_select_statement().execute_optimized(std::move(join_stmt_));
+                // Pass wrapper by value (lightweight - just 3 function pointers)
+                auto result = get_select_statement().execute_optimized(*join_stmt_);
+                // Reset to allow reuse for non-JOIN queries (maintains original semantics)
+                join_stmt_.reset();
+                return result;
             }
             // Normal SELECT without JOIN
             return get_select_statement().execute_optimized();
@@ -83,8 +86,8 @@ export namespace storm {
         template <auto... FKFieldPtrs>
             requires(sizeof...(FKFieldPtrs) >= 1)
         constexpr auto&& join(this auto&& self) {
-            // Create and store JoinStatement
-            self.join_stmt_ = std::make_unique<orm::statements::JoinStatement<T, ConnType, FKFieldPtrs...>>();
+            // Create type-erased wrapper with compile-time generated SQL
+            self.join_stmt_ = orm::statements::make_join_wrapper<T, ConnType, FKFieldPtrs...>();
             return self_cast(self);
         }
 
@@ -185,7 +188,7 @@ export namespace storm {
         mutable std::unique_ptr<orm::statements::SelectStatement<T, ConnType>> select_stmt_;
         mutable std::unique_ptr<orm::statements::UpdateStatement<T, ConnType>> update_stmt_;
 
-        mutable std::unique_ptr<orm::statements::IJoinStatement> join_stmt_;
+        mutable std::optional<orm::statements::JoinStatementWrapper> join_stmt_;
     };
 
     // Factory function for convenient QuerySet creation with default connection
