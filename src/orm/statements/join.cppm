@@ -32,6 +32,7 @@ export namespace storm::orm::statements {
     struct JoinStatementWrapper {
         const std::string& (*get_join_sql_fn)();
         const std::string& (*get_select_fields_fn)();
+        const std::string& (*get_complete_sql_fn)();  // NEW: Complete SELECT...JOIN SQL
         void (*extract_row_fn)(void*, void*);
 
         const std::string& to_sql() const {
@@ -40,6 +41,11 @@ export namespace storm::orm::statements {
 
         const std::string& build_qualified_select_fields() const {
             return get_select_fields_fn();
+        }
+
+        // NEW: Get complete pre-computed SELECT...JOIN SQL
+        const std::string& get_complete_sql() const {
+            return get_complete_sql_fn();
         }
 
         void extract_row(void* stmt, void* obj) const {
@@ -218,14 +224,48 @@ export namespace storm::orm::statements {
         static constexpr auto join_sql_array      = build_join_sql_array();
         static constexpr auto select_fields_array = build_select_fields_array();
 
+        // NEW: Compile-time complete SQL generation
+        static consteval size_t calculate_complete_sql_size() {
+            size_t total = 0;
+            total += 7;  // "SELECT "
+            total += calculate_select_fields_size();
+            total += 6;  // " FROM "
+            total += Base::table_name_.size();
+            total += 3;  // " t1"
+            total += calculate_join_sql_size();
+            return total + 10;  // Buffer
+        }
+
+        static consteval auto build_complete_sql_array() {
+            constexpr size_t sql_size = calculate_complete_sql_size();
+            ConstexprString<sql_size> result;
+
+            result.append("SELECT ");
+            result.append(select_fields_array);
+            result.append(" FROM ");
+            result.append(Base::table_name_);
+            result.append(" t1");
+            result.append(join_sql_array);
+
+            return result;
+        }
+
+        static constexpr auto complete_sql_array = build_complete_sql_array();
+
         // Lazy initialization to avoid duplicate storage
         static const std::string& get_join_sql_cached() {
-            static const std::string str{join_sql_array.data(), join_sql_array.size()};
+            static const std::string str{join_sql_array.data.data(), join_sql_array.len};
             return str;
         }
 
         static const std::string& get_select_fields_cached() {
-            static const std::string str{select_fields_array.data(), select_fields_array.size()};
+            static const std::string str{select_fields_array.data.data(), select_fields_array.len};
+            return str;
+        }
+
+        // NEW: Get complete SQL with lazy initialization
+        static const std::string& get_complete_sql_cached() {
+            static const std::string str{complete_sql_array.data.data(), complete_sql_array.len};
             return str;
         }
 
@@ -238,9 +278,14 @@ export namespace storm::orm::statements {
             return get_select_fields_cached();
         }
 
-        // Enhanced type extraction with NULL handling
+        // NEW: Get complete pre-computed SELECT...JOIN SQL
+        static const std::string& get_complete_sql() {
+            return get_complete_sql_cached();
+        }
+
+        // Enhanced type extraction with NULL handling (optimized for inlining)
         template <typename FieldType>
-        static void extract_typed_field(Statement* stmt, FieldType& field, int col_idx) noexcept {
+        __attribute__((always_inline)) static inline void extract_typed_field(Statement* stmt, FieldType& field, int col_idx) noexcept {
             if (stmt->is_null(col_idx)) {
                 if constexpr (requires { field = std::nullopt; }) {
                     field = std::nullopt;
@@ -270,13 +315,13 @@ export namespace storm::orm::statements {
         }
 
         template <size_t... Is>
-        static void extract_t_fields(Statement* stmt, T& obj, std::index_sequence<Is...>) noexcept {
+        __attribute__((always_inline)) static inline void extract_t_fields(Statement* stmt, T& obj, std::index_sequence<Is...>) noexcept {
             int col_idx = 0;
             ((extract_column_at<Is>(stmt, obj, col_idx)), ...);
         }
 
         template <size_t MemberIdx>
-        static void extract_column_at(Statement* stmt, T& obj, int& col_idx) noexcept {
+        __attribute__((always_inline)) static inline void extract_column_at(Statement* stmt, T& obj, int& col_idx) noexcept {
             if constexpr (MemberIdx < Base::field_count_) {
                 constexpr auto member = Base::all_members_[MemberIdx];
 
@@ -290,7 +335,7 @@ export namespace storm::orm::statements {
         }
 
         template <size_t FKIdx, size_t... FieldIs>
-        static void extract_fk_fields_impl(
+        __attribute__((always_inline)) static inline void extract_fk_fields_impl(
             Statement* stmt, FK_type<FKIdx>& fk_obj, size_t col_offset, std::index_sequence<FieldIs...>
         ) noexcept {
             using FKBase = FKBase_at<FKIdx>;
@@ -298,7 +343,7 @@ export namespace storm::orm::statements {
         }
 
         template <typename FKBase, size_t FieldIdx>
-        static void extract_fk_field_at(Statement* stmt, auto& fk_obj, int col_idx) noexcept {
+        __attribute__((always_inline)) static inline void extract_fk_field_at(Statement* stmt, auto& fk_obj, int col_idx) noexcept {
             if constexpr (FieldIdx < FKBase::field_count_) {
                 constexpr auto member = FKBase::all_members_[FieldIdx];
                 extract_typed_field(stmt, fk_obj.[:member:], col_idx);
@@ -306,7 +351,7 @@ export namespace storm::orm::statements {
         }
 
         template <size_t Idx>
-        static void extract_fk_at(Statement* stmt, T& obj) noexcept {
+        __attribute__((always_inline)) static inline void extract_fk_at(Statement* stmt, T& obj) noexcept {
             constexpr auto FKPtr = FKFieldPtrs...[Idx]; // C++26 pack indexing
             auto& fk_obj = obj.*FKPtr;
             extract_fk_fields_impl<Idx>(
@@ -316,11 +361,11 @@ export namespace storm::orm::statements {
         }
 
         template <size_t... Is>
-        static void extract_all_fks(Statement* stmt, T& obj, std::index_sequence<Is...>) noexcept {
+        __attribute__((always_inline)) static inline void extract_all_fks(Statement* stmt, T& obj, std::index_sequence<Is...>) noexcept {
             (extract_fk_at<Is>(stmt, obj), ...);
         }
 
-        static void extract_joined_row(Statement* stmt, T& obj) noexcept {
+        __attribute__((hot)) __attribute__((flatten)) static void extract_joined_row(Statement* stmt, T& obj) noexcept {
             #ifndef NDEBUG
             size_t expected_cols = non_fk_field_count_;
             [&]<size_t... Is>(std::index_sequence<Is...>) {
@@ -342,6 +387,7 @@ export namespace storm::orm::statements {
         return JoinStatementWrapper{
             +[]() -> const std::string& { return JS::get_join_sql(); },
             +[]() -> const std::string& { return JS::get_select_fields(); },
+            +[]() -> const std::string& { return JS::get_complete_sql(); },  // NEW
             +[](void* stmt, void* obj) {
                 JS::extract_joined_row(
                     static_cast<typename ConnType::Statement*>(stmt),

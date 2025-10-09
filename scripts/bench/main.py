@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""
+Storm ORM Performance Benchmark Suite
+Unified entry point for all benchmark scripts
+"""
+
+import sys
+import argparse
+from pathlib import Path
+
+# Add current directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent))
+from common import Colors
+
+
+def print_header():
+    """Print benchmark suite header"""
+    print(f"{Colors.BOLD}{Colors.CYAN}")
+    print("╔════════════════════════════════════════════════════════════════════════════════╗")
+    print("║                                                                                ║")
+    print("║                   Storm ORM Performance Benchmark Suite                        ║")
+    print("║                                                                                ║")
+    print("╚════════════════════════════════════════════════════════════════════════════════╝")
+    print(Colors.RESET)
+
+
+def run_join_benchmark(args):
+    """Run JOIN performance benchmark"""
+    from join import JoinBenchmark
+
+    print_header()
+    print(f"{Colors.GREEN}Running JOIN Performance Analysis...{Colors.RESET}\n")
+
+    benchmark = JoinBenchmark(args.binary)
+    benchmark.run(
+        f'--size={args.size or 10000}',
+        f'--iterations={args.iterations or 100}',
+        messages=args.size or 10000,
+        iterations=args.iterations or 100
+    )
+
+
+def run_crud_benchmark(args):
+    """Run CRUD performance benchmark"""
+    from crud import main as crud_main
+
+    print_header()
+    print(f"{Colors.GREEN}Running CRUD Performance Benchmark...{Colors.RESET}\n")
+
+    try:
+        crud_main()
+    except Exception as e:
+        print(f"{Colors.RED}CRUD benchmark failed: {e}{Colors.RESET}")
+
+
+def run_sql_gen_benchmark(args):
+    """Run SQL generation benchmark"""
+    from sql_gen import SQLGenerationBenchmark
+
+    print_header()
+    print(f"{Colors.GREEN}Running SQL Generation Analysis...{Colors.RESET}\n")
+
+    try:
+        benchmark = SQLGenerationBenchmark(args.binary if hasattr(args, 'binary') else './build/debug/benchmarks/sql_generation_microbench')
+        benchmark.run()
+    except Exception as e:
+        print(f"{Colors.RED}SQL generation benchmark failed: {e}{Colors.RESET}")
+
+
+def run_all_benchmarks(args):
+    """Run all benchmarks"""
+    from all import main as run_all_main
+
+    print_header()
+    print(f"{Colors.GREEN}Running All Microbenchmarks...{Colors.RESET}\n")
+
+    # Run comprehensive benchmark suite
+    try:
+        run_all_main(
+            messages=args.size or 1000,
+            iterations=args.iterations or 50
+        )
+    except Exception as e:
+        print(f"{Colors.RED}Benchmark suite failed: {e}{Colors.RESET}")
+        import traceback
+        traceback.print_exc()
+
+
+def main():
+    """Main entry point"""
+    parser = argparse.ArgumentParser(
+        description='Storm ORM Performance Benchmark Suite',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Available Benchmarks:
+  📊 JOIN Performance       - Compare Storm ORM vs Raw SQLite JOIN operations
+  📊 CRUD Operations        - Full suite of INSERT/SELECT/UPDATE/DELETE benchmarks
+  📊 SQL Generation         - Analyze compile-time SQL generation performance
+  📊 All Microbenchmarks    - Run complete benchmark suite
+
+Examples:
+  %(prog)s --joins                        # Run JOIN benchmarks
+  %(prog)s --joins --size=50000           # Run JOIN with 50K messages
+  %(prog)s --all                          # Run all benchmarks
+        '''
+    )
+
+    # Commands
+    commands = parser.add_mutually_exclusive_group(required=True)
+    commands.add_argument('--joins', action='store_true',
+                         help='Run JOIN performance analysis (Storm vs Raw SQLite)')
+    commands.add_argument('--crud', action='store_true',
+                         help='Run comprehensive CRUD benchmark (INSERT/SELECT/UPDATE/DELETE)')
+    commands.add_argument('--sql-gen', action='store_true',
+                         help='Run SQL generation performance analysis')
+    commands.add_argument('--all', action='store_true',
+                         help='Run all microbenchmarks')
+
+    # Options
+    parser.add_argument('--size', type=int,
+                       help='Set dataset size (default varies by benchmark)')
+    parser.add_argument('--iterations', type=int,
+                       help='Set number of iterations (default varies by benchmark)')
+    parser.add_argument('--binary', default='./build/release/benchmarks/bench_join_performance',
+                       help='Path to benchmark binary (default: %(default)s)')
+
+    args = parser.parse_args()
+
+    # Execute command
+    try:
+        if args.joins:
+            run_join_benchmark(args)
+        elif args.crud:
+            run_crud_benchmark(args)
+        elif args.sql_gen:
+            run_sql_gen_benchmark(args)
+        elif args.all:
+            run_all_benchmarks(args)
+    except KeyboardInterrupt:
+        print(f"\n{Colors.YELLOW}Benchmark interrupted by user{Colors.RESET}")
+        sys.exit(130)
+    except Exception as e:
+        print(f"{Colors.RED}Error: {e}{Colors.RESET}")
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()

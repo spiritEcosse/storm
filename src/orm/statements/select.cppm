@@ -151,18 +151,12 @@ export namespace storm::orm::statements {
         }
 
         // JOIN execution with compile-time SQL (type-erased wrapper)
-        [[nodiscard]] __attribute__((hot)) auto execute_with_join_impl(JoinStatementWrapper join_wrapper) noexcept
+        // OPTIMIZATION: Uses pre-computed complete SQL from JoinStatement (zero runtime concatenation)
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_with_join_impl(JoinStatementWrapper join_wrapper) noexcept
                 -> std::expected<std::vector<T>, Error> {
-            // Build JOIN SQL: SELECT t1.*, t2.* FROM table t1 INNER JOIN fk_table t2 ON ...
-            // Note: join_wrapper returns compile-time generated SQL strings (no runtime generation)
-            std::string join_sql;
-            join_sql.reserve(1000);
-            join_sql += "SELECT ";
-            join_sql += join_wrapper.build_qualified_select_fields();
-            join_sql += " FROM ";
-            join_sql += Base::table_name_;
-            join_sql += " t1";
-            join_sql += join_wrapper.to_sql();
+            // OPTIMIZATION: Use pre-computed complete SQL (generated at compile-time)
+            // Eliminates all runtime string concatenation and heap allocation
+            const std::string& join_sql = join_wrapper.get_complete_sql();
 
             // Cache JOIN statement separately (different SQL than simple SELECT)
             if (!cached_join_stmt_) {
