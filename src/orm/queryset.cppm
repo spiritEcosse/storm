@@ -79,15 +79,39 @@ export namespace storm {
             return get_select_statement().execute_optimized();
         }
 
-        // JOIN support for single or multiple FK fields
+        // INNER JOIN support for single or multiple FK fields
         // Usage:
         //   Single FK: message_qs.join<&Message::sender>().select()
         //   Multi FK:  message_qs.join<&Message::sender, &Message::receiver>().select()
         template <auto... FKFieldPtrs>
             requires(sizeof...(FKFieldPtrs) >= 1)
         constexpr auto&& join(this auto&& self) {
-            // Create type-erased wrapper with compile-time generated SQL
-            self.join_stmt_ = orm::statements::make_join_wrapper<T, ConnType, FKFieldPtrs...>();
+            // Create type-erased wrapper with compile-time generated SQL (INNER JOIN)
+            self.join_stmt_ = orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Inner, FKFieldPtrs...>();
+            return self_cast(self);
+        }
+
+        // LEFT JOIN support for single or multiple FK fields
+        // Usage:
+        //   Single FK: message_qs.left_join<&Message::sender>().select()
+        //   Multi FK:  message_qs.left_join<&Message::sender, &Message::receiver>().select()
+        template <auto... FKFieldPtrs>
+            requires(sizeof...(FKFieldPtrs) >= 1)
+        constexpr auto&& left_join(this auto&& self) {
+            // Create type-erased wrapper with compile-time generated SQL (LEFT JOIN)
+            self.join_stmt_ = orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Left, FKFieldPtrs...>();
+            return self_cast(self);
+        }
+
+        // RIGHT JOIN support for single or multiple FK fields
+        // Usage:
+        //   Single FK: message_qs.right_join<&Message::sender>().select()
+        //   Multi FK:  message_qs.right_join<&Message::sender, &Message::receiver>().select()
+        template <auto... FKFieldPtrs>
+            requires(sizeof...(FKFieldPtrs) >= 1)
+        constexpr auto&& right_join(this auto&& self) {
+            // Create type-erased wrapper with compile-time generated SQL (RIGHT JOIN)
+            self.join_stmt_ = orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Right, FKFieldPtrs...>();
             return self_cast(self);
         }
 

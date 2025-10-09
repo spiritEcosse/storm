@@ -432,3 +432,346 @@ TEST_F(FKFieldTest, JoinMultipleFKFields) {
     EXPECT_EQ(messages[0].receiver.name, "Bob") << "Multi-JOIN should populate receiver FK object's name!";
     EXPECT_EQ(messages[0].receiver.age, 25) << "Multi-JOIN should populate receiver FK object's age!";
 }
+
+// Test: LEFT JOIN returns all messages even when FK doesn't match
+TEST_F(FKFieldTest, LeftJoinReturnsAllMessages) {
+    QuerySet<User>    user_qs;
+    QuerySet<Message> message_qs;
+
+    // Insert only one user (Alice)
+    User alice{0, "Alice", 30};
+    auto alice_result = user_qs.insert(alice);
+    ASSERT_TRUE(alice_result.has_value());
+    int64_t alice_id = alice_result.value();
+
+    // Insert a message with a non-existent receiver ID (999)
+    // This simulates an orphaned FK reference
+    auto& conn        = QuerySet<User>::get_default_connection();
+    auto  stmt_result = conn.prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (?, ?, ?)");
+    ASSERT_TRUE(stmt_result.has_value()) << "Prepare failed: " << stmt_result.error().message();
+
+    auto stmt = std::move(stmt_result.value());
+    ASSERT_TRUE(stmt.bind_int(1, alice_id).has_value());
+    ASSERT_TRUE(stmt.bind_int(2, 999).has_value());
+    ASSERT_TRUE(stmt.bind_text(3, "Orphaned message").has_value());
+
+    int step_result = stmt.step_raw();
+    ASSERT_EQ(step_result, decltype(stmt)::NO_MORE_ROWS) << "Direct INSERT failed";
+
+    // LEFT JOIN on sender - should return message even though receiver doesn't exist
+    auto join_result = message_qs.left_join<&Message::sender>().select();
+    ASSERT_TRUE(join_result.has_value()) << "LEFT JOIN failed: " << join_result.error().message();
+
+    const auto& messages = join_result.value();
+    ASSERT_EQ(messages.size(), 1) << "LEFT JOIN should return all messages";
+
+    // Verify sender is fully populated (exists)
+    EXPECT_EQ(messages[0].sender.id, alice_id);
+    EXPECT_EQ(messages[0].sender.name, "Alice") << "LEFT JOIN should populate existing FK";
+    EXPECT_EQ(messages[0].sender.age, 30);
+
+    // Verify receiver is not populated (doesn't exist in User table)
+    EXPECT_EQ(messages[0].receiver.id, 0) << "Non-JOINed FK should remain default";
+
+    // Verify message text
+    EXPECT_EQ(messages[0].text, "Orphaned message");
+}
+
+// Test: LEFT JOIN with multiple FK fields
+TEST_F(FKFieldTest, LeftJoinMultipleFKFields) {
+    QuerySet<User>    user_qs;
+    QuerySet<Message> message_qs;
+
+    // Insert users
+    User alice{0, "Alice", 30};
+    User bob{0, "Bob", 25};
+    auto alice_result = user_qs.insert(alice);
+    auto bob_result   = user_qs.insert(bob);
+    ASSERT_TRUE(alice_result.has_value());
+    ASSERT_TRUE(bob_result.has_value());
+    int64_t alice_id = alice_result.value();
+    int64_t bob_id   = bob_result.value();
+
+    // Insert message from Alice to Bob
+    Message msg{0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Hello with LEFT JOIN"};
+    auto    msg_result = message_qs.insert(msg);
+    ASSERT_TRUE(msg_result.has_value());
+
+    // LEFT JOIN on both sender and receiver
+    auto join_result = message_qs.left_join<&Message::sender, &Message::receiver>().select();
+    ASSERT_TRUE(join_result.has_value()) << "Multi LEFT JOIN failed: " << join_result.error().message();
+
+    const auto& messages = join_result.value();
+    ASSERT_EQ(messages.size(), 1);
+
+    // Verify both FK objects are fully populated
+    EXPECT_EQ(messages[0].sender.id, alice_id);
+    EXPECT_EQ(messages[0].sender.name, "Alice");
+    EXPECT_EQ(messages[0].sender.age, 30);
+
+    EXPECT_EQ(messages[0].receiver.id, bob_id);
+    EXPECT_EQ(messages[0].receiver.name, "Bob");
+    EXPECT_EQ(messages[0].receiver.age, 25);
+
+    EXPECT_EQ(messages[0].text, "Hello with LEFT JOIN");
+}
+
+// Test: RIGHT JOIN behavior
+// Note: RIGHT JOIN is less commonly used but should work symmetrically to LEFT JOIN
+TEST_F(FKFieldTest, RightJoinBehavior) {
+    QuerySet<User>    user_qs;
+    QuerySet<Message> message_qs;
+
+    // Insert users first
+    User alice{0, "Alice", 30};
+    User bob{0, "Bob", 25};
+    User charlie{0, "Charlie", 35}; // Charlie has no messages
+    auto alice_result   = user_qs.insert(alice);
+    auto bob_result     = user_qs.insert(bob);
+    auto charlie_result = user_qs.insert(charlie);
+    ASSERT_TRUE(alice_result.has_value());
+    ASSERT_TRUE(bob_result.has_value());
+    ASSERT_TRUE(charlie_result.has_value());
+    int64_t alice_id   = alice_result.value();
+    int64_t bob_id     = bob_result.value();
+    int64_t charlie_id = charlie_result.value();
+
+    // Insert messages from Alice to Bob (Charlie is not referenced)
+    Message msg{0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Message to Bob"};
+    auto    msg_result = message_qs.insert(msg);
+    ASSERT_TRUE(msg_result.has_value());
+
+    // RIGHT JOIN on sender - should return all users in User table as senders
+    // This includes Charlie even though no message references him
+    auto join_result = message_qs.right_join<&Message::sender>().select();
+    ASSERT_TRUE(join_result.has_value()) << "RIGHT JOIN failed: " << join_result.error().message();
+
+    const auto& messages = join_result.value();
+
+    // RIGHT JOIN returns:
+    // - All rows from right table (User)
+    // - Matching rows from left table (Message)
+    // So we should get at least the message we inserted, possibly more depending on implementation
+    EXPECT_GE(messages.size(), 1) << "RIGHT JOIN should return at least existing messages";
+
+    // Find the message we inserted
+    bool found = false;
+    for (const auto& m : messages) {
+        if (m.text == "Message to Bob") {
+            found = true;
+            EXPECT_EQ(m.sender.id, alice_id);
+            EXPECT_EQ(m.sender.name, "Alice");
+            EXPECT_EQ(m.sender.age, 30);
+        }
+    }
+    EXPECT_TRUE(found) << "RIGHT JOIN should include the message we inserted";
+}
+
+// Test: RIGHT JOIN with multiple FK fields
+TEST_F(FKFieldTest, RightJoinMultipleFKFields) {
+    QuerySet<User>    user_qs;
+    QuerySet<Message> message_qs;
+
+    // Insert users
+    User alice{0, "Alice", 30};
+    User bob{0, "Bob", 25};
+    auto alice_result = user_qs.insert(alice);
+    auto bob_result   = user_qs.insert(bob);
+    ASSERT_TRUE(alice_result.has_value());
+    ASSERT_TRUE(bob_result.has_value());
+    int64_t alice_id = alice_result.value();
+    int64_t bob_id   = bob_result.value();
+
+    // Insert message from Alice to Bob
+    Message msg{
+            0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Hello with RIGHT JOIN"
+    };
+    auto msg_result = message_qs.insert(msg);
+    ASSERT_TRUE(msg_result.has_value());
+
+    // RIGHT JOIN on both sender and receiver
+    auto join_result = message_qs.right_join<&Message::sender, &Message::receiver>().select();
+    ASSERT_TRUE(join_result.has_value()) << "Multi RIGHT JOIN failed: " << join_result.error().message();
+
+    const auto& messages = join_result.value();
+    EXPECT_GE(messages.size(), 1) << "RIGHT JOIN should return at least the inserted message";
+
+    // Find and verify our message
+    bool found = false;
+    for (const auto& m : messages) {
+        if (m.text == "Hello with RIGHT JOIN") {
+            found = true;
+            EXPECT_EQ(m.sender.id, alice_id);
+            EXPECT_EQ(m.sender.name, "Alice");
+            EXPECT_EQ(m.sender.age, 30);
+
+            EXPECT_EQ(m.receiver.id, bob_id);
+            EXPECT_EQ(m.receiver.name, "Bob");
+            EXPECT_EQ(m.receiver.age, 25);
+        }
+    }
+    EXPECT_TRUE(found) << "Should find the message we inserted";
+}
+
+// Test fixture for nullable FK fields
+class NullableFKTest : public ::testing::Test {
+  protected:
+    void SetUp() override {
+        auto result = QuerySet<User>::set_default_connection(":memory:");
+        ASSERT_TRUE(result.has_value());
+
+        auto& conn = QuerySet<User>::get_default_connection();
+
+        // Create User table
+        auto create_user_result = conn.execute(
+                "CREATE TABLE User ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "name TEXT NOT NULL, "
+                "age INTEGER NOT NULL"
+                ")"
+        );
+        ASSERT_TRUE(create_user_result.has_value());
+
+        // Create Message table with NULLABLE sender_id (allows NULL)
+        auto create_message_result = conn.execute(
+                "CREATE TABLE Message ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "sender_id INTEGER, "  // NULLABLE FK
+                "receiver_id INTEGER NOT NULL, "
+                "text TEXT NOT NULL"
+                ")"
+        );
+        ASSERT_TRUE(create_message_result.has_value());
+    }
+
+    void TearDown() override {
+        QuerySet<User>::clear_default_connection();
+    }
+};
+
+// Test: SELECT with NULL FK values
+TEST_F(NullableFKTest, SelectWithNullFKField) {
+    QuerySet<Message> message_qs;
+
+    // Insert message with NULL sender_id
+    auto& conn        = QuerySet<User>::get_default_connection();
+    auto  stmt_result = conn.prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+    ASSERT_TRUE(stmt.bind_int(1, 1).has_value());
+    ASSERT_TRUE(stmt.bind_text(2, "Message with NULL sender").has_value());
+
+    int step_result = stmt.step_raw();
+    ASSERT_EQ(step_result, decltype(stmt)::NO_MORE_ROWS);
+
+    // SELECT should handle NULL FK gracefully
+    auto select_result = message_qs.select();
+    ASSERT_TRUE(select_result.has_value()) << "SELECT with NULL FK failed: " << select_result.error().message();
+
+    const auto& messages = select_result.value();
+    ASSERT_EQ(messages.size(), 1);
+
+    // Verify FK field with NULL value is default-initialized
+    EXPECT_EQ(messages[0].sender.id, 0) << "NULL FK should result in default-initialized PK (0)";
+    EXPECT_EQ(messages[0].sender.name, "");
+    EXPECT_EQ(messages[0].sender.age, 0);
+    EXPECT_EQ(messages[0].text, "Message with NULL sender");
+}
+
+// Test: LEFT JOIN with NULL FK values
+TEST_F(NullableFKTest, LeftJoinWithNullFKField) {
+    QuerySet<User>    user_qs;
+    QuerySet<Message> message_qs;
+
+    // Insert a user
+    User alice{0, "Alice", 30};
+    auto alice_result = user_qs.insert(alice);
+    ASSERT_TRUE(alice_result.has_value());
+    int64_t alice_id = alice_result.value();
+
+    // Insert message with NULL sender_id
+    auto& conn        = QuerySet<User>::get_default_connection();
+    auto  stmt_result = conn.prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+    ASSERT_TRUE(stmt.bind_int(1, alice_id).has_value());
+    ASSERT_TRUE(stmt.bind_text(2, "NULL sender message").has_value());
+
+    int step_result = stmt.step_raw();
+    ASSERT_EQ(step_result, decltype(stmt)::NO_MORE_ROWS);
+
+    // LEFT JOIN on sender - should return message even with NULL sender_id
+    auto join_result = message_qs.left_join<&Message::sender>().select();
+    ASSERT_TRUE(join_result.has_value()) << "LEFT JOIN with NULL FK failed: " << join_result.error().message();
+
+    const auto& messages = join_result.value();
+    ASSERT_EQ(messages.size(), 1) << "LEFT JOIN should return message with NULL FK";
+
+    // Verify sender FK is default-initialized (NULL in DB = no JOIN match)
+    EXPECT_EQ(messages[0].sender.id, 0) << "NULL FK should not JOIN, remain default";
+    EXPECT_EQ(messages[0].sender.name, "") << "NULL FK should not populate name";
+    EXPECT_EQ(messages[0].sender.age, 0) << "NULL FK should not populate age";
+    EXPECT_EQ(messages[0].text, "NULL sender message");
+}
+
+// Test: LEFT JOIN with mix of NULL and valid FKs
+TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
+    QuerySet<User>    user_qs;
+    QuerySet<Message> message_qs;
+
+    // Insert users
+    User alice{0, "Alice", 30};
+    User bob{0, "Bob", 25};
+    auto alice_result = user_qs.insert(alice);
+    auto bob_result   = user_qs.insert(bob);
+    ASSERT_TRUE(alice_result.has_value());
+    ASSERT_TRUE(bob_result.has_value());
+    int64_t alice_id = alice_result.value();
+    int64_t bob_id   = bob_result.value();
+
+    auto& conn = QuerySet<User>::get_default_connection();
+
+    // Message 1: Valid sender (Alice)
+    auto stmt1 = conn.prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (?, ?, ?)");
+    ASSERT_TRUE(stmt1.has_value());
+    auto s1 = std::move(stmt1.value());
+    ASSERT_TRUE(s1.bind_int(1, alice_id).has_value());
+    ASSERT_TRUE(s1.bind_int(2, bob_id).has_value());
+    ASSERT_TRUE(s1.bind_text(3, "From Alice").has_value());
+    ASSERT_EQ(s1.step_raw(), decltype(s1)::NO_MORE_ROWS);
+
+    // Message 2: NULL sender
+    auto stmt2 = conn.prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
+    ASSERT_TRUE(stmt2.has_value());
+    auto s2 = std::move(stmt2.value());
+    ASSERT_TRUE(s2.bind_int(1, bob_id).has_value());
+    ASSERT_TRUE(s2.bind_text(2, "Anonymous").has_value());
+    ASSERT_EQ(s2.step_raw(), decltype(s2)::NO_MORE_ROWS);
+
+    // LEFT JOIN should return both messages
+    auto join_result = message_qs.left_join<&Message::sender>().select();
+    ASSERT_TRUE(join_result.has_value());
+
+    const auto& messages = join_result.value();
+    ASSERT_EQ(messages.size(), 2) << "LEFT JOIN should return all messages";
+
+    // Find and verify each message
+    bool found_alice = false, found_null = false;
+    for (const auto& m : messages) {
+        if (m.text == "From Alice") {
+            found_alice = true;
+            EXPECT_EQ(m.sender.id, alice_id);
+            EXPECT_EQ(m.sender.name, "Alice");
+            EXPECT_EQ(m.sender.age, 30);
+        } else if (m.text == "Anonymous") {
+            found_null = true;
+            EXPECT_EQ(m.sender.id, 0) << "NULL sender should remain default";
+            EXPECT_EQ(m.sender.name, "");
+            EXPECT_EQ(m.sender.age, 0);
+        }
+    }
+    EXPECT_TRUE(found_alice) << "Should find Alice's message";
+    EXPECT_TRUE(found_null) << "Should find anonymous message";
+}

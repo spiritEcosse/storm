@@ -22,6 +22,13 @@ export namespace storm::orm::statements {
 
     using storm::orm::utilities::ConstexprString;
 
+    // JOIN type enumeration
+    enum class JoinType {
+        Inner,  // INNER JOIN
+        Left,   // LEFT JOIN (LEFT OUTER JOIN)
+        Right   // RIGHT JOIN (RIGHT OUTER JOIN)
+    };
+
     // Type-erased wrapper for JOIN operations (replaces IJoinStatement abstract base)
     // Uses function pointers instead of virtual dispatch for zero-overhead abstraction
     struct JoinStatementWrapper {
@@ -44,12 +51,12 @@ export namespace storm::orm::statements {
         }
     };
 
-    // Unified JOIN statement - supports single or multiple FK fields
+    // Unified JOIN statement - supports single or multiple FK fields with configurable join type
     // Now generates SQL at compile-time and uses static methods (no virtual dispatch)
     // Usage:
-    //   Single FK: JoinStatement<Message, ConnType, &Message::sender>
-    //   Multi FK:  JoinStatement<Message, ConnType, &Message::sender, &Message::receiver>
-    template <typename T, storm::db::DatabaseConnection ConnType, auto... FKFieldPtrs>
+    //   Single FK INNER: JoinStatement<Message, ConnType, JoinType::Inner, &Message::sender>
+    //   Multi FK LEFT:   JoinStatement<Message, ConnType, JoinType::Left, &Message::sender, &Message::receiver>
+    template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, auto... FKFieldPtrs>
         requires(sizeof...(FKFieldPtrs) >= 1)
     class JoinStatement : private BaseStatement<T> {
         friend class BaseStatement<T>;
@@ -131,15 +138,26 @@ export namespace storm::orm::statements {
         // Get FK pointer at index (reuses pack_element_at)
         template <size_t Idx> static constexpr auto get_fk_ptr_at = pack_element_at<Idx, FKFieldPtrs...>::value;
 
+        // Get JOIN keyword based on JoinType
+        static constexpr std::string_view get_join_keyword() {
+            if constexpr (Type == JoinType::Inner) {
+                return " INNER JOIN ";
+            } else if constexpr (Type == JoinType::Left) {
+                return " LEFT JOIN ";
+            } else if constexpr (Type == JoinType::Right) {
+                return " RIGHT JOIN ";
+            }
+        }
+
         // ==================== COMPILE-TIME SQL GENERATION ====================
 
         // Calculate JOIN SQL size at compile-time
         static consteval size_t calculate_join_sql_size() {
             size_t total = 0;
-            // For each FK: " INNER JOIN table tN ON tN.pk = t1.fk_id"
+            // For each FK: " <JOIN_TYPE> table tN ON tN.pk = t1.fk_id"
             auto calc_one_join = []<size_t I>() constexpr {
                 size_t size = 0;
-                size += 12; // " INNER JOIN "
+                size += get_join_keyword().size(); // " INNER/LEFT/RIGHT JOIN "
                 size += FKBase_at<I>::table_name_.size();
                 size += 2; // " t"
                 size += 1; // digit (2-9)
@@ -168,7 +186,7 @@ export namespace storm::orm::statements {
 
             // Build JOIN clauses for each FK using fold expression
             [&]<size_t... Is>(std::index_sequence<Is...>) {
-                ((result.append(" INNER JOIN "),
+                ((result.append(get_join_keyword()),
                   result.append(FKBase_at<Is>::table_name_),
                   result.append(" t"),
                   result.append_digit(Is + 2),
@@ -370,10 +388,10 @@ export namespace storm::orm::statements {
         }
     };
 
-    // Factory function to create type-erased wrapper (called by QuerySet::join<>())
-    template <typename T, storm::db::DatabaseConnection ConnType, auto... FKFieldPtrs>
+    // Factory function to create type-erased wrapper (called by QuerySet::join<>(), left_join<>(), right_join<>())
+    template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, auto... FKFieldPtrs>
     [[nodiscard]] auto make_join_wrapper() -> JoinStatementWrapper {
-        using JS = JoinStatement<T, ConnType, FKFieldPtrs...>;
+        using JS = JoinStatement<T, ConnType, Type, FKFieldPtrs...>;
 
         return JoinStatementWrapper{
                 // Function pointers to static methods returning compile-time generated SQL
