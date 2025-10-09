@@ -46,7 +46,6 @@ export namespace storm::orm::statements {
     class JoinStatement : public IJoinStatement, private BaseStatement<T> {
         friend class BaseStatement<T>;
         using Base       = BaseStatement<T>;
-        using Connection = ConnType;
         using Error      = typename ConnType::Error;
         using Statement  = typename ConnType::Statement;
 
