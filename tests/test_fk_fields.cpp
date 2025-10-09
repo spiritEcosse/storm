@@ -775,3 +775,225 @@ TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     EXPECT_TRUE(found_alice) << "Should find Alice's message";
     EXPECT_TRUE(found_null) << "Should find anonymous message";
 }
+
+// Test fixture for extended type support in JOINs
+class ExtendedTypesJoinTest : public ::testing::Test {
+  protected:
+    void SetUp() override {
+        auto result = QuerySet<User>::set_default_connection(":memory:");
+        ASSERT_TRUE(result.has_value());
+
+        auto& conn = QuerySet<User>::get_default_connection();
+
+        // Create Employee table with extended types
+        auto create_employee_result = conn.execute(
+                "CREATE TABLE Employee ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "name TEXT NOT NULL, "
+                "salary REAL NOT NULL, "
+                "is_active INTEGER NOT NULL, "
+                "nickname TEXT"  // NULL allowed for optional
+                ")"
+        );
+        ASSERT_TRUE(create_employee_result.has_value())
+                << "Failed to create Employee table: " << create_employee_result.error().message();
+
+        // Create Project table with FK to Employee
+        auto create_project_result = conn.execute(
+                "CREATE TABLE Project ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "manager_id INTEGER NOT NULL, "
+                "title TEXT NOT NULL, "
+                "budget REAL NOT NULL"
+                ")"
+        );
+        ASSERT_TRUE(create_project_result.has_value())
+                << "Failed to create Project table: " << create_project_result.error().message();
+    }
+
+    void TearDown() override {
+        QuerySet<User>::clear_default_connection();
+    }
+};
+
+// Test: JOIN with extended types (double, bool, optional)
+TEST_F(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
+    // Define structs with extended types
+    struct Employee {
+        [[= storm::meta::FieldAttr::primary]] int id;
+        std::string                               name;
+        double                                    salary;
+        bool                                      is_active;
+        std::optional<std::string>                nickname;
+    };
+
+    struct Project {
+        [[= storm::meta::FieldAttr::primary]] int id;
+        [[= storm::meta::FieldAttr::fk]] Employee     manager;
+        std::string                                   title;
+        double                                        budget;
+    };
+
+    QuerySet<Employee> employee_qs;
+    QuerySet<Project>  project_qs;
+
+    // Insert employees with extended types
+    Employee alice{0, "Alice Smith", 95000.50, true, "Ally"};
+    Employee bob{0, "Bob Johnson", 87500.75, false, std::nullopt};
+
+    auto alice_result = employee_qs.insert(alice);
+    auto bob_result   = employee_qs.insert(bob);
+
+    ASSERT_TRUE(alice_result.has_value()) << "Failed to insert Alice: " << alice_result.error().message();
+    ASSERT_TRUE(bob_result.has_value()) << "Failed to insert Bob: " << bob_result.error().message();
+
+    int64_t alice_id = alice_result.value();
+    int64_t bob_id   = bob_result.value();
+
+    // Insert projects managed by Alice and Bob
+    Project proj1{0, Employee{static_cast<int>(alice_id), "", 0.0, false, std::nullopt}, "Web Redesign", 50000.0};
+    Project proj2{0, Employee{static_cast<int>(bob_id), "", 0.0, false, std::nullopt}, "Mobile App", 75000.0};
+
+    auto proj1_result = project_qs.insert(proj1);
+    auto proj2_result = project_qs.insert(proj2);
+
+    ASSERT_TRUE(proj1_result.has_value()) << "Failed to insert project 1: " << proj1_result.error().message();
+    ASSERT_TRUE(proj2_result.has_value()) << "Failed to insert project 2: " << proj2_result.error().message();
+
+    // JOIN to get projects with fully populated manager (Employee) objects
+    auto join_result = project_qs.join<&Project::manager>().select();
+    ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
+
+    const auto& projects = join_result.value();
+    ASSERT_EQ(projects.size(), 2) << "Should retrieve both projects";
+
+    // Find Alice's project and verify all extended types
+    bool found_alice_project = false;
+    bool found_bob_project   = false;
+
+    for (const auto& proj : projects) {
+        if (proj.title == "Web Redesign") {
+            found_alice_project = true;
+
+            // Verify manager FK is fully populated with all extended types
+            EXPECT_EQ(proj.manager.id, alice_id) << "Manager ID should be Alice";
+            EXPECT_EQ(proj.manager.name, "Alice Smith") << "Manager name should be populated";
+
+            // Test double type
+            EXPECT_DOUBLE_EQ(proj.manager.salary, 95000.50) << "Double field (salary) should be populated correctly";
+
+            // Test bool type
+            EXPECT_TRUE(proj.manager.is_active) << "Bool field (is_active) should be true for Alice";
+
+            // Test optional<string> with value
+            ASSERT_TRUE(proj.manager.nickname.has_value()) << "Optional nickname should have value for Alice";
+            EXPECT_EQ(proj.manager.nickname.value(), "Ally") << "Optional nickname value should be 'Ally'";
+
+            // Verify project fields
+            EXPECT_DOUBLE_EQ(proj.budget, 50000.0) << "Project budget should be correct";
+        } else if (proj.title == "Mobile App") {
+            found_bob_project = true;
+
+            // Verify Bob's extended types
+            EXPECT_EQ(proj.manager.id, bob_id) << "Manager ID should be Bob";
+            EXPECT_EQ(proj.manager.name, "Bob Johnson") << "Manager name should be populated";
+
+            // Test double type
+            EXPECT_DOUBLE_EQ(proj.manager.salary, 87500.75) << "Double field should be populated correctly for Bob";
+
+            // Test bool type (false)
+            EXPECT_FALSE(proj.manager.is_active) << "Bool field should be false for Bob";
+
+            // Test optional<string> without value (NULL in DB)
+            EXPECT_FALSE(proj.manager.nickname.has_value())
+                    << "Optional nickname should be empty (nullopt) for Bob when NULL in DB";
+
+            // Verify project fields
+            EXPECT_DOUBLE_EQ(proj.budget, 75000.0) << "Project budget should be correct";
+        }
+    }
+
+    EXPECT_TRUE(found_alice_project) << "Should find Alice's project with extended types";
+    EXPECT_TRUE(found_bob_project) << "Should find Bob's project with extended types";
+}
+
+// Test: Multi-JOIN with extended types
+TEST_F(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
+    struct Employee {
+        [[= storm::meta::FieldAttr::primary]] int id;
+        std::string                               name;
+        double                                    salary;
+        bool                                      is_active;
+        std::optional<std::string>                nickname;
+    };
+
+    struct Task {
+        [[= storm::meta::FieldAttr::primary]] int id;
+        [[= storm::meta::FieldAttr::fk]] Employee     assignee;
+        [[= storm::meta::FieldAttr::fk]] Employee     reviewer;
+        std::string                                   description;
+    };
+
+    QuerySet<Employee> employee_qs;
+    QuerySet<Task>     task_qs;
+
+    // Create Task table
+    auto& conn              = QuerySet<User>::get_default_connection();
+    auto  create_task_result = conn.execute(
+            "CREATE TABLE Task ("
+             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+             "assignee_id INTEGER NOT NULL, "
+             "reviewer_id INTEGER NOT NULL, "
+             "description TEXT NOT NULL"
+             ")"
+    );
+    ASSERT_TRUE(create_task_result.has_value());
+
+    // Insert employees
+    Employee alice{0, "Alice", 95000.0, true, "Ally"};
+    Employee bob{0, "Bob", 87500.0, false, std::nullopt};
+
+    auto alice_result = employee_qs.insert(alice);
+    auto bob_result   = employee_qs.insert(bob);
+
+    ASSERT_TRUE(alice_result.has_value());
+    ASSERT_TRUE(bob_result.has_value());
+
+    int64_t alice_id = alice_result.value();
+    int64_t bob_id   = bob_result.value();
+
+    // Insert task: Alice assigned, Bob reviewing
+    Task task{
+            0,
+            Employee{static_cast<int>(alice_id), "", 0.0, false, std::nullopt},
+            Employee{static_cast<int>(bob_id), "", 0.0, false, std::nullopt},
+            "Implement feature X"
+    };
+
+    auto task_result = task_qs.insert(task);
+    ASSERT_TRUE(task_result.has_value());
+
+    // Multi-JOIN to populate both assignee and reviewer
+    auto join_result = task_qs.join<&Task::assignee, &Task::reviewer>().select();
+    ASSERT_TRUE(join_result.has_value()) << "Multi-JOIN failed: " << join_result.error().message();
+
+    const auto& tasks = join_result.value();
+    ASSERT_EQ(tasks.size(), 1);
+
+    // Verify assignee (Alice) - all extended types
+    EXPECT_EQ(tasks[0].assignee.id, alice_id);
+    EXPECT_EQ(tasks[0].assignee.name, "Alice");
+    EXPECT_DOUBLE_EQ(tasks[0].assignee.salary, 95000.0);
+    EXPECT_TRUE(tasks[0].assignee.is_active);
+    ASSERT_TRUE(tasks[0].assignee.nickname.has_value());
+    EXPECT_EQ(tasks[0].assignee.nickname.value(), "Ally");
+
+    // Verify reviewer (Bob) - all extended types
+    EXPECT_EQ(tasks[0].reviewer.id, bob_id);
+    EXPECT_EQ(tasks[0].reviewer.name, "Bob");
+    EXPECT_DOUBLE_EQ(tasks[0].reviewer.salary, 87500.0);
+    EXPECT_FALSE(tasks[0].reviewer.is_active);
+    EXPECT_FALSE(tasks[0].reviewer.nickname.has_value()) << "Bob's nickname should be nullopt";
+
+    EXPECT_EQ(tasks[0].description, "Implement feature X");
+}
