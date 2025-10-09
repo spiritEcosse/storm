@@ -378,7 +378,341 @@ void benchmark_raw_sqlite_inner_join(int num_messages, int iterations = 100) {
         total_time += elapsed;
     }
 
-    std::cout << "Raw SQLite INNER JOIN - " << num_messages << " messages:" << std::endl;
+    std::cout << "Raw SQLite INNER JOIN (single FK) - " << num_messages << " messages:" << std::endl;
+    std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
+    std::cout << "  Iterations: " << iterations << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
+              << (total_time / iterations) << " ms" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+              << (total_rows / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << std::endl;
+
+    teardown_database();
+}
+
+// Benchmark: Raw SQLite INNER JOIN multi FK
+void benchmark_raw_sqlite_inner_join_multi(int num_messages, int iterations = 100) {
+    int num_users = std::max(100, num_messages / 10);
+    setup_database(num_users, num_messages);
+
+    auto& conn = QuerySet<User>::get_default_connection();
+    std::string sql =
+        "SELECT m.id, m.text, "
+        "u1.id, u1.name, u1.age, "
+        "u2.id, u2.name, u2.age "
+        "FROM Message m "
+        "INNER JOIN User u1 ON u1.id = m.sender_id "
+        "INNER JOIN User u2 ON u2.id = m.receiver_id";
+
+    BenchmarkTimer timer;
+    double total_time = 0;
+    int total_rows = 0;
+
+    for (int i = 0; i < iterations; ++i) {
+        timer.reset();
+
+        auto stmt_result = conn.prepare(sql);
+        if (!stmt_result.has_value()) {
+            std::cerr << "Failed to prepare statement" << std::endl;
+            break;
+        }
+
+        auto stmt = std::move(stmt_result.value());
+        int count = 0;
+        while (true) {
+            int step = stmt.step_raw();
+            if (step == decltype(stmt)::ROW_AVAILABLE) {
+                (void)stmt.extract_int(0);
+                (void)stmt.extract_text_ptr(1);
+                (void)stmt.extract_int(2);
+                (void)stmt.extract_text_ptr(3);
+                (void)stmt.extract_int(4);
+                (void)stmt.extract_int(5);
+                (void)stmt.extract_text_ptr(6);
+                (void)stmt.extract_int(7);
+                count++;
+            } else if (step == decltype(stmt)::NO_MORE_ROWS) {
+                break;
+            } else {
+                std::cerr << "Step failed" << std::endl;
+                break;
+            }
+        }
+
+        double elapsed = timer.elapsed_ms();
+        total_rows += count;
+        total_time += elapsed;
+    }
+
+    std::cout << "Raw SQLite INNER JOIN (multi FK) - " << num_messages << " messages:" << std::endl;
+    std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
+    std::cout << "  Iterations: " << iterations << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
+              << (total_time / iterations) << " ms" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+              << (total_rows / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << std::endl;
+
+    teardown_database();
+}
+
+// Benchmark: Raw SQLite LEFT JOIN single FK
+void benchmark_raw_sqlite_left_join_single(int num_messages, int iterations = 100) {
+    int num_users = std::max(100, num_messages / 10);
+    setup_database(num_users, num_messages);
+
+    auto& conn = QuerySet<User>::get_default_connection();
+    std::string sql =
+        "SELECT m.id, m.text, "
+        "u1.id, u1.name, u1.age "
+        "FROM Message m "
+        "LEFT JOIN User u1 ON u1.id = m.sender_id";
+
+    BenchmarkTimer timer;
+    double total_time = 0;
+    int total_rows = 0;
+
+    for (int i = 0; i < iterations; ++i) {
+        timer.reset();
+
+        auto stmt_result = conn.prepare(sql);
+        if (!stmt_result.has_value()) {
+            std::cerr << "Failed to prepare statement" << std::endl;
+            break;
+        }
+
+        auto stmt = std::move(stmt_result.value());
+        int count = 0;
+        while (true) {
+            int step = stmt.step_raw();
+            if (step == decltype(stmt)::ROW_AVAILABLE) {
+                (void)stmt.extract_int(0);
+                (void)stmt.extract_text_ptr(1);
+                if (!stmt.is_null(2)) {
+                    (void)stmt.extract_int(2);
+                    (void)stmt.extract_text_ptr(3);
+                    (void)stmt.extract_int(4);
+                }
+                count++;
+            } else if (step == decltype(stmt)::NO_MORE_ROWS) {
+                break;
+            } else {
+                std::cerr << "Step failed" << std::endl;
+                break;
+            }
+        }
+
+        double elapsed = timer.elapsed_ms();
+        total_rows += count;
+        total_time += elapsed;
+    }
+
+    std::cout << "Raw SQLite LEFT JOIN (single FK) - " << num_messages << " messages:" << std::endl;
+    std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
+    std::cout << "  Iterations: " << iterations << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
+              << (total_time / iterations) << " ms" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+              << (total_rows / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << std::endl;
+
+    teardown_database();
+}
+
+// Benchmark: Raw SQLite LEFT JOIN multi FK
+void benchmark_raw_sqlite_left_join_multi(int num_messages, int iterations = 100) {
+    int num_users = std::max(100, num_messages / 10);
+    setup_database(num_users, num_messages);
+
+    auto& conn = QuerySet<User>::get_default_connection();
+    std::string sql =
+        "SELECT m.id, m.text, "
+        "u1.id, u1.name, u1.age, "
+        "u2.id, u2.name, u2.age "
+        "FROM Message m "
+        "LEFT JOIN User u1 ON u1.id = m.sender_id "
+        "LEFT JOIN User u2 ON u2.id = m.receiver_id";
+
+    BenchmarkTimer timer;
+    double total_time = 0;
+    int total_rows = 0;
+
+    for (int i = 0; i < iterations; ++i) {
+        timer.reset();
+
+        auto stmt_result = conn.prepare(sql);
+        if (!stmt_result.has_value()) {
+            std::cerr << "Failed to prepare statement" << std::endl;
+            break;
+        }
+
+        auto stmt = std::move(stmt_result.value());
+        int count = 0;
+        while (true) {
+            int step = stmt.step_raw();
+            if (step == decltype(stmt)::ROW_AVAILABLE) {
+                (void)stmt.extract_int(0);
+                (void)stmt.extract_text_ptr(1);
+                if (!stmt.is_null(2)) {
+                    (void)stmt.extract_int(2);
+                    (void)stmt.extract_text_ptr(3);
+                    (void)stmt.extract_int(4);
+                }
+                if (!stmt.is_null(5)) {
+                    (void)stmt.extract_int(5);
+                    (void)stmt.extract_text_ptr(6);
+                    (void)stmt.extract_int(7);
+                }
+                count++;
+            } else if (step == decltype(stmt)::NO_MORE_ROWS) {
+                break;
+            } else {
+                std::cerr << "Step failed" << std::endl;
+                break;
+            }
+        }
+
+        double elapsed = timer.elapsed_ms();
+        total_rows += count;
+        total_time += elapsed;
+    }
+
+    std::cout << "Raw SQLite LEFT JOIN (multi FK) - " << num_messages << " messages:" << std::endl;
+    std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
+    std::cout << "  Iterations: " << iterations << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
+              << (total_time / iterations) << " ms" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+              << (total_rows / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << std::endl;
+
+    teardown_database();
+}
+
+// Benchmark: Raw SQLite RIGHT JOIN single FK
+void benchmark_raw_sqlite_right_join_single(int num_messages, int iterations = 100) {
+    int num_users = std::max(100, num_messages / 10);
+    setup_database(num_users, num_messages);
+
+    auto& conn = QuerySet<User>::get_default_connection();
+    std::string sql =
+        "SELECT m.id, m.text, "
+        "u1.id, u1.name, u1.age "
+        "FROM Message m "
+        "RIGHT JOIN User u1 ON u1.id = m.sender_id";
+
+    BenchmarkTimer timer;
+    double total_time = 0;
+    int total_rows = 0;
+
+    for (int i = 0; i < iterations; ++i) {
+        timer.reset();
+
+        auto stmt_result = conn.prepare(sql);
+        if (!stmt_result.has_value()) {
+            std::cerr << "Failed to prepare statement" << std::endl;
+            break;
+        }
+
+        auto stmt = std::move(stmt_result.value());
+        int count = 0;
+        while (true) {
+            int step = stmt.step_raw();
+            if (step == decltype(stmt)::ROW_AVAILABLE) {
+                if (!stmt.is_null(0)) {
+                    (void)stmt.extract_int(0);
+                    (void)stmt.extract_text_ptr(1);
+                }
+                (void)stmt.extract_int(2);
+                (void)stmt.extract_text_ptr(3);
+                (void)stmt.extract_int(4);
+                count++;
+            } else if (step == decltype(stmt)::NO_MORE_ROWS) {
+                break;
+            } else {
+                std::cerr << "Step failed" << std::endl;
+                break;
+            }
+        }
+
+        double elapsed = timer.elapsed_ms();
+        total_rows += count;
+        total_time += elapsed;
+    }
+
+    std::cout << "Raw SQLite RIGHT JOIN (single FK) - " << num_messages << " messages:" << std::endl;
+    std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
+    std::cout << "  Iterations: " << iterations << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
+              << (total_time / iterations) << " ms" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+              << (total_rows / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << std::endl;
+
+    teardown_database();
+}
+
+// Benchmark: Raw SQLite RIGHT JOIN multi FK
+void benchmark_raw_sqlite_right_join_multi(int num_messages, int iterations = 100) {
+    int num_users = std::max(100, num_messages / 10);
+    setup_database(num_users, num_messages);
+
+    auto& conn = QuerySet<User>::get_default_connection();
+    std::string sql =
+        "SELECT m.id, m.text, "
+        "u1.id, u1.name, u1.age, "
+        "u2.id, u2.name, u2.age "
+        "FROM Message m "
+        "RIGHT JOIN User u1 ON u1.id = m.sender_id "
+        "RIGHT JOIN User u2 ON u2.id = m.receiver_id";
+
+    BenchmarkTimer timer;
+    double total_time = 0;
+    int total_rows = 0;
+
+    for (int i = 0; i < iterations; ++i) {
+        timer.reset();
+
+        auto stmt_result = conn.prepare(sql);
+        if (!stmt_result.has_value()) {
+            std::cerr << "Failed to prepare statement" << std::endl;
+            break;
+        }
+
+        auto stmt = std::move(stmt_result.value());
+        int count = 0;
+        while (true) {
+            int step = stmt.step_raw();
+            if (step == decltype(stmt)::ROW_AVAILABLE) {
+                if (!stmt.is_null(0)) {
+                    (void)stmt.extract_int(0);
+                    (void)stmt.extract_text_ptr(1);
+                }
+                if (!stmt.is_null(2)) {
+                    (void)stmt.extract_int(2);
+                    (void)stmt.extract_text_ptr(3);
+                    (void)stmt.extract_int(4);
+                }
+                if (!stmt.is_null(5)) {
+                    (void)stmt.extract_int(5);
+                    (void)stmt.extract_text_ptr(6);
+                    (void)stmt.extract_int(7);
+                }
+                count++;
+            } else if (step == decltype(stmt)::NO_MORE_ROWS) {
+                break;
+            } else {
+                std::cerr << "Step failed" << std::endl;
+                break;
+            }
+        }
+
+        double elapsed = timer.elapsed_ms();
+        total_rows += count;
+        total_time += elapsed;
+    }
+
+    std::cout << "Raw SQLite RIGHT JOIN (multi FK) - " << num_messages << " messages:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Iterations: " << iterations << std::endl;
     std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
@@ -427,13 +761,22 @@ int main(int argc, char* argv[]) {
         std::cout << std::endl;
 
         benchmark_select_no_join(size, iterations);
+
+        std::cout << "--- Storm ORM JOINs ---" << std::endl;
         benchmark_inner_join_single_fk(size, iterations);
         benchmark_inner_join_multi_fk(size, iterations);
         benchmark_left_join_single_fk(size, iterations);
         benchmark_left_join_multi_fk(size, iterations);
         benchmark_right_join_single_fk(size, iterations);
         benchmark_right_join_multi_fk(size, iterations);
+
+        std::cout << "--- Raw SQLite JOINs ---" << std::endl;
         benchmark_raw_sqlite_inner_join(size, iterations);
+        benchmark_raw_sqlite_inner_join_multi(size, iterations);
+        benchmark_raw_sqlite_left_join_single(size, iterations);
+        benchmark_raw_sqlite_left_join_multi(size, iterations);
+        benchmark_raw_sqlite_right_join_single(size, iterations);
+        benchmark_raw_sqlite_right_join_multi(size, iterations);
 
         std::cout << std::string(60, '=') << std::endl;
         std::cout << std::endl;

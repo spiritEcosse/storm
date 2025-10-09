@@ -88,7 +88,9 @@ if check_benchmark "$BENCH_JOIN"; then
     baseline_throughput=$(echo "$output" | grep "SELECT (no JOIN)" -A 4 | grep "Throughput:" | awk '{print $2}')
     baseline_time=$(echo "$output" | grep "SELECT (no JOIN)" -A 3 | grep "Avg per iteration:" | awk '{print $4, $5}')
 
-    echo "$output" | grep -E "(SELECT|JOIN|Raw SQLite)" | while read line; do
+    # Show Storm ORM operations
+    echo -e "${GREEN}Storm ORM Operations:${NC}"
+    echo "$output" | grep -E "(SELECT|INNER JOIN \(|LEFT JOIN \(|RIGHT JOIN \()" | grep -v "Raw SQLite" | while read line; do
         operation=$(echo "$line" | sed 's/ - .*//')
         avg_time=$(echo "$output" | grep -A 3 "$operation" | grep "Avg per iteration:" | awk '{print $4, $5}')
         throughput=$(echo "$output" | grep -A 4 "$operation" | grep "Throughput:" | awk '{print $2, $3}')
@@ -96,7 +98,6 @@ if check_benchmark "$BENCH_JOIN"; then
         if [ "$operation" != "SELECT (no JOIN)" ] && [ ! -z "$baseline_throughput" ]; then
             current_throughput=$(echo "$throughput" | awk '{print $1}')
             if [ ! -z "$current_throughput" ] && [ "$current_throughput" != "0" ]; then
-                # Use awk for percentage calculation (no bc required)
                 percent=$(awk "BEGIN {printf \"%.0f\", ($current_throughput / $baseline_throughput) * 100}")
                 vs_baseline="${percent}%"
             else
@@ -104,6 +105,28 @@ if check_benchmark "$BENCH_JOIN"; then
             fi
         else
             vs_baseline="100% (baseline)"
+        fi
+
+        print_table_row "$operation" "$avg_time" "$throughput" "$vs_baseline"
+    done
+
+    echo ""
+    echo -e "${YELLOW}Raw SQLite Operations (comparison baseline):${NC}"
+    echo "$output" | grep "Raw SQLite" | while read line; do
+        operation=$(echo "$line" | sed 's/ - .*//')
+        avg_time=$(echo "$output" | grep -A 3 "$operation" | grep "Avg per iteration:" | awk '{print $4, $5}')
+        throughput=$(echo "$output" | grep -A 4 "$operation" | grep "Throughput:" | awk '{print $2, $3}')
+
+        if [ ! -z "$baseline_throughput" ]; then
+            current_throughput=$(echo "$throughput" | awk '{print $1}')
+            if [ ! -z "$current_throughput" ] && [ "$current_throughput" != "0" ]; then
+                percent=$(awk "BEGIN {printf \"%.0f\", ($current_throughput / $baseline_throughput) * 100}")
+                vs_baseline="${percent}%"
+            else
+                vs_baseline="N/A"
+            fi
+        else
+            vs_baseline="-"
         fi
 
         print_table_row "$operation" "$avg_time" "$throughput" "$vs_baseline"
