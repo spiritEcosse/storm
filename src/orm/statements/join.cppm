@@ -176,16 +176,26 @@ export namespace storm::orm::statements {
         // Get FK pointer at index (reuses pack_element_at)
         template <size_t Idx> static constexpr auto get_fk_ptr_at = pack_element_at<Idx, FKFieldPtrs...>::value;
 
+        // Cached SQL strings to avoid rebuilding on repeated queries
+        mutable std::string cached_join_sql_;
+        mutable std::string cached_select_fields_;
+
       public:
         JoinStatement() = default;
 
-        // Virtual interface implementation
+        // Virtual interface implementation with caching
         std::string to_sql() const override {
-            return build_join_sql_impl(std::make_index_sequence<fk_count_>{});
+            if (cached_join_sql_.empty()) {
+                cached_join_sql_ = build_join_sql_impl(std::make_index_sequence<fk_count_>{});
+            }
+            return cached_join_sql_;
         }
 
         std::string build_qualified_select_fields() const override {
-            return build_select_fields_impl(std::make_index_sequence<fk_count_>{});
+            if (cached_select_fields_.empty()) {
+                cached_select_fields_ = build_select_fields_impl(std::make_index_sequence<fk_count_>{});
+            }
+            return cached_select_fields_;
         }
 
         // Virtual extraction method for polymorphic access
