@@ -736,22 +736,27 @@ void benchmark_raw_sqlite_select(int num_records) {
     BenchmarkTimer timer;
     timer.reset();
 
-    int rows_fetched = 0;
+    // Create objects just like Storm ORM does
+    struct Person {
+        int id;
+        std::string name;
+        int age;
+    };
+    std::vector<Person> persons;
+    persons.reserve(num_records); // Pre-allocate to match Storm ORM's optimization
+
     while (sqlite3_step(select_stmt) == SQLITE_ROW) {
-        // Extract values to simulate full row processing
+        // Extract values and create Person object
         int id = sqlite3_column_int(select_stmt, 0);
         const char* name = reinterpret_cast<const char*>(sqlite3_column_text(select_stmt, 1));
         int age = sqlite3_column_int(select_stmt, 2);
 
-        // Prevent compiler optimization
-        (void)id;
-        (void)name;
-        (void)age;
-
-        rows_fetched++;
+        // Create Person object and add to vector (matching Storm ORM behavior)
+        persons.push_back(Person{id, std::string(name), age});
     }
 
     double elapsed = timer.elapsed_ms();
+    int rows_fetched = persons.size();
 
     sqlite3_finalize(select_stmt);
 

@@ -354,17 +354,26 @@ void benchmark_raw_sqlite_inner_join(int num_messages, int iterations = 100) {
         }
 
         auto stmt = std::move(stmt_result.value());
-        int count = 0;
+        std::vector<Message> results;
+        results.reserve(num_messages);
+
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
-                // Extract columns (simulate work)
-                (void)stmt.extract_int(0);
-                (void)stmt.extract_text_ptr(1);
-                (void)stmt.extract_int(2);
-                (void)stmt.extract_text_ptr(3);
-                (void)stmt.extract_int(4);
-                count++;
+                // Build actual Message object with sender populated
+                Message msg;
+                msg.id = stmt.extract_int(0);
+                msg.text = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+
+                // Populate sender FK (fully populated via JOIN)
+                msg.sender.id = stmt.extract_int(2);
+                msg.sender.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(3)));
+                msg.sender.age = stmt.extract_int(4);
+
+                // Receiver is not populated (not joined)
+                msg.receiver = User{0, "", 0};
+
+                results.push_back(std::move(msg));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -374,7 +383,7 @@ void benchmark_raw_sqlite_inner_join(int num_messages, int iterations = 100) {
         }
 
         double elapsed = timer.elapsed_ms();
-        total_rows += count;
+        total_rows += results.size();
         total_time += elapsed;
     }
 
@@ -418,19 +427,28 @@ void benchmark_raw_sqlite_inner_join_multi(int num_messages, int iterations = 10
         }
 
         auto stmt = std::move(stmt_result.value());
-        int count = 0;
+        std::vector<Message> results;
+        results.reserve(num_messages);
+
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
-                (void)stmt.extract_int(0);
-                (void)stmt.extract_text_ptr(1);
-                (void)stmt.extract_int(2);
-                (void)stmt.extract_text_ptr(3);
-                (void)stmt.extract_int(4);
-                (void)stmt.extract_int(5);
-                (void)stmt.extract_text_ptr(6);
-                (void)stmt.extract_int(7);
-                count++;
+                // Build actual Message object with both sender and receiver populated
+                Message msg;
+                msg.id = stmt.extract_int(0);
+                msg.text = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+
+                // Populate sender FK (fully populated via JOIN)
+                msg.sender.id = stmt.extract_int(2);
+                msg.sender.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(3)));
+                msg.sender.age = stmt.extract_int(4);
+
+                // Populate receiver FK (fully populated via JOIN)
+                msg.receiver.id = stmt.extract_int(5);
+                msg.receiver.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(6)));
+                msg.receiver.age = stmt.extract_int(7);
+
+                results.push_back(std::move(msg));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -440,7 +458,7 @@ void benchmark_raw_sqlite_inner_join_multi(int num_messages, int iterations = 10
         }
 
         double elapsed = timer.elapsed_ms();
-        total_rows += count;
+        total_rows += results.size();
         total_time += elapsed;
     }
 
@@ -482,18 +500,30 @@ void benchmark_raw_sqlite_left_join_single(int num_messages, int iterations = 10
         }
 
         auto stmt = std::move(stmt_result.value());
-        int count = 0;
+        std::vector<Message> results;
+        results.reserve(num_messages);
+
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
-                (void)stmt.extract_int(0);
-                (void)stmt.extract_text_ptr(1);
+                // Build actual Message object with LEFT JOIN handling
+                Message msg;
+                msg.id = stmt.extract_int(0);
+                msg.text = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+
+                // Populate sender FK if not NULL (LEFT JOIN may have NULL)
                 if (!stmt.is_null(2)) {
-                    (void)stmt.extract_int(2);
-                    (void)stmt.extract_text_ptr(3);
-                    (void)stmt.extract_int(4);
+                    msg.sender.id = stmt.extract_int(2);
+                    msg.sender.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(3)));
+                    msg.sender.age = stmt.extract_int(4);
+                } else {
+                    msg.sender = User{0, "", 0};
                 }
-                count++;
+
+                // Receiver is not populated (not joined)
+                msg.receiver = User{0, "", 0};
+
+                results.push_back(std::move(msg));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -503,7 +533,7 @@ void benchmark_raw_sqlite_left_join_single(int num_messages, int iterations = 10
         }
 
         double elapsed = timer.elapsed_ms();
-        total_rows += count;
+        total_rows += results.size();
         total_time += elapsed;
     }
 
@@ -547,23 +577,36 @@ void benchmark_raw_sqlite_left_join_multi(int num_messages, int iterations = 100
         }
 
         auto stmt = std::move(stmt_result.value());
-        int count = 0;
+        std::vector<Message> results;
+        results.reserve(num_messages);
+
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
-                (void)stmt.extract_int(0);
-                (void)stmt.extract_text_ptr(1);
+                // Build actual Message object with LEFT JOIN handling for both FKs
+                Message msg;
+                msg.id = stmt.extract_int(0);
+                msg.text = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+
+                // Populate sender FK if not NULL (LEFT JOIN may have NULL)
                 if (!stmt.is_null(2)) {
-                    (void)stmt.extract_int(2);
-                    (void)stmt.extract_text_ptr(3);
-                    (void)stmt.extract_int(4);
+                    msg.sender.id = stmt.extract_int(2);
+                    msg.sender.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(3)));
+                    msg.sender.age = stmt.extract_int(4);
+                } else {
+                    msg.sender = User{0, "", 0};
                 }
+
+                // Populate receiver FK if not NULL (LEFT JOIN may have NULL)
                 if (!stmt.is_null(5)) {
-                    (void)stmt.extract_int(5);
-                    (void)stmt.extract_text_ptr(6);
-                    (void)stmt.extract_int(7);
+                    msg.receiver.id = stmt.extract_int(5);
+                    msg.receiver.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(6)));
+                    msg.receiver.age = stmt.extract_int(7);
+                } else {
+                    msg.receiver = User{0, "", 0};
                 }
-                count++;
+
+                results.push_back(std::move(msg));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -573,7 +616,7 @@ void benchmark_raw_sqlite_left_join_multi(int num_messages, int iterations = 100
         }
 
         double elapsed = timer.elapsed_ms();
-        total_rows += count;
+        total_rows += results.size();
         total_time += elapsed;
     }
 
@@ -615,18 +658,33 @@ void benchmark_raw_sqlite_right_join_single(int num_messages, int iterations = 1
         }
 
         auto stmt = std::move(stmt_result.value());
-        int count = 0;
+        std::vector<Message> results;
+        results.reserve(num_messages);
+
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
+                // Build actual Message object with RIGHT JOIN handling
+                Message msg;
+
+                // Message fields may be NULL (RIGHT JOIN)
                 if (!stmt.is_null(0)) {
-                    (void)stmt.extract_int(0);
-                    (void)stmt.extract_text_ptr(1);
+                    msg.id = stmt.extract_int(0);
+                    msg.text = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                } else {
+                    msg.id = 0;
+                    msg.text = "";
                 }
-                (void)stmt.extract_int(2);
-                (void)stmt.extract_text_ptr(3);
-                (void)stmt.extract_int(4);
-                count++;
+
+                // Sender FK is always populated (right table)
+                msg.sender.id = stmt.extract_int(2);
+                msg.sender.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(3)));
+                msg.sender.age = stmt.extract_int(4);
+
+                // Receiver is not populated (not joined)
+                msg.receiver = User{0, "", 0};
+
+                results.push_back(std::move(msg));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -636,7 +694,7 @@ void benchmark_raw_sqlite_right_join_single(int num_messages, int iterations = 1
         }
 
         double elapsed = timer.elapsed_ms();
-        total_rows += count;
+        total_rows += results.size();
         total_time += elapsed;
     }
 
@@ -680,25 +738,43 @@ void benchmark_raw_sqlite_right_join_multi(int num_messages, int iterations = 10
         }
 
         auto stmt = std::move(stmt_result.value());
-        int count = 0;
+        std::vector<Message> results;
+        results.reserve(num_messages);
+
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
+                // Build actual Message object with RIGHT JOIN handling for both FKs
+                Message msg;
+
+                // Message fields may be NULL (RIGHT JOIN)
                 if (!stmt.is_null(0)) {
-                    (void)stmt.extract_int(0);
-                    (void)stmt.extract_text_ptr(1);
+                    msg.id = stmt.extract_int(0);
+                    msg.text = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                } else {
+                    msg.id = 0;
+                    msg.text = "";
                 }
+
+                // Sender FK may be NULL (right table on second JOIN)
                 if (!stmt.is_null(2)) {
-                    (void)stmt.extract_int(2);
-                    (void)stmt.extract_text_ptr(3);
-                    (void)stmt.extract_int(4);
+                    msg.sender.id = stmt.extract_int(2);
+                    msg.sender.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(3)));
+                    msg.sender.age = stmt.extract_int(4);
+                } else {
+                    msg.sender = User{0, "", 0};
                 }
+
+                // Receiver FK may be NULL (right table on second JOIN)
                 if (!stmt.is_null(5)) {
-                    (void)stmt.extract_int(5);
-                    (void)stmt.extract_text_ptr(6);
-                    (void)stmt.extract_int(7);
+                    msg.receiver.id = stmt.extract_int(5);
+                    msg.receiver.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(6)));
+                    msg.receiver.age = stmt.extract_int(7);
+                } else {
+                    msg.receiver = User{0, "", 0};
                 }
-                count++;
+
+                results.push_back(std::move(msg));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -708,7 +784,7 @@ void benchmark_raw_sqlite_right_join_multi(int num_messages, int iterations = 10
         }
 
         double elapsed = timer.elapsed_ms();
-        total_rows += count;
+        total_rows += results.size();
         total_time += elapsed;
     }
 
