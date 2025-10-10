@@ -76,7 +76,7 @@ def run_all_benchmarks(args):
 
 def run_perf_comparison(args):
     """Run comprehensive performance comparison"""
-    from bench_compare import performance_comparison
+    from compare import performance_comparison
 
     # Run the performance comparison
     try:
@@ -103,7 +103,7 @@ Examples:
   %(prog)s --joins                        # Run JOIN benchmarks
   %(prog)s --joins --size=50000           # Run JOIN with 50K messages
   %(prog)s --all                          # Run all benchmarks
-  %(prog)s --perf_compare                 # Run comprehensive performance comparison
+  %(prog)s --compare                      # Run comprehensive performance comparison
         '''
     )
 
@@ -115,7 +115,7 @@ Examples:
                          help='Run SQL generation performance analysis')
     commands.add_argument('--all', action='store_true',
                          help='Run all microbenchmarks')
-    commands.add_argument('--perf_compare', action='store_true',
+    commands.add_argument('--compare', action='store_true',
                          help='Run comprehensive performance comparison (Storm vs sqlite_orm vs Raw SQLite)')
 
     # Options
@@ -136,7 +136,7 @@ Examples:
             run_sql_gen_benchmark(args)
         elif args.all:
             run_all_benchmarks(args)
-        elif args.perf_compare:
+        elif args.compare:
             run_perf_comparison(args)
     except KeyboardInterrupt:
         print(f"\n{Colors.YELLOW}Benchmark interrupted by user{Colors.RESET}")

@@ -6,7 +6,7 @@ Complete guide to running and understanding Storm ORM performance benchmarks.
 
 ```bash
 ./bench.py --joins         # JOIN performance (recommended for routine testing)
-./bench.py --perf_compare  # CRUD operations comparison
+./bench.py --compare       # CRUD operations comparison
 ./bench.py --sql-gen       # SQL generation analysis
 ./bench.py --all           # Complete benchmark suite
 ```
@@ -47,7 +47,7 @@ Complete guide to running and understanding Storm ORM performance benchmarks.
 
 ---
 
-### 2. CRUD Operations (`--perf_compare`)
+### 2. CRUD Operations (`--compare`)
 
 **Purpose:** Comprehensive CRUD performance comparison
 
@@ -67,7 +67,7 @@ Complete guide to running and understanding Storm ORM performance benchmarks.
 
 **Usage:**
 ```bash
-./bench.py --perf_compare          # Run CRUD suite (builds benchmarks automatically)
+./bench.py --compare               # Run CRUD suite (builds benchmarks automatically)
 ```
 
 **Performance Tiers:**
@@ -280,7 +280,7 @@ cmake --build --preset ninja-release --target bench_storm
 
 **CRUD benchmark:**
 ```bash
-./scripts/bench/bench_compare.py --perf_compare  # Builds automatically
+./scripts/bench/compare.py --compare  # Builds automatically
 ```
 
 **SQL generation:**

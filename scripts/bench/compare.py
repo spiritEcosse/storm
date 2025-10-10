@@ -461,12 +461,12 @@ def performance_comparison():
 
 def main():
     parser = argparse.ArgumentParser(description="Storm ORM Benchmark Suite")
-    parser.add_argument('--perf_compare', action='store_true',
+    parser.add_argument('--compare', action='store_true',
                        help='Run comprehensive performance comparison (Release build)')
 
     args = parser.parse_args()
 
-    if args.perf_compare:
+    if args.compare:
         performance_comparison()
     else:
         parser.print_help()

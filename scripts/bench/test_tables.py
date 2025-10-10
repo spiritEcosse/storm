@@ -12,7 +12,7 @@ from common import FlexibleTable, BenchmarkTable, Colors, pad_string, get_visibl
 
 def test_flexible_table():
     """Test FlexibleTable with color-coded cells"""
-    print("=== Testing FlexibleTable (9-column bench_compare style) ===\n")
+    print("=== Testing FlexibleTable (9-column compare style) ===\n")
 
     table = FlexibleTable(
         headers=[

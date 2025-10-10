@@ -1,8 +1,12 @@
-# Storm ORM Benchmark Suite
+# Storm ORM Benchmark Suite - Developer Guide
 
-Modern Python-based benchmark infrastructure for Storm ORM performance testing.
+Technical documentation for extending and maintaining the Storm ORM benchmark infrastructure.
 
-## Structure
+> **For users:** See [BENCHMARKS.md](../../BENCHMARKS.md) for how to run benchmarks and interpret results.
+
+## Architecture
+
+### Structure
 
 ```
 bench.py (root)       # Unified entry point for all benchmarks
@@ -16,82 +20,18 @@ scripts/bench/
 │   └── pad_string()
 ├── all.py            # Comprehensive benchmark suite
 ├── join.py           # JOIN performance benchmarks
-├── bench_compare.py  # CRUD operations comparison
+├── compare.py        # CRUD operations comparison
 ├── sql_gen.py        # SQL generation analysis
 ├── test_tables.py    # Table rendering tests
-└── README.md         # This file
+└── README.md         # This file (developer guide)
 ```
 
-## Quick Start
+### Design Principles
 
-From project root:
-
-```bash
-# Unified entry point (recommended)
-./bench.py --joins                 # Run JOIN benchmarks
-./bench.py --perf_compare          # Run CRUD performance comparison
-./bench.py --sql-gen               # Run SQL generation analysis
-./bench.py --all                   # Run all benchmarks
-
-# Custom parameters
-./bench.py --joins --size=50000       # Custom dataset size
-./bench.py --joins --iterations=200   # More iterations
-./bench.py --all --size=5000          # All benchmarks with 5K dataset
-
-# Direct script execution
-./scripts/bench/join.py               # JOIN benchmark
-./scripts/bench/bench_compare.py --perf_compare  # CRUD comparison
-./scripts/bench/sql_gen.py            # SQL generation analysis
-```
-
-## Usage
-
-### JOIN Benchmarks
-
-```bash
-./bench.py --joins                            # Default: 10k messages, 100 iterations
-./bench.py --joins --size=50000              # Custom message count
-./bench.py --joins --iterations=200          # More iterations
-./bench.py --joins --size=10000 --iterations=100
-```
-
-### CRUD Benchmarks
-
-```bash
-./bench.py --perf_compare                     # Full CRUD comparison (builds automatically)
-./scripts/bench/bench_compare.py --perf_compare   # Direct execution
-```
-
-**Measures:**
-- Single INSERT (10K operations)
-- Batch INSERT (10K operations, batch size 1000)
-- Single DELETE (10K operations)
-- Bulk DELETE (10K operations)
-- Single UPDATE (1K operations)
-- Batch UPDATE (1K operations)
-- SELECT (10K rows)
-
-**Compares:** Raw SQLite, sqlite_orm, Storm ORM
-
-### SQL Generation Benchmarks
-
-```bash
-./bench.py --sql-gen                       # SQL generation analysis
-./scripts/bench/sql_gen.py                 # Direct execution
-```
-
-**Analyzes:**
-- Compile-time SQL generation performance
-- Thread-local cache effectiveness
-- Batch size impact (1-1000)
-- Cache hit/miss patterns
-
-### All Benchmarks
-
-```bash
-./bench.py --all                           # Run complete suite
-./bench.py --all --size=5000               # Custom dataset
-```
+1. **DRY (Don't Repeat Yourself):** All benchmarks share common code via `BenchmarkRunner` base class
+2. **Consistent Formatting:** Use `BenchmarkTable` (4-column) or `FlexibleTable` (N-column) for uniform output
+3. **ANSI-Aware:** Handle color codes properly in all string operations
+4. **Unified Entry Point:** `bench.py` dispatches to individual benchmark scripts
 
 ## Adding New Benchmarks
 
@@ -215,16 +155,7 @@ class MyBench(BenchmarkRunner):
         pass
 ```
 
-## Color Coding
-
-Efficiency percentages are automatically color-coded:
-- 🟢 **Green** (≥70%) - Excellent performance
-- 🟡 **Yellow** (50-70%) - Acceptable performance
-- 🔴 **Red** (<50%) - Needs optimization
-
-## Development
-
-### Testing
+## Testing
 
 ```bash
 # Test table rendering
@@ -239,10 +170,38 @@ Efficiency percentages are automatically color-coded:
 ./bench.py --joins
 ```
 
-### Extending
+## Implementation Checklist
 
-All benchmark scripts follow the same pattern:
-1. Inherit from `BenchmarkRunner`
-2. Implement `parse_results()` and `display_results()`
-3. Use `BenchmarkTable` (4-column) or `FlexibleTable` (N-column) for formatting
-4. Register dispatcher function in `bench.py`
+When adding a new benchmark:
+
+1. ✅ Create class inheriting from `BenchmarkRunner`
+2. ✅ Implement `parse_results()` - extract metrics from binary output
+3. ✅ Implement `display_results()` - format using `BenchmarkTable` or `FlexibleTable`
+4. ✅ Add dispatcher function to `bench.py`
+5. ✅ Add command-line argument in `bench.py` main()
+6. ✅ Update `BENCHMARKS.md` with user-facing documentation
+7. ✅ Test with `test_tables.py` and manual runs
+
+## Color Coding Reference
+
+Use `Colors` class from `common.py` for consistent color coding:
+
+```python
+from common import Colors
+
+# Efficiency thresholds
+if efficiency >= 70:
+    color = Colors.GREEN    # Excellent
+elif efficiency >= 50:
+    color = Colors.YELLOW   # Acceptable
+else:
+    color = Colors.RED      # Needs optimization
+```
+
+**Color Constants:**
+- `Colors.GREEN` - ≥70% efficiency (excellent)
+- `Colors.YELLOW` - 50-70% efficiency (acceptable)
+- `Colors.RED` - <50% efficiency (needs optimization)
+- `Colors.BLUE` - ≥1M ops/sec (good performance tier)
+- `Colors.CYAN` - ≥500K ops/sec (acceptable performance tier)
+- `Colors.NC` - Reset to default (always use after colored text)
