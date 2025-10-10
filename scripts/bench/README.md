@@ -5,16 +5,20 @@ Modern Python-based benchmark infrastructure for Storm ORM performance testing.
 ## Structure
 
 ```
+bench.py (root)       # Unified entry point for all benchmarks
 scripts/bench/
 ├── common.py         # Base classes and utilities
 │   ├── Colors            # ANSI color codes
-│   ├── BenchmarkTable    # Reusable table formatting
-│   └── BenchmarkRunner   # Abstract benchmark runner
-├── main.py           # Unified entry point
+│   ├── BenchmarkTable    # 4-column table formatting
+│   ├── FlexibleTable     # N-column table formatting
+│   ├── BenchmarkRunner   # Abstract benchmark runner
+│   ├── get_visible_length()  # ANSI-aware string utilities
+│   └── pad_string()
 ├── all.py            # Comprehensive benchmark suite
 ├── join.py           # JOIN performance benchmarks
-├── crud.py           # CRUD operations benchmark
+├── bench_compare.py  # CRUD operations comparison
 ├── sql_gen.py        # SQL generation analysis
+├── test_tables.py    # Table rendering tests
 └── README.md         # This file
 ```
 
@@ -23,22 +27,21 @@ scripts/bench/
 From project root:
 
 ```bash
-# Convenient wrapper (recommended)
-./bench --joins                    # Run JOIN benchmarks
-./bench --crud                     # Run CRUD benchmarks
-./bench --sql-gen                  # Run SQL generation analysis
-./bench --all                      # Run all benchmarks
+# Unified entry point (recommended)
+./bench.py --joins                 # Run JOIN benchmarks
+./bench.py --perf_compare          # Run CRUD performance comparison
+./bench.py --sql-gen               # Run SQL generation analysis
+./bench.py --all                   # Run all benchmarks
 
 # Custom parameters
-./bench --joins --size=50000       # Custom dataset size
-./bench --joins --iterations=200   # More iterations
-./bench --all --size=5000          # All benchmarks with 5K dataset
+./bench.py --joins --size=50000       # Custom dataset size
+./bench.py --joins --iterations=200   # More iterations
+./bench.py --all --size=5000          # All benchmarks with 5K dataset
 
 # Direct script execution
-./scripts/bench/join.py            # JOIN benchmark
-./scripts/bench/crud.py            # CRUD benchmark
-./scripts/bench/sql_gen.py         # SQL generation analysis
-./scripts/bench/main.py --joins    # Via main entry point
+./scripts/bench/join.py               # JOIN benchmark
+./scripts/bench/bench_compare.py --perf_compare  # CRUD comparison
+./scripts/bench/sql_gen.py            # SQL generation analysis
 ```
 
 ## Usage
@@ -46,17 +49,17 @@ From project root:
 ### JOIN Benchmarks
 
 ```bash
-./bench --joins                            # Default: 10k messages, 100 iterations
-./bench --joins --size=50000              # Custom message count
-./bench --joins --iterations=200          # More iterations
-./bench --joins --size=10000 --iterations=100
+./bench.py --joins                            # Default: 10k messages, 100 iterations
+./bench.py --joins --size=50000              # Custom message count
+./bench.py --joins --iterations=200          # More iterations
+./bench.py --joins --size=10000 --iterations=100
 ```
 
 ### CRUD Benchmarks
 
 ```bash
-./bench --crud                             # Default CRUD suite
-./scripts/bench/crud.py --build           # Build first, then run
+./bench.py --perf_compare                     # Full CRUD comparison (builds automatically)
+./scripts/bench/bench_compare.py --perf_compare   # Direct execution
 ```
 
 **Measures:**
@@ -73,8 +76,8 @@ From project root:
 ### SQL Generation Benchmarks
 
 ```bash
-./bench --sql-gen                          # SQL generation analysis
-./scripts/bench/sql_gen.py                # Direct execution
+./bench.py --sql-gen                       # SQL generation analysis
+./scripts/bench/sql_gen.py                 # Direct execution
 ```
 
 **Analyzes:**
@@ -86,8 +89,8 @@ From project root:
 ### All Benchmarks
 
 ```bash
-./bench --all                              # Run complete suite
-./bench --all --size=5000                  # Custom dataset
+./bench.py --all                           # Run complete suite
+./bench.py --all --size=5000               # Custom dataset
 ```
 
 ## Adding New Benchmarks
@@ -97,7 +100,7 @@ From project root:
 Inherit from `BenchmarkRunner`:
 
 ```python
-from common import BenchmarkRunner, BenchmarkTable
+from common import BenchmarkRunner, BenchmarkTable, FlexibleTable
 
 class MyBenchmark(BenchmarkRunner):
     def parse_results(self, output):
@@ -105,7 +108,7 @@ class MyBenchmark(BenchmarkRunner):
         return {...}
 
     def display_results(self, data, **kwargs):
-        # Use BenchmarkTable for formatting
+        # Use BenchmarkTable (4-column) or FlexibleTable (N-column)
         BenchmarkTable.print_header("My Operation")
         # ...
         BenchmarkTable.print_footer()
@@ -113,7 +116,7 @@ class MyBenchmark(BenchmarkRunner):
 
 ### 2. Add to Main Entry Point
 
-Edit `main.py`:
+Edit `bench.py` in project root:
 
 ```python
 def run_my_benchmark(args):
@@ -124,7 +127,7 @@ def run_my_benchmark(args):
 
 ### 3. Register Command
 
-Add argument in `main()`:
+Add argument in `main()` in `bench.py`:
 
 ```python
 commands.add_argument('--my-bench', action='store_true',
@@ -133,9 +136,9 @@ commands.add_argument('--my-bench', action='store_true',
 
 ## Reusable Components
 
-### BenchmarkTable
+### BenchmarkTable (4-column format)
 
-Provides consistent table formatting across all benchmarks:
+Provides consistent 4-column table formatting for JOIN benchmarks:
 
 ```python
 from common import BenchmarkTable
@@ -143,7 +146,7 @@ from common import BenchmarkTable
 # Print header
 BenchmarkTable.print_header("Operation Name")
 
-# Print data rows
+# Print data rows (operation, storm_throughput, raw_throughput, efficiency)
 BenchmarkTable.print_row("Test 1", storm_value, raw_value, efficiency)
 
 # Print separator
@@ -154,6 +157,42 @@ BenchmarkTable.print_footer()
 
 # Print summary
 BenchmarkTable.print_summary(messages, iterations, avg_efficiency)
+```
+
+### FlexibleTable (N-column format)
+
+Provides flexible N-column table formatting for performance comparison:
+
+```python
+from common import FlexibleTable
+
+# Create table with custom headers and widths
+table = FlexibleTable(
+    headers=['Benchmark', 'INSERT', 'DELETE', 'SELECT'],
+    column_widths=[35, 18, 18, 18]
+)
+
+# Print header
+table.print_header()
+
+# Print rows (automatically handles ANSI color codes)
+table.print_row(['Storm ORM', '992K/sec', '21.6M/sec', '13.1M/sec'])
+
+# Print footer
+table.print_footer()
+```
+
+### ANSI-Aware String Utilities
+
+```python
+from common import get_visible_length, pad_string
+
+# Get visible length without ANSI codes
+colored_text = f"{Colors.GREEN}Success{Colors.NC}"
+length = get_visible_length(colored_text)  # Returns 7, not 17
+
+# Pad string accounting for ANSI codes
+padded = pad_string(colored_text, 20)  # Pads to exactly 20 visible chars
 ```
 
 ### BenchmarkRunner
@@ -188,13 +227,16 @@ Efficiency percentages are automatically color-coded:
 ### Testing
 
 ```bash
-# Test JOIN benchmark
+# Test table rendering
+./scripts/bench/test_tables.py
+
+# Test individual benchmarks
 ./scripts/bench/join.py --help
 ./scripts/bench/join.py
 
-# Test main entry point
-./scripts/bench/main.py --help
-./scripts/bench/main.py --joins
+# Test unified entry point
+./bench.py --help
+./bench.py --joins
 ```
 
 ### Extending
@@ -202,5 +244,5 @@ Efficiency percentages are automatically color-coded:
 All benchmark scripts follow the same pattern:
 1. Inherit from `BenchmarkRunner`
 2. Implement `parse_results()` and `display_results()`
-3. Use `BenchmarkTable` for consistent formatting
-4. Register in `main.py`
+3. Use `BenchmarkTable` (4-column) or `FlexibleTable` (N-column) for formatting
+4. Register dispatcher function in `bench.py`

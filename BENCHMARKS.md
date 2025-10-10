@@ -5,10 +5,10 @@ Complete guide to running and understanding Storm ORM performance benchmarks.
 ## Quick Reference
 
 ```bash
-./bench --joins      # JOIN performance (recommended for routine testing)
-./bench --crud       # CRUD operations comparison
-./bench --sql-gen    # SQL generation analysis
-./bench --all        # Complete benchmark suite
+./bench.py --joins         # JOIN performance (recommended for routine testing)
+./bench.py --perf_compare  # CRUD operations comparison
+./bench.py --sql-gen       # SQL generation analysis
+./bench.py --all           # Complete benchmark suite
 ```
 
 ## Available Benchmarks
@@ -25,9 +25,9 @@ Complete guide to running and understanding Storm ORM performance benchmarks.
 
 **Usage:**
 ```bash
-./bench --joins                    # Default: 10K messages, 100 iterations
-./bench --joins --size=50000      # Custom dataset
-./bench --joins --iterations=200  # More iterations for stability
+./bench.py --joins                    # Default: 10K messages, 100 iterations
+./bench.py --joins --size=50000      # Custom dataset
+./bench.py --joins --iterations=200  # More iterations for stability
 ```
 
 **Output Example:**
@@ -47,7 +47,7 @@ Complete guide to running and understanding Storm ORM performance benchmarks.
 
 ---
 
-### 2. CRUD Operations (`--crud`)
+### 2. CRUD Operations (`--perf_compare`)
 
 **Purpose:** Comprehensive CRUD performance comparison
 
@@ -67,8 +67,7 @@ Complete guide to running and understanding Storm ORM performance benchmarks.
 
 **Usage:**
 ```bash
-./bench --crud                     # Run CRUD suite
-./scripts/bench/crud.py --build   # Build benchmarks first
+./bench.py --perf_compare          # Run CRUD suite (builds benchmarks automatically)
 ```
 
 **Performance Tiers:**
@@ -91,7 +90,7 @@ Complete guide to running and understanding Storm ORM performance benchmarks.
 
 **Usage:**
 ```bash
-./bench --sql-gen                  # Run analysis
+./bench.py --sql-gen               # Run analysis
 ```
 
 **Key Metrics:**
@@ -121,8 +120,8 @@ Complete guide to running and understanding Storm ORM performance benchmarks.
 
 **Usage:**
 ```bash
-./bench --all                      # Default settings
-./bench --all --size=5000          # Custom dataset size
+./bench.py --all                   # Default settings
+./bench.py --all --size=5000       # Custom dataset size
 ```
 
 ---
@@ -184,26 +183,26 @@ Complete guide to running and understanding Storm ORM performance benchmarks.
 
 For day-to-day development:
 ```bash
-./bench --joins                    # Quick JOIN performance check
+./bench.py --joins                 # Quick JOIN performance check
 ```
 
 ### Pre-Commit Verification
 
 Before committing performance-critical changes:
 ```bash
-./bench --all --size=10000         # Comprehensive suite
+./bench.py --all --size=10000      # Comprehensive suite
 ```
 
 ### Release Validation
 
 For release builds:
 ```bash
-# Build release benchmarks
+# Build release benchmarks (bench.py builds automatically)
 cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
 
 # Run full suite
-./bench --all --size=10000 --iterations=100
+./bench.py --all --size=10000 --iterations=100
 ```
 
 ### Performance Regression Detection
@@ -211,10 +210,10 @@ cmake --build --preset ninja-release
 Compare results across commits:
 ```bash
 # Baseline (develop branch)
-./bench --joins > baseline.txt
+./bench.py --joins > baseline.txt
 
 # After changes
-./bench --joins > optimized.txt
+./bench.py --joins > optimized.txt
 
 # Compare
 diff baseline.txt optimized.txt
@@ -269,7 +268,7 @@ cmake --build --preset ninja-release --target bench_storm
 ### Custom Binary Paths
 
 ```bash
-./bench --joins --binary=/custom/path/to/bench_join_performance
+./bench.py --joins --binary=/custom/path/to/bench_join_performance
 ```
 
 ### Benchmark-Specific Options
@@ -281,7 +280,7 @@ cmake --build --preset ninja-release --target bench_storm
 
 **CRUD benchmark:**
 ```bash
-./scripts/bench/crud.py --build  # Build first
+./scripts/bench/bench_compare.py --perf_compare  # Builds automatically
 ```
 
 **SQL generation:**
@@ -327,8 +326,8 @@ When adding new benchmarks:
 
 1. Inherit from `BenchmarkRunner` (see `scripts/bench/common.py`)
 2. Implement `parse_results()` and `display_results()`
-3. Use `BenchmarkTable` for consistent formatting
-4. Add to `scripts/bench/main.py`
+3. Use `BenchmarkTable` or `FlexibleTable` for consistent formatting
+4. Add dispatcher function to `bench.py`
 5. Update this documentation
 
 Example:

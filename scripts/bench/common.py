@@ -4,10 +4,12 @@ Common utilities for Storm ORM benchmarks
 Provides base classes and formatting utilities for benchmark output
 """
 
+import re
 import subprocess
 import sys
 from pathlib import Path
 from abc import ABC, abstractmethod
+from typing import List, Optional
 
 
 class Colors:
@@ -20,6 +22,24 @@ class Colors:
     BLUE = '\033[94m'
     RESET = '\033[0m'
     DIM = '\033[2m'
+    NC = '\033[0m'  # No Color (alias for RESET)
+
+
+def get_visible_length(text: str) -> int:
+    """Get visible length of string without ANSI escape codes"""
+    ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
+    clean_text = ansi_escape.sub('', text)
+    return len(clean_text)
+
+
+def pad_string(text: str, width: int) -> str:
+    """Pad string to specific width, accounting for ANSI escape codes"""
+    visible_length = get_visible_length(text)
+    padding_needed = width - visible_length
+
+    if padding_needed > 0:
+        return text + (' ' * padding_needed)
+    return text
 
 
 class BenchmarkTable:
@@ -78,6 +98,75 @@ class BenchmarkTable:
         print(f"\n{Colors.DIM}Test configuration: {messages:,} messages, {iterations} iterations{Colors.RESET}")
         avg_eff_str = f"{avg_efficiency:>11.1f}%"
         print(f"\n{Colors.BOLD}Average Efficiency:{Colors.RESET} {BenchmarkTable.color_efficiency(avg_eff_str)}")
+
+
+class FlexibleTable:
+    """Flexible table class for rendering tables with variable columns"""
+
+    def __init__(self, headers: List[str], column_widths: List[int]):
+        """
+        Initialize flexible table
+
+        Args:
+            headers: List of column header strings
+            column_widths: List of column widths (in characters)
+        """
+        self.headers = headers
+        self.column_widths = column_widths
+
+        if len(headers) != len(column_widths):
+            raise ValueError("Number of headers must match number of column widths")
+
+    def _build_separator(self, left='├', mid='┼', right='┤') -> str:
+        """Build a separator line"""
+        parts = [left]
+        for i, width in enumerate(self.column_widths):
+            parts.append('─' * (width + 2))
+            if i < len(self.column_widths) - 1:
+                parts.append(mid)
+        parts.append(right)
+        return ''.join(parts)
+
+    def print_header(self):
+        """Print table header"""
+        # Top border
+        print(self._build_separator('┌', '┬', '┐'))
+
+        # Header row
+        header_cells = []
+        for i, (header, width) in enumerate(zip(self.headers, self.column_widths)):
+            padded = pad_string(header, width)
+            header_cells.append(f" {padded} ")
+
+        print(f"│{'│'.join(header_cells)}│")
+
+        # Header separator
+        print(self._build_separator('├', '┼', '┤'))
+
+    def print_row(self, cells: List[str]):
+        """
+        Print a table row
+
+        Args:
+            cells: List of cell contents (may contain ANSI color codes)
+        """
+        if len(cells) != len(self.column_widths):
+            raise ValueError(f"Expected {len(self.column_widths)} cells, got {len(cells)}")
+
+        row_cells = []
+        for cell, width in zip(cells, self.column_widths):
+            padded = pad_string(cell, width)
+            row_cells.append(f" {padded} ")
+
+        print(f"│{'│'.join(row_cells)}│")
+
+    def print_separator(self):
+        """Print a separator between rows"""
+        print(self._build_separator('├', '┼', '┤'))
+
+    def print_footer(self):
+        """Print table footer"""
+        print(self._build_separator('└', '┴', '┘'))
 
 
 class BenchmarkRunner(ABC):

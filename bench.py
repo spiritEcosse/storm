@@ -8,8 +8,9 @@ import sys
 import argparse
 from pathlib import Path
 
-# Add current directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
+# Add scripts/bench directory to path for imports
+bench_dir = Path(__file__).parent / 'scripts' / 'bench'
+sys.path.insert(0, str(bench_dir))
 from common import Colors
 
 
@@ -75,7 +76,7 @@ def run_all_benchmarks(args):
 
 def run_perf_comparison(args):
     """Run comprehensive performance comparison"""
-    from perf_compare import performance_comparison
+    from bench_compare import performance_comparison
 
     # Run the performance comparison
     try:

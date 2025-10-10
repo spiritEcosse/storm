@@ -12,6 +12,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, List, Tuple
 
+# Import shared utilities
+sys.path.insert(0, str(Path(__file__).parent))
+from common import FlexibleTable, pad_string, get_visible_length
+
 
 # ANSI Color Codes
 class Colors:
@@ -67,24 +71,6 @@ def format_number_with_color(num: int, operation_type: str = "inserts") -> str:
         return f"{Colors.YELLOW}{formatted}{Colors.NC}"
     else:  # <500K = Poor (Red)
         return f"{Colors.RED}{formatted}{Colors.NC}"
-
-
-def get_visible_length(text: str) -> int:
-    """Get visible length of string without ANSI escape codes"""
-    # Remove ANSI escape sequences
-    ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
-    clean_text = ansi_escape.sub('', text)
-    return len(clean_text)
-
-
-def pad_string(text: str, width: int) -> str:
-    """Pad string to specific width, accounting for ANSI escape codes"""
-    visible_length = get_visible_length(text)
-    padding_needed = width - visible_length
-
-    if padding_needed > 0:
-        return text + (' ' * padding_needed)
-    return text
 
 
 def calculate_percentage(value: Optional[int], baseline: Optional[int]) -> int:
@@ -381,10 +367,23 @@ def performance_comparison():
     # Sort results by performance percentage (descending)
     results.sort(key=lambda x: x.performance_percentage, reverse=True)
 
-    # Display results table
-    print("┌─────────────────────────────────────┬──────────────────┬────────────────────┬─────────────────────┬────────────────────┬─────────────────────┬────────────────────┬─────────────────────┬─────────────────────┐")
-    print("│ Benchmark                           │ Overall Perf %   │ Single INSERT      │ Best Batch INSERT   │ Single DELETE      │ Bulk DELETE         │ Single UPDATE      │ Best Batch UPDATE   │ SELECT              │")
-    print("├─────────────────────────────────────┼──────────────────┼────────────────────┼─────────────────────┼────────────────────┼─────────────────────┼────────────────────┼─────────────────────┼─────────────────────┤")
+    # Display results table using FlexibleTable
+    table = FlexibleTable(
+        headers=[
+            'Benchmark',
+            'Overall Perf %',
+            'Single INSERT',
+            'Best Batch INSERT',
+            'Single DELETE',
+            'Bulk DELETE',
+            'Single UPDATE',
+            'Best Batch UPDATE',
+            'SELECT'
+        ],
+        column_widths=[35, 16, 18, 19, 18, 19, 18, 19, 19]
+    )
+
+    table.print_header()
 
     for result in results:
         # Format percentage
@@ -410,20 +409,20 @@ def performance_comparison():
         batch_update_display = format_metric(result.batch_update, "updates")
         select_display = format_metric(result.select, "rows")
 
-        # Pad columns
-        name_padded = pad_string(result.name, 35)
-        percentage_padded = pad_string(percentage_display, 16)
-        single_insert_padded = pad_string(single_insert_display, 18)
-        batch_insert_padded = pad_string(batch_insert_display, 19)
-        single_delete_padded = pad_string(single_delete_display, 18)
-        bulk_delete_padded = pad_string(bulk_delete_display, 19)
-        single_update_padded = pad_string(single_update_display, 18)
-        batch_update_padded = pad_string(batch_update_display, 19)
-        select_padded = pad_string(select_display, 19)
+        # Print row
+        table.print_row([
+            result.name,
+            percentage_display,
+            single_insert_display,
+            batch_insert_display,
+            single_delete_display,
+            bulk_delete_display,
+            single_update_display,
+            batch_update_display,
+            select_display
+        ])
 
-        print(f"│ {name_padded} │ {percentage_padded} │ {single_insert_padded} │ {batch_insert_padded} │ {single_delete_padded} │ {bulk_delete_padded} │ {single_update_padded} │ {batch_update_padded} │ {select_padded} │")
-
-    print("└─────────────────────────────────────┴──────────────────┴────────────────────┴─────────────────────┴────────────────────┴─────────────────────┴────────────────────┴─────────────────────┴─────────────────────┘")
+    table.print_footer()
     print()
 
     print_success("Comprehensive performance benchmark suite completed successfully!")
