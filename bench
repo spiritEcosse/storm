@@ -1,30 +1,4 @@
-#!/usr/bin/env python3
-"""Convenience wrapper for Storm ORM benchmark suite"""
-import sys
-from pathlib import Path
-
-def show_help():
-    print("Storm ORM Benchmark Runner")
-    print()
-    print("Usage: bench [COMMAND]")
-    print()
-    print("Commands:")
-    print("  --main    Run the main microbenchmark suite (JOIN, SQL generation, SELECT)")
-    print("  --help    Show this help message")
-    sys.exit(0)
-
-if __name__ == '__main__':
-    if len(sys.argv) < 2 or sys.argv[1] == '--help':
-        show_help()
-
-    command = sys.argv[1]
-
-    if command == '--main':
-        # Run main microbenchmark suite
-        sys.path.insert(0, str(Path(__file__).parent / 'scripts'))
-        from main import main
-        sys.exit(main())
-    else:
-        print(f"Unknown command: {command}")
-        print("Run 'bench --help' for usage information")
-        sys.exit(1)
+#!/bin/bash
+# Wrapper script for Storm ORM benchmark suite
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "$SCRIPT_DIR/scripts/bench/main.py" "$@"

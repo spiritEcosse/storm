@@ -40,19 +40,6 @@ def run_join_benchmark(args):
     )
 
 
-def run_crud_benchmark(args):
-    """Run CRUD performance benchmark"""
-    from crud import main as crud_main
-
-    print_header()
-    print(f"{Colors.GREEN}Running CRUD Performance Benchmark...{Colors.RESET}\n")
-
-    try:
-        crud_main()
-    except Exception as e:
-        print(f"{Colors.RED}CRUD benchmark failed: {e}{Colors.RESET}")
-
-
 def run_sql_gen_benchmark(args):
     """Run SQL generation benchmark"""
     from sql_gen import SQLGenerationBenchmark
@@ -86,6 +73,19 @@ def run_all_benchmarks(args):
         traceback.print_exc()
 
 
+def run_perf_comparison(args):
+    """Run comprehensive performance comparison"""
+    from perf_compare import performance_comparison
+
+    # Run the performance comparison
+    try:
+        performance_comparison()
+    except Exception as e:
+        print(f"{Colors.RED}Performance comparison failed: {e}{Colors.RESET}")
+        import traceback
+        traceback.print_exc()
+
+
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(
@@ -94,14 +94,15 @@ def main():
         epilog='''
 Available Benchmarks:
   📊 JOIN Performance       - Compare Storm ORM vs Raw SQLite JOIN operations
-  📊 CRUD Operations        - Full suite of INSERT/SELECT/UPDATE/DELETE benchmarks
   📊 SQL Generation         - Analyze compile-time SQL generation performance
   📊 All Microbenchmarks    - Run complete benchmark suite
+  📊 Performance Comparison - Comprehensive Storm vs sqlite_orm vs Raw SQLite comparison
 
 Examples:
   %(prog)s --joins                        # Run JOIN benchmarks
   %(prog)s --joins --size=50000           # Run JOIN with 50K messages
   %(prog)s --all                          # Run all benchmarks
+  %(prog)s --perf_compare                 # Run comprehensive performance comparison
         '''
     )
 
@@ -109,12 +110,12 @@ Examples:
     commands = parser.add_mutually_exclusive_group(required=True)
     commands.add_argument('--joins', action='store_true',
                          help='Run JOIN performance analysis (Storm vs Raw SQLite)')
-    commands.add_argument('--crud', action='store_true',
-                         help='Run comprehensive CRUD benchmark (INSERT/SELECT/UPDATE/DELETE)')
     commands.add_argument('--sql-gen', action='store_true',
                          help='Run SQL generation performance analysis')
     commands.add_argument('--all', action='store_true',
                          help='Run all microbenchmarks')
+    commands.add_argument('--perf_compare', action='store_true',
+                         help='Run comprehensive performance comparison (Storm vs sqlite_orm vs Raw SQLite)')
 
     # Options
     parser.add_argument('--size', type=int,
@@ -130,12 +131,12 @@ Examples:
     try:
         if args.joins:
             run_join_benchmark(args)
-        elif args.crud:
-            run_crud_benchmark(args)
         elif args.sql_gen:
             run_sql_gen_benchmark(args)
         elif args.all:
             run_all_benchmarks(args)
+        elif args.perf_compare:
+            run_perf_comparison(args)
     except KeyboardInterrupt:
         print(f"\n{Colors.YELLOW}Benchmark interrupted by user{Colors.RESET}")
         sys.exit(130)
