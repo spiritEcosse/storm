@@ -64,7 +64,17 @@ python3 bench.py --compare              # Comprehensive Storm vs sqlite_orm vs R
 # Direct benchmark execution (manual rebuild required)
 cmake --preset ninja-release -DENABLE_TESTS=ON -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
-./build/release/benchmarks/bench_join --size=10000 --iterations=100
+
+# JOIN benchmarks with selective flags
+./build/release/benchmarks/bench_join --size=10000 --iterations=100          # All benchmarks
+./build/release/benchmarks/bench_join --storm-join-1 --size=10000            # Storm single FK only
+./build/release/benchmarks/bench_join --storm-join-multi --size=10000        # Storm multi FK only
+./build/release/benchmarks/bench_join --raw-join-1 --size=10000              # Raw SQLite single FK
+./build/release/benchmarks/bench_join --raw-join-multi --size=10000          # Raw SQLite multi FK
+./build/release/benchmarks/bench_join --storm-join-1 --raw-join-1 --size=10000  # Compare single FK
+./build/release/benchmarks/bench_join --help                                 # Show all options
+
+# Other benchmarks
 ./build/release/benchmarks/bench_storm
 ./build/release/benchmarks/bench_sqlite_orm
 ./build/release/benchmarks/bench_sqlite
@@ -701,7 +711,17 @@ python3 bench.py --compare               # Full comparison
 # Manual: Build and run individual benchmarks
 cmake --preset ninja-release -DENABLE_TESTS=ON -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
-./build/release/benchmarks/bench_join --size=10000 --iterations=100
+
+# JOIN benchmark with selective flags
+./build/release/benchmarks/bench_join --size=10000 --iterations=100          # All benchmarks
+./build/release/benchmarks/bench_join --storm-join-1 --size=10000            # Storm single FK
+./build/release/benchmarks/bench_join --storm-join-multi --size=10000        # Storm multi FK
+./build/release/benchmarks/bench_join --raw-join-1 --size=10000              # Raw single FK
+./build/release/benchmarks/bench_join --raw-join-multi --size=10000          # Raw multi FK
+./build/release/benchmarks/bench_join --storm-join-1 --raw-join-1 --size=10000  # Compare single
+./build/release/benchmarks/bench_join --help                                 # Show all options
+
+# Other benchmarks
 ./build/release/benchmarks/bench_storm
 ./build/release/benchmarks/bench_sqlite_orm
 ./build/release/benchmarks/bench_sqlite

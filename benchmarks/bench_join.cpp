@@ -808,17 +808,31 @@ void benchmark_raw_sqlite_right_join_multi(int num_messages, int iterations = 10
 }
 
 void print_usage(const char* program_name) {
-    std::cout << "Usage: " << program_name << " [--size=N] [--iterations=N]" << std::endl;
+    std::cout << "Usage: " << program_name << " [OPTIONS]" << std::endl;
     std::cout << std::endl;
     std::cout << "Options:" << std::endl;
     std::cout << "  --size=N          Number of messages (default: 1000)" << std::endl;
     std::cout << "  --iterations=N    Number of iterations (default: 100)" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Benchmark Selection (run all if none specified):" << std::endl;
+    std::cout << "  --storm-join-1    Run Storm ORM single FK JOIN benchmarks" << std::endl;
+    std::cout << "  --storm-join-multi Run Storm ORM multi FK JOIN benchmarks" << std::endl;
+    std::cout << "  --raw-join-1      Run raw SQL single FK JOIN benchmarks" << std::endl;
+    std::cout << "  --raw-join-multi  Run raw SQL multi FK JOIN benchmarks" << std::endl;
+    std::cout << std::endl;
     std::cout << "  --help, -h        Show this help message" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
     std::vector<int> test_sizes = {100, 1000, 10000};
     int iterations = 100;
+
+    // Benchmark selection flags
+    bool run_storm_join_1 = false;
+    bool run_storm_join_multi = false;
+    bool run_raw_join_1 = false;
+    bool run_raw_join_multi = false;
+    bool run_all = true; // Default: run everything
 
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
@@ -827,6 +841,18 @@ int main(int argc, char* argv[]) {
             test_sizes.push_back(std::stoi(argv[i] + 7));
         } else if (strncmp(argv[i], "--iterations=", 13) == 0) {
             iterations = std::stoi(argv[i] + 13);
+        } else if (strcmp(argv[i], "--storm-join-1") == 0) {
+            run_storm_join_1 = true;
+            run_all = false;
+        } else if (strcmp(argv[i], "--storm-join-multi") == 0) {
+            run_storm_join_multi = true;
+            run_all = false;
+        } else if (strcmp(argv[i], "--raw-join-1") == 0) {
+            run_raw_join_1 = true;
+            run_all = false;
+        } else if (strcmp(argv[i], "--raw-join-multi") == 0) {
+            run_raw_join_multi = true;
+            run_all = false;
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             print_usage(argv[0]);
             return 0;
@@ -843,23 +869,44 @@ int main(int argc, char* argv[]) {
         std::cout << std::string(60, '-') << std::endl;
         std::cout << std::endl;
 
+        // Always run baseline for context
         benchmark_select_no_join(size, iterations);
 
-        std::cout << "--- Storm ORM JOINs ---" << std::endl;
-        benchmark_inner_join_single_fk(size, iterations);
-        benchmark_inner_join_multi_fk(size, iterations);
-        benchmark_left_join_single_fk(size, iterations);
-        benchmark_left_join_multi_fk(size, iterations);
-        benchmark_right_join_single_fk(size, iterations);
-        benchmark_right_join_multi_fk(size, iterations);
+        // Storm ORM single FK JOINs
+        if (run_all || run_storm_join_1) {
+            std::cout << "--- Storm ORM Single FK JOINs ---" << std::endl;
+            benchmark_inner_join_single_fk(size, iterations);
+            benchmark_left_join_single_fk(size, iterations);
+            benchmark_right_join_single_fk(size, iterations);
+            std::cout << std::endl;
+        }
 
-        std::cout << "--- Raw SQLite JOINs ---" << std::endl;
-        benchmark_raw_sqlite_inner_join(size, iterations);
-        benchmark_raw_sqlite_inner_join_multi(size, iterations);
-        benchmark_raw_sqlite_left_join_single(size, iterations);
-        benchmark_raw_sqlite_left_join_multi(size, iterations);
-        benchmark_raw_sqlite_right_join_single(size, iterations);
-        benchmark_raw_sqlite_right_join_multi(size, iterations);
+        // Storm ORM multi FK JOINs
+        if (run_all || run_storm_join_multi) {
+            std::cout << "--- Storm ORM Multi FK JOINs ---" << std::endl;
+            benchmark_inner_join_multi_fk(size, iterations);
+            benchmark_left_join_multi_fk(size, iterations);
+            benchmark_right_join_multi_fk(size, iterations);
+            std::cout << std::endl;
+        }
+
+        // Raw SQLite single FK JOINs
+        if (run_all || run_raw_join_1) {
+            std::cout << "--- Raw SQLite Single FK JOINs ---" << std::endl;
+            benchmark_raw_sqlite_inner_join(size, iterations);
+            benchmark_raw_sqlite_left_join_single(size, iterations);
+            benchmark_raw_sqlite_right_join_single(size, iterations);
+            std::cout << std::endl;
+        }
+
+        // Raw SQLite multi FK JOINs
+        if (run_all || run_raw_join_multi) {
+            std::cout << "--- Raw SQLite Multi FK JOINs ---" << std::endl;
+            benchmark_raw_sqlite_inner_join_multi(size, iterations);
+            benchmark_raw_sqlite_left_join_multi(size, iterations);
+            benchmark_raw_sqlite_right_join_multi(size, iterations);
+            std::cout << std::endl;
+        }
 
         std::cout << std::string(60, '=') << std::endl;
         std::cout << std::endl;

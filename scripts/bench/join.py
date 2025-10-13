@@ -68,32 +68,23 @@ class JoinBenchmark(BenchmarkRunner):
         print(f"│ {'Simple SELECT (no JOIN)':<31} │ {storm_select/1_000_000:>11.2f}M │ {'(baseline)':<12} │ {'-':<12} │")
         BenchmarkTable.print_separator()
 
-        # RIGHT JOIN operations (most efficient)
-        for name, label in [
-            ('right_single', 'RIGHT JOIN (single FK)'),
-            ('right_multi', 'RIGHT JOIN (multi FK)'),
-        ]:
-            storm, raw = data[name]
-            eff = (storm / raw * 100) if raw > 0 else 0
-            BenchmarkTable.print_row(label, storm, raw, eff)
-
-        BenchmarkTable.print_separator()
-
-        # LEFT JOIN operations
-        for name, label in [
-            ('left_single', 'LEFT JOIN (single FK)'),
-            ('left_multi', 'LEFT JOIN (multi FK)'),
-        ]:
-            storm, raw = data[name]
-            eff = (storm / raw * 100) if raw > 0 else 0
-            BenchmarkTable.print_row(label, storm, raw, eff)
-
-        BenchmarkTable.print_separator()
-
-        # INNER JOIN operations
+        # Single FK JOIN operations (matches manual output structure)
         for name, label in [
             ('inner_single', 'INNER JOIN (single FK)'),
+            ('left_single', 'LEFT JOIN (single FK)'),
+            ('right_single', 'RIGHT JOIN (single FK)'),
+        ]:
+            storm, raw = data[name]
+            eff = (storm / raw * 100) if raw > 0 else 0
+            BenchmarkTable.print_row(label, storm, raw, eff)
+
+        BenchmarkTable.print_separator()
+
+        # Multi FK JOIN operations (matches manual output structure)
+        for name, label in [
             ('inner_multi', 'INNER JOIN (multi FK)'),
+            ('left_multi', 'LEFT JOIN (multi FK)'),
+            ('right_multi', 'RIGHT JOIN (multi FK)'),
         ]:
             storm, raw = data[name]
             eff = (storm / raw * 100) if raw > 0 else 0
