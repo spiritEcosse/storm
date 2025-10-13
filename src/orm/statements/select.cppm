@@ -108,6 +108,7 @@ export namespace storm::orm::statements {
 
             // OPTIMIZATION: Use resize() instead of reserve() + emplace_back()
             // Pre-constructing objects is significantly faster (6.08M vs 3.60M rows/sec)
+            // Initial capacity: 10K rows. If more rows exist, exponential growth kicks in.
             std::vector<T> results;
             results.resize(10000); // Pre-allocate with default-constructed objects
 
@@ -127,9 +128,16 @@ export namespace storm::orm::statements {
             }
 
             // Handle case where we got more rows than pre-allocated
+            // Use exponential growth strategy to minimize reallocations
             while (step_result == Statement::ROW_AVAILABLE) {
-                results.emplace_back();
-                T& obj = results.back();
+                // Grow exponentially when hitting capacity (10K → 20K → 40K → 80K)
+                // This maintains the resize() optimization benefit (1.7x faster than emplace_back)
+                if (row_count >= results.size()) {
+                    size_t new_size = results.size() * 2;  // 2x exponential growth
+                    results.resize(new_size);
+                }
+
+                T& obj = results[row_count];
                 extract_all_columns_inline_fast(cached_select_stmt_, obj);
                 row_count++;
                 step_result = cached_select_stmt_->step_raw();
@@ -167,8 +175,10 @@ export namespace storm::orm::statements {
                 cached_join_stmt_ = *prepare_result;
             }
 
+            // OPTIMIZATION: Use resize() for pre-allocation (1.7x faster than reserve + emplace_back)
+            // Initial capacity: 10K rows. Exponential growth handles larger result sets efficiently.
             std::vector<T> results;
-            results.resize(10000); // Pre-allocate
+            results.resize(10000); // Pre-allocate with default-constructed objects
 
             int    step_result;
             size_t row_count = 0;
@@ -182,10 +192,17 @@ export namespace storm::orm::statements {
                 row_count++;
             }
 
-            // Handle overflow
+            // Handle overflow with exponential growth strategy
+            // Use exponential growth to minimize reallocations for large result sets
             while (step_result == Statement::ROW_AVAILABLE) {
-                results.emplace_back();
-                T& obj = results.back();
+                // Grow exponentially when hitting capacity (10K → 20K → 40K → 80K)
+                // This maintains the resize() optimization benefit (1.7x faster than emplace_back)
+                if (row_count >= results.size()) {
+                    size_t new_size = results.size() * 2;  // 2x exponential growth
+                    results.resize(new_size);
+                }
+
+                T& obj = results[row_count];
                 join_wrapper.extract_row(cached_join_stmt_, &obj);
                 row_count++;
                 step_result = cached_join_stmt_->step_raw();

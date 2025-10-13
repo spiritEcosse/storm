@@ -27,6 +27,10 @@ class JoinBenchmark(BenchmarkRunner):
             return int(match.group(1)) if match else 0
 
         return {
+            'select_no_join': (
+                extract_throughput(r'SELECT \(no JOIN\)'),
+                0  # No raw SQLite equivalent for simple SELECT
+            ),
             'inner_single': (
                 extract_throughput(r'INNER JOIN \(single FK: sender\)'),
                 extract_throughput(r'Raw SQLite INNER JOIN \(single FK\)')
@@ -59,10 +63,15 @@ class JoinBenchmark(BenchmarkRunner):
         # Print header
         BenchmarkTable.print_header("JOIN Operation")
 
-        # INNER JOIN operations
+        # Simple SELECT baseline (no JOIN)
+        storm_select, _ = data['select_no_join']
+        print(f"│ {'Simple SELECT (no JOIN)':<31} │ {storm_select/1_000_000:>11.2f}M │ {'(baseline)':<12} │ {'-':<12} │")
+        BenchmarkTable.print_separator()
+
+        # RIGHT JOIN operations (most efficient)
         for name, label in [
-            ('inner_single', 'INNER JOIN (single FK)'),
-            ('inner_multi', 'INNER JOIN (multi FK)'),
+            ('right_single', 'RIGHT JOIN (single FK)'),
+            ('right_multi', 'RIGHT JOIN (multi FK)'),
         ]:
             storm, raw = data[name]
             eff = (storm / raw * 100) if raw > 0 else 0
@@ -81,10 +90,10 @@ class JoinBenchmark(BenchmarkRunner):
 
         BenchmarkTable.print_separator()
 
-        # RIGHT JOIN operations
+        # INNER JOIN operations
         for name, label in [
-            ('right_single', 'RIGHT JOIN (single FK)'),
-            ('right_multi', 'RIGHT JOIN (multi FK)'),
+            ('inner_single', 'INNER JOIN (single FK)'),
+            ('inner_multi', 'INNER JOIN (multi FK)'),
         ]:
             storm, raw = data[name]
             eff = (storm / raw * 100) if raw > 0 else 0
@@ -92,8 +101,9 @@ class JoinBenchmark(BenchmarkRunner):
 
         BenchmarkTable.print_footer()
 
-        # Calculate and print average efficiency
-        all_effs = [(data[k][0] / data[k][1] * 100) if data[k][1] > 0 else 0 for k in data.keys()]
+        # Calculate and print average efficiency (excluding simple SELECT baseline)
+        all_effs = [(data[k][0] / data[k][1] * 100) if data[k][1] > 0 else 0
+                    for k in data.keys() if k != 'select_no_join']
         avg_eff = sum(all_effs) / len(all_effs)
 
         BenchmarkTable.print_summary(messages, iterations, avg_eff)

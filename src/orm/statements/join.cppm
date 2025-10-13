@@ -372,7 +372,8 @@ export namespace storm::orm::statements {
                 ((expected_cols += FKBase_at<Is>::field_count_), ...);
             }(std::make_index_sequence<fk_count_>{});
 
-            assert(stmt->column_count() == expected_cols && "Column count mismatch");
+            // Use raw SQLite API since Statement wrapper doesn't expose column_count()
+            assert(sqlite3_column_count(stmt->handle()) == static_cast<int>(expected_cols) && "Column count mismatch");
             #endif
 
             extract_t_fields(stmt, obj, typename Base::field_indices_t{});

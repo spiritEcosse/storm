@@ -58,24 +58,35 @@ class BenchmarkTable:
             return f"{Colors.RED}{eff_str}{Colors.RESET}"
 
     @staticmethod
-    def print_header(title):
+    def print_header(title, include_db_hits=False):
         """Print table header"""
-        print(f"{Colors.BOLD}┌─────────────────────────────────┬──────────────┬──────────────┬──────────────┐{Colors.RESET}")
-        print(f"{Colors.BOLD}│ {title:31} │ Storm ORM    │ Raw SQLite   │ Efficiency   │{Colors.RESET}")
-        print(f"{Colors.BOLD}├─────────────────────────────────┼──────────────┼──────────────┼──────────────┤{Colors.RESET}")
+        if include_db_hits:
+            print(f"{Colors.BOLD}┌─────────────────────────────────┬──────────┬──────────────┬──────────────┬──────────────┐{Colors.RESET}")
+            print(f"{Colors.BOLD}│ {title:31} │ DB Hits  │ Storm ORM    │ Raw SQLite   │ Efficiency   │{Colors.RESET}")
+            print(f"{Colors.BOLD}├─────────────────────────────────┼──────────┼──────────────┼──────────────┼──────────────┤{Colors.RESET}")
+        else:
+            print(f"{Colors.BOLD}┌─────────────────────────────────┬──────────────┬──────────────┬──────────────┐{Colors.RESET}")
+            print(f"{Colors.BOLD}│ {title:31} │ Storm ORM    │ Raw SQLite   │ Efficiency   │{Colors.RESET}")
+            print(f"{Colors.BOLD}├─────────────────────────────────┼──────────────┼──────────────┼──────────────┤{Colors.RESET}")
 
     @staticmethod
-    def print_separator():
+    def print_separator(include_db_hits=False):
         """Print table separator"""
-        print(f"{Colors.BOLD}├─────────────────────────────────┼──────────────┼──────────────┼──────────────┤{Colors.RESET}")
+        if include_db_hits:
+            print(f"{Colors.BOLD}├─────────────────────────────────┼──────────┼──────────────┼──────────────┼──────────────┤{Colors.RESET}")
+        else:
+            print(f"{Colors.BOLD}├─────────────────────────────────┼──────────────┼──────────────┼──────────────┤{Colors.RESET}")
 
     @staticmethod
-    def print_footer():
+    def print_footer(include_db_hits=False):
         """Print table footer"""
-        print(f"{Colors.BOLD}└─────────────────────────────────┴──────────────┴──────────────┴──────────────┘{Colors.RESET}")
+        if include_db_hits:
+            print(f"{Colors.BOLD}└─────────────────────────────────┴──────────┴──────────────┴──────────────┴──────────────┘{Colors.RESET}")
+        else:
+            print(f"{Colors.BOLD}└─────────────────────────────────┴──────────────┴──────────────┴──────────────┘{Colors.RESET}")
 
     @staticmethod
-    def print_row(label, storm_value, raw_value, efficiency):
+    def print_row(label, storm_value, raw_value, efficiency, db_hits=None):
         """
         Print a single table row
 
@@ -84,13 +95,19 @@ class BenchmarkTable:
             storm_value: Storm ORM throughput (int, rows/sec)
             raw_value: Raw SQLite throughput (int, rows/sec)
             efficiency: Efficiency percentage (float)
+            db_hits: Optional number of database queries executed (int)
         """
         storm_str = f"{storm_value / 1_000_000:>11.2f}M"
         raw_str = f"{raw_value / 1_000_000:>11.2f}M"
         eff_str = f"{efficiency:>11.1f}%"
 
-        print(f"│ {label:31} │ {Colors.CYAN}{storm_str}{Colors.RESET} │ "
-              f"{Colors.DIM}{raw_str}{Colors.RESET} │ {BenchmarkTable.color_efficiency(eff_str)} │")
+        if db_hits is not None:
+            db_hits_str = f"{db_hits:>8}"
+            print(f"│ {label:31} │ {Colors.GREEN}{db_hits_str}{Colors.RESET} │ {Colors.CYAN}{storm_str}{Colors.RESET} │ "
+                  f"{Colors.DIM}{raw_str}{Colors.RESET} │ {BenchmarkTable.color_efficiency(eff_str)} │")
+        else:
+            print(f"│ {label:31} │ {Colors.CYAN}{storm_str}{Colors.RESET} │ "
+                  f"{Colors.DIM}{raw_str}{Colors.RESET} │ {BenchmarkTable.color_efficiency(eff_str)} │")
 
     @staticmethod
     def print_summary(messages, iterations, avg_efficiency):
