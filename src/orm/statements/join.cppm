@@ -304,12 +304,16 @@ export namespace storm::orm::statements {
             } else if constexpr (std::is_same_v<FieldType, std::string>) {
                 const unsigned char* text = stmt->extract_text_ptr(col_idx);
                 if (text) {
-                    field = std::string(reinterpret_cast<const char*>(text));
+                    // OPTIMIZATION: Direct assign with known length (no temporary, no strlen)
+                    // Avoids temporary string construction and leverages SQLite's length info
+                    int len = sqlite3_column_bytes(stmt->handle(), col_idx);
+                    field.assign(reinterpret_cast<const char*>(text), len);
                 }
             } else if constexpr (requires { field.emplace(std::string{}); }) {
                 const unsigned char* text = stmt->extract_text_ptr(col_idx);
                 if (text) {
-                    field.emplace(reinterpret_cast<const char*>(text));
+                    int len = sqlite3_column_bytes(stmt->handle(), col_idx);
+                    field.emplace(reinterpret_cast<const char*>(text), len);
                 }
             }
         }

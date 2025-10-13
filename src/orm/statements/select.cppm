@@ -94,7 +94,7 @@ export namespace storm::orm::statements {
         }
 
       private:
-        // Simple SELECT execution (original logic)
+        // Simple SELECT execution (with object pooling optimization)
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_simple_select() noexcept
                 -> std::expected<std::vector<T>, Error> {
             // Cache statement on first use (RemoveStatement pattern)
@@ -106,34 +106,25 @@ export namespace storm::orm::statements {
                 cached_select_stmt_ = *prepare_result;
             }
 
-            // OPTIMIZATION: Use resize() instead of reserve() + emplace_back()
+            // OPTIMIZATION: Use resize() for pre-allocation (no intermediate copies)
             // Pre-constructing objects is significantly faster (6.08M vs 3.60M rows/sec)
-            // Initial capacity: 10K rows. If more rows exist, exponential growth kicks in.
             std::vector<T> results;
-            results.resize(10000); // Pre-allocate with default-constructed objects
+            results.resize(10000);
 
-            // OPTIMIZATION: Simplified loop with direct row check using abstracted interface
-            int    step_result;
+            int step_result;
             size_t row_count = 0;
             while ((step_result = cached_select_stmt_->step_raw()) == Statement::ROW_AVAILABLE &&
                    row_count < results.size()) {
-                // OPTIMIZATION: Write directly into pre-constructed object
+                // Extract directly into pre-constructed object (no copy)
                 T& obj = results[row_count];
-
-                // OPTIMIZATION: Direct column extraction without error checking
-                // This is safe because we know the statement and table structure at compile time
                 extract_all_columns_inline_fast(cached_select_stmt_, obj);
-
                 row_count++;
             }
 
-            // Handle case where we got more rows than pre-allocated
-            // Use exponential growth strategy to minimize reallocations
+            // Handle overflow with exponential growth
             while (step_result == Statement::ROW_AVAILABLE) {
-                // Grow exponentially when hitting capacity (10K → 20K → 40K → 80K)
-                // This maintains the resize() optimization benefit (1.7x faster than emplace_back)
                 if (row_count >= results.size()) {
-                    size_t new_size = results.size() * 2;  // 2x exponential growth
+                    size_t new_size = results.size() * 2;
                     results.resize(new_size);
                 }
 
@@ -143,18 +134,15 @@ export namespace storm::orm::statements {
                 step_result = cached_select_stmt_->step_raw();
             }
 
-            // Trim vector to actual size
             results.resize(row_count);
 
-            // Check for errors only after loop completes
+            // Check for errors
             if (step_result != Statement::NO_MORE_ROWS) {
                 cached_select_stmt_->reset();
                 return std::unexpected(Error{step_result, cached_select_stmt_->get_error_message()});
             }
 
-            // Reset statement for next use
             cached_select_stmt_->reset();
-
             return results;
         }
 
@@ -175,30 +163,23 @@ export namespace storm::orm::statements {
                 cached_join_stmt_ = *prepare_result;
             }
 
-            // OPTIMIZATION: Use resize() for pre-allocation (1.7x faster than reserve + emplace_back)
-            // Initial capacity: 10K rows. Exponential growth handles larger result sets efficiently.
+            // OPTIMIZATION: Use resize() for pre-allocation (no intermediate copies)
             std::vector<T> results;
-            results.resize(10000); // Pre-allocate with default-constructed objects
+            results.resize(10000);
 
-            int    step_result;
+            int step_result;
             size_t row_count = 0;
             while ((step_result = cached_join_stmt_->step_raw()) == Statement::ROW_AVAILABLE &&
                    row_count < results.size()) {
                 T& obj = results[row_count];
-
-                // Use JoinStatement's extraction logic via function pointer
                 join_wrapper.extract_row(cached_join_stmt_, &obj);
-
                 row_count++;
             }
 
-            // Handle overflow with exponential growth strategy
-            // Use exponential growth to minimize reallocations for large result sets
+            // Handle overflow with exponential growth
             while (step_result == Statement::ROW_AVAILABLE) {
-                // Grow exponentially when hitting capacity (10K → 20K → 40K → 80K)
-                // This maintains the resize() optimization benefit (1.7x faster than emplace_back)
                 if (row_count >= results.size()) {
-                    size_t new_size = results.size() * 2;  // 2x exponential growth
+                    size_t new_size = results.size() * 2;
                     results.resize(new_size);
                 }
 
@@ -271,13 +252,15 @@ export namespace storm::orm::statements {
                         } else if constexpr (std::is_same_v<InnerType, std::string>) {
                             const unsigned char* text = stmt->extract_text_ptr(Index);
                             if (text) {
-                                temp_value = std::string(reinterpret_cast<const char*>(text));
+                                int len = sqlite3_column_bytes(stmt->handle(), Index);
+                                temp_value.assign(reinterpret_cast<const char*>(text), len);
                             } else {
                                 temp_value = std::string();
                             }
                         }
 
-                        obj.[:member:] = temp_value;
+                        // OPTIMIZATION: Move temp_value to avoid copy
+                        obj.[:member:] = std::move(temp_value);
                     }
                 }
                 // Boolean type (stored as INTEGER 0/1)
@@ -318,9 +301,10 @@ export namespace storm::orm::statements {
                 else if constexpr (std::is_same_v<FieldType, std::string>) {
                     const unsigned char* text = stmt->extract_text_ptr(Index);
                     if (text) {
-                        // OPTIMIZATION: Direct string construction is 2.2x faster than assign()
-                        // 9.05M rows/sec vs 4.10M rows/sec in benchmarks
-                        obj.[:member:] = std::string(reinterpret_cast<const char*>(text));
+                        // OPTIMIZATION: Direct assign with known length (no temporary, no strlen)
+                        // Avoids temporary string construction and leverages SQLite's length info
+                        int len = sqlite3_column_bytes(stmt->handle(), Index);
+                        obj.[:member:].assign(reinterpret_cast<const char*>(text), len);
                     } else {
                         obj.[:member:].clear();
                     }

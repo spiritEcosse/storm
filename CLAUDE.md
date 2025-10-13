@@ -259,8 +259,9 @@ Two optimized batch operation strategies:
 - `execute_optimized()` returns all rows
 - Statement-level caching for repeated SELECT calls
 - resize() pre-allocation (1.7x faster than reserve() + push_back())
-- Direct string construction (2.2x faster than assign())
-- Inline column extraction with compiler hints
+- Optimized string extraction using `sqlite3_column_bytes()` (avoids strlen)
+- Move semantics for optional field assignments (avoids copy)
+- Inline column extraction with compiler hints (`__attribute__((hot/flatten/always_inline))`)
 
 #### 10. **Auto-Generated ID Support**
 Returns generated IDs from insert operations:
