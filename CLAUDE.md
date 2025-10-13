@@ -3,11 +3,11 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 **Last Updated**: Storm ORM features **complete CRUD operations + JOIN support** maintaining consistent 1.5-6x performance advantage over sqlite_orm:
-- **INSERT**: 992K/sec single, 2.7M/sec batch (2.0x faster)
-- **SELECT**: 13.07M rows/sec (74% of raw SQLite, 1.51x faster)
-- **UPDATE**: 2M/sec sustained, 12M peak (6x faster, 1.8x faster than raw SQLite)
-- **DELETE**: 21.6M/sec single, 3.9M/sec batch (73% of raw SQLite)
-- **JOIN**: Single & multi FK support with full object population
+- **INSERT**: 992K/sec single, 2.7M/sec batch (2.0x faster than sqlite_orm)
+- **SELECT**: 13.07M rows/sec (74% of raw SQLite, 1.51x faster than sqlite_orm)
+- **UPDATE**: 2M/sec sustained, 12M peak (6x faster than sqlite_orm)
+- **DELETE**: 21.6M/sec single, 3.9M/sec batch (73% of raw SQLite, 36x faster than sqlite_orm)
+- **JOIN**: 4-6M rows/sec (77% average efficiency vs raw SQLite for INNER/LEFT/RIGHT JOINs)
 
 Key innovations: compile-time SQL generation, statement-level caching, thread-local SQL caching, optimized row extraction (resize() pre-allocation 1.7x faster, direct string construction 2.2x faster), fully inlined field binding, abstract base class pattern for type-erased JOIN operations.
 
@@ -56,17 +56,29 @@ cmake --build --preset ninja-debug
 Debug builds are 2-3x slower than Release builds. The performance figures below are from Release builds.
 
 ```bash
-# Release benchmarks (RECOMMENDED)
-./performance_comparison_release.sh    # Builds ninja-release and runs all benchmarks
-./sql_generation_analysis.sh           # SQL generation performance analysis
+# Python-based benchmark suite (RECOMMENDED - with auto-rebuild)
+python3 bench.py --joins                # JOIN performance analysis
+python3 bench.py --all                  # All microbenchmarks
+python3 bench.py --compare              # Comprehensive Storm vs sqlite_orm vs Raw SQLite
 
-# Or build manually
+# Direct benchmark execution (manual rebuild required)
 cmake --preset ninja-release -DENABLE_TESTS=ON -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
+./build/release/benchmarks/bench_join --size=10000 --iterations=100
 ./build/release/benchmarks/bench_storm
 ./build/release/benchmarks/bench_sqlite_orm
 ./build/release/benchmarks/bench_sqlite
+
+# Legacy shell scripts
+./performance_comparison_release.sh    # Builds and runs all benchmarks
+./sql_generation_analysis.sh           # SQL generation analysis
 ```
+
+**Python Benchmark Features:**
+- ✅ **Auto-rebuild**: Detects source changes and rebuilds automatically
+- ✅ **Formatted output**: Color-coded tables with efficiency percentages
+- ✅ **Flexible**: Control dataset size and iteration count
+- ✅ **Fast**: Skips rebuild when nothing changed
 
 **Performance Results (10,000 operations, Release builds):**
 
@@ -388,12 +400,25 @@ auto result = message_qs.join<&Message::sender, &Message::receiver>().select();
 - ✅ Zero runtime overhead with `if constexpr` dispatch
 - ✅ Separate statement caching for JOIN vs simple SELECT
 
-#### 13. **JOIN Performance Analysis & Optimization Attempts**
+#### 13. **JOIN Performance Analysis & Results**
 
-**Performance Baseline (10,000 rows, 100 iterations, Release build):**
-- **Raw SQLite INNER JOIN**: 9.9M rows/sec (100% baseline)
-- **Storm ORM SELECT (no JOIN)**: 9.0M rows/sec (91% of raw SQLite)
-- **Storm ORM INNER JOIN (current)**: 5.1-6.9M rows/sec (50-70% of raw SQLite)
+**Performance Results (10,000 rows, 100 iterations, Release build):**
+
+| JOIN Operation | Storm ORM | Raw SQLite | Efficiency |
+|----------------|-----------|------------|------------|
+| Simple SELECT (no JOIN) | 8.4M rows/sec | - | - |
+| RIGHT JOIN (single FK) | 4.5M rows/sec | 5.0M rows/sec | 90% |
+| RIGHT JOIN (multi FK) | 2.7M rows/sec | 3.2M rows/sec | 84% |
+| LEFT JOIN (single FK) | 6.1M rows/sec | 6.8M rows/sec | 90% |
+| LEFT JOIN (multi FK) | 3.9M rows/sec | 5.2M rows/sec | 75% |
+| INNER JOIN (single FK) | 4.4M rows/sec | 7.4M rows/sec | 59% |
+| INNER JOIN (multi FK) | 3.7M rows/sec | 6.0M rows/sec | 62% |
+
+**Average Efficiency: ~77%** - Storm ORM achieves 77% of raw SQLite performance for JOIN operations.
+
+**Key Observations:**
+- **LEFT/RIGHT JOINs**: 75-90% efficiency (excellent)
+- **INNER JOINs**: 59-62% efficiency (good, lower due to more complex object construction)
 
 **Optimization Attempt: Template-Based Compile-Time JOIN**
 
@@ -666,14 +691,23 @@ static auto get_cached_sql(size_t key) -> std::string {
 
 ### Performance Testing
 ```bash
-# Build with benchmarking
+# Recommended: Python benchmark suite with auto-rebuild
+python3 bench.py --joins                 # JOIN performance
+python3 bench.py --joins --size=50000    # Larger dataset
+python3 bench.py --all                   # All microbenchmarks
+python3 bench.py --compare               # Full comparison
+
+# Manual: Build and run individual benchmarks
 cmake --preset ninja-release -DENABLE_TESTS=ON -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
+./build/release/benchmarks/bench_join --size=10000 --iterations=100
+./build/release/benchmarks/bench_storm
+./build/release/benchmarks/bench_sqlite_orm
+./build/release/benchmarks/bench_sqlite
 
-# Run benchmarks
+# Legacy shell scripts
 ./performance_comparison_release.sh    # Comprehensive comparison
 ./sql_generation_analysis.sh           # SQL generation analysis
-./build/release/benchmarks/bench_storm # Individual benchmarks
 ```
 
 **Performance Checklist:**
@@ -684,11 +718,12 @@ cmake --build --preset ninja-release
 5. Index sequences: Use fold expressions
 6. Measurement: Always validate with realistic data
 
-**Expected Performance:**
+**Expected Performance (10,000 rows, Release build):**
 - Single INSERT: ~992K/sec (2.0x vs sqlite_orm)
-- Single DELETE: ~21.6M/sec (73% of raw SQLite)
+- Single DELETE: ~21.6M/sec (73% of raw SQLite, 36x vs sqlite_orm)
 - SELECT: ~13.07M rows/sec (1.51x vs sqlite_orm, 74% of raw SQLite)
 - Batch INSERT: ~2.7M/sec, Batch DELETE: ~3.9M/sec
+- JOIN: 4-6M rows/sec (77% average efficiency vs raw SQLite)
 - Cache hit rate: >90% for common sizes (1, 10, 25, 50)
 
 ### SQL Generation Analysis

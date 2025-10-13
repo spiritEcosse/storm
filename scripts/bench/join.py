@@ -17,7 +17,7 @@ from common import BenchmarkRunner, BenchmarkTable, Colors
 class JoinBenchmark(BenchmarkRunner):
     """JOIN performance benchmark runner"""
 
-    def __init__(self, binary_path='./build/release/benchmarks/bench_join_performance'):
+    def __init__(self, binary_path='./build/release/benchmarks/bench_join'):
         super().__init__(binary_path)
 
     def parse_results(self, output):
@@ -125,7 +125,7 @@ Examples:
 
     parser.add_argument(
         '--binary',
-        default='./build/release/benchmarks/bench_join_performance',
+        default='./build/release/benchmarks/bench_join',
         help='Path to benchmark binary (default: %(default)s)'
     )
     parser.add_argument(

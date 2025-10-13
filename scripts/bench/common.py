@@ -189,14 +189,98 @@ class FlexibleTable:
 class BenchmarkRunner(ABC):
     """Abstract base class for benchmark runners"""
 
-    def __init__(self, binary_path):
+    def __init__(self, binary_path, auto_rebuild=True):
         """
         Initialize benchmark runner
 
         Args:
             binary_path: Path to benchmark binary
+            auto_rebuild: Automatically rebuild if source files changed (default: True)
         """
         self.binary_path = Path(binary_path)
+        self.auto_rebuild = auto_rebuild
+        self.project_root = self._find_project_root()
+        self.build_dir = self._detect_build_dir()
+
+    def _find_project_root(self):
+        """Find project root by looking for CMakeLists.txt"""
+        current = Path(__file__).resolve().parent
+        while current != current.parent:
+            if (current / 'CMakeLists.txt').exists():
+                return current
+            current = current.parent
+        return None
+
+    def _detect_build_dir(self):
+        """Detect build directory from binary path"""
+        if not self.binary_path.exists():
+            # Try to infer from path structure
+            # e.g., ./build/release/benchmarks/bench_join -> build/release
+            parts = self.binary_path.parts
+            if 'build' in parts:
+                build_idx = parts.index('build')
+                if build_idx + 1 < len(parts):
+                    return Path(*parts[:build_idx + 2])  # e.g., build/release
+        else:
+            # Binary exists, extract build dir from its path
+            parts = self.binary_path.resolve().parts
+            if 'build' in parts:
+                build_idx = parts.index('build')
+                if build_idx + 1 < len(parts):
+                    return Path(*parts[:build_idx + 2])
+        return None
+
+    def _get_target_name(self):
+        """Extract target name from binary path"""
+        return self.binary_path.stem
+
+    def _needs_rebuild(self):
+        """Check if binary needs rebuilding by comparing timestamps"""
+        if not self.binary_path.exists():
+            return True
+
+        if not self.project_root:
+            return False
+
+        binary_mtime = self.binary_path.stat().st_mtime
+
+        # Check if any source files in benchmarks/ are newer
+        benchmarks_dir = self.project_root / 'benchmarks'
+        if benchmarks_dir.exists():
+            for src_file in benchmarks_dir.glob('*.cpp'):
+                if src_file.stat().st_mtime > binary_mtime:
+                    return True
+
+        # Check if CMakeLists.txt changed
+        cmake_file = benchmarks_dir / 'CMakeLists.txt'
+        if cmake_file.exists() and cmake_file.stat().st_mtime > binary_mtime:
+            return True
+
+        return False
+
+    def _rebuild_binary(self):
+        """Rebuild the benchmark binary using cmake"""
+        if not self.build_dir or not self.project_root:
+            print(f"{Colors.YELLOW}Warning: Could not determine build directory, skipping rebuild{Colors.RESET}")
+            return False
+
+        target_name = self._get_target_name()
+        print(f"{Colors.CYAN}Building {target_name}...{Colors.RESET}")
+
+        result = subprocess.run(
+            ['cmake', '--build', str(self.build_dir), '--target', target_name],
+            cwd=str(self.project_root),
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            print(f"{Colors.RED}Build failed:{Colors.RESET}")
+            print(result.stderr)
+            return False
+
+        print(f"{Colors.GREEN}Build successful{Colors.RESET}")
+        return True
 
     def check_binary_exists(self):
         """Verify benchmark binary exists"""
@@ -256,12 +340,19 @@ class BenchmarkRunner(ABC):
 
     def run(self, *args, **kwargs):
         """
-        Complete benchmark workflow: check, run, parse, display
+        Complete benchmark workflow: rebuild if needed, check, run, parse, display
 
         Args:
             *args: Arguments for benchmark binary
             **kwargs: Additional parameters for display
         """
+        # Auto-rebuild if enabled and sources changed
+        if self.auto_rebuild and self._needs_rebuild():
+            print(f"{Colors.YELLOW}Source files changed, rebuilding...{Colors.RESET}")
+            if not self._rebuild_binary():
+                print(f"{Colors.RED}Failed to rebuild binary{Colors.RESET}")
+                sys.exit(1)
+
         self.check_binary_exists()
         output = self.run_benchmark(*args)
         data = self.parse_results(output)

@@ -335,7 +335,7 @@ void benchmark_raw_sqlite_inner_join(int num_messages, int iterations = 100) {
 
     auto& conn = QuerySet<User>::get_default_connection();
     std::string sql =
-        "SELECT m.id, m.text, "
+        "SELECT m.id, m.sender_id, m.receiver_id, m.text, "
         "u1.id, u1.name, u1.age "
         "FROM Message m "
         "INNER JOIN User u1 ON u1.id = m.sender_id";
@@ -346,7 +346,6 @@ void benchmark_raw_sqlite_inner_join(int num_messages, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-
         auto stmt_result = conn.prepare(sql);
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
@@ -363,15 +362,18 @@ void benchmark_raw_sqlite_inner_join(int num_messages, int iterations = 100) {
                 // Build actual Message object with sender populated
                 Message msg;
                 msg.id = stmt.extract_int(0);
-                msg.text = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                int sender_id_fk = stmt.extract_int(1);
+                int receiver_id_fk = stmt.extract_int(2);
+                msg.text = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(3)));
 
                 // Populate sender FK (fully populated via JOIN)
-                msg.sender.id = stmt.extract_int(2);
-                msg.sender.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(3)));
-                msg.sender.age = stmt.extract_int(4);
+                msg.sender.id = stmt.extract_int(4);
+                msg.sender.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(5)));
+                msg.sender.age = stmt.extract_int(6);
 
-                // Receiver is not populated (not joined)
-                msg.receiver = User{0, "", 0};
+                // Receiver is not populated (not joined, but extract FK ID)
+                msg.receiver = User{receiver_id_fk, "", 0};
+                (void)sender_id_fk; // Prevent unused warning
 
                 results.push_back(std::move(msg));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
@@ -481,7 +483,7 @@ void benchmark_raw_sqlite_left_join_single(int num_messages, int iterations = 10
 
     auto& conn = QuerySet<User>::get_default_connection();
     std::string sql =
-        "SELECT m.id, m.text, "
+        "SELECT m.id, m.sender_id, m.receiver_id, m.text, "
         "u1.id, u1.name, u1.age "
         "FROM Message m "
         "LEFT JOIN User u1 ON u1.id = m.sender_id";
@@ -492,7 +494,6 @@ void benchmark_raw_sqlite_left_join_single(int num_messages, int iterations = 10
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-
         auto stmt_result = conn.prepare(sql);
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
@@ -509,19 +510,21 @@ void benchmark_raw_sqlite_left_join_single(int num_messages, int iterations = 10
                 // Build actual Message object with LEFT JOIN handling
                 Message msg;
                 msg.id = stmt.extract_int(0);
-                msg.text = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                int sender_id_fk = stmt.extract_int(1);
+                int receiver_id_fk = stmt.extract_int(2);
+                msg.text = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(3)));
 
                 // Populate sender FK if not NULL (LEFT JOIN may have NULL)
-                if (!stmt.is_null(2)) {
-                    msg.sender.id = stmt.extract_int(2);
-                    msg.sender.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(3)));
-                    msg.sender.age = stmt.extract_int(4);
+                if (!stmt.is_null(4)) {
+                    msg.sender.id = stmt.extract_int(4);
+                    msg.sender.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(5)));
+                    msg.sender.age = stmt.extract_int(6);
                 } else {
-                    msg.sender = User{0, "", 0};
+                    msg.sender = User{sender_id_fk, "", 0};
                 }
 
-                // Receiver is not populated (not joined)
-                msg.receiver = User{0, "", 0};
+                // Receiver is not populated (not joined, but extract FK ID)
+                msg.receiver = User{receiver_id_fk, "", 0};
 
                 results.push_back(std::move(msg));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
@@ -639,7 +642,7 @@ void benchmark_raw_sqlite_right_join_single(int num_messages, int iterations = 1
 
     auto& conn = QuerySet<User>::get_default_connection();
     std::string sql =
-        "SELECT m.id, m.text, "
+        "SELECT m.id, m.sender_id, m.receiver_id, m.text, "
         "u1.id, u1.name, u1.age "
         "FROM Message m "
         "RIGHT JOIN User u1 ON u1.id = m.sender_id";
@@ -650,7 +653,6 @@ void benchmark_raw_sqlite_right_join_single(int num_messages, int iterations = 1
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-
         auto stmt_result = conn.prepare(sql);
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
@@ -668,21 +670,26 @@ void benchmark_raw_sqlite_right_join_single(int num_messages, int iterations = 1
                 Message msg;
 
                 // Message fields may be NULL (RIGHT JOIN)
+                int sender_id_fk = 0;
+                int receiver_id_fk = 0;
                 if (!stmt.is_null(0)) {
                     msg.id = stmt.extract_int(0);
-                    msg.text = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                    sender_id_fk = stmt.extract_int(1);
+                    receiver_id_fk = stmt.extract_int(2);
+                    msg.text = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(3)));
                 } else {
                     msg.id = 0;
                     msg.text = "";
                 }
 
                 // Sender FK is always populated (right table)
-                msg.sender.id = stmt.extract_int(2);
-                msg.sender.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(3)));
-                msg.sender.age = stmt.extract_int(4);
+                msg.sender.id = stmt.extract_int(4);
+                msg.sender.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(5)));
+                msg.sender.age = stmt.extract_int(6);
 
-                // Receiver is not populated (not joined)
-                msg.receiver = User{0, "", 0};
+                // Receiver is not populated (not joined, but extract FK ID if available)
+                msg.receiver = User{receiver_id_fk, "", 0};
+                (void)sender_id_fk; // Prevent unused warning
 
                 results.push_back(std::move(msg));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {

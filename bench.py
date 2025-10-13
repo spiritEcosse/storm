@@ -123,7 +123,7 @@ Examples:
                        help='Set dataset size (default varies by benchmark)')
     parser.add_argument('--iterations', type=int,
                        help='Set number of iterations (default varies by benchmark)')
-    parser.add_argument('--binary', default='./build/release/benchmarks/bench_join_performance',
+    parser.add_argument('--binary', default='./build/release/benchmarks/bench_join',
                        help='Path to benchmark binary (default: %(default)s)')
 
     args = parser.parse_args()
