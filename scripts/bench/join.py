@@ -57,7 +57,7 @@ class JoinBenchmark(BenchmarkRunner):
             ),
         }
 
-    def display_results(self, data, messages=10000, iterations=100):
+    def display_results(self, data, messages=1000, iterations=100):
         """Display formatted JOIN benchmark results"""
 
         # Print header
@@ -122,7 +122,7 @@ Examples:
     parser.add_argument(
         '--messages',
         type=int,
-        default=10000,
+        default=1000,
         help='Number of messages (default: %(default)s)'
     )
     parser.add_argument(

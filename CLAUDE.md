@@ -57,7 +57,9 @@ Debug builds are 2-3x slower than Release builds. The performance figures below 
 
 ```bash
 # Python-based benchmark suite (RECOMMENDED - with auto-rebuild)
+# Default: 1000 messages, 100 iterations
 python3 bench.py --joins                # JOIN performance analysis
+python3 bench.py --joins --messages=10000  # Custom dataset size
 python3 bench.py --all                  # All microbenchmarks
 python3 bench.py --compare              # Comprehensive Storm vs sqlite_orm vs Raw SQLite
 
@@ -65,8 +67,9 @@ python3 bench.py --compare              # Comprehensive Storm vs sqlite_orm vs R
 cmake --preset ninja-release -DENABLE_TESTS=ON -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
 
-# JOIN benchmarks with selective flags
-./build/release/benchmarks/bench_join --size=10000 --iterations=100          # All benchmarks
+# JOIN benchmarks with selective flags (defaults: sizes={100,1000,10000}, iterations=100)
+./build/release/benchmarks/bench_join                                        # Run all benchmarks with defaults
+./build/release/benchmarks/bench_join --size=10000 --iterations=100          # All benchmarks (custom size)
 ./build/release/benchmarks/bench_join --storm-join-1 --size=10000            # Storm single FK only
 ./build/release/benchmarks/bench_join --storm-join-multi --size=10000        # Storm multi FK only
 ./build/release/benchmarks/bench_join --raw-join-1 --size=10000              # Raw SQLite single FK
@@ -702,9 +705,9 @@ static auto get_cached_sql(size_t key) -> std::string {
 
 ### Performance Testing
 ```bash
-# Recommended: Python benchmark suite with auto-rebuild
-python3 bench.py --joins                 # JOIN performance
-python3 bench.py --joins --size=50000    # Larger dataset
+# Recommended: Python benchmark suite with auto-rebuild (default: 1000 messages, 100 iterations)
+python3 bench.py --joins                 # JOIN performance (default: 1000 messages)
+python3 bench.py --joins --messages=10000  # Custom dataset size
 python3 bench.py --all                   # All microbenchmarks
 python3 bench.py --compare               # Full comparison
 
@@ -712,8 +715,9 @@ python3 bench.py --compare               # Full comparison
 cmake --preset ninja-release -DENABLE_TESTS=ON -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
 
-# JOIN benchmark with selective flags
-./build/release/benchmarks/bench_join --size=10000 --iterations=100          # All benchmarks
+# C++ JOIN benchmark with selective flags (default: sizes={100,1000,10000}, iterations=100)
+./build/release/benchmarks/bench_join                                        # Run all benchmarks with defaults
+./build/release/benchmarks/bench_join --size=10000 --iterations=100          # All benchmarks (custom size)
 ./build/release/benchmarks/bench_join --storm-join-1 --size=10000            # Storm single FK
 ./build/release/benchmarks/bench_join --storm-join-multi --size=10000        # Storm multi FK
 ./build/release/benchmarks/bench_join --raw-join-1 --size=10000              # Raw single FK
