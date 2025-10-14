@@ -15,6 +15,21 @@ Key innovations: compile-time SQL generation, statement-level caching, thread-lo
 
 Storm is a modern C++26 ORM library for SQLite using cutting-edge C++26 reflection to automatically map C++ structs to database tables without macros.
 
+## Critical Safety Rules
+
+**⚠️ IMPORTANT: These rules must NEVER be violated:**
+
+1. **NEVER Delete .git Repository**
+   - Do not run `rm -rf .git` or any command that deletes the `.git` directory
+   - Do not run `git clean` with flags that could remove the repository
+   - The `.git` directory contains all project history and must be preserved
+
+2. **NEVER Push Without User Approval**
+   - Do not run `git push` unless explicitly requested by the user
+   - Always ask for permission before pushing to remote repository
+   - When committing changes, wait for user confirmation before pushing
+   - Exception: If user explicitly says "commit and push", then both operations are approved
+
 ## Build Commands
 
 ### Prerequisites
