@@ -81,47 +81,120 @@ export namespace storm::orm::statements {
         explicit SelectStatement(Connection& conn) : conn_(conn) {}
 
         // Optimized SELECT execution without JOIN
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_optimized() noexcept
-                -> std::expected<std::vector<T>, Error> {
-            return execute_simple_select();
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_optimized(
+                std::optional<size_t> limit  = std::nullopt,
+                std::optional<size_t> offset = std::nullopt
+        ) noexcept -> std::expected<std::vector<T>, Error> {
+            return execute_simple_select(limit, offset);
         }
 
         // Optimized SELECT execution with JOIN (type-erased wrapper with compile-time SQL)
         // NOTE: join_wrapper is passed by value (lightweight - just 3 function pointers)
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
-        execute_optimized(JoinStatementWrapper join_wrapper) noexcept -> std::expected<std::vector<T>, Error> {
-            return execute_with_join_impl(join_wrapper);
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_optimized(
+                JoinStatementWrapper  join_wrapper,
+                std::optional<size_t> limit  = std::nullopt,
+                std::optional<size_t> offset = std::nullopt
+        ) noexcept -> std::expected<std::vector<T>, Error> {
+            return execute_with_join_impl(join_wrapper, limit, offset);
         }
 
       private:
+        // Helper to build SQL with LIMIT/OFFSET
+        static std::string build_select_sql_with_limit_offset(
+                bool has_limit,
+                bool has_offset
+        ) {
+            std::string sql = get_select_sql();
+            if (has_limit) {
+                sql += " LIMIT ?";
+            }
+            if (has_offset) {
+                sql += " OFFSET ?";
+            }
+            return sql;
+        }
+
         // Simple SELECT execution (with object pooling optimization)
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_simple_select() noexcept
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_simple_select(
+                std::optional<size_t> limit,
+                std::optional<size_t> offset
+        ) noexcept
                 -> std::expected<std::vector<T>, Error> {
-            // Cache statement on first use (RemoveStatement pattern)
-            if (!cached_select_stmt_) {
-                auto prepare_result = conn_.prepare_cached(get_select_sql());
-                if (!prepare_result) [[unlikely]] {
-                    return std::unexpected(prepare_result.error());
+            Statement* stmt = nullptr;
+
+            // Select appropriate cached statement based on LIMIT/OFFSET presence
+            if (!limit.has_value() && !offset.has_value()) {
+                // No LIMIT/OFFSET - use existing cache
+                if (!cached_select_stmt_) {
+                    auto prepare_result = conn_.prepare_cached(get_select_sql());
+                    if (!prepare_result) [[unlikely]] {
+                        return std::unexpected(prepare_result.error());
+                    }
+                    cached_select_stmt_ = *prepare_result;
                 }
-                cached_select_stmt_ = *prepare_result;
+                stmt = cached_select_stmt_;
+            } else if (limit.has_value() && !offset.has_value()) {
+                // LIMIT only
+                if (!cached_select_limit_stmt_) {
+                    auto sql            = build_select_sql_with_limit_offset(true, false);
+                    auto prepare_result = conn_.prepare_cached(sql);
+                    if (!prepare_result) [[unlikely]] {
+                        return std::unexpected(prepare_result.error());
+                    }
+                    cached_select_limit_stmt_ = *prepare_result;
+                }
+                stmt = cached_select_limit_stmt_;
+                // Bind LIMIT value
+                if (!stmt->bind_int64(1, static_cast<int64_t>(*limit))) {
+                    return std::unexpected(Error{-1, "Failed to bind LIMIT parameter"});
+                }
+            } else {
+                // LIMIT + OFFSET (or OFFSET only, which we treat as LIMIT -1 OFFSET n)
+                if (!cached_select_limit_offset_stmt_) {
+                    auto sql            = build_select_sql_with_limit_offset(true, true);
+                    auto prepare_result = conn_.prepare_cached(sql);
+                    if (!prepare_result) [[unlikely]] {
+                        return std::unexpected(prepare_result.error());
+                    }
+                    cached_select_limit_offset_stmt_ = *prepare_result;
+                }
+                stmt = cached_select_limit_offset_stmt_;
+                // Bind LIMIT value (use -1 for unlimited if only OFFSET is provided)
+                int64_t limit_value = limit.has_value() ? static_cast<int64_t>(*limit) : -1;
+                if (!stmt->bind_int64(1, limit_value)) {
+                    return std::unexpected(Error{-1, "Failed to bind LIMIT parameter"});
+                }
+                // Bind OFFSET value
+                int64_t offset_value = offset.has_value() ? static_cast<int64_t>(*offset) : 0;
+                if (!stmt->bind_int64(2, offset_value)) {
+                    return std::unexpected(Error{-1, "Failed to bind OFFSET parameter"});
+                }
             }
 
             // OPTIMIZATION: Use resize() for pre-allocation (no intermediate copies)
             // Pre-constructing objects is significantly faster (6.08M vs 3.60M rows/sec)
+            // For LIMIT queries, pre-allocate exact size if LIMIT is small
+            // For simple SELECT (no LIMIT), start with smaller size to avoid over-allocation
             std::vector<T> results;
-            results.resize(10000);
+            if (limit.has_value()) {
+                // LIMIT specified - use exact size or cap at 10000
+                results.resize(std::min(*limit, size_t(10000)));
+            } else {
+                // No LIMIT - start with 1000 and let overflow handling grow as needed
+                results.resize(1000);
+            }
 
             int step_result;
             size_t row_count = 0;
-            while ((step_result = cached_select_stmt_->step_raw()) == Statement::ROW_AVAILABLE &&
+            while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE &&
                    row_count < results.size()) {
                 // Extract directly into pre-constructed object (no copy)
                 T& obj = results[row_count];
-                extract_all_columns_inline_fast(cached_select_stmt_, obj);
+                extract_all_columns_inline_fast(stmt, obj);
                 row_count++;
             }
 
-            // Handle overflow with exponential growth
+            // Handle overflow with exponential growth (only if no LIMIT or results exceed LIMIT)
             while (step_result == Statement::ROW_AVAILABLE) {
                 if (row_count >= results.size()) {
                     size_t new_size = results.size() * 2;
@@ -129,50 +202,103 @@ export namespace storm::orm::statements {
                 }
 
                 T& obj = results[row_count];
-                extract_all_columns_inline_fast(cached_select_stmt_, obj);
+                extract_all_columns_inline_fast(stmt, obj);
                 row_count++;
-                step_result = cached_select_stmt_->step_raw();
+                step_result = stmt->step_raw();
             }
 
             results.resize(row_count);
 
             // Check for errors
             if (step_result != Statement::NO_MORE_ROWS) {
-                cached_select_stmt_->reset();
-                return std::unexpected(Error{step_result, cached_select_stmt_->get_error_message()});
+                stmt->reset();
+                return std::unexpected(Error{step_result, stmt->get_error_message()});
             }
 
-            cached_select_stmt_->reset();
+            stmt->reset();
             return results;
         }
 
         // JOIN execution with compile-time SQL (type-erased wrapper)
         // OPTIMIZATION: Uses pre-computed complete SQL from JoinStatement (zero runtime concatenation)
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_with_join_impl(JoinStatementWrapper join_wrapper) noexcept
-                -> std::expected<std::vector<T>, Error> {
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_with_join_impl(
+                JoinStatementWrapper  join_wrapper,
+                std::optional<size_t> limit,
+                std::optional<size_t> offset
+        ) noexcept -> std::expected<std::vector<T>, Error> {
             // OPTIMIZATION: Use pre-computed complete SQL (generated at compile-time)
             // Eliminates all runtime string concatenation and heap allocation
-            const std::string& join_sql = join_wrapper.get_complete_sql();
+            std::string join_sql = join_wrapper.get_complete_sql();
 
-            // Cache JOIN statement separately (different SQL than simple SELECT)
-            if (!cached_join_stmt_) {
-                auto prepare_result = conn_.prepare_cached(join_sql);
-                if (!prepare_result) [[unlikely]] {
-                    return std::unexpected(prepare_result.error());
+            Statement* stmt = nullptr;
+
+            // Select appropriate cached statement based on LIMIT/OFFSET presence
+            if (!limit.has_value() && !offset.has_value()) {
+                // No LIMIT/OFFSET - use existing JOIN cache
+                if (!cached_join_stmt_) {
+                    auto prepare_result = conn_.prepare_cached(join_sql);
+                    if (!prepare_result) [[unlikely]] {
+                        return std::unexpected(prepare_result.error());
+                    }
+                    cached_join_stmt_ = *prepare_result;
                 }
-                cached_join_stmt_ = *prepare_result;
+                stmt = cached_join_stmt_;
+            } else if (limit.has_value() && !offset.has_value()) {
+                // LIMIT only
+                if (!cached_join_limit_stmt_) {
+                    join_sql += " LIMIT ?";
+                    auto prepare_result = conn_.prepare_cached(join_sql);
+                    if (!prepare_result) [[unlikely]] {
+                        return std::unexpected(prepare_result.error());
+                    }
+                    cached_join_limit_stmt_ = *prepare_result;
+                }
+                stmt = cached_join_limit_stmt_;
+                // Bind LIMIT value
+                if (!stmt->bind_int64(1, static_cast<int64_t>(*limit))) {
+                    return std::unexpected(Error{-1, "Failed to bind LIMIT parameter"});
+                }
+            } else {
+                // LIMIT + OFFSET (or OFFSET only)
+                if (!cached_join_limit_offset_stmt_) {
+                    join_sql += " LIMIT ? OFFSET ?";
+                    auto prepare_result = conn_.prepare_cached(join_sql);
+                    if (!prepare_result) [[unlikely]] {
+                        return std::unexpected(prepare_result.error());
+                    }
+                    cached_join_limit_offset_stmt_ = *prepare_result;
+                }
+                stmt = cached_join_limit_offset_stmt_;
+                // Bind LIMIT value (use -1 for unlimited if only OFFSET is provided)
+                int64_t limit_value = limit.has_value() ? static_cast<int64_t>(*limit) : -1;
+                if (!stmt->bind_int64(1, limit_value)) {
+                    return std::unexpected(Error{-1, "Failed to bind LIMIT parameter"});
+                }
+                // Bind OFFSET value
+                int64_t offset_value = offset.has_value() ? static_cast<int64_t>(*offset) : 0;
+                if (!stmt->bind_int64(2, offset_value)) {
+                    return std::unexpected(Error{-1, "Failed to bind OFFSET parameter"});
+                }
             }
 
             // OPTIMIZATION: Use resize() for pre-allocation (no intermediate copies)
+            // For LIMIT queries, pre-allocate exact size if LIMIT is small
+            // For JOIN without LIMIT, start with smaller size to avoid over-allocation
             std::vector<T> results;
-            results.resize(10000);
+            if (limit.has_value()) {
+                // LIMIT specified - use exact size or cap at 10000
+                results.resize(std::min(*limit, size_t(10000)));
+            } else {
+                // No LIMIT - start with 1000 and let overflow handling grow as needed
+                results.resize(1000);
+            }
 
             int step_result;
             size_t row_count = 0;
-            while ((step_result = cached_join_stmt_->step_raw()) == Statement::ROW_AVAILABLE &&
+            while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE &&
                    row_count < results.size()) {
                 T& obj = results[row_count];
-                join_wrapper.extract_row(cached_join_stmt_, &obj);
+                join_wrapper.extract_row(stmt, &obj);
                 row_count++;
             }
 
@@ -184,19 +310,19 @@ export namespace storm::orm::statements {
                 }
 
                 T& obj = results[row_count];
-                join_wrapper.extract_row(cached_join_stmt_, &obj);
+                join_wrapper.extract_row(stmt, &obj);
                 row_count++;
-                step_result = cached_join_stmt_->step_raw();
+                step_result = stmt->step_raw();
             }
 
             results.resize(row_count);
 
             if (step_result != Statement::NO_MORE_ROWS) {
-                cached_join_stmt_->reset();
-                return std::unexpected(Error{step_result, cached_join_stmt_->get_error_message()});
+                stmt->reset();
+                return std::unexpected(Error{step_result, stmt->get_error_message()});
             }
 
-            cached_join_stmt_->reset();
+            stmt->reset();
             return results;
         }
 
@@ -327,8 +453,14 @@ export namespace storm::orm::statements {
         }
 
         Connection&        conn_;
-        mutable Statement* cached_select_stmt_ = nullptr; // Statement caching for simple SELECT
-        mutable Statement* cached_join_stmt_   = nullptr; // Separate cache for JOIN queries
+        // Simple SELECT statement caches
+        mutable Statement* cached_select_stmt_              = nullptr; // No LIMIT/OFFSET
+        mutable Statement* cached_select_limit_stmt_        = nullptr; // LIMIT only
+        mutable Statement* cached_select_limit_offset_stmt_ = nullptr; // LIMIT + OFFSET
+        // JOIN query statement caches
+        mutable Statement* cached_join_stmt_              = nullptr; // No LIMIT/OFFSET
+        mutable Statement* cached_join_limit_stmt_        = nullptr; // LIMIT only
+        mutable Statement* cached_join_limit_offset_stmt_ = nullptr; // LIMIT + OFFSET
     };
 
 } // namespace storm::orm::statements

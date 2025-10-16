@@ -70,13 +70,19 @@ export namespace storm {
         std::expected<std::vector<T>, Error> select() {
             if (join_stmt_) {
                 // Pass wrapper by value (lightweight - just 3 function pointers)
-                auto result = get_select_statement().execute_optimized(*join_stmt_);
+                auto result = get_select_statement().execute_optimized(*join_stmt_, limit_, offset_);
                 // Reset to allow reuse for non-JOIN queries (maintains original semantics)
                 join_stmt_.reset();
+                limit_.reset();
+                offset_.reset();
                 return result;
             }
             // Normal SELECT without JOIN
-            return get_select_statement().execute_optimized();
+            auto result = get_select_statement().execute_optimized(limit_, offset_);
+            // Reset after use to allow new queries
+            limit_.reset();
+            offset_.reset();
+            return result;
         }
 
         // INNER JOIN support for single or multiple FK fields
@@ -112,6 +118,32 @@ export namespace storm {
         constexpr auto&& right_join(this auto&& self) {
             // Create type-erased wrapper with compile-time generated SQL (RIGHT JOIN)
             self.join_stmt_ = orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Right, FKFieldPtrs...>();
+            return self_cast(self);
+        }
+
+        // LIMIT clause for SELECT queries
+        // NOTE: Accepts size_t, internally cast to int64_t for SQLite binding
+        //       - Values >= INT64_MAX (9,223,372,036,854,775,807) will overflow
+        //       - Negative values (if forced via cast) become -1 in SQLite = "no limit" (returns all)
+        //       - This is not a practical concern for real-world use cases
+        //       - Compiler warns on negative literals: qs.limit(-1) triggers -Wsign-conversion
+        // Usage: qs.limit(10).select()              // Returns first 10 rows
+        //        qs.limit(10).offset(5).select()    // Skip 5, return next 10
+        constexpr auto&& limit(this auto&& self, size_t n) {
+            self.limit_ = n;
+            return self_cast(self);
+        }
+
+        // OFFSET clause for SELECT queries
+        // NOTE: Accepts size_t, internally cast to int64_t for SQLite binding
+        //       - Values >= INT64_MAX (9,223,372,036,854,775,807) will overflow
+        //       - Negative values (if forced via cast) become 0 in SQLite = "no offset" (starts from beginning)
+        //       - This is not a practical concern for real-world use cases
+        //       - Compiler warns on negative literals: qs.offset(-1) triggers -Wsign-conversion
+        // Usage: qs.offset(5).select()              // Skip first 5 rows, return rest
+        //        qs.limit(10).offset(5).select()    // Skip 5, return next 10
+        constexpr auto&& offset(this auto&& self, size_t n) {
+            self.offset_ = n;
             return self_cast(self);
         }
 
@@ -213,6 +245,8 @@ export namespace storm {
         mutable std::unique_ptr<orm::statements::UpdateStatement<T, ConnType>> update_stmt_;
 
         mutable std::optional<orm::statements::JoinStatementWrapper> join_stmt_;
+        mutable std::optional<size_t>                                 limit_;
+        mutable std::optional<size_t>                                 offset_;
     };
 
     // Factory function for convenient QuerySet creation with default connection

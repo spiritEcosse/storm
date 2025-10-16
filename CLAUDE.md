@@ -30,6 +30,14 @@ Storm is a modern C++26 ORM library for SQLite using cutting-edge C++26 reflecti
    - When committing changes, wait for user confirmation before pushing
    - Exception: If user explicitly says "commit and push", then both operations are approved
 
+3. **NEVER Use git reset Without User Approval**
+   - Do not run `git reset --hard` or any destructive git reset command
+   - Do not run `git checkout` to revert files without asking
+   - Do not run any command that discards uncommitted changes without user permission
+   - **ALWAYS ask the user first** if you want to reset or revert any files or commits
+   - **Reason**: These commands can permanently delete work in progress
+   - **Historical incident**: Accidentally used `git reset --hard HEAD` which removed an entire LIMIT/OFFSET feature implementation requiring complete re-implementation from scratch
+
 ## Build Commands
 
 ### Prerequisites
