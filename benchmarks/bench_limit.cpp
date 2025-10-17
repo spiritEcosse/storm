@@ -118,52 +118,15 @@ void teardown_database() {
 
 // Global statistics for comparison
 struct BenchmarkStats {
-    double storm_select_throughput = 0;
     double storm_limit_throughput = 0;
     double storm_limit_offset_throughput = 0;
     double storm_offset_throughput = 0;
     double storm_join_limit_throughput = 0;
-    double raw_select_throughput = 0;
     double raw_limit_throughput = 0;
     double raw_limit_offset_throughput = 0;
     double raw_offset_throughput = 0;
     double raw_join_limit_throughput = 0;
 } global_stats;
-
-// Benchmark: Storm ORM - Simple SELECT (no LIMIT/OFFSET)
-void benchmark_storm_select(const BenchmarkConfig& config) {
-    format_utils::print_benchmark_header("Storm ORM - Simple SELECT");
-    setup_database(config.num_users, config.num_messages);
-
-    QuerySet<Message> message_qs;
-    BenchmarkTimer timer;
-    double total_time = 0;
-    int64_t total_rows = 0;
-
-    for (int i = 0; i < config.iterations; ++i) {
-        timer.reset();
-        auto result = message_qs.select();
-        double elapsed = timer.elapsed_ms();
-
-        if (result.has_value()) {
-            total_rows += result.value().size();
-            total_time += elapsed;
-        }
-    }
-
-    std::cout << "Storm ORM - Simple SELECT from " << config.num_messages << " messages:" << std::endl;
-    std::cout << "  Iterations: " << config.iterations << std::endl;
-    std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
-    std::cout << "  Avg per query: " << std::fixed << std::setprecision(4)
-              << (total_time / config.iterations) << " ms" << std::endl;
-    std::cout << "  Total rows: " << total_rows << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
-              << (total_rows / (total_time / 1000.0)) / 1000000.0 << " M rows/sec" << std::endl;
-    std::cout << std::endl;
-
-    global_stats.storm_select_throughput = total_rows / (total_time / 1000.0);
-    teardown_database();
-}
 
 // Benchmark: Storm ORM - LIMIT only
 void benchmark_storm_limit(const BenchmarkConfig& config) {
@@ -312,66 +275,6 @@ void benchmark_storm_join_limit(const BenchmarkConfig& config) {
     teardown_database();
 }
 
-// Benchmark: Raw SQLite - Simple SELECT (no LIMIT/OFFSET)
-void benchmark_raw_select(const BenchmarkConfig& config) {
-    format_utils::print_benchmark_header("Raw SQLite - Simple SELECT");
-    setup_database(config.num_users, config.num_messages);
-
-    auto& conn = QuerySet<User>::get_default_connection();
-    std::string sql = "SELECT id, sender_id, receiver_id, text FROM Message";
-
-    BenchmarkTimer timer;
-    double total_time = 0;
-    int64_t total_rows = 0;
-
-    for (int i = 0; i < config.iterations; ++i) {
-        auto stmt_result = conn.prepare(sql);
-        if (!stmt_result.has_value()) {
-            std::cerr << "Failed to prepare statement" << std::endl;
-            break;
-        }
-
-        auto stmt = std::move(stmt_result.value());
-
-        timer.reset();
-        std::vector<Message> results;
-        results.reserve(config.num_messages);
-
-        while (true) {
-            int step = stmt.step_raw();
-            if (step == decltype(stmt)::ROW_AVAILABLE) {
-                Message msg;
-                msg.id = stmt.extract_int(0);
-                int sender_id = stmt.extract_int(1);
-                int receiver_id = stmt.extract_int(2);
-                msg.text = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(3)));
-                msg.sender = User{sender_id, "", 0};
-                msg.receiver = User{receiver_id, "", 0};
-                results.push_back(std::move(msg));
-            } else if (step == decltype(stmt)::NO_MORE_ROWS) {
-                break;
-            }
-        }
-
-        double elapsed = timer.elapsed_ms();
-        total_rows += results.size();
-        total_time += elapsed;
-    }
-
-    std::cout << "Raw SQLite - Simple SELECT from " << config.num_messages << " messages:" << std::endl;
-    std::cout << "  Iterations: " << config.iterations << std::endl;
-    std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
-    std::cout << "  Avg per query: " << std::fixed << std::setprecision(4)
-              << (total_time / config.iterations) << " ms" << std::endl;
-    std::cout << "  Total rows: " << total_rows << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
-              << (total_rows / (total_time / 1000.0)) / 1000000.0 << " M rows/sec" << std::endl;
-    std::cout << std::endl;
-
-    global_stats.raw_select_throughput = total_rows / (total_time / 1000.0);
-    teardown_database();
-}
-
 // Benchmark: Raw SQLite - LIMIT only
 void benchmark_raw_limit(const BenchmarkConfig& config) {
     format_utils::print_benchmark_header("Raw SQLite - SELECT with LIMIT");
@@ -380,36 +283,40 @@ void benchmark_raw_limit(const BenchmarkConfig& config) {
     auto& conn = QuerySet<User>::get_default_connection();
     std::string sql = "SELECT id, sender_id, receiver_id, text FROM Message LIMIT ?";
 
+    // Prepare statement ONCE (cached, like Storm ORM does)
+    auto stmt_result = conn.prepare_cached(sql);
+    if (!stmt_result.has_value()) {
+        std::cerr << "Failed to prepare statement" << std::endl;
+        teardown_database();
+        return;
+    }
+    auto* stmt = *stmt_result;
+
     BenchmarkTimer timer;
     double total_time = 0;
     int64_t total_rows = 0;
 
-    for (int i = 0; i < config.iterations; ++i) {
-        auto stmt_result = conn.prepare(sql);
-        if (!stmt_result.has_value()) {
-            std::cerr << "Failed to prepare statement" << std::endl;
-            break;
-        }
+    using StmtType = std::remove_reference_t<decltype(*stmt)>;
 
-        auto stmt = std::move(stmt_result.value());
-        (void)stmt.bind_int(1, config.limit_size);
+    for (int i = 0; i < config.iterations; ++i) {
+        (void)stmt->bind_int(1, config.limit_size);
 
         timer.reset();
         std::vector<Message> results;
         results.reserve(config.limit_size);
 
         while (true) {
-            int step = stmt.step_raw();
-            if (step == decltype(stmt)::ROW_AVAILABLE) {
+            int step = stmt->step_raw();
+            if (step == StmtType::ROW_AVAILABLE) {
                 Message msg;
-                msg.id = stmt.extract_int(0);
-                int sender_id = stmt.extract_int(1);
-                int receiver_id = stmt.extract_int(2);
-                msg.text = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(3)));
+                msg.id = stmt->extract_int(0);
+                int sender_id = stmt->extract_int(1);
+                int receiver_id = stmt->extract_int(2);
+                msg.text = std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(3)));
                 msg.sender = User{sender_id, "", 0};
                 msg.receiver = User{receiver_id, "", 0};
                 results.push_back(std::move(msg));
-            } else if (step == decltype(stmt)::NO_MORE_ROWS) {
+            } else if (step == StmtType::NO_MORE_ROWS) {
                 break;
             }
         }
@@ -417,6 +324,7 @@ void benchmark_raw_limit(const BenchmarkConfig& config) {
         double elapsed = timer.elapsed_ms();
         total_rows += results.size();
         total_time += elapsed;
+        stmt->reset();
     }
 
     std::cout << "Raw SQLite - SELECT with LIMIT " << config.limit_size
@@ -442,37 +350,41 @@ void benchmark_raw_limit_offset(const BenchmarkConfig& config) {
     auto& conn = QuerySet<User>::get_default_connection();
     std::string sql = "SELECT id, sender_id, receiver_id, text FROM Message LIMIT ? OFFSET ?";
 
+    // Prepare statement ONCE (cached, like Storm ORM does)
+    auto stmt_result = conn.prepare_cached(sql);
+    if (!stmt_result.has_value()) {
+        std::cerr << "Failed to prepare statement" << std::endl;
+        teardown_database();
+        return;
+    }
+    auto* stmt = *stmt_result;
+
     BenchmarkTimer timer;
     double total_time = 0;
     int64_t total_rows = 0;
 
-    for (int i = 0; i < config.iterations; ++i) {
-        auto stmt_result = conn.prepare(sql);
-        if (!stmt_result.has_value()) {
-            std::cerr << "Failed to prepare statement" << std::endl;
-            break;
-        }
+    using StmtType = std::remove_reference_t<decltype(*stmt)>;
 
-        auto stmt = std::move(stmt_result.value());
-        (void)stmt.bind_int(1, config.limit_size);
-        (void)stmt.bind_int(2, config.offset_size);
+    for (int i = 0; i < config.iterations; ++i) {
+        (void)stmt->bind_int(1, config.limit_size);
+        (void)stmt->bind_int(2, config.offset_size);
 
         timer.reset();
         std::vector<Message> results;
         results.reserve(config.limit_size);
 
         while (true) {
-            int step = stmt.step_raw();
-            if (step == decltype(stmt)::ROW_AVAILABLE) {
+            int step = stmt->step_raw();
+            if (step == StmtType::ROW_AVAILABLE) {
                 Message msg;
-                msg.id = stmt.extract_int(0);
-                int sender_id = stmt.extract_int(1);
-                int receiver_id = stmt.extract_int(2);
-                msg.text = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(3)));
+                msg.id = stmt->extract_int(0);
+                int sender_id = stmt->extract_int(1);
+                int receiver_id = stmt->extract_int(2);
+                msg.text = std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(3)));
                 msg.sender = User{sender_id, "", 0};
                 msg.receiver = User{receiver_id, "", 0};
                 results.push_back(std::move(msg));
-            } else if (step == decltype(stmt)::NO_MORE_ROWS) {
+            } else if (step == StmtType::NO_MORE_ROWS) {
                 break;
             }
         }
@@ -480,6 +392,7 @@ void benchmark_raw_limit_offset(const BenchmarkConfig& config) {
         double elapsed = timer.elapsed_ms();
         total_rows += results.size();
         total_time += elapsed;
+        stmt->reset();
     }
 
     std::cout << "Raw SQLite - SELECT with LIMIT " << config.limit_size
@@ -505,20 +418,24 @@ void benchmark_raw_offset(const BenchmarkConfig& config) {
     auto& conn = QuerySet<User>::get_default_connection();
     std::string sql = "SELECT id, sender_id, receiver_id, text FROM Message LIMIT ? OFFSET ?";
 
+    // Prepare statement ONCE (cached, like Storm ORM does)
+    auto stmt_result = conn.prepare_cached(sql);
+    if (!stmt_result.has_value()) {
+        std::cerr << "Failed to prepare statement" << std::endl;
+        teardown_database();
+        return;
+    }
+    auto* stmt = *stmt_result;
+
     BenchmarkTimer timer;
     double total_time = 0;
     int64_t total_rows = 0;
 
-    for (int i = 0; i < config.iterations; ++i) {
-        auto stmt_result = conn.prepare(sql);
-        if (!stmt_result.has_value()) {
-            std::cerr << "Failed to prepare statement" << std::endl;
-            break;
-        }
+    using StmtType = std::remove_reference_t<decltype(*stmt)>;
 
-        auto stmt = std::move(stmt_result.value());
-        (void)stmt.bind_int(1, -1);  // -1 means unlimited
-        (void)stmt.bind_int(2, config.offset_size);
+    for (int i = 0; i < config.iterations; ++i) {
+        (void)stmt->bind_int(1, -1);  // -1 means unlimited
+        (void)stmt->bind_int(2, config.offset_size);
 
         timer.reset();
         std::vector<Message> results;
@@ -529,17 +446,17 @@ void benchmark_raw_offset(const BenchmarkConfig& config) {
         results.reserve(expected_rows);
 
         while (true) {
-            int step = stmt.step_raw();
-            if (step == decltype(stmt)::ROW_AVAILABLE) {
+            int step = stmt->step_raw();
+            if (step == StmtType::ROW_AVAILABLE) {
                 Message msg;
-                msg.id = stmt.extract_int(0);
-                int sender_id = stmt.extract_int(1);
-                int receiver_id = stmt.extract_int(2);
-                msg.text = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(3)));
+                msg.id = stmt->extract_int(0);
+                int sender_id = stmt->extract_int(1);
+                int receiver_id = stmt->extract_int(2);
+                msg.text = std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(3)));
                 msg.sender = User{sender_id, "", 0};
                 msg.receiver = User{receiver_id, "", 0};
                 results.push_back(std::move(msg));
-            } else if (step == decltype(stmt)::NO_MORE_ROWS) {
+            } else if (step == StmtType::NO_MORE_ROWS) {
                 break;
             }
         }
@@ -547,6 +464,7 @@ void benchmark_raw_offset(const BenchmarkConfig& config) {
         double elapsed = timer.elapsed_ms();
         total_rows += results.size();
         total_time += elapsed;
+        stmt->reset();
     }
 
     std::cout << "Raw SQLite - SELECT with OFFSET " << config.offset_size
@@ -579,44 +497,48 @@ void benchmark_raw_join_limit(const BenchmarkConfig& config) {
         "INNER JOIN User u2 ON u2.id = m.receiver_id "
         "LIMIT ? OFFSET ?";
 
+    // Prepare statement ONCE (cached, like Storm ORM does)
+    auto stmt_result = conn.prepare_cached(sql);
+    if (!stmt_result.has_value()) {
+        std::cerr << "Failed to prepare statement" << std::endl;
+        teardown_database();
+        return;
+    }
+    auto* stmt = *stmt_result;
+
     BenchmarkTimer timer;
     double total_time = 0;
     int64_t total_rows = 0;
 
-    for (int i = 0; i < config.iterations; ++i) {
-        auto stmt_result = conn.prepare(sql);
-        if (!stmt_result.has_value()) {
-            std::cerr << "Failed to prepare statement" << std::endl;
-            break;
-        }
+    using StmtType = std::remove_reference_t<decltype(*stmt)>;
 
-        auto stmt = std::move(stmt_result.value());
-        (void)stmt.bind_int(1, config.limit_size);
-        (void)stmt.bind_int(2, config.offset_size);
+    for (int i = 0; i < config.iterations; ++i) {
+        (void)stmt->bind_int(1, config.limit_size);
+        (void)stmt->bind_int(2, config.offset_size);
 
         timer.reset();
         std::vector<Message> results;
         results.reserve(config.limit_size);
 
         while (true) {
-            int step = stmt.step_raw();
-            if (step == decltype(stmt)::ROW_AVAILABLE) {
+            int step = stmt->step_raw();
+            if (step == StmtType::ROW_AVAILABLE) {
                 Message msg;
-                msg.id = stmt.extract_int(0);
-                msg.text = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                msg.id = stmt->extract_int(0);
+                msg.text = std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(1)));
 
                 // Populate sender
-                msg.sender.id = stmt.extract_int(2);
-                msg.sender.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(3)));
-                msg.sender.age = stmt.extract_int(4);
+                msg.sender.id = stmt->extract_int(2);
+                msg.sender.name = std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(3)));
+                msg.sender.age = stmt->extract_int(4);
 
                 // Populate receiver
-                msg.receiver.id = stmt.extract_int(5);
-                msg.receiver.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(6)));
-                msg.receiver.age = stmt.extract_int(7);
+                msg.receiver.id = stmt->extract_int(5);
+                msg.receiver.name = std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(6)));
+                msg.receiver.age = stmt->extract_int(7);
 
                 results.push_back(std::move(msg));
-            } else if (step == decltype(stmt)::NO_MORE_ROWS) {
+            } else if (step == StmtType::NO_MORE_ROWS) {
                 break;
             }
         }
@@ -624,6 +546,7 @@ void benchmark_raw_join_limit(const BenchmarkConfig& config) {
         double elapsed = timer.elapsed_ms();
         total_rows += results.size();
         total_time += elapsed;
+        stmt->reset();
     }
 
     std::cout << "Raw SQLite - JOIN (sender+receiver) with LIMIT " << config.limit_size
@@ -815,9 +738,6 @@ int main(int argc, char* argv[]) {
     std::cout << std::endl;
 
     // Run selected benchmarks
-    if (config.run_all) {
-        benchmark_storm_select(config);
-    }
     if (config.run_all || config.run_storm_limit) {
         benchmark_storm_limit(config);
     }
@@ -831,9 +751,6 @@ int main(int argc, char* argv[]) {
         benchmark_storm_join_limit(config);
     }
 
-    if (config.run_all) {
-        benchmark_raw_select(config);
-    }
     if (config.run_all || config.run_raw_limit) {
         benchmark_raw_limit(config);
     }

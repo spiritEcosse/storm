@@ -90,6 +90,7 @@ def run_perf_comparison(args):
 def run_limit_offset_benchmark(args):
     """Run LIMIT/OFFSET performance benchmark"""
     from limit_offset import LimitOffsetBenchmark
+    import subprocess
 
     print_header()
     print(f"{Colors.GREEN}Running LIMIT/OFFSET Performance Analysis...{Colors.RESET}\n")
@@ -97,16 +98,65 @@ def run_limit_offset_benchmark(args):
     # Calculate sensible default offset (50% of messages) if not specified
     messages = args.messages or 10000
     offset = args.offset if args.offset is not None else (messages // 2)
+    iterations = args.iterations or 100
 
     # Use bench_limit binary (not the default bench_join)
     binary = './build/release/benchmarks/bench_limit'
 
     benchmark = LimitOffsetBenchmark(binary)
+
+    # First, run simple SELECT benchmark
+    print(f"{Colors.CYAN}Running Simple SELECT benchmark...{Colors.RESET}")
+    try:
+        simple_select_result = subprocess.run(
+            [benchmark.simple_select_binary,
+             f'--iterations={iterations}'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        benchmark.simple_select_output = simple_select_result.stdout
+        print(benchmark.simple_select_output)
+    except subprocess.CalledProcessError as e:
+        print(f"{Colors.RED}Simple SELECT benchmark failed: {e}{Colors.RESET}")
+        print(f"Error: {e.stderr}")
+    except FileNotFoundError:
+        print(f"{Colors.YELLOW}Warning: bench_simple_select binary not found at {benchmark.simple_select_binary}{Colors.RESET}")
+        print(f"{Colors.YELLOW}Building bench_simple_select...{Colors.RESET}")
+        # Try to build it
+        try:
+            build_result = subprocess.run(
+                ['cmake', '--build', str(benchmark.build_dir), '--target', 'bench_simple_select'],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            print(f"{Colors.GREEN}Build successful{Colors.RESET}")
+            # Try running again
+            simple_select_result = subprocess.run(
+                [benchmark.simple_select_binary,
+                 f'--iterations={iterations}'],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            benchmark.simple_select_output = simple_select_result.stdout
+            print(benchmark.simple_select_output)
+        except Exception as build_error:
+            print(f"{Colors.RED}Could not build bench_simple_select: {build_error}{Colors.RESET}")
+
+    # Then run LIMIT/OFFSET benchmark
+    print(f"\n{Colors.CYAN}Running LIMIT/OFFSET benchmark...{Colors.RESET}")
+
     benchmark.run(
+        f'--messages={messages}',
+        f'--limit={args.limit or 100}',
+        f'--offset={offset}',
+        f'--iterations={iterations}',
         messages=messages,
         limit=args.limit or 100,
         offset=offset,
-        iterations=args.iterations or 100
+        iterations=iterations
     )
 
 

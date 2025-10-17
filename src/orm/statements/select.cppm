@@ -144,8 +144,8 @@ export namespace storm::orm::statements {
                     cached_select_limit_stmt_ = *prepare_result;
                 }
                 stmt = cached_select_limit_stmt_;
-                // Bind LIMIT value
-                if (!stmt->bind_int64(1, static_cast<int64_t>(*limit))) {
+                // Bind LIMIT value (use bind_int for better performance)
+                if (!stmt->bind_int(1, static_cast<int>(*limit))) {
                     return std::unexpected(Error{-1, "Failed to bind LIMIT parameter"});
                 }
             } else {
@@ -159,60 +159,74 @@ export namespace storm::orm::statements {
                     cached_select_limit_offset_stmt_ = *prepare_result;
                 }
                 stmt = cached_select_limit_offset_stmt_;
-                // Bind LIMIT value (use -1 for unlimited if only OFFSET is provided)
-                int64_t limit_value = limit.has_value() ? static_cast<int64_t>(*limit) : -1;
-                if (!stmt->bind_int64(1, limit_value)) {
+                // Bind LIMIT value (use bind_int for better performance)
+                int limit_value = limit.has_value() ? static_cast<int>(*limit) : -1;
+                if (!stmt->bind_int(1, limit_value)) {
                     return std::unexpected(Error{-1, "Failed to bind LIMIT parameter"});
                 }
-                // Bind OFFSET value
-                int64_t offset_value = offset.has_value() ? static_cast<int64_t>(*offset) : 0;
-                if (!stmt->bind_int64(2, offset_value)) {
+                // Bind OFFSET value (use bind_int for better performance)
+                int offset_value = offset.has_value() ? static_cast<int>(*offset) : 0;
+                if (!stmt->bind_int(2, offset_value)) {
                     return std::unexpected(Error{-1, "Failed to bind OFFSET parameter"});
                 }
             }
 
-            // OPTIMIZATION: Use resize() for pre-allocation (no intermediate copies)
-            // Pre-constructing objects is significantly faster (6.08M vs 3.60M rows/sec)
-            // For LIMIT queries, pre-allocate exact size if LIMIT is small
-            // For simple SELECT (no LIMIT), start with smaller size to avoid over-allocation
+            // OPTIMIZATION: For LIMIT queries, use reserve() + emplace_back() to avoid
+            // pre-constructing objects that may not be needed
+            // For large queries without LIMIT, use resize() for pre-allocation
             std::vector<T> results;
-            if (limit.has_value()) {
-                // LIMIT specified - use exact size or cap at 10000
-                results.resize(std::min(*limit, size_t(10000)));
-            } else {
-                // No LIMIT - start with 1000 and let overflow handling grow as needed
-                results.resize(1000);
-            }
 
-            int step_result;
-            size_t row_count = 0;
-            while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE &&
-                   row_count < results.size()) {
-                // Extract directly into pre-constructed object (no copy)
-                T& obj = results[row_count];
-                extract_all_columns_inline_fast(stmt, obj);
-                row_count++;
-            }
+            if (limit.has_value() && *limit <= 1000) {
+                // Small LIMIT: use reserve() + emplace_back() (construct on-demand)
+                results.reserve(*limit);
 
-            // Handle overflow with exponential growth (only if no LIMIT or results exceed LIMIT)
-            while (step_result == Statement::ROW_AVAILABLE) {
-                if (row_count >= results.size()) {
-                    size_t new_size = results.size() * 2;
-                    results.resize(new_size);
+                int step_result;
+                while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
+                    T obj{};  // Default construct
+                    extract_all_columns_inline_fast(stmt, obj);
+                    results.push_back(std::move(obj));
                 }
 
-                T& obj = results[row_count];
-                extract_all_columns_inline_fast(stmt, obj);
-                row_count++;
-                step_result = stmt->step_raw();
-            }
+                if (step_result != Statement::NO_MORE_ROWS) {
+                    stmt->reset();
+                    return std::unexpected(Error{step_result, stmt->get_error_message()});
+                }
+            } else {
+                // Large LIMIT or no LIMIT: use resize() for pre-allocation
+                if (limit.has_value()) {
+                    results.resize(std::min(*limit, size_t(10000)));
+                } else {
+                    results.resize(1000);
+                }
 
-            results.resize(row_count);
+                int step_result;
+                size_t row_count = 0;
+                while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE &&
+                       row_count < results.size()) {
+                    T& obj = results[row_count];
+                    extract_all_columns_inline_fast(stmt, obj);
+                    row_count++;
+                }
 
-            // Check for errors
-            if (step_result != Statement::NO_MORE_ROWS) {
-                stmt->reset();
-                return std::unexpected(Error{step_result, stmt->get_error_message()});
+                // Handle overflow with exponential growth
+                while (step_result == Statement::ROW_AVAILABLE) {
+                    if (row_count >= results.size()) {
+                        size_t new_size = results.size() * 2;
+                        results.resize(new_size);
+                    }
+
+                    T& obj = results[row_count];
+                    extract_all_columns_inline_fast(stmt, obj);
+                    row_count++;
+                    step_result = stmt->step_raw();
+                }
+
+                results.resize(row_count);
+
+                if (step_result != Statement::NO_MORE_ROWS) {
+                    stmt->reset();
+                    return std::unexpected(Error{step_result, stmt->get_error_message()});
+                }
             }
 
             stmt->reset();
@@ -254,8 +268,8 @@ export namespace storm::orm::statements {
                     cached_join_limit_stmt_ = *prepare_result;
                 }
                 stmt = cached_join_limit_stmt_;
-                // Bind LIMIT value
-                if (!stmt->bind_int64(1, static_cast<int64_t>(*limit))) {
+                // Bind LIMIT value (use bind_int for better performance)
+                if (!stmt->bind_int(1, static_cast<int>(*limit))) {
                     return std::unexpected(Error{-1, "Failed to bind LIMIT parameter"});
                 }
             } else {
@@ -269,14 +283,14 @@ export namespace storm::orm::statements {
                     cached_join_limit_offset_stmt_ = *prepare_result;
                 }
                 stmt = cached_join_limit_offset_stmt_;
-                // Bind LIMIT value (use -1 for unlimited if only OFFSET is provided)
-                int64_t limit_value = limit.has_value() ? static_cast<int64_t>(*limit) : -1;
-                if (!stmt->bind_int64(1, limit_value)) {
+                // Bind LIMIT value (use bind_int for better performance)
+                int limit_value = limit.has_value() ? static_cast<int>(*limit) : -1;
+                if (!stmt->bind_int(1, limit_value)) {
                     return std::unexpected(Error{-1, "Failed to bind LIMIT parameter"});
                 }
-                // Bind OFFSET value
-                int64_t offset_value = offset.has_value() ? static_cast<int64_t>(*offset) : 0;
-                if (!stmt->bind_int64(2, offset_value)) {
+                // Bind OFFSET value (use bind_int for better performance)
+                int offset_value = offset.has_value() ? static_cast<int>(*offset) : 0;
+                if (!stmt->bind_int(2, offset_value)) {
                     return std::unexpected(Error{-1, "Failed to bind OFFSET parameter"});
                 }
             }

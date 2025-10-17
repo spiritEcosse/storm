@@ -19,12 +19,17 @@ class LimitOffsetBenchmark(BenchmarkRunner):
 
     def __init__(self, binary_path='./build/release/benchmarks/bench_limit'):
         super().__init__(binary_path)
+        self.simple_select_binary = './build/release/benchmarks/bench_simple_select'
+        self.simple_select_output = ''  # Store simple select output
 
     def parse_results(self, output):
         """Parse LIMIT/OFFSET benchmark output"""
+        # Combine outputs (simple select + limit/offset)
+        combined_output = self.simple_select_output + '\n' + output
+
         def extract_throughput(pattern):
             # Find the section starting with pattern
-            section_match = re.search(pattern + r'[^\n]*\n(.*?)(?===|$)', output, re.DOTALL)
+            section_match = re.search(pattern + r'[^\n]*\n(.*?)(?===|$)', combined_output, re.DOTALL)
             if section_match:
                 section_text = section_match.group(1)
                 # Now find throughput within this section only
@@ -144,8 +149,54 @@ Examples:
     # Calculate sensible default offset (50% of messages) if not specified
     offset = args.offset if args.offset is not None else (args.messages // 2)
 
-    # Run benchmark
+    # Run benchmarks
     benchmark = LimitOffsetBenchmark(args.binary)
+
+    # First, run simple SELECT benchmark
+    import subprocess
+    print(f"{Colors.CYAN}Running Simple SELECT benchmark...{Colors.RESET}")
+    try:
+        simple_select_result = subprocess.run(
+            [benchmark.simple_select_binary,
+             f'--iterations={args.iterations}'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        benchmark.simple_select_output = simple_select_result.stdout
+        print(benchmark.simple_select_output)
+    except subprocess.CalledProcessError as e:
+        print(f"{Colors.RED}Simple SELECT benchmark failed: {e}{Colors.RESET}")
+        print(f"Error: {e.stderr}")
+    except FileNotFoundError:
+        print(f"{Colors.YELLOW}Warning: bench_simple_select binary not found at {benchmark.simple_select_binary}{Colors.RESET}")
+        print(f"{Colors.YELLOW}Building bench_simple_select...{Colors.RESET}")
+        # Try to build it
+        try:
+            build_result = subprocess.run(
+                ['cmake', '--build', str(benchmark.build_dir), '--target', 'bench_simple_select'],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            print(f"{Colors.GREEN}Build successful{Colors.RESET}")
+            # Try running again
+            simple_select_result = subprocess.run(
+                [benchmark.simple_select_binary,
+                 f'--iterations={args.iterations}'],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            benchmark.simple_select_output = simple_select_result.stdout
+            print(benchmark.simple_select_output)
+        except Exception as build_error:
+            print(f"{Colors.RED}Could not build bench_simple_select: {build_error}{Colors.RESET}")
+
+    # Then run LIMIT/OFFSET benchmark
+    print(f"\n{Colors.CYAN}Running LIMIT/OFFSET benchmark...{Colors.RESET}")
+
+    # Now run the benchmark (it will use self.simple_select_output in parse_results)
     benchmark.run(
         f'--messages={args.messages}',
         f'--limit={args.limit}',
