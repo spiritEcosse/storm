@@ -99,77 +99,32 @@ export namespace storm::orm::statements {
         }
 
       private:
-        // Helper to build SQL with LIMIT/OFFSET
-        static std::string build_select_sql_with_limit_offset(
-                bool has_limit,
-                bool has_offset
-        ) {
-            std::string sql = get_select_sql();
-            if (has_limit) {
-                sql += " LIMIT ?";
-            }
-            if (has_offset) {
-                sql += " OFFSET ?";
-            }
-            return sql;
-        }
-
-        // Simple SELECT execution (with object pooling optimization)
+        // Simple SELECT execution (dynamic SQL with connection-level caching)
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_simple_select(
                 std::optional<size_t> limit,
                 std::optional<size_t> offset
         ) noexcept
                 -> std::expected<std::vector<T>, Error> {
-            Statement* stmt = nullptr;
-
-            // Select appropriate cached statement based on LIMIT/OFFSET presence
-            if (!limit.has_value() && !offset.has_value()) {
-                // No LIMIT/OFFSET - use existing cache
-                if (!cached_select_stmt_) {
-                    auto prepare_result = conn_.prepare_cached(get_select_sql());
-                    if (!prepare_result) [[unlikely]] {
-                        return std::unexpected(prepare_result.error());
-                    }
-                    cached_select_stmt_ = *prepare_result;
-                }
-                stmt = cached_select_stmt_;
-            } else if (limit.has_value() && !offset.has_value()) {
-                // LIMIT only
-                if (!cached_select_limit_stmt_) {
-                    auto sql            = build_select_sql_with_limit_offset(true, false);
-                    auto prepare_result = conn_.prepare_cached(sql);
-                    if (!prepare_result) [[unlikely]] {
-                        return std::unexpected(prepare_result.error());
-                    }
-                    cached_select_limit_stmt_ = *prepare_result;
-                }
-                stmt = cached_select_limit_stmt_;
-                // Bind LIMIT value (use bind_int for better performance)
-                if (!stmt->bind_int(1, static_cast<int>(*limit))) {
-                    return std::unexpected(Error{-1, "Failed to bind LIMIT parameter"});
-                }
-            } else {
-                // LIMIT + OFFSET (or OFFSET only, which we treat as LIMIT -1 OFFSET n)
-                if (!cached_select_limit_offset_stmt_) {
-                    auto sql            = build_select_sql_with_limit_offset(true, true);
-                    auto prepare_result = conn_.prepare_cached(sql);
-                    if (!prepare_result) [[unlikely]] {
-                        return std::unexpected(prepare_result.error());
-                    }
-                    cached_select_limit_offset_stmt_ = *prepare_result;
-                }
-                stmt = cached_select_limit_offset_stmt_;
-                // Bind LIMIT value (use bind_int for better performance)
-                int limit_value = limit.has_value() ? static_cast<int>(*limit) : -1;
-                if (!stmt->bind_int(1, limit_value)) {
-                    return std::unexpected(Error{-1, "Failed to bind LIMIT parameter"});
-                }
-                // Bind OFFSET value (use bind_int for better performance)
-                int offset_value = offset.has_value() ? static_cast<int>(*offset) : 0;
-                if (!stmt->bind_int(2, offset_value)) {
-                    return std::unexpected(Error{-1, "Failed to bind OFFSET parameter"});
-                }
+            // OPTIMIZATION: Build SQL dynamically, only add LIMIT/OFFSET when requested
+            // Connection-level prepare_cached() handles statement caching automatically
+            // SQLite requires LIMIT if OFFSET is used, so use "LIMIT -1" for offset-only
+            std::string sql = get_select_sql();
+            if (limit.has_value()) {
+                sql += " LIMIT " + std::to_string(*limit);
+            } else if (offset.has_value()) {
+                // OFFSET without LIMIT: use LIMIT -1 (means "no limit" in SQLite)
+                sql += " LIMIT -1";
             }
+            if (offset.has_value()) {
+                sql += " OFFSET " + std::to_string(*offset);
+            }
+
+            // Use connection-level caching (prepare_cached maintains internal cache)
+            auto prepare_result = conn_.prepare_cached(sql);
+            if (!prepare_result) [[unlikely]] {
+                return std::unexpected(prepare_result.error());
+            }
+            Statement* stmt = *prepare_result;
 
             // OPTIMIZATION: For LIMIT queries, use reserve() + emplace_back() to avoid
             // pre-constructing objects that may not be needed
@@ -240,60 +195,26 @@ export namespace storm::orm::statements {
                 std::optional<size_t> limit,
                 std::optional<size_t> offset
         ) noexcept -> std::expected<std::vector<T>, Error> {
-            // OPTIMIZATION: Use pre-computed complete SQL (generated at compile-time)
-            // Eliminates all runtime string concatenation and heap allocation
+            // OPTIMIZATION: Build SQL dynamically, only add LIMIT/OFFSET when requested
+            // Use pre-computed complete SQL (generated at compile-time)
+            // SQLite requires LIMIT if OFFSET is used, so use "LIMIT -1" for offset-only
             std::string join_sql = join_wrapper.get_complete_sql();
-
-            Statement* stmt = nullptr;
-
-            // Select appropriate cached statement based on LIMIT/OFFSET presence
-            if (!limit.has_value() && !offset.has_value()) {
-                // No LIMIT/OFFSET - use existing JOIN cache
-                if (!cached_join_stmt_) {
-                    auto prepare_result = conn_.prepare_cached(join_sql);
-                    if (!prepare_result) [[unlikely]] {
-                        return std::unexpected(prepare_result.error());
-                    }
-                    cached_join_stmt_ = *prepare_result;
-                }
-                stmt = cached_join_stmt_;
-            } else if (limit.has_value() && !offset.has_value()) {
-                // LIMIT only
-                if (!cached_join_limit_stmt_) {
-                    join_sql += " LIMIT ?";
-                    auto prepare_result = conn_.prepare_cached(join_sql);
-                    if (!prepare_result) [[unlikely]] {
-                        return std::unexpected(prepare_result.error());
-                    }
-                    cached_join_limit_stmt_ = *prepare_result;
-                }
-                stmt = cached_join_limit_stmt_;
-                // Bind LIMIT value (use bind_int for better performance)
-                if (!stmt->bind_int(1, static_cast<int>(*limit))) {
-                    return std::unexpected(Error{-1, "Failed to bind LIMIT parameter"});
-                }
-            } else {
-                // LIMIT + OFFSET (or OFFSET only)
-                if (!cached_join_limit_offset_stmt_) {
-                    join_sql += " LIMIT ? OFFSET ?";
-                    auto prepare_result = conn_.prepare_cached(join_sql);
-                    if (!prepare_result) [[unlikely]] {
-                        return std::unexpected(prepare_result.error());
-                    }
-                    cached_join_limit_offset_stmt_ = *prepare_result;
-                }
-                stmt = cached_join_limit_offset_stmt_;
-                // Bind LIMIT value (use bind_int for better performance)
-                int limit_value = limit.has_value() ? static_cast<int>(*limit) : -1;
-                if (!stmt->bind_int(1, limit_value)) {
-                    return std::unexpected(Error{-1, "Failed to bind LIMIT parameter"});
-                }
-                // Bind OFFSET value (use bind_int for better performance)
-                int offset_value = offset.has_value() ? static_cast<int>(*offset) : 0;
-                if (!stmt->bind_int(2, offset_value)) {
-                    return std::unexpected(Error{-1, "Failed to bind OFFSET parameter"});
-                }
+            if (limit.has_value()) {
+                join_sql += " LIMIT " + std::to_string(*limit);
+            } else if (offset.has_value()) {
+                // OFFSET without LIMIT: use LIMIT -1 (means "no limit" in SQLite)
+                join_sql += " LIMIT -1";
             }
+            if (offset.has_value()) {
+                join_sql += " OFFSET " + std::to_string(*offset);
+            }
+
+            // Use connection-level caching
+            auto prepare_result = conn_.prepare_cached(join_sql);
+            if (!prepare_result) [[unlikely]] {
+                return std::unexpected(prepare_result.error());
+            }
+            Statement* stmt = *prepare_result;
 
             // OPTIMIZATION: Use resize() for pre-allocation (no intermediate copies)
             // For LIMIT queries, pre-allocate exact size if LIMIT is small
@@ -466,15 +387,9 @@ export namespace storm::orm::statements {
             extract_all_columns_inline_fast_impl(stmt, obj, typename Base::field_indices_t{});
         }
 
-        Connection&        conn_;
-        // Simple SELECT statement caches
-        mutable Statement* cached_select_stmt_              = nullptr; // No LIMIT/OFFSET
-        mutable Statement* cached_select_limit_stmt_        = nullptr; // LIMIT only
-        mutable Statement* cached_select_limit_offset_stmt_ = nullptr; // LIMIT + OFFSET
-        // JOIN query statement caches
-        mutable Statement* cached_join_stmt_              = nullptr; // No LIMIT/OFFSET
-        mutable Statement* cached_join_limit_stmt_        = nullptr; // LIMIT only
-        mutable Statement* cached_join_limit_offset_stmt_ = nullptr; // LIMIT + OFFSET
+        Connection& conn_;
+        // No statement-level caching - rely on connection-level prepare_cached() instead
+        // This keeps code simple and SQL queries clean (no LIMIT/OFFSET when not needed)
     };
 
 } // namespace storm::orm::statements
