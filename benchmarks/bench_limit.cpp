@@ -45,8 +45,42 @@ struct BenchmarkConfig {
     bool run_raw_join_limit = false;
 };
 
-// Setup database with test data
-void setup_database(int num_users, int num_messages) {
+// Setup database with test data for simple LIMIT/OFFSET tests (User table only)
+void setup_simple_database(int num_rows) {
+    auto result = QuerySet<User>::set_default_connection(":memory:");
+    if (!result.has_value()) {
+        throw std::runtime_error("Failed to open database");
+    }
+
+    auto& conn = QuerySet<User>::get_default_connection();
+
+    // Create User table
+    auto create_user = conn.execute(
+            "CREATE TABLE User ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "name TEXT NOT NULL, "
+            "age INTEGER NOT NULL"
+            ")"
+    );
+    if (!create_user.has_value()) {
+        throw std::runtime_error("Failed to create User table");
+    }
+
+    // Insert users
+    QuerySet<User> user_qs;
+    std::vector<User> users;
+    users.reserve(num_rows);
+    for (int i = 0; i < num_rows; ++i) {
+        users.push_back({0, "User" + std::to_string(i), 20 + (i % 50)});
+    }
+    auto user_result = user_qs.insert(std::span<const User>(users));
+    if (!user_result.has_value()) {
+        throw std::runtime_error("Failed to insert users");
+    }
+}
+
+// Setup database with FK relationships for JOIN tests (User + Message tables)
+void setup_join_database(int num_users, int num_messages) {
     auto result = QuerySet<User>::set_default_connection(":memory:");
     if (!result.has_value()) {
         throw std::runtime_error("Failed to open database");
@@ -131,16 +165,16 @@ struct BenchmarkStats {
 // Benchmark: Storm ORM - LIMIT only
 void benchmark_storm_limit(const BenchmarkConfig& config) {
     format_utils::print_benchmark_header("Storm ORM - SELECT with LIMIT");
-    setup_database(config.num_users, config.num_messages);
+    setup_simple_database(config.num_messages);
 
-    QuerySet<Message> message_qs;
+    QuerySet<User> user_qs;
     BenchmarkTimer timer;
     double total_time = 0;
     int64_t total_rows = 0;
 
     for (int i = 0; i < config.iterations; ++i) {
         timer.reset();
-        auto result = message_qs.limit(config.limit_size).select();
+        auto result = user_qs.limit(config.limit_size).select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -150,7 +184,7 @@ void benchmark_storm_limit(const BenchmarkConfig& config) {
     }
 
     std::cout << "Storm ORM - SELECT with LIMIT " << config.limit_size
-              << " from " << config.num_messages << " messages:" << std::endl;
+              << " from " << config.num_messages << " users:" << std::endl;
     std::cout << "  Iterations: " << config.iterations << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Avg per query: " << std::fixed << std::setprecision(4)
@@ -167,16 +201,16 @@ void benchmark_storm_limit(const BenchmarkConfig& config) {
 // Benchmark: Storm ORM - LIMIT + OFFSET
 void benchmark_storm_limit_offset(const BenchmarkConfig& config) {
     format_utils::print_benchmark_header("Storm ORM - SELECT with LIMIT + OFFSET");
-    setup_database(config.num_users, config.num_messages);
+    setup_simple_database(config.num_messages);
 
-    QuerySet<Message> message_qs;
+    QuerySet<User> user_qs;
     BenchmarkTimer timer;
     double total_time = 0;
     int64_t total_rows = 0;
 
     for (int i = 0; i < config.iterations; ++i) {
         timer.reset();
-        auto result = message_qs.limit(config.limit_size).offset(config.offset_size).select();
+        auto result = user_qs.limit(config.limit_size).offset(config.offset_size).select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -186,7 +220,7 @@ void benchmark_storm_limit_offset(const BenchmarkConfig& config) {
     }
 
     std::cout << "Storm ORM - SELECT with LIMIT " << config.limit_size
-              << " OFFSET " << config.offset_size << " from " << config.num_messages << " messages:" << std::endl;
+              << " OFFSET " << config.offset_size << " from " << config.num_messages << " users:" << std::endl;
     std::cout << "  Iterations: " << config.iterations << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Avg per query: " << std::fixed << std::setprecision(4)
@@ -203,16 +237,16 @@ void benchmark_storm_limit_offset(const BenchmarkConfig& config) {
 // Benchmark: Storm ORM - OFFSET only
 void benchmark_storm_offset(const BenchmarkConfig& config) {
     format_utils::print_benchmark_header("Storm ORM - SELECT with OFFSET only");
-    setup_database(config.num_users, config.num_messages);
+    setup_simple_database(config.num_messages);
 
-    QuerySet<Message> message_qs;
+    QuerySet<User> user_qs;
     BenchmarkTimer timer;
     double total_time = 0;
     int64_t total_rows = 0;
 
     for (int i = 0; i < config.iterations; ++i) {
         timer.reset();
-        auto result = message_qs.offset(config.offset_size).select();
+        auto result = user_qs.offset(config.offset_size).select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -222,7 +256,7 @@ void benchmark_storm_offset(const BenchmarkConfig& config) {
     }
 
     std::cout << "Storm ORM - SELECT with OFFSET " << config.offset_size
-              << " from " << config.num_messages << " messages:" << std::endl;
+              << " from " << config.num_messages << " users:" << std::endl;
     std::cout << "  Iterations: " << config.iterations << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Avg per query: " << std::fixed << std::setprecision(4)
@@ -239,7 +273,7 @@ void benchmark_storm_offset(const BenchmarkConfig& config) {
 // Benchmark: Storm ORM - JOIN + LIMIT + OFFSET
 void benchmark_storm_join_limit(const BenchmarkConfig& config) {
     format_utils::print_benchmark_header("Storm ORM - JOIN + LIMIT + OFFSET");
-    setup_database(config.num_users, config.num_messages);
+    setup_join_database(config.num_users, config.num_messages);
 
     QuerySet<Message> message_qs;
     BenchmarkTimer timer;
@@ -278,10 +312,10 @@ void benchmark_storm_join_limit(const BenchmarkConfig& config) {
 // Benchmark: Raw SQLite - LIMIT only
 void benchmark_raw_limit(const BenchmarkConfig& config) {
     format_utils::print_benchmark_header("Raw SQLite - SELECT with LIMIT");
-    setup_database(config.num_users, config.num_messages);
+    setup_simple_database(config.num_messages);
 
     auto& conn = QuerySet<User>::get_default_connection();
-    std::string sql = "SELECT id, sender_id, receiver_id, text FROM Message LIMIT ?";
+    std::string sql = "SELECT id, name, age FROM User LIMIT ?";
 
     // Prepare statement ONCE (cached, like Storm ORM does)
     auto stmt_result = conn.prepare_cached(sql);
@@ -302,20 +336,17 @@ void benchmark_raw_limit(const BenchmarkConfig& config) {
         (void)stmt->bind_int(1, config.limit_size);
 
         timer.reset();
-        std::vector<Message> results;
+        std::vector<User> results;
         results.reserve(config.limit_size);
 
         while (true) {
             int step = stmt->step_raw();
             if (step == StmtType::ROW_AVAILABLE) {
-                Message msg;
-                msg.id = stmt->extract_int(0);
-                int sender_id = stmt->extract_int(1);
-                int receiver_id = stmt->extract_int(2);
-                msg.text = std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(3)));
-                msg.sender = User{sender_id, "", 0};
-                msg.receiver = User{receiver_id, "", 0};
-                results.push_back(std::move(msg));
+                User user;
+                user.id = stmt->extract_int(0);
+                user.name = std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(1)));
+                user.age = stmt->extract_int(2);
+                results.push_back(std::move(user));
             } else if (step == StmtType::NO_MORE_ROWS) {
                 break;
             }
@@ -328,7 +359,7 @@ void benchmark_raw_limit(const BenchmarkConfig& config) {
     }
 
     std::cout << "Raw SQLite - SELECT with LIMIT " << config.limit_size
-              << " from " << config.num_messages << " messages:" << std::endl;
+              << " from " << config.num_messages << " users:" << std::endl;
     std::cout << "  Iterations: " << config.iterations << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Avg per query: " << std::fixed << std::setprecision(4)
@@ -345,10 +376,10 @@ void benchmark_raw_limit(const BenchmarkConfig& config) {
 // Benchmark: Raw SQLite - LIMIT + OFFSET
 void benchmark_raw_limit_offset(const BenchmarkConfig& config) {
     format_utils::print_benchmark_header("Raw SQLite - SELECT with LIMIT + OFFSET");
-    setup_database(config.num_users, config.num_messages);
+    setup_simple_database(config.num_messages);
 
     auto& conn = QuerySet<User>::get_default_connection();
-    std::string sql = "SELECT id, sender_id, receiver_id, text FROM Message LIMIT ? OFFSET ?";
+    std::string sql = "SELECT id, name, age FROM User LIMIT ? OFFSET ?";
 
     // Prepare statement ONCE (cached, like Storm ORM does)
     auto stmt_result = conn.prepare_cached(sql);
@@ -370,20 +401,17 @@ void benchmark_raw_limit_offset(const BenchmarkConfig& config) {
         (void)stmt->bind_int(2, config.offset_size);
 
         timer.reset();
-        std::vector<Message> results;
+        std::vector<User> results;
         results.reserve(config.limit_size);
 
         while (true) {
             int step = stmt->step_raw();
             if (step == StmtType::ROW_AVAILABLE) {
-                Message msg;
-                msg.id = stmt->extract_int(0);
-                int sender_id = stmt->extract_int(1);
-                int receiver_id = stmt->extract_int(2);
-                msg.text = std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(3)));
-                msg.sender = User{sender_id, "", 0};
-                msg.receiver = User{receiver_id, "", 0};
-                results.push_back(std::move(msg));
+                User user;
+                user.id = stmt->extract_int(0);
+                user.name = std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(1)));
+                user.age = stmt->extract_int(2);
+                results.push_back(std::move(user));
             } else if (step == StmtType::NO_MORE_ROWS) {
                 break;
             }
@@ -396,7 +424,7 @@ void benchmark_raw_limit_offset(const BenchmarkConfig& config) {
     }
 
     std::cout << "Raw SQLite - SELECT with LIMIT " << config.limit_size
-              << " OFFSET " << config.offset_size << " from " << config.num_messages << " messages:" << std::endl;
+              << " OFFSET " << config.offset_size << " from " << config.num_messages << " users:" << std::endl;
     std::cout << "  Iterations: " << config.iterations << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Avg per query: " << std::fixed << std::setprecision(4)
@@ -413,10 +441,10 @@ void benchmark_raw_limit_offset(const BenchmarkConfig& config) {
 // Benchmark: Raw SQLite - OFFSET only
 void benchmark_raw_offset(const BenchmarkConfig& config) {
     format_utils::print_benchmark_header("Raw SQLite - SELECT with OFFSET only");
-    setup_database(config.num_users, config.num_messages);
+    setup_simple_database(config.num_messages);
 
     auto& conn = QuerySet<User>::get_default_connection();
-    std::string sql = "SELECT id, sender_id, receiver_id, text FROM Message LIMIT ? OFFSET ?";
+    std::string sql = "SELECT id, name, age FROM User LIMIT ? OFFSET ?";
 
     // Prepare statement ONCE (cached, like Storm ORM does)
     auto stmt_result = conn.prepare_cached(sql);
@@ -438,7 +466,7 @@ void benchmark_raw_offset(const BenchmarkConfig& config) {
         (void)stmt->bind_int(2, config.offset_size);
 
         timer.reset();
-        std::vector<Message> results;
+        std::vector<User> results;
         // Avoid underflow when offset >= num_messages
         size_t expected_rows = (config.offset_size < config.num_messages)
                                 ? (config.num_messages - config.offset_size)
@@ -448,14 +476,11 @@ void benchmark_raw_offset(const BenchmarkConfig& config) {
         while (true) {
             int step = stmt->step_raw();
             if (step == StmtType::ROW_AVAILABLE) {
-                Message msg;
-                msg.id = stmt->extract_int(0);
-                int sender_id = stmt->extract_int(1);
-                int receiver_id = stmt->extract_int(2);
-                msg.text = std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(3)));
-                msg.sender = User{sender_id, "", 0};
-                msg.receiver = User{receiver_id, "", 0};
-                results.push_back(std::move(msg));
+                User user;
+                user.id = stmt->extract_int(0);
+                user.name = std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(1)));
+                user.age = stmt->extract_int(2);
+                results.push_back(std::move(user));
             } else if (step == StmtType::NO_MORE_ROWS) {
                 break;
             }
@@ -468,7 +493,7 @@ void benchmark_raw_offset(const BenchmarkConfig& config) {
     }
 
     std::cout << "Raw SQLite - SELECT with OFFSET " << config.offset_size
-              << " from " << config.num_messages << " messages:" << std::endl;
+              << " from " << config.num_messages << " users:" << std::endl;
     std::cout << "  Iterations: " << config.iterations << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Avg per query: " << std::fixed << std::setprecision(4)
@@ -485,7 +510,7 @@ void benchmark_raw_offset(const BenchmarkConfig& config) {
 // Benchmark: Raw SQLite - JOIN + LIMIT + OFFSET
 void benchmark_raw_join_limit(const BenchmarkConfig& config) {
     format_utils::print_benchmark_header("Raw SQLite - JOIN + LIMIT + OFFSET");
-    setup_database(config.num_users, config.num_messages);
+    setup_join_database(config.num_users, config.num_messages);
 
     auto& conn = QuerySet<User>::get_default_connection();
     std::string sql =
@@ -638,7 +663,7 @@ void print_comparison_summary() {
     std::cout << "  ✓ Three separate caches (no LIMIT, LIMIT only, LIMIT+OFFSET)" << std::endl;
     std::cout << "  ✓ Smart pre-allocation based on LIMIT size" << std::endl;
     std::cout << "  ✓ Works seamlessly with JOIN operations" << std::endl;
-    std::cout << "  ✓ Realistic User/Message table structure with FK relationships" << std::endl;
+    std::cout << "  ✓ Simple User model for basic tests, Message with FKs for JOIN tests" << std::endl;
     std::cout << std::endl;
 }
 

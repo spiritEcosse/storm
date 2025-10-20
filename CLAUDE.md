@@ -662,6 +662,33 @@ When deciding which implementation approach is "good", **performance testing is 
    - Report efficiency percentage: `(Storm_ORM_performance / Raw_SQLite_performance) * 100`
    - Include in commit message: "feat: add LIMIT support (85% of raw SQLite efficiency)"
 
+5. **Benchmark Model Complexity Principle**
+   - **Simple models for simple features**: Use simple models (e.g., `User` with 3 fields) for testing basic functionality
+   - **Complex models only when necessary**: Reserve complex models with FK relationships (e.g., `Message` with FK to `User`) for testing JOIN operations
+   - **Rationale**: Testing basic LIMIT/OFFSET doesn't require FK complexity; simpler models provide clearer performance measurements
+   - **Example structure**:
+     ```cpp
+     // Simple model for basic tests
+     struct User {
+         [[= storm::meta::FieldAttr::primary]] int id;
+         std::string name;
+         int age;
+     };
+
+     // Complex model for JOIN tests only
+     struct Message {
+         [[= storm::meta::FieldAttr::primary]] int id;
+         [[= storm::meta::FieldAttr::fk]] User sender;
+         [[= storm::meta::FieldAttr::fk]] User receiver;
+         std::string text;
+     };
+
+     // Use User for: LIMIT, OFFSET, WHERE, ORDER BY, GROUP BY benchmarks
+     // Use Message for: JOIN + LIMIT, JOIN + WHERE benchmarks
+     ```
+   - **Benefit**: Faster test execution, clearer performance bottleneck identification, reduced setup complexity
+   - **See**: `benchmarks/bench_limit.cpp` uses `setup_simple_database()` for basic tests, `setup_join_database()` for JOIN tests
+
 **Design Principles Balance:**
 
 Storm ORM follows **DRY (Don't Repeat Yourself)** and **KISS (Keep It Simple, Stupid)** principles, but performance takes precedence when there's a conflict:
