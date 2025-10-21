@@ -97,7 +97,6 @@ add_storm_benchmark(join_performance_microbench "join_performance_microbench.cpp
 add_storm_benchmark(bench_join "bench_join.cpp")
 add_storm_benchmark(bench_simple_select "bench_simple_select.cpp")
 add_storm_benchmark(bench_limit "bench_limit.cpp")
-add_storm_benchmark(bench_limit_comparison "bench_limit_comparison.cpp")
 add_storm_benchmark(bench_select_comparison "bench_select_comparison.cpp")
 add_storm_benchmark(bench_model_comparison "bench_model_comparison.cpp")
 
