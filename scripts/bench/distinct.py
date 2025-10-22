@@ -27,6 +27,7 @@ class DistinctBenchmark(BenchmarkRunner):
             return int(match.group(1)) if match else 0
 
         return {
+            # Single-field DISTINCT
             'name': (
                 extract_throughput(r'Storm ORM DISTINCT \(name\)'),
                 extract_throughput(r'Raw SQLite DISTINCT \(name\)')
@@ -39,6 +40,15 @@ class DistinctBenchmark(BenchmarkRunner):
                 extract_throughput(r'Storm ORM DISTINCT \(id/PK\)'),
                 extract_throughput(r'Raw SQLite DISTINCT \(id\)')
             ),
+            # Multi-field DISTINCT
+            'name_age': (
+                extract_throughput(r'Storm ORM DISTINCT \(name, age\)'),
+                extract_throughput(r'Raw SQLite DISTINCT \(name, age\)')
+            ),
+            'id_name_age': (
+                extract_throughput(r'Storm ORM DISTINCT \(id, name, age\)'),
+                extract_throughput(r'Raw SQLite DISTINCT \(id, name, age\)')
+            ),
         }
 
     def display_results(self, data, records=10000, iterations=100):
@@ -47,22 +57,35 @@ class DistinctBenchmark(BenchmarkRunner):
         # Print header
         BenchmarkTable.print_header("DISTINCT Operation")
 
-        # DISTINCT on different field types
+        # Single-field DISTINCT operations
+        print(f"\n{Colors.BOLD}Single-Field DISTINCT:{Colors.RESET}")
         for name, label in [
             ('name', 'DISTINCT (name - TEXT)'),
             ('age', 'DISTINCT (age - INTEGER)'),
             ('id', 'DISTINCT (id/PK - INTEGER)'),
         ]:
-            storm, raw = data[name]
-            eff = (storm / raw * 100) if raw > 0 else 0
-            BenchmarkTable.print_row(label, storm, raw, eff)
+            if name in data and data[name][0] > 0:  # Only show if data exists
+                storm, raw = data[name]
+                eff = (storm / raw * 100) if raw > 0 else 0
+                BenchmarkTable.print_row(label, storm, raw, eff)
+
+        # Multi-field DISTINCT operations
+        print(f"\n{Colors.BOLD}Multi-Field DISTINCT:{Colors.RESET}")
+        for name, label in [
+            ('name_age', 'DISTINCT (name, age)'),
+            ('id_name_age', 'DISTINCT (id, name, age)'),
+        ]:
+            if name in data and data[name][0] > 0:  # Only show if data exists
+                storm, raw = data[name]
+                eff = (storm / raw * 100) if raw > 0 else 0
+                BenchmarkTable.print_row(label, storm, raw, eff)
 
         BenchmarkTable.print_footer()
 
         # Calculate and print average efficiency
-        all_effs = [(data[k][0] / data[k][1] * 100) if data[k][1] > 0 else 0
-                    for k in data.keys()]
-        avg_eff = sum(all_effs) / len(all_effs)
+        all_effs = [(data[k][0] / data[k][1] * 100) if data[k][1] > 0 and data[k][0] > 0 else 0
+                    for k in data.keys() if k in data and data[k][0] > 0]
+        avg_eff = sum(all_effs) / len(all_effs) if all_effs else 0
 
         BenchmarkTable.print_summary(records, iterations, avg_eff)
 

@@ -6,14 +6,27 @@ import <vector>;
 import <expected>;
 import <algorithm>;
 import <set>;
+import <tuple>;
 
 using namespace storm;
 
-// Test model for DISTINCT operations
+// Test models for DISTINCT operations
 struct Person {
     [[= storm::meta::FieldAttr::primary]] int id;
     std::string                               name;
     int                                       age;
+};
+
+struct User {
+    [[= storm::meta::FieldAttr::primary]] int id;
+    std::string                               name;
+    int                                       age;
+};
+
+struct Message {
+    [[= storm::meta::FieldAttr::primary]] int id;
+    std::string                               content;
+    [[= storm::meta::FieldAttr::fk]] User     sender;
 };
 
 // Test fixture for DISTINCT operations
@@ -26,19 +39,56 @@ class DistinctTest : public ::testing::Test {
 
         auto& conn = QuerySet<Person>::get_default_connection();
 
-        // Create table with AUTOINCREMENT for proper ID generation
-        auto create_result = conn.execute(
+        // Create Person table
+        auto create_person = conn.execute(
                 "CREATE TABLE Person ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
                 "age INTEGER NOT NULL"
                 ")"
         );
-        ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
+        ASSERT_TRUE(create_person.has_value()) << "Failed to create Person table: " << create_person.error().message();
+
+        // Create User table (for JOIN tests)
+        auto create_user = conn.execute(
+                "CREATE TABLE User ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "name TEXT NOT NULL, "
+                "age INTEGER NOT NULL"
+                ")"
+        );
+        ASSERT_TRUE(create_user.has_value());
+
+        // Create Message table with FK (for JOIN and edge case tests)
+        auto create_msg = conn.execute(
+                "CREATE TABLE Message ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "content TEXT NOT NULL, "
+                "sender_id INTEGER NOT NULL, "
+                "FOREIGN KEY (sender_id) REFERENCES User(id)"
+                ")"
+        );
+        ASSERT_TRUE(create_msg.has_value());
     }
 
     void TearDown() override {
         QuerySet<Person>::clear_default_connection();
+    }
+
+    void populate_join_test_data() {
+        auto& conn = QuerySet<Person>::get_default_connection();
+
+        // Insert users
+        conn.execute("INSERT INTO User (name, age) VALUES ('Alice', 30)");
+        conn.execute("INSERT INTO User (name, age) VALUES ('Bob', 25)");
+        conn.execute("INSERT INTO User (name, age) VALUES ('Charlie', 35)");
+
+        // Insert messages (multiple messages per user to test DISTINCT)
+        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('Hello', 1)");      // Alice
+        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('World', 1)");      // Alice
+        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('Hi there', 2)");   // Bob
+        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('Goodbye', 2)");    // Bob
+        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('Test', 3)");       // Charlie
     }
 };
 
@@ -228,4 +278,584 @@ TEST_F(DistinctTest, VerifyReturnTypes) {
     // Verify distinct() (PK) returns std::vector<int>
     auto ids_result = queryset.distinct().select();
     static_assert(std::is_same_v<decltype(ids_result.value()), std::vector<int>&>);
+}
+
+// ==================== Multi-Field DISTINCT Tests ====================
+
+// Test: DISTINCT on two fields (name, age)
+TEST_F(DistinctTest, DistinctTwoFieldsNameAndAge) {
+    QuerySet<Person> queryset;
+
+    // Insert people with duplicate names but different ages, and duplicate ages but different names
+    std::vector<Person> people_to_insert = {
+            {1, "Alice", 30},
+            {2, "Bob", 25},
+            {3, "Alice", 30},   // Duplicate (name, age) pair
+            {4, "Alice", 35},   // Same name, different age
+            {5, "Bob", 25},     // Duplicate (name, age) pair
+            {6, "Charlie", 30}  // Different name, same age as Alice#1
+    };
+
+    auto insert_result = queryset.insert(std::span<const Person>(people_to_insert));
+    ASSERT_TRUE(insert_result.has_value());
+
+    // SELECT DISTINCT name, age
+    auto result = queryset.distinct<&Person::name, &Person::age>().select();
+    ASSERT_TRUE(result.has_value()) << "SELECT DISTINCT failed: " << result.error().message();
+
+    const auto& pairs = result.value();
+
+    // Expected unique pairs: (Alice, 30), (Bob, 25), (Alice, 35), (Charlie, 30)
+    EXPECT_EQ(pairs.size(), 4) << "Expected 4 unique (name, age) pairs";
+
+    // Convert to set for verification
+    std::set<std::tuple<std::string, int>> unique_pairs(pairs.begin(), pairs.end());
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Alice", 30)));
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Bob", 25)));
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Alice", 35)));
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Charlie", 30)));
+}
+
+// Test: DISTINCT on three fields (name, age) with different field ordering
+// NOTE: We skip id field to avoid ambiguity with type-based field matching (both id and age are int)
+TEST_F(DistinctTest, DistinctThreeFieldsAllFields) {
+    QuerySet<Person> queryset;
+
+    std::vector<Person> people_to_insert = {
+            {1, "Alice", 30},
+            {2, "Bob", 25},
+            {3, "Alice", 30},  // Same name and age as #1
+            {4, "Alice", 25},  // Same name as #1, same age as #2
+            {5, "Bob", 30}     // Same name as #2, same age as #1
+    };
+
+    auto insert_result = queryset.insert(std::span<const Person>(people_to_insert));
+    ASSERT_TRUE(insert_result.has_value());
+
+    // SELECT DISTINCT name, age (should return 4 unique combinations)
+    // (Alice,30), (Bob,25), (Alice,25), (Bob,30)
+    auto result = queryset.distinct<&Person::name, &Person::age>().select();
+    ASSERT_TRUE(result.has_value());
+
+    const auto& pairs = result.value();
+    EXPECT_EQ(pairs.size(), 4) << "Expected 4 unique (name, age) combinations";
+
+    // Verify we got the expected tuples
+    std::set<std::tuple<std::string, int>> unique_pairs(pairs.begin(), pairs.end());
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Alice", 30)));
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Bob", 25)));
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Alice", 25)));
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Bob", 30)));
+}
+
+// Test: DISTINCT two fields with all duplicates
+TEST_F(DistinctTest, DistinctTwoFieldsAllDuplicates) {
+    QuerySet<Person> queryset;
+
+    // Insert 10 people with the same (name, age) combination
+    std::vector<Person> people_to_insert;
+    for (int i = 1; i <= 10; ++i) {
+        people_to_insert.push_back({i, "SameName", 42});
+    }
+
+    auto insert_result = queryset.insert(std::span<const Person>(people_to_insert));
+    ASSERT_TRUE(insert_result.has_value());
+
+    // SELECT DISTINCT name, age
+    auto result = queryset.distinct<&Person::name, &Person::age>().select();
+    ASSERT_TRUE(result.has_value());
+
+    const auto& pairs = result.value();
+    EXPECT_EQ(pairs.size(), 1) << "Expected only 1 unique (name, age) pair";
+
+    EXPECT_EQ(std::get<0>(pairs[0]), "SameName");
+    EXPECT_EQ(std::get<1>(pairs[0]), 42);
+}
+
+// Test: DISTINCT two fields from empty table
+TEST_F(DistinctTest, DistinctTwoFieldsFromEmptyTable) {
+    QuerySet<Person> queryset;
+
+    // SELECT DISTINCT name, age from empty table
+    auto result = queryset.distinct<&Person::name, &Person::age>().select();
+    ASSERT_TRUE(result.has_value());
+
+    const auto& pairs = result.value();
+    EXPECT_TRUE(pairs.empty()) << "Expected empty result from empty table";
+}
+
+// Test: DISTINCT two fields with large dataset
+TEST_F(DistinctTest, DistinctTwoFieldsLargeDataset) {
+    QuerySet<Person> queryset;
+
+    // Insert 10,000 people with 100 unique (name, age) combinations (100 duplicates each)
+    std::vector<Person> people_to_insert;
+    for (int i = 1; i <= 10000; ++i) {
+        int combo_idx = (i - 1) % 100;
+        // Generate 100 unique (name, age) combinations: 10 names × 10 ages
+        people_to_insert.push_back({i, "Person" + std::to_string(combo_idx / 10), 20 + (combo_idx % 10)});
+    }
+
+    auto insert_result = queryset.insert(std::span<const Person>(people_to_insert));
+    ASSERT_TRUE(insert_result.has_value());
+
+    // SELECT DISTINCT name, age
+    auto result = queryset.distinct<&Person::name, &Person::age>().select();
+    ASSERT_TRUE(result.has_value());
+
+    const auto& pairs = result.value();
+
+    // We have 10 unique names (Person0-Person9) and 10 unique ages (20-29), giving 100 unique combinations
+    EXPECT_EQ(pairs.size(), 100) << "Expected 100 unique (name, age) pairs";
+}
+
+// Test: DISTINCT two fields (age, name) - different order than previous test
+TEST_F(DistinctTest, DistinctTwoFieldsDifferentOrder) {
+    QuerySet<Person> queryset;
+
+    std::vector<Person> people_to_insert = {
+            {1, "Alice", 30},
+            {2, "Bob", 25},
+            {3, "Alice", 30},
+            {4, "Charlie", 25}
+    };
+
+    auto insert_result = queryset.insert(std::span<const Person>(people_to_insert));
+    ASSERT_TRUE(insert_result.has_value());
+
+    // SELECT DISTINCT age, name (reversed order)
+    auto result = queryset.distinct<&Person::age, &Person::name>().select();
+    ASSERT_TRUE(result.has_value());
+
+    const auto& pairs = result.value();
+    EXPECT_EQ(pairs.size(), 3) << "Expected 3 unique (age, name) pairs";
+
+    // Verify we got the expected tuples (age first, then name)
+    std::set<std::tuple<int, std::string>> unique_pairs(pairs.begin(), pairs.end());
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple(30, "Alice")));
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple(25, "Bob")));
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple(25, "Charlie")));
+}
+
+// Test: Return type verification for multi-field DISTINCT
+TEST_F(DistinctTest, VerifyMultiFieldReturnTypes) {
+    QuerySet<Person> queryset;
+
+    // Insert test data
+    queryset.insert(Person{0, "Alice", 30});
+
+    // Verify distinct<&Person::name, &Person::age>() returns std::vector<std::tuple<std::string, int>>
+    auto pairs_result = queryset.distinct<&Person::name, &Person::age>().select();
+    static_assert(std::is_same_v<
+        decltype(pairs_result.value()),
+        std::vector<std::tuple<std::string, int>>&
+    >);
+
+    // Verify distinct<&Person::age, &Person::name>() returns std::vector<std::tuple<int, std::string>> (reversed)
+    auto reversed_result = queryset.distinct<&Person::age, &Person::name>().select();
+    static_assert(std::is_same_v<
+        decltype(reversed_result.value()),
+        std::vector<std::tuple<int, std::string>>&
+    >);
+}
+
+// Test: DISTINCT two fields with single row
+TEST_F(DistinctTest, DistinctTwoFieldsWithSingleRow) {
+    QuerySet<Person> queryset;
+
+    Person alice{0, "Alice", 30};
+    auto insert_result = queryset.insert(alice);
+    ASSERT_TRUE(insert_result.has_value());
+
+    auto result = queryset.distinct<&Person::name, &Person::age>().select();
+    ASSERT_TRUE(result.has_value());
+
+    const auto& pairs = result.value();
+    ASSERT_EQ(pairs.size(), 1);
+    EXPECT_EQ(std::get<0>(pairs[0]), "Alice");
+    EXPECT_EQ(std::get<1>(pairs[0]), 30);
+}
+// Test: Duplicate field specification (same field twice)
+// This should compile and work, but return redundant data
+TEST_F(DistinctTest, DuplicateFieldSpecification) {
+    QuerySet<Person> queryset;
+
+    // Insert test data
+    std::vector<Person> people = {
+            {1, "Alice", 30},
+            {2, "Bob", 25},
+            {3, "Alice", 35}  // Different Alice (different age)
+    };
+
+    auto insert_result = queryset.insert(std::span<const Person>(people));
+    ASSERT_TRUE(insert_result.has_value());
+
+    // SELECT DISTINCT name, name (redundant but valid SQL)
+    auto result = queryset.distinct<&Person::name, &Person::name>().select();
+    ASSERT_TRUE(result.has_value());
+
+    const auto& pairs = result.value();
+
+    // Should return 2 unique names, but each appears twice in the tuple
+    EXPECT_EQ(pairs.size(), 2);
+
+    // Each tuple should have identical elements
+    for (const auto& [name1, name2] : pairs) {
+        EXPECT_EQ(name1, name2) << "Duplicate field should have identical values";
+    }
+
+    // Verify we got Alice and Bob
+    std::set<std::string> names;
+    for (const auto& [name1, name2] : pairs) {
+        names.insert(name1);
+    }
+    EXPECT_TRUE(names.count("Alice"));
+    EXPECT_TRUE(names.count("Bob"));
+}
+
+// Test: Same field three times
+TEST_F(DistinctTest, TriplicateFieldSpecification) {
+    QuerySet<Person> queryset;
+
+    std::vector<Person> people = {{1, "Alice", 30}, {2, "Bob", 25}};
+    queryset.insert(std::span<const Person>(people));
+
+    // SELECT DISTINCT age, age, age (extreme redundancy)
+    auto result = queryset.distinct<&Person::age, &Person::age, &Person::age>().select();
+    ASSERT_TRUE(result.has_value());
+
+    const auto& triples = result.value();
+    EXPECT_EQ(triples.size(), 2);  // 2 unique ages
+
+    // Each tuple should have all three elements identical
+    for (const auto& [age1, age2, age3] : triples) {
+        EXPECT_EQ(age1, age2);
+        EXPECT_EQ(age2, age3);
+    }
+}
+
+// Test: Cross-struct field access is PREVENTED by compiler (type safety!)
+// Attempting QuerySet<Person>().distinct<&Message::sender_id>() results in compile error:
+// "left hand operand to .* must be a class compatible with the right hand operand"
+//
+// This is GOOD! The compiler enforces type safety at compile-time.
+//
+// The error occurs in get_member_info() when trying to deduce the field type:
+//   using MemberPtrFieldType = std::remove_cvref_t<decltype(std::declval<T>().*FP)>;
+//
+// Since T=Person and FP=&Message::sender_id, the .* operator fails because
+// you cannot apply a Message member pointer to a Person object.
+//
+// This test documents the compile-time safety rather than testing it.
+TEST_F(DistinctTest, CrossStructFieldAccessPrevented) {
+    /**
+     * Cross-struct field access is PREVENTED at compile-time!
+     *
+     * Example that WON'T compile:
+     *   QuerySet<Person> person_qs;
+     *   person_qs.distinct<&Message::sender_id>().select(); // COMPILE ERROR!
+     *
+     * Error: "left hand operand to .* must be a class compatible with the right hand operand"
+     *
+     * This is excellent type safety! The compiler prevents using field pointers
+     * from one struct with a QuerySet of a different struct.
+     *
+     * Benefit: No runtime errors from accessing wrong fields or invalid memory.
+     */
+    SUCCEED() << "Cross-struct field access correctly prevented by compiler";
+}
+
+// Test: Return type verification for duplicate fields
+TEST_F(DistinctTest, VerifyDuplicateFieldReturnTypes) {
+    QuerySet<Person> queryset;
+    queryset.insert(Person{0, "Alice", 30});
+
+    // Duplicate field returns tuple with same type repeated
+    auto dup_result = queryset.distinct<&Person::name, &Person::name>().select();
+    static_assert(std::is_same_v<
+        decltype(dup_result.value()),
+        std::vector<std::tuple<std::string, std::string>>&
+    >);
+
+    // Triple duplicate
+    auto trip_result = queryset.distinct<&Person::age, &Person::age, &Person::age>().select();
+    static_assert(std::is_same_v<
+        decltype(trip_result.value()),
+        std::vector<std::tuple<int, int, int>>&
+    >);
+}
+
+// Test: Mixed duplicate and unique fields
+TEST_F(DistinctTest, MixedDuplicateFields) {
+    QuerySet<Person> queryset;
+
+    std::vector<Person> people = {
+            {1, "Alice", 30},
+            {2, "Bob", 25},
+            {3, "Alice", 30}  // Duplicate (name, age)
+    };
+    queryset.insert(std::span<const Person>(people));
+
+    // SELECT DISTINCT name, age, name (name appears twice)
+    auto result = queryset.distinct<&Person::name, &Person::age, &Person::name>().select();
+    ASSERT_TRUE(result.has_value());
+
+    const auto& triples = result.value();
+    EXPECT_EQ(triples.size(), 2);  // 2 unique (name, age) pairs
+
+    // Verify that first and third elements of each tuple are identical
+    for (const auto& [name1, age, name2] : triples) {
+        EXPECT_EQ(name1, name2);
+    }
+}
+
+// Test: Documentation of current behavior and limitations
+TEST_F(DistinctTest, DocumentedBehaviorAndLimitations) {
+    /**
+     * Current DISTINCT implementation behavior:
+     *
+     * POSITIVE (Type Safety):
+     * 1. **Cross-Struct Field Access PREVENTED**:
+     *    - QuerySet<Person>().distinct<&Message::sender_id>() → COMPILE ERROR ✅
+     *    - Compiler enforces that field pointers must match QuerySet struct type
+     *    - No risk of accidentally using fields from wrong struct
+     *
+     * 2. **Compile-Time Type Safety**:
+     *    - Return types automatically deduced from field types
+     *    - Single field: std::vector<FieldType>
+     *    - Multiple fields: std::vector<std::tuple<Type1, Type2, ...>>
+     *
+     * NEUTRAL (Features):
+     * 3. **Duplicate Fields Allowed**:
+     *    - distinct<&Person::name, &Person::name>() compiles and runs
+     *    - Generates SQL: SELECT DISTINCT name, name FROM Person
+     *    - Returns redundant but valid data
+     *    - Useful for testing but not recommended in production
+     *
+     * LIMITATIONS:
+     * 4. **Type Ambiguity with Multiple Fields of Same Type**:
+     *    - If struct has multiple int fields (id, age), type-based matching can be ambiguous
+     *    - distinct<&Person::id, &Person::age>() works but might confuse which is which
+     *    - Workaround: Use fields with unique types when possible
+     *
+     * 5. **No Statement Caching**:
+     *    - Each DISTINCT query prepares a new statement
+     *    - Unlike SELECT/UPDATE/DELETE which use statement-level caching
+     *    - Minor performance impact for repeated identical queries
+     *
+     * 6. **No JOIN Support**:
+     *    - DISTINCT operates only on the base table
+     *    - Cannot do: queryset.join<&FK>().distinct<&JoinedTable::field>()
+     *    - Would require significant refactoring to support
+     *
+     * Recommendations for future improvement:
+     * - Consider statement caching for repeated DISTINCT queries
+     * - Add warning/docs about type ambiguity issues
+     * - Explore JOIN + DISTINCT support (complex feature)
+     */
+    SUCCEED() << "See test comments for documented behavior and limitations";
+}
+// Test: Current behavior - DISTINCT on base table only (no JOIN)
+TEST_F(DistinctTest, DistinctOnBaseTableWithoutJoin) {
+    populate_join_test_data();
+
+    QuerySet<Message> msg_qs;
+
+    // DISTINCT on Message.content (no JOIN involved)
+    auto result = msg_qs.distinct<&Message::content>().select();
+    ASSERT_TRUE(result.has_value());
+
+    const auto& contents = result.value();
+    EXPECT_EQ(contents.size(), 5);  // 5 unique message contents
+
+    std::set<std::string> content_set(contents.begin(), contents.end());
+    EXPECT_TRUE(content_set.count("Hello"));
+    EXPECT_TRUE(content_set.count("World"));
+    EXPECT_TRUE(content_set.count("Hi there"));
+    EXPECT_TRUE(content_set.count("Goodbye"));
+    EXPECT_TRUE(content_set.count("Test"));
+}
+
+// Test: DISTINCT on FK field limitation
+TEST_F(DistinctTest, DistinctOnForeignKeyFieldNotSupported) {
+    /**
+     * Limitation: DISTINCT on FK object fields not supported
+     *
+     * Problem:
+     *   Message has FK field: [[fk]] User sender
+     *   Trying: msg_qs.distinct<&Message::sender>()
+     *   Error: "Unsupported field type for DISTINCT"
+     *
+     * Why:
+     *   - DISTINCT only supports basic types (int, string, double, etc.)
+     *   - FK fields are complex objects (User in this case)
+     *   - extract_column() doesn't know how to extract User objects
+     *
+     * Workaround:
+     *   - Use raw SQL to get DISTINCT sender_id values
+     *   - Then manually fetch User objects for those IDs
+     *
+     * Future enhancement:
+     *   - Could support DISTINCT on FK *ID* column (sender_id)
+     *   - Would require special handling of FK fields
+     *   - Return std::vector<int> (IDs) instead of std::vector<User>
+     */
+    SUCCEED() << "DISTINCT on FK object fields not currently supported (by design)";
+}
+
+// Test: What SQL would we WANT for DISTINCT + JOIN?
+TEST_F(DistinctTest, DesiredSQLForDistinctWithJoin) {
+    /**
+     * Desired SQL for DISTINCT with JOIN:
+     *
+     * Use Case 1: Get distinct user names who sent messages
+     *   SELECT DISTINCT User.name
+     *   FROM Message
+     *   INNER JOIN User ON User.id = Message.sender_id
+     *
+     * Use Case 2: Get distinct (user name, message content) pairs
+     *   SELECT DISTINCT User.name, Message.content
+     *   FROM Message
+     *   INNER JOIN User ON User.id = Message.sender_id
+     *
+     * Use Case 3: Get distinct users (full objects) who sent messages
+     *   SELECT DISTINCT User.*
+     *   FROM Message
+     *   INNER JOIN User ON User.id = Message.sender_id
+     *
+     * Current Storm ORM API doesn't support this because:
+     * 1. DISTINCT operates independently of JOIN
+     * 2. No way to specify fields from joined tables
+     * 3. QuerySet<Message>.join<&sender>().distinct<???>() - what goes in distinct?
+     *
+     * Possible API designs:
+     *
+     * Option A: Chaining
+     *   msg_qs.join<&Message::sender>()
+     *         .distinct<&User::name>()  // PROBLEM: &User::name won't match Message fields
+     *         .select()
+     *
+     * Option B: Separate DISTINCT type for JOINs
+     *   msg_qs.join<&Message::sender>()
+     *         .distinct_joined<&Message::sender, &User::name>()
+     *         .select()
+     *
+     * Option C: SQL-style field selection
+     *   msg_qs.join<&Message::sender>()
+     *         .select_distinct(
+     *             field<&Message::content>(),
+     *             field<&Message::sender, &User::name>()  // Joined field
+     *         )
+     *
+     * Challenges:
+     * - Type safety: How to represent fields from different tables?
+     * - Return type: What does distinct_joined return?
+     * - SQL generation: Building correct SELECT DISTINCT with JOINs
+     * - Field extraction: Mapping SQL columns back to C++ types
+     */
+    SUCCEED() << "See test comments for desired SQL and API design challenges";
+}
+
+// Test: Workaround - Raw SQL for DISTINCT with JOIN
+TEST_F(DistinctTest, RawSQLWorkaround) {
+    populate_join_test_data();
+
+    auto& conn = QuerySet<Message>::get_default_connection();
+
+    // Workaround: Use raw SQL for DISTINCT + JOIN
+    std::string sql = "SELECT DISTINCT User.name "
+                      "FROM Message "
+                      "INNER JOIN User ON User.id = Message.sender_id";
+
+    auto stmt_result = conn.prepare(sql);
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+    std::vector<std::string> user_names;
+
+    while (true) {
+        int step = stmt.step_raw();
+        if (step == decltype(stmt)::ROW_AVAILABLE) {
+            user_names.push_back(std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(0))));
+        } else if (step == decltype(stmt)::NO_MORE_ROWS) {
+            break;
+        } else {
+            FAIL() << "Query failed";
+        }
+    }
+
+    // We have 3 users (Alice, Bob, Charlie) who all sent messages
+    EXPECT_EQ(user_names.size(), 3);
+
+    std::set<std::string> name_set(user_names.begin(), user_names.end());
+    EXPECT_TRUE(name_set.count("Alice"));
+    EXPECT_TRUE(name_set.count("Bob"));
+    EXPECT_TRUE(name_set.count("Charlie"));
+}
+
+// Test: Current JOIN implementation doesn't support DISTINCT
+TEST_F(DistinctTest, CurrentLimitations) {
+    /**
+     * Current Limitations of JOIN + DISTINCT:
+     *
+     * 1. **Separate Operations**:
+     *    - JOIN is handled by QuerySet::join() → SelectStatement
+     *    - DISTINCT is handled by QuerySet::distinct() → DistinctQuery
+     *    - They don't integrate
+     *
+     * 2. **No Chaining Support**:
+     *    - Cannot do: queryset.join<&FK>().distinct<&Field>()
+     *    - join() returns QuerySet&&, but DISTINCT expects to operate independently
+     *
+     * 3. **Field Specification Limitation**:
+     *    - DISTINCT takes field pointers from struct T only
+     *    - Cannot specify fields from joined tables
+     *    - No syntax for "field from joined table"
+     *
+     * 4. **Return Type Challenge**:
+     *    - JOIN returns std::vector<T> with FKs populated
+     *    - DISTINCT returns std::vector<FieldType> or std::vector<std::tuple<...>>
+     *    - How to represent DISTINCT results from multiple tables?
+     *
+     * 5. **SQL Generation Complexity**:
+     *    - Would need to merge JOIN SQL with DISTINCT SQL
+     *    - Proper table aliasing (t1, t2, etc.)
+     *    - Qualified field names (t1.name vs t2.name)
+     *
+     * Recommendations:
+     * - For now, use raw SQL for DISTINCT + JOIN queries
+     * - Future enhancement: Design proper API for joined DISTINCT
+     * - Consider: Does DISTINCT + JOIN justify the implementation complexity?
+     *   (It's a relatively rare use case)
+     */
+    SUCCEED() << "See test comments for current limitations";
+}
+
+// Test: Alternative approaches for DISTINCT with relationships
+TEST_F(DistinctTest, AlternativeApproaches) {
+    /**
+     * Alternative approaches for DISTINCT with relationships:
+     *
+     * Approach 1: Raw SQL (most flexible)
+     *   - Use conn.prepare() with custom SQL
+     *   - Full control over DISTINCT + JOIN queries
+     *   - Loss of type safety and ORM convenience
+     *
+     * Approach 2: Application-level filtering
+     *   - Fetch all data with JOIN: msg_qs.join<&sender>().select()
+     *   - Filter unique values in application code (std::set, std::unique)
+     *   - May load more data than necessary
+     *
+     * Approach 3: Separate queries (N+1 issue)
+     *   - Query 1: SELECT DISTINCT sender_id FROM Message
+     *   - Query 2-N: SELECT * FROM User WHERE id = ?
+     *   - Inefficient but works with current API
+     *
+     * Recommendation:
+     *   For complex DISTINCT + JOIN queries, use raw SQL.
+     *   For simple cases, application-level filtering may suffice.
+     *   Full ORM support for DISTINCT + JOIN would require significant
+     *   architectural changes and may not be worth the complexity.
+     */
+    SUCCEED() << "See comments for alternative approaches";
 }

@@ -8,6 +8,7 @@ import <string>;
 import <vector>;
 import <span>;
 import <expected>;
+import <tuple>;
 
 using namespace storm;
 using namespace storm::benchmark;
@@ -311,6 +312,179 @@ void benchmark_raw_distinct_id(int num_records, int iterations = 100) {
     teardown_database();
 }
 
+// Benchmark: Storm ORM DISTINCT on two fields (name, age)
+void benchmark_storm_distinct_name_age(int num_records, int iterations = 100) {
+    setup_database(num_records);
+
+    QuerySet<Person> person_qs;
+    BenchmarkTimer timer;
+    double total_time = 0;
+    int total_results = 0;
+
+    for (int i = 0; i < iterations; ++i) {
+        timer.reset();
+        auto result = person_qs.distinct<&Person::name, &Person::age>().select();
+        double elapsed = timer.elapsed_ms();
+
+        if (result.has_value()) {
+            total_results += result.value().size();
+            total_time += elapsed;
+        }
+    }
+
+    std::cout << "Storm ORM DISTINCT (name, age) - " << num_records << " records:" << std::endl;
+    std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
+    std::cout << "  Iterations: " << iterations << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
+              << (total_time / iterations) << " ms" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+              << (total_results / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << std::endl;
+
+    teardown_database();
+}
+
+// Benchmark: Storm ORM DISTINCT on three fields (id, name, age)
+void benchmark_storm_distinct_id_name_age(int num_records, int iterations = 100) {
+    setup_database(num_records);
+
+    QuerySet<Person> person_qs;
+    BenchmarkTimer timer;
+    double total_time = 0;
+    int total_results = 0;
+
+    for (int i = 0; i < iterations; ++i) {
+        timer.reset();
+        auto result = person_qs.distinct<&Person::id, &Person::name, &Person::age>().select();
+        double elapsed = timer.elapsed_ms();
+
+        if (result.has_value()) {
+            total_results += result.value().size();
+            total_time += elapsed;
+        }
+    }
+
+    std::cout << "Storm ORM DISTINCT (id, name, age) - " << num_records << " records:" << std::endl;
+    std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
+    std::cout << "  Iterations: " << iterations << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
+              << (total_time / iterations) << " ms" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+              << (total_results / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << std::endl;
+
+    teardown_database();
+}
+
+// Benchmark: Raw SQLite DISTINCT on two fields (name, age)
+void benchmark_raw_distinct_name_age(int num_records, int iterations = 100) {
+    setup_database(num_records);
+
+    auto& conn = QuerySet<Person>::get_default_connection();
+    std::string sql = "SELECT DISTINCT name, age FROM Person";
+
+    BenchmarkTimer timer;
+    double total_time = 0;
+    int total_results = 0;
+
+    for (int i = 0; i < iterations; ++i) {
+        timer.reset();
+        auto stmt_result = conn.prepare(sql);
+        if (!stmt_result.has_value()) {
+            std::cerr << "Failed to prepare statement" << std::endl;
+            break;
+        }
+
+        auto stmt = std::move(stmt_result.value());
+        std::vector<std::tuple<std::string, int>> results;
+        results.reserve(100);
+
+        while (true) {
+            int step = stmt.step_raw();
+            if (step == decltype(stmt)::ROW_AVAILABLE) {
+                std::string name(reinterpret_cast<const char*>(stmt.extract_text_ptr(0)));
+                int age = stmt.extract_int(1);
+                results.emplace_back(name, age);
+            } else if (step == decltype(stmt)::NO_MORE_ROWS) {
+                break;
+            } else {
+                std::cerr << "Step failed" << std::endl;
+                break;
+            }
+        }
+
+        double elapsed = timer.elapsed_ms();
+        total_results += results.size();
+        total_time += elapsed;
+    }
+
+    std::cout << "Raw SQLite DISTINCT (name, age) - " << num_records << " records:" << std::endl;
+    std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
+    std::cout << "  Iterations: " << iterations << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
+              << (total_time / iterations) << " ms" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+              << (total_results / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << std::endl;
+
+    teardown_database();
+}
+
+// Benchmark: Raw SQLite DISTINCT on three fields (id, name, age)
+void benchmark_raw_distinct_id_name_age(int num_records, int iterations = 100) {
+    setup_database(num_records);
+
+    auto& conn = QuerySet<Person>::get_default_connection();
+    std::string sql = "SELECT DISTINCT id, name, age FROM Person";
+
+    BenchmarkTimer timer;
+    double total_time = 0;
+    int total_results = 0;
+
+    for (int i = 0; i < iterations; ++i) {
+        timer.reset();
+        auto stmt_result = conn.prepare(sql);
+        if (!stmt_result.has_value()) {
+            std::cerr << "Failed to prepare statement" << std::endl;
+            break;
+        }
+
+        auto stmt = std::move(stmt_result.value());
+        std::vector<std::tuple<int, std::string, int>> results;
+        results.reserve(num_records);
+
+        while (true) {
+            int step = stmt.step_raw();
+            if (step == decltype(stmt)::ROW_AVAILABLE) {
+                int id = stmt.extract_int(0);
+                std::string name(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                int age = stmt.extract_int(2);
+                results.emplace_back(id, name, age);
+            } else if (step == decltype(stmt)::NO_MORE_ROWS) {
+                break;
+            } else {
+                std::cerr << "Step failed" << std::endl;
+                break;
+            }
+        }
+
+        double elapsed = timer.elapsed_ms();
+        total_results += results.size();
+        total_time += elapsed;
+    }
+
+    std::cout << "Raw SQLite DISTINCT (id, name, age) - " << num_records << " records:" << std::endl;
+    std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
+    std::cout << "  Iterations: " << iterations << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
+              << (total_time / iterations) << " ms" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+              << (total_results / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << std::endl;
+
+    teardown_database();
+}
+
 void print_usage(const char* program_name) {
     std::cout << "Usage: " << program_name << " [OPTIONS]" << std::endl;
     std::cout << std::endl;
@@ -319,27 +493,41 @@ void print_usage(const char* program_name) {
     std::cout << "  --iterations=N    Number of iterations (default: 100)" << std::endl;
     std::cout << std::endl;
     std::cout << "Benchmark Selection (run all if none specified):" << std::endl;
-    std::cout << "  --storm-name      Run Storm ORM DISTINCT on name field" << std::endl;
-    std::cout << "  --storm-age       Run Storm ORM DISTINCT on age field" << std::endl;
-    std::cout << "  --storm-id        Run Storm ORM DISTINCT on id field (PK)" << std::endl;
-    std::cout << "  --raw-name        Run raw SQL DISTINCT on name field" << std::endl;
-    std::cout << "  --raw-age         Run raw SQL DISTINCT on age field" << std::endl;
-    std::cout << "  --raw-id          Run raw SQL DISTINCT on id field" << std::endl;
+    std::cout << "Single Field DISTINCT:" << std::endl;
+    std::cout << "  --storm-name         Run Storm ORM DISTINCT on name field" << std::endl;
+    std::cout << "  --storm-age          Run Storm ORM DISTINCT on age field" << std::endl;
+    std::cout << "  --storm-id           Run Storm ORM DISTINCT on id field (PK)" << std::endl;
+    std::cout << "  --raw-name           Run raw SQL DISTINCT on name field" << std::endl;
+    std::cout << "  --raw-age            Run raw SQL DISTINCT on age field" << std::endl;
+    std::cout << "  --raw-id             Run raw SQL DISTINCT on id field" << std::endl;
     std::cout << std::endl;
-    std::cout << "  --help, -h        Show this help message" << std::endl;
+    std::cout << "Multi-Field DISTINCT:" << std::endl;
+    std::cout << "  --storm-name-age     Run Storm ORM DISTINCT on (name, age)" << std::endl;
+    std::cout << "  --storm-id-name-age  Run Storm ORM DISTINCT on (id, name, age)" << std::endl;
+    std::cout << "  --raw-name-age       Run raw SQL DISTINCT on (name, age)" << std::endl;
+    std::cout << "  --raw-id-name-age    Run raw SQL DISTINCT on (id, name, age)" << std::endl;
+    std::cout << std::endl;
+    std::cout << "  --help, -h           Show this help message" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
     int test_size = 10000;
     int iterations = 100;
 
-    // Benchmark selection flags
+    // Benchmark selection flags - single field
     bool run_storm_name = false;
     bool run_storm_age = false;
     bool run_storm_id = false;
     bool run_raw_name = false;
     bool run_raw_age = false;
     bool run_raw_id = false;
+
+    // Benchmark selection flags - multi-field
+    bool run_storm_name_age = false;
+    bool run_storm_id_name_age = false;
+    bool run_raw_name_age = false;
+    bool run_raw_id_name_age = false;
+
     bool run_all = true; // Default: run everything
 
     // Parse arguments
@@ -366,6 +554,18 @@ int main(int argc, char* argv[]) {
         } else if (strcmp(argv[i], "--raw-id") == 0) {
             run_raw_id = true;
             run_all = false;
+        } else if (strcmp(argv[i], "--storm-name-age") == 0) {
+            run_storm_name_age = true;
+            run_all = false;
+        } else if (strcmp(argv[i], "--storm-id-name-age") == 0) {
+            run_storm_id_name_age = true;
+            run_all = false;
+        } else if (strcmp(argv[i], "--raw-name-age") == 0) {
+            run_raw_name_age = true;
+            run_all = false;
+        } else if (strcmp(argv[i], "--raw-id-name-age") == 0) {
+            run_raw_id_name_age = true;
+            run_all = false;
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             print_usage(argv[0]);
             return 0;
@@ -381,9 +581,9 @@ int main(int argc, char* argv[]) {
     std::cout << std::string(60, '-') << std::endl;
     std::cout << std::endl;
 
-    // Run Storm ORM benchmarks
+    // Run Storm ORM single-field benchmarks
     if (run_all || run_storm_name || run_storm_age || run_storm_id) {
-        std::cout << "--- Storm ORM DISTINCT Operations ---" << std::endl;
+        std::cout << "--- Storm ORM Single-Field DISTINCT Operations ---" << std::endl;
         if (run_all || run_storm_name) {
             benchmark_storm_distinct_name(test_size, iterations);
         }
@@ -396,9 +596,9 @@ int main(int argc, char* argv[]) {
         std::cout << std::endl;
     }
 
-    // Run Raw SQLite benchmarks
+    // Run Raw SQLite single-field benchmarks
     if (run_all || run_raw_name || run_raw_age || run_raw_id) {
-        std::cout << "--- Raw SQLite DISTINCT Operations ---" << std::endl;
+        std::cout << "--- Raw SQLite Single-Field DISTINCT Operations ---" << std::endl;
         if (run_all || run_raw_name) {
             benchmark_raw_distinct_name(test_size, iterations);
         }
@@ -407,6 +607,30 @@ int main(int argc, char* argv[]) {
         }
         if (run_all || run_raw_id) {
             benchmark_raw_distinct_id(test_size, iterations);
+        }
+        std::cout << std::endl;
+    }
+
+    // Run Storm ORM multi-field benchmarks
+    if (run_all || run_storm_name_age || run_storm_id_name_age) {
+        std::cout << "--- Storm ORM Multi-Field DISTINCT Operations ---" << std::endl;
+        if (run_all || run_storm_name_age) {
+            benchmark_storm_distinct_name_age(test_size, iterations);
+        }
+        if (run_all || run_storm_id_name_age) {
+            benchmark_storm_distinct_id_name_age(test_size, iterations);
+        }
+        std::cout << std::endl;
+    }
+
+    // Run Raw SQLite multi-field benchmarks
+    if (run_all || run_raw_name_age || run_raw_id_name_age) {
+        std::cout << "--- Raw SQLite Multi-Field DISTINCT Operations ---" << std::endl;
+        if (run_all || run_raw_name_age) {
+            benchmark_raw_distinct_name_age(test_size, iterations);
+        }
+        if (run_all || run_raw_id_name_age) {
+            benchmark_raw_distinct_id_name_age(test_size, iterations);
         }
         std::cout << std::endl;
     }
