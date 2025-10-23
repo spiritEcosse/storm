@@ -11,6 +11,7 @@ import storm_orm_statements_base;
 import storm_orm_statements_remove;
 import storm_orm_statements_insert;
 import storm_orm_statements_select;
+import storm_orm_statements_distinct;
 import storm_orm_statements_update;
 import storm_orm_statements_join;
 
@@ -24,6 +25,9 @@ import <vector>;
 import <variant>;
 import <optional>;
 import <functional>;
+import <tuple>;
+import <array>;
+import <meta>;
 
 export namespace storm {
 
@@ -77,6 +81,21 @@ export namespace storm {
             }
             // Normal SELECT without JOIN
             return get_select_statement().execute_optimized();
+        }
+
+        // Field-specific DISTINCT support using reflection
+        // Usage:
+        //   auto names = queryset.distinct<^^Person::name>().select();  // std::vector<std::string>
+        //   auto pairs = queryset.distinct<^^Person::name, ^^Person::age>().select();  // std::vector<std::tuple<std::string, int>>
+        //   auto ids = queryset.distinct().select();  // std::vector<int> (defaults to PK)
+        template <std::meta::info... FieldInfos>
+        constexpr auto distinct() {
+            if constexpr (sizeof...(FieldInfos) == 0) {
+                // Default to primary key when no fields specified
+                return orm::statements::DistinctStatement<T, ConnType, orm::statements::BaseStatement<T>::primary_key_>{conn_};
+            } else {
+                return orm::statements::DistinctStatement<T, ConnType, FieldInfos...>{conn_};
+            }
         }
 
         // INNER JOIN support for single or multiple FK fields

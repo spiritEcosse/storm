@@ -201,13 +201,6 @@ export namespace storm::orm::statements {
         }
 
       private:
-        // Helper to detect if a type is std::optional
-        template <typename T2> struct is_optional_type : std::false_type {};
-
-        template <typename T2> struct is_optional_type<std::optional<T2>> : std::true_type {};
-
-        template <typename T2> static constexpr bool is_optional_type_v = is_optional_type<T2>::value;
-
         // OPTIMIZATION: Fast column extraction without error checking using abstracted interface
         template <size_t Index>
         __attribute__((always_inline)) static inline void extract_column_inline_fast(Statement* stmt, T& obj) noexcept {
@@ -220,94 +213,13 @@ export namespace storm::orm::statements {
                     constexpr auto fk_pk_member = Base::template find_fk_primary_key<FieldType>();
                     using PKType                = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
 
-                    // Extract PK value based on its type
-                    if constexpr (std::is_same_v<PKType, int>) {
-                        obj.[:member:].[:fk_pk_member:] = stmt->extract_int(Index);
-                    } else if constexpr (std::is_same_v<PKType, int64_t>) {
-                        obj.[:member:].[:fk_pk_member:] = stmt->extract_int64(Index);
-                    } else if constexpr (std::is_same_v<PKType, long> || std::is_same_v<PKType, long long>) {
-                        obj.[:member:].[:fk_pk_member:] = static_cast<PKType>(stmt->extract_int64(Index));
-                    }
-                    // Other fields remain default-initialized
+                    // Extract PK value using shared utility
+                    obj.[:member:].[:fk_pk_member:] = Base::template extract_column_value<PKType>(*stmt, Index);
+                    // Other FK fields remain default-initialized
                 }
-                // Handle std::optional types
-                else if constexpr (is_optional_type_v<FieldType>) {
-                    if (stmt->is_null(Index)) {
-                        obj.[:member:] = std::nullopt;
-                    } else {
-                        using InnerType = typename FieldType::value_type;
-                        InnerType temp_value;
-
-                        // Extract based on inner type
-                        if constexpr (std::is_same_v<InnerType, int>) {
-                            temp_value = stmt->extract_int(Index);
-                        } else if constexpr (std::is_same_v<InnerType, int64_t>) {
-                            temp_value = stmt->extract_int64(Index);
-                        } else if constexpr (std::is_same_v<InnerType, double>) {
-                            temp_value = stmt->extract_double(Index);
-                        } else if constexpr (std::is_same_v<InnerType, float>) {
-                            temp_value = stmt->extract_float(Index);
-                        } else if constexpr (std::is_same_v<InnerType, bool>) {
-                            temp_value = stmt->extract_bool(Index);
-                        } else if constexpr (std::is_same_v<InnerType, std::string>) {
-                            const unsigned char* text = stmt->extract_text_ptr(Index);
-                            if (text) {
-                                int len = sqlite3_column_bytes(stmt->handle(), Index);
-                                temp_value.assign(reinterpret_cast<const char*>(text), len);
-                            } else {
-                                temp_value = std::string();
-                            }
-                        }
-
-                        // OPTIMIZATION: Move temp_value to avoid copy
-                        obj.[:member:] = std::move(temp_value);
-                    }
-                }
-                // Boolean type (stored as INTEGER 0/1)
-                else if constexpr (std::is_same_v<FieldType, bool>) {
-                    obj.[:member:] = stmt->extract_bool(Index);
-                }
-                // Integer types
-                else if constexpr (std::is_same_v<FieldType, int>) {
-                    obj.[:member:] = stmt->extract_int(Index);
-                } else if constexpr (std::is_same_v<FieldType, int64_t> || std::is_same_v<FieldType, long> ||
-                                     std::is_same_v<FieldType, long long>) {
-                    obj.[:member:] = static_cast<FieldType>(stmt->extract_int64(Index));
-                } else if constexpr (std::is_same_v<FieldType, uint64_t> || std::is_same_v<FieldType, unsigned long> ||
-                                     std::is_same_v<FieldType, unsigned long long>) {
-                    obj.[:member:] = static_cast<FieldType>(stmt->extract_int64(Index));
-                } else if constexpr (std::is_same_v<FieldType, short> || std::is_same_v<FieldType, unsigned short> ||
-                                     std::is_same_v<FieldType, unsigned int>) {
-                    obj.[:member:] = static_cast<FieldType>(stmt->extract_int(Index));
-                }
-                // Floating point types
-                else if constexpr (std::is_same_v<FieldType, double>) {
-                    obj.[:member:] = stmt->extract_double(Index);
-                } else if constexpr (std::is_same_v<FieldType, float>) {
-                    obj.[:member:] = stmt->extract_float(Index);
-                }
-                // BLOB types
-                else if constexpr (std::is_same_v<FieldType, std::vector<uint8_t>> ||
-                                   std::is_same_v<FieldType, std::vector<unsigned char>>) {
-                    auto [blob_ptr, blob_size] = stmt->extract_blob(Index);
-                    if (blob_ptr && blob_size > 0) {
-                        const uint8_t* data = static_cast<const uint8_t*>(blob_ptr);
-                        obj.[:member:]      = std::vector<uint8_t>(data, data + blob_size);
-                    } else {
-                        obj.[:member:].clear();
-                    }
-                }
-                // String types
-                else if constexpr (std::is_same_v<FieldType, std::string>) {
-                    const unsigned char* text = stmt->extract_text_ptr(Index);
-                    if (text) {
-                        // OPTIMIZATION: Direct assign with known length (no temporary, no strlen)
-                        // Avoids temporary string construction and leverages SQLite's length info
-                        int len = sqlite3_column_bytes(stmt->handle(), Index);
-                        obj.[:member:].assign(reinterpret_cast<const char*>(text), len);
-                    } else {
-                        obj.[:member:].clear();
-                    }
+                // All other types: use shared extraction utility from BaseStatement
+                else {
+                    obj.[:member:] = Base::template extract_column_value<FieldType>(*stmt, Index);
                 }
             }
         }

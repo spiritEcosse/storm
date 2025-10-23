@@ -189,16 +189,18 @@ class FlexibleTable:
 class BenchmarkRunner(ABC):
     """Abstract base class for benchmark runners"""
 
-    def __init__(self, binary_path, auto_rebuild=True):
+    def __init__(self, binary_path, auto_rebuild=True, clean_build=True):
         """
         Initialize benchmark runner
 
         Args:
             binary_path: Path to benchmark binary
             auto_rebuild: Automatically rebuild if source files changed (default: True)
+            clean_build: Remove build directory before rebuilding (default: True)
         """
         self.binary_path = Path(binary_path)
         self.auto_rebuild = auto_rebuild
+        self.clean_build = clean_build
         self.project_root = self._find_project_root()
         self.build_dir = self._detect_build_dir()
 
@@ -258,11 +260,47 @@ class BenchmarkRunner(ABC):
 
         return False
 
+    def _clean_build_dir(self):
+        """Remove build directory for clean rebuild"""
+        if not self.build_dir or not self.build_dir.exists():
+            return True
+
+        import shutil
+        try:
+            print(f"{Colors.YELLOW}Removing build directory: {self.build_dir}{Colors.RESET}")
+            shutil.rmtree(self.build_dir)
+            print(f"{Colors.GREEN}Build directory removed{Colors.RESET}")
+            return True
+        except Exception as e:
+            print(f"{Colors.RED}Failed to remove build directory: {e}{Colors.RESET}")
+            return False
+
     def _rebuild_binary(self):
         """Rebuild the benchmark binary using cmake"""
         if not self.build_dir or not self.project_root:
             print(f"{Colors.YELLOW}Warning: Could not determine build directory, skipping rebuild{Colors.RESET}")
             return False
+
+        # Clean build directory if requested
+        if self.clean_build:
+            if not self._clean_build_dir():
+                return False
+
+            # Reconfigure after cleaning
+            preset = 'ninja-release' if 'release' in str(self.build_dir) else 'ninja-debug'
+            print(f"{Colors.CYAN}Reconfiguring with preset {preset}...{Colors.RESET}")
+
+            result = subprocess.run(
+                ['cmake', '--preset', preset, '-DENABLE_BENCH=ON'],
+                cwd=str(self.project_root),
+                capture_output=True,
+                text=True
+            )
+
+            if result.returncode != 0:
+                print(f"{Colors.RED}CMake configuration failed:{Colors.RESET}")
+                print(result.stderr)
+                return False
 
         target_name = self._get_target_name()
         print(f"{Colors.CYAN}Building {target_name}...{Colors.RESET}")
@@ -346,9 +384,16 @@ class BenchmarkRunner(ABC):
             *args: Arguments for benchmark binary
             **kwargs: Additional parameters for display
         """
-        # Auto-rebuild if enabled and sources changed
-        if self.auto_rebuild and self._needs_rebuild():
+        # Always rebuild if clean_build is enabled, or if auto_rebuild and sources changed
+        should_rebuild = False
+        if self.clean_build:
+            print(f"{Colors.YELLOW}Clean build enabled, rebuilding from scratch...{Colors.RESET}")
+            should_rebuild = True
+        elif self.auto_rebuild and self._needs_rebuild():
             print(f"{Colors.YELLOW}Source files changed, rebuilding...{Colors.RESET}")
+            should_rebuild = True
+
+        if should_rebuild:
             if not self._rebuild_binary():
                 print(f"{Colors.RED}Failed to rebuild binary{Colors.RESET}")
                 sys.exit(1)
