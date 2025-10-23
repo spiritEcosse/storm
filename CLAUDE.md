@@ -135,7 +135,7 @@ src/
         ├── base.cppm               # BaseStatement utilities
         ├── insert.cppm             # InsertStatement
         ├── select.cppm             # SelectStatement (with JOIN support)
-        ├── select_value.cppm       # SelectValueStatement + SelectValueQuery (DISTINCT)
+        ├── distinct.cppm           # DistinctStatement (DISTINCT queries)
         ├── update.cppm             # UpdateStatement
         ├── remove.cppm             # RemoveStatement
         └── join.cppm               # JoinStatement (SQL builder for FK JOINs)
@@ -521,14 +521,15 @@ Storm ORM supports `DISTINCT` queries on one or more fields with compile-time ty
 
 **Architecture:**
 ```cpp
-// Two-layer design following Storm ORM statement pattern:
-
-// 1. SelectValueStatement (in src/orm/statements/select_value.cppm)
+// DistinctStatement (in src/orm/statements/distinct.cppm)
 //    - Inherits from BaseStatement<T>
 //    - Executes SELECT DISTINCT with field extraction
-//    - Variadic template supporting 1+ fields
+//    - Variadic template requiring 1+ fields (enforced via requires clause)
+//    - Fields specified at construction as template parameters
+//    - Always generates DISTINCT queries (for aggregates, use separate AggregateStatement)
 template <typename T, ConnType, auto... FieldPtrs>
-class SelectValueStatement : private BaseStatement<T> {
+    requires (sizeof...(FieldPtrs) > 0)
+class DistinctStatement : private BaseStatement<T> {
     static constexpr size_t NumFields = sizeof...(FieldPtrs);
     static constexpr auto member_infos_ = std::array{get_member_info<FieldPtrs>()...};
 
@@ -541,18 +542,7 @@ class SelectValueStatement : private BaseStatement<T> {
     >;
 
     auto execute() -> std::expected<ResultType, Error>;
-};
-
-// 2. SelectValueQuery (in src/orm/statements/select_value.cppm, storm namespace)
-//    - Lightweight wrapper returned by QuerySet::distinct()
-//    - Delegates to SelectValueStatement::execute()
-//    - Both classes in same module for cohesion
-template <class T, ConnType, auto... FieldPtrs>
-class SelectValueQuery {
-    using StatementType = SelectValueStatement<T, ConnType, FieldPtrs...>;
-public:
-    using ResultType = typename StatementType::ResultType;
-    auto select() -> std::expected<ResultType, Error>;
+    auto select() -> std::expected<ResultType, Error>;  // Alias for execute()
 };
 ```
 
@@ -597,19 +587,19 @@ auto ids = qs.distinct().select();
 - ✅ **Backward Compatible**: Single-field API unchanged from original implementation
 
 **Implementation Highlights:**
-1. **Separation of Concerns**: Query builder (`SelectValueQuery`) separated from statement executor (`SelectValueStatement`)
+1. **Simplified Architecture**: Direct statement executor (no wrapper layer), QuerySet handles convenience
 2. **Architectural Consistency**: Follows same pattern as `InsertStatement`, `UpdateStatement`, etc. in `src/orm/statements/`
-3. **Colocated Classes**: Both `SelectValueStatement` and `SelectValueQuery` in same module (`select_value.cppm`) for cohesion
+3. **Requires Clause**: Template constraint `requires (sizeof...(FieldPtrs) > 0)` enforces at least one field
 4. **Compile-Time Field List**: Uses fold expressions with lambda templates to build comma-separated field list
 5. **Type Deduction**: Automatically determines return type based on number and types of fields
 6. **Index Sequences**: Leverages `std::index_sequence` for compile-time iteration
 7. **Tuple Extraction**: Multi-field results extracted into `std::tuple` with perfect type matching
-8. **Delegation Pattern**: `SelectValueQuery` is a lightweight wrapper that delegates execution to `SelectValueStatement`
+8. **Statement Caching**: Prepared statement cached for repeated DISTINCT queries on same fields
 
 **Known Limitations:**
 - Type-based field matching can be ambiguous when multiple fields have the same type (e.g., `&Person::id` and `&Person::age` are both `int`)
 - Workaround: Use fields with unique types or access via different field orderings
-- No statement caching for DISTINCT queries (each call prepares a new statement)
+- Aggregate functions (COUNT, SUM, AVG) require separate implementation (different return types)
 
 **Testing:**
 - 29 comprehensive unit tests in `tests/test_distinct.cpp` covering:
@@ -626,7 +616,7 @@ storm (main module)
 ├── storm_db_sqlite
 ├── storm_orm_statements_base
 ├── storm_orm_utilities
-├── storm_orm_statements_{insert,update,remove,select,select_value,join}
+├── storm_orm_statements_{insert,update,remove,select,distinct,join}
 └── storm_orm_queryset
 ```
 

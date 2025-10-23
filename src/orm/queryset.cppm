@@ -11,9 +11,9 @@ import storm_orm_statements_base;
 import storm_orm_statements_remove;
 import storm_orm_statements_insert;
 import storm_orm_statements_select;
+import storm_orm_statements_distinct;
 import storm_orm_statements_update;
 import storm_orm_statements_join;
-import storm_orm_statements_select_value;
 
 import <expected>;
 import <string>;
@@ -92,9 +92,9 @@ export namespace storm {
         constexpr auto distinct() {
             if constexpr (sizeof...(FieldPtrs) == 0) {
                 // Default to primary key when no fields specified
-                return SelectValueQuery<T, ConnType, orm::statements::BaseStatement<T>::primary_key_>{conn_};
+                return orm::statements::DistinctStatement<T, ConnType, orm::statements::BaseStatement<T>::primary_key_>{conn_};
             } else {
-                return SelectValueQuery<T, ConnType, FieldPtrs...>{conn_};
+                return orm::statements::DistinctStatement<T, ConnType, FieldPtrs...>{conn_};
             }
         }
 
