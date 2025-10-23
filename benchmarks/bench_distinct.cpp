@@ -71,7 +71,7 @@ void benchmark_storm_distinct_name(int num_records, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto result = person_qs.distinct<&Person::name>().select();
+        auto result = person_qs.distinct<^^Person::name>().select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -103,7 +103,7 @@ void benchmark_storm_distinct_age(int num_records, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto result = person_qs.distinct<&Person::age>().select();
+        auto result = person_qs.distinct<^^Person::age>().select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -323,7 +323,7 @@ void benchmark_storm_distinct_name_age(int num_records, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto result = person_qs.distinct<&Person::name, &Person::age>().select();
+        auto result = person_qs.distinct<^^Person::name, ^^Person::age>().select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -355,7 +355,7 @@ void benchmark_storm_distinct_id_name_age(int num_records, int iterations = 100)
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto result = person_qs.distinct<&Person::id, &Person::name, &Person::age>().select();
+        auto result = person_qs.distinct<^^Person::id, ^^Person::name, ^^Person::age>().select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {

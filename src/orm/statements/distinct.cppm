@@ -24,8 +24,12 @@ export namespace storm::orm::statements {
     // DistinctStatement - executes SELECT DISTINCT on specified field(s) and returns tuple data
     // Supports 1+ fields with compile-time type safety
     // Always generates DISTINCT queries (for aggregates, use separate AggregateStatement)
-    template <typename T, storm::db::DatabaseConnection ConnType, auto... FieldPtrs>
-        requires (sizeof...(FieldPtrs) > 0)
+    //
+    // API: Use ^^ operator to pass reflected field information directly
+    // Example: qs.distinct<^^Person::name>().select()
+    //          qs.distinct<^^Person::name, ^^Person::age>().select()
+    template <typename T, storm::db::DatabaseConnection ConnType, std::meta::info... FieldInfos>
+        requires (sizeof...(FieldInfos) > 0)
     class DistinctStatement : private BaseStatement<T> {
         using Base = BaseStatement<T>;
 
@@ -33,66 +37,12 @@ export namespace storm::orm::statements {
         using Error     = typename ConnType::Error;
         using Statement = typename ConnType::Statement;
 
-        static constexpr size_t NumFields = sizeof...(FieldPtrs);
+        static constexpr size_t NumFields = sizeof...(FieldInfos);
 
       private:
-        // Helper to check if a field pointer is meta::info
-        template <auto FP>
-        static constexpr bool is_meta_info = std::is_same_v<decltype(FP), std::meta::info>;
-
-        // Get member_info for a single field pointer (meta::info or member pointer)
-        // Uses __PRETTY_FUNCTION__ for member pointer → reflection conversion
-        //
-        // RATIONALE: P2996R10 limitations prevent cleaner alternatives:
-        //   1. Applying ^^ to non-type template parameters is ill-formed (P2996R10 §5.1)
-        //   2. pointer_to_member() was removed (collapsed into value_of in R5)
-        //   3. value_of() doesn't extract member pointers from reflections
-        //   4. Splice operator &T::[:member:] unsupported in clang-p2996
-        //
-        // __PRETTY_FUNCTION__ provides:
-        //   ✓ Zero runtime cost (consteval function, fully compile-time)
-        //   ✓ Compiler support (GCC/Clang/MSVC all implement this builtin)
-        //   ✓ Deterministic format (member pointer syntax standardized across compilers)
-        //
-        // TODO: Revisit when P2996 evolves to support bidirectional reflection:
-        //       - member pointer → std::meta::info (currently missing)
-        //       - std::meta::info → member pointer (removed: pointer_to_member)
-        template <auto FP>
-        static consteval std::meta::info get_member_info() {
-            if constexpr (is_meta_info<FP>) {
-                // FP is already a meta::info (default PK case)
-                return FP;
-            } else {
-                // FP is a member pointer - find matching meta::info by name extraction
-                // Extract member name from __PRETTY_FUNCTION__ format: "... [FP = &Type::member]"
-                std::string_view func_name = __PRETTY_FUNCTION__;
-
-                // Find last "::" which precedes the member name
-                size_t last_colon = func_name.rfind("::");
-                if (last_colon != std::string_view::npos) {
-                    size_t start = last_colon + 2;
-                    size_t end = func_name.find(']', start);
-                    if (end != std::string_view::npos) {
-                        std::string_view target_name = func_name.substr(start, end - start);
-
-                        // Match by name against reflected members
-                        auto members = std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked());
-                        for (auto member : members) {
-                            if (std::meta::identifier_of(member) == target_name) {
-                                return member;
-                            }
-                        }
-                    }
-                }
-
-                // Fallback to first member (should never reach here)
-                auto members = std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked());
-                return members[0];
-            }
-        }
-
-        // Convert variadic FieldPtrs to array of member_info
-        static constexpr auto member_infos_ = std::array{get_member_info<FieldPtrs>()...};
+        // Field information is already std::meta::info - no conversion needed!
+        // This eliminates the need for __PRETTY_FUNCTION__ string parsing
+        static constexpr auto member_infos_ = std::array{FieldInfos...};
 
         // Deduce field types from member_info array
         template <size_t... Is>

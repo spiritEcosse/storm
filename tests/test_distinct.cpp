@@ -105,7 +105,7 @@ TEST_F(DistinctTest, DistinctNameFieldWithDuplicates) {
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     // SELECT DISTINCT name
-    auto result = queryset.distinct<&Person::name>().select();
+    auto result = queryset.distinct<^^Person::name>().select();
     ASSERT_TRUE(result.has_value()) << "SELECT DISTINCT failed: " << result.error().message();
 
     const auto& names = result.value();
@@ -131,7 +131,7 @@ TEST_F(DistinctTest, DistinctAgeFieldWithDuplicates) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT age
-    auto result = queryset.distinct<&Person::age>().select();
+    auto result = queryset.distinct<^^Person::age>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& ages = result.value();
@@ -179,7 +179,7 @@ TEST_F(DistinctTest, DistinctNameFieldAllUnique) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name
-    auto result = queryset.distinct<&Person::name>().select();
+    auto result = queryset.distinct<^^Person::name>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -191,7 +191,7 @@ TEST_F(DistinctTest, DistinctFromEmptyTable) {
     QuerySet<Person> queryset;
 
     // SELECT DISTINCT name from empty table
-    auto result = queryset.distinct<&Person::name>().select();
+    auto result = queryset.distinct<^^Person::name>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -208,7 +208,7 @@ TEST_F(DistinctTest, DistinctWithSingleRow) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name
-    auto result = queryset.distinct<&Person::name>().select();
+    auto result = queryset.distinct<^^Person::name>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -231,7 +231,7 @@ TEST_F(DistinctTest, DistinctWithLargeDataset) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name
-    auto result = queryset.distinct<&Person::name>().select();
+    auto result = queryset.distinct<^^Person::name>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -249,7 +249,7 @@ TEST_F(DistinctTest, DistinctWithEmptyStrings) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name
-    auto result = queryset.distinct<&Person::name>().select();
+    auto result = queryset.distinct<^^Person::name>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -268,11 +268,11 @@ TEST_F(DistinctTest, VerifyReturnTypes) {
     queryset.insert(Person{0, "Alice", 30});
 
     // Verify distinct<&Person::name>() returns std::vector<std::string>
-    auto names_result = queryset.distinct<&Person::name>().select();
+    auto names_result = queryset.distinct<^^Person::name>().select();
     static_assert(std::is_same_v<decltype(names_result.value()), std::vector<std::string>&>);
 
     // Verify distinct<&Person::age>() returns std::vector<int>
-    auto ages_result = queryset.distinct<&Person::age>().select();
+    auto ages_result = queryset.distinct<^^Person::age>().select();
     static_assert(std::is_same_v<decltype(ages_result.value()), std::vector<int>&>);
 
     // Verify distinct() (PK) returns std::vector<int>
@@ -300,7 +300,7 @@ TEST_F(DistinctTest, DistinctTwoFieldsNameAndAge) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name, age
-    auto result = queryset.distinct<&Person::name, &Person::age>().select();
+    auto result = queryset.distinct<^^Person::name, ^^Person::age>().select();
     ASSERT_TRUE(result.has_value()) << "SELECT DISTINCT failed: " << result.error().message();
 
     const auto& pairs = result.value();
@@ -334,7 +334,7 @@ TEST_F(DistinctTest, DistinctThreeFieldsAllFields) {
 
     // SELECT DISTINCT name, age (should return 4 unique combinations)
     // (Alice,30), (Bob,25), (Alice,25), (Bob,30)
-    auto result = queryset.distinct<&Person::name, &Person::age>().select();
+    auto result = queryset.distinct<^^Person::name, ^^Person::age>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& pairs = result.value();
@@ -362,7 +362,7 @@ TEST_F(DistinctTest, DistinctTwoFieldsAllDuplicates) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name, age
-    auto result = queryset.distinct<&Person::name, &Person::age>().select();
+    auto result = queryset.distinct<^^Person::name, ^^Person::age>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& pairs = result.value();
@@ -377,7 +377,7 @@ TEST_F(DistinctTest, DistinctTwoFieldsFromEmptyTable) {
     QuerySet<Person> queryset;
 
     // SELECT DISTINCT name, age from empty table
-    auto result = queryset.distinct<&Person::name, &Person::age>().select();
+    auto result = queryset.distinct<^^Person::name, ^^Person::age>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& pairs = result.value();
@@ -400,7 +400,7 @@ TEST_F(DistinctTest, DistinctTwoFieldsLargeDataset) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name, age
-    auto result = queryset.distinct<&Person::name, &Person::age>().select();
+    auto result = queryset.distinct<^^Person::name, ^^Person::age>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& pairs = result.value();
@@ -424,7 +424,7 @@ TEST_F(DistinctTest, DistinctTwoFieldsDifferentOrder) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT age, name (reversed order)
-    auto result = queryset.distinct<&Person::age, &Person::name>().select();
+    auto result = queryset.distinct<^^Person::age, ^^Person::name>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& pairs = result.value();
@@ -445,14 +445,14 @@ TEST_F(DistinctTest, VerifyMultiFieldReturnTypes) {
     queryset.insert(Person{0, "Alice", 30});
 
     // Verify distinct<&Person::name, &Person::age>() returns std::vector<std::tuple<std::string, int>>
-    auto pairs_result = queryset.distinct<&Person::name, &Person::age>().select();
+    auto pairs_result = queryset.distinct<^^Person::name, ^^Person::age>().select();
     static_assert(std::is_same_v<
         decltype(pairs_result.value()),
         std::vector<std::tuple<std::string, int>>&
     >);
 
     // Verify distinct<&Person::age, &Person::name>() returns std::vector<std::tuple<int, std::string>> (reversed)
-    auto reversed_result = queryset.distinct<&Person::age, &Person::name>().select();
+    auto reversed_result = queryset.distinct<^^Person::age, ^^Person::name>().select();
     static_assert(std::is_same_v<
         decltype(reversed_result.value()),
         std::vector<std::tuple<int, std::string>>&
@@ -467,7 +467,7 @@ TEST_F(DistinctTest, DistinctTwoFieldsWithSingleRow) {
     auto insert_result = queryset.insert(alice);
     ASSERT_TRUE(insert_result.has_value());
 
-    auto result = queryset.distinct<&Person::name, &Person::age>().select();
+    auto result = queryset.distinct<^^Person::name, ^^Person::age>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& pairs = result.value();
@@ -491,7 +491,7 @@ TEST_F(DistinctTest, DuplicateFieldSpecification) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name, name (redundant but valid SQL)
-    auto result = queryset.distinct<&Person::name, &Person::name>().select();
+    auto result = queryset.distinct<^^Person::name, ^^Person::name>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& pairs = result.value();
@@ -521,7 +521,7 @@ TEST_F(DistinctTest, TriplicateFieldSpecification) {
     queryset.insert(std::span<const Person>(people));
 
     // SELECT DISTINCT age, age, age (extreme redundancy)
-    auto result = queryset.distinct<&Person::age, &Person::age, &Person::age>().select();
+    auto result = queryset.distinct<^^Person::age, ^^Person::age, ^^Person::age>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& triples = result.value();
@@ -571,14 +571,14 @@ TEST_F(DistinctTest, VerifyDuplicateFieldReturnTypes) {
     queryset.insert(Person{0, "Alice", 30});
 
     // Duplicate field returns tuple with same type repeated
-    auto dup_result = queryset.distinct<&Person::name, &Person::name>().select();
+    auto dup_result = queryset.distinct<^^Person::name, ^^Person::name>().select();
     static_assert(std::is_same_v<
         decltype(dup_result.value()),
         std::vector<std::tuple<std::string, std::string>>&
     >);
 
     // Triple duplicate
-    auto trip_result = queryset.distinct<&Person::age, &Person::age, &Person::age>().select();
+    auto trip_result = queryset.distinct<^^Person::age, ^^Person::age, ^^Person::age>().select();
     static_assert(std::is_same_v<
         decltype(trip_result.value()),
         std::vector<std::tuple<int, int, int>>&
@@ -597,7 +597,7 @@ TEST_F(DistinctTest, MixedDuplicateFields) {
     queryset.insert(std::span<const Person>(people));
 
     // SELECT DISTINCT name, age, name (name appears twice)
-    auto result = queryset.distinct<&Person::name, &Person::age, &Person::name>().select();
+    auto result = queryset.distinct<^^Person::name, ^^Person::age, ^^Person::name>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& triples = result.value();
@@ -662,7 +662,7 @@ TEST_F(DistinctTest, DistinctOnBaseTableWithoutJoin) {
     QuerySet<Message> msg_qs;
 
     // DISTINCT on Message.content (no JOIN involved)
-    auto result = msg_qs.distinct<&Message::content>().select();
+    auto result = msg_qs.distinct<^^Message::content>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& contents = result.value();

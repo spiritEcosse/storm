@@ -10,6 +10,7 @@ import <vector>;
 import <span>;
 import <expected>;
 import <tuple>;
+import <meta>;
 
 using namespace storm;
 using namespace storm::benchmark;
@@ -69,7 +70,7 @@ void teardown_database() {
 }
 
 // Benchmark Storm ORM DISTINCT with specific field(s)
-template<auto... FieldPtrs>
+template<std::meta::info... FieldInfos>
 void benchmark_storm_distinct(const char* field_desc, int num_records, int num_unique_combos, int iterations = 100) {
     setup_database(num_records, num_unique_combos);
 
@@ -82,11 +83,11 @@ void benchmark_storm_distinct(const char* field_desc, int num_records, int num_u
         timer.reset();
 
         auto result = [&]() {
-            if constexpr (sizeof...(FieldPtrs) == 0) {
+            if constexpr (sizeof...(FieldInfos) == 0) {
                 // Default to PK
                 return person_qs.distinct().select();
             } else {
-                return person_qs.distinct<FieldPtrs...>().select();
+                return person_qs.distinct<FieldInfos...>().select();
             }
         }();
 
@@ -175,10 +176,10 @@ void run_scaling_test(int num_records, int num_unique_combos, int iterations) {
     // Single-field DISTINCT tests
     std::cout << "Single-Field DISTINCT:" << std::endl;
 
-    benchmark_storm_distinct<&Person::name>("Storm: name", num_records, num_unique_combos, iterations);
+    benchmark_storm_distinct<^^Person::name>("Storm: name", num_records, num_unique_combos, iterations);
     benchmark_raw_distinct("Raw: name", "SELECT DISTINCT name FROM Person", num_records, num_unique_combos, 1, iterations);
 
-    benchmark_storm_distinct<&Person::age>("Storm: age", num_records, num_unique_combos, iterations);
+    benchmark_storm_distinct<^^Person::age>("Storm: age", num_records, num_unique_combos, iterations);
     benchmark_raw_distinct("Raw: age", "SELECT DISTINCT age FROM Person", num_records, num_unique_combos, 1, iterations);
 
     benchmark_storm_distinct<>("Storm: id (PK)", num_records, num_unique_combos, iterations);
@@ -187,10 +188,10 @@ void run_scaling_test(int num_records, int num_unique_combos, int iterations) {
     // Multi-field DISTINCT tests
     std::cout << "\nMulti-Field DISTINCT:" << std::endl;
 
-    benchmark_storm_distinct<&Person::name, &Person::age>("Storm: name, age", num_records, num_unique_combos, iterations);
+    benchmark_storm_distinct<^^Person::name, ^^Person::age>("Storm: name, age", num_records, num_unique_combos, iterations);
     benchmark_raw_distinct("Raw: name, age", "SELECT DISTINCT name, age FROM Person", num_records, num_unique_combos, 2, iterations);
 
-    benchmark_storm_distinct<&Person::id, &Person::name, &Person::age>("Storm: id, name, age", num_records, num_unique_combos, iterations);
+    benchmark_storm_distinct<^^Person::id, ^^Person::name, ^^Person::age>("Storm: id, name, age", num_records, num_unique_combos, iterations);
     benchmark_raw_distinct("Raw: id, name, age", "SELECT DISTINCT id, name, age FROM Person", num_records, num_unique_combos, 3, iterations);
 }
 

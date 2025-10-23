@@ -83,18 +83,18 @@ export namespace storm {
             return get_select_statement().execute_optimized();
         }
 
-        // Field-specific DISTINCT support
+        // Field-specific DISTINCT support using reflection
         // Usage:
-        //   auto names = queryset.distinct<&Person::name>().select();  // std::vector<std::string>
-        //   auto pairs = queryset.distinct<&Person::name, &Person::age>().select();  // std::vector<std::tuple<std::string, int>>
+        //   auto names = queryset.distinct<^^Person::name>().select();  // std::vector<std::string>
+        //   auto pairs = queryset.distinct<^^Person::name, ^^Person::age>().select();  // std::vector<std::tuple<std::string, int>>
         //   auto ids = queryset.distinct().select();  // std::vector<int> (defaults to PK)
-        template <auto... FieldPtrs>
+        template <std::meta::info... FieldInfos>
         constexpr auto distinct() {
-            if constexpr (sizeof...(FieldPtrs) == 0) {
+            if constexpr (sizeof...(FieldInfos) == 0) {
                 // Default to primary key when no fields specified
                 return orm::statements::DistinctStatement<T, ConnType, orm::statements::BaseStatement<T>::primary_key_>{conn_};
             } else {
-                return orm::statements::DistinctStatement<T, ConnType, FieldPtrs...>{conn_};
+                return orm::statements::DistinctStatement<T, ConnType, FieldInfos...>{conn_};
             }
         }
 
