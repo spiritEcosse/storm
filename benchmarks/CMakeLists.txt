@@ -98,6 +98,7 @@ add_storm_benchmark(bench_join "bench_join.cpp")
 add_storm_benchmark(bench_distinct "bench_distinct.cpp")
 add_storm_benchmark(bench_distinct_scaling "bench_distinct_scaling.cpp")
 add_storm_benchmark(bench_select_comparison "bench_select_comparison.cpp")
+add_storm_benchmark(bench_aggregate "bench_aggregate.cpp")
 
 # SELECT performance analysis (C++20, system clang, libstdc++)
 add_system_clang_benchmark(bench_select_analysis "bench_select_analysis.cpp")

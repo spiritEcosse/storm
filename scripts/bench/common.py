@@ -376,12 +376,13 @@ class BenchmarkRunner(ABC):
         """
         pass
 
-    def run(self, *args, **kwargs):
+    def run(self, *args, show_raw_output=False, **kwargs):
         """
         Complete benchmark workflow: rebuild if needed, check, run, parse, display
 
         Args:
             *args: Arguments for benchmark binary
+            show_raw_output: If True, print raw benchmark output instead of formatted table
             **kwargs: Additional parameters for display
         """
         # Always rebuild if clean_build is enabled, or if auto_rebuild and sources changed
@@ -400,5 +401,11 @@ class BenchmarkRunner(ABC):
 
         self.check_binary_exists()
         output = self.run_benchmark(*args)
-        data = self.parse_results(output)
-        self.display_results(data, **kwargs)
+
+        if show_raw_output:
+            # Print raw output from C++ benchmark
+            print(output)
+        else:
+            # Parse and display formatted results
+            data = self.parse_results(output)
+            self.display_results(data, **kwargs)

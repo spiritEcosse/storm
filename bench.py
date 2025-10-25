@@ -76,6 +76,24 @@ def run_distinct_scaling_benchmark(args):
     )
 
 
+def run_aggregate_benchmark(args):
+    """Run aggregate functions performance benchmark"""
+    from aggregate import AggregateBenchmark
+
+    print_header()
+    print(f"{Colors.GREEN}Running Aggregate Functions Performance Analysis...{Colors.RESET}\n")
+
+    binary_path = './build/release/benchmarks/bench_aggregate'
+    benchmark = AggregateBenchmark(binary_path)
+    benchmark.run(
+        f'--size={args.size or 10000}',
+        f'--iterations={args.iterations or 100}',
+        show_raw_output=args.report if hasattr(args, 'report') else False,
+        rows=args.size or 10000,
+        iterations=args.iterations or 100
+    )
+
+
 def run_sql_gen_benchmark(args):
     """Run SQL generation benchmark"""
     from sql_gen import SQLGenerationBenchmark
@@ -132,6 +150,7 @@ Available Benchmarks:
   📊 JOIN Performance          - Compare Storm ORM vs Raw SQLite JOIN operations
   📊 DISTINCT Performance      - Compare Storm ORM vs Raw SQLite DISTINCT operations
   📊 DISTINCT Scaling          - Show DISTINCT performance across different result sizes
+  📊 Aggregate Functions       - Compare Storm ORM vs Raw SQLite aggregate operations (SUM, COUNT, AVG, MIN, MAX)
   📊 SQL Generation            - Analyze compile-time SQL generation performance
   📊 All Microbenchmarks       - Run complete benchmark suite
   📊 Performance Comparison    - Comprehensive Storm vs sqlite_orm vs Raw SQLite comparison
@@ -143,6 +162,8 @@ Examples:
   %(prog)s --distinct --size=50000        # Run DISTINCT with 50K records
   %(prog)s --distinct-scaling             # Run DISTINCT scaling analysis
   %(prog)s --distinct-scaling --size=50000 # DISTINCT scaling with 50K records
+  %(prog)s --aggregate                    # Run aggregate function benchmarks
+  %(prog)s --aggregate --size=50000       # Run aggregate with 50K rows
   %(prog)s --all                          # Run all benchmarks
   %(prog)s --compare                      # Run comprehensive performance comparison
         '''
@@ -156,6 +177,8 @@ Examples:
                          help='Run DISTINCT performance analysis (Storm vs Raw SQLite)')
     commands.add_argument('--distinct-scaling', action='store_true',
                          help='Run DISTINCT scaling analysis (100, 1K, 10K unique results)')
+    commands.add_argument('--aggregate', action='store_true',
+                         help='Run aggregate functions performance analysis (SUM, COUNT, AVG, MIN, MAX)')
     commands.add_argument('--sql-gen', action='store_true',
                          help='Run SQL generation performance analysis')
     commands.add_argument('--all', action='store_true',
@@ -170,6 +193,8 @@ Examples:
                        help='Set number of iterations (default varies by benchmark)')
     parser.add_argument('--binary', default='./build/release/benchmarks/bench_join',
                        help='Path to benchmark binary (default: %(default)s)')
+    parser.add_argument('--report', action='store_true',
+                       help='Show raw benchmark output instead of formatted table')
 
     args = parser.parse_args()
 
@@ -181,6 +206,8 @@ Examples:
             run_distinct_benchmark(args)
         elif args.distinct_scaling:
             run_distinct_scaling_benchmark(args)
+        elif args.aggregate:
+            run_aggregate_benchmark(args)
         elif args.sql_gen:
             run_sql_gen_benchmark(args)
         elif args.all:
