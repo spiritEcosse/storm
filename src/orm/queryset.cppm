@@ -14,6 +14,7 @@ import storm_orm_statements_select;
 import storm_orm_statements_distinct;
 import storm_orm_statements_update;
 import storm_orm_statements_join;
+import storm_orm_statements_aggregate;
 
 import <expected>;
 import <string>;
@@ -143,6 +144,49 @@ export namespace storm {
         // Bulk update operations
         std::expected<void, Error> update(std::span<const T> objects) {
             return get_update_statement().execute(objects);
+        }
+
+        // Aggregate functions - fluent builder pattern for multiple aggregates
+        // Usage: queryset.aggregate().sum<^^Person::age>().count().avg<^^Person::salary>().select()
+        constexpr auto aggregate() {
+            return orm::statements::AggregateBuilder<T, ConnType>{conn_};
+        }
+
+        // Shortcut: SUM aggregate (multi-field: SUM(f1 + f2 + ...))
+        // Usage: queryset.sum<^^Person::age>().select()
+        //        queryset.sum<^^Person::age, ^^Person::years>().select()  // SUM(age + years)
+        template <std::meta::info... FieldInfos>
+        constexpr auto sum() {
+            return orm::statements::SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::SUM, FieldInfos...>{conn_};
+        }
+
+        // Shortcut: COUNT aggregate (defaults to COUNT(*) if no fields)
+        // Usage: queryset.count().select()  // COUNT(*)
+        //        queryset.count<^^Person::id>().select()  // COUNT(id)
+        template <std::meta::info... FieldInfos>
+        constexpr auto count() {
+            return orm::statements::SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::COUNT, FieldInfos...>{conn_};
+        }
+
+        // Shortcut: AVG aggregate (multi-field: AVG(f1 + f2 + ...))
+        // Usage: queryset.avg<^^Person::salary>().select()
+        template <std::meta::info... FieldInfos>
+        constexpr auto avg() {
+            return orm::statements::SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::AVG, FieldInfos...>{conn_};
+        }
+
+        // Shortcut: MIN aggregate (multi-field: MIN(f1 + f2 + ...))
+        // Usage: queryset.min<^^Person::age>().select()
+        template <std::meta::info... FieldInfos>
+        constexpr auto min() {
+            return orm::statements::SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::MIN, FieldInfos...>{conn_};
+        }
+
+        // Shortcut: MAX aggregate (multi-field: MAX(f1 + f2 + ...))
+        // Usage: queryset.max<^^Person::age>().select()
+        template <std::meta::info... FieldInfos>
+        constexpr auto max() {
+            return orm::statements::SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::MAX, FieldInfos...>{conn_};
         }
 
         // Static methods for connection management
