@@ -22,24 +22,39 @@ class WhereBenchmark(BenchmarkRunner):
 
     def parse_results(self, output):
         """Parse WHERE benchmark output"""
-        def extract_throughput(pattern):
-            # Look for the pattern followed by "Throughput: X rows/sec"
-            match = re.search(pattern + r'[^\n]*\n(?:[^\n]*\n)*?\s*Throughput:\s+(\d+)\s+rows/sec', output)
-            return int(match.group(1)) if match else 0
+        def extract_throughput_baseline(pattern):
+            # Look for the pattern followed by "Throughput: X.XXM rows/sec"
+            match = re.search(pattern + r'[^\n]*\n(?:[^\n]*\n)*?\s*Throughput:\s+([\d.]+)M\s+rows/sec', output)
+            return float(match.group(1)) * 1_000_000 if match else 0
+
+        def extract_throughput_new(section_pattern):
+            # New format: "WHERE (int: age > 30):\n  Storm ORM: X.XXM rows/sec\n  Raw SQLite: X.XXM rows/sec"
+            match = re.search(section_pattern + r':\s*\n\s*Storm ORM:\s+([\d.]+)M\s+rows/sec\s*\n\s*Raw SQLite:\s+([\d.]+)M\s+rows/sec', output)
+            if match:
+                storm = float(match.group(1)) * 1_000_000
+                raw = float(match.group(2)) * 1_000_000
+                return (storm, raw)
+            return (0, 0)
 
         return {
             'select_no_where': (
-                extract_throughput(r'SELECT \(no WHERE\)'),
+                extract_throughput_baseline(r'SELECT \(no WHERE\)'),
                 0  # No raw SQLite equivalent for baseline
             ),
-            'single_condition': (
-                extract_throughput(r'Storm ORM WHERE \(single condition: age > 30\)'),
-                extract_throughput(r'Raw SQLite WHERE \(single condition: age > 30\)')
-            ),
-            'multiple_conditions': (
-                extract_throughput(r'Storm ORM WHERE \(multiple conditions: age > 25 AND age < 50\)'),
-                extract_throughput(r'Raw SQLite WHERE \(multiple conditions: age > 25 AND age < 50\)')
-            ),
+            # Data type comparisons
+            'int': extract_throughput_new(r'WHERE \(int: age > 30\)'),
+            'string': extract_throughput_new(r'WHERE \(string: name LIKE "Person5%"\)'),
+            'float': extract_throughput_new(r'WHERE \(float: salary > 35000\.0\)'),
+            'bool': extract_throughput_new(r'WHERE \(bool: is_active == true\)'),
+            # Special methods
+            'like': extract_throughput_new(r'WHERE \(LIKE: name LIKE "Person5%"\)'),
+            'between': extract_throughput_new(r'WHERE \(BETWEEN: age BETWEEN 28 AND 35\)'),
+            'in_3': extract_throughput_new(r'WHERE \(IN 3 values: id IN \(100, 200, 300\)\)'),
+            'in_10': extract_throughput_new(r'WHERE \(IN 10 values: id IN \(100\.\.\.1000\)\)'),
+            # Complex queries
+            'simple': extract_throughput_new(r'WHERE \(simple: age > 25 AND age < 50\)'),
+            'medium': extract_throughput_new(r'WHERE \(medium: 4 conditions with AND/OR\)'),
+            'complex': extract_throughput_new(r'WHERE \(complex: 8\+ conditions, nested AND/OR, special methods\)'),
         }
 
     def display_results(self, data, size=10000, iterations=100):
@@ -56,10 +71,37 @@ class WhereBenchmark(BenchmarkRunner):
         print(f"│ {'SELECT (no WHERE)':<37} │ {storm_select/1_000_000:>11.2f}M │ {'(baseline)':<12} │ {'-':<12} │")
         BenchmarkTable.print_separator()
 
-        # WHERE operations
+        # Data type comparisons
         for name, label in [
-            ('single_condition', 'WHERE (single: age > 30)'),
-            ('multiple_conditions', 'WHERE (multi: age > 25 AND < 50)'),
+            ('int', 'WHERE (int: age > 30)'),
+            ('string', 'WHERE (string: name LIKE "Person5%")'),
+            ('float', 'WHERE (float: salary > 35000.0)'),
+            ('bool', 'WHERE (bool: is_active == true)'),
+        ]:
+            storm, raw = data[name]
+            eff = (storm / raw * 100) if raw > 0 else 0
+            BenchmarkTable.print_row(label, storm, raw, eff)
+
+        BenchmarkTable.print_separator()
+
+        # Special methods
+        for name, label in [
+            ('like', 'WHERE (LIKE pattern)'),
+            ('between', 'WHERE (BETWEEN range)'),
+            ('in_3', 'WHERE (IN 3 values)'),
+            ('in_10', 'WHERE (IN 10 values)'),
+        ]:
+            storm, raw = data[name]
+            eff = (storm / raw * 100) if raw > 0 else 0
+            BenchmarkTable.print_row(label, storm, raw, eff)
+
+        BenchmarkTable.print_separator()
+
+        # Complex queries
+        for name, label in [
+            ('simple', 'WHERE (simple: 2 AND)'),
+            ('medium', 'WHERE (medium: 4 cond)'),
+            ('complex', 'WHERE (complex: 8+ cond)'),
         ]:
             storm, raw = data[name]
             eff = (storm / raw * 100) if raw > 0 else 0

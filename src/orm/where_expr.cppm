@@ -10,6 +10,7 @@ import <variant>;
 import <memory>;
 import <concepts>;
 import <sstream>;
+import <tuple>;
 
 export namespace storm::orm::where {
 
