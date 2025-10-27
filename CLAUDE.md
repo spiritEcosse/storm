@@ -18,7 +18,16 @@ Storm is a modern C++26 ORM library for SQLite using cutting-edge C++26 reflecti
 | UPDATE | 2M/sec (12M peak) | 1.09M/sec | 6x faster |
 | DELETE | 21.6M/sec | 29.4M/sec | 36.6x faster |
 | JOIN | 4-6M rows/sec | 5-7.4M rows/sec | 77% avg efficiency |
-| WHERE | 9.45-11.88M rows/sec | 10.57-13.82M rows/sec | 86-90% efficiency |
+| **WHERE (detailed)** | | | |
+| - int comparison | 9.51M rows/sec | 10.21M rows/sec | 93.1% efficiency |
+| - bool comparison | 9.09M rows/sec | 10.17M rows/sec | 89.4% efficiency |
+| - LIKE pattern | 2.82M rows/sec | 2.90M rows/sec | 97.2% efficiency |
+| - BETWEEN range | 5.01M rows/sec | 5.23M rows/sec | 95.9% efficiency |
+| - IN (3 values) | 0.32M rows/sec | 0.99M rows/sec | 32.0% efficiency |
+| - IN (10 values) | 0.98M rows/sec | 1.97M rows/sec | 49.8% efficiency |
+| - Simple (2 AND) | 7.44M rows/sec | 7.81M rows/sec | 95.2% efficiency |
+| - Medium (4 cond) | 1.38M rows/sec | 1.40M rows/sec | 98.6% efficiency |
+| - Complex (8+ cond) | 0.57M rows/sec | 0.58M rows/sec | 98.3% efficiency |
 
 **Key Innovations**: Compile-time SQL generation, 3-level statement caching, thread-local SQL caching, optimized row extraction, abstract base class pattern for type-erased JOINs, pure C++26 reflection for WHERE clauses.
 
