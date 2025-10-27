@@ -1,0 +1,422 @@
+#include <gtest/gtest.h>
+
+import storm;
+import <string>;
+import <vector>;
+import <expected>;
+import <optional>;
+
+using namespace storm;
+using namespace storm::orm::where;
+
+// Test model for WHERE clause operations (matching test_select.cpp)
+struct Person {
+    [[= storm::meta::FieldAttr::primary]] int id;
+    std::string                               name;
+    int                                       age;
+};
+
+// Test fixture for WHERE operations
+class WhereTest : public ::testing::Test {
+  protected:
+    void SetUp() override {
+        // Set up in-memory SQLite database
+        auto result = QuerySet<Person>::set_default_connection(":memory:");
+        ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
+
+        auto& conn = QuerySet<Person>::get_default_connection();
+
+        // Create table with AUTOINCREMENT (matching test_select.cpp)
+        auto create_result = conn.execute(
+                "CREATE TABLE Person ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "name TEXT NOT NULL, "
+                "age INTEGER NOT NULL"
+                ")"
+        );
+        ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
+
+        // Insert test data (use ID 0 to let AUTOINCREMENT generate IDs)
+        std::vector<Person> people = {
+                {0, "Alice", 30},
+                {0, "Bob", 25},
+                {0, "Charlie", 35},
+                {0, "Diana", 28},
+                {0, "Eve", 40}
+        };
+
+        QuerySet<Person> queryset;
+        // Insert one by one to avoid batch insert issues
+        for (const auto& person : people) {
+            auto insert_result = queryset.insert(person);
+            ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data: " << insert_result.error().message();
+        }
+    }
+
+    void TearDown() override {
+        QuerySet<Person>::clear_default_connection();
+    }
+};
+
+// Test: WHERE with single integer condition
+TEST_F(WhereTest, WhereSingleIntegerCondition) {
+    QuerySet<Person> queryset;
+
+    auto result = queryset.where(field<^^Person::age>() == 30).select();
+    ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
+
+    const auto& people = result.value();
+    ASSERT_EQ(people.size(), 1) << "Expected 1 person with age 30";
+    EXPECT_EQ(people[0].name, "Alice");
+    EXPECT_EQ(people[0].age, 30);
+}
+
+// Test: WHERE with greater than condition
+TEST_F(WhereTest, WhereGreaterThan) {
+    QuerySet<Person> queryset;
+
+    auto result = queryset.where(field<^^Person::age>() > 30).select();
+    ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
+
+    const auto& people = result.value();
+    ASSERT_EQ(people.size(), 2) << "Expected 2 people with age > 30";
+    EXPECT_EQ(people[0].name, "Charlie");
+    EXPECT_EQ(people[0].age, 35);
+    EXPECT_EQ(people[1].name, "Eve");
+    EXPECT_EQ(people[1].age, 40);
+}
+
+// Test: WHERE with less than condition
+TEST_F(WhereTest, WhereLessThan) {
+    QuerySet<Person> queryset;
+
+    auto result = queryset.where(field<^^Person::age>() < 30).select();
+    ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
+
+    const auto& people = result.value();
+    ASSERT_EQ(people.size(), 2) << "Expected 2 people with age < 30";
+    EXPECT_EQ(people[0].name, "Bob");
+    EXPECT_EQ(people[0].age, 25);
+    EXPECT_EQ(people[1].name, "Diana");
+    EXPECT_EQ(people[1].age, 28);
+}
+
+// Test: WHERE with string condition
+TEST_F(WhereTest, WhereStringCondition) {
+    QuerySet<Person> queryset;
+
+    auto result = queryset.where(field<^^Person::name>() == "Bob").select();
+    ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
+
+    const auto& people = result.value();
+    ASSERT_EQ(people.size(), 1) << "Expected 1 person named Bob";
+    EXPECT_EQ(people[0].name, "Bob");
+    EXPECT_EQ(people[0].age, 25);
+}
+
+// Test: WHERE with LIKE pattern
+TEST_F(WhereTest, WhereLikePattern) {
+    QuerySet<Person> queryset;
+
+    auto result = queryset.where(field<^^Person::name>().like("A%")).select();
+    ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
+
+    const auto& people = result.value();
+    ASSERT_EQ(people.size(), 1) << "Expected 1 person with name starting with 'A'";
+    EXPECT_EQ(people[0].name, "Alice");
+}
+
+// Test: WHERE with multiple conditions (AND logic)
+TEST_F(WhereTest, WhereMultipleConditions) {
+    QuerySet<Person> queryset;
+
+    auto expr1 = field<^^Person::age>() > 25;
+    auto expr2 = field<^^Person::age>() < 40;
+    auto result = queryset.where(and_(expr1, expr2)).select();
+    ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
+
+    const auto& people = result.value();
+    ASSERT_EQ(people.size(), 3) << "Expected 3 people with age between 26 and 39";
+    EXPECT_EQ(people[0].name, "Alice");
+    EXPECT_EQ(people[1].name, "Charlie");
+    EXPECT_EQ(people[2].name, "Diana");
+}
+
+// Test: WHERE with three conditions
+TEST_F(WhereTest, WhereThreeConditions) {
+    QuerySet<Person> queryset;
+
+    auto expr1 = field<^^Person::age>() >= 28;
+    auto expr2 = field<^^Person::age>() <= 35;
+    auto expr3 = field<^^Person::name>() != "Charlie";
+    auto result = queryset.where(and_(and_(expr1, expr2), expr3)).select();
+    ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
+
+    const auto& people = result.value();
+    ASSERT_EQ(people.size(), 2) << "Expected 2 people matching all three conditions";
+    EXPECT_EQ(people[0].name, "Alice");
+    EXPECT_EQ(people[1].name, "Diana");
+}
+
+// Test: WHERE with BETWEEN clause
+TEST_F(WhereTest, WhereBetween) {
+    QuerySet<Person> queryset;
+
+    auto result = queryset.where(field<^^Person::age>().between(28, 35)).select();
+    ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
+
+    const auto& people = result.value();
+    ASSERT_EQ(people.size(), 3) << "Expected 3 people with age between 28 and 35";
+    EXPECT_EQ(people[0].name, "Alice");
+    EXPECT_EQ(people[1].name, "Charlie");
+    EXPECT_EQ(people[2].name, "Diana");
+}
+
+// Test: WHERE with IN clause (multiple parameters)
+TEST_F(WhereTest, WhereIn) {
+    QuerySet<Person> queryset;
+
+    auto result = queryset.where(field<^^Person::age>().in(25, 30, 40)).select();
+    ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
+
+    const auto& people = result.value();
+    ASSERT_EQ(people.size(), 3) << "Expected 3 people with age in (25, 30, 40)";
+    EXPECT_EQ(people[0].name, "Alice");
+    EXPECT_EQ(people[1].name, "Bob");
+    EXPECT_EQ(people[2].name, "Eve");
+}
+
+// Test: WHERE returning empty result
+TEST_F(WhereTest, WhereNoMatch) {
+    QuerySet<Person> queryset;
+
+    auto result = queryset.where(field<^^Person::age>() > 100).select();
+    ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
+
+    const auto& people = result.value();
+    EXPECT_TRUE(people.empty()) << "Expected no results for age > 100";
+}
+
+// Test: WHERE returning all rows
+TEST_F(WhereTest, WhereMatchesAll) {
+    QuerySet<Person> queryset;
+
+    auto result = queryset.where(field<^^Person::age>() > 0).select();
+    ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
+
+    const auto& people = result.value();
+    ASSERT_EQ(people.size(), 5) << "Expected all 5 people with age > 0";
+}
+
+// Test: WHERE with complex expression
+TEST_F(WhereTest, WhereComplexExpression) {
+    QuerySet<Person> queryset;
+
+    auto expr1 = field<^^Person::age>() < 30;
+    auto expr2 = field<^^Person::age>() > 35;
+    auto expr3 = field<^^Person::name>() != "Charlie";
+    auto result = queryset.where(and_(or_(expr1, expr2), expr3)).select();
+    ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
+
+    const auto& people = result.value();
+    ASSERT_EQ(people.size(), 3) << "Expected 3 people matching complex condition";
+    EXPECT_EQ(people[0].name, "Bob");
+    EXPECT_EQ(people[1].name, "Diana");
+    EXPECT_EQ(people[2].name, "Eve");
+}
+
+// Test: Multiple WHERE calls on same QuerySet resets state
+TEST_F(WhereTest, WhereResetsAfterSelect) {
+    QuerySet<Person> queryset;
+
+    // First query
+    auto result1 = queryset.where(field<^^Person::age>() == 30).select();
+    ASSERT_TRUE(result1.has_value());
+    ASSERT_EQ(result1.value().size(), 1);
+
+    // Second query should start fresh (not accumulate WHERE conditions)
+    auto result2 = queryset.where(field<^^Person::age>() == 25).select();
+    ASSERT_TRUE(result2.has_value());
+    ASSERT_EQ(result2.value().size(), 1);
+    EXPECT_EQ(result2.value()[0].name, "Bob");
+}
+
+// Test: WHERE with std::string_view parameter
+TEST_F(WhereTest, WhereStringView) {
+    QuerySet<Person> queryset;
+
+    std::string_view name_view = "Charlie";
+    auto result = queryset.where(field<^^Person::name>() == name_view).select();
+    ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
+
+    const auto& people = result.value();
+    ASSERT_EQ(people.size(), 1);
+    EXPECT_EQ(people[0].name, "Charlie");
+}
+
+// Test: WHERE with mixed parameter types
+TEST_F(WhereTest, WhereMixedTypes) {
+    QuerySet<Person> queryset;
+
+    auto expr1 = field<^^Person::name>() == "Diana";
+    auto expr2 = field<^^Person::age>() == 28;
+    auto result = queryset.where(and_(expr1, expr2)).select();
+    ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
+
+    const auto& people = result.value();
+    ASSERT_EQ(people.size(), 1);
+    EXPECT_EQ(people[0].name, "Diana");
+}
+
+// Test model with FK for JOIN + WHERE tests
+// Note: Named WhereUser/WhereMessage to avoid ODR violation with test_fk_fields.cpp
+struct WhereUser {
+    [[= storm::meta::FieldAttr::primary]] int id;
+    std::string                               username;
+    int                                       level;
+};
+
+struct WhereMessage {
+    [[= storm::meta::FieldAttr::primary]] int id;
+    std::string                               content;
+    [[= storm::meta::FieldAttr::fk]] WhereUser sender;
+};
+
+// Test fixture for WHERE + JOIN operations
+class WhereJoinTest : public ::testing::Test {
+  protected:
+    void SetUp() override {
+        auto result = QuerySet<WhereMessage>::set_default_connection(":memory:");
+        ASSERT_TRUE(result.has_value());
+
+        auto& conn = QuerySet<WhereMessage>::get_default_connection();
+
+        // Create WhereUser table
+        auto create_user = conn.execute(
+                "CREATE TABLE WhereUser ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "username TEXT NOT NULL, "
+                "level INTEGER NOT NULL"
+                ")"
+        );
+        ASSERT_TRUE(create_user.has_value());
+
+        // Create WhereMessage table with FK
+        auto create_message = conn.execute(
+                "CREATE TABLE WhereMessage ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "content TEXT NOT NULL, "
+                "sender_id INTEGER NOT NULL"
+                ")"
+        );
+        ASSERT_TRUE(create_message.has_value());
+
+        // Insert users (use ID 0 to let AUTOINCREMENT generate IDs)
+        QuerySet<WhereUser> user_qs;
+        auto alice_id = user_qs.insert(WhereUser{0, "alice", 10});
+        ASSERT_TRUE(alice_id.has_value()) << "Failed to insert alice: " << alice_id.error().message();
+
+        auto bob_id = user_qs.insert(WhereUser{0, "bob", 5});
+        ASSERT_TRUE(bob_id.has_value()) << "Failed to insert bob: " << bob_id.error().message();
+
+        auto charlie_id = user_qs.insert(WhereUser{0, "charlie", 15});
+        ASSERT_TRUE(charlie_id.has_value()) << "Failed to insert charlie: " << charlie_id.error().message();
+
+        // Insert messages (use generated user IDs)
+        QuerySet<WhereMessage> msg_qs;
+        auto msg1 = msg_qs.insert(WhereMessage{0, "Hello from Alice", WhereUser{static_cast<int>(alice_id.value()), "", 0}});
+        ASSERT_TRUE(msg1.has_value()) << "Failed to insert message 1: " << msg1.error().message();
+
+        auto msg2 = msg_qs.insert(WhereMessage{0, "Hi from Bob", WhereUser{static_cast<int>(bob_id.value()), "", 0}});
+        ASSERT_TRUE(msg2.has_value()) << "Failed to insert message 2: " << msg2.error().message();
+
+        auto msg3 = msg_qs.insert(WhereMessage{0, "Greetings from Alice", WhereUser{static_cast<int>(alice_id.value()), "", 0}});
+        ASSERT_TRUE(msg3.has_value()) << "Failed to insert message 3: " << msg3.error().message();
+
+        auto msg4 = msg_qs.insert(WhereMessage{0, "Greetings Charlie", WhereUser{static_cast<int>(charlie_id.value()), "", 0}});
+        ASSERT_TRUE(msg4.has_value()) << "Failed to insert message 4: " << msg4.error().message();
+    }
+
+    void TearDown() override {
+        QuerySet<WhereMessage>::clear_default_connection();
+    }
+};
+
+// Test: WHERE with JOIN
+TEST_F(WhereJoinTest, WhereWithJoin) {
+    QuerySet<WhereMessage> queryset;
+
+    // SELECT with JOIN and WHERE filtering by WhereUser.level
+    auto result = queryset.join<&WhereMessage::sender>().where(field<^^WhereUser::level>() >= 10).select();
+    ASSERT_TRUE(result.has_value()) << "WHERE + JOIN failed: " << result.error().message();
+
+    const auto& messages = result.value();
+    ASSERT_EQ(messages.size(), 3) << "Expected 3 messages from users with level >= 10";
+
+    // Verify sender information is populated
+    EXPECT_EQ(messages[0].sender.username, "alice");
+    EXPECT_EQ(messages[0].sender.level, 10);
+    EXPECT_EQ(messages[1].sender.username, "alice");
+    EXPECT_EQ(messages[2].sender.username, "charlie");
+    EXPECT_EQ(messages[2].sender.level, 15);
+}
+
+// Test: WHERE with JOIN and content filter
+TEST_F(WhereJoinTest, WhereWithJoinContentFilter) {
+    QuerySet<WhereMessage> queryset;
+
+    auto result = queryset.join<&WhereMessage::sender>().where(field<^^WhereMessage::content>().like("%Alice%")).select();
+    ASSERT_TRUE(result.has_value()) << "WHERE + JOIN failed: " << result.error().message();
+
+    const auto& messages = result.value();
+    ASSERT_EQ(messages.size(), 2) << "Expected 2 messages with 'Alice' in content";
+}
+
+// Test: WHERE with JOIN and multiple conditions
+TEST_F(WhereJoinTest, WhereWithJoinMultipleConditions) {
+    QuerySet<WhereMessage> queryset;
+
+    auto expr1 = field<^^WhereUser::level>() > 5;
+    auto expr2 = field<^^WhereMessage::content>().like("%from%");
+    auto result = queryset.join<&WhereMessage::sender>()
+                          .where(and_(expr1, expr2))
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "WHERE + JOIN failed: " << result.error().message();
+
+    const auto& messages = result.value();
+    ASSERT_EQ(messages.size(), 2) << "Expected 2 messages matching both conditions";
+}
+
+// Test: Natural && and || operators (and/or keywords)
+TEST_F(WhereJoinTest, WhereWithNaturalOperators) {
+    QuerySet<WhereMessage> queryset;
+
+    // Using natural 'and' operator (also works with &&)
+    auto result = queryset.join<&WhereMessage::sender>()
+                          .where(field<^^WhereUser::level>() > 5 and
+                                 field<^^WhereMessage::content>().like("%from%"))
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "WHERE + JOIN failed: " << result.error().message();
+
+    const auto& messages = result.value();
+    ASSERT_EQ(messages.size(), 2) << "Expected 2 messages matching both conditions";
+    EXPECT_EQ(messages[0].sender.username, "alice");
+    EXPECT_EQ(messages[1].sender.username, "alice");
+}
+
+// Test: Natural operators with complex expressions
+TEST_F(WhereTest, WhereNaturalOperatorsComplex) {
+    QuerySet<Person> queryset;
+
+    // Using natural 'and' and 'or' operators
+    auto result = queryset.where((field<^^Person::age>() < 30 or field<^^Person::age>() > 35) and
+                                  field<^^Person::name>() != "Charlie")
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
+
+    const auto& people = result.value();
+    ASSERT_EQ(people.size(), 3) << "Expected 3 people matching complex condition";
+    EXPECT_EQ(people[0].name, "Bob");
+    EXPECT_EQ(people[1].name, "Diana");
+    EXPECT_EQ(people[2].name, "Eve");
+}

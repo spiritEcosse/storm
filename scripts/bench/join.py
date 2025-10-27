@@ -65,7 +65,7 @@ class JoinBenchmark(BenchmarkRunner):
 
         # Simple SELECT baseline (no JOIN)
         storm_select, _ = data['select_no_join']
-        print(f"│ {'Simple SELECT (no JOIN)':<31} │ {storm_select/1_000_000:>11.2f}M │ {'(baseline)':<12} │ {'-':<12} │")
+        print(f"│ {'Simple SELECT (no JOIN)':<37} │ {storm_select/1_000_000:>11.2f}M │ {'(baseline)':<12} │ {'-':<12} │")
         BenchmarkTable.print_separator()
 
         # Single FK JOIN operations (matches manual output structure)

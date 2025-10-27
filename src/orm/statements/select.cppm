@@ -8,6 +8,7 @@ export module storm_orm_statements_select;
 import storm_orm_statements_base;
 import storm_orm_statements_join;
 import storm_orm_utilities;
+import storm_orm_where_expr;
 import storm_db_concept;
 import storm_db_sqlite;
 
@@ -23,6 +24,7 @@ import <type_traits>;
 import <optional>;
 import <cstdint>;
 import <memory>;
+import <variant>;
 
 export namespace storm::orm::statements {
 
@@ -91,6 +93,21 @@ export namespace storm::orm::statements {
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
         execute_optimized(JoinStatementWrapper join_wrapper) noexcept -> std::expected<std::vector<T>, Error> {
             return execute_with_join_impl(join_wrapper);
+        }
+
+        // SELECT with WHERE clause (without JOIN)
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
+        execute_with_where(std::shared_ptr<orm::where::Expression> where_expr) noexcept
+                -> std::expected<std::vector<T>, Error> {
+            return execute_where_impl(where_expr);
+        }
+
+        // SELECT with WHERE clause and JOIN
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
+        execute_with_where_and_join(JoinStatementWrapper join_wrapper,
+                                    std::shared_ptr<orm::where::Expression> where_expr) noexcept
+                -> std::expected<std::vector<T>, Error> {
+            return execute_where_join_impl(join_wrapper, where_expr);
         }
 
       private:
@@ -326,9 +343,206 @@ export namespace storm::orm::statements {
             extract_all_columns_inline_fast_impl(stmt, obj, typename Base::field_indices_t{});
         }
 
+        // Helper to bind WHERE parameters
+        [[nodiscard]] auto bind_where_params(Statement* stmt, const std::vector<orm::where::ParamValue>& where_params) noexcept
+                -> std::expected<void, Error> {
+            for (size_t i = 0; i < where_params.size(); ++i) {
+                auto result = std::visit([stmt, param_idx = static_cast<int>(i + 1)](const auto& value)
+                        -> std::expected<void, Error> {
+                    using ValueType = std::decay_t<decltype(value)>;
+
+                    if constexpr (std::is_same_v<ValueType, std::nullptr_t>) {
+                        return stmt->bind_null(param_idx);
+                    } else if constexpr (std::is_same_v<ValueType, bool>) {
+                        return stmt->bind_int(param_idx, value ? 1 : 0);
+                    } else if constexpr (std::is_same_v<ValueType, int>) {
+                        return stmt->bind_int(param_idx, value);
+                    } else if constexpr (std::is_same_v<ValueType, int64_t> ||
+                                       std::is_same_v<ValueType, long> ||
+                                       std::is_same_v<ValueType, long long>) {
+                        return stmt->bind_int64(param_idx, static_cast<int64_t>(value));
+                    } else if constexpr (std::is_same_v<ValueType, uint64_t> ||
+                                       std::is_same_v<ValueType, unsigned long> ||
+                                       std::is_same_v<ValueType, unsigned long long>) {
+                        return stmt->bind_int64(param_idx, static_cast<int64_t>(value));
+                    } else if constexpr (std::is_same_v<ValueType, short> ||
+                                       std::is_same_v<ValueType, unsigned short> ||
+                                       std::is_same_v<ValueType, unsigned int>) {
+                        return stmt->bind_int(param_idx, static_cast<int>(value));
+                    } else if constexpr (std::is_same_v<ValueType, double>) {
+                        return stmt->bind_double(param_idx, value);
+                    } else if constexpr (std::is_same_v<ValueType, float>) {
+                        return stmt->bind_double(param_idx, static_cast<double>(value));
+                    } else if constexpr (std::is_same_v<ValueType, std::string> ||
+                                       std::is_same_v<ValueType, std::string_view>) {
+                        return stmt->bind_text(param_idx, std::string_view{value});
+                    }
+                    return {};
+                }, where_params[i]);
+
+                if (!result) {
+                    return result;
+                }
+            }
+            return {};
+        }
+
+        // SELECT with WHERE clause (no JOIN)
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
+        execute_where_impl(std::shared_ptr<orm::where::Expression> where_expr) noexcept
+                -> std::expected<std::vector<T>, Error> {
+            // Generate WHERE clause SQL from expression
+            std::string where_sql;
+            where_sql.reserve(get_select_sql().size() + 7 + 100); // Pre-allocate for typical WHERE clause
+            where_sql = get_select_sql();
+            where_sql.append(" WHERE ");
+            where_sql.append(where_expr->to_sql());
+
+            // Collect parameters from expression tree
+            std::vector<orm::where::ParamValue> params;
+            where_expr->collect_params(params);
+
+            // OPTIMIZATION: Cache WHERE statement if SQL matches previous query
+            Statement* stmt_ptr = nullptr;
+            if (cached_where_stmt_ && cached_where_sql_ == where_sql) {
+                // Reuse cached statement for same WHERE clause
+                stmt_ptr = cached_where_stmt_;
+            } else {
+                // Different WHERE clause or first query - prepare new statement
+                auto prepare_result = conn_.prepare_cached(where_sql);
+                if (!prepare_result) [[unlikely]] {
+                    return std::unexpected(prepare_result.error());
+                }
+                cached_where_stmt_ = *prepare_result;
+                cached_where_sql_ = std::move(where_sql);
+                stmt_ptr = cached_where_stmt_;
+            }
+
+            // Bind WHERE parameters
+            auto bind_result = bind_where_params(stmt_ptr, params);
+            if (!bind_result) [[unlikely]] {
+                return std::unexpected(bind_result.error());
+            }
+
+            // Execute and extract results (same as execute_simple_select)
+            std::vector<T> results;
+            results.resize(10000);
+
+            int step_result;
+            size_t row_count = 0;
+            while ((step_result = stmt_ptr->step_raw()) == Statement::ROW_AVAILABLE &&
+                   row_count < results.size()) {
+                T& obj = results[row_count];
+                extract_all_columns_inline_fast(stmt_ptr, obj);
+                row_count++;
+            }
+
+            // Handle overflow with exponential growth
+            while (step_result == Statement::ROW_AVAILABLE) {
+                if (row_count >= results.size()) {
+                    size_t new_size = results.size() * 2;
+                    results.resize(new_size);
+                }
+
+                T& obj = results[row_count];
+                extract_all_columns_inline_fast(stmt_ptr, obj);
+                row_count++;
+                step_result = stmt_ptr->step_raw();
+            }
+
+            results.resize(row_count);
+
+            if (step_result != Statement::NO_MORE_ROWS) {
+                stmt_ptr->reset();
+                return std::unexpected(Error{step_result, stmt_ptr->get_error_message()});
+            }
+
+            stmt_ptr->reset();
+            return results;
+        }
+
+        // SELECT with WHERE clause and JOIN
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
+        execute_where_join_impl(JoinStatementWrapper join_wrapper,
+                               std::shared_ptr<orm::where::Expression> where_expr) noexcept
+                -> std::expected<std::vector<T>, Error> {
+            // Generate WHERE clause SQL from expression
+            std::string join_where_sql;
+            join_where_sql.reserve(join_wrapper.get_complete_sql().size() + 7 + 100); // Pre-allocate
+            join_where_sql = join_wrapper.get_complete_sql();
+            join_where_sql.append(" WHERE ");
+            join_where_sql.append(where_expr->to_sql());
+
+            // Collect parameters from expression tree
+            std::vector<orm::where::ParamValue> params;
+            where_expr->collect_params(params);
+
+            // OPTIMIZATION: Cache WHERE+JOIN statement if SQL matches previous query
+            Statement* stmt_ptr = nullptr;
+            if (cached_where_join_stmt_ && cached_where_join_sql_ == join_where_sql) {
+                // Reuse cached statement for same WHERE+JOIN clause
+                stmt_ptr = cached_where_join_stmt_;
+            } else {
+                // Different WHERE+JOIN clause or first query - prepare new statement
+                auto prepare_result = conn_.prepare_cached(join_where_sql);
+                if (!prepare_result) [[unlikely]] {
+                    return std::unexpected(prepare_result.error());
+                }
+                cached_where_join_stmt_ = *prepare_result;
+                cached_where_join_sql_ = std::move(join_where_sql);
+                stmt_ptr = cached_where_join_stmt_;
+            }
+
+            // Bind WHERE parameters
+            auto bind_result = bind_where_params(stmt_ptr, params);
+            if (!bind_result) [[unlikely]] {
+                return std::unexpected(bind_result.error());
+            }
+
+            // Execute and extract results with JOIN extraction
+            std::vector<T> results;
+            results.resize(10000);
+
+            int step_result;
+            size_t row_count = 0;
+            while ((step_result = stmt_ptr->step_raw()) == Statement::ROW_AVAILABLE &&
+                   row_count < results.size()) {
+                T& obj = results[row_count];
+                join_wrapper.extract_row(stmt_ptr, &obj);
+                row_count++;
+            }
+
+            // Handle overflow
+            while (step_result == Statement::ROW_AVAILABLE) {
+                if (row_count >= results.size()) {
+                    size_t new_size = results.size() * 2;
+                    results.resize(new_size);
+                }
+
+                T& obj = results[row_count];
+                join_wrapper.extract_row(stmt_ptr, &obj);
+                row_count++;
+                step_result = stmt_ptr->step_raw();
+            }
+
+            results.resize(row_count);
+
+            if (step_result != Statement::NO_MORE_ROWS) {
+                stmt_ptr->reset();
+                return std::unexpected(Error{step_result, stmt_ptr->get_error_message()});
+            }
+
+            stmt_ptr->reset();
+            return results;
+        }
+
         Connection&        conn_;
-        mutable Statement* cached_select_stmt_ = nullptr; // Statement caching for simple SELECT
-        mutable Statement* cached_join_stmt_   = nullptr; // Separate cache for JOIN queries
+        mutable Statement* cached_select_stmt_ = nullptr;      // Statement caching for simple SELECT
+        mutable Statement* cached_join_stmt_   = nullptr;      // Separate cache for JOIN queries
+        mutable Statement* cached_where_stmt_ = nullptr;       // Cache for WHERE without JOIN
+        mutable Statement* cached_where_join_stmt_ = nullptr;  // Cache for WHERE + JOIN
+        mutable std::string cached_where_sql_;                 // Remember last WHERE SQL for cache validation
+        mutable std::string cached_where_join_sql_;            // Remember last WHERE+JOIN SQL for cache validation
     };
 
 } // namespace storm::orm::statements

@@ -2,12 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: Storm ORM features **complete CRUD operations + JOIN support** maintaining consistent 1.5-6x performance advantage over sqlite_orm:
+**Last Updated**: Storm ORM features **complete CRUD operations + JOIN + WHERE support** maintaining consistent 1.5-6x performance advantage over sqlite_orm:
 - **INSERT**: 992K/sec single, 2.7M/sec batch (2.0x faster than sqlite_orm)
 - **SELECT**: 13.07M rows/sec (74% of raw SQLite, 1.51x faster than sqlite_orm)
 - **UPDATE**: 2M/sec sustained, 12M peak (6x faster than sqlite_orm)
 - **DELETE**: 21.6M/sec single, 3.9M/sec batch (73% of raw SQLite, 36x faster than sqlite_orm)
 - **JOIN**: 4-6M rows/sec (77% average efficiency vs raw SQLite for INNER/LEFT/RIGHT JOINs)
+- **WHERE**: 9.45-11.88M rows/sec (86-90% efficiency vs raw SQLite with type-safe expressions)
 
 Key innovations: compile-time SQL generation, statement-level caching, thread-local SQL caching, optimized row extraction (resize() pre-allocation 1.7x faster, direct string construction 2.2x faster), fully inlined field binding, abstract base class pattern for type-erased JOIN operations.
 
@@ -607,6 +608,7 @@ Experimental Clang fork with C++26 reflection:
 - **Primary Key Access**: Uses reflection splice operator `obj.[:primary_key_:]`
 - **Bulk INSERT Caching**: Thread-local 8-entry cache with optimized string pre-allocation
 - **JOIN Implementation**: Abstract base class (`IJoinStatement`) + variadic template for type erasure without `std::function`
+- **WHERE Clause Implementation**: Pure C++26 reflection using `field<^^T::member>()` - no macro needed, fully module-compatible
 - **INSERT Return Types (Breaking Change)**:
   - Single: `std::expected<int64_t, Error>` (was void)
   - Batch: `std::expected<std::vector<int64_t>, Error>` (was void)
@@ -773,6 +775,58 @@ for (int i = 0; i < 100; ++i) {
     auto result = queryset.select();  // Optimal performance
 }
 ```
+
+**WHERE clause operations (type-safe expressions using pure C++26 reflection):**
+```cpp
+using namespace storm::orm::where;
+
+// Single condition (pure reflection - no macro needed!)
+auto result = queryset.where(field<^^Person::age>() > 30).select();
+
+// Multiple conditions with natural 'and' / 'or' keywords (or && / ||)
+auto result = queryset.where(field<^^Person::age>() > 25 and
+                              field<^^Person::age>() < 50).select();
+
+// Complex expressions with natural operators
+auto result = queryset.where((field<^^Person::age>() < 30 or field<^^Person::age>() > 35) and
+                              field<^^Person::name>() != "Charlie")
+                      .select();
+
+// Backward compatible: and_() / or_() functions still work
+auto expr1 = field<^^Person::age>() > 25;
+auto expr2 = field<^^Person::age>() < 50;
+auto result = queryset.where(and_(expr1, expr2)).select();
+
+// Special methods
+auto result = queryset.where(field<^^Person::name>().like("A%")).select();
+auto result = queryset.where(field<^^Person::age>().between(28, 35)).select();
+auto result = queryset.where(field<^^Person::id>().in(1, 2, 3)).select();
+
+// WHERE with JOIN (filter on joined table fields)
+auto result = queryset.join<&Message::sender>()
+                      .where(field<^^User::level>() > 5 and
+                             field<^^Message::content>().like("%from%"))
+                      .select();
+```
+
+**WHERE Performance Results (10,000 rows, Release build):**
+
+| Operation | Storm ORM | Raw SQLite | Efficiency |
+|-----------|-----------|------------|------------|
+| SELECT (no WHERE) | 12.81M rows/sec | - | - |
+| WHERE (single condition) | 11.88M rows/sec | 13.82M rows/sec | 86.0% |
+| WHERE (multiple conditions) | 9.45M rows/sec | 10.57M rows/sec | 89.5% |
+
+**Key Implementation Details:**
+- **Type Safety**: Compile-time type checking via `Field<T, FieldType>` template
+- **Expression Trees**: Composable WHERE clauses using shared_ptr-based expression trees
+- **Natural Operators**: `Expr` wrapper class enables intuitive `and`/`or` (or `&&`/`||`) syntax without ambiguity
+- **Zero SQL Injection**: All values bound as parameters (no string concatenation)
+- **Pure C++26 Reflection**: Uses `field<^^T::member>()` syntax - no macro needed, fully module-compatible
+- **Compile-Time Field Extraction**: `std::meta::identifier_of()`, `std::meta::type_of()`, and `std::meta::parent_of()` extract field information
+- **Supported Operators**: ==, !=, >, <, >=, <=, like(), between(), in()
+- **Backward Compatible**: and_(), or_() functions still work for explicit composition
+- **Performance**: 86-90% of raw SQLite efficiency (well above 70% target)
 
 ### Optimizing Statement Performance
 1. Use BaseStatement utilities: `execute_with_transaction()`, shared binding

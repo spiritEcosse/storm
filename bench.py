@@ -41,6 +41,28 @@ def run_join_benchmark(args):
     )
 
 
+def run_where_benchmark(args):
+    """Run WHERE clause performance benchmark"""
+    from where import WhereBenchmark
+
+    print_header()
+    print(f"{Colors.GREEN}Running WHERE Clause Performance Analysis...{Colors.RESET}\n")
+
+    # Use WHERE-specific binary unless custom path explicitly provided
+    binary_path = './build/release/benchmarks/bench_where'
+    if hasattr(args, 'binary') and args.binary != './build/release/benchmarks/bench_join':
+        # Only override if user specified a custom binary (not the default)
+        binary_path = args.binary
+
+    benchmark = WhereBenchmark(binary_path)
+    benchmark.run(
+        f'--size={args.size or 10000}',
+        f'--iterations={args.iterations or 100}',
+        size=args.size or 10000,
+        iterations=args.iterations or 100
+    )
+
+
 def run_sql_gen_benchmark(args):
     """Run SQL generation benchmark"""
     from sql_gen import SQLGenerationBenchmark
@@ -95,6 +117,7 @@ def main():
         epilog='''
 Available Benchmarks:
   📊 JOIN Performance       - Compare Storm ORM vs Raw SQLite JOIN operations
+  📊 WHERE Performance      - Compare Storm ORM vs Raw SQLite WHERE clause operations
   📊 SQL Generation         - Analyze compile-time SQL generation performance
   📊 All Microbenchmarks    - Run complete benchmark suite
   📊 Performance Comparison - Comprehensive Storm vs sqlite_orm vs Raw SQLite comparison
@@ -102,6 +125,8 @@ Available Benchmarks:
 Examples:
   %(prog)s --joins                        # Run JOIN benchmarks
   %(prog)s --joins --size=50000           # Run JOIN with 50K messages
+  %(prog)s --where                        # Run WHERE clause benchmarks
+  %(prog)s --where --size=50000           # Run WHERE with 50K rows
   %(prog)s --all                          # Run all benchmarks
   %(prog)s --compare                      # Run comprehensive performance comparison
         '''
@@ -111,6 +136,8 @@ Examples:
     commands = parser.add_mutually_exclusive_group(required=True)
     commands.add_argument('--joins', action='store_true',
                          help='Run JOIN performance analysis (Storm vs Raw SQLite)')
+    commands.add_argument('--where', action='store_true',
+                         help='Run WHERE clause performance analysis (Storm vs Raw SQLite)')
     commands.add_argument('--sql-gen', action='store_true',
                          help='Run SQL generation performance analysis')
     commands.add_argument('--all', action='store_true',
@@ -132,6 +159,8 @@ Examples:
     try:
         if args.joins:
             run_join_benchmark(args)
+        elif args.where:
+            run_where_benchmark(args)
         elif args.sql_gen:
             run_sql_gen_benchmark(args)
         elif args.all:
