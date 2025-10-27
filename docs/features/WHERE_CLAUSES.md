@@ -495,6 +495,34 @@ To reach 96-99% efficiency would require:
 
 **Recommendation**: Keep the current elegant runtime WHERE API. The performance is already excellent and the developer experience is superior.
 
+## Performance Investigation: Virtual Functions vs Function Pointers
+
+**Date**: 2025-10-27
+**Investigation**: Evaluated function pointer-based type erasure (similar to JoinStatementWrapper) as an alternative to virtual functions for WHERE expression building.
+
+### Results
+
+Benchmarked 1M iterations of expression building (not query execution):
+
+| Operation | Virtual Functions | Function Pointers | Difference |
+|-----------|-------------------|-------------------|------------|
+| Simple comparison (`field > value`) | 58.10 ns/op | 51.97 ns/op | +10.6% faster |
+| Complex expression (`(a > 25 && a < 50) \|\| b == "Test"`) | 258.25 ns/op | 250.29 ns/op | +3.1% faster |
+| LIKE expression | 34.93 ns/op | 34.39 ns/op | +1.5% faster |
+| BETWEEN expression | 39.02 ns/op | 38.92 ns/op | +0.3% faster |
+| IN expression (5 values) | 122.48 ns/op | 126.33 ns/op | -3.1% slower |
+
+### Decision: Keep Virtual Functions
+
+**Rationale**:
+1. **Marginal gains** - 6-8 nanoseconds saved on expression building (not query execution)
+2. **Expression building ≠ bottleneck** - WHERE filtering runs at 9.45-11.88M rows/sec (86-90% efficiency). The bottleneck is SQLite execution, not expression construction.
+3. **Increased complexity** - Function pointers require factory functions, manual memory management (`void*` casts), and move-only semantics
+4. **Different usage pattern than JOIN** - JOINs benefit from compile-time SQL generation with static function pointers. WHERE clauses are inherently dynamic with runtime value binding, requiring heap allocation regardless of approach.
+5. **Code maintainability** - Virtual function approach is cleaner, uses `shared_ptr` for automatic memory management, and is easier to debug
+
+**Conclusion**: The 3-10% speedup on expression building does not justify the increased code complexity, especially when expression building cost is negligible compared to query execution. The virtual function approach remains the right choice for WHERE clauses.
+
 ## See Also
 
 - [SELECT Queries](SELECT_QUERIES.md) - Statement caching with WHERE
