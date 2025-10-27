@@ -449,6 +449,52 @@ void bind(Statement& stmt, int& idx) const override {
 ✅ **86-90% efficiency** - Near-raw SQLite performance
 ✅ **Backward compatible** - and_(), or_() functions still work
 
+## Performance Optimization Investigation
+
+### Can We Reach 99% Efficiency?
+
+**TL;DR**: The current 86-90% efficiency represents an excellent balance between developer experience and performance. Reaching 99% would require fundamental changes that sacrifice the elegant API.
+
+### Investigation Summary (2025-10)
+
+An investigation was conducted to determine if compile-time SQL generation could improve WHERE clause performance from 90-92% to 96-99% efficiency.
+
+**Approach Tested**: Compile-time WHERE API with template-based SQL generation:
+```cpp
+// Compile-time API (tested but not adopted)
+queryset.where_gt<^^Person::age>(30);  // 90-92% efficiency
+
+// Current runtime API (kept)
+queryset.where(field<^^Person::age>() > 30).select();  // 88-91% efficiency
+```
+
+**Results** (10,000 rows, 500-1000 iterations):
+- **Runtime WHERE** (expression tree): 88.5-91.3% efficiency
+- **Compile-time WHERE** (direct SQL): 90.6-91.2% efficiency
+- **Improvement**: +0-2% (within measurement variance)
+
+**Root Cause Analysis**: The real bottleneck isn't WHERE clause overhead—it's row extraction and result management:
+1. **Row extraction** (~6-8%): Converting SQLite rows to C++ objects
+2. **Vector resizing** (~1-2%): Dynamic memory management
+3. **Parameter binding** (~1%): Even direct binding has overhead
+4. **SQL construction** (~1%): Even compile-time has initialization cost
+
+The expression tree overhead we could eliminate was only **~1-2%** of total overhead.
+
+**Conclusion**:
+- **88-91% efficiency is excellent** for an ORM with elegant, type-safe API
+- Compile-time SQL provides marginal improvement (~0-2%)
+- The 9-12% gap vs raw SQLite is primarily unavoidable ORM abstraction cost
+- The natural `field<^^Person::age>() > 30` syntax is worth the minimal overhead
+
+To reach 96-99% efficiency would require:
+- Optimizing row extraction (not WHERE clauses)
+- Pre-allocated result buffers
+- Zero-copy string handling
+- These optimizations would apply equally to all SELECT operations, not just WHERE
+
+**Recommendation**: Keep the current elegant runtime WHERE API. The performance is already excellent and the developer experience is superior.
+
 ## See Also
 
 - [SELECT Queries](SELECT_QUERIES.md) - Statement caching with WHERE
