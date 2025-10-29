@@ -25,6 +25,8 @@ import <optional>;
 import <cstdint>;
 import <memory>;
 import <variant>;
+import <chrono>;
+import <iostream>;
 
 export namespace storm::orm::statements {
 
@@ -199,37 +201,59 @@ export namespace storm::orm::statements {
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
         execute_query_loop(Statement* stmt, ExtractFunc&& extract_func) noexcept
                 -> std::expected<std::vector<T>, Error> {
-            // OPTIMIZATION: Pre-allocate with resize() (no intermediate copies)
-            // Pre-constructing objects is significantly faster (6.08M vs 3.60M rows/sec)
+            // OPTIMIZATION: Use reserve() + emplace_back() instead of resize()
+            // For small result sets, resize() wastes time constructing/destroying unused objects
+            // For large result sets, reserve with exponential growth amortizes allocations
             std::vector<T> results;
-            results.resize(10000);
+            results.reserve(100);  // Initial capacity for typical queries
+
+#ifdef STORM_PROFILE_WHERE
+            auto loop_start = std::chrono::high_resolution_clock::now();
+            size_t step_count = 0;
+            size_t extract_count = 0;
+#endif
 
             int step_result;
-            size_t row_count = 0;
-
-            // Fast path: extract into pre-allocated objects
-            while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE &&
-                   row_count < results.size()) {
-                T& obj = results[row_count];
-                extract_func(stmt, obj);
-                row_count++;
+            while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
+#ifdef STORM_PROFILE_WHERE
+                step_count++;
+#endif
+                // Construct object on-demand
+                results.emplace_back();
+                extract_func(stmt, results.back());
+#ifdef STORM_PROFILE_WHERE
+                extract_count++;
+#endif
             }
 
-            // Overflow handling with exponential growth
-            while (step_result == Statement::ROW_AVAILABLE) {
-                if (row_count >= results.size()) {
-                    size_t new_size = results.size() * 2;
-                    results.resize(new_size);
-                }
+#ifdef STORM_PROFILE_WHERE
+            auto loop_end = std::chrono::high_resolution_clock::now();
+            auto loop_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(loop_end - loop_start).count();
 
-                T& obj = results[row_count];
-                extract_func(stmt, obj);
-                row_count++;
-                step_result = stmt->step_raw();
+            static thread_local long long total_loop_ns = 0;
+            static thread_local long long total_steps = 0;
+            static thread_local long long total_extracts = 0;
+            static thread_local int loop_calls = 0;
+
+            total_loop_ns += loop_ns;
+            total_steps += step_count;
+            total_extracts += extract_count;
+            loop_calls++;
+
+            if (loop_calls == 100) {
+                std::cerr << "=== Query Loop Details (100 calls) ===\n";
+                std::cerr << "Total loop time:   " << (total_loop_ns / 100) << " ns avg\n";
+                std::cerr << "Avg rows/query:    " << (total_steps / 100) << "\n";
+                std::cerr << "Time per step():   " << (total_steps > 0 ? total_loop_ns / total_steps : 0) << " ns\n";
+                std::cerr << "Time per extract:  " << (total_extracts > 0 ? total_loop_ns / total_extracts : 0) << " ns\n";
+                std::cerr << "======================================\n\n";
+
+                total_loop_ns = 0;
+                total_steps = 0;
+                total_extracts = 0;
+                loop_calls = 0;
             }
-
-            // Trim to actual size
-            results.resize(row_count);
+#endif
 
             // Error handling
             if (step_result != Statement::NO_MORE_ROWS) {
@@ -245,12 +269,19 @@ export namespace storm::orm::statements {
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
         execute_where_impl(std::shared_ptr<orm::where::Expression> where_expr) noexcept
                 -> std::expected<std::vector<T>, Error> {
+#ifdef STORM_PROFILE_WHERE
+            auto t0 = std::chrono::high_resolution_clock::now();
+#endif
             // Generate WHERE clause SQL from expression
             std::string where_sql;
             where_sql.reserve(get_select_sql().size() + 7 + 100); // Pre-allocate for typical WHERE clause
             where_sql = get_select_sql();
             where_sql.append(" WHERE ");
             where_sql.append(where_expr->to_sql());
+#ifdef STORM_PROFILE_WHERE
+            auto t1 = std::chrono::high_resolution_clock::now();
+            auto sql_gen_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+#endif
 
             // OPTIMIZATION: Cache WHERE statement if SQL matches previous query
             Statement* stmt_ptr = nullptr;
@@ -267,6 +298,10 @@ export namespace storm::orm::statements {
                 cached_where_sql_ = std::move(where_sql);
                 stmt_ptr = cached_where_stmt_;
             }
+#ifdef STORM_PROFILE_WHERE
+            auto t2 = std::chrono::high_resolution_clock::now();
+            auto stmt_prep_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count();
+#endif
 
             // OPTIMIZATION: Direct parameter binding (eliminates std::variant overhead)
             int param_index = 1;
@@ -275,12 +310,51 @@ export namespace storm::orm::statements {
                 stmt_ptr->reset();
                 return std::unexpected(bind_result.error());
             }
+#ifdef STORM_PROFILE_WHERE
+            auto t3 = std::chrono::high_resolution_clock::now();
+            auto bind_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t3 - t2).count();
+#endif
 
             // Use unified query loop with fast extraction
-            return execute_query_loop(stmt_ptr,
+            auto result = execute_query_loop(stmt_ptr,
                 [](Statement* stmt, T& obj) {
                     extract_all_columns_inline_fast(stmt, obj);
                 });
+#ifdef STORM_PROFILE_WHERE
+            auto t4 = std::chrono::high_resolution_clock::now();
+            auto query_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t4 - t3).count();
+            auto total_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t4 - t0).count();
+
+            static thread_local long long total_sql_gen = 0;
+            static thread_local long long total_stmt_prep = 0;
+            static thread_local long long total_bind = 0;
+            static thread_local long long total_query = 0;
+            static thread_local int call_count = 0;
+
+            total_sql_gen += sql_gen_ns;
+            total_stmt_prep += stmt_prep_ns;
+            total_bind += bind_ns;
+            total_query += query_ns;
+            call_count++;
+
+            if (call_count == 100) {
+                std::cerr << "\n=== WHERE Profiling (100 calls avg) ===\n";
+                std::cerr << "SQL Generation:    " << (total_sql_gen / 100) << " ns\n";
+                std::cerr << "Stmt Prep/Cache:   " << (total_stmt_prep / 100) << " ns\n";
+                std::cerr << "Param Binding:     " << (total_bind / 100) << " ns\n";
+                std::cerr << "Query Execution:   " << (total_query / 100) << " ns\n";
+                std::cerr << "Total:             " << ((total_sql_gen + total_stmt_prep + total_bind + total_query) / 100) << " ns\n";
+                std::cerr << "======================================\n\n";
+
+                // Reset for next batch
+                total_sql_gen = 0;
+                total_stmt_prep = 0;
+                total_bind = 0;
+                total_query = 0;
+                call_count = 0;
+            }
+#endif
+            return result;
         }
 
         // SELECT with WHERE clause and JOIN - uses unified query loop

@@ -216,19 +216,25 @@ export namespace storm::orm::where {
     class InExpression : public Expression {
     public:
         InExpression(std::string field_name, std::vector<ValueType> values)
-            : field_name_(std::move(field_name)), values_(std::move(values)) {}
+            : field_name_(std::move(field_name)), values_(std::move(values)) {
+            // OPTIMIZATION: Pre-generate SQL once in constructor to avoid repeated string concatenations
+            if (values_.empty()) {
+                sql_ = "1 = 0"; // SQL that always evaluates to false
+            } else {
+                // Reserve capacity to avoid reallocations
+                sql_.reserve(field_name_.size() + 10 + values_.size() * 3);
+                sql_ = field_name_;
+                sql_ += " IN (";
+                for (size_t i = 0; i < values_.size(); ++i) {
+                    if (i > 0) sql_ += ", ";
+                    sql_ += "?";
+                }
+                sql_ += ")";
+            }
+        }
 
         std::string to_sql() const override {
-            if (values_.empty()) {
-                return "1 = 0"; // SQL that always evaluates to false
-            }
-            std::string sql = field_name_ + " IN (";
-            for (size_t i = 0; i < values_.size(); ++i) {
-                if (i > 0) sql += ", ";
-                sql += "?";
-            }
-            sql += ")";
-            return sql;
+            return sql_;  // Return pre-generated SQL
         }
 
         void collect_params(std::vector<ParamValue>& params) const override {
@@ -250,6 +256,7 @@ export namespace storm::orm::where {
     private:
         std::string field_name_;
         std::vector<ValueType> values_;
+        std::string sql_;  // Pre-generated SQL string
     };
 
     // Logical expression: expr1 AND expr2 / expr1 OR expr2

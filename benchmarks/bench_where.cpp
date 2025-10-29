@@ -139,15 +139,18 @@ void benchmark_where_int(int num_people, int iterations = 100) {
     double raw_time = 0;
     int raw_rows = 0;
 
+    // Prepare statement once outside loop
+    auto stmt_result = conn.prepare(sql);
+    if (!stmt_result.has_value()) {
+        std::cerr << "Failed to prepare statement" << std::endl;
+        teardown_database();
+        return;
+    }
+    auto stmt = std::move(stmt_result.value());
+
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
-        if (!stmt_result.has_value()) {
-            std::cerr << "Failed to prepare statement" << std::endl;
-            break;
-        }
-
-        auto stmt = std::move(stmt_result.value());
+        stmt.reset();  // Reset statement, don't re-prepare
         stmt.bind_int(1, 30);
 
         std::vector<TestPerson> results;
@@ -218,15 +221,18 @@ void benchmark_where_string(int num_people, int iterations = 100) {
     double raw_time = 0;
     int raw_rows = 0;
 
+    // Prepare statement once outside loop
+    auto stmt_result = conn.prepare(sql);
+    if (!stmt_result.has_value()) {
+        std::cerr << "Failed to prepare statement" << std::endl;
+        teardown_database();
+        return;
+    }
+    auto stmt = std::move(stmt_result.value());
+
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
-        if (!stmt_result.has_value()) {
-            std::cerr << "Failed to prepare statement" << std::endl;
-            break;
-        }
-
-        auto stmt = std::move(stmt_result.value());
+        stmt.reset();  // Reset statement, don't re-prepare
         stmt.bind_text(1, "Person5%");
 
         std::vector<TestPerson> results;
@@ -297,15 +303,18 @@ void benchmark_where_float(int num_people, int iterations = 100) {
     double raw_time = 0;
     int raw_rows = 0;
 
+    // Prepare statement once outside loop
+    auto stmt_result = conn.prepare(sql);
+    if (!stmt_result.has_value()) {
+        std::cerr << "Failed to prepare statement" << std::endl;
+        teardown_database();
+        return;
+    }
+    auto stmt = std::move(stmt_result.value());
+
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
-        if (!stmt_result.has_value()) {
-            std::cerr << "Failed to prepare statement" << std::endl;
-            break;
-        }
-
-        auto stmt = std::move(stmt_result.value());
+        stmt.reset();  // Reset statement, don't re-prepare
         stmt.bind_double(1, 35000.0);
 
         std::vector<TestPerson> results;
@@ -376,15 +385,18 @@ void benchmark_where_bool(int num_people, int iterations = 100) {
     double raw_time = 0;
     int raw_rows = 0;
 
+    // Prepare statement once outside loop
+    auto stmt_result = conn.prepare(sql);
+    if (!stmt_result.has_value()) {
+        std::cerr << "Failed to prepare statement" << std::endl;
+        teardown_database();
+        return;
+    }
+    auto stmt = std::move(stmt_result.value());
+
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
-        if (!stmt_result.has_value()) {
-            std::cerr << "Failed to prepare statement" << std::endl;
-            break;
-        }
-
-        auto stmt = std::move(stmt_result.value());
+        stmt.reset();  // Reset statement, don't re-prepare
         stmt.bind_int(1, 1); // true = 1
 
         std::vector<TestPerson> results;
@@ -459,15 +471,18 @@ void benchmark_where_like(int num_people, int iterations = 100) {
     double raw_time = 0;
     int raw_rows = 0;
 
+    // Prepare statement once outside loop
+    auto stmt_result = conn.prepare(sql);
+    if (!stmt_result.has_value()) {
+        std::cerr << "Failed to prepare statement" << std::endl;
+        teardown_database();
+        return;
+    }
+    auto stmt = std::move(stmt_result.value());
+
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
-        if (!stmt_result.has_value()) {
-            std::cerr << "Failed to prepare statement" << std::endl;
-            break;
-        }
-
-        auto stmt = std::move(stmt_result.value());
+        stmt.reset();  // Reset statement, don't re-prepare
         stmt.bind_text(1, "Person5%");
 
         std::vector<TestPerson> results;
@@ -538,15 +553,18 @@ void benchmark_where_between(int num_people, int iterations = 100) {
     double raw_time = 0;
     int raw_rows = 0;
 
+    // Prepare statement once outside loop
+    auto stmt_result = conn.prepare(sql);
+    if (!stmt_result.has_value()) {
+        std::cerr << "Failed to prepare statement" << std::endl;
+        teardown_database();
+        return;
+    }
+    auto stmt = std::move(stmt_result.value());
+
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
-        if (!stmt_result.has_value()) {
-            std::cerr << "Failed to prepare statement" << std::endl;
-            break;
-        }
-
-        auto stmt = std::move(stmt_result.value());
+        stmt.reset();  // Reset statement, don't re-prepare
         stmt.bind_int(1, 28);
         stmt.bind_int(2, 35);
 
@@ -618,14 +636,18 @@ void benchmark_where_in_3_ct(int num_people, int iterations = 100) {
     double raw_time = 0;
     int raw_rows = 0;
 
+    // Prepare statement once outside loop
+    auto stmt_result = conn.prepare(sql);
+    if (!stmt_result.has_value()) {
+        std::cerr << "Failed to prepare statement" << std::endl;
+        teardown_database();
+        return;
+    }
+    auto stmt = std::move(stmt_result.value());
+
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
-        if (!stmt_result.has_value()) {
-            break;
-        }
-
-        auto stmt = std::move(stmt_result.value());
+        stmt.reset();  // Reset statement, don't re-prepare
         stmt.bind_int(1, 100);
         stmt.bind_int(2, 200);
         stmt.bind_int(3, 300);
@@ -699,14 +721,18 @@ void benchmark_where_in_10_ct(int num_people, int iterations = 100) {
     double raw_time = 0;
     int raw_rows = 0;
 
+    // Prepare statement once outside loop
+    auto stmt_result = conn.prepare(sql);
+    if (!stmt_result.has_value()) {
+        std::cerr << "Failed to prepare statement" << std::endl;
+        teardown_database();
+        return;
+    }
+    auto stmt = std::move(stmt_result.value());
+
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
-        if (!stmt_result.has_value()) {
-            break;
-        }
-
-        auto stmt = std::move(stmt_result.value());
+        stmt.reset();  // Reset statement, don't re-prepare
         stmt.bind_int(1, 100);
         stmt.bind_int(2, 200);
         stmt.bind_int(3, 300);
@@ -790,15 +816,18 @@ void benchmark_where_simple(int num_people, int iterations = 100) {
     double raw_time = 0;
     int raw_rows = 0;
 
+    // Prepare statement once outside loop
+    auto stmt_result = conn.prepare(sql);
+    if (!stmt_result.has_value()) {
+        std::cerr << "Failed to prepare statement" << std::endl;
+        teardown_database();
+        return;
+    }
+    auto stmt = std::move(stmt_result.value());
+
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
-        if (!stmt_result.has_value()) {
-            std::cerr << "Failed to prepare statement" << std::endl;
-            break;
-        }
-
-        auto stmt = std::move(stmt_result.value());
+        stmt.reset();  // Reset statement, don't re-prepare
         stmt.bind_int(1, 25);
         stmt.bind_int(2, 50);
 
@@ -874,15 +903,18 @@ void benchmark_where_medium(int num_people, int iterations = 100) {
     double raw_time = 0;
     int raw_rows = 0;
 
+    // Prepare statement once outside loop
+    auto stmt_result = conn.prepare(sql);
+    if (!stmt_result.has_value()) {
+        std::cerr << "Failed to prepare statement" << std::endl;
+        teardown_database();
+        return;
+    }
+    auto stmt = std::move(stmt_result.value());
+
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
-        if (!stmt_result.has_value()) {
-            std::cerr << "Failed to prepare statement" << std::endl;
-            break;
-        }
-
-        auto stmt = std::move(stmt_result.value());
+        stmt.reset();  // Reset statement, don't re-prepare
         stmt.bind_int(1, 25);
         stmt.bind_double(2, 40000.0);
         stmt.bind_text(3, "Person5%");
@@ -969,15 +1001,18 @@ void benchmark_where_complex(int num_people, int iterations = 100) {
     double raw_time = 0;
     int raw_rows = 0;
 
+    // Prepare statement once outside loop
+    auto stmt_result = conn.prepare(sql);
+    if (!stmt_result.has_value()) {
+        std::cerr << "Failed to prepare statement" << std::endl;
+        teardown_database();
+        return;
+    }
+    auto stmt = std::move(stmt_result.value());
+
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
-        if (!stmt_result.has_value()) {
-            std::cerr << "Failed to prepare statement" << std::endl;
-            break;
-        }
-
-        auto stmt = std::move(stmt_result.value());
+        stmt.reset();  // Reset statement, don't re-prepare
         stmt.bind_int(1, 25);
         stmt.bind_int(2, 40);
         stmt.bind_double(3, 35000.0);
