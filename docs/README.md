@@ -23,6 +23,7 @@ Welcome to Storm ORM - a modern C++26 ORM library for SQLite using cutting-edge 
 - **[Statement Caching](architecture/STATEMENT_CACHING.md)** - 3-level caching achieving near-raw SQLite performance
 - **[SQL Generation](architecture/SQL_GENERATION.md)** - Compile-time SQL generation with ConstexprString
 - **[Module System](architecture/MODULE_SYSTEM.md)** - C++26 module structure and dependencies
+- **[Compile-Time vs Runtime](architecture/COMPILE_TIME_VS_RUNTIME.md)** - WHERE expression design tradeoffs and performance analysis
 
 ## Development
 

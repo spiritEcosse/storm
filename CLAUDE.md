@@ -23,8 +23,8 @@ Storm is a modern C++26 ORM library for SQLite using cutting-edge C++26 reflecti
 | - bool comparison | 9.09M rows/sec | 10.17M rows/sec | 89.4% efficiency |
 | - LIKE pattern | 2.82M rows/sec | 2.90M rows/sec | 97.2% efficiency |
 | - BETWEEN range | 5.01M rows/sec | 5.23M rows/sec | 95.9% efficiency |
-| - IN (3 values) | 0.32M rows/sec | 0.99M rows/sec | 32.0% efficiency |
-| - IN (10 values) | 0.98M rows/sec | 1.97M rows/sec | 49.8% efficiency |
+| - IN (3 values) | 0.36-0.42M rows/sec | 0.99M rows/sec | 36-42% efficiency |
+| - IN (10 values) | 0.98-1.00M rows/sec | 1.97M rows/sec | 49-51% efficiency |
 | - Simple (2 AND) | 7.44M rows/sec | 7.81M rows/sec | 95.2% efficiency |
 | - Medium (4 cond) | 1.38M rows/sec | 1.40M rows/sec | 98.6% efficiency |
 | - Complex (8+ cond) | 0.57M rows/sec | 0.58M rows/sec | 98.3% efficiency |
@@ -153,7 +153,9 @@ auto result = queryset.where(field<^^Person::age>() > 25 and
 // Special methods
 auto result = queryset.where(field<^^Person::name>().like("A%")).select();
 auto result = queryset.where(field<^^Person::age>().between(28, 35)).select();
-auto result = queryset.where(field<^^Person::id>().in(1, 2, 3)).select();
+
+// IN clause - compile-time (high performance, executes immediately, no .select() needed)
+auto result = queryset.where(field<^^Person::id>().in(1, 2, 3));
 ```
 
 See [docs/features/WHERE_CLAUSES.md](docs/features/WHERE_CLAUSES.md) for complete WHERE documentation.

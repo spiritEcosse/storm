@@ -398,10 +398,6 @@ export namespace storm::orm::statements {
             where_sql.append(" WHERE ");
             where_sql.append(where_expr->to_sql());
 
-            // Collect parameters from expression tree
-            std::vector<orm::where::ParamValue> params;
-            where_expr->collect_params(params);
-
             // OPTIMIZATION: Cache WHERE statement if SQL matches previous query
             Statement* stmt_ptr = nullptr;
             if (cached_where_stmt_ && cached_where_sql_ == where_sql) {
@@ -418,9 +414,11 @@ export namespace storm::orm::statements {
                 stmt_ptr = cached_where_stmt_;
             }
 
-            // Bind WHERE parameters
-            auto bind_result = bind_where_params(stmt_ptr, params);
+            // OPTIMIZATION: Direct parameter binding (eliminates std::variant overhead)
+            int param_index = 1;
+            auto bind_result = where_expr->bind_params_direct(stmt_ptr, param_index);
             if (!bind_result) [[unlikely]] {
+                stmt_ptr->reset();
                 return std::unexpected(bind_result.error());
             }
 
@@ -473,10 +471,6 @@ export namespace storm::orm::statements {
             join_where_sql.append(" WHERE ");
             join_where_sql.append(where_expr->to_sql());
 
-            // Collect parameters from expression tree
-            std::vector<orm::where::ParamValue> params;
-            where_expr->collect_params(params);
-
             // OPTIMIZATION: Cache WHERE+JOIN statement if SQL matches previous query
             Statement* stmt_ptr = nullptr;
             if (cached_where_join_stmt_ && cached_where_join_sql_ == join_where_sql) {
@@ -493,9 +487,11 @@ export namespace storm::orm::statements {
                 stmt_ptr = cached_where_join_stmt_;
             }
 
-            // Bind WHERE parameters
-            auto bind_result = bind_where_params(stmt_ptr, params);
+            // OPTIMIZATION: Direct parameter binding (eliminates std::variant overhead)
+            int param_index = 1;
+            auto bind_result = where_expr->bind_params_direct(stmt_ptr, param_index);
             if (!bind_result) [[unlikely]] {
+                stmt_ptr->reset();
                 return std::unexpected(bind_result.error());
             }
 

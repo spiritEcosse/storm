@@ -68,14 +68,22 @@ export namespace storm {
         }
 
         // WHERE clause support - builder pattern with method chaining using type-safe expressions
-        // Usage:
-        //   queryset.where(field(&Person::age) > 25).select()
-        //   queryset.where(field(&Person::age) > 25 && field(&Person::name) == "Alice").select()
-        //   queryset.where(field(&Person::age) > 100 || (field(&Person::rating) < 0 && field(&Person::is_active) == false)).select()
-        //   queryset.where(field(&Person::name).like("A%")).select()
-        //   queryset.where(field(&Person::age).between(25, 50)).select()
-        //   queryset.where(field(&Person::id).in(1, 2, 3)).select()
-        //   queryset.join<&Message::sender>().where(field(&User::age) > 25).select()
+        //
+        // Usage examples:
+        //   queryset.where(field<^^Person::age>() > 25).select()
+        //   queryset.where(field<^^Person::id>().in(1, 2, 3)).select()
+        //   queryset.where(field<^^Person::name>().like("A%")).select()
+        //   queryset.where(field<^^Person::age>().between(25, 50)).select()
+        //
+        // Chaining with AND composition:
+        //   queryset.where(field<^^Person::age>() > 25)
+        //           .where(field<^^Person::name>() == "Alice")
+        //           .select()
+        //
+        // Complex expressions with AND/OR:
+        //   queryset.where(field<^^Person::age>() > 25 and field<^^Person::is_active>() == true).select()
+        //   queryset.where((field<^^Person::age>() > 25) or (field<^^Person::name>().like("A%"))).select()
+        //
         constexpr auto&& where(this auto&& self, std::shared_ptr<orm::where::Expression> expr) {
             if (self.where_expr_) {
                 // Combine with existing expression using AND

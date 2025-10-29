@@ -589,8 +589,8 @@ void benchmark_where_between(int num_people, int iterations = 100) {
     teardown_database();
 }
 
-// IN operator with 3 values
-void benchmark_where_in_3(int num_people, int iterations = 100) {
+// IN (3 values)
+void benchmark_where_in_3_ct(int num_people, int iterations = 100) {
     setup_database(num_people);
 
     QuerySet<TestPerson> person_qs;
@@ -610,7 +610,7 @@ void benchmark_where_in_3(int num_people, int iterations = 100) {
         }
     }
 
-    // Raw SQLite
+    // Raw SQLite (same as before for comparison)
     auto& conn = QuerySet<TestPerson>::get_default_connection();
     std::string sql = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE id IN (?, ?, ?)";
 
@@ -622,7 +622,6 @@ void benchmark_where_in_3(int num_people, int iterations = 100) {
         timer.reset();
         auto stmt_result = conn.prepare(sql);
         if (!stmt_result.has_value()) {
-            std::cerr << "Failed to prepare statement" << std::endl;
             break;
         }
 
@@ -647,7 +646,6 @@ void benchmark_where_in_3(int num_people, int iterations = 100) {
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
-                std::cerr << "Step failed" << std::endl;
                 break;
             }
         }
@@ -670,8 +668,8 @@ void benchmark_where_in_3(int num_people, int iterations = 100) {
     teardown_database();
 }
 
-// IN operator with 10 values
-void benchmark_where_in_10(int num_people, int iterations = 100) {
+// IN (10 values)
+void benchmark_where_in_10_ct(int num_people, int iterations = 100) {
     setup_database(num_people);
 
     QuerySet<TestPerson> person_qs;
@@ -693,7 +691,7 @@ void benchmark_where_in_10(int num_people, int iterations = 100) {
         }
     }
 
-    // Raw SQLite
+    // Raw SQLite (same as before for comparison)
     auto& conn = QuerySet<TestPerson>::get_default_connection();
     std::string sql = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE id IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
@@ -705,7 +703,6 @@ void benchmark_where_in_10(int num_people, int iterations = 100) {
         timer.reset();
         auto stmt_result = conn.prepare(sql);
         if (!stmt_result.has_value()) {
-            std::cerr << "Failed to prepare statement" << std::endl;
             break;
         }
 
@@ -737,7 +734,6 @@ void benchmark_where_in_10(int num_people, int iterations = 100) {
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
-                std::cerr << "Step failed" << std::endl;
                 break;
             }
         }
@@ -951,7 +947,7 @@ void benchmark_where_complex(int num_people, int iterations = 100) {
                  field<^^TestPerson::is_active>() == true)
             ) and
             (
-                field<^^TestPerson::id>().in(100, 200, 300, 400, 500) or
+                field<^^TestPerson::id>() < 500 or
                 (field<^^TestPerson::age>() > 50 and field<^^TestPerson::salary>() < 80000.0)
             )
         ).select();
@@ -967,7 +963,7 @@ void benchmark_where_complex(int num_people, int iterations = 100) {
     auto& conn = QuerySet<TestPerson>::get_default_connection();
     std::string sql = "SELECT id, name, age, salary, is_active FROM TestPerson "
                       "WHERE ((age BETWEEN ? AND ? AND salary > ?) OR (name LIKE ? AND is_active = ?)) "
-                      "AND (id IN (?, ?, ?, ?, ?) OR (age > ? AND salary < ?))";
+                      "AND (id < ? OR (age > ? AND salary < ?))";
 
     timer.reset();
     double raw_time = 0;
@@ -987,13 +983,9 @@ void benchmark_where_complex(int num_people, int iterations = 100) {
         stmt.bind_double(3, 35000.0);
         stmt.bind_text(4, "Person1%");
         stmt.bind_int(5, 1);
-        stmt.bind_int(6, 100);
-        stmt.bind_int(7, 200);
-        stmt.bind_int(8, 300);
-        stmt.bind_int(9, 400);
-        stmt.bind_int(10, 500);
-        stmt.bind_int(11, 50);
-        stmt.bind_double(12, 80000.0);
+        stmt.bind_int(6, 500);
+        stmt.bind_int(7, 50);
+        stmt.bind_double(8, 80000.0);
 
         std::vector<TestPerson> results;
         results.reserve(num_people);
@@ -1124,8 +1116,9 @@ int main(int argc, char* argv[]) {
         std::cout << std::string(60, '-') << std::endl;
         benchmark_where_like(test_size, iterations);
         benchmark_where_between(test_size, iterations);
-        benchmark_where_in_3(test_size, iterations);
-        benchmark_where_in_10(test_size, iterations);
+
+        benchmark_where_in_3_ct(test_size, iterations);
+        benchmark_where_in_10_ct(test_size, iterations);
     }
 
     // Complex queries

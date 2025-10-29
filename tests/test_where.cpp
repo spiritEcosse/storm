@@ -176,6 +176,7 @@ TEST_F(WhereTest, WhereBetween) {
 TEST_F(WhereTest, WhereIn) {
     QuerySet<Person> queryset;
 
+    // IN expressions use runtime builder pattern, requires .select()
     auto result = queryset.where(field<^^Person::age>().in(25, 30, 40)).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 

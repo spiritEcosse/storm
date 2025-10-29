@@ -11,6 +11,9 @@ import <memory>;
 import <concepts>;
 import <sstream>;
 import <tuple>;
+import <expected>;
+import storm_db_sqlite;  // For Statement type
+import storm_orm_utilities;  // For ConstexprString
 
 export namespace storm::orm::where {
 
@@ -19,7 +22,7 @@ export namespace storm::orm::where {
         enum class FieldAttr { primary, indexed, unique, fk };
     }
 
-    // Type-erased parameter value for WHERE clause binding
+    // Type-erased parameter value for WHERE clause binding (kept for backward compatibility)
     using ParamValue = std::variant<
         int, int64_t, long, long long,
         uint64_t, unsigned long, unsigned long long,
@@ -31,7 +34,9 @@ export namespace storm::orm::where {
 
     // Forward declarations
     class Expression;
-    template<typename T, typename FieldType> class Field;
+    template<std::meta::info MemberInfo>
+        requires (std::meta::is_nonstatic_data_member(MemberInfo))
+    class Field;
     class Expr;
 
     // Base expression interface
@@ -39,7 +44,14 @@ export namespace storm::orm::where {
     public:
         virtual ~Expression() = default;
         virtual std::string to_sql() const = 0;
+
+        // OLD API: Type-erased parameter collection (kept for backward compatibility)
         virtual void collect_params(std::vector<ParamValue>& params) const = 0;
+
+        // NEW API: Direct parameter binding (eliminates std::variant overhead)
+        // stmt_ptr must point to a Statement-like object with bind_int/bind_text/etc methods
+        // Returns std::expected<void, storm::db::sqlite::Error>
+        virtual auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> = 0;
     };
 
     // Comparison operators
@@ -52,7 +64,7 @@ export namespace storm::orm::where {
         LessEqual
     };
 
-    inline std::string comp_op_to_sql(CompOp op) {
+    constexpr std::string_view comp_op_to_sql(CompOp op) {
         switch (op) {
             case CompOp::Equal: return " = ";
             case CompOp::NotEqual: return " != ";
@@ -70,7 +82,7 @@ export namespace storm::orm::where {
         Or
     };
 
-    inline std::string logical_op_to_sql(LogicalOp op) {
+    constexpr std::string_view logical_op_to_sql(LogicalOp op) {
         switch (op) {
             case LogicalOp::And: return " AND ";
             case LogicalOp::Or: return " OR ";
@@ -101,6 +113,42 @@ export namespace storm::orm::where {
             }
         }
 
+        auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
+            // Cast stmt_ptr to Statement* (type-erased binding)
+            auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
+            return bind_single_value(stmt, param_index++, value_);
+        }
+
+        // Helper: Bind a single value directly to SQLite statement
+        // Public so other expression types (BetweenExpr, InExpression) can use it
+        template<typename T>
+        static auto bind_single_value(storm::db::sqlite::Statement* stmt, int idx, const T& value) -> std::expected<void, storm::db::sqlite::Error> {
+            using V = std::decay_t<T>;
+
+            if constexpr (std::is_same_v<V, int>) {
+                return stmt->bind_int(idx, value);
+            } else if constexpr (std::is_same_v<V, int64_t> || std::is_same_v<V, long> || std::is_same_v<V, long long>) {
+                return stmt->bind_int64(idx, static_cast<int64_t>(value));
+            } else if constexpr (std::is_same_v<V, uint64_t> || std::is_same_v<V, unsigned long> || std::is_same_v<V, unsigned long long>) {
+                return stmt->bind_int64(idx, static_cast<int64_t>(value));
+            } else if constexpr (std::is_same_v<V, short> || std::is_same_v<V, unsigned short> || std::is_same_v<V, unsigned int>) {
+                return stmt->bind_int(idx, static_cast<int>(value));
+            } else if constexpr (std::is_same_v<V, double>) {
+                return stmt->bind_double(idx, value);
+            } else if constexpr (std::is_same_v<V, float>) {
+                return stmt->bind_double(idx, static_cast<double>(value));
+            } else if constexpr (std::is_same_v<V, bool>) {
+                return stmt->bind_int(idx, value ? 1 : 0);
+            } else if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, std::string_view>) {
+                return stmt->bind_text(idx, std::string_view{value});
+            } else if constexpr (std::is_same_v<V, const char*> || std::is_array_v<T>) {
+                return stmt->bind_text(idx, std::string_view{value});
+            } else {
+                // Fallback for unknown types
+                return std::unexpected(storm::db::sqlite::Error{-1, "Unknown type for parameter binding"});
+            }
+        }
+
     private:
         std::string field_name_;
         CompOp op_;
@@ -119,6 +167,11 @@ export namespace storm::orm::where {
 
         void collect_params(std::vector<ParamValue>& params) const override {
             params.emplace_back(pattern_);
+        }
+
+        auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
+            auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
+            return stmt->bind_text(param_index++, pattern_);
         }
 
     private:
@@ -142,22 +195,35 @@ export namespace storm::orm::where {
             params.emplace_back(max_val_);
         }
 
+        auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
+            auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
+            // Bind min value
+            if (auto result = ComparisonExpr<int, ValueType>::bind_single_value(stmt, param_index++, min_val_); !result) {
+                return result;
+            }
+            // Bind max value
+            return ComparisonExpr<int, ValueType>::bind_single_value(stmt, param_index++, max_val_);
+        }
+
     private:
         std::string field_name_;
         ValueType min_val_;
         ValueType max_val_;
     };
 
-    // IN expression: field.in(1, 2, 3)
-    template<typename... ValueTypes>
-    class InExpr : public Expression {
+    // IN expression (runtime): field IN (val1, val2, ..., valN)
+    template<typename ValueType>
+    class InExpression : public Expression {
     public:
-        InExpr(std::string field_name, ValueTypes... values)
-            : field_name_(std::move(field_name)), values_(std::make_tuple(std::move(values)...)) {}
+        InExpression(std::string field_name, std::vector<ValueType> values)
+            : field_name_(std::move(field_name)), values_(std::move(values)) {}
 
         std::string to_sql() const override {
+            if (values_.empty()) {
+                return "1 = 0"; // SQL that always evaluates to false
+            }
             std::string sql = field_name_ + " IN (";
-            for (size_t i = 0; i < sizeof...(ValueTypes); ++i) {
+            for (size_t i = 0; i < values_.size(); ++i) {
                 if (i > 0) sql += ", ";
                 sql += "?";
             }
@@ -166,14 +232,24 @@ export namespace storm::orm::where {
         }
 
         void collect_params(std::vector<ParamValue>& params) const override {
-            std::apply([&params](auto&&... args) {
-                (params.emplace_back(std::forward<decltype(args)>(args)), ...);
-            }, values_);
+            for (const auto& value : values_) {
+                params.emplace_back(value);
+            }
+        }
+
+        auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
+            auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
+            for (const auto& value : values_) {
+                if (auto result = ComparisonExpr<int, ValueType>::bind_single_value(stmt, param_index++, value); !result) {
+                    return result;
+                }
+            }
+            return {};
         }
 
     private:
         std::string field_name_;
-        std::tuple<ValueTypes...> values_;
+        std::vector<ValueType> values_;
     };
 
     // Logical expression: expr1 AND expr2 / expr1 OR expr2
@@ -189,6 +265,14 @@ export namespace storm::orm::where {
         void collect_params(std::vector<ParamValue>& params) const override {
             left_->collect_params(params);
             right_->collect_params(params);
+        }
+
+        auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
+            // Bind left expression parameters, then right expression parameters
+            if (auto result = left_->bind_params_direct(stmt_ptr, param_index); !result) {
+                return result;
+            }
+            return right_->bind_params_direct(stmt_ptr, param_index);
         }
 
     private:
@@ -224,16 +308,32 @@ export namespace storm::orm::where {
         std::shared_ptr<Expression> expr_;
     };
 
-    // Field proxy - represents a database field with type safety
-    template<typename T, typename FieldType>
+    // Field proxy - stores reflection info as template parameter
+    // Provides compile-time IN expression and runtime comparison/special methods
+    template<std::meta::info MemberInfo>
+        requires (std::meta::is_nonstatic_data_member(MemberInfo))
     class Field {
     public:
-        using ModelType = T;
-        using ValueType = FieldType;
+        using ParentType = typename [:std::meta::parent_of(MemberInfo):];
+        using FieldType = typename [:std::meta::type_of(MemberInfo):];
 
-        explicit Field(std::string field_name) : field_name_(std::move(field_name)) {}
+        static constexpr auto field_name_sv = std::meta::identifier_of(MemberInfo);
 
-        // Comparison operators - return Expr for natural && and || usage
+        constexpr Field() : field_name_(field_name_sv) {}
+
+        // IN: Returns runtime Expr for consistency with other methods
+        // Usage: field<^^Person::id>().in(100, 200, 300)
+        template<typename... Values>
+        auto in(Values&&... values) const {
+            // Use common_type to find the appropriate type for all values
+            using ValueType = std::common_type_t<std::decay_t<Values>...>;
+            std::vector<ValueType> vals{static_cast<ValueType>(std::forward<Values>(values))...};
+            return Expr(std::make_shared<InExpression<ValueType>>(
+                std::string(field_name_), std::move(vals)
+            ));
+        }
+
+        // Comparison operators - return runtime Expr for flexibility
         template<typename V>
         Expr operator==(V&& value) const {
             return Expr(std::make_shared<ComparisonExpr<FieldType, std::decay_t<V>>>(
@@ -276,7 +376,7 @@ export namespace storm::orm::where {
             ));
         }
 
-        // Special methods - return Expr for consistency
+        // Special methods - return runtime Expr
         Expr like(std::string_view pattern) const {
             return Expr(std::make_shared<LikeExpr>(field_name_, std::string(pattern)));
         }
@@ -285,13 +385,6 @@ export namespace storm::orm::where {
         Expr between(V&& min_val, V&& max_val) const {
             return Expr(std::make_shared<BetweenExpr<std::decay_t<V>>>(
                 field_name_, std::forward<V>(min_val), std::forward<V>(max_val)
-            ));
-        }
-
-        template<typename... Values>
-        Expr in(Values&&... values) const {
-            return Expr(std::make_shared<InExpr<std::decay_t<Values>...>>(
-                field_name_, std::forward<Values>(values)...
             ));
         }
 
@@ -324,32 +417,18 @@ export namespace storm::orm::where {
     }
 
     // Pure C++26 Reflection-Based Field Helper (No Macro Needed!)
-    // Usage: field<^^Person::age>() instead of field(Person, age)
+    // Usage: field<^^Person::id>().in(100, 200, 300)
     //
-    // This function uses compile-time reflection to extract:
-    // - Field name via std::meta::identifier_of()
-    // - Field type via std::meta::type_of()
-    // - Parent class via std::meta::parent_of()
+    // Returns Field which provides:
+    // - in() -> Expr (runtime expression, composable with AND/OR)
+    // - Comparison operators (==, >, <, etc.) -> Expr (composable with AND/OR)
+    // - Special methods (like, between) -> Expr (composable with AND/OR)
     //
-    // Benefits over macro approach:
-    // ✅ Module-friendly (no header file needed)
-    // ✅ Compile-time validated (^^Person::age fails if member doesn't exist)
-    // ✅ Refactoring-safe (IDEs understand ^^Person::age)
-    // ✅ Type-safe with full reflection information
+    // All methods return runtime expressions that can be used with QuerySet::where()
     template<std::meta::info MemberInfo>
         requires (std::meta::is_nonstatic_data_member(MemberInfo))
     constexpr auto field() {
-        // Extract compile-time information from reflection
-        constexpr auto field_name_view = std::meta::identifier_of(MemberInfo);
-        constexpr auto parent_type_info = std::meta::parent_of(MemberInfo);
-        constexpr auto field_type_info = std::meta::type_of(MemberInfo);
-
-        // Convert to C++ types using splice syntax
-        using T = typename [:parent_type_info:];
-        using FieldType = typename [:field_type_info:];
-
-        // Create Field with compile-time extracted name
-        return Field<T, FieldType>(std::string(field_name_view));
+        return Field<MemberInfo>();
     }
 
 } // namespace storm::orm::where
