@@ -343,50 +343,6 @@ export namespace storm::orm::statements {
             extract_all_columns_inline_fast_impl(stmt, obj, typename Base::field_indices_t{});
         }
 
-        // Helper to bind WHERE parameters
-        [[nodiscard]] auto bind_where_params(Statement* stmt, const std::vector<orm::where::ParamValue>& where_params) noexcept
-                -> std::expected<void, Error> {
-            for (size_t i = 0; i < where_params.size(); ++i) {
-                auto result = std::visit([stmt, param_idx = static_cast<int>(i + 1)](const auto& value)
-                        -> std::expected<void, Error> {
-                    using ValueType = std::decay_t<decltype(value)>;
-
-                    if constexpr (std::is_same_v<ValueType, std::nullptr_t>) {
-                        return stmt->bind_null(param_idx);
-                    } else if constexpr (std::is_same_v<ValueType, bool>) {
-                        return stmt->bind_int(param_idx, value ? 1 : 0);
-                    } else if constexpr (std::is_same_v<ValueType, int>) {
-                        return stmt->bind_int(param_idx, value);
-                    } else if constexpr (std::is_same_v<ValueType, int64_t> ||
-                                       std::is_same_v<ValueType, long> ||
-                                       std::is_same_v<ValueType, long long>) {
-                        return stmt->bind_int64(param_idx, static_cast<int64_t>(value));
-                    } else if constexpr (std::is_same_v<ValueType, uint64_t> ||
-                                       std::is_same_v<ValueType, unsigned long> ||
-                                       std::is_same_v<ValueType, unsigned long long>) {
-                        return stmt->bind_int64(param_idx, static_cast<int64_t>(value));
-                    } else if constexpr (std::is_same_v<ValueType, short> ||
-                                       std::is_same_v<ValueType, unsigned short> ||
-                                       std::is_same_v<ValueType, unsigned int>) {
-                        return stmt->bind_int(param_idx, static_cast<int>(value));
-                    } else if constexpr (std::is_same_v<ValueType, double>) {
-                        return stmt->bind_double(param_idx, value);
-                    } else if constexpr (std::is_same_v<ValueType, float>) {
-                        return stmt->bind_double(param_idx, static_cast<double>(value));
-                    } else if constexpr (std::is_same_v<ValueType, std::string> ||
-                                       std::is_same_v<ValueType, std::string_view>) {
-                        return stmt->bind_text(param_idx, std::string_view{value});
-                    }
-                    return {};
-                }, where_params[i]);
-
-                if (!result) {
-                    return result;
-                }
-            }
-            return {};
-        }
-
         // SELECT with WHERE clause (no JOIN)
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
         execute_where_impl(std::shared_ptr<orm::where::Expression> where_expr) noexcept

@@ -45,6 +45,39 @@ Storm is a modern C++26 ORM library for SQLite using cutting-edge C++26 reflecti
    - When committing changes, wait for user confirmation before pushing
    - Exception: If user explicitly says "commit and push", then both operations are approved
 
+3. **MANDATORY: Benchmark After ANY Code Changes**
+   - **After suggesting/implementing ANY improvement, IMMEDIATELY run benchmarks**
+   - This applies to ALL changes, even "zero overhead" or "refactoring only" changes
+   - **If benchmarks show ANY slowdown (even 1-2%), REVERT IMMEDIATELY**
+   - Try alternative approach if available, or keep original code
+   - **Never declare success without benchmark confirmation**
+   - Remember: Performance > Code Cleanliness for ORMs
+
+   **Why This Matters:**
+   - Binary layout changes affect instruction cache unpredictably
+   - Even removing dead code can change memory layout
+   - Template/lambda changes can affect inlining decisions
+   - "Unrelated" code can regress due to code placement
+   - Benchmarks are the only source of truth
+
+   **Mandatory Workflow:**
+   ```bash
+   # 1. Implement change
+   # 2. Build release
+   cmake --build --preset ninja-release
+
+   # 3. RUN BENCHMARKS (for affected code paths)
+   ./build/release/benchmarks/bench_join --size=10000 --all
+   ./build/release/benchmarks/bench_where --benchmark_min_time=2s
+   ./build/release/benchmarks/bench_storm --mode=select-only --test-size=10000
+
+   # 4. Compare with baseline - if ANY regression:
+   git stash  # or git checkout -- <files>
+
+   # 5. Only after confirming zero regression:
+   # Proceed with commit
+   ```
+
 ## Quick Start
 
 ### Prerequisites
