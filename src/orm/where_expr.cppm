@@ -91,14 +91,18 @@ export namespace storm::orm::where {
     }
 
     // Comparison expression: field > value
-    template<typename FieldType, typename ValueType>
+    template<typename ValueType>
     class ComparisonExpr : public Expression {
     public:
         ComparisonExpr(std::string field_name, CompOp op, ValueType value)
-            : field_name_(std::move(field_name)), op_(op), value_(std::move(value)) {}
+            : field_name_(std::move(field_name)), op_(op), value_(std::move(value)) {
+            // Pre-generate SQL in constructor for consistency with InExpression
+            // and to benchmark whether simple concatenation benefits from caching
+            sql_ = field_name_ + comp_op_to_sql(op_) + "?";
+        }
 
         std::string to_sql() const override {
-            return field_name_ + comp_op_to_sql(op_) + "?";
+            return sql_;
         }
 
         void collect_params(std::vector<ParamValue>& params) const override {
@@ -153,16 +157,20 @@ export namespace storm::orm::where {
         std::string field_name_;
         CompOp op_;
         ValueType value_;
+        std::string sql_;  // Cached SQL string (pre-generated in constructor)
     };
 
     // LIKE expression: field.like("pattern%")
     class LikeExpr : public Expression {
     public:
         LikeExpr(std::string field_name, std::string pattern)
-            : field_name_(std::move(field_name)), pattern_(std::move(pattern)) {}
+            : field_name_(std::move(field_name)), pattern_(std::move(pattern)) {
+            // Pre-generate SQL in constructor for consistency with ComparisonExpr
+            sql_ = field_name_ + " LIKE ?";
+        }
 
         std::string to_sql() const override {
-            return field_name_ + " LIKE ?";
+            return sql_;
         }
 
         void collect_params(std::vector<ParamValue>& params) const override {
@@ -177,6 +185,7 @@ export namespace storm::orm::where {
     private:
         std::string field_name_;
         std::string pattern_;
+        std::string sql_;  // Cached SQL string (pre-generated in constructor)
     };
 
     // BETWEEN expression: field.between(a, b)
@@ -184,10 +193,13 @@ export namespace storm::orm::where {
     class BetweenExpr : public Expression {
     public:
         BetweenExpr(std::string field_name, ValueType min_val, ValueType max_val)
-            : field_name_(std::move(field_name)), min_val_(std::move(min_val)), max_val_(std::move(max_val)) {}
+            : field_name_(std::move(field_name)), min_val_(std::move(min_val)), max_val_(std::move(max_val)) {
+            // Pre-generate SQL in constructor for consistency with ComparisonExpr
+            sql_ = field_name_ + " BETWEEN ? AND ?";
+        }
 
         std::string to_sql() const override {
-            return field_name_ + " BETWEEN ? AND ?";
+            return sql_;
         }
 
         void collect_params(std::vector<ParamValue>& params) const override {
@@ -198,17 +210,18 @@ export namespace storm::orm::where {
         auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
             // Bind min value
-            if (auto result = ComparisonExpr<int, ValueType>::bind_single_value(stmt, param_index++, min_val_); !result) {
+            if (auto result = ComparisonExpr<ValueType>::bind_single_value(stmt, param_index++, min_val_); !result) {
                 return result;
             }
             // Bind max value
-            return ComparisonExpr<int, ValueType>::bind_single_value(stmt, param_index++, max_val_);
+            return ComparisonExpr<ValueType>::bind_single_value(stmt, param_index++, max_val_);
         }
 
     private:
         std::string field_name_;
         ValueType min_val_;
         ValueType max_val_;
+        std::string sql_;  // Cached SQL string (pre-generated in constructor)
     };
 
     // IN expression (runtime): field IN (val1, val2, ..., valN)
@@ -246,7 +259,7 @@ export namespace storm::orm::where {
         auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
             for (const auto& value : values_) {
-                if (auto result = ComparisonExpr<int, ValueType>::bind_single_value(stmt, param_index++, value); !result) {
+                if (auto result = ComparisonExpr<ValueType>::bind_single_value(stmt, param_index++, value); !result) {
                     return result;
                 }
             }
@@ -343,42 +356,42 @@ export namespace storm::orm::where {
         // Comparison operators - return runtime Expr for flexibility
         template<typename V>
         Expr operator==(V&& value) const {
-            return Expr(std::make_shared<ComparisonExpr<FieldType, std::decay_t<V>>>(
+            return Expr(std::make_shared<ComparisonExpr<std::decay_t<V>>>(
                 field_name_, CompOp::Equal, std::forward<V>(value)
             ));
         }
 
         template<typename V>
         Expr operator!=(V&& value) const {
-            return Expr(std::make_shared<ComparisonExpr<FieldType, std::decay_t<V>>>(
+            return Expr(std::make_shared<ComparisonExpr<std::decay_t<V>>>(
                 field_name_, CompOp::NotEqual, std::forward<V>(value)
             ));
         }
 
         template<typename V>
         Expr operator>(V&& value) const {
-            return Expr(std::make_shared<ComparisonExpr<FieldType, std::decay_t<V>>>(
+            return Expr(std::make_shared<ComparisonExpr<std::decay_t<V>>>(
                 field_name_, CompOp::Greater, std::forward<V>(value)
             ));
         }
 
         template<typename V>
         Expr operator>=(V&& value) const {
-            return Expr(std::make_shared<ComparisonExpr<FieldType, std::decay_t<V>>>(
+            return Expr(std::make_shared<ComparisonExpr<std::decay_t<V>>>(
                 field_name_, CompOp::GreaterEqual, std::forward<V>(value)
             ));
         }
 
         template<typename V>
         Expr operator<(V&& value) const {
-            return Expr(std::make_shared<ComparisonExpr<FieldType, std::decay_t<V>>>(
+            return Expr(std::make_shared<ComparisonExpr<std::decay_t<V>>>(
                 field_name_, CompOp::Less, std::forward<V>(value)
             ));
         }
 
         template<typename V>
         Expr operator<=(V&& value) const {
-            return Expr(std::make_shared<ComparisonExpr<FieldType, std::decay_t<V>>>(
+            return Expr(std::make_shared<ComparisonExpr<std::decay_t<V>>>(
                 field_name_, CompOp::LessEqual, std::forward<V>(value)
             ));
         }
