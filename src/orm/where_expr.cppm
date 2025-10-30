@@ -288,9 +288,6 @@ export namespace storm::orm::where {
         requires (std::meta::is_nonstatic_data_member(MemberInfo))
     class Field {
     public:
-        using ParentType = typename [:std::meta::parent_of(MemberInfo):];
-        using FieldType = typename [:std::meta::type_of(MemberInfo):];
-
         static constexpr auto field_name_sv = std::meta::identifier_of(MemberInfo);
 
         constexpr Field() : field_name_(field_name_sv) {}
