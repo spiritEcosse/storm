@@ -6,7 +6,6 @@ export module storm_orm_where_expr;
 
 import <string>;
 import <vector>;
-import <variant>;
 import <memory>;
 import <concepts>;
 import <sstream>;
@@ -22,16 +21,6 @@ export namespace storm::orm::where {
         enum class FieldAttr { primary, indexed, unique, fk };
     }
 
-    // Type-erased parameter value for WHERE clause binding (kept for backward compatibility)
-    using ParamValue = std::variant<
-        int, int64_t, long, long long,
-        uint64_t, unsigned long, unsigned long long,
-        short, unsigned short, unsigned int,
-        double, float, bool,
-        std::string, std::string_view,
-        std::nullptr_t
-    >;
-
     // Forward declarations
     class Expression;
     template<std::meta::info MemberInfo>
@@ -45,10 +34,7 @@ export namespace storm::orm::where {
         virtual ~Expression() = default;
         virtual std::string to_sql() const = 0;
 
-        // OLD API: Type-erased parameter collection (kept for backward compatibility)
-        virtual void collect_params(std::vector<ParamValue>& params) const = 0;
-
-        // NEW API: Direct parameter binding (eliminates std::variant overhead)
+        // Direct parameter binding (eliminates std::variant overhead)
         // stmt_ptr must point to a Statement-like object with bind_int/bind_text/etc methods
         // Returns std::expected<void, storm::db::sqlite::Error>
         virtual auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> = 0;
@@ -103,18 +89,6 @@ export namespace storm::orm::where {
 
         std::string to_sql() const override {
             return sql_;
-        }
-
-        void collect_params(std::vector<ParamValue>& params) const override {
-            // Convert value to ParamValue
-            if constexpr (std::is_convertible_v<ValueType, ParamValue>) {
-                params.emplace_back(value_);
-            } else if constexpr (std::is_same_v<ValueType, const char*> ||
-                                std::is_array_v<std::remove_reference_t<ValueType>>) {
-                params.emplace_back(std::string_view{value_});
-            } else {
-                params.emplace_back(value_);
-            }
         }
 
         auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
@@ -173,10 +147,6 @@ export namespace storm::orm::where {
             return sql_;
         }
 
-        void collect_params(std::vector<ParamValue>& params) const override {
-            params.emplace_back(pattern_);
-        }
-
         auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
             return stmt->bind_text(param_index++, pattern_);
@@ -200,11 +170,6 @@ export namespace storm::orm::where {
 
         std::string to_sql() const override {
             return sql_;
-        }
-
-        void collect_params(std::vector<ParamValue>& params) const override {
-            params.emplace_back(min_val_);
-            params.emplace_back(max_val_);
         }
 
         auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
@@ -250,12 +215,6 @@ export namespace storm::orm::where {
             return sql_;  // Return pre-generated SQL
         }
 
-        void collect_params(std::vector<ParamValue>& params) const override {
-            for (const auto& value : values_) {
-                params.emplace_back(value);
-            }
-        }
-
         auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
             for (const auto& value : values_) {
@@ -280,11 +239,6 @@ export namespace storm::orm::where {
 
         std::string to_sql() const override {
             return "(" + left_->to_sql() + logical_op_to_sql(op_) + right_->to_sql() + ")";
-        }
-
-        void collect_params(std::vector<ParamValue>& params) const override {
-            left_->collect_params(params);
-            right_->collect_params(params);
         }
 
         auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
