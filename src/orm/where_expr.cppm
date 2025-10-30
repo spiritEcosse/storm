@@ -94,8 +94,8 @@ export namespace storm::orm::where {
     template<typename ValueType>
     class ComparisonExpr : public Expression {
     public:
-        ComparisonExpr(std::string field_name, CompOp op, ValueType value)
-            : field_name_(std::move(field_name)), op_(op), value_(std::move(value)) {
+        ComparisonExpr(std::string_view field_name, CompOp op, ValueType value)
+            : field_name_(field_name), op_(op), value_(std::move(value)) {
             // Pre-generate SQL in constructor for consistency with InExpression
             // and to benchmark whether simple concatenation benefits from caching
             sql_ = field_name_ + comp_op_to_sql(op_) + "?";
@@ -163,8 +163,8 @@ export namespace storm::orm::where {
     // LIKE expression: field.like("pattern%")
     class LikeExpr : public Expression {
     public:
-        LikeExpr(std::string field_name, std::string pattern)
-            : field_name_(std::move(field_name)), pattern_(std::move(pattern)) {
+        LikeExpr(std::string_view field_name, std::string_view pattern)
+            : field_name_(field_name), pattern_(pattern) {
             // Pre-generate SQL in constructor for consistency with ComparisonExpr
             sql_ = field_name_ + " LIKE ?";
         }
@@ -192,8 +192,8 @@ export namespace storm::orm::where {
     template<typename ValueType>
     class BetweenExpr : public Expression {
     public:
-        BetweenExpr(std::string field_name, ValueType min_val, ValueType max_val)
-            : field_name_(std::move(field_name)), min_val_(std::move(min_val)), max_val_(std::move(max_val)) {
+        BetweenExpr(std::string_view field_name, ValueType min_val, ValueType max_val)
+            : field_name_(field_name), min_val_(std::move(min_val)), max_val_(std::move(max_val)) {
             // Pre-generate SQL in constructor for consistency with ComparisonExpr
             sql_ = field_name_ + " BETWEEN ? AND ?";
         }
@@ -228,8 +228,8 @@ export namespace storm::orm::where {
     template<typename ValueType>
     class InExpression : public Expression {
     public:
-        InExpression(std::string field_name, std::vector<ValueType> values)
-            : field_name_(std::move(field_name)), values_(std::move(values)) {
+        InExpression(std::string_view field_name, std::vector<ValueType> values)
+            : field_name_(field_name), values_(std::move(values)) {
             // OPTIMIZATION: Pre-generate SQL once in constructor to avoid repeated string concatenations
             if (values_.empty()) {
                 sql_ = "1 = 0"; // SQL that always evaluates to false
@@ -398,7 +398,7 @@ export namespace storm::orm::where {
 
         // Special methods - return runtime Expr
         Expr like(std::string_view pattern) const {
-            return Expr(std::make_shared<LikeExpr>(field_name_, std::string(pattern)));
+            return Expr(std::make_shared<LikeExpr>(field_name_, pattern));
         }
 
         template<typename V>
