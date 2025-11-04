@@ -98,7 +98,7 @@ void teardown_database() {
 }
 
 // Benchmark: SELECT without JOIN (baseline)
-void benchmark_select_no_join(int num_messages, int iterations = 100) {
+void benchmark_select_no_join(int num_messages, int iterations = 1000) {
     int num_users = std::max(100, num_messages / 10);
     setup_database(num_users, num_messages);
 
@@ -131,7 +131,7 @@ void benchmark_select_no_join(int num_messages, int iterations = 100) {
 }
 
 // Benchmark: INNER JOIN single FK
-void benchmark_inner_join_single_fk(int num_messages, int iterations = 100) {
+void benchmark_inner_join_single_fk(int num_messages, int iterations = 1000) {
     int num_users = std::max(100, num_messages / 10);
     setup_database(num_users, num_messages);
 
@@ -164,7 +164,7 @@ void benchmark_inner_join_single_fk(int num_messages, int iterations = 100) {
 }
 
 // Benchmark: INNER JOIN multi FK
-void benchmark_inner_join_multi_fk(int num_messages, int iterations = 100) {
+void benchmark_inner_join_multi_fk(int num_messages, int iterations = 1000) {
     int num_users = std::max(100, num_messages / 10);
     setup_database(num_users, num_messages);
 
@@ -197,7 +197,7 @@ void benchmark_inner_join_multi_fk(int num_messages, int iterations = 100) {
 }
 
 // Benchmark: LEFT JOIN single FK
-void benchmark_left_join_single_fk(int num_messages, int iterations = 100) {
+void benchmark_left_join_single_fk(int num_messages, int iterations = 1000) {
     int num_users = std::max(100, num_messages / 10);
     setup_database(num_users, num_messages);
 
@@ -230,7 +230,7 @@ void benchmark_left_join_single_fk(int num_messages, int iterations = 100) {
 }
 
 // Benchmark: LEFT JOIN multi FK
-void benchmark_left_join_multi_fk(int num_messages, int iterations = 100) {
+void benchmark_left_join_multi_fk(int num_messages, int iterations = 1000) {
     int num_users = std::max(100, num_messages / 10);
     setup_database(num_users, num_messages);
 
@@ -263,7 +263,7 @@ void benchmark_left_join_multi_fk(int num_messages, int iterations = 100) {
 }
 
 // Benchmark: RIGHT JOIN single FK
-void benchmark_right_join_single_fk(int num_messages, int iterations = 100) {
+void benchmark_right_join_single_fk(int num_messages, int iterations = 1000) {
     int num_users = std::max(100, num_messages / 10);
     setup_database(num_users, num_messages);
 
@@ -296,7 +296,7 @@ void benchmark_right_join_single_fk(int num_messages, int iterations = 100) {
 }
 
 // Benchmark: RIGHT JOIN multi FK
-void benchmark_right_join_multi_fk(int num_messages, int iterations = 100) {
+void benchmark_right_join_multi_fk(int num_messages, int iterations = 1000) {
     int num_users = std::max(100, num_messages / 10);
     setup_database(num_users, num_messages);
 
@@ -329,7 +329,7 @@ void benchmark_right_join_multi_fk(int num_messages, int iterations = 100) {
 }
 
 // Benchmark: Raw SQLite INNER JOIN (for comparison)
-void benchmark_raw_sqlite_inner_join(int num_messages, int iterations = 100) {
+void benchmark_raw_sqlite_inner_join(int num_messages, int iterations = 1000) {
     int num_users = std::max(100, num_messages / 10);
     setup_database(num_users, num_messages);
 
@@ -402,7 +402,7 @@ void benchmark_raw_sqlite_inner_join(int num_messages, int iterations = 100) {
 }
 
 // Benchmark: Raw SQLite INNER JOIN multi FK
-void benchmark_raw_sqlite_inner_join_multi(int num_messages, int iterations = 100) {
+void benchmark_raw_sqlite_inner_join_multi(int num_messages, int iterations = 1000) {
     int num_users = std::max(100, num_messages / 10);
     setup_database(num_users, num_messages);
 
@@ -477,7 +477,7 @@ void benchmark_raw_sqlite_inner_join_multi(int num_messages, int iterations = 10
 }
 
 // Benchmark: Raw SQLite LEFT JOIN single FK
-void benchmark_raw_sqlite_left_join_single(int num_messages, int iterations = 100) {
+void benchmark_raw_sqlite_left_join_single(int num_messages, int iterations = 1000) {
     int num_users = std::max(100, num_messages / 10);
     setup_database(num_users, num_messages);
 
@@ -553,7 +553,7 @@ void benchmark_raw_sqlite_left_join_single(int num_messages, int iterations = 10
 }
 
 // Benchmark: Raw SQLite LEFT JOIN multi FK
-void benchmark_raw_sqlite_left_join_multi(int num_messages, int iterations = 100) {
+void benchmark_raw_sqlite_left_join_multi(int num_messages, int iterations = 1000) {
     int num_users = std::max(100, num_messages / 10);
     setup_database(num_users, num_messages);
 
@@ -636,7 +636,7 @@ void benchmark_raw_sqlite_left_join_multi(int num_messages, int iterations = 100
 }
 
 // Benchmark: Raw SQLite RIGHT JOIN single FK
-void benchmark_raw_sqlite_right_join_single(int num_messages, int iterations = 100) {
+void benchmark_raw_sqlite_right_join_single(int num_messages, int iterations = 1000) {
     int num_users = std::max(100, num_messages / 10);
     setup_database(num_users, num_messages);
 
@@ -718,7 +718,7 @@ void benchmark_raw_sqlite_right_join_single(int num_messages, int iterations = 1
 }
 
 // Benchmark: Raw SQLite RIGHT JOIN multi FK
-void benchmark_raw_sqlite_right_join_multi(int num_messages, int iterations = 100) {
+void benchmark_raw_sqlite_right_join_multi(int num_messages, int iterations = 1000) {
     int num_users = std::max(100, num_messages / 10);
     setup_database(num_users, num_messages);
 
@@ -825,7 +825,9 @@ void print_usage(const char* program_name) {
 
 int main(int argc, char* argv[]) {
     std::vector<int> test_sizes = {100, 1000, 10000};
-    int iterations = 100;
+    // Default to 1000 iterations to measure steady-state performance
+    // (amortizes first-run overhead from SQLite query planner)
+    int iterations = 1000;
 
     // Benchmark selection flags
     bool run_storm_join_1 = false;
