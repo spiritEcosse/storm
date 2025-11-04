@@ -13,7 +13,7 @@ import storm_orm_statements_insert;
 import storm_orm_statements_select;
 import storm_orm_statements_update;
 import storm_orm_statements_join;
-import storm_orm_where_expr;
+import storm_orm_where;
 
 import <expected>;
 import <string>;

@@ -421,3 +421,67 @@ TEST_F(WhereTest, WhereNaturalOperatorsComplex) {
     EXPECT_EQ(people[1].name, "Diana");
     EXPECT_EQ(people[2].name, "Eve");
 }
+
+// Test: Reusing WHERE conditions across multiple queries
+TEST_F(WhereTest, WhereReuseCondition) {
+    QuerySet<Person> queryset;
+
+    // Store condition in variable
+    auto age_condition = field<^^Person::age>() > 25;
+
+    // First use - should return 4 people (Alice=30, Charlie=35, Diana=28, Eve=40)
+    auto result1 = queryset.where(age_condition).select();
+    ASSERT_TRUE(result1.has_value()) << "First WHERE failed: " << result1.error().message();
+    EXPECT_EQ(result1.value().size(), 4) << "Expected 4 people with age > 25";
+
+    // Reuse same condition - should return same results
+    auto result2 = queryset.where(age_condition).select();
+    ASSERT_TRUE(result2.has_value()) << "Second WHERE failed: " << result2.error().message();
+    EXPECT_EQ(result2.value().size(), 4) << "Expected 4 people with age > 25 (reused condition)";
+
+    // Combine reused condition with new one
+    auto result3 = queryset.where(age_condition and field<^^Person::name>() == "Alice").select();
+    ASSERT_TRUE(result3.has_value()) << "Combined WHERE failed: " << result3.error().message();
+    ASSERT_EQ(result3.value().size(), 1) << "Expected 1 person matching both conditions";
+    EXPECT_EQ(result3.value()[0].name, "Alice");
+    EXPECT_EQ(result3.value()[0].age, 30);
+
+    // Reuse the original condition again after combining it
+    auto result4 = queryset.where(age_condition).select();
+    ASSERT_TRUE(result4.has_value()) << "Third WHERE failed: " << result4.error().message();
+    EXPECT_EQ(result4.value().size(), 4) << "Expected 4 people with age > 25 (reused after combining)";
+}
+
+// Test: Building composable filter library
+TEST_F(WhereTest, WhereComposableFilters) {
+    QuerySet<Person> queryset;
+
+    // Create reusable filter components
+    auto young_filter = field<^^Person::age>() < 30;
+    auto old_filter = field<^^Person::age>() >= 35;
+    auto name_starts_with_a = field<^^Person::name>().like("A%");
+
+    // Use filters independently
+    auto young_people = queryset.where(young_filter).select();
+    ASSERT_TRUE(young_people.has_value());
+    EXPECT_EQ(young_people.value().size(), 2) << "Expected 2 young people (Bob=25, Diana=28)";
+
+    auto old_people = queryset.where(old_filter).select();
+    ASSERT_TRUE(old_people.has_value());
+    EXPECT_EQ(old_people.value().size(), 2) << "Expected 2 old people (Charlie=35, Eve=40)";
+
+    // Combine filters
+    auto young_or_old = queryset.where(young_filter or old_filter).select();
+    ASSERT_TRUE(young_or_old.has_value());
+    EXPECT_EQ(young_or_old.value().size(), 4) << "Expected 4 people (young or old)";
+
+    // Complex composition
+    auto young_a_names = queryset.where(young_filter and name_starts_with_a).select();
+    ASSERT_TRUE(young_a_names.has_value());
+    EXPECT_EQ(young_a_names.value().size(), 0) << "Expected 0 people (no young people with A names)";
+
+    // Reuse filters in different combinations
+    auto old_a_names = queryset.where(old_filter and name_starts_with_a).select();
+    ASSERT_TRUE(old_a_names.has_value());
+    EXPECT_EQ(old_a_names.value().size(), 0) << "Expected 0 people (no old people with A names)";
+}

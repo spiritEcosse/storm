@@ -10,7 +10,7 @@ export import storm_db_sqlite;
 export import storm_orm_statements_base;
 export import storm_orm_statements_select;
 export import storm_orm_statements_join;
-export import storm_orm_where_expr;
+export import storm_orm_where;
 export import storm_orm_queryset;
 import <meta>;
 

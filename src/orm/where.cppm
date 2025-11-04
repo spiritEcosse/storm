@@ -2,7 +2,7 @@ module;
 
 #include <meta>
 
-export module storm_orm_where_expr;
+export module storm_orm_where;
 
 import <string>;
 import <vector>;
