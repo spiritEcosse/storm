@@ -295,23 +295,12 @@ git push
 
 ## Module Structure
 
-```
-src/
-├── storm.cppm                      # Main module
-├── db/
-│   ├── concept.cppm                # Database concepts
-│   └── sqlite.cppm                 # SQLite implementation
-└── orm/
-    ├── queryset.cppm               # QuerySet ORM interface
-    ├── utilities.cppm              # ConstexprString, SQLCache templates
-    └── statements/
-        ├── base.cppm               # BaseStatement utilities
-        ├── insert.cppm, update.cppm, remove.cppm
-        ├── select.cppm             # SelectStatement with JOIN support
-        └── join.cppm               # JoinStatement (SQL builder)
-```
+Storm uses C++26 modules organized into:
+- **storm.cppm** - Main module exporting all public APIs
+- **db/** - Database abstraction (concepts + SQLite implementation)
+- **orm/** - ORM layer (QuerySet, WHERE expressions, utilities, statements)
 
-See [docs/architecture/MODULE_SYSTEM.md](docs/architecture/MODULE_SYSTEM.md) for module dependencies and circular dependency avoidance.
+See **[docs/architecture/MODULE_SYSTEM.md](docs/architecture/MODULE_SYSTEM.md)** for the complete module structure, dependency graph, and circular dependency avoidance strategies.
 
 ## Compiler Requirements
 
