@@ -99,32 +99,10 @@ export namespace storm::orm::where {
 
         // Helper: Bind a single value directly to SQLite statement
         // Public so other expression types (BetweenExpr, InExpression) can use it
+        // Delegates to unified bind_parameter_value utility
         template<typename T>
         static auto bind_single_value(storm::db::sqlite::Statement* stmt, int idx, const T& value) -> std::expected<void, storm::db::sqlite::Error> {
-            using V = std::decay_t<T>;
-
-            if constexpr (std::is_same_v<V, int>) {
-                return stmt->bind_int(idx, value);
-            } else if constexpr (std::is_same_v<V, int64_t> || std::is_same_v<V, long> || std::is_same_v<V, long long>) {
-                return stmt->bind_int64(idx, static_cast<int64_t>(value));
-            } else if constexpr (std::is_same_v<V, uint64_t> || std::is_same_v<V, unsigned long> || std::is_same_v<V, unsigned long long>) {
-                return stmt->bind_int64(idx, static_cast<int64_t>(value));
-            } else if constexpr (std::is_same_v<V, short> || std::is_same_v<V, unsigned short> || std::is_same_v<V, unsigned int>) {
-                return stmt->bind_int(idx, static_cast<int>(value));
-            } else if constexpr (std::is_same_v<V, double>) {
-                return stmt->bind_double(idx, value);
-            } else if constexpr (std::is_same_v<V, float>) {
-                return stmt->bind_double(idx, static_cast<double>(value));
-            } else if constexpr (std::is_same_v<V, bool>) {
-                return stmt->bind_int(idx, value ? 1 : 0);
-            } else if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, std::string_view>) {
-                return stmt->bind_text(idx, std::string_view{value});
-            } else if constexpr (std::is_same_v<V, const char*> || std::is_array_v<T>) {
-                return stmt->bind_text(idx, std::string_view{value});
-            } else {
-                // Fallback for unknown types
-                return std::unexpected(storm::db::sqlite::Error{-1, "Unknown type for parameter binding"});
-            }
+            return utilities::bind_parameter_value<storm::db::sqlite::Statement, storm::db::sqlite::Error>(*stmt, idx, value);
         }
 
     private:
