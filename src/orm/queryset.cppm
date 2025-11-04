@@ -96,19 +96,15 @@ export namespace storm {
 
         // Select operations - returns all rows (optimized with statement caching)
         std::expected<std::vector<T>, Error> select() {
-            // Determine which execution path to use based on JOIN and WHERE state
-            bool has_join  = join_stmt_.has_value();
-            bool has_where = static_cast<bool>(where_expr_);
-
             std::expected<std::vector<T>, Error> result;
 
-            if (has_join && has_where) {
+            if (join_stmt_.has_value() && where_expr_) {
                 // JOIN + WHERE
                 result = get_select_statement().execute_with_where_and_join(*join_stmt_, std::move(where_expr_));
-            } else if (has_join) {
+            } else if (join_stmt_.has_value()) {
                 // JOIN only (no WHERE)
                 result = get_select_statement().execute_optimized(*join_stmt_);
-            } else if (has_where) {
+            } else if (where_expr_) {
                 // WHERE only (no JOIN)
                 result = get_select_statement().execute_with_where(std::move(where_expr_));
             } else {
