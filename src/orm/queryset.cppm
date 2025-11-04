@@ -104,13 +104,13 @@ export namespace storm {
 
             if (has_join && has_where) {
                 // JOIN + WHERE
-                result = get_select_statement().execute_with_where_and_join(*join_stmt_, where_expr_);
+                result = get_select_statement().execute_with_where_and_join(*join_stmt_, std::move(where_expr_));
             } else if (has_join) {
                 // JOIN only (no WHERE)
                 result = get_select_statement().execute_optimized(*join_stmt_);
             } else if (has_where) {
                 // WHERE only (no JOIN)
-                result = get_select_statement().execute_with_where(where_expr_);
+                result = get_select_statement().execute_with_where(std::move(where_expr_));
             } else {
                 // Simple SELECT (no JOIN, no WHERE)
                 result = get_select_statement().execute_optimized();

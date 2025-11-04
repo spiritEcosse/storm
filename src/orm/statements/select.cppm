@@ -101,7 +101,7 @@ export namespace storm::orm::statements {
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
         execute_with_where(std::shared_ptr<orm::where::Expression> where_expr) noexcept
                 -> std::expected<std::vector<T>, Error> {
-            return execute_where_impl(where_expr);
+            return execute_where_impl(std::move(where_expr));
         }
 
         // SELECT with WHERE clause and JOIN
@@ -109,7 +109,7 @@ export namespace storm::orm::statements {
         execute_with_where_and_join(JoinStatementWrapper join_wrapper,
                                     std::shared_ptr<orm::where::Expression> where_expr) noexcept
                 -> std::expected<std::vector<T>, Error> {
-            return execute_where_join_impl(join_wrapper, where_expr);
+            return execute_where_join_impl(join_wrapper, std::move(where_expr));
         }
 
       private:
