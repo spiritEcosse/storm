@@ -87,9 +87,9 @@ export namespace storm {
         constexpr auto&& where(this auto&& self, std::shared_ptr<orm::where::Expression> expr) {
             if (self.where_expr_) {
                 // Combine with existing expression using AND
-                self.where_expr_ = orm::where::and_(self.where_expr_, expr);
+                self.where_expr_ = orm::where::and_(std::move(self.where_expr_), std::move(expr));
             } else {
-                self.where_expr_ = expr;
+                self.where_expr_ = std::move(expr);
             }
             return self_cast(self);
         }
