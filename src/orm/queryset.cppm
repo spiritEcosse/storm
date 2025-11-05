@@ -95,7 +95,7 @@ export namespace storm {
         }
 
         // Select operations - returns all rows (optimized with statement caching)
-        std::expected<std::vector<T>, Error> select() {
+        [[nodiscard]] __attribute__((hot)) std::expected<std::vector<T>, Error> select() {
             std::expected<std::vector<T>, Error> result;
 
             if (join_stmt_.has_value() && where_expr_) {
