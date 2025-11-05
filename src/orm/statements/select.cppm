@@ -269,16 +269,36 @@ export namespace storm::orm::statements {
             return results;
         }
 
+        // Helper: Build WHERE clause SQL by appending to base SQL
+        [[nodiscard]] __attribute__((always_inline)) static inline std::string
+        build_where_sql(const std::string& base_sql, const std::shared_ptr<orm::where::Expression>& where_expr) {
+            std::string where_sql;
+            where_sql.reserve(base_sql.size() + 7 + 100); // Pre-allocate for " WHERE " + typical WHERE clause
+            where_sql = base_sql;
+            where_sql += " WHERE ";
+            where_sql += where_expr->to_sql();
+            return where_sql;
+        }
+
+        // Helper: Bind WHERE expression parameters to statement
+        [[nodiscard]] __attribute__((always_inline)) static inline auto
+        bind_where_params(Statement* stmt_ptr, const std::shared_ptr<orm::where::Expression>& where_expr)
+                -> std::expected<void, Error> {
+            int param_index = 1;
+            auto bind_result = where_expr->bind_params_direct(stmt_ptr, param_index);
+            if (!bind_result) [[unlikely]] {
+                stmt_ptr->reset();
+                return std::unexpected(bind_result.error());
+            }
+            return {};
+        }
+
         // SELECT with WHERE clause (no JOIN) - uses unified query loop
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
         execute_where_impl(std::shared_ptr<orm::where::Expression> where_expr) noexcept
                 -> std::expected<std::vector<T>, Error> {
-            // Generate WHERE clause SQL from expression
-            std::string where_sql;
-            where_sql.reserve(get_select_sql().size() + 7 + 100); // Pre-allocate for typical WHERE clause
-            where_sql = get_select_sql();
-            where_sql += " WHERE ";
-            where_sql += where_expr->to_sql();
+            // Generate WHERE clause SQL from expression using helper
+            std::string where_sql = build_where_sql(get_select_sql(), where_expr);
 
             // OPTIMIZATION: Cache WHERE statement if SQL matches previous query
             Statement* stmt_ptr = nullptr;
@@ -296,11 +316,9 @@ export namespace storm::orm::statements {
                 stmt_ptr = cached_where_stmt_;
             }
 
-            // OPTIMIZATION: Direct parameter binding (eliminates std::variant overhead)
-            int param_index = 1;
-            auto bind_result = where_expr->bind_params_direct(stmt_ptr, param_index);
+            // OPTIMIZATION: Direct parameter binding using helper
+            auto bind_result = bind_where_params(stmt_ptr, where_expr);
             if (!bind_result) [[unlikely]] {
-                stmt_ptr->reset();
                 return std::unexpected(bind_result.error());
             }
 
@@ -317,12 +335,8 @@ export namespace storm::orm::statements {
         execute_where_join_impl(JoinStatementWrapper join_wrapper,
                                std::shared_ptr<orm::where::Expression> where_expr) noexcept
                 -> std::expected<std::vector<T>, Error> {
-            // Generate WHERE clause SQL from expression
-            std::string join_where_sql;
-            join_where_sql.reserve(join_wrapper.get_complete_sql().size() + 7 + 100); // Pre-allocate
-            join_where_sql = join_wrapper.get_complete_sql();
-            join_where_sql += " WHERE ";
-            join_where_sql += where_expr->to_sql();
+            // Generate WHERE clause SQL from expression using helper
+            std::string join_where_sql = build_where_sql(join_wrapper.get_complete_sql(), where_expr);
 
             // OPTIMIZATION: Cache WHERE+JOIN statement if SQL matches previous query
             Statement* stmt_ptr = nullptr;
@@ -340,11 +354,9 @@ export namespace storm::orm::statements {
                 stmt_ptr = cached_where_join_stmt_;
             }
 
-            // OPTIMIZATION: Direct parameter binding (eliminates std::variant overhead)
-            int param_index = 1;
-            auto bind_result = where_expr->bind_params_direct(stmt_ptr, param_index);
+            // OPTIMIZATION: Direct parameter binding using helper
+            auto bind_result = bind_where_params(stmt_ptr, where_expr);
             if (!bind_result) [[unlikely]] {
-                stmt_ptr->reset();
                 return std::unexpected(bind_result.error());
             }
 
