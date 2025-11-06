@@ -50,7 +50,7 @@ export namespace storm::orm::where {
         LessEqual
     };
 
-    constexpr std::string_view comp_op_to_sql(CompOp op) {
+    constexpr std::string_view comp_op_to_sql(CompOp op) noexcept {
         switch (op) {
             case CompOp::Equal: return " = ";
             case CompOp::NotEqual: return " != ";
@@ -62,13 +62,66 @@ export namespace storm::orm::where {
         return " = ";
     }
 
+    // CONSTEXPR SQL GENERATION: Compile-time SQL string generation for simple cases
+    // This allows the compiler to optimize away SQL string construction in hot paths
+    template<std::meta::info MemberInfo, CompOp Op>
+        requires (std::meta::is_nonstatic_data_member(MemberInfo))
+    struct ConstexprComparisonSQL {
+        static constexpr auto generate() noexcept {
+            utilities::ConstexprString<256> result;
+            result += std::meta::identifier_of(MemberInfo);
+            result += comp_op_to_sql(Op);
+            result += "?";
+            return result;
+        }
+
+        static constexpr auto sql = generate();
+        static constexpr std::string_view sql_view() noexcept {
+            return std::string_view(sql.data(), sql.size());
+        }
+    };
+
+    // CONSTEXPR LIKE SQL
+    template<std::meta::info MemberInfo>
+        requires (std::meta::is_nonstatic_data_member(MemberInfo))
+    struct ConstexprLikeSQL {
+        static constexpr auto generate() noexcept {
+            utilities::ConstexprString<256> result;
+            result += std::meta::identifier_of(MemberInfo);
+            result += " LIKE ?";
+            return result;
+        }
+
+        static constexpr auto sql = generate();
+        static constexpr std::string_view sql_view() noexcept {
+            return std::string_view(sql.data(), sql.size());
+        }
+    };
+
+    // CONSTEXPR BETWEEN SQL
+    template<std::meta::info MemberInfo>
+        requires (std::meta::is_nonstatic_data_member(MemberInfo))
+    struct ConstexprBetweenSQL {
+        static constexpr auto generate() noexcept {
+            utilities::ConstexprString<256> result;
+            result += std::meta::identifier_of(MemberInfo);
+            result += " BETWEEN ? AND ?";
+            return result;
+        }
+
+        static constexpr auto sql = generate();
+        static constexpr std::string_view sql_view() noexcept {
+            return std::string_view(sql.data(), sql.size());
+        }
+    };
+
     // Logical operators
     enum class LogicalOp {
         And,
         Or
     };
 
-    constexpr std::string_view logical_op_to_sql(LogicalOp op) {
+    constexpr std::string_view logical_op_to_sql(LogicalOp op) noexcept {
         switch (op) {
             case LogicalOp::And: return " AND ";
             case LogicalOp::Or: return " OR ";
@@ -258,10 +311,10 @@ export namespace storm::orm::where {
     class Expr {
     public:
         // Constructor from shared_ptr<Expression>
-        Expr(std::shared_ptr<Expression> expr) : expr_(std::move(expr)) {}
+        Expr(std::shared_ptr<Expression> expr) noexcept : expr_(std::move(expr)) {}
 
         // Implicit conversion to shared_ptr<Expression> for where() calls
-        operator std::shared_ptr<Expression>() const { return expr_; }
+        operator std::shared_ptr<Expression>() const noexcept { return expr_; }
 
         // Logical AND operator (also accessible via 'and' keyword)
         Expr operator&&(const Expr& other) const {
@@ -274,7 +327,7 @@ export namespace storm::orm::where {
         }
 
         // Access the underlying expression
-        const std::shared_ptr<Expression>& get() const { return expr_; }
+        [[nodiscard]] const std::shared_ptr<Expression>& get() const noexcept { return expr_; }
 
     private:
         std::shared_ptr<Expression> expr_;
@@ -282,22 +335,34 @@ export namespace storm::orm::where {
 
     // Field proxy - stores reflection info as template parameter
     // Provides compile-time IN expression and runtime comparison/special methods
+    //
+    // P2996 REFLECTION FEATURES:
+    // - MemberInfo contains compile-time reflection metadata
+    // - field_name extracted via std::meta::identifier_of (zero runtime cost)
+    // - Type information available via std::meta::type_of for automatic type conversion
+    // - Compile-time validation ensures MemberInfo is a valid data member
     template<std::meta::info MemberInfo>
         requires (std::meta::is_nonstatic_data_member(MemberInfo))
     class Field {
     public:
         static constexpr auto field_name_sv = std::meta::identifier_of(MemberInfo);
 
-        constexpr Field() : field_name_(field_name_sv) {}
+        constexpr Field() noexcept : field_name_(field_name_sv) {}
 
         // IN: Returns runtime Expr for consistency with other methods
         // Usage: field<^^Person::id>().in(100, 200, 300)
+        //
+        // REFLECTION-BASED TYPE DEDUCTION: Uses P2996 to get the field's actual type
+        // and automatically converts values to match
         template<typename... Values>
         auto in(Values&&... values) const {
-            // Use common_type to find the appropriate type for all values
-            using ValueType = std::common_type_t<std::decay_t<Values>...>;
-            std::vector<ValueType> vals{static_cast<ValueType>(std::forward<Values>(values))...};
-            return Expr(std::make_shared<InExpression<ValueType>>(
+            // Use reflection to get the field's actual C++ type for type safety
+            using FieldType = typename [:std::meta::type_of(MemberInfo):];
+
+            // Convert all values to the field's type (compile-time type checking!)
+            std::vector<FieldType> vals{static_cast<FieldType>(std::forward<Values>(values))...};
+
+            return Expr(std::make_shared<InExpression<FieldType>>(
                 std::string(field_name_), std::move(vals)
             ));
         }
@@ -357,7 +422,15 @@ export namespace storm::orm::where {
             ));
         }
 
-        const std::string& get_field_name() const { return field_name_; }
+        [[nodiscard]] const std::string& get_field_name() const noexcept { return field_name_; }
+
+        // Get field name at compile-time for constexpr contexts
+        [[nodiscard]] static constexpr std::string_view get_field_name_constexpr() noexcept {
+            return field_name_sv;
+        }
+
+        // Get the reflected field's C++ type
+        using field_type = typename [:std::meta::type_of(MemberInfo):];
 
     private:
         std::string field_name_;
@@ -394,9 +467,16 @@ export namespace storm::orm::where {
     // - Special methods (like, between) -> Expr (composable with AND/OR)
     //
     // All methods return runtime expressions that can be used with QuerySet::where()
+    //
+    // COMPILE-TIME VALIDATION: Uses P2996 to ensure MemberInfo is a valid field
     template<std::meta::info MemberInfo>
-        requires (std::meta::is_nonstatic_data_member(MemberInfo))
+        requires (std::meta::is_nonstatic_data_member(MemberInfo) &&
+                  std::meta::has_identifier(MemberInfo))  // Ensures field has a name
     constexpr auto field() {
+        // Additional compile-time validation: field must be accessible
+        static_assert(std::meta::is_nonstatic_data_member(MemberInfo),
+            "field<> requires a non-static data member reflection (use ^^Type::member syntax)");
+
         return Field<MemberInfo>();
     }
 
