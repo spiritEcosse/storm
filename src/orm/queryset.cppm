@@ -95,6 +95,8 @@ export namespace storm {
         }
 
         // Select operations - returns all rows (optimized with statement caching)
+        // NOTE: WHERE and JOIN state is preserved after select() for query reusability.
+        // Call reset() to clear state when needed.
         [[nodiscard]] __attribute__((hot)) std::expected<std::vector<T>, Error> select() {
             std::expected<std::vector<T>, Error> result;
 
@@ -111,10 +113,6 @@ export namespace storm {
                 // Simple SELECT (no JOIN, no WHERE)
                 result = get_select_statement().execute_optimized();
             }
-
-            // Reset state for next query (maintains original semantics)
-            join_stmt_.reset();
-            where_expr_.reset();
 
             return result;
         }
@@ -164,6 +162,18 @@ export namespace storm {
         // Bulk update operations
         std::expected<void, Error> update(std::span<const T> objects) {
             return get_update_statement().execute(objects);
+        }
+
+        // Reset WHERE and JOIN state
+        // Use this to clear conditions and start fresh with the same QuerySet instance
+        // Example:
+        //   auto qs = QuerySet<Person>(conn);
+        //   qs.where(age > 25).select();  // WHERE age > 25
+        //   qs.reset();                   // Clear state
+        //   qs.select();                  // No WHERE
+        void reset() noexcept {
+            join_stmt_.reset();
+            where_expr_.reset();
         }
 
         // Static methods for connection management

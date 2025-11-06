@@ -60,6 +60,90 @@ SELECT id, name, age FROM Person WHERE name = ? OR name = ?
 
 **Performance**: 9.45M rows/sec (89.5% of raw SQLite)
 
+## State Management
+
+**Important**: WHERE and JOIN state is **preserved after `select()`** to enable query reusability. Call `reset()` to clear state when needed.
+
+### Persistent State Pattern
+
+```cpp
+storm::orm::QuerySet<Person> queryset(conn);
+
+// Set base filter
+queryset.where(field<^^Person::age>() >= 18);
+
+// Reuse the same filter multiple times
+auto result1 = queryset.select();  // WHERE age >= 18
+auto result2 = queryset.select();  // Still WHERE age >= 18 ✓
+
+// Add more conditions - they accumulate with AND
+queryset.where(field<^^Person::age>() < 65);
+auto result3 = queryset.select();  // WHERE age >= 18 AND age < 65 ✓
+```
+
+### Clearing State
+
+Use `reset()` to clear all WHERE and JOIN conditions:
+
+```cpp
+storm::orm::QuerySet<Person> queryset(conn);
+
+// Build complex filter
+queryset.where(field<^^Person::age>() >= 25);
+queryset.where(field<^^Person::is_active>() == true);
+auto filtered = queryset.select();  // WHERE age >= 25 AND is_active = true
+
+// Clear state and start fresh
+queryset.reset();
+auto all = queryset.select();  // No WHERE - selects all rows
+```
+
+### Common Patterns
+
+**Reusable Base QuerySet**:
+```cpp
+// Create base filtered QuerySet
+auto active_qs = QuerySet<Person>(conn);
+active_qs.where(field<^^Person::is_active>() == true);
+
+// Use it multiple times
+auto all_active = active_qs.select();
+auto still_active = active_qs.select();  // State preserved ✓
+```
+
+**Progressive Query Building**:
+```cpp
+// Start with broad filter
+queryset.where(field<^^Person::age>() >= 20);
+
+// Narrow it down progressively
+queryset.where(field<^^Person::age>() < 35);
+queryset.where(field<^^Person::is_active>() == true);
+
+// Execute the accumulated filters
+auto result = queryset.select();  // All conditions combined
+```
+
+### Why Persistent State?
+
+This design enables:
+- **Reusable base filters** - Set up common filters once, use many times
+- **Progressive refinement** - Build complex queries step-by-step
+- **Memory efficiency** - No need to create multiple QuerySet instances
+- **Explicit control** - Call `reset()` when you need a clean slate
+
+Compare to Django ORM:
+```python
+# Django (immutable QuerySets)
+Person.objects.filter(age__gte=18).all()  # Filter preserved
+Person.objects.filter(age__gte=18).count()  # Can reuse
+
+# Storm ORM (mutable QuerySet with persistent state)
+queryset.where(field<^^Person::age>() >= 18);
+queryset.select();  // Filter preserved ✓
+queryset.select();  // Can reuse ✓
+```
+
 ## Two Equivalent Syntaxes
 
 Storm ORM supports two syntaxes for combining conditions:

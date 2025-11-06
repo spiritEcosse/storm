@@ -226,20 +226,34 @@ TEST_F(WhereTest, WhereComplexExpression) {
     EXPECT_EQ(people[2].name, "Eve");
 }
 
-// Test: Multiple WHERE calls on same QuerySet resets state
-TEST_F(WhereTest, WhereResetsAfterSelect) {
+// Test: WHERE state persists after select() - enables query reusability
+TEST_F(WhereTest, WherePreservesStateAfterSelect) {
     QuerySet<Person> queryset;
 
-    // First query
-    auto result1 = queryset.where(field<^^Person::age>() == 30).select();
-    ASSERT_TRUE(result1.has_value());
-    ASSERT_EQ(result1.value().size(), 1);
+    // Set base filter
+    queryset.where(field<^^Person::age>() >= 25);
 
-    // Second query should start fresh (not accumulate WHERE conditions)
-    auto result2 = queryset.where(field<^^Person::age>() == 25).select();
+    // First query uses the filter
+    auto result1 = queryset.select();
+    ASSERT_TRUE(result1.has_value());
+    ASSERT_EQ(result1.value().size(), 5) << "Expected 5 people with age >= 25";
+
+    // Second query still has the same filter (state preserved)
+    auto result2 = queryset.select();
     ASSERT_TRUE(result2.has_value());
-    ASSERT_EQ(result2.value().size(), 1);
-    EXPECT_EQ(result2.value()[0].name, "Bob");
+    ASSERT_EQ(result2.value().size(), 5) << "State should persist after first select()";
+
+    // Add more conditions - they accumulate
+    queryset.where(field<^^Person::age>() < 40);
+    auto result3 = queryset.select();
+    ASSERT_TRUE(result3.has_value());
+    ASSERT_EQ(result3.value().size(), 4) << "Expected 4 people with age >= 25 AND age < 40";
+
+    // reset() clears all state
+    queryset.reset();
+    auto result4 = queryset.select();
+    ASSERT_TRUE(result4.has_value());
+    ASSERT_EQ(result4.value().size(), 5) << "After reset() should select all rows";
 }
 
 // Test: WHERE with std::string_view parameter
@@ -484,4 +498,80 @@ TEST_F(WhereTest, WhereComposableFilters) {
     auto old_a_names = queryset.where(old_filter and name_starts_with_a).select();
     ASSERT_TRUE(old_a_names.has_value());
     EXPECT_EQ(old_a_names.value().size(), 0) << "Expected 0 people (no old people with A names)";
+}
+
+// Test: Reusable base QuerySet pattern
+TEST_F(WhereTest, ReusableBaseQuerySet) {
+    QuerySet<Person> queryset;
+
+    // Create a base filtered QuerySet (age >= 25)
+    queryset.where(field<^^Person::age>() >= 25);
+
+    // Reuse base filter multiple times
+    auto result1 = queryset.select();
+    ASSERT_TRUE(result1.has_value());
+    ASSERT_EQ(result1.value().size(), 5) << "Expected 5 people with age >= 25";
+
+    // Still has base filter on second call
+    auto result2 = queryset.select();
+    ASSERT_TRUE(result2.has_value());
+    ASSERT_EQ(result2.value().size(), 5) << "Base filter should persist";
+
+    // Refine the base filter
+    queryset.where(field<^^Person::age>() >= 30);
+    auto adults = queryset.select();
+    ASSERT_TRUE(adults.has_value());
+    ASSERT_EQ(adults.value().size(), 3) << "Expected 3 people (age >= 25 AND age >= 30)";
+}
+
+// Test: Building query progressively
+TEST_F(WhereTest, ProgressiveQueryBuilding) {
+    QuerySet<Person> queryset;
+
+    // Start with broad filter
+    queryset.where(field<^^Person::age>() >= 25);
+    auto result1 = queryset.select();
+    ASSERT_TRUE(result1.has_value());
+    EXPECT_EQ(result1.value().size(), 5) << "All people are >= 25";
+
+    // Narrow it down
+    queryset.where(field<^^Person::age>() < 35);
+    auto result2 = queryset.select();
+    ASSERT_TRUE(result2.has_value());
+    EXPECT_EQ(result2.value().size(), 3) << "Expected 3 people (25 <= age < 35)";
+
+    // Add another condition (names starting with certain letter)
+    queryset.where(field<^^Person::name>().like("D%"));
+    auto result3 = queryset.select();
+    ASSERT_TRUE(result3.has_value());
+    EXPECT_EQ(result3.value().size(), 1) << "Expected 1 person matching all conditions (Diana)";
+    EXPECT_EQ(result3.value()[0].name, "Diana");
+}
+
+// Test: reset() clears all accumulated conditions
+TEST_F(WhereTest, ResetClearsAllConditions) {
+    QuerySet<Person> queryset;
+
+    // Build up complex filter
+    queryset.where(field<^^Person::age>() >= 25);
+    queryset.where(field<^^Person::age>() < 40);
+    queryset.where(field<^^Person::name>().like("D%"));
+
+    auto filtered = queryset.select();
+    ASSERT_TRUE(filtered.has_value());
+    EXPECT_EQ(filtered.value().size(), 1) << "Complex filter should match Diana only";
+    EXPECT_EQ(filtered.value()[0].name, "Diana");
+
+    // Reset and verify clean slate
+    queryset.reset();
+    auto all_people = queryset.select();
+    ASSERT_TRUE(all_people.has_value());
+    EXPECT_EQ(all_people.value().size(), 5) << "After reset() should get all rows";
+
+    // Can build new filter after reset
+    queryset.where(field<^^Person::age>() == 25);
+    auto bob_only = queryset.select();
+    ASSERT_TRUE(bob_only.has_value());
+    EXPECT_EQ(bob_only.value().size(), 1) << "New filter after reset works";
+    EXPECT_EQ(bob_only.value()[0].name, "Bob");
 }
