@@ -244,6 +244,7 @@ See [docs/features/BATCH_OPERATIONS.md](docs/features/BATCH_OPERATIONS.md) for c
 - **[Module System](docs/architecture/MODULE_SYSTEM.md)** - C++26 module structure and dependencies
 
 ### Development
+- **[Compiler Attributes](docs/development/COMPILER_ATTRIBUTES.md)** - Guide for using hot, flatten, and always_inline attributes
 - **[Compiler Issues](docs/development/COMPILER_ISSUES.md)** - Known workarounds for clang-p2996
 - **[Performance Testing](docs/development/PERFORMANCE_TESTING.md)** - Benchmarking guidelines and workflow
 - **[Adding Features](docs/development/ADDING_FEATURES.md)** - How to add new database operations
@@ -365,6 +366,7 @@ See [docs/development/PERFORMANCE_TESTING.md](docs/development/PERFORMANCE_TESTI
 - **Primary Key Access**: Uses reflection splice operator `obj.[:primary_key_:]`
 - **WHERE Implementation**: Pure C++26 reflection using `field<^^T::member>()` - no macro needed
 - **String Concatenation**: Use `operator+=` for string building - benchmarked 11.8% faster than `.append()` in hot paths (WHERE clause SQL generation). While both compile to similar code, `operator+=` produces better instruction layout in practice.
+- **Compiler Attributes**: Use `__attribute__((hot)) __attribute__((flatten))` on main execution paths, `__attribute__((always_inline))` on small helpers. See [docs/development/COMPILER_ATTRIBUTES.md](docs/development/COMPILER_ATTRIBUTES.md) for complete rules and when to use each attribute.
 
 ## Thread Safety
 

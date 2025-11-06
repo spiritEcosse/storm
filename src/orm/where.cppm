@@ -87,11 +87,11 @@ export namespace storm::orm::where {
             sql_ = field_name_ + comp_op_to_sql(op_) + "?";
         }
 
-        std::string to_sql() const override {
+        __attribute__((always_inline)) inline std::string to_sql() const override {
             return sql_;
         }
 
-        auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
+        __attribute__((always_inline)) inline auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
             // Cast stmt_ptr to Statement* (type-erased binding)
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
             return bind_single_value(stmt, param_index++, value_);
@@ -101,7 +101,7 @@ export namespace storm::orm::where {
         // Public so other expression types (BetweenExpr, InExpression) can use it
         // Delegates to unified bind_parameter_value utility
         template<typename T>
-        static auto bind_single_value(storm::db::sqlite::Statement* stmt, int idx, const T& value) -> std::expected<void, storm::db::sqlite::Error> {
+        __attribute__((always_inline)) static inline auto bind_single_value(storm::db::sqlite::Statement* stmt, int idx, const T& value) -> std::expected<void, storm::db::sqlite::Error> {
             return utilities::bind_parameter_value<storm::db::sqlite::Statement, storm::db::sqlite::Error>(*stmt, idx, value);
         }
 
@@ -121,11 +121,11 @@ export namespace storm::orm::where {
             sql_ = field_name_ + " LIKE ?";
         }
 
-        std::string to_sql() const override {
+        __attribute__((always_inline)) inline std::string to_sql() const override {
             return sql_;
         }
 
-        auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
+        __attribute__((always_inline)) inline auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
             return stmt->bind_text(param_index++, pattern_);
         }
@@ -146,11 +146,11 @@ export namespace storm::orm::where {
             sql_ = field_name_ + " BETWEEN ? AND ?";
         }
 
-        std::string to_sql() const override {
+        __attribute__((always_inline)) inline std::string to_sql() const override {
             return sql_;
         }
 
-        auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
+        __attribute__((hot)) auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
             // Bind min value
             if (auto result = ComparisonExpr<ValueType>::bind_single_value(stmt, param_index++, min_val_); !result) {
@@ -189,11 +189,11 @@ export namespace storm::orm::where {
             }
         }
 
-        std::string to_sql() const override {
+        __attribute__((always_inline)) inline std::string to_sql() const override {
             return sql_;  // Return pre-generated SQL
         }
 
-        auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
+        __attribute__((hot)) auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
             for (const auto& value : values_) {
                 if (auto result = ComparisonExpr<ValueType>::bind_single_value(stmt, param_index++, value); !result) {
@@ -215,11 +215,11 @@ export namespace storm::orm::where {
         LogicalExpr(std::shared_ptr<Expression> left, LogicalOp op, std::shared_ptr<Expression> right)
             : left_(std::move(left)), op_(op), right_(std::move(right)) {}
 
-        std::string to_sql() const override {
+        __attribute__((hot)) std::string to_sql() const override {
             return "(" + left_->to_sql() + logical_op_to_sql(op_) + right_->to_sql() + ")";
         }
 
-        auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
+        __attribute__((hot)) auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> override {
             // Bind left expression parameters, then right expression parameters
             if (auto result = left_->bind_params_direct(stmt_ptr, param_index); !result) {
                 return result;
