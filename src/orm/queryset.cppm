@@ -102,13 +102,15 @@ export namespace storm {
 
             if (join_stmt_.has_value() && where_expr_) {
                 // JOIN + WHERE
-                result = get_select_statement().execute_with_where_and_join(*join_stmt_, std::move(where_expr_));
+                // Copy shared_ptr (cheap - just ref count increment) to preserve state
+                result = get_select_statement().execute_with_where_and_join(*join_stmt_, where_expr_);
             } else if (join_stmt_.has_value()) {
                 // JOIN only (no WHERE)
                 result = get_select_statement().execute_optimized(*join_stmt_);
             } else if (where_expr_) {
                 // WHERE only (no JOIN)
-                result = get_select_statement().execute_with_where(std::move(where_expr_));
+                // Copy shared_ptr (cheap - just ref count increment) to preserve state
+                result = get_select_statement().execute_with_where(where_expr_);
             } else {
                 // Simple SELECT (no JOIN, no WHERE)
                 result = get_select_statement().execute_optimized();
