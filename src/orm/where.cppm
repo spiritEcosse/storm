@@ -50,7 +50,7 @@ export namespace storm::orm::where {
         LessEqual
     };
 
-    constexpr std::string_view comp_op_to_sql(CompOp op) {
+    constexpr std::string_view comp_op_to_sql(CompOp op) noexcept {
         switch (op) {
             case CompOp::Equal: return " = ";
             case CompOp::NotEqual: return " != ";
@@ -68,7 +68,7 @@ export namespace storm::orm::where {
         Or
     };
 
-    constexpr std::string_view logical_op_to_sql(LogicalOp op) {
+    constexpr std::string_view logical_op_to_sql(LogicalOp op) noexcept {
         switch (op) {
             case LogicalOp::And: return " AND ";
             case LogicalOp::Or: return " OR ";
@@ -250,10 +250,10 @@ export namespace storm::orm::where {
     class Expr {
     public:
         // Constructor from shared_ptr<Expression>
-        Expr(std::shared_ptr<Expression> expr) : expr_(std::move(expr)) {}
+        Expr(std::shared_ptr<Expression> expr) noexcept : expr_(std::move(expr)) {}
 
         // Implicit conversion to shared_ptr<Expression> for where() calls
-        operator std::shared_ptr<Expression>() const { return expr_; }
+        operator std::shared_ptr<Expression>() const noexcept { return expr_; }
 
         // Logical AND operator (also accessible via 'and' keyword)
         Expr operator&&(const Expr& other) const {
@@ -266,7 +266,7 @@ export namespace storm::orm::where {
         }
 
         // Access the underlying expression
-        const std::shared_ptr<Expression>& get() const { return expr_; }
+        [[nodiscard]] const std::shared_ptr<Expression>& get() const noexcept { return expr_; }
 
     private:
         std::shared_ptr<Expression> expr_;
@@ -279,18 +279,16 @@ export namespace storm::orm::where {
     class Field {
     public:
         static constexpr auto field_name_sv = std::meta::identifier_of(MemberInfo);
-
-        constexpr Field() : field_name_(field_name_sv) {}
+        using FieldType = typename [:std::meta::type_of(MemberInfo):];
 
         // IN: Returns runtime Expr for consistency with other methods
         // Usage: field<^^Person::id>().in(100, 200, 300)
         template<typename... Values>
         auto in(Values&&... values) const {
-            // Use common_type to find the appropriate type for all values
-            using ValueType = std::common_type_t<std::decay_t<Values>...>;
-            std::vector<ValueType> vals{static_cast<ValueType>(std::forward<Values>(values))...};
-            return Expr(std::make_shared<InExpression<ValueType>>(
-                std::string(field_name_), std::move(vals)
+            //TODO: Convert values types to type of field: is it really good ? double check needed.
+            std::vector<FieldType> vals{static_cast<FieldType>(std::forward<Values>(values))...};
+            return Expr(std::make_shared<InExpression<FieldType>>(
+                std::string(field_name_sv), std::move(vals)
             ));
         }
 
@@ -298,61 +296,56 @@ export namespace storm::orm::where {
         template<typename V>
         Expr operator==(V&& value) const {
             return Expr(std::make_shared<ComparisonExpr<std::decay_t<V>>>(
-                field_name_, CompOp::Equal, std::forward<V>(value)
+                std::string(field_name_sv), CompOp::Equal, std::forward<V>(value)
             ));
         }
 
         template<typename V>
         Expr operator!=(V&& value) const {
             return Expr(std::make_shared<ComparisonExpr<std::decay_t<V>>>(
-                field_name_, CompOp::NotEqual, std::forward<V>(value)
+                std::string(field_name_sv), CompOp::NotEqual, std::forward<V>(value)
             ));
         }
 
         template<typename V>
         Expr operator>(V&& value) const {
             return Expr(std::make_shared<ComparisonExpr<std::decay_t<V>>>(
-                field_name_, CompOp::Greater, std::forward<V>(value)
+                std::string(field_name_sv), CompOp::Greater, std::forward<V>(value)
             ));
         }
 
         template<typename V>
         Expr operator>=(V&& value) const {
             return Expr(std::make_shared<ComparisonExpr<std::decay_t<V>>>(
-                field_name_, CompOp::GreaterEqual, std::forward<V>(value)
+                std::string(field_name_sv), CompOp::GreaterEqual, std::forward<V>(value)
             ));
         }
 
         template<typename V>
         Expr operator<(V&& value) const {
             return Expr(std::make_shared<ComparisonExpr<std::decay_t<V>>>(
-                field_name_, CompOp::Less, std::forward<V>(value)
+                std::string(field_name_sv), CompOp::Less, std::forward<V>(value)
             ));
         }
 
         template<typename V>
         Expr operator<=(V&& value) const {
             return Expr(std::make_shared<ComparisonExpr<std::decay_t<V>>>(
-                field_name_, CompOp::LessEqual, std::forward<V>(value)
+                std::string(field_name_sv), CompOp::LessEqual, std::forward<V>(value)
             ));
         }
 
         // Special methods - return runtime Expr
         Expr like(std::string_view pattern) const {
-            return Expr(std::make_shared<LikeExpr>(field_name_, pattern));
+            return Expr(std::make_shared<LikeExpr>(std::string(field_name_sv), pattern));
         }
 
         template<typename V>
         Expr between(V&& min_val, V&& max_val) const {
             return Expr(std::make_shared<BetweenExpr<std::decay_t<V>>>(
-                field_name_, std::forward<V>(min_val), std::forward<V>(max_val)
+                std::string(field_name_sv), std::forward<V>(min_val), std::forward<V>(max_val)
             ));
         }
-
-        const std::string& get_field_name() const { return field_name_; }
-
-    private:
-        std::string field_name_;
     };
 
     // Helper functions for composing expressions
@@ -386,9 +379,15 @@ export namespace storm::orm::where {
     // - Special methods (like, between) -> Expr (composable with AND/OR)
     //
     // All methods return runtime expressions that can be used with QuerySet::where()
+    //
+    // COMPILE-TIME VALIDATION: Uses P2996 to ensure MemberInfo is a valid field
     template<std::meta::info MemberInfo>
-        requires (std::meta::is_nonstatic_data_member(MemberInfo))
+        requires (std::meta::is_nonstatic_data_member(MemberInfo) &&
+                  std::meta::has_identifier(MemberInfo))  // Ensures field has a name
     constexpr auto field() {
+        // Additional compile-time validation: field must be accessible
+        static_assert(std::meta::is_nonstatic_data_member(MemberInfo),
+            "field<> requires a non-static data member reflection (use ^^Type::member syntax)");
         return Field<MemberInfo>();
     }
 
