@@ -999,3 +999,98 @@ git push
 2. Add PostgreSQL-specific statement implementations
 3. Update `ConnectionManager` for multiple backends
 4. Ensure concepts properly abstract differences
+
+# Core Concepts of QuerySet
+
+This document outlines the fundamental principles and behaviors of the QuerySet system, designed for building and executing SQLite queries in a fluent, type-safe manner using C++. It emphasizes immutability, chaining, and modular modes for handling projections, aggregations, and more.
+
+## Immutability and Chaining
+
+- **Core Principle**: All non-terminal methods (e.g., `where()`, `join()`) return a **new query object** by copying or moving the internal state. This ensures thread-safety and allows for fluent, immutable chaining without modifying the original query.
+- **Fluent API**: Enables building complex queries in a readable, chainable style:
+  ```cpp
+  auto results = QuerySet<Model>().where(...).order_by<...>().select();
+  ```
+- **Terminal Methods**: Methods like `select()` or standalone aggregates execute the query immediately and return results (e.g., vectors, tuples, or scalar values). No further chaining is possible after a terminal call.
+
+## Clause Ordering
+
+- **Flexible Chaining**: Users can chain methods in any order for convenience (e.g., `where()` before or after `join()`).
+- **Internal Enforcement**: During SQL generation, clauses are reordered to match valid SQLite syntax:
+   - `SELECT ... FROM ... JOIN ... WHERE ... GROUP BY ... HAVING ... ORDER BY ... LIMIT/OFFSET`
+- **Validation**: Invalid combinations (e.g., selecting non-grouped columns alongside aggregates without `group_by<...>()`) trigger compile-time errors to prevent incorrect SQL.
+
+## Projection and Result Types
+
+- **Transformers**: There are `distinct<...>()` or `values<...>()`.
+- **Without Transformers**: `select()` returns `std::vector<Model>`, representing full model objects fetched from the database.
+- **With Transformers**: `select()` returns `std::vector<std::tuple<...>>` or `std::vector<type>`, where the types match the projected or aggregated columns.
+- **Standalone Aggregates**: To return a single aggregate value, simply use `qs.min<...>()` and similar methods directly, which return scalar values (e.g., `int` for count, `double` for average).
+
+## Available Methods in All Modes
+
+These methods are accessible regardless of the current mode and build query state without altering the mode:
+
+- `join<OtherModel>()`: Adds a JOIN clause to include related models.
+- `where(Condition)`: Filters rows based on the provided condition.
+- `order_by<Cols...>()`: Sorts results by the specified columns.
+- `limit(int)`: Restricts the number of results returned.
+- `offset(int)`: Skips a specified number of results.
+- `group_by<Cols...>()`: Groups results by the given columns (especially useful in Aggregate Mode).
+- `having(Condition)`: Filters groups based on aggregate conditions (references aggregates in Aggregate Mode).
+
+## Modes and Transformers
+
+QuerySet operates in different **modes** to handle various query types. Modes are entered via **transformers**, which return new objects while preserving prior chain state (e.g., existing `where()` or `join()` clauses).
+
+### Default Mode (Object Mode)
+
+- **Starting Point**: Begins with `QuerySet<Model>`, representing queries that fetch full rows without custom projections.
+- **Behavior**: Focuses on retrieving complete model instances.
+- **Terminals**: `select()` returns model vectors; aggregates can be used to shift to Aggregate Mode.
+- **Transformers**: Use `distinct<Cols...>()` or `values<Cols...>()` to enter Tuple Mode, or aggregate methods to enter Aggregate Mode.
+
+### Tuple Mode
+
+- **Entry**: Via `distinct<Cols...>()` or `values<Cols...>()`.
+   - Returns specialized objects like `DistinctQuerySet<Model, Cols...>` or `ValuesQuerySet<Model, Cols...>`.
+- **Mirrors SQLite**:
+   - `DISTINCT` applies to the entire result set after projection.
+   - `VALUES` specifies explicit column projections.
+- **Chaining Behavior**: If both `distinct<Cols...>()` and `values<Cols...>()` are used, the last one dictates the SQL clause, but the mode remains Tuple.
+- **Column Specification**: `<Cols...>` can be omitted to infer all columns (e.g., `distinct<>()` or `values<>()`).
+- **Additional Features**: Supports DISTINCT within aggregates (e.g., `distinct<true>()` for unique values).
+- **Available Methods**: All base methods, plus aggregates (to enter Aggregate Mode), and terminals.
+- **Results**:
+   - `select()`: Yields tuples of distinct or projected values.
+   - Aggregates: Applied over the distinct/projected rows.
+
+### Aggregate Mode
+
+- **Entry**: Via aggregate transformers like `min<Col>()`, `max<Col>()`, `sum<Col>()`, `avg<Col>()`, or `count<Col|*>()`.
+   - Returns objects like `AggregateQuerySet<Model, Aggs...>`, accumulating aggregates in the projection.
+- **Accumulation**: Chain multiple aggregates (e.g., `min<Col1>().max<Col2>()` generates `MIN(col1), MAX(col2)`).
+- **Compatibility with Tuple Mode**: Aggregates can follow `distinct<Cols...>()` or `values<Cols...>()`, applying to projected/distinct rows.
+- **SQLite Features**:
+   - DISTINCT inside aggregates (e.g., `sum<Col, true>()` for `SUM(DISTINCT col)`).
+   - FILTER clauses via optional parameters.
+   - Ordering in functions like `GROUP_CONCAT`.
+- **Available Methods**: All base methods, additional aggregates, transformers (e.g., `distinct<Cols...>()`, `values<Cols...>()` which may adjust projection), and terminals.
+   - `group_by<Cols...>()` and `having()` are particularly useful here, as `having()` can reference aggregates.
+- **Grouping Behavior**:
+   - Without `group_by<Cols...>()`: Aggregates over the entire dataset (single result row).
+   - With `group_by<Cols...>()`: One result per group.
+- **Results**:
+   - `select()`: Tuples of aggregate values (one or more rows).
+   - Standalone terminals: Single scalar values if no grouping or accumulation.
+
+## Mode Precedence and Combinations
+
+- **Interleaving Transformers**: Modes can be combined by chaining transformers (e.g., `values<Cols...>().sum<Col>()` enters Tuple then Aggregate Mode).
+- **Final Mode Determination**:
+   - **Tuple Mode**: If `distinct<Cols...>()` or `values<Cols...>()` was ever called.
+   - **Aggregate Mode**: If any aggregates are present.
+   - Prior state always transfers to new objects.
+- **Projection Overrides**: If a transformer like `values<Cols...>()` follows aggregates, aggregates are preserved only if compatible; otherwise, they may need re-adding.
+- **Flexibility**: Ensures seamless transitions while maintaining query integrity and type safety.
+
