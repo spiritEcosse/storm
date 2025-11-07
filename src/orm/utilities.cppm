@@ -139,6 +139,22 @@ export namespace storm::orm::utilities {
             data[len] = '\0';
         }
 
+        // Operator+= overloads (for convenient syntax)
+        consteval ConstexprString& operator+=(const char* str) {
+            append(str);
+            return *this;
+        }
+
+        consteval ConstexprString& operator+=(const std::string_view& str) {
+            append(str);
+            return *this;
+        }
+
+        template <size_t M> consteval ConstexprString& operator+=(const ConstexprString<M>& other) {
+            append(other);
+            return *this;
+        }
+
         // Append a single digit (0-9) for compile-time number formatting
         consteval void append_digit(size_t digit) {
             if (digit <= 9 && len < N - 1) {
