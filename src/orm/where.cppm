@@ -32,18 +32,6 @@ export namespace storm::orm::where {
         enum class FieldAttr { primary, indexed, unique, fk };
     }
 
-    // Base expression interface
-    class Expression {
-    public:
-        virtual ~Expression() = default;
-        [[nodiscard]] virtual std::string to_sql() const = 0;
-
-        // Direct parameter binding (eliminates std::variant overhead)
-        // stmt_ptr must point to a Statement-like object with bind_int/bind_text/etc methods
-        // Returns std::expected<void, storm::db::sqlite::Error>
-        [[nodiscard]] virtual auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> = 0;
-    };
-
     // Comparison operators
     enum class CompOp {
         Equal,
