@@ -84,7 +84,7 @@ export namespace storm {
         //   queryset.where(field<^^Person::age>() > 25 and field<^^Person::is_active>() == true).select()
         //   queryset.where((field<^^Person::age>() > 25) or (field<^^Person::name>().like("A%"))).select()
         //
-        constexpr auto&& where(this auto&& self, std::shared_ptr<orm::where::Expression> expr) {
+        constexpr auto&& where(this auto&& self, orm::where::ExpressionVariantPtr expr) {
             if (self.where_expr_) {
                 // Combine with existing expression using AND
                 self.where_expr_ = orm::where::and_(std::move(self.where_expr_), std::move(expr));
@@ -263,7 +263,7 @@ export namespace storm {
         mutable std::unique_ptr<orm::statements::UpdateStatement<T, ConnType>> update_stmt_;
 
         mutable std::optional<orm::statements::JoinStatementWrapper> join_stmt_;
-        mutable std::shared_ptr<orm::where::Expression>              where_expr_;
+        mutable orm::where::ExpressionVariantPtr              where_expr_;
     };
 
     // Factory function for convenient QuerySet creation with default connection
