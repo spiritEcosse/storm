@@ -99,17 +99,17 @@ export namespace storm::orm::statements {
 
         // SELECT with WHERE clause (without JOIN)
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
-        execute_with_where(orm::where::ExpressionVariantPtr where_expr) noexcept
+        execute_with_where(const orm::where::ExpressionVariantPtr& where_expr) noexcept
                 -> std::expected<std::vector<T>, Error> {
-            return execute_where_impl(std::move(where_expr));
+            return execute_where_impl(where_expr);
         }
 
         // SELECT with WHERE clause and JOIN
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
         execute_with_where_and_join(JoinStatementWrapper join_wrapper,
-                                    orm::where::ExpressionVariantPtr where_expr) noexcept
+                                    const orm::where::ExpressionVariantPtr& where_expr) noexcept
                 -> std::expected<std::vector<T>, Error> {
-            return execute_where_join_impl(join_wrapper, std::move(where_expr));
+            return execute_where_join_impl(join_wrapper, where_expr);
         }
 
       private:
@@ -295,7 +295,7 @@ export namespace storm::orm::statements {
 
         // SELECT with WHERE clause (no JOIN) - uses unified query loop
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
-        execute_where_impl(orm::where::ExpressionVariantPtr where_expr) noexcept
+        execute_where_impl(const orm::where::ExpressionVariantPtr& where_expr) noexcept
                 -> std::expected<std::vector<T>, Error> {
             // Generate WHERE clause SQL from expression using helper
             std::string where_sql = build_where_sql(get_select_sql(), where_expr);
@@ -333,7 +333,7 @@ export namespace storm::orm::statements {
         // SELECT with WHERE clause and JOIN - uses unified query loop
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
         execute_where_join_impl(JoinStatementWrapper join_wrapper,
-                               orm::where::ExpressionVariantPtr where_expr) noexcept
+                               const orm::where::ExpressionVariantPtr& where_expr) noexcept
                 -> std::expected<std::vector<T>, Error> {
             // Generate WHERE clause SQL from expression using helper
             std::string join_where_sql = build_where_sql(join_wrapper.get_complete_sql(), where_expr);

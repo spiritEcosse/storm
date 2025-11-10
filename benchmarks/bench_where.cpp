@@ -123,6 +123,7 @@ void benchmark_where_int(int num_people, int iterations = 100) {
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
         auto result = person_qs.where(field<^^TestPerson::age>() > 30).select();
+        person_qs.reset();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -205,6 +206,7 @@ void benchmark_where_string(int num_people, int iterations = 100) {
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
         auto result = person_qs.where(field<^^TestPerson::name>().like("Person5%")).select();
+        person_qs.reset();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -287,6 +289,7 @@ void benchmark_where_float(int num_people, int iterations = 100) {
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
         auto result = person_qs.where(field<^^TestPerson::salary>() > 35000.0).select();
+        person_qs.reset();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -369,6 +372,7 @@ void benchmark_where_bool(int num_people, int iterations = 100) {
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
         auto result = person_qs.where(field<^^TestPerson::is_active>() == true).select();
+        person_qs.reset();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -455,6 +459,7 @@ void benchmark_where_like(int num_people, int iterations = 100) {
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
         auto result = person_qs.where(field<^^TestPerson::name>().like("Person5%")).select();
+        person_qs.reset();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -537,6 +542,7 @@ void benchmark_where_between(int num_people, int iterations = 100) {
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
         auto result = person_qs.where(field<^^TestPerson::age>().between(28, 35)).select();
+        person_qs.reset();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -620,6 +626,7 @@ void benchmark_where_in_3_ct(int num_people, int iterations = 100) {
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
         auto result = person_qs.where(field<^^TestPerson::id>().in(100, 200, 300)).select();
+        person_qs.reset();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -705,6 +712,7 @@ void benchmark_where_in_10_ct(int num_people, int iterations = 100) {
         auto result = person_qs.where(field<^^TestPerson::id>().in(
             100, 200, 300, 400, 500, 600, 700, 800, 900, 1000
         )).select();
+        person_qs.reset();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -800,6 +808,7 @@ void benchmark_where_simple(int num_people, int iterations = 100) {
         timer.reset();
         auto result = person_qs.where(field<^^TestPerson::age>() > 25 and
                                       field<^^TestPerson::age>() < 50).select();
+        person_qs.reset();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -886,6 +895,7 @@ void benchmark_where_medium(int num_people, int iterations = 100) {
             (field<^^TestPerson::age>() > 25 and field<^^TestPerson::salary>() > 40000.0) or
             (field<^^TestPerson::name>().like("Person5%") and field<^^TestPerson::is_active>() == true)
         ).select();
+        person_qs.reset();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -983,6 +993,7 @@ void benchmark_where_complex(int num_people, int iterations = 100) {
                 (field<^^TestPerson::age>() > 50 and field<^^TestPerson::salary>() < 80000.0)
             )
         ).select();
+        person_qs.reset();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
