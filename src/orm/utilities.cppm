@@ -6,8 +6,92 @@ import <array>;
 import <string>;
 import <string_view>;
 import <utility>;
+import <expected>;
+import <optional>;
+import <vector>;
+import <cstdint>;
+import <type_traits>;
 
 export namespace storm::orm::utilities {
+
+    // ============================================================================
+    // Parameter Binding Utilities
+    // ============================================================================
+
+    // Helper trait to detect std::optional types
+    template <typename T> struct is_optional : std::false_type {};
+    template <typename TValue> struct is_optional<std::optional<TValue>> : std::true_type {};
+    template <typename TValue> constexpr bool is_optional_v = is_optional<TValue>::value;
+
+    // Generic parameter binding - unified implementation for WHERE and CRUD statements
+    // No dependency on entity type T - pure type dispatch based on value type
+    template <typename StmtType, typename ErrorType>
+    [[nodiscard]] auto
+    bind_parameter_value(StmtType& stmt, int param_index, const auto& value) noexcept
+        -> std::expected<void, ErrorType> {
+        using ValueType = std::decay_t<decltype(value)>;
+
+        // Handle std::optional types first
+        if constexpr (is_optional_v<ValueType>) {
+            if (value.has_value()) {
+                // Recursively bind the contained value
+                return bind_parameter_value<StmtType, ErrorType>(stmt, param_index, *value);
+            } else {
+                // Bind NULL for std::nullopt
+                return stmt.bind_null(param_index);
+            }
+        }
+        // Boolean type (stored as INTEGER 0/1)
+        else if constexpr (std::is_same_v<ValueType, bool>) {
+            return stmt.bind_int(param_index, value ? 1 : 0);
+        }
+        // Integer types
+        else if constexpr (std::is_same_v<ValueType, int>) {
+            return stmt.bind_int(param_index, value);
+        } else if constexpr (std::is_same_v<ValueType, int64_t> || std::is_same_v<ValueType, long> ||
+                             std::is_same_v<ValueType, long long>) {
+            return stmt.bind_int64(param_index, static_cast<int64_t>(value));
+        } else if constexpr (std::is_same_v<ValueType, uint64_t> || std::is_same_v<ValueType, unsigned long> ||
+                             std::is_same_v<ValueType, unsigned long long>) {
+            return stmt.bind_int64(param_index, static_cast<int64_t>(value));
+        } else if constexpr (std::is_same_v<ValueType, short> || std::is_same_v<ValueType, unsigned short> ||
+                             std::is_same_v<ValueType, unsigned int>) {
+            return stmt.bind_int(param_index, static_cast<int>(value));
+        }
+        // Floating point types
+        else if constexpr (std::is_same_v<ValueType, double>) {
+            return stmt.bind_double(param_index, value);
+        } else if constexpr (std::is_same_v<ValueType, float>) {
+            return stmt.bind_double(param_index, static_cast<double>(value));
+        }
+        // BLOB types (std::vector<uint8_t>)
+        else if constexpr (std::is_same_v<ValueType, std::vector<uint8_t>> ||
+                           std::is_same_v<ValueType, std::vector<unsigned char>>) {
+            if (value.empty()) {
+                return stmt.bind_blob(param_index, nullptr, 0);
+            }
+            return stmt.bind_blob(param_index, value.data(), value.size());
+        }
+        // String types (must be last to avoid matching everything)
+        else if constexpr (std::is_convertible_v<ValueType, std::string_view>) {
+            return stmt.bind_text(param_index, std::string_view{value});
+        } else {
+            static_assert(
+                std::is_same_v<ValueType, int> || std::is_same_v<ValueType, int64_t> ||
+                    std::is_same_v<ValueType, double> || std::is_same_v<ValueType, bool> ||
+                    std::is_convertible_v<ValueType, std::string_view>,
+                "Unsupported field type for binding. Supported types: "
+                "int, int64_t, long, short, unsigned variants, "
+                "double, float, bool, std::string, std::string_view, "
+                "std::optional<T>, std::vector<uint8_t>");
+            // Unreachable due to static_assert, but needed for return type
+            return std::unexpected(ErrorType{});
+        }
+    }
+
+    // ============================================================================
+    // SQL String Building Utilities
+    // ============================================================================
 
     // Compile-time string utility for SQL generation
     template <size_t N> struct ConstexprString {
@@ -53,6 +137,22 @@ export namespace storm::orm::utilities {
                 ++len;
             }
             data[len] = '\0';
+        }
+
+        // Operator+= overloads (for convenient syntax)
+        consteval ConstexprString& operator+=(const char* str) {
+            append(str);
+            return *this;
+        }
+
+        consteval ConstexprString& operator+=(const std::string_view& str) {
+            append(str);
+            return *this;
+        }
+
+        template <size_t M> consteval ConstexprString& operator+=(const ConstexprString<M>& other) {
+            append(other);
+            return *this;
         }
 
         // Append a single digit (0-9) for compile-time number formatting

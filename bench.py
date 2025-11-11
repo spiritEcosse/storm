@@ -33,11 +33,35 @@ def run_join_benchmark(args):
     print(f"{Colors.GREEN}Running JOIN Performance Analysis...{Colors.RESET}\n")
 
     benchmark = JoinBenchmark(args.binary)
+    # Default to 1000 iterations for accurate steady-state performance
     benchmark.run(
         f'--size={args.size or 10000}',
-        f'--iterations={args.iterations or 100}',
+        f'--iterations={args.iterations or 1000}',
         messages=args.size or 10000,
-        iterations=args.iterations or 100
+        iterations=args.iterations or 1000
+    )
+
+
+def run_where_benchmark(args):
+    """Run WHERE clause performance benchmark"""
+    from where import WhereBenchmark
+
+    print_header()
+    print(f"{Colors.GREEN}Running WHERE Clause Performance Analysis...{Colors.RESET}\n")
+
+    # Use WHERE-specific binary unless custom path explicitly provided
+    binary_path = './build/release/benchmarks/bench_where'
+    if hasattr(args, 'binary') and args.binary != './build/release/benchmarks/bench_join':
+        # Only override if user specified a custom binary (not the default)
+        binary_path = args.binary
+
+    benchmark = WhereBenchmark(binary_path)
+    # Default to 1000 iterations for accurate steady-state performance
+    benchmark.run(
+        f'--size={args.size or 10000}',
+        f'--iterations={args.iterations or 1000}',
+        size=args.size or 10000,
+        iterations=args.iterations or 1000
     )
 
 
@@ -158,6 +182,8 @@ Available Benchmarks:
 Examples:
   %(prog)s --joins                        # Run JOIN benchmarks
   %(prog)s --joins --size=50000           # Run JOIN with 50K messages
+  %(prog)s --where                        # Run WHERE clause benchmarks
+  %(prog)s --where --size=50000           # Run WHERE with 50K rows
   %(prog)s --distinct                     # Run DISTINCT benchmarks
   %(prog)s --distinct --size=50000        # Run DISTINCT with 50K records
   %(prog)s --distinct-scaling             # Run DISTINCT scaling analysis
@@ -173,6 +199,8 @@ Examples:
     commands = parser.add_mutually_exclusive_group(required=True)
     commands.add_argument('--joins', action='store_true',
                          help='Run JOIN performance analysis (Storm vs Raw SQLite)')
+    commands.add_argument('--where', action='store_true',
+                         help='Run WHERE clause performance analysis (Storm vs Raw SQLite)')
     commands.add_argument('--distinct', action='store_true',
                          help='Run DISTINCT performance analysis (Storm vs Raw SQLite)')
     commands.add_argument('--distinct-scaling', action='store_true',
@@ -202,6 +230,8 @@ Examples:
     try:
         if args.joins:
             run_join_benchmark(args)
+        elif args.where:
+            run_where_benchmark(args)
         elif args.distinct:
             run_distinct_benchmark(args)
         elif args.distinct_scaling:

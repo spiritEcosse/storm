@@ -14,6 +14,7 @@ import storm_orm_statements_select;
 import storm_orm_statements_distinct;
 import storm_orm_statements_update;
 import storm_orm_statements_join;
+import storm_orm_where;
 import storm_orm_statements_aggregate;
 
 import <expected>;
@@ -71,17 +72,54 @@ export namespace storm {
             return execute_insert(objects);
         }
 
-        // Select operations - returns all rows (optimized with statement caching)
-        std::expected<std::vector<T>, Error> select() {
-            if (join_stmt_) {
-                // Pass wrapper by value (lightweight - just 3 function pointers)
-                auto result = get_select_statement().execute_optimized(*join_stmt_);
-                // Reset to allow reuse for non-JOIN queries (maintains original semantics)
-                join_stmt_.reset();
-                return result;
+        // WHERE clause support - builder pattern with method chaining using type-safe expressions
+        //
+        // Usage examples:
+        //   queryset.where(field<^^Person::age>() > 25).select()
+        //   queryset.where(field<^^Person::id>().in(1, 2, 3)).select()
+        //   queryset.where(field<^^Person::name>().like("A%")).select()
+        //   queryset.where(field<^^Person::age>().between(25, 50)).select()
+        //
+        // Chaining with AND composition:
+        //   queryset.where(field<^^Person::age>() > 25)
+        //           .where(field<^^Person::name>() == "Alice")
+        //           .select()
+        //
+        // Complex expressions with AND/OR:
+        //   queryset.where(field<^^Person::age>() > 25 and field<^^Person::is_active>() == true).select()
+        //   queryset.where((field<^^Person::age>() > 25) or (field<^^Person::name>().like("A%"))).select()
+        //
+        constexpr auto&& where(this auto&& self, orm::where::ExpressionVariantPtr expr) {
+            if (self.where_expr_) {
+                // Combine with existing expression using AND
+                self.where_expr_ = orm::where::and_(self.where_expr_, expr);
+            } else {
+                self.where_expr_ = expr;
             }
-            // Normal SELECT without JOIN
-            return get_select_statement().execute_optimized();
+            return self_cast(self);
+        }
+
+        // Select operations - returns all rows (optimized with statement caching)
+        // NOTE: WHERE and JOIN state is preserved after select() for query reusability.
+        // Call reset() to clear state when needed.
+        [[nodiscard]] __attribute__((hot)) std::expected<std::vector<T>, Error> select() {
+            std::expected<std::vector<T>, Error> result;
+
+            if (join_stmt_.has_value() && where_expr_) {
+                // JOIN + WHERE
+                result = get_select_statement().execute_with_where_and_join(*join_stmt_, where_expr_);
+            } else if (join_stmt_.has_value()) {
+                // JOIN only (no WHERE)
+                result = get_select_statement().execute_optimized(*join_stmt_);
+            } else if (where_expr_) {
+                // WHERE only (no JOIN)
+                result = get_select_statement().execute_with_where(where_expr_);
+            } else {
+                // Simple SELECT (no JOIN, no WHERE)
+                result = get_select_statement().execute_optimized();
+            }
+
+            return result;
         }
 
         // Field-specific DISTINCT support using reflection
@@ -146,6 +184,18 @@ export namespace storm {
             return get_update_statement().execute(objects);
         }
 
+        // Reset WHERE and JOIN state
+        // Use this to clear conditions and start fresh with the same QuerySet instance
+        // Example:
+        //   auto qs = QuerySet<Person>(conn);
+        //   qs.where(age > 25).select();  // WHERE age > 25
+        //   qs.reset();                   // Clear state
+        //   qs.select();                  // No WHERE
+        void reset() noexcept {
+            join_stmt_.reset();
+            where_expr_.reset();
+        }
+      
         // Aggregate functions - fluent builder pattern for multiple aggregates
         // Usage: queryset.aggregate().sum<^^Person::age>().count().avg<^^Person::salary>().select()
         constexpr auto aggregate() {
@@ -276,6 +326,7 @@ export namespace storm {
         mutable std::unique_ptr<orm::statements::UpdateStatement<T, ConnType>> update_stmt_;
 
         mutable std::optional<orm::statements::JoinStatementWrapper> join_stmt_;
+        mutable orm::where::ExpressionVariantPtr              where_expr_;
     };
 
     // Factory function for convenient QuerySet creation with default connection

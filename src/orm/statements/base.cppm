@@ -400,73 +400,82 @@ export namespace storm::orm::statements {
         static constexpr size_t BATCH_THRESHOLD      = 50;
         static constexpr size_t MAX_SQLITE_VARIABLES = 999;
 
-        // Helper to detect if a type is std::optional
-        template <typename TValue> struct is_optional : std::false_type {};
-
-        template <typename TValue> struct is_optional<std::optional<TValue>> : std::true_type {};
-
-        template <typename TValue> static constexpr bool is_optional_v = is_optional<TValue>::value;
-
         // Common binding utilities for different types
+        // Delegates to unified bind_parameter_value in utilities
         template <typename ConnType>
         [[nodiscard]] static auto
         bind_value_by_type(typename ConnType::Statement& stmt, int param_index, const auto& value) noexcept
                 -> std::expected<void, typename ConnType::Error> {
-            using ValueType = std::decay_t<decltype(value)>;
+            return utilities::bind_parameter_value<typename ConnType::Statement, typename ConnType::Error>(stmt, param_index, value);
+        }
 
+        // Shared column extraction utility - returns value of specified type from given column index
+        // Handles: int, int64_t, uint64_t, short, float, double, bool, string, optional<T>, vector<uint8_t>
+        template <typename FieldType, typename Statement>
+        [[nodiscard]] __attribute__((always_inline)) static inline FieldType
+        extract_column_value(Statement& stmt, int col_idx) noexcept {
             // Handle std::optional types first
-            if constexpr (is_optional_v<ValueType>) {
-                if (value.has_value()) {
-                    // Recursively bind the contained value
-                    return bind_value_by_type<ConnType>(stmt, param_index, *value);
+            if constexpr (utilities::is_optional_v<FieldType>) {
+                using InnerType = typename FieldType::value_type;
+                if (stmt.is_null(col_idx)) {
+                    return std::nullopt;
                 } else {
-                    // Bind NULL for std::nullopt
-                    return stmt.bind_null(param_index);
+                    // Extract the inner value and wrap it in optional
+                    InnerType inner_value = extract_column_value<InnerType>(stmt, col_idx);
+                    return FieldType{std::move(inner_value)};
                 }
             }
             // Boolean type (stored as INTEGER 0/1)
-            else if constexpr (std::is_same_v<ValueType, bool>) {
-                return stmt.bind_int(param_index, value ? 1 : 0);
+            else if constexpr (std::is_same_v<FieldType, bool>) {
+                return stmt.extract_bool(col_idx);
             }
             // Integer types
-            else if constexpr (std::is_same_v<ValueType, int>) {
-                return stmt.bind_int(param_index, value);
-            } else if constexpr (std::is_same_v<ValueType, int64_t> || std::is_same_v<ValueType, long> ||
-                                 std::is_same_v<ValueType, long long>) {
-                return stmt.bind_int64(param_index, static_cast<int64_t>(value));
-            } else if constexpr (std::is_same_v<ValueType, uint64_t> || std::is_same_v<ValueType, unsigned long> ||
-                                 std::is_same_v<ValueType, unsigned long long>) {
-                return stmt.bind_int64(param_index, static_cast<int64_t>(value));
-            } else if constexpr (std::is_same_v<ValueType, short> || std::is_same_v<ValueType, unsigned short> ||
-                                 std::is_same_v<ValueType, unsigned int>) {
-                return stmt.bind_int(param_index, static_cast<int>(value));
+            else if constexpr (std::is_same_v<FieldType, int>) {
+                return stmt.extract_int(col_idx);
+            } else if constexpr (std::is_same_v<FieldType, int64_t> || std::is_same_v<FieldType, long> ||
+                                 std::is_same_v<FieldType, long long>) {
+                return static_cast<FieldType>(stmt.extract_int64(col_idx));
+            } else if constexpr (std::is_same_v<FieldType, uint64_t> || std::is_same_v<FieldType, unsigned long> ||
+                                 std::is_same_v<FieldType, unsigned long long>) {
+                return static_cast<FieldType>(stmt.extract_int64(col_idx));
+            } else if constexpr (std::is_same_v<FieldType, short> || std::is_same_v<FieldType, unsigned short> ||
+                                 std::is_same_v<FieldType, unsigned int>) {
+                return static_cast<FieldType>(stmt.extract_int(col_idx));
             }
             // Floating point types
-            else if constexpr (std::is_same_v<ValueType, double>) {
-                return stmt.bind_double(param_index, value);
-            } else if constexpr (std::is_same_v<ValueType, float>) {
-                return stmt.bind_double(param_index, static_cast<double>(value));
+            else if constexpr (std::is_same_v<FieldType, double>) {
+                return stmt.extract_double(col_idx);
+            } else if constexpr (std::is_same_v<FieldType, float>) {
+                return stmt.extract_float(col_idx);
             }
-            // BLOB types (std::vector<uint8_t>)
-            else if constexpr (std::is_same_v<ValueType, std::vector<uint8_t>> ||
-                               std::is_same_v<ValueType, std::vector<unsigned char>>) {
-                if (value.empty()) {
-                    return stmt.bind_blob(param_index, nullptr, 0);
+            // BLOB types
+            else if constexpr (std::is_same_v<FieldType, std::vector<uint8_t>> ||
+                               std::is_same_v<FieldType, std::vector<unsigned char>>) {
+                auto [blob_ptr, blob_size] = stmt.extract_blob(col_idx);
+                if (blob_ptr && blob_size > 0) {
+                    const uint8_t* data = static_cast<const uint8_t*>(blob_ptr);
+                    return FieldType(data, data + blob_size);
+                } else {
+                    return FieldType{};
                 }
-                return stmt.bind_blob(param_index, value.data(), value.size());
             }
-            // String types (must be last to avoid matching everything)
-            else if constexpr (std::is_convertible_v<ValueType, std::string_view>) {
-                return stmt.bind_text(param_index, std::string_view{value});
+            // String types
+            else if constexpr (std::is_same_v<FieldType, std::string>) {
+                const unsigned char* text = stmt.extract_text_ptr(col_idx);
+                if (text) {
+                    // OPTIMIZATION: Direct construction with known length (no strlen, no temporary)
+                    int len = sqlite3_column_bytes(stmt.handle(), col_idx);
+                    return FieldType(reinterpret_cast<const char*>(text), len);
+                } else {
+                    return FieldType{};
+                }
             } else {
                 static_assert(
-                        std::is_same_v<ValueType, int> || std::is_same_v<ValueType, int64_t> ||
-                                std::is_same_v<ValueType, double> || std::is_same_v<ValueType, bool> ||
-                                std::is_convertible_v<ValueType, std::string_view>,
-                        "Unsupported field type for binding. Supported types: "
-                        "int, int64_t, long, short, unsigned variants, "
-                        "float, double, bool, std::string, std::string_view, "
-                        "std::optional<T>, std::vector<uint8_t>"
+                    std::is_same_v<FieldType, int> || std::is_same_v<FieldType, std::string>,
+                    "Unsupported field type for column extraction. Supported types: "
+                    "int, int64_t, long, short, unsigned variants, "
+                    "float, double, bool, std::string, "
+                    "std::optional<T>, std::vector<uint8_t>"
                 );
             }
         }
