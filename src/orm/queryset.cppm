@@ -11,9 +11,11 @@ import storm_orm_statements_base;
 import storm_orm_statements_remove;
 import storm_orm_statements_insert;
 import storm_orm_statements_select;
+import storm_orm_statements_distinct;
 import storm_orm_statements_update;
 import storm_orm_statements_join;
 import storm_orm_where;
+import storm_orm_statements_aggregate;
 
 import <expected>;
 import <string>;
@@ -25,6 +27,9 @@ import <vector>;
 import <variant>;
 import <optional>;
 import <functional>;
+import <tuple>;
+import <array>;
+import <meta>;
 
 export namespace storm {
 
@@ -117,6 +122,21 @@ export namespace storm {
             return result;
         }
 
+        // Field-specific DISTINCT support using reflection
+        // Usage:
+        //   auto names = queryset.distinct<^^Person::name>().select();  // std::vector<std::string>
+        //   auto pairs = queryset.distinct<^^Person::name, ^^Person::age>().select();  // std::vector<std::tuple<std::string, int>>
+        //   auto ids = queryset.distinct().select();  // std::vector<int> (defaults to PK)
+        template <std::meta::info... FieldInfos>
+        constexpr auto distinct() {
+            if constexpr (sizeof...(FieldInfos) == 0) {
+                // Default to primary key when no fields specified
+                return orm::statements::DistinctStatement<T, ConnType, orm::statements::BaseStatement<T>::primary_key_>{conn_};
+            } else {
+                return orm::statements::DistinctStatement<T, ConnType, FieldInfos...>{conn_};
+            }
+        }
+
         // INNER JOIN support for single or multiple FK fields
         // Usage:
         //   Single FK: message_qs.join<&Message::sender>().select()
@@ -174,6 +194,49 @@ export namespace storm {
         void reset() noexcept {
             join_stmt_.reset();
             where_expr_.reset();
+        }
+      
+        // Aggregate functions - fluent builder pattern for multiple aggregates
+        // Usage: queryset.aggregate().sum<^^Person::age>().count().avg<^^Person::salary>().select()
+        constexpr auto aggregate() {
+            return orm::statements::AggregateBuilder<T, ConnType>{conn_};
+        }
+
+        // Shortcut: SUM aggregate (multi-field: SUM(f1 + f2 + ...))
+        // Usage: queryset.sum<^^Person::age>().select()
+        //        queryset.sum<^^Person::age, ^^Person::years>().select()  // SUM(age + years)
+        template <std::meta::info... FieldInfos>
+        constexpr auto sum() {
+            return orm::statements::SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::SUM, FieldInfos...>{conn_};
+        }
+
+        // Shortcut: COUNT aggregate (defaults to COUNT(*) if no fields)
+        // Usage: queryset.count().select()  // COUNT(*)
+        //        queryset.count<^^Person::id>().select()  // COUNT(id)
+        template <std::meta::info... FieldInfos>
+        constexpr auto count() {
+            return orm::statements::SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::COUNT, FieldInfos...>{conn_};
+        }
+
+        // Shortcut: AVG aggregate (multi-field: AVG(f1 + f2 + ...))
+        // Usage: queryset.avg<^^Person::salary>().select()
+        template <std::meta::info... FieldInfos>
+        constexpr auto avg() {
+            return orm::statements::SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::AVG, FieldInfos...>{conn_};
+        }
+
+        // Shortcut: MIN aggregate (multi-field: MIN(f1 + f2 + ...))
+        // Usage: queryset.min<^^Person::age>().select()
+        template <std::meta::info... FieldInfos>
+        constexpr auto min() {
+            return orm::statements::SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::MIN, FieldInfos...>{conn_};
+        }
+
+        // Shortcut: MAX aggregate (multi-field: MAX(f1 + f2 + ...))
+        // Usage: queryset.max<^^Person::age>().select()
+        template <std::meta::info... FieldInfos>
+        constexpr auto max() {
+            return orm::statements::SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::MAX, FieldInfos...>{conn_};
         }
 
         // Static methods for connection management

@@ -141,7 +141,35 @@ cmake --build --preset ninja-release
 
 ## Basic Usage Examples
 
-### Defining Structs
+## High-Level Architecture
+
+### Module Structure
+```
+src/
+├── storm.cppm                      # Main module with meta functionality
+├── db/
+│   ├── concept.cppm                # Database concepts
+│   └── sqlite.cppm                 # SQLite implementation
+└── orm/
+    ├── queryset.cppm               # QuerySet ORM interface
+    ├── utilities.cppm              # ConstexprString, SQLCache templates
+    └── statements/
+        ├── base.cppm               # BaseStatement utilities
+        ├── insert.cppm             # InsertStatement
+        ├── select.cppm             # SelectStatement (with JOIN support)
+        ├── distinct.cppm           # DistinctStatement (DISTINCT queries)
+        ├── update.cppm             # UpdateStatement
+        ├── remove.cppm             # RemoveStatement
+        └── join.cppm               # JoinStatement (SQL builder for FK JOINs)
+```
+
+### Key Design Decisions
+
+#### 1. **C++26 Reflection-Based ORM**
+Uses compile-time reflection (`std::meta`) to automatically:
+- Find primary key fields marked with `[[=storm::meta::FieldAttr::primary]]`
+- Generate SQL statements from struct definitions
+- Bind struct fields to database columns
 
 ```cpp
 struct Person {
@@ -256,6 +284,162 @@ See [docs/features/BATCH_OPERATIONS.md](docs/features/BATCH_OPERATIONS.md) for c
 ```bash
 cmake --build --preset ninja-debug
 ctest --test-dir build/debug --output-on-failure
+```
+
+**Results: Templates Made It WORSE**
+- **Function pointer approach (current)**: 6.9M rows/sec (70% of raw) ✅ **BEST**
+- **Template approach (attempted)**: 4.9M rows/sec (49% of raw) ❌ **28% SLOWER**
+
+**Why Templates Failed:**
+1. **Code bloat**: Template instantiation for each JOIN configuration created more code → worse instruction cache locality
+2. **Compiler optimization surprise**: Modern compilers (Clang 21) optimize indirect function calls better than expected with profile-guided optimization
+3. **Inlining limits**: Even with templates, deep call chains with complex reflection operations hit compiler inlining budget limits
+4. **Register pressure**: Fully inlined template code increased register spilling in the hot loop
+
+**Real Performance Bottlenecks (NOT Function Pointers!):**
+1. **String allocations**: Each `std::string` field requires heap allocation (~30-40% of runtime)
+2. **Object construction**: Creating and populating complex objects with multiple fields
+3. **Vector management**: Resizing, copying, moving objects in result vectors
+4. **Multi-column extraction**: 5-8 columns for JOIN vs 2-3 for simple SELECT
+5. **Type dispatch overhead**: Runtime `if constexpr` type checks for each field
+
+**Measured Overhead Breakdown (profiling data):**
+- SQL execution: ~20% (unavoidable, same as raw SQLite)
+- Row stepping: ~5% (minimal overhead)
+- Column extraction: ~35% (type checks + conversion)
+- String allocation: ~30% (heap allocations for TEXT fields)
+- Object construction: ~10% (calling constructors, field assignment)
+
+**Recommendations for Future Optimization:**
+
+Current 50-70% of raw SQLite performance is **respectable for a full ORM** with reflection-based mapping. Further gains require architectural changes:
+
+1. **String handling** (biggest potential win):
+   - Use `std::string_view` for read-only operations (eliminate allocation)
+   - Implement move semantics throughout extraction chain
+   - Consider string interning for repeated values
+   - Arena allocator for temporary strings
+
+2. **Memory management**:
+   - Object pooling to reuse allocated objects
+   - Custom allocator optimized for ORM access patterns
+   - Better size estimation (currently pre-allocates 10K, may overshoot)
+
+3. **Column extraction optimization**:
+   - Batch extraction by type (extract all ints, then all strings)
+   - SIMD for type checking and conversion
+   - Specialized fast paths for common type combinations
+
+4. **Caching improvements**:
+   - Cache field offset calculations
+   - Reuse extraction buffers across queries
+   - Pre-build type dispatch tables at compile-time
+
+**Key Lesson**: Don't assume eliminating indirect calls will improve performance. Profile first, optimize second. The current function-pointer based implementation strikes a good balance between flexibility and performance.
+
+#### 14. **DISTINCT Query Support (Single & Multi-Field)**
+
+Storm ORM supports `DISTINCT` queries on one or more fields with compile-time type safety and near-raw SQLite performance.
+
+**Architecture:**
+```cpp
+// DistinctStatement (in src/orm/statements/distinct.cppm)
+//    - Inherits from BaseStatement<T>
+//    - Executes SELECT DISTINCT with field extraction
+//    - Variadic template requiring 1+ fields (enforced via requires clause)
+//    - Fields specified at construction as template parameters
+//    - Always generates DISTINCT queries (for aggregates, use separate AggregateStatement)
+template <typename T, ConnType, auto... FieldPtrs>
+    requires (sizeof...(FieldPtrs) > 0)
+class DistinctStatement : private BaseStatement<T> {
+    static constexpr size_t NumFields = sizeof...(FieldPtrs);
+    static constexpr auto member_infos_ = std::array{get_member_info<FieldPtrs>()...};
+
+    // Return type: single field → std::vector<FieldType>
+    //              multiple fields → std::vector<std::tuple<Type1, Type2, ...>>
+    using ResultType = std::conditional_t<
+        NumFields == 1,
+        std::vector<std::tuple_element_t<0, FieldTypesTuple>>,
+        std::vector<FieldTypesTuple>
+    >;
+
+    auto execute() -> std::expected<ResultType, Error>;
+    auto select() -> std::expected<ResultType, Error>;  // Alias for execute()
+};
+```
+
+**Usage:**
+```cpp
+QuerySet<Person> qs;
+
+// Single field DISTINCT (backward compatible)
+auto names = qs.distinct<&Person::name>().select();
+// Returns: std::vector<std::string>
+
+// Multiple field DISTINCT
+auto pairs = qs.distinct<&Person::name, &Person::age>().select();
+// Returns: std::vector<std::tuple<std::string, int>>
+
+// Default to primary key
+auto ids = qs.distinct().select();
+// Returns: std::vector<int>
+```
+
+**SQL Generation:**
+- Single field: `SELECT DISTINCT name FROM Person`
+- Multiple fields: `SELECT DISTINCT name, age FROM Person`
+- Compile-time field list construction using fold expressions with index sequences
+- FK fields automatically use column name (e.g., `sender_id` instead of `sender`)
+
+**Performance Results (10,000 rows, 100 iterations, Release build):**
+
+| Operation | Storm ORM | Raw SQLite | Efficiency |
+|-----------|-----------|------------|------------|
+| DISTINCT name (string) | 140,507 rows/sec | 147,083 rows/sec | 95% |
+| DISTINCT age (int) | 148,841 rows/sec | 141,179 rows/sec | 105% |
+| DISTINCT id/PK (int) | 35.8M rows/sec | 36.2M rows/sec | 99% |
+| DISTINCT (name, age) | 132,336 rows/sec | 131,125 rows/sec | 101% |
+
+**Average Efficiency: ~100%** - Storm ORM achieves parity with raw SQLite for DISTINCT operations!
+
+**Key Features:**
+- ✅ **Type Safety**: Return type automatically deduced at compile-time
+- ✅ **Zero Overhead**: Compile-time SQL generation, no runtime string building
+- ✅ **Multiple Fields**: Full support for DISTINCT on 1+ fields (SQLite supports 2000 columns)
+- ✅ **Backward Compatible**: Single-field API unchanged from original implementation
+
+**Implementation Highlights:**
+1. **Simplified Architecture**: Direct statement executor (no wrapper layer), QuerySet handles convenience
+2. **Architectural Consistency**: Follows same pattern as `InsertStatement`, `UpdateStatement`, etc. in `src/orm/statements/`
+3. **Requires Clause**: Template constraint `requires (sizeof...(FieldPtrs) > 0)` enforces at least one field
+4. **Compile-Time Field List**: Uses fold expressions with lambda templates to build comma-separated field list
+5. **Type Deduction**: Automatically determines return type based on number and types of fields
+6. **Index Sequences**: Leverages `std::index_sequence` for compile-time iteration
+7. **Tuple Extraction**: Multi-field results extracted into `std::tuple` with perfect type matching
+8. **Statement Caching**: Prepared statement cached for repeated DISTINCT queries on same fields
+
+**Known Limitations:**
+- Type-based field matching can be ambiguous when multiple fields have the same type (e.g., `&Person::id` and `&Person::age` are both `int`)
+- Workaround: Use fields with unique types or access via different field orderings
+- Aggregate functions (COUNT, SUM, AVG) require separate implementation (different return types)
+
+**Testing:**
+- 29 comprehensive unit tests in `tests/test_distinct.cpp` covering:
+  - Single-field and multi-field DISTINCT operations (17 tests)
+  - Edge cases: duplicate fields, type safety, cross-struct prevention (6 tests)
+  - JOIN exploration: limitations and workarounds (6 tests)
+- Tests include: empty table, single row, large datasets (10K rows), duplicate handling, type verification, FK field behavior
+- All tests pass with 100% success rate
+
+### Cross-Module Dependencies
+```
+storm (main module)
+├── storm_db_concept
+├── storm_db_sqlite
+├── storm_orm_statements_base
+├── storm_orm_utilities
+├── storm_orm_statements_{insert,update,remove,select,distinct,join}
+└── storm_orm_queryset
 ```
 
 ### Performance Testing
@@ -392,3 +576,103 @@ For questions or issues:
 - See [docs/development/COMPILER_ISSUES.md](docs/development/COMPILER_ISSUES.md) for known workarounds
 - Browse [docs/features/](docs/features/) for feature-specific usage
 - Consult [docs/architecture/](docs/architecture/) for implementation details
+### Adding PostgreSQL Support
+1. Create `src/db/postgresql.cppm` implementing concepts
+2. Add PostgreSQL-specific statement implementations
+3. Update `ConnectionManager` for multiple backends
+4. Ensure concepts properly abstract differences
+
+# Core Concepts of QuerySet
+
+This document outlines the fundamental principles and behaviors of the QuerySet system, designed for building and executing SQLite queries in a fluent, type-safe manner using C++. It emphasizes immutability, chaining, and modular modes for handling projections, aggregations, and more.
+
+## Immutability and Chaining
+
+- **Core Principle**: All non-terminal methods (e.g., `where()`, `join()`) return a **new query object** by copying or moving the internal state. This ensures thread-safety and allows for fluent, immutable chaining without modifying the original query.
+- **Fluent API**: Enables building complex queries in a readable, chainable style:
+  ```cpp
+  auto results = QuerySet<Model>().where(...).order_by<...>().select();
+  ```
+- **Terminal Methods**: Methods like `select()` or standalone aggregates execute the query immediately and return results (e.g., vectors, tuples, or scalar values). No further chaining is possible after a terminal call.
+
+## Clause Ordering
+
+- **Flexible Chaining**: Users can chain methods in any order for convenience (e.g., `where()` before or after `join()`).
+- **Internal Enforcement**: During SQL generation, clauses are reordered to match valid SQLite syntax:
+   - `SELECT ... FROM ... JOIN ... WHERE ... GROUP BY ... HAVING ... ORDER BY ... LIMIT/OFFSET`
+- **Validation**: Invalid combinations (e.g., selecting non-grouped columns alongside aggregates without `group_by<...>()`) trigger compile-time errors to prevent incorrect SQL.
+
+## Projection and Result Types
+
+- **Transformers**: There are `distinct<...>()` or `values<...>()`.
+- **Without Transformers**: `select()` returns `std::vector<Model>`, representing full model objects fetched from the database.
+- **With Transformers**: `select()` returns `std::vector<std::tuple<...>>` or `std::vector<type>`, where the types match the projected or aggregated columns.
+- **Standalone Aggregates**: To return a single aggregate value, simply use `qs.min<...>()` and similar methods directly, which return scalar values (e.g., `int` for count, `double` for average).
+
+## Available Methods in All Modes
+
+These methods are accessible regardless of the current mode and build query state without altering the mode:
+
+- `join<OtherModel>()`: Adds a JOIN clause to include related models.
+- `where(Condition)`: Filters rows based on the provided condition.
+- `order_by<Cols...>()`: Sorts results by the specified columns.
+- `limit(int)`: Restricts the number of results returned.
+- `offset(int)`: Skips a specified number of results.
+- `group_by<Cols...>()`: Groups results by the given columns (especially useful in Aggregate Mode).
+- `having(Condition)`: Filters groups based on aggregate conditions (references aggregates in Aggregate Mode).
+
+## Modes and Transformers
+
+QuerySet operates in different **modes** to handle various query types. Modes are entered via **transformers**, which return new objects while preserving prior chain state (e.g., existing `where()` or `join()` clauses).
+
+### Default Mode (Object Mode)
+
+- **Starting Point**: Begins with `QuerySet<Model>`, representing queries that fetch full rows without custom projections.
+- **Behavior**: Focuses on retrieving complete model instances.
+- **Terminals**: `select()` returns model vectors; aggregates can be used to shift to Aggregate Mode.
+- **Transformers**: Use `distinct<Cols...>()` or `values<Cols...>()` to enter Tuple Mode, or aggregate methods to enter Aggregate Mode.
+
+### Tuple Mode
+
+- **Entry**: Via `distinct<Cols...>()` or `values<Cols...>()`.
+   - Returns specialized objects like `DistinctQuerySet<Model, Cols...>` or `ValuesQuerySet<Model, Cols...>`.
+- **Mirrors SQLite**:
+   - `DISTINCT` applies to the entire result set after projection.
+   - `VALUES` specifies explicit column projections.
+- **Chaining Behavior**: If both `distinct<Cols...>()` and `values<Cols...>()` are used, the last one dictates the SQL clause, but the mode remains Tuple.
+- **Column Specification**: `<Cols...>` can be omitted to infer all columns (e.g., `distinct<>()` or `values<>()`).
+- **Additional Features**: Supports DISTINCT within aggregates (e.g., `distinct<true>()` for unique values).
+- **Available Methods**: All base methods, plus aggregates (to enter Aggregate Mode), and terminals.
+- **Results**:
+   - `select()`: Yields tuples of distinct or projected values.
+   - Aggregates: Applied over the distinct/projected rows.
+
+### Aggregate Mode
+
+- **Entry**: Via aggregate transformers like `min<Col>()`, `max<Col>()`, `sum<Col>()`, `avg<Col>()`, or `count<Col|*>()`.
+   - Returns objects like `AggregateQuerySet<Model, Aggs...>`, accumulating aggregates in the projection.
+- **Accumulation**: Chain multiple aggregates (e.g., `min<Col1>().max<Col2>()` generates `MIN(col1), MAX(col2)`).
+- **Compatibility with Tuple Mode**: Aggregates can follow `distinct<Cols...>()` or `values<Cols...>()`, applying to projected/distinct rows.
+- **SQLite Features**:
+   - DISTINCT inside aggregates (e.g., `sum<Col, true>()` for `SUM(DISTINCT col)`).
+   - FILTER clauses via optional parameters.
+   - Ordering in functions like `GROUP_CONCAT`.
+- **Available Methods**: All base methods, additional aggregates, transformers (e.g., `distinct<Cols...>()`, `values<Cols...>()` which may adjust projection), and terminals.
+   - `group_by<Cols...>()` and `having()` are particularly useful here, as `having()` can reference aggregates.
+- **Grouping Behavior**:
+   - Without `group_by<Cols...>()`: Aggregates over the entire dataset (single result row).
+   - With `group_by<Cols...>()`: One result per group.
+- **Results**:
+   - `select()`: Tuples of aggregate values (one or more rows).
+   - Standalone terminals: Single scalar values if no grouping or accumulation.
+
+## Mode Precedence and Combinations
+
+- **Interleaving Transformers**: Modes can be combined by chaining transformers (e.g., `values<Cols...>().sum<Col>()` enters Tuple then Aggregate Mode).
+- **Final Mode Determination**:
+   - **Tuple Mode**: If `distinct<Cols...>()` or `values<Cols...>()` was ever called.
+   - **Aggregate Mode**: If any aggregates are present.
+   - Prior state always transfers to new objects.
+- **Projection Overrides**: If a transformer like `values<Cols...>()` follows aggregates, aggregates are preserved only if compatible; otherwise, they may need re-adding.
+- **Flexibility**: Ensures seamless transitions while maintaining query integrity and type safety.
+

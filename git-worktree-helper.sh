@@ -50,18 +50,20 @@ show_usage() {
     echo ""
     echo "Usage:"
     echo "  $0 add <branch-name> [worktree-path] [--no-env]  Add worktree with new branch from current branch"
-    echo "  $0 remove <worktree-path>                        Remove worktree and optionally delete branch"
+    echo "  $0 remove <worktree-path> [--force]              Remove worktree and optionally delete branch"
     echo "  $0 list                                          List all worktrees"
     echo "  $0 help                                          Show this help"
     echo ""
     echo "Options:"
-    echo "  --no-env    Skip copying local.env file to the new worktree"
+    echo "  --no-env    Skip copying local.env file to the new worktree (for add)"
+    echo "  --force     Force removal of worktree even if it has modified/untracked files (for remove)"
     echo ""
     echo "Examples:"
     echo "  $0 add feature-login                    # Creates worktree in ../feature-login with local.env"
     echo "  $0 add feature-login /tmp/feature-login # Creates worktree in /tmp/feature-login with local.env"
     echo "  $0 add feature-login --no-env           # Creates worktree without copying local.env"
     echo "  $0 remove ../feature-login              # Removes worktree and prompts to delete branch"
+    echo "  $0 remove ../feature-login --force      # Force removes worktree and prompts to delete branch"
     echo ""
 }
 
@@ -123,6 +125,7 @@ add_worktree() {
 # Remove worktree and optionally delete branch
 remove_worktree() {
     local worktree_path="$1"
+    local force="$2"
 
     if [[ -z "$worktree_path" ]]; then
         print_error "Worktree path is required"
@@ -144,8 +147,13 @@ remove_worktree() {
     print_info "Removing worktree at '$worktree_path'"
     print_info "Associated branch: '$branch_name'"
 
-    # Remove the worktree
-    git worktree remove "$worktree_path"
+    if [[ "$force" == "true" ]]; then
+        print_warning "Using --force: Any modified or untracked files will be discarded!"
+        git worktree remove --force "$worktree_path"
+    else
+        git worktree remove "$worktree_path"
+    fi
+
     print_success "Worktree removed successfully"
 
     # Ask if user wants to delete the branch
@@ -192,6 +200,23 @@ parse_add_args() {
     add_worktree "$branch_name" "$worktree_path" "$skip_env"
 }
 
+# Parse arguments for remove command
+parse_remove_args() {
+    local worktree_path="$1"
+    local arg2="$2"
+    local force="false"
+
+    if [[ "$arg2" == "--force" ]]; then
+        force="true"
+    elif [[ -n "$arg2" ]]; then
+        print_error "Unknown option: $arg2"
+        show_usage
+        exit 1
+    fi
+
+    remove_worktree "$worktree_path" "$force"
+}
+
 # Main script logic
 main() {
     check_git_repo
@@ -201,7 +226,7 @@ main() {
             parse_add_args "$2" "$3" "$4"
             ;;
         "remove")
-            remove_worktree "$2"
+            parse_remove_args "$2" "$3"
             ;;
         "list")
             list_worktrees
