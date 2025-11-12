@@ -1,10 +1,7 @@
 #pragma once
 
 // Storm ORM Main Header
-// Include this header to get access to Storm's convenience macros and all core functionality
-// This header must be included because C++26 modules cannot export macros
-
-#include <storm/macros.h>
+// Include this header to get access to all core Storm functionality
 
 // Note: Import Storm modules as needed in your code:
 // import storm.connection;
