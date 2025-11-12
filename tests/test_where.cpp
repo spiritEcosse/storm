@@ -10,7 +10,7 @@ using namespace storm;
 using namespace storm::orm::where;
 
 // Test model for WHERE clause operations (matching test_select.cpp)
-struct Person {
+struct WherePerson {
     [[= storm::meta::FieldAttr::primary]] int id;
     std::string                               name;
     int                                       age;
@@ -21,14 +21,14 @@ class WhereTest : public ::testing::Test {
   protected:
     void SetUp() override {
         // Set up in-memory SQLite database
-        auto result = QuerySet<Person>::set_default_connection(":memory:");
+        auto result = QuerySet<WherePerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
 
-        auto& conn = QuerySet<Person>::get_default_connection();
+        auto& conn = QuerySet<WherePerson>::get_default_connection();
 
         // Create table with AUTOINCREMENT (matching test_select.cpp)
         auto create_result = conn.execute(
-                "CREATE TABLE Person ("
+                "CREATE TABLE WherePerson ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
                 "age INTEGER NOT NULL"
@@ -37,7 +37,7 @@ class WhereTest : public ::testing::Test {
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
         // Insert test data (use ID 0 to let AUTOINCREMENT generate IDs)
-        std::vector<Person> people = {
+        std::vector<WherePerson> people = {
                 {0, "Alice", 30},
                 {0, "Bob", 25},
                 {0, "Charlie", 35},
@@ -45,7 +45,7 @@ class WhereTest : public ::testing::Test {
                 {0, "Eve", 40}
         };
 
-        QuerySet<Person> queryset;
+        QuerySet<WherePerson> queryset;
         // Insert one by one to avoid batch insert issues
         for (const auto& person : people) {
             auto insert_result = queryset.insert(person);
@@ -54,15 +54,15 @@ class WhereTest : public ::testing::Test {
     }
 
     void TearDown() override {
-        QuerySet<Person>::clear_default_connection();
+        QuerySet<WherePerson>::clear_default_connection();
     }
 };
 
 // Test: WHERE with single integer condition
 TEST_F(WhereTest, WhereSingleIntegerCondition) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
-    auto result = queryset.where(field<^^Person::age>() == 30).select();
+    auto result = queryset.where(field<^^WherePerson::age>() == 30).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -73,9 +73,9 @@ TEST_F(WhereTest, WhereSingleIntegerCondition) {
 
 // Test: WHERE with greater than condition
 TEST_F(WhereTest, WhereGreaterThan) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
-    auto result = queryset.where(field<^^Person::age>() > 30).select();
+    auto result = queryset.where(field<^^WherePerson::age>() > 30).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -88,9 +88,9 @@ TEST_F(WhereTest, WhereGreaterThan) {
 
 // Test: WHERE with less than condition
 TEST_F(WhereTest, WhereLessThan) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
-    auto result = queryset.where(field<^^Person::age>() < 30).select();
+    auto result = queryset.where(field<^^WherePerson::age>() < 30).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -103,9 +103,9 @@ TEST_F(WhereTest, WhereLessThan) {
 
 // Test: WHERE with string condition
 TEST_F(WhereTest, WhereStringCondition) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
-    auto result = queryset.where(field<^^Person::name>() == "Bob").select();
+    auto result = queryset.where(field<^^WherePerson::name>() == "Bob").select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -116,9 +116,9 @@ TEST_F(WhereTest, WhereStringCondition) {
 
 // Test: WHERE with LIKE pattern
 TEST_F(WhereTest, WhereLikePattern) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
-    auto result = queryset.where(field<^^Person::name>().like("A%")).select();
+    auto result = queryset.where(field<^^WherePerson::name>().like("A%")).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -128,10 +128,10 @@ TEST_F(WhereTest, WhereLikePattern) {
 
 // Test: WHERE with multiple conditions (AND logic)
 TEST_F(WhereTest, WhereMultipleConditions) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
-    auto expr1 = field<^^Person::age>() > 25;
-    auto expr2 = field<^^Person::age>() < 40;
+    auto expr1 = field<^^WherePerson::age>() > 25;
+    auto expr2 = field<^^WherePerson::age>() < 40;
     auto result = queryset.where(and_(expr1, expr2)).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
@@ -144,11 +144,11 @@ TEST_F(WhereTest, WhereMultipleConditions) {
 
 // Test: WHERE with three conditions
 TEST_F(WhereTest, WhereThreeConditions) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
-    auto expr1 = field<^^Person::age>() >= 28;
-    auto expr2 = field<^^Person::age>() <= 35;
-    auto expr3 = field<^^Person::name>() != "Charlie";
+    auto expr1 = field<^^WherePerson::age>() >= 28;
+    auto expr2 = field<^^WherePerson::age>() <= 35;
+    auto expr3 = field<^^WherePerson::name>() != "Charlie";
     auto result = queryset.where(and_(and_(expr1, expr2), expr3)).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
@@ -160,9 +160,9 @@ TEST_F(WhereTest, WhereThreeConditions) {
 
 // Test: WHERE with BETWEEN clause
 TEST_F(WhereTest, WhereBetween) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
-    auto result = queryset.where(field<^^Person::age>().between(28, 35)).select();
+    auto result = queryset.where(field<^^WherePerson::age>().between(28, 35)).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -174,10 +174,10 @@ TEST_F(WhereTest, WhereBetween) {
 
 // Test: WHERE with IN clause (multiple parameters)
 TEST_F(WhereTest, WhereIn) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
     // IN expressions use runtime builder pattern, requires .select()
-    auto result = queryset.where(field<^^Person::age>().in(25, 30, 40)).select();
+    auto result = queryset.where(field<^^WherePerson::age>().in(25, 30, 40)).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -189,9 +189,9 @@ TEST_F(WhereTest, WhereIn) {
 
 // Test: WHERE returning empty result
 TEST_F(WhereTest, WhereNoMatch) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
-    auto result = queryset.where(field<^^Person::age>() > 100).select();
+    auto result = queryset.where(field<^^WherePerson::age>() > 100).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -200,9 +200,9 @@ TEST_F(WhereTest, WhereNoMatch) {
 
 // Test: WHERE returning all rows
 TEST_F(WhereTest, WhereMatchesAll) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
-    auto result = queryset.where(field<^^Person::age>() > 0).select();
+    auto result = queryset.where(field<^^WherePerson::age>() > 0).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -211,11 +211,11 @@ TEST_F(WhereTest, WhereMatchesAll) {
 
 // Test: WHERE with complex expression
 TEST_F(WhereTest, WhereComplexExpression) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
-    auto expr1 = field<^^Person::age>() < 30;
-    auto expr2 = field<^^Person::age>() > 35;
-    auto expr3 = field<^^Person::name>() != "Charlie";
+    auto expr1 = field<^^WherePerson::age>() < 30;
+    auto expr2 = field<^^WherePerson::age>() > 35;
+    auto expr3 = field<^^WherePerson::name>() != "Charlie";
     auto result = queryset.where(and_(or_(expr1, expr2), expr3)).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
@@ -228,10 +228,10 @@ TEST_F(WhereTest, WhereComplexExpression) {
 
 // Test: WHERE state persists after select() - enables query reusability
 TEST_F(WhereTest, WherePreservesStateAfterSelect) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
     // Set base filter
-    queryset.where(field<^^Person::age>() >= 25);
+    queryset.where(field<^^WherePerson::age>() >= 25);
 
     // First query uses the filter
     auto result1 = queryset.select();
@@ -244,7 +244,7 @@ TEST_F(WhereTest, WherePreservesStateAfterSelect) {
     ASSERT_EQ(result2.value().size(), 5) << "State should persist after first select()";
 
     // Add more conditions - they accumulate
-    queryset.where(field<^^Person::age>() < 40);
+    queryset.where(field<^^WherePerson::age>() < 40);
     auto result3 = queryset.select();
     ASSERT_TRUE(result3.has_value());
     ASSERT_EQ(result3.value().size(), 4) << "Expected 4 people with age >= 25 AND age < 40";
@@ -258,10 +258,10 @@ TEST_F(WhereTest, WherePreservesStateAfterSelect) {
 
 // Test: WHERE with std::string_view parameter
 TEST_F(WhereTest, WhereStringView) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
     std::string_view name_view = "Charlie";
-    auto result = queryset.where(field<^^Person::name>() == name_view).select();
+    auto result = queryset.where(field<^^WherePerson::name>() == name_view).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -271,10 +271,10 @@ TEST_F(WhereTest, WhereStringView) {
 
 // Test: WHERE with const char* parameter
 TEST_F(WhereTest, WhereConstCharPtr) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
     const char* name_ptr = "Bob";
-    auto result = queryset.where(field<^^Person::name>() == name_ptr).select();
+    auto result = queryset.where(field<^^WherePerson::name>() == name_ptr).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -285,10 +285,10 @@ TEST_F(WhereTest, WhereConstCharPtr) {
 
 // Test: WHERE with mixed parameter types
 TEST_F(WhereTest, WhereMixedTypes) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
-    auto expr1 = field<^^Person::name>() == "Diana";
-    auto expr2 = field<^^Person::age>() == 28;
+    auto expr1 = field<^^WherePerson::name>() == "Diana";
+    auto expr2 = field<^^WherePerson::age>() == 28;
     auto result = queryset.where(and_(expr1, expr2)).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
@@ -435,11 +435,11 @@ TEST_F(WhereJoinTest, WhereWithNaturalOperators) {
 
 // Test: Natural operators with complex expressions
 TEST_F(WhereTest, WhereNaturalOperatorsComplex) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
     // Using natural 'and' and 'or' operators
-    auto result = queryset.where((field<^^Person::age>() < 30 or field<^^Person::age>() > 35) and
-                                  field<^^Person::name>() != "Charlie")
+    auto result = queryset.where((field<^^WherePerson::age>() < 30 or field<^^WherePerson::age>() > 35) and
+                                  field<^^WherePerson::name>() != "Charlie")
                           .select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
@@ -453,30 +453,30 @@ TEST_F(WhereTest, WhereNaturalOperatorsComplex) {
 // Test: Reusing WHERE conditions across multiple queries
 TEST_F(WhereTest, WhereReuseCondition) {
     // Store condition in variable
-    auto age_condition = field<^^Person::age>() > 25;
+    auto age_condition = field<^^WherePerson::age>() > 25;
 
     // First use - should return 4 people (Alice=30, Charlie=35, Diana=28, Eve=40)
-    QuerySet<Person> queryset1;
+    QuerySet<WherePerson> queryset1;
     auto result1 = queryset1.where(age_condition).select();
     ASSERT_TRUE(result1.has_value()) << "First WHERE failed: " << result1.error().message();
     EXPECT_EQ(result1.value().size(), 4) << "Expected 4 people with age > 25";
 
     // Reuse same condition with fresh QuerySet - should return same results
-    QuerySet<Person> queryset2;
+    QuerySet<WherePerson> queryset2;
     auto result2 = queryset2.where(age_condition).select();
     ASSERT_TRUE(result2.has_value()) << "Second WHERE failed: " << result2.error().message();
     EXPECT_EQ(result2.value().size(), 4) << "Expected 4 people with age > 25 (reused condition)";
 
     // Combine reused condition with new one
-    QuerySet<Person> queryset3;
-    auto result3 = queryset3.where(age_condition and field<^^Person::name>() == "Alice").select();
+    QuerySet<WherePerson> queryset3;
+    auto result3 = queryset3.where(age_condition and field<^^WherePerson::name>() == "Alice").select();
     ASSERT_TRUE(result3.has_value()) << "Combined WHERE failed: " << result3.error().message();
     ASSERT_EQ(result3.value().size(), 1) << "Expected 1 person matching both conditions";
     EXPECT_EQ(result3.value()[0].name, "Alice");
     EXPECT_EQ(result3.value()[0].age, 30);
 
     // Reuse the original condition again with fresh QuerySet
-    QuerySet<Person> queryset4;
+    QuerySet<WherePerson> queryset4;
     auto result4 = queryset4.where(age_condition).select();
     ASSERT_TRUE(result4.has_value()) << "Third WHERE failed: " << result4.error().message();
     EXPECT_EQ(result4.value().size(), 4) << "Expected 4 people with age > 25 (reused after combining)";
@@ -485,35 +485,35 @@ TEST_F(WhereTest, WhereReuseCondition) {
 // Test: Building composable filter library
 TEST_F(WhereTest, WhereComposableFilters) {
     // Create reusable filter components
-    auto young_filter = field<^^Person::age>() < 30;
-    auto old_filter = field<^^Person::age>() >= 35;
-    auto name_starts_with_a = field<^^Person::name>().like("A%");
+    auto young_filter = field<^^WherePerson::age>() < 30;
+    auto old_filter = field<^^WherePerson::age>() >= 35;
+    auto name_starts_with_a = field<^^WherePerson::name>().like("A%");
 
     // Use filters independently with fresh QuerySets
-    QuerySet<Person> qs1;
+    QuerySet<WherePerson> qs1;
     auto young_people = qs1.where(young_filter).select();
     ASSERT_TRUE(young_people.has_value());
     EXPECT_EQ(young_people.value().size(), 2) << "Expected 2 young people (Bob=25, Diana=28)";
 
-    QuerySet<Person> qs2;
+    QuerySet<WherePerson> qs2;
     auto old_people = qs2.where(old_filter).select();
     ASSERT_TRUE(old_people.has_value());
     EXPECT_EQ(old_people.value().size(), 2) << "Expected 2 old people (Charlie=35, Eve=40)";
 
     // Combine filters
-    QuerySet<Person> qs3;
+    QuerySet<WherePerson> qs3;
     auto young_or_old = qs3.where(young_filter or old_filter).select();
     ASSERT_TRUE(young_or_old.has_value());
     EXPECT_EQ(young_or_old.value().size(), 4) << "Expected 4 people (young or old)";
 
     // Complex composition
-    QuerySet<Person> qs4;
+    QuerySet<WherePerson> qs4;
     auto young_a_names = qs4.where(young_filter and name_starts_with_a).select();
     ASSERT_TRUE(young_a_names.has_value());
     EXPECT_EQ(young_a_names.value().size(), 0) << "Expected 0 people (no young people with A names)";
 
     // Reuse filters in different combinations
-    QuerySet<Person> qs5;
+    QuerySet<WherePerson> qs5;
     auto old_a_names = qs5.where(old_filter and name_starts_with_a).select();
     ASSERT_TRUE(old_a_names.has_value());
     EXPECT_EQ(old_a_names.value().size(), 0) << "Expected 0 people (no old people with A names)";
@@ -521,10 +521,10 @@ TEST_F(WhereTest, WhereComposableFilters) {
 
 // Test: Reusable base QuerySet pattern
 TEST_F(WhereTest, ReusableBaseQuerySet) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
     // Create a base filtered QuerySet (age >= 25)
-    queryset.where(field<^^Person::age>() >= 25);
+    queryset.where(field<^^WherePerson::age>() >= 25);
 
     // Reuse base filter multiple times
     auto result1 = queryset.select();
@@ -537,7 +537,7 @@ TEST_F(WhereTest, ReusableBaseQuerySet) {
     ASSERT_EQ(result2.value().size(), 5) << "Base filter should persist";
 
     // Refine the base filter
-    queryset.where(field<^^Person::age>() >= 30);
+    queryset.where(field<^^WherePerson::age>() >= 30);
     auto adults = queryset.select();
     ASSERT_TRUE(adults.has_value());
     ASSERT_EQ(adults.value().size(), 3) << "Expected 3 people (age >= 25 AND age >= 30)";
@@ -545,22 +545,22 @@ TEST_F(WhereTest, ReusableBaseQuerySet) {
 
 // Test: Building query progressively
 TEST_F(WhereTest, ProgressiveQueryBuilding) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
     // Start with broad filter
-    queryset.where(field<^^Person::age>() >= 25);
+    queryset.where(field<^^WherePerson::age>() >= 25);
     auto result1 = queryset.select();
     ASSERT_TRUE(result1.has_value());
     EXPECT_EQ(result1.value().size(), 5) << "All people are >= 25";
 
     // Narrow it down
-    queryset.where(field<^^Person::age>() < 35);
+    queryset.where(field<^^WherePerson::age>() < 35);
     auto result2 = queryset.select();
     ASSERT_TRUE(result2.has_value());
     EXPECT_EQ(result2.value().size(), 3) << "Expected 3 people (25 <= age < 35)";
 
     // Add another condition (names starting with certain letter)
-    queryset.where(field<^^Person::name>().like("D%"));
+    queryset.where(field<^^WherePerson::name>().like("D%"));
     auto result3 = queryset.select();
     ASSERT_TRUE(result3.has_value());
     EXPECT_EQ(result3.value().size(), 1) << "Expected 1 person matching all conditions (Diana)";
@@ -569,12 +569,12 @@ TEST_F(WhereTest, ProgressiveQueryBuilding) {
 
 // Test: reset() clears all accumulated conditions
 TEST_F(WhereTest, ResetClearsAllConditions) {
-    QuerySet<Person> queryset;
+    QuerySet<WherePerson> queryset;
 
     // Build up complex filter
-    queryset.where(field<^^Person::age>() >= 25);
-    queryset.where(field<^^Person::age>() < 40);
-    queryset.where(field<^^Person::name>().like("D%"));
+    queryset.where(field<^^WherePerson::age>() >= 25);
+    queryset.where(field<^^WherePerson::age>() < 40);
+    queryset.where(field<^^WherePerson::name>().like("D%"));
 
     auto filtered = queryset.select();
     ASSERT_TRUE(filtered.has_value());
@@ -588,7 +588,7 @@ TEST_F(WhereTest, ResetClearsAllConditions) {
     EXPECT_EQ(all_people.value().size(), 5) << "After reset() should get all rows";
 
     // Can build new filter after reset
-    queryset.where(field<^^Person::age>() == 25);
+    queryset.where(field<^^WherePerson::age>() == 25);
     auto bob_only = queryset.select();
     ASSERT_TRUE(bob_only.has_value());
     EXPECT_EQ(bob_only.value().size(), 1) << "New filter after reset works";

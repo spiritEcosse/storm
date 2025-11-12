@@ -8,7 +8,7 @@ import <expected>;
 using namespace storm;
 
 // Test model with various field types
-struct Person {
+struct SelectPerson {
     [[= storm::meta::FieldAttr::primary]] int id;
     std::string                               name;
     int                                       age;
@@ -19,14 +19,14 @@ class SelectTest : public ::testing::Test {
   protected:
     void SetUp() override {
         // Set up in-memory SQLite database
-        auto result = QuerySet<Person>::set_default_connection(":memory:");
+        auto result = QuerySet<SelectPerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
 
-        auto& conn = QuerySet<Person>::get_default_connection();
+        auto& conn = QuerySet<SelectPerson>::get_default_connection();
 
         // Create table with AUTOINCREMENT for proper ID generation
         auto create_result = conn.execute(
-                "CREATE TABLE Person ("
+                "CREATE TABLE SelectPerson ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
                 "age INTEGER NOT NULL"
@@ -36,13 +36,13 @@ class SelectTest : public ::testing::Test {
     }
 
     void TearDown() override {
-        QuerySet<Person>::clear_default_connection();
+        QuerySet<SelectPerson>::clear_default_connection();
     }
 };
 
 // Test: SELECT from empty table returns empty vector
 TEST_F(SelectTest, SelectFromEmptyTable) {
-    QuerySet<Person> queryset;
+    QuerySet<SelectPerson> queryset;
 
     auto result = queryset.select();
     ASSERT_TRUE(result.has_value()) << "SELECT failed: " << result.error().message();
@@ -53,10 +53,10 @@ TEST_F(SelectTest, SelectFromEmptyTable) {
 
 // Test: SELECT single row
 TEST_F(SelectTest, SelectSingleRow) {
-    QuerySet<Person> queryset;
+    QuerySet<SelectPerson> queryset;
 
     // Insert one person
-    Person alice{0, "Alice", 30};
+    SelectPerson alice{0, "Alice", 30};
     auto   insert_result = queryset.insert(alice);
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
@@ -77,12 +77,12 @@ TEST_F(SelectTest, SelectSingleRow) {
 
 // Test: SELECT multiple rows
 TEST_F(SelectTest, SelectMultipleRows) {
-    QuerySet<Person> queryset;
+    QuerySet<SelectPerson> queryset;
 
     // Insert multiple people (use explicit IDs for batch insert)
-    std::vector<Person> people_to_insert = {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Charlie", 35}};
+    std::vector<SelectPerson> people_to_insert = {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Charlie", 35}};
 
-    auto insert_result = queryset.insert(std::span<const Person>(people_to_insert));
+    auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert));
     ASSERT_TRUE(insert_result.has_value())
             << "INSERT failed: code=" << insert_result.error().code() << " message=" << insert_result.error().message();
 
@@ -112,10 +112,10 @@ TEST_F(SelectTest, SelectMultipleRows) {
 
 // Test: SELECT with different field types (int and std::string)
 TEST_F(SelectTest, SelectDifferentFieldTypes) {
-    QuerySet<Person> queryset;
+    QuerySet<SelectPerson> queryset;
 
     // Insert person with specific values
-    Person dave{0, "Dave", 40};
+    SelectPerson dave{0, "Dave", 40};
     auto   insert_result = queryset.insert(dave);
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
@@ -137,18 +137,18 @@ TEST_F(SelectTest, SelectDifferentFieldTypes) {
 
 // Test: SELECT after INSERT and DELETE
 TEST_F(SelectTest, SelectAfterInsertAndDelete) {
-    QuerySet<Person> queryset;
+    QuerySet<SelectPerson> queryset;
 
     // Insert multiple people (use explicit IDs for batch insert)
-    std::vector<Person> people_to_insert = {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Charlie", 35}};
+    std::vector<SelectPerson> people_to_insert = {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Charlie", 35}};
 
-    auto insert_result = queryset.insert(std::span<const Person>(people_to_insert));
+    auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert));
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     const auto& inserted_ids = insert_result.value();
 
     // Delete Bob (middle row)
-    Person bob_to_delete{static_cast<int>(inserted_ids[1]), "Bob", 25};
+    SelectPerson bob_to_delete{static_cast<int>(inserted_ids[1]), "Bob", 25};
     auto   delete_result = queryset.remove(bob_to_delete);
     ASSERT_TRUE(delete_result.has_value()) << "DELETE failed: " << delete_result.error().message();
 
@@ -166,15 +166,15 @@ TEST_F(SelectTest, SelectAfterInsertAndDelete) {
 
 // Test: SELECT with large dataset
 TEST_F(SelectTest, SelectLargeDataset) {
-    QuerySet<Person> queryset;
+    QuerySet<SelectPerson> queryset;
 
     // Insert 100 people (use explicit IDs for batch insert)
-    std::vector<Person> people_to_insert;
+    std::vector<SelectPerson> people_to_insert;
     for (int i = 1; i <= 100; ++i) {
-        people_to_insert.push_back({i, "Person" + std::to_string(i), 20 + i});
+        people_to_insert.push_back({i, "SelectPerson" + std::to_string(i), 20 + i});
     }
 
-    auto insert_result = queryset.insert(std::span<const Person>(people_to_insert));
+    auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert));
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     // Select all rows
@@ -185,22 +185,22 @@ TEST_F(SelectTest, SelectLargeDataset) {
     ASSERT_EQ(people.size(), 100) << "Expected 100 rows";
 
     // Verify a few rows
-    EXPECT_EQ(people[0].name, "Person1");
+    EXPECT_EQ(people[0].name, "SelectPerson1");
     EXPECT_EQ(people[0].age, 21);
 
-    EXPECT_EQ(people[50].name, "Person51");
+    EXPECT_EQ(people[50].name, "SelectPerson51");
     EXPECT_EQ(people[50].age, 71);
 
-    EXPECT_EQ(people[99].name, "Person100");
+    EXPECT_EQ(people[99].name, "SelectPerson100");
     EXPECT_EQ(people[99].age, 120);
 }
 
 // Test: Multiple SELECT calls reuse cached statement
 TEST_F(SelectTest, MultipleSelectCallsUseCaching) {
-    QuerySet<Person> queryset;
+    QuerySet<SelectPerson> queryset;
 
     // Insert test data
-    Person alice{0, "Alice", 30};
+    SelectPerson alice{0, "Alice", 30};
     auto   insert_result = queryset.insert(alice);
     ASSERT_TRUE(insert_result.has_value());
 
@@ -222,10 +222,10 @@ TEST_F(SelectTest, MultipleSelectCallsUseCaching) {
 
 // Test: SELECT with empty strings
 TEST_F(SelectTest, SelectWithEmptyString) {
-    QuerySet<Person> queryset;
+    QuerySet<SelectPerson> queryset;
 
     // Insert person with empty name
-    Person anonymous{0, "", 25};
+    SelectPerson anonymous{0, "", 25};
     auto   insert_result = queryset.insert(anonymous);
     ASSERT_TRUE(insert_result.has_value());
 
@@ -241,13 +241,13 @@ TEST_F(SelectTest, SelectWithEmptyString) {
 
 // Test: SELECT preserves row order
 TEST_F(SelectTest, SelectPreservesRowOrder) {
-    QuerySet<Person> queryset;
+    QuerySet<SelectPerson> queryset;
 
     // Insert in specific order (use explicit IDs for batch insert)
-    std::vector<Person> people_to_insert =
+    std::vector<SelectPerson> people_to_insert =
             {{1, "First", 1}, {2, "Second", 2}, {3, "Third", 3}, {4, "Fourth", 4}, {5, "Fifth", 5}};
 
-    auto insert_result = queryset.insert(std::span<const Person>(people_to_insert));
+    auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert));
     ASSERT_TRUE(insert_result.has_value());
 
     // Select and verify order is preserved
