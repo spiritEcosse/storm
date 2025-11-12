@@ -99,14 +99,20 @@ void benchmark_storm_orm_single_insert(int num_records, const BenchmarkConfig& c
     // Create QuerySet
     auto queryset = storm::QuerySet<Person>{};
 
-    // Benchmark single INSERT operations
+    // Warmup phase: populate statement cache with first few inserts
+    constexpr int warmup_count = 10;
+    for (int i = 0; i < warmup_count && i < num_records; ++i) {
+        queryset.insert(persons[i]);
+    }
+
+    // Benchmark single INSERT operations (with warm cache)
     BenchmarkTimer timer;
     double total_time = 0;
     int successful_inserts = 0;
 
-    for (const auto& person : persons) {
+    for (size_t i = warmup_count; i < persons.size(); ++i) {
         timer.reset();
-        auto result = queryset.insert(person);
+        auto result = queryset.insert(persons[i]);
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -251,14 +257,20 @@ void benchmark_storm_orm_single_update(int num_records, const BenchmarkConfig& c
         person.name += "_updated";  // Modify name
     }
 
-    // Benchmark single UPDATE operations
+    // Warmup phase: populate UPDATE statement cache
+    constexpr int warmup_count = 10;
+    for (int i = 0; i < warmup_count && i < num_records; ++i) {
+        queryset.update(persons[i]);
+    }
+
+    // Benchmark single UPDATE operations (with warm cache)
     BenchmarkTimer timer;
     double total_time = 0;
     int successful_updates = 0;
 
-    for (const auto& person : persons) {
+    for (size_t i = warmup_count; i < persons.size(); ++i) {
         timer.reset();
-        auto result = queryset.update(person);
+        auto result = queryset.update(persons[i]);
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -413,14 +425,20 @@ void benchmark_storm_orm_single_delete(int num_records, const BenchmarkConfig& c
         }
     }
 
-    // Benchmark single DELETE operations
+    // Warmup phase: populate DELETE statement cache
+    constexpr int warmup_count = 10;
+    for (int i = 0; i < warmup_count && i < num_records; ++i) {
+        queryset.remove(persons[i]);
+    }
+
+    // Benchmark single DELETE operations (with warm cache)
     BenchmarkTimer timer;
     double total_time = 0;
     int successful_deletes = 0;
 
-    for (const auto& person : persons) {
+    for (size_t i = warmup_count; i < persons.size(); ++i) {
         timer.reset();
-        auto result = queryset.remove(person);
+        auto result = queryset.remove(persons[i]);
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
