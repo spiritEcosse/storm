@@ -33,12 +33,12 @@ def run_join_benchmark(args):
     print(f"{Colors.GREEN}Running JOIN Performance Analysis...{Colors.RESET}\n")
 
     benchmark = JoinBenchmark(args.binary)
-    # Default to 1000 iterations for accurate steady-state performance
+    # Default to 100 iterations for fast feedback; use --iterations=1000 for production-grade measurements
     benchmark.run(
         f'--size={args.size or 10000}',
-        f'--iterations={args.iterations or 1000}',
+        f'--iterations={args.iterations or 100}',
         messages=args.size or 10000,
-        iterations=args.iterations or 1000
+        iterations=args.iterations or 100
     )
 
 
@@ -56,12 +56,12 @@ def run_where_benchmark(args):
         binary_path = args.binary
 
     benchmark = WhereBenchmark(binary_path)
-    # Default to 1000 iterations for accurate steady-state performance
+    # Default to 100 iterations for fast feedback; use --iterations=1000 for production-grade measurements
     benchmark.run(
         f'--size={args.size or 10000}',
-        f'--iterations={args.iterations or 1000}',
+        f'--iterations={args.iterations or 100}',
         size=args.size or 10000,
-        iterations=args.iterations or 1000
+        iterations=args.iterations or 100
     )
 
 
