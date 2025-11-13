@@ -92,6 +92,19 @@ cmake --preset ninja-release
 cmake --build --preset ninja-release
 ```
 
+### Quick Commit Workflow
+
+```bash
+# Format, test, commit, and push in one command
+./quick_commit.sh
+```
+
+This script:
+1. Runs clang-format on all source files
+2. Runs unit tests (fails if any test fails)
+3. Prompts for commit message
+4. Asks for confirmation before pushing
+
 ### Benchmarking
 
 **⚠️ Always use Release builds for accurate performance measurements!**

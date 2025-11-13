@@ -13,11 +13,11 @@ using namespace storm;
 
 // Test model: AggregatePerson with multiple numeric fields
 struct AggregatePerson {
-    [[=storm::meta::FieldAttr::primary]] int id;
-    std::string name;
-    int age;
-    double salary;
-    int years_experience;
+    [[= storm::meta::FieldAttr::primary]] int id;
+    std::string                               name;
+    int                                       age;
+    double                                    salary;
+    int                                       years_experience;
 };
 
 // Test fixture for aggregate functions
@@ -51,13 +51,12 @@ class AggregateTest : public ::testing::Test {
 
     // Helper to insert test data
     void insert_test_data() {
-        std::vector<AggregatePerson> people = {
-            {0, "Alice", 25, 50000.0, 3},
-            {0, "Bob", 30, 60000.0, 5},
-            {0, "Charlie", 35, 70000.0, 7},
-            {0, "Dave", 40, 80000.0, 10},
-            {0, "Eve", 45, 90000.0, 15}
-        };
+        std::vector<AggregatePerson> people =
+                {{0, "Alice", 25, 50000.0, 3},
+                 {0, "Bob", 30, 60000.0, 5},
+                 {0, "Charlie", 35, 70000.0, 7},
+                 {0, "Dave", 40, 80000.0, 10},
+                 {0, "Eve", 45, 90000.0, 15}};
 
         for (const auto& person : people) {
             auto result = qs->insert(person);
@@ -182,11 +181,7 @@ TEST_F(AggregateTest, MultipleAggregates_SumCountAvg) {
     insert_test_data();
 
     // SELECT SUM(age), COUNT(*), AVG(salary) FROM AggregatePerson
-    auto result = qs->aggregate()
-                      .sum<^^AggregatePerson::age>()
-                      .count()
-                      .avg<^^AggregatePerson::salary>()
-                      .select();
+    auto result = qs->aggregate().sum<^^AggregatePerson::age>().count().avg<^^AggregatePerson::salary>().select();
     ASSERT_TRUE(result.has_value()) << "Triple aggregate failed: " << result.error().message();
 
     auto [sum_age, count_all, avg_salary] = result.value();
@@ -200,12 +195,12 @@ TEST_F(AggregateTest, MultipleAggregates_AllTypes) {
 
     // SELECT SUM(age), COUNT(*), AVG(salary), MIN(years_experience), MAX(age) FROM AggregatePerson
     auto result = qs->aggregate()
-                      .sum<^^AggregatePerson::age>()
-                      .count()
-                      .avg<^^AggregatePerson::salary>()
-                      .min<^^AggregatePerson::years_experience>()
-                      .max<^^AggregatePerson::age>()
-                      .select();
+                          .sum<^^AggregatePerson::age>()
+                          .count()
+                          .avg<^^AggregatePerson::salary>()
+                          .min<^^AggregatePerson::years_experience>()
+                          .max<^^AggregatePerson::age>()
+                          .select();
     ASSERT_TRUE(result.has_value()) << "All aggregates failed: " << result.error().message();
 
     auto [sum_age, count_all, avg_salary, min_exp, max_age] = result.value();
@@ -307,7 +302,9 @@ TEST_F(AggregateTest, TypeSafety_IntegerResult) {
     // Verify SUM returns int64_t
     auto result = qs->sum<^^AggregatePerson::age>().select();
     ASSERT_TRUE(result.has_value());
-    static_assert(std::is_same_v<std::remove_reference_t<decltype(result.value())>, int64_t>, "SUM should return int64_t");
+    static_assert(
+            std::is_same_v<std::remove_reference_t<decltype(result.value())>, int64_t>, "SUM should return int64_t"
+    );
 }
 
 TEST_F(AggregateTest, TypeSafety_DoubleResult) {
@@ -316,7 +313,9 @@ TEST_F(AggregateTest, TypeSafety_DoubleResult) {
     // Verify AVG returns double
     auto result = qs->avg<^^AggregatePerson::age>().select();
     ASSERT_TRUE(result.has_value());
-    static_assert(std::is_same_v<std::remove_reference_t<decltype(result.value())>, double>, "AVG should return double");
+    static_assert(
+            std::is_same_v<std::remove_reference_t<decltype(result.value())>, double>, "AVG should return double"
+    );
 }
 
 TEST_F(AggregateTest, TypeSafety_TupleResult) {
@@ -325,8 +324,10 @@ TEST_F(AggregateTest, TypeSafety_TupleResult) {
     // Verify multiple aggregates return tuple
     auto result = qs->aggregate().sum<^^AggregatePerson::age>().count().select();
     ASSERT_TRUE(result.has_value());
-    static_assert(std::is_same_v<std::remove_reference_t<decltype(result.value())>, std::tuple<int64_t, int64_t>>,
-                  "Multiple aggregates should return tuple");
+    static_assert(
+            std::is_same_v<std::remove_reference_t<decltype(result.value())>, std::tuple<int64_t, int64_t>>,
+            "Multiple aggregates should return tuple"
+    );
 }
 
 // ============================================================================
@@ -410,7 +411,7 @@ TEST_F(AggregateTest, Integration_AfterUpdate) {
     ASSERT_TRUE(people.has_value());
 
     for (auto& person : people.value()) {
-        person.age = 30;
+        person.age         = 30;
         auto update_result = qs->update(person);
         ASSERT_TRUE(update_result.has_value());
     }

@@ -125,13 +125,15 @@ export namespace storm {
         // Field-specific DISTINCT support using reflection
         // Usage:
         //   auto names = queryset.distinct<^^Person::name>().select();  // std::vector<std::string>
-        //   auto pairs = queryset.distinct<^^Person::name, ^^Person::age>().select();  // std::vector<std::tuple<std::string, int>>
-        //   auto ids = queryset.distinct().select();  // std::vector<int> (defaults to PK)
-        template <std::meta::info... FieldInfos>
-        constexpr auto distinct() {
+        //   auto pairs = queryset.distinct<^^Person::name, ^^Person::age>().select();  //
+        //   std::vector<std::tuple<std::string, int>> auto ids = queryset.distinct().select();  // std::vector<int>
+        //   (defaults to PK)
+        template <std::meta::info... FieldInfos> constexpr auto distinct() {
             if constexpr (sizeof...(FieldInfos) == 0) {
                 // Default to primary key when no fields specified
-                return orm::statements::DistinctStatement<T, ConnType, orm::statements::BaseStatement<T>::primary_key_>{conn_};
+                return orm::statements::DistinctStatement<T, ConnType, orm::statements::BaseStatement<T>::primary_key_>{
+                        conn_
+                };
             } else {
                 return orm::statements::DistinctStatement<T, ConnType, FieldInfos...>{conn_};
             }
@@ -145,7 +147,8 @@ export namespace storm {
             requires(sizeof...(FKFieldPtrs) >= 1)
         constexpr auto&& join(this auto&& self) {
             // Create type-erased wrapper with compile-time generated SQL (INNER JOIN)
-            self.join_stmt_ = orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Inner, FKFieldPtrs...>();
+            self.join_stmt_ =
+                    orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Inner, FKFieldPtrs...>();
             return self_cast(self);
         }
 
@@ -157,7 +160,8 @@ export namespace storm {
             requires(sizeof...(FKFieldPtrs) >= 1)
         constexpr auto&& left_join(this auto&& self) {
             // Create type-erased wrapper with compile-time generated SQL (LEFT JOIN)
-            self.join_stmt_ = orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Left, FKFieldPtrs...>();
+            self.join_stmt_ =
+                    orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Left, FKFieldPtrs...>();
             return self_cast(self);
         }
 
@@ -169,7 +173,8 @@ export namespace storm {
             requires(sizeof...(FKFieldPtrs) >= 1)
         constexpr auto&& right_join(this auto&& self) {
             // Create type-erased wrapper with compile-time generated SQL (RIGHT JOIN)
-            self.join_stmt_ = orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Right, FKFieldPtrs...>();
+            self.join_stmt_ =
+                    orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Right, FKFieldPtrs...>();
             return self_cast(self);
         }
 
@@ -195,7 +200,7 @@ export namespace storm {
             join_stmt_.reset();
             where_expr_.reset();
         }
-      
+
         // Aggregate functions - fluent builder pattern for multiple aggregates
         // Usage: queryset.aggregate().sum<^^Person::age>().count().avg<^^Person::salary>().select()
         constexpr auto aggregate() {
@@ -205,38 +210,38 @@ export namespace storm {
         // Shortcut: SUM aggregate (multi-field: SUM(f1 + f2 + ...))
         // Usage: queryset.sum<^^Person::age>().select()
         //        queryset.sum<^^Person::age, ^^Person::years>().select()  // SUM(age + years)
-        template <std::meta::info... FieldInfos>
-        constexpr auto sum() {
-            return orm::statements::SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::SUM, FieldInfos...>{conn_};
+        template <std::meta::info... FieldInfos> constexpr auto sum() {
+            return orm::statements::
+                    SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::SUM, FieldInfos...>{conn_};
         }
 
         // Shortcut: COUNT aggregate (defaults to COUNT(*) if no fields)
         // Usage: queryset.count().select()  // COUNT(*)
         //        queryset.count<^^Person::id>().select()  // COUNT(id)
-        template <std::meta::info... FieldInfos>
-        constexpr auto count() {
-            return orm::statements::SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::COUNT, FieldInfos...>{conn_};
+        template <std::meta::info... FieldInfos> constexpr auto count() {
+            return orm::statements::
+                    SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::COUNT, FieldInfos...>{conn_};
         }
 
         // Shortcut: AVG aggregate (multi-field: AVG(f1 + f2 + ...))
         // Usage: queryset.avg<^^Person::salary>().select()
-        template <std::meta::info... FieldInfos>
-        constexpr auto avg() {
-            return orm::statements::SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::AVG, FieldInfos...>{conn_};
+        template <std::meta::info... FieldInfos> constexpr auto avg() {
+            return orm::statements::
+                    SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::AVG, FieldInfos...>{conn_};
         }
 
         // Shortcut: MIN aggregate (multi-field: MIN(f1 + f2 + ...))
         // Usage: queryset.min<^^Person::age>().select()
-        template <std::meta::info... FieldInfos>
-        constexpr auto min() {
-            return orm::statements::SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::MIN, FieldInfos...>{conn_};
+        template <std::meta::info... FieldInfos> constexpr auto min() {
+            return orm::statements::
+                    SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::MIN, FieldInfos...>{conn_};
         }
 
         // Shortcut: MAX aggregate (multi-field: MAX(f1 + f2 + ...))
         // Usage: queryset.max<^^Person::age>().select()
-        template <std::meta::info... FieldInfos>
-        constexpr auto max() {
-            return orm::statements::SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::MAX, FieldInfos...>{conn_};
+        template <std::meta::info... FieldInfos> constexpr auto max() {
+            return orm::statements::
+                    SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::MAX, FieldInfos...>{conn_};
         }
 
         // Static methods for connection management
@@ -326,7 +331,7 @@ export namespace storm {
         mutable std::unique_ptr<orm::statements::UpdateStatement<T, ConnType>> update_stmt_;
 
         mutable std::optional<orm::statements::JoinStatementWrapper> join_stmt_;
-        mutable orm::where::ExpressionVariantPtr              where_expr_;
+        mutable orm::where::ExpressionVariantPtr                     where_expr_;
     };
 
     // Factory function for convenient QuerySet creation with default connection

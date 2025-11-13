@@ -493,8 +493,10 @@ TEST_F(FKFieldTest, LeftJoinMultipleFKFields) {
     int64_t bob_id   = bob_result.value();
 
     // Insert message from Alice to Bob
-    Message msg{0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Hello with LEFT JOIN"};
-    auto    msg_result = message_qs.insert(msg);
+    Message msg{
+            0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Hello with LEFT JOIN"
+    };
+    auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
 
     // LEFT JOIN on both sender and receiver
@@ -636,7 +638,7 @@ class NullableFKTest : public ::testing::Test {
         auto create_message_result = conn.execute(
                 "CREATE TABLE Message ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "sender_id INTEGER, "  // NULLABLE FK
+                "sender_id INTEGER, " // NULLABLE FK
                 "receiver_id INTEGER NOT NULL, "
                 "text TEXT NOT NULL"
                 ")"
@@ -792,7 +794,7 @@ class ExtendedTypesJoinTest : public ::testing::Test {
                 "name TEXT NOT NULL, "
                 "salary REAL NOT NULL, "
                 "is_active INTEGER NOT NULL, "
-                "nickname TEXT"  // NULL allowed for optional
+                "nickname TEXT" // NULL allowed for optional
                 ")"
         );
         ASSERT_TRUE(create_employee_result.has_value())
@@ -829,9 +831,9 @@ TEST_F(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
 
     struct Project {
         [[= storm::meta::FieldAttr::primary]] int id;
-        [[= storm::meta::FieldAttr::fk]] Employee     manager;
-        std::string                                   title;
-        double                                        budget;
+        [[= storm::meta::FieldAttr::fk]] Employee manager;
+        std::string                               title;
+        double                                    budget;
     };
 
     QuerySet<Employee> employee_qs;
@@ -929,16 +931,16 @@ TEST_F(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
 
     struct Task {
         [[= storm::meta::FieldAttr::primary]] int id;
-        [[= storm::meta::FieldAttr::fk]] Employee     assignee;
-        [[= storm::meta::FieldAttr::fk]] Employee     reviewer;
-        std::string                                   description;
+        [[= storm::meta::FieldAttr::fk]] Employee assignee;
+        [[= storm::meta::FieldAttr::fk]] Employee reviewer;
+        std::string                               description;
     };
 
     QuerySet<Employee> employee_qs;
     QuerySet<Task>     task_qs;
 
     // Create Task table
-    auto& conn              = QuerySet<User>::get_default_connection();
+    auto& conn               = QuerySet<User>::get_default_connection();
     auto  create_task_result = conn.execute(
             "CREATE TABLE Task ("
              "id INTEGER PRIMARY KEY AUTOINCREMENT, "

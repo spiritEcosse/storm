@@ -57,7 +57,7 @@ TEST_F(SelectTest, SelectSingleRow) {
 
     // Insert one person
     SelectPerson alice{0, "Alice", 30};
-    auto   insert_result = queryset.insert(alice);
+    auto         insert_result = queryset.insert(alice);
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     int64_t inserted_id = insert_result.value();
@@ -116,7 +116,7 @@ TEST_F(SelectTest, SelectDifferentFieldTypes) {
 
     // Insert person with specific values
     SelectPerson dave{0, "Dave", 40};
-    auto   insert_result = queryset.insert(dave);
+    auto         insert_result = queryset.insert(dave);
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     // Select and verify field types are correctly handled
@@ -149,7 +149,7 @@ TEST_F(SelectTest, SelectAfterInsertAndDelete) {
 
     // Delete Bob (middle row)
     SelectPerson bob_to_delete{static_cast<int>(inserted_ids[1]), "Bob", 25};
-    auto   delete_result = queryset.remove(bob_to_delete);
+    auto         delete_result = queryset.remove(bob_to_delete);
     ASSERT_TRUE(delete_result.has_value()) << "DELETE failed: " << delete_result.error().message();
 
     // Select all rows
@@ -201,7 +201,7 @@ TEST_F(SelectTest, MultipleSelectCallsUseCaching) {
 
     // Insert test data
     SelectPerson alice{0, "Alice", 30};
-    auto   insert_result = queryset.insert(alice);
+    auto         insert_result = queryset.insert(alice);
     ASSERT_TRUE(insert_result.has_value());
 
     // First SELECT
@@ -226,7 +226,7 @@ TEST_F(SelectTest, SelectWithEmptyString) {
 
     // Insert person with empty name
     SelectPerson anonymous{0, "", 25};
-    auto   insert_result = queryset.insert(anonymous);
+    auto         insert_result = queryset.insert(anonymous);
     ASSERT_TRUE(insert_result.has_value());
 
     // Select and verify

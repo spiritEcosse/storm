@@ -12,8 +12,8 @@ import <sstream>;
 import <tuple>;
 import <expected>;
 import <variant>;
-import storm_db_sqlite;  // For Statement type
-import storm_orm_utilities;  // For ConstexprString
+import storm_db_sqlite;     // For Statement type
+import storm_orm_utilities; // For ConstexprString
 
 export namespace storm::orm::where {
 
@@ -33,48 +33,45 @@ export namespace storm::orm::where {
     }
 
     // Comparison operators
-    enum class CompOp {
-        Equal,
-        NotEqual,
-        Greater,
-        GreaterEqual,
-        Less,
-        LessEqual
-    };
+    enum class CompOp { Equal, NotEqual, Greater, GreaterEqual, Less, LessEqual };
 
     constexpr std::string_view comp_op_to_sql(CompOp op) noexcept {
         switch (op) {
-            case CompOp::Equal: return " = ";
-            case CompOp::NotEqual: return " != ";
-            case CompOp::Greater: return " > ";
-            case CompOp::GreaterEqual: return " >= ";
-            case CompOp::Less: return " < ";
-            case CompOp::LessEqual: return " <= ";
+        case CompOp::Equal:
+            return " = ";
+        case CompOp::NotEqual:
+            return " != ";
+        case CompOp::Greater:
+            return " > ";
+        case CompOp::GreaterEqual:
+            return " >= ";
+        case CompOp::Less:
+            return " < ";
+        case CompOp::LessEqual:
+            return " <= ";
         }
         return " = ";
     }
 
     // Logical operators
-    enum class LogicalOp {
-        And,
-        Or
-    };
+    enum class LogicalOp { And, Or };
 
     constexpr std::string_view logical_op_to_sql(LogicalOp op) noexcept {
         switch (op) {
-            case LogicalOp::And: return " AND ";
-            case LogicalOp::Or: return " OR ";
+        case LogicalOp::And:
+            return " AND ";
+        case LogicalOp::Or:
+            return " OR ";
         }
         return " AND ";
     }
 
     // VALUE-TYPE Comparison expression: field > value (NO VIRTUAL FUNCTIONS!)
-    template<typename ValueType>
-    struct ComparisonExpr {
+    template <typename ValueType> struct ComparisonExpr {
         std::string field_name_;
-        CompOp op_;
-        ValueType value_;
-        std::string sql_;  // Cached SQL string (pre-generated in constructor)
+        CompOp      op_;
+        ValueType   value_;
+        std::string sql_; // Cached SQL string (pre-generated in constructor)
 
         ComparisonExpr(std::string_view field_name, CompOp op, ValueType value)
             : field_name_(field_name), op_(op), value_(std::move(value)) {
@@ -90,10 +87,13 @@ export namespace storm::orm::where {
             return sql_;
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> {
+        [[nodiscard]] __attribute__((always_inline)) inline auto
+        bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> {
             // Cast stmt_ptr to Statement* (type-erased binding)
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
-            return utilities::bind_parameter_value<storm::db::sqlite::Statement, storm::db::sqlite::Error>(*stmt, param_index++, value_);
+            return utilities::bind_parameter_value<storm::db::sqlite::Statement, storm::db::sqlite::Error>(
+                    *stmt, param_index++, value_
+            );
         }
     };
 
@@ -101,10 +101,9 @@ export namespace storm::orm::where {
     struct LikeExpr {
         std::string field_name_;
         std::string pattern_;
-        std::string sql_;  // Cached SQL string (pre-generated in constructor)
+        std::string sql_; // Cached SQL string (pre-generated in constructor)
 
-        LikeExpr(std::string_view field_name, std::string_view pattern)
-            : field_name_(field_name), pattern_(pattern) {
+        LikeExpr(std::string_view field_name, std::string_view pattern) : field_name_(field_name), pattern_(pattern) {
             // Pre-generate SQL in constructor for consistency with ComparisonExpr
             sql_.reserve(field_name_.size() + 8);
             sql_ = field_name;
@@ -115,19 +114,19 @@ export namespace storm::orm::where {
             return sql_;
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> {
+        [[nodiscard]] __attribute__((always_inline)) inline auto
+        bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> {
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
             return stmt->bind_text(param_index++, pattern_);
         }
     };
 
     // BETWEEN expression: field.between(a, b)
-    template<typename ValueType>
-    struct BetweenExpr {
+    template <typename ValueType> struct BetweenExpr {
         std::string field_name_;
-        ValueType min_val_;
-        ValueType max_val_;
-        std::string sql_;  // Cached SQL string (pre-generated in constructor)
+        ValueType   min_val_;
+        ValueType   max_val_;
+        std::string sql_; // Cached SQL string (pre-generated in constructor)
 
         BetweenExpr(std::string_view field_name, ValueType min_val, ValueType max_val)
             : field_name_(field_name), min_val_(std::move(min_val)), max_val_(std::move(max_val)) {
@@ -141,23 +140,28 @@ export namespace storm::orm::where {
             return sql_;
         }
 
-        [[nodiscard]] __attribute__((hot)) auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error>  {
+        [[nodiscard]] __attribute__((hot)) auto bind_params_direct(void* stmt_ptr, int& param_index) const
+                -> std::expected<void, storm::db::sqlite::Error> {
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
             // Bind min value
-            if (auto result  = utilities::bind_parameter_value<storm::db::sqlite::Statement, storm::db::sqlite::Error>(*stmt, param_index++, min_val_); !result) {
+            if (auto result = utilities::bind_parameter_value<storm::db::sqlite::Statement, storm::db::sqlite::Error>(
+                        *stmt, param_index++, min_val_
+                );
+                !result) {
                 return result;
             }
             // Bind max value
-            return utilities::bind_parameter_value<storm::db::sqlite::Statement, storm::db::sqlite::Error>(*stmt, param_index++, max_val_);
+            return utilities::bind_parameter_value<storm::db::sqlite::Statement, storm::db::sqlite::Error>(
+                    *stmt, param_index++, max_val_
+            );
         }
     };
 
     // IN expression (runtime): field IN (val1, val2, ..., valN)
-    template<typename ValueType>
-    struct InExpression {
-        std::string field_name_;
+    template <typename ValueType> struct InExpression {
+        std::string            field_name_;
         std::vector<ValueType> values_;
-        std::string sql_;  // Pre-generated SQL string
+        std::string            sql_; // Pre-generated SQL string
 
         InExpression(std::string_view field_name, std::vector<ValueType> values)
             : field_name_(field_name), values_(std::move(values)) {
@@ -170,7 +174,8 @@ export namespace storm::orm::where {
                 sql_ = field_name_;
                 sql_ += " IN (";
                 for (size_t i = 0; i < values_.size(); ++i) {
-                    if (i > 0) sql_ += ", ";
+                    if (i > 0)
+                        sql_ += ", ";
                     sql_ += "?";
                 }
                 sql_ += ")";
@@ -178,13 +183,18 @@ export namespace storm::orm::where {
         }
 
         [[nodiscard]] __attribute__((always_inline)) inline std::string to_sql() const noexcept {
-            return sql_;  // Return pre-generated SQL
+            return sql_; // Return pre-generated SQL
         }
 
-        [[nodiscard]] __attribute__((hot)) auto bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error>  {
+        [[nodiscard]] __attribute__((hot)) auto bind_params_direct(void* stmt_ptr, int& param_index) const
+                -> std::expected<void, storm::db::sqlite::Error> {
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
             for (const auto& value : values_) {
-                if (auto result = utilities::bind_parameter_value<storm::db::sqlite::Statement, storm::db::sqlite::Error>(*stmt, param_index++, value); !result) {
+                if (auto result =
+                            utilities::bind_parameter_value<storm::db::sqlite::Statement, storm::db::sqlite::Error>(
+                                    *stmt, param_index++, value
+                            );
+                    !result) {
                     return result;
                 }
             }
@@ -194,9 +204,9 @@ export namespace storm::orm::where {
 
     // Logical expression: expr1 AND expr2 / expr1 OR expr2
     struct LogicalExpr {
-        ExpressionVariantPtr left;   // Recursive: holds another expression
-        LogicalOp op;
-        ExpressionVariantPtr right;  // Recursive: holds another expression
+        ExpressionVariantPtr left; // Recursive: holds another expression
+        LogicalOp            op;
+        ExpressionVariantPtr right; // Recursive: holds another expression
 
         LogicalExpr(ExpressionVariantPtr l, LogicalOp operation, ExpressionVariantPtr r)
             : left(std::move(l)), op(operation), right(std::move(r)) {}
@@ -212,23 +222,22 @@ export namespace storm::orm::where {
     // std::variant provides compile-time polymorphism without vtable overhead
     // Common types (int, std::string) are stored inline, eliminating heap allocation
     struct ExpressionVariant : std::variant<
-        ComparisonExpr<int>,
-        ComparisonExpr<int64_t>,
-        ComparisonExpr<double>,
-        ComparisonExpr<std::string>,
-        ComparisonExpr<std::string_view>,
-        ComparisonExpr<const char *>,
-        ComparisonExpr<bool>,
-        LikeExpr,
-        BetweenExpr<int>,
-        BetweenExpr<int64_t>,
-        BetweenExpr<double>,
-        InExpression<int>,
-        InExpression<int64_t>,
-        InExpression<double>,
-        InExpression<std::string>,
-        LogicalExpr
-    > {
+                                       ComparisonExpr<int>,
+                                       ComparisonExpr<int64_t>,
+                                       ComparisonExpr<double>,
+                                       ComparisonExpr<std::string>,
+                                       ComparisonExpr<std::string_view>,
+                                       ComparisonExpr<const char*>,
+                                       ComparisonExpr<bool>,
+                                       LikeExpr,
+                                       BetweenExpr<int>,
+                                       BetweenExpr<int64_t>,
+                                       BetweenExpr<double>,
+                                       InExpression<int>,
+                                       InExpression<int64_t>,
+                                       InExpression<double>,
+                                       InExpression<std::string>,
+                                       LogicalExpr> {
         // Inherit constructors from variant
         using variant::variant;
     };
@@ -243,14 +252,14 @@ export namespace storm::orm::where {
 
     // Forward declare visitor functions
     [[nodiscard]] std::string to_sql(const ExpressionVariant& expr);
-    [[nodiscard]] auto bind_params_direct(const ExpressionVariant& expr, void* stmt_ptr, int& param_index)
-        -> std::expected<void, storm::db::sqlite::Error>;
+    [[nodiscard]] auto        bind_params_direct(const ExpressionVariant& expr, void* stmt_ptr, int& param_index)
+            -> std::expected<void, storm::db::sqlite::Error>;
 
     // Visitor for to_sql() - called via std::visit
     struct ToSqlVisitor {
         [[nodiscard]] std::string operator()(const LogicalExpr& expr) const {
             // Recursive case: visit left and right expressions
-            auto left_sql = to_sql(*expr.left);
+            auto left_sql  = to_sql(*expr.left);
             auto right_sql = to_sql(*expr.right);
 
             std::string result;
@@ -264,8 +273,7 @@ export namespace storm::orm::where {
         }
 
         // All other expression types have their own to_sql() method
-        template<typename T>
-        [[nodiscard]] std::string operator()(const T& expr) const {
+        template <typename T> [[nodiscard]] std::string operator()(const T& expr) const {
             return expr.to_sql();
         }
     };
@@ -273,10 +281,9 @@ export namespace storm::orm::where {
     // Visitor for bind_params_direct() - called via std::visit
     struct BindParamsVisitor {
         void* stmt_ptr;
-        int& param_index;
+        int&  param_index;
 
-        [[nodiscard]] auto operator()(const LogicalExpr& expr) const
-            -> std::expected<void, storm::db::sqlite::Error> {
+        [[nodiscard]] auto operator()(const LogicalExpr& expr) const -> std::expected<void, storm::db::sqlite::Error> {
             // Recursive case: bind left then right
             if (auto result = bind_params_direct(*expr.left, stmt_ptr, param_index); !result) {
                 return result;
@@ -285,9 +292,8 @@ export namespace storm::orm::where {
         }
 
         // All other expression types have their own bind_params_direct() method
-        template<typename T>
-        [[nodiscard]] auto operator()(const T& expr) const
-            -> std::expected<void, storm::db::sqlite::Error> {
+        template <typename T>
+        [[nodiscard]] auto operator()(const T& expr) const -> std::expected<void, storm::db::sqlite::Error> {
             return expr.bind_params_direct(stmt_ptr, param_index);
         }
     };
@@ -298,119 +304,125 @@ export namespace storm::orm::where {
     }
 
     [[nodiscard]] inline auto bind_params_direct(const ExpressionVariant& expr, void* stmt_ptr, int& param_index)
-        -> std::expected<void, storm::db::sqlite::Error> {
+            -> std::expected<void, storm::db::sqlite::Error> {
         return std::visit(BindParamsVisitor{stmt_ptr, param_index}, expr);
     }
 
     // Expression wrapper to enable natural && and || operators without ambiguity
     // Solves the problem of shared_ptr's implicit bool conversion conflicting with built-in operators
     class Expr {
-    public:
+      public:
         // Constructor from ExpressionVariantPtr
         Expr(ExpressionVariantPtr expr) noexcept : expr_(std::move(expr)) {}
 
         // Constructor from ExpressionVariant (wraps in shared_ptr)
-        Expr(ExpressionVariant&& expr) noexcept
-            : expr_(std::make_shared<ExpressionVariant>(std::move(expr))) {}
+        Expr(ExpressionVariant&& expr) noexcept : expr_(std::make_shared<ExpressionVariant>(std::move(expr))) {}
 
         // Implicit conversion to ExpressionVariantPtr for where() calls
-        operator ExpressionVariantPtr() const noexcept { return expr_; }
+        operator ExpressionVariantPtr() const noexcept {
+            return expr_;
+        }
 
         // Logical AND operator (also accessible via 'and' keyword)
         Expr operator&&(const Expr& other) const {
-            return Expr(std::make_shared<ExpressionVariant>(
-                LogicalExpr{expr_, LogicalOp::And, other.expr_}
-            ));
+            return Expr(std::make_shared<ExpressionVariant>(LogicalExpr{expr_, LogicalOp::And, other.expr_}));
         }
 
         // Logical OR operator (also accessible via 'or' keyword)
         Expr operator||(const Expr& other) const {
-            return Expr(std::make_shared<ExpressionVariant>(
-                LogicalExpr{expr_, LogicalOp::Or, other.expr_}
-            ));
+            return Expr(std::make_shared<ExpressionVariant>(LogicalExpr{expr_, LogicalOp::Or, other.expr_}));
         }
 
         // Access the underlying expression
-        [[nodiscard]] const ExpressionVariantPtr& get() const noexcept { return expr_; }
+        [[nodiscard]] const ExpressionVariantPtr& get() const noexcept {
+            return expr_;
+        }
 
-    private:
-        ExpressionVariantPtr expr_;  // VARIANT-based, not virtual!
+      private:
+        ExpressionVariantPtr expr_; // VARIANT-based, not virtual!
     };
 
     // Field proxy - stores reflection info as template parameter
     // Provides compile-time IN expression and runtime comparison/special methods
-    template<std::meta::info MemberInfo>
-        requires (std::meta::is_nonstatic_data_member(MemberInfo))
+    template <std::meta::info MemberInfo>
+        requires(std::meta::is_nonstatic_data_member(MemberInfo))
     class Field {
-    public:
+      public:
         static constexpr auto field_name_sv = std::meta::identifier_of(MemberInfo);
-        using FieldType = typename [:std::meta::type_of(MemberInfo):];
+        using FieldType                     = typename[:std::meta::type_of(MemberInfo):];
 
         // IN: Returns Expr wrapping VARIANT (no heap allocation for expression itself!)
         // Usage: field<^^Person::id>().in(100, 200, 300)
-        template<typename... Values>
-        requires (std::constructible_from<FieldType, Values> && ...)
+        template <typename... Values>
+            requires(std::constructible_from<FieldType, Values> && ...)
         auto in(Values&&... values) const {
-            return Expr(std::make_shared<ExpressionVariant>(
-                InExpression<FieldType>{std::string(field_name_sv), {FieldType{std::forward<Values>(values)}...}}
-            ));
+            return Expr(
+                    std::make_shared<ExpressionVariant>(InExpression<FieldType>{
+                            std::string(field_name_sv), {FieldType{std::forward<Values>(values)}...}
+                    })
+            );
         }
 
         // Comparison operators - return runtime Expr for flexibility
-        template<typename V>
-        Expr operator==(V&& value) const {
-            return Expr(std::make_shared<ExpressionVariant>(
-                ComparisonExpr<std::decay_t<V>>{std::string(field_name_sv), CompOp::Equal, std::forward<V>(value)}
-            ));
+        template <typename V> Expr operator==(V&& value) const {
+            return Expr(
+                    std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
+                            std::string(field_name_sv), CompOp::Equal, std::forward<V>(value)
+                    })
+            );
         }
 
-        template<typename V>
-        Expr operator!=(V&& value) const {
-            return Expr(std::make_shared<ExpressionVariant>(
-                ComparisonExpr<std::decay_t<V>>{std::string(field_name_sv), CompOp::NotEqual, std::forward<V>(value)}
-            ));
+        template <typename V> Expr operator!=(V&& value) const {
+            return Expr(
+                    std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
+                            std::string(field_name_sv), CompOp::NotEqual, std::forward<V>(value)
+                    })
+            );
         }
 
-        template<typename V>
-        Expr operator>(V&& value) const {
-            return Expr(std::make_shared<ExpressionVariant>(
-                ComparisonExpr<std::decay_t<V>>{std::string(field_name_sv), CompOp::Greater, std::forward<V>(value)}
-            ));
+        template <typename V> Expr operator>(V&& value) const {
+            return Expr(
+                    std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
+                            std::string(field_name_sv), CompOp::Greater, std::forward<V>(value)
+                    })
+            );
         }
 
-        template<typename V>
-        Expr operator>=(V&& value) const {
-            return Expr(std::make_shared<ExpressionVariant>(
-                ComparisonExpr<std::decay_t<V>>{std::string(field_name_sv), CompOp::GreaterEqual, std::forward<V>(value)}
-            ));
+        template <typename V> Expr operator>=(V&& value) const {
+            return Expr(
+                    std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
+                            std::string(field_name_sv), CompOp::GreaterEqual, std::forward<V>(value)
+                    })
+            );
         }
 
-        template<typename V>
-        Expr operator<(V&& value) const {
-            return Expr(std::make_shared<ExpressionVariant>(
-                ComparisonExpr<std::decay_t<V>>{std::string(field_name_sv), CompOp::Less, std::forward<V>(value)}
-            ));
+        template <typename V> Expr operator<(V&& value) const {
+            return Expr(
+                    std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
+                            std::string(field_name_sv), CompOp::Less, std::forward<V>(value)
+                    })
+            );
         }
 
-        template<typename V>
-        Expr operator<=(V&& value) const {
-            return Expr(std::make_shared<ExpressionVariant>(
-                ComparisonExpr<std::decay_t<V>>{std::string(field_name_sv), CompOp::LessEqual, std::forward<V>(value)}
-            ));
+        template <typename V> Expr operator<=(V&& value) const {
+            return Expr(
+                    std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
+                            std::string(field_name_sv), CompOp::LessEqual, std::forward<V>(value)
+                    })
+            );
         }
 
         // Special methods - return VARIANT-BASED Expr
         Expr like(std::string_view pattern) const {
-            return Expr(std::make_shared<ExpressionVariant>(
-                LikeExpr{std::string(field_name_sv), pattern}
-            ));
+            return Expr(std::make_shared<ExpressionVariant>(LikeExpr{std::string(field_name_sv), pattern}));
         }
 
-        template<typename V>
-        Expr between(V&& min_val, V&& max_val) const {
-            return Expr(std::make_shared<ExpressionVariant>(
-                BetweenExpr<std::decay_t<V>>{std::string(field_name_sv), std::forward<V>(min_val), std::forward<V>(max_val)}
-            ));
+        template <typename V> Expr between(V&& min_val, V&& max_val) const {
+            return Expr(
+                    std::make_shared<ExpressionVariant>(BetweenExpr<std::decay_t<V>>{
+                            std::string(field_name_sv), std::forward<V>(min_val), std::forward<V>(max_val)
+                    })
+            );
         }
     };
 
@@ -429,15 +441,11 @@ export namespace storm::orm::where {
 
     // ExpressionVariantPtr overloads for explicit construction
     inline auto and_(const ExpressionVariantPtr& left, const ExpressionVariantPtr& right) {
-        return std::make_shared<ExpressionVariant>(
-            LogicalExpr{left, LogicalOp::And, right}
-        );
+        return std::make_shared<ExpressionVariant>(LogicalExpr{left, LogicalOp::And, right});
     }
 
     inline auto or_(const ExpressionVariantPtr& left, const ExpressionVariantPtr& right) {
-        return std::make_shared<ExpressionVariant>(
-            LogicalExpr{left, LogicalOp::Or, right}
-        );
+        return std::make_shared<ExpressionVariant>(LogicalExpr{left, LogicalOp::Or, right});
     }
 
     // Pure C++26 Reflection-Based Field Helper (No Macro Needed!)
@@ -451,13 +459,16 @@ export namespace storm::orm::where {
     // All methods return runtime expressions that can be used with QuerySet::where()
     //
     // COMPILE-TIME VALIDATION: Uses P2996 to ensure MemberInfo is a valid field
-    template<std::meta::info MemberInfo>
-        requires (std::meta::is_nonstatic_data_member(MemberInfo) &&
-                  std::meta::has_identifier(MemberInfo))  // Ensures field has a name
+    template <std::meta::info MemberInfo>
+        requires(
+                std::meta::is_nonstatic_data_member(MemberInfo) && std::meta::has_identifier(MemberInfo)
+        ) // Ensures field has a name
     constexpr auto field() {
         // Additional compile-time validation: field must be accessible
-        static_assert(std::meta::is_nonstatic_data_member(MemberInfo),
-            "field<> requires a non-static data member reflection (use ^^Type::member syntax)");
+        static_assert(
+                std::meta::is_nonstatic_data_member(MemberInfo),
+                "field<> requires a non-static data member reflection (use ^^Type::member syntax)"
+        );
         return Field<MemberInfo>();
     }
 

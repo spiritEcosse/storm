@@ -12,35 +12,34 @@ using namespace storm::benchmark;
 // Define the actual Person struct with Storm imports
 struct Person {
     [[= storm::meta::FieldAttr::primary]] int id;
-    std::string name;
-    int age;
+    std::string                               name;
+    int                                       age;
 };
 
 // Configuration structure
 struct BenchmarkConfig {
     enum Mode { COMPREHENSIVE, DELETE_FOCUS, INSERT_ONLY, DELETE_ONLY, SELECT_ONLY, CACHE_ANALYSIS, OPTIMIZATION_TEST };
-    Mode mode = COMPREHENSIVE;
-    std::vector<int> test_sizes = {1000, 5000, 10000};
-    bool verbose = false;
-    bool show_cache_stats = false;
-    bool realistic_data = false;
+    Mode             mode             = COMPREHENSIVE;
+    std::vector<int> test_sizes       = {1000, 5000, 10000};
+    bool             verbose          = false;
+    bool             show_cache_stats = false;
+    bool             realistic_data   = false;
 };
 
 // Forward declarations (Person defined later)
-void benchmark_storm_orm_single_insert(int num_records, const BenchmarkConfig& config);
-void benchmark_storm_orm_batch_insert(int num_records, const BenchmarkConfig& config);
-void benchmark_storm_orm_single_update(int num_records, const BenchmarkConfig& config);
-void benchmark_storm_orm_batch_update(int num_records, const BenchmarkConfig& config);
-void benchmark_storm_orm_single_delete(int num_records, const BenchmarkConfig& config);
-void benchmark_storm_orm_batch_delete(int num_records, const BenchmarkConfig& config);
-void benchmark_storm_orm_select(int num_records, const BenchmarkConfig& config);
-void benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& config);
-void benchmark_cache_analysis(int num_records, const BenchmarkConfig& config);
-void benchmark_optimization_test(int num_records, const BenchmarkConfig& config);
-void print_optimization_summary();
+void            benchmark_storm_orm_single_insert(int num_records, const BenchmarkConfig& config);
+void            benchmark_storm_orm_batch_insert(int num_records, const BenchmarkConfig& config);
+void            benchmark_storm_orm_single_update(int num_records, const BenchmarkConfig& config);
+void            benchmark_storm_orm_batch_update(int num_records, const BenchmarkConfig& config);
+void            benchmark_storm_orm_single_delete(int num_records, const BenchmarkConfig& config);
+void            benchmark_storm_orm_batch_delete(int num_records, const BenchmarkConfig& config);
+void            benchmark_storm_orm_select(int num_records, const BenchmarkConfig& config);
+void            benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& config);
+void            benchmark_cache_analysis(int num_records, const BenchmarkConfig& config);
+void            benchmark_optimization_test(int num_records, const BenchmarkConfig& config);
+void            print_optimization_summary();
 BenchmarkConfig parse_arguments(int argc, char* argv[]);
-void print_usage(const char* program_name);
-
+void            print_usage(const char* program_name);
 
 // Forward declaration for realistic data generation
 std::vector<Person> generate_realistic_test_data(int count, int start_id = 1);
@@ -50,21 +49,30 @@ std::vector<Person> generate_realistic_test_data(int count, int start_id) {
     std::vector<Person> persons;
     persons.reserve(count);
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
+    std::random_device              rd;
+    std::mt19937                    gen(rd());
     std::uniform_int_distribution<> age_dist(18, 80);
 
-    const std::vector<std::string> names = {
-        "Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Henry",
-        "Iris", "Jack", "Kate", "Liam", "Maya", "Nathan", "Olivia", "Paul"
-    };
+    const std::vector<std::string> names =
+            {"Alice",
+             "Bob",
+             "Charlie",
+             "Diana",
+             "Eve",
+             "Frank",
+             "Grace",
+             "Henry",
+             "Iris",
+             "Jack",
+             "Kate",
+             "Liam",
+             "Maya",
+             "Nathan",
+             "Olivia",
+             "Paul"};
 
     for (int i = 0; i < count; ++i) {
-        persons.push_back({
-            start_id + i,
-            names[i % names.size()] + std::to_string(i),
-            age_dist(gen)
-        });
+        persons.push_back({start_id + i, names[i % names.size()] + std::to_string(i), age_dist(gen)});
     }
 
     return persons;
@@ -81,8 +89,8 @@ void benchmark_storm_orm_single_insert(int num_records, const BenchmarkConfig& c
     }
 
     // Create table
-    auto& conn = storm::QuerySet<Person>::get_default_connection();
-    auto create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+    auto& conn          = storm::QuerySet<Person>::get_default_connection();
+    auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
     if (!create_result.has_value()) {
         std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
         return;
@@ -107,12 +115,12 @@ void benchmark_storm_orm_single_insert(int num_records, const BenchmarkConfig& c
 
     // Benchmark single INSERT operations (with warm cache)
     BenchmarkTimer timer;
-    double total_time = 0;
-    int successful_inserts = 0;
+    double         total_time         = 0;
+    int            successful_inserts = 0;
 
     for (size_t i = warmup_count; i < persons.size(); ++i) {
         timer.reset();
-        auto result = queryset.insert(persons[i]);
+        auto   result  = queryset.insert(persons[i]);
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -124,11 +132,11 @@ void benchmark_storm_orm_single_insert(int num_records, const BenchmarkConfig& c
     // Report results
     std::cout << "Storm ORM - Single INSERT " << num_records << " records:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
-    std::cout << "  Average per insert: " << std::fixed << std::setprecision(4)
-              << (total_time / successful_inserts) << " ms" << std::endl;
+    std::cout << "  Average per insert: " << std::fixed << std::setprecision(4) << (total_time / successful_inserts)
+              << " ms" << std::endl;
     std::cout << "  Successful inserts: " << successful_inserts << "/" << num_records << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (successful_inserts / (total_time / 1000.0)) << " inserts/sec" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (successful_inserts / (total_time / 1000.0))
+              << " inserts/sec" << std::endl;
 
     if (config.show_cache_stats) {
         std::cout << "  Statement cache size: " << conn.cached_statement_count() << std::endl;
@@ -145,7 +153,8 @@ void benchmark_storm_orm_batch_insert(int num_records, const BenchmarkConfig& co
     const std::vector<size_t> batch_sizes = {1, 10, 25, 50, 100, 500, 1000};
 
     for (size_t batch_size : batch_sizes) {
-        if (batch_size > static_cast<size_t>(num_records)) continue;
+        if (batch_size > static_cast<size_t>(num_records))
+            continue;
 
         std::cout << std::endl << "--- Batch size: " << batch_size << " ---" << std::endl;
 
@@ -157,8 +166,8 @@ void benchmark_storm_orm_batch_insert(int num_records, const BenchmarkConfig& co
         }
 
         // Create table
-        auto& conn = storm::QuerySet<Person>::get_default_connection();
-        auto create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+        auto& conn          = storm::QuerySet<Person>::get_default_connection();
+        auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
         if (!create_result.has_value()) {
             std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
             storm::QuerySet<Person>::clear_default_connection();
@@ -173,16 +182,16 @@ void benchmark_storm_orm_batch_insert(int num_records, const BenchmarkConfig& co
 
         // Benchmark batch INSERT operations
         BenchmarkTimer timer;
-        double total_time = 0;
-        int successful_inserts = 0;
-        int batch_count = 0;
+        double         total_time         = 0;
+        int            successful_inserts = 0;
+        int            batch_count        = 0;
 
         for (size_t i = 0; i < persons.size(); i += batch_size) {
-            size_t end_idx = std::min(i + batch_size, persons.size());
+            size_t                  end_idx = std::min(i + batch_size, persons.size());
             std::span<const Person> batch(persons.data() + i, end_idx - i);
 
             timer.reset();
-            auto result = queryset.insert(batch);
+            auto   result  = queryset.insert(batch);
             double elapsed = timer.elapsed_ms();
 
             if (result.has_value()) {
@@ -193,12 +202,13 @@ void benchmark_storm_orm_batch_insert(int num_records, const BenchmarkConfig& co
         }
 
         // Report results
-        std::cout << "Storm ORM - Batch INSERT " << num_records << " records (batch size " << batch_size << "):" << std::endl;
+        std::cout << "Storm ORM - Batch INSERT " << num_records << " records (batch size " << batch_size
+                  << "):" << std::endl;
         std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
-        std::cout << "  Average per insert: " << std::fixed << std::setprecision(4)
-                  << (total_time / successful_inserts) << " ms" << std::endl;
-        std::cout << "  Average per batch: " << std::fixed << std::setprecision(4)
-                  << (total_time / batch_count) << " ms" << std::endl;
+        std::cout << "  Average per insert: " << std::fixed << std::setprecision(4) << (total_time / successful_inserts)
+                  << " ms" << std::endl;
+        std::cout << "  Average per batch: " << std::fixed << std::setprecision(4) << (total_time / batch_count)
+                  << " ms" << std::endl;
         std::cout << "  Successful inserts: " << successful_inserts << "/" << num_records << std::endl;
         std::cout << "  Batch count: " << batch_count << std::endl;
         std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
@@ -224,8 +234,8 @@ void benchmark_storm_orm_single_update(int num_records, const BenchmarkConfig& c
     }
 
     // Create table
-    auto& conn = storm::QuerySet<Person>::get_default_connection();
-    auto create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+    auto& conn          = storm::QuerySet<Person>::get_default_connection();
+    auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
     if (!create_result.has_value()) {
         std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
         return;
@@ -253,8 +263,8 @@ void benchmark_storm_orm_single_update(int num_records, const BenchmarkConfig& c
 
     // Modify data for update
     for (auto& person : persons) {
-        person.age += 1;  // Increment age
-        person.name += "_updated";  // Modify name
+        person.age += 1;           // Increment age
+        person.name += "_updated"; // Modify name
     }
 
     // Warmup phase: populate UPDATE statement cache
@@ -265,12 +275,12 @@ void benchmark_storm_orm_single_update(int num_records, const BenchmarkConfig& c
 
     // Benchmark single UPDATE operations (with warm cache)
     BenchmarkTimer timer;
-    double total_time = 0;
-    int successful_updates = 0;
+    double         total_time         = 0;
+    int            successful_updates = 0;
 
     for (size_t i = warmup_count; i < persons.size(); ++i) {
         timer.reset();
-        auto result = queryset.update(persons[i]);
+        auto   result  = queryset.update(persons[i]);
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -282,11 +292,11 @@ void benchmark_storm_orm_single_update(int num_records, const BenchmarkConfig& c
     // Report results
     std::cout << "Storm ORM - Single UPDATE " << num_records << " records:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
-    std::cout << "  Average per update: " << std::fixed << std::setprecision(4)
-              << (total_time / successful_updates) << " ms" << std::endl;
+    std::cout << "  Average per update: " << std::fixed << std::setprecision(4) << (total_time / successful_updates)
+              << " ms" << std::endl;
     std::cout << "  Successful updates: " << successful_updates << "/" << num_records << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (successful_updates / (total_time / 1000.0)) << " updates/sec" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (successful_updates / (total_time / 1000.0))
+              << " updates/sec" << std::endl;
 
     if (config.show_cache_stats) {
         std::cout << "  Statement cache size: " << conn.cached_statement_count() << std::endl;
@@ -303,7 +313,8 @@ void benchmark_storm_orm_batch_update(int num_records, const BenchmarkConfig& co
     const std::vector<size_t> batch_sizes = {1, 10, 25, 50, 100, 500, 1000};
 
     for (size_t batch_size : batch_sizes) {
-        if (batch_size > static_cast<size_t>(num_records)) continue;
+        if (batch_size > static_cast<size_t>(num_records))
+            continue;
 
         std::cout << std::endl << "--- Batch size: " << batch_size << " ---" << std::endl;
 
@@ -315,8 +326,8 @@ void benchmark_storm_orm_batch_update(int num_records, const BenchmarkConfig& co
         }
 
         // Create table
-        auto& conn = storm::QuerySet<Person>::get_default_connection();
-        auto create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+        auto& conn          = storm::QuerySet<Person>::get_default_connection();
+        auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
         if (!create_result.has_value()) {
             std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
             storm::QuerySet<Person>::clear_default_connection();
@@ -347,16 +358,16 @@ void benchmark_storm_orm_batch_update(int num_records, const BenchmarkConfig& co
 
         // Benchmark batch UPDATE operations
         BenchmarkTimer timer;
-        double total_time = 0;
-        int successful_updates = 0;
-        int batch_count = 0;
+        double         total_time         = 0;
+        int            successful_updates = 0;
+        int            batch_count        = 0;
 
         for (size_t i = 0; i < persons.size(); i += batch_size) {
-            size_t end_idx = std::min(i + batch_size, persons.size());
+            size_t                  end_idx = std::min(i + batch_size, persons.size());
             std::span<const Person> batch(persons.data() + i, end_idx - i);
 
             timer.reset();
-            auto result = queryset.update(batch);
+            auto   result  = queryset.update(batch);
             double elapsed = timer.elapsed_ms();
 
             if (result.has_value()) {
@@ -367,12 +378,13 @@ void benchmark_storm_orm_batch_update(int num_records, const BenchmarkConfig& co
         }
 
         // Report results
-        std::cout << "Storm ORM - Batch UPDATE " << num_records << " records (batch size " << batch_size << "):" << std::endl;
+        std::cout << "Storm ORM - Batch UPDATE " << num_records << " records (batch size " << batch_size
+                  << "):" << std::endl;
         std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
-        std::cout << "  Average per update: " << std::fixed << std::setprecision(4)
-                  << (total_time / successful_updates) << " ms" << std::endl;
-        std::cout << "  Average per batch: " << std::fixed << std::setprecision(4)
-                  << (total_time / batch_count) << " ms" << std::endl;
+        std::cout << "  Average per update: " << std::fixed << std::setprecision(4) << (total_time / successful_updates)
+                  << " ms" << std::endl;
+        std::cout << "  Average per batch: " << std::fixed << std::setprecision(4) << (total_time / batch_count)
+                  << " ms" << std::endl;
         std::cout << "  Successful updates: " << successful_updates << "/" << num_records << std::endl;
         std::cout << "  Batch count: " << batch_count << std::endl;
         std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
@@ -398,8 +410,8 @@ void benchmark_storm_orm_single_delete(int num_records, const BenchmarkConfig& c
     }
 
     // Create table
-    auto& conn = storm::QuerySet<Person>::get_default_connection();
-    auto create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+    auto& conn          = storm::QuerySet<Person>::get_default_connection();
+    auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
     if (!create_result.has_value()) {
         std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
         return;
@@ -433,12 +445,12 @@ void benchmark_storm_orm_single_delete(int num_records, const BenchmarkConfig& c
 
     // Benchmark single DELETE operations (with warm cache)
     BenchmarkTimer timer;
-    double total_time = 0;
-    int successful_deletes = 0;
+    double         total_time         = 0;
+    int            successful_deletes = 0;
 
     for (size_t i = warmup_count; i < persons.size(); ++i) {
         timer.reset();
-        auto result = queryset.remove(persons[i]);
+        auto   result  = queryset.remove(persons[i]);
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -450,11 +462,11 @@ void benchmark_storm_orm_single_delete(int num_records, const BenchmarkConfig& c
     // Report results
     std::cout << "Storm ORM - Single DELETE " << num_records << " records:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
-    std::cout << "  Average per delete: " << std::fixed << std::setprecision(4)
-              << (total_time / successful_deletes) << " ms" << std::endl;
+    std::cout << "  Average per delete: " << std::fixed << std::setprecision(4) << (total_time / successful_deletes)
+              << " ms" << std::endl;
     std::cout << "  Successful deletes: " << successful_deletes << "/" << num_records << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (successful_deletes / (total_time / 1000.0)) << " deletes/sec" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (successful_deletes / (total_time / 1000.0))
+              << " deletes/sec" << std::endl;
 
     if (config.show_cache_stats) {
         std::cout << "  Statement cache size: " << conn.cached_statement_count() << std::endl;
@@ -471,7 +483,8 @@ void benchmark_storm_orm_batch_delete(int num_records, const BenchmarkConfig& co
     const std::vector<size_t> batch_sizes = {1, 10, 25, 50, 100, 500, 1000};
 
     for (size_t batch_size : batch_sizes) {
-        if (batch_size > static_cast<size_t>(num_records)) continue;
+        if (batch_size > static_cast<size_t>(num_records))
+            continue;
 
         std::cout << std::endl << "--- Batch size: " << batch_size << " ---" << std::endl;
 
@@ -483,8 +496,8 @@ void benchmark_storm_orm_batch_delete(int num_records, const BenchmarkConfig& co
         }
 
         // Create table
-        auto& conn = storm::QuerySet<Person>::get_default_connection();
-        auto create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+        auto& conn          = storm::QuerySet<Person>::get_default_connection();
+        auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
         if (!create_result.has_value()) {
             std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
             storm::QuerySet<Person>::clear_default_connection();
@@ -509,12 +522,12 @@ void benchmark_storm_orm_batch_delete(int num_records, const BenchmarkConfig& co
 
         // Benchmark batch DELETE operations
         BenchmarkTimer timer;
-        double total_time = 0;
-        int successful_deletes = 0;
-        int batch_count = 0;
+        double         total_time         = 0;
+        int            successful_deletes = 0;
+        int            batch_count        = 0;
 
         for (size_t i = 0; i < persons.size(); i += batch_size) {
-            size_t end_idx = std::min(i + batch_size, persons.size());
+            size_t end_idx            = std::min(i + batch_size, persons.size());
             size_t current_batch_size = end_idx - i;
 
             // Create batch span for this chunk
@@ -535,12 +548,13 @@ void benchmark_storm_orm_batch_delete(int num_records, const BenchmarkConfig& co
         }
 
         // Report results
-        std::cout << "Storm ORM - Batch DELETE " << num_records << " records (batch size " << batch_size << "):" << std::endl;
+        std::cout << "Storm ORM - Batch DELETE " << num_records << " records (batch size " << batch_size
+                  << "):" << std::endl;
         std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
-        std::cout << "  Average per delete: " << std::fixed << std::setprecision(4)
-                  << (total_time / successful_deletes) << " ms" << std::endl;
-        std::cout << "  Average per batch: " << std::fixed << std::setprecision(4)
-                  << (total_time / batch_count) << " ms" << std::endl;
+        std::cout << "  Average per delete: " << std::fixed << std::setprecision(4) << (total_time / successful_deletes)
+                  << " ms" << std::endl;
+        std::cout << "  Average per batch: " << std::fixed << std::setprecision(4) << (total_time / batch_count)
+                  << " ms" << std::endl;
         std::cout << "  Successful deletes: " << successful_deletes << "/" << num_records << std::endl;
         std::cout << "  Batch count: " << batch_count << std::endl;
         std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
@@ -566,8 +580,8 @@ void benchmark_storm_orm_select(int num_records, const BenchmarkConfig& config) 
     }
 
     // Create table
-    auto& conn = storm::QuerySet<Person>::get_default_connection();
-    auto create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+    auto& conn          = storm::QuerySet<Person>::get_default_connection();
+    auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
     if (!create_result.has_value()) {
         std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
         return;
@@ -596,16 +610,16 @@ void benchmark_storm_orm_select(int num_records, const BenchmarkConfig& config) 
     // Benchmark SELECT operation (fetching all rows)
     BenchmarkTimer timer;
     timer.reset();
-    auto select_result = queryset.select();
-    double elapsed = timer.elapsed_ms();
+    auto   select_result = queryset.select();
+    double elapsed       = timer.elapsed_ms();
 
     if (select_result.has_value()) {
         const auto& selected_persons = select_result.value();
         std::cout << "Storm ORM - SELECT " << num_records << " records:" << std::endl;
         std::cout << "  Total time: " << std::fixed << std::setprecision(2) << elapsed << " ms" << std::endl;
         std::cout << "  Rows fetched: " << selected_persons.size() << std::endl;
-        std::cout << "  Average per row: " << std::fixed << std::setprecision(4)
-                  << (elapsed / selected_persons.size()) << " ms" << std::endl;
+        std::cout << "  Average per row: " << std::fixed << std::setprecision(4) << (elapsed / selected_persons.size())
+                  << " ms" << std::endl;
         std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
                   << (selected_persons.size() / (elapsed / 1000.0)) << " rows/sec" << std::endl;
 
@@ -629,8 +643,8 @@ void benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& co
     }
 
     // Create table
-    auto& conn = storm::QuerySet<Person>::get_default_connection();
-    auto create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+    auto& conn          = storm::QuerySet<Person>::get_default_connection();
+    auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
     if (!create_result.has_value()) {
         std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
         return;
@@ -648,9 +662,8 @@ void benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& co
     (void)conn.execute("BEGIN TRANSACTION");
     for (const auto& person : persons) {
         (void)conn.execute(
-            "INSERT INTO Person (id, name, age) VALUES (" +
-            std::to_string(person.id) + ", '" + person.name + "', " +
-            std::to_string(person.age) + ")"
+                "INSERT INTO Person (id, name, age) VALUES (" + std::to_string(person.id) + ", '" + person.name +
+                "', " + std::to_string(person.age) + ")"
         );
     }
     (void)conn.execute("COMMIT");
@@ -660,13 +673,13 @@ void benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& co
 
     // Benchmark individual removal (testing single-item optimization)
     BenchmarkTimer timer;
-    double total_time_individual = 0;
-    int successful_removes_individual = 0;
+    double         total_time_individual         = 0;
+    int            successful_removes_individual = 0;
 
     // Test individual removes (first half)
     for (size_t i = 0; i < persons.size() / 2; ++i) {
         timer.reset();
-        auto result = queryset.remove(persons[i]);
+        auto   result  = queryset.remove(persons[i]);
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -680,9 +693,9 @@ void benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& co
     std::vector<Person> remaining_persons(persons.begin() + persons.size() / 2, persons.end());
 
     // Remove the remaining objects in batches to test bulk optimization
-    const size_t batch_size = 10; // Test batch optimization
-    double total_time_batch = 0;
-    int successful_removes_batch = 0;
+    const size_t batch_size               = 10; // Test batch optimization
+    double       total_time_batch         = 0;
+    int          successful_removes_batch = 0;
 
     for (size_t i = 0; i < remaining_persons.size(); i += batch_size) {
         timer.reset();
@@ -702,7 +715,8 @@ void benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& co
     // Get cache statistics
     std::cout << "Storm ORM (DELETE Focus) - Remove " << num_records << " records:" << std::endl;
     std::cout << "  Individual removes (" << successful_removes_individual << " items):" << std::endl;
-    std::cout << "    Total time: " << std::fixed << std::setprecision(2) << total_time_individual << " ms" << std::endl;
+    std::cout << "    Total time: " << std::fixed << std::setprecision(2) << total_time_individual << " ms"
+              << std::endl;
     if (successful_removes_individual > 0) {
         std::cout << "    Average per remove: " << std::fixed << std::setprecision(4)
                   << (total_time_individual / successful_removes_individual) << " ms" << std::endl;
@@ -715,8 +729,8 @@ void benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& co
                   << (total_time_batch / successful_removes_batch) << " ms" << std::endl;
     }
 
-    std::cout << "  Total successful removes: " << (successful_removes_individual + successful_removes_batch)
-              << "/" << num_records << std::endl;
+    std::cout << "  Total successful removes: " << (successful_removes_individual + successful_removes_batch) << "/"
+              << num_records << std::endl;
     std::cout << "  Statement cache size: " << conn.cached_statement_count() << std::endl;
 
     // Cleanup
@@ -732,11 +746,11 @@ void benchmark_cache_analysis(int num_records, const BenchmarkConfig& config) {
     const std::vector<size_t> test_sizes = {1, 5, 10, 25, 50, 75, 100, 200, 500};
 
     for (size_t size : test_sizes) {
-        if (size > static_cast<size_t>(num_records)) continue;
+        if (size > static_cast<size_t>(num_records))
+            continue;
 
-        auto persons = config.realistic_data ?
-            generate_realistic_test_data(static_cast<int>(size * 10)) :
-            std::vector<Person>();
+        auto persons = config.realistic_data ? generate_realistic_test_data(static_cast<int>(size * 10))
+                                             : std::vector<Person>();
 
         if (!config.realistic_data) {
             persons.reserve(size * 10);
@@ -764,7 +778,8 @@ void benchmark_optimization_test(int num_records, const BenchmarkConfig& config)
     const std::vector<int> record_counts = {100, 1000, 5000};
 
     for (int count : record_counts) {
-        if (count > num_records) continue;
+        if (count > num_records)
+            continue;
 
         std::cout << "--- Testing with " << count << " records ---" << std::endl;
 
@@ -898,7 +913,7 @@ BenchmarkConfig parse_arguments(int argc, char* argv[]) {
         if (strcmp(argv[i], "--mode=comprehensive") == 0) {
             config.mode = BenchmarkConfig::COMPREHENSIVE;
         } else if (strcmp(argv[i], "--mode=delete-focus") == 0) {
-            config.mode = BenchmarkConfig::DELETE_FOCUS;
+            config.mode             = BenchmarkConfig::DELETE_FOCUS;
             config.show_cache_stats = true;
         } else if (strcmp(argv[i], "--mode=insert-only") == 0) {
             config.mode = BenchmarkConfig::INSERT_ONLY;
@@ -907,15 +922,15 @@ BenchmarkConfig parse_arguments(int argc, char* argv[]) {
         } else if (strcmp(argv[i], "--mode=select-only") == 0) {
             config.mode = BenchmarkConfig::SELECT_ONLY;
         } else if (strcmp(argv[i], "--mode=cache-analysis") == 0) {
-            config.mode = BenchmarkConfig::CACHE_ANALYSIS;
+            config.mode             = BenchmarkConfig::CACHE_ANALYSIS;
             config.show_cache_stats = true;
         } else if (strcmp(argv[i], "--mode=optimization-test") == 0) {
-            config.mode = BenchmarkConfig::OPTIMIZATION_TEST;
+            config.mode             = BenchmarkConfig::OPTIMIZATION_TEST;
             config.show_cache_stats = true;
         } else if (strcmp(argv[i], "--realistic-data") == 0) {
             config.realistic_data = true;
         } else if (strcmp(argv[i], "--verbose") == 0) {
-            config.verbose = true;
+            config.verbose          = true;
             config.show_cache_stats = true;
         } else if (strncmp(argv[i], "--test-size=", 12) == 0) {
             // Parse comma-separated test sizes
@@ -923,10 +938,11 @@ BenchmarkConfig parse_arguments(int argc, char* argv[]) {
             config.test_sizes.clear();
             size_t pos = 0;
             while (pos < sizes_str.length()) {
-                size_t comma_pos = sizes_str.find(',', pos);
-                std::string size_str = sizes_str.substr(pos, comma_pos - pos);
+                size_t      comma_pos = sizes_str.find(',', pos);
+                std::string size_str  = sizes_str.substr(pos, comma_pos - pos);
                 config.test_sizes.push_back(std::stoi(size_str));
-                if (comma_pos == std::string::npos) break;
+                if (comma_pos == std::string::npos)
+                    break;
                 pos = comma_pos + 1;
             }
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
@@ -954,12 +970,18 @@ void print_usage(const char* program_name) {
     std::cout << "  --mode=optimization-test   Comprehensive optimization testing with feature summary" << std::endl;
     std::cout << "  --realistic-data           Use random test data instead of predictable patterns" << std::endl;
     std::cout << "  --verbose                  Show detailed cache statistics" << std::endl;
-    std::cout << "  --test-size=N              Comma-separated list of test sizes (default: 1000,5000,10000)" << std::endl;
+    std::cout << "  --test-size=N              Comma-separated list of test sizes (default: 1000,5000,10000)"
+              << std::endl;
     std::cout << "  --help, -h                 Show this help message" << std::endl;
     std::cout << std::endl << "Examples:" << std::endl;
-    std::cout << "  " << program_name << "                                        # Run comprehensive benchmark" << std::endl;
-    std::cout << "  " << program_name << " --mode=delete-focus                        # DELETE focus with cache stats" << std::endl;
-    std::cout << "  " << program_name << " --mode=insert-only --test-size=10000       # Only INSERT with 10K records" << std::endl;
-    std::cout << "  " << program_name << " --mode=cache-analysis --realistic-data    # Cache analysis with random data" << std::endl;
-    std::cout << "  " << program_name << " --mode=optimization-test --verbose         # Full optimization test with details" << std::endl;
+    std::cout << "  " << program_name << "                                        # Run comprehensive benchmark"
+              << std::endl;
+    std::cout << "  " << program_name << " --mode=delete-focus                        # DELETE focus with cache stats"
+              << std::endl;
+    std::cout << "  " << program_name << " --mode=insert-only --test-size=10000       # Only INSERT with 10K records"
+              << std::endl;
+    std::cout << "  " << program_name << " --mode=cache-analysis --realistic-data    # Cache analysis with random data"
+              << std::endl;
+    std::cout << "  " << program_name
+              << " --mode=optimization-test --verbose         # Full optimization test with details" << std::endl;
 }

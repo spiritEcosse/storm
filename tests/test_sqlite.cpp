@@ -202,8 +202,8 @@ TEST_F(QuerySetRemoveTest, RemoveBatchSmall) {
     auto& conn = storm::QuerySet<SqlitePerson>::get_default_connection();
     for (int i = 4; i <= 12; i++) {
         auto insert_result = conn.execute(
-                "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" + std::to_string(i) +
-                "', " + std::to_string(20 + i) + ")"
+                "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" +
+                std::to_string(i) + "', " + std::to_string(20 + i) + ")"
         );
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
     }
@@ -244,8 +244,8 @@ TEST_F(QuerySetRemoveTest, RemoveBatchLarge) {
     auto& conn = storm::QuerySet<SqlitePerson>::get_default_connection();
     for (int i = 4; i <= 103; i++) {
         auto insert_result = conn.execute(
-                "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" + std::to_string(i) +
-                "', " + std::to_string(20 + (i % 60)) + ")"
+                "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" +
+                std::to_string(i) + "', " + std::to_string(20 + (i % 60)) + ")"
         );
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
     }
@@ -344,8 +344,8 @@ TEST_F(QuerySetRemoveTest, RemoveBatchPerformance) {
     const int num_records = 1000;
     for (int i = 4; i <= num_records; i++) {
         auto insert_result = conn.execute(
-                "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" + std::to_string(i) +
-                "', " + std::to_string(20 + (i % 60)) + ")"
+                "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" +
+                std::to_string(i) + "', " + std::to_string(20 + (i % 60)) + ")"
         );
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
     }
@@ -354,7 +354,7 @@ TEST_F(QuerySetRemoveTest, RemoveBatchPerformance) {
     auto start_individual = std::chrono::steady_clock::now();
     for (int i = 1; i <= 50; i++) {
         SqlitePerson p{i, "SqlitePerson" + std::to_string(i), 20 + (i % 60)};
-        auto   result = queryset.remove(p);
+        auto         result = queryset.remove(p);
         ASSERT_TRUE(result.has_value()) << "Individual remove should succeed";
     }
     auto end_individual = std::chrono::steady_clock::now();
@@ -589,7 +589,9 @@ class QuerySetUpdateTest : public ::testing::Test {
     std::optional<SqlitePerson> getSqlitePerson(int id) {
         auto&         conn = storm::QuerySet<SqlitePerson>::get_default_connection();
         sqlite3_stmt* stmt;
-        int rc = sqlite3_prepare_v2(conn.get(), "SELECT id, name, age FROM SqlitePerson WHERE id = ?", -1, &stmt, nullptr);
+        int           rc = sqlite3_prepare_v2(
+                conn.get(), "SELECT id, name, age FROM SqlitePerson WHERE id = ?", -1, &stmt, nullptr
+        );
         if (rc != SQLITE_OK)
             return std::nullopt;
 
@@ -598,10 +600,11 @@ class QuerySetUpdateTest : public ::testing::Test {
 
         std::optional<SqlitePerson> result;
         if (rc == SQLITE_ROW) {
-            result =
-                    SqlitePerson{sqlite3_column_int(stmt, 0),
-                           std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))),
-                           sqlite3_column_int(stmt, 2)};
+            result = SqlitePerson{
+                    sqlite3_column_int(stmt, 0),
+                    std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))),
+                    sqlite3_column_int(stmt, 2)
+            };
         }
 
         sqlite3_finalize(stmt);
@@ -649,7 +652,7 @@ TEST_F(QuerySetUpdateTest, UpdateExistingSqlitePerson) {
 
     // Update Alice's information
     SqlitePerson updated_alice{1, "Alice Smith", 31};
-    auto   result = queryset.update(updated_alice);
+    auto         result = queryset.update(updated_alice);
 
     // Verify update was successful
     ASSERT_TRUE(result.has_value()) << "Update operation should succeed";
@@ -680,7 +683,7 @@ TEST_F(QuerySetUpdateTest, UpdateNonExistingSqlitePerson) {
 
     // Attempt to update non-existing person
     SqlitePerson non_existing{999, "Ghost SqlitePerson", 99};
-    auto   result = queryset.update(non_existing);
+    auto         result = queryset.update(non_existing);
 
     // Verify operation completes without error (UPDATE of non-existing row is not an error in SQL)
     ASSERT_TRUE(result.has_value()) << "Update of non-existing person should not error";
@@ -696,7 +699,7 @@ TEST_F(QuerySetUpdateTest, UpdateMultipleTimes) {
 
     // Update Alice multiple times
     SqlitePerson alice_v1{1, "Alice A", 31};
-    auto   result1 = queryset.update(alice_v1);
+    auto         result1 = queryset.update(alice_v1);
     ASSERT_TRUE(result1.has_value()) << "First update should succeed";
 
     auto check1 = getSqlitePerson(1);
@@ -705,7 +708,7 @@ TEST_F(QuerySetUpdateTest, UpdateMultipleTimes) {
     EXPECT_EQ(check1->age, 31);
 
     SqlitePerson alice_v2{1, "Alice B", 32};
-    auto   result2 = queryset.update(alice_v2);
+    auto         result2 = queryset.update(alice_v2);
     ASSERT_TRUE(result2.has_value()) << "Second update should succeed";
 
     auto check2 = getSqlitePerson(1);
@@ -714,7 +717,7 @@ TEST_F(QuerySetUpdateTest, UpdateMultipleTimes) {
     EXPECT_EQ(check2->age, 32);
 
     SqlitePerson alice_v3{1, "Alice C", 33};
-    auto   result3 = queryset.update(alice_v3);
+    auto         result3 = queryset.update(alice_v3);
     ASSERT_TRUE(result3.has_value()) << "Third update should succeed";
 
     auto check3 = getSqlitePerson(1);
@@ -768,8 +771,8 @@ TEST_F(QuerySetUpdateTest, UpdateBatchMedium) {
     auto& conn = storm::QuerySet<SqlitePerson>::get_default_connection();
     for (int i = 4; i <= 25; i++) {
         auto insert_result = conn.execute(
-                "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" + std::to_string(i) +
-                "', " + std::to_string(20 + i) + ")"
+                "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" +
+                std::to_string(i) + "', " + std::to_string(20 + i) + ")"
         );
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
     }
@@ -817,8 +820,8 @@ TEST_F(QuerySetUpdateTest, UpdateBatchLarge) {
     auto& conn = storm::QuerySet<SqlitePerson>::get_default_connection();
     for (int i = 4; i <= 103; i++) {
         auto insert_result = conn.execute(
-                "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" + std::to_string(i) +
-                "', " + std::to_string(20 + (i % 60)) + ")"
+                "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" +
+                std::to_string(i) + "', " + std::to_string(20 + (i % 60)) + ")"
         );
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
     }
@@ -938,7 +941,7 @@ TEST_F(QuerySetUpdateTest, UpdateCachedStatementReuse) {
     // Perform multiple updates to verify statement caching works correctly
     for (int i = 0; i < 10; ++i) {
         SqlitePerson updated_alice{1, "Alice V" + std::to_string(i), 30 + i};
-        auto   result = queryset.update(updated_alice);
+        auto         result = queryset.update(updated_alice);
         ASSERT_TRUE(result.has_value()) << "Update iteration " << i << " should succeed";
 
         auto alice = getSqlitePerson(1);

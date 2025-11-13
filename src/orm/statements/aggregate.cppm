@@ -23,37 +23,30 @@ export namespace storm::orm::statements {
     using storm::orm::utilities::ConstexprString;
 
     // Aggregate function types
-    enum class AggregateType {
-        SUM,
-        COUNT,
-        AVG,
-        MIN,
-        MAX
-    };
+    enum class AggregateType { SUM, COUNT, AVG, MIN, MAX };
 
     // Helper to get SQL function name from AggregateType
     constexpr std::string_view get_agg_function_name(AggregateType type) {
         switch (type) {
-            case AggregateType::SUM:
-                return "SUM";
-            case AggregateType::COUNT:
-                return "COUNT";
-            case AggregateType::AVG:
-                return "AVG";
-            case AggregateType::MIN:
-                return "MIN";
-            case AggregateType::MAX:
-                return "MAX";
+        case AggregateType::SUM:
+            return "SUM";
+        case AggregateType::COUNT:
+            return "COUNT";
+        case AggregateType::AVG:
+            return "AVG";
+        case AggregateType::MIN:
+            return "MIN";
+        case AggregateType::MAX:
+            return "MAX";
         }
         return "";
     }
 
     // Aggregate operation descriptor
-    template <AggregateType Type, std::meta::info... FieldInfos>
-    struct AggregateOp {
-        static constexpr AggregateType agg_type = Type;
-        static constexpr size_t field_count = sizeof...(FieldInfos);
-        static constexpr auto get_field_infos() {
+    template <AggregateType Type, std::meta::info... FieldInfos> struct AggregateOp {
+        static constexpr AggregateType agg_type    = Type;
+        static constexpr size_t        field_count = sizeof...(FieldInfos);
+        static constexpr auto          get_field_infos() {
             if constexpr (sizeof...(FieldInfos) > 0) {
                 return std::array{FieldInfos...};
             } else {
@@ -65,36 +58,32 @@ export namespace storm::orm::statements {
 
     // AggregateBuilder - fluent interface for building multiple aggregates in one query
     // Usage: queryset.aggregate().sum<&Person::age>().count().avg<&Person::salary>().select()
-    template <typename T, storm::db::DatabaseConnection ConnType, typename... Ops>
-    class AggregateBuilder {
-        using Base = BaseStatement<T>;
-        using Error = typename ConnType::Error;
+    template <typename T, storm::db::DatabaseConnection ConnType, typename... Ops> class AggregateBuilder {
+        using Base      = BaseStatement<T>;
+        using Error     = typename ConnType::Error;
         using Statement = typename ConnType::Statement;
 
         // Result type for a single operation
-        template <size_t OpIdx>
-        struct OpResultType {
+        template <size_t OpIdx> struct OpResultType {
             static constexpr auto op = std::tuple_element_t<OpIdx, std::tuple<Ops...>>{};
 
             // SUM/COUNT return int64_t, AVG/MIN/MAX return double
             using type = std::conditional_t<
-                op.agg_type == AggregateType::SUM || op.agg_type == AggregateType::COUNT,
-                int64_t,
-                double
-            >;
+                    op.agg_type == AggregateType::SUM || op.agg_type == AggregateType::COUNT,
+                    int64_t,
+                    double>;
         };
 
         // Deduce result type based on number of operations
         // Returns: single scalar for 1 op, tuple for multiple ops, void for 0 ops
-        template <size_t... Is>
-        static consteval auto deduce_result_type_helper(std::index_sequence<Is...>) {
+        template <size_t... Is> static consteval auto deduce_result_type_helper(std::index_sequence<Is...>) {
             if constexpr (sizeof...(Ops) == 0) {
                 struct EmptyTag {};
-                return EmptyTag{};  // Should never be used (select() has requires clause)
+                return EmptyTag{}; // Should never be used (select() has requires clause)
             } else if constexpr (sizeof...(Ops) == 1) {
-                return typename OpResultType<0>::type{};  // Single scalar value
+                return typename OpResultType<0>::type{}; // Single scalar value
             } else {
-                return std::tuple<typename OpResultType<Is>::type...>{};  // Multiple values as tuple
+                return std::tuple<typename OpResultType<Is>::type...>{}; // Multiple values as tuple
             }
         }
 
@@ -104,46 +93,41 @@ export namespace storm::orm::statements {
         explicit AggregateBuilder(ConnType& conn) : conn_(conn) {}
 
         // Add SUM aggregate (multi-field: SUM(f1 + f2 + ...))
-        template <std::meta::info... FieldInfos>
-        auto sum() {
+        template <std::meta::info... FieldInfos> auto sum() {
             return AggregateBuilder<T, ConnType, Ops..., AggregateOp<AggregateType::SUM, FieldInfos...>>{conn_};
         }
 
         // Add COUNT aggregate (COUNT(*) if no fields specified)
-        template <std::meta::info... FieldInfos>
-        auto count() {
+        template <std::meta::info... FieldInfos> auto count() {
             return AggregateBuilder<T, ConnType, Ops..., AggregateOp<AggregateType::COUNT, FieldInfos...>>{conn_};
         }
 
         // Add AVG aggregate (multi-field: AVG(f1 + f2 + ...))
-        template <std::meta::info... FieldInfos>
-        auto avg() {
+        template <std::meta::info... FieldInfos> auto avg() {
             return AggregateBuilder<T, ConnType, Ops..., AggregateOp<AggregateType::AVG, FieldInfos...>>{conn_};
         }
 
         // Add MIN aggregate (multi-field: MIN(f1 + f2 + ...))
-        template <std::meta::info... FieldInfos>
-        auto min() {
+        template <std::meta::info... FieldInfos> auto min() {
             return AggregateBuilder<T, ConnType, Ops..., AggregateOp<AggregateType::MIN, FieldInfos...>>{conn_};
         }
 
         // Add MAX aggregate (multi-field: MAX(f1 + f2 + ...))
-        template <std::meta::info... FieldInfos>
-        auto max() {
+        template <std::meta::info... FieldInfos> auto max() {
             return AggregateBuilder<T, ConnType, Ops..., AggregateOp<AggregateType::MAX, FieldInfos...>>{conn_};
         }
 
         // Execute the query and return results
-        auto select() -> std::expected<ResultType, Error> requires (sizeof...(Ops) > 0) {
+        auto select() -> std::expected<ResultType, Error>
+            requires(sizeof...(Ops) > 0)
+        {
             return execute();
         }
 
       private:
-
         // Build SQL for single operation
-        template <size_t OpIdx>
-        static consteval auto build_operation_sql() {
-            constexpr auto op = std::tuple_element_t<OpIdx, std::tuple<Ops...>>{};
+        template <size_t OpIdx> static consteval auto build_operation_sql() {
+            constexpr auto op       = std::tuple_element_t<OpIdx, std::tuple<Ops...>>{};
             constexpr auto agg_name = get_agg_function_name(op.agg_type);
 
             // Calculate size
@@ -184,21 +168,19 @@ export namespace storm::orm::statements {
         }
 
         // Build full SELECT statement
-        template <size_t... Is>
-        static consteval auto build_aggregate_sql(std::index_sequence<Is...>) {
+        template <size_t... Is> static consteval auto build_aggregate_sql(std::index_sequence<Is...>) {
             ConstexprString<2048> result;
             result.append("SELECT ");
 
             // Add each operation
-            ((
-                [&result]() {
-                    if constexpr (Is > 0) {
-                        result.append(", ");
-                    }
-                    constexpr auto op_sql = build_operation_sql<Is>();
-                    result.append(op_sql);
-                }()
-            ), ...);
+            (([&result]() {
+                 if constexpr (Is > 0) {
+                     result.append(", ");
+                 }
+                 constexpr auto op_sql = build_operation_sql<Is>();
+                 result.append(op_sql);
+             }()),
+             ...);
 
             result.append(" FROM ");
             result.append(Base::get_table_name());
@@ -209,8 +191,7 @@ export namespace storm::orm::statements {
         static constexpr auto sql_array = build_aggregate_sql(std::make_index_sequence<sizeof...(Ops)>{});
 
         // Extract single result value based on type
-        template <typename ResultT>
-        static ResultT extract_result(Statement& stmt, int col_idx) {
+        template <typename ResultT> static ResultT extract_result(Statement& stmt, int col_idx) {
             if constexpr (std::is_same_v<ResultT, int64_t>) {
                 return stmt.extract_int64(col_idx);
             } else if constexpr (std::is_same_v<ResultT, double>) {
@@ -219,8 +200,7 @@ export namespace storm::orm::statements {
         }
 
         // Execute and extract results
-        template <size_t... Is>
-        auto execute_impl(std::index_sequence<Is...>) -> std::expected<ResultType, Error> {
+        template <size_t... Is> auto execute_impl(std::index_sequence<Is...>) -> std::expected<ResultType, Error> {
             static const std::string sql{sql_array.data.data(), sql_array.len};
 
             // Cache statement on first use
@@ -260,11 +240,13 @@ export namespace storm::orm::statements {
             return result;
         }
 
-        auto execute() -> std::expected<ResultType, Error> requires (sizeof...(Ops) > 0) {
+        auto execute() -> std::expected<ResultType, Error>
+            requires(sizeof...(Ops) > 0)
+        {
             return execute_impl(std::make_index_sequence<sizeof...(Ops)>{});
         }
 
-        ConnType& conn_;
+        ConnType&          conn_;
         mutable Statement* cached_stmt_ = nullptr;
     };
 
@@ -272,9 +254,9 @@ export namespace storm::orm::statements {
     // These provide shortcut methods like queryset.sum<&Person::age>().select()
     // Requires at least one field EXCEPT for COUNT which can use COUNT(*)
     template <typename T, storm::db::DatabaseConnection ConnType, AggregateType AggType, std::meta::info... FieldInfos>
-        requires (sizeof...(FieldInfos) > 0 || AggType == AggregateType::COUNT)
+        requires(sizeof...(FieldInfos) > 0 || AggType == AggregateType::COUNT)
     class SingleAggregateStatement {
-        using Error = typename ConnType::Error;
+        using Error   = typename ConnType::Error;
         using Builder = AggregateBuilder<T, ConnType, AggregateOp<AggType, FieldInfos...>>;
 
       public:

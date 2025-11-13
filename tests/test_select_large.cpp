@@ -31,8 +31,7 @@ class SelectLargeTest : public ::testing::Test {
                 "name TEXT NOT NULL"
                 ")"
         );
-        ASSERT_TRUE(create_result.has_value())
-                << "Failed to create table: " << create_result.error().message();
+        ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
     }
 
     void TearDown() override {
@@ -46,7 +45,7 @@ TEST_F(SelectLargeTest, SelectMoreThan10KRows) {
     QuerySet<TestRecord> queryset;
 
     // Insert 25,000 records (will trigger exponential growth: 10K → 20K → 40K)
-    constexpr int RECORD_COUNT = 25000;
+    constexpr int           RECORD_COUNT = 25000;
     std::vector<TestRecord> records;
     records.reserve(RECORD_COUNT);
 
@@ -68,10 +67,10 @@ TEST_F(SelectLargeTest, SelectMoreThan10KRows) {
     EXPECT_EQ(retrieved[0].value, 10);
     EXPECT_EQ(retrieved[0].name, "Record_1");
 
-    EXPECT_EQ(retrieved[9999].value, 100000);  // 10K boundary
+    EXPECT_EQ(retrieved[9999].value, 100000); // 10K boundary
     EXPECT_EQ(retrieved[9999].name, "Record_10000");
 
-    EXPECT_EQ(retrieved[19999].value, 200000);  // 20K boundary
+    EXPECT_EQ(retrieved[19999].value, 200000); // 20K boundary
     EXPECT_EQ(retrieved[19999].name, "Record_20000");
 
     EXPECT_EQ(retrieved[RECORD_COUNT - 1].value, RECORD_COUNT * 10);
@@ -82,7 +81,7 @@ TEST_F(SelectLargeTest, SelectMoreThan10KRows) {
 TEST_F(SelectLargeTest, SelectExactly10KRows) {
     QuerySet<TestRecord> queryset;
 
-    constexpr int RECORD_COUNT = 10000;
+    constexpr int           RECORD_COUNT = 10000;
     std::vector<TestRecord> records;
     records.reserve(RECORD_COUNT);
 
@@ -108,7 +107,7 @@ TEST_F(SelectLargeTest, SelectExactly10KRows) {
 TEST_F(SelectLargeTest, SelectSlightlyOver10KRows) {
     QuerySet<TestRecord> queryset;
 
-    constexpr int RECORD_COUNT = 10001;  // Just 1 over capacity
+    constexpr int           RECORD_COUNT = 10001; // Just 1 over capacity
     std::vector<TestRecord> records;
     records.reserve(RECORD_COUNT);
 
@@ -126,7 +125,7 @@ TEST_F(SelectLargeTest, SelectSlightlyOver10KRows) {
     const auto& retrieved = select_result.value();
     ASSERT_EQ(retrieved.size(), RECORD_COUNT);
 
-    EXPECT_EQ(retrieved[10000].value, 10001);  // The one that triggered growth
+    EXPECT_EQ(retrieved[10000].value, 10001); // The one that triggered growth
 }
 
 // Test: SELECT with very large result set (100K rows)
@@ -161,9 +160,9 @@ TEST_F(SelectLargeTest, SelectVeryLargeDataset) {
 
     // Verify data integrity at key boundaries
     EXPECT_EQ(retrieved[0].value, 1);
-    EXPECT_EQ(retrieved[10000].value, 10001);   // After initial capacity
-    EXPECT_EQ(retrieved[20000].value, 20001);   // After first growth
-    EXPECT_EQ(retrieved[40000].value, 40001);   // After second growth
-    EXPECT_EQ(retrieved[80000].value, 80001);   // After third growth
+    EXPECT_EQ(retrieved[10000].value, 10001); // After initial capacity
+    EXPECT_EQ(retrieved[20000].value, 20001); // After first growth
+    EXPECT_EQ(retrieved[40000].value, 40001); // After second growth
+    EXPECT_EQ(retrieved[80000].value, 80001); // After third growth
     EXPECT_EQ(retrieved[RECORD_COUNT - 1].value, RECORD_COUNT);
 }

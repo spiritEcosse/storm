@@ -17,10 +17,10 @@ using namespace storm::benchmark;
 // Test model for aggregate benchmarks
 struct Person {
     [[= storm::meta::FieldAttr::primary]] int id;
-    std::string name;
-    int age;
-    double salary;
-    int years_experience;
+    std::string                               name;
+    int                                       age;
+    double                                    salary;
+    int                                       years_experience;
 };
 
 // Setup database with test data
@@ -47,16 +47,16 @@ void setup_database(int num_people) {
     }
 
     // Insert test data
-    QuerySet<Person> qs;
+    QuerySet<Person>    qs;
     std::vector<Person> people;
     people.reserve(num_people);
     for (int i = 0; i < num_people; ++i) {
         people.push_back({
-            0,
-            "Person" + std::to_string(i),
-            20 + (i % 50),                    // age: 20-69
-            50000.0 + (i % 100) * 1000.0,     // salary: 50k-149k
-            (i % 20)                          // years_experience: 0-19
+                0,
+                "Person" + std::to_string(i),
+                20 + (i % 50),                // age: 20-69
+                50000.0 + (i % 100) * 1000.0, // salary: 50k-149k
+                (i % 20)                      // years_experience: 0-19
         });
     }
 
@@ -79,12 +79,12 @@ void benchmark_storm_sum(int num_people, int iterations) {
     QuerySet<Person> qs;
 
     BenchmarkTimer timer;
-    double total_time = 0;
-    int total_rows = 0;
+    double         total_time = 0;
+    int            total_rows = 0;
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto result = qs.sum<^^Person::age>().select();
+        auto   result  = qs.sum<^^Person::age>().select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -96,10 +96,10 @@ void benchmark_storm_sum(int num_people, int iterations) {
     std::cout << "Storm SUM(age) - " << num_people << " rows:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Iterations: " << iterations << std::endl;
-    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
-              << (total_time / iterations) << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (total_rows / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4) << (total_time / iterations) << " ms"
+              << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (total_rows / (total_time / 1000.0))
+              << " rows/sec" << std::endl;
     std::cout << std::endl;
 
     teardown_database();
@@ -110,12 +110,12 @@ void benchmark_storm_count(int num_people, int iterations) {
     QuerySet<Person> qs;
 
     BenchmarkTimer timer;
-    double total_time = 0;
-    int successful_queries = 0;
+    double         total_time         = 0;
+    int            successful_queries = 0;
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto result = qs.count().select();
+        auto   result  = qs.count().select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -127,10 +127,10 @@ void benchmark_storm_count(int num_people, int iterations) {
     std::cout << "Storm COUNT(*) - " << num_people << " rows:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Iterations: " << iterations << std::endl;
-    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
-              << (total_time / iterations) << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (successful_queries / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4) << (total_time / iterations) << " ms"
+              << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (successful_queries / (total_time / 1000.0))
+              << " rows/sec" << std::endl;
     std::cout << std::endl;
 
     teardown_database();
@@ -141,12 +141,12 @@ void benchmark_storm_avg(int num_people, int iterations) {
     QuerySet<Person> qs;
 
     BenchmarkTimer timer;
-    double total_time = 0;
-    int total_rows = 0;
+    double         total_time = 0;
+    int            total_rows = 0;
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto result = qs.avg<^^Person::salary>().select();
+        auto   result  = qs.avg<^^Person::salary>().select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -158,10 +158,10 @@ void benchmark_storm_avg(int num_people, int iterations) {
     std::cout << "Storm AVG(salary) - " << num_people << " rows:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Iterations: " << iterations << std::endl;
-    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
-              << (total_time / iterations) << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (total_rows / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4) << (total_time / iterations) << " ms"
+              << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (total_rows / (total_time / 1000.0))
+              << " rows/sec" << std::endl;
     std::cout << std::endl;
 
     teardown_database();
@@ -172,12 +172,12 @@ void benchmark_storm_min(int num_people, int iterations) {
     QuerySet<Person> qs;
 
     BenchmarkTimer timer;
-    double total_time = 0;
-    int total_rows = 0;
+    double         total_time = 0;
+    int            total_rows = 0;
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto result = qs.min<^^Person::age>().select();
+        auto   result  = qs.min<^^Person::age>().select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -189,10 +189,10 @@ void benchmark_storm_min(int num_people, int iterations) {
     std::cout << "Storm MIN(age) - " << num_people << " rows:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Iterations: " << iterations << std::endl;
-    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
-              << (total_time / iterations) << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (total_rows / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4) << (total_time / iterations) << " ms"
+              << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (total_rows / (total_time / 1000.0))
+              << " rows/sec" << std::endl;
     std::cout << std::endl;
 
     teardown_database();
@@ -203,12 +203,12 @@ void benchmark_storm_max(int num_people, int iterations) {
     QuerySet<Person> qs;
 
     BenchmarkTimer timer;
-    double total_time = 0;
-    int total_rows = 0;
+    double         total_time = 0;
+    int            total_rows = 0;
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto result = qs.max<^^Person::salary>().select();
+        auto   result  = qs.max<^^Person::salary>().select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -220,10 +220,10 @@ void benchmark_storm_max(int num_people, int iterations) {
     std::cout << "Storm MAX(salary) - " << num_people << " rows:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Iterations: " << iterations << std::endl;
-    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
-              << (total_time / iterations) << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (total_rows / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4) << (total_time / iterations) << " ms"
+              << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (total_rows / (total_time / 1000.0))
+              << " rows/sec" << std::endl;
     std::cout << std::endl;
 
     teardown_database();
@@ -234,16 +234,12 @@ void benchmark_storm_multi_aggregate(int num_people, int iterations) {
     QuerySet<Person> qs;
 
     BenchmarkTimer timer;
-    double total_time = 0;
-    int total_rows = 0;
+    double         total_time = 0;
+    int            total_rows = 0;
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto result = qs.aggregate()
-                          .sum<^^Person::age>()
-                          .count()
-                          .avg<^^Person::salary>()
-                          .select();
+        auto   result  = qs.aggregate().sum<^^Person::age>().count().avg<^^Person::salary>().select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -255,10 +251,10 @@ void benchmark_storm_multi_aggregate(int num_people, int iterations) {
     std::cout << "Storm Multi-Aggregate - " << num_people << " rows:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Iterations: " << iterations << std::endl;
-    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
-              << (total_time / iterations) << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (total_rows / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4) << (total_time / iterations) << " ms"
+              << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (total_rows / (total_time / 1000.0))
+              << " rows/sec" << std::endl;
     std::cout << std::endl;
 
     teardown_database();
@@ -269,12 +265,12 @@ void benchmark_storm_sum_multi_field(int num_people, int iterations) {
     QuerySet<Person> qs;
 
     BenchmarkTimer timer;
-    double total_time = 0;
-    int total_rows = 0;
+    double         total_time = 0;
+    int            total_rows = 0;
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto result = qs.sum<^^Person::age, ^^Person::years_experience>().select();
+        auto   result  = qs.sum<^^Person::age, ^^Person::years_experience>().select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -286,10 +282,10 @@ void benchmark_storm_sum_multi_field(int num_people, int iterations) {
     std::cout << "Storm SUM(age+years) - " << num_people << " rows:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Iterations: " << iterations << std::endl;
-    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
-              << (total_time / iterations) << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (total_rows / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4) << (total_time / iterations) << " ms"
+              << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (total_rows / (total_time / 1000.0))
+              << " rows/sec" << std::endl;
     std::cout << std::endl;
 
     teardown_database();
@@ -310,8 +306,8 @@ void benchmark_raw_sum(int num_people, int iterations) {
     auto stmt = stmt_result.value();
 
     BenchmarkTimer timer;
-    double total_time = 0;
-    int total_rows = 0;
+    double         total_time = 0;
+    int            total_rows = 0;
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
@@ -332,10 +328,10 @@ void benchmark_raw_sum(int num_people, int iterations) {
     std::cout << "Raw SQLite SUM(age) - " << num_people << " rows:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Iterations: " << iterations << std::endl;
-    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
-              << (total_time / iterations) << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (total_rows / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4) << (total_time / iterations) << " ms"
+              << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (total_rows / (total_time / 1000.0))
+              << " rows/sec" << std::endl;
     std::cout << std::endl;
 
     teardown_database();
@@ -352,8 +348,8 @@ void benchmark_raw_count(int num_people, int iterations) {
     auto stmt = stmt_result.value();
 
     BenchmarkTimer timer;
-    double total_time = 0;
-    int successful_queries = 0;
+    double         total_time         = 0;
+    int            successful_queries = 0;
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
@@ -374,10 +370,10 @@ void benchmark_raw_count(int num_people, int iterations) {
     std::cout << "Raw SQLite COUNT(*) - " << num_people << " rows:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Iterations: " << iterations << std::endl;
-    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
-              << (total_time / iterations) << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (successful_queries / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4) << (total_time / iterations) << " ms"
+              << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (successful_queries / (total_time / 1000.0))
+              << " rows/sec" << std::endl;
     std::cout << std::endl;
 
     teardown_database();
@@ -394,8 +390,8 @@ void benchmark_raw_avg(int num_people, int iterations) {
     auto stmt = stmt_result.value();
 
     BenchmarkTimer timer;
-    double total_time = 0;
-    int total_rows = 0;
+    double         total_time = 0;
+    int            total_rows = 0;
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
@@ -416,10 +412,10 @@ void benchmark_raw_avg(int num_people, int iterations) {
     std::cout << "Raw SQLite AVG(salary) - " << num_people << " rows:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Iterations: " << iterations << std::endl;
-    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
-              << (total_time / iterations) << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (total_rows / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4) << (total_time / iterations) << " ms"
+              << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (total_rows / (total_time / 1000.0))
+              << " rows/sec" << std::endl;
     std::cout << std::endl;
 
     teardown_database();
@@ -436,8 +432,8 @@ void benchmark_raw_min(int num_people, int iterations) {
     auto stmt = stmt_result.value();
 
     BenchmarkTimer timer;
-    double total_time = 0;
-    int total_rows = 0;
+    double         total_time = 0;
+    int            total_rows = 0;
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
@@ -458,10 +454,10 @@ void benchmark_raw_min(int num_people, int iterations) {
     std::cout << "Raw SQLite MIN(age) - " << num_people << " rows:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Iterations: " << iterations << std::endl;
-    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
-              << (total_time / iterations) << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (total_rows / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4) << (total_time / iterations) << " ms"
+              << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (total_rows / (total_time / 1000.0))
+              << " rows/sec" << std::endl;
     std::cout << std::endl;
 
     teardown_database();
@@ -478,8 +474,8 @@ void benchmark_raw_max(int num_people, int iterations) {
     auto stmt = stmt_result.value();
 
     BenchmarkTimer timer;
-    double total_time = 0;
-    int total_rows = 0;
+    double         total_time = 0;
+    int            total_rows = 0;
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
@@ -500,10 +496,10 @@ void benchmark_raw_max(int num_people, int iterations) {
     std::cout << "Raw SQLite MAX(salary) - " << num_people << " rows:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Iterations: " << iterations << std::endl;
-    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
-              << (total_time / iterations) << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (total_rows / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4) << (total_time / iterations) << " ms"
+              << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (total_rows / (total_time / 1000.0))
+              << " rows/sec" << std::endl;
     std::cout << std::endl;
 
     teardown_database();
@@ -520,8 +516,8 @@ void benchmark_raw_multi_aggregate(int num_people, int iterations) {
     auto stmt = stmt_result.value();
 
     BenchmarkTimer timer;
-    double total_time = 0;
-    int total_rows = 0;
+    double         total_time = 0;
+    int            total_rows = 0;
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
@@ -531,9 +527,9 @@ void benchmark_raw_multi_aggregate(int num_people, int iterations) {
             throw std::runtime_error("Step failed");
         }
 
-        int64_t sum = sqlite3_column_int64(stmt->handle(), 0);
+        int64_t sum   = sqlite3_column_int64(stmt->handle(), 0);
         int64_t count = sqlite3_column_int64(stmt->handle(), 1);
-        double avg = sqlite3_column_double(stmt->handle(), 2);
+        double  avg   = sqlite3_column_double(stmt->handle(), 2);
         stmt->reset();
         double elapsed = timer.elapsed_ms();
 
@@ -544,10 +540,10 @@ void benchmark_raw_multi_aggregate(int num_people, int iterations) {
     std::cout << "Raw SQLite Multi-Aggregate - " << num_people << " rows:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Iterations: " << iterations << std::endl;
-    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
-              << (total_time / iterations) << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (total_rows / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4) << (total_time / iterations) << " ms"
+              << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (total_rows / (total_time / 1000.0))
+              << " rows/sec" << std::endl;
     std::cout << std::endl;
 
     teardown_database();
@@ -564,8 +560,8 @@ void benchmark_raw_sum_multi_field(int num_people, int iterations) {
     auto stmt = stmt_result.value();
 
     BenchmarkTimer timer;
-    double total_time = 0;
-    int total_rows = 0;
+    double         total_time = 0;
+    int            total_rows = 0;
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
@@ -575,7 +571,7 @@ void benchmark_raw_sum_multi_field(int num_people, int iterations) {
             throw std::runtime_error("Step failed");
         }
 
-        int64_t sum_age = sqlite3_column_int64(stmt->handle(), 0);
+        int64_t sum_age   = sqlite3_column_int64(stmt->handle(), 0);
         int64_t sum_years = sqlite3_column_int64(stmt->handle(), 1);
         stmt->reset();
         double elapsed = timer.elapsed_ms();
@@ -587,10 +583,10 @@ void benchmark_raw_sum_multi_field(int num_people, int iterations) {
     std::cout << "Raw SQLite SUM(age+years) - " << num_people << " rows:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Iterations: " << iterations << std::endl;
-    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
-              << (total_time / iterations) << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (total_rows / (total_time / 1000.0)) << " rows/sec" << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4) << (total_time / iterations) << " ms"
+              << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (total_rows / (total_time / 1000.0))
+              << " rows/sec" << std::endl;
     std::cout << std::endl;
 
     teardown_database();
@@ -621,24 +617,24 @@ void print_help() {
 }
 
 int main(int argc, char* argv[]) {
-    int num_people = 10000;
-    int iterations = 100;
-    bool run_all = false;
-    bool run_compare = false;
-    bool run_storm_sum = false;
-    bool run_storm_count = false;
-    bool run_storm_avg = false;
-    bool run_storm_min = false;
-    bool run_storm_max = false;
-    bool run_storm_multi = false;
+    int  num_people          = 10000;
+    int  iterations          = 100;
+    bool run_all             = false;
+    bool run_compare         = false;
+    bool run_storm_sum       = false;
+    bool run_storm_count     = false;
+    bool run_storm_avg       = false;
+    bool run_storm_min       = false;
+    bool run_storm_max       = false;
+    bool run_storm_multi     = false;
     bool run_storm_sum_multi = false;
-    bool run_raw_sum = false;
-    bool run_raw_count = false;
-    bool run_raw_avg = false;
-    bool run_raw_min = false;
-    bool run_raw_max = false;
-    bool run_raw_multi = false;
-    bool run_raw_sum_multi = false;
+    bool run_raw_sum         = false;
+    bool run_raw_count       = false;
+    bool run_raw_avg         = false;
+    bool run_raw_min         = false;
+    bool run_raw_max         = false;
+    bool run_raw_multi       = false;
+    bool run_raw_sum_multi   = false;
 
     // Parse command line arguments
     for (int i = 1; i < argc; ++i) {
@@ -690,10 +686,8 @@ int main(int argc, char* argv[]) {
     }
 
     // Default to running all if no specific benchmarks selected
-    if (!run_all && !run_compare &&
-        !run_storm_sum && !run_storm_count && !run_storm_avg &&
-        !run_storm_min && !run_storm_max && !run_storm_multi && !run_storm_sum_multi &&
-        !run_raw_sum && !run_raw_count && !run_raw_avg &&
+    if (!run_all && !run_compare && !run_storm_sum && !run_storm_count && !run_storm_avg && !run_storm_min &&
+        !run_storm_max && !run_storm_multi && !run_storm_sum_multi && !run_raw_sum && !run_raw_count && !run_raw_avg &&
         !run_raw_min && !run_raw_max && !run_raw_multi && !run_raw_sum_multi) {
         run_all = true;
     }

@@ -45,7 +45,7 @@ void setup_database(int num_records, int num_unique_combos) {
 
     // Insert records with controlled number of unique (name, age) combinations
     // Strategy: cycle through unique_combos different combinations
-    QuerySet<Person> person_qs;
+    QuerySet<Person>    person_qs;
     std::vector<Person> people;
     people.reserve(num_records);
 
@@ -53,9 +53,9 @@ void setup_database(int num_records, int num_unique_combos) {
         int combo_idx = i % num_unique_combos;
         // Use square root distribution for balanced cardinality
         int name_factor = static_cast<int>(std::sqrt(num_unique_combos));
-        int age_factor = (num_unique_combos + name_factor - 1) / name_factor;
-        int name_idx = combo_idx % name_factor;
-        int age_idx = combo_idx / name_factor;
+        int age_factor  = (num_unique_combos + name_factor - 1) / name_factor;
+        int name_idx    = combo_idx % name_factor;
+        int age_idx     = combo_idx / name_factor;
         people.push_back({0, "Person" + std::to_string(name_idx), 20 + age_idx});
     }
 
@@ -70,14 +70,14 @@ void teardown_database() {
 }
 
 // Benchmark Storm ORM DISTINCT with specific field(s)
-template<std::meta::info... FieldInfos>
+template <std::meta::info... FieldInfos>
 void benchmark_storm_distinct(const char* field_desc, int num_records, int num_unique_combos, int iterations = 100) {
     setup_database(num_records, num_unique_combos);
 
     QuerySet<Person> person_qs;
-    BenchmarkTimer timer;
-    double total_time = 0;
-    int total_results = 0;
+    BenchmarkTimer   timer;
+    double           total_time    = 0;
+    int              total_results = 0;
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
@@ -99,28 +99,34 @@ void benchmark_storm_distinct(const char* field_desc, int num_records, int num_u
         }
     }
 
-    double avg_time_ms = total_time / iterations;
-    double throughput = total_results / (total_time / 1000.0);
-    int avg_result_size = total_results / iterations;
+    double avg_time_ms     = total_time / iterations;
+    double throughput      = total_results / (total_time / 1000.0);
+    int    avg_result_size = total_results / iterations;
 
-    std::cout << "  " << std::setw(25) << std::left << field_desc
-              << " | Avg: " << std::fixed << std::setprecision(2) << std::setw(6) << avg_time_ms << " ms"
-              << " | Results: " << std::setw(6) << avg_result_size
-              << " | Throughput: " << std::setprecision(2) << std::setw(8) << (throughput / 1000000.0) << " M/s"
+    std::cout << "  " << std::setw(25) << std::left << field_desc << " | Avg: " << std::fixed << std::setprecision(2)
+              << std::setw(6) << avg_time_ms << " ms"
+              << " | Results: " << std::setw(6) << avg_result_size << " | Throughput: " << std::setprecision(2)
+              << std::setw(8) << (throughput / 1000000.0) << " M/s"
               << " | Efficiency: ";
 
     teardown_database();
 }
 
 // Benchmark Raw SQLite DISTINCT
-void benchmark_raw_distinct(const char* field_desc, const char* sql, int num_records, int num_unique_combos,
-                            int num_fields, int iterations = 100) {
+void benchmark_raw_distinct(
+        const char* field_desc,
+        const char* sql,
+        int         num_records,
+        int         num_unique_combos,
+        int         num_fields,
+        int         iterations = 100
+) {
     setup_database(num_records, num_unique_combos);
 
-    auto& conn = QuerySet<Person>::get_default_connection();
+    auto&          conn = QuerySet<Person>::get_default_connection();
     BenchmarkTimer timer;
-    double total_time = 0;
-    int total_results = 0;
+    double         total_time    = 0;
+    int            total_results = 0;
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
@@ -130,8 +136,8 @@ void benchmark_raw_distinct(const char* field_desc, const char* sql, int num_rec
             break;
         }
 
-        auto stmt = std::move(stmt_result.value());
-        int row_count = 0;
+        auto stmt      = std::move(stmt_result.value());
+        int  row_count = 0;
 
         while (true) {
             int step = stmt.step_raw();
@@ -161,7 +167,7 @@ void benchmark_raw_distinct(const char* field_desc, const char* sql, int num_rec
     }
 
     double avg_time_ms = total_time / iterations;
-    double throughput = total_results / (total_time / 1000.0);
+    double throughput  = total_results / (total_time / 1000.0);
 
     std::cout << std::fixed << std::setprecision(2) << std::setw(8) << (throughput / 1000000.0) << " M/s" << std::endl;
 
@@ -170,17 +176,22 @@ void benchmark_raw_distinct(const char* field_desc, const char* sql, int num_rec
 
 void run_scaling_test(int num_records, int num_unique_combos, int iterations) {
     std::cout << "\n========================================" << std::endl;
-    std::cout << "Result Size: ~" << num_unique_combos << " unique rows (" << num_records << " total records)" << std::endl;
+    std::cout << "Result Size: ~" << num_unique_combos << " unique rows (" << num_records << " total records)"
+              << std::endl;
     std::cout << "========================================\n" << std::endl;
 
     // Single-field DISTINCT tests
     std::cout << "Single-Field DISTINCT:" << std::endl;
 
     benchmark_storm_distinct<^^Person::name>("Storm: name", num_records, num_unique_combos, iterations);
-    benchmark_raw_distinct("Raw: name", "SELECT DISTINCT name FROM Person", num_records, num_unique_combos, 1, iterations);
+    benchmark_raw_distinct(
+            "Raw: name", "SELECT DISTINCT name FROM Person", num_records, num_unique_combos, 1, iterations
+    );
 
     benchmark_storm_distinct<^^Person::age>("Storm: age", num_records, num_unique_combos, iterations);
-    benchmark_raw_distinct("Raw: age", "SELECT DISTINCT age FROM Person", num_records, num_unique_combos, 1, iterations);
+    benchmark_raw_distinct(
+            "Raw: age", "SELECT DISTINCT age FROM Person", num_records, num_unique_combos, 1, iterations
+    );
 
     benchmark_storm_distinct<>("Storm: id (PK)", num_records, num_unique_combos, iterations);
     benchmark_raw_distinct("Raw: id", "SELECT DISTINCT id FROM Person", num_records, num_unique_combos, 1, iterations);
@@ -188,16 +199,29 @@ void run_scaling_test(int num_records, int num_unique_combos, int iterations) {
     // Multi-field DISTINCT tests
     std::cout << "\nMulti-Field DISTINCT:" << std::endl;
 
-    benchmark_storm_distinct<^^Person::name, ^^Person::age>("Storm: name, age", num_records, num_unique_combos, iterations);
-    benchmark_raw_distinct("Raw: name, age", "SELECT DISTINCT name, age FROM Person", num_records, num_unique_combos, 2, iterations);
+    benchmark_storm_distinct<^^Person::name, ^^Person::age>(
+            "Storm: name, age", num_records, num_unique_combos, iterations
+    );
+    benchmark_raw_distinct(
+            "Raw: name, age", "SELECT DISTINCT name, age FROM Person", num_records, num_unique_combos, 2, iterations
+    );
 
-    benchmark_storm_distinct<^^Person::id, ^^Person::name, ^^Person::age>("Storm: id, name, age", num_records, num_unique_combos, iterations);
-    benchmark_raw_distinct("Raw: id, name, age", "SELECT DISTINCT id, name, age FROM Person", num_records, num_unique_combos, 3, iterations);
+    benchmark_storm_distinct<^^Person::id, ^^Person::name, ^^Person::age>(
+            "Storm: id, name, age", num_records, num_unique_combos, iterations
+    );
+    benchmark_raw_distinct(
+            "Raw: id, name, age",
+            "SELECT DISTINCT id, name, age FROM Person",
+            num_records,
+            num_unique_combos,
+            3,
+            iterations
+    );
 }
 
 int main(int argc, char* argv[]) {
     int num_records = 10000;
-    int iterations = 100;
+    int iterations  = 100;
 
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
@@ -221,9 +245,9 @@ int main(int argc, char* argv[]) {
     std::cout << "\nTotal records: " << num_records << ", Iterations: " << iterations << std::endl;
 
     // Test with different result sizes to show scaling behavior
-    run_scaling_test(num_records, 100, iterations);      // Small result set
-    run_scaling_test(num_records, 1000, iterations);     // Medium result set
-    run_scaling_test(num_records, num_records, iterations);  // Large result set (all unique)
+    run_scaling_test(num_records, 100, iterations);         // Small result set
+    run_scaling_test(num_records, 1000, iterations);        // Medium result set
+    run_scaling_test(num_records, num_records, iterations); // Large result set (all unique)
 
     std::cout << "\n=====================================================" << std::endl;
 

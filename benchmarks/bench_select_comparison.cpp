@@ -10,8 +10,8 @@ import <expected>;
 
 struct Person {
     [[= storm::meta::FieldAttr::primary]] int id;
-    std::string name;
-    int age;
+    std::string                               name;
+    int                                       age;
 };
 
 using namespace storm::benchmark;
@@ -22,7 +22,8 @@ void benchmark_raw_sqlite(int num_records) {
     sqlite3* db;
     sqlite3_open(":memory:", &db);
 
-    const char* create_sql = "CREATE TABLE Person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER NOT NULL)";
+    const char* create_sql =
+            "CREATE TABLE Person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER NOT NULL)";
     sqlite3_exec(db, create_sql, nullptr, nullptr, nullptr);
 
     // Insert test data
@@ -48,10 +49,10 @@ void benchmark_raw_sqlite(int num_records) {
     results.resize(num_records);
 
     BenchmarkTimer timer;
-    int rows = 0;
+    int            rows = 0;
     while (sqlite3_step(select_stmt) == SQLITE_ROW) {
-        Person& obj = results[rows];
-        obj.id = sqlite3_column_int(select_stmt, 0);
+        Person& obj               = results[rows];
+        obj.id                    = sqlite3_column_int(select_stmt, 0);
         const unsigned char* text = sqlite3_column_text(select_stmt, 1);
         if (text) {
             obj.name = std::string(reinterpret_cast<const char*>(text));
@@ -69,8 +70,8 @@ void benchmark_raw_sqlite(int num_records) {
 
     std::cout << "  Rows: " << rows << std::endl;
     std::cout << "  Time: " << std::fixed << std::setprecision(2) << elapsed << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
-              << (rows / (elapsed / 1000.0) / 1000000.0) << "M rows/sec" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(2) << (rows / (elapsed / 1000.0) / 1000000.0)
+              << "M rows/sec" << std::endl;
 }
 
 void benchmark_storm_orm(int num_records) {
@@ -83,14 +84,14 @@ void benchmark_storm_orm(int num_records) {
         return;
     }
 
-    auto& conn = storm::QuerySet<Person>::get_default_connection();
-    auto create_result = conn.execute(
-        "CREATE TABLE Person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER NOT NULL)"
+    auto& conn          = storm::QuerySet<Person>::get_default_connection();
+    auto  create_result = conn.execute(
+            "CREATE TABLE Person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER NOT NULL)"
     );
 
     // Insert test data
-    std::vector<Person> persons = data_utils::generate_simple_test_data<Person>(num_records);
-    auto queryset = storm::QuerySet<Person>{};
+    std::vector<Person> persons  = data_utils::generate_simple_test_data<Person>(num_records);
+    auto                queryset = storm::QuerySet<Person>{};
 
     for (const auto& person : persons) {
         queryset.insert(person);
@@ -98,8 +99,8 @@ void benchmark_storm_orm(int num_records) {
 
     // Benchmark SELECT
     BenchmarkTimer timer;
-    auto select_result = queryset.select();
-    double elapsed = timer.elapsed_ms();
+    auto           select_result = queryset.select();
+    double         elapsed       = timer.elapsed_ms();
 
     if (select_result.has_value()) {
         const auto& selected = select_result.value();

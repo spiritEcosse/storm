@@ -5,34 +5,37 @@
 
 // Person struct for sqlite_orm
 struct PersonSqliteOrm {
-    int id;
+    int         id;
     std::string name;
-    int age;
+    int         age;
 };
 
 using namespace sqlite_orm;
 
 // Internal storage type
-using Storage = decltype(make_storage("",
-    make_table("Person",
-        make_column("id", &PersonSqliteOrm::id, primary_key()),
-        make_column("name", &PersonSqliteOrm::name),
-        make_column("age", &PersonSqliteOrm::age)
-    )
+using Storage = decltype(make_storage(
+        "",
+        make_table(
+                "Person",
+                make_column("id", &PersonSqliteOrm::id, primary_key()),
+                make_column("name", &PersonSqliteOrm::name),
+                make_column("age", &PersonSqliteOrm::age)
+        )
 ));
 
 struct StorageWrapper {
     Storage storage;
 
     StorageWrapper(const char* db_path)
-        : storage(make_storage(db_path,
-            make_table("Person",
-                make_column("id", &PersonSqliteOrm::id, primary_key()),
-                make_column("name", &PersonSqliteOrm::name),
-                make_column("age", &PersonSqliteOrm::age)
-            )
-        ))
-    {
+        : storage(make_storage(
+                  db_path,
+                  make_table(
+                          "Person",
+                          make_column("id", &PersonSqliteOrm::id, primary_key()),
+                          make_column("name", &PersonSqliteOrm::name),
+                          make_column("age", &PersonSqliteOrm::age)
+                  )
+          )) {
         storage.sync_schema();
     }
 };
@@ -49,7 +52,8 @@ sqlite_orm_storage_t sqlite_orm_init(const char* db_path) {
 }
 
 void sqlite_orm_insert_person(sqlite_orm_storage_t storage, int id, const char* name, int age) {
-    if (!storage) return;
+    if (!storage)
+        return;
 
     auto* wrapper = static_cast<StorageWrapper*>(storage);
     try {
@@ -61,7 +65,8 @@ void sqlite_orm_insert_person(sqlite_orm_storage_t storage, int id, const char* 
 }
 
 void sqlite_orm_remove_person(sqlite_orm_storage_t storage, int id) {
-    if (!storage) return;
+    if (!storage)
+        return;
 
     auto* wrapper = static_cast<StorageWrapper*>(storage);
     try {
@@ -72,7 +77,8 @@ void sqlite_orm_remove_person(sqlite_orm_storage_t storage, int id) {
 }
 
 void sqlite_orm_update_person(sqlite_orm_storage_t storage, int id, const char* name, int age) {
-    if (!storage) return;
+    if (!storage)
+        return;
 
     auto* wrapper = static_cast<StorageWrapper*>(storage);
     try {
@@ -84,7 +90,8 @@ void sqlite_orm_update_person(sqlite_orm_storage_t storage, int id, const char* 
 }
 
 int sqlite_orm_select_all_persons(sqlite_orm_storage_t storage) {
-    if (!storage) return 0;
+    if (!storage)
+        return 0;
 
     auto* wrapper = static_cast<StorageWrapper*>(storage);
     try {
@@ -106,14 +113,16 @@ int sqlite_orm_select_all_persons(sqlite_orm_storage_t storage) {
 }
 
 void sqlite_orm_cleanup(sqlite_orm_storage_t storage) {
-    if (!storage) return;
+    if (!storage)
+        return;
 
     auto* wrapper = static_cast<StorageWrapper*>(storage);
     delete wrapper;
 }
 
 void sqlite_orm_begin_transaction(sqlite_orm_storage_t storage) {
-    if (!storage) return;
+    if (!storage)
+        return;
 
     auto* wrapper = static_cast<StorageWrapper*>(storage);
     try {
@@ -124,7 +133,8 @@ void sqlite_orm_begin_transaction(sqlite_orm_storage_t storage) {
 }
 
 void sqlite_orm_commit_transaction(sqlite_orm_storage_t storage) {
-    if (!storage) return;
+    if (!storage)
+        return;
 
     auto* wrapper = static_cast<StorageWrapper*>(storage);
     try {

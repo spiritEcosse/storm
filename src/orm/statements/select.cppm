@@ -105,10 +105,9 @@ export namespace storm::orm::statements {
         }
 
         // SELECT with WHERE clause and JOIN
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
-        execute_with_where_and_join(JoinStatementWrapper join_wrapper,
-                                    const orm::where::ExpressionVariantPtr& where_expr) noexcept
-                -> std::expected<std::vector<T>, Error> {
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_with_where_and_join(
+                JoinStatementWrapper join_wrapper, const orm::where::ExpressionVariantPtr& where_expr
+        ) noexcept -> std::expected<std::vector<T>, Error> {
             return execute_where_join_impl(join_wrapper, where_expr);
         }
 
@@ -126,16 +125,15 @@ export namespace storm::orm::statements {
             }
 
             // Use unified query loop with fast extraction
-            return execute_query_loop(cached_select_stmt_,
-                [](Statement* stmt, T& obj) {
-                    extract_all_columns_inline_fast(stmt, obj);
-                });
+            return execute_query_loop(cached_select_stmt_, [](Statement* stmt, T& obj) {
+                extract_all_columns_inline_fast(stmt, obj);
+            });
         }
 
         // JOIN execution with compile-time SQL (uses unified query loop)
         // OPTIMIZATION: Uses pre-computed complete SQL from JoinStatement (zero runtime concatenation)
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_with_join_impl(JoinStatementWrapper join_wrapper) noexcept
-                -> std::expected<std::vector<T>, Error> {
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
+        execute_with_join_impl(JoinStatementWrapper join_wrapper) noexcept -> std::expected<std::vector<T>, Error> {
             // OPTIMIZATION: Use pre-computed complete SQL (generated at compile-time)
             // Eliminates all runtime string concatenation and heap allocation
             const std::string& join_sql = join_wrapper.get_complete_sql();
@@ -150,10 +148,9 @@ export namespace storm::orm::statements {
             }
 
             // Use unified query loop with JOIN extraction
-            return execute_query_loop(cached_join_stmt_,
-                [&join_wrapper](Statement* stmt, T& obj) {
-                    join_wrapper.extract_row(stmt, &obj);
-                });
+            return execute_query_loop(cached_join_stmt_, [&join_wrapper](Statement* stmt, T& obj) {
+                join_wrapper.extract_row(stmt, &obj);
+            });
         }
 
       private:
@@ -209,15 +206,14 @@ export namespace storm::orm::statements {
             //   Single reallocation 100→10000 much faster than multiple 1.5x steps
             // - Overflow (>10000): 1.5x growth provides 40% less memory waste than 2x
             std::vector<T> results;
-            results.reserve(100);  // Initial capacity for typical WHERE/IN queries
+            results.reserve(100); // Initial capacity for typical WHERE/IN queries
 
-            int step_result;
-            size_t row_count = 0;
+            int              step_result;
+            size_t           row_count              = 0;
             constexpr size_t SMALL_RESULT_THRESHOLD = 100;
 
             // Phase 1: Use emplace_back() for first 100 rows (optimized for small results)
-            while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE &&
-                   row_count < SMALL_RESULT_THRESHOLD) {
+            while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE && row_count < SMALL_RESULT_THRESHOLD) {
                 results.emplace_back();
                 extract_func(stmt, results.back());
                 row_count++;
@@ -246,10 +242,10 @@ export namespace storm::orm::statements {
                     // SAFETY: Check capacity BEFORE access to prevent out-of-bounds
                     // Resize happens before results[row_count] access, ensuring safety
                     if (row_count >= results.size()) {
-                        size_t new_size = results.size() + results.size() / 2;  // 1.5x growth
+                        size_t new_size = results.size() + results.size() / 2; // 1.5x growth
                         results.resize(new_size);
                     }
-                    T& obj = results[row_count];  // Safe: resized above if needed
+                    T& obj = results[row_count]; // Safe: resized above if needed
                     extract_func(stmt, obj);
                     row_count++;
                     step_result = stmt->step_raw();
@@ -284,7 +280,7 @@ export namespace storm::orm::statements {
         [[nodiscard]] __attribute__((always_inline)) static inline auto
         bind_where_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& where_expr)
                 -> std::expected<void, Error> {
-            int param_index = 1;
+            int  param_index = 1;
             auto bind_result = orm::where::bind_params_direct(*where_expr, stmt_ptr, param_index);
             if (!bind_result) [[unlikely]] {
                 stmt_ptr->reset();
@@ -312,8 +308,8 @@ export namespace storm::orm::statements {
                     return std::unexpected(prepare_result.error());
                 }
                 cached_where_stmt_ = *prepare_result;
-                cached_where_sql_ = std::move(where_sql);
-                stmt_ptr = cached_where_stmt_;
+                cached_where_sql_  = std::move(where_sql);
+                stmt_ptr           = cached_where_stmt_;
             }
 
             // OPTIMIZATION: Direct parameter binding using helper
@@ -323,18 +319,16 @@ export namespace storm::orm::statements {
             }
 
             // Use unified query loop with fast extraction
-            auto result = execute_query_loop(stmt_ptr,
-                [](Statement* stmt, T& obj) {
-                    extract_all_columns_inline_fast(stmt, obj);
-                });
+            auto result = execute_query_loop(stmt_ptr, [](Statement* stmt, T& obj) {
+                extract_all_columns_inline_fast(stmt, obj);
+            });
             return result;
         }
 
         // SELECT with WHERE clause and JOIN - uses unified query loop
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
-        execute_where_join_impl(JoinStatementWrapper join_wrapper,
-                               const orm::where::ExpressionVariantPtr& where_expr) noexcept
-                -> std::expected<std::vector<T>, Error> {
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_where_join_impl(
+                JoinStatementWrapper join_wrapper, const orm::where::ExpressionVariantPtr& where_expr
+        ) noexcept -> std::expected<std::vector<T>, Error> {
             // Generate WHERE clause SQL from expression using helper
             std::string join_where_sql = build_where_sql(join_wrapper.get_complete_sql(), where_expr);
 
@@ -350,8 +344,8 @@ export namespace storm::orm::statements {
                     return std::unexpected(prepare_result.error());
                 }
                 cached_where_join_stmt_ = *prepare_result;
-                cached_where_join_sql_ = std::move(join_where_sql);
-                stmt_ptr = cached_where_join_stmt_;
+                cached_where_join_sql_  = std::move(join_where_sql);
+                stmt_ptr                = cached_where_join_stmt_;
             }
 
             // OPTIMIZATION: Direct parameter binding using helper
@@ -361,17 +355,16 @@ export namespace storm::orm::statements {
             }
 
             // Use unified query loop with JOIN extraction
-            return execute_query_loop(stmt_ptr,
-                [&join_wrapper](Statement* stmt, T& obj) {
-                    join_wrapper.extract_row(stmt, &obj);
-                });
+            return execute_query_loop(stmt_ptr, [&join_wrapper](Statement* stmt, T& obj) {
+                join_wrapper.extract_row(stmt, &obj);
+            });
         }
 
-        Connection&        conn_;
-        mutable Statement* cached_select_stmt_ = nullptr;      // Statement caching for simple SELECT
-        mutable Statement* cached_join_stmt_   = nullptr;      // Separate cache for JOIN queries
-        mutable Statement* cached_where_stmt_ = nullptr;       // Cache for WHERE without JOIN
-        mutable Statement* cached_where_join_stmt_ = nullptr;  // Cache for WHERE + JOIN
+        Connection&         conn_;
+        mutable Statement*  cached_select_stmt_     = nullptr; // Statement caching for simple SELECT
+        mutable Statement*  cached_join_stmt_       = nullptr; // Separate cache for JOIN queries
+        mutable Statement*  cached_where_stmt_      = nullptr; // Cache for WHERE without JOIN
+        mutable Statement*  cached_where_join_stmt_ = nullptr; // Cache for WHERE + JOIN
         mutable std::string cached_where_sql_;                 // Remember last WHERE SQL for cache validation
         mutable std::string cached_where_join_sql_;            // Remember last WHERE+JOIN SQL for cache validation
     };

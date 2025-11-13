@@ -15,11 +15,11 @@ void benchmark_sqlite_orm_single_update(int num_records);
 void benchmark_sqlite_orm_batch_update(int num_records);
 
 class BenchmarkTimer {
-public:
+  public:
     BenchmarkTimer() : start_(std::chrono::high_resolution_clock::now()) {}
 
     double elapsed_ms() const {
-        auto end = std::chrono::high_resolution_clock::now();
+        auto end      = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start_);
         return duration.count() / 1000.0;
     }
@@ -28,7 +28,7 @@ public:
         start_ = std::chrono::high_resolution_clock::now();
     }
 
-private:
+  private:
     std::chrono::high_resolution_clock::time_point start_;
 };
 
@@ -44,9 +44,9 @@ void benchmark_sqlite_orm_single_insert(int num_records) {
 
     // Prepare data - same pattern as Storm ORM
     struct PersonData {
-        int id;
+        int         id;
         std::string name;
-        int age;
+        int         age;
     };
 
     std::vector<PersonData> persons;
@@ -57,8 +57,8 @@ void benchmark_sqlite_orm_single_insert(int num_records) {
 
     // Benchmark single INSERT operations
     BenchmarkTimer timer;
-    double total_time = 0;
-    int successful_inserts = 0;
+    double         total_time         = 0;
+    int            successful_inserts = 0;
 
     for (const auto& person : persons) {
         timer.reset();
@@ -71,11 +71,11 @@ void benchmark_sqlite_orm_single_insert(int num_records) {
     // Report results - matching Storm ORM format
     std::cout << "sqlite_orm - Single INSERT " << num_records << " records:\n";
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms\n";
-    std::cout << "  Average per insert: " << std::fixed << std::setprecision(4)
-              << (total_time / successful_inserts) << " ms\n";
+    std::cout << "  Average per insert: " << std::fixed << std::setprecision(4) << (total_time / successful_inserts)
+              << " ms\n";
     std::cout << "  Successful inserts: " << successful_inserts << "/" << num_records << "\n";
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (successful_inserts / (total_time / 1000.0)) << " inserts/sec\n";
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (successful_inserts / (total_time / 1000.0))
+              << " inserts/sec\n";
 
     // Cleanup
     sqlite_orm_cleanup(storage);
@@ -88,7 +88,8 @@ void benchmark_sqlite_orm_batch_insert(int num_records) {
     const std::vector<size_t> batch_sizes = {1, 10, 25, 50, 100, 500, 1000};
 
     for (size_t batch_size : batch_sizes) {
-        if (batch_size > static_cast<size_t>(num_records)) continue;
+        if (batch_size > static_cast<size_t>(num_records))
+            continue;
 
         std::cout << "\n--- Batch size: " << batch_size << " ---\n";
 
@@ -101,9 +102,9 @@ void benchmark_sqlite_orm_batch_insert(int num_records) {
 
         // Prepare data - same pattern as Storm ORM
         struct PersonData {
-            int id;
+            int         id;
             std::string name;
-            int age;
+            int         age;
         };
 
         std::vector<PersonData> persons;
@@ -114,12 +115,12 @@ void benchmark_sqlite_orm_batch_insert(int num_records) {
 
         // Benchmark batch INSERT operations with transaction management
         BenchmarkTimer timer;
-        double total_time = 0;
-        int successful_inserts = 0;
-        int batch_count = 0;
+        double         total_time         = 0;
+        int            successful_inserts = 0;
+        int            batch_count        = 0;
 
         for (size_t i = 0; i < persons.size(); i += batch_size) {
-            size_t end_idx = std::min(i + batch_size, persons.size());
+            size_t end_idx            = std::min(i + batch_size, persons.size());
             size_t current_batch_size = end_idx - i;
 
             timer.reset();
@@ -141,10 +142,10 @@ void benchmark_sqlite_orm_batch_insert(int num_records) {
         // Report results - matching Storm ORM format
         std::cout << "sqlite_orm - Batch INSERT " << num_records << " records (batch size " << batch_size << "):\n";
         std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms\n";
-        std::cout << "  Average per insert: " << std::fixed << std::setprecision(4)
-                  << (total_time / successful_inserts) << " ms\n";
-        std::cout << "  Average per batch: " << std::fixed << std::setprecision(4)
-                  << (total_time / batch_count) << " ms\n";
+        std::cout << "  Average per insert: " << std::fixed << std::setprecision(4) << (total_time / successful_inserts)
+                  << " ms\n";
+        std::cout << "  Average per batch: " << std::fixed << std::setprecision(4) << (total_time / batch_count)
+                  << " ms\n";
         std::cout << "  Successful inserts: " << successful_inserts << "/" << num_records << "\n";
         std::cout << "  Batch count: " << batch_count << "\n";
         std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
@@ -167,9 +168,9 @@ void benchmark_sqlite_orm_select(int num_records) {
 
     // Prepare and insert test data
     struct PersonData {
-        int id;
+        int         id;
         std::string name;
-        int age;
+        int         age;
     };
 
     std::vector<PersonData> persons;
@@ -186,17 +187,16 @@ void benchmark_sqlite_orm_select(int num_records) {
     // Benchmark SELECT operation (fetching all rows)
     BenchmarkTimer timer;
     timer.reset();
-    int rows_fetched = sqlite_orm_select_all_persons(storage);
-    double elapsed = timer.elapsed_ms();
+    int    rows_fetched = sqlite_orm_select_all_persons(storage);
+    double elapsed      = timer.elapsed_ms();
 
     // Report results - matching Storm ORM format
     std::cout << "sqlite_orm - SELECT " << num_records << " records:\n";
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << elapsed << " ms\n";
     std::cout << "  Rows fetched: " << rows_fetched << "\n";
-    std::cout << "  Average per row: " << std::fixed << std::setprecision(4)
-              << (elapsed / rows_fetched) << " ms\n";
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (rows_fetched / (elapsed / 1000.0)) << " rows/sec\n";
+    std::cout << "  Average per row: " << std::fixed << std::setprecision(4) << (elapsed / rows_fetched) << " ms\n";
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (rows_fetched / (elapsed / 1000.0))
+              << " rows/sec\n";
 
     // Cleanup
     sqlite_orm_cleanup(storage);
@@ -256,9 +256,9 @@ void benchmark_sqlite_orm_single_delete(int num_records) {
 
     // Prepare data - same pattern as Storm ORM
     struct PersonData {
-        int id;
+        int         id;
         std::string name;
-        int age;
+        int         age;
     };
 
     std::vector<PersonData> persons;
@@ -276,8 +276,8 @@ void benchmark_sqlite_orm_single_delete(int num_records) {
 
     // Benchmark single DELETE operations
     BenchmarkTimer timer;
-    double total_time = 0;
-    int successful_deletes = 0;
+    double         total_time         = 0;
+    int            successful_deletes = 0;
 
     for (const auto& person : persons) {
         timer.reset();
@@ -290,11 +290,11 @@ void benchmark_sqlite_orm_single_delete(int num_records) {
     // Report results - matching Storm ORM format
     std::cout << "sqlite_orm - Single DELETE " << num_records << " records:\n";
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms\n";
-    std::cout << "  Average per delete: " << std::fixed << std::setprecision(4)
-              << (total_time / successful_deletes) << " ms\n";
+    std::cout << "  Average per delete: " << std::fixed << std::setprecision(4) << (total_time / successful_deletes)
+              << " ms\n";
     std::cout << "  Successful deletes: " << successful_deletes << "/" << num_records << "\n";
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (successful_deletes / (total_time / 1000.0)) << " deletes/sec\n";
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (successful_deletes / (total_time / 1000.0))
+              << " deletes/sec\n";
 
     // Cleanup
     sqlite_orm_cleanup(storage);
@@ -307,7 +307,8 @@ void benchmark_sqlite_orm_batch_delete(int num_records) {
     const std::vector<size_t> batch_sizes = {1, 10, 25, 50, 100, 500, 1000};
 
     for (size_t batch_size : batch_sizes) {
-        if (batch_size > static_cast<size_t>(num_records)) continue;
+        if (batch_size > static_cast<size_t>(num_records))
+            continue;
 
         std::cout << "\n--- Batch size: " << batch_size << " ---\n";
 
@@ -320,9 +321,9 @@ void benchmark_sqlite_orm_batch_delete(int num_records) {
 
         // Prepare data - same pattern as Storm ORM
         struct PersonData {
-            int id;
+            int         id;
             std::string name;
-            int age;
+            int         age;
         };
 
         std::vector<PersonData> persons;
@@ -340,12 +341,12 @@ void benchmark_sqlite_orm_batch_delete(int num_records) {
 
         // Benchmark batch DELETE operations with transaction management
         BenchmarkTimer timer;
-        double total_time = 0;
-        int successful_deletes = 0;
-        int batch_count = 0;
+        double         total_time         = 0;
+        int            successful_deletes = 0;
+        int            batch_count        = 0;
 
         for (size_t i = 0; i < persons.size(); i += batch_size) {
-            size_t end_idx = std::min(i + batch_size, persons.size());
+            size_t end_idx            = std::min(i + batch_size, persons.size());
             size_t current_batch_size = end_idx - i;
 
             timer.reset();
@@ -367,10 +368,10 @@ void benchmark_sqlite_orm_batch_delete(int num_records) {
         // Report results - matching Storm ORM format
         std::cout << "sqlite_orm - Batch DELETE " << num_records << " records (batch size " << batch_size << "):\n";
         std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms\n";
-        std::cout << "  Average per delete: " << std::fixed << std::setprecision(4)
-                  << (total_time / successful_deletes) << " ms\n";
-        std::cout << "  Average per batch: " << std::fixed << std::setprecision(4)
-                  << (total_time / batch_count) << " ms\n";
+        std::cout << "  Average per delete: " << std::fixed << std::setprecision(4) << (total_time / successful_deletes)
+                  << " ms\n";
+        std::cout << "  Average per batch: " << std::fixed << std::setprecision(4) << (total_time / batch_count)
+                  << " ms\n";
         std::cout << "  Successful deletes: " << successful_deletes << "/" << num_records << "\n";
         std::cout << "  Batch count: " << batch_count << "\n";
         std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
@@ -393,9 +394,9 @@ void benchmark_sqlite_orm_single_update(int num_records) {
 
     // Prepare data - same pattern as Storm ORM
     struct PersonData {
-        int id;
+        int         id;
         std::string name;
-        int age;
+        int         age;
     };
 
     std::vector<PersonData> persons;
@@ -413,8 +414,8 @@ void benchmark_sqlite_orm_single_update(int num_records) {
 
     // Benchmark single UPDATE operations
     BenchmarkTimer timer;
-    double total_time = 0;
-    int successful_updates = 0;
+    double         total_time         = 0;
+    int            successful_updates = 0;
 
     for (auto& person : persons) {
         timer.reset();
@@ -433,11 +434,11 @@ void benchmark_sqlite_orm_single_update(int num_records) {
     // Report results - matching Storm ORM format
     std::cout << "sqlite_orm - Single UPDATE " << num_records << " records:\n";
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms\n";
-    std::cout << "  Average per update: " << std::fixed << std::setprecision(4)
-              << (total_time / successful_updates) << " ms\n";
+    std::cout << "  Average per update: " << std::fixed << std::setprecision(4) << (total_time / successful_updates)
+              << " ms\n";
     std::cout << "  Successful updates: " << successful_updates << "/" << num_records << "\n";
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-              << (successful_updates / (total_time / 1000.0)) << " updates/sec\n";
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (successful_updates / (total_time / 1000.0))
+              << " updates/sec\n";
 
     // Cleanup
     sqlite_orm_cleanup(storage);
@@ -450,7 +451,8 @@ void benchmark_sqlite_orm_batch_update(int num_records) {
     const std::vector<size_t> batch_sizes = {1, 10, 25, 50, 100, 500, 1000};
 
     for (size_t batch_size : batch_sizes) {
-        if (batch_size > static_cast<size_t>(num_records)) continue;
+        if (batch_size > static_cast<size_t>(num_records))
+            continue;
 
         std::cout << "\n--- Batch size: " << batch_size << " ---\n";
 
@@ -463,9 +465,9 @@ void benchmark_sqlite_orm_batch_update(int num_records) {
 
         // Prepare data - same pattern as Storm ORM
         struct PersonData {
-            int id;
+            int         id;
             std::string name;
-            int age;
+            int         age;
         };
 
         std::vector<PersonData> persons;
@@ -483,12 +485,12 @@ void benchmark_sqlite_orm_batch_update(int num_records) {
 
         // Benchmark batch UPDATE operations with transaction management
         BenchmarkTimer timer;
-        double total_time = 0;
-        int successful_updates = 0;
-        int batch_count = 0;
+        double         total_time         = 0;
+        int            successful_updates = 0;
+        int            batch_count        = 0;
 
         for (size_t i = 0; i < persons.size(); i += batch_size) {
-            size_t end_idx = std::min(i + batch_size, persons.size());
+            size_t end_idx            = std::min(i + batch_size, persons.size());
             size_t current_batch_size = end_idx - i;
 
             timer.reset();
@@ -513,10 +515,10 @@ void benchmark_sqlite_orm_batch_update(int num_records) {
         // Report results - matching Storm ORM format
         std::cout << "sqlite_orm - Batch UPDATE " << num_records << " records (batch size " << batch_size << "):\n";
         std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms\n";
-        std::cout << "  Average per update: " << std::fixed << std::setprecision(4)
-                  << (total_time / successful_updates) << " ms\n";
-        std::cout << "  Average per batch: " << std::fixed << std::setprecision(4)
-                  << (total_time / batch_count) << " ms\n";
+        std::cout << "  Average per update: " << std::fixed << std::setprecision(4) << (total_time / successful_updates)
+                  << " ms\n";
+        std::cout << "  Average per batch: " << std::fixed << std::setprecision(4) << (total_time / batch_count)
+                  << " ms\n";
         std::cout << "  Successful updates: " << successful_updates << "/" << num_records << "\n";
         std::cout << "  Batch count: " << batch_count << "\n";
         std::cout << "  Throughput: " << std::fixed << std::setprecision(0)

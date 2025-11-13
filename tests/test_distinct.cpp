@@ -47,7 +47,8 @@ class DistinctTest : public ::testing::Test {
                 "age INTEGER NOT NULL"
                 ")"
         );
-        ASSERT_TRUE(create_person.has_value()) << "Failed to create DistinctPerson table: " << create_person.error().message();
+        ASSERT_TRUE(create_person.has_value())
+                << "Failed to create DistinctPerson table: " << create_person.error().message();
 
         // Create User table (for JOIN tests)
         auto create_user = conn.execute(
@@ -84,11 +85,11 @@ class DistinctTest : public ::testing::Test {
         conn.execute("INSERT INTO User (name, age) VALUES ('Charlie', 35)");
 
         // Insert messages (multiple messages per user to test DISTINCT)
-        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('Hello', 1)");      // Alice
-        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('World', 1)");      // Alice
-        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('Hi there', 2)");   // Bob
-        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('Goodbye', 2)");    // Bob
-        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('Test', 3)");       // Charlie
+        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('Hello', 1)");    // Alice
+        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('World', 1)");    // Alice
+        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('Hi there', 2)"); // Bob
+        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('Goodbye', 2)");  // Bob
+        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('Test', 3)");     // Charlie
     }
 };
 
@@ -97,9 +98,8 @@ TEST_F(DistinctTest, DistinctNameFieldWithDuplicates) {
     QuerySet<DistinctPerson> queryset;
 
     // Insert people with duplicate names
-    std::vector<DistinctPerson> people_to_insert = {
-            {1, "Alice", 30}, {2, "Bob", 25}, {3, "Alice", 35}, {4, "Charlie", 40}, {5, "Bob", 28}
-    };
+    std::vector<DistinctPerson> people_to_insert =
+            {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Alice", 35}, {4, "Charlie", 40}, {5, "Bob", 28}};
 
     auto insert_result = queryset.insert(std::span<const DistinctPerson>(people_to_insert));
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
@@ -123,9 +123,8 @@ TEST_F(DistinctTest, DistinctAgeFieldWithDuplicates) {
     QuerySet<DistinctPerson> queryset;
 
     // Insert people with duplicate ages
-    std::vector<DistinctPerson> people_to_insert = {
-            {1, "Alice", 30}, {2, "Bob", 25}, {3, "Charlie", 30}, {4, "Dave", 25}, {5, "Eve", 35}
-    };
+    std::vector<DistinctPerson> people_to_insert =
+            {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Charlie", 30}, {4, "Dave", 25}, {5, "Eve", 35}};
 
     auto insert_result = queryset.insert(std::span<const DistinctPerson>(people_to_insert));
     ASSERT_TRUE(insert_result.has_value());
@@ -204,7 +203,7 @@ TEST_F(DistinctTest, DistinctWithSingleRow) {
 
     // Insert one person
     DistinctPerson alice{0, "Alice", 30};
-    auto   insert_result = queryset.insert(alice);
+    auto           insert_result = queryset.insert(alice);
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name
@@ -290,10 +289,10 @@ TEST_F(DistinctTest, DistinctTwoFieldsNameAndAge) {
     std::vector<DistinctPerson> people_to_insert = {
             {1, "Alice", 30},
             {2, "Bob", 25},
-            {3, "Alice", 30},   // Duplicate (name, age) pair
-            {4, "Alice", 35},   // Same name, different age
-            {5, "Bob", 25},     // Duplicate (name, age) pair
-            {6, "Charlie", 30}  // Different name, same age as Alice#1
+            {3, "Alice", 30},  // Duplicate (name, age) pair
+            {4, "Alice", 35},  // Same name, different age
+            {5, "Bob", 25},    // Duplicate (name, age) pair
+            {6, "Charlie", 30} // Different name, same age as Alice#1
     };
 
     auto insert_result = queryset.insert(std::span<const DistinctPerson>(people_to_insert));
@@ -324,9 +323,9 @@ TEST_F(DistinctTest, DistinctThreeFieldsAllFields) {
     std::vector<DistinctPerson> people_to_insert = {
             {1, "Alice", 30},
             {2, "Bob", 25},
-            {3, "Alice", 30},  // Same name and age as #1
-            {4, "Alice", 25},  // Same name as #1, same age as #2
-            {5, "Bob", 30}     // Same name as #2, same age as #1
+            {3, "Alice", 30}, // Same name and age as #1
+            {4, "Alice", 25}, // Same name as #1, same age as #2
+            {5, "Bob", 30}    // Same name as #2, same age as #1
     };
 
     auto insert_result = queryset.insert(std::span<const DistinctPerson>(people_to_insert));
@@ -405,7 +404,8 @@ TEST_F(DistinctTest, DistinctTwoFieldsLargeDataset) {
 
     const auto& pairs = result.value();
 
-    // We have 10 unique names (DistinctPerson0-DistinctPerson9) and 10 unique ages (20-29), giving 100 unique combinations
+    // We have 10 unique names (DistinctPerson0-DistinctPerson9) and 10 unique ages (20-29), giving 100 unique
+    // combinations
     EXPECT_EQ(pairs.size(), 100) << "Expected 100 unique (name, age) pairs";
 }
 
@@ -413,12 +413,8 @@ TEST_F(DistinctTest, DistinctTwoFieldsLargeDataset) {
 TEST_F(DistinctTest, DistinctTwoFieldsDifferentOrder) {
     QuerySet<DistinctPerson> queryset;
 
-    std::vector<DistinctPerson> people_to_insert = {
-            {1, "Alice", 30},
-            {2, "Bob", 25},
-            {3, "Alice", 30},
-            {4, "Charlie", 25}
-    };
+    std::vector<DistinctPerson> people_to_insert =
+            {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Alice", 30}, {4, "Charlie", 25}};
 
     auto insert_result = queryset.insert(std::span<const DistinctPerson>(people_to_insert));
     ASSERT_TRUE(insert_result.has_value());
@@ -446,17 +442,12 @@ TEST_F(DistinctTest, VerifyMultiFieldReturnTypes) {
 
     // Verify distinct<&DistinctPerson::name, &DistinctPerson::age>() returns std::vector<std::tuple<std::string, int>>
     auto pairs_result = queryset.distinct<^^DistinctPerson::name, ^^DistinctPerson::age>().select();
-    static_assert(std::is_same_v<
-        decltype(pairs_result.value()),
-        std::vector<std::tuple<std::string, int>>&
-    >);
+    static_assert(std::is_same_v<decltype(pairs_result.value()), std::vector<std::tuple<std::string, int>>&>);
 
-    // Verify distinct<&DistinctPerson::age, &DistinctPerson::name>() returns std::vector<std::tuple<int, std::string>> (reversed)
+    // Verify distinct<&DistinctPerson::age, &DistinctPerson::name>() returns std::vector<std::tuple<int, std::string>>
+    // (reversed)
     auto reversed_result = queryset.distinct<^^DistinctPerson::age, ^^DistinctPerson::name>().select();
-    static_assert(std::is_same_v<
-        decltype(reversed_result.value()),
-        std::vector<std::tuple<int, std::string>>&
-    >);
+    static_assert(std::is_same_v<decltype(reversed_result.value()), std::vector<std::tuple<int, std::string>>&>);
 }
 
 // Test: DISTINCT two fields with single row
@@ -464,7 +455,7 @@ TEST_F(DistinctTest, DistinctTwoFieldsWithSingleRow) {
     QuerySet<DistinctPerson> queryset;
 
     DistinctPerson alice{0, "Alice", 30};
-    auto insert_result = queryset.insert(alice);
+    auto           insert_result = queryset.insert(alice);
     ASSERT_TRUE(insert_result.has_value());
 
     auto result = queryset.distinct<^^DistinctPerson::name, ^^DistinctPerson::age>().select();
@@ -482,9 +473,7 @@ TEST_F(DistinctTest, DuplicateFieldSpecification) {
 
     // Insert test data
     std::vector<DistinctPerson> people = {
-            {1, "Alice", 30},
-            {2, "Bob", 25},
-            {3, "Alice", 35}  // Different Alice (different age)
+            {1, "Alice", 30}, {2, "Bob", 25}, {3, "Alice", 35} // Different Alice (different age)
     };
 
     auto insert_result = queryset.insert(std::span<const DistinctPerson>(people));
@@ -525,7 +514,7 @@ TEST_F(DistinctTest, TriplicateFieldSpecification) {
     ASSERT_TRUE(result.has_value());
 
     const auto& triples = result.value();
-    EXPECT_EQ(triples.size(), 2);  // 2 unique ages
+    EXPECT_EQ(triples.size(), 2); // 2 unique ages
 
     // Each tuple should have all three elements identical
     for (const auto& [age1, age2, age3] : triples) {
@@ -572,17 +561,12 @@ TEST_F(DistinctTest, VerifyDuplicateFieldReturnTypes) {
 
     // Duplicate field returns tuple with same type repeated
     auto dup_result = queryset.distinct<^^DistinctPerson::name, ^^DistinctPerson::name>().select();
-    static_assert(std::is_same_v<
-        decltype(dup_result.value()),
-        std::vector<std::tuple<std::string, std::string>>&
-    >);
+    static_assert(std::is_same_v<decltype(dup_result.value()), std::vector<std::tuple<std::string, std::string>>&>);
 
     // Triple duplicate
-    auto trip_result = queryset.distinct<^^DistinctPerson::age, ^^DistinctPerson::age, ^^DistinctPerson::age>().select();
-    static_assert(std::is_same_v<
-        decltype(trip_result.value()),
-        std::vector<std::tuple<int, int, int>>&
-    >);
+    auto trip_result =
+            queryset.distinct<^^DistinctPerson::age, ^^DistinctPerson::age, ^^DistinctPerson::age>().select();
+    static_assert(std::is_same_v<decltype(trip_result.value()), std::vector<std::tuple<int, int, int>>&>);
 }
 
 // Test: Mixed duplicate and unique fields
@@ -590,9 +574,7 @@ TEST_F(DistinctTest, MixedDuplicateFields) {
     QuerySet<DistinctPerson> queryset;
 
     std::vector<DistinctPerson> people = {
-            {1, "Alice", 30},
-            {2, "Bob", 25},
-            {3, "Alice", 30}  // Duplicate (name, age)
+            {1, "Alice", 30}, {2, "Bob", 25}, {3, "Alice", 30} // Duplicate (name, age)
     };
     queryset.insert(std::span<const DistinctPerson>(people));
 
@@ -601,7 +583,7 @@ TEST_F(DistinctTest, MixedDuplicateFields) {
     ASSERT_TRUE(result.has_value());
 
     const auto& triples = result.value();
-    EXPECT_EQ(triples.size(), 2);  // 2 unique (name, age) pairs
+    EXPECT_EQ(triples.size(), 2); // 2 unique (name, age) pairs
 
     // Verify that first and third elements of each tuple are identical
     for (const auto& [name1, age, name2] : triples) {
@@ -666,7 +648,7 @@ TEST_F(DistinctTest, DistinctOnBaseTableWithoutJoin) {
     ASSERT_TRUE(result.has_value());
 
     const auto& contents = result.value();
-    EXPECT_EQ(contents.size(), 5);  // 5 unique message contents
+    EXPECT_EQ(contents.size(), 5); // 5 unique message contents
 
     std::set<std::string> content_set(contents.begin(), contents.end());
     EXPECT_TRUE(content_set.count("Hello"));
@@ -770,7 +752,7 @@ TEST_F(DistinctTest, RawSQLWorkaround) {
     auto stmt_result = conn.prepare(sql);
     ASSERT_TRUE(stmt_result.has_value());
 
-    auto stmt = std::move(stmt_result.value());
+    auto                     stmt = std::move(stmt_result.value());
     std::vector<std::string> user_names;
 
     while (true) {

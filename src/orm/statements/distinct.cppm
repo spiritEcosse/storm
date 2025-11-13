@@ -29,7 +29,7 @@ export namespace storm::orm::statements {
     // Example: qs.distinct<^^Person::name>().select()
     //          qs.distinct<^^Person::name, ^^Person::age>().select()
     template <typename T, storm::db::DatabaseConnection ConnType, std::meta::info... FieldInfos>
-        requires (sizeof...(FieldInfos) > 0)
+        requires(sizeof...(FieldInfos) > 0)
     class DistinctStatement : private BaseStatement<T> {
         using Base = BaseStatement<T>;
 
@@ -45,17 +45,15 @@ export namespace storm::orm::statements {
         static constexpr auto member_infos_ = std::array{FieldInfos...};
 
         // Deduce field types from member_info array
-        template <size_t... Is>
-        static consteval auto get_field_types_helper(std::index_sequence<Is...>) {
+        template <size_t... Is> static consteval auto get_field_types_helper(std::index_sequence<Is...>) {
             return std::tuple<std::remove_cvref_t<decltype(std::declval<T>().[:member_infos_[Is]:])>...>{};
         }
 
         using FieldTypesTuple = decltype(get_field_types_helper(std::make_index_sequence<NumFields>{}));
 
         // Calculate field size at compile-time
-        template <size_t I>
-        static consteval size_t get_field_size() {
-            size_t size = std::meta::identifier_of(member_infos_[I]).size();
+        template <size_t I> static consteval size_t get_field_size() {
+            size_t         size       = std::meta::identifier_of(member_infos_[I]).size();
             constexpr auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member_infos_[I]);
             if constexpr (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
                 size += 3; // "_id"
@@ -67,17 +65,15 @@ export namespace storm::orm::statements {
         }
 
         // Calculate total size of all fields
-        template <size_t... Is>
-        static consteval size_t calculate_field_list_size(std::index_sequence<Is...>) {
+        template <size_t... Is> static consteval size_t calculate_field_list_size(std::index_sequence<Is...>) {
             return (get_field_size<Is>() + ...);
         }
 
         // Compile-time field list generation (returns ConstexprString)
-        template <size_t... Is>
-        static consteval auto build_field_list_constexpr(std::index_sequence<Is...>) {
+        template <size_t... Is> static consteval auto build_field_list_constexpr(std::index_sequence<Is...>) {
             constexpr size_t total_size = calculate_field_list_size(std::make_index_sequence<NumFields>{});
             ConstexprString<total_size + 10> result;
-            auto append_field = [&result]<size_t I>() {
+            auto                             append_field = [&result]<size_t I>() {
                 if constexpr (I > 0) {
                     result.append(", ");
                 }
@@ -97,18 +93,18 @@ export namespace storm::orm::statements {
         // Calculate SQL size at compile-time
         static consteval size_t calculate_select_sql_size() {
             constexpr auto field_list = build_field_list_constexpr(std::make_index_sequence<NumFields>{});
-            size_t size = 0;
+            size_t         size       = 0;
             size += 16; // "SELECT DISTINCT " (max length, DISTINCT is optional)
             size += field_list.len;
-            size += 6;  // " FROM "
+            size += 6; // " FROM "
             size += Base::table_name_.size();
-            size += 1;  // null terminator
+            size += 1; // null terminator
             return size;
         }
 
         // Build SELECT DISTINCT at compile-time
         static consteval auto build_distinct_sql_array() {
-            constexpr size_t sql_size = calculate_select_sql_size() + 50; // Safety buffer
+            constexpr size_t          sql_size = calculate_select_sql_size() + 50; // Safety buffer
             ConstexprString<sql_size> result;
 
             result.append("SELECT DISTINCT ");
@@ -126,10 +122,9 @@ export namespace storm::orm::statements {
       public:
         // Result type: vector of single field OR vector of tuple
         using ResultType = std::conditional_t<
-            NumFields == 1,
-            std::vector<std::tuple_element_t<0, FieldTypesTuple>>,
-            std::vector<FieldTypesTuple>
-        >;
+                NumFields == 1,
+                std::vector<std::tuple_element_t<0, FieldTypesTuple>>,
+                std::vector<FieldTypesTuple>>;
 
         explicit DistinctStatement(ConnType& conn) : conn_(conn) {}
 
@@ -156,14 +151,14 @@ export namespace storm::orm::statements {
             // - Single field: resize() is 1.7x faster (cheap default construction)
             // - Multi-field: reserve() + emplace_back() avoids pre-allocating tuples with heap members
             ResultType results;
-            int step_result = Statement::NO_MORE_ROWS;
+            int        step_result = Statement::NO_MORE_ROWS;
 
             if constexpr (NumFields == 1) {
                 // Single field: use resize() optimization (pre-construct for direct assignment)
                 results.resize(1000);
 
                 size_t row_count = 0;
-                using FieldType = std::tuple_element_t<0, FieldTypesTuple>;
+                using FieldType  = std::tuple_element_t<0, FieldTypesTuple>;
 
                 // Fetch rows into pre-constructed elements
                 while ((step_result = cached_stmt_->step_raw()) == Statement::ROW_AVAILABLE &&
@@ -213,11 +208,11 @@ export namespace storm::orm::statements {
             requires(NumFields > 0)
         {
             results.emplace_back(
-                Base::template extract_column_value<std::tuple_element_t<Is, FieldTypesTuple>>(*cached_stmt_, Is)...
+                    Base::template extract_column_value<std::tuple_element_t<Is, FieldTypesTuple>>(*cached_stmt_, Is)...
             );
         }
 
-        ConnType& conn_;
+        ConnType&          conn_;
         mutable Statement* cached_stmt_ = nullptr; // Statement caching for repeated DISTINCT queries
     };
 

@@ -406,7 +406,9 @@ export namespace storm::orm::statements {
         [[nodiscard]] static auto
         bind_value_by_type(typename ConnType::Statement& stmt, int param_index, const auto& value) noexcept
                 -> std::expected<void, typename ConnType::Error> {
-            return utilities::bind_parameter_value<typename ConnType::Statement, typename ConnType::Error>(stmt, param_index, value);
+            return utilities::bind_parameter_value<typename ConnType::Statement, typename ConnType::Error>(
+                    stmt, param_index, value
+            );
         }
 
         // Shared column extraction utility - returns value of specified type from given column index
@@ -471,11 +473,11 @@ export namespace storm::orm::statements {
                 }
             } else {
                 static_assert(
-                    std::is_same_v<FieldType, int> || std::is_same_v<FieldType, std::string>,
-                    "Unsupported field type for column extraction. Supported types: "
-                    "int, int64_t, long, short, unsigned variants, "
-                    "float, double, bool, std::string, "
-                    "std::optional<T>, std::vector<uint8_t>"
+                        std::is_same_v<FieldType, int> || std::is_same_v<FieldType, std::string>,
+                        "Unsupported field type for column extraction. Supported types: "
+                        "int, int64_t, long, short, unsigned variants, "
+                        "float, double, bool, std::string, "
+                        "std::optional<T>, std::vector<uint8_t>"
                 );
             }
         }

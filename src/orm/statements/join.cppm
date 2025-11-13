@@ -23,16 +23,12 @@ export namespace storm::orm::statements {
 
     using storm::orm::utilities::ConstexprString;
 
-    enum class JoinType {
-        Inner,
-        Left,
-        Right
-    };
+    enum class JoinType { Inner, Left, Right };
 
     struct JoinStatementWrapper {
         const std::string& (*get_join_sql_fn)();
         const std::string& (*get_select_fields_fn)();
-        const std::string& (*get_complete_sql_fn)();  // NEW: Complete SELECT...JOIN SQL
+        const std::string& (*get_complete_sql_fn)(); // NEW: Complete SELECT...JOIN SQL
         void (*extract_row_fn)(void*, void*);
 
         const std::string& to_sql() const {
@@ -64,15 +60,15 @@ export namespace storm::orm::statements {
         static constexpr size_t fk_count_ = sizeof...(FKFieldPtrs);
 
         // C++26: Direct pack indexing
-        template <size_t Idx>
-        using FK_type = std::remove_cvref_t<decltype(std::declval<T>().*FKFieldPtrs...[Idx])>;
+        template <size_t Idx> using FK_type = std::remove_cvref_t<decltype(std::declval<T>().*FKFieldPtrs...[Idx])>;
 
-        template <size_t Idx>
-        using FKBase_at = BaseStatement<FK_type<Idx>>;
+        template <size_t Idx> using FKBase_at = BaseStatement<FK_type<Idx>>;
 
         // Compile-time validation
-        static_assert((std::is_member_object_pointer_v<decltype(FKFieldPtrs)> && ...),
-                      "FK pointers must be member object pointers");
+        static_assert(
+                (std::is_member_object_pointer_v<decltype(FKFieldPtrs)> && ...),
+                "FK pointers must be member object pointers"
+        );
 
         static consteval size_t count_non_fk_fields() {
             size_t count = 0;
@@ -89,12 +85,11 @@ export namespace storm::orm::statements {
         // Constexpr storage for column offsets
         static constexpr auto calculate_column_offsets() {
             std::array<size_t, fk_count_> offsets{};
-            size_t current_offset = non_fk_field_count_;
-            size_t idx = 0;
+            size_t                        current_offset = non_fk_field_count_;
+            size_t                        idx            = 0;
 
             [&]<size_t... Is>(std::index_sequence<Is...>) {
-                ((offsets[idx++] = current_offset,
-                  current_offset += FKBase_at<Is>::field_count_), ...);
+                ((offsets[idx++] = current_offset, current_offset += FKBase_at<Is>::field_count_), ...);
             }(std::make_index_sequence<fk_count_>{});
 
             return offsets;
@@ -104,7 +99,7 @@ export namespace storm::orm::statements {
 
         static consteval auto build_fk_field_names() {
             std::array<std::string_view, fk_count_> names{};
-            size_t fk_idx = 0;
+            size_t                                  fk_idx = 0;
 
             for (size_t member_idx = 0; member_idx < Base::field_count_ && fk_idx < fk_count_; ++member_idx) {
                 auto member = Base::all_members_[member_idx];
@@ -118,9 +113,12 @@ export namespace storm::orm::statements {
         static constexpr auto fk_field_names_ = build_fk_field_names();
 
         static constexpr std::string_view get_join_keyword() {
-            if constexpr (Type == JoinType::Inner) return " INNER JOIN ";
-            else if constexpr (Type == JoinType::Left) return " LEFT JOIN ";
-            else return " RIGHT JOIN ";
+            if constexpr (Type == JoinType::Inner)
+                return " INNER JOIN ";
+            else if constexpr (Type == JoinType::Left)
+                return " LEFT JOIN ";
+            else
+                return " RIGHT JOIN ";
         }
 
         // Compile-time SQL generation with ConstexprString
@@ -128,10 +126,9 @@ export namespace storm::orm::statements {
             size_t total = 0;
 
             [&]<size_t... Is>(std::index_sequence<Is...>) {
-                ((total += get_join_keyword().size() +
-                           FKBase_at<Is>::table_name_.size() + 2 + 1 + 4 + 1 + 1 + 1 +
-                           FKBase_at<Is>::pk_name_.size() + 5 +
-                           fk_field_names_[Is].size() + 3), ...);
+                ((total += get_join_keyword().size() + FKBase_at<Is>::table_name_.size() + 2 + 1 + 4 + 1 + 1 + 1 +
+                           FKBase_at<Is>::pk_name_.size() + 5 + fk_field_names_[Is].size() + 3),
+                 ...);
             }(std::make_index_sequence<fk_count_>{});
 
             return total + 10; // Small buffer
@@ -172,14 +169,17 @@ export namespace storm::orm::statements {
 
             // FK fields
             [&]<size_t... Is>(std::index_sequence<Is...>) {
-                ([&]<size_t I>() {
-                    total += 2; // ", "
-                    [&]<size_t... FieldIs>(std::index_sequence<FieldIs...>) {
-                        ((total += (FieldIs > 0 ? 2 : 0) + 3 + 1 +
-                                   std::meta::identifier_of(FKBase_at<I>::all_members_[FieldIs]).size()),
-                         ...);
-                    }(std::make_index_sequence<FKBase_at<I>::field_count_>{});
-                }.template operator()<Is>(), ...);
+                (
+                        [&]<size_t I>() {
+                            total += 2; // ", "
+                            [&]<size_t... FieldIs>(std::index_sequence<FieldIs...>) {
+                                ((total += (FieldIs > 0 ? 2 : 0) + 3 + 1 +
+                                           std::meta::identifier_of(FKBase_at<I>::all_members_[FieldIs]).size()),
+                                 ...);
+                            }(std::make_index_sequence<FKBase_at<I>::field_count_>{});
+                        }.template operator()<Is>(),
+                        ...
+                );
             }(std::make_index_sequence<fk_count_>{});
 
             return total + 10;
@@ -194,7 +194,8 @@ export namespace storm::orm::statements {
             for (size_t i = 0; i < Base::field_count_; ++i) {
                 auto member = Base::all_members_[i];
                 if (!Base::is_fk_field(member)) {
-                    if (!first) result.append(", ");
+                    if (!first)
+                        result.append(", ");
                     result.append("t1.");
                     result.append(std::meta::identifier_of(member));
                     first = false;
@@ -203,19 +204,22 @@ export namespace storm::orm::statements {
 
             // FK fields
             [&]<size_t... Is>(std::index_sequence<Is...>) {
-                ([&]<size_t I>() {
-                    result.append(", ");
-                    [&]<size_t... FieldIs>(std::index_sequence<FieldIs...>) {
-                        bool first_in_table = true;
-                        (((first_in_table ? (void)0 : result.append(", ")),
-                          result.append("t"),
-                          result.append_digit(I + 2),
-                          result.append("."),
-                          result.append(std::meta::identifier_of(FKBase_at<I>::all_members_[FieldIs])),
-                          first_in_table = false),
-                         ...);
-                    }(std::make_index_sequence<FKBase_at<I>::field_count_>{});
-                }.template operator()<Is>(), ...);
+                (
+                        [&]<size_t I>() {
+                            result.append(", ");
+                            [&]<size_t... FieldIs>(std::index_sequence<FieldIs...>) {
+                                bool first_in_table = true;
+                                (((first_in_table ? (void)0 : result.append(", ")),
+                                  result.append("t"),
+                                  result.append_digit(I + 2),
+                                  result.append("."),
+                                  result.append(std::meta::identifier_of(FKBase_at<I>::all_members_[FieldIs])),
+                                  first_in_table = false),
+                                 ...);
+                            }(std::make_index_sequence<FKBase_at<I>::field_count_>{});
+                        }.template operator()<Is>(),
+                        ...
+                );
             }(std::make_index_sequence<fk_count_>{});
 
             return result;
@@ -227,17 +231,17 @@ export namespace storm::orm::statements {
         // NEW: Compile-time complete SQL generation
         static consteval size_t calculate_complete_sql_size() {
             size_t total = 0;
-            total += 7;  // "SELECT "
+            total += 7; // "SELECT "
             total += calculate_select_fields_size();
-            total += 6;  // " FROM "
+            total += 6; // " FROM "
             total += Base::table_name_.size();
-            total += 3;  // " t1"
+            total += 3; // " t1"
             total += calculate_join_sql_size();
-            return total + 10;  // Buffer
+            return total + 10; // Buffer
         }
 
         static consteval auto build_complete_sql_array() {
-            constexpr size_t sql_size = calculate_complete_sql_size();
+            constexpr size_t          sql_size = calculate_complete_sql_size();
             ConstexprString<sql_size> result;
 
             result.append("SELECT ");
@@ -285,7 +289,8 @@ export namespace storm::orm::statements {
 
         // Enhanced type extraction with NULL handling (optimized for inlining)
         template <typename FieldType>
-        __attribute__((always_inline)) static inline void extract_typed_field(Statement* stmt, FieldType& field, int col_idx) noexcept {
+        __attribute__((always_inline)) static inline void
+        extract_typed_field(Statement* stmt, FieldType& field, int col_idx) noexcept {
             if (stmt->is_null(col_idx)) {
                 if constexpr (requires { field = std::nullopt; }) {
                     field = std::nullopt;
@@ -319,13 +324,15 @@ export namespace storm::orm::statements {
         }
 
         template <size_t... Is>
-        __attribute__((always_inline)) static inline void extract_t_fields(Statement* stmt, T& obj, std::index_sequence<Is...>) noexcept {
+        __attribute__((always_inline)) static inline void
+        extract_t_fields(Statement* stmt, T& obj, std::index_sequence<Is...>) noexcept {
             int col_idx = 0;
             ((extract_column_at<Is>(stmt, obj, col_idx)), ...);
         }
 
         template <size_t MemberIdx>
-        __attribute__((always_inline)) static inline void extract_column_at(Statement* stmt, T& obj, int& col_idx) noexcept {
+        __attribute__((always_inline)) static inline void
+        extract_column_at(Statement* stmt, T& obj, int& col_idx) noexcept {
             if constexpr (MemberIdx < Base::field_count_) {
                 constexpr auto member = Base::all_members_[MemberIdx];
 
@@ -340,14 +347,15 @@ export namespace storm::orm::statements {
 
         template <size_t FKIdx, size_t... FieldIs>
         __attribute__((always_inline)) static inline void extract_fk_fields_impl(
-            Statement* stmt, FK_type<FKIdx>& fk_obj, size_t col_offset, std::index_sequence<FieldIs...>
+                Statement* stmt, FK_type<FKIdx>& fk_obj, size_t col_offset, std::index_sequence<FieldIs...>
         ) noexcept {
             using FKBase = FKBase_at<FKIdx>;
             ((extract_fk_field_at<FKBase, FieldIs>(stmt, fk_obj, col_offset + FieldIs)), ...);
         }
 
         template <typename FKBase, size_t FieldIdx>
-        __attribute__((always_inline)) static inline void extract_fk_field_at(Statement* stmt, auto& fk_obj, int col_idx) noexcept {
+        __attribute__((always_inline)) static inline void
+        extract_fk_field_at(Statement* stmt, auto& fk_obj, int col_idx) noexcept {
             if constexpr (FieldIdx < FKBase::field_count_) {
                 constexpr auto member = FKBase::all_members_[FieldIdx];
                 extract_typed_field(stmt, fk_obj.[:member:], col_idx);
@@ -356,21 +364,21 @@ export namespace storm::orm::statements {
 
         template <size_t Idx>
         __attribute__((always_inline)) static inline void extract_fk_at(Statement* stmt, T& obj) noexcept {
-            constexpr auto FKPtr = FKFieldPtrs...[Idx]; // C++26 pack indexing
-            auto& fk_obj = obj.*FKPtr;
+            constexpr auto FKPtr  = FKFieldPtrs...[Idx]; // C++26 pack indexing
+            auto&          fk_obj = obj.*FKPtr;
             extract_fk_fields_impl<Idx>(
-                stmt, fk_obj, column_offsets_[Idx],
-                std::make_index_sequence<FKBase_at<Idx>::field_count_>{}
+                    stmt, fk_obj, column_offsets_[Idx], std::make_index_sequence<FKBase_at<Idx>::field_count_>{}
             );
         }
 
         template <size_t... Is>
-        __attribute__((always_inline)) static inline void extract_all_fks(Statement* stmt, T& obj, std::index_sequence<Is...>) noexcept {
+        __attribute__((always_inline)) static inline void
+        extract_all_fks(Statement* stmt, T& obj, std::index_sequence<Is...>) noexcept {
             (extract_fk_at<Is>(stmt, obj), ...);
         }
 
         __attribute__((hot)) __attribute__((flatten)) static void extract_joined_row(Statement* stmt, T& obj) noexcept {
-            #ifndef NDEBUG
+#ifndef NDEBUG
             size_t expected_cols = non_fk_field_count_;
             [&]<size_t... Is>(std::index_sequence<Is...>) {
                 ((expected_cols += FKBase_at<Is>::field_count_), ...);
@@ -378,7 +386,7 @@ export namespace storm::orm::statements {
 
             // Use raw SQLite API since Statement wrapper doesn't expose column_count()
             assert(sqlite3_column_count(stmt->handle()) == static_cast<int>(expected_cols) && "Column count mismatch");
-            #endif
+#endif
 
             extract_t_fields(stmt, obj, typename Base::field_indices_t{});
             extract_all_fks(stmt, obj, std::make_index_sequence<fk_count_>{});
@@ -390,15 +398,12 @@ export namespace storm::orm::statements {
         using JS = JoinStatement<T, ConnType, Type, FKFieldPtrs...>;
 
         return JoinStatementWrapper{
-            +[]() -> const std::string& { return JS::get_join_sql(); },
-            +[]() -> const std::string& { return JS::get_select_fields(); },
-            +[]() -> const std::string& { return JS::get_complete_sql(); },  // NEW
-            +[](void* stmt, void* obj) {
-                JS::extract_joined_row(
-                    static_cast<typename ConnType::Statement*>(stmt),
-                    *static_cast<T*>(obj)
-                );
-            }
+                +[]() -> const std::string& { return JS::get_join_sql(); },
+                +[]() -> const std::string& { return JS::get_select_fields(); },
+                +[]() -> const std::string& { return JS::get_complete_sql(); }, // NEW
+                +[](void* stmt, void* obj) {
+                    JS::extract_joined_row(static_cast<typename ConnType::Statement*>(stmt), *static_cast<T*>(obj));
+                }
         };
     }
 

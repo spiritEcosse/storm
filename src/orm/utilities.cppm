@@ -26,9 +26,8 @@ export namespace storm::orm::utilities {
     // Generic parameter binding - unified implementation for WHERE and CRUD statements
     // No dependency on entity type T - pure type dispatch based on value type
     template <typename StmtType, typename ErrorType>
-    [[nodiscard]] auto
-    bind_parameter_value(StmtType& stmt, int param_index, const auto& value) noexcept
-        -> std::expected<void, ErrorType> {
+    [[nodiscard]] auto bind_parameter_value(StmtType& stmt, int param_index, const auto& value) noexcept
+            -> std::expected<void, ErrorType> {
         using ValueType = std::decay_t<decltype(value)>;
 
         // Handle std::optional types first
@@ -77,13 +76,14 @@ export namespace storm::orm::utilities {
             return stmt.bind_text(param_index, std::string_view{value});
         } else {
             static_assert(
-                std::is_same_v<ValueType, int> || std::is_same_v<ValueType, int64_t> ||
-                    std::is_same_v<ValueType, double> || std::is_same_v<ValueType, bool> ||
-                    std::is_convertible_v<ValueType, std::string_view>,
-                "Unsupported field type for binding. Supported types: "
-                "int, int64_t, long, short, unsigned variants, "
-                "double, float, bool, std::string, std::string_view, "
-                "std::optional<T>, std::vector<uint8_t>");
+                    std::is_same_v<ValueType, int> || std::is_same_v<ValueType, int64_t> ||
+                            std::is_same_v<ValueType, double> || std::is_same_v<ValueType, bool> ||
+                            std::is_convertible_v<ValueType, std::string_view>,
+                    "Unsupported field type for binding. Supported types: "
+                    "int, int64_t, long, short, unsigned variants, "
+                    "double, float, bool, std::string, std::string_view, "
+                    "std::optional<T>, std::vector<uint8_t>"
+            );
             // Unreachable due to static_assert, but needed for return type
             return std::unexpected(ErrorType{});
         }

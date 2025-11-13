@@ -9,8 +9,8 @@ using namespace storm::benchmark;
 // Define the actual Person struct with Storm imports
 struct Person {
     [[= storm::meta::FieldAttr::primary]] int id;
-    std::string name;
-    int age;
+    std::string                               name;
+    int                                       age;
 };
 
 // Access the static methods directly from InsertStatement
@@ -26,17 +26,15 @@ void benchmark_sql_generation() {
         return;
     }
 
-    auto& conn = storm::QuerySet<Person>::get_default_connection();
-    auto create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+    auto& conn          = storm::QuerySet<Person>::get_default_connection();
+    auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
 
     // Create QuerySet to trigger template instantiation
     auto queryset = storm::QuerySet<Person>{};
 
     // Test batch sizes that would trigger cache misses and hits
-    const std::vector<size_t> test_batch_sizes = {
-        1, 2, 3, 5, 7, 8, 10, 12, 15, 20, 25, 30, 35, 40, 45, 50,
-        55, 60, 75, 100, 150, 200, 300, 500, 1000
-    };
+    const std::vector<size_t> test_batch_sizes = {1,  2,  3,  5,  7,  8,  10,  12,  15,  20,  25,  30,  35,
+                                                  40, 45, 50, 55, 60, 75, 100, 150, 200, 300, 500, 1000};
 
     std::cout << "Batch Size | SQL Gen Time (μs) | Cache Hit | SQL Length" << std::endl;
     std::cout << "-----------|-------------------|-----------|------------" << std::endl;
@@ -68,9 +66,8 @@ void benchmark_sql_generation() {
             }
         }
 
-        std::cout << std::setw(10) << batch_size << " | "
-                  << std::setw(17) << std::fixed << std::setprecision(3) << generation_time << " | "
-                  << std::setw(9) << (likely_cache_hit ? "Likely" : "Unlikely") << " | "
+        std::cout << std::setw(10) << batch_size << " | " << std::setw(17) << std::fixed << std::setprecision(3)
+                  << generation_time << " | " << std::setw(9) << (likely_cache_hit ? "Likely" : "Unlikely") << " | "
                   << std::setw(10) << "~" << (50 + batch_size * 8) << std::endl;
     }
 
@@ -81,7 +78,7 @@ void benchmark_sql_generation() {
 
     // Test cache effectiveness for common batch sizes
     const std::vector<size_t> common_sizes = {1, 10, 25, 50};
-    const int iterations = 100;
+    const int                 iterations   = 100;
 
     for (size_t batch_size : common_sizes) {
         std::vector<double> times;
@@ -96,7 +93,7 @@ void benchmark_sql_generation() {
             }
 
             MicroBenchmarkTimer timer;
-            auto insert_result = queryset.insert(std::span<const Person>(persons));
+            auto                insert_result = queryset.insert(std::span<const Person>(persons));
             times.push_back(timer.elapsed_us());
 
             // Clean up
@@ -109,8 +106,8 @@ void benchmark_sql_generation() {
 
         // Calculate statistics
         double total_time = 0;
-        double min_time = times[0];
-        double max_time = times[0];
+        double min_time   = times[0];
+        double max_time   = times[0];
 
         for (double time : times) {
             total_time += time;
@@ -124,7 +121,8 @@ void benchmark_sql_generation() {
         std::cout << "  Average: " << std::fixed << std::setprecision(3) << avg_time << " μs" << std::endl;
         std::cout << "  Min:     " << std::fixed << std::setprecision(3) << min_time << " μs" << std::endl;
         std::cout << "  Max:     " << std::fixed << std::setprecision(3) << max_time << " μs" << std::endl;
-        std::cout << "  Speedup (max/min): " << std::fixed << std::setprecision(1) << (max_time / min_time) << "x" << std::endl;
+        std::cout << "  Speedup (max/min): " << std::fixed << std::setprecision(1) << (max_time / min_time) << "x"
+                  << std::endl;
         std::cout << std::endl;
     }
 
@@ -159,8 +157,8 @@ void benchmark_delete_sql_generation() {
         return;
     }
 
-    auto& conn = storm::QuerySet<Person>::get_default_connection();
-    auto create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+    auto& conn          = storm::QuerySet<Person>::get_default_connection();
+    auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
     if (!create_result.has_value()) {
         std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
         storm::QuerySet<Person>::clear_default_connection();
@@ -185,9 +183,7 @@ void benchmark_delete_sql_generation() {
     }
 
     // Test batch sizes for DELETE operations
-    const std::vector<size_t> test_batch_sizes = {
-        1, 10, 25, 50, 100, 200, 500, 1000
-    };
+    const std::vector<size_t> test_batch_sizes = {1, 10, 25, 50, 100, 200, 500, 1000};
 
     std::cout << "DELETE Batch Performance Analysis" << std::endl;
     std::cout << "Batch Size | DELETE Time (μs) | Cache Status | SQL Length (est)" << std::endl;
@@ -200,10 +196,7 @@ void benchmark_delete_sql_generation() {
         }
 
         // Create batch of persons to delete
-        std::vector<Person> delete_batch(
-            all_persons.begin() + offset,
-            all_persons.begin() + offset + batch_size
-        );
+        std::vector<Person> delete_batch(all_persons.begin() + offset, all_persons.begin() + offset + batch_size);
 
         MicroBenchmarkTimer timer;
 
@@ -219,9 +212,8 @@ void benchmark_delete_sql_generation() {
         // "DELETE FROM Person WHERE id IN (?,?,?,...)"
         size_t estimated_sql_length = 30 + (batch_size * 2);
 
-        std::cout << std::setw(10) << batch_size << " | "
-                  << std::setw(16) << std::fixed << std::setprecision(3) << delete_time << " | "
-                  << std::setw(12) << (likely_cache_hit ? "Cache Hit" : "Cache Miss") << " | "
+        std::cout << std::setw(10) << batch_size << " | " << std::setw(16) << std::fixed << std::setprecision(3)
+                  << delete_time << " | " << std::setw(12) << (likely_cache_hit ? "Cache Hit" : "Cache Miss") << " | "
                   << std::setw(16) << estimated_sql_length << std::endl;
 
         offset += batch_size;
@@ -234,7 +226,7 @@ void benchmark_delete_sql_generation() {
 
     // Test cache effectiveness for common DELETE batch sizes
     const std::vector<size_t> common_delete_sizes = {1, 10, 25, 50};
-    const int iterations = 100;
+    const int                 iterations          = 100;
 
     for (size_t batch_size : common_delete_sizes) {
         std::vector<double> times;
@@ -250,15 +242,11 @@ void benchmark_delete_sql_generation() {
             // Create batch with unique IDs
             std::vector<Person> delete_batch;
             for (size_t j = 0; j < batch_size; ++j) {
-                delete_batch.push_back({
-                    static_cast<int>(10000 + i * batch_size + j),
-                    "CacheTest",
-                    30
-                });
+                delete_batch.push_back({static_cast<int>(10000 + i * batch_size + j), "CacheTest", 30});
             }
 
             MicroBenchmarkTimer timer;
-            auto delete_result = queryset.remove(std::span<const Person>(delete_batch));
+            auto                delete_result = queryset.remove(std::span<const Person>(delete_batch));
             times.push_back(timer.elapsed_us());
 
             if (!delete_result.has_value()) {
@@ -269,7 +257,7 @@ void benchmark_delete_sql_generation() {
 
         if (!times.empty()) {
             // Calculate statistics
-            double sum = 0;
+            double sum      = 0;
             double min_time = times[0];
             double max_time = times[0];
 
@@ -279,16 +267,15 @@ void benchmark_delete_sql_generation() {
                 max_time = std::max(max_time, t);
             }
 
-            double avg_time = sum / times.size();
+            double avg_time   = sum / times.size();
             double first_time = times[0];
-            double speedup = first_time / avg_time;
+            double speedup    = first_time / avg_time;
 
             std::cout << "Batch size " << std::setw(3) << batch_size << ": "
                       << "Avg: " << std::fixed << std::setprecision(3) << std::setw(8) << avg_time << " μs, "
                       << "Min: " << std::setw(8) << min_time << " μs, "
                       << "Max: " << std::setw(8) << max_time << " μs, "
-                      << "Speedup: " << std::setprecision(2) << speedup << "x"
-                      << std::endl;
+                      << "Speedup: " << std::setprecision(2) << speedup << "x" << std::endl;
         }
     }
 

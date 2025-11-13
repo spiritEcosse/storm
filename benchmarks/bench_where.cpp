@@ -48,16 +48,16 @@ void setup_database(int num_people) {
     }
 
     // Insert people with varied data
-    QuerySet<TestPerson> person_qs;
+    QuerySet<TestPerson>    person_qs;
     std::vector<TestPerson> people;
     people.reserve(num_people);
     for (int i = 0; i < num_people; ++i) {
         people.push_back({
-            0,                                      // id (auto-generated)
-            "Person" + std::to_string(i),          // name
-            20 + (i % 50),                         // age (20-69)
-            30000.0 + (i % 70000),                 // salary (30k-100k)
-            (i % 3) != 0                           // is_active (2/3 true, 1/3 false)
+                0,                            // id (auto-generated)
+                "Person" + std::to_string(i), // name
+                20 + (i % 50),                // age (20-69)
+                30000.0 + (i % 70000),        // salary (30k-100k)
+                (i % 3) != 0                  // is_active (2/3 true, 1/3 false)
         });
     }
 
@@ -79,13 +79,13 @@ void benchmark_select_no_where(int num_people, int iterations = 100) {
     setup_database(num_people);
 
     QuerySet<TestPerson> person_qs;
-    BenchmarkTimer timer;
-    double total_time = 0;
-    int total_rows = 0;
+    BenchmarkTimer       timer;
+    double               total_time = 0;
+    int                  total_rows = 0;
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto result = person_qs.select();
+        auto   result  = person_qs.select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -97,8 +97,8 @@ void benchmark_select_no_where(int num_people, int iterations = 100) {
     std::cout << "SELECT (no WHERE) - " << num_people << " rows:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time << " ms" << std::endl;
     std::cout << "  Iterations: " << iterations << std::endl;
-    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4)
-              << (total_time / iterations) << " ms" << std::endl;
+    std::cout << "  Avg per iteration: " << std::fixed << std::setprecision(4) << (total_time / iterations) << " ms"
+              << std::endl;
     std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
               << (total_rows / (total_time / 1000.0) / 1000000.0) << "M rows/sec" << std::endl;
     std::cout << std::endl;
@@ -115,9 +115,9 @@ void benchmark_where_int(int num_people, int iterations = 100) {
     setup_database(num_people);
 
     QuerySet<TestPerson> person_qs;
-    BenchmarkTimer timer;
-    double storm_time = 0;
-    int storm_rows = 0;
+    BenchmarkTimer       timer;
+    double               storm_time = 0;
+    int                  storm_rows = 0;
 
     // Storm ORM
     for (int i = 0; i < iterations; ++i) {
@@ -133,12 +133,12 @@ void benchmark_where_int(int num_people, int iterations = 100) {
     }
 
     // Raw SQLite
-    auto& conn = QuerySet<TestPerson>::get_default_connection();
-    std::string sql = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE age > ?";
+    auto&       conn = QuerySet<TestPerson>::get_default_connection();
+    std::string sql  = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE age > ?";
 
     timer.reset();
     double raw_time = 0;
-    int raw_rows = 0;
+    int    raw_rows = 0;
 
     // Prepare statement once outside loop
     auto stmt_result = conn.prepare(sql);
@@ -151,7 +151,7 @@ void benchmark_where_int(int num_people, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        stmt.reset();  // Reset statement, don't re-prepare
+        stmt.reset(); // Reset statement, don't re-prepare
         stmt.bind_int(1, 30);
 
         std::vector<TestPerson> results;
@@ -161,10 +161,10 @@ void benchmark_where_int(int num_people, int iterations = 100) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
                 TestPerson p;
-                p.id = stmt.extract_int(0);
-                p.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
-                p.age = stmt.extract_int(2);
-                p.salary = stmt.extract_double(3);
+                p.id        = stmt.extract_int(0);
+                p.name      = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                p.age       = stmt.extract_int(2);
+                p.salary    = stmt.extract_double(3);
                 p.is_active = stmt.extract_int(4) != 0;
                 results.push_back(std::move(p));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
@@ -181,8 +181,8 @@ void benchmark_where_int(int num_people, int iterations = 100) {
     }
 
     double storm_throughput = storm_rows / (storm_time / 1000.0) / 1000000.0;
-    double raw_throughput = raw_rows / (raw_time / 1000.0) / 1000000.0;
-    double efficiency = (storm_throughput / raw_throughput) * 100.0;
+    double raw_throughput   = raw_rows / (raw_time / 1000.0) / 1000000.0;
+    double efficiency       = (storm_throughput / raw_throughput) * 100.0;
 
     std::cout << "WHERE (int: age > 30):" << std::endl;
     std::cout << "  Storm ORM: " << std::fixed << std::setprecision(2) << storm_throughput << "M rows/sec" << std::endl;
@@ -198,9 +198,9 @@ void benchmark_where_string(int num_people, int iterations = 100) {
     setup_database(num_people);
 
     QuerySet<TestPerson> person_qs;
-    BenchmarkTimer timer;
-    double storm_time = 0;
-    int storm_rows = 0;
+    BenchmarkTimer       timer;
+    double               storm_time = 0;
+    int                  storm_rows = 0;
 
     // Storm ORM - use LIKE to match more rows (Person5% matches Person5, Person50, Person500, etc.)
     for (int i = 0; i < iterations; ++i) {
@@ -216,12 +216,12 @@ void benchmark_where_string(int num_people, int iterations = 100) {
     }
 
     // Raw SQLite
-    auto& conn = QuerySet<TestPerson>::get_default_connection();
-    std::string sql = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE name LIKE ?";
+    auto&       conn = QuerySet<TestPerson>::get_default_connection();
+    std::string sql  = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE name LIKE ?";
 
     timer.reset();
     double raw_time = 0;
-    int raw_rows = 0;
+    int    raw_rows = 0;
 
     // Prepare statement once outside loop
     auto stmt_result = conn.prepare(sql);
@@ -234,7 +234,7 @@ void benchmark_where_string(int num_people, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        stmt.reset();  // Reset statement, don't re-prepare
+        stmt.reset(); // Reset statement, don't re-prepare
         stmt.bind_text(1, "Person5%");
 
         std::vector<TestPerson> results;
@@ -244,10 +244,10 @@ void benchmark_where_string(int num_people, int iterations = 100) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
                 TestPerson p;
-                p.id = stmt.extract_int(0);
-                p.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
-                p.age = stmt.extract_int(2);
-                p.salary = stmt.extract_double(3);
+                p.id        = stmt.extract_int(0);
+                p.name      = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                p.age       = stmt.extract_int(2);
+                p.salary    = stmt.extract_double(3);
                 p.is_active = stmt.extract_int(4) != 0;
                 results.push_back(std::move(p));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
@@ -264,8 +264,8 @@ void benchmark_where_string(int num_people, int iterations = 100) {
     }
 
     double storm_throughput = storm_rows / (storm_time / 1000.0) / 1000000.0;
-    double raw_throughput = raw_rows / (raw_time / 1000.0) / 1000000.0;
-    double efficiency = (storm_throughput / raw_throughput) * 100.0;
+    double raw_throughput   = raw_rows / (raw_time / 1000.0) / 1000000.0;
+    double efficiency       = (storm_throughput / raw_throughput) * 100.0;
 
     std::cout << "WHERE (string: name LIKE \"Person5%\"):" << std::endl;
     std::cout << "  Storm ORM: " << std::fixed << std::setprecision(2) << storm_throughput << "M rows/sec" << std::endl;
@@ -281,9 +281,9 @@ void benchmark_where_float(int num_people, int iterations = 100) {
     setup_database(num_people);
 
     QuerySet<TestPerson> person_qs;
-    BenchmarkTimer timer;
-    double storm_time = 0;
-    int storm_rows = 0;
+    BenchmarkTimer       timer;
+    double               storm_time = 0;
+    int                  storm_rows = 0;
 
     // Storm ORM - salary ranges from 30k to ~40k, so use 35k to match ~50% of rows
     for (int i = 0; i < iterations; ++i) {
@@ -299,12 +299,12 @@ void benchmark_where_float(int num_people, int iterations = 100) {
     }
 
     // Raw SQLite
-    auto& conn = QuerySet<TestPerson>::get_default_connection();
-    std::string sql = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE salary > ?";
+    auto&       conn = QuerySet<TestPerson>::get_default_connection();
+    std::string sql  = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE salary > ?";
 
     timer.reset();
     double raw_time = 0;
-    int raw_rows = 0;
+    int    raw_rows = 0;
 
     // Prepare statement once outside loop
     auto stmt_result = conn.prepare(sql);
@@ -317,7 +317,7 @@ void benchmark_where_float(int num_people, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        stmt.reset();  // Reset statement, don't re-prepare
+        stmt.reset(); // Reset statement, don't re-prepare
         stmt.bind_double(1, 35000.0);
 
         std::vector<TestPerson> results;
@@ -327,10 +327,10 @@ void benchmark_where_float(int num_people, int iterations = 100) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
                 TestPerson p;
-                p.id = stmt.extract_int(0);
-                p.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
-                p.age = stmt.extract_int(2);
-                p.salary = stmt.extract_double(3);
+                p.id        = stmt.extract_int(0);
+                p.name      = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                p.age       = stmt.extract_int(2);
+                p.salary    = stmt.extract_double(3);
                 p.is_active = stmt.extract_int(4) != 0;
                 results.push_back(std::move(p));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
@@ -347,8 +347,8 @@ void benchmark_where_float(int num_people, int iterations = 100) {
     }
 
     double storm_throughput = storm_rows / (storm_time / 1000.0) / 1000000.0;
-    double raw_throughput = raw_rows / (raw_time / 1000.0) / 1000000.0;
-    double efficiency = (storm_throughput / raw_throughput) * 100.0;
+    double raw_throughput   = raw_rows / (raw_time / 1000.0) / 1000000.0;
+    double efficiency       = (storm_throughput / raw_throughput) * 100.0;
 
     std::cout << "WHERE (float: salary > 35000.0):" << std::endl;
     std::cout << "  Storm ORM: " << std::fixed << std::setprecision(2) << storm_throughput << "M rows/sec" << std::endl;
@@ -364,9 +364,9 @@ void benchmark_where_bool(int num_people, int iterations = 100) {
     setup_database(num_people);
 
     QuerySet<TestPerson> person_qs;
-    BenchmarkTimer timer;
-    double storm_time = 0;
-    int storm_rows = 0;
+    BenchmarkTimer       timer;
+    double               storm_time = 0;
+    int                  storm_rows = 0;
 
     // Storm ORM
     for (int i = 0; i < iterations; ++i) {
@@ -382,12 +382,12 @@ void benchmark_where_bool(int num_people, int iterations = 100) {
     }
 
     // Raw SQLite
-    auto& conn = QuerySet<TestPerson>::get_default_connection();
-    std::string sql = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE is_active = ?";
+    auto&       conn = QuerySet<TestPerson>::get_default_connection();
+    std::string sql  = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE is_active = ?";
 
     timer.reset();
     double raw_time = 0;
-    int raw_rows = 0;
+    int    raw_rows = 0;
 
     // Prepare statement once outside loop
     auto stmt_result = conn.prepare(sql);
@@ -400,7 +400,7 @@ void benchmark_where_bool(int num_people, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        stmt.reset();  // Reset statement, don't re-prepare
+        stmt.reset();        // Reset statement, don't re-prepare
         stmt.bind_int(1, 1); // true = 1
 
         std::vector<TestPerson> results;
@@ -410,10 +410,10 @@ void benchmark_where_bool(int num_people, int iterations = 100) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
                 TestPerson p;
-                p.id = stmt.extract_int(0);
-                p.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
-                p.age = stmt.extract_int(2);
-                p.salary = stmt.extract_double(3);
+                p.id        = stmt.extract_int(0);
+                p.name      = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                p.age       = stmt.extract_int(2);
+                p.salary    = stmt.extract_double(3);
                 p.is_active = stmt.extract_int(4) != 0;
                 results.push_back(std::move(p));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
@@ -430,8 +430,8 @@ void benchmark_where_bool(int num_people, int iterations = 100) {
     }
 
     double storm_throughput = storm_rows / (storm_time / 1000.0) / 1000000.0;
-    double raw_throughput = raw_rows / (raw_time / 1000.0) / 1000000.0;
-    double efficiency = (storm_throughput / raw_throughput) * 100.0;
+    double raw_throughput   = raw_rows / (raw_time / 1000.0) / 1000000.0;
+    double efficiency       = (storm_throughput / raw_throughput) * 100.0;
 
     std::cout << "WHERE (bool: is_active == true):" << std::endl;
     std::cout << "  Storm ORM: " << std::fixed << std::setprecision(2) << storm_throughput << "M rows/sec" << std::endl;
@@ -451,9 +451,9 @@ void benchmark_where_like(int num_people, int iterations = 100) {
     setup_database(num_people);
 
     QuerySet<TestPerson> person_qs;
-    BenchmarkTimer timer;
-    double storm_time = 0;
-    int storm_rows = 0;
+    BenchmarkTimer       timer;
+    double               storm_time = 0;
+    int                  storm_rows = 0;
 
     // Storm ORM
     for (int i = 0; i < iterations; ++i) {
@@ -469,12 +469,12 @@ void benchmark_where_like(int num_people, int iterations = 100) {
     }
 
     // Raw SQLite
-    auto& conn = QuerySet<TestPerson>::get_default_connection();
-    std::string sql = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE name LIKE ?";
+    auto&       conn = QuerySet<TestPerson>::get_default_connection();
+    std::string sql  = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE name LIKE ?";
 
     timer.reset();
     double raw_time = 0;
-    int raw_rows = 0;
+    int    raw_rows = 0;
 
     // Prepare statement once outside loop
     auto stmt_result = conn.prepare(sql);
@@ -487,7 +487,7 @@ void benchmark_where_like(int num_people, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        stmt.reset();  // Reset statement, don't re-prepare
+        stmt.reset(); // Reset statement, don't re-prepare
         stmt.bind_text(1, "Person5%");
 
         std::vector<TestPerson> results;
@@ -497,10 +497,10 @@ void benchmark_where_like(int num_people, int iterations = 100) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
                 TestPerson p;
-                p.id = stmt.extract_int(0);
-                p.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
-                p.age = stmt.extract_int(2);
-                p.salary = stmt.extract_double(3);
+                p.id        = stmt.extract_int(0);
+                p.name      = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                p.age       = stmt.extract_int(2);
+                p.salary    = stmt.extract_double(3);
                 p.is_active = stmt.extract_int(4) != 0;
                 results.push_back(std::move(p));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
@@ -517,8 +517,8 @@ void benchmark_where_like(int num_people, int iterations = 100) {
     }
 
     double storm_throughput = storm_rows / (storm_time / 1000.0) / 1000000.0;
-    double raw_throughput = raw_rows / (raw_time / 1000.0) / 1000000.0;
-    double efficiency = (storm_throughput / raw_throughput) * 100.0;
+    double raw_throughput   = raw_rows / (raw_time / 1000.0) / 1000000.0;
+    double efficiency       = (storm_throughput / raw_throughput) * 100.0;
 
     std::cout << "WHERE (LIKE: name LIKE \"Person5%\"):" << std::endl;
     std::cout << "  Storm ORM: " << std::fixed << std::setprecision(2) << storm_throughput << "M rows/sec" << std::endl;
@@ -534,9 +534,9 @@ void benchmark_where_between(int num_people, int iterations = 100) {
     setup_database(num_people);
 
     QuerySet<TestPerson> person_qs;
-    BenchmarkTimer timer;
-    double storm_time = 0;
-    int storm_rows = 0;
+    BenchmarkTimer       timer;
+    double               storm_time = 0;
+    int                  storm_rows = 0;
 
     // Storm ORM
     for (int i = 0; i < iterations; ++i) {
@@ -552,12 +552,12 @@ void benchmark_where_between(int num_people, int iterations = 100) {
     }
 
     // Raw SQLite
-    auto& conn = QuerySet<TestPerson>::get_default_connection();
-    std::string sql = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE age BETWEEN ? AND ?";
+    auto&       conn = QuerySet<TestPerson>::get_default_connection();
+    std::string sql  = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE age BETWEEN ? AND ?";
 
     timer.reset();
     double raw_time = 0;
-    int raw_rows = 0;
+    int    raw_rows = 0;
 
     // Prepare statement once outside loop
     auto stmt_result = conn.prepare(sql);
@@ -570,7 +570,7 @@ void benchmark_where_between(int num_people, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        stmt.reset();  // Reset statement, don't re-prepare
+        stmt.reset(); // Reset statement, don't re-prepare
         stmt.bind_int(1, 28);
         stmt.bind_int(2, 35);
 
@@ -581,10 +581,10 @@ void benchmark_where_between(int num_people, int iterations = 100) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
                 TestPerson p;
-                p.id = stmt.extract_int(0);
-                p.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
-                p.age = stmt.extract_int(2);
-                p.salary = stmt.extract_double(3);
+                p.id        = stmt.extract_int(0);
+                p.name      = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                p.age       = stmt.extract_int(2);
+                p.salary    = stmt.extract_double(3);
                 p.is_active = stmt.extract_int(4) != 0;
                 results.push_back(std::move(p));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
@@ -601,8 +601,8 @@ void benchmark_where_between(int num_people, int iterations = 100) {
     }
 
     double storm_throughput = storm_rows / (storm_time / 1000.0) / 1000000.0;
-    double raw_throughput = raw_rows / (raw_time / 1000.0) / 1000000.0;
-    double efficiency = (storm_throughput / raw_throughput) * 100.0;
+    double raw_throughput   = raw_rows / (raw_time / 1000.0) / 1000000.0;
+    double efficiency       = (storm_throughput / raw_throughput) * 100.0;
 
     std::cout << "WHERE (BETWEEN: age BETWEEN 28 AND 35):" << std::endl;
     std::cout << "  Storm ORM: " << std::fixed << std::setprecision(2) << storm_throughput << "M rows/sec" << std::endl;
@@ -618,9 +618,9 @@ void benchmark_where_in_3_ct(int num_people, int iterations = 100) {
     setup_database(num_people);
 
     QuerySet<TestPerson> person_qs;
-    BenchmarkTimer timer;
-    double storm_time = 0;
-    int storm_rows = 0;
+    BenchmarkTimer       timer;
+    double               storm_time = 0;
+    int                  storm_rows = 0;
 
     // Storm ORM
     for (int i = 0; i < iterations; ++i) {
@@ -636,12 +636,12 @@ void benchmark_where_in_3_ct(int num_people, int iterations = 100) {
     }
 
     // Raw SQLite (same as before for comparison)
-    auto& conn = QuerySet<TestPerson>::get_default_connection();
-    std::string sql = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE id IN (?, ?, ?)";
+    auto&       conn = QuerySet<TestPerson>::get_default_connection();
+    std::string sql  = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE id IN (?, ?, ?)";
 
     timer.reset();
     double raw_time = 0;
-    int raw_rows = 0;
+    int    raw_rows = 0;
 
     // Prepare statement once outside loop
     auto stmt_result = conn.prepare(sql);
@@ -654,7 +654,7 @@ void benchmark_where_in_3_ct(int num_people, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        stmt.reset();  // Reset statement, don't re-prepare
+        stmt.reset(); // Reset statement, don't re-prepare
         stmt.bind_int(1, 100);
         stmt.bind_int(2, 200);
         stmt.bind_int(3, 300);
@@ -666,10 +666,10 @@ void benchmark_where_in_3_ct(int num_people, int iterations = 100) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
                 TestPerson p;
-                p.id = stmt.extract_int(0);
-                p.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
-                p.age = stmt.extract_int(2);
-                p.salary = stmt.extract_double(3);
+                p.id        = stmt.extract_int(0);
+                p.name      = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                p.age       = stmt.extract_int(2);
+                p.salary    = stmt.extract_double(3);
                 p.is_active = stmt.extract_int(4) != 0;
                 results.push_back(std::move(p));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
@@ -685,8 +685,8 @@ void benchmark_where_in_3_ct(int num_people, int iterations = 100) {
     }
 
     double storm_throughput = storm_rows / (storm_time / 1000.0) / 1000000.0;
-    double raw_throughput = raw_rows / (raw_time / 1000.0) / 1000000.0;
-    double efficiency = (storm_throughput / raw_throughput) * 100.0;
+    double raw_throughput   = raw_rows / (raw_time / 1000.0) / 1000000.0;
+    double efficiency       = (storm_throughput / raw_throughput) * 100.0;
 
     std::cout << "WHERE (IN 3 values: id IN (100, 200, 300)):" << std::endl;
     std::cout << "  Storm ORM: " << std::fixed << std::setprecision(2) << storm_throughput << "M rows/sec" << std::endl;
@@ -702,16 +702,15 @@ void benchmark_where_in_10_ct(int num_people, int iterations = 100) {
     setup_database(num_people);
 
     QuerySet<TestPerson> person_qs;
-    BenchmarkTimer timer;
-    double storm_time = 0;
-    int storm_rows = 0;
+    BenchmarkTimer       timer;
+    double               storm_time = 0;
+    int                  storm_rows = 0;
 
     // Storm ORM
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto result = person_qs.where(field<^^TestPerson::id>().in(
-            100, 200, 300, 400, 500, 600, 700, 800, 900, 1000
-        )).select();
+        auto result = person_qs.where(field<^^TestPerson::id>().in(100, 200, 300, 400, 500, 600, 700, 800, 900, 1000))
+                              .select();
         person_qs.reset();
         double elapsed = timer.elapsed_ms();
 
@@ -722,12 +721,13 @@ void benchmark_where_in_10_ct(int num_people, int iterations = 100) {
     }
 
     // Raw SQLite (same as before for comparison)
-    auto& conn = QuerySet<TestPerson>::get_default_connection();
-    std::string sql = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE id IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    auto&       conn = QuerySet<TestPerson>::get_default_connection();
+    std::string sql =
+            "SELECT id, name, age, salary, is_active FROM TestPerson WHERE id IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     timer.reset();
     double raw_time = 0;
-    int raw_rows = 0;
+    int    raw_rows = 0;
 
     // Prepare statement once outside loop
     auto stmt_result = conn.prepare(sql);
@@ -740,7 +740,7 @@ void benchmark_where_in_10_ct(int num_people, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        stmt.reset();  // Reset statement, don't re-prepare
+        stmt.reset(); // Reset statement, don't re-prepare
         stmt.bind_int(1, 100);
         stmt.bind_int(2, 200);
         stmt.bind_int(3, 300);
@@ -759,10 +759,10 @@ void benchmark_where_in_10_ct(int num_people, int iterations = 100) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
                 TestPerson p;
-                p.id = stmt.extract_int(0);
-                p.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
-                p.age = stmt.extract_int(2);
-                p.salary = stmt.extract_double(3);
+                p.id        = stmt.extract_int(0);
+                p.name      = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                p.age       = stmt.extract_int(2);
+                p.salary    = stmt.extract_double(3);
                 p.is_active = stmt.extract_int(4) != 0;
                 results.push_back(std::move(p));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
@@ -778,8 +778,8 @@ void benchmark_where_in_10_ct(int num_people, int iterations = 100) {
     }
 
     double storm_throughput = storm_rows / (storm_time / 1000.0) / 1000000.0;
-    double raw_throughput = raw_rows / (raw_time / 1000.0) / 1000000.0;
-    double efficiency = (storm_throughput / raw_throughput) * 100.0;
+    double raw_throughput   = raw_rows / (raw_time / 1000.0) / 1000000.0;
+    double efficiency       = (storm_throughput / raw_throughput) * 100.0;
 
     std::cout << "WHERE (IN 10 values: id IN (100...1000)):" << std::endl;
     std::cout << "  Storm ORM: " << std::fixed << std::setprecision(2) << storm_throughput << "M rows/sec" << std::endl;
@@ -799,15 +799,14 @@ void benchmark_where_simple(int num_people, int iterations = 100) {
     setup_database(num_people);
 
     QuerySet<TestPerson> person_qs;
-    BenchmarkTimer timer;
-    double storm_time = 0;
-    int storm_rows = 0;
+    BenchmarkTimer       timer;
+    double               storm_time = 0;
+    int                  storm_rows = 0;
 
     // Storm ORM
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto result = person_qs.where(field<^^TestPerson::age>() > 25 and
-                                      field<^^TestPerson::age>() < 50).select();
+        auto result = person_qs.where(field<^^TestPerson::age>() > 25 and field<^^TestPerson::age>() < 50).select();
         person_qs.reset();
         double elapsed = timer.elapsed_ms();
 
@@ -818,12 +817,12 @@ void benchmark_where_simple(int num_people, int iterations = 100) {
     }
 
     // Raw SQLite
-    auto& conn = QuerySet<TestPerson>::get_default_connection();
-    std::string sql = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE age > ? AND age < ?";
+    auto&       conn = QuerySet<TestPerson>::get_default_connection();
+    std::string sql  = "SELECT id, name, age, salary, is_active FROM TestPerson WHERE age > ? AND age < ?";
 
     timer.reset();
     double raw_time = 0;
-    int raw_rows = 0;
+    int    raw_rows = 0;
 
     // Prepare statement once outside loop
     auto stmt_result = conn.prepare(sql);
@@ -836,7 +835,7 @@ void benchmark_where_simple(int num_people, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        stmt.reset();  // Reset statement, don't re-prepare
+        stmt.reset(); // Reset statement, don't re-prepare
         stmt.bind_int(1, 25);
         stmt.bind_int(2, 50);
 
@@ -847,10 +846,10 @@ void benchmark_where_simple(int num_people, int iterations = 100) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
                 TestPerson p;
-                p.id = stmt.extract_int(0);
-                p.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
-                p.age = stmt.extract_int(2);
-                p.salary = stmt.extract_double(3);
+                p.id        = stmt.extract_int(0);
+                p.name      = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                p.age       = stmt.extract_int(2);
+                p.salary    = stmt.extract_double(3);
                 p.is_active = stmt.extract_int(4) != 0;
                 results.push_back(std::move(p));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
@@ -867,8 +866,8 @@ void benchmark_where_simple(int num_people, int iterations = 100) {
     }
 
     double storm_throughput = storm_rows / (storm_time / 1000.0) / 1000000.0;
-    double raw_throughput = raw_rows / (raw_time / 1000.0) / 1000000.0;
-    double efficiency = (storm_throughput / raw_throughput) * 100.0;
+    double raw_throughput   = raw_rows / (raw_time / 1000.0) / 1000000.0;
+    double efficiency       = (storm_throughput / raw_throughput) * 100.0;
 
     std::cout << "WHERE (simple: age > 25 AND age < 50):" << std::endl;
     std::cout << "  Storm ORM: " << std::fixed << std::setprecision(2) << storm_throughput << "M rows/sec" << std::endl;
@@ -884,17 +883,18 @@ void benchmark_where_medium(int num_people, int iterations = 100) {
     setup_database(num_people);
 
     QuerySet<TestPerson> person_qs;
-    BenchmarkTimer timer;
-    double storm_time = 0;
-    int storm_rows = 0;
+    BenchmarkTimer       timer;
+    double               storm_time = 0;
+    int                  storm_rows = 0;
 
     // Storm ORM
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto result = person_qs.where(
-            (field<^^TestPerson::age>() > 25 and field<^^TestPerson::salary>() > 40000.0) or
-            (field<^^TestPerson::name>().like("Person5%") and field<^^TestPerson::is_active>() == true)
-        ).select();
+        auto result = person_qs
+                              .where((field<^^TestPerson::age>() > 25 and field<^^TestPerson::salary>() > 40000.0) or
+                                     (field<^^TestPerson::name>().like("Person5%") and
+                                      field<^^TestPerson::is_active>() == true))
+                              .select();
         person_qs.reset();
         double elapsed = timer.elapsed_ms();
 
@@ -905,13 +905,13 @@ void benchmark_where_medium(int num_people, int iterations = 100) {
     }
 
     // Raw SQLite
-    auto& conn = QuerySet<TestPerson>::get_default_connection();
-    std::string sql = "SELECT id, name, age, salary, is_active FROM TestPerson "
-                      "WHERE (age > ? AND salary > ?) OR (name LIKE ? AND is_active = ?)";
+    auto&       conn = QuerySet<TestPerson>::get_default_connection();
+    std::string sql  = "SELECT id, name, age, salary, is_active FROM TestPerson "
+                       "WHERE (age > ? AND salary > ?) OR (name LIKE ? AND is_active = ?)";
 
     timer.reset();
     double raw_time = 0;
-    int raw_rows = 0;
+    int    raw_rows = 0;
 
     // Prepare statement once outside loop
     auto stmt_result = conn.prepare(sql);
@@ -924,7 +924,7 @@ void benchmark_where_medium(int num_people, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        stmt.reset();  // Reset statement, don't re-prepare
+        stmt.reset(); // Reset statement, don't re-prepare
         stmt.bind_int(1, 25);
         stmt.bind_double(2, 40000.0);
         stmt.bind_text(3, "Person5%");
@@ -937,10 +937,10 @@ void benchmark_where_medium(int num_people, int iterations = 100) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
                 TestPerson p;
-                p.id = stmt.extract_int(0);
-                p.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
-                p.age = stmt.extract_int(2);
-                p.salary = stmt.extract_double(3);
+                p.id        = stmt.extract_int(0);
+                p.name      = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                p.age       = stmt.extract_int(2);
+                p.salary    = stmt.extract_double(3);
                 p.is_active = stmt.extract_int(4) != 0;
                 results.push_back(std::move(p));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
@@ -957,8 +957,8 @@ void benchmark_where_medium(int num_people, int iterations = 100) {
     }
 
     double storm_throughput = storm_rows / (storm_time / 1000.0) / 1000000.0;
-    double raw_throughput = raw_rows / (raw_time / 1000.0) / 1000000.0;
-    double efficiency = (storm_throughput / raw_throughput) * 100.0;
+    double raw_throughput   = raw_rows / (raw_time / 1000.0) / 1000000.0;
+    double efficiency       = (storm_throughput / raw_throughput) * 100.0;
 
     std::cout << "WHERE (medium: 4 conditions with AND/OR):" << std::endl;
     std::cout << "  Storm ORM: " << std::fixed << std::setprecision(2) << storm_throughput << "M rows/sec" << std::endl;
@@ -974,25 +974,21 @@ void benchmark_where_complex(int num_people, int iterations = 100) {
     setup_database(num_people);
 
     QuerySet<TestPerson> person_qs;
-    BenchmarkTimer timer;
-    double storm_time = 0;
-    int storm_rows = 0;
+    BenchmarkTimer       timer;
+    double               storm_time = 0;
+    int                  storm_rows = 0;
 
     // Storm ORM
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto result = person_qs.where(
-            (
-                (field<^^TestPerson::age>().between(25, 40) and
-                 field<^^TestPerson::salary>() > 35000.0) or
-                (field<^^TestPerson::name>().like("Person1%") and
-                 field<^^TestPerson::is_active>() == true)
-            ) and
-            (
-                field<^^TestPerson::id>() < 500 or
-                (field<^^TestPerson::age>() > 50 and field<^^TestPerson::salary>() < 80000.0)
-            )
-        ).select();
+        auto result = person_qs
+                              .where(((field<^^TestPerson::age>().between(25, 40) and
+                                       field<^^TestPerson::salary>() > 35000.0) or
+                                      (field<^^TestPerson::name>().like("Person1%") and
+                                       field<^^TestPerson::is_active>() == true)) and
+                                     (field<^^TestPerson::id>() < 500 or
+                                      (field<^^TestPerson::age>() > 50 and field<^^TestPerson::salary>() < 80000.0)))
+                              .select();
         person_qs.reset();
         double elapsed = timer.elapsed_ms();
 
@@ -1003,14 +999,14 @@ void benchmark_where_complex(int num_people, int iterations = 100) {
     }
 
     // Raw SQLite
-    auto& conn = QuerySet<TestPerson>::get_default_connection();
-    std::string sql = "SELECT id, name, age, salary, is_active FROM TestPerson "
-                      "WHERE ((age BETWEEN ? AND ? AND salary > ?) OR (name LIKE ? AND is_active = ?)) "
-                      "AND (id < ? OR (age > ? AND salary < ?))";
+    auto&       conn = QuerySet<TestPerson>::get_default_connection();
+    std::string sql  = "SELECT id, name, age, salary, is_active FROM TestPerson "
+                       "WHERE ((age BETWEEN ? AND ? AND salary > ?) OR (name LIKE ? AND is_active = ?)) "
+                       "AND (id < ? OR (age > ? AND salary < ?))";
 
     timer.reset();
     double raw_time = 0;
-    int raw_rows = 0;
+    int    raw_rows = 0;
 
     // Prepare statement once outside loop
     auto stmt_result = conn.prepare(sql);
@@ -1023,7 +1019,7 @@ void benchmark_where_complex(int num_people, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        stmt.reset();  // Reset statement, don't re-prepare
+        stmt.reset(); // Reset statement, don't re-prepare
         stmt.bind_int(1, 25);
         stmt.bind_int(2, 40);
         stmt.bind_double(3, 35000.0);
@@ -1040,10 +1036,10 @@ void benchmark_where_complex(int num_people, int iterations = 100) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
                 TestPerson p;
-                p.id = stmt.extract_int(0);
-                p.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
-                p.age = stmt.extract_int(2);
-                p.salary = stmt.extract_double(3);
+                p.id        = stmt.extract_int(0);
+                p.name      = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
+                p.age       = stmt.extract_int(2);
+                p.salary    = stmt.extract_double(3);
                 p.is_active = stmt.extract_int(4) != 0;
                 results.push_back(std::move(p));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
@@ -1060,8 +1056,8 @@ void benchmark_where_complex(int num_people, int iterations = 100) {
     }
 
     double storm_throughput = storm_rows / (storm_time / 1000.0) / 1000000.0;
-    double raw_throughput = raw_rows / (raw_time / 1000.0) / 1000000.0;
-    double efficiency = (storm_throughput / raw_throughput) * 100.0;
+    double raw_throughput   = raw_rows / (raw_time / 1000.0) / 1000000.0;
+    double efficiency       = (storm_throughput / raw_throughput) * 100.0;
 
     std::cout << "WHERE (complex: 8+ conditions, nested AND/OR, special methods):" << std::endl;
     std::cout << "  Storm ORM: " << std::fixed << std::setprecision(2) << storm_throughput << "M rows/sec" << std::endl;
@@ -1094,15 +1090,15 @@ void print_usage(const char* program_name) {
 }
 
 int main(int argc, char* argv[]) {
-    int test_size = 10000;
+    int test_size  = 10000;
     int iterations = 100;
 
     // Benchmark category flags
     bool run_baseline = false;
-    bool run_types = false;
-    bool run_special = false;
-    bool run_complex = false;
-    bool run_all = true; // Default: run everything
+    bool run_types    = false;
+    bool run_special  = false;
+    bool run_complex  = false;
+    bool run_all      = true; // Default: run everything
 
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
@@ -1112,16 +1108,16 @@ int main(int argc, char* argv[]) {
             iterations = std::stoi(argv[i] + 13);
         } else if (strcmp(argv[i], "--baseline") == 0) {
             run_baseline = true;
-            run_all = false;
+            run_all      = false;
         } else if (strcmp(argv[i], "--types") == 0) {
             run_types = true;
-            run_all = false;
+            run_all   = false;
         } else if (strcmp(argv[i], "--special") == 0) {
             run_special = true;
-            run_all = false;
+            run_all     = false;
         } else if (strcmp(argv[i], "--complex") == 0) {
             run_complex = true;
-            run_all = false;
+            run_all     = false;
         } else if (strcmp(argv[i], "--all") == 0) {
             run_all = true;
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {

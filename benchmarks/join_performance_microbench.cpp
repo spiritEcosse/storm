@@ -25,15 +25,17 @@ struct Message {
 
 // High-resolution timer
 class Timer {
-    using clock_t = std::chrono::high_resolution_clock;
+    using clock_t      = std::chrono::high_resolution_clock;
     using time_point_t = std::chrono::time_point<clock_t>;
 
     time_point_t start_;
 
-public:
+  public:
     Timer() : start_(clock_t::now()) {}
 
-    void reset() { start_ = clock_t::now(); }
+    void reset() {
+        start_ = clock_t::now();
+    }
 
     double elapsed_us() const {
         auto end = clock_t::now();
@@ -57,11 +59,11 @@ void setup_database(int num_users, int num_messages) {
 
     // Create User table
     auto create_user = conn.execute(
-        "CREATE TABLE User ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "name TEXT NOT NULL, "
-        "age INTEGER NOT NULL"
-        ")"
+            "CREATE TABLE User ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "name TEXT NOT NULL, "
+            "age INTEGER NOT NULL"
+            ")"
     );
     if (!create_user.has_value()) {
         std::cerr << "Failed to create User table: " << create_user.error().message() << std::endl;
@@ -70,12 +72,12 @@ void setup_database(int num_users, int num_messages) {
 
     // Create Message table
     auto create_message = conn.execute(
-        "CREATE TABLE Message ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "sender_id INTEGER NOT NULL, "
-        "receiver_id INTEGER NOT NULL, "
-        "text TEXT NOT NULL"
-        ")"
+            "CREATE TABLE Message ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "sender_id INTEGER NOT NULL, "
+            "receiver_id INTEGER NOT NULL, "
+            "text TEXT NOT NULL"
+            ")"
     );
     if (!create_message.has_value()) {
         std::cerr << "Failed to create Message table: " << create_message.error().message() << std::endl;
@@ -83,7 +85,7 @@ void setup_database(int num_users, int num_messages) {
     }
 
     // Insert users
-    QuerySet<User> user_qs;
+    QuerySet<User>       user_qs;
     std::vector<int64_t> user_ids;
     user_ids.reserve(num_users);
 
@@ -100,14 +102,14 @@ void setup_database(int num_users, int num_messages) {
     // Insert messages (round-robin sender/receiver)
     QuerySet<Message> message_qs;
     for (int i = 0; i < num_messages; ++i) {
-        int sender_idx = i % num_users;
+        int sender_idx   = i % num_users;
         int receiver_idx = (i + 1) % num_users;
 
         Message msg{
-            0,
-            User{static_cast<int>(user_ids[sender_idx]), "", 0},
-            User{static_cast<int>(user_ids[receiver_idx]), "", 0},
-            "Message " + std::to_string(i)
+                0,
+                User{static_cast<int>(user_ids[sender_idx]), "", 0},
+                User{static_cast<int>(user_ids[receiver_idx]), "", 0},
+                "Message " + std::to_string(i)
         };
 
         auto insert_result = message_qs.insert(msg);
@@ -120,7 +122,7 @@ void setup_database(int num_users, int num_messages) {
 
 // Benchmark: Simple SELECT (no JOIN)
 struct SimpleSelectResult {
-    int row_count;
+    int    row_count;
     double total_time_ms;
     double time_per_row_us;
     double throughput_rows_per_sec;
@@ -130,7 +132,7 @@ SimpleSelectResult benchmark_simple_select(int iterations) {
     QuerySet<Message> message_qs;
 
     Timer timer;
-    int total_rows = 0;
+    int   total_rows = 0;
 
     for (int iter = 0; iter < iterations; ++iter) {
         auto result = message_qs.select();
@@ -141,16 +143,16 @@ SimpleSelectResult benchmark_simple_select(int iterations) {
         total_rows += result.value().size();
     }
 
-    double elapsed_ms = timer.elapsed_ms();
+    double elapsed_ms      = timer.elapsed_ms();
     double time_per_row_us = (elapsed_ms * 1000.0) / total_rows;
-    double throughput = total_rows / (elapsed_ms / 1000.0);
+    double throughput      = total_rows / (elapsed_ms / 1000.0);
 
     return {total_rows, elapsed_ms, time_per_row_us, throughput};
 }
 
 // Benchmark: Single FK JOIN
 struct JoinSelectResult {
-    int row_count;
+    int    row_count;
     double total_time_ms;
     double time_per_row_us;
     double throughput_rows_per_sec;
@@ -160,7 +162,7 @@ JoinSelectResult benchmark_single_fk_join(int iterations) {
     QuerySet<Message> message_qs;
 
     Timer timer;
-    int total_rows = 0;
+    int   total_rows = 0;
 
     for (int iter = 0; iter < iterations; ++iter) {
         auto result = message_qs.join<&Message::sender>().select();
@@ -171,9 +173,9 @@ JoinSelectResult benchmark_single_fk_join(int iterations) {
         total_rows += result.value().size();
     }
 
-    double elapsed_ms = timer.elapsed_ms();
+    double elapsed_ms      = timer.elapsed_ms();
     double time_per_row_us = (elapsed_ms * 1000.0) / total_rows;
-    double throughput = total_rows / (elapsed_ms / 1000.0);
+    double throughput      = total_rows / (elapsed_ms / 1000.0);
 
     return {total_rows, elapsed_ms, time_per_row_us, throughput};
 }
@@ -183,7 +185,7 @@ JoinSelectResult benchmark_multi_fk_join(int iterations) {
     QuerySet<Message> message_qs;
 
     Timer timer;
-    int total_rows = 0;
+    int   total_rows = 0;
 
     for (int iter = 0; iter < iterations; ++iter) {
         auto result = message_qs.join<&Message::sender, &Message::receiver>().select();
@@ -194,9 +196,9 @@ JoinSelectResult benchmark_multi_fk_join(int iterations) {
         total_rows += result.value().size();
     }
 
-    double elapsed_ms = timer.elapsed_ms();
+    double elapsed_ms      = timer.elapsed_ms();
     double time_per_row_us = (elapsed_ms * 1000.0) / total_rows;
-    double throughput = total_rows / (elapsed_ms / 1000.0);
+    double throughput      = total_rows / (elapsed_ms / 1000.0);
 
     return {total_rows, elapsed_ms, time_per_row_us, throughput};
 }
@@ -212,20 +214,23 @@ void print_benchmark_result(const char* name, const auto& result, const SimpleSe
     std::cout << name << ":" << std::endl;
     std::cout << "  Rows processed: " << result.row_count << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << result.total_time_ms << " ms" << std::endl;
-    std::cout << "  Time per row: " << std::fixed << std::setprecision(4) << result.time_per_row_us << " μs" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << result.throughput_rows_per_sec << " rows/sec" << std::endl;
+    std::cout << "  Time per row: " << std::fixed << std::setprecision(4) << result.time_per_row_us << " μs"
+              << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << result.throughput_rows_per_sec << " rows/sec"
+              << std::endl;
 
     // Calculate overhead vs baseline
     double overhead_pct = ((result.time_per_row_us / baseline.time_per_row_us) - 1.0) * 100.0;
-    std::cout << "  Overhead vs simple SELECT: " << std::fixed << std::setprecision(2) << overhead_pct << "%" << std::endl;
+    std::cout << "  Overhead vs simple SELECT: " << std::fixed << std::setprecision(2) << overhead_pct << "%"
+              << std::endl;
     std::cout << std::endl;
 }
 
 int main(int argc, char* argv[]) {
     // Parse command-line arguments
-    int num_users = 100;
+    int num_users    = 100;
     int num_messages = 1000;
-    int iterations = 10;
+    int iterations   = 10;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -270,8 +275,10 @@ int main(int argc, char* argv[]) {
     std::cout << "Simple SELECT (baseline):" << std::endl;
     std::cout << "  Rows processed: " << baseline.row_count << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << baseline.total_time_ms << " ms" << std::endl;
-    std::cout << "  Time per row: " << std::fixed << std::setprecision(4) << baseline.time_per_row_us << " μs" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << baseline.throughput_rows_per_sec << " rows/sec" << std::endl;
+    std::cout << "  Time per row: " << std::fixed << std::setprecision(4) << baseline.time_per_row_us << " μs"
+              << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << baseline.throughput_rows_per_sec
+              << " rows/sec" << std::endl;
     std::cout << std::endl;
 
     // Single FK JOIN
@@ -289,10 +296,12 @@ int main(int argc, char* argv[]) {
     std::cout << "Virtual method overhead analysis:" << std::endl;
 
     double single_fk_overhead = ((single_fk.time_per_row_us / baseline.time_per_row_us) - 1.0) * 100.0;
-    double multi_fk_overhead = ((multi_fk.time_per_row_us / baseline.time_per_row_us) - 1.0) * 100.0;
+    double multi_fk_overhead  = ((multi_fk.time_per_row_us / baseline.time_per_row_us) - 1.0) * 100.0;
 
-    std::cout << "  Single FK JOIN overhead: " << std::fixed << std::setprecision(2) << single_fk_overhead << "%" << std::endl;
-    std::cout << "  Multi FK JOIN overhead: " << std::fixed << std::setprecision(2) << multi_fk_overhead << "%" << std::endl;
+    std::cout << "  Single FK JOIN overhead: " << std::fixed << std::setprecision(2) << single_fk_overhead << "%"
+              << std::endl;
+    std::cout << "  Multi FK JOIN overhead: " << std::fixed << std::setprecision(2) << multi_fk_overhead << "%"
+              << std::endl;
     std::cout << std::endl;
 
     // Interpretation

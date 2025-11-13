@@ -9,11 +9,11 @@
 #include <sqlite3.h>
 
 class BenchmarkTimer {
-public:
+  public:
     BenchmarkTimer() : start_(std::chrono::high_resolution_clock::now()) {}
 
     double elapsed_ms() const {
-        auto end = std::chrono::high_resolution_clock::now();
+        auto end      = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start_);
         return duration.count() / 1000.0;
     }
@@ -22,14 +22,14 @@ public:
         start_ = std::chrono::high_resolution_clock::now();
     }
 
-private:
+  private:
     std::chrono::high_resolution_clock::time_point start_;
 };
 
 struct Person {
-    int id;
+    int         id;
     std::string name;
-    int age;
+    int         age;
 };
 
 // Benchmark 1: Just sqlite3_step() loop - no data extraction
@@ -40,7 +40,7 @@ void benchmark_step_only(sqlite3* db, int num_records) {
     sqlite3_prepare_v2(db, "SELECT id, name, age FROM Person", -1, &select_stmt, nullptr);
 
     BenchmarkTimer timer;
-    int rows = 0;
+    int            rows = 0;
     while (sqlite3_step(select_stmt) == SQLITE_ROW) {
         rows++;
     }
@@ -50,8 +50,8 @@ void benchmark_step_only(sqlite3* db, int num_records) {
 
     std::cout << "  Rows: " << rows << std::endl;
     std::cout << "  Time: " << std::fixed << std::setprecision(2) << elapsed << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
-              << (rows / (elapsed / 1000.0) / 1000000.0) << "M rows/sec" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(2) << (rows / (elapsed / 1000.0) / 1000000.0)
+              << "M rows/sec" << std::endl;
 }
 
 // Benchmark 2: sqlite3_step() + column reading (no object construction)
@@ -62,12 +62,12 @@ void benchmark_step_and_read(sqlite3* db, int num_records) {
     sqlite3_prepare_v2(db, "SELECT id, name, age FROM Person", -1, &select_stmt, nullptr);
 
     BenchmarkTimer timer;
-    int rows = 0;
+    int            rows = 0;
     while (sqlite3_step(select_stmt) == SQLITE_ROW) {
         // Read columns but don't store
-        int id = sqlite3_column_int(select_stmt, 0);
+        int                  id   = sqlite3_column_int(select_stmt, 0);
         const unsigned char* text = sqlite3_column_text(select_stmt, 1);
-        int age = sqlite3_column_int(select_stmt, 2);
+        int                  age  = sqlite3_column_int(select_stmt, 2);
 
         // Prevent optimization
         (void)id;
@@ -82,8 +82,8 @@ void benchmark_step_and_read(sqlite3* db, int num_records) {
 
     std::cout << "  Rows: " << rows << std::endl;
     std::cout << "  Time: " << std::fixed << std::setprecision(2) << elapsed << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
-              << (rows / (elapsed / 1000.0) / 1000000.0) << "M rows/sec" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(2) << (rows / (elapsed / 1000.0) / 1000000.0)
+              << "M rows/sec" << std::endl;
 }
 
 // Benchmark 3: sqlite3_step() + column reading + emplace_back (no string copy)
@@ -97,16 +97,16 @@ void benchmark_step_read_emplace_no_string(sqlite3* db, int num_records) {
     results.reserve(num_records);
 
     BenchmarkTimer timer;
-    int rows = 0;
+    int            rows = 0;
     while (sqlite3_step(select_stmt) == SQLITE_ROW) {
-        int id = sqlite3_column_int(select_stmt, 0);
+        int id  = sqlite3_column_int(select_stmt, 0);
         int age = sqlite3_column_int(select_stmt, 2);
 
         results.emplace_back();
         Person& obj = results.back();
-        obj.id = id;
-        obj.name = ""; // Don't copy string
-        obj.age = age;
+        obj.id      = id;
+        obj.name    = ""; // Don't copy string
+        obj.age     = age;
 
         rows++;
     }
@@ -116,8 +116,8 @@ void benchmark_step_read_emplace_no_string(sqlite3* db, int num_records) {
 
     std::cout << "  Rows: " << rows << std::endl;
     std::cout << "  Time: " << std::fixed << std::setprecision(2) << elapsed << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
-              << (rows / (elapsed / 1000.0) / 1000000.0) << "M rows/sec" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(2) << (rows / (elapsed / 1000.0) / 1000000.0)
+              << "M rows/sec" << std::endl;
 }
 
 // Benchmark 4: Full Storm ORM equivalent - step + read + emplace_back + string copy
@@ -131,16 +131,16 @@ void benchmark_full_storm_equivalent(sqlite3* db, int num_records) {
     results.reserve(num_records);
 
     BenchmarkTimer timer;
-    int rows = 0;
+    int            rows = 0;
     while (sqlite3_step(select_stmt) == SQLITE_ROW) {
-        int id = sqlite3_column_int(select_stmt, 0);
+        int                  id   = sqlite3_column_int(select_stmt, 0);
         const unsigned char* text = sqlite3_column_text(select_stmt, 1);
-        int len = sqlite3_column_bytes(select_stmt, 1);
-        int age = sqlite3_column_int(select_stmt, 2);
+        int                  len  = sqlite3_column_bytes(select_stmt, 1);
+        int                  age  = sqlite3_column_int(select_stmt, 2);
 
         results.emplace_back();
         Person& obj = results.back();
-        obj.id = id;
+        obj.id      = id;
         if (text) {
             obj.name.assign(reinterpret_cast<const char*>(text), len);
         } else {
@@ -156,8 +156,8 @@ void benchmark_full_storm_equivalent(sqlite3* db, int num_records) {
 
     std::cout << "  Rows: " << rows << std::endl;
     std::cout << "  Time: " << std::fixed << std::setprecision(2) << elapsed << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
-              << (rows / (elapsed / 1000.0) / 1000000.0) << "M rows/sec" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(2) << (rows / (elapsed / 1000.0) / 1000000.0)
+              << "M rows/sec" << std::endl;
 }
 
 // Benchmark 5: Optimized with resize instead of emplace_back
@@ -171,13 +171,13 @@ void benchmark_optimized_resize(sqlite3* db, int num_records) {
     results.resize(num_records);
 
     BenchmarkTimer timer;
-    int rows = 0;
+    int            rows = 0;
     while (sqlite3_step(select_stmt) == SQLITE_ROW) {
         Person& obj = results[rows];
 
-        obj.id = sqlite3_column_int(select_stmt, 0);
+        obj.id                    = sqlite3_column_int(select_stmt, 0);
         const unsigned char* text = sqlite3_column_text(select_stmt, 1);
-        int len = sqlite3_column_bytes(select_stmt, 1);
+        int                  len  = sqlite3_column_bytes(select_stmt, 1);
         if (text) {
             obj.name.assign(reinterpret_cast<const char*>(text), len);
         } else {
@@ -194,8 +194,8 @@ void benchmark_optimized_resize(sqlite3* db, int num_records) {
 
     std::cout << "  Rows: " << rows << std::endl;
     std::cout << "  Time: " << std::fixed << std::setprecision(2) << elapsed << " ms" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
-              << (rows / (elapsed / 1000.0) / 1000000.0) << "M rows/sec" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(2) << (rows / (elapsed / 1000.0) / 1000000.0)
+              << "M rows/sec" << std::endl;
 }
 
 // Benchmark 6: Test string allocation overhead
@@ -210,7 +210,7 @@ void benchmark_string_allocation_cost(sqlite3* db, int num_records) {
     strings1.reserve(num_records);
 
     BenchmarkTimer timer1;
-    int rows1 = 0;
+    int            rows1 = 0;
     while (sqlite3_step(select_stmt) == SQLITE_ROW) {
         const unsigned char* text = sqlite3_column_text(select_stmt, 1);
         if (text) {
@@ -227,10 +227,10 @@ void benchmark_string_allocation_cost(sqlite3* db, int num_records) {
     strings2.reserve(num_records);
 
     BenchmarkTimer timer2;
-    int rows2 = 0;
+    int            rows2 = 0;
     while (sqlite3_step(select_stmt) == SQLITE_ROW) {
         const unsigned char* text = sqlite3_column_text(select_stmt, 1);
-        int len = sqlite3_column_bytes(select_stmt, 1);
+        int                  len  = sqlite3_column_bytes(select_stmt, 1);
         if (text) {
             strings2.emplace_back();
             strings2.back().assign(reinterpret_cast<const char*>(text), len);
@@ -241,10 +241,10 @@ void benchmark_string_allocation_cost(sqlite3* db, int num_records) {
 
     sqlite3_finalize(select_stmt);
 
-    std::cout << "  std::string(const char*):       " << std::fixed << std::setprecision(2)
-              << elapsed1 << " ms (" << (rows1 / (elapsed1 / 1000.0) / 1000000.0) << "M rows/sec)" << std::endl;
-    std::cout << "  string.assign(const char*, len): " << std::fixed << std::setprecision(2)
-              << elapsed2 << " ms (" << (rows2 / (elapsed2 / 1000.0) / 1000000.0) << "M rows/sec)" << std::endl;
+    std::cout << "  std::string(const char*):       " << std::fixed << std::setprecision(2) << elapsed1 << " ms ("
+              << (rows1 / (elapsed1 / 1000.0) / 1000000.0) << "M rows/sec)" << std::endl;
+    std::cout << "  string.assign(const char*, len): " << std::fixed << std::setprecision(2) << elapsed2 << " ms ("
+              << (rows2 / (elapsed2 / 1000.0) / 1000000.0) << "M rows/sec)" << std::endl;
 }
 
 int main() {
@@ -255,14 +255,15 @@ int main() {
 
     // Setup database
     sqlite3* db;
-    int rc = sqlite3_open(":memory:", &db);
+    int      rc = sqlite3_open(":memory:", &db);
     if (rc != SQLITE_OK) {
         std::cerr << "Cannot open database" << std::endl;
         return 1;
     }
 
     // Create table
-    const char* create_sql = "CREATE TABLE Person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER NOT NULL)";
+    const char* create_sql =
+            "CREATE TABLE Person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER NOT NULL)";
     sqlite3_exec(db, create_sql, nullptr, nullptr, nullptr);
 
     // Insert test data
