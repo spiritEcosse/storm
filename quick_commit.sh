@@ -1,7 +1,21 @@
 #!/bin/bash
 # Quick commit workflow: format -> test -> commit -> push
+# Usage: ./quick_commit.sh [--no-push] [commit message]
 
 set -e  # Exit on any error
+
+# Parse flags
+NO_PUSH=false
+COMMIT_MSG_ARG=""
+
+for arg in "$@"; do
+    if [[ "$arg" == "--no-push" ]]; then
+        NO_PUSH=true
+    else
+        COMMIT_MSG_ARG="$COMMIT_MSG_ARG $arg"
+    fi
+done
+COMMIT_MSG_ARG=$(echo "$COMMIT_MSG_ARG" | xargs)  # Trim whitespace
 
 echo "📝 Running clang-format..."
 find src tests benchmarks -type f \( -name "*.cpp" -o -name "*.cppm" -o -name "*.h" -o -name "*.hpp" \) -exec ../clang-p2996/build/bin/clang-format -i --style=file {} +
@@ -83,8 +97,8 @@ auto_summary() {
 }
 
 # Check if commit message was provided as argument
-if [[ -n "$1" ]]; then
-    commit_msg="$*"
+if [[ -n "$COMMIT_MSG_ARG" ]]; then
+    commit_msg="$COMMIT_MSG_ARG"
     echo "Using commit message: $commit_msg"
 else
     # Generate auto-summary
@@ -92,19 +106,27 @@ else
     echo "📝 Auto-generated summary:"
     echo "   $auto_msg"
     echo ""
-    read -p "Use this message? (Y/n) or enter your own: " user_input
 
-    if [[ -z "$user_input" || "$user_input" =~ ^[Yy]$ ]]; then
-        commit_msg="$auto_msg"
-    elif [[ "$user_input" =~ ^[Nn]$ ]]; then
-        read -p "Enter commit message: " commit_msg
-        if [[ -z "$commit_msg" ]]; then
-            echo "❌ Commit message cannot be empty"
-            exit 1
+    # Use auto-generated message by default in non-interactive mode
+    if [[ -t 0 ]]; then
+        # Interactive mode
+        read -p "Use this message? (Y/n) or enter your own: " user_input
+        if [[ -z "$user_input" || "$user_input" =~ ^[Yy]$ ]]; then
+            commit_msg="$auto_msg"
+        elif [[ "$user_input" =~ ^[Nn]$ ]]; then
+            read -p "Enter commit message: " commit_msg
+            if [[ -z "$commit_msg" ]]; then
+                echo "❌ Commit message cannot be empty"
+                exit 1
+            fi
+        else
+            # User entered a custom message directly
+            commit_msg="$user_input"
         fi
     else
-        # User entered a custom message directly
-        commit_msg="$user_input"
+        # Non-interactive mode - use auto-generated message
+        commit_msg="$auto_msg"
+        echo "✓ Using auto-generated message (non-interactive mode)"
     fi
 fi
 
@@ -118,12 +140,11 @@ git commit -m "$commit_msg
 Co-Authored-By: Claude <noreply@anthropic.com>"
 
 echo ""
-read -p "Push to remote? (y/N): " push_confirm
-
-if [[ "$push_confirm" =~ ^[Yy]$ ]]; then
+if [[ "$NO_PUSH" == true ]]; then
+    echo "ℹ️  Skipped push (--no-push flag used)"
+    echo "   Run 'git push' manually when ready"
+else
     echo "🚀 Pushing to remote..."
     git push
     echo "✅ Done!"
-else
-    echo "ℹ️  Skipped push (run 'git push' manually when ready)"
 fi
