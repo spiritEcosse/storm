@@ -216,9 +216,31 @@ export namespace storm::db::sqlite {
         StmtPtr stmt_;
     };
 
+    // Transparent hash for string_view lookups without allocation
+    struct string_hash {
+        using is_transparent = void;
+        using hash_type = std::hash<std::string_view>;
+
+        [[nodiscard]] size_t operator()(std::string_view str) const noexcept {
+            return hash_type{}(str);
+        }
+
+        [[nodiscard]] size_t operator()(const std::string& str) const noexcept {
+            return hash_type{}(str);
+        }
+    };
+
+    struct string_equal {
+        using is_transparent = void;
+
+        [[nodiscard]] bool operator()(std::string_view lhs, std::string_view rhs) const noexcept {
+            return lhs == rhs;
+        }
+    };
+
     class Connection {
         using SqlitePtr      = std::unique_ptr<sqlite3, SqliteDeleter>;
-        using StatementCache = std::unordered_map<std::string, Statement>;
+        using StatementCache = std::unordered_map<std::string, Statement, string_hash, string_equal>;
 
       public:
         using Error     = sqlite::Error;
@@ -274,22 +296,22 @@ export namespace storm::db::sqlite {
         }
 
         // Prepare statement with caching - reuses statements for identical SQL
+        // OPTIMIZATION: Uses heterogeneous lookup to avoid string allocation on cache hit
         [[nodiscard]] auto prepare_cached(std::string_view sql) noexcept -> std::expected<Statement*, Error> {
             if (!is_open()) {
                 return std::unexpected(Error{SQLITE_MISUSE, "Connection not open"});
             }
 
-            std::string sql_key{sql};
-
-            // Try to find cached statement
-            auto it = statement_cache_.find(sql_key);
-            if (it != statement_cache_.end()) {
-                // Reset cached statement for reuse
+            // OPTIMIZATION: Lookup using string_view directly (no allocation!)
+            // The transparent hash/equal functors enable this
+            auto it = statement_cache_.find(sql);
+            if (it != statement_cache_.end()) [[likely]] {
+                // Cache hit - reset cached statement for reuse
                 it->second.reset();
                 return &it->second;
             }
 
-            // Create new statement and cache it
+            // Cache miss - create new statement and cache it
             sqlite3_stmt* stmt = nullptr;
             int           rc   = sqlite3_prepare_v2(db.get(), sql.data(), -1, &stmt, nullptr);
 
@@ -297,7 +319,8 @@ export namespace storm::db::sqlite {
                 return std::unexpected(Error{rc, sqlite3_errmsg(db.get())});
             }
 
-            auto [inserted_it, success] = statement_cache_.emplace(std::move(sql_key), Statement{stmt});
+            // Only allocate string for storage in cache (on miss)
+            auto [inserted_it, success] = statement_cache_.emplace(std::string(sql), Statement{stmt});
             if (!success) {
                 return std::unexpected(Error{SQLITE_INTERNAL, "Failed to cache statement"});
             }

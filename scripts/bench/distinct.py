@@ -49,6 +49,21 @@ class DistinctBenchmark(BenchmarkRunner):
                 extract_throughput(r'Storm ORM DISTINCT \(id, name, age\)'),
                 extract_throughput(r'Raw SQLite DISTINCT \(id, name, age\)')
             ),
+            # DISTINCT with WHERE
+            'where': (
+                extract_throughput(r'Storm ORM DISTINCT \(name\) \+ WHERE'),
+                extract_throughput(r'Raw SQLite DISTINCT \(name\) \+ WHERE')
+            ),
+            # DISTINCT with JOIN
+            'join': (
+                extract_throughput(r'Storm ORM DISTINCT \(content\) \+ JOIN'),
+                extract_throughput(r'Raw SQLite DISTINCT \(content\) \+ JOIN')
+            ),
+            # DISTINCT with WHERE + JOIN
+            'where_join': (
+                extract_throughput(r'Storm ORM DISTINCT \(content\) \+ WHERE \+ JOIN'),
+                extract_throughput(r'Raw SQLite DISTINCT \(content\) \+ WHERE \+ JOIN')
+            ),
         }
 
     def display_results(self, data, records=10000, iterations=100):
@@ -74,6 +89,18 @@ class DistinctBenchmark(BenchmarkRunner):
         for name, label in [
             ('name_age', 'DISTINCT (name, age)'),
             ('id_name_age', 'DISTINCT (id, name, age)'),
+        ]:
+            if name in data and data[name][0] > 0:  # Only show if data exists
+                storm, raw = data[name]
+                eff = (storm / raw * 100) if raw > 0 else 0
+                BenchmarkTable.print_row(label, storm, raw, eff)
+
+        # DISTINCT with WHERE/JOIN operations
+        print(f"\n{Colors.BOLD}DISTINCT with WHERE/JOIN:{Colors.RESET}")
+        for name, label in [
+            ('where', 'DISTINCT + WHERE'),
+            ('join', 'DISTINCT + JOIN'),
+            ('where_join', 'DISTINCT + WHERE + JOIN'),
         ]:
             if name in data and data[name][0] > 0:  # Only show if data exists
                 storm, raw = data[name]

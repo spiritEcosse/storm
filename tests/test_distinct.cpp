@@ -9,6 +9,7 @@ import <set>;
 import <tuple>;
 
 using namespace storm;
+using namespace storm::orm::where;
 
 // Test models for DISTINCT operations
 struct DistinctPerson {
@@ -840,4 +841,244 @@ TEST_F(DistinctTest, AlternativeApproaches) {
      *   architectural changes and may not be worth the complexity.
      */
     SUCCEED() << "See comments for alternative approaches";
+}
+
+// ============================================================================
+// NEW TESTS: DISTINCT with WHERE and JOIN support
+// ============================================================================
+
+// Test DISTINCT with WHERE clause - single field
+TEST_F(DistinctTest, DistinctWithWhereSingleField) {
+    QuerySet<DistinctPerson> queryset;
+
+    // Insert test data with different ages
+    std::vector<DistinctPerson> people = {
+            {0, "Alice", 25},   {0, "Alice", 25},   // Duplicate
+            {0, "Bob", 30},     {0, "Bob", 30},     // Duplicate
+            {0, "Charlie", 20}, {0, "Charlie", 20}, // Duplicate (filtered out by WHERE)
+            {0, "David", 35},                       // Unique
+    };
+
+    auto insert_result = queryset.insert(people);
+    ASSERT_TRUE(insert_result.has_value());
+
+    // SELECT DISTINCT name WHERE age > 22
+    auto result = queryset.where(field<^^DistinctPerson::age>() > 22).distinct<^^DistinctPerson::name>().select();
+    ASSERT_TRUE(result.has_value()) << "DISTINCT with WHERE failed: " << result.error().message();
+
+    const auto& names = result.value();
+
+    // Should return 3 unique names: Alice, Bob, David (Charlie filtered out by WHERE)
+    EXPECT_EQ(names.size(), 3);
+
+    std::set<std::string> unique_names(names.begin(), names.end());
+    EXPECT_EQ(unique_names.size(), 3);
+    EXPECT_TRUE(unique_names.count("Alice") > 0);
+    EXPECT_TRUE(unique_names.count("Bob") > 0);
+    EXPECT_TRUE(unique_names.count("David") > 0);
+    EXPECT_FALSE(unique_names.count("Charlie") > 0); // Filtered out by WHERE
+}
+
+// Test DISTINCT with WHERE clause - multiple fields
+TEST_F(DistinctTest, DistinctWithWhereMultipleFields) {
+    QuerySet<DistinctPerson> queryset;
+
+    std::vector<DistinctPerson> people = {
+            {0, "Alice", 25},
+            {0, "Alice", 25},
+            {0, "Bob", 30},
+            {0, "Bob", 20},    // Age 20 - filtered out
+            {0, "Charlie", 15}, // Age 15 - filtered out
+            {0, "Alice", 35},
+    };
+
+    auto insert_result = queryset.insert(people);
+    ASSERT_TRUE(insert_result.has_value());
+
+    // SELECT DISTINCT name, age WHERE age > 22
+    auto result = queryset.where(field<^^DistinctPerson::age>() > 22)
+                          .distinct<^^DistinctPerson::name, ^^DistinctPerson::age>()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "DISTINCT with WHERE failed: " << result.error().message();
+
+    const auto& pairs = result.value();
+
+    // Should return 3 unique (name, age) pairs: (Alice, 25), (Bob, 30), (Alice, 35)
+    EXPECT_EQ(pairs.size(), 3);
+
+    std::set<std::tuple<std::string, int>> unique_pairs(pairs.begin(), pairs.end());
+    EXPECT_EQ(unique_pairs.size(), 3);
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Alice", 25)) > 0);
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Bob", 30)) > 0);
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Alice", 35)) > 0);
+}
+
+// Test DISTINCT with WHERE clause - no results
+TEST_F(DistinctTest, DistinctWithWhereNoResults) {
+    QuerySet<DistinctPerson> queryset;
+
+    std::vector<DistinctPerson> people = {
+            {0, "Alice", 25},
+            {0, "Bob", 30},
+    };
+
+    auto insert_result = queryset.insert(people);
+    ASSERT_TRUE(insert_result.has_value());
+
+    // SELECT DISTINCT name WHERE age > 100 (no matches)
+    auto result = queryset.where(field<^^DistinctPerson::age>() > 100).distinct<^^DistinctPerson::name>().select();
+    ASSERT_TRUE(result.has_value());
+
+    const auto& names = result.value();
+    EXPECT_EQ(names.size(), 0); // No results due to WHERE filtering
+}
+
+// Test DISTINCT with complex WHERE clause
+TEST_F(DistinctTest, DistinctWithComplexWhere) {
+    QuerySet<DistinctPerson> queryset;
+
+    std::vector<DistinctPerson> people = {
+            {0, "Alice", 25},   {0, "Alice", 25},
+            {0, "Bob", 30},     {0, "Bob", 30},
+            {0, "Charlie", 20}, {0, "Charlie", 35},
+            {0, "David", 40},
+    };
+
+    auto insert_result = queryset.insert(people);
+    ASSERT_TRUE(insert_result.has_value());
+
+    // SELECT DISTINCT name WHERE age >= 25 AND age <= 35
+    auto result = queryset.where(field<^^DistinctPerson::age>().between(25, 35))
+                          .distinct<^^DistinctPerson::name>()
+                          .select();
+    ASSERT_TRUE(result.has_value());
+
+    const auto& names = result.value();
+
+    std::set<std::string> unique_names(names.begin(), names.end());
+    // Alice (25), Bob (30), Charlie (35) - Charlie (20) and David (40) filtered out
+    EXPECT_GE(unique_names.size(), 3);
+    EXPECT_TRUE(unique_names.count("Alice") > 0);
+    EXPECT_TRUE(unique_names.count("Bob") > 0);
+    EXPECT_TRUE(unique_names.count("Charlie") > 0);
+}
+
+// Test DISTINCT with JOIN - single field
+TEST_F(DistinctTest, DistinctWithJoinSingleField) {
+    populate_join_test_data(); // Create Users and Messages
+
+    QuerySet<Message> msg_qs;
+
+    // SELECT DISTINCT sender.name (via JOIN)
+    // Note: We need to select from Message and distinct on Message fields
+    // The JOIN should expand the result set
+    auto result = msg_qs.join<&Message::sender>().distinct<^^Message::content>().select();
+    ASSERT_TRUE(result.has_value()) << "DISTINCT with JOIN failed: " << result.error().message();
+
+    const auto& contents = result.value();
+
+    // Should return distinct message contents
+    std::set<std::string> unique_contents(contents.begin(), contents.end());
+    EXPECT_EQ(unique_contents.size(), contents.size()); // All should be unique
+}
+
+// Test DISTINCT with JOIN and WHERE
+TEST_F(DistinctTest, DistinctWithJoinAndWhere) {
+    populate_join_test_data();
+
+    QuerySet<Message> msg_qs;
+
+    // SELECT DISTINCT content WHERE <some condition> with JOIN
+    // Using content field to avoid "ambiguous column name: id" error
+    auto result = msg_qs.join<&Message::sender>()
+                        .where(field<^^Message::content>().like("%o%")) // Match "Hello", "World", "Goodbye"
+                        .distinct<^^Message::content>()
+                        .select();
+    ASSERT_TRUE(result.has_value()) << "DISTINCT with JOIN and WHERE failed: " << result.error().message();
+
+    const auto& contents = result.value();
+    EXPECT_GT(contents.size(), 0); // Should have results
+    // Should include messages with 'o': Hello, World, Goodbye
+    EXPECT_GE(contents.size(), 3);
+}
+
+// Test chaining order: WHERE -> JOIN -> DISTINCT
+TEST_F(DistinctTest, ChainingOrderWhereJoinDistinct) {
+    populate_join_test_data();
+
+    QuerySet<Message> msg_qs;
+
+    // Test that WHERE -> JOIN -> DISTINCT works
+    // Using content field to avoid ambiguous column names
+    auto result = msg_qs.where(field<^^Message::content>().like("%e%"))
+                        .join<&Message::sender>()
+                        .distinct<^^Message::content>()
+                        .select();
+    ASSERT_TRUE(result.has_value()) << "WHERE -> JOIN -> DISTINCT failed: " << result.error().message();
+}
+
+// Test chaining order: JOIN -> WHERE -> DISTINCT
+TEST_F(DistinctTest, ChainingOrderJoinWhereDistinct) {
+    populate_join_test_data();
+
+    QuerySet<Message> msg_qs;
+
+    // Test that JOIN -> WHERE -> DISTINCT works
+    // Using content field to avoid ambiguous column names
+    auto result = msg_qs.join<&Message::sender>()
+                        .where(field<^^Message::content>().like("%e%"))
+                        .distinct<^^Message::content>()
+                        .select();
+    ASSERT_TRUE(result.has_value()) << "JOIN -> WHERE -> DISTINCT failed: " << result.error().message();
+}
+
+// Test DISTINCT defaults to PK with WHERE
+TEST_F(DistinctTest, DistinctDefaultPKWithWhere) {
+    QuerySet<DistinctPerson> queryset;
+
+    std::vector<DistinctPerson> people = {
+            {0, "Alice", 25},
+            {0, "Bob", 30},
+            {0, "Charlie", 20},
+    };
+
+    auto insert_result = queryset.insert(people);
+    ASSERT_TRUE(insert_result.has_value());
+
+    // SELECT DISTINCT id (default PK) WHERE age > 22
+    auto result = queryset.where(field<^^DistinctPerson::age>() > 22).distinct().select();
+    ASSERT_TRUE(result.has_value());
+
+    const auto& ids = result.value();
+    EXPECT_EQ(ids.size(), 2); // Alice and Bob (Charlie filtered out)
+}
+
+// Test multiple WHERE clauses with DISTINCT
+TEST_F(DistinctTest, MultipleWhereClausesWithDistinct) {
+    QuerySet<DistinctPerson> queryset;
+
+    std::vector<DistinctPerson> people = {
+            {0, "Alice", 25},
+            {0, "Bob", 30},
+            {0, "Charlie", 20},
+            {0, "David", 35},
+    };
+
+    auto insert_result = queryset.insert(people);
+    ASSERT_TRUE(insert_result.has_value());
+
+    // Chain multiple WHERE clauses (should combine with AND)
+    auto result = queryset.where(field<^^DistinctPerson::age>() > 22)
+                          .where(field<^^DistinctPerson::age>() < 32)
+                          .distinct<^^DistinctPerson::name>()
+                          .select();
+    ASSERT_TRUE(result.has_value());
+
+    const auto& names = result.value();
+    std::set<std::string> unique_names(names.begin(), names.end());
+
+    // Should only include Alice (25) and Bob (30)
+    EXPECT_EQ(unique_names.size(), 2);
+    EXPECT_TRUE(unique_names.count("Alice") > 0);
+    EXPECT_TRUE(unique_names.count("Bob") > 0);
 }

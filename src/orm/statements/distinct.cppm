@@ -7,7 +7,9 @@ export module storm_orm_statements_distinct;
 
 import storm_db_concept;
 import storm_orm_statements_base;
+import storm_orm_statements_join;
 import storm_orm_utilities;
+import storm_orm_where;
 
 import <expected>;
 import <string>;
@@ -15,6 +17,8 @@ import <vector>;
 import <tuple>;
 import <array>;
 import <meta>;
+import <optional>;
+import <memory>;
 
 export namespace storm::orm::statements {
 
