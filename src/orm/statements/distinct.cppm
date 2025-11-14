@@ -130,7 +130,27 @@ export namespace storm::orm::statements {
                 std::vector<std::tuple_element_t<0, FieldTypesTuple>>,
                 std::vector<FieldTypesTuple>>;
 
-        explicit DistinctStatement(ConnType& conn) : conn_(conn) {}
+        explicit DistinctStatement(
+                ConnType*                                          conn,
+                const orm::where::ExpressionVariantPtr&            where_expr  = nullptr,
+                const std::optional<JoinStatementWrapper>&         join_stmt   = std::nullopt
+        )
+            : conn_(conn), where_expr_(where_expr), join_stmt_(join_stmt) {}
+
+        // Update state for cached statement reuse (called by DistinctQuerySet)
+        void update_state(
+                ConnType*                                  conn,
+                const orm::where::ExpressionVariantPtr&    where_expr,
+                const std::optional<JoinStatementWrapper>& join_stmt
+        ) {
+            conn_       = conn;
+            // Clear cached WHERE SQL if expression changed
+            if (where_expr_.get() != where_expr.get()) {
+                cached_where_sql_.clear();
+            }
+            where_expr_ = where_expr;
+            join_stmt_  = join_stmt;
+        }
 
         // Alias for execute() - provides familiar QuerySet-like API
         [[nodiscard]] auto select() -> std::expected<ResultType, Error> {
@@ -139,17 +159,149 @@ export namespace storm::orm::statements {
 
         // Execute SELECT DISTINCT query on the specified field(s)
         [[nodiscard]] auto execute() -> std::expected<ResultType, Error> {
+            // Route to appropriate execution path based on WHERE/JOIN state
+            if (join_stmt_.has_value() && where_expr_) {
+                return execute_where_join_impl();
+            } else if (join_stmt_.has_value()) {
+                return execute_join_impl();
+            } else if (where_expr_) {
+                return execute_where_impl();
+            } else {
+                return execute_simple_distinct();
+            }
+        }
+
+      private:
+        // Helper: Bind WHERE expression parameters to statement
+        [[nodiscard]] __attribute__((always_inline)) __attribute__((hot)) static inline auto
+        bind_where_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& where_expr)
+                -> std::expected<void, Error> {
+            int  param_index = 1;
+            auto bind_result = orm::where::bind_params_direct(*where_expr, stmt_ptr, param_index);
+            if (!bind_result) [[unlikely]] {
+                stmt_ptr->reset();
+                return std::unexpected(bind_result.error());
+            }
+            return {};
+        }
+
+        // Simple DISTINCT execution (no WHERE, no JOIN)
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_simple_distinct() -> std::expected<ResultType, Error> {
             // Use compile-time generated SQL (always includes DISTINCT)
             static const std::string sql{distinct_sql_array.data.data(), distinct_sql_array.len};
 
-            // Cache statement on first use (following SelectStatement pattern)
+            // Cache statement on first use
             if (!cached_stmt_) {
-                auto prepare_result = conn_.prepare_cached(sql);
+                auto prepare_result = conn_->prepare_cached(sql);
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
                 }
                 cached_stmt_ = *prepare_result;
             }
+
+            return execute_query_loop(cached_stmt_);
+        }
+
+        // DISTINCT with WHERE clause (no JOIN)
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_where_impl() -> std::expected<ResultType, Error> {
+            // Build WHERE SQL (compile-time base + runtime WHERE clause)
+            static const std::string base_sql{distinct_sql_array.data.data(), distinct_sql_array.len};
+
+            // Cache WHERE SQL string to avoid repeated to_sql() calls (expensive)
+            if (cached_where_sql_.empty()) [[unlikely]] {
+                cached_where_sql_.reserve(base_sql.size() + 50);
+                cached_where_sql_ = base_sql;
+                cached_where_sql_ += " WHERE ";
+                cached_where_sql_ += orm::where::to_sql(*where_expr_);
+            }
+
+            // Connection-level cache handles statement reuse
+            auto prepare_result = conn_->prepare_cached(cached_where_sql_);
+            if (!prepare_result) [[unlikely]] {
+                return std::unexpected(prepare_result.error());
+            }
+            Statement* stmt_ptr = *prepare_result;
+
+            // Bind WHERE parameters
+            auto bind_result = bind_where_params(stmt_ptr, where_expr_);
+            if (!bind_result) [[unlikely]] {
+                return std::unexpected(bind_result.error());
+            }
+
+            return execute_query_loop(stmt_ptr);
+        }
+
+        // DISTINCT with JOIN (no WHERE)
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_join_impl() -> std::expected<ResultType, Error> {
+            const std::string& base_sql = join_stmt_->get_complete_sql();
+
+            // Inject DISTINCT into SELECT clause
+            std::string distinct_join_sql;
+            distinct_join_sql.reserve(base_sql.size() + 10);
+
+            size_t select_pos = base_sql.find("SELECT ");
+            if (select_pos != std::string::npos) {
+                distinct_join_sql = base_sql.substr(0, select_pos + 7);
+                distinct_join_sql += "DISTINCT ";
+                distinct_join_sql += base_sql.substr(select_pos + 7);
+            } else {
+                distinct_join_sql = base_sql;
+            }
+
+            // Cache JOIN statement
+            if (!cached_join_stmt_) {
+                auto prepare_result = conn_->prepare_cached(distinct_join_sql);
+                if (!prepare_result) [[unlikely]] {
+                    return std::unexpected(prepare_result.error());
+                }
+                cached_join_stmt_ = *prepare_result;
+            }
+
+            return execute_query_loop(cached_join_stmt_);
+        }
+
+        // DISTINCT with WHERE and JOIN
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_where_join_impl() -> std::expected<ResultType, Error> {
+            const std::string& base_sql = join_stmt_->get_complete_sql();
+
+            // Inject DISTINCT into SELECT clause
+            std::string distinct_join_sql;
+            distinct_join_sql.reserve(base_sql.size() + 10);
+
+            size_t select_pos = base_sql.find("SELECT ");
+            if (select_pos != std::string::npos) {
+                distinct_join_sql = base_sql.substr(0, select_pos + 7);
+                distinct_join_sql += "DISTINCT ";
+                distinct_join_sql += base_sql.substr(select_pos + 7);
+            } else {
+                distinct_join_sql = base_sql;
+            }
+
+            // Add WHERE clause
+            std::string where_join_sql;
+            where_join_sql.reserve(distinct_join_sql.size() + 20);
+            where_join_sql = distinct_join_sql;
+            where_join_sql += " WHERE ";
+            where_join_sql += orm::where::to_sql(*where_expr_);
+
+            // Connection-level cache handles statement reuse
+            auto prepare_result = conn_->prepare_cached(where_join_sql);
+            if (!prepare_result) [[unlikely]] {
+                return std::unexpected(prepare_result.error());
+            }
+            Statement* stmt_ptr = *prepare_result;
+
+            // Bind WHERE parameters
+            auto bind_result = bind_where_params(stmt_ptr, where_expr_);
+            if (!bind_result) [[unlikely]] {
+                return std::unexpected(bind_result.error());
+            }
+
+            return execute_query_loop(stmt_ptr);
+        }
+
+        // Unified query execution loop for all DISTINCT query types
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_query_loop(Statement* stmt) -> std::expected<ResultType, Error> {
 
             // OPTIMIZATION: Hybrid allocation strategy based on field complexity
             // - Single field: resize() is 1.7x faster (cheap default construction)
@@ -165,9 +317,9 @@ export namespace storm::orm::statements {
                 using FieldType  = std::tuple_element_t<0, FieldTypesTuple>;
 
                 // Fetch rows into pre-constructed elements
-                while ((step_result = cached_stmt_->step_raw()) == Statement::ROW_AVAILABLE &&
+                while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE &&
                        row_count < results.size()) {
-                    results[row_count] = Base::template extract_column_value<FieldType>(*cached_stmt_, 0);
+                    results[row_count] = Base::template extract_column_value<FieldType>(*stmt, 0);
                     row_count++;
                 }
 
@@ -176,9 +328,9 @@ export namespace storm::orm::statements {
                     if (row_count >= results.size()) {
                         results.resize(results.size() * 2);
                     }
-                    results[row_count] = Base::template extract_column_value<FieldType>(*cached_stmt_, 0);
+                    results[row_count] = Base::template extract_column_value<FieldType>(*stmt, 0);
                     row_count++;
-                    step_result = cached_stmt_->step_raw();
+                    step_result = stmt->step_raw();
                 }
 
                 results.resize(row_count);
@@ -188,18 +340,18 @@ export namespace storm::orm::statements {
                 results.reserve(100);
 
                 // Fetch rows with in-place construction
-                while ((step_result = cached_stmt_->step_raw()) == Statement::ROW_AVAILABLE) {
-                    emplace_tuple_from_columns(results, std::make_index_sequence<NumFields>{});
+                while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
+                    emplace_tuple_from_columns(results, stmt, std::make_index_sequence<NumFields>{});
                 }
             }
 
             // Check for errors
             if (step_result != Statement::NO_MORE_ROWS) {
-                cached_stmt_->reset();
-                return std::unexpected(Error{step_result, cached_stmt_->get_error_message()});
+                stmt->reset();
+                return std::unexpected(Error{step_result, stmt->get_error_message()});
             }
 
-            cached_stmt_->reset();
+            stmt->reset();
             return results;
         }
 
@@ -208,16 +360,20 @@ export namespace storm::orm::statements {
         // Constructs tuple directly in vector without intermediate temporaries
         // Template parameter R delays evaluation until method is called (avoids void& when NumFields == 0)
         template <size_t... Is, typename R = ResultType>
-        void emplace_tuple_from_columns(R& results, std::index_sequence<Is...>)
+        void emplace_tuple_from_columns(R& results, Statement* stmt, std::index_sequence<Is...>)
             requires(NumFields > 0)
         {
             results.emplace_back(
-                    Base::template extract_column_value<std::tuple_element_t<Is, FieldTypesTuple>>(*cached_stmt_, Is)...
+                    Base::template extract_column_value<std::tuple_element_t<Is, FieldTypesTuple>>(*stmt, Is)...
             );
         }
 
-        ConnType&          conn_;
-        mutable Statement* cached_stmt_ = nullptr; // Statement caching for repeated DISTINCT queries
+        ConnType*                               conn_;
+        orm::where::ExpressionVariantPtr        where_expr_;
+        std::optional<JoinStatementWrapper>     join_stmt_;
+        mutable Statement*                      cached_stmt_      = nullptr; // Simple DISTINCT caching
+        mutable Statement*                      cached_join_stmt_ = nullptr; // JOIN statement caching
+        mutable std::string                     cached_where_sql_;           // Cached WHERE SQL string
     };
 
 } // namespace storm::orm::statements

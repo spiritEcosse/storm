@@ -527,6 +527,9 @@ void benchmark_storm_distinct_where(int num_records, int iterations = 100) {
             total_results += result.value().size();
             total_time += elapsed;
         }
+
+        // Reset WHERE state to avoid compounding ANDs
+        person_qs.reset();
     }
 
     std::cout << "Storm ORM DISTINCT (name) + WHERE (age > 30) - " << num_records << " records:" << std::endl;
@@ -771,6 +774,9 @@ void benchmark_storm_distinct_where_join(int num_messages, int iterations = 100)
             total_results += result.value().size();
             total_time += elapsed;
         }
+
+        // Reset WHERE/JOIN state to avoid compounding
+        msg_qs.reset();
     }
 
     std::cout << "Storm ORM DISTINCT (content) + WHERE + JOIN - " << num_messages << " messages:" << std::endl;

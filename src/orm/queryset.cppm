@@ -391,12 +391,16 @@ export namespace storm {
         // Type-safe select(): Returns correct type based on field count
         [[nodiscard]] auto select() -> std::expected<ResultType, Error> {
             // Lazy-initialize cached DistinctStatement on first use
-            // NOTE: For now, only simple DISTINCT (no WHERE/JOIN support yet)
             if (!cached_stmt_) [[unlikely]] {
-                cached_stmt_ = std::make_unique<StmtType>(parent_.get().conn_);
+                cached_stmt_ = std::make_unique<StmtType>(
+                    &parent_.get().conn_,
+                    parent_.get().where_expr_,
+                    parent_.get().join_stmt_
+                );
+            } else {
+                // Update connection + WHERE/JOIN state for cached statement
+                cached_stmt_->update_state(&parent_.get().conn_, parent_.get().where_expr_, parent_.get().join_stmt_);
             }
-
-            // TODO: Add WHERE/JOIN support by calling cached_stmt_->update_state()
 
             return cached_stmt_->select();
         }
