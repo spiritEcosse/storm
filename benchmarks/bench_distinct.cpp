@@ -708,16 +708,22 @@ void benchmark_raw_distinct_join(int num_messages, int iterations = 100) {
     double         total_time    = 0;
     int            total_results = 0;
 
+    // OPTIMIZATION: Prepare statement ONCE outside loop (fair comparison with Storm's caching)
+    auto stmt_result = conn.prepare(sql);
+    if (!stmt_result.has_value()) {
+        std::cerr << "Failed to prepare statement" << std::endl;
+        teardown_join_database();
+        return;
+    }
+    auto stmt = std::move(stmt_result.value());
+
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
-        if (!stmt_result.has_value()) {
-            std::cerr << "Failed to prepare statement" << std::endl;
-            break;
-        }
 
-        auto                      stmt = std::move(stmt_result.value());
-        std::vector<std::string>  results;
+        // Reset statement for reuse
+        stmt.reset();
+
+        std::vector<std::string> results;
         results.reserve(num_messages);
 
         while (true) {
