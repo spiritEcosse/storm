@@ -219,7 +219,7 @@ export namespace storm::db::sqlite {
     // Transparent hash for string_view lookups without allocation
     struct string_hash {
         using is_transparent = void;
-        using hash_type = std::hash<std::string_view>;
+        using hash_type      = std::hash<std::string_view>;
 
         [[nodiscard]] size_t operator()(std::string_view str) const noexcept {
             return hash_type{}(str);

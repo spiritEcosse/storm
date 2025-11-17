@@ -518,9 +518,7 @@ void benchmark_storm_distinct_where(int num_records, int iterations = 100) {
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
         // SELECT DISTINCT name WHERE age > 30
-        auto   result  = person_qs.where(where_expr)
-                               .distinct<^^Person::name>()
-                               .select();
+        auto   result  = person_qs.where(where_expr).distinct<^^Person::name>().select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -640,7 +638,8 @@ void setup_join_database(int num_messages) {
     // Insert test users (fewer unique users than messages)
     int num_users = std::min(100, num_messages / 10);
     for (int i = 0; i < num_users; ++i) {
-        std::string sql = "INSERT INTO User (name, age) VALUES ('User" + std::to_string(i) + "', " + std::to_string(20 + (i % 50)) + ")";
+        std::string sql = "INSERT INTO User (name, age) VALUES ('User" + std::to_string(i) + "', " +
+                          std::to_string(20 + (i % 50)) + ")";
         auto user_insert = conn.execute(sql);
         if (!user_insert.has_value()) {
             throw std::runtime_error("Failed to insert user");
@@ -649,8 +648,9 @@ void setup_join_database(int num_messages) {
 
     // Insert messages
     for (int i = 0; i < num_messages; ++i) {
-        int sender_id = 1 + (i % num_users);
-        std::string sql = "INSERT INTO Message (content, sender_id) VALUES ('Message" + std::to_string(i) + "', " + std::to_string(sender_id) + ")";
+        int         sender_id = 1 + (i % num_users);
+        std::string sql = "INSERT INTO Message (content, sender_id) VALUES ('Message" + std::to_string(i) + "', " +
+                          std::to_string(sender_id) + ")";
         auto msg_insert = conn.execute(sql);
         if (!msg_insert.has_value()) {
             throw std::runtime_error("Failed to insert message");
@@ -674,9 +674,7 @@ void benchmark_storm_distinct_join(int num_messages, int iterations = 100) {
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
         // SELECT DISTINCT content FROM Message JOIN User
-        auto   result  = msg_qs.join<&Message::sender>()
-                               .distinct<^^Message::content>()
-                               .select();
+        auto   result  = msg_qs.join<&Message::sender>().distinct<^^Message::content>().select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -770,10 +768,7 @@ void benchmark_storm_distinct_where_join(int num_messages, int iterations = 100)
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
         // SELECT DISTINCT content FROM Message JOIN User WHERE content LIKE '%0%'
-        auto   result  = msg_qs.join<&Message::sender>()
-                               .where(where_expr)
-                               .distinct<^^Message::content>()
-                               .select();
+        auto   result  = msg_qs.join<&Message::sender>().where(where_expr).distinct<^^Message::content>().select();
         double elapsed = timer.elapsed_ms();
 
         if (result.has_value()) {
@@ -802,7 +797,8 @@ void benchmark_raw_distinct_where_join(int num_messages, int iterations = 100) {
     setup_join_database(num_messages);
 
     auto&       conn = QuerySet<User>::get_default_connection();
-    std::string sql  = "SELECT DISTINCT content FROM Message m INNER JOIN User u ON m.sender_id = u.id WHERE content LIKE ?";
+    std::string sql =
+            "SELECT DISTINCT content FROM Message m INNER JOIN User u ON m.sender_id = u.id WHERE content LIKE ?";
 
     BenchmarkTimer timer;
     double         total_time    = 0;

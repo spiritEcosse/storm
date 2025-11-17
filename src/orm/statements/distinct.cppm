@@ -131,9 +131,9 @@ export namespace storm::orm::statements {
                 std::vector<FieldTypesTuple>>;
 
         explicit DistinctStatement(
-                ConnType*                                          conn,
-                const orm::where::ExpressionVariantPtr&            where_expr  = nullptr,
-                const std::optional<JoinStatementWrapper>&         join_stmt   = std::nullopt
+                ConnType*                                  conn,
+                const orm::where::ExpressionVariantPtr&    where_expr = nullptr,
+                const std::optional<JoinStatementWrapper>& join_stmt  = std::nullopt
         )
             : conn_(conn), where_expr_(where_expr), join_stmt_(join_stmt) {}
 
@@ -217,7 +217,8 @@ export namespace storm::orm::statements {
         }
 
         // Simple DISTINCT execution (no WHERE, no JOIN)
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_simple_distinct() -> std::expected<ResultType, Error> {
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_simple_distinct()
+                -> std::expected<ResultType, Error> {
             // Use compile-time generated SQL (always includes DISTINCT)
             static const std::string sql{distinct_sql_array.data.data(), distinct_sql_array.len};
 
@@ -234,7 +235,8 @@ export namespace storm::orm::statements {
         }
 
         // DISTINCT with WHERE clause (no JOIN)
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_where_impl() -> std::expected<ResultType, Error> {
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_where_impl()
+                -> std::expected<ResultType, Error> {
             // Build WHERE SQL (compile-time base + runtime WHERE clause)
             static const std::string base_sql{distinct_sql_array.data.data(), distinct_sql_array.len};
 
@@ -265,7 +267,8 @@ export namespace storm::orm::statements {
         }
 
         // DISTINCT with JOIN (no WHERE)
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_join_impl() -> std::expected<ResultType, Error> {
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_join_impl()
+                -> std::expected<ResultType, Error> {
             const std::string& base_sql = join_stmt_->get_complete_sql();
 
             // Inject DISTINCT into SELECT clause
@@ -294,7 +297,8 @@ export namespace storm::orm::statements {
         }
 
         // DISTINCT with WHERE and JOIN
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_where_join_impl() -> std::expected<ResultType, Error> {
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_where_join_impl()
+                -> std::expected<ResultType, Error> {
             // OPTIMIZATION: Cache WHERE + JOIN SQL string to avoid repeated string concatenation
             // Only rebuild when WHERE expression changes (checked in update_state)
             if (cached_where_join_sql_.empty()) [[unlikely]] {
@@ -339,8 +343,8 @@ export namespace storm::orm::statements {
         }
 
         // Unified query execution loop for all DISTINCT query types
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_query_loop(Statement* stmt) -> std::expected<ResultType, Error> {
-
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_query_loop(Statement* stmt)
+                -> std::expected<ResultType, Error> {
             // OPTIMIZATION: Hybrid allocation strategy based on field complexity
             // - Single field: resize() is 1.7x faster (cheap default construction)
             // - Multi-field: reserve() + emplace_back() avoids pre-allocating tuples with heap members
@@ -355,8 +359,7 @@ export namespace storm::orm::statements {
                 using FieldType  = std::tuple_element_t<0, FieldTypesTuple>;
 
                 // Fetch rows into pre-constructed elements
-                while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE &&
-                       row_count < results.size()) {
+                while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE && row_count < results.size()) {
                     results[row_count] = Base::template extract_column_value<FieldType>(*stmt, 0);
                     row_count++;
                 }
@@ -406,15 +409,15 @@ export namespace storm::orm::statements {
             );
         }
 
-        ConnType*                               conn_;
-        orm::where::ExpressionVariantPtr        where_expr_;
-        std::optional<JoinStatementWrapper>     join_stmt_;
-        mutable Statement*                      cached_stmt_           = nullptr; // Simple DISTINCT caching
-        mutable Statement*                      cached_where_stmt_     = nullptr; // WHERE statement caching
-        mutable Statement*                      cached_join_stmt_      = nullptr; // JOIN statement caching
-        mutable Statement*                      cached_where_join_stmt_ = nullptr; // WHERE + JOIN statement caching
-        mutable std::string                     cached_where_sql_;                // Cached WHERE SQL string
-        mutable std::string                     cached_where_join_sql_;           // Cached WHERE + JOIN SQL string
+        ConnType*                           conn_;
+        orm::where::ExpressionVariantPtr    where_expr_;
+        std::optional<JoinStatementWrapper> join_stmt_;
+        mutable Statement*                  cached_stmt_            = nullptr; // Simple DISTINCT caching
+        mutable Statement*                  cached_where_stmt_      = nullptr; // WHERE statement caching
+        mutable Statement*                  cached_join_stmt_       = nullptr; // JOIN statement caching
+        mutable Statement*                  cached_where_join_stmt_ = nullptr; // WHERE + JOIN statement caching
+        mutable std::string                 cached_where_sql_;                 // Cached WHERE SQL string
+        mutable std::string                 cached_where_join_sql_;            // Cached WHERE + JOIN SQL string
     };
 
 } // namespace storm::orm::statements

@@ -33,11 +33,6 @@ import <meta>;
 
 export namespace storm {
 
-    // Forward declaration for DistinctQuerySet wrapper
-    template <class T, storm::db::DatabaseConnection ConnType, std::meta::info... FieldInfos>
-        requires(sizeof...(FieldInfos) > 0)
-    class DistinctQuerySet;
-
     // Default connection management for QuerySet
     // WARNING: Not thread-safe - use external synchronization in multi-threaded environments
     namespace detail {
@@ -127,51 +122,43 @@ export namespace storm {
             return result;
         }
 
-        // Field-specific DISTINCT support using reflection (OPTION 2: Cached wrapper)
+        // Field-specific DISTINCT support using reflection
         // Usage:
         //   auto names = queryset.distinct<^^Person::name>().select();  // std::vector<std::string>
         //   auto pairs = queryset.distinct<^^Person::name, ^^Person::age>().select();  //
         //   std::vector<std::tuple<std::string, int>> auto ids = queryset.distinct().select();  // std::vector<int>
         //   (defaults to PK)
         //
-        // OPTIMIZATION: Returns cached DistinctQuerySet wrapper for 90% efficiency
+        // OPTIMIZATION: Returns cached DistinctStatement for optimal performance
+        // - Thread-local caching eliminates DistinctQuerySet wrapper overhead
+        // - Statement pointer caching avoids prepare_cached() hash lookup
+        // - SQL string caching avoids repeated to_sql() calls
         template <std::meta::info... FieldInfos> constexpr auto& distinct() {
             if constexpr (sizeof...(FieldInfos) == 0) {
                 // Default to primary key when no fields specified
-                using DQSType = DistinctQuerySet<T, ConnType, orm::statements::BaseStatement<T>::primary_key_>;
+                using StmtType = orm::statements::
+                        DistinctStatement<T, ConnType, orm::statements::BaseStatement<T>::primary_key_>;
 
-                // OPTIMIZATION: Use optional instead of unique_ptr for TLS storage
-                // - Avoids heap allocation (stored directly in thread-local storage)
-                // - Eliminates one pointer indirection (better cache locality)
-                // - DistinctQuerySet is small (~16 bytes), perfect for TLS
-                static thread_local std::optional<DQSType> cached_dqs;
+                // Use TLS to avoid repeated allocation, but always reconstruct with current state
+                // This ensures no stale pointers to destroyed QuerySet members
+                static thread_local std::optional<StmtType> cached_stmt;
 
-                if (!cached_dqs) [[unlikely]] {
-                    cached_dqs.emplace(*this);  // Construct in-place in TLS
-                } else {
-                    // Update reference to current QuerySet (for WHERE/JOIN state)
-                    cached_dqs->update_parent(*this);
-                }
+                // Always reconstruct - simpler and safer than trying to detect state changes
+                cached_stmt.emplace(&conn_, where_expr_, join_stmt_);
 
-                return *cached_dqs;
+                return *cached_stmt;
             } else {
                 // User-specified fields
-                using DQSType = DistinctQuerySet<T, ConnType, FieldInfos...>;
+                using StmtType = orm::statements::DistinctStatement<T, ConnType, FieldInfos...>;
 
-                // OPTIMIZATION: Use optional instead of unique_ptr for TLS storage
-                // - Avoids heap allocation (stored directly in thread-local storage)
-                // - Eliminates one pointer indirection (better cache locality)
-                // - DistinctQuerySet is small (~16 bytes), perfect for TLS
-                static thread_local std::optional<DQSType> cached_dqs;
+                // Use TLS to avoid repeated allocation, but always reconstruct with current state
+                // This ensures no stale pointers to destroyed QuerySet members
+                static thread_local std::optional<StmtType> cached_stmt;
 
-                if (!cached_dqs) [[unlikely]] {
-                    cached_dqs.emplace(*this);  // Construct in-place in TLS
-                } else {
-                    // Update reference to current QuerySet (for WHERE/JOIN state)
-                    cached_dqs->update_parent(*this);
-                }
+                // Always reconstruct - simpler and safer than trying to detect state changes
+                cached_stmt.emplace(&conn_, where_expr_, join_stmt_);
 
-                return *cached_dqs;
+                return *cached_stmt;
             }
         }
 
@@ -318,11 +305,6 @@ export namespace storm {
         }
 
       private:
-        // Friend declaration for DistinctQuerySet to access private members
-        template <class, storm::db::DatabaseConnection, std::meta::info... FieldInfos>
-            requires(sizeof...(FieldInfos) > 0)
-        friend class DistinctQuerySet;
-
         // Helper for perfect forwarding in method chaining (deducing this pattern)
         template <typename Self> static constexpr decltype(auto) self_cast(Self&& self) {
             return std::forward<Self>(self);
@@ -373,46 +355,6 @@ export namespace storm {
 
         mutable std::optional<orm::statements::JoinStatementWrapper> join_stmt_;
         mutable orm::where::ExpressionVariantPtr                     where_expr_;
-    };
-
-    // DistinctQuerySet: Wrapper for type-safe DISTINCT operations with statement caching
-    // Holds reference to parent QuerySet for WHERE/JOIN state, caches DistinctStatement
-    template <class T, storm::db::DatabaseConnection ConnType, std::meta::info... FieldInfos>
-        requires(sizeof...(FieldInfos) > 0)
-    class DistinctQuerySet {
-        using Error = typename ConnType::Error;
-        using StmtType = orm::statements::DistinctStatement<T, ConnType, FieldInfos...>;
-        using ResultType = typename StmtType::ResultType;
-
-      public:
-        // Constructor: Store reference to parent QuerySet
-        explicit DistinctQuerySet(QuerySet<T, ConnType>& parent) : parent_(parent) {}
-
-        // Update parent reference (called when reusing cached DistinctQuerySet)
-        void update_parent(QuerySet<T, ConnType>& parent) {
-            parent_ = parent;
-        }
-
-        // Type-safe select(): Returns correct type based on field count
-        [[nodiscard]] auto select() -> std::expected<ResultType, Error> {
-            // Lazy-initialize cached DistinctStatement on first use
-            if (!cached_stmt_) [[unlikely]] {
-                cached_stmt_ = std::make_unique<StmtType>(
-                    &parent_.get().conn_,
-                    parent_.get().where_expr_,
-                    parent_.get().join_stmt_
-                );
-            } else {
-                // Update connection + WHERE/JOIN state for cached statement
-                cached_stmt_->update_state(&parent_.get().conn_, parent_.get().where_expr_, parent_.get().join_stmt_);
-            }
-
-            return cached_stmt_->select();
-        }
-
-      private:
-        std::reference_wrapper<QuerySet<T, ConnType>> parent_;  // Reference to parent QuerySet
-        mutable std::unique_ptr<StmtType> cached_stmt_;  // Cached DistinctStatement
     };
 
 } // namespace storm
