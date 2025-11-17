@@ -415,9 +415,4 @@ export namespace storm {
         mutable std::unique_ptr<StmtType> cached_stmt_;  // Cached DistinctStatement
     };
 
-    // Factory function for convenient QuerySet creation with default connection
-    template <typename T> [[nodiscard]] auto make_queryset() -> QuerySet<T> {
-        return QuerySet<T>{};
-    }
-
 } // namespace storm

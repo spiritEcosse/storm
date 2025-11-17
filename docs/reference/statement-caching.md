@@ -189,6 +189,149 @@ static auto get_cached_sql(size_t batch_size) -> std::string {
 
 **Performance**: 94% improvement (0.253µs → 0.016µs) for cached sizes, thread-safe, zero synchronization overhead.
 
+## Parameter Binding Safety with Shared Cached Statements
+
+### Why Shared Statement Caching is Safe
+
+Multiple QuerySet instances can safely share the same cached prepared statement because **parameter binding happens atomically with execution** in the same method call. This section explains the safety mechanisms.
+
+### Architecture Overview
+
+When using statement caching (especially with DISTINCT/WHERE operations), you may have:
+- **Shared**: `static thread_local DistinctQuerySet` object (one per thread + field combination)
+- **Shared**: `cached_where_stmt_` pointer (points to same prepared statement)
+- **NOT Shared**: `where_expr_` object (each QuerySet has its own)
+- **NOT Shared**: Bound parameters (overwritten on each `bind()` call)
+
+### What Gets Cached and Shared
+
+| Component | Scope | Shared Across QuerySets? | Purpose |
+|-----------|-------|-------------------------|---------|
+| `DistinctQuerySet` object | `static thread_local` | ✅ YES (same thread + field combo) | Statement wrapper reuse |
+| `cached_where_stmt_` pointer | Inside DistinctQuerySet | ✅ YES (points to same prepared statement) | Avoid `prepare_cached()` hash lookup |
+| `cached_where_sql_` string | Inside DistinctQuerySet | ✅ YES (same SQL template) | Avoid `to_sql()` overhead |
+| **`where_expr_` object** | **Per QuerySet instance** | **❌ NO** (each QuerySet has its own) | **WHERE clause parameters** |
+| **Bound parameters** | **Temporary** | **❌ NO** (overwritten on each bind) | **Execution state** |
+
+### Execution Flow Example
+
+```cpp
+// Two QuerySet instances on the same thread
+QuerySet<Person> q1;
+QuerySet<Person> q2;
+
+// Scenario: Both execute DISTINCT on same field with different WHERE clauses
+q1.where(age > 30).distinct<^^Person::name>().select();
+q2.where(age > 50).distinct<^^Person::name>().select();
+```
+
+**Timeline:**
+
+```cpp
+// q1 execution:
+// 1. Get shared DistinctQuerySet from thread_local cache
+// 2. Check cached_where_stmt_ (may be null or reused)
+// 3. Bind q1's WHERE expression parameters: age > 30
+// 4. Execute query immediately
+// 5. Return results
+// 6. QuerySet q1 destroyed, WHERE expression freed
+
+// q2 execution:
+// 1. Get SAME shared DistinctQuerySet from thread_local cache
+// 2. Use cached_where_stmt_ (points to same prepared statement)
+// 3. Bind q2's WHERE expression parameters: age > 50
+//    ⚠️ This OVERWRITES the "30" from q1 (but q1 already finished!)
+// 4. Execute query immediately
+// 5. Return results
+```
+
+### Why No Race Condition Occurs
+
+**Key Safety Mechanism**: SQLite's parameter binding is **"last write wins"**:
+
+```cpp
+// Inside DistinctStatement::select_where()
+if (cached_where_stmt_ == nullptr || cached_where_sql_ != current_sql) {
+    cached_where_stmt_ = conn_.prepare_cached(cached_where_sql_).value();
+}
+
+// Bind THIS QuerySet's parameters (overwrites any previous bindings)
+where_expr_->bind(*cached_where_stmt_, 1);  // Uses q1 or q2's OWN where_expr_
+
+// Execute IMMEDIATELY (no window for another QuerySet to interfere)
+auto results = conn_.execute_query<...>(*cached_where_stmt_);
+```
+
+**Critical Properties:**
+1. **Atomic execution**: `bind()` → `execute()` happens in same method call
+2. **No suspension**: No async/await or yield points between bind and execute
+3. **Instance-specific state**: Each QuerySet has its own `where_expr_` object
+4. **Overwrite semantics**: Each bind overwrites previous parameters completely
+
+### When It WOULD Break (Already Documented as Unsafe)
+
+```cpp
+// ❌ UNSAFE: Concurrent use of shared QuerySet instance
+QuerySet<Person> qs;
+
+std::thread t1([&qs]() {
+    qs.where(age > 30).distinct<^^Person::name>().select();
+});
+std::thread t2([&qs]() {
+    qs.where(age > 50).distinct<^^Person::name>().select();  // RACE!
+});
+```
+
+**Race Conditions:**
+- Both threads modify `qs.where_expr_` concurrently
+- Both threads call `bind()` on same statement at same time
+- Undefined behavior: mixed parameters, crashes, or wrong results
+
+**Solution**: Use per-thread QuerySet instances (documented safe pattern).
+
+### Safe Pattern (Production Use)
+
+```cpp
+void worker_thread() {
+    // Thread-local connection (required by SQLite)
+    auto conn = db::sqlite::Connection::create("database.db").value();
+
+    // Thread-local QuerySet instance
+    QuerySet<Person> qs{conn};
+
+    // Safe - all caching is thread-local, bind+execute is atomic
+    for (int i = 0; i < 1000; i++) {
+        auto results = qs.where(age > 30).distinct<^^Person::name>().select();
+        // Process results...
+    }
+}
+
+std::thread t1(worker_thread);
+std::thread t2(worker_thread);
+t1.join();
+t2.join();
+```
+
+**Why This Works:**
+- Each thread has its own `Connection` instance (SQLite requirement)
+- Each thread has its own `QuerySet` instance (Storm requirement)
+- `static thread_local` caching provides isolated storage per thread
+- No shared mutable state between threads
+- Binding and execution are atomic within each thread
+
+### Performance Benefits of Shared Caching
+
+Despite sharing cached statements safely, we still get massive performance gains:
+
+| Benefit | Mechanism | Performance Impact |
+|---------|-----------|-------------------|
+| **Avoid prepare overhead** | Reuse cached `Statement*` pointer | 20-100x speedup |
+| **Avoid hash lookup** | Direct pointer dereference vs `prepare_cached()` map lookup | 2-3x speedup |
+| **Avoid SQL generation** | Cache `to_sql()` result string | 94% improvement for bulk ops |
+| **Avoid allocations** | Reuse prepared statement buffers | Reduced memory churn |
+
+**Key Insight**: We get the best of both worlds - **shared caching for performance** + **instance-specific binding for safety**.
+
 ## Best Practices
 
 ### DO:

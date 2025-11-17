@@ -277,6 +277,14 @@ mutable Statement* cached_where_join_stmt_; // Combined WHERE + JOIN optimizatio
 - Different field combinations (`distinct<^^Person::name>()` vs `distinct<^^Person::age>()`) → **separate caches**
 - Different threads → **separate caches** (`thread_local`)
 
+**Parameter Binding Safety**: Multiple QuerySet instances can safely share the same cached statement because:
+1. Each QuerySet has its own `where_expr_` object (NOT shared)
+2. Parameter binding happens atomically with execution in the same method call
+3. SQLite's binding is "last write wins" - each bind overwrites previous parameters
+4. No window exists for another QuerySet to interfere between bind and execute
+
+See [Parameter Binding Safety](docs/reference/statement-caching.md#parameter-binding-safety-with-shared-cached-statements) for detailed explanation.
+
 ### Thread Safety Issues (TODO: Fix)
 
 **⚠️ CRITICAL**: The following patterns are **NOT thread-safe** and will cause data races:

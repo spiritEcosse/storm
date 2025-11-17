@@ -146,6 +146,26 @@ cmake --build --preset ninja-release
 ./build/release/benchmarks/bench_storm  # Includes DISTINCT operations
 ```
 
+## Caching Safety
+
+Multiple QuerySet instances can safely share the same cached `DistinctQuerySet` and prepared statements because:
+
+1. **Each QuerySet has its own `where_expr_` object** (NOT shared across instances)
+2. **Parameter binding happens atomically** with execution in the same method call
+3. **SQLite's binding is "last write wins"** - each bind overwrites previous parameters
+4. **No suspension points** - no window for another QuerySet to interfere between bind and execute
+
+**What gets shared:**
+- `static thread_local DistinctQuerySet` object (per thread + field combination)
+- `cached_where_stmt_` pointer (points to same prepared statement)
+- `cached_where_sql_` string (same SQL template)
+
+**What does NOT get shared:**
+- `where_expr_` object (each QuerySet instance has its own)
+- Bound parameters (temporary, overwritten on each bind call)
+
+See [Parameter Binding Safety](../reference/statement-caching.md#parameter-binding-safety-with-shared-cached-statements) for comprehensive explanation and examples.
+
 ## Future Enhancements
 
 Potential improvements for DISTINCT functionality:
