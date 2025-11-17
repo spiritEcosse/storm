@@ -140,12 +140,14 @@ export namespace storm {
                 // Default to primary key when no fields specified
                 using DQSType = DistinctQuerySet<T, ConnType, orm::statements::BaseStatement<T>::primary_key_>;
 
-                // Static cache: each field combination gets its own cached wrapper
-                // This avoids per-iteration object creation (21% → ~90% efficiency)
-                static thread_local std::unique_ptr<DQSType> cached_dqs;
+                // OPTIMIZATION: Use optional instead of unique_ptr for TLS storage
+                // - Avoids heap allocation (stored directly in thread-local storage)
+                // - Eliminates one pointer indirection (better cache locality)
+                // - DistinctQuerySet is small (~16 bytes), perfect for TLS
+                static thread_local std::optional<DQSType> cached_dqs;
 
                 if (!cached_dqs) [[unlikely]] {
-                    cached_dqs = std::make_unique<DQSType>(*this);
+                    cached_dqs.emplace(*this);  // Construct in-place in TLS
                 } else {
                     // Update reference to current QuerySet (for WHERE/JOIN state)
                     cached_dqs->update_parent(*this);
@@ -156,11 +158,14 @@ export namespace storm {
                 // User-specified fields
                 using DQSType = DistinctQuerySet<T, ConnType, FieldInfos...>;
 
-                // Static cache: each field combination gets its own cached wrapper
-                static thread_local std::unique_ptr<DQSType> cached_dqs;
+                // OPTIMIZATION: Use optional instead of unique_ptr for TLS storage
+                // - Avoids heap allocation (stored directly in thread-local storage)
+                // - Eliminates one pointer indirection (better cache locality)
+                // - DistinctQuerySet is small (~16 bytes), perfect for TLS
+                static thread_local std::optional<DQSType> cached_dqs;
 
                 if (!cached_dqs) [[unlikely]] {
-                    cached_dqs = std::make_unique<DQSType>(*this);
+                    cached_dqs.emplace(*this);  // Construct in-place in TLS
                 } else {
                     // Update reference to current QuerySet (for WHERE/JOIN state)
                     cached_dqs->update_parent(*this);
