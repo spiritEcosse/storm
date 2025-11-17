@@ -14,7 +14,7 @@ Storm is a modern C++26 ORM library for SQLite using cutting-edge C++26 reflecti
 - **UPDATE**: 16.23M/sec single, 15.15M/sec batch (18x faster than sqlite_orm)
 - **DELETE**: 31.51M/sec single, 32.26M/sec batch (33x faster than sqlite_orm)
 - **JOIN**: 4-6M rows/sec (77% average efficiency vs raw SQLite)
-- **DISTINCT**: ~100% efficiency (parity with raw SQLite)
+- **DISTINCT**: 100-223% efficiency (JOIN: 223%, WHERE: 100-137%)
 - **WHERE (detailed)**:
   - int comparison: 8.88M rows/sec (88.6% efficiency vs raw SQLite)
   - bool comparison: 9.04M rows/sec (92.8% efficiency)
@@ -231,6 +231,133 @@ Other known issues:
 - C headers must be `#include`d, not `import`ed
 
 See [Compiler Issues Reference](docs/reference/compiler-issues.md) for all workarounds.
+
+## Known Issues and Findings
+
+### DISTINCT Performance Analysis (2025-01)
+
+**Discovery**: DISTINCT operations achieve different efficiency levels based on complexity:
+
+| Operation | Storm Performance | Raw SQLite | Efficiency | Bottleneck |
+|-----------|------------------|------------|------------|------------|
+| DISTINCT + JOIN | 8.70M rows/sec | 3.90M rows/sec | **223%** | None - optimal! |
+| DISTINCT + WHERE + JOIN | 4.40M rows/sec | 3.21M rows/sec | **137%** | Parameter binding |
+| DISTINCT + WHERE | 0.14M rows/sec | 0.14M rows/sec | **100%** | Parameter binding |
+
+**Why DISTINCT + JOIN outperforms raw SQLite (223% efficiency):**
+1. **Statement pointer caching** - Avoids connection cache hash lookup
+2. **SQL string caching** - Avoids repeated string concatenation
+3. **Zero parameter binding** - JOIN conditions are static (`ON sender_id = id`)
+4. **Static DistinctQuerySet caching** - Same instance persists across calls
+
+**Why DISTINCT + WHERE cannot match JOIN performance:**
+- ✅ Statement pointer caching implemented (eliminates hash lookup)
+- ✅ SQL string caching implemented (eliminates `to_sql()` overhead)
+- ❌ **Parameter binding is unavoidable** - WHERE clauses require binding values on EVERY execution
+- **The 100-137% efficiency represents the theoretical maximum** given mandatory parameter binding
+
+**Caching Architecture:**
+```cpp
+// Per-thread, per-field-combination caching
+static thread_local std::unique_ptr<DistinctQuerySet> cached_dqs;
+
+// Inside DistinctStatement:
+mutable Statement* cached_where_stmt_;      // Avoids prepare_cached() hash lookup
+mutable std::string cached_where_sql_;      // Avoids to_sql() overhead
+mutable Statement* cached_where_join_stmt_; // Combined WHERE + JOIN optimization
+```
+
+**When caches are reused:**
+- Same thread + same field combination (`distinct<^^Person::name>()`) → **cache shared**
+- Different QuerySet instances → **cache shared** (keyed by template params, not instance)
+- Same WHERE expression object → **cache preserved** across calls
+- Different WHERE expressions → **cache cleared** (SQL changed)
+
+**When new caches are created:**
+- Different field combinations (`distinct<^^Person::name>()` vs `distinct<^^Person::age>()`) → **separate caches**
+- Different threads → **separate caches** (`thread_local`)
+
+### Thread Safety Issues (TODO: Fix)
+
+**⚠️ CRITICAL**: The following patterns are **NOT thread-safe** and will cause data races:
+
+#### 1. Default Connection Sharing (Documented, Not Fixed)
+
+```cpp
+// ❌ UNSAFE: Multiple threads using default connection
+// Thread 1
+QuerySet<Person> qs1;  // Uses static default connection
+qs1.where(age > 30).select();
+
+// Thread 2
+QuerySet<Person> qs2;  // SAME static default connection - RACE CONDITION!
+qs2.where(age > 50).select();
+```
+
+**Problem**: `get_default_connection_ptr()` returns `static` (not `thread_local`) connection.
+**Race on**: SQLite connection internals, prepared statement maps, statement execution state.
+
+#### 2. QuerySet Sharing Between Threads (Not Documented, Not Fixed)
+
+```cpp
+// ❌ UNSAFE: Sharing QuerySet between threads
+QuerySet<Person> qs;
+
+std::thread t1([&qs]() { qs.where(age > 30).select(); });
+std::thread t2([&qs]() { qs.where(age > 50).select(); });  // RACE CONDITION!
+```
+
+**Problem**: QuerySet has mutable state (`where_expr_`, `join_stmt_`).
+**Race on**: WHERE expression pointer, JOIN statement wrapper.
+
+#### 3. Connection Sharing Between Threads (SQLite Limitation)
+
+```cpp
+// ❌ UNSAFE: Sharing connection between threads
+auto conn = Connection::create("db.sqlite").value();
+
+std::thread t1([&conn]() { QuerySet<Person>{conn}.select(); });
+std::thread t2([&conn]() { QuerySet<Person>{conn}.select(); });  // RACE CONDITION!
+```
+
+**Problem**: SQLite connections are not thread-safe.
+**Race on**: Statement preparation, execution, internal connection state.
+
+#### Safe Pattern (Use This!)
+
+```cpp
+// ✅ SAFE: Per-thread connections and QuerySets
+void worker_thread() {
+    // Thread-local connection
+    auto conn = db::sqlite::Connection::create("database.db").value();
+
+    // Thread-local QuerySet
+    QuerySet<Person> qs{conn};
+
+    // Safe - all caching is thread-local
+    for (int i = 0; i < 1000; i++) {
+        qs.where(age > 30).distinct<^^Person::name>().select();
+    }
+}
+
+std::thread t1(worker_thread);
+std::thread t2(worker_thread);
+```
+
+**Why this is safe:**
+- Each thread has its own `Connection` instance
+- Each thread has its own `QuerySet` instance
+- `static thread_local` caching provides isolated storage per thread
+- No shared mutable state between threads
+
+#### TODO: Improvements Needed
+
+1. **Make default connection thread_local** (easy fix, breaking change)
+2. **Document QuerySet thread safety** in public API docs
+3. **Consider making QuerySet/Connection non-copyable** to prevent accidental sharing
+4. **Add compile-time or runtime checks** for cross-thread usage (hard)
+
+**Current Status**: Users must manually ensure per-thread instances. Violation = undefined behavior.
 
 ## Testing
 

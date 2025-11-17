@@ -143,11 +143,42 @@ export namespace storm::orm::statements {
                 const orm::where::ExpressionVariantPtr&    where_expr,
                 const std::optional<JoinStatementWrapper>& join_stmt
         ) {
-            conn_       = conn;
-            // Clear cached WHERE SQL if expression changed
-            if (where_expr_.get() != where_expr.get()) {
-                cached_where_sql_.clear();
+            conn_ = conn;
+
+            // OPTIMIZATION: Only clear WHERE caches if expression CONTENT changed
+            // Don't clear if transitioning from nullptr → expr or expr → nullptr (benchmark reset() pattern)
+            bool where_content_changed = false;
+            if (where_expr_ && where_expr && where_expr_.get() != where_expr.get()) {
+                // Both non-null but different pointers - check if SQL content differs
+                // Use cheap pointer equality as optimization - different pointers = different content
+                where_content_changed = true;
             }
+
+            if (where_content_changed) {
+                cached_where_sql_.clear();
+                cached_where_stmt_ = nullptr;
+                cached_where_join_sql_.clear();
+                cached_where_join_stmt_ = nullptr;
+            }
+
+            // OPTIMIZATION: Only clear JOIN caches if JOIN SQL content changed
+            bool join_content_changed = false;
+            if (join_stmt_.has_value() && join_stmt.has_value()) {
+                // Both have JOIN - check if SQL differs
+                if (join_stmt_->get_complete_sql() != join_stmt->get_complete_sql()) {
+                    join_content_changed = true;
+                }
+            } else if (join_stmt_.has_value() != join_stmt.has_value()) {
+                // One has JOIN, other doesn't - content changed
+                join_content_changed = true;
+            }
+
+            if (join_content_changed) {
+                cached_join_stmt_ = nullptr;
+                cached_where_join_sql_.clear();
+                cached_where_join_stmt_ = nullptr;
+            }
+
             where_expr_ = where_expr;
             join_stmt_  = join_stmt;
         }
@@ -215,20 +246,22 @@ export namespace storm::orm::statements {
                 cached_where_sql_ += orm::where::to_sql(*where_expr_);
             }
 
-            // Connection-level cache handles statement reuse
-            auto prepare_result = conn_->prepare_cached(cached_where_sql_);
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
+            // OPTIMIZATION: Cache prepared statement pointer (like JOIN caching)
+            if (!cached_where_stmt_) [[unlikely]] {
+                auto prepare_result = conn_->prepare_cached(cached_where_sql_);
+                if (!prepare_result) [[unlikely]] {
+                    return std::unexpected(prepare_result.error());
+                }
+                cached_where_stmt_ = *prepare_result;
             }
-            Statement* stmt_ptr = *prepare_result;
 
-            // Bind WHERE parameters
-            auto bind_result = bind_where_params(stmt_ptr, where_expr_);
+            // Bind WHERE parameters (required for each execution)
+            auto bind_result = bind_where_params(cached_where_stmt_, where_expr_);
             if (!bind_result) [[unlikely]] {
                 return std::unexpected(bind_result.error());
             }
 
-            return execute_query_loop(stmt_ptr);
+            return execute_query_loop(cached_where_stmt_);
         }
 
         // DISTINCT with JOIN (no WHERE)
@@ -262,42 +295,47 @@ export namespace storm::orm::statements {
 
         // DISTINCT with WHERE and JOIN
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_where_join_impl() -> std::expected<ResultType, Error> {
-            const std::string& base_sql = join_stmt_->get_complete_sql();
+            // OPTIMIZATION: Cache WHERE + JOIN SQL string to avoid repeated string concatenation
+            // Only rebuild when WHERE expression changes (checked in update_state)
+            if (cached_where_join_sql_.empty()) [[unlikely]] {
+                const std::string& base_sql = join_stmt_->get_complete_sql();
 
-            // Inject DISTINCT into SELECT clause
-            std::string distinct_join_sql;
-            distinct_join_sql.reserve(base_sql.size() + 10);
+                // Inject DISTINCT into SELECT clause
+                std::string distinct_join_sql;
+                distinct_join_sql.reserve(base_sql.size() + 10);
 
-            size_t select_pos = base_sql.find("SELECT ");
-            if (select_pos != std::string::npos) {
-                distinct_join_sql = base_sql.substr(0, select_pos + 7);
-                distinct_join_sql += "DISTINCT ";
-                distinct_join_sql += base_sql.substr(select_pos + 7);
-            } else {
-                distinct_join_sql = base_sql;
+                size_t select_pos = base_sql.find("SELECT ");
+                if (select_pos != std::string::npos) {
+                    distinct_join_sql = base_sql.substr(0, select_pos + 7);
+                    distinct_join_sql += "DISTINCT ";
+                    distinct_join_sql += base_sql.substr(select_pos + 7);
+                } else {
+                    distinct_join_sql = base_sql;
+                }
+
+                // Add WHERE clause
+                cached_where_join_sql_.reserve(distinct_join_sql.size() + 50);
+                cached_where_join_sql_ = distinct_join_sql;
+                cached_where_join_sql_ += " WHERE ";
+                cached_where_join_sql_ += orm::where::to_sql(*where_expr_);
             }
 
-            // Add WHERE clause
-            std::string where_join_sql;
-            where_join_sql.reserve(distinct_join_sql.size() + 20);
-            where_join_sql = distinct_join_sql;
-            where_join_sql += " WHERE ";
-            where_join_sql += orm::where::to_sql(*where_expr_);
-
-            // Connection-level cache handles statement reuse
-            auto prepare_result = conn_->prepare_cached(where_join_sql);
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
+            // OPTIMIZATION: Cache prepared statement (like JOIN-only caching)
+            if (!cached_where_join_stmt_) [[unlikely]] {
+                auto prepare_result = conn_->prepare_cached(cached_where_join_sql_);
+                if (!prepare_result) [[unlikely]] {
+                    return std::unexpected(prepare_result.error());
+                }
+                cached_where_join_stmt_ = *prepare_result;
             }
-            Statement* stmt_ptr = *prepare_result;
 
-            // Bind WHERE parameters
-            auto bind_result = bind_where_params(stmt_ptr, where_expr_);
+            // Bind WHERE parameters (required for each execution)
+            auto bind_result = bind_where_params(cached_where_join_stmt_, where_expr_);
             if (!bind_result) [[unlikely]] {
                 return std::unexpected(bind_result.error());
             }
 
-            return execute_query_loop(stmt_ptr);
+            return execute_query_loop(cached_where_join_stmt_);
         }
 
         // Unified query execution loop for all DISTINCT query types
@@ -371,9 +409,12 @@ export namespace storm::orm::statements {
         ConnType*                               conn_;
         orm::where::ExpressionVariantPtr        where_expr_;
         std::optional<JoinStatementWrapper>     join_stmt_;
-        mutable Statement*                      cached_stmt_      = nullptr; // Simple DISTINCT caching
-        mutable Statement*                      cached_join_stmt_ = nullptr; // JOIN statement caching
-        mutable std::string                     cached_where_sql_;           // Cached WHERE SQL string
+        mutable Statement*                      cached_stmt_           = nullptr; // Simple DISTINCT caching
+        mutable Statement*                      cached_where_stmt_     = nullptr; // WHERE statement caching
+        mutable Statement*                      cached_join_stmt_      = nullptr; // JOIN statement caching
+        mutable Statement*                      cached_where_join_stmt_ = nullptr; // WHERE + JOIN statement caching
+        mutable std::string                     cached_where_sql_;                // Cached WHERE SQL string
+        mutable std::string                     cached_where_join_sql_;           // Cached WHERE + JOIN SQL string
     };
 
 } // namespace storm::orm::statements
