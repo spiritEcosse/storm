@@ -234,27 +234,34 @@ See [Compiler Issues Reference](docs/reference/compiler-issues.md) for all worka
 
 ## Known Issues and Findings
 
-### DISTINCT Performance Analysis (2025-01)
+### DISTINCT Performance Analysis (2025-01) - CORRECTED
 
-**Discovery**: DISTINCT operations achieve different efficiency levels based on complexity:
+**Discovery**: The original "rows/sec" throughput metric was **misleading** because it measured output row count, not query latency. The corrected analysis using **latency (ms/query)** reveals the truth:
 
-| Operation | Storm Performance | Raw SQLite | Efficiency | Bottleneck |
-|-----------|------------------|------------|------------|------------|
-| DISTINCT + JOIN | 8.70M rows/sec | 3.90M rows/sec | **223%** | None - optimal! |
-| DISTINCT + WHERE + JOIN | 4.40M rows/sec | 3.21M rows/sec | **137%** | Parameter binding |
-| DISTINCT + WHERE | 0.14M rows/sec | 0.14M rows/sec | **100%** | Parameter binding |
+| Operation | Storm Latency | Raw Latency | Efficiency | Avg Results | True Performance |
+|-----------|---------------|-------------|------------|-------------|------------------|
+| DISTINCT + WHERE | **0.588ms** | 0.578ms | 98.3% | 78 rows | **FASTEST** - near-parity |
+| DISTINCT + WHERE + JOIN | **0.603ms** | 0.811ms | **134.5%** | 2,620 rows | **Very fast** - 1.35x faster |
+| DISTINCT + JOIN | 1.143ms | 2.590ms | **226.5%** | 10,000 rows | **Slower, but 2.27x faster than SQLite** |
 
-**Why DISTINCT + JOIN outperforms raw SQLite (223% efficiency):**
+**Key Insight**: The "rows/sec" metric was misleading because:
+- **DISTINCT + JOIN** returns 10,000 rows → inflated throughput (8.75M rows/sec)
+- **DISTINCT + WHERE** returns only 78 rows → deflated throughput (0.13M rows/sec)
+- **Latency tells the truth**: WHERE is fastest at 0.588ms, JOIN is slowest at 1.143ms
+
+**Why DISTINCT + JOIN shows 226.5% efficiency despite being slower:**
 1. **Statement pointer caching** - Avoids connection cache hash lookup
 2. **SQL string caching** - Avoids repeated string concatenation
 3. **Zero parameter binding** - JOIN conditions are static (`ON sender_id = id`)
-4. **Static DistinctQuerySet caching** - Same instance persists across calls
+4. Raw SQLite's JOIN implementation is inefficient (2.590ms vs Storm's 1.143ms)
 
-**Why DISTINCT + WHERE cannot match JOIN performance:**
-- ✅ Statement pointer caching implemented (eliminates hash lookup)
-- ✅ SQL string caching implemented (eliminates `to_sql()` overhead)
-- ❌ **Parameter binding is unavoidable** - WHERE clauses require binding values on EVERY execution
-- **The 100-137% efficiency represents the theoretical maximum** given mandatory parameter binding
+**Why DISTINCT + WHERE is fastest:**
+- ✅ Statement pointer caching implemented
+- ✅ SQL string caching implemented
+- ✅ **Selective WHERE reduces result set** (78 rows vs 10,000 rows)
+- ❌ Parameter binding overhead present but minimal
+
+**Benchmark Methodology Note**: Always use **latency (ms/query)** for comparing query performance, not throughput. Throughput is only meaningful when comparing operations with similar result set sizes.
 
 **Caching Architecture:**
 ```cpp
