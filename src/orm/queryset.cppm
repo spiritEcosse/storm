@@ -139,24 +139,32 @@ export namespace storm {
                 using StmtType = orm::statements::
                         DistinctStatement<T, ConnType, orm::statements::BaseStatement<T>::primary_key_>;
 
-                // Use TLS to avoid repeated allocation, but always reconstruct with current state
-                // This ensures no stale pointers to destroyed QuerySet members
+                // Use TLS for per-thread, per-field-combination caching
+                // Preserves statement caches across calls for optimal performance
                 static thread_local std::optional<StmtType> cached_stmt;
 
-                // Always reconstruct - simpler and safer than trying to detect state changes
-                cached_stmt.emplace(&conn_, where_expr_, join_stmt_);
+                // Create on first use, update state on subsequent calls
+                if (!cached_stmt.has_value()) {
+                    cached_stmt.emplace(&conn_, where_expr_, join_stmt_);
+                } else {
+                    cached_stmt->update_state(&conn_, where_expr_, join_stmt_);
+                }
 
                 return *cached_stmt;
             } else {
                 // User-specified fields
                 using StmtType = orm::statements::DistinctStatement<T, ConnType, FieldInfos...>;
 
-                // Use TLS to avoid repeated allocation, but always reconstruct with current state
-                // This ensures no stale pointers to destroyed QuerySet members
+                // Use TLS for per-thread, per-field-combination caching
+                // Preserves statement caches across calls for optimal performance
                 static thread_local std::optional<StmtType> cached_stmt;
 
-                // Always reconstruct - simpler and safer than trying to detect state changes
-                cached_stmt.emplace(&conn_, where_expr_, join_stmt_);
+                // Create on first use, update state on subsequent calls
+                if (!cached_stmt.has_value()) {
+                    cached_stmt.emplace(&conn_, where_expr_, join_stmt_);
+                } else {
+                    cached_stmt->update_state(&conn_, where_expr_, join_stmt_);
+                }
 
                 return *cached_stmt;
             }

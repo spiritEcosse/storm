@@ -203,6 +203,28 @@ export namespace storm::orm::statements {
         }
 
       private:
+        // Helper: Inject DISTINCT keyword into JOIN SQL (after SELECT)
+        [[nodiscard]] static auto inject_distinct_keyword(const std::string& sql) -> std::expected<std::string, Error> {
+            size_t select_pos = sql.find("SELECT ");
+            if (select_pos == std::string::npos) [[unlikely]] {
+                // This should NEVER happen with correct compile-time JOIN SQL generation
+                // But if it does, fail loudly rather than silently producing incorrect SQL
+                return std::unexpected(Error{
+                        -1,
+                        "INTERNAL BUG: JOIN SQL missing SELECT clause. "
+                        "This indicates a compile-time SQL generation error. SQL: " +
+                                sql
+                });
+            }
+
+            std::string result;
+            result.reserve(sql.size() + 10); // "DISTINCT " = 9 chars + null terminator
+            result = sql.substr(0, select_pos + 7);
+            result += "DISTINCT ";
+            result += sql.substr(select_pos + 7);
+            return result;
+        }
+
         // Helper: Bind WHERE expression parameters to statement
         [[nodiscard]] __attribute__((always_inline)) __attribute__((hot)) static inline auto
         bind_where_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& where_expr)
@@ -272,21 +294,14 @@ export namespace storm::orm::statements {
             const std::string& base_sql = join_stmt_->get_complete_sql();
 
             // Inject DISTINCT into SELECT clause
-            std::string distinct_join_sql;
-            distinct_join_sql.reserve(base_sql.size() + 10);
-
-            size_t select_pos = base_sql.find("SELECT ");
-            if (select_pos != std::string::npos) {
-                distinct_join_sql = base_sql.substr(0, select_pos + 7);
-                distinct_join_sql += "DISTINCT ";
-                distinct_join_sql += base_sql.substr(select_pos + 7);
-            } else {
-                distinct_join_sql = base_sql;
+            auto distinct_join_sql_result = inject_distinct_keyword(base_sql);
+            if (!distinct_join_sql_result) [[unlikely]] {
+                return std::unexpected(distinct_join_sql_result.error());
             }
 
             // Cache JOIN statement
             if (!cached_join_stmt_) {
-                auto prepare_result = conn_->prepare_cached(distinct_join_sql);
+                auto prepare_result = conn_->prepare_cached(distinct_join_sql_result.value());
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
                 }
@@ -305,21 +320,15 @@ export namespace storm::orm::statements {
                 const std::string& base_sql = join_stmt_->get_complete_sql();
 
                 // Inject DISTINCT into SELECT clause
-                std::string distinct_join_sql;
-                distinct_join_sql.reserve(base_sql.size() + 10);
-
-                size_t select_pos = base_sql.find("SELECT ");
-                if (select_pos != std::string::npos) {
-                    distinct_join_sql = base_sql.substr(0, select_pos + 7);
-                    distinct_join_sql += "DISTINCT ";
-                    distinct_join_sql += base_sql.substr(select_pos + 7);
-                } else {
-                    distinct_join_sql = base_sql;
+                auto distinct_join_sql_result = inject_distinct_keyword(base_sql);
+                if (!distinct_join_sql_result) [[unlikely]] {
+                    return std::unexpected(distinct_join_sql_result.error());
                 }
 
                 // Add WHERE clause
-                cached_where_join_sql_.reserve(distinct_join_sql.size() + 50);
-                cached_where_join_sql_ = distinct_join_sql;
+                std::string distinct_sql = std::move(distinct_join_sql_result.value());
+                cached_where_join_sql_.reserve(distinct_sql.size() + 50);
+                cached_where_join_sql_ = std::move(distinct_sql);
                 cached_where_join_sql_ += " WHERE ";
                 cached_where_join_sql_ += orm::where::to_sql(*where_expr_);
             }
@@ -412,12 +421,21 @@ export namespace storm::orm::statements {
         ConnType*                           conn_;
         orm::where::ExpressionVariantPtr    where_expr_;
         std::optional<JoinStatementWrapper> join_stmt_;
-        mutable Statement*                  cached_stmt_            = nullptr; // Simple DISTINCT caching
-        mutable Statement*                  cached_where_stmt_      = nullptr; // WHERE statement caching
-        mutable Statement*                  cached_join_stmt_       = nullptr; // JOIN statement caching
-        mutable Statement*                  cached_where_join_stmt_ = nullptr; // WHERE + JOIN statement caching
-        mutable std::string                 cached_where_sql_;                 // Cached WHERE SQL string
-        mutable std::string                 cached_where_join_sql_;            // Cached WHERE + JOIN SQL string
+
+        // Statement pointer caches (one per execution path)
+        // THREAD SAFETY: Safe to share across QuerySet instances because:
+        // - Each QuerySet has unique where_expr_ (parameter binding source)
+        // - bind_params() + execute_query_loop() are atomic operations
+        // - SQLite binding is "last write wins" - no race window exists
+        // - Binding happens immediately before execution in same method call
+        mutable Statement* cached_stmt_            = nullptr; // Simple DISTINCT caching
+        mutable Statement* cached_where_stmt_      = nullptr; // WHERE statement caching
+        mutable Statement* cached_join_stmt_       = nullptr; // JOIN statement caching
+        mutable Statement* cached_where_join_stmt_ = nullptr; // WHERE + JOIN statement caching
+
+        // SQL string caches (avoid repeated to_sql() calls)
+        mutable std::string cached_where_sql_;      // Cached WHERE SQL string
+        mutable std::string cached_where_join_sql_; // Cached WHERE + JOIN SQL string
     };
 
 } // namespace storm::orm::statements

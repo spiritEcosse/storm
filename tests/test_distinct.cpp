@@ -1087,3 +1087,40 @@ TEST_F(DistinctTest, MultipleWhereClausesWithDistinct) {
     EXPECT_TRUE(unique_names.count("Alice") > 0);
     EXPECT_TRUE(unique_names.count("Bob") > 0);
 }
+
+// Test: Validate DISTINCT keyword injection in JOIN queries
+TEST_F(DistinctTest, DistinctKeywordInjectionInJoinQueries) {
+    /**
+     * This test validates that DISTINCT is correctly injected into JOIN SQL.
+     *
+     * Implementation detail:
+     * - JOIN SQL is generated at compile-time via templates
+     * - DistinctStatement::inject_distinct_keyword() injects "DISTINCT " after "SELECT "
+     * - Defensive check: Returns error if "SELECT " not found (should never happen)
+     *
+     * This test verifies:
+     * 1. Normal JOIN + DISTINCT operations work correctly
+     * 2. DISTINCT keyword is actually applied (results are deduplicated)
+     * 3. The compile-time JOIN SQL generation produces valid SQL with SELECT clause
+     *
+     * Note: It's not feasible to test the error path (missing SELECT clause)
+     * without internal code modification, since JOIN SQL is compile-time generated.
+     * The defensive check exists to catch future compiler bugs or refactoring issues.
+     */
+    populate_join_test_data();
+
+    QuerySet<Message> msg_qs;
+
+    // Test 1: Verify JOIN + DISTINCT works (implicit validation of SELECT clause injection)
+    auto result = msg_qs.join<&Message::sender>().distinct<^^Message::content>().select();
+    ASSERT_TRUE(result.has_value()) << "JOIN + DISTINCT failed: " << result.error().message();
+
+    const auto& contents = result.value();
+
+    // Test 2: Verify DISTINCT returns results and deduplicates
+    EXPECT_GT(contents.size(), 0) << "Should return some results";
+
+    // Verify no duplicates in result
+    std::set<std::string> unique_contents(contents.begin(), contents.end());
+    EXPECT_EQ(unique_contents.size(), contents.size()) << "DISTINCT should eliminate duplicates";
+}
