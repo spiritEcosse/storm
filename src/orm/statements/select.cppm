@@ -362,12 +362,12 @@ export namespace storm::orm::statements {
         }
 
         std::shared_ptr<ConnType> conn_;
-        mutable Statement*  cached_select_stmt_     = nullptr; // Statement caching for simple SELECT
-        mutable Statement*  cached_join_stmt_       = nullptr; // Separate cache for JOIN queries
-        mutable Statement*  cached_where_stmt_      = nullptr; // Cache for WHERE without JOIN
-        mutable Statement*  cached_where_join_stmt_ = nullptr; // Cache for WHERE + JOIN
-        mutable std::string cached_where_sql_;                 // Remember last WHERE SQL for cache validation
-        mutable std::string cached_where_join_sql_;            // Remember last WHERE+JOIN SQL for cache validation
+        mutable Statement*        cached_select_stmt_     = nullptr; // Statement caching for simple SELECT
+        mutable Statement*        cached_join_stmt_       = nullptr; // Separate cache for JOIN queries
+        mutable Statement*        cached_where_stmt_      = nullptr; // Cache for WHERE without JOIN
+        mutable Statement*        cached_where_join_stmt_ = nullptr; // Cache for WHERE + JOIN
+        mutable std::string       cached_where_sql_;                 // Remember last WHERE SQL for cache validation
+        mutable std::string       cached_where_join_sql_; // Remember last WHERE+JOIN SQL for cache validation
     };
 
 } // namespace storm::orm::statements

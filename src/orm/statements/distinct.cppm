@@ -132,7 +132,7 @@ export namespace storm::orm::statements {
                 std::vector<FieldTypesTuple>>;
 
         explicit DistinctStatement(
-                std::shared_ptr<ConnType>                   conn,
+                std::shared_ptr<ConnType>                  conn,
                 const orm::where::ExpressionVariantPtr&    where_expr = nullptr,
                 const std::optional<JoinStatementWrapper>& join_stmt  = std::nullopt
         )
@@ -140,11 +140,11 @@ export namespace storm::orm::statements {
 
         // Update state for reuse (called by DistinctQuerySet)
         void update_state(
-                std::shared_ptr<ConnType>                   conn,
+                std::shared_ptr<ConnType>                  conn,
                 const orm::where::ExpressionVariantPtr&    where_expr,
                 const std::optional<JoinStatementWrapper>& join_stmt
         ) {
-            conn_ = conn;
+            conn_       = conn;
             where_expr_ = where_expr;
             join_stmt_  = join_stmt;
             // No cache invalidation needed - connection's prepare_cached() handles caching
@@ -176,12 +176,12 @@ export namespace storm::orm::statements {
             if (select_pos == std::string::npos) [[unlikely]] {
                 // This should NEVER happen with correct compile-time JOIN SQL generation
                 // But if it does, fail loudly rather than silently producing incorrect SQL
-                return std::unexpected(Error{
-                        -1,
-                        "INTERNAL BUG: JOIN SQL missing SELECT clause. "
-                        "This indicates a compile-time SQL generation error. SQL: " +
-                                sql
-                });
+                return std::unexpected(
+                        Error{-1,
+                              "INTERNAL BUG: JOIN SQL missing SELECT clause. "
+                              "This indicates a compile-time SQL generation error. SQL: " +
+                                      sql}
+                );
             }
 
             std::string result;
@@ -366,7 +366,7 @@ export namespace storm::orm::statements {
             );
         }
 
-        std::shared_ptr<ConnType>         conn_;
+        std::shared_ptr<ConnType>           conn_;
         orm::where::ExpressionVariantPtr    where_expr_;
         std::optional<JoinStatementWrapper> join_stmt_;
     };

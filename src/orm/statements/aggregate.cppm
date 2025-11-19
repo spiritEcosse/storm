@@ -247,7 +247,7 @@ export namespace storm::orm::statements {
         }
 
         std::shared_ptr<ConnType> conn_;
-        mutable Statement* cached_stmt_ = nullptr;
+        mutable Statement*        cached_stmt_ = nullptr;
     };
 
     // Convenience wrapper for single aggregate operations

@@ -14,7 +14,7 @@ struct User {
     int                                       age;
 };
 
-struct Message {
+struct FKMessage {
     [[= storm::meta::FieldAttr::primary]] int id;
     [[= storm::meta::FieldAttr::fk]] User     sender;
     [[= storm::meta::FieldAttr::fk]] User     receiver;
@@ -42,9 +42,9 @@ class FKFieldTest : public ::testing::Test {
         ASSERT_TRUE(create_user_result.has_value())
                 << "Failed to create User table: " << create_user_result.error().message();
 
-        // Create Message table with sender_id and receiver_id foreign keys
+        // Create FKMessage table with sender_id and receiver_id foreign keys
         auto create_message_result = conn->execute(
-                "CREATE TABLE Message ("
+                "CREATE TABLE FKMessage ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "sender_id INTEGER NOT NULL, "
                 "receiver_id INTEGER NOT NULL, "
@@ -62,8 +62,8 @@ class FKFieldTest : public ::testing::Test {
 
 // Test: INSERT with FK field binds only the PK value
 TEST_F(FKFieldTest, InsertWithFKField) {
-    QuerySet<User>    user_qs;
-    QuerySet<Message> message_qs;
+    QuerySet<User>      user_qs;
+    QuerySet<FKMessage> message_qs;
 
     // Insert users first
     User alice{0, "Alice", 30};
@@ -78,7 +78,7 @@ TEST_F(FKFieldTest, InsertWithFKField) {
 
     // Insert a message with FK to Alice (sender) and Bob (receiver)
     // Only sender.id and receiver.id are used, name and age are ignored
-    Message msg{
+    FKMessage msg{
             0,
             User{static_cast<int>(alice_id), "ignored", 0},
             User{static_cast<int>(bob_id), "ignored", 0},
@@ -86,14 +86,14 @@ TEST_F(FKFieldTest, InsertWithFKField) {
     };
 
     auto msg_result = message_qs.insert(msg);
-    ASSERT_TRUE(msg_result.has_value()) << "Message INSERT failed: " << msg_result.error().message();
+    ASSERT_TRUE(msg_result.has_value()) << "FKMessage INSERT failed: " << msg_result.error().message();
 
     int64_t msg_id = msg_result.value();
     EXPECT_GT(msg_id, 0) << "Expected valid message ID";
 
     // Verify FKs were stored correctly by querying database directly
     auto& conn     = QuerySet<User>::get_default_connection();
-    auto  stmt_res = conn->prepare("SELECT sender_id, receiver_id FROM Message WHERE id = ?");
+    auto  stmt_res = conn->prepare("SELECT sender_id, receiver_id FROM FKMessage WHERE id = ?");
     ASSERT_TRUE(stmt_res.has_value());
 
     auto stmt = std::move(stmt_res.value());
@@ -110,8 +110,8 @@ TEST_F(FKFieldTest, InsertWithFKField) {
 
 // Test: SELECT with FK field populates only the PK
 TEST_F(FKFieldTest, SelectWithFKFieldPartialPopulation) {
-    QuerySet<User>    user_qs;
-    QuerySet<Message> message_qs;
+    QuerySet<User>      user_qs;
+    QuerySet<FKMessage> message_qs;
 
     // Insert users
     User bob{0, "Bob", 25};
@@ -124,8 +124,8 @@ TEST_F(FKFieldTest, SelectWithFKFieldPartialPopulation) {
     int64_t charlie_id = charlie_result.value();
 
     // Insert a message from Bob to Charlie
-    Message msg{0, User{static_cast<int>(bob_id), "", 0}, User{static_cast<int>(charlie_id), "", 0}, "Test message"};
-    auto    msg_result = message_qs.insert(msg);
+    FKMessage msg{0, User{static_cast<int>(bob_id), "", 0}, User{static_cast<int>(charlie_id), "", 0}, "Test message"};
+    auto      msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
 
     // SELECT messages
@@ -150,8 +150,8 @@ TEST_F(FKFieldTest, SelectWithFKFieldPartialPopulation) {
 
 // Test: Batch INSERT with FK fields
 TEST_F(FKFieldTest, BatchInsertWithFKFields) {
-    QuerySet<User>    user_qs;
-    QuerySet<Message> message_qs;
+    QuerySet<User>      user_qs;
+    QuerySet<FKMessage> message_qs;
 
     // Insert users
     std::vector<User> users       = {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Charlie", 35}, {4, "Dave", 40}};
@@ -160,17 +160,17 @@ TEST_F(FKFieldTest, BatchInsertWithFKFields) {
     const auto& user_ids = user_result.value();
 
     // Insert messages with FK references (Alice to Bob, Charlie to Dave)
-    std::vector<Message> messages =
+    std::vector<FKMessage> messages =
             {{1,
               User{static_cast<int>(user_ids[0]), "", 0},
               User{static_cast<int>(user_ids[1]), "", 0},
-              "Message from Alice to Bob"},
+              "FKMessage from Alice to Bob"},
              {2,
               User{static_cast<int>(user_ids[2]), "", 0},
               User{static_cast<int>(user_ids[3]), "", 0},
-              "Message from Charlie to Dave"}};
+              "FKMessage from Charlie to Dave"}};
 
-    auto msg_result = message_qs.insert(std::span<const Message>(messages));
+    auto msg_result = message_qs.insert(std::span<const FKMessage>(messages));
     ASSERT_TRUE(msg_result.has_value()) << "Batch INSERT failed: " << msg_result.error().message();
 
     const auto& msg_ids = msg_result.value();
@@ -192,8 +192,8 @@ TEST_F(FKFieldTest, BatchInsertWithFKFields) {
 
 // Test: UPDATE with FK field
 TEST_F(FKFieldTest, UpdateWithFKField) {
-    QuerySet<User>    user_qs;
-    QuerySet<Message> message_qs;
+    QuerySet<User>      user_qs;
+    QuerySet<FKMessage> message_qs;
 
     // Insert users
     User alice{0, "Alice", 30};
@@ -217,14 +217,16 @@ TEST_F(FKFieldTest, UpdateWithFKField) {
     int64_t dave_id    = dave_result.value();
 
     // Insert message from Alice to Bob
-    Message msg{0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Original message"};
-    auto    msg_result = message_qs.insert(msg);
+    FKMessage msg{
+            0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Original message"
+    };
+    auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
 
     int64_t msg_id = msg_result.value();
 
     // Update message: change sender to Charlie, receiver to Dave, and text
-    Message updated_msg{
+    FKMessage updated_msg{
             static_cast<int>(msg_id),
             User{static_cast<int>(charlie_id), "", 0},
             User{static_cast<int>(dave_id), "", 0},
@@ -249,8 +251,8 @@ TEST_F(FKFieldTest, UpdateWithFKField) {
 
 // Test: DELETE with FK field
 TEST_F(FKFieldTest, DeleteWithFKField) {
-    QuerySet<User>    user_qs;
-    QuerySet<Message> message_qs;
+    QuerySet<User>      user_qs;
+    QuerySet<FKMessage> message_qs;
 
     // Insert users
     User alice{0, "Alice", 30};
@@ -263,16 +265,16 @@ TEST_F(FKFieldTest, DeleteWithFKField) {
     int64_t bob_id   = bob_result.value();
 
     // Insert messages from Alice to Bob
-    std::vector<Message> messages =
-            {{1, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Message 1"},
-             {2, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Message 2"}};
+    std::vector<FKMessage> messages =
+            {{1, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "FKMessage 1"},
+             {2, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "FKMessage 2"}};
 
-    auto msg_result = message_qs.insert(std::span<const Message>(messages));
+    auto msg_result = message_qs.insert(std::span<const FKMessage>(messages));
     ASSERT_TRUE(msg_result.has_value());
     const auto& msg_ids = msg_result.value();
 
     // Delete first message
-    Message to_delete{
+    FKMessage to_delete{
             static_cast<int>(msg_ids[0]),
             User{static_cast<int>(alice_id), "", 0},
             User{static_cast<int>(bob_id), "", 0},
@@ -289,7 +291,7 @@ TEST_F(FKFieldTest, DeleteWithFKField) {
     const auto& remaining_messages = select_result.value();
     ASSERT_EQ(remaining_messages.size(), 1);
     EXPECT_EQ(remaining_messages[0].id, msg_ids[1]);
-    EXPECT_EQ(remaining_messages[0].text, "Message 2");
+    EXPECT_EQ(remaining_messages[0].text, "FKMessage 2");
 }
 
 // Test: Multiple FK fields to same type
@@ -350,8 +352,8 @@ TEST_F(FKFieldTest, MultipleFKFieldsToSameType) {
 
 // Test: Phase 2 - JOIN populates FK object fully
 TEST_F(FKFieldTest, JoinFullyPopulatesFKObject) {
-    QuerySet<User>    user_qs;
-    QuerySet<Message> message_qs;
+    QuerySet<User>      user_qs;
+    QuerySet<FKMessage> message_qs;
 
     // Insert users
     User alice{0, "Alice", 30};
@@ -364,12 +366,14 @@ TEST_F(FKFieldTest, JoinFullyPopulatesFKObject) {
     int64_t bob_id   = bob_result.value();
 
     // Insert message from Alice to Bob
-    Message msg{0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Hello from JOIN!"};
-    auto    msg_result = message_qs.insert(msg);
+    FKMessage msg{
+            0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Hello from JOIN!"
+    };
+    auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
 
     // Phase 2: JOIN to get fully populated sender
-    auto join_result = message_qs.join<&Message::sender>().select();
+    auto join_result = message_qs.join<&FKMessage::sender>().select();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -392,8 +396,8 @@ TEST_F(FKFieldTest, JoinFullyPopulatesFKObject) {
 
 // Test: Phase 3 - Multi-JOIN populates multiple FK objects fully
 TEST_F(FKFieldTest, JoinMultipleFKFields) {
-    QuerySet<User>    user_qs;
-    QuerySet<Message> message_qs;
+    QuerySet<User>      user_qs;
+    QuerySet<FKMessage> message_qs;
 
     // Insert users
     User alice{0, "Alice", 30};
@@ -406,14 +410,14 @@ TEST_F(FKFieldTest, JoinMultipleFKFields) {
     int64_t bob_id   = bob_result.value();
 
     // Insert message from Alice to Bob
-    Message msg{
+    FKMessage msg{
             0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Hello from multi-JOIN!"
     };
     auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
 
     // Phase 3: Multi-JOIN to get BOTH sender and receiver fully populated
-    auto join_result = message_qs.join<&Message::sender, &Message::receiver>().select();
+    auto join_result = message_qs.join<&FKMessage::sender, &FKMessage::receiver>().select();
     ASSERT_TRUE(join_result.has_value()) << "Multi-JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -435,8 +439,8 @@ TEST_F(FKFieldTest, JoinMultipleFKFields) {
 
 // Test: LEFT JOIN returns all messages even when FK doesn't match
 TEST_F(FKFieldTest, LeftJoinReturnsAllMessages) {
-    QuerySet<User>    user_qs;
-    QuerySet<Message> message_qs;
+    QuerySet<User>      user_qs;
+    QuerySet<FKMessage> message_qs;
 
     // Insert only one user (Alice)
     User alice{0, "Alice", 30};
@@ -447,7 +451,7 @@ TEST_F(FKFieldTest, LeftJoinReturnsAllMessages) {
     // Insert a message with a non-existent receiver ID (999)
     // This simulates an orphaned FK reference
     auto& conn        = QuerySet<User>::get_default_connection();
-    auto  stmt_result = conn->prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (?, ?, ?)");
+    auto  stmt_result = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (?, ?, ?)");
     ASSERT_TRUE(stmt_result.has_value()) << "Prepare failed: " << stmt_result.error().message();
 
     auto stmt = std::move(stmt_result.value());
@@ -459,7 +463,7 @@ TEST_F(FKFieldTest, LeftJoinReturnsAllMessages) {
     ASSERT_EQ(step_result, decltype(stmt)::NO_MORE_ROWS) << "Direct INSERT failed";
 
     // LEFT JOIN on sender - should return message even though receiver doesn't exist
-    auto join_result = message_qs.left_join<&Message::sender>().select();
+    auto join_result = message_qs.left_join<&FKMessage::sender>().select();
     ASSERT_TRUE(join_result.has_value()) << "LEFT JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -479,8 +483,8 @@ TEST_F(FKFieldTest, LeftJoinReturnsAllMessages) {
 
 // Test: LEFT JOIN with multiple FK fields
 TEST_F(FKFieldTest, LeftJoinMultipleFKFields) {
-    QuerySet<User>    user_qs;
-    QuerySet<Message> message_qs;
+    QuerySet<User>      user_qs;
+    QuerySet<FKMessage> message_qs;
 
     // Insert users
     User alice{0, "Alice", 30};
@@ -493,14 +497,14 @@ TEST_F(FKFieldTest, LeftJoinMultipleFKFields) {
     int64_t bob_id   = bob_result.value();
 
     // Insert message from Alice to Bob
-    Message msg{
+    FKMessage msg{
             0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Hello with LEFT JOIN"
     };
     auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
 
     // LEFT JOIN on both sender and receiver
-    auto join_result = message_qs.left_join<&Message::sender, &Message::receiver>().select();
+    auto join_result = message_qs.left_join<&FKMessage::sender, &FKMessage::receiver>().select();
     ASSERT_TRUE(join_result.has_value()) << "Multi LEFT JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -521,8 +525,8 @@ TEST_F(FKFieldTest, LeftJoinMultipleFKFields) {
 // Test: RIGHT JOIN behavior
 // Note: RIGHT JOIN is less commonly used but should work symmetrically to LEFT JOIN
 TEST_F(FKFieldTest, RightJoinBehavior) {
-    QuerySet<User>    user_qs;
-    QuerySet<Message> message_qs;
+    QuerySet<User>      user_qs;
+    QuerySet<FKMessage> message_qs;
 
     // Insert users first
     User alice{0, "Alice", 30};
@@ -539,27 +543,29 @@ TEST_F(FKFieldTest, RightJoinBehavior) {
     int64_t charlie_id = charlie_result.value();
 
     // Insert messages from Alice to Bob (Charlie is not referenced)
-    Message msg{0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Message to Bob"};
-    auto    msg_result = message_qs.insert(msg);
+    FKMessage msg{
+            0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "FKMessage to Bob"
+    };
+    auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
 
     // RIGHT JOIN on sender - should return all users in User table as senders
     // This includes Charlie even though no message references him
-    auto join_result = message_qs.right_join<&Message::sender>().select();
+    auto join_result = message_qs.right_join<&FKMessage::sender>().select();
     ASSERT_TRUE(join_result.has_value()) << "RIGHT JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
 
     // RIGHT JOIN returns:
     // - All rows from right table (User)
-    // - Matching rows from left table (Message)
+    // - Matching rows from left table (FKMessage)
     // So we should get at least the message we inserted, possibly more depending on implementation
     EXPECT_GE(messages.size(), 1) << "RIGHT JOIN should return at least existing messages";
 
     // Find the message we inserted
     bool found = false;
     for (const auto& m : messages) {
-        if (m.text == "Message to Bob") {
+        if (m.text == "FKMessage to Bob") {
             found = true;
             EXPECT_EQ(m.sender.id, alice_id);
             EXPECT_EQ(m.sender.name, "Alice");
@@ -571,8 +577,8 @@ TEST_F(FKFieldTest, RightJoinBehavior) {
 
 // Test: RIGHT JOIN with multiple FK fields
 TEST_F(FKFieldTest, RightJoinMultipleFKFields) {
-    QuerySet<User>    user_qs;
-    QuerySet<Message> message_qs;
+    QuerySet<User>      user_qs;
+    QuerySet<FKMessage> message_qs;
 
     // Insert users
     User alice{0, "Alice", 30};
@@ -585,14 +591,14 @@ TEST_F(FKFieldTest, RightJoinMultipleFKFields) {
     int64_t bob_id   = bob_result.value();
 
     // Insert message from Alice to Bob
-    Message msg{
+    FKMessage msg{
             0, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "Hello with RIGHT JOIN"
     };
     auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
 
     // RIGHT JOIN on both sender and receiver
-    auto join_result = message_qs.right_join<&Message::sender, &Message::receiver>().select();
+    auto join_result = message_qs.right_join<&FKMessage::sender, &FKMessage::receiver>().select();
     ASSERT_TRUE(join_result.has_value()) << "Multi RIGHT JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -634,9 +640,9 @@ class NullableFKTest : public ::testing::Test {
         );
         ASSERT_TRUE(create_user_result.has_value());
 
-        // Create Message table with NULLABLE sender_id (allows NULL)
+        // Create FKMessage table with NULLABLE sender_id (allows NULL)
         auto create_message_result = conn->execute(
-                "CREATE TABLE Message ("
+                "CREATE TABLE FKMessage ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "sender_id INTEGER, " // NULLABLE FK
                 "receiver_id INTEGER NOT NULL, "
@@ -653,16 +659,16 @@ class NullableFKTest : public ::testing::Test {
 
 // Test: SELECT with NULL FK values
 TEST_F(NullableFKTest, SelectWithNullFKField) {
-    QuerySet<Message> message_qs;
+    QuerySet<FKMessage> message_qs;
 
     // Insert message with NULL sender_id
     auto& conn        = QuerySet<User>::get_default_connection();
-    auto  stmt_result = conn->prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
+    auto  stmt_result = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
     ASSERT_TRUE(stmt_result.has_value());
 
     auto stmt = std::move(stmt_result.value());
     ASSERT_TRUE(stmt.bind_int(1, 1).has_value());
-    ASSERT_TRUE(stmt.bind_text(2, "Message with NULL sender").has_value());
+    ASSERT_TRUE(stmt.bind_text(2, "FKMessage with NULL sender").has_value());
 
     int step_result = stmt.step_raw();
     ASSERT_EQ(step_result, decltype(stmt)::NO_MORE_ROWS);
@@ -678,13 +684,13 @@ TEST_F(NullableFKTest, SelectWithNullFKField) {
     EXPECT_EQ(messages[0].sender.id, 0) << "NULL FK should result in default-initialized PK (0)";
     EXPECT_EQ(messages[0].sender.name, "");
     EXPECT_EQ(messages[0].sender.age, 0);
-    EXPECT_EQ(messages[0].text, "Message with NULL sender");
+    EXPECT_EQ(messages[0].text, "FKMessage with NULL sender");
 }
 
 // Test: LEFT JOIN with NULL FK values
 TEST_F(NullableFKTest, LeftJoinWithNullFKField) {
-    QuerySet<User>    user_qs;
-    QuerySet<Message> message_qs;
+    QuerySet<User>      user_qs;
+    QuerySet<FKMessage> message_qs;
 
     // Insert a user
     User alice{0, "Alice", 30};
@@ -694,7 +700,7 @@ TEST_F(NullableFKTest, LeftJoinWithNullFKField) {
 
     // Insert message with NULL sender_id
     auto& conn        = QuerySet<User>::get_default_connection();
-    auto  stmt_result = conn->prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
+    auto  stmt_result = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
     ASSERT_TRUE(stmt_result.has_value());
 
     auto stmt = std::move(stmt_result.value());
@@ -705,7 +711,7 @@ TEST_F(NullableFKTest, LeftJoinWithNullFKField) {
     ASSERT_EQ(step_result, decltype(stmt)::NO_MORE_ROWS);
 
     // LEFT JOIN on sender - should return message even with NULL sender_id
-    auto join_result = message_qs.left_join<&Message::sender>().select();
+    auto join_result = message_qs.left_join<&FKMessage::sender>().select();
     ASSERT_TRUE(join_result.has_value()) << "LEFT JOIN with NULL FK failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -720,8 +726,8 @@ TEST_F(NullableFKTest, LeftJoinWithNullFKField) {
 
 // Test: LEFT JOIN with mix of NULL and valid FKs
 TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
-    QuerySet<User>    user_qs;
-    QuerySet<Message> message_qs;
+    QuerySet<User>      user_qs;
+    QuerySet<FKMessage> message_qs;
 
     // Insert users
     User alice{0, "Alice", 30};
@@ -735,8 +741,8 @@ TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
 
     auto& conn = QuerySet<User>::get_default_connection();
 
-    // Message 1: Valid sender (Alice)
-    auto stmt1 = conn->prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (?, ?, ?)");
+    // FKMessage 1: Valid sender (Alice)
+    auto stmt1 = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (?, ?, ?)");
     ASSERT_TRUE(stmt1.has_value());
     auto s1 = std::move(stmt1.value());
     ASSERT_TRUE(s1.bind_int(1, alice_id).has_value());
@@ -744,8 +750,8 @@ TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     ASSERT_TRUE(s1.bind_text(3, "From Alice").has_value());
     ASSERT_EQ(s1.step_raw(), decltype(s1)::NO_MORE_ROWS);
 
-    // Message 2: NULL sender
-    auto stmt2 = conn->prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
+    // FKMessage 2: NULL sender
+    auto stmt2 = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
     ASSERT_TRUE(stmt2.has_value());
     auto s2 = std::move(stmt2.value());
     ASSERT_TRUE(s2.bind_int(1, bob_id).has_value());
@@ -753,7 +759,7 @@ TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     ASSERT_EQ(s2.step_raw(), decltype(s2)::NO_MORE_ROWS);
 
     // LEFT JOIN should return both messages
-    auto join_result = message_qs.left_join<&Message::sender>().select();
+    auto join_result = message_qs.left_join<&FKMessage::sender>().select();
     ASSERT_TRUE(join_result.has_value());
 
     const auto& messages = join_result.value();

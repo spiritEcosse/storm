@@ -77,24 +77,20 @@ void teardown_database() {
 
 // Helper: Print benchmark results with both throughput and latency
 void print_benchmark_results(
-        const std::string& name,
-        int                num_records,
-        int                iterations,
-        double             total_time_ms,
-        int                total_results
+        const std::string& name, int num_records, int iterations, double total_time_ms, int total_results
 ) {
-    double avg_time_per_query   = total_time_ms / iterations;
-    double throughput_rows_sec  = total_results / (total_time_ms / 1000.0);
+    double avg_time_per_query    = total_time_ms / iterations;
+    double throughput_rows_sec   = total_results / (total_time_ms / 1000.0);
     double avg_results_per_query = static_cast<double>(total_results) / iterations;
 
     std::cout << name << " - " << num_records << " records:" << std::endl;
     std::cout << "  Total time: " << std::fixed << std::setprecision(2) << total_time_ms << " ms" << std::endl;
     std::cout << "  Iterations: " << iterations << std::endl;
     std::cout << "  Latency: " << std::fixed << std::setprecision(4) << avg_time_per_query << " ms/query" << std::endl;
-    std::cout << "  Throughput: " << std::fixed << std::setprecision(2) << throughput_rows_sec
-              << " rows/sec (output)" << std::endl;
-    std::cout << "  Avg results: " << std::fixed << std::setprecision(1) << avg_results_per_query
-              << " rows/query" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(2) << throughput_rows_sec << " rows/sec (output)"
+              << std::endl;
+    std::cout << "  Avg results: " << std::fixed << std::setprecision(1) << avg_results_per_query << " rows/query"
+              << std::endl;
     std::cout << std::endl;
 }
 
@@ -482,7 +478,9 @@ void benchmark_storm_distinct_where(int num_records, int iterations = 100) {
         person_qs.reset();
     }
 
-    print_benchmark_results("Storm ORM DISTINCT (name) + WHERE (age > 30)", num_records, iterations, total_time, total_results);
+    print_benchmark_results(
+            "Storm ORM DISTINCT (name) + WHERE (age > 30)", num_records, iterations, total_time, total_results
+    );
 
     teardown_database();
 }
@@ -534,7 +532,9 @@ void benchmark_raw_distinct_where(int num_records, int iterations = 100) {
         total_time += elapsed;
     }
 
-    print_benchmark_results("Raw SQLite DISTINCT (name) + WHERE (age > 30)", num_records, iterations, total_time, total_results);
+    print_benchmark_results(
+            "Raw SQLite DISTINCT (name) + WHERE (age > 30)", num_records, iterations, total_time, total_results
+    );
 
     teardown_database();
 }
@@ -672,7 +672,9 @@ void benchmark_raw_distinct_join(int num_messages, int iterations = 100) {
         total_time += elapsed;
     }
 
-    print_benchmark_results("Raw SQLite DISTINCT (content) + JOIN", num_messages, iterations, total_time, total_results);
+    print_benchmark_results(
+            "Raw SQLite DISTINCT (content) + JOIN", num_messages, iterations, total_time, total_results
+    );
 
     teardown_join_database();
 }
@@ -704,7 +706,9 @@ void benchmark_storm_distinct_where_join(int num_messages, int iterations = 100)
         msg_qs.reset();
     }
 
-    print_benchmark_results("Storm ORM DISTINCT (content) + WHERE + JOIN", num_messages, iterations, total_time, total_results);
+    print_benchmark_results(
+            "Storm ORM DISTINCT (content) + WHERE + JOIN", num_messages, iterations, total_time, total_results
+    );
 
     teardown_join_database();
 }
@@ -757,7 +761,9 @@ void benchmark_raw_distinct_where_join(int num_messages, int iterations = 100) {
         total_time += elapsed;
     }
 
-    print_benchmark_results("Raw SQLite DISTINCT (content) + WHERE + JOIN", num_messages, iterations, total_time, total_results);
+    print_benchmark_results(
+            "Raw SQLite DISTINCT (content) + WHERE + JOIN", num_messages, iterations, total_time, total_results
+    );
 
     teardown_join_database();
 }

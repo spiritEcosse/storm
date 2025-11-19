@@ -307,7 +307,7 @@ export namespace storm::orm::statements {
         }
 
         std::shared_ptr<ConnType> conn_;
-        mutable Statement* cached_update_stmt_ = nullptr; // Cached statement for optimized single UPDATE
+        mutable Statement*        cached_update_stmt_ = nullptr; // Cached statement for optimized single UPDATE
     };
 
 } // namespace storm::orm::statements
