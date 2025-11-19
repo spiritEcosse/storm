@@ -95,15 +95,20 @@ cmake --build --preset ninja-release
 ### Quick Commit Workflow
 
 ```bash
-# Format, test, commit, and push in one command
+# Usage: ./quick_commit.sh [commit message]
+
+# With custom commit message
+./quick_commit.sh "fix: resolve ODR violation in Message struct"
+
+# Without message (uses auto-generated default: "chore: - run code formatting")
 ./quick_commit.sh
 ```
 
 This script:
 1. Runs clang-format on all source files
 2. Runs unit tests (fails if any test fails)
-3. Prompts for commit message
-4. Asks for confirmation before pushing
+3. Uses provided commit message or auto-generates one
+4. Commits changes and pushes to remote
 
 ### Benchmarking
 
