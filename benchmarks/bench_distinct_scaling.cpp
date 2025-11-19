@@ -1,4 +1,5 @@
 #include <cstring>
+import <memory>;
 #include <iostream>
 #include <iomanip>
 #include <cmath>
@@ -32,7 +33,7 @@ void setup_database(int num_records, int num_unique_combos) {
     auto& conn = QuerySet<Person>::get_default_connection();
 
     // Create table
-    auto create_result = conn.execute(
+    auto create_result = conn->execute(
             "CREATE TABLE Person ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "name TEXT NOT NULL, "
@@ -130,7 +131,7 @@ void benchmark_raw_distinct(
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
+        auto stmt_result = conn->prepare(sql);
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
             break;

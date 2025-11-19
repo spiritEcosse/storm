@@ -1,4 +1,5 @@
 #include <cstring>
+import <memory>;
 #include <iostream>
 #include <iomanip>
 #include "benchmark_utils.hpp"
@@ -36,7 +37,7 @@ void setup_database(int num_users, int num_messages) {
     auto& conn = QuerySet<User>::get_default_connection();
 
     // Create tables
-    auto create_user = conn.execute(
+    auto create_user = conn->execute(
             "CREATE TABLE User ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "name TEXT NOT NULL, "
@@ -47,7 +48,7 @@ void setup_database(int num_users, int num_messages) {
         throw std::runtime_error("Failed to create User table");
     }
 
-    auto create_message = conn.execute(
+    auto create_message = conn->execute(
             "CREATE TABLE Message ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "sender_id INTEGER NOT NULL, "
@@ -345,7 +346,7 @@ void benchmark_raw_sqlite_inner_join(int num_messages, int iterations = 1000) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
+        auto stmt_result = conn->prepare(sql);
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
             break;
@@ -420,7 +421,7 @@ void benchmark_raw_sqlite_inner_join_multi(int num_messages, int iterations = 10
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
 
-        auto stmt_result = conn.prepare(sql);
+        auto stmt_result = conn->prepare(sql);
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
             break;
@@ -491,7 +492,7 @@ void benchmark_raw_sqlite_left_join_single(int num_messages, int iterations = 10
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
+        auto stmt_result = conn->prepare(sql);
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
             break;
@@ -569,7 +570,7 @@ void benchmark_raw_sqlite_left_join_multi(int num_messages, int iterations = 100
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
 
-        auto stmt_result = conn.prepare(sql);
+        auto stmt_result = conn->prepare(sql);
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
             break;
@@ -648,7 +649,7 @@ void benchmark_raw_sqlite_right_join_single(int num_messages, int iterations = 1
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
+        auto stmt_result = conn->prepare(sql);
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
             break;
@@ -732,7 +733,7 @@ void benchmark_raw_sqlite_right_join_multi(int num_messages, int iterations = 10
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
 
-        auto stmt_result = conn.prepare(sql);
+        auto stmt_result = conn->prepare(sql);
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
             break;

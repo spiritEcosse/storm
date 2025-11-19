@@ -24,7 +24,7 @@ class SelectLargeTest : public ::testing::Test {
         auto& conn = QuerySet<TestRecord>::get_default_connection();
 
         // Create table
-        auto create_result = conn.execute(
+        auto create_result = conn->execute(
                 "CREATE TABLE TestRecord ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "value INTEGER NOT NULL, "

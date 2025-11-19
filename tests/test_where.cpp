@@ -27,7 +27,7 @@ class WhereTest : public ::testing::Test {
         auto& conn = QuerySet<WherePerson>::get_default_connection();
 
         // Create table with AUTOINCREMENT (matching test_select.cpp)
-        auto create_result = conn.execute(
+        auto create_result = conn->execute(
                 "CREATE TABLE WherePerson ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
@@ -316,7 +316,7 @@ class WhereJoinTest : public ::testing::Test {
         auto& conn = QuerySet<WhereMessage>::get_default_connection();
 
         // Create WhereUser table
-        auto create_user = conn.execute(
+        auto create_user = conn->execute(
                 "CREATE TABLE WhereUser ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "username TEXT NOT NULL, "
@@ -326,7 +326,7 @@ class WhereJoinTest : public ::testing::Test {
         ASSERT_TRUE(create_user.has_value());
 
         // Create WhereMessage table with FK
-        auto create_message = conn.execute(
+        auto create_message = conn->execute(
                 "CREATE TABLE WhereMessage ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "content TEXT NOT NULL, "

@@ -90,7 +90,7 @@ export namespace storm::orm::statements {
       public:
         using ResultType = decltype(deduce_result_type_helper(std::make_index_sequence<sizeof...(Ops)>{}));
 
-        explicit AggregateBuilder(ConnType& conn) : conn_(conn) {}
+        explicit AggregateBuilder(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
         // Add SUM aggregate (multi-field: SUM(f1 + f2 + ...))
         template <std::meta::info... FieldInfos> auto sum() {
@@ -205,7 +205,7 @@ export namespace storm::orm::statements {
 
             // Cache statement on first use
             if (!cached_stmt_) {
-                auto prepare_result = conn_.prepare_cached(sql);
+                auto prepare_result = conn_->prepare_cached(sql);
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
                 }
@@ -246,7 +246,7 @@ export namespace storm::orm::statements {
             return execute_impl(std::make_index_sequence<sizeof...(Ops)>{});
         }
 
-        ConnType&          conn_;
+        std::shared_ptr<ConnType> conn_;
         mutable Statement* cached_stmt_ = nullptr;
     };
 
@@ -260,7 +260,7 @@ export namespace storm::orm::statements {
         using Builder = AggregateBuilder<T, ConnType, AggregateOp<AggType, FieldInfos...>>;
 
       public:
-        explicit SingleAggregateStatement(ConnType& conn) : builder_(conn) {}
+        explicit SingleAggregateStatement(std::shared_ptr<ConnType> conn) : builder_(std::move(conn)) {}
 
         // Execute and return scalar result
         auto select() -> std::expected<typename Builder::ResultType, Error> {

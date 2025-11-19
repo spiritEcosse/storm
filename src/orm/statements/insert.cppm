@@ -20,6 +20,7 @@ import <array>;
 import <span>;
 import <vector>;
 import <type_traits>;
+import <memory>;
 
 export namespace storm::orm::statements {
 
@@ -185,7 +186,7 @@ export namespace storm::orm::statements {
         }
 
       public:
-        explicit InsertStatement(Connection& conn) : conn_(conn) {}
+        explicit InsertStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
         // Unified insert operation - handles both single and batch operations
         [[nodiscard]] auto execute(std::span<const T> objects) noexcept -> std::expected<std::vector<int64_t>, Error> {
@@ -209,7 +210,7 @@ export namespace storm::orm::statements {
                 -> std::expected<int64_t, Error> {
             // Get or cache the prepared statement
             if (!cached_insert_stmt_) {
-                auto stmt_result = conn_.prepare_cached(get_insert_sql());
+                auto stmt_result = conn_->prepare_cached(get_insert_sql());
                 if (!stmt_result) {
                     return std::unexpected(stmt_result.error());
                 }
@@ -232,7 +233,7 @@ export namespace storm::orm::statements {
                 return std::unexpected(exec_result.error());
             }
 
-            int64_t id = conn_.last_insert_rowid();
+            int64_t id = conn_->last_insert_rowid();
 
             // Reset for next use
             cached_insert_stmt_->reset();
@@ -254,10 +255,10 @@ export namespace storm::orm::statements {
             const auto sql = get_bulk_insert_sql(objects.size());
 
             return Base::template execute_with_transaction<ConnType>(
-                    conn_,
+                    *conn_,
                     Base::should_use_transaction(objects),
                     [this, &sql, objects]() -> std::expected<std::vector<int64_t>, Error> {
-                        return conn_.prepare(sql).and_then(
+                        return conn_->prepare(sql).and_then(
                                 [this, objects](Statement stmt) -> std::expected<std::vector<int64_t>, Error> {
                                     return Base::template bind_non_pk_objects_bulk_impl<ConnType, Statement>(
                                                    stmt, objects, typename Base::field_indices_t()
@@ -268,7 +269,7 @@ export namespace storm::orm::statements {
                                                 // For bulk INSERT with multiple VALUES, last_insert_rowid() returns the
                                                 // ID of the LAST row We need to calculate the first ID by subtracting
                                                 // the count
-                                                int64_t last_id  = conn_.last_insert_rowid();
+                                                int64_t last_id  = conn_->last_insert_rowid();
                                                 int64_t first_id = last_id - static_cast<int64_t>(objects.size()) + 1;
 
                                                 // Generate consecutive IDs for bulk insert
@@ -292,7 +293,7 @@ export namespace storm::orm::statements {
             ids.reserve(objects.size());
 
             auto result = Base::template execute_with_statement<ConnType>(
-                    conn_, get_insert_sql(), [this, objects, &ids](auto& stmt) -> std::expected<void, Error> {
+                    *conn_, get_insert_sql(), [this, objects, &ids](auto& stmt) -> std::expected<void, Error> {
                         for (const auto& obj : objects) {
                             // Monadic composition: reset → bind → execute
                             if (auto result = Base::reset_bind_and_execute(
@@ -302,7 +303,7 @@ export namespace storm::orm::statements {
                                 return std::unexpected(result.error());
                             }
                             // Get the generated ID after each insert
-                            ids.push_back(conn_.last_insert_rowid());
+                            ids.push_back(conn_->last_insert_rowid());
                         }
                         return {};
                     }
@@ -316,7 +317,7 @@ export namespace storm::orm::statements {
         }
 
       private:
-        Connection&        conn_;
+        std::shared_ptr<ConnType> conn_;
         mutable Statement* cached_insert_stmt_ = nullptr; // Cached statement for optimized single INSERT
     };
 

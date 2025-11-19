@@ -32,7 +32,7 @@ class FKFieldTest : public ::testing::Test {
         auto& conn = QuerySet<User>::get_default_connection();
 
         // Create User table
-        auto create_user_result = conn.execute(
+        auto create_user_result = conn->execute(
                 "CREATE TABLE User ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
@@ -43,7 +43,7 @@ class FKFieldTest : public ::testing::Test {
                 << "Failed to create User table: " << create_user_result.error().message();
 
         // Create Message table with sender_id and receiver_id foreign keys
-        auto create_message_result = conn.execute(
+        auto create_message_result = conn->execute(
                 "CREATE TABLE Message ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "sender_id INTEGER NOT NULL, "
@@ -93,7 +93,7 @@ TEST_F(FKFieldTest, InsertWithFKField) {
 
     // Verify FKs were stored correctly by querying database directly
     auto& conn     = QuerySet<User>::get_default_connection();
-    auto  stmt_res = conn.prepare("SELECT sender_id, receiver_id FROM Message WHERE id = ?");
+    auto  stmt_res = conn->prepare("SELECT sender_id, receiver_id FROM Message WHERE id = ?");
     ASSERT_TRUE(stmt_res.has_value());
 
     auto stmt = std::move(stmt_res.value());
@@ -307,7 +307,7 @@ TEST_F(FKFieldTest, MultipleFKFieldsToSameType) {
 
     // Create conversation table
     auto& conn               = QuerySet<User>::get_default_connection();
-    auto  create_conv_result = conn.execute(
+    auto  create_conv_result = conn->execute(
             "CREATE TABLE Conversation ("
              "id INTEGER PRIMARY KEY AUTOINCREMENT, "
              "sender_id INTEGER NOT NULL, "
@@ -447,7 +447,7 @@ TEST_F(FKFieldTest, LeftJoinReturnsAllMessages) {
     // Insert a message with a non-existent receiver ID (999)
     // This simulates an orphaned FK reference
     auto& conn        = QuerySet<User>::get_default_connection();
-    auto  stmt_result = conn.prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (?, ?, ?)");
+    auto  stmt_result = conn->prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (?, ?, ?)");
     ASSERT_TRUE(stmt_result.has_value()) << "Prepare failed: " << stmt_result.error().message();
 
     auto stmt = std::move(stmt_result.value());
@@ -625,7 +625,7 @@ class NullableFKTest : public ::testing::Test {
         auto& conn = QuerySet<User>::get_default_connection();
 
         // Create User table
-        auto create_user_result = conn.execute(
+        auto create_user_result = conn->execute(
                 "CREATE TABLE User ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
@@ -635,7 +635,7 @@ class NullableFKTest : public ::testing::Test {
         ASSERT_TRUE(create_user_result.has_value());
 
         // Create Message table with NULLABLE sender_id (allows NULL)
-        auto create_message_result = conn.execute(
+        auto create_message_result = conn->execute(
                 "CREATE TABLE Message ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "sender_id INTEGER, " // NULLABLE FK
@@ -657,7 +657,7 @@ TEST_F(NullableFKTest, SelectWithNullFKField) {
 
     // Insert message with NULL sender_id
     auto& conn        = QuerySet<User>::get_default_connection();
-    auto  stmt_result = conn.prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
+    auto  stmt_result = conn->prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
     ASSERT_TRUE(stmt_result.has_value());
 
     auto stmt = std::move(stmt_result.value());
@@ -694,7 +694,7 @@ TEST_F(NullableFKTest, LeftJoinWithNullFKField) {
 
     // Insert message with NULL sender_id
     auto& conn        = QuerySet<User>::get_default_connection();
-    auto  stmt_result = conn.prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
+    auto  stmt_result = conn->prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
     ASSERT_TRUE(stmt_result.has_value());
 
     auto stmt = std::move(stmt_result.value());
@@ -736,7 +736,7 @@ TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     auto& conn = QuerySet<User>::get_default_connection();
 
     // Message 1: Valid sender (Alice)
-    auto stmt1 = conn.prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (?, ?, ?)");
+    auto stmt1 = conn->prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (?, ?, ?)");
     ASSERT_TRUE(stmt1.has_value());
     auto s1 = std::move(stmt1.value());
     ASSERT_TRUE(s1.bind_int(1, alice_id).has_value());
@@ -745,7 +745,7 @@ TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     ASSERT_EQ(s1.step_raw(), decltype(s1)::NO_MORE_ROWS);
 
     // Message 2: NULL sender
-    auto stmt2 = conn.prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
+    auto stmt2 = conn->prepare("INSERT INTO Message (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
     ASSERT_TRUE(stmt2.has_value());
     auto s2 = std::move(stmt2.value());
     ASSERT_TRUE(s2.bind_int(1, bob_id).has_value());
@@ -788,7 +788,7 @@ class ExtendedTypesJoinTest : public ::testing::Test {
         auto& conn = QuerySet<User>::get_default_connection();
 
         // Create Employee table with extended types
-        auto create_employee_result = conn.execute(
+        auto create_employee_result = conn->execute(
                 "CREATE TABLE Employee ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
@@ -801,7 +801,7 @@ class ExtendedTypesJoinTest : public ::testing::Test {
                 << "Failed to create Employee table: " << create_employee_result.error().message();
 
         // Create Project table with FK to Employee
-        auto create_project_result = conn.execute(
+        auto create_project_result = conn->execute(
                 "CREATE TABLE Project ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "manager_id INTEGER NOT NULL, "
@@ -941,7 +941,7 @@ TEST_F(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
 
     // Create Task table
     auto& conn               = QuerySet<User>::get_default_connection();
-    auto  create_task_result = conn.execute(
+    auto  create_task_result = conn->execute(
             "CREATE TABLE Task ("
              "id INTEGER PRIMARY KEY AUTOINCREMENT, "
              "assignee_id INTEGER NOT NULL, "

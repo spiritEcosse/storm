@@ -54,7 +54,7 @@ class IntTypesInsertUpdateTest : public ::testing::Test {
         auto result = QuerySet<IntTypes>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
         auto& conn = QuerySet<IntTypes>::get_default_connection();
-        ASSERT_TRUE(conn.execute(
+        ASSERT_TRUE(conn->execute(
                                 "CREATE TABLE IntTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, big_num INTEGER, "
                                 "small_num INTEGER)"
         )
@@ -146,7 +146,7 @@ class FloatTypesInsertUpdateTest : public ::testing::Test {
         ASSERT_TRUE(result.has_value());
         auto& conn = QuerySet<FloatTypes>::get_default_connection();
         ASSERT_TRUE(
-                conn.execute(
+                conn->execute(
                             "CREATE TABLE FloatTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, precise REAL, approx REAL)"
                 )
                         .has_value()
@@ -197,7 +197,7 @@ class MixedTypesInsertUpdateTest : public ::testing::Test {
         ASSERT_TRUE(result.has_value());
         auto& conn = QuerySet<MixedTypes>::get_default_connection();
         ASSERT_TRUE(
-                conn.execute(
+                conn->execute(
                             "CREATE TABLE MixedTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, active INTEGER, name TEXT)"
                 )
                         .has_value()
@@ -276,7 +276,7 @@ class OptTypesInsertUpdateTest : public ::testing::Test {
         ASSERT_TRUE(result.has_value());
         auto& conn = QuerySet<OptTypes>::get_default_connection();
         ASSERT_TRUE(
-                conn.execute(
+                conn->execute(
                             "CREATE TABLE OptTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, maybe_num INTEGER, name TEXT)"
                 )
                         .has_value()
@@ -386,7 +386,7 @@ class DataTypesInsertUpdateTest : public ::testing::Test {
         ASSERT_TRUE(result.has_value());
         auto& conn = QuerySet<DataTypes>::get_default_connection();
         ASSERT_TRUE(
-                conn.execute("CREATE TABLE DataTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, binary BLOB, label TEXT)")
+                conn->execute("CREATE TABLE DataTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, binary BLOB, label TEXT)")
                         .has_value()
         );
     }

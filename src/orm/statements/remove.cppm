@@ -18,6 +18,7 @@ import <concepts>;
 import <format>;
 import <meta>;
 import <type_traits>;
+import <memory>;
 
 export namespace storm::orm::statements {
 
@@ -150,7 +151,7 @@ export namespace storm::orm::statements {
         }
 
       public:
-        explicit RemoveStatement(Connection& conn) : conn_(conn) {}
+        explicit RemoveStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
         [[nodiscard]] auto execute(std::span<const T> objects) noexcept -> std::expected<void, Error> {
             if (objects.empty()) {
@@ -171,7 +172,7 @@ export namespace storm::orm::statements {
                 -> std::expected<void, Error> {
             // Get or cache the prepared statement
             if (!cached_delete_stmt_) {
-                auto stmt_result = conn_.prepare_cached(get_delete_sql());
+                auto stmt_result = conn_->prepare_cached(get_delete_sql());
                 if (!stmt_result) {
                     return std::unexpected(stmt_result.error());
                 }
@@ -209,7 +210,7 @@ export namespace storm::orm::statements {
                 -> std::expected<void, Error> {
             auto bulk_sql = get_bulk_delete_sql(objects.size());
 
-            return conn_.prepare(bulk_sql).and_then([this, objects](Statement stmt) -> std::expected<void, Error> {
+            return conn_->prepare(bulk_sql).and_then([this, objects](Statement stmt) -> std::expected<void, Error> {
                 return bind_and_execute_bulk(std::move(stmt), objects);
             });
         }
@@ -218,7 +219,7 @@ export namespace storm::orm::statements {
         // Execute individual deletes for large batches (caller handles transaction)
         [[nodiscard]] auto execute_individual_batch(std::span<const T> objects) noexcept -> std::expected<void, Error> {
             return Base::template execute_with_statement<ConnType>(
-                    conn_, get_delete_sql(), [this, objects](auto& stmt) -> std::expected<void, Error> {
+                    *conn_, get_delete_sql(), [this, objects](auto& stmt) -> std::expected<void, Error> {
                         for (const auto& obj : objects) {
                             // Monadic composition: reset → bind → execute
                             if (auto result = Base::reset_bind_and_execute(
@@ -272,7 +273,7 @@ export namespace storm::orm::statements {
             return Base::template bind_value_by_type<ConnType>(stmt, 1, pk_value);
         }
 
-        Connection&        conn_;
+        std::shared_ptr<ConnType> conn_;
         mutable Statement* cached_delete_stmt_ = nullptr; // Cached statement for optimized single DELETE
     };
 

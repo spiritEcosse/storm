@@ -1,4 +1,5 @@
 #include <chrono>
+import <memory>;
 #include <iostream>
 #include <iomanip>
 #include <vector>
@@ -58,7 +59,7 @@ void setup_database(int num_users, int num_messages) {
     auto& conn = QuerySet<User>::get_default_connection();
 
     // Create User table
-    auto create_user = conn.execute(
+    auto create_user = conn->execute(
             "CREATE TABLE User ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "name TEXT NOT NULL, "
@@ -71,7 +72,7 @@ void setup_database(int num_users, int num_messages) {
     }
 
     // Create Message table
-    auto create_message = conn.execute(
+    auto create_message = conn->execute(
             "CREATE TABLE Message ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "sender_id INTEGER NOT NULL, "

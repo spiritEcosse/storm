@@ -591,7 +591,7 @@ export namespace storm::orm::statements {
         ) noexcept -> decltype(statement_instance.execute_individual_batch(objects)) {
             using ConnType = typename StatementType::Connection;
             return execute_batch_optimized<ConnType>(
-                    statement_instance.conn_,
+                    *statement_instance.conn_,
                     objects,
                     variables_per_object,
                     [&statement_instance, &objects]() { return statement_instance.execute_bulk(objects); },

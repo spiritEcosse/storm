@@ -1,4 +1,5 @@
 #include <cstring>
+import <memory>;
 #include <iostream>
 #include <iomanip>
 #include "benchmark_utils.hpp"
@@ -44,7 +45,7 @@ void setup_database(int num_records, int num_unique_names = 100, int num_unique_
     auto& conn = QuerySet<Person>::get_default_connection();
 
     // Create table
-    auto create_result = conn.execute(
+    auto create_result = conn->execute(
             "CREATE TABLE Person ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "name TEXT NOT NULL, "
@@ -183,7 +184,7 @@ void benchmark_raw_distinct_name(int num_records, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
+        auto stmt_result = conn->prepare(sql);
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
             break;
@@ -228,7 +229,7 @@ void benchmark_raw_distinct_age(int num_records, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
+        auto stmt_result = conn->prepare(sql);
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
             break;
@@ -273,7 +274,7 @@ void benchmark_raw_distinct_id(int num_records, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
+        auto stmt_result = conn->prepare(sql);
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
             break;
@@ -368,7 +369,7 @@ void benchmark_raw_distinct_name_age(int num_records, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
+        auto stmt_result = conn->prepare(sql);
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
             break;
@@ -415,7 +416,7 @@ void benchmark_raw_distinct_id_name_age(int num_records, int iterations = 100) {
 
     for (int i = 0; i < iterations; ++i) {
         timer.reset();
-        auto stmt_result = conn.prepare(sql);
+        auto stmt_result = conn->prepare(sql);
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
             break;
@@ -498,7 +499,7 @@ void benchmark_raw_distinct_where(int num_records, int iterations = 100) {
     int            total_results = 0;
 
     // OPTIMIZATION: Prepare statement ONCE outside loop (fair comparison with Storm's caching)
-    auto stmt_result = conn.prepare(sql);
+    auto stmt_result = conn->prepare(sql);
     if (!stmt_result.has_value()) {
         std::cerr << "Failed to prepare statement" << std::endl;
         teardown_database();
@@ -548,7 +549,7 @@ void setup_join_database(int num_messages) {
     auto& conn = QuerySet<User>::get_default_connection();
 
     // Create User table
-    auto create_user = conn.execute(
+    auto create_user = conn->execute(
             "CREATE TABLE User ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "name TEXT NOT NULL, "
@@ -560,7 +561,7 @@ void setup_join_database(int num_messages) {
     }
 
     // Create Message table
-    auto create_msg = conn.execute(
+    auto create_msg = conn->execute(
             "CREATE TABLE Message ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "content TEXT NOT NULL, "
@@ -577,7 +578,7 @@ void setup_join_database(int num_messages) {
     for (int i = 0; i < num_users; ++i) {
         std::string sql = "INSERT INTO User (name, age) VALUES ('User" + std::to_string(i) + "', " +
                           std::to_string(20 + (i % 50)) + ")";
-        auto user_insert = conn.execute(sql);
+        auto user_insert = conn->execute(sql);
         if (!user_insert.has_value()) {
             throw std::runtime_error("Failed to insert user");
         }
@@ -588,7 +589,7 @@ void setup_join_database(int num_messages) {
         int         sender_id = 1 + (i % num_users);
         std::string sql = "INSERT INTO Message (content, sender_id) VALUES ('Message" + std::to_string(i) + "', " +
                           std::to_string(sender_id) + ")";
-        auto msg_insert = conn.execute(sql);
+        auto msg_insert = conn->execute(sql);
         if (!msg_insert.has_value()) {
             throw std::runtime_error("Failed to insert message");
         }
@@ -637,7 +638,7 @@ void benchmark_raw_distinct_join(int num_messages, int iterations = 100) {
     int            total_results = 0;
 
     // OPTIMIZATION: Prepare statement ONCE outside loop (fair comparison with Storm's caching)
-    auto stmt_result = conn.prepare(sql);
+    auto stmt_result = conn->prepare(sql);
     if (!stmt_result.has_value()) {
         std::cerr << "Failed to prepare statement" << std::endl;
         teardown_join_database();
@@ -721,7 +722,7 @@ void benchmark_raw_distinct_where_join(int num_messages, int iterations = 100) {
     int            total_results = 0;
 
     // OPTIMIZATION: Prepare statement ONCE outside loop
-    auto stmt_result = conn.prepare(sql);
+    auto stmt_result = conn->prepare(sql);
     if (!stmt_result.has_value()) {
         std::cerr << "Failed to prepare statement" << std::endl;
         teardown_join_database();

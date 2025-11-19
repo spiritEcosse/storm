@@ -25,7 +25,7 @@ class SelectTest : public ::testing::Test {
         auto& conn = QuerySet<SelectPerson>::get_default_connection();
 
         // Create table with AUTOINCREMENT for proper ID generation
-        auto create_result = conn.execute(
+        auto create_result = conn->execute(
                 "CREATE TABLE SelectPerson ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "

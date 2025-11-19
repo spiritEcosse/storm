@@ -22,6 +22,7 @@ import <array>;
 import <vector>;
 import <type_traits>;
 import <optional>;
+import <memory>;
 import <cstdint>;
 import <memory>;
 import <variant>;
@@ -82,7 +83,7 @@ export namespace storm::orm::statements {
         }
 
       public:
-        explicit SelectStatement(Connection& conn) : conn_(conn) {}
+        explicit SelectStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
         // Optimized SELECT execution without JOIN
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_optimized() noexcept
@@ -117,7 +118,7 @@ export namespace storm::orm::statements {
                 -> std::expected<std::vector<T>, Error> {
             // Cache statement on first use
             if (!cached_select_stmt_) {
-                auto prepare_result = conn_.prepare_cached(get_select_sql());
+                auto prepare_result = conn_->prepare_cached(get_select_sql());
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
                 }
@@ -140,7 +141,7 @@ export namespace storm::orm::statements {
 
             // Cache JOIN statement separately (different SQL than simple SELECT)
             if (!cached_join_stmt_) {
-                auto prepare_result = conn_.prepare_cached(join_sql);
+                auto prepare_result = conn_->prepare_cached(join_sql);
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
                 }
@@ -303,7 +304,7 @@ export namespace storm::orm::statements {
                 stmt_ptr = cached_where_stmt_;
             } else {
                 // Different WHERE clause or first query - prepare new statement
-                auto prepare_result = conn_.prepare_cached(where_sql);
+                auto prepare_result = conn_->prepare_cached(where_sql);
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
                 }
@@ -339,7 +340,7 @@ export namespace storm::orm::statements {
                 stmt_ptr = cached_where_join_stmt_;
             } else {
                 // Different WHERE+JOIN clause or first query - prepare new statement
-                auto prepare_result = conn_.prepare_cached(join_where_sql);
+                auto prepare_result = conn_->prepare_cached(join_where_sql);
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
                 }
@@ -360,7 +361,7 @@ export namespace storm::orm::statements {
             });
         }
 
-        Connection&         conn_;
+        std::shared_ptr<ConnType> conn_;
         mutable Statement*  cached_select_stmt_     = nullptr; // Statement caching for simple SELECT
         mutable Statement*  cached_join_stmt_       = nullptr; // Separate cache for JOIN queries
         mutable Statement*  cached_where_stmt_      = nullptr; // Cache for WHERE without JOIN

@@ -41,7 +41,7 @@ class DistinctTest : public ::testing::Test {
         auto& conn = QuerySet<DistinctPerson>::get_default_connection();
 
         // Create DistinctPerson table
-        auto create_person = conn.execute(
+        auto create_person = conn->execute(
                 "CREATE TABLE DistinctPerson ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
@@ -52,7 +52,7 @@ class DistinctTest : public ::testing::Test {
                 << "Failed to create DistinctPerson table: " << create_person.error().message();
 
         // Create User table (for JOIN tests)
-        auto create_user = conn.execute(
+        auto create_user = conn->execute(
                 "CREATE TABLE User ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
@@ -62,7 +62,7 @@ class DistinctTest : public ::testing::Test {
         ASSERT_TRUE(create_user.has_value());
 
         // Create Message table with FK (for JOIN and edge case tests)
-        auto create_msg = conn.execute(
+        auto create_msg = conn->execute(
                 "CREATE TABLE Message ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "content TEXT NOT NULL, "
@@ -81,16 +81,16 @@ class DistinctTest : public ::testing::Test {
         auto& conn = QuerySet<DistinctPerson>::get_default_connection();
 
         // Insert users
-        conn.execute("INSERT INTO User (name, age) VALUES ('Alice', 30)");
-        conn.execute("INSERT INTO User (name, age) VALUES ('Bob', 25)");
-        conn.execute("INSERT INTO User (name, age) VALUES ('Charlie', 35)");
+        conn->execute("INSERT INTO User (name, age) VALUES ('Alice', 30)");
+        conn->execute("INSERT INTO User (name, age) VALUES ('Bob', 25)");
+        conn->execute("INSERT INTO User (name, age) VALUES ('Charlie', 35)");
 
         // Insert messages (multiple messages per user to test DISTINCT)
-        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('Hello', 1)");    // Alice
-        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('World', 1)");    // Alice
-        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('Hi there', 2)"); // Bob
-        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('Goodbye', 2)");  // Bob
-        conn.execute("INSERT INTO Message (content, sender_id) VALUES ('Test', 3)");     // Charlie
+        conn->execute("INSERT INTO Message (content, sender_id) VALUES ('Hello', 1)");    // Alice
+        conn->execute("INSERT INTO Message (content, sender_id) VALUES ('World', 1)");    // Alice
+        conn->execute("INSERT INTO Message (content, sender_id) VALUES ('Hi there', 2)"); // Bob
+        conn->execute("INSERT INTO Message (content, sender_id) VALUES ('Goodbye', 2)");  // Bob
+        conn->execute("INSERT INTO Message (content, sender_id) VALUES ('Test', 3)");     // Charlie
     }
 };
 
@@ -750,7 +750,7 @@ TEST_F(DistinctTest, RawSQLWorkaround) {
                       "FROM Message "
                       "INNER JOIN User ON User.id = Message.sender_id";
 
-    auto stmt_result = conn.prepare(sql);
+    auto stmt_result = conn->prepare(sql);
     ASSERT_TRUE(stmt_result.has_value());
 
     auto                     stmt = std::move(stmt_result.value());
@@ -820,7 +820,7 @@ TEST_F(DistinctTest, AlternativeApproaches) {
      * Alternative approaches for DISTINCT with relationships:
      *
      * Approach 1: Raw SQL (most flexible)
-     *   - Use conn.prepare() with custom SQL
+     *   - Use conn->prepare() with custom SQL
      *   - Full control over DISTINCT + JOIN queries
      *   - Loss of type safety and ORM convenience
      *

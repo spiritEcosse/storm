@@ -37,7 +37,7 @@ export namespace storm {
     // WARNING: Not thread-safe - use external synchronization in multi-threaded environments
     namespace detail {
         inline auto& get_default_connection_ptr() {
-            static std::unique_ptr<db::sqlite::Connection> conn_;
+            static std::shared_ptr<db::sqlite::Connection> conn_;
             return conn_;
         }
     } // namespace detail
@@ -145,9 +145,9 @@ export namespace storm {
 
                 // Create on first use, update state on subsequent calls
                 if (!cached_stmt.has_value()) {
-                    cached_stmt.emplace(&conn_, where_expr_, join_stmt_);
+                    cached_stmt.emplace(conn_, where_expr_, join_stmt_);
                 } else {
-                    cached_stmt->update_state(&conn_, where_expr_, join_stmt_);
+                    cached_stmt->update_state(conn_, where_expr_, join_stmt_);
                 }
 
                 return *cached_stmt;
@@ -161,9 +161,9 @@ export namespace storm {
 
                 // Create on first use, update state on subsequent calls
                 if (!cached_stmt.has_value()) {
-                    cached_stmt.emplace(&conn_, where_expr_, join_stmt_);
+                    cached_stmt.emplace(conn_, where_expr_, join_stmt_);
                 } else {
-                    cached_stmt->update_state(&conn_, where_expr_, join_stmt_);
+                    cached_stmt->update_state(conn_, where_expr_, join_stmt_);
                 }
 
                 return *cached_stmt;
@@ -286,22 +286,22 @@ export namespace storm {
                 return std::unexpected(conn_result.error());
             }
 
-            auto conn_ptr = std::make_unique<db::sqlite::Connection>(std::move(conn_result.value()));
+            auto conn_ptr = std::make_shared<db::sqlite::Connection>(std::move(conn_result.value()));
 
             // Pre-populate statement cache for better performance
             conn_ptr->prepare_common_statements();
 
-            detail::get_default_connection_ptr() = std::move(conn_ptr);
+            detail::get_default_connection_ptr() = conn_ptr;
             return {};
         }
 
-        [[nodiscard]] static auto& get_default_connection() {
+        [[nodiscard]] static auto get_default_connection() -> const std::shared_ptr<ConnType>& {
             if (!detail::get_default_connection_ptr()) {
                 throw std::runtime_error(
                         "Default database connection not set. Call QuerySet::set_default_connection() first."
                 );
             }
-            return *detail::get_default_connection_ptr();
+            return detail::get_default_connection_ptr();
         }
 
         [[nodiscard]] static bool has_default_connection() noexcept {
@@ -355,7 +355,7 @@ export namespace storm {
             return *select_stmt_;
         }
 
-        ConnType&                                                              conn_;
+        std::shared_ptr<ConnType>                                              conn_;
         mutable std::unique_ptr<orm::statements::InsertStatement<T, ConnType>> insert_stmt_;
         mutable std::unique_ptr<orm::statements::RemoveStatement<T, ConnType>> remove_stmt_;
         mutable std::unique_ptr<orm::statements::SelectStatement<T, ConnType>> select_stmt_;

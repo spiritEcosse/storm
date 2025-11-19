@@ -1,4 +1,5 @@
 #include <cstring>
+import <memory>;
 #include <iostream>
 #include <iomanip>
 #include <sqlite3.h>
@@ -33,7 +34,7 @@ void setup_database(int num_people) {
     auto& conn = QuerySet<Person>::get_default_connection();
 
     // Create table
-    auto create_result = conn.execute(
+    auto create_result = conn->execute(
             "CREATE TABLE Person ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "name TEXT NOT NULL, "
@@ -299,7 +300,7 @@ void benchmark_raw_sum(int num_people, int iterations) {
     setup_database(num_people);
     auto& conn = QuerySet<Person>::get_default_connection();
 
-    auto stmt_result = conn.prepare_cached("SELECT SUM(age) FROM Person");
+    auto stmt_result = conn->prepare_cached("SELECT SUM(age) FROM Person");
     if (!stmt_result.has_value()) {
         throw std::runtime_error("Prepare failed");
     }
@@ -341,7 +342,7 @@ void benchmark_raw_count(int num_people, int iterations) {
     setup_database(num_people);
     auto& conn = QuerySet<Person>::get_default_connection();
 
-    auto stmt_result = conn.prepare_cached("SELECT COUNT(*) FROM Person");
+    auto stmt_result = conn->prepare_cached("SELECT COUNT(*) FROM Person");
     if (!stmt_result.has_value()) {
         throw std::runtime_error("Prepare failed");
     }
@@ -383,7 +384,7 @@ void benchmark_raw_avg(int num_people, int iterations) {
     setup_database(num_people);
     auto& conn = QuerySet<Person>::get_default_connection();
 
-    auto stmt_result = conn.prepare_cached("SELECT AVG(salary) FROM Person");
+    auto stmt_result = conn->prepare_cached("SELECT AVG(salary) FROM Person");
     if (!stmt_result.has_value()) {
         throw std::runtime_error("Prepare failed");
     }
@@ -425,7 +426,7 @@ void benchmark_raw_min(int num_people, int iterations) {
     setup_database(num_people);
     auto& conn = QuerySet<Person>::get_default_connection();
 
-    auto stmt_result = conn.prepare_cached("SELECT MIN(age) FROM Person");
+    auto stmt_result = conn->prepare_cached("SELECT MIN(age) FROM Person");
     if (!stmt_result.has_value()) {
         throw std::runtime_error("Prepare failed");
     }
@@ -467,7 +468,7 @@ void benchmark_raw_max(int num_people, int iterations) {
     setup_database(num_people);
     auto& conn = QuerySet<Person>::get_default_connection();
 
-    auto stmt_result = conn.prepare_cached("SELECT MAX(salary) FROM Person");
+    auto stmt_result = conn->prepare_cached("SELECT MAX(salary) FROM Person");
     if (!stmt_result.has_value()) {
         throw std::runtime_error("Prepare failed");
     }
@@ -509,7 +510,7 @@ void benchmark_raw_multi_aggregate(int num_people, int iterations) {
     setup_database(num_people);
     auto& conn = QuerySet<Person>::get_default_connection();
 
-    auto stmt_result = conn.prepare_cached("SELECT SUM(age), COUNT(*), AVG(salary) FROM Person");
+    auto stmt_result = conn->prepare_cached("SELECT SUM(age), COUNT(*), AVG(salary) FROM Person");
     if (!stmt_result.has_value()) {
         throw std::runtime_error("Prepare failed");
     }
@@ -553,7 +554,7 @@ void benchmark_raw_sum_multi_field(int num_people, int iterations) {
     setup_database(num_people);
     auto& conn = QuerySet<Person>::get_default_connection();
 
-    auto stmt_result = conn.prepare_cached("SELECT SUM(age), SUM(years_experience) FROM Person");
+    auto stmt_result = conn->prepare_cached("SELECT SUM(age), SUM(years_experience) FROM Person");
     if (!stmt_result.has_value()) {
         throw std::runtime_error("Prepare failed");
     }

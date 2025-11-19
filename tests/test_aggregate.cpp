@@ -31,7 +31,7 @@ class AggregateTest : public ::testing::Test {
         auto& conn = QuerySet<AggregatePerson>::get_default_connection();
 
         // Create table
-        auto create_result = conn.execute(
+        auto create_result = conn->execute(
                 "CREATE TABLE AggregatePerson ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "

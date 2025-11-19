@@ -1,4 +1,5 @@
 // Direct comparison between raw SQLite and Storm ORM SELECT
+import <memory>;
 // Using the exact same test setup to find performance gap
 
 #include <sqlite3.h>
@@ -85,7 +86,7 @@ void benchmark_storm_orm(int num_records) {
     }
 
     auto& conn          = storm::QuerySet<Person>::get_default_connection();
-    auto  create_result = conn.execute(
+    auto  create_result = conn->execute(
             "CREATE TABLE Person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER NOT NULL)"
     );
 

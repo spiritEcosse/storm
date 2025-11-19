@@ -126,7 +126,7 @@ export namespace storm::orm::statements {
         }
 
       public:
-        explicit UpdateStatement(Connection& conn) : conn_(conn) {}
+        explicit UpdateStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
         [[nodiscard]] auto execute(std::span<const T> objects) noexcept -> std::expected<void, Error> {
             if (objects.empty()) {
@@ -140,7 +140,7 @@ export namespace storm::orm::statements {
 
             // Multiple updates - use transaction wrapper with individual statements
             return Base::template execute_with_transaction<ConnType>(
-                    conn_,
+                    *conn_,
                     true, // Always use transaction for batch updates
                     [this, objects]() -> std::expected<void, Error> { return execute_individual_batch(objects); }
             );
@@ -212,7 +212,7 @@ export namespace storm::orm::statements {
                 -> std::expected<void, Error> {
             // Get or cache the prepared statement
             if (!cached_update_stmt_) {
-                auto stmt_result = conn_.prepare_cached(get_update_sql());
+                auto stmt_result = conn_->prepare_cached(get_update_sql());
                 if (!stmt_result) {
                     return std::unexpected(stmt_result.error());
                 }
@@ -285,7 +285,7 @@ export namespace storm::orm::statements {
         // Execute individual updates for batch operations (caller handles transaction)
         [[nodiscard]] auto execute_individual_batch(std::span<const T> objects) noexcept -> std::expected<void, Error> {
             return Base::template execute_with_statement<ConnType>(
-                    conn_, get_update_sql(), [this, objects](auto& stmt) -> std::expected<void, Error> {
+                    *conn_, get_update_sql(), [this, objects](auto& stmt) -> std::expected<void, Error> {
                         for (const auto& obj : objects) {
                             // Reset and bind all fields
                             stmt.reset();
@@ -306,7 +306,7 @@ export namespace storm::orm::statements {
             );
         }
 
-        Connection&        conn_;
+        std::shared_ptr<ConnType> conn_;
         mutable Statement* cached_update_stmt_ = nullptr; // Cached statement for optimized single UPDATE
     };
 

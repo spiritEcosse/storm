@@ -1,4 +1,5 @@
 #include "benchmark_utils.hpp"
+import <memory>;
 
 import storm;
 import <span>;
@@ -27,7 +28,7 @@ void benchmark_sql_generation() {
     }
 
     auto& conn          = storm::QuerySet<Person>::get_default_connection();
-    auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+    auto  create_result = conn->execute(db_utils::PERSON_TABLE_SQL);
 
     // Create QuerySet to trigger template instantiation
     auto queryset = storm::QuerySet<Person>{};
@@ -158,7 +159,7 @@ void benchmark_delete_sql_generation() {
     }
 
     auto& conn          = storm::QuerySet<Person>::get_default_connection();
-    auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+    auto  create_result = conn->execute(db_utils::PERSON_TABLE_SQL);
     if (!create_result.has_value()) {
         std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
         storm::QuerySet<Person>::clear_default_connection();

@@ -19,6 +19,7 @@ import <array>;
 import <meta>;
 import <optional>;
 import <memory>;
+import <functional>;
 
 export namespace storm::orm::statements {
 
@@ -131,19 +132,19 @@ export namespace storm::orm::statements {
                 std::vector<FieldTypesTuple>>;
 
         explicit DistinctStatement(
-                ConnType*                                  conn,
+                std::shared_ptr<ConnType>                   conn,
                 const orm::where::ExpressionVariantPtr&    where_expr = nullptr,
                 const std::optional<JoinStatementWrapper>& join_stmt  = std::nullopt
         )
-            : conn_(conn), where_expr_(where_expr), join_stmt_(join_stmt) {}
+            : conn_(std::move(conn)), where_expr_(where_expr), join_stmt_(join_stmt) {}
 
         // Update state for reuse (called by DistinctQuerySet)
         void update_state(
-                ConnType*                                  conn,
+                std::shared_ptr<ConnType>                   conn,
                 const orm::where::ExpressionVariantPtr&    where_expr,
                 const std::optional<JoinStatementWrapper>& join_stmt
         ) {
-            conn_       = conn;
+            conn_ = conn;
             where_expr_ = where_expr;
             join_stmt_  = join_stmt;
             // No cache invalidation needed - connection's prepare_cached() handles caching
@@ -365,7 +366,7 @@ export namespace storm::orm::statements {
             );
         }
 
-        ConnType*                           conn_;
+        std::shared_ptr<ConnType>         conn_;
         orm::where::ExpressionVariantPtr    where_expr_;
         std::optional<JoinStatementWrapper> join_stmt_;
     };

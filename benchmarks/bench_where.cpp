@@ -1,4 +1,5 @@
 #include <cstring>
+import <memory>;
 #include <iostream>
 #include <iomanip>
 #include "benchmark_utils.hpp"
@@ -34,7 +35,7 @@ void setup_database(int num_people) {
     auto& conn = QuerySet<TestPerson>::get_default_connection();
 
     // Create table
-    auto create_result = conn.execute(
+    auto create_result = conn->execute(
             "CREATE TABLE TestPerson ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "name TEXT NOT NULL, "
@@ -141,7 +142,7 @@ void benchmark_where_int(int num_people, int iterations = 100) {
     int    raw_rows = 0;
 
     // Prepare statement once outside loop
-    auto stmt_result = conn.prepare(sql);
+    auto stmt_result = conn->prepare(sql);
     if (!stmt_result.has_value()) {
         std::cerr << "Failed to prepare statement" << std::endl;
         teardown_database();
@@ -224,7 +225,7 @@ void benchmark_where_string(int num_people, int iterations = 100) {
     int    raw_rows = 0;
 
     // Prepare statement once outside loop
-    auto stmt_result = conn.prepare(sql);
+    auto stmt_result = conn->prepare(sql);
     if (!stmt_result.has_value()) {
         std::cerr << "Failed to prepare statement" << std::endl;
         teardown_database();
@@ -307,7 +308,7 @@ void benchmark_where_float(int num_people, int iterations = 100) {
     int    raw_rows = 0;
 
     // Prepare statement once outside loop
-    auto stmt_result = conn.prepare(sql);
+    auto stmt_result = conn->prepare(sql);
     if (!stmt_result.has_value()) {
         std::cerr << "Failed to prepare statement" << std::endl;
         teardown_database();
@@ -390,7 +391,7 @@ void benchmark_where_bool(int num_people, int iterations = 100) {
     int    raw_rows = 0;
 
     // Prepare statement once outside loop
-    auto stmt_result = conn.prepare(sql);
+    auto stmt_result = conn->prepare(sql);
     if (!stmt_result.has_value()) {
         std::cerr << "Failed to prepare statement" << std::endl;
         teardown_database();
@@ -477,7 +478,7 @@ void benchmark_where_like(int num_people, int iterations = 100) {
     int    raw_rows = 0;
 
     // Prepare statement once outside loop
-    auto stmt_result = conn.prepare(sql);
+    auto stmt_result = conn->prepare(sql);
     if (!stmt_result.has_value()) {
         std::cerr << "Failed to prepare statement" << std::endl;
         teardown_database();
@@ -560,7 +561,7 @@ void benchmark_where_between(int num_people, int iterations = 100) {
     int    raw_rows = 0;
 
     // Prepare statement once outside loop
-    auto stmt_result = conn.prepare(sql);
+    auto stmt_result = conn->prepare(sql);
     if (!stmt_result.has_value()) {
         std::cerr << "Failed to prepare statement" << std::endl;
         teardown_database();
@@ -644,7 +645,7 @@ void benchmark_where_in_3_ct(int num_people, int iterations = 100) {
     int    raw_rows = 0;
 
     // Prepare statement once outside loop
-    auto stmt_result = conn.prepare(sql);
+    auto stmt_result = conn->prepare(sql);
     if (!stmt_result.has_value()) {
         std::cerr << "Failed to prepare statement" << std::endl;
         teardown_database();
@@ -730,7 +731,7 @@ void benchmark_where_in_10_ct(int num_people, int iterations = 100) {
     int    raw_rows = 0;
 
     // Prepare statement once outside loop
-    auto stmt_result = conn.prepare(sql);
+    auto stmt_result = conn->prepare(sql);
     if (!stmt_result.has_value()) {
         std::cerr << "Failed to prepare statement" << std::endl;
         teardown_database();
@@ -825,7 +826,7 @@ void benchmark_where_simple(int num_people, int iterations = 100) {
     int    raw_rows = 0;
 
     // Prepare statement once outside loop
-    auto stmt_result = conn.prepare(sql);
+    auto stmt_result = conn->prepare(sql);
     if (!stmt_result.has_value()) {
         std::cerr << "Failed to prepare statement" << std::endl;
         teardown_database();
@@ -914,7 +915,7 @@ void benchmark_where_medium(int num_people, int iterations = 100) {
     int    raw_rows = 0;
 
     // Prepare statement once outside loop
-    auto stmt_result = conn.prepare(sql);
+    auto stmt_result = conn->prepare(sql);
     if (!stmt_result.has_value()) {
         std::cerr << "Failed to prepare statement" << std::endl;
         teardown_database();
@@ -1009,7 +1010,7 @@ void benchmark_where_complex(int num_people, int iterations = 100) {
     int    raw_rows = 0;
 
     // Prepare statement once outside loop
-    auto stmt_result = conn.prepare(sql);
+    auto stmt_result = conn->prepare(sql);
     if (!stmt_result.has_value()) {
         std::cerr << "Failed to prepare statement" << std::endl;
         teardown_database();

@@ -27,7 +27,7 @@ class QuerySetRemoveTest : public ::testing::Test {
 
         // Create test table using the default connection
         auto& default_conn  = storm::QuerySet<SqlitePerson>::get_default_connection();
-        auto  create_result = default_conn.execute(
+        auto  create_result = default_conn->execute(
                 "CREATE TABLE SqlitePerson ("
                  "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                  "name TEXT NOT NULL, "
@@ -37,7 +37,7 @@ class QuerySetRemoveTest : public ::testing::Test {
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
         // Insert test data
-        auto insert_result = default_conn.execute(
+        auto insert_result = default_conn->execute(
                 "INSERT INTO SqlitePerson (id, name, age) VALUES "
                 "(1, 'Alice', 30), "
                 "(2, 'Bob', 25), "
@@ -55,7 +55,7 @@ class QuerySetRemoveTest : public ::testing::Test {
     int countSqlitePersons() {
         auto&         conn = storm::QuerySet<SqlitePerson>::get_default_connection();
         sqlite3_stmt* stmt;
-        int           rc = sqlite3_prepare_v2(conn.get(), "SELECT COUNT(*) FROM SqlitePerson", -1, &stmt, nullptr);
+        int           rc = sqlite3_prepare_v2(conn->get(), "SELECT COUNT(*) FROM SqlitePerson", -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
             return -1;
 
@@ -70,7 +70,7 @@ class QuerySetRemoveTest : public ::testing::Test {
     bool personExists(int id) {
         auto&         conn = storm::QuerySet<SqlitePerson>::get_default_connection();
         sqlite3_stmt* stmt;
-        int rc = sqlite3_prepare_v2(conn.get(), "SELECT COUNT(*) FROM SqlitePerson WHERE id = ?", -1, &stmt, nullptr);
+        int rc = sqlite3_prepare_v2(conn->get(), "SELECT COUNT(*) FROM SqlitePerson WHERE id = ?", -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
             return false;
 
@@ -201,7 +201,7 @@ TEST_F(QuerySetRemoveTest, RemoveBatchSmall) {
     // Add more test data for batch testing
     auto& conn = storm::QuerySet<SqlitePerson>::get_default_connection();
     for (int i = 4; i <= 12; i++) {
-        auto insert_result = conn.execute(
+        auto insert_result = conn->execute(
                 "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" +
                 std::to_string(i) + "', " + std::to_string(20 + i) + ")"
         );
@@ -243,7 +243,7 @@ TEST_F(QuerySetRemoveTest, RemoveBatchLarge) {
     // Add many test records for large batch testing
     auto& conn = storm::QuerySet<SqlitePerson>::get_default_connection();
     for (int i = 4; i <= 103; i++) {
-        auto insert_result = conn.execute(
+        auto insert_result = conn->execute(
                 "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" +
                 std::to_string(i) + "', " + std::to_string(20 + (i % 60)) + ")"
         );
@@ -343,7 +343,7 @@ TEST_F(QuerySetRemoveTest, RemoveBatchPerformance) {
     auto&     conn        = storm::QuerySet<SqlitePerson>::get_default_connection();
     const int num_records = 1000;
     for (int i = 4; i <= num_records; i++) {
-        auto insert_result = conn.execute(
+        auto insert_result = conn->execute(
                 "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" +
                 std::to_string(i) + "', " + std::to_string(20 + (i % 60)) + ")"
         );
@@ -546,7 +546,7 @@ class QuerySetUpdateTest : public ::testing::Test {
 
         // Create test table using the default connection
         auto& default_conn  = storm::QuerySet<SqlitePerson>::get_default_connection();
-        auto  create_result = default_conn.execute(
+        auto  create_result = default_conn->execute(
                 "CREATE TABLE SqlitePerson ("
                  "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                  "name TEXT NOT NULL, "
@@ -556,7 +556,7 @@ class QuerySetUpdateTest : public ::testing::Test {
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
         // Insert test data
-        auto insert_result = default_conn.execute(
+        auto insert_result = default_conn->execute(
                 "INSERT INTO SqlitePerson (id, name, age) VALUES "
                 "(1, 'Alice', 30), "
                 "(2, 'Bob', 25), "
@@ -574,7 +574,7 @@ class QuerySetUpdateTest : public ::testing::Test {
     int countSqlitePersons() {
         auto&         conn = storm::QuerySet<SqlitePerson>::get_default_connection();
         sqlite3_stmt* stmt;
-        int           rc = sqlite3_prepare_v2(conn.get(), "SELECT COUNT(*) FROM SqlitePerson", -1, &stmt, nullptr);
+        int           rc = sqlite3_prepare_v2(conn->get(), "SELECT COUNT(*) FROM SqlitePerson", -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
             return -1;
 
@@ -590,7 +590,7 @@ class QuerySetUpdateTest : public ::testing::Test {
         auto&         conn = storm::QuerySet<SqlitePerson>::get_default_connection();
         sqlite3_stmt* stmt;
         int           rc = sqlite3_prepare_v2(
-                conn.get(), "SELECT id, name, age FROM SqlitePerson WHERE id = ?", -1, &stmt, nullptr
+                conn->get(), "SELECT id, name, age FROM SqlitePerson WHERE id = ?", -1, &stmt, nullptr
         );
         if (rc != SQLITE_OK)
             return std::nullopt;
@@ -770,7 +770,7 @@ TEST_F(QuerySetUpdateTest, UpdateBatchMedium) {
     // Add more test data for batch testing
     auto& conn = storm::QuerySet<SqlitePerson>::get_default_connection();
     for (int i = 4; i <= 25; i++) {
-        auto insert_result = conn.execute(
+        auto insert_result = conn->execute(
                 "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" +
                 std::to_string(i) + "', " + std::to_string(20 + i) + ")"
         );
@@ -819,7 +819,7 @@ TEST_F(QuerySetUpdateTest, UpdateBatchLarge) {
     // Add many test records for large batch testing
     auto& conn = storm::QuerySet<SqlitePerson>::get_default_connection();
     for (int i = 4; i <= 103; i++) {
-        auto insert_result = conn.execute(
+        auto insert_result = conn->execute(
                 "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" +
                 std::to_string(i) + "', " + std::to_string(20 + (i % 60)) + ")"
         );

@@ -1,4 +1,5 @@
 #include <cstring>
+import <memory>;
 #include <random>
 #include <algorithm>
 #include "benchmark_utils.hpp"
@@ -90,7 +91,7 @@ void benchmark_storm_orm_single_insert(int num_records, const BenchmarkConfig& c
 
     // Create table
     auto& conn          = storm::QuerySet<Person>::get_default_connection();
-    auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+    auto  create_result = conn->execute(db_utils::PERSON_TABLE_SQL);
     if (!create_result.has_value()) {
         std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
         return;
@@ -139,7 +140,7 @@ void benchmark_storm_orm_single_insert(int num_records, const BenchmarkConfig& c
               << " inserts/sec" << std::endl;
 
     if (config.show_cache_stats) {
-        std::cout << "  Statement cache size: " << conn.cached_statement_count() << std::endl;
+        std::cout << "  Statement cache size: " << conn->cached_statement_count() << std::endl;
     }
 
     // Cleanup
@@ -167,7 +168,7 @@ void benchmark_storm_orm_batch_insert(int num_records, const BenchmarkConfig& co
 
         // Create table
         auto& conn          = storm::QuerySet<Person>::get_default_connection();
-        auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+        auto  create_result = conn->execute(db_utils::PERSON_TABLE_SQL);
         if (!create_result.has_value()) {
             std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
             storm::QuerySet<Person>::clear_default_connection();
@@ -215,7 +216,7 @@ void benchmark_storm_orm_batch_insert(int num_records, const BenchmarkConfig& co
                   << (successful_inserts / (total_time / 1000.0)) << " inserts/sec" << std::endl;
 
         if (config.show_cache_stats) {
-            std::cout << "  Statement cache size: " << conn.cached_statement_count() << std::endl;
+            std::cout << "  Statement cache size: " << conn->cached_statement_count() << std::endl;
         }
 
         // Cleanup
@@ -235,7 +236,7 @@ void benchmark_storm_orm_single_update(int num_records, const BenchmarkConfig& c
 
     // Create table
     auto& conn          = storm::QuerySet<Person>::get_default_connection();
-    auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+    auto  create_result = conn->execute(db_utils::PERSON_TABLE_SQL);
     if (!create_result.has_value()) {
         std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
         return;
@@ -299,7 +300,7 @@ void benchmark_storm_orm_single_update(int num_records, const BenchmarkConfig& c
               << " updates/sec" << std::endl;
 
     if (config.show_cache_stats) {
-        std::cout << "  Statement cache size: " << conn.cached_statement_count() << std::endl;
+        std::cout << "  Statement cache size: " << conn->cached_statement_count() << std::endl;
     }
 
     // Cleanup
@@ -327,7 +328,7 @@ void benchmark_storm_orm_batch_update(int num_records, const BenchmarkConfig& co
 
         // Create table
         auto& conn          = storm::QuerySet<Person>::get_default_connection();
-        auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+        auto  create_result = conn->execute(db_utils::PERSON_TABLE_SQL);
         if (!create_result.has_value()) {
             std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
             storm::QuerySet<Person>::clear_default_connection();
@@ -391,7 +392,7 @@ void benchmark_storm_orm_batch_update(int num_records, const BenchmarkConfig& co
                   << (successful_updates / (total_time / 1000.0)) << " updates/sec" << std::endl;
 
         if (config.show_cache_stats) {
-            std::cout << "  Statement cache size: " << conn.cached_statement_count() << std::endl;
+            std::cout << "  Statement cache size: " << conn->cached_statement_count() << std::endl;
         }
 
         // Cleanup
@@ -411,7 +412,7 @@ void benchmark_storm_orm_single_delete(int num_records, const BenchmarkConfig& c
 
     // Create table
     auto& conn          = storm::QuerySet<Person>::get_default_connection();
-    auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+    auto  create_result = conn->execute(db_utils::PERSON_TABLE_SQL);
     if (!create_result.has_value()) {
         std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
         return;
@@ -469,7 +470,7 @@ void benchmark_storm_orm_single_delete(int num_records, const BenchmarkConfig& c
               << " deletes/sec" << std::endl;
 
     if (config.show_cache_stats) {
-        std::cout << "  Statement cache size: " << conn.cached_statement_count() << std::endl;
+        std::cout << "  Statement cache size: " << conn->cached_statement_count() << std::endl;
     }
 
     // Cleanup
@@ -497,7 +498,7 @@ void benchmark_storm_orm_batch_delete(int num_records, const BenchmarkConfig& co
 
         // Create table
         auto& conn          = storm::QuerySet<Person>::get_default_connection();
-        auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+        auto  create_result = conn->execute(db_utils::PERSON_TABLE_SQL);
         if (!create_result.has_value()) {
             std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
             storm::QuerySet<Person>::clear_default_connection();
@@ -561,7 +562,7 @@ void benchmark_storm_orm_batch_delete(int num_records, const BenchmarkConfig& co
                   << (successful_deletes / (total_time / 1000.0)) << " deletes/sec" << std::endl;
 
         if (config.show_cache_stats) {
-            std::cout << "  Statement cache size: " << conn.cached_statement_count() << std::endl;
+            std::cout << "  Statement cache size: " << conn->cached_statement_count() << std::endl;
         }
 
         // Cleanup
@@ -581,7 +582,7 @@ void benchmark_storm_orm_select(int num_records, const BenchmarkConfig& config) 
 
     // Create table
     auto& conn          = storm::QuerySet<Person>::get_default_connection();
-    auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+    auto  create_result = conn->execute(db_utils::PERSON_TABLE_SQL);
     if (!create_result.has_value()) {
         std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
         return;
@@ -624,7 +625,7 @@ void benchmark_storm_orm_select(int num_records, const BenchmarkConfig& config) 
                   << (selected_persons.size() / (elapsed / 1000.0)) << " rows/sec" << std::endl;
 
         if (config.show_cache_stats) {
-            std::cout << "  Statement cache size: " << conn.cached_statement_count() << std::endl;
+            std::cout << "  Statement cache size: " << conn->cached_statement_count() << std::endl;
         }
     } else {
         std::cerr << "SELECT failed: " << select_result.error().message() << std::endl;
@@ -644,7 +645,7 @@ void benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& co
 
     // Create table
     auto& conn          = storm::QuerySet<Person>::get_default_connection();
-    auto  create_result = conn.execute(db_utils::PERSON_TABLE_SQL);
+    auto  create_result = conn->execute(db_utils::PERSON_TABLE_SQL);
     if (!create_result.has_value()) {
         std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
         return;
@@ -659,14 +660,14 @@ void benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& co
     }
 
     // Insert test data with transaction for setup
-    (void)conn.execute("BEGIN TRANSACTION");
+    (void)conn->execute("BEGIN TRANSACTION");
     for (const auto& person : persons) {
-        (void)conn.execute(
+        (void)conn->execute(
                 "INSERT INTO Person (id, name, age) VALUES (" + std::to_string(person.id) + ", '" + person.name +
                 "', " + std::to_string(person.age) + ")"
         );
     }
-    (void)conn.execute("COMMIT");
+    (void)conn->execute("COMMIT");
 
     // Create QuerySet
     auto queryset = storm::QuerySet<Person>{};
@@ -731,7 +732,7 @@ void benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& co
 
     std::cout << "  Total successful removes: " << (successful_removes_individual + successful_removes_batch) << "/"
               << num_records << std::endl;
-    std::cout << "  Statement cache size: " << conn.cached_statement_count() << std::endl;
+    std::cout << "  Statement cache size: " << conn->cached_statement_count() << std::endl;
 
     // Cleanup
     storm::QuerySet<Person>::clear_default_connection();
