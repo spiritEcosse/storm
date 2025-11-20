@@ -86,70 +86,109 @@ export namespace storm::orm::statements {
         explicit SelectStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
         // Optimized SELECT execution without JOIN
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_optimized() noexcept
-                -> std::expected<std::vector<T>, Error> {
-            return execute_simple_select();
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_optimized(
+                const std::optional<int>& limit = std::nullopt, const std::optional<int>& offset = std::nullopt
+        ) noexcept -> std::expected<std::vector<T>, Error> {
+            return execute_simple_select(limit, offset);
         }
 
         // Optimized SELECT execution with JOIN (type-erased wrapper with compile-time SQL)
         // NOTE: join_wrapper is passed by value (lightweight - just 3 function pointers)
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
-        execute_optimized(JoinStatementWrapper join_wrapper) noexcept -> std::expected<std::vector<T>, Error> {
-            return execute_with_join_impl(join_wrapper);
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_optimized(
+                JoinStatementWrapper      join_wrapper,
+                const std::optional<int>& limit  = std::nullopt,
+                const std::optional<int>& offset = std::nullopt
+        ) noexcept -> std::expected<std::vector<T>, Error> {
+            return execute_with_join_impl(join_wrapper, limit, offset);
         }
 
         // SELECT with WHERE clause (without JOIN)
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
-        execute_with_where(const orm::where::ExpressionVariantPtr& where_expr) noexcept
-                -> std::expected<std::vector<T>, Error> {
-            return execute_where_impl(where_expr);
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_with_where(
+                const orm::where::ExpressionVariantPtr& where_expr,
+                const std::optional<int>&               limit  = std::nullopt,
+                const std::optional<int>&               offset = std::nullopt
+        ) noexcept -> std::expected<std::vector<T>, Error> {
+            return execute_where_impl(where_expr, limit, offset);
         }
 
         // SELECT with WHERE clause and JOIN
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_with_where_and_join(
-                JoinStatementWrapper join_wrapper, const orm::where::ExpressionVariantPtr& where_expr
+                JoinStatementWrapper                    join_wrapper,
+                const orm::where::ExpressionVariantPtr& where_expr,
+                const std::optional<int>&               limit  = std::nullopt,
+                const std::optional<int>&               offset = std::nullopt
         ) noexcept -> std::expected<std::vector<T>, Error> {
-            return execute_where_join_impl(join_wrapper, where_expr);
+            return execute_where_join_impl(join_wrapper, where_expr, limit, offset);
         }
 
       private:
         // Simple SELECT execution (uses unified query loop)
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_simple_select() noexcept
-                -> std::expected<std::vector<T>, Error> {
-            // Cache statement on first use
-            if (!cached_select_stmt_) {
-                auto prepare_result = conn_->prepare_cached(get_select_sql());
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_simple_select(
+                const std::optional<int>& limit = std::nullopt, const std::optional<int>& offset = std::nullopt
+        ) noexcept -> std::expected<std::vector<T>, Error> {
+            Statement* stmt_ptr = nullptr;
+
+            // Check if we have LIMIT/OFFSET - if so, build custom SQL
+            if (limit.has_value() || offset.has_value()) {
+                std::string sql = get_select_sql();
+                append_limit_offset(sql, limit, offset);
+
+                auto prepare_result = conn_->prepare_cached(sql);
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
                 }
-                cached_select_stmt_ = *prepare_result;
+                stmt_ptr = *prepare_result;
+            } else {
+                // No LIMIT/OFFSET - use cached statement
+                if (!cached_select_stmt_) {
+                    auto prepare_result = conn_->prepare_cached(get_select_sql());
+                    if (!prepare_result) [[unlikely]] {
+                        return std::unexpected(prepare_result.error());
+                    }
+                    cached_select_stmt_ = *prepare_result;
+                }
+                stmt_ptr = cached_select_stmt_;
             }
 
             // Use unified query loop with fast extraction
-            return execute_query_loop(cached_select_stmt_, [](Statement* stmt, T& obj) {
+            return execute_query_loop(stmt_ptr, [](Statement* stmt, T& obj) {
                 extract_all_columns_inline_fast(stmt, obj);
             });
         }
 
         // JOIN execution with compile-time SQL (uses unified query loop)
         // OPTIMIZATION: Uses pre-computed complete SQL from JoinStatement (zero runtime concatenation)
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
-        execute_with_join_impl(JoinStatementWrapper join_wrapper) noexcept -> std::expected<std::vector<T>, Error> {
-            // OPTIMIZATION: Use pre-computed complete SQL (generated at compile-time)
-            // Eliminates all runtime string concatenation and heap allocation
-            const std::string& join_sql = join_wrapper.get_complete_sql();
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_with_join_impl(
+                JoinStatementWrapper      join_wrapper,
+                const std::optional<int>& limit  = std::nullopt,
+                const std::optional<int>& offset = std::nullopt
+        ) noexcept -> std::expected<std::vector<T>, Error> {
+            Statement* stmt_ptr = nullptr;
 
-            // Cache JOIN statement separately (different SQL than simple SELECT)
-            if (!cached_join_stmt_) {
-                auto prepare_result = conn_->prepare_cached(join_sql);
+            // Check if we have LIMIT/OFFSET - if so, build custom SQL
+            if (limit.has_value() || offset.has_value()) {
+                std::string sql = join_wrapper.get_complete_sql();
+                append_limit_offset(sql, limit, offset);
+
+                auto prepare_result = conn_->prepare_cached(sql);
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
                 }
-                cached_join_stmt_ = *prepare_result;
+                stmt_ptr = *prepare_result;
+            } else {
+                // No LIMIT/OFFSET - use cached JOIN statement
+                if (!cached_join_stmt_) {
+                    auto prepare_result = conn_->prepare_cached(join_wrapper.get_complete_sql());
+                    if (!prepare_result) [[unlikely]] {
+                        return std::unexpected(prepare_result.error());
+                    }
+                    cached_join_stmt_ = *prepare_result;
+                }
+                stmt_ptr = cached_join_stmt_;
             }
 
             // Use unified query loop with JOIN extraction
-            return execute_query_loop(cached_join_stmt_, [&join_wrapper](Statement* stmt, T& obj) {
+            return execute_query_loop(stmt_ptr, [&join_wrapper](Statement* stmt, T& obj) {
                 join_wrapper.extract_row(stmt, &obj);
             });
         }
@@ -266,6 +305,24 @@ export namespace storm::orm::statements {
             return results;
         }
 
+        // Helper: Append LIMIT/OFFSET clauses to SQL
+        // NOTE: SQLite requires LIMIT when using OFFSET, so we use LIMIT -1 (meaning unlimited) when OFFSET is used alone
+        __attribute__((always_inline)) static inline void
+        append_limit_offset(std::string& sql, const std::optional<int>& limit, const std::optional<int>& offset) {
+            if (limit.has_value()) {
+                sql += " LIMIT ";
+                sql += std::to_string(limit.value());
+            } else if (offset.has_value()) {
+                // SQLite requires LIMIT when using OFFSET
+                sql += " LIMIT -1";
+            }
+
+            if (offset.has_value()) {
+                sql += " OFFSET ";
+                sql += std::to_string(offset.value());
+            }
+        }
+
         // Helper: Build WHERE clause SQL by appending to base SQL
         [[nodiscard]] __attribute__((always_inline)) static inline std::string
         build_where_sql(const std::string& base_sql, const orm::where::ExpressionVariantPtr& where_expr) {
@@ -291,11 +348,14 @@ export namespace storm::orm::statements {
         }
 
         // SELECT with WHERE clause (no JOIN) - uses unified query loop
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
-        execute_where_impl(const orm::where::ExpressionVariantPtr& where_expr) noexcept
-                -> std::expected<std::vector<T>, Error> {
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_where_impl(
+                const orm::where::ExpressionVariantPtr& where_expr,
+                const std::optional<int>&               limit  = std::nullopt,
+                const std::optional<int>&               offset = std::nullopt
+        ) noexcept -> std::expected<std::vector<T>, Error> {
             // Generate WHERE clause SQL from expression using helper
             std::string where_sql = build_where_sql(get_select_sql(), where_expr);
+            append_limit_offset(where_sql, limit, offset);
 
             // OPTIMIZATION: Cache WHERE statement if SQL matches previous query
             Statement* stmt_ptr = nullptr;
@@ -328,10 +388,14 @@ export namespace storm::orm::statements {
 
         // SELECT with WHERE clause and JOIN - uses unified query loop
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_where_join_impl(
-                JoinStatementWrapper join_wrapper, const orm::where::ExpressionVariantPtr& where_expr
+                JoinStatementWrapper                    join_wrapper,
+                const orm::where::ExpressionVariantPtr& where_expr,
+                const std::optional<int>&               limit  = std::nullopt,
+                const std::optional<int>&               offset = std::nullopt
         ) noexcept -> std::expected<std::vector<T>, Error> {
             // Generate WHERE clause SQL from expression using helper
             std::string join_where_sql = build_where_sql(join_wrapper.get_complete_sql(), where_expr);
+            append_limit_offset(join_where_sql, limit, offset);
 
             // OPTIMIZATION: Cache WHERE+JOIN statement if SQL matches previous query
             Statement* stmt_ptr = nullptr;

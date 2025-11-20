@@ -99,6 +99,22 @@ export namespace storm {
             return self_cast(self);
         }
 
+        // LIMIT clause support - builder pattern with method chaining
+        // Usage: queryset.limit(10).select()
+        //        queryset.where(age > 25).limit(10).select()
+        constexpr auto&& limit(this auto&& self, int n) {
+            self.limit_value_ = n;
+            return self_cast(self);
+        }
+
+        // OFFSET clause support - builder pattern with method chaining
+        // Usage: queryset.offset(5).select()
+        //        queryset.limit(10).offset(5).select()
+        constexpr auto&& offset(this auto&& self, int n) {
+            self.offset_value_ = n;
+            return self_cast(self);
+        }
+
         // Select operations - returns all rows (optimized with statement caching)
         // NOTE: WHERE and JOIN state is preserved after select() for query reusability.
         // Call reset() to clear state when needed.
@@ -107,16 +123,16 @@ export namespace storm {
 
             if (join_stmt_.has_value() && where_expr_) {
                 // JOIN + WHERE
-                result = get_select_statement().execute_with_where_and_join(*join_stmt_, where_expr_);
+                result = get_select_statement().execute_with_where_and_join(*join_stmt_, where_expr_, limit_value_, offset_value_);
             } else if (join_stmt_.has_value()) {
                 // JOIN only (no WHERE)
-                result = get_select_statement().execute_optimized(*join_stmt_);
+                result = get_select_statement().execute_optimized(*join_stmt_, limit_value_, offset_value_);
             } else if (where_expr_) {
                 // WHERE only (no JOIN)
-                result = get_select_statement().execute_with_where(where_expr_);
+                result = get_select_statement().execute_with_where(where_expr_, limit_value_, offset_value_);
             } else {
                 // Simple SELECT (no JOIN, no WHERE)
-                result = get_select_statement().execute_optimized();
+                result = get_select_statement().execute_optimized(limit_value_, offset_value_);
             }
 
             return result;
@@ -145,9 +161,9 @@ export namespace storm {
 
                 // Create on first use, update state on subsequent calls
                 if (!cached_stmt.has_value()) {
-                    cached_stmt.emplace(conn_, where_expr_, join_stmt_);
+                    cached_stmt.emplace(conn_, where_expr_, join_stmt_, limit_value_, offset_value_);
                 } else {
-                    cached_stmt->update_state(conn_, where_expr_, join_stmt_);
+                    cached_stmt->update_state(conn_, where_expr_, join_stmt_, limit_value_, offset_value_);
                 }
 
                 return *cached_stmt;
@@ -161,9 +177,9 @@ export namespace storm {
 
                 // Create on first use, update state on subsequent calls
                 if (!cached_stmt.has_value()) {
-                    cached_stmt.emplace(conn_, where_expr_, join_stmt_);
+                    cached_stmt.emplace(conn_, where_expr_, join_stmt_, limit_value_, offset_value_);
                 } else {
-                    cached_stmt->update_state(conn_, where_expr_, join_stmt_);
+                    cached_stmt->update_state(conn_, where_expr_, join_stmt_, limit_value_, offset_value_);
                 }
 
                 return *cached_stmt;
@@ -220,16 +236,18 @@ export namespace storm {
             return get_update_statement().execute(objects);
         }
 
-        // Reset WHERE and JOIN state
+        // Reset WHERE, JOIN, LIMIT, and OFFSET state
         // Use this to clear conditions and start fresh with the same QuerySet instance
         // Example:
         //   auto qs = QuerySet<Person>(conn);
-        //   qs.where(age > 25).select();  // WHERE age > 25
-        //   qs.reset();                   // Clear state
-        //   qs.select();                  // No WHERE
+        //   qs.where(age > 25).limit(10).select();  // WHERE age > 25 LIMIT 10
+        //   qs.reset();                              // Clear state
+        //   qs.select();                             // No WHERE, no LIMIT
         void reset() noexcept {
             join_stmt_.reset();
             where_expr_.reset();
+            limit_value_.reset();
+            offset_value_.reset();
         }
 
         // Aggregate functions - fluent builder pattern for multiple aggregates
@@ -363,6 +381,8 @@ export namespace storm {
 
         mutable std::optional<orm::statements::JoinStatementWrapper> join_stmt_;
         mutable orm::where::ExpressionVariantPtr                     where_expr_;
+        mutable std::optional<int>                                   limit_value_;
+        mutable std::optional<int>                                   offset_value_;
     };
 
 } // namespace storm

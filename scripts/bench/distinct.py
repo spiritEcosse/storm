@@ -75,6 +75,23 @@ class DistinctBenchmark(BenchmarkRunner):
                 *extract_metrics(r'Storm ORM DISTINCT \(content\) \+ WHERE \+ JOIN'),
                 *extract_metrics(r'Raw SQLite DISTINCT \(content\) \+ WHERE \+ JOIN')
             ),
+            # DISTINCT with LIMIT/OFFSET (Storm vs Raw comparison)
+            'limit_100': (
+                *extract_metrics(r'Storm ORM DISTINCT \(name\) \+ LIMIT 100'),
+                *extract_metrics(r'Raw SQLite DISTINCT \(name\) \+ LIMIT 100')
+            ),
+            'limit_offset': (
+                *extract_metrics(r'Storm ORM DISTINCT \(name\) \+ LIMIT 50 OFFSET 50'),
+                *extract_metrics(r'Raw SQLite DISTINCT \(name\) \+ LIMIT 50 OFFSET 50')
+            ),
+            'multi_limit': (
+                *extract_metrics(r'Storm ORM DISTINCT \(name, age\) \+ LIMIT 100'),
+                *extract_metrics(r'Raw SQLite DISTINCT \(name, age\) \+ LIMIT 100')
+            ),
+            'offset_50': (
+                *extract_metrics(r'Storm ORM DISTINCT \(name\) \+ OFFSET 50'),
+                *extract_metrics(r'Raw SQLite DISTINCT \(name\) \+ OFFSET 50')
+            ),
         }
 
     def display_results(self, data, records=10000, iterations=100):
@@ -125,7 +142,8 @@ class DistinctBenchmark(BenchmarkRunner):
         all_effs = []
 
         # Single-field DISTINCT operations
-        print(f"\n{Colors.BOLD}Single-Field DISTINCT:{Colors.RESET}")
+        # Add section header as empty/separator row
+        table.print_row([f"{Colors.BOLD}Single-Field DISTINCT:{Colors.RESET}", "", "", "", ""])
         for name, label in [
             ('name', 'DISTINCT (name - TEXT)'),
             ('age', 'DISTINCT (age - INTEGER)'),
@@ -138,7 +156,8 @@ class DistinctBenchmark(BenchmarkRunner):
                 all_effs.append(eff)
 
         # Multi-field DISTINCT operations
-        print(f"\n{Colors.BOLD}Multi-Field DISTINCT:{Colors.RESET}")
+        table.print_separator()
+        table.print_row([f"{Colors.BOLD}Multi-Field DISTINCT:{Colors.RESET}", "", "", "", ""])
         for name, label in [
             ('name_age', 'DISTINCT (name, age)'),
             ('id_name_age', 'DISTINCT (id, name, age)'),
@@ -150,7 +169,8 @@ class DistinctBenchmark(BenchmarkRunner):
                 all_effs.append(eff)
 
         # DISTINCT with WHERE/JOIN operations
-        print(f"\n{Colors.BOLD}DISTINCT with WHERE/JOIN:{Colors.RESET}")
+        table.print_separator()
+        table.print_row([f"{Colors.BOLD}DISTINCT with WHERE/JOIN:{Colors.RESET}", "", "", "", ""])
         for name, label in [
             ('where', 'DISTINCT + WHERE'),
             ('join', 'DISTINCT + JOIN'),
@@ -162,9 +182,25 @@ class DistinctBenchmark(BenchmarkRunner):
                 table.print_row(row)
                 all_effs.append(eff)
 
+        # DISTINCT with LIMIT/OFFSET operations (Storm vs Raw comparison)
+        table.print_separator()
+        table.print_row([f"{Colors.BOLD}DISTINCT with LIMIT/OFFSET:{Colors.RESET}", "", "", "", ""])
+        for name, label in [
+            ('limit_100', 'DISTINCT (name) + LIMIT 100'),
+            ('limit_offset', 'DISTINCT (name) + LIMIT 50 OFFSET 50'),
+            ('multi_limit', 'DISTINCT (name, age) + LIMIT 100'),
+            ('offset_50', 'DISTINCT (name) + OFFSET 50'),
+        ]:
+            if name in data and data[name][0] > 0:
+                storm_lat, storm_thr, storm_res, raw_lat, raw_thr, raw_res = data[name]
+                row, eff = format_row(label, storm_lat, storm_thr, storm_res, raw_lat, raw_thr, raw_res)
+                table.print_row(row)
+                all_effs.append(eff)
+
+        # Close the table
         table.print_footer()
 
-        # Calculate and print average efficiency
+        # Calculate and print average efficiency for all operations
         avg_eff = sum(all_effs) / len(all_effs) if all_effs else 0
         print(f"\n{Colors.DIM}Test configuration: {records:,} records, {iterations} iterations{Colors.RESET}")
         print(f"{Colors.DIM}Format: Storm ORM / Raw SQLite{Colors.RESET}")

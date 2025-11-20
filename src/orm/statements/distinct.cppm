@@ -134,19 +134,25 @@ export namespace storm::orm::statements {
         explicit DistinctStatement(
                 std::shared_ptr<ConnType>                  conn,
                 const orm::where::ExpressionVariantPtr&    where_expr = nullptr,
-                const std::optional<JoinStatementWrapper>& join_stmt  = std::nullopt
+                const std::optional<JoinStatementWrapper>& join_stmt  = std::nullopt,
+                const std::optional<int>&                  limit      = std::nullopt,
+                const std::optional<int>&                  offset     = std::nullopt
         )
-            : conn_(std::move(conn)), where_expr_(where_expr), join_stmt_(join_stmt) {}
+            : conn_(std::move(conn)), where_expr_(where_expr), join_stmt_(join_stmt), limit_(limit), offset_(offset) {}
 
-        // Update state for reuse (called by DistinctQuerySet)
+        // Update state for reuse (called by QuerySet)
         void update_state(
                 std::shared_ptr<ConnType>                  conn,
                 const orm::where::ExpressionVariantPtr&    where_expr,
-                const std::optional<JoinStatementWrapper>& join_stmt
+                const std::optional<JoinStatementWrapper>& join_stmt,
+                const std::optional<int>&                  limit,
+                const std::optional<int>&                  offset
         ) {
             conn_       = conn;
             where_expr_ = where_expr;
             join_stmt_  = join_stmt;
+            limit_      = limit;
+            offset_     = offset;
             // No cache invalidation needed - connection's prepare_cached() handles caching
         }
 
@@ -170,6 +176,24 @@ export namespace storm::orm::statements {
         }
 
       private:
+        // Helper: Append LIMIT/OFFSET clauses to SQL
+        // NOTE: SQLite requires LIMIT when using OFFSET, so we use LIMIT -1 (meaning unlimited) when OFFSET is used alone
+        __attribute__((always_inline)) static inline void
+        append_limit_offset(std::string& sql, const std::optional<int>& limit, const std::optional<int>& offset) {
+            if (limit.has_value()) {
+                sql += " LIMIT ";
+                sql += std::to_string(limit.value());
+            } else if (offset.has_value()) {
+                // SQLite requires LIMIT when using OFFSET
+                sql += " LIMIT -1";
+            }
+
+            if (offset.has_value()) {
+                sql += " OFFSET ";
+                sql += std::to_string(offset.value());
+            }
+        }
+
         // Helper: Inject DISTINCT keyword into JOIN SQL (after SELECT)
         [[nodiscard]] static auto inject_distinct_keyword(const std::string& sql) -> std::expected<std::string, Error> {
             size_t select_pos = sql.find("SELECT ");
@@ -209,7 +233,15 @@ export namespace storm::orm::statements {
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_simple_distinct()
                 -> std::expected<ResultType, Error> {
             // Use compile-time generated SQL (always includes DISTINCT)
-            static const std::string sql{distinct_sql_array.data.data(), distinct_sql_array.len};
+            static const std::string base_sql{distinct_sql_array.data.data(), distinct_sql_array.len};
+
+            std::string sql;
+            if (limit_.has_value() || offset_.has_value()) {
+                sql = base_sql;
+                append_limit_offset(sql, limit_, offset_);
+            } else {
+                sql = base_sql;
+            }
 
             // Connection's prepare_cached() provides efficient internal caching
             auto prepare_result = conn_->prepare_cached(sql);
@@ -232,6 +264,7 @@ export namespace storm::orm::statements {
             sql = base_sql;
             sql += " WHERE ";
             sql += orm::where::to_sql(*where_expr_);
+            append_limit_offset(sql, limit_, offset_);
 
             auto prepare_result = conn_->prepare_cached(sql);
             if (!prepare_result) [[unlikely]] {
@@ -258,8 +291,11 @@ export namespace storm::orm::statements {
                 return std::unexpected(distinct_join_sql_result.error());
             }
 
+            std::string sql = std::move(distinct_join_sql_result.value());
+            append_limit_offset(sql, limit_, offset_);
+
             // Connection's prepare_cached() provides efficient internal caching
-            auto prepare_result = conn_->prepare_cached(distinct_join_sql_result.value());
+            auto prepare_result = conn_->prepare_cached(sql);
             if (!prepare_result) [[unlikely]] {
                 return std::unexpected(prepare_result.error());
             }
@@ -284,6 +320,7 @@ export namespace storm::orm::statements {
             sql.reserve(sql.size() + 50);
             sql += " WHERE ";
             sql += orm::where::to_sql(*where_expr_);
+            append_limit_offset(sql, limit_, offset_);
 
             auto prepare_result = conn_->prepare_cached(sql);
             if (!prepare_result) [[unlikely]] {
@@ -369,6 +406,8 @@ export namespace storm::orm::statements {
         std::shared_ptr<ConnType>           conn_;
         orm::where::ExpressionVariantPtr    where_expr_;
         std::optional<JoinStatementWrapper> join_stmt_;
+        std::optional<int>                  limit_;
+        std::optional<int>                  offset_;
     };
 
 } // namespace storm::orm::statements

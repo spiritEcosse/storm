@@ -108,10 +108,9 @@ void benchmark_storm_distinct_name(int num_records, int iterations = 100) {
         auto   result  = person_qs.distinct<^^Person::name>().select();
         double elapsed = timer.elapsed_ms();
 
-        if (result.has_value()) {
-            total_results += result.value().size();
-            total_time += elapsed;
-        }
+        // Fail-fast - no has_value() check in timing loop
+        total_results += result.value().size();
+        total_time += elapsed;
     }
 
     print_benchmark_results("Storm ORM DISTINCT (name)", num_records, iterations, total_time, total_results);
@@ -132,10 +131,9 @@ void benchmark_storm_distinct_age(int num_records, int iterations = 100) {
         auto   result  = person_qs.distinct<^^Person::age>().select();
         double elapsed = timer.elapsed_ms();
 
-        if (result.has_value()) {
-            total_results += result.value().size();
-            total_time += elapsed;
-        }
+        // Fail-fast - no has_value() check in timing loop
+        total_results += result.value().size();
+        total_time += elapsed;
     }
 
     print_benchmark_results("Storm ORM DISTINCT (age)", num_records, iterations, total_time, total_results);
@@ -156,10 +154,9 @@ void benchmark_storm_distinct_id(int num_records, int iterations = 100) {
         auto   result  = person_qs.distinct().select(); // Defaults to PK
         double elapsed = timer.elapsed_ms();
 
-        if (result.has_value()) {
-            total_results += result.value().size();
-            total_time += elapsed;
-        }
+        // Fail-fast - no has_value() check in timing loop
+        total_results += result.value().size();
+        total_time += elapsed;
     }
 
     print_benchmark_results("Storm ORM DISTINCT (id/PK)", num_records, iterations, total_time, total_results);
@@ -316,10 +313,9 @@ void benchmark_storm_distinct_name_age(int num_records, int iterations = 100) {
         auto   result  = person_qs.distinct<^^Person::name, ^^Person::age>().select();
         double elapsed = timer.elapsed_ms();
 
-        if (result.has_value()) {
-            total_results += result.value().size();
-            total_time += elapsed;
-        }
+        // Fail-fast - no has_value() check in timing loop
+        total_results += result.value().size();
+        total_time += elapsed;
     }
 
     print_benchmark_results("Storm ORM DISTINCT (name, age)", num_records, iterations, total_time, total_results);
@@ -341,10 +337,9 @@ void benchmark_storm_distinct_id_name_age(int num_records, int iterations = 100)
         auto   result  = person_qs.distinct<^^Person::id, ^^Person::name, ^^Person::age>().select();
         double elapsed = timer.elapsed_ms();
 
-        if (result.has_value()) {
-            total_results += result.value().size();
-            total_time += elapsed;
-        }
+        // Fail-fast - no has_value() check in timing loop
+        total_results += result.value().size();
+        total_time += elapsed;
     }
 
     print_benchmark_results("Storm ORM DISTINCT (id, name, age)", num_records, iterations, total_time, total_results);
@@ -469,10 +464,9 @@ void benchmark_storm_distinct_where(int num_records, int iterations = 100) {
         auto   result  = person_qs.where(where_expr).distinct<^^Person::name>().select();
         double elapsed = timer.elapsed_ms();
 
-        if (result.has_value()) {
-            total_results += result.value().size();
-            total_time += elapsed;
-        }
+        // Fail-fast - no has_value() check in timing loop
+        total_results += result.value().size();
+        total_time += elapsed;
 
         // Reset WHERE state to avoid compounding ANDs
         person_qs.reset();
@@ -615,10 +609,9 @@ void benchmark_storm_distinct_join(int num_messages, int iterations = 100) {
         auto   result  = msg_qs.join<&Message::sender>().distinct<^^Message::content>().select();
         double elapsed = timer.elapsed_ms();
 
-        if (result.has_value()) {
-            total_results += result.value().size();
-            total_time += elapsed;
-        }
+        // Fail-fast - no has_value() check in timing loop
+        total_results += result.value().size();
+        total_time += elapsed;
     }
 
     print_benchmark_results("Storm ORM DISTINCT (content) + JOIN", num_messages, iterations, total_time, total_results);
@@ -697,10 +690,9 @@ void benchmark_storm_distinct_where_join(int num_messages, int iterations = 100)
         auto   result  = msg_qs.join<&Message::sender>().where(where_expr).distinct<^^Message::content>().select();
         double elapsed = timer.elapsed_ms();
 
-        if (result.has_value()) {
-            total_results += result.value().size();
-            total_time += elapsed;
-        }
+        // Fail-fast - no has_value() check in timing loop
+        total_results += result.value().size();
+        total_time += elapsed;
 
         // Reset WHERE/JOIN state to avoid compounding
         msg_qs.reset();
@@ -766,6 +758,299 @@ void benchmark_raw_distinct_where_join(int num_messages, int iterations = 100) {
     );
 
     teardown_join_database();
+}
+
+// Benchmark: DISTINCT with LIMIT/OFFSET
+void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
+    setup_database(num_records);
+
+    QuerySet<Person> person_qs;
+    auto&            conn = QuerySet<Person>::get_default_connection();
+    BenchmarkTimer   timer;
+
+    std::cout << "\n--- DISTINCT with LIMIT/OFFSET Performance ---" << std::endl;
+    std::cout << "Dataset: " << num_records << " records, Iterations: " << iterations << "\n" << std::endl;
+
+    // Test 1: DISTINCT with LIMIT 100
+    {
+        // Storm ORM
+        double storm_total_time    = 0;
+        int    storm_total_results = 0;
+
+        for (int i = 0; i < iterations; ++i) {
+            timer.reset();
+            auto   result  = person_qs.limit(100).distinct<^^Person::name>().select();
+            double elapsed = timer.elapsed_ms();
+
+            // No has_value() check - fail fast if query fails (like raw SQLite)
+            storm_total_results += result.value().size();
+            storm_total_time += elapsed;
+            person_qs.reset();
+        }
+
+        // Raw SQLite (fair comparison: use prepare_cached + extract data like Storm)
+        double raw_total_time    = 0;
+        int    raw_total_results = 0;
+
+        // Prepare once and cache (matches Storm's prepare_cached behavior)
+        auto stmt_result = conn->prepare_cached("SELECT DISTINCT name FROM Person LIMIT 100");
+        if (!stmt_result.has_value()) {
+            std::cerr << "Failed to prepare cached statement" << std::endl;
+        } else {
+            for (int i = 0; i < iterations; ++i) {
+                timer.reset();
+
+                auto* stmt = stmt_result.value();
+                std::vector<std::string> results;
+                results.reserve(100);
+
+                while (true) {
+                    int step = stmt->step_raw();
+                    if (step == storm::db::sqlite::Statement::ROW_AVAILABLE) {
+                        // Extract string data (matches Storm's std::tuple extraction)
+                        results.push_back(std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(0))));
+                    } else {
+                        break;
+                    }
+                }
+
+                double elapsed = timer.elapsed_ms();
+                raw_total_results += results.size();
+                raw_total_time += elapsed;
+
+                stmt->reset();  // Reset for next iteration
+            }
+        }
+
+        std::cout << "Storm ORM DISTINCT (name) + LIMIT 100:" << std::endl;
+        std::cout << "  Latency: " << std::fixed << std::setprecision(4) << (storm_total_time / iterations)
+                  << " ms/query" << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
+                  << (storm_total_results / (storm_total_time / 1000.0)) << " rows/sec" << std::endl;
+        std::cout << "  Avg results: " << std::fixed << std::setprecision(1)
+                  << (static_cast<double>(storm_total_results) / iterations) << " rows/query" << std::endl;
+
+        std::cout << "\nRaw SQLite DISTINCT (name) + LIMIT 100:" << std::endl;
+        std::cout << "  Latency: " << std::fixed << std::setprecision(4) << (raw_total_time / iterations)
+                  << " ms/query" << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
+                  << (raw_total_results / (raw_total_time / 1000.0)) << " rows/sec" << std::endl;
+        std::cout << "  Avg results: " << std::fixed << std::setprecision(1)
+                  << (static_cast<double>(raw_total_results) / iterations) << " rows/query" << std::endl;
+        std::cout << std::endl;
+    }
+
+    // Test 2: DISTINCT with LIMIT + OFFSET (pagination)
+    {
+        // Storm ORM
+        double storm_total_time    = 0;
+        int    storm_total_results = 0;
+
+        for (int i = 0; i < iterations; ++i) {
+            timer.reset();
+            auto   result  = person_qs.limit(50).offset(50).distinct<^^Person::name>().select();
+            double elapsed = timer.elapsed_ms();
+
+            // No has_value() check - fail fast if query fails (like raw SQLite)
+            storm_total_results += result.value().size();
+            storm_total_time += elapsed;
+            person_qs.reset();
+        }
+
+        // Raw SQLite (fair comparison: use prepare_cached + extract data like Storm)
+        double raw_total_time    = 0;
+        int    raw_total_results = 0;
+
+        // Prepare once and cache (matches Storm's prepare_cached behavior)
+        auto stmt_result = conn->prepare_cached("SELECT DISTINCT name FROM Person LIMIT 50 OFFSET 50");
+        if (!stmt_result.has_value()) {
+            std::cerr << "Failed to prepare cached statement" << std::endl;
+        } else {
+            for (int i = 0; i < iterations; ++i) {
+                timer.reset();
+
+                auto* stmt = stmt_result.value();
+                std::vector<std::string> results;
+                results.reserve(50);
+
+                while (true) {
+                    int step = stmt->step_raw();
+                    if (step == storm::db::sqlite::Statement::ROW_AVAILABLE) {
+                        // Extract string data (matches Storm's std::tuple extraction)
+                        results.push_back(std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(0))));
+                    } else {
+                        break;
+                    }
+                }
+
+                double elapsed = timer.elapsed_ms();
+                raw_total_results += results.size();
+                raw_total_time += elapsed;
+
+                stmt->reset();  // Reset for next iteration
+            }
+        }
+
+        std::cout << "Storm ORM DISTINCT (name) + LIMIT 50 OFFSET 50:" << std::endl;
+        std::cout << "  Latency: " << std::fixed << std::setprecision(4) << (storm_total_time / iterations)
+                  << " ms/query" << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
+                  << (storm_total_results / (storm_total_time / 1000.0)) << " rows/sec" << std::endl;
+        std::cout << "  Avg results: " << std::fixed << std::setprecision(1)
+                  << (static_cast<double>(storm_total_results) / iterations) << " rows/query" << std::endl;
+
+        std::cout << "\nRaw SQLite DISTINCT (name) + LIMIT 50 OFFSET 50:" << std::endl;
+        std::cout << "  Latency: " << std::fixed << std::setprecision(4) << (raw_total_time / iterations)
+                  << " ms/query" << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
+                  << (raw_total_results / (raw_total_time / 1000.0)) << " rows/sec" << std::endl;
+        std::cout << "  Avg results: " << std::fixed << std::setprecision(1)
+                  << (static_cast<double>(raw_total_results) / iterations) << " rows/query" << std::endl;
+        std::cout << std::endl;
+    }
+
+    // Test 3: Multi-field DISTINCT with LIMIT
+    {
+        // Storm ORM
+        double storm_total_time    = 0;
+        int    storm_total_results = 0;
+
+        for (int i = 0; i < iterations; ++i) {
+            timer.reset();
+            auto   result  = person_qs.limit(100).distinct<^^Person::name, ^^Person::age>().select();
+            double elapsed = timer.elapsed_ms();
+
+            // No has_value() check - fail fast if query fails (like raw SQLite)
+            storm_total_results += result.value().size();
+            storm_total_time += elapsed;
+            person_qs.reset();
+        }
+
+        // Raw SQLite (fair comparison: use prepare_cached + extract data like Storm)
+        double raw_total_time    = 0;
+        int    raw_total_results = 0;
+
+        // Prepare once and cache (matches Storm's prepare_cached behavior)
+        auto stmt_result = conn->prepare_cached("SELECT DISTINCT name, age FROM Person LIMIT 100");
+        if (!stmt_result.has_value()) {
+            std::cerr << "Failed to prepare cached statement" << std::endl;
+        } else {
+            for (int i = 0; i < iterations; ++i) {
+                timer.reset();
+
+                auto* stmt = stmt_result.value();
+                std::vector<std::tuple<std::string, int>> results;
+                results.reserve(100);
+
+                while (true) {
+                    int step = stmt->step_raw();
+                    if (step == storm::db::sqlite::Statement::ROW_AVAILABLE) {
+                        // Extract both fields (matches Storm's std::tuple extraction)
+                        std::string name(reinterpret_cast<const char*>(stmt->extract_text_ptr(0)));
+                        int age = stmt->extract_int(1);
+                        results.emplace_back(std::move(name), age);
+                    } else {
+                        break;
+                    }
+                }
+
+                double elapsed = timer.elapsed_ms();
+                raw_total_results += results.size();
+                raw_total_time += elapsed;
+
+                stmt->reset();  // Reset for next iteration
+            }
+        }
+
+        std::cout << "Storm ORM DISTINCT (name, age) + LIMIT 100:" << std::endl;
+        std::cout << "  Latency: " << std::fixed << std::setprecision(4) << (storm_total_time / iterations)
+                  << " ms/query" << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
+                  << (storm_total_results / (storm_total_time / 1000.0)) << " rows/sec" << std::endl;
+        std::cout << "  Avg results: " << std::fixed << std::setprecision(1)
+                  << (static_cast<double>(storm_total_results) / iterations) << " rows/query" << std::endl;
+
+        std::cout << "\nRaw SQLite DISTINCT (name, age) + LIMIT 100:" << std::endl;
+        std::cout << "  Latency: " << std::fixed << std::setprecision(4) << (raw_total_time / iterations)
+                  << " ms/query" << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
+                  << (raw_total_results / (raw_total_time / 1000.0)) << " rows/sec" << std::endl;
+        std::cout << "  Avg results: " << std::fixed << std::setprecision(1)
+                  << (static_cast<double>(raw_total_results) / iterations) << " rows/query" << std::endl;
+        std::cout << std::endl;
+    }
+
+    // Test 4: OFFSET only (skip first 50)
+    {
+        // Storm ORM
+        double storm_total_time    = 0;
+        int    storm_total_results = 0;
+
+        for (int i = 0; i < iterations; ++i) {
+            timer.reset();
+            auto   result  = person_qs.offset(50).distinct<^^Person::name>().select();
+            double elapsed = timer.elapsed_ms();
+
+            // No has_value() check - fail fast if query fails (like raw SQLite)
+            storm_total_results += result.value().size();
+            storm_total_time += elapsed;
+            person_qs.reset();
+        }
+
+        // Raw SQLite (fair comparison: use prepare_cached + extract data like Storm)
+        double raw_total_time    = 0;
+        int    raw_total_results = 0;
+
+        // Prepare once and cache (matches Storm's prepare_cached behavior)
+        // Note: Storm adds "LIMIT -1" automatically when OFFSET is used alone
+        auto stmt_result = conn->prepare_cached("SELECT DISTINCT name FROM Person LIMIT -1 OFFSET 50");
+        if (!stmt_result.has_value()) {
+            std::cerr << "Failed to prepare cached statement" << std::endl;
+        } else {
+            for (int i = 0; i < iterations; ++i) {
+                timer.reset();
+
+                auto* stmt = stmt_result.value();
+                std::vector<std::string> results;
+                results.reserve(50);  // Expect ~50 results (100 unique - 50 offset)
+
+                while (true) {
+                    int step = stmt->step_raw();
+                    if (step == storm::db::sqlite::Statement::ROW_AVAILABLE) {
+                        // Extract string data (matches Storm's std::tuple extraction)
+                        results.push_back(std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(0))));
+                    } else {
+                        break;
+                    }
+                }
+
+                double elapsed = timer.elapsed_ms();
+                raw_total_results += results.size();
+                raw_total_time += elapsed;
+
+                stmt->reset();  // Reset for next iteration
+            }
+        }
+
+        std::cout << "Storm ORM DISTINCT (name) + OFFSET 50:" << std::endl;
+        std::cout << "  Latency: " << std::fixed << std::setprecision(4) << (storm_total_time / iterations)
+                  << " ms/query" << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
+                  << (storm_total_results / (storm_total_time / 1000.0)) << " rows/sec" << std::endl;
+        std::cout << "  Avg results: " << std::fixed << std::setprecision(1)
+                  << (static_cast<double>(storm_total_results) / iterations) << " rows/query" << std::endl;
+
+        std::cout << "\nRaw SQLite DISTINCT (name) + OFFSET 50:" << std::endl;
+        std::cout << "  Latency: " << std::fixed << std::setprecision(4) << (raw_total_time / iterations)
+                  << " ms/query" << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
+                  << (raw_total_results / (raw_total_time / 1000.0)) << " rows/sec" << std::endl;
+        std::cout << "  Avg results: " << std::fixed << std::setprecision(1)
+                  << (static_cast<double>(raw_total_results) / iterations) << " rows/query" << std::endl;
+        std::cout << std::endl;
+    }
+
+    teardown_database();
 }
 
 void print_usage(const char* program_name) {
@@ -986,6 +1271,11 @@ int main(int argc, char* argv[]) {
             benchmark_raw_distinct_where_join(test_size, iterations);
         }
         std::cout << std::endl;
+    }
+
+    // Run DISTINCT with LIMIT/OFFSET benchmarks
+    if (run_all) {
+        benchmark_distinct_limit_offset(test_size, iterations);
     }
 
     std::cout << std::string(60, '=') << std::endl;

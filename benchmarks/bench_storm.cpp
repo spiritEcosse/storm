@@ -35,6 +35,7 @@ void            benchmark_storm_orm_batch_update(int num_records, const Benchmar
 void            benchmark_storm_orm_single_delete(int num_records, const BenchmarkConfig& config);
 void            benchmark_storm_orm_batch_delete(int num_records, const BenchmarkConfig& config);
 void            benchmark_storm_orm_select(int num_records, const BenchmarkConfig& config);
+void            benchmark_storm_orm_select_with_limit_offset(int num_records, const BenchmarkConfig& config);
 void            benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& config);
 void            benchmark_cache_analysis(int num_records, const BenchmarkConfig& config);
 void            benchmark_optimization_test(int num_records, const BenchmarkConfig& config);
@@ -635,6 +636,228 @@ void benchmark_storm_orm_select(int num_records, const BenchmarkConfig& config) 
     storm::QuerySet<Person>::clear_default_connection();
 }
 
+void benchmark_storm_orm_select_with_limit_offset(int num_records, const BenchmarkConfig& config) {
+    std::cout << "\n=== Storm ORM SELECT with LIMIT/OFFSET Benchmark ===" << std::endl;
+
+    // Setup Storm ORM connection
+    auto result = storm::QuerySet<Person>::set_default_connection(":memory:");
+    if (!result.has_value()) {
+        std::cerr << "Failed to set Storm connection: " << result.error().message() << std::endl;
+        return;
+    }
+
+    // Create table
+    auto& conn          = storm::QuerySet<Person>::get_default_connection();
+    auto  create_result = conn->execute(db_utils::PERSON_TABLE_SQL);
+    if (!create_result.has_value()) {
+        std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
+        return;
+    }
+
+    // Prepare and insert test data
+    std::vector<Person> persons;
+    if (config.realistic_data) {
+        persons = generate_realistic_test_data(num_records);
+    } else {
+        persons = data_utils::generate_simple_test_data<Person>(num_records);
+    }
+
+    // Create QuerySet
+    auto queryset = storm::QuerySet<Person>{};
+
+    // Insert test data
+    for (const auto& person : persons) {
+        auto insert_result = queryset.insert(person);
+        if (!insert_result.has_value()) {
+            std::cerr << "Failed to insert test data: " << insert_result.error().message() << std::endl;
+            return;
+        }
+    }
+
+    std::cout << "\nDataset size: " << num_records << " records\n" << std::endl;
+
+    BenchmarkTimer timer;
+
+    // Test 1: LIMIT only (first 100 records)
+    {
+        // Storm ORM
+        timer.reset();
+        auto   select_result = queryset.limit(100).select();
+        double storm_elapsed = timer.elapsed_ms();
+        size_t storm_rows    = select_result.has_value() ? select_result.value().size() : 0;
+        queryset.reset();
+
+        // Raw SQLite
+        timer.reset();
+        auto stmt_result = conn->prepare("SELECT id, name, age, email FROM Person LIMIT 100");
+        if (!stmt_result.has_value()) {
+            std::cerr << "Failed to prepare statement" << std::endl;
+            return;
+        }
+        auto stmt = std::move(stmt_result.value());
+        size_t raw_rows = 0;
+        while (true) {
+            int step = stmt.step_raw();
+            if (step == decltype(stmt)::ROW_AVAILABLE) {
+                raw_rows++;
+            } else {
+                break;
+            }
+        }
+        double raw_elapsed = timer.elapsed_ms();
+
+        std::cout << "Storm ORM SELECT + LIMIT 100:" << std::endl;
+        std::cout << "  Time: " << std::fixed << std::setprecision(3) << storm_elapsed << " ms" << std::endl;
+        std::cout << "  Rows: " << storm_rows << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+                  << (storm_rows / (storm_elapsed / 1000.0)) << " rows/sec" << std::endl;
+
+        std::cout << "\nRaw SQLite SELECT + LIMIT 100:" << std::endl;
+        std::cout << "  Time: " << std::fixed << std::setprecision(3) << raw_elapsed << " ms" << std::endl;
+        std::cout << "  Rows: " << raw_rows << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+                  << (raw_rows / (raw_elapsed / 1000.0)) << " rows/sec" << std::endl;
+        std::cout << "  Efficiency: " << std::fixed << std::setprecision(1)
+                  << (raw_elapsed / storm_elapsed * 100.0) << "%" << std::endl;
+        std::cout << std::endl;
+    }
+
+    // Test 2: LIMIT + OFFSET (pagination - page 2)
+    {
+        // Storm ORM
+        timer.reset();
+        auto   select_result = queryset.limit(100).offset(100).select();
+        double storm_elapsed = timer.elapsed_ms();
+        size_t storm_rows    = select_result.has_value() ? select_result.value().size() : 0;
+        queryset.reset();
+
+        // Raw SQLite
+        timer.reset();
+        auto stmt_result = conn->prepare("SELECT id, name, age, email FROM Person LIMIT 100 OFFSET 100");
+        if (!stmt_result.has_value()) {
+            std::cerr << "Failed to prepare statement" << std::endl;
+            return;
+        }
+        auto stmt = std::move(stmt_result.value());
+        size_t raw_rows = 0;
+        while (true) {
+            int step = stmt.step_raw();
+            if (step == decltype(stmt)::ROW_AVAILABLE) {
+                raw_rows++;
+            } else {
+                break;
+            }
+        }
+        double raw_elapsed = timer.elapsed_ms();
+
+        std::cout << "Storm ORM SELECT + LIMIT 100 OFFSET 100:" << std::endl;
+        std::cout << "  Time: " << std::fixed << std::setprecision(3) << storm_elapsed << " ms" << std::endl;
+        std::cout << "  Rows: " << storm_rows << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+                  << (storm_rows / (storm_elapsed / 1000.0)) << " rows/sec" << std::endl;
+
+        std::cout << "\nRaw SQLite SELECT + LIMIT 100 OFFSET 100:" << std::endl;
+        std::cout << "  Time: " << std::fixed << std::setprecision(3) << raw_elapsed << " ms" << std::endl;
+        std::cout << "  Rows: " << raw_rows << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+                  << (raw_rows / (raw_elapsed / 1000.0)) << " rows/sec" << std::endl;
+        std::cout << "  Efficiency: " << std::fixed << std::setprecision(1)
+                  << (raw_elapsed / storm_elapsed * 100.0) << "%" << std::endl;
+        std::cout << std::endl;
+    }
+
+    // Test 3: OFFSET only (skip first 1000, get rest)
+    {
+        // Storm ORM
+        timer.reset();
+        auto   select_result = queryset.offset(1000).select();
+        double storm_elapsed = timer.elapsed_ms();
+        size_t storm_rows    = select_result.has_value() ? select_result.value().size() : 0;
+        queryset.reset();
+
+        // Raw SQLite
+        timer.reset();
+        auto stmt_result = conn->prepare("SELECT id, name, age, email FROM Person OFFSET 1000");
+        if (!stmt_result.has_value()) {
+            std::cerr << "Failed to prepare statement" << std::endl;
+            return;
+        }
+        auto stmt = std::move(stmt_result.value());
+        size_t raw_rows = 0;
+        while (true) {
+            int step = stmt.step_raw();
+            if (step == decltype(stmt)::ROW_AVAILABLE) {
+                raw_rows++;
+            } else {
+                break;
+            }
+        }
+        double raw_elapsed = timer.elapsed_ms();
+
+        std::cout << "Storm ORM SELECT + OFFSET 1000:" << std::endl;
+        std::cout << "  Time: " << std::fixed << std::setprecision(3) << storm_elapsed << " ms" << std::endl;
+        std::cout << "  Rows: " << storm_rows << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+                  << (storm_rows / (storm_elapsed / 1000.0)) << " rows/sec" << std::endl;
+
+        std::cout << "\nRaw SQLite SELECT + OFFSET 1000:" << std::endl;
+        std::cout << "  Time: " << std::fixed << std::setprecision(3) << raw_elapsed << " ms" << std::endl;
+        std::cout << "  Rows: " << raw_rows << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+                  << (raw_rows / (raw_elapsed / 1000.0)) << " rows/sec" << std::endl;
+        std::cout << "  Efficiency: " << std::fixed << std::setprecision(1)
+                  << (raw_elapsed / storm_elapsed * 100.0) << "%" << std::endl;
+        std::cout << std::endl;
+    }
+
+    // Test 4: Small LIMIT (first 10 records)
+    {
+        // Storm ORM
+        timer.reset();
+        auto   select_result = queryset.limit(10).select();
+        double storm_elapsed = timer.elapsed_ms();
+        size_t storm_rows    = select_result.has_value() ? select_result.value().size() : 0;
+        queryset.reset();
+
+        // Raw SQLite
+        timer.reset();
+        auto stmt_result = conn->prepare("SELECT id, name, age, email FROM Person LIMIT 10");
+        if (!stmt_result.has_value()) {
+            std::cerr << "Failed to prepare statement" << std::endl;
+            return;
+        }
+        auto stmt = std::move(stmt_result.value());
+        size_t raw_rows = 0;
+        while (true) {
+            int step = stmt.step_raw();
+            if (step == decltype(stmt)::ROW_AVAILABLE) {
+                raw_rows++;
+            } else {
+                break;
+            }
+        }
+        double raw_elapsed = timer.elapsed_ms();
+
+        std::cout << "Storm ORM SELECT + LIMIT 10:" << std::endl;
+        std::cout << "  Time: " << std::fixed << std::setprecision(3) << storm_elapsed << " ms" << std::endl;
+        std::cout << "  Rows: " << storm_rows << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+                  << (storm_rows / (storm_elapsed / 1000.0)) << " rows/sec" << std::endl;
+
+        std::cout << "\nRaw SQLite SELECT + LIMIT 10:" << std::endl;
+        std::cout << "  Time: " << std::fixed << std::setprecision(3) << raw_elapsed << " ms" << std::endl;
+        std::cout << "  Rows: " << raw_rows << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
+                  << (raw_rows / (raw_elapsed / 1000.0)) << " rows/sec" << std::endl;
+        std::cout << "  Efficiency: " << std::fixed << std::setprecision(1)
+                  << (raw_elapsed / storm_elapsed * 100.0) << "%" << std::endl;
+        std::cout << std::endl;
+    }
+
+    // Cleanup
+    storm::QuerySet<Person>::clear_default_connection();
+}
+
 void benchmark_storm_orm_delete_focus(int num_records, const BenchmarkConfig& config) {
     // Setup Storm ORM connection
     auto result = storm::QuerySet<Person>::set_default_connection(":memory:");
@@ -899,6 +1122,10 @@ int main(int argc, char* argv[]) {
             if (config.mode == BenchmarkConfig::COMPREHENSIVE || config.mode == BenchmarkConfig::SELECT_ONLY) {
                 // Test SELECT operations
                 benchmark_storm_orm_select(size, config);
+                std::cout << std::endl << std::endl;
+
+                // Test SELECT with LIMIT/OFFSET
+                benchmark_storm_orm_select_with_limit_offset(size, config);
                 std::cout << std::endl << std::endl;
             }
         }
