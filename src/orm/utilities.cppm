@@ -1,5 +1,7 @@
 module;
 
+#include <meta>
+
 export module storm_orm_utilities;
 
 import <array>;
@@ -11,6 +13,7 @@ import <optional>;
 import <vector>;
 import <cstdint>;
 import <type_traits>;
+import <meta>;
 
 export namespace storm::orm::utilities {
 
@@ -259,5 +262,157 @@ export namespace storm::orm::utilities {
             return 3;                                   // "()" + null terminator
         return 2 + (count * 1) + ((count - 1) * 1) + 1; // "()" + count * "?" + (count-1) * "," + null terminator
     }
+
+    // ============================================================================
+    // ORDER BY Clause Utilities
+    // ============================================================================
+
+    // Forward declaration for recursive parsing
+    namespace detail {
+        template <auto... Args> struct OrderByParser;
+
+        // Base case: no arguments
+        template <> struct OrderByParser<> {
+            static constexpr size_t                                          count = 0;
+            static constexpr std::array<std::pair<std::meta::info, bool>, 0> fields{};
+        };
+
+        // Case 1: Single field at end (no direction specified, defaults to ASC)
+        template <auto Field> struct OrderByParser<Field> {
+            static constexpr size_t                                          count = 1;
+            static constexpr std::array<std::pair<std::meta::info, bool>, 1> fields{
+                    std::pair{Field, true} // default ASC
+            };
+        };
+
+        // Case 2: Field followed by bool direction, then more args
+        template <auto Field, bool Dir, auto... Rest> struct OrderByParser<Field, Dir, Rest...> {
+            using RestParser              = OrderByParser<Rest...>;
+            static constexpr size_t count = 1 + RestParser::count;
+
+            static constexpr auto fields = []() consteval {
+                std::array<std::pair<std::meta::info, bool>, count> result{};
+                result[0] = {Field, Dir};
+                for (size_t i = 0; i < RestParser::count; ++i) {
+                    result[i + 1] = RestParser::fields[i];
+                }
+                return result;
+            }();
+        };
+
+        // Case 3: Field NOT followed by bool (followed by another field)
+        template <auto Field, auto Next, auto... Rest>
+            requires(!std::same_as<decltype(Next), bool>)
+        struct OrderByParser<Field, Next, Rest...> {
+            using RestParser              = OrderByParser<Next, Rest...>;
+            static constexpr size_t count = 1 + RestParser::count;
+
+            static constexpr auto fields = []() consteval {
+                std::array<std::pair<std::meta::info, bool>, count> result{};
+                result[0] = {Field, true}; // default ASC
+                for (size_t i = 0; i < RestParser::count; ++i) {
+                    result[i + 1] = RestParser::fields[i];
+                }
+                return result;
+            }();
+        };
+    } // namespace detail
+
+    // Main OrderByClause - wraps the parser
+    template <auto... Args> struct OrderByClause {
+        using Parser = detail::OrderByParser<Args...>;
+
+        static constexpr size_t count  = Parser::count;
+        static constexpr auto   fields = Parser::fields;
+
+        // Check if clause is empty
+        static constexpr bool empty() {
+            return count == 0;
+        }
+
+        // Generate ORDER BY SQL fragment at compile-time
+        template <size_t BufferSize = 1024> static consteval ConstexprString<BufferSize> to_sql() {
+            ConstexprString<BufferSize> result;
+
+            if constexpr (count == 0) {
+                return result; // Empty ORDER BY
+            }
+
+            result.append(" ORDER BY ");
+
+            for (size_t i = 0; i < count; ++i) {
+                if (i > 0) {
+                    result.append(", ");
+                }
+
+                // Get field name
+                constexpr auto field_info = fields[i].first;
+                constexpr auto field_name = std::meta::identifier_of(field_info);
+                result.append(field_name);
+
+                // Add direction
+                constexpr bool ascending = fields[i].second;
+                if (ascending) {
+                    result.append(" ASC");
+                } else {
+                    result.append(" DESC");
+                }
+            }
+
+            return result;
+        }
+
+        // Generate ORDER BY SQL fragment at runtime
+        static std::string to_sql_runtime() {
+            if constexpr (count == 0) {
+                return "";
+            }
+
+            std::string result = " ORDER BY ";
+
+            // Use index_sequence to generate code for each field at compile-time
+            [&]<size_t... Is>(std::index_sequence<Is...>) {
+                ((append_field<Is>(result, Is > 0)), ...);
+            }(std::make_index_sequence<count>{});
+
+            return result;
+        }
+
+      private:
+        // Helper to append a single field's ORDER BY clause
+        template <size_t I> static void append_field(std::string& result, bool add_comma) {
+            if (add_comma) {
+                result += ", ";
+            }
+
+            // Get field info at compile-time
+            constexpr auto field_info = fields[I].first;
+            result += std::string(std::meta::identifier_of(field_info));
+
+            // Add direction
+            constexpr bool ascending = fields[I].second;
+            result += ascending ? " ASC" : " DESC";
+        }
+
+      public:
+    };
+
+    // Empty OrderByClause specialization (default state)
+    template <> struct OrderByClause<> {
+        static constexpr size_t                                          count = 0;
+        static constexpr std::array<std::pair<std::meta::info, bool>, 0> fields{};
+
+        static constexpr bool empty() {
+            return true;
+        }
+
+        template <size_t BufferSize = 1024> static consteval ConstexprString<BufferSize> to_sql() {
+            return ConstexprString<BufferSize>{};
+        }
+
+        static std::string to_sql_runtime() {
+            return "";
+        }
+    };
 
 } // namespace storm::orm::utilities

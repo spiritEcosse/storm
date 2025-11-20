@@ -118,6 +118,38 @@ def run_aggregate_benchmark(args):
     )
 
 
+def run_order_by_benchmark(args):
+    """Run ORDER BY performance benchmark"""
+    from orderby import OrderByBenchmark
+
+    print_header()
+    print(f"{Colors.GREEN}Running ORDER BY Performance Analysis...{Colors.RESET}\n")
+
+    binary_path = './build/release/benchmarks/bench_storm'
+    benchmark = OrderByBenchmark(binary_path)
+    benchmark.run(
+        '--mode=order-by',
+        f'--test-size={args.size or 10000}',
+        records=args.size or 10000
+    )
+
+
+def run_select_only_benchmark(args):
+    """Run SELECT-only performance benchmark"""
+    from select_bench import SelectBenchmark
+
+    print_header()
+    print(f"{Colors.GREEN}Running SELECT Performance Analysis...{Colors.RESET}\n")
+
+    binary_path = './build/release/benchmarks/bench_storm'
+    benchmark = SelectBenchmark(binary_path)
+    benchmark.run(
+        '--mode=select-only',
+        f'--test-size={args.size or 10000}',
+        records=args.size or 10000
+    )
+
+
 def run_sql_gen_benchmark(args):
     """Run SQL generation benchmark"""
     from sql_gen import SQLGenerationBenchmark
@@ -174,6 +206,8 @@ Available Benchmarks:
   📊 JOIN Performance          - Compare Storm ORM vs Raw SQLite JOIN operations
   📊 DISTINCT Performance      - Compare Storm ORM vs Raw SQLite DISTINCT operations
   📊 DISTINCT Scaling          - Show DISTINCT performance across different result sizes
+  📊 ORDER BY Performance      - Compare Storm ORM vs Raw SQLite ORDER BY operations
+  📊 SELECT Performance        - Compare Storm ORM SELECT with LIMIT/OFFSET operations
   📊 Aggregate Functions       - Compare Storm ORM vs Raw SQLite aggregate operations (SUM, COUNT, AVG, MIN, MAX)
   📊 SQL Generation            - Analyze compile-time SQL generation performance
   📊 All Microbenchmarks       - Run complete benchmark suite
@@ -188,6 +222,10 @@ Examples:
   %(prog)s --distinct --size=50000        # Run DISTINCT with 50K records
   %(prog)s --distinct-scaling             # Run DISTINCT scaling analysis
   %(prog)s --distinct-scaling --size=50000 # DISTINCT scaling with 50K records
+  %(prog)s --order-by                     # Run ORDER BY benchmarks
+  %(prog)s --order-by --size=50000        # Run ORDER BY with 50K records
+  %(prog)s --select-only                  # Run SELECT benchmarks
+  %(prog)s --select-only --size=50000     # Run SELECT with 50K records
   %(prog)s --aggregate                    # Run aggregate function benchmarks
   %(prog)s --aggregate --size=50000       # Run aggregate with 50K rows
   %(prog)s --all                          # Run all benchmarks
@@ -205,6 +243,10 @@ Examples:
                          help='Run DISTINCT performance analysis (Storm vs Raw SQLite)')
     commands.add_argument('--distinct-scaling', action='store_true',
                          help='Run DISTINCT scaling analysis (100, 1K, 10K unique results)')
+    commands.add_argument('--order-by', action='store_true',
+                         help='Run ORDER BY performance analysis (Storm vs Raw SQLite)')
+    commands.add_argument('--select-only', action='store_true',
+                         help='Run SELECT performance analysis with LIMIT/OFFSET (Storm vs Raw SQLite)')
     commands.add_argument('--aggregate', action='store_true',
                          help='Run aggregate functions performance analysis (SUM, COUNT, AVG, MIN, MAX)')
     commands.add_argument('--sql-gen', action='store_true',
@@ -236,6 +278,10 @@ Examples:
             run_distinct_benchmark(args)
         elif args.distinct_scaling:
             run_distinct_scaling_benchmark(args)
+        elif args.order_by:
+            run_order_by_benchmark(args)
+        elif args.select_only:
+            run_select_only_benchmark(args)
         elif args.aggregate:
             run_aggregate_benchmark(args)
         elif args.sql_gen:

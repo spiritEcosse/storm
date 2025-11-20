@@ -1053,6 +1053,74 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
     teardown_database();
 }
 
+// Benchmark: Storm ORM DISTINCT with ORDER BY
+void benchmark_storm_distinct_orderby(int num_records, int iterations = 100) {
+    setup_database(num_records);
+
+    QuerySet<Person> person_qs;
+    BenchmarkTimer   timer;
+    double           total_time    = 0;
+    int              total_results = 0;
+
+    for (int i = 0; i < iterations; ++i) {
+        timer.reset();
+        auto   result  = person_qs.order_by<^^Person::name>().distinct<^^Person::name>().select();
+        double elapsed = timer.elapsed_ms();
+
+        total_results += result.value().size();
+        total_time += elapsed;
+    }
+
+    print_benchmark_results("Storm ORM DISTINCT (name) + ORDER BY", num_records, iterations, total_time, total_results);
+    teardown_database();
+}
+
+// Benchmark: Raw SQLite DISTINCT with ORDER BY
+void benchmark_raw_distinct_orderby(int num_records, int iterations = 100) {
+    setup_database(num_records);
+
+    auto&       conn = QuerySet<Person>::get_default_connection();
+    std::string sql  = "SELECT DISTINCT name FROM Person ORDER BY name ASC";
+
+    BenchmarkTimer timer;
+    double         total_time    = 0;
+    int            total_results = 0;
+
+    for (int i = 0; i < iterations; ++i) {
+        timer.reset();
+        auto stmt_result = conn->prepare(sql);
+        if (!stmt_result.has_value()) {
+            std::cerr << "Failed to prepare statement" << std::endl;
+            break;
+        }
+
+        auto                     stmt = std::move(stmt_result.value());
+        std::vector<std::string> results;
+        results.reserve(100);
+
+        while (true) {
+            int step = stmt.step_raw();
+            if (step == decltype(stmt)::ROW_AVAILABLE) {
+                results.push_back(std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(0))));
+            } else if (step == decltype(stmt)::NO_MORE_ROWS) {
+                break;
+            } else {
+                std::cerr << "Step failed" << std::endl;
+                break;
+            }
+        }
+
+        double elapsed = timer.elapsed_ms();
+        total_results += results.size();
+        total_time += elapsed;
+    }
+
+    print_benchmark_results(
+            "Raw SQLite DISTINCT (name) + ORDER BY", num_records, iterations, total_time, total_results
+    );
+    teardown_database();
+}
+
 void print_usage(const char* program_name) {
     std::cout << "Usage: " << program_name << " [OPTIONS]" << std::endl;
     std::cout << std::endl;
@@ -1083,6 +1151,10 @@ void print_usage(const char* program_name) {
     std::cout << "  --storm-where-join   Run Storm ORM DISTINCT + WHERE + JOIN" << std::endl;
     std::cout << "  --raw-where-join     Run raw SQL DISTINCT + WHERE + JOIN" << std::endl;
     std::cout << std::endl;
+    std::cout << "DISTINCT with ORDER BY:" << std::endl;
+    std::cout << "  --storm-orderby      Run Storm ORM DISTINCT + ORDER BY" << std::endl;
+    std::cout << "  --raw-orderby        Run raw SQL DISTINCT + ORDER BY" << std::endl;
+    std::cout << std::endl;
     std::cout << "  --help, -h           Show this help message" << std::endl;
 }
 
@@ -1111,6 +1183,10 @@ int main(int argc, char* argv[]) {
     bool run_raw_join         = false;
     bool run_storm_where_join = false;
     bool run_raw_where_join   = false;
+
+    // Benchmark selection flags - ORDER BY
+    bool run_storm_orderby = false;
+    bool run_raw_orderby   = false;
 
     bool run_all = true; // Default: run everything
 
@@ -1168,6 +1244,12 @@ int main(int argc, char* argv[]) {
         } else if (strcmp(argv[i], "--raw-where-join") == 0) {
             run_raw_where_join = true;
             run_all            = false;
+        } else if (strcmp(argv[i], "--storm-orderby") == 0) {
+            run_storm_orderby = true;
+            run_all           = false;
+        } else if (strcmp(argv[i], "--raw-orderby") == 0) {
+            run_raw_orderby = true;
+            run_all         = false;
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             print_usage(argv[0]);
             return 0;
@@ -1269,6 +1351,18 @@ int main(int argc, char* argv[]) {
         }
         if (run_all || run_raw_where_join) {
             benchmark_raw_distinct_where_join(test_size, iterations);
+        }
+        std::cout << std::endl;
+    }
+
+    // Run DISTINCT with ORDER BY benchmarks
+    if (run_all || run_storm_orderby || run_raw_orderby) {
+        std::cout << "--- DISTINCT with ORDER BY ---" << std::endl;
+        if (run_all || run_storm_orderby) {
+            benchmark_storm_distinct_orderby(test_size, iterations);
+        }
+        if (run_all || run_raw_orderby) {
+            benchmark_raw_distinct_orderby(test_size, iterations);
         }
         std::cout << std::endl;
     }

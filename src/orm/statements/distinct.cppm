@@ -8,6 +8,7 @@ export module storm_orm_statements_distinct;
 import storm_db_concept;
 import storm_orm_statements_base;
 import storm_orm_statements_join;
+import storm_orm_statements_orderby;
 import storm_orm_utilities;
 import storm_orm_where;
 
@@ -133,12 +134,18 @@ export namespace storm::orm::statements {
 
         explicit DistinctStatement(
                 std::shared_ptr<ConnType>                  conn,
-                const orm::where::ExpressionVariantPtr&    where_expr = nullptr,
-                const std::optional<JoinStatementWrapper>& join_stmt  = std::nullopt,
-                const std::optional<int>&                  limit      = std::nullopt,
-                const std::optional<int>&                  offset     = std::nullopt
+                const orm::where::ExpressionVariantPtr&    where_expr       = nullptr,
+                const std::optional<JoinStatementWrapper>& join_stmt        = std::nullopt,
+                const std::optional<int>&                  limit            = std::nullopt,
+                const std::optional<int>&                  offset           = std::nullopt,
+                const std::optional<OrderByWrapper>&       order_by_wrapper = std::nullopt
         )
-            : conn_(std::move(conn)), where_expr_(where_expr), join_stmt_(join_stmt), limit_(limit), offset_(offset) {}
+            : conn_(std::move(conn))
+            , where_expr_(where_expr)
+            , join_stmt_(join_stmt)
+            , limit_(limit)
+            , offset_(offset)
+            , order_by_wrapper_(order_by_wrapper) {}
 
         // Update state for reuse (called by QuerySet)
         void update_state(
@@ -146,13 +153,15 @@ export namespace storm::orm::statements {
                 const orm::where::ExpressionVariantPtr&    where_expr,
                 const std::optional<JoinStatementWrapper>& join_stmt,
                 const std::optional<int>&                  limit,
-                const std::optional<int>&                  offset
+                const std::optional<int>&                  offset,
+                const std::optional<OrderByWrapper>&       order_by_wrapper = std::nullopt
         ) {
-            conn_       = conn;
-            where_expr_ = where_expr;
-            join_stmt_  = join_stmt;
-            limit_      = limit;
-            offset_     = offset;
+            conn_             = conn;
+            where_expr_       = where_expr;
+            join_stmt_        = join_stmt;
+            limit_            = limit;
+            offset_           = offset;
+            order_by_wrapper_ = order_by_wrapper;
             // No cache invalidation needed - connection's prepare_cached() handles caching
         }
 
@@ -176,6 +185,14 @@ export namespace storm::orm::statements {
         }
 
       private:
+        // Helper: Append ORDER BY clause to SQL from wrapper
+        // NOTE: ORDER BY must come before LIMIT/OFFSET in SQLite
+        __attribute__((always_inline)) inline void append_order_by(std::string& sql) const {
+            if (order_by_wrapper_.has_value() && !order_by_wrapper_->empty()) {
+                sql += order_by_wrapper_->get_order_by_sql();
+            }
+        }
+
         // Helper: Append LIMIT/OFFSET clauses to SQL
         // NOTE: SQLite requires LIMIT when using OFFSET, so we use LIMIT -1 (meaning unlimited) when OFFSET is used
         // alone
@@ -237,8 +254,9 @@ export namespace storm::orm::statements {
             static const std::string base_sql{distinct_sql_array.data.data(), distinct_sql_array.len};
 
             std::string sql;
-            if (limit_.has_value() || offset_.has_value()) {
+            if (order_by_wrapper_.has_value() || limit_.has_value() || offset_.has_value()) {
                 sql = base_sql;
+                append_order_by(sql);
                 append_limit_offset(sql, limit_, offset_);
             } else {
                 sql = base_sql;
@@ -265,6 +283,7 @@ export namespace storm::orm::statements {
             sql = base_sql;
             sql += " WHERE ";
             sql += orm::where::to_sql(*where_expr_);
+            append_order_by(sql);
             append_limit_offset(sql, limit_, offset_);
 
             auto prepare_result = conn_->prepare_cached(sql);
@@ -293,6 +312,7 @@ export namespace storm::orm::statements {
             }
 
             std::string sql = std::move(distinct_join_sql_result.value());
+            append_order_by(sql);
             append_limit_offset(sql, limit_, offset_);
 
             // Connection's prepare_cached() provides efficient internal caching
@@ -321,6 +341,7 @@ export namespace storm::orm::statements {
             sql.reserve(sql.size() + 50);
             sql += " WHERE ";
             sql += orm::where::to_sql(*where_expr_);
+            append_order_by(sql);
             append_limit_offset(sql, limit_, offset_);
 
             auto prepare_result = conn_->prepare_cached(sql);
@@ -466,6 +487,7 @@ export namespace storm::orm::statements {
         std::optional<JoinStatementWrapper> join_stmt_;
         std::optional<int>                  limit_;
         std::optional<int>                  offset_;
+        std::optional<OrderByWrapper>       order_by_wrapper_;
     };
 
 } // namespace storm::orm::statements

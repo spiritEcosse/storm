@@ -19,7 +19,16 @@ struct Person {
 
 // Configuration structure
 struct BenchmarkConfig {
-    enum Mode { COMPREHENSIVE, DELETE_FOCUS, INSERT_ONLY, DELETE_ONLY, SELECT_ONLY, CACHE_ANALYSIS, OPTIMIZATION_TEST };
+    enum Mode {
+        COMPREHENSIVE,
+        DELETE_FOCUS,
+        INSERT_ONLY,
+        DELETE_ONLY,
+        SELECT_ONLY,
+        CACHE_ANALYSIS,
+        OPTIMIZATION_TEST,
+        ORDER_BY
+    };
     Mode             mode             = COMPREHENSIVE;
     std::vector<int> test_sizes       = {1000, 5000, 10000};
     bool             verbose          = false;
@@ -687,23 +696,29 @@ void benchmark_storm_orm_select_with_limit_offset(int num_records, const Benchma
         size_t storm_rows    = select_result.has_value() ? select_result.value().size() : 0;
         queryset.reset();
 
-        // Raw SQLite
+        // Raw SQLite - fair comparison with object construction
         timer.reset();
-        auto stmt_result = conn->prepare("SELECT id, name, age, email FROM Person LIMIT 100");
+        auto stmt_result = conn->prepare("SELECT id, name, age FROM Person LIMIT 100");
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
             return;
         }
-        auto   stmt     = std::move(stmt_result.value());
-        size_t raw_rows = 0;
+        auto                stmt = std::move(stmt_result.value());
+        std::vector<Person> raw_results;
+        raw_results.reserve(100);
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
-                raw_rows++;
+                Person p;
+                p.id   = stmt.extract_int(0);
+                p.name = std::string(stmt.extract_text_view(1));
+                p.age  = stmt.extract_int(2);
+                raw_results.push_back(std::move(p));
             } else {
                 break;
             }
         }
+        size_t raw_rows    = raw_results.size();
         double raw_elapsed = timer.elapsed_ms();
 
         std::cout << "Storm ORM SELECT + LIMIT 100:" << std::endl;
@@ -731,23 +746,29 @@ void benchmark_storm_orm_select_with_limit_offset(int num_records, const Benchma
         size_t storm_rows    = select_result.has_value() ? select_result.value().size() : 0;
         queryset.reset();
 
-        // Raw SQLite
+        // Raw SQLite - fair comparison with object construction
         timer.reset();
-        auto stmt_result = conn->prepare("SELECT id, name, age, email FROM Person LIMIT 100 OFFSET 100");
+        auto stmt_result = conn->prepare("SELECT id, name, age FROM Person LIMIT 100 OFFSET 100");
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
             return;
         }
-        auto   stmt     = std::move(stmt_result.value());
-        size_t raw_rows = 0;
+        auto                stmt = std::move(stmt_result.value());
+        std::vector<Person> raw_results;
+        raw_results.reserve(100);
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
-                raw_rows++;
+                Person p;
+                p.id   = stmt.extract_int(0);
+                p.name = std::string(stmt.extract_text_view(1));
+                p.age  = stmt.extract_int(2);
+                raw_results.push_back(std::move(p));
             } else {
                 break;
             }
         }
+        size_t raw_rows    = raw_results.size();
         double raw_elapsed = timer.elapsed_ms();
 
         std::cout << "Storm ORM SELECT + LIMIT 100 OFFSET 100:" << std::endl;
@@ -775,23 +796,29 @@ void benchmark_storm_orm_select_with_limit_offset(int num_records, const Benchma
         size_t storm_rows    = select_result.has_value() ? select_result.value().size() : 0;
         queryset.reset();
 
-        // Raw SQLite
+        // Raw SQLite - fair comparison with object construction
         timer.reset();
-        auto stmt_result = conn->prepare("SELECT id, name, age, email FROM Person OFFSET 1000");
+        auto stmt_result = conn->prepare("SELECT id, name, age FROM Person OFFSET 1000");
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
             return;
         }
-        auto   stmt     = std::move(stmt_result.value());
-        size_t raw_rows = 0;
+        auto                stmt = std::move(stmt_result.value());
+        std::vector<Person> raw_results;
+        raw_results.reserve(num_records - 1000);
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
-                raw_rows++;
+                Person p;
+                p.id   = stmt.extract_int(0);
+                p.name = std::string(stmt.extract_text_view(1));
+                p.age  = stmt.extract_int(2);
+                raw_results.push_back(std::move(p));
             } else {
                 break;
             }
         }
+        size_t raw_rows    = raw_results.size();
         double raw_elapsed = timer.elapsed_ms();
 
         std::cout << "Storm ORM SELECT + OFFSET 1000:" << std::endl;
@@ -819,23 +846,29 @@ void benchmark_storm_orm_select_with_limit_offset(int num_records, const Benchma
         size_t storm_rows    = select_result.has_value() ? select_result.value().size() : 0;
         queryset.reset();
 
-        // Raw SQLite
+        // Raw SQLite - fair comparison with object construction
         timer.reset();
-        auto stmt_result = conn->prepare("SELECT id, name, age, email FROM Person LIMIT 10");
+        auto stmt_result = conn->prepare("SELECT id, name, age FROM Person LIMIT 10");
         if (!stmt_result.has_value()) {
             std::cerr << "Failed to prepare statement" << std::endl;
             return;
         }
-        auto   stmt     = std::move(stmt_result.value());
-        size_t raw_rows = 0;
+        auto                stmt = std::move(stmt_result.value());
+        std::vector<Person> raw_results;
+        raw_results.reserve(10);
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
-                raw_rows++;
+                Person p;
+                p.id   = stmt.extract_int(0);
+                p.name = std::string(stmt.extract_text_view(1));
+                p.age  = stmt.extract_int(2);
+                raw_results.push_back(std::move(p));
             } else {
                 break;
             }
         }
+        size_t raw_rows    = raw_results.size();
         double raw_elapsed = timer.elapsed_ms();
 
         std::cout << "Storm ORM SELECT + LIMIT 10:" << std::endl;
@@ -853,6 +886,183 @@ void benchmark_storm_orm_select_with_limit_offset(int num_records, const Benchma
                   << "%" << std::endl;
         std::cout << std::endl;
     }
+
+    // Cleanup
+    storm::QuerySet<Person>::clear_default_connection();
+}
+
+void benchmark_storm_orm_order_by(int num_records, const BenchmarkConfig& config) {
+    std::cout << "\n=== Storm ORM ORDER BY Benchmark ===" << std::endl;
+
+    // Setup Storm ORM connection
+    auto result = storm::QuerySet<Person>::set_default_connection(":memory:");
+    if (!result.has_value()) {
+        std::cerr << "Failed to set Storm connection: " << result.error().message() << std::endl;
+        return;
+    }
+
+    // Create table
+    auto& conn          = storm::QuerySet<Person>::get_default_connection();
+    auto  create_result = conn->execute(db_utils::PERSON_TABLE_SQL);
+    if (!create_result.has_value()) {
+        std::cerr << "Failed to create table: " << create_result.error().message() << std::endl;
+        return;
+    }
+
+    // Insert test data
+    std::vector<Person> persons  = data_utils::generate_simple_test_data<Person>(num_records);
+    auto                queryset = storm::QuerySet<Person>{};
+    for (const auto& person : persons) {
+        auto insert_result = queryset.insert(person);
+        if (!insert_result.has_value()) {
+            std::cerr << "Failed to insert test data" << std::endl;
+            return;
+        }
+    }
+
+    BenchmarkTimer timer;
+
+    // Test 1: ORDER BY single field ASC (integer)
+    {
+        timer.reset();
+        auto   storm_result = queryset.order_by<^^Person::age>().select();
+        double storm_time   = timer.elapsed_ms();
+
+        timer.reset();
+        auto prepare_result = conn->prepare("SELECT id, name, age FROM Person ORDER BY age ASC");
+        if (!prepare_result.has_value()) {
+            std::cerr << "Failed to prepare raw SQL" << std::endl;
+        } else {
+            auto                stmt = std::move(prepare_result.value());
+            std::vector<Person> raw_results;
+            raw_results.reserve(num_records);
+            while (stmt.step_raw() == decltype(stmt)::ROW_AVAILABLE) {
+                Person p;
+                p.id   = stmt.extract_int(0);
+                p.name = std::string(stmt.extract_text_view(1));
+                p.age  = stmt.extract_int(2);
+                raw_results.push_back(std::move(p));
+            }
+            double raw_time = timer.elapsed_ms();
+
+            std::cout << "ORDER BY age ASC:" << std::endl;
+            std::cout << "  Storm: " << std::fixed << std::setprecision(3) << storm_time << " ms";
+            std::cout << " (" << std::fixed << std::setprecision(2) << (num_records / (storm_time / 1000.0) / 1000000.0)
+                      << "M rows/sec)" << std::endl;
+            std::cout << "  Raw:   " << std::fixed << std::setprecision(3) << raw_time << " ms";
+            std::cout << " (" << std::fixed << std::setprecision(2)
+                      << (raw_results.size() / (raw_time / 1000.0) / 1000000.0) << "M rows/sec)" << std::endl;
+            std::cout << "  Efficiency: " << std::fixed << std::setprecision(1) << (raw_time / storm_time * 100.0)
+                      << "%" << std::endl;
+        }
+    }
+
+    // Test 2: ORDER BY single field DESC (string)
+    {
+        timer.reset();
+        auto   storm_result = queryset.order_by<^^Person::name, false>().select();
+        double storm_time   = timer.elapsed_ms();
+
+        timer.reset();
+        auto prepare_result = conn->prepare("SELECT id, name, age FROM Person ORDER BY name DESC");
+        if (!prepare_result.has_value()) {
+            std::cerr << "Failed to prepare raw SQL" << std::endl;
+        } else {
+            auto                stmt = std::move(prepare_result.value());
+            std::vector<Person> raw_results;
+            raw_results.reserve(num_records);
+            while (stmt.step_raw() == decltype(stmt)::ROW_AVAILABLE) {
+                Person p;
+                p.id   = stmt.extract_int(0);
+                p.name = std::string(stmt.extract_text_view(1));
+                p.age  = stmt.extract_int(2);
+                raw_results.push_back(std::move(p));
+            }
+            double raw_time = timer.elapsed_ms();
+
+            std::cout << "\nORDER BY name DESC:" << std::endl;
+            std::cout << "  Storm: " << std::fixed << std::setprecision(3) << storm_time << " ms";
+            std::cout << " (" << std::fixed << std::setprecision(2) << (num_records / (storm_time / 1000.0) / 1000000.0)
+                      << "M rows/sec)" << std::endl;
+            std::cout << "  Raw:   " << std::fixed << std::setprecision(3) << raw_time << " ms";
+            std::cout << " (" << std::fixed << std::setprecision(2)
+                      << (raw_results.size() / (raw_time / 1000.0) / 1000000.0) << "M rows/sec)" << std::endl;
+            std::cout << "  Efficiency: " << std::fixed << std::setprecision(1) << (raw_time / storm_time * 100.0)
+                      << "%" << std::endl;
+        }
+    }
+
+    // Test 3: ORDER BY multiple fields
+    {
+        timer.reset();
+        auto   storm_result = queryset.order_by<^^Person::age, ^^Person::name>().select();
+        double storm_time   = timer.elapsed_ms();
+
+        timer.reset();
+        auto prepare_result = conn->prepare("SELECT id, name, age FROM Person ORDER BY age ASC, name ASC");
+        if (!prepare_result.has_value()) {
+            std::cerr << "Failed to prepare raw SQL" << std::endl;
+        } else {
+            auto                stmt = std::move(prepare_result.value());
+            std::vector<Person> raw_results;
+            raw_results.reserve(num_records);
+            while (stmt.step_raw() == decltype(stmt)::ROW_AVAILABLE) {
+                Person p;
+                p.id   = stmt.extract_int(0);
+                p.name = std::string(stmt.extract_text_view(1));
+                p.age  = stmt.extract_int(2);
+                raw_results.push_back(std::move(p));
+            }
+            double raw_time = timer.elapsed_ms();
+
+            std::cout << "\nORDER BY age, name (both ASC):" << std::endl;
+            std::cout << "  Storm: " << std::fixed << std::setprecision(3) << storm_time << " ms";
+            std::cout << " (" << std::fixed << std::setprecision(2) << (num_records / (storm_time / 1000.0) / 1000000.0)
+                      << "M rows/sec)" << std::endl;
+            std::cout << "  Raw:   " << std::fixed << std::setprecision(3) << raw_time << " ms";
+            std::cout << " (" << std::fixed << std::setprecision(2)
+                      << (raw_results.size() / (raw_time / 1000.0) / 1000000.0) << "M rows/sec)" << std::endl;
+            std::cout << "  Efficiency: " << std::fixed << std::setprecision(1) << (raw_time / storm_time * 100.0)
+                      << "%" << std::endl;
+        }
+    }
+
+    // Test 4: ORDER BY with LIMIT
+    {
+        timer.reset();
+        auto   storm_result = queryset.order_by<^^Person::age>().limit(100).select();
+        double storm_time   = timer.elapsed_ms();
+
+        timer.reset();
+        auto prepare_result = conn->prepare("SELECT id, name, age FROM Person ORDER BY age ASC LIMIT 100");
+        if (!prepare_result.has_value()) {
+            std::cerr << "Failed to prepare raw SQL" << std::endl;
+        } else {
+            auto                stmt = std::move(prepare_result.value());
+            std::vector<Person> raw_results;
+            raw_results.reserve(100);
+            while (stmt.step_raw() == decltype(stmt)::ROW_AVAILABLE) {
+                Person p;
+                p.id   = stmt.extract_int(0);
+                p.name = std::string(stmt.extract_text_view(1));
+                p.age  = stmt.extract_int(2);
+                raw_results.push_back(std::move(p));
+            }
+            double raw_time = timer.elapsed_ms();
+
+            std::cout << "\nORDER BY age + LIMIT 100:" << std::endl;
+            std::cout << "  Storm: " << std::fixed << std::setprecision(3) << storm_time << " ms";
+            std::cout << " (" << std::fixed << std::setprecision(2)
+                      << (raw_results.size() / (storm_time / 1000.0) / 1000000.0) << "M rows/sec)" << std::endl;
+            std::cout << "  Raw:   " << std::fixed << std::setprecision(3) << raw_time << " ms";
+            std::cout << " (" << std::fixed << std::setprecision(2)
+                      << (raw_results.size() / (raw_time / 1000.0) / 1000000.0) << "M rows/sec)" << std::endl;
+            std::cout << "  Efficiency: " << std::fixed << std::setprecision(1) << (raw_time / storm_time * 100.0)
+                      << "%" << std::endl;
+        }
+    }
+
+    std::cout << std::endl;
 
     // Cleanup
     storm::QuerySet<Person>::clear_default_connection();
@@ -1069,6 +1279,13 @@ int main(int argc, char* argv[]) {
         std::cout << "- Thread-local caching effectiveness" << std::endl;
         std::cout << "- Individual vs batch INSERT comparison" << std::endl;
         std::cout << "- Cache performance analysis" << std::endl << std::endl;
+    } else if (config.mode == BenchmarkConfig::ORDER_BY) {
+        std::cout << "=== Storm ORM ORDER BY Benchmark ===" << std::endl << std::endl;
+        std::cout << "Features tested:" << std::endl;
+        std::cout << "- Single field ORDER BY (ASC/DESC)" << std::endl;
+        std::cout << "- Multiple field ORDER BY" << std::endl;
+        std::cout << "- ORDER BY with LIMIT/OFFSET" << std::endl;
+        std::cout << "- Integer vs String field ordering" << std::endl << std::endl;
     }
 
     for (int size : config.test_sizes) {
@@ -1083,6 +1300,10 @@ int main(int argc, char* argv[]) {
         } else if (config.mode == BenchmarkConfig::OPTIMIZATION_TEST) {
             std::cout << "--- Testing with " << size << " records ---" << std::endl;
             benchmark_optimization_test(size, config);
+            std::cout << std::endl << std::endl;
+        } else if (config.mode == BenchmarkConfig::ORDER_BY) {
+            std::cout << "--- Testing with " << size << " records ---" << std::endl;
+            benchmark_storm_orm_order_by(size, config);
             std::cout << std::endl << std::endl;
         } else {
             std::cout << "========================================" << std::endl;
@@ -1155,6 +1376,8 @@ BenchmarkConfig parse_arguments(int argc, char* argv[]) {
         } else if (strcmp(argv[i], "--mode=optimization-test") == 0) {
             config.mode             = BenchmarkConfig::OPTIMIZATION_TEST;
             config.show_cache_stats = true;
+        } else if (strcmp(argv[i], "--mode=order-by") == 0) {
+            config.mode = BenchmarkConfig::ORDER_BY;
         } else if (strcmp(argv[i], "--realistic-data") == 0) {
             config.realistic_data = true;
         } else if (strcmp(argv[i], "--verbose") == 0) {
@@ -1196,6 +1419,7 @@ void print_usage(const char* program_name) {
     std::cout << "  --mode=select-only         Run only SELECT benchmarks" << std::endl;
     std::cout << "  --mode=cache-analysis      Test SQL cache performance and effectiveness" << std::endl;
     std::cout << "  --mode=optimization-test   Comprehensive optimization testing with feature summary" << std::endl;
+    std::cout << "  --mode=order-by            Test ORDER BY operations (ASC/DESC, single/multi-field)" << std::endl;
     std::cout << "  --realistic-data           Use random test data instead of predictable patterns" << std::endl;
     std::cout << "  --verbose                  Show detailed cache statistics" << std::endl;
     std::cout << "  --test-size=N              Comma-separated list of test sizes (default: 1000,5000,10000)"
@@ -1212,4 +1436,6 @@ void print_usage(const char* program_name) {
               << std::endl;
     std::cout << "  " << program_name
               << " --mode=optimization-test --verbose         # Full optimization test with details" << std::endl;
+    std::cout << "  " << program_name << " --mode=order-by --test-size=10000              # ORDER BY with 10K records"
+              << std::endl;
 }

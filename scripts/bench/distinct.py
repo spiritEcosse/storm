@@ -75,6 +75,11 @@ class DistinctBenchmark(BenchmarkRunner):
                 *extract_metrics(r'Storm ORM DISTINCT \(content\) \+ WHERE \+ JOIN'),
                 *extract_metrics(r'Raw SQLite DISTINCT \(content\) \+ WHERE \+ JOIN')
             ),
+            # DISTINCT with ORDER BY
+            'orderby': (
+                *extract_metrics(r'Storm ORM DISTINCT \(name\) \+ ORDER BY'),
+                *extract_metrics(r'Raw SQLite DISTINCT \(name\) \+ ORDER BY')
+            ),
             # DISTINCT with LIMIT/OFFSET (Storm vs Raw comparison)
             'limit_100': (
                 *extract_metrics(r'Storm ORM DISTINCT \(name\) \+ LIMIT 100'),
@@ -175,6 +180,18 @@ class DistinctBenchmark(BenchmarkRunner):
             ('where', 'DISTINCT + WHERE'),
             ('join', 'DISTINCT + JOIN'),
             ('where_join', 'DISTINCT + WHERE + JOIN'),
+        ]:
+            if name in data and data[name][0] > 0:
+                storm_lat, storm_thr, storm_res, raw_lat, raw_thr, raw_res = data[name]
+                row, eff = format_row(label, storm_lat, storm_thr, storm_res, raw_lat, raw_thr, raw_res)
+                table.print_row(row)
+                all_effs.append(eff)
+
+        # DISTINCT with ORDER BY operations
+        table.print_separator()
+        table.print_row([f"{Colors.BOLD}DISTINCT with ORDER BY:{Colors.RESET}", "", "", "", ""])
+        for name, label in [
+            ('orderby', 'DISTINCT (name) + ORDER BY name'),
         ]:
             if name in data and data[name][0] > 0:
                 storm_lat, storm_thr, storm_res, raw_lat, raw_thr, raw_res = data[name]

@@ -14,8 +14,10 @@ import storm_orm_statements_select;
 import storm_orm_statements_distinct;
 import storm_orm_statements_update;
 import storm_orm_statements_join;
+import storm_orm_statements_orderby;
 import storm_orm_where;
 import storm_orm_statements_aggregate;
+import storm_orm_utilities;
 
 import <expected>;
 import <string>;
@@ -115,6 +117,24 @@ export namespace storm {
             return self_cast(self);
         }
 
+        // ORDER BY clause support - builder pattern with method chaining
+        // Supports all variations:
+        //   order_by<^^Person::age>()                          // Single field, default ASC
+        //   order_by<^^Person::age, false>()                   // Single field, explicit DESC
+        //   order_by<^^Person::age, ^^Person::name>()          // Multiple fields, all ASC
+        //   order_by<^^Person::age, true, ^^Person::name, false>()  // Mixed directions
+        //
+        // Usage examples:
+        //   queryset.order_by<^^Person::age>().select()
+        //   queryset.where(age > 25).order_by<^^Person::name>().select()
+        //   queryset.order_by<^^Person::age, false>().limit(10).select()
+        //
+        template <auto... Args> constexpr auto&& order_by(this auto&& self) {
+            // Create lightweight wrapper to compile-time generated static SQL
+            self.order_by_wrapper_ = orm::statements::make_order_by_wrapper<Args...>();
+            return self_cast(self);
+        }
+
         // Select operations - returns all rows (optimized with statement caching)
         // NOTE: WHERE and JOIN state is preserved after select() for query reusability.
         // Call reset() to clear state when needed.
@@ -123,17 +143,20 @@ export namespace storm {
 
             if (join_stmt_.has_value() && where_expr_) {
                 // JOIN + WHERE
-                result = get_select_statement()
-                                 .execute_with_where_and_join(*join_stmt_, where_expr_, limit_value_, offset_value_);
+                result = get_select_statement().execute_with_where_and_join(
+                        *join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_
+                );
             } else if (join_stmt_.has_value()) {
                 // JOIN only (no WHERE)
-                result = get_select_statement().execute_optimized(*join_stmt_, limit_value_, offset_value_);
+                result = get_select_statement()
+                                 .execute_optimized(*join_stmt_, limit_value_, offset_value_, order_by_wrapper_);
             } else if (where_expr_) {
                 // WHERE only (no JOIN)
-                result = get_select_statement().execute_with_where(where_expr_, limit_value_, offset_value_);
+                result = get_select_statement()
+                                 .execute_with_where(where_expr_, limit_value_, offset_value_, order_by_wrapper_);
             } else {
                 // Simple SELECT (no JOIN, no WHERE)
-                result = get_select_statement().execute_optimized(limit_value_, offset_value_);
+                result = get_select_statement().execute_optimized(limit_value_, offset_value_, order_by_wrapper_);
             }
 
             return result;
@@ -162,9 +185,11 @@ export namespace storm {
 
                 // Create on first use, update state on subsequent calls
                 if (!cached_stmt.has_value()) {
-                    cached_stmt.emplace(conn_, where_expr_, join_stmt_, limit_value_, offset_value_);
+                    cached_stmt.emplace(conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_);
                 } else {
-                    cached_stmt->update_state(conn_, where_expr_, join_stmt_, limit_value_, offset_value_);
+                    cached_stmt->update_state(
+                            conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_
+                    );
                 }
 
                 return *cached_stmt;
@@ -178,9 +203,11 @@ export namespace storm {
 
                 // Create on first use, update state on subsequent calls
                 if (!cached_stmt.has_value()) {
-                    cached_stmt.emplace(conn_, where_expr_, join_stmt_, limit_value_, offset_value_);
+                    cached_stmt.emplace(conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_);
                 } else {
-                    cached_stmt->update_state(conn_, where_expr_, join_stmt_, limit_value_, offset_value_);
+                    cached_stmt->update_state(
+                            conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_
+                    );
                 }
 
                 return *cached_stmt;
@@ -384,6 +411,7 @@ export namespace storm {
         mutable orm::where::ExpressionVariantPtr                     where_expr_;
         mutable std::optional<int>                                   limit_value_;
         mutable std::optional<int>                                   offset_value_;
+        mutable std::optional<orm::statements::OrderByWrapper>       order_by_wrapper_;
     };
 
 } // namespace storm
