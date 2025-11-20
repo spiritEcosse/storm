@@ -123,7 +123,8 @@ export namespace storm {
 
             if (join_stmt_.has_value() && where_expr_) {
                 // JOIN + WHERE
-                result = get_select_statement().execute_with_where_and_join(*join_stmt_, where_expr_, limit_value_, offset_value_);
+                result = get_select_statement()
+                                 .execute_with_where_and_join(*join_stmt_, where_expr_, limit_value_, offset_value_);
             } else if (join_stmt_.has_value()) {
                 // JOIN only (no WHERE)
                 result = get_select_statement().execute_optimized(*join_stmt_, limit_value_, offset_value_);

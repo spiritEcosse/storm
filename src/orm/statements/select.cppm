@@ -306,7 +306,8 @@ export namespace storm::orm::statements {
         }
 
         // Helper: Append LIMIT/OFFSET clauses to SQL
-        // NOTE: SQLite requires LIMIT when using OFFSET, so we use LIMIT -1 (meaning unlimited) when OFFSET is used alone
+        // NOTE: SQLite requires LIMIT when using OFFSET, so we use LIMIT -1 (meaning unlimited) when OFFSET is used
+        // alone
         __attribute__((always_inline)) static inline void
         append_limit_offset(std::string& sql, const std::optional<int>& limit, const std::optional<int>& offset) {
             if (limit.has_value()) {

@@ -36,7 +36,7 @@ class LimitOffsetTest : public ::testing::Test {
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
         // Insert 20 test records for comprehensive testing
-        QuerySet<LimitOffsetPerson> queryset;
+        QuerySet<LimitOffsetPerson>    queryset;
         std::vector<LimitOffsetPerson> people;
         for (int i = 1; i <= 20; i++) {
             people.push_back({i, "Person" + std::to_string(i), 20 + i});
@@ -185,9 +185,7 @@ TEST_F(LimitOffsetTest, LimitOffsetPagination) {
 TEST_F(LimitOffsetTest, LimitWithWhere) {
     QuerySet<LimitOffsetPerson> qs;
 
-    auto result = qs.where(field<^^LimitOffsetPerson::age>() > 25)
-                          .limit(3)
-                          .select();
+    auto result = qs.where(field<^^LimitOffsetPerson::age>() > 25).limit(3).select();
     ASSERT_TRUE(result.has_value()) << "SELECT WHERE with LIMIT failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -202,10 +200,7 @@ TEST_F(LimitOffsetTest, LimitWithWhere) {
 TEST_F(LimitOffsetTest, LimitOffsetWithWhere) {
     QuerySet<LimitOffsetPerson> qs;
 
-    auto result = qs.where(field<^^LimitOffsetPerson::age>() > 25)
-                          .limit(3)
-                          .offset(2)
-                          .select();
+    auto result = qs.where(field<^^LimitOffsetPerson::age>() > 25).limit(3).offset(2).select();
     ASSERT_TRUE(result.has_value()) << "SELECT WHERE with LIMIT/OFFSET failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -220,9 +215,7 @@ TEST_F(LimitOffsetTest, LimitOffsetWithWhere) {
 TEST_F(LimitOffsetTest, WhereWithOffsetNoLimit) {
     QuerySet<LimitOffsetPerson> qs;
 
-    auto result = qs.where(field<^^LimitOffsetPerson::age>() < 30)
-                          .offset(2)
-                          .select();
+    auto result = qs.where(field<^^LimitOffsetPerson::age>() < 30).offset(2).select();
     ASSERT_TRUE(result.has_value()) << "SELECT WHERE with OFFSET failed: " << result.error().message();
 
     // Should get all matching records except first 2
@@ -268,10 +261,8 @@ TEST_F(LimitOffsetTest, DistinctMultiFieldWithLimit) {
 TEST_F(LimitOffsetTest, DistinctWithWhereAndLimit) {
     QuerySet<LimitOffsetPerson> qs;
 
-    auto result = qs.where(field<^^LimitOffsetPerson::age>() > 30)
-                          .limit(3)
-                          .distinct<^^LimitOffsetPerson::name>()
-                          .select();
+    auto result =
+            qs.where(field<^^LimitOffsetPerson::age>() > 30).limit(3).distinct<^^LimitOffsetPerson::name>().select();
     ASSERT_TRUE(result.has_value()) << "DISTINCT WHERE with LIMIT failed: " << result.error().message();
 
     const auto& names = result.value();

@@ -107,14 +107,14 @@ class DistinctBenchmark(BenchmarkRunner):
                 f"{Colors.BOLD}Avg Results{Colors.RESET}",
                 f"{Colors.BOLD}Efficiency{Colors.RESET}"
             ],
-            column_widths=[35, 22, 22, 14, 14]
+            column_widths=[50, 24, 22, 14, 14]
         )
 
         def format_row(label, storm_lat, storm_thr, storm_res, raw_lat, raw_thr, raw_res):
             """Format a single row with Storm ORM / Raw SQLite comparison"""
             # Latency comparison (lower is better, so invert for efficiency)
             lat_eff = (raw_lat / storm_lat * 100) if storm_lat > 0 else 0
-            lat_str = f"{Colors.CYAN}{storm_lat:>6.3f}{Colors.RESET} / {Colors.DIM}{raw_lat:>6.3f}{Colors.RESET}"
+            lat_str = f"{Colors.CYAN}{storm_lat:>7.4f}{Colors.RESET} / {Colors.DIM}{raw_lat:>7.4f}{Colors.RESET}"
 
             # Throughput comparison (higher is better)
             thr_eff = (storm_thr / raw_thr * 100) if raw_thr > 0 else 0
@@ -204,6 +204,9 @@ class DistinctBenchmark(BenchmarkRunner):
         avg_eff = sum(all_effs) / len(all_effs) if all_effs else 0
         print(f"\n{Colors.DIM}Test configuration: {records:,} records, {iterations} iterations{Colors.RESET}")
         print(f"{Colors.DIM}Format: Storm ORM / Raw SQLite{Colors.RESET}")
+        print(f"{Colors.DIM}Latency = primary metric (lower is better){Colors.RESET}")
+        print(f"{Colors.DIM}Throughput = output rows/sec (misleading for different result sizes){Colors.RESET}")
+        print(f"{Colors.DIM}⚠️  OFFSET without LIMIT requires full table scan (finds all DISTINCT values){Colors.RESET}")
         avg_eff_str = f"{avg_eff:>11.1f}%"
         if avg_eff >= 70:
             avg_eff_colored = f"{Colors.GREEN}{avg_eff_str}{Colors.RESET}"

@@ -694,7 +694,7 @@ void benchmark_storm_orm_select_with_limit_offset(int num_records, const Benchma
             std::cerr << "Failed to prepare statement" << std::endl;
             return;
         }
-        auto stmt = std::move(stmt_result.value());
+        auto   stmt     = std::move(stmt_result.value());
         size_t raw_rows = 0;
         while (true) {
             int step = stmt.step_raw();
@@ -709,16 +709,16 @@ void benchmark_storm_orm_select_with_limit_offset(int num_records, const Benchma
         std::cout << "Storm ORM SELECT + LIMIT 100:" << std::endl;
         std::cout << "  Time: " << std::fixed << std::setprecision(3) << storm_elapsed << " ms" << std::endl;
         std::cout << "  Rows: " << storm_rows << std::endl;
-        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-                  << (storm_rows / (storm_elapsed / 1000.0)) << " rows/sec" << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (storm_rows / (storm_elapsed / 1000.0))
+                  << " rows/sec" << std::endl;
 
         std::cout << "\nRaw SQLite SELECT + LIMIT 100:" << std::endl;
         std::cout << "  Time: " << std::fixed << std::setprecision(3) << raw_elapsed << " ms" << std::endl;
         std::cout << "  Rows: " << raw_rows << std::endl;
-        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-                  << (raw_rows / (raw_elapsed / 1000.0)) << " rows/sec" << std::endl;
-        std::cout << "  Efficiency: " << std::fixed << std::setprecision(1)
-                  << (raw_elapsed / storm_elapsed * 100.0) << "%" << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (raw_rows / (raw_elapsed / 1000.0))
+                  << " rows/sec" << std::endl;
+        std::cout << "  Efficiency: " << std::fixed << std::setprecision(1) << (raw_elapsed / storm_elapsed * 100.0)
+                  << "%" << std::endl;
         std::cout << std::endl;
     }
 
@@ -738,7 +738,7 @@ void benchmark_storm_orm_select_with_limit_offset(int num_records, const Benchma
             std::cerr << "Failed to prepare statement" << std::endl;
             return;
         }
-        auto stmt = std::move(stmt_result.value());
+        auto   stmt     = std::move(stmt_result.value());
         size_t raw_rows = 0;
         while (true) {
             int step = stmt.step_raw();
@@ -753,16 +753,16 @@ void benchmark_storm_orm_select_with_limit_offset(int num_records, const Benchma
         std::cout << "Storm ORM SELECT + LIMIT 100 OFFSET 100:" << std::endl;
         std::cout << "  Time: " << std::fixed << std::setprecision(3) << storm_elapsed << " ms" << std::endl;
         std::cout << "  Rows: " << storm_rows << std::endl;
-        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-                  << (storm_rows / (storm_elapsed / 1000.0)) << " rows/sec" << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (storm_rows / (storm_elapsed / 1000.0))
+                  << " rows/sec" << std::endl;
 
         std::cout << "\nRaw SQLite SELECT + LIMIT 100 OFFSET 100:" << std::endl;
         std::cout << "  Time: " << std::fixed << std::setprecision(3) << raw_elapsed << " ms" << std::endl;
         std::cout << "  Rows: " << raw_rows << std::endl;
-        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-                  << (raw_rows / (raw_elapsed / 1000.0)) << " rows/sec" << std::endl;
-        std::cout << "  Efficiency: " << std::fixed << std::setprecision(1)
-                  << (raw_elapsed / storm_elapsed * 100.0) << "%" << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (raw_rows / (raw_elapsed / 1000.0))
+                  << " rows/sec" << std::endl;
+        std::cout << "  Efficiency: " << std::fixed << std::setprecision(1) << (raw_elapsed / storm_elapsed * 100.0)
+                  << "%" << std::endl;
         std::cout << std::endl;
     }
 
@@ -782,7 +782,7 @@ void benchmark_storm_orm_select_with_limit_offset(int num_records, const Benchma
             std::cerr << "Failed to prepare statement" << std::endl;
             return;
         }
-        auto stmt = std::move(stmt_result.value());
+        auto   stmt     = std::move(stmt_result.value());
         size_t raw_rows = 0;
         while (true) {
             int step = stmt.step_raw();
@@ -797,16 +797,16 @@ void benchmark_storm_orm_select_with_limit_offset(int num_records, const Benchma
         std::cout << "Storm ORM SELECT + OFFSET 1000:" << std::endl;
         std::cout << "  Time: " << std::fixed << std::setprecision(3) << storm_elapsed << " ms" << std::endl;
         std::cout << "  Rows: " << storm_rows << std::endl;
-        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-                  << (storm_rows / (storm_elapsed / 1000.0)) << " rows/sec" << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (storm_rows / (storm_elapsed / 1000.0))
+                  << " rows/sec" << std::endl;
 
         std::cout << "\nRaw SQLite SELECT + OFFSET 1000:" << std::endl;
         std::cout << "  Time: " << std::fixed << std::setprecision(3) << raw_elapsed << " ms" << std::endl;
         std::cout << "  Rows: " << raw_rows << std::endl;
-        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-                  << (raw_rows / (raw_elapsed / 1000.0)) << " rows/sec" << std::endl;
-        std::cout << "  Efficiency: " << std::fixed << std::setprecision(1)
-                  << (raw_elapsed / storm_elapsed * 100.0) << "%" << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (raw_rows / (raw_elapsed / 1000.0))
+                  << " rows/sec" << std::endl;
+        std::cout << "  Efficiency: " << std::fixed << std::setprecision(1) << (raw_elapsed / storm_elapsed * 100.0)
+                  << "%" << std::endl;
         std::cout << std::endl;
     }
 
@@ -826,7 +826,7 @@ void benchmark_storm_orm_select_with_limit_offset(int num_records, const Benchma
             std::cerr << "Failed to prepare statement" << std::endl;
             return;
         }
-        auto stmt = std::move(stmt_result.value());
+        auto   stmt     = std::move(stmt_result.value());
         size_t raw_rows = 0;
         while (true) {
             int step = stmt.step_raw();
@@ -841,16 +841,16 @@ void benchmark_storm_orm_select_with_limit_offset(int num_records, const Benchma
         std::cout << "Storm ORM SELECT + LIMIT 10:" << std::endl;
         std::cout << "  Time: " << std::fixed << std::setprecision(3) << storm_elapsed << " ms" << std::endl;
         std::cout << "  Rows: " << storm_rows << std::endl;
-        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-                  << (storm_rows / (storm_elapsed / 1000.0)) << " rows/sec" << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (storm_rows / (storm_elapsed / 1000.0))
+                  << " rows/sec" << std::endl;
 
         std::cout << "\nRaw SQLite SELECT + LIMIT 10:" << std::endl;
         std::cout << "  Time: " << std::fixed << std::setprecision(3) << raw_elapsed << " ms" << std::endl;
         std::cout << "  Rows: " << raw_rows << std::endl;
-        std::cout << "  Throughput: " << std::fixed << std::setprecision(0)
-                  << (raw_rows / (raw_elapsed / 1000.0)) << " rows/sec" << std::endl;
-        std::cout << "  Efficiency: " << std::fixed << std::setprecision(1)
-                  << (raw_elapsed / storm_elapsed * 100.0) << "%" << std::endl;
+        std::cout << "  Throughput: " << std::fixed << std::setprecision(0) << (raw_rows / (raw_elapsed / 1000.0))
+                  << " rows/sec" << std::endl;
+        std::cout << "  Efficiency: " << std::fixed << std::setprecision(1) << (raw_elapsed / storm_elapsed * 100.0)
+                  << "%" << std::endl;
         std::cout << std::endl;
     }
 

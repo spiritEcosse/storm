@@ -800,7 +800,7 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
             for (int i = 0; i < iterations; ++i) {
                 timer.reset();
 
-                auto* stmt = stmt_result.value();
+                auto*                    stmt = stmt_result.value();
                 std::vector<std::string> results;
                 results.reserve(100);
 
@@ -818,7 +818,7 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
                 raw_total_results += results.size();
                 raw_total_time += elapsed;
 
-                stmt->reset();  // Reset for next iteration
+                stmt->reset(); // Reset for next iteration
             }
         }
 
@@ -831,8 +831,8 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
                   << (static_cast<double>(storm_total_results) / iterations) << " rows/query" << std::endl;
 
         std::cout << "\nRaw SQLite DISTINCT (name) + LIMIT 100:" << std::endl;
-        std::cout << "  Latency: " << std::fixed << std::setprecision(4) << (raw_total_time / iterations)
-                  << " ms/query" << std::endl;
+        std::cout << "  Latency: " << std::fixed << std::setprecision(4) << (raw_total_time / iterations) << " ms/query"
+                  << std::endl;
         std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
                   << (raw_total_results / (raw_total_time / 1000.0)) << " rows/sec" << std::endl;
         std::cout << "  Avg results: " << std::fixed << std::setprecision(1)
@@ -869,7 +869,7 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
             for (int i = 0; i < iterations; ++i) {
                 timer.reset();
 
-                auto* stmt = stmt_result.value();
+                auto*                    stmt = stmt_result.value();
                 std::vector<std::string> results;
                 results.reserve(50);
 
@@ -887,7 +887,7 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
                 raw_total_results += results.size();
                 raw_total_time += elapsed;
 
-                stmt->reset();  // Reset for next iteration
+                stmt->reset(); // Reset for next iteration
             }
         }
 
@@ -900,8 +900,8 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
                   << (static_cast<double>(storm_total_results) / iterations) << " rows/query" << std::endl;
 
         std::cout << "\nRaw SQLite DISTINCT (name) + LIMIT 50 OFFSET 50:" << std::endl;
-        std::cout << "  Latency: " << std::fixed << std::setprecision(4) << (raw_total_time / iterations)
-                  << " ms/query" << std::endl;
+        std::cout << "  Latency: " << std::fixed << std::setprecision(4) << (raw_total_time / iterations) << " ms/query"
+                  << std::endl;
         std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
                   << (raw_total_results / (raw_total_time / 1000.0)) << " rows/sec" << std::endl;
         std::cout << "  Avg results: " << std::fixed << std::setprecision(1)
@@ -938,7 +938,7 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
             for (int i = 0; i < iterations; ++i) {
                 timer.reset();
 
-                auto* stmt = stmt_result.value();
+                auto*                                     stmt = stmt_result.value();
                 std::vector<std::tuple<std::string, int>> results;
                 results.reserve(100);
 
@@ -947,7 +947,7 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
                     if (step == storm::db::sqlite::Statement::ROW_AVAILABLE) {
                         // Extract both fields (matches Storm's std::tuple extraction)
                         std::string name(reinterpret_cast<const char*>(stmt->extract_text_ptr(0)));
-                        int age = stmt->extract_int(1);
+                        int         age = stmt->extract_int(1);
                         results.emplace_back(std::move(name), age);
                     } else {
                         break;
@@ -958,7 +958,7 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
                 raw_total_results += results.size();
                 raw_total_time += elapsed;
 
-                stmt->reset();  // Reset for next iteration
+                stmt->reset(); // Reset for next iteration
             }
         }
 
@@ -971,8 +971,8 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
                   << (static_cast<double>(storm_total_results) / iterations) << " rows/query" << std::endl;
 
         std::cout << "\nRaw SQLite DISTINCT (name, age) + LIMIT 100:" << std::endl;
-        std::cout << "  Latency: " << std::fixed << std::setprecision(4) << (raw_total_time / iterations)
-                  << " ms/query" << std::endl;
+        std::cout << "  Latency: " << std::fixed << std::setprecision(4) << (raw_total_time / iterations) << " ms/query"
+                  << std::endl;
         std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
                   << (raw_total_results / (raw_total_time / 1000.0)) << " rows/sec" << std::endl;
         std::cout << "  Avg results: " << std::fixed << std::setprecision(1)
@@ -1010,9 +1010,9 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
             for (int i = 0; i < iterations; ++i) {
                 timer.reset();
 
-                auto* stmt = stmt_result.value();
+                auto*                    stmt = stmt_result.value();
                 std::vector<std::string> results;
-                results.reserve(50);  // Expect ~50 results (100 unique - 50 offset)
+                results.reserve(50); // Expect ~50 results (100 unique - 50 offset)
 
                 while (true) {
                     int step = stmt->step_raw();
@@ -1028,7 +1028,7 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
                 raw_total_results += results.size();
                 raw_total_time += elapsed;
 
-                stmt->reset();  // Reset for next iteration
+                stmt->reset(); // Reset for next iteration
             }
         }
 
@@ -1041,8 +1041,8 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
                   << (static_cast<double>(storm_total_results) / iterations) << " rows/query" << std::endl;
 
         std::cout << "\nRaw SQLite DISTINCT (name) + OFFSET 50:" << std::endl;
-        std::cout << "  Latency: " << std::fixed << std::setprecision(4) << (raw_total_time / iterations)
-                  << " ms/query" << std::endl;
+        std::cout << "  Latency: " << std::fixed << std::setprecision(4) << (raw_total_time / iterations) << " ms/query"
+                  << std::endl;
         std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
                   << (raw_total_results / (raw_total_time / 1000.0)) << " rows/sec" << std::endl;
         std::cout << "  Avg results: " << std::fixed << std::setprecision(1)
