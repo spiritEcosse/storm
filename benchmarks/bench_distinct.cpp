@@ -1,4 +1,5 @@
 #include <cstring>
+#include <plf_hive/plf_hive.h>
 import <memory>;
 #include <iostream>
 #include <iomanip>
@@ -183,14 +184,13 @@ void benchmark_raw_distinct_name(int num_records, int iterations = 100) {
             break;
         }
 
-        auto                     stmt = std::move(stmt_result.value());
-        std::vector<std::string> results;
-        results.reserve(100);
+        auto                   stmt = std::move(stmt_result.value());
+        plf::hive<std::string> results;
 
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
-                results.push_back(std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(0))));
+                results.insert(std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(0))));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -228,14 +228,13 @@ void benchmark_raw_distinct_age(int num_records, int iterations = 100) {
             break;
         }
 
-        auto             stmt = std::move(stmt_result.value());
-        std::vector<int> results;
-        results.reserve(50);
+        auto           stmt = std::move(stmt_result.value());
+        plf::hive<int> results;
 
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
-                results.push_back(stmt.extract_int(0));
+                results.insert(stmt.extract_int(0));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -273,14 +272,13 @@ void benchmark_raw_distinct_id(int num_records, int iterations = 100) {
             break;
         }
 
-        auto             stmt = std::move(stmt_result.value());
-        std::vector<int> results;
-        results.reserve(num_records);
+        auto           stmt = std::move(stmt_result.value());
+        plf::hive<int> results;
 
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
-                results.push_back(stmt.extract_int(0));
+                results.insert(stmt.extract_int(0));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -366,16 +364,15 @@ void benchmark_raw_distinct_name_age(int num_records, int iterations = 100) {
             break;
         }
 
-        auto                                      stmt = std::move(stmt_result.value());
-        std::vector<std::tuple<std::string, int>> results;
-        results.reserve(100);
+        auto                                    stmt = std::move(stmt_result.value());
+        plf::hive<std::tuple<std::string, int>> results;
 
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
                 std::string name(reinterpret_cast<const char*>(stmt.extract_text_ptr(0)));
                 int         age = stmt.extract_int(1);
-                results.emplace_back(name, age);
+                results.insert(std::make_tuple(name, age));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -413,9 +410,8 @@ void benchmark_raw_distinct_id_name_age(int num_records, int iterations = 100) {
             break;
         }
 
-        auto                                           stmt = std::move(stmt_result.value());
-        std::vector<std::tuple<int, std::string, int>> results;
-        results.reserve(num_records);
+        auto                                         stmt = std::move(stmt_result.value());
+        plf::hive<std::tuple<int, std::string, int>> results;
 
         while (true) {
             int step = stmt.step_raw();
@@ -423,7 +419,7 @@ void benchmark_raw_distinct_id_name_age(int num_records, int iterations = 100) {
                 int         id = stmt.extract_int(0);
                 std::string name(reinterpret_cast<const char*>(stmt.extract_text_ptr(1)));
                 int         age = stmt.extract_int(2);
-                results.emplace_back(id, name, age);
+                results.insert(std::make_tuple(id, name, age));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -506,13 +502,12 @@ void benchmark_raw_distinct_where(int num_records, int iterations = 100) {
         stmt.reset();
         stmt.bind_int(1, 30);
 
-        std::vector<std::string> results;
-        results.reserve(100);
+        plf::hive<std::string> results;
 
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
-                results.emplace_back(reinterpret_cast<const char*>(stmt.extract_text_ptr(0)));
+                results.insert(reinterpret_cast<const char*>(stmt.extract_text_ptr(0)));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -645,13 +640,12 @@ void benchmark_raw_distinct_join(int num_messages, int iterations = 100) {
         // Reset statement for reuse
         stmt.reset();
 
-        std::vector<std::string> results;
-        results.reserve(num_messages);
+        plf::hive<std::string> results;
 
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
-                results.emplace_back(reinterpret_cast<const char*>(stmt.extract_text_ptr(0)));
+                results.insert(reinterpret_cast<const char*>(stmt.extract_text_ptr(0)));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -733,13 +727,12 @@ void benchmark_raw_distinct_where_join(int num_messages, int iterations = 100) {
         stmt.reset();
         stmt.bind_text(1, "%0%");
 
-        std::vector<std::string> results;
-        results.reserve(num_messages / 10);
+        plf::hive<std::string> results;
 
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
-                results.emplace_back(reinterpret_cast<const char*>(stmt.extract_text_ptr(0)));
+                results.insert(reinterpret_cast<const char*>(stmt.extract_text_ptr(0)));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -800,15 +793,14 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
             for (int i = 0; i < iterations; ++i) {
                 timer.reset();
 
-                auto*                    stmt = stmt_result.value();
-                std::vector<std::string> results;
-                results.reserve(100);
+                auto*                  stmt = stmt_result.value();
+                plf::hive<std::string> results;
 
                 while (true) {
                     int step = stmt->step_raw();
                     if (step == storm::db::sqlite::Statement::ROW_AVAILABLE) {
                         // Extract string data (matches Storm's std::tuple extraction)
-                        results.push_back(std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(0))));
+                        results.insert(std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(0))));
                     } else {
                         break;
                     }
@@ -869,15 +861,14 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
             for (int i = 0; i < iterations; ++i) {
                 timer.reset();
 
-                auto*                    stmt = stmt_result.value();
-                std::vector<std::string> results;
-                results.reserve(50);
+                auto*                  stmt = stmt_result.value();
+                plf::hive<std::string> results;
 
                 while (true) {
                     int step = stmt->step_raw();
                     if (step == storm::db::sqlite::Statement::ROW_AVAILABLE) {
                         // Extract string data (matches Storm's std::tuple extraction)
-                        results.push_back(std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(0))));
+                        results.insert(std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(0))));
                     } else {
                         break;
                     }
@@ -938,9 +929,8 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
             for (int i = 0; i < iterations; ++i) {
                 timer.reset();
 
-                auto*                                     stmt = stmt_result.value();
-                std::vector<std::tuple<std::string, int>> results;
-                results.reserve(100);
+                auto*                                   stmt = stmt_result.value();
+                plf::hive<std::tuple<std::string, int>> results;
 
                 while (true) {
                     int step = stmt->step_raw();
@@ -948,7 +938,7 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
                         // Extract both fields (matches Storm's std::tuple extraction)
                         std::string name(reinterpret_cast<const char*>(stmt->extract_text_ptr(0)));
                         int         age = stmt->extract_int(1);
-                        results.emplace_back(std::move(name), age);
+                        results.insert(std::make_tuple(std::move(name), age));
                     } else {
                         break;
                     }
@@ -1010,15 +1000,14 @@ void benchmark_distinct_limit_offset(int num_records, int iterations = 100) {
             for (int i = 0; i < iterations; ++i) {
                 timer.reset();
 
-                auto*                    stmt = stmt_result.value();
-                std::vector<std::string> results;
-                results.reserve(50); // Expect ~50 results (100 unique - 50 offset)
+                auto*                  stmt = stmt_result.value();
+                plf::hive<std::string> results;
 
                 while (true) {
                     int step = stmt->step_raw();
                     if (step == storm::db::sqlite::Statement::ROW_AVAILABLE) {
                         // Extract string data (matches Storm's std::tuple extraction)
-                        results.push_back(std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(0))));
+                        results.insert(std::string(reinterpret_cast<const char*>(stmt->extract_text_ptr(0))));
                     } else {
                         break;
                     }
@@ -1094,14 +1083,13 @@ void benchmark_raw_distinct_orderby(int num_records, int iterations = 100) {
             break;
         }
 
-        auto                     stmt = std::move(stmt_result.value());
-        std::vector<std::string> results;
-        results.reserve(100);
+        auto                   stmt = std::move(stmt_result.value());
+        plf::hive<std::string> results;
 
         while (true) {
             int step = stmt.step_raw();
             if (step == decltype(stmt)::ROW_AVAILABLE) {
-                results.push_back(std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(0))));
+                results.insert(std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(0))));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {

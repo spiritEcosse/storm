@@ -1,4 +1,5 @@
 // Micro-benchmark to analyze SELECT performance bottlenecks
+#include <plf_hive/plf_hive.h>
 // Isolates different components: sqlite3_step, column reading, object construction, string allocation
 
 #include <chrono>
@@ -93,8 +94,7 @@ void benchmark_step_read_emplace_no_string(sqlite3* db, int num_records) {
     sqlite3_stmt* select_stmt;
     sqlite3_prepare_v2(db, "SELECT id, name, age FROM Person", -1, &select_stmt, nullptr);
 
-    std::vector<Person> results;
-    results.reserve(num_records);
+    plf::hive<Person> results;
 
     BenchmarkTimer timer;
     int            rows = 0;
@@ -102,11 +102,11 @@ void benchmark_step_read_emplace_no_string(sqlite3* db, int num_records) {
         int id  = sqlite3_column_int(select_stmt, 0);
         int age = sqlite3_column_int(select_stmt, 2);
 
-        results.emplace_back();
-        Person& obj = results.back();
-        obj.id      = id;
-        obj.name    = ""; // Don't copy string
-        obj.age     = age;
+        Person obj;
+        obj.id   = id;
+        obj.name = ""; // Don't copy string
+        obj.age  = age;
+        results.insert(std::move(obj));
 
         rows++;
     }
@@ -127,8 +127,7 @@ void benchmark_full_storm_equivalent(sqlite3* db, int num_records) {
     sqlite3_stmt* select_stmt;
     sqlite3_prepare_v2(db, "SELECT id, name, age FROM Person", -1, &select_stmt, nullptr);
 
-    std::vector<Person> results;
-    results.reserve(num_records);
+    plf::hive<Person> results;
 
     BenchmarkTimer timer;
     int            rows = 0;
@@ -138,15 +137,15 @@ void benchmark_full_storm_equivalent(sqlite3* db, int num_records) {
         int                  len  = sqlite3_column_bytes(select_stmt, 1);
         int                  age  = sqlite3_column_int(select_stmt, 2);
 
-        results.emplace_back();
-        Person& obj = results.back();
-        obj.id      = id;
+        Person obj;
+        obj.id = id;
         if (text) {
             obj.name.assign(reinterpret_cast<const char*>(text), len);
         } else {
             obj.name.clear();
         }
         obj.age = age;
+        results.insert(std::move(obj));
 
         rows++;
     }
@@ -167,13 +166,13 @@ void benchmark_optimized_resize(sqlite3* db, int num_records) {
     sqlite3_stmt* select_stmt;
     sqlite3_prepare_v2(db, "SELECT id, name, age FROM Person", -1, &select_stmt, nullptr);
 
-    std::vector<Person> results;
-    results.resize(num_records);
+    plf::hive<Person> results;
+    // Note: hive doesn't support resize/indexed access, using insert instead
 
     BenchmarkTimer timer;
     int            rows = 0;
     while (sqlite3_step(select_stmt) == SQLITE_ROW) {
-        Person& obj = results[rows];
+        Person obj;
 
         obj.id                    = sqlite3_column_int(select_stmt, 0);
         const unsigned char* text = sqlite3_column_text(select_stmt, 1);
@@ -184,12 +183,11 @@ void benchmark_optimized_resize(sqlite3* db, int num_records) {
             obj.name.clear();
         }
         obj.age = sqlite3_column_int(select_stmt, 2);
+        results.insert(std::move(obj));
 
         rows++;
     }
     double elapsed = timer.elapsed_ms();
-
-    results.resize(rows); // Trim to actual size
     sqlite3_finalize(select_stmt);
 
     std::cout << "  Rows: " << rows << std::endl;
@@ -206,7 +204,7 @@ void benchmark_string_allocation_cost(sqlite3* db, int num_records) {
     sqlite3_prepare_v2(db, "SELECT id, name, age FROM Person", -1, &select_stmt, nullptr);
 
     // First pass: measure with std::string construction
-    std::vector<std::string> strings1;
+    plf::hive<std::string> strings1;
     strings1.reserve(num_records);
 
     BenchmarkTimer timer1;
@@ -214,7 +212,7 @@ void benchmark_string_allocation_cost(sqlite3* db, int num_records) {
     while (sqlite3_step(select_stmt) == SQLITE_ROW) {
         const unsigned char* text = sqlite3_column_text(select_stmt, 1);
         if (text) {
-            strings1.emplace_back(reinterpret_cast<const char*>(text));
+            strings1.insert(reinterpret_cast<const char*>(text));
         }
         rows1++;
     }
@@ -223,7 +221,7 @@ void benchmark_string_allocation_cost(sqlite3* db, int num_records) {
     sqlite3_reset(select_stmt);
 
     // Second pass: measure with string.assign()
-    std::vector<std::string> strings2;
+    plf::hive<std::string> strings2;
     strings2.reserve(num_records);
 
     BenchmarkTimer timer2;
@@ -232,8 +230,9 @@ void benchmark_string_allocation_cost(sqlite3* db, int num_records) {
         const unsigned char* text = sqlite3_column_text(select_stmt, 1);
         int                  len  = sqlite3_column_bytes(select_stmt, 1);
         if (text) {
-            strings2.emplace_back();
-            strings2.back().assign(reinterpret_cast<const char*>(text), len);
+            std::string str;
+            str.assign(reinterpret_cast<const char*>(text), len);
+            strings2.insert(std::move(str));
         }
         rows2++;
     }

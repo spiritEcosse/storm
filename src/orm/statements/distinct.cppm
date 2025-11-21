@@ -2,6 +2,7 @@ module;
 
 #include <sqlite3.h>
 #include <meta>
+#include <plf_hive/plf_hive.h>
 
 export module storm_orm_statements_distinct;
 
@@ -126,11 +127,11 @@ export namespace storm::orm::statements {
         static constexpr auto distinct_sql_array = build_distinct_sql_array();
 
       public:
-        // Result type: vector of single field OR vector of tuple
+        // Result type: hive of single field OR hive of tuple
         using ResultType = std::conditional_t<
                 NumFields == 1,
-                std::vector<std::tuple_element_t<0, FieldTypesTuple>>,
-                std::vector<FieldTypesTuple>>;
+                plf::hive<std::tuple_element_t<0, FieldTypesTuple>>,
+                plf::hive<FieldTypesTuple>>;
 
         explicit DistinctStatement(
                 std::shared_ptr<ConnType>                  conn,
@@ -361,90 +362,25 @@ export namespace storm::orm::statements {
         // Unified query execution loop for all DISTINCT query types
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_query_loop(Statement* stmt)
                 -> std::expected<ResultType, Error> {
-            // HYBRID OPTIMIZATION: Adaptive strategy for small vs large result sets (matches SELECT strategy)
-            // - Small results (<100 rows): emplace_back() avoids constructing unused objects
-            //   (LIMIT queries: optimal for typical DISTINCT operations)
-            // - Large results (≥100 rows): resize() pre-allocation avoids per-row overhead
-            //   (Full table DISTINCT: 1.7x faster for single fields)
-            // - Overflow (>1000): 1.5x growth provides better memory reuse than 2x
+            // plf::hive OPTIMIZATION: Stable pointers + fast insertion/iteration
+            // - No reallocation overhead (multi-block architecture)
+            // - Superior cache locality during iteration vs std::list/std::deque
+            // - Optimal for scenarios with frequent insertions during result processing
             ResultType results;
-            results.reserve(100); // Initial capacity for typical DISTINCT queries
 
-            int              step_result            = Statement::NO_MORE_ROWS;
-            size_t           row_count              = 0;
-            constexpr size_t SMALL_RESULT_THRESHOLD = 100;
+            int step_result = Statement::NO_MORE_ROWS;
 
             if constexpr (NumFields == 1) {
-                // Single field: adaptive strategy
+                // Single field: direct insertion
                 using FieldType = std::tuple_element_t<0, FieldTypesTuple>;
 
-                // Phase 1: Use emplace_back() for first 100 rows (optimized for LIMIT queries)
-                while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE &&
-                       row_count < SMALL_RESULT_THRESHOLD) {
-                    results.emplace_back(Base::template extract_column_value<FieldType>(*stmt, 0));
-                    row_count++;
-                }
-
-                // Phase 2: If exceeded threshold, switch to pre-allocation strategy
-                if (step_result == Statement::ROW_AVAILABLE) {
-                    // Large result set - pre-allocate for remaining rows
-                    results.resize(1000);
-
-                    // Continue extracting into pre-allocated objects
-                    while (step_result == Statement::ROW_AVAILABLE && row_count < results.size()) {
-                        results[row_count] = Base::template extract_column_value<FieldType>(*stmt, 0);
-                        row_count++;
-                        step_result = stmt->step_raw();
-                    }
-
-                    // Handle overflow with 1.5x growth (better memory reuse than 2x)
-                    while (step_result == Statement::ROW_AVAILABLE) {
-                        if (row_count >= results.size()) {
-                            size_t new_size = results.size() + results.size() / 2; // 1.5x growth
-                            results.resize(new_size);
-                        }
-                        results[row_count] = Base::template extract_column_value<FieldType>(*stmt, 0);
-                        row_count++;
-                        step_result = stmt->step_raw();
-                    }
-
-                    // Trim to actual size
-                    results.resize(row_count);
+                while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
+                    results.insert(Base::template extract_column_value<FieldType>(*stmt, 0));
                 }
             } else {
-                // Multi-field: adaptive strategy
-                // Phase 1: Use emplace_back() for first 100 rows (optimized for LIMIT queries)
-                while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE &&
-                       row_count < SMALL_RESULT_THRESHOLD) {
-                    emplace_tuple_from_columns(results, stmt, std::make_index_sequence<NumFields>{});
-                    row_count++;
-                }
-
-                // Phase 2: If exceeded threshold, switch to pre-allocation strategy
-                if (step_result == Statement::ROW_AVAILABLE) {
-                    // Large result set - pre-allocate for remaining rows
-                    results.resize(1000);
-
-                    // Continue extracting into pre-allocated objects
-                    while (step_result == Statement::ROW_AVAILABLE && row_count < results.size()) {
-                        emplace_tuple_at_index(results, row_count, stmt, std::make_index_sequence<NumFields>{});
-                        row_count++;
-                        step_result = stmt->step_raw();
-                    }
-
-                    // Handle overflow with 1.5x growth
-                    while (step_result == Statement::ROW_AVAILABLE) {
-                        if (row_count >= results.size()) {
-                            size_t new_size = results.size() + results.size() / 2; // 1.5x growth
-                            results.resize(new_size);
-                        }
-                        emplace_tuple_at_index(results, row_count, stmt, std::make_index_sequence<NumFields>{});
-                        row_count++;
-                        step_result = stmt->step_raw();
-                    }
-
-                    // Trim to actual size
-                    results.resize(row_count);
+                // Multi-field: insert tuples
+                while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
+                    insert_tuple_from_columns(results, stmt, std::make_index_sequence<NumFields>{});
                 }
             }
 
@@ -459,26 +395,17 @@ export namespace storm::orm::statements {
         }
 
       private:
-        // OPTIMIZATION: Emplace tuple by extracting columns in-place (for reserve() strategy)
-        // Constructs tuple directly in vector without intermediate temporaries
+        // OPTIMIZATION: Insert tuple by extracting columns in-place
+        // Constructs tuple directly in hive without intermediate temporaries
         // Template parameter R delays evaluation until method is called (avoids void& when NumFields == 0)
         template <size_t... Is, typename R = ResultType>
-        void emplace_tuple_from_columns(R& results, Statement* stmt, std::index_sequence<Is...>)
+        void insert_tuple_from_columns(R& results, Statement* stmt, std::index_sequence<Is...>)
             requires(NumFields > 0)
         {
-            results.emplace_back(
-                    Base::template extract_column_value<std::tuple_element_t<Is, FieldTypesTuple>>(*stmt, Is)...
-            );
-        }
-
-        // OPTIMIZATION: Assign tuple to pre-allocated index (for resize() strategy)
-        // Assigns to existing tuple element without intermediate temporaries
-        template <size_t... Is, typename R = ResultType>
-        void emplace_tuple_at_index(R& results, size_t index, Statement* stmt, std::index_sequence<Is...>)
-            requires(NumFields > 0)
-        {
-            results[index] = std::make_tuple(
-                    Base::template extract_column_value<std::tuple_element_t<Is, FieldTypesTuple>>(*stmt, Is)...
+            results.insert(
+                    std::make_tuple(
+                            Base::template extract_column_value<std::tuple_element_t<Is, FieldTypesTuple>>(*stmt, Is)...
+                    )
             );
         }
 

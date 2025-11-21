@@ -2,6 +2,7 @@ module;
 
 #include <sqlite3.h>
 #include <meta>
+#include <plf_hive/plf_hive.h>
 
 export module storm_orm_statements_select;
 
@@ -91,7 +92,7 @@ export namespace storm::orm::statements {
                 const std::optional<int>&            limit            = std::nullopt,
                 const std::optional<int>&            offset           = std::nullopt,
                 const std::optional<OrderByWrapper>& order_by_wrapper = std::nullopt
-        ) noexcept -> std::expected<std::vector<T>, Error> {
+        ) noexcept -> std::expected<plf::hive<T>, Error> {
             return execute_simple_select(limit, offset, order_by_wrapper);
         }
 
@@ -102,7 +103,7 @@ export namespace storm::orm::statements {
                 const std::optional<int>&            limit            = std::nullopt,
                 const std::optional<int>&            offset           = std::nullopt,
                 const std::optional<OrderByWrapper>& order_by_wrapper = std::nullopt
-        ) noexcept -> std::expected<std::vector<T>, Error> {
+        ) noexcept -> std::expected<plf::hive<T>, Error> {
             return execute_with_join_impl(join_wrapper, limit, offset, order_by_wrapper);
         }
 
@@ -112,7 +113,7 @@ export namespace storm::orm::statements {
                 const std::optional<int>&               limit            = std::nullopt,
                 const std::optional<int>&               offset           = std::nullopt,
                 const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt
-        ) noexcept -> std::expected<std::vector<T>, Error> {
+        ) noexcept -> std::expected<plf::hive<T>, Error> {
             return execute_where_impl(where_expr, limit, offset, order_by_wrapper);
         }
 
@@ -123,7 +124,7 @@ export namespace storm::orm::statements {
                 const std::optional<int>&               limit            = std::nullopt,
                 const std::optional<int>&               offset           = std::nullopt,
                 const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt
-        ) noexcept -> std::expected<std::vector<T>, Error> {
+        ) noexcept -> std::expected<plf::hive<T>, Error> {
             return execute_where_join_impl(join_wrapper, where_expr, limit, offset, order_by_wrapper);
         }
 
@@ -133,7 +134,7 @@ export namespace storm::orm::statements {
                 const std::optional<int>&            limit            = std::nullopt,
                 const std::optional<int>&            offset           = std::nullopt,
                 const std::optional<OrderByWrapper>& order_by_wrapper = std::nullopt
-        ) noexcept -> std::expected<std::vector<T>, Error> {
+        ) noexcept -> std::expected<plf::hive<T>, Error> {
             Statement* stmt_ptr = nullptr;
 
             // Check if we have ORDER BY/LIMIT/OFFSET - if so, build custom SQL
@@ -172,7 +173,7 @@ export namespace storm::orm::statements {
                 const std::optional<int>&            limit            = std::nullopt,
                 const std::optional<int>&            offset           = std::nullopt,
                 const std::optional<OrderByWrapper>& order_by_wrapper = std::nullopt
-        ) noexcept -> std::expected<std::vector<T>, Error> {
+        ) noexcept -> std::expected<plf::hive<T>, Error> {
             Statement* stmt_ptr = nullptr;
 
             // Check if we have ORDER BY/LIMIT/OFFSET - if so, build custom SQL
@@ -247,63 +248,20 @@ export namespace storm::orm::statements {
         // Takes extraction function as template parameter for zero-overhead abstraction
         template <typename ExtractFunc>
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
-        execute_query_loop(Statement* stmt, ExtractFunc&& extract_func) noexcept
-                -> std::expected<std::vector<T>, Error> {
-            // HYBRID OPTIMIZATION: Adaptive strategy for small vs large result sets
-            // - Small results (<100 rows): emplace_back() avoids constructing unused objects
-            //   (IN clause: 2.65M vs 0.35M rows/sec = 7.6x faster)
-            // - Large results (≥100 rows): resize(10000) pre-allocation avoids per-row overhead
-            //   (SELECT: 11.9M vs 7.0M rows/sec = 1.7x faster)
-            //   Single reallocation 100→10000 much faster than multiple 1.5x steps
-            // - Overflow (>10000): 1.5x growth provides 40% less memory waste than 2x
-            std::vector<T> results;
-            results.reserve(100); // Initial capacity for typical WHERE/IN queries
+        execute_query_loop(Statement* stmt, ExtractFunc&& extract_func) noexcept -> std::expected<plf::hive<T>, Error> {
+            // plf::hive OPTIMIZATION: Stable pointers + fast insertion/iteration
+            // - No reallocation overhead (multi-block architecture)
+            // - Superior cache locality during iteration vs std::list/std::deque
+            // - Optimal for scenarios with frequent insertions during result processing
+            plf::hive<T> results;
 
-            int              step_result;
-            size_t           row_count              = 0;
-            constexpr size_t SMALL_RESULT_THRESHOLD = 100;
+            int step_result;
 
-            // Phase 1: Use emplace_back() for first 100 rows (optimized for small results)
-            while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE && row_count < SMALL_RESULT_THRESHOLD) {
-                results.emplace_back();
-                extract_func(stmt, results.back());
-                row_count++;
-            }
-
-            // Phase 2: If we exceeded threshold, switch to pre-allocation strategy
-            if (step_result == Statement::ROW_AVAILABLE) {
-                // We have a large result set - pre-allocate for remaining rows
-                // Testing showed resize(10000) provides 5-10% better performance than
-                // incremental 1.5x growth due to fewer reallocations and memory copies
-                results.resize(10000);
-
-                // Continue extracting into pre-allocated objects
-                while (step_result == Statement::ROW_AVAILABLE && row_count < results.size()) {
-                    T& obj = results[row_count];
-                    extract_func(stmt, obj);
-                    row_count++;
-                    step_result = stmt->step_raw();
-                }
-
-                // Handle overflow with 1.5x growth (Facebook folly strategy)
-                // 1.5x provides better memory reuse than 2x while maintaining O(1) amortized cost
-                // Results in ~40% less memory waste with only ~15% more reallocations
-                // Growth sequence: 10,000 → 15,000 → 22,500 → 33,750 → 50,625 → ...
-                while (step_result == Statement::ROW_AVAILABLE) {
-                    // SAFETY: Check capacity BEFORE access to prevent out-of-bounds
-                    // Resize happens before results[row_count] access, ensuring safety
-                    if (row_count >= results.size()) {
-                        size_t new_size = results.size() + results.size() / 2; // 1.5x growth
-                        results.resize(new_size);
-                    }
-                    T& obj = results[row_count]; // Safe: resized above if needed
-                    extract_func(stmt, obj);
-                    row_count++;
-                    step_result = stmt->step_raw();
-                }
-
-                // Trim to actual size
-                results.resize(row_count);
+            // Simple loop: insert directly into hive
+            while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
+                T obj;
+                extract_func(stmt, obj);
+                results.insert(std::move(obj));
             }
 
             // Error handling
@@ -374,7 +332,7 @@ export namespace storm::orm::statements {
                 const std::optional<int>&               limit            = std::nullopt,
                 const std::optional<int>&               offset           = std::nullopt,
                 const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt
-        ) noexcept -> std::expected<std::vector<T>, Error> {
+        ) noexcept -> std::expected<plf::hive<T>, Error> {
             // Generate WHERE clause SQL from expression using helper
             std::string where_sql = build_where_sql(get_select_sql(), where_expr);
             append_order_by(where_sql, order_by_wrapper);
@@ -416,7 +374,7 @@ export namespace storm::orm::statements {
                 const std::optional<int>&               limit            = std::nullopt,
                 const std::optional<int>&               offset           = std::nullopt,
                 const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt
-        ) noexcept -> std::expected<std::vector<T>, Error> {
+        ) noexcept -> std::expected<plf::hive<T>, Error> {
             // Generate WHERE clause SQL from expression using helper
             std::string join_where_sql = build_where_sql(join_wrapper.get_complete_sql(), where_expr);
             append_order_by(join_where_sql, order_by_wrapper);

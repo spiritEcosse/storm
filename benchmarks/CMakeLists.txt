@@ -60,6 +60,9 @@ function(add_system_clang_benchmark target_name source_file)
         -fno-modules
         -stdlib=libstdc++
     )
+    target_include_directories(${target_name} PRIVATE
+        "${CMAKE_SOURCE_DIR}/third_party"
+    )
     target_link_libraries(${target_name} PRIVATE pthread)
 endfunction()
 

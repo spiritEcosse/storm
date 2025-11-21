@@ -1,4 +1,5 @@
 // Direct comparison between raw SQLite and Storm ORM SELECT
+#include <plf_hive/plf_hive.h>
 import <memory>;
 // Using the exact same test setup to find performance gap
 
@@ -46,13 +47,12 @@ void benchmark_raw_sqlite(int num_records) {
     sqlite3_stmt* select_stmt;
     sqlite3_prepare_v2(db, "SELECT id, name, age FROM Person", -1, &select_stmt, nullptr);
 
-    std::vector<Person> results;
-    results.resize(num_records);
+    plf::hive<Person> results;
 
     BenchmarkTimer timer;
     int            rows = 0;
     while (sqlite3_step(select_stmt) == SQLITE_ROW) {
-        Person& obj               = results[rows];
+        Person obj;
         obj.id                    = sqlite3_column_int(select_stmt, 0);
         const unsigned char* text = sqlite3_column_text(select_stmt, 1);
         if (text) {
@@ -61,9 +61,9 @@ void benchmark_raw_sqlite(int num_records) {
             obj.name.clear();
         }
         obj.age = sqlite3_column_int(select_stmt, 2);
+        results.insert(std::move(obj));
         rows++;
     }
-    results.resize(rows);
     double elapsed = timer.elapsed_ms();
 
     sqlite3_finalize(select_stmt);

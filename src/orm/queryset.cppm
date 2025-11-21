@@ -2,6 +2,7 @@ module;
 
 #include <sqlite3.h>
 #include <meta>
+#include <plf_hive/plf_hive.h>
 
 export module storm_orm_queryset;
 
@@ -138,8 +139,8 @@ export namespace storm {
         // Select operations - returns all rows (optimized with statement caching)
         // NOTE: WHERE and JOIN state is preserved after select() for query reusability.
         // Call reset() to clear state when needed.
-        [[nodiscard]] __attribute__((hot)) std::expected<std::vector<T>, Error> select() {
-            std::expected<std::vector<T>, Error> result;
+        [[nodiscard]] __attribute__((hot)) std::expected<plf::hive<T>, Error> select() {
+            std::expected<plf::hive<T>, Error> result;
 
             if (join_stmt_.has_value() && where_expr_) {
                 // JOIN + WHERE

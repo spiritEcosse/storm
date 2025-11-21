@@ -1,4 +1,5 @@
 #include <cstring>
+#include <plf_hive/plf_hive.h>
 import <memory>;
 #include <iostream>
 #include <iomanip>
@@ -352,9 +353,8 @@ void benchmark_raw_sqlite_inner_join(int num_messages, int iterations = 1000) {
             break;
         }
 
-        auto                 stmt = std::move(stmt_result.value());
-        std::vector<Message> results;
-        results.reserve(num_messages);
+        auto               stmt = std::move(stmt_result.value());
+        plf::hive<Message> results;
 
         while (true) {
             int step = stmt.step_raw();
@@ -375,7 +375,7 @@ void benchmark_raw_sqlite_inner_join(int num_messages, int iterations = 1000) {
                 msg.receiver = User{receiver_id_fk, "", 0};
                 (void)sender_id_fk; // Prevent unused warning
 
-                results.push_back(std::move(msg));
+                results.insert(std::move(msg));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -427,9 +427,8 @@ void benchmark_raw_sqlite_inner_join_multi(int num_messages, int iterations = 10
             break;
         }
 
-        auto                 stmt = std::move(stmt_result.value());
-        std::vector<Message> results;
-        results.reserve(num_messages);
+        auto               stmt = std::move(stmt_result.value());
+        plf::hive<Message> results;
 
         while (true) {
             int step = stmt.step_raw();
@@ -449,7 +448,7 @@ void benchmark_raw_sqlite_inner_join_multi(int num_messages, int iterations = 10
                 msg.receiver.name = std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(6)));
                 msg.receiver.age  = stmt.extract_int(7);
 
-                results.push_back(std::move(msg));
+                results.insert(std::move(msg));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -498,9 +497,8 @@ void benchmark_raw_sqlite_left_join_single(int num_messages, int iterations = 10
             break;
         }
 
-        auto                 stmt = std::move(stmt_result.value());
-        std::vector<Message> results;
-        results.reserve(num_messages);
+        auto               stmt = std::move(stmt_result.value());
+        plf::hive<Message> results;
 
         while (true) {
             int step = stmt.step_raw();
@@ -524,7 +522,7 @@ void benchmark_raw_sqlite_left_join_single(int num_messages, int iterations = 10
                 // Receiver is not populated (not joined, but extract FK ID)
                 msg.receiver = User{receiver_id_fk, "", 0};
 
-                results.push_back(std::move(msg));
+                results.insert(std::move(msg));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -576,9 +574,8 @@ void benchmark_raw_sqlite_left_join_multi(int num_messages, int iterations = 100
             break;
         }
 
-        auto                 stmt = std::move(stmt_result.value());
-        std::vector<Message> results;
-        results.reserve(num_messages);
+        auto               stmt = std::move(stmt_result.value());
+        plf::hive<Message> results;
 
         while (true) {
             int step = stmt.step_raw();
@@ -606,7 +603,7 @@ void benchmark_raw_sqlite_left_join_multi(int num_messages, int iterations = 100
                     msg.receiver = User{0, "", 0};
                 }
 
-                results.push_back(std::move(msg));
+                results.insert(std::move(msg));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -655,9 +652,8 @@ void benchmark_raw_sqlite_right_join_single(int num_messages, int iterations = 1
             break;
         }
 
-        auto                 stmt = std::move(stmt_result.value());
-        std::vector<Message> results;
-        results.reserve(num_messages);
+        auto               stmt = std::move(stmt_result.value());
+        plf::hive<Message> results;
 
         while (true) {
             int step = stmt.step_raw();
@@ -687,7 +683,7 @@ void benchmark_raw_sqlite_right_join_single(int num_messages, int iterations = 1
                 msg.receiver = User{receiver_id_fk, "", 0};
                 (void)sender_id_fk; // Prevent unused warning
 
-                results.push_back(std::move(msg));
+                results.insert(std::move(msg));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
@@ -739,9 +735,8 @@ void benchmark_raw_sqlite_right_join_multi(int num_messages, int iterations = 10
             break;
         }
 
-        auto                 stmt = std::move(stmt_result.value());
-        std::vector<Message> results;
-        results.reserve(num_messages);
+        auto               stmt = std::move(stmt_result.value());
+        plf::hive<Message> results;
 
         while (true) {
             int step = stmt.step_raw();
@@ -776,7 +771,7 @@ void benchmark_raw_sqlite_right_join_multi(int num_messages, int iterations = 10
                     msg.receiver = User{0, "", 0};
                 }
 
-                results.push_back(std::move(msg));
+                results.insert(std::move(msg));
             } else if (step == decltype(stmt)::NO_MORE_ROWS) {
                 break;
             } else {
