@@ -105,7 +105,10 @@ add_storm_benchmark(bench_distinct_scaling "bench_distinct_scaling.cpp")
 add_storm_benchmark(bench_select_comparison "bench_select_comparison.cpp")
 add_storm_benchmark(bench_aggregate "bench_aggregate.cpp")
 
+# Unified benchmark system (C++26, custom clang, libc++)
+add_storm_benchmark(bench_unified "bench_unified.cpp")
+
 # SELECT performance analysis (C++20, system clang, libstdc++)
 add_system_clang_benchmark(bench_select_analysis "bench_select_analysis.cpp")
 
-message(STATUS "Benchmark executables: bench_sqlite, bench_sqlite_orm, bench_storm, sql_generation_microbench, join_performance_microbench, bench_join, bench_where, bench_select_analysis")
+message(STATUS "Benchmark executables: bench_sqlite, bench_sqlite_orm, bench_storm, sql_generation_microbench, join_performance_microbench, bench_join, bench_where, bench_select_analysis, bench_unified")
