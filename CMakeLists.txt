@@ -75,6 +75,7 @@ function(apply_clang_flags target_name)
         target_compile_options(${target_name} PRIVATE
             -freflection
             -fannotation-attributes
+            -fexpansion-statements
             -nostdinc++
             -I${LIBCXX_INCLUDE_DIR}
             -I${LIBCXX_BUILD_INCLUDE_DIR}

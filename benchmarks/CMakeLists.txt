@@ -13,17 +13,11 @@ function(add_storm_benchmark target_name source_file)
     apply_clang_flags(${target_name})
     target_include_directories(${target_name} PRIVATE
         "${CMAKE_SOURCE_DIR}/src"
-        "${CMAKE_CURRENT_SOURCE_DIR}/common"  # Common benchmark utilities
     )
 endfunction()
 
-# Unified benchmark system (C++26, custom clang, libc++)
-# This is the main benchmark management system that uses Storm ORM
-# to manage test registry and performance history
-add_storm_benchmark(bench_unified "bench_unified.cpp")
+# Storm ORM Compile-Time Benchmark System
+# Loads tests from JSON at compile time, zero runtime overhead
+add_storm_benchmark(storm_bench "main.cpp")
 
-# Low-level microbenchmarks for performance analysis
-add_storm_benchmark(sql_generation_microbench "sql_generation_microbench.cpp")
-add_storm_benchmark(join_performance_microbench "join_performance_microbench.cpp")
-
-message(STATUS "Benchmark executables: bench_unified, sql_generation_microbench, join_performance_microbench")
+message(STATUS "Benchmark executable: storm_bench")

@@ -8,8 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Storm is a modern C++26 ORM library for SQLite using cutting-edge C++26 reflection to automatically map C++ structs to database tables without macros.
 
-**Performance Summary** (10,000 operations, Release builds, warm cache):
-- **INSERT**: 23.67M/sec single, 3.04M/sec batch (24x faster than sqlite_orm)
+**Performance Summary** (1,000 iterations, Release builds, fair comparison, BATCH_THRESHOLD=100):
+- **INSERT**: 0.62M/sec single (230% of raw SQLite), 1.21-2.51M/sec batch (87-118% of raw SQLite)
+  - Single: 0.62M ops/sec (230% efficiency - statement caching advantage!)
+  - Batch 10: 1.21M ops/sec (87% efficiency - uses bulk SQL)
+  - **Batch 100: 2.05M ops/sec (118% efficiency - FASTER than raw SQLite!)** 🏆
+  - Batch 500: 1.77M ops/sec (69% efficiency - uses individual inserts)
+  - Batch 1000: 2.51M ops/sec (96% efficiency - uses individual inserts)
 - **SELECT**: 13.28M rows/sec (1.44x faster than sqlite_orm)
 - **UPDATE**: 16.23M/sec single, 15.15M/sec batch (18x faster than sqlite_orm)
 - **DELETE**: 31.51M/sec single, 32.26M/sec batch (33x faster than sqlite_orm)
@@ -26,7 +31,7 @@ Storm is a modern C++26 ORM library for SQLite using cutting-edge C++26 reflecti
   - Medium (4 conditions): 1.32M rows/sec (95.6% efficiency)
   - Complex (8+ conditions): 0.73M rows/sec (102% efficiency)
 
-**Note**: CRUD measurements use warm statement cache (production-realistic scenario). WHERE measurements may include cold cache overhead.
+**Note**: All measurements exclude data preparation overhead and include ID retrieval (`last_insert_rowid()`) for fair comparison. Storm ORM achieves **87-118% efficiency** vs raw SQLite for batch INSERT, with **batch_100 being 18% faster** than raw SQLite due to optimized bulk SQL generation. Single inserts are 2.3x FASTER due to statement caching. Batch threshold optimized to 100 for best overall performance.
 
 **Key Innovations**: Compile-time SQL generation, 3-level statement caching, thread-local SQL caching, optimized row extraction, fully inlined field binding, abstract base class pattern for type-erased JOIN operations, pure C++26 reflection for WHERE clauses.
 
@@ -62,13 +67,14 @@ Storm is a modern C++26 ORM library for SQLite using cutting-edge C++26 reflecti
    **Mandatory Workflow:**
    ```bash
    # 1. Implement change
-   # 2. Build release
+   # 2. Build RELEASE (REQUIRED - debug builds are not representative)
+   cmake --preset ninja-release -DENABLE_BENCH=ON
    cmake --build --preset ninja-release
 
    # 3. RUN BENCHMARKS (for affected code paths)
    ./build/release/benchmarks/bench_join --size=10000 --all
    ./build/release/benchmarks/bench_where --benchmark_min_time=2s
-   ./build/release/benchmarks/bench_storm --mode=select-only --test-size=10000
+   ./build/release/benchmarks/storm_bench --filter=<test_name> --iterations=10000
 
    # 4. Compare with baseline - if ANY regression:
    git stash  # or git checkout -- <files>
@@ -76,6 +82,134 @@ Storm is a modern C++26 ORM library for SQLite using cutting-edge C++26 reflecti
    # 5. Only after confirming zero regression:
    # Proceed with commit
    ```
+
+   **CRITICAL: ALWAYS use Release builds for benchmarks**
+   - Debug builds have 10-100x performance degradation
+   - Debug builds cannot detect micro-optimizations
+   - Benchmark results are meaningless without `-O3` optimization
+
+4. **MANDATORY: Update Documentation After Changes**
+   - **After ANY significant change, IMMEDIATELY update affected README/documentation files**
+   - Documentation must always reflect the current state of the codebase
+   - Out-of-date documentation is worse than no documentation
+
+   **When to Update Documentation:**
+
+   **Must Update:**
+   - ✅ **Project structure changes**: Add/remove/rename directories or major files
+   - ✅ **Module architecture changes**: New modules, module reorganization, import changes
+   - ✅ **API changes**: New public functions, changed signatures, removed features
+   - ✅ **Build system changes**: CMake targets, presets, compilation flags, dependencies
+   - ✅ **Performance characteristics**: New benchmarks, significant speedups/regressions
+   - ✅ **Usage patterns**: New ways to use features, changed workflows
+   - ✅ **Feature additions**: New ORM operations, query capabilities, supported types
+   - ✅ **Feature removals**: Deprecated/removed functionality
+   - ✅ **Configuration changes**: New environment variables, config files, command-line args
+   - ✅ **Compiler requirements**: Clang version updates, new C++ features used
+   - ✅ **Known issues/workarounds**: New compiler bugs, platform-specific issues
+
+   **Watch in Documentation:**
+   - 📝 **File/directory paths**: Ensure all referenced paths exist and are correct
+   - 📝 **Command examples**: Test that commands actually work as shown
+   - 📝 **Code snippets**: Verify code compiles and demonstrates current API
+   - 📝 **Build instructions**: Confirm CMake presets, targets, and flags are accurate
+   - 📝 **Feature lists**: Remove deprecated features, add new capabilities
+   - 📝 **Performance numbers**: Update benchmark results when implementation changes
+   - 📝 **Architecture diagrams**: Keep module structure, inheritance hierarchy current
+   - 📝 **Supported types**: Update when adding/removing field type support
+   - 📝 **Return types**: std::expected, std::optional usage changes
+   - 📝 **Links**: Ensure cross-references between docs point to existing files
+   - 📝 **Version requirements**: Compiler versions, library dependencies
+   - 📝 **Migration guides**: Update when breaking API changes occur
+
+   **Documentation Files to Check:**
+   ```bash
+   # Primary documentation
+   CLAUDE.md                              # Project overview, rules, quick start
+   README.md                              # User-facing main documentation
+   BENCHMARKS.md                          # Benchmark guide
+
+   # Feature-specific READMEs
+   benchmarks/README.md                   # Benchmark system documentation
+   docs/README.md                         # Documentation index
+
+   # Architecture documentation
+   docs/architecture/design-decisions.md  # Design rationale
+   docs/architecture/module-structure.md  # Module organization
+
+   # Development guides
+   docs/development/getting-started.md    # Setup instructions
+   docs/development/common-tasks.md       # How-to guides
+   docs/development/performance-guidelines.md  # Performance rules
+
+   # Reference documentation
+   docs/reference/field-types.md          # Supported types mapping
+   docs/reference/statement-caching.md    # Caching architecture
+   docs/reference/compiler-issues.md      # Known compiler bugs
+
+   # Benchmark results
+   docs/benchmarks/results.md             # Performance measurements
+   docs/benchmarks/join-analysis.md       # JOIN performance details
+   docs/benchmarks/distinct-analysis.md   # DISTINCT performance details
+   ```
+
+   **Mandatory Workflow:**
+   ```bash
+   # 1. Make code changes
+   # 2. Identify affected documentation
+   # 3. Update ALL affected .md files
+   # 4. Verify examples still work:
+
+   # Test code snippets
+   grep -r "```cpp" docs/ | # Extract and test compile
+
+   # Test commands
+   grep -r "```bash" docs/ | # Verify commands execute
+
+   # Check paths
+   grep -r "src/" docs/ | # Ensure referenced files exist
+
+   # 5. Commit code AND documentation together
+   git add src/ docs/ CLAUDE.md README.md
+   git commit -m "feat: add feature X
+
+   - Implementation details
+   - Update docs/feature/X.md with usage
+   - Update CLAUDE.md with performance notes"
+   ```
+
+   **Examples:**
+
+   **Example 1: Adding new ORM operation**
+   - Update `docs/development/common-tasks.md` with how to use it
+   - Update `CLAUDE.md` performance summary if benchmarked
+   - Update `README.md` feature list
+   - Update `docs/architecture/module-structure.md` if new module
+
+   **Example 2: Changing benchmark system**
+   - Update `benchmarks/README.md` with new usage
+   - Update `BENCHMARKS.md` if user-facing changes
+   - Update `CLAUDE.md` benchmark workflow if commands change
+
+   **Example 3: Refactoring module structure**
+   - Update `docs/architecture/module-structure.md` with new layout
+   - Update `CLAUDE.md` "Module Structure" section
+   - Update all file path references in documentation
+   - Update `docs/development/common-tasks.md` if import paths change
+
+   **Example 4: New compiler requirement**
+   - Update `CLAUDE.md` prerequisites
+   - Update `docs/development/getting-started.md` setup instructions
+   - Update `docs/reference/compiler-issues.md` if new workarounds needed
+
+   **Verification Checklist Before Commit:**
+   - [ ] All referenced file paths exist
+   - [ ] All command examples execute successfully
+   - [ ] All code snippets compile
+   - [ ] Performance numbers match latest benchmarks
+   - [ ] Cross-references link to existing documentation
+   - [ ] Feature lists match actual capabilities
+   - [ ] No outdated information remains
 
 ## Quick Start
 
@@ -112,16 +246,30 @@ This script:
 
 ### Benchmarking
 
-**⚠️ Always use Release builds for accurate performance measurements!**
+**⚠️ CRITICAL: ONLY use Release builds for benchmarks!**
 
 ```bash
-# Python-based (recommended - auto-rebuild)
-python3 bench.py --joins         # JOIN performance
-python3 bench.py --compare       # All CRUD operations
-python3 bench.py --all           # Complete suite
+# Build release first (MANDATORY)
+cmake --preset ninja-release -DENABLE_BENCH=ON
+cmake --build --preset ninja-release
+
+# Run unified benchmark system
+./build/release/benchmarks/storm_bench                    # All tests
+./build/release/benchmarks/storm_bench --list             # List available tests
+./build/release/benchmarks/storm_bench --filter=insert    # Filter tests
+./build/release/benchmarks/storm_bench --iterations=10000 # Custom iterations
+
+# Legacy benchmarks (if available)
+./build/release/benchmarks/bench_join --size=10000 --all
+./build/release/benchmarks/bench_where --benchmark_min_time=2s
 
 # See BENCHMARKS.md for detailed guide
 ```
+
+**Why Release-Only:**
+- Debug builds: 10-100x slower (meaningless results)
+- No `-O3` optimization = no inlining, no loop unrolling
+- Cannot detect real-world performance characteristics
 
 ### Prerequisites
 - Custom Clang with C++26 reflection (`../clang-p2996/`)

@@ -4,12 +4,26 @@ Complete guide to running and understanding Storm ORM performance benchmarks.
 
 ## Quick Reference
 
+**⚠️ CRITICAL: ALWAYS use Release builds for benchmarks!**
+
 ```bash
-./bench.py --joins         # JOIN performance (recommended for routine testing)
-./bench.py --compare       # CRUD operations comparison
-./bench.py --sql-gen       # SQL generation analysis
-./bench.py --all           # Complete benchmark suite
+# Build release first (MANDATORY)
+cmake --preset ninja-release -DENABLE_BENCH=ON
+cmake --build --preset ninja-release
+
+# Run unified benchmark system
+./build/release/benchmarks/storm_bench                    # All tests
+./build/release/benchmarks/storm_bench --list             # List available tests
+./build/release/benchmarks/storm_bench --filter=where     # Filter by operation
+./build/release/benchmarks/storm_bench --iterations=10000 # Custom iterations
+
+# See benchmarks/README.md for detailed unified benchmark documentation
 ```
+
+**Why Release-Only:**
+- Debug builds: 10-100x slower (meaningless results)
+- No `-O3` optimization = no inlining, no loop unrolling
+- Cannot detect real-world performance characteristics
 
 ## Available Benchmarks
 
