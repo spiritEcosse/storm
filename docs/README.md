@@ -63,3 +63,27 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 - Browse feature docs for detailed usage examples
 - See architecture docs for implementation details
 - Consult development docs for contributing guidelines
+
+
+## TODO:
+- [ ] Replace all std::vector with plf::hive
+- [ ] Lets think how to add true sttistics in README files (like benchmarks)
+- [ ] **Batch INSERT Performance Variance** - Small batch operations (batch_10) show high measurement variance (72-88% efficiency range across runs). This is expected for very small operations due to:
+  - Cold cache effects (first-run overhead)
+  - Timer precision at microsecond scale
+  - CPU frequency scaling
+
+  **Example benchmark run** (batch_10, 1000 iterations):
+  ```
+  Storm ORM:   1.61 M ops/sec (10000 operations in 6209.29 μs)
+  Raw SQLite:  1.95 M ops/sec (10000 operations in 5122.02 μs)
+  Efficiency:  82.5% (slower than raw SQLite)
+  ```
+
+  **Recommendation**: For accurate batch performance assessment:
+  - Run multiple iterations (5-10 runs minimum)
+  - Calculate average efficiency
+  - Focus on larger batch sizes (100+) for stable measurements
+  - Small batches (<50) will always show ±10-15% variance
+
+  See `field_aware_adaptive_threshold_results.md` for detailed analysis.

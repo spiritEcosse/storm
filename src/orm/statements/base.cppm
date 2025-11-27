@@ -397,8 +397,36 @@ export namespace storm::orm::statements {
         }
 
         // Common batch operation thresholds
-        static constexpr size_t BATCH_THRESHOLD      = 50;
         static constexpr size_t MAX_SQLITE_VARIABLES = 999;
+
+        // Adaptive threshold calculation based on batch size and field count
+        // Returns the optimal threshold for deciding between bulk SQL and individual inserts
+        static constexpr size_t calculate_adaptive_threshold(size_t batch_size, size_t max_bulk_size) {
+            // For very small batches (≤10), always use bulk SQL up to the SQLite limit
+            if (batch_size <= 10) return max_bulk_size;
+
+            // Calculate safe thresholds based on max_bulk_size (which already accounts for field count)
+            // max_bulk_size = 999 / field_count, so we scale our thresholds accordingly
+
+            // For small-medium batches, use bulk SQL if safe
+            // Use 50% of max_bulk_size as the sweet spot for bulk operations
+            const size_t bulk_sweet_spot = std::max(size_t(50), max_bulk_size / 2);
+
+            if (batch_size <= bulk_sweet_spot) {
+                return bulk_sweet_spot;  // Use bulk SQL - most efficient
+            }
+
+            // For medium batches, try to use bulk if within 80% of SQLite limit
+            const size_t bulk_max_safe = (max_bulk_size * 4) / 5;  // 80% of max
+
+            if (batch_size <= bulk_max_safe) {
+                return bulk_max_safe;  // Push bulk SQL to near SQLite limit
+            }
+
+            // For large batches (>80% of SQLite limit), use individual inserts with transaction
+            // Avoids hitting SQLite variable limits and better memory usage
+            return 50; // Force individual insert path - safe for any field count
+        }
 
         // Common binding utilities for different types
         // Delegates to unified bind_parameter_value in utilities
@@ -618,10 +646,13 @@ export namespace storm::orm::statements {
             }
 
             // Calculate max bulk size based on SQLite variable limit
-            const size_t max_bulk_size       = MAX_SQLITE_VARIABLES / items_per_variable;
-            const size_t effective_threshold = std::min(BATCH_THRESHOLD, max_bulk_size);
+            const size_t max_bulk_size = MAX_SQLITE_VARIABLES / items_per_variable;
 
-            // Small batch - use bulk executor
+            // Use adaptive threshold based on actual batch size
+            const size_t adaptive_threshold = calculate_adaptive_threshold(items.size(), max_bulk_size);
+            const size_t effective_threshold = std::min(adaptive_threshold, max_bulk_size);
+
+            // Decide strategy: bulk SQL vs individual inserts with transaction
             if (items.size() <= effective_threshold) {
                 return bulk_executor();
             }
