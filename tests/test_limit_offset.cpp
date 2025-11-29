@@ -62,9 +62,10 @@ TEST_F(LimitOffsetTest, LimitOnly) {
     ASSERT_EQ(people.size(), 5) << "Expected exactly 5 rows";
 
     // Verify we got the first 5 records
-    for (size_t i = 0; i < 5; i++) {
-        EXPECT_EQ(people[i].id, i + 1);
-        EXPECT_EQ(people[i].name, "Person" + std::to_string(i + 1));
+    size_t i = 0;
+    for (auto it = people.begin(); it != people.end(); ++it, ++i) {
+        EXPECT_EQ(it->id, i + 1);
+        EXPECT_EQ(it->name, "Person" + std::to_string(i + 1));
     }
 }
 
@@ -100,8 +101,9 @@ TEST_F(LimitOffsetTest, OffsetOnly) {
     ASSERT_EQ(people.size(), 10) << "Expected 10 rows (20 total - 10 offset)";
 
     // Verify we got records 11-20
-    for (size_t i = 0; i < 10; i++) {
-        EXPECT_EQ(people[i].id, i + 11);
+    size_t i = 0;
+    for (auto it = people.begin(); it != people.end(); ++it, ++i) {
+        EXPECT_EQ(it->id, i + 11);
     }
 }
 
@@ -137,9 +139,10 @@ TEST_F(LimitOffsetTest, LimitAndOffset) {
     ASSERT_EQ(people.size(), 5) << "Expected 5 rows (skip 5, take 5)";
 
     // Verify we got records 6-10
-    for (size_t i = 0; i < 5; i++) {
-        EXPECT_EQ(people[i].id, i + 6);
-        EXPECT_EQ(people[i].name, "Person" + std::to_string(i + 6));
+    size_t i = 0;
+    for (auto it = people.begin(); it != people.end(); ++it, ++i) {
+        EXPECT_EQ(it->id, i + 6);
+        EXPECT_EQ(it->name, "Person" + std::to_string(i + 6));
     }
 }
 
@@ -150,29 +153,29 @@ TEST_F(LimitOffsetTest, LimitOffsetPagination) {
     auto page1 = qs.limit(5).offset(0).select();
     ASSERT_TRUE(page1.has_value());
     ASSERT_EQ(page1.value().size(), 5);
-    EXPECT_EQ(page1.value()[0].id, 1);
-    EXPECT_EQ(page1.value()[4].id, 5);
+    EXPECT_EQ(page1.value().begin()->id, 1);
+    EXPECT_EQ(std::ranges::next(page1.value().begin(), 4)->id, 5);
 
     // Page 2: records 6-10
     auto page2 = qs.limit(5).offset(5).select();
     ASSERT_TRUE(page2.has_value());
     ASSERT_EQ(page2.value().size(), 5);
-    EXPECT_EQ(page2.value()[0].id, 6);
-    EXPECT_EQ(page2.value()[4].id, 10);
+    EXPECT_EQ(page2.value().begin()->id, 6);
+    EXPECT_EQ(std::ranges::next(page2.value().begin(), 4)->id, 10);
 
     // Page 3: records 11-15
     auto page3 = qs.limit(5).offset(10).select();
     ASSERT_TRUE(page3.has_value());
     ASSERT_EQ(page3.value().size(), 5);
-    EXPECT_EQ(page3.value()[0].id, 11);
-    EXPECT_EQ(page3.value()[4].id, 15);
+    EXPECT_EQ(page3.value().begin()->id, 11);
+    EXPECT_EQ(std::ranges::next(page3.value().begin(), 4)->id, 15);
 
     // Page 4: records 16-20
     auto page4 = qs.limit(5).offset(15).select();
     ASSERT_TRUE(page4.has_value());
     ASSERT_EQ(page4.value().size(), 5);
-    EXPECT_EQ(page4.value()[0].id, 16);
-    EXPECT_EQ(page4.value()[4].id, 20);
+    EXPECT_EQ(page4.value().begin()->id, 16);
+    EXPECT_EQ(std::ranges::next(page4.value().begin(), 4)->id, 20);
 
     // Page 5: no more records
     auto page5 = qs.limit(5).offset(20).select();
@@ -296,13 +299,13 @@ TEST_F(LimitOffsetTest, ReuseLimitOffset) {
     auto result1 = qs.select();
     ASSERT_TRUE(result1.has_value());
     ASSERT_EQ(result1.value().size(), 5);
-    EXPECT_EQ(result1.value()[0].id, 11);
+    EXPECT_EQ(result1.value().begin()->id, 11);
 
     // Second query reuses same LIMIT/OFFSET
     auto result2 = qs.select();
     ASSERT_TRUE(result2.has_value());
     ASSERT_EQ(result2.value().size(), 5);
-    EXPECT_EQ(result2.value()[0].id, 11);
+    EXPECT_EQ(result2.value().begin()->id, 11);
 }
 
 TEST_F(LimitOffsetTest, OverwriteLimitOffset) {
@@ -312,13 +315,13 @@ TEST_F(LimitOffsetTest, OverwriteLimitOffset) {
     auto result1 = qs.limit(5).offset(0).select();
     ASSERT_TRUE(result1.has_value());
     ASSERT_EQ(result1.value().size(), 5);
-    EXPECT_EQ(result1.value()[0].id, 1);
+    EXPECT_EQ(result1.value().begin()->id, 1);
 
     // Change LIMIT/OFFSET
     auto result2 = qs.limit(3).offset(10).select();
     ASSERT_TRUE(result2.has_value());
     ASSERT_EQ(result2.value().size(), 3);
-    EXPECT_EQ(result2.value()[0].id, 11);
+    EXPECT_EQ(result2.value().begin()->id, 11);
 }
 
 // ===== Edge Cases =====
@@ -330,8 +333,8 @@ TEST_F(LimitOffsetTest, LimitOffsetAtBoundary) {
     auto result = qs.limit(5).offset(15).select();
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value().size(), 5) << "Expected exactly 5 rows (records 16-20)";
-    EXPECT_EQ(result.value()[0].id, 16);
-    EXPECT_EQ(result.value()[4].id, 20);
+    EXPECT_EQ(result.value().begin()->id, 16);
+    EXPECT_EQ(std::ranges::next(result.value().begin(), 4)->id, 20);
 }
 
 TEST_F(LimitOffsetTest, LimitOffsetPartialPage) {
@@ -349,7 +352,7 @@ TEST_F(LimitOffsetTest, LimitOne) {
     auto result = qs.limit(1).select();
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value().size(), 1);
-    EXPECT_EQ(result.value()[0].id, 1);
+    EXPECT_EQ(result.value().begin()->id, 1);
 }
 
 TEST_F(LimitOffsetTest, OffsetOne) {
@@ -358,7 +361,7 @@ TEST_F(LimitOffsetTest, OffsetOne) {
     auto result = qs.limit(1).offset(1).select();
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value().size(), 1);
-    EXPECT_EQ(result.value()[0].id, 2);
+    EXPECT_EQ(result.value().begin()->id, 2);
 }
 
 // ===== SQL Clause Ordering =====
@@ -376,7 +379,9 @@ TEST_F(LimitOffsetTest, MethodChainingOrder) {
 
     // Results should be identical
     ASSERT_EQ(result1.value().size(), result2.value().size());
-    for (size_t i = 0; i < result1.value().size(); i++) {
-        EXPECT_EQ(result1.value()[i].id, result2.value()[i].id);
+    auto it1 = result1.value().begin();
+    auto it2 = result2.value().begin();
+    for (; it1 != result1.value().end() && it2 != result2.value().end(); ++it1, ++it2) {
+        EXPECT_EQ(it1->id, it2->id);
     }
 }

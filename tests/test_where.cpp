@@ -62,8 +62,9 @@ TEST_F(WhereTest, WhereSingleIntegerCondition) {
 
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 1) << "Expected 1 person with age 30";
-    EXPECT_EQ(people[0].name, "Alice");
-    EXPECT_EQ(people[0].age, 30);
+    auto it = people.begin();
+    EXPECT_EQ(it->name, "Alice");
+    EXPECT_EQ(it->age, 30);
 }
 
 // Test: WHERE with greater than condition
@@ -75,10 +76,12 @@ TEST_F(WhereTest, WhereGreaterThan) {
 
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 2) << "Expected 2 people with age > 30";
-    EXPECT_EQ(people[0].name, "Charlie");
-    EXPECT_EQ(people[0].age, 35);
-    EXPECT_EQ(people[1].name, "Eve");
-    EXPECT_EQ(people[1].age, 40);
+    auto it = people.begin();
+    EXPECT_EQ(it->name, "Charlie");
+    EXPECT_EQ(it->age, 35);
+    ++it;
+    EXPECT_EQ(it->name, "Eve");
+    EXPECT_EQ(it->age, 40);
 }
 
 // Test: WHERE with less than condition
@@ -90,10 +93,12 @@ TEST_F(WhereTest, WhereLessThan) {
 
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 2) << "Expected 2 people with age < 30";
-    EXPECT_EQ(people[0].name, "Bob");
-    EXPECT_EQ(people[0].age, 25);
-    EXPECT_EQ(people[1].name, "Diana");
-    EXPECT_EQ(people[1].age, 28);
+    auto it = people.begin();
+    EXPECT_EQ(it->name, "Bob");
+    EXPECT_EQ(it->age, 25);
+    ++it;
+    EXPECT_EQ(it->name, "Diana");
+    EXPECT_EQ(it->age, 28);
 }
 
 // Test: WHERE with string condition
@@ -105,8 +110,9 @@ TEST_F(WhereTest, WhereStringCondition) {
 
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 1) << "Expected 1 person named Bob";
-    EXPECT_EQ(people[0].name, "Bob");
-    EXPECT_EQ(people[0].age, 25);
+    auto it = people.begin();
+    EXPECT_EQ(it->name, "Bob");
+    EXPECT_EQ(it->age, 25);
 }
 
 // Test: WHERE with LIKE pattern
@@ -118,7 +124,7 @@ TEST_F(WhereTest, WhereLikePattern) {
 
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 1) << "Expected 1 person with name starting with 'A'";
-    EXPECT_EQ(people[0].name, "Alice");
+    EXPECT_EQ(people.begin()->name, "Alice");
 }
 
 // Test: WHERE with multiple conditions (AND logic)
@@ -132,9 +138,12 @@ TEST_F(WhereTest, WhereMultipleConditions) {
 
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 3) << "Expected 3 people with age between 26 and 39";
-    EXPECT_EQ(people[0].name, "Alice");
-    EXPECT_EQ(people[1].name, "Charlie");
-    EXPECT_EQ(people[2].name, "Diana");
+    auto it = people.begin();
+    EXPECT_EQ(it->name, "Alice");
+    ++it;
+    EXPECT_EQ(it->name, "Charlie");
+    ++it;
+    EXPECT_EQ(it->name, "Diana");
 }
 
 // Test: WHERE with three conditions
@@ -149,8 +158,10 @@ TEST_F(WhereTest, WhereThreeConditions) {
 
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 2) << "Expected 2 people matching all three conditions";
-    EXPECT_EQ(people[0].name, "Alice");
-    EXPECT_EQ(people[1].name, "Diana");
+    auto it = people.begin();
+    EXPECT_EQ(it->name, "Alice");
+    ++it;
+    EXPECT_EQ(it->name, "Diana");
 }
 
 // Test: WHERE with BETWEEN clause
@@ -162,9 +173,12 @@ TEST_F(WhereTest, WhereBetween) {
 
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 3) << "Expected 3 people with age between 28 and 35";
-    EXPECT_EQ(people[0].name, "Alice");
-    EXPECT_EQ(people[1].name, "Charlie");
-    EXPECT_EQ(people[2].name, "Diana");
+    auto it = people.begin();
+    EXPECT_EQ(it->name, "Alice");
+    ++it;
+    EXPECT_EQ(it->name, "Charlie");
+    ++it;
+    EXPECT_EQ(it->name, "Diana");
 }
 
 // Test: WHERE with IN clause (multiple parameters)
@@ -177,9 +191,12 @@ TEST_F(WhereTest, WhereIn) {
 
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 3) << "Expected 3 people with age in (25, 30, 40)";
-    EXPECT_EQ(people[0].name, "Alice");
-    EXPECT_EQ(people[1].name, "Bob");
-    EXPECT_EQ(people[2].name, "Eve");
+    auto it = people.begin();
+    EXPECT_EQ(it->name, "Alice");
+    ++it;
+    EXPECT_EQ(it->name, "Bob");
+    ++it;
+    EXPECT_EQ(it->name, "Eve");
 }
 
 // Test: WHERE returning empty result
@@ -216,9 +233,12 @@ TEST_F(WhereTest, WhereComplexExpression) {
 
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 3) << "Expected 3 people matching complex condition";
-    EXPECT_EQ(people[0].name, "Bob");
-    EXPECT_EQ(people[1].name, "Diana");
-    EXPECT_EQ(people[2].name, "Eve");
+    auto it = people.begin();
+    EXPECT_EQ(it->name, "Bob");
+    ++it;
+    EXPECT_EQ(it->name, "Diana");
+    ++it;
+    EXPECT_EQ(it->name, "Eve");
 }
 
 // Test: WHERE state persists after select() - enables query reusability
@@ -261,7 +281,7 @@ TEST_F(WhereTest, WhereStringView) {
 
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 1);
-    EXPECT_EQ(people[0].name, "Charlie");
+    EXPECT_EQ(people.begin()->name, "Charlie");
 }
 
 // Test: WHERE with const char* parameter
@@ -274,8 +294,9 @@ TEST_F(WhereTest, WhereConstCharPtr) {
 
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 1);
-    EXPECT_EQ(people[0].name, "Bob");
-    EXPECT_EQ(people[0].age, 25);
+    auto it = people.begin();
+    EXPECT_EQ(it->name, "Bob");
+    EXPECT_EQ(it->age, 25);
 }
 
 // Test: WHERE with mixed parameter types
@@ -289,7 +310,7 @@ TEST_F(WhereTest, WhereMixedTypes) {
 
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 1);
-    EXPECT_EQ(people[0].name, "Diana");
+    EXPECT_EQ(people.begin()->name, "Diana");
 }
 
 // Test model with FK for JOIN + WHERE tests
@@ -384,11 +405,14 @@ TEST_F(WhereJoinTest, WhereWithJoin) {
     ASSERT_EQ(messages.size(), 3) << "Expected 3 messages from users with level >= 10";
 
     // Verify sender information is populated
-    EXPECT_EQ(messages[0].sender.username, "alice");
-    EXPECT_EQ(messages[0].sender.level, 10);
-    EXPECT_EQ(messages[1].sender.username, "alice");
-    EXPECT_EQ(messages[2].sender.username, "charlie");
-    EXPECT_EQ(messages[2].sender.level, 15);
+    auto it = messages.begin();
+    EXPECT_EQ(it->sender.username, "alice");
+    EXPECT_EQ(it->sender.level, 10);
+    ++it;
+    EXPECT_EQ(it->sender.username, "alice");
+    ++it;
+    EXPECT_EQ(it->sender.username, "charlie");
+    EXPECT_EQ(it->sender.level, 15);
 }
 
 // Test: WHERE with JOIN and content filter
@@ -428,8 +452,10 @@ TEST_F(WhereJoinTest, WhereWithNaturalOperators) {
 
     const auto& messages = result.value();
     ASSERT_EQ(messages.size(), 2) << "Expected 2 messages matching both conditions";
-    EXPECT_EQ(messages[0].sender.username, "alice");
-    EXPECT_EQ(messages[1].sender.username, "alice");
+    auto it = messages.begin();
+    EXPECT_EQ(it->sender.username, "alice");
+    ++it;
+    EXPECT_EQ(it->sender.username, "alice");
 }
 
 // Test: Natural operators with complex expressions
@@ -444,9 +470,12 @@ TEST_F(WhereTest, WhereNaturalOperatorsComplex) {
 
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 3) << "Expected 3 people matching complex condition";
-    EXPECT_EQ(people[0].name, "Bob");
-    EXPECT_EQ(people[1].name, "Diana");
-    EXPECT_EQ(people[2].name, "Eve");
+    auto it = people.begin();
+    EXPECT_EQ(it->name, "Bob");
+    ++it;
+    EXPECT_EQ(it->name, "Diana");
+    ++it;
+    EXPECT_EQ(it->name, "Eve");
 }
 
 // Test: Reusing WHERE conditions across multiple queries
@@ -471,8 +500,9 @@ TEST_F(WhereTest, WhereReuseCondition) {
     auto                  result3 = queryset3.where(age_condition and field<^^WherePerson::name>() == "Alice").select();
     ASSERT_TRUE(result3.has_value()) << "Combined WHERE failed: " << result3.error().message();
     ASSERT_EQ(result3.value().size(), 1) << "Expected 1 person matching both conditions";
-    EXPECT_EQ(result3.value()[0].name, "Alice");
-    EXPECT_EQ(result3.value()[0].age, 30);
+    auto it = result3.value().begin();
+    EXPECT_EQ(it->name, "Alice");
+    EXPECT_EQ(it->age, 30);
 
     // Reuse the original condition again with fresh QuerySet
     QuerySet<WherePerson> queryset4;
@@ -563,7 +593,7 @@ TEST_F(WhereTest, ProgressiveQueryBuilding) {
     auto result3 = queryset.select();
     ASSERT_TRUE(result3.has_value());
     EXPECT_EQ(result3.value().size(), 1) << "Expected 1 person matching all conditions (Diana)";
-    EXPECT_EQ(result3.value()[0].name, "Diana");
+    EXPECT_EQ(result3.value().begin()->name, "Diana");
 }
 
 // Test: reset() clears all accumulated conditions
@@ -578,7 +608,7 @@ TEST_F(WhereTest, ResetClearsAllConditions) {
     auto filtered = queryset.select();
     ASSERT_TRUE(filtered.has_value());
     EXPECT_EQ(filtered.value().size(), 1) << "Complex filter should match Diana only";
-    EXPECT_EQ(filtered.value()[0].name, "Diana");
+    EXPECT_EQ(filtered.value().begin()->name, "Diana");
 
     // Reset and verify clean slate
     queryset.reset();
@@ -591,5 +621,5 @@ TEST_F(WhereTest, ResetClearsAllConditions) {
     auto bob_only = queryset.select();
     ASSERT_TRUE(bob_only.has_value());
     EXPECT_EQ(bob_only.value().size(), 1) << "New filter after reset works";
-    EXPECT_EQ(bob_only.value()[0].name, "Bob");
+    EXPECT_EQ(bob_only.value().begin()->name, "Bob");
 }

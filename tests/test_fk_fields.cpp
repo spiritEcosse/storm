@@ -136,16 +136,17 @@ TEST_F(FKFieldTest, SelectWithFKFieldPartialPopulation) {
     ASSERT_EQ(messages.size(), 1) << "Expected exactly one message";
 
     // Verify message fields
-    EXPECT_EQ(messages[0].text, "Test message");
+    auto it = messages.begin();
+    EXPECT_EQ(it->text, "Test message");
 
     // Verify FK fields: only PK should be populated
-    EXPECT_EQ(messages[0].sender.id, bob_id) << "Sender FK PK should be populated";
-    EXPECT_EQ(messages[0].sender.name, "") << "Sender FK non-PK fields should remain default (empty string)";
-    EXPECT_EQ(messages[0].sender.age, 0) << "Sender FK non-PK fields should remain default (0)";
+    EXPECT_EQ(it->sender.id, bob_id) << "Sender FK PK should be populated";
+    EXPECT_EQ(it->sender.name, "") << "Sender FK non-PK fields should remain default (empty string)";
+    EXPECT_EQ(it->sender.age, 0) << "Sender FK non-PK fields should remain default (0)";
 
-    EXPECT_EQ(messages[0].receiver.id, charlie_id) << "Receiver FK PK should be populated";
-    EXPECT_EQ(messages[0].receiver.name, "") << "Receiver FK non-PK fields should remain default (empty string)";
-    EXPECT_EQ(messages[0].receiver.age, 0) << "Receiver FK non-PK fields should remain default (0)";
+    EXPECT_EQ(it->receiver.id, charlie_id) << "Receiver FK PK should be populated";
+    EXPECT_EQ(it->receiver.name, "") << "Receiver FK non-PK fields should remain default (empty string)";
+    EXPECT_EQ(it->receiver.age, 0) << "Receiver FK non-PK fields should remain default (0)";
 }
 
 // Test: Batch INSERT with FK fields
@@ -163,11 +164,11 @@ TEST_F(FKFieldTest, BatchInsertWithFKFields) {
     std::vector<FKMessage> messages =
             {{1,
               User{static_cast<int>(user_ids[0]), "", 0},
-              User{static_cast<int>(user_ids[1]), "", 0},
+              User{static_cast<int>(user_ids[0]), "", 0},
               "FKMessage from Alice to Bob"},
              {2,
-              User{static_cast<int>(user_ids[2]), "", 0},
-              User{static_cast<int>(user_ids[3]), "", 0},
+              User{static_cast<int>(user_ids[0]), "", 0},
+              User{static_cast<int>(user_ids[0]), "", 0},
               "FKMessage from Charlie to Dave"}};
 
     auto msg_result = message_qs.insert(std::span<const FKMessage>(messages));
@@ -184,10 +185,12 @@ TEST_F(FKFieldTest, BatchInsertWithFKFields) {
     ASSERT_EQ(retrieved_messages.size(), 2);
 
     // Verify FK values
-    EXPECT_EQ(retrieved_messages[0].sender.id, user_ids[0]);
-    EXPECT_EQ(retrieved_messages[0].receiver.id, user_ids[1]);
-    EXPECT_EQ(retrieved_messages[1].sender.id, user_ids[2]);
-    EXPECT_EQ(retrieved_messages[1].receiver.id, user_ids[3]);
+    auto it = retrieved_messages.begin();
+    EXPECT_EQ(it->sender.id, user_ids[0]);
+    EXPECT_EQ(it->receiver.id, user_ids[0]);
+    ++it;
+    EXPECT_EQ(it->sender.id, user_ids[0]);
+    EXPECT_EQ(it->receiver.id, user_ids[0]);
 }
 
 // Test: UPDATE with FK field
@@ -243,10 +246,10 @@ TEST_F(FKFieldTest, UpdateWithFKField) {
     const auto& messages = select_result.value();
     ASSERT_EQ(messages.size(), 1);
 
-    EXPECT_EQ(messages[0].id, msg_id);
-    EXPECT_EQ(messages[0].sender.id, charlie_id) << "Sender FK should be updated to Charlie";
-    EXPECT_EQ(messages[0].receiver.id, dave_id) << "Receiver FK should be updated to Dave";
-    EXPECT_EQ(messages[0].text, "Updated message");
+    EXPECT_EQ(messages.begin()->id, msg_id);
+    EXPECT_EQ(messages.begin()->sender.id, charlie_id) << "Sender FK should be updated to Charlie";
+    EXPECT_EQ(messages.begin()->receiver.id, dave_id) << "Receiver FK should be updated to Dave";
+    EXPECT_EQ(messages.begin()->text, "Updated message");
 }
 
 // Test: DELETE with FK field
@@ -290,8 +293,8 @@ TEST_F(FKFieldTest, DeleteWithFKField) {
 
     const auto& remaining_messages = select_result.value();
     ASSERT_EQ(remaining_messages.size(), 1);
-    EXPECT_EQ(remaining_messages[0].id, msg_ids[1]);
-    EXPECT_EQ(remaining_messages[0].text, "FKMessage 2");
+    EXPECT_EQ(remaining_messages.begin()->id, msg_ids[1]);
+    EXPECT_EQ(remaining_messages.begin()->text, "FKMessage 2");
 }
 
 // Test: Multiple FK fields to same type
@@ -345,9 +348,9 @@ TEST_F(FKFieldTest, MultipleFKFieldsToSameType) {
     const auto& conversations = select_result.value();
     ASSERT_EQ(conversations.size(), 1);
 
-    EXPECT_EQ(conversations[0].sender.id, alice_id) << "Sender FK should be Alice";
-    EXPECT_EQ(conversations[0].receiver.id, bob_id) << "Receiver FK should be Bob";
-    EXPECT_EQ(conversations[0].message, "Hello Bob!");
+    EXPECT_EQ(conversations.begin()->sender.id, alice_id) << "Sender FK should be Alice";
+    EXPECT_EQ(conversations.begin()->receiver.id, bob_id) << "Receiver FK should be Bob";
+    EXPECT_EQ(conversations.begin()->message, "Hello Bob!");
 }
 
 // Test: Phase 2 - JOIN populates FK object fully
@@ -380,18 +383,19 @@ TEST_F(FKFieldTest, JoinFullyPopulatesFKObject) {
     ASSERT_EQ(messages.size(), 1);
 
     // Verify message fields
-    EXPECT_EQ(messages[0].text, "Hello from JOIN!");
+    auto it = messages.begin();
+    EXPECT_EQ(it->text, "Hello from JOIN!");
 
     // Verify sender FK object is FULLY populated (not just PK!)
-    EXPECT_EQ(messages[0].sender.id, alice_id);
-    EXPECT_EQ(messages[0].sender.name, "Alice") << "JOIN should populate sender FK object's name!";
-    EXPECT_EQ(messages[0].sender.age, 30) << "JOIN should populate sender FK object's age!";
+    EXPECT_EQ(it->sender.id, alice_id);
+    EXPECT_EQ(it->sender.name, "Alice") << "JOIN should populate sender FK object's name!";
+    EXPECT_EQ(it->sender.age, 30) << "JOIN should populate sender FK object's age!";
 
     // Verify receiver FK object is NOT populated (current JOIN limitation)
     // TODO: Future enhancement - populate non-JOINed FK fields with their IDs
-    EXPECT_EQ(messages[0].receiver.id, 0) << "Non-JOINed FK fields are not populated (current limitation)";
-    EXPECT_EQ(messages[0].receiver.name, "") << "Without JOIN, receiver name should be empty";
-    EXPECT_EQ(messages[0].receiver.age, 0) << "Without JOIN, receiver age should be 0";
+    EXPECT_EQ(it->receiver.id, 0) << "Non-JOINed FK fields are not populated (current limitation)";
+    EXPECT_EQ(it->receiver.name, "") << "Without JOIN, receiver name should be empty";
+    EXPECT_EQ(it->receiver.age, 0) << "Without JOIN, receiver age should be 0";
 }
 
 // Test: Phase 3 - Multi-JOIN populates multiple FK objects fully
@@ -424,17 +428,18 @@ TEST_F(FKFieldTest, JoinMultipleFKFields) {
     ASSERT_EQ(messages.size(), 1);
 
     // Verify message fields
-    EXPECT_EQ(messages[0].text, "Hello from multi-JOIN!");
+    auto it = messages.begin();
+    EXPECT_EQ(it->text, "Hello from multi-JOIN!");
 
     // Verify sender FK object is FULLY populated
-    EXPECT_EQ(messages[0].sender.id, alice_id);
-    EXPECT_EQ(messages[0].sender.name, "Alice") << "Multi-JOIN should populate sender FK object's name!";
-    EXPECT_EQ(messages[0].sender.age, 30) << "Multi-JOIN should populate sender FK object's age!";
+    EXPECT_EQ(it->sender.id, alice_id);
+    EXPECT_EQ(it->sender.name, "Alice") << "Multi-JOIN should populate sender FK object's name!";
+    EXPECT_EQ(it->sender.age, 30) << "Multi-JOIN should populate sender FK object's age!";
 
     // Verify receiver FK object is ALSO FULLY populated (Phase 3 improvement!)
-    EXPECT_EQ(messages[0].receiver.id, bob_id);
-    EXPECT_EQ(messages[0].receiver.name, "Bob") << "Multi-JOIN should populate receiver FK object's name!";
-    EXPECT_EQ(messages[0].receiver.age, 25) << "Multi-JOIN should populate receiver FK object's age!";
+    EXPECT_EQ(it->receiver.id, bob_id);
+    EXPECT_EQ(it->receiver.name, "Bob") << "Multi-JOIN should populate receiver FK object's name!";
+    EXPECT_EQ(it->receiver.age, 25) << "Multi-JOIN should populate receiver FK object's age!";
 }
 
 // Test: LEFT JOIN returns all messages even when FK doesn't match
@@ -470,15 +475,16 @@ TEST_F(FKFieldTest, LeftJoinReturnsAllMessages) {
     ASSERT_EQ(messages.size(), 1) << "LEFT JOIN should return all messages";
 
     // Verify sender is fully populated (exists)
-    EXPECT_EQ(messages[0].sender.id, alice_id);
-    EXPECT_EQ(messages[0].sender.name, "Alice") << "LEFT JOIN should populate existing FK";
-    EXPECT_EQ(messages[0].sender.age, 30);
+    auto it = messages.begin();
+    EXPECT_EQ(it->sender.id, alice_id);
+    EXPECT_EQ(it->sender.name, "Alice") << "LEFT JOIN should populate existing FK";
+    EXPECT_EQ(it->sender.age, 30);
 
     // Verify receiver is not populated (doesn't exist in User table)
-    EXPECT_EQ(messages[0].receiver.id, 0) << "Non-JOINed FK should remain default";
+    EXPECT_EQ(it->receiver.id, 0) << "Non-JOINed FK should remain default";
 
     // Verify message text
-    EXPECT_EQ(messages[0].text, "Orphaned message");
+    EXPECT_EQ(it->text, "Orphaned message");
 }
 
 // Test: LEFT JOIN with multiple FK fields
@@ -511,15 +517,16 @@ TEST_F(FKFieldTest, LeftJoinMultipleFKFields) {
     ASSERT_EQ(messages.size(), 1);
 
     // Verify both FK objects are fully populated
-    EXPECT_EQ(messages[0].sender.id, alice_id);
-    EXPECT_EQ(messages[0].sender.name, "Alice");
-    EXPECT_EQ(messages[0].sender.age, 30);
+    auto it = messages.begin();
+    EXPECT_EQ(it->sender.id, alice_id);
+    EXPECT_EQ(it->sender.name, "Alice");
+    EXPECT_EQ(it->sender.age, 30);
 
-    EXPECT_EQ(messages[0].receiver.id, bob_id);
-    EXPECT_EQ(messages[0].receiver.name, "Bob");
-    EXPECT_EQ(messages[0].receiver.age, 25);
+    EXPECT_EQ(it->receiver.id, bob_id);
+    EXPECT_EQ(it->receiver.name, "Bob");
+    EXPECT_EQ(it->receiver.age, 25);
 
-    EXPECT_EQ(messages[0].text, "Hello with LEFT JOIN");
+    EXPECT_EQ(it->text, "Hello with LEFT JOIN");
 }
 
 // Test: RIGHT JOIN behavior
@@ -681,10 +688,11 @@ TEST_F(NullableFKTest, SelectWithNullFKField) {
     ASSERT_EQ(messages.size(), 1);
 
     // Verify FK field with NULL value is default-initialized
-    EXPECT_EQ(messages[0].sender.id, 0) << "NULL FK should result in default-initialized PK (0)";
-    EXPECT_EQ(messages[0].sender.name, "");
-    EXPECT_EQ(messages[0].sender.age, 0);
-    EXPECT_EQ(messages[0].text, "FKMessage with NULL sender");
+    auto it = messages.begin();
+    EXPECT_EQ(it->sender.id, 0) << "NULL FK should result in default-initialized PK (0)";
+    EXPECT_EQ(it->sender.name, "");
+    EXPECT_EQ(it->sender.age, 0);
+    EXPECT_EQ(it->text, "FKMessage with NULL sender");
 }
 
 // Test: LEFT JOIN with NULL FK values
@@ -718,10 +726,11 @@ TEST_F(NullableFKTest, LeftJoinWithNullFKField) {
     ASSERT_EQ(messages.size(), 1) << "LEFT JOIN should return message with NULL FK";
 
     // Verify sender FK is default-initialized (NULL in DB = no JOIN match)
-    EXPECT_EQ(messages[0].sender.id, 0) << "NULL FK should not JOIN, remain default";
-    EXPECT_EQ(messages[0].sender.name, "") << "NULL FK should not populate name";
-    EXPECT_EQ(messages[0].sender.age, 0) << "NULL FK should not populate age";
-    EXPECT_EQ(messages[0].text, "NULL sender message");
+    auto it = messages.begin();
+    EXPECT_EQ(it->sender.id, 0) << "NULL FK should not JOIN, remain default";
+    EXPECT_EQ(it->sender.name, "") << "NULL FK should not populate name";
+    EXPECT_EQ(it->sender.age, 0) << "NULL FK should not populate age";
+    EXPECT_EQ(it->text, "NULL sender message");
 }
 
 // Test: LEFT JOIN with mix of NULL and valid FKs
@@ -989,19 +998,19 @@ TEST_F(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
     ASSERT_EQ(tasks.size(), 1);
 
     // Verify assignee (Alice) - all extended types
-    EXPECT_EQ(tasks[0].assignee.id, alice_id);
-    EXPECT_EQ(tasks[0].assignee.name, "Alice");
-    EXPECT_DOUBLE_EQ(tasks[0].assignee.salary, 95000.0);
-    EXPECT_TRUE(tasks[0].assignee.is_active);
-    ASSERT_TRUE(tasks[0].assignee.nickname.has_value());
-    EXPECT_EQ(tasks[0].assignee.nickname.value(), "Ally");
+    EXPECT_EQ(tasks.begin()->assignee.id, alice_id);
+    EXPECT_EQ(tasks.begin()->assignee.name, "Alice");
+    EXPECT_DOUBLE_EQ(tasks.begin()->assignee.salary, 95000.0);
+    EXPECT_TRUE(tasks.begin()->assignee.is_active);
+    ASSERT_TRUE(tasks.begin()->assignee.nickname.has_value());
+    EXPECT_EQ(tasks.begin()->assignee.nickname.value(), "Ally");
 
     // Verify reviewer (Bob) - all extended types
-    EXPECT_EQ(tasks[0].reviewer.id, bob_id);
-    EXPECT_EQ(tasks[0].reviewer.name, "Bob");
-    EXPECT_DOUBLE_EQ(tasks[0].reviewer.salary, 87500.0);
-    EXPECT_FALSE(tasks[0].reviewer.is_active);
-    EXPECT_FALSE(tasks[0].reviewer.nickname.has_value()) << "Bob's nickname should be nullopt";
+    EXPECT_EQ(tasks.begin()->reviewer.id, bob_id);
+    EXPECT_EQ(tasks.begin()->reviewer.name, "Bob");
+    EXPECT_DOUBLE_EQ(tasks.begin()->reviewer.salary, 87500.0);
+    EXPECT_FALSE(tasks.begin()->reviewer.is_active);
+    EXPECT_FALSE(tasks.begin()->reviewer.nickname.has_value()) << "Bob's nickname should be nullopt";
 
-    EXPECT_EQ(tasks[0].description, "Implement feature X");
+    EXPECT_EQ(tasks.begin()->description, "Implement feature X");
 }

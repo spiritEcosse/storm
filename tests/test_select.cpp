@@ -70,9 +70,9 @@ TEST_F(SelectTest, SelectSingleRow) {
     ASSERT_EQ(people.size(), 1) << "Expected exactly one row";
 
     // Verify row contents
-    EXPECT_EQ(people[0].id, inserted_id);
-    EXPECT_EQ(people[0].name, "Alice");
-    EXPECT_EQ(people[0].age, 30);
+    EXPECT_EQ(people.begin()->id, inserted_id);
+    EXPECT_EQ(people.begin()->name, "Alice");
+    EXPECT_EQ(people.begin()->age, 30);
 }
 
 // Test: SELECT multiple rows
@@ -97,17 +97,20 @@ TEST_F(SelectTest, SelectMultipleRows) {
     ASSERT_EQ(people.size(), 3) << "Expected exactly 3 rows";
 
     // Verify row contents
-    EXPECT_EQ(people[0].id, inserted_ids[0]);
-    EXPECT_EQ(people[0].name, "Alice");
-    EXPECT_EQ(people[0].age, 30);
+    auto it = people.begin();
+    EXPECT_EQ(it->id, inserted_ids[0]);
+    EXPECT_EQ(it->name, "Alice");
+    EXPECT_EQ(it->age, 30);
 
-    EXPECT_EQ(people[1].id, inserted_ids[1]);
-    EXPECT_EQ(people[1].name, "Bob");
-    EXPECT_EQ(people[1].age, 25);
+    ++it;
+    EXPECT_EQ(it->id, inserted_ids[1]);
+    EXPECT_EQ(it->name, "Bob");
+    EXPECT_EQ(it->age, 25);
 
-    EXPECT_EQ(people[2].id, inserted_ids[2]);
-    EXPECT_EQ(people[2].name, "Charlie");
-    EXPECT_EQ(people[2].age, 35);
+    ++it;
+    EXPECT_EQ(it->id, inserted_ids[2]);
+    EXPECT_EQ(it->name, "Charlie");
+    EXPECT_EQ(it->age, 35);
 }
 
 // Test: SELECT with different field types (int and std::string)
@@ -127,12 +130,12 @@ TEST_F(SelectTest, SelectDifferentFieldTypes) {
     ASSERT_EQ(people.size(), 1);
 
     // Verify int field
-    EXPECT_EQ(people[0].age, 40);
-    EXPECT_TRUE((std::is_same_v<decltype(people[0].age), int>));
+    EXPECT_EQ(people.begin()->age, 40);
+    EXPECT_TRUE((std::is_same_v<decltype(people.begin()->age), int>));
 
     // Verify string field
-    EXPECT_EQ(people[0].name, "Dave");
-    EXPECT_TRUE((std::is_same_v<decltype(people[0].name), std::string>));
+    EXPECT_EQ(people.begin()->name, "Dave");
+    EXPECT_TRUE((std::is_same_v<decltype(people.begin()->name), std::string>));
 }
 
 // Test: SELECT after INSERT and DELETE
@@ -160,8 +163,10 @@ TEST_F(SelectTest, SelectAfterInsertAndDelete) {
     ASSERT_EQ(people.size(), 2) << "Expected 2 rows after deletion";
 
     // Verify remaining rows
-    EXPECT_EQ(people[0].name, "Alice");
-    EXPECT_EQ(people[1].name, "Charlie");
+    auto it = people.begin();
+    EXPECT_EQ(it->name, "Alice");
+    ++it;
+    EXPECT_EQ(it->name, "Charlie");
 }
 
 // Test: SELECT with large dataset
@@ -185,14 +190,17 @@ TEST_F(SelectTest, SelectLargeDataset) {
     ASSERT_EQ(people.size(), 100) << "Expected 100 rows";
 
     // Verify a few rows
-    EXPECT_EQ(people[0].name, "SelectPerson1");
-    EXPECT_EQ(people[0].age, 21);
+    auto it = people.begin();
+    EXPECT_EQ(it->name, "SelectPerson1");
+    EXPECT_EQ(it->age, 21);
 
-    EXPECT_EQ(people[50].name, "SelectPerson51");
-    EXPECT_EQ(people[50].age, 71);
+    auto it_50 = std::ranges::next(people.begin(), 50);  // 51st element (index 50)
+    EXPECT_EQ(it_50->name, "SelectPerson51");
+    EXPECT_EQ(it_50->age, 71);
 
-    EXPECT_EQ(people[99].name, "SelectPerson100");
-    EXPECT_EQ(people[99].age, 120);
+    auto it_99 = std::ranges::next(people.begin(), 99);  // 100th element (index 99)
+    EXPECT_EQ(it_99->name, "SelectPerson100");
+    EXPECT_EQ(it_99->age, 120);
 }
 
 // Test: Multiple SELECT calls reuse cached statement
@@ -235,8 +243,8 @@ TEST_F(SelectTest, SelectWithEmptyString) {
 
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 1);
-    EXPECT_EQ(people[0].name, "");
-    EXPECT_EQ(people[0].age, 25);
+    EXPECT_EQ(people.begin()->name, "");
+    EXPECT_EQ(people.begin()->age, 25);
 }
 
 // Test: SELECT preserves row order
@@ -257,7 +265,8 @@ TEST_F(SelectTest, SelectPreservesRowOrder) {
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 5);
 
-    for (size_t i = 0; i < 5; ++i) {
-        EXPECT_EQ(people[i].age, static_cast<int>(i + 1)) << "Row order not preserved at index " << i;
+    size_t i = 0;
+    for (auto it = people.begin(); it != people.end(); ++it, ++i) {
+        EXPECT_EQ(it->age, static_cast<int>(i + 1)) << "Row order not preserved at index " << i;
     }
 }

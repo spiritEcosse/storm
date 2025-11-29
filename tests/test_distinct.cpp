@@ -369,8 +369,8 @@ TEST_F(DistinctTest, DistinctTwoFieldsAllDuplicates) {
     const auto& pairs = result.value();
     EXPECT_EQ(pairs.size(), 1) << "Expected only 1 unique (name, age) pair";
 
-    EXPECT_EQ(std::get<0>(pairs[0]), "SameName");
-    EXPECT_EQ(std::get<1>(pairs[0]), 42);
+    EXPECT_EQ(std::get<0>((*pairs.begin())), "SameName");
+    EXPECT_EQ(std::get<1>((*pairs.begin())), 42);
 }
 
 // Test: DISTINCT two fields from empty table
@@ -442,14 +442,14 @@ TEST_F(DistinctTest, VerifyMultiFieldReturnTypes) {
     // Insert test data
     queryset.insert(DistinctPerson{0, "Alice", 30});
 
-    // Verify distinct<&DistinctPerson::name, &DistinctPerson::age>() returns std::vector<std::tuple<std::string, int>>
+    // Verify distinct<&DistinctPerson::name, &DistinctPerson::age>() returns plf::hive<std::tuple<std::string, int>>
     auto pairs_result = queryset.distinct<^^DistinctPerson::name, ^^DistinctPerson::age>().select();
-    static_assert(std::is_same_v<decltype(pairs_result.value()), std::vector<std::tuple<std::string, int>>&>);
+    static_assert(std::is_same_v<decltype(pairs_result.value()), plf::hive<std::tuple<std::string, int>>&>);
 
-    // Verify distinct<&DistinctPerson::age, &DistinctPerson::name>() returns std::vector<std::tuple<int, std::string>>
+    // Verify distinct<&DistinctPerson::age, &DistinctPerson::name>() returns plf::hive<std::tuple<int, std::string>>
     // (reversed)
     auto reversed_result = queryset.distinct<^^DistinctPerson::age, ^^DistinctPerson::name>().select();
-    static_assert(std::is_same_v<decltype(reversed_result.value()), std::vector<std::tuple<int, std::string>>&>);
+    static_assert(std::is_same_v<decltype(reversed_result.value()), plf::hive<std::tuple<int, std::string>>&>);
 }
 
 // Test: DISTINCT two fields with single row
@@ -465,8 +465,8 @@ TEST_F(DistinctTest, DistinctTwoFieldsWithSingleRow) {
 
     const auto& pairs = result.value();
     ASSERT_EQ(pairs.size(), 1);
-    EXPECT_EQ(std::get<0>(pairs[0]), "Alice");
-    EXPECT_EQ(std::get<1>(pairs[0]), 30);
+    EXPECT_EQ(std::get<0>((*pairs.begin())), "Alice");
+    EXPECT_EQ(std::get<1>((*pairs.begin())), 30);
 }
 // Test: Duplicate field specification (same field twice)
 // This should compile and work, but return redundant data
@@ -563,12 +563,12 @@ TEST_F(DistinctTest, VerifyDuplicateFieldReturnTypes) {
 
     // Duplicate field returns tuple with same type repeated
     auto dup_result = queryset.distinct<^^DistinctPerson::name, ^^DistinctPerson::name>().select();
-    static_assert(std::is_same_v<decltype(dup_result.value()), std::vector<std::tuple<std::string, std::string>>&>);
+    static_assert(std::is_same_v<decltype(dup_result.value()), plf::hive<std::tuple<std::string, std::string>>&>);
 
     // Triple duplicate
     auto trip_result =
             queryset.distinct<^^DistinctPerson::age, ^^DistinctPerson::age, ^^DistinctPerson::age>().select();
-    static_assert(std::is_same_v<decltype(trip_result.value()), std::vector<std::tuple<int, int, int>>&>);
+    static_assert(std::is_same_v<decltype(trip_result.value()), plf::hive<std::tuple<int, int, int>>&>);
 }
 
 // Test: Mixed duplicate and unique fields

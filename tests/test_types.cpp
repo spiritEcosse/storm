@@ -75,8 +75,8 @@ TEST_F(IntTypesInsertUpdateTest, InsertSingleIntTypes) {
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
     ASSERT_EQ(selected.value().size(), 1);
-    EXPECT_EQ(selected.value()[0].big_num, 9223372036854775807LL);
-    EXPECT_EQ(selected.value()[0].small_num, 32767);
+    EXPECT_EQ(selected.value().begin()->big_num, 9223372036854775807LL);
+    EXPECT_EQ(selected.value().begin()->small_num, 32767);
 }
 
 TEST_F(IntTypesInsertUpdateTest, InsertBatchIntTypes) {
@@ -90,7 +90,7 @@ TEST_F(IntTypesInsertUpdateTest, InsertBatchIntTypes) {
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 3);
-    EXPECT_EQ(selected.value()[1].big_num, 200LL);
+    EXPECT_EQ(selected.value().begin()->big_num, 100LL);
 }
 
 TEST_F(IntTypesInsertUpdateTest, UpdateSingleIntTypes) {
@@ -104,8 +104,9 @@ TEST_F(IntTypesInsertUpdateTest, UpdateSingleIntTypes) {
     // Verify INSERT worked
     auto check1 = qs.select();
     ASSERT_TRUE(check1.has_value());
-    EXPECT_EQ(check1.value()[0].big_num, 100LL);
-    EXPECT_EQ(check1.value()[0].small_num, 10);
+    auto it1 = check1.value().begin();
+    EXPECT_EQ(it1->big_num, 100LL);
+    EXPECT_EQ(it1->small_num, 10);
 
     // Update with the returned ID
     IntTypes updated{static_cast<int>(id), 999LL, 99};
@@ -114,8 +115,9 @@ TEST_F(IntTypesInsertUpdateTest, UpdateSingleIntTypes) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_EQ(selected.value()[0].big_num, 999LL);
-    EXPECT_EQ(selected.value()[0].small_num, 99);
+    auto it2 = selected.value().begin();
+    EXPECT_EQ(it2->big_num, 999LL);
+    EXPECT_EQ(it2->small_num, 99);
 }
 
 TEST_F(IntTypesInsertUpdateTest, UpdateBatchIntTypes) {
@@ -132,9 +134,12 @@ TEST_F(IntTypesInsertUpdateTest, UpdateBatchIntTypes) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_EQ(selected.value()[0].big_num, 111LL);
-    EXPECT_EQ(selected.value()[1].big_num, 222LL);
-    EXPECT_EQ(selected.value()[2].big_num, 333LL);
+    auto it = selected.value().begin();
+    EXPECT_EQ(it->big_num, 111LL);
+    ++it;
+    EXPECT_EQ(it->big_num, 222LL);
+    ++it;
+    EXPECT_EQ(it->big_num, 333LL);
 }
 
 // ===== FLOATING POINT TYPES TESTS =====
@@ -166,8 +171,8 @@ TEST_F(FloatTypesInsertUpdateTest, InsertSingleFloatTypes) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_NEAR(selected.value()[0].precise, 3.141592653589793, 1e-10);
-    EXPECT_NEAR(selected.value()[0].approx, 2.718f, 1e-4);
+    EXPECT_NEAR(selected.value().begin()->precise, 3.141592653589793, 1e-10);
+    EXPECT_NEAR(selected.value().begin()->approx, 2.718f, 1e-4);
 }
 
 TEST_F(FloatTypesInsertUpdateTest, UpdateSingleFloatTypes) {
@@ -184,8 +189,8 @@ TEST_F(FloatTypesInsertUpdateTest, UpdateSingleFloatTypes) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_NEAR(selected.value()[0].precise, 2.71828, 1e-5);
-    EXPECT_NEAR(selected.value()[0].approx, 3.14159f, 1e-4);
+    EXPECT_NEAR(selected.value().begin()->precise, 2.71828, 1e-5);
+    EXPECT_NEAR(selected.value().begin()->approx, 3.14159f, 1e-4);
 }
 
 // ===== BOOLEAN AND STRING TYPES TESTS =====
@@ -217,8 +222,8 @@ TEST_F(MixedTypesInsertUpdateTest, InsertBooleanTrue) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_TRUE(selected.value()[0].active);
-    EXPECT_EQ(selected.value()[0].name, "active_user");
+    EXPECT_TRUE(selected.value().begin()->active);
+    EXPECT_EQ(selected.value().begin()->name, "active_user");
 }
 
 TEST_F(MixedTypesInsertUpdateTest, InsertBooleanFalse) {
@@ -230,8 +235,8 @@ TEST_F(MixedTypesInsertUpdateTest, InsertBooleanFalse) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_FALSE(selected.value()[0].active);
-    EXPECT_EQ(selected.value()[0].name, "inactive_user");
+    EXPECT_FALSE(selected.value().begin()->active);
+    EXPECT_EQ(selected.value().begin()->name, "inactive_user");
 }
 
 TEST_F(MixedTypesInsertUpdateTest, UpdateBooleanAndString) {
@@ -248,8 +253,8 @@ TEST_F(MixedTypesInsertUpdateTest, UpdateBooleanAndString) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_TRUE(selected.value()[0].active);
-    EXPECT_EQ(selected.value()[0].name, "new_name");
+    EXPECT_TRUE(selected.value().begin()->active);
+    EXPECT_EQ(selected.value().begin()->name, "new_name");
 }
 
 TEST_F(MixedTypesInsertUpdateTest, InsertBatchMixedTypes) {
@@ -262,9 +267,12 @@ TEST_F(MixedTypesInsertUpdateTest, InsertBatchMixedTypes) {
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 3);
-    EXPECT_TRUE(selected.value()[0].active);
-    EXPECT_FALSE(selected.value()[1].active);
-    EXPECT_EQ(selected.value()[2].name, "user3");
+    auto it = selected.value().begin();
+    EXPECT_TRUE(it->active);
+    ++it;
+    EXPECT_FALSE(it->active);
+    ++it;
+    EXPECT_EQ(it->name, "user3");
 }
 
 // ===== OPTIONAL TYPES TESTS =====
@@ -296,9 +304,9 @@ TEST_F(OptTypesInsertUpdateTest, InsertWithValues) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    ASSERT_TRUE(selected.value()[0].maybe_num.has_value());
-    EXPECT_EQ(selected.value()[0].maybe_num.value(), 42);
-    EXPECT_EQ(selected.value()[0].name, "with_value");
+    ASSERT_TRUE(selected.value().begin()->maybe_num.has_value());
+    EXPECT_EQ(selected.value().begin()->maybe_num.value(), 42);
+    EXPECT_EQ(selected.value().begin()->name, "with_value");
 }
 
 TEST_F(OptTypesInsertUpdateTest, InsertWithNull) {
@@ -310,8 +318,8 @@ TEST_F(OptTypesInsertUpdateTest, InsertWithNull) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_FALSE(selected.value()[0].maybe_num.has_value());
-    EXPECT_EQ(selected.value()[0].name, "null_value");
+    EXPECT_FALSE(selected.value().begin()->maybe_num.has_value());
+    EXPECT_EQ(selected.value().begin()->name, "null_value");
 }
 
 TEST_F(OptTypesInsertUpdateTest, UpdateFromValueToNull) {
@@ -329,8 +337,8 @@ TEST_F(OptTypesInsertUpdateTest, UpdateFromValueToNull) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_FALSE(selected.value()[0].maybe_num.has_value());
-    EXPECT_EQ(selected.value()[0].name, "updated_to_null");
+    EXPECT_FALSE(selected.value().begin()->maybe_num.has_value());
+    EXPECT_EQ(selected.value().begin()->name, "updated_to_null");
 }
 
 TEST_F(OptTypesInsertUpdateTest, UpdateFromNullToValue) {
@@ -348,9 +356,9 @@ TEST_F(OptTypesInsertUpdateTest, UpdateFromNullToValue) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    ASSERT_TRUE(selected.value()[0].maybe_num.has_value());
-    EXPECT_EQ(selected.value()[0].maybe_num.value(), 999);
-    EXPECT_EQ(selected.value()[0].name, "updated_to_value");
+    ASSERT_TRUE(selected.value().begin()->maybe_num.has_value());
+    EXPECT_EQ(selected.value().begin()->maybe_num.value(), 999);
+    EXPECT_EQ(selected.value().begin()->name, "updated_to_value");
 }
 
 TEST_F(OptTypesInsertUpdateTest, InsertBatchMixedNulls) {
@@ -369,12 +377,16 @@ TEST_F(OptTypesInsertUpdateTest, InsertBatchMixedNulls) {
     EXPECT_EQ(selected.value().size(), 4);
 
     // Verify mixed NULL/value pattern
-    EXPECT_TRUE(selected.value()[0].maybe_num.has_value());
-    EXPECT_EQ(selected.value()[0].maybe_num.value(), 1);
-    EXPECT_FALSE(selected.value()[1].maybe_num.has_value());
-    EXPECT_TRUE(selected.value()[2].maybe_num.has_value());
-    EXPECT_EQ(selected.value()[2].maybe_num.value(), 3);
-    EXPECT_FALSE(selected.value()[3].maybe_num.has_value());
+    auto it = selected.value().begin();
+    EXPECT_TRUE(it->maybe_num.has_value());
+    EXPECT_EQ(it->maybe_num.value(), 1);
+    ++it;
+    EXPECT_FALSE(it->maybe_num.has_value());
+    ++it;
+    EXPECT_TRUE(it->maybe_num.has_value());
+    EXPECT_EQ(it->maybe_num.value(), 3);
+    ++it;
+    EXPECT_FALSE(it->maybe_num.has_value());
 }
 
 // ===== BLOB TYPES TESTS =====
@@ -404,8 +416,8 @@ TEST_F(DataTypesInsertUpdateTest, InsertSmallBlob) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_EQ(selected.value()[0].binary, (std::vector<uint8_t>{0xDE, 0xAD, 0xBE, 0xEF}));
-    EXPECT_EQ(selected.value()[0].label, "test_blob");
+    EXPECT_EQ(selected.value().begin()->binary, (std::vector<uint8_t>{0xDE, 0xAD, 0xBE, 0xEF}));
+    EXPECT_EQ(selected.value().begin()->label, "test_blob");
 }
 
 TEST_F(DataTypesInsertUpdateTest, InsertLargeBlob) {
@@ -422,10 +434,11 @@ TEST_F(DataTypesInsertUpdateTest, InsertLargeBlob) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    ASSERT_EQ(selected.value()[0].binary.size(), 1024);
+    auto it = selected.value().begin();
+    ASSERT_EQ(it->binary.size(), 1024);
 
     for (size_t i = 0; i < 1024; ++i) {
-        EXPECT_EQ(selected.value()[0].binary[i], static_cast<uint8_t>(i % 256));
+        EXPECT_EQ(it->binary[i], static_cast<uint8_t>(i % 256));
     }
 }
 
@@ -438,7 +451,7 @@ TEST_F(DataTypesInsertUpdateTest, InsertEmptyBlob) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_TRUE(selected.value()[0].binary.empty());
+    EXPECT_TRUE(selected.value().begin()->binary.empty());
 }
 
 TEST_F(DataTypesInsertUpdateTest, UpdateBlob) {
@@ -456,8 +469,8 @@ TEST_F(DataTypesInsertUpdateTest, UpdateBlob) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_EQ(selected.value()[0].binary, (std::vector<uint8_t>{0xFF, 0xEE, 0xDD}));
-    EXPECT_EQ(selected.value()[0].label, "updated");
+    EXPECT_EQ(selected.value().begin()->binary, (std::vector<uint8_t>{0xFF, 0xEE, 0xDD}));
+    EXPECT_EQ(selected.value().begin()->label, "updated");
 }
 
 TEST_F(DataTypesInsertUpdateTest, InsertBatchBlobs) {
@@ -470,9 +483,12 @@ TEST_F(DataTypesInsertUpdateTest, InsertBatchBlobs) {
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 3);
-    EXPECT_EQ(selected.value()[0].binary.size(), 1);
-    EXPECT_EQ(selected.value()[1].binary.size(), 2);
-    EXPECT_EQ(selected.value()[2].binary.size(), 3);
+    auto it = selected.value().begin();
+    EXPECT_EQ(it->binary.size(), 1);
+    ++it;
+    EXPECT_EQ(it->binary.size(), 2);
+    ++it;
+    EXPECT_EQ(it->binary.size(), 3);
 }
 
 // ===== EXTREME VALUE TESTS =====
@@ -487,8 +503,9 @@ TEST_F(IntTypesInsertUpdateTest, ExtremeIntegerValues) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_EQ(selected.value()[0].big_num, -9223372036854775807LL - 1);
-    EXPECT_EQ(selected.value()[0].small_num, -32768);
+    auto it = selected.value().begin();
+    EXPECT_EQ(it->big_num, -9223372036854775807LL - 1);
+    EXPECT_EQ(it->small_num, -32768);
 }
 
 TEST_F(FloatTypesInsertUpdateTest, SpecialFloatValues) {
@@ -501,5 +518,5 @@ TEST_F(FloatTypesInsertUpdateTest, SpecialFloatValues) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_DOUBLE_EQ(selected.value()[0].precise, 0.0);
+    EXPECT_DOUBLE_EQ(selected.value().begin()->precise, 0.0);
 }

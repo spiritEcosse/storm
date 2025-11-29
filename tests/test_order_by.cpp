@@ -78,16 +78,16 @@ TEST_F(OrderByTest, SingleFieldDefaultAsc) {
     ASSERT_EQ(people.size(), 10);
 
     // Verify ascending order by age
-    EXPECT_EQ(people[0].age, 25); // Bob, David, or Grace
-    EXPECT_EQ(people[1].age, 25);
-    EXPECT_EQ(people[2].age, 25);
-    EXPECT_EQ(people[3].age, 30); // Alice, Eve, or Ivy
-    EXPECT_EQ(people[4].age, 30);
-    EXPECT_EQ(people[5].age, 30);
-    EXPECT_EQ(people[6].age, 35); // Charlie or Henry
-    EXPECT_EQ(people[7].age, 35);
-    EXPECT_EQ(people[8].age, 40); // Frank or Jack
-    EXPECT_EQ(people[9].age, 40);
+    EXPECT_EQ(std::ranges::next(people.begin(), 0)->age, 25); // Bob, David, or Grace
+    EXPECT_EQ(std::ranges::next(people.begin(), 1)->age, 25);
+    EXPECT_EQ(std::ranges::next(people.begin(), 2)->age, 25);
+    EXPECT_EQ(std::ranges::next(people.begin(), 3)->age, 30); // Alice, Eve, or Ivy
+    EXPECT_EQ(std::ranges::next(people.begin(), 4)->age, 30);
+    EXPECT_EQ(std::ranges::next(people.begin(), 5)->age, 30);
+    EXPECT_EQ(std::ranges::next(people.begin(), 6)->age, 35); // Charlie or Henry
+    EXPECT_EQ(std::ranges::next(people.begin(), 7)->age, 35);
+    EXPECT_EQ(std::ranges::next(people.begin(), 8)->age, 40); // Frank or Jack
+    EXPECT_EQ(std::ranges::next(people.begin(), 9)->age, 40);
 }
 
 TEST_F(OrderByTest, SingleFieldExplicitAsc) {
@@ -101,8 +101,10 @@ TEST_F(OrderByTest, SingleFieldExplicitAsc) {
     ASSERT_EQ(people.size(), 10);
 
     // Verify ascending order
-    for (size_t i = 1; i < people.size(); ++i) {
-        EXPECT_LE(people[i - 1].age, people[i].age);
+    auto prev_it = people.begin();
+    auto it = std::ranges::next(prev_it);
+    for (; it != people.end(); ++prev_it, ++it) {
+        EXPECT_LE(prev_it->age, it->age);
     }
 }
 
@@ -117,16 +119,16 @@ TEST_F(OrderByTest, SingleFieldDesc) {
     ASSERT_EQ(people.size(), 10);
 
     // Verify descending order
-    EXPECT_EQ(people[0].age, 40); // Frank or Jack
-    EXPECT_EQ(people[1].age, 40);
-    EXPECT_EQ(people[2].age, 35); // Charlie or Henry
-    EXPECT_EQ(people[3].age, 35);
-    EXPECT_EQ(people[4].age, 30); // Alice, Eve, or Ivy
-    EXPECT_EQ(people[5].age, 30);
-    EXPECT_EQ(people[6].age, 30);
-    EXPECT_EQ(people[7].age, 25); // Bob, David, or Grace
-    EXPECT_EQ(people[8].age, 25);
-    EXPECT_EQ(people[9].age, 25);
+    EXPECT_EQ(std::ranges::next(people.begin(), 0)->age, 40); // Frank or Jack
+    EXPECT_EQ(std::ranges::next(people.begin(), 1)->age, 40);
+    EXPECT_EQ(std::ranges::next(people.begin(), 2)->age, 35); // Charlie or Henry
+    EXPECT_EQ(std::ranges::next(people.begin(), 3)->age, 35);
+    EXPECT_EQ(std::ranges::next(people.begin(), 4)->age, 30); // Alice, Eve, or Ivy
+    EXPECT_EQ(std::ranges::next(people.begin(), 5)->age, 30);
+    EXPECT_EQ(std::ranges::next(people.begin(), 6)->age, 30);
+    EXPECT_EQ(std::ranges::next(people.begin(), 7)->age, 25); // Bob, David, or Grace
+    EXPECT_EQ(std::ranges::next(people.begin(), 8)->age, 25);
+    EXPECT_EQ(std::ranges::next(people.begin(), 9)->age, 25);
 }
 
 TEST_F(OrderByTest, StringFieldAsc) {
@@ -140,16 +142,16 @@ TEST_F(OrderByTest, StringFieldAsc) {
     ASSERT_EQ(people.size(), 10);
 
     // Verify alphabetical order
-    EXPECT_EQ(people[0].name, "Alice");
-    EXPECT_EQ(people[1].name, "Bob");
-    EXPECT_EQ(people[2].name, "Charlie");
-    EXPECT_EQ(people[3].name, "David");
-    EXPECT_EQ(people[4].name, "Eve");
-    EXPECT_EQ(people[5].name, "Frank");
-    EXPECT_EQ(people[6].name, "Grace");
-    EXPECT_EQ(people[7].name, "Henry");
-    EXPECT_EQ(people[8].name, "Ivy");
-    EXPECT_EQ(people[9].name, "Jack");
+    EXPECT_EQ(std::ranges::next(people.begin(), 0)->name, "Alice");
+    EXPECT_EQ(std::ranges::next(people.begin(), 1)->name, "Bob");
+    EXPECT_EQ(std::ranges::next(people.begin(), 2)->name, "Charlie");
+    EXPECT_EQ(std::ranges::next(people.begin(), 3)->name, "David");
+    EXPECT_EQ(std::ranges::next(people.begin(), 4)->name, "Eve");
+    EXPECT_EQ(std::ranges::next(people.begin(), 5)->name, "Frank");
+    EXPECT_EQ(std::ranges::next(people.begin(), 6)->name, "Grace");
+    EXPECT_EQ(std::ranges::next(people.begin(), 7)->name, "Henry");
+    EXPECT_EQ(std::ranges::next(people.begin(), 8)->name, "Ivy");
+    EXPECT_EQ(std::ranges::next(people.begin(), 9)->name, "Jack");
 }
 
 TEST_F(OrderByTest, StringFieldDesc) {
@@ -163,16 +165,16 @@ TEST_F(OrderByTest, StringFieldDesc) {
     ASSERT_EQ(people.size(), 10);
 
     // Verify reverse alphabetical order
-    EXPECT_EQ(people[0].name, "Jack");
-    EXPECT_EQ(people[1].name, "Ivy");
-    EXPECT_EQ(people[2].name, "Henry");
-    EXPECT_EQ(people[3].name, "Grace");
-    EXPECT_EQ(people[4].name, "Frank");
-    EXPECT_EQ(people[5].name, "Eve");
-    EXPECT_EQ(people[6].name, "David");
-    EXPECT_EQ(people[7].name, "Charlie");
-    EXPECT_EQ(people[8].name, "Bob");
-    EXPECT_EQ(people[9].name, "Alice");
+    EXPECT_EQ(std::ranges::next(people.begin(), 0)->name, "Jack");
+    EXPECT_EQ(std::ranges::next(people.begin(), 1)->name, "Ivy");
+    EXPECT_EQ(std::ranges::next(people.begin(), 2)->name, "Henry");
+    EXPECT_EQ(std::ranges::next(people.begin(), 3)->name, "Grace");
+    EXPECT_EQ(std::ranges::next(people.begin(), 4)->name, "Frank");
+    EXPECT_EQ(std::ranges::next(people.begin(), 5)->name, "Eve");
+    EXPECT_EQ(std::ranges::next(people.begin(), 6)->name, "David");
+    EXPECT_EQ(std::ranges::next(people.begin(), 7)->name, "Charlie");
+    EXPECT_EQ(std::ranges::next(people.begin(), 8)->name, "Bob");
+    EXPECT_EQ(std::ranges::next(people.begin(), 9)->name, "Alice");
 }
 
 // ============================================================================
@@ -190,18 +192,18 @@ TEST_F(OrderByTest, MultipleFieldsAllAsc) {
     ASSERT_EQ(people.size(), 10);
 
     // Verify ordering: age ASC, then name ASC within same age
-    EXPECT_EQ(people[0].age, 25);
-    EXPECT_EQ(people[0].name, "Bob"); // Age 25: Bob, David, Grace
-    EXPECT_EQ(people[1].age, 25);
-    EXPECT_EQ(people[1].name, "David");
-    EXPECT_EQ(people[2].age, 25);
-    EXPECT_EQ(people[2].name, "Grace");
-    EXPECT_EQ(people[3].age, 30);
-    EXPECT_EQ(people[3].name, "Alice"); // Age 30: Alice, Eve, Ivy
-    EXPECT_EQ(people[4].age, 30);
-    EXPECT_EQ(people[4].name, "Eve");
-    EXPECT_EQ(people[5].age, 30);
-    EXPECT_EQ(people[5].name, "Ivy");
+    EXPECT_EQ(std::ranges::next(people.begin(), 0)->age, 25);
+    EXPECT_EQ(std::ranges::next(people.begin(), 0)->name, "Bob"); // Age 25: Bob, David, Grace
+    EXPECT_EQ(std::ranges::next(people.begin(), 1)->age, 25);
+    EXPECT_EQ(std::ranges::next(people.begin(), 1)->name, "David");
+    EXPECT_EQ(std::ranges::next(people.begin(), 2)->age, 25);
+    EXPECT_EQ(std::ranges::next(people.begin(), 2)->name, "Grace");
+    EXPECT_EQ(std::ranges::next(people.begin(), 3)->age, 30);
+    EXPECT_EQ(std::ranges::next(people.begin(), 3)->name, "Alice"); // Age 30: Alice, Eve, Ivy
+    EXPECT_EQ(std::ranges::next(people.begin(), 4)->age, 30);
+    EXPECT_EQ(std::ranges::next(people.begin(), 4)->name, "Eve");
+    EXPECT_EQ(std::ranges::next(people.begin(), 5)->age, 30);
+    EXPECT_EQ(std::ranges::next(people.begin(), 5)->name, "Ivy");
 }
 
 TEST_F(OrderByTest, MultipleFieldsMixedDirections) {
@@ -215,18 +217,18 @@ TEST_F(OrderByTest, MultipleFieldsMixedDirections) {
     ASSERT_EQ(people.size(), 10);
 
     // Verify ordering: age ASC, then name DESC within same age
-    EXPECT_EQ(people[0].age, 25);
-    EXPECT_EQ(people[0].name, "Grace"); // Age 25: Grace, David, Bob (DESC)
-    EXPECT_EQ(people[1].age, 25);
-    EXPECT_EQ(people[1].name, "David");
-    EXPECT_EQ(people[2].age, 25);
-    EXPECT_EQ(people[2].name, "Bob");
-    EXPECT_EQ(people[3].age, 30);
-    EXPECT_EQ(people[3].name, "Ivy"); // Age 30: Ivy, Eve, Alice (DESC)
-    EXPECT_EQ(people[4].age, 30);
-    EXPECT_EQ(people[4].name, "Eve");
-    EXPECT_EQ(people[5].age, 30);
-    EXPECT_EQ(people[5].name, "Alice");
+    EXPECT_EQ(std::ranges::next(people.begin(), 0)->age, 25);
+    EXPECT_EQ(std::ranges::next(people.begin(), 0)->name, "Grace"); // Age 25: Grace, David, Bob (DESC)
+    EXPECT_EQ(std::ranges::next(people.begin(), 1)->age, 25);
+    EXPECT_EQ(std::ranges::next(people.begin(), 1)->name, "David");
+    EXPECT_EQ(std::ranges::next(people.begin(), 2)->age, 25);
+    EXPECT_EQ(std::ranges::next(people.begin(), 2)->name, "Bob");
+    EXPECT_EQ(std::ranges::next(people.begin(), 3)->age, 30);
+    EXPECT_EQ(std::ranges::next(people.begin(), 3)->name, "Ivy"); // Age 30: Ivy, Eve, Alice (DESC)
+    EXPECT_EQ(std::ranges::next(people.begin(), 4)->age, 30);
+    EXPECT_EQ(std::ranges::next(people.begin(), 4)->name, "Eve");
+    EXPECT_EQ(std::ranges::next(people.begin(), 5)->age, 30);
+    EXPECT_EQ(std::ranges::next(people.begin(), 5)->name, "Alice");
 }
 
 TEST_F(OrderByTest, MultipleFieldsAllDesc) {
@@ -240,14 +242,14 @@ TEST_F(OrderByTest, MultipleFieldsAllDesc) {
     ASSERT_EQ(people.size(), 10);
 
     // Verify ordering: age DESC, then name DESC
-    EXPECT_EQ(people[0].age, 40);
-    EXPECT_EQ(people[0].name, "Jack"); // Age 40: Jack, Frank (DESC)
-    EXPECT_EQ(people[1].age, 40);
-    EXPECT_EQ(people[1].name, "Frank");
-    EXPECT_EQ(people[2].age, 35);
-    EXPECT_EQ(people[2].name, "Henry"); // Age 35: Henry, Charlie (DESC)
-    EXPECT_EQ(people[3].age, 35);
-    EXPECT_EQ(people[3].name, "Charlie");
+    EXPECT_EQ(std::ranges::next(people.begin(), 0)->age, 40);
+    EXPECT_EQ(std::ranges::next(people.begin(), 0)->name, "Jack"); // Age 40: Jack, Frank (DESC)
+    EXPECT_EQ(std::ranges::next(people.begin(), 1)->age, 40);
+    EXPECT_EQ(std::ranges::next(people.begin(), 1)->name, "Frank");
+    EXPECT_EQ(std::ranges::next(people.begin(), 2)->age, 35);
+    EXPECT_EQ(std::ranges::next(people.begin(), 2)->name, "Henry"); // Age 35: Henry, Charlie (DESC)
+    EXPECT_EQ(std::ranges::next(people.begin(), 3)->age, 35);
+    EXPECT_EQ(std::ranges::next(people.begin(), 3)->name, "Charlie");
 }
 
 // ============================================================================
@@ -269,8 +271,8 @@ TEST_F(OrderByTest, WithWhereClause) {
     for (const auto& person : people) {
         EXPECT_TRUE(person.is_active);
     }
-    EXPECT_GE(people[0].age, people[1].age);
-    EXPECT_GE(people[1].age, people[2].age);
+    EXPECT_GE(std::ranges::next(people.begin(), 0)->age, std::ranges::next(people.begin(), 1)->age);
+    EXPECT_GE(std::ranges::next(people.begin(), 1)->age, std::ranges::next(people.begin(), 2)->age);
 }
 
 TEST_F(OrderByTest, WhereWithMultipleOrderBy) {
@@ -306,9 +308,9 @@ TEST_F(OrderByTest, WithLimit) {
     ASSERT_EQ(people.size(), 3);
 
     // All should be age 25
-    EXPECT_EQ(people[0].age, 25);
-    EXPECT_EQ(people[1].age, 25);
-    EXPECT_EQ(people[2].age, 25);
+    EXPECT_EQ(std::ranges::next(people.begin(), 0)->age, 25);
+    EXPECT_EQ(std::ranges::next(people.begin(), 1)->age, 25);
+    EXPECT_EQ(std::ranges::next(people.begin(), 2)->age, 25);
 }
 
 TEST_F(OrderByTest, WithLimitAndOffset) {
@@ -321,9 +323,9 @@ TEST_F(OrderByTest, WithLimitAndOffset) {
     auto people = result.value();
     ASSERT_EQ(people.size(), 3);
 
-    EXPECT_EQ(people[0].name, "David");
-    EXPECT_EQ(people[1].name, "Eve");
-    EXPECT_EQ(people[2].name, "Frank");
+    EXPECT_EQ(std::ranges::next(people.begin(), 0)->name, "David");
+    EXPECT_EQ(std::ranges::next(people.begin(), 1)->name, "Eve");
+    EXPECT_EQ(std::ranges::next(people.begin(), 2)->name, "Frank");
 }
 
 TEST_F(OrderByTest, OrderByBeforeLimitOffset) {
@@ -337,7 +339,7 @@ TEST_F(OrderByTest, OrderByBeforeLimitOffset) {
     ASSERT_EQ(people.size(), 5);
 
     // Should get ages in descending order, skipping first 2 (both 40)
-    EXPECT_EQ(people[0].age, 35); // Charlie or Henry
+    EXPECT_EQ(std::ranges::next(people.begin(), 0)->age, 35); // Charlie or Henry
 }
 
 // ============================================================================
@@ -366,7 +368,7 @@ TEST_F(OrderByTest, BooleanField) {
     ASSERT_EQ(people.size(), 10);
 
     // true comes before false in DESC order (1 > 0)
-    EXPECT_TRUE(people[0].is_active);
+    EXPECT_TRUE(std::ranges::next(people.begin(), 0)->is_active);
 }
 
 TEST_F(OrderByTest, ChainedWithMultipleClauses) {
@@ -384,11 +386,13 @@ TEST_F(OrderByTest, ChainedWithMultipleClauses) {
     ASSERT_EQ(people.size(), 5);
 
     // Verify ordering maintained with all clauses
-    for (size_t i = 1; i < people.size(); ++i) {
-        if (people[i - 1].age == people[i].age) {
-            EXPECT_LE(people[i - 1].name, people[i].name);
+    auto prev_it = people.begin();
+    auto it = std::ranges::next(prev_it);
+    for (; it != people.end(); ++prev_it, ++it) {
+        if (prev_it->age == it->age) {
+            EXPECT_LE(prev_it->name, it->name);
         } else {
-            EXPECT_LE(people[i - 1].age, people[i].age);
+            EXPECT_LE(prev_it->age, it->age);
         }
     }
 }

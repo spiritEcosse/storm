@@ -64,17 +64,21 @@ TEST_F(SelectLargeTest, SelectMoreThan10KRows) {
     ASSERT_EQ(retrieved.size(), RECORD_COUNT) << "Should retrieve all 25K records";
 
     // Verify data integrity (spot checks)
-    EXPECT_EQ(retrieved[0].value, 10);
-    EXPECT_EQ(retrieved[0].name, "Record_1");
+    auto it = retrieved.begin();
+    EXPECT_EQ(it->value, 10);
+    EXPECT_EQ(it->name, "Record_1");
 
-    EXPECT_EQ(retrieved[9999].value, 100000); // 10K boundary
-    EXPECT_EQ(retrieved[9999].name, "Record_10000");
+    auto it_10k = std::ranges::next(retrieved.begin(), 9999);  // 10000th element
+    EXPECT_EQ(it_10k->value, 100000); // 10K boundary
+    EXPECT_EQ(it_10k->name, "Record_10000");
 
-    EXPECT_EQ(retrieved[19999].value, 200000); // 20K boundary
-    EXPECT_EQ(retrieved[19999].name, "Record_20000");
+    auto it_20k = std::ranges::next(retrieved.begin(), 19999);  // 20000th element
+    EXPECT_EQ(it_20k->value, 200000); // 20K boundary
+    EXPECT_EQ(it_20k->name, "Record_20000");
 
-    EXPECT_EQ(retrieved[RECORD_COUNT - 1].value, RECORD_COUNT * 10);
-    EXPECT_EQ(retrieved[RECORD_COUNT - 1].name, "Record_" + std::to_string(RECORD_COUNT));
+    auto last_it = std::ranges::next(retrieved.begin(), RECORD_COUNT - 1);
+    EXPECT_EQ(last_it->value, RECORD_COUNT * 10);
+    EXPECT_EQ(last_it->name, "Record_" + std::to_string(RECORD_COUNT));
 }
 
 // Test: SELECT with result set at exactly 10K (no exponential growth needed)
@@ -99,8 +103,9 @@ TEST_F(SelectLargeTest, SelectExactly10KRows) {
     const auto& retrieved = select_result.value();
     ASSERT_EQ(retrieved.size(), RECORD_COUNT);
 
-    EXPECT_EQ(retrieved[0].value, 1);
-    EXPECT_EQ(retrieved[RECORD_COUNT - 1].value, RECORD_COUNT);
+    EXPECT_EQ(retrieved.begin()->value, 1);
+    auto last_it = std::ranges::next(retrieved.begin(), RECORD_COUNT - 1);
+    EXPECT_EQ(last_it->value, RECORD_COUNT);
 }
 
 // Test: SELECT with result set slightly over 10K (minimal exponential growth)
@@ -125,7 +130,8 @@ TEST_F(SelectLargeTest, SelectSlightlyOver10KRows) {
     const auto& retrieved = select_result.value();
     ASSERT_EQ(retrieved.size(), RECORD_COUNT);
 
-    EXPECT_EQ(retrieved[10000].value, 10001); // The one that triggered growth
+    auto last_it = std::ranges::next(retrieved.begin(), RECORD_COUNT - 1);
+    EXPECT_EQ(last_it->value, 10001); // The one that triggered growth
 }
 
 // Test: SELECT with very large result set (100K rows)
@@ -159,10 +165,11 @@ TEST_F(SelectLargeTest, SelectVeryLargeDataset) {
     ASSERT_EQ(retrieved.size(), RECORD_COUNT) << "Should retrieve all 100K records";
 
     // Verify data integrity at key boundaries
-    EXPECT_EQ(retrieved[0].value, 1);
-    EXPECT_EQ(retrieved[10000].value, 10001); // After initial capacity
-    EXPECT_EQ(retrieved[20000].value, 20001); // After first growth
-    EXPECT_EQ(retrieved[40000].value, 40001); // After second growth
-    EXPECT_EQ(retrieved[80000].value, 80001); // After third growth
-    EXPECT_EQ(retrieved[RECORD_COUNT - 1].value, RECORD_COUNT);
+    EXPECT_EQ(retrieved.begin()->value, 1);
+    EXPECT_EQ(std::ranges::next(retrieved.begin(), 10000)->value, 10001); // After initial capacity
+    EXPECT_EQ(std::ranges::next(retrieved.begin(), 20000)->value, 20001); // After first growth
+    EXPECT_EQ(std::ranges::next(retrieved.begin(), 40000)->value, 40001); // After second growth
+    EXPECT_EQ(std::ranges::next(retrieved.begin(), 80000)->value, 80001); // After third growth
+    auto last_it = std::ranges::next(retrieved.begin(), RECORD_COUNT - 1);
+    EXPECT_EQ(last_it->value, RECORD_COUNT);
 }
