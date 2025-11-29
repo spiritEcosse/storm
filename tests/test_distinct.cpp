@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include "plf_hive/plf_hive.h"
 
 import storm;
 import <string>;
@@ -213,7 +214,7 @@ TEST_F(DistinctTest, DistinctWithSingleRow) {
 
     const auto& names = result.value();
     ASSERT_EQ(names.size(), 1);
-    EXPECT_EQ(names[0], "Alice");
+    EXPECT_EQ(*names.begin(), "Alice");
 }
 
 // Test: DISTINCT with large dataset
@@ -267,17 +268,17 @@ TEST_F(DistinctTest, VerifyReturnTypes) {
     // Insert test data
     queryset.insert(DistinctPerson{0, "Alice", 30});
 
-    // Verify distinct<&DistinctPerson::name>() returns std::vector<std::string>
+    // Verify distinct<&DistinctPerson::name>() returns plf::hive<std::string>
     auto names_result = queryset.distinct<^^DistinctPerson::name>().select();
-    static_assert(std::is_same_v<decltype(names_result.value()), std::vector<std::string>&>);
+    static_assert(std::is_same_v<decltype(names_result.value()), plf::hive<std::string>&>);
 
-    // Verify distinct<&DistinctPerson::age>() returns std::vector<int>
+    // Verify distinct<&DistinctPerson::age>() returns plf::hive<int>
     auto ages_result = queryset.distinct<^^DistinctPerson::age>().select();
-    static_assert(std::is_same_v<decltype(ages_result.value()), std::vector<int>&>);
+    static_assert(std::is_same_v<decltype(ages_result.value()), plf::hive<int>&>);
 
-    // Verify distinct() (PK) returns std::vector<int>
+    // Verify distinct() (PK) returns plf::hive<int>
     auto ids_result = queryset.distinct().select();
-    static_assert(std::is_same_v<decltype(ids_result.value()), std::vector<int>&>);
+    static_assert(std::is_same_v<decltype(ids_result.value()), plf::hive<int>&>);
 }
 
 // ==================== Multi-Field DISTINCT Tests ====================

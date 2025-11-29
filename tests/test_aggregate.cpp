@@ -429,9 +429,11 @@ TEST_F(AggregateTest, Integration_AfterDelete) {
     auto people = qs->select();
     ASSERT_TRUE(people.has_value());
 
-    auto delete_result = qs->remove(people.value()[0]);
+    auto it = people.value().begin();
+    auto delete_result = qs->remove(*it);
     ASSERT_TRUE(delete_result.has_value());
-    delete_result = qs->remove(people.value()[1]);
+    ++it;
+    delete_result = qs->remove(*it);
     ASSERT_TRUE(delete_result.has_value());
 
     // COUNT should now be 3
