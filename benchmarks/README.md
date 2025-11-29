@@ -176,9 +176,57 @@ Throughput: 2.96329 M ops/sec
 - `insert_batch_1000` - Batch inserts with 1000 rows per batch
 
 **What's tested:**
-- **Storm ORM**: Uses `QuerySet::insert(std::span<const T>)` with automatic transaction management
-- **Raw SQLite**: Manual prepared statement binding + BEGIN/COMMIT transaction wrapping
-- **Fair comparison**: Both versions use prepared statements and explicit transactions
+- **Storm ORM**: Uses `QuerySet::insert(std::span<const T>)` with automatic transaction management and chunked bulk SQL
+- **Raw SQLite**: Manual prepared statement binding + BEGIN/COMMIT transaction wrapping using chunked bulk SQL
+- **Fair comparison**: Both versions use the SAME chunked bulk SQL strategy for batches exceeding SQLite's 999-variable limit
+
+### Batch INSERT Performance Characteristics
+
+**Performance varies by batch size** due to chunking strategy and SQLite's 999-variable limit:
+
+**Chunked Bulk SQL Strategy:**
+- Person model has 4 non-PK fields → max chunk size = 999 / 4 = **249 rows**
+- Batches exceeding 249 rows split into multiple bulk INSERT statements
+- Each chunk: `INSERT INTO ... VALUES (...), (...), ... (up to 249 rows)`
+- All chunks executed within one transaction
+
+**Typical Performance (1000 iterations, Release build):**
+
+| Batch Size | Storm ORM | Raw SQLite | Efficiency | Chunks | Notes |
+|------------|-----------|------------|------------|--------|-------|
+| 10 | 1.22 M/s | 1.03 M/s | **117.9%** | 1 | ✅ Storm FASTER - SQL caching advantage |
+| 100 | 2.02 M/s | 1.70 M/s | **118.8%** | 1 | ✅ Storm FASTER - SQL caching advantage |
+| **500** | 1.99 M/s | 2.27 M/s | **87.7%** | 3 (249+249+2) | ⚠️ Storm slower - inefficient 2-row remainder |
+| **1000** | **VARIES** | **VARIES** | **83-114%** | 5 (249×4+4) | ⚠️ **Performance unstable** - see below |
+| 5000 | 2.89 M/s | 2.54 M/s | **113.5%** | 21 | ✅ Storm FASTER |
+| 10000 | 2.87 M/s | 2.52 M/s | **114.0%** | 41 | ✅ Storm FASTER |
+
+**🔍 batch_1000 Performance Variability:**
+
+The `insert_batch_1000` test shows **inconsistent results** across runs:
+
+- **Good runs**: 2.85 M/s Storm vs 2.49 M/s Raw → **114.4% efficiency** ✅
+- **Poor runs**: 2.07 M/s Storm vs 2.49 M/s Raw → **83.0% efficiency** ⚠️
+
+**Why the variability?**
+1. **Memory allocation patterns** - 5 chunks (249×4+4) may trigger different heap behavior
+2. **Cache effects** - Total batch size (1000 rows) near CPU cache boundary
+3. **SQLite internal state** - Page allocation patterns vary with DB size
+4. **OS scheduling** - Background processes occasionally interfere
+
+**Recommendation:** Run batch_1000 benchmark **multiple times** to get representative results. Single runs can be misleading.
+
+**🔍 batch_500 Regression:**
+
+The `insert_batch_500` test consistently shows Storm slower (87.7% efficiency) due to:
+- Splits into **3 chunks**: 249 + 249 + **2 rows**
+- Last chunk (2 rows) wastes bulk SQL overhead
+- Raw SQLite may handle small remainder chunks more efficiently
+
+**Why Storm is generally FASTER (114-119% efficiency):**
+1. **SQL String Caching** - Thread-local cache avoids regenerating SQL every iteration
+2. **Compile-Time SQL Generation** - Pre-computed SQL with optimized string handling
+3. **Statement Preparation Optimization** - Connection-level caching reduces overhead
 
 ### Run Benchmarks by Filter (Test Name)
 

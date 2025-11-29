@@ -82,28 +82,27 @@ public:
     }
 };
 
-// Batch INSERT benchmark
+// Batch INSERT benchmark - REALISTIC pattern
+// Inserts BatchSize records in ONE call, repeated N times for averaging
 template<typename Model, int BatchSize = 100>
 class InsertBatchBenchmark {
     QuerySet<Model> qs_;
-    std::vector<Model> all_data_;
+    std::vector<Model> batch_data_;  // Single batch to insert repeatedly
 
 public:
     void print_info() const {
-        std::cout << "Operation: INSERT (batch, " << BatchSize << " rows per batch)\n";
+        std::cout << "Operation: INSERT (batch, " << BatchSize << " rows per insert)\n";
     }
 
     // Prepare data BEFORE timing starts
     void prepare(int iterations) {
-        // Calculate total records to insert
-        int total_records = iterations * BatchSize;
+        // Prepare ONE batch of BatchSize records
+        // This will be inserted 'iterations' times with DB cleanup between iterations
+        batch_data_.clear();
+        batch_data_.reserve(BatchSize);
 
-        // Prepare ALL data upfront
-        all_data_.clear();
-        all_data_.reserve(total_records);
-
-        for (int i = 0; i < total_records; i++) {
-            all_data_.push_back(Model{
+        for (int i = 0; i < BatchSize; i++) {
+            batch_data_.push_back(Model{
                 .id = 0,  // Auto-increment
                 .name = "BatchPerson",
                 .age = 25 + (i % 45),
@@ -116,20 +115,21 @@ public:
     int execute(int iterations) {
         int total_inserts = 0;
 
-        // Execute batch inserts by slicing the pre-prepared vector
+        // REALISTIC: Insert the FULL batch once per iteration
+        // This tests: "How fast is ONE bulk insert of BatchSize records?"
+        // repeated N times for statistical averaging
+        //
+        // Note: We don't delete between iterations - the DB grows naturally
+        // This is realistic since users typically insert into growing databases
         for (int i = 0; i < iterations; i++) {
-            size_t start_idx = i * BatchSize;
-            size_t end_idx = std::min(start_idx + BatchSize, all_data_.size());
-            std::span<const Model> batch(all_data_.data() + start_idx, end_idx - start_idx);
-
-            qs_.insert(batch);
-            total_inserts += batch.size();
+            qs_.insert(batch_data_);  // Insert all BatchSize records at once
+            total_inserts += batch_data_.size();
         }
 
         return total_inserts;
     }
 
-    // Raw SQLite batch execution for comparison
+    // Raw SQLite batch execution for comparison - USES SAME CHUNKED BULK SQL STRATEGY AS STORM ORM
     int execute_raw(int iterations) {
         auto& conn = QuerySet<Model>::get_default_connection();
         sqlite3* db = conn->get();
@@ -137,50 +137,62 @@ public:
 
         int total_inserts = 0;
 
-        // Prepare statement once (fair comparison - Storm also uses prepared statements)
-        sqlite3_stmt* stmt = nullptr;
-        const char* sql = "INSERT INTO Person (id, name, age, is_active, salary) VALUES (NULL, ?, ?, ?, ?)";
+        // Calculate max chunk size based on SQLite's 999 variable limit
+        // Person has 4 non-PK fields (name, age, is_active, salary)
+        constexpr size_t fields_per_row = 4;
+        constexpr size_t max_chunk_size = 999 / fields_per_row;  // 249 rows per chunk
 
-        if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-            return 0;
-        }
-
-        // Execute batch inserts by slicing the pre-prepared data
+        // REALISTIC: Insert BatchSize records per iteration using chunked bulk SQL
         for (int iter = 0; iter < iterations; iter++) {
-            size_t start_idx = iter * BatchSize;
-            size_t end_idx = std::min(start_idx + BatchSize, all_data_.size());
-
-            // Begin transaction for batch
+            // Begin transaction for this batch
             sqlite3_exec(db, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
 
-            // Insert BatchSize rows from the prepared data
-            for (size_t i = start_idx; i < end_idx; i++) {
-                const auto& person = all_data_[i];
+            // Process in chunks (same as Storm ORM does)
+            size_t offset = 0;
+            while (offset < batch_data_.size()) {
+                size_t chunk_size = std::min(max_chunk_size, batch_data_.size() - offset);
 
-                // Bind parameters
-                sqlite3_bind_text(stmt, 1, person.name.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int(stmt, 2, person.age);
-                sqlite3_bind_int(stmt, 3, person.is_active ? 1 : 0);
-                sqlite3_bind_double(stmt, 4, person.salary);
-
-                // Execute
-                if (sqlite3_step(stmt) == SQLITE_DONE) {
-                    total_inserts++;
-
-                    // Get the inserted row ID (same as Storm ORM does)
-                    int64_t id = sqlite3_last_insert_rowid(db);
-                    (void)id;  // Suppress unused warning
+                // Build bulk INSERT SQL: INSERT INTO ... VALUES (...), (...), ...
+                std::string sql = "INSERT INTO Person (id, name, age, is_active, salary) VALUES ";
+                for (size_t i = 0; i < chunk_size; i++) {
+                    if (i > 0) sql += ", ";
+                    sql += "(NULL, ?, ?, ?, ?)";
                 }
 
-                // Reset statement for next iteration
-                sqlite3_reset(stmt);
+                // Prepare statement for this chunk
+                sqlite3_stmt* stmt = nullptr;
+                if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+                    sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
+                    return total_inserts;
+                }
+
+                // Bind all parameters for this chunk
+                int param_index = 1;
+                for (size_t i = 0; i < chunk_size; i++) {
+                    const auto& person = batch_data_[offset + i];
+
+                    sqlite3_bind_text(stmt, param_index++, person.name.c_str(), -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_int(stmt, param_index++, person.age);
+                    sqlite3_bind_int(stmt, param_index++, person.is_active ? 1 : 0);
+                    sqlite3_bind_double(stmt, param_index++, person.salary);
+                }
+
+                // Execute bulk insert for this chunk
+                if (sqlite3_step(stmt) == SQLITE_DONE) {
+                    // Get the last inserted row ID (same as Storm ORM does)
+                    int64_t id = sqlite3_last_insert_rowid(db);
+                    (void)id;  // Suppress unused warning
+                    total_inserts += chunk_size;
+                }
+
+                sqlite3_finalize(stmt);
+                offset += chunk_size;
             }
 
             // Commit transaction
             sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr);
         }
 
-        sqlite3_finalize(stmt);
         return total_inserts;
     }
 };
