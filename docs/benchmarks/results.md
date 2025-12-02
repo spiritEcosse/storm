@@ -92,7 +92,7 @@ Impact of compile-time SQL generation and index sequence optimization:
 
 ## Running Benchmarks
 
-See [BENCHMARKS.md](../../BENCHMARKS.md) for comprehensive benchmarking guide.
+See [benchmarks/README.md](../../benchmarks/README.md) for comprehensive benchmarking guide.
 
 ### Quick Commands
 

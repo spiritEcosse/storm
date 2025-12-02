@@ -88,7 +88,7 @@ cmake --build --preset ninja-release
 ./build/release/benchmarks/bench_join --size=10000 --iterations=100
 ```
 
-See [BENCHMARKS.md](../../BENCHMARKS.md) for comprehensive benchmarking guide.
+See [benchmarks/README.md](../../benchmarks/README.md) for comprehensive benchmarking guide.
 
 ## Common Build Issues
 

@@ -31,7 +31,7 @@
 - DISTINCT queries
 - Batch operations
 
-See [BENCHMARKS.md](../../BENCHMARKS.md) for detailed benchmark documentation.
+See [benchmarks/README.md](../../benchmarks/README.md) for detailed benchmark documentation.
 
 ## Running Tests
 

@@ -126,4 +126,4 @@ python3 bench.py --joins --messages=10000  # Custom size
 ./build/release/benchmarks/bench_join --storm-join-1 --raw-join-1 --size=10000
 ```
 
-See [BENCHMARKS.md](../../BENCHMARKS.md) for comprehensive guide.
+See [benchmarks/README.md](../../benchmarks/README.md) for comprehensive guide.

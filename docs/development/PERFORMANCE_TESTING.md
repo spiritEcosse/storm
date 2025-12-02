@@ -151,4 +151,4 @@ void benchmark_storm_where() {
 ## See Also
 
 - [Adding Features](ADDING_FEATURES.md) - Development workflow
-- [Benchmarks](../../BENCHMARKS.md) - Current benchmark results
+- [Benchmarks](../../benchmarks/README.md) - Current benchmark results

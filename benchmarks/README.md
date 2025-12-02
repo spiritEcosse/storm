@@ -67,6 +67,8 @@ cmake --build --preset ninja-release
 
 **DO NOT use debug builds for benchmarking!**
 
+> **Note:** This is the new unified benchmark system. The old Python-based benchmark system (`bench.py`, `scripts/bench/`) has been deprecated. All benchmark functionality is now available through the `storm_bench` executable with compile-time dispatch and zero runtime overhead.
+
 ### Show Help
 
 ```bash
@@ -662,7 +664,7 @@ struct Person {
 
 ## 📚 Related Documentation
 
-- **Main benchmark guide:** [../BENCHMARKS.md](../BENCHMARKS.md)
+- **Main benchmark guide:** [README.md](README.md)
 - **Performance guidelines:** [../docs/development/performance-guidelines.md](../docs/development/performance-guidelines.md)
 - **Storm ORM architecture:** [../docs/architecture/](../docs/architecture/)
 

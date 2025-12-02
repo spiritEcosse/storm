@@ -5,7 +5,7 @@ Welcome to Storm ORM - a modern C++26 ORM library for SQLite using cutting-edge 
 ## Quick Links
 
 - **[Main Project Guide (CLAUDE.md)](../CLAUDE.md)** - Quick start and common tasks
-- **[Benchmarks](../BENCHMARKS.md)** - Performance comparison results
+- **[Benchmarks](../benchmarks/README.md)** - Unified benchmark system documentation
 
 ## Features
 

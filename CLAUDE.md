@@ -72,9 +72,8 @@ Storm is a modern C++26 ORM library for SQLite using cutting-edge C++26 reflecti
    cmake --build --preset ninja-release
 
    # 3. RUN BENCHMARKS (for affected code paths)
-   ./build/release/benchmarks/bench_join --size=10000 --all
-   ./build/release/benchmarks/bench_where --benchmark_min_time=2s
    ./build/release/benchmarks/storm_bench --filter=<test_name> --iterations=10000
+   ./build/release/benchmarks/storm_bench --filter=insert_batch --scale-test  # Test all batch sizes
 
    # 4. Compare with baseline - if ANY regression:
    git stash  # or git checkout -- <files>
@@ -127,10 +126,9 @@ Storm is a modern C++26 ORM library for SQLite using cutting-edge C++26 reflecti
    # Primary documentation
    CLAUDE.md                              # Project overview, rules, quick start
    README.md                              # User-facing main documentation
-   BENCHMARKS.md                          # Benchmark guide
 
    # Feature-specific READMEs
-   benchmarks/README.md                   # Benchmark system documentation
+   benchmarks/README.md                   # Unified benchmark system documentation
    docs/README.md                         # Documentation index
 
    # Architecture documentation
@@ -188,7 +186,6 @@ Storm is a modern C++26 ORM library for SQLite using cutting-edge C++26 reflecti
 
    **Example 2: Changing benchmark system**
    - Update `benchmarks/README.md` with new usage
-   - Update `BENCHMARKS.md` if user-facing changes
    - Update `CLAUDE.md` benchmark workflow if commands change
 
    **Example 3: Refactoring module structure**
@@ -254,16 +251,13 @@ cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
 
 # Run unified benchmark system
-./build/release/benchmarks/storm_bench                    # All tests
-./build/release/benchmarks/storm_bench --list             # List available tests
-./build/release/benchmarks/storm_bench --filter=insert    # Filter tests
-./build/release/benchmarks/storm_bench --iterations=10000 # Custom iterations
+./build/release/benchmarks/storm_bench                           # All tests
+./build/release/benchmarks/storm_bench --list                    # List available tests
+./build/release/benchmarks/storm_bench --filter=insert_batch_100 # Run specific test (exact match)
+./build/release/benchmarks/storm_bench --filter=insert_batch --scale-test  # Test performance degradation
+./build/release/benchmarks/storm_bench --iterations=10000        # Custom iterations
 
-# Legacy benchmarks (if available)
-./build/release/benchmarks/bench_join --size=10000 --all
-./build/release/benchmarks/bench_where --benchmark_min_time=2s
-
-# See BENCHMARKS.md for detailed guide
+# See benchmarks/README.md for detailed guide
 ```
 
 **Why Release-Only:**
@@ -550,7 +544,7 @@ See [Testing Strategy](docs/development/testing.md) for comprehensive guide.
 - **[docs/development/](docs/development/)** - Getting started, common tasks, testing, performance guidelines
 - **[docs/benchmarks/](docs/benchmarks/)** - Performance results, JOIN analysis, DISTINCT analysis
 - **[docs/reference/](docs/reference/)** - Field types, statement caching, compiler issues
-- **[BENCHMARKS.md](BENCHMARKS.md)** - Comprehensive benchmarking guide (user-facing)
+- **[benchmarks/README.md](benchmarks/README.md)** - Unified benchmark system documentation
 - **[rules.md](rules.md)** - General C++23/26 coding standards
 
 ## Core Concepts of QuerySet
