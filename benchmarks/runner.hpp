@@ -160,13 +160,8 @@ private:
 
     template<typename Model, auto& test>
     static void run_insert_operation(BenchmarkRunner& runner, int iterations) {
-        constexpr int batch_size = test.batch_size;
-
-        if constexpr (batch_size <= 1) {
-            runner.run_benchmark(test.test_name.c_str(), InsertBenchmark<Model>{}, iterations);
-        } else {
-            runner.run_benchmark(test.test_name.c_str(), InsertBatchBenchmark<Model, batch_size>{}, iterations);
-        }
+        runner.run_benchmark(test.test_name.c_str(),
+            InsertBenchmark<Model, test.batch_size>{}, iterations);
     }
 
     template<typename Model, auto& test>
@@ -193,14 +188,19 @@ public:
     // Template recursion to execute tests at compile time
     template<typename Model, size_t TestIndex, size_t TotalTests>
     struct TestExecutor {
-        static void execute(BenchmarkRunner& runner, int iterations, const std::string& filter = "") {
+        static void execute(BenchmarkRunner& runner, int iterations, const std::string& filter = "", bool scale_test = false) {
             constexpr auto& test = BENCHMARK_TESTS[TestIndex];
             constexpr std::string_view test_name = test.test_name.view();
             constexpr std::string_view operation = test.operation.view();
 
             // Check if test matches filter (runtime check, but minimal overhead)
+            // - Empty filter: run all tests
+            // - scale_test=true: substring match (e.g., "insert_batch" matches "insert_batch_100")
+            // - scale_test=false: exact match (e.g., "insert_batch_100" only matches "insert_batch_100")
+            std::string test_name_str(test_name.data(), test_name.size());
             bool should_run = filter.empty() ||
-                             std::string(test_name.data(), test_name.size()).find(filter) != std::string::npos;
+                             (scale_test ? (test_name_str.find(filter) != std::string::npos)
+                                         : (test_name_str == filter));
 
             if (should_run) {
                 // Dispatch to handler - still compile-time, just cleaner
@@ -217,7 +217,7 @@ public:
 
             // Recurse to next test
             if constexpr (TestIndex + 1 < TotalTests) {
-                TestExecutor<Model, TestIndex + 1, TotalTests>::execute(runner, iterations, filter);
+                TestExecutor<Model, TestIndex + 1, TotalTests>::execute(runner, iterations, filter, scale_test);
             }
         }
     };
@@ -241,14 +241,15 @@ public:
 
     // Entry point for filtered test execution
     template<typename Model>
-    void run_filtered(const std::string& filter, int iterations = 1000) {
+    void run_filtered(const std::string& filter, int iterations = 1000, bool scale_test = false) {
         std::cout << "=== Running Filtered Benchmark Tests ===\n";
-        std::cout << "Filter: \"" << filter << "\"\n";
+        std::cout << "Filter: \"" << filter << "\" (";
+        std::cout << (scale_test ? "substring match - scale testing mode" : "exact match") << ")\n";
         std::cout << "Iterations per test: " << iterations << "\n";
         std::cout << "Using compile-time dispatch with runtime filtering\n\n";
 
         // Start template recursion with filter
-        TestExecutor<Model, 0, BENCHMARK_TESTS.size()>::execute(*this, iterations, filter);
+        TestExecutor<Model, 0, BENCHMARK_TESTS.size()>::execute(*this, iterations, filter, scale_test);
 
         std::cout << "\n✅ Filtered tests completed!\n";
     }

@@ -12,10 +12,11 @@ cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
 
 # Run unified benchmark system
-./build/release/benchmarks/storm_bench                    # All tests
-./build/release/benchmarks/storm_bench --list             # List available tests
-./build/release/benchmarks/storm_bench --filter=where     # Filter by operation
-./build/release/benchmarks/storm_bench --iterations=10000 # Custom iterations
+./build/release/benchmarks/storm_bench                           # All tests
+./build/release/benchmarks/storm_bench --list                    # List available tests
+./build/release/benchmarks/storm_bench --filter=insert_batch_100 # Run specific test (exact match)
+./build/release/benchmarks/storm_bench --filter=insert_batch --scale-test  # Test performance degradation
+./build/release/benchmarks/storm_bench --iterations=10000        # Custom iterations
 
 # See benchmarks/README.md for detailed unified benchmark documentation
 ```

@@ -87,13 +87,18 @@ struct BenchmarkTest {
 consteval auto load_benchmark_tests();
 
 // Helper function to get maximum dataset_size from filtered tests (runtime)
-constexpr int get_filtered_dataset_size(const auto& tests, const std::string& filter) {
+constexpr int get_filtered_dataset_size(const auto& tests, const std::string& filter, bool scale_test) {
     int max_size = 0;
     for (const auto& test : tests) {
-        // If filter is empty, consider all tests
-        // If filter is not empty, only consider tests that match
+        std::string test_name_str(test.test_name.view());
+
+        // Match logic:
+        // - Empty filter: consider all tests
+        // - scale_test=true: substring match (e.g., "insert_batch" matches "insert_batch_100")
+        // - scale_test=false: exact match (e.g., "insert_batch_100" only matches "insert_batch_100")
         bool matches = filter.empty() ||
-                      std::string(test.test_name.view()).find(filter) != std::string::npos;
+                      (scale_test ? (test_name_str.find(filter) != std::string::npos)
+                                  : (test_name_str == filter));
 
         if (matches && test.dataset_size > max_size) {
             max_size = test.dataset_size;

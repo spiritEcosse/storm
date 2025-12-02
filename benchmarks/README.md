@@ -80,14 +80,16 @@ Storm ORM Benchmark System
 Usage: ./build/release/benchmarks/storm_bench [options]
 
 Options:
-  --filter=<pattern>      Run only tests matching pattern (substring match)
+  --filter=<pattern>      Run only tests with EXACT name match
+  --scale-test            Test performance with increasing sizes (substring match)
   --iterations=<n>        Number of iterations per test (default: 1000)
   --list, -l              List all available tests
   --help, -h              Show this help message
 
 Examples:
-  ./build/release/benchmarks/storm_bench --filter=insert_single
-  ./build/release/benchmarks/storm_bench --filter=where_int
+  ./build/release/benchmarks/storm_bench --filter=insert_batch_100                # Run only insert_batch_100
+  ./build/release/benchmarks/storm_bench --filter=insert_batch --scale-test       # Test degradation: 10,100,1000,10000...
+  ./build/release/benchmarks/storm_bench --filter=where_int --scale-test          # Run all where_int_* variants
   ./build/release/benchmarks/storm_bench --iterations=5000
   ./build/release/benchmarks/storm_bench --list
 ```
@@ -224,19 +226,31 @@ Throughput: 2.96329 M ops/sec
 
 ### Run Benchmarks by Filter (Test Name)
 
-**✅ IMPLEMENTED!** Filter tests by name using substring matching:
+**✅ IMPLEMENTED!** Filter tests by name with exact or substring matching:
 
 ```bash
-# Run only the insert_single test
-./build/release/benchmarks/storm_bench --filter="insert_single"
+# Exact match (default) - run ONLY tests with exact name match
+./build/release/benchmarks/storm_bench --filter=insert_batch_100
+# Runs only: insert_batch_100
 
-# Run all tests with "where_int" in the name
-./build/release/benchmarks/storm_bench --filter="where_int"
+# Scale test mode - test performance degradation with increasing sizes
+./build/release/benchmarks/storm_bench --filter=insert_batch --scale-test
+# Runs: insert_batch_10, insert_batch_100, insert_batch_500, insert_batch_1000, etc.
+
+# Test specific progression
+./build/release/benchmarks/storm_bench --filter=insert_batch_100 --scale-test
+# Runs: insert_batch_100, insert_batch_1000, insert_batch_10000, insert_batch_100000
+
+# Run all WHERE tests with "where_int" in the name
+./build/release/benchmarks/storm_bench --filter=where_int --scale-test
 # Runs: where_int_comparison_gt, where_int_less_than
-
-# Run all WHERE tests
-./build/release/benchmarks/storm_bench --filter="where"
 ```
+
+**Filter Modes:**
+- **Default (exact match)**: `--filter=<name>` runs only the test with that exact name
+- **Scale test mode**: `--filter=<pattern> --scale-test` uses substring matching to run all tests containing the pattern
+  - Perfect for testing performance degradation as batch sizes increase
+  - Example: `--filter=insert_batch --scale-test` runs all batch insert benchmarks
 
 **Output (with colors and comparison!):**
 ```
@@ -291,14 +305,14 @@ Efficiency: 144.0% (FASTER than raw SQLite)
 
 ### Run Benchmarks by Category
 
-**Current Status:** Specific category filtering is not yet implemented, but you can use `--filter` to match category names in test names:
+**Current Status:** Specific category filtering is not yet implemented, but you can use `--filter` with `--scale-test` to match category names in test names:
 
 ```bash
 # Filter WHERE tests (matches test names containing "where")
-./build/release/benchmarks/storm_bench --filter="where"
+./build/release/benchmarks/storm_bench --filter=where --scale-test
 
 # Filter INSERT tests (matches test names containing "insert")
-./build/release/benchmarks/storm_bench --filter="insert"
+./build/release/benchmarks/storm_bench --filter=insert --scale-test
 ```
 
 ## 🔧 How It Works

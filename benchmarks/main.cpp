@@ -44,6 +44,7 @@ int main(int argc, char* argv[]) {
         std::string filter;
         int iterations = 1000;
         bool list_tests = false;
+        bool scale_test = false;  // Scale test mode (test performance degradation with increasing sizes)
 
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
@@ -53,17 +54,21 @@ int main(int argc, char* argv[]) {
                 iterations = std::stoi(arg.substr(13));
             } else if (arg == "--list" || arg == "-l") {
                 list_tests = true;
+            } else if (arg == "--scale-test") {
+                scale_test = true;
             } else if (arg == "--help" || arg == "-h") {
                 std::cout << "Storm ORM Benchmark System\n\n";
                 std::cout << "Usage: " << argv[0] << " [options]\n\n";
                 std::cout << "Options:\n";
-                std::cout << "  --filter=<pattern>      Run only tests matching pattern (substring match)\n";
+                std::cout << "  --filter=<pattern>      Run only tests with EXACT name match\n";
+                std::cout << "  --scale-test            Test performance with increasing sizes (substring match)\n";
                 std::cout << "  --iterations=<n>        Number of iterations per test (default: 1000)\n";
                 std::cout << "  --list, -l              List all available tests\n";
                 std::cout << "  --help, -h              Show this help message\n\n";
                 std::cout << "Examples:\n";
-                std::cout << "  " << argv[0] << " --filter=insert_single\n";
-                std::cout << "  " << argv[0] << " --filter=where_int\n";
+                std::cout << "  " << argv[0] << " --filter=insert_batch_100                # Run only insert_batch_100\n";
+                std::cout << "  " << argv[0] << " --filter=insert_batch --scale-test       # Test degradation: 10,100,1000,10000...\n";
+                std::cout << "  " << argv[0] << " --filter=where_int --scale-test          # Run all where_int_* variants\n";
                 std::cout << "  " << argv[0] << " --iterations=5000\n";
                 std::cout << "  " << argv[0] << " --list\n";
                 return 0;
@@ -102,7 +107,7 @@ int main(int argc, char* argv[]) {
 
         // Determine required dataset size based on filter
         // Use runtime filter-aware calculation to avoid inserting unnecessary data
-        int required_dataset_size = get_filtered_dataset_size(BENCHMARK_TESTS, filter);
+        int required_dataset_size = get_filtered_dataset_size(BENCHMARK_TESTS, filter, scale_test);
 
         // Insert test data only if required (skip if dataset_size is 0)
         if (required_dataset_size > 0) {
@@ -132,7 +137,7 @@ int main(int argc, char* argv[]) {
         if (filter.empty()) {
             runner.run_all<Person>(iterations);
         } else {
-            runner.run_filtered<Person>(filter, iterations);
+            runner.run_filtered<Person>(filter, iterations, scale_test);
         }
 
         std::cout << "\n=== SUCCESS ===\n";
