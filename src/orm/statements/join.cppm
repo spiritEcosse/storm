@@ -377,6 +377,26 @@ export namespace storm::orm::statements {
             (extract_fk_at<Is>(stmt, obj), ...);
         }
 
+        // FIX: Initialize all FK fields to default values before extraction
+        // This ensures non-JOINed FK fields have proper default values instead of garbage
+        template <size_t MemberIdx>
+        __attribute__((always_inline)) static inline void
+        init_fk_field_at(T& obj) noexcept {
+            if constexpr (MemberIdx < Base::field_count_) {
+                constexpr auto member = Base::all_members_[MemberIdx];
+                if constexpr (Base::is_fk_field(member)) {
+                    using FieldType = std::remove_cvref_t<decltype(obj.[:member:])>;
+                    obj.[:member:] = FieldType{}; // Default-construct FK object
+                }
+            }
+        }
+
+        template <size_t... Is>
+        __attribute__((always_inline)) static inline void
+        init_all_fk_fields(T& obj, std::index_sequence<Is...>) noexcept {
+            (init_fk_field_at<Is>(obj), ...);
+        }
+
         __attribute__((hot)) __attribute__((flatten)) static void extract_joined_row(Statement* stmt, T& obj) noexcept {
 #ifndef NDEBUG
             size_t expected_cols = non_fk_field_count_;
@@ -387,6 +407,10 @@ export namespace storm::orm::statements {
             // Use raw SQLite API since Statement wrapper doesn't expose column_count()
             assert(sqlite3_column_count(stmt->handle()) == static_cast<int>(expected_cols) && "Column count mismatch");
 #endif
+
+            // FIX: Initialize ALL FK fields to defaults first
+            // JOINed FK fields will be overwritten, non-JOINed will have proper defaults
+            init_all_fk_fields(obj, typename Base::field_indices_t{});
 
             extract_t_fields(stmt, obj, typename Base::field_indices_t{});
             extract_all_fks(stmt, obj, std::make_index_sequence<fk_count_>{});

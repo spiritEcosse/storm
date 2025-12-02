@@ -71,7 +71,7 @@ public:
 
     // Common timing and reporting for all benchmarks
     template<typename BenchmarkClass>
-    void run_benchmark(const char* test_name, BenchmarkClass& bench, int iterations) {
+    void run_benchmark(const char* test_name, BenchmarkClass&& bench, int iterations) {
         std::cout << "\n" << Color::BOLD_CYAN << "=== " << test_name << " ===" << Color::RESET << "\n";
 
         bench.print_info();
@@ -155,50 +155,17 @@ private:
         constexpr int value = test.where.value_int;
         constexpr auto field_info = dispatch_field<Model>(field_name);
 
-        SelectBenchmark<Model, field_info, op_str, int> bench(value);
-        runner.run_benchmark(test.test_name.c_str(), bench, iterations);
+        runner.run_benchmark(test.test_name.c_str(), SelectBenchmark<Model, field_info, op_str, int>{value}, iterations);
     }
 
     template<typename Model, auto& test>
     static void run_insert_operation(BenchmarkRunner& runner, int iterations) {
         constexpr int batch_size = test.batch_size;
 
-        // Dispatch based on batch size at compile time
         if constexpr (batch_size <= 1) {
-            // Single insert
-            InsertBenchmark<Model> bench;
-            runner.run_benchmark(test.test_name.c_str(), bench, iterations);
-        } else if constexpr (batch_size == 10) {
-            InsertBatchBenchmark<Model, 10> bench;
-            runner.run_benchmark(test.test_name.c_str(), bench, iterations);
-        } else if constexpr (batch_size == 50) {
-            InsertBatchBenchmark<Model, 50> bench;
-            runner.run_benchmark(test.test_name.c_str(), bench, iterations);
-        } else if constexpr (batch_size == 100) {
-            InsertBatchBenchmark<Model, 100> bench;
-            runner.run_benchmark(test.test_name.c_str(), bench, iterations);
-        } else if constexpr (batch_size == 500) {
-            InsertBatchBenchmark<Model, 500> bench;
-            runner.run_benchmark(test.test_name.c_str(), bench, iterations);
-        } else if constexpr (batch_size == 1000) {
-            InsertBatchBenchmark<Model, 1000> bench;
-            runner.run_benchmark(test.test_name.c_str(), bench, iterations);
-        } else if constexpr (batch_size == 5000) {
-            InsertBatchBenchmark<Model, 5000> bench;
-            runner.run_benchmark(test.test_name.c_str(), bench, iterations);
-        } else if constexpr (batch_size == 10000) {
-            InsertBatchBenchmark<Model, 10000> bench;
-            runner.run_benchmark(test.test_name.c_str(), bench, iterations);
-        } else if constexpr (batch_size == 50000) {
-            InsertBatchBenchmark<Model, 50000> bench;
-            runner.run_benchmark(test.test_name.c_str(), bench, iterations);
-        } else if constexpr (batch_size == 100000) {
-            InsertBatchBenchmark<Model, 100000> bench;
-            runner.run_benchmark(test.test_name.c_str(), bench, iterations);
+            runner.run_benchmark(test.test_name.c_str(), InsertBenchmark<Model>{}, iterations);
         } else {
-            // Default to 100 for other values
-            InsertBatchBenchmark<Model, 100> bench;
-            runner.run_benchmark(test.test_name.c_str(), bench, iterations);
+            runner.run_benchmark(test.test_name.c_str(), InsertBatchBenchmark<Model, batch_size>{}, iterations);
         }
     }
 
@@ -209,8 +176,7 @@ private:
         constexpr int value = test.where.value_int;
         constexpr auto field_info = dispatch_field<Model>(field_name);
 
-        UpdateBenchmark<Model, field_info, op_str, int> bench(value);
-        runner.run_benchmark(test.test_name.c_str(), bench, iterations);
+        runner.run_benchmark(test.test_name.c_str(), UpdateBenchmark<Model, field_info, op_str, int>{value}, iterations);
     }
 
     template<typename Model, auto& test>
@@ -220,8 +186,7 @@ private:
         constexpr int value = test.where.value_int;
         constexpr auto field_info = dispatch_field<Model>(field_name);
 
-        DeleteBenchmark<Model, field_info, op_str, int> bench(value);
-        runner.run_benchmark(test.test_name.c_str(), bench, iterations);
+        runner.run_benchmark(test.test_name.c_str(), DeleteBenchmark<Model, field_info, op_str, int>{value}, iterations);
     }
 
 public:

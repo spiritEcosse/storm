@@ -216,12 +216,15 @@ export namespace storm::orm::statements {
 
                 // Handle FK fields - populate only the primary key
                 if constexpr (Base::is_fk_field(member)) {
+                    // FIX: Default-construct FK object first to ensure all fields are zero-initialized
+                    obj.[:member:] = FieldType{};
+
                     constexpr auto fk_pk_member = Base::template find_fk_primary_key<FieldType>();
                     using PKType                = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
 
                     // Extract PK value using shared utility
                     obj.[:member:].[:fk_pk_member:] = Base::template extract_column_value<PKType>(*stmt, Index);
-                    // Other FK fields remain default-initialized
+                    // Other FK fields are now properly default-initialized (0 for int, "" for string, etc.)
                 }
                 // All other types: use shared extraction utility from BaseStatement
                 else {
