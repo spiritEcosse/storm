@@ -18,6 +18,14 @@ class InsertBenchmark {
     QuerySet<Model> qs_;
     std::vector<Model> data_;
 
+    // Helper to build single INSERT with literal values
+    static inline std::string sql_insert(const Model& person) {
+        return "INSERT INTO Person (id, name, age, is_active, salary) VALUES (NULL, '" +
+            person.name + "', " + std::to_string(person.age) + ", " +
+            std::to_string(person.is_active ? 1 : 0) + ", " +
+            std::to_string(person.salary) + ")";
+    }
+
 public:
     void print_info() const {
         std::cout << "Operation: INSERT (single row)\n";
@@ -62,10 +70,7 @@ public:
             const auto& person = data_[i];
 
             // Build SQL string with literal values
-            std::string insert_sql = "INSERT INTO Person (id, name, age, is_active, salary) VALUES (NULL, '" +
-                person.name + "', " + std::to_string(person.age) + ", " +
-                std::to_string(person.is_active ? 1 : 0) + ", " +
-                std::to_string(person.salary) + ")";
+            std::string insert_sql = sql_insert(person);
 
             // Execute using sqlite3_exec (no prepared statements)
             int rc = sqlite3_exec(db, insert_sql.c_str(), nullptr, nullptr, nullptr);
@@ -88,6 +93,18 @@ template<typename Model, int BatchSize = 100>
 class InsertBatchBenchmark {
     QuerySet<Model> qs_;
     std::vector<Model> batch_data_;  // Single batch to insert repeatedly
+
+    // Helper to build bulk INSERT SQL with placeholders
+    static inline std::string sql_insert(size_t count) {
+        std::string sql = "INSERT INTO Person (id, name, age, is_active, salary) VALUES ";
+
+        for (size_t i = 0; i < count; i++) {
+            if (i > 0) sql += ", ";
+            sql += "(NULL, ?, ?, ?, ?)";
+        }
+
+        return sql;
+    }
 
 public:
     void print_info() const {
@@ -152,12 +169,8 @@ public:
             while (offset < batch_data_.size()) {
                 size_t chunk_size = std::min(max_chunk_size, batch_data_.size() - offset);
 
-                // Build bulk INSERT SQL: INSERT INTO ... VALUES (...), (...), ...
-                std::string sql = "INSERT INTO Person (id, name, age, is_active, salary) VALUES ";
-                for (size_t i = 0; i < chunk_size; i++) {
-                    if (i > 0) sql += ", ";
-                    sql += "(NULL, ?, ?, ?, ?)";
-                }
+                // Build bulk INSERT SQL
+                std::string sql = sql_insert(chunk_size);
 
                 // Prepare statement for this chunk
                 sqlite3_stmt* stmt = nullptr;
