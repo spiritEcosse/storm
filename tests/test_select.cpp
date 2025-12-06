@@ -194,11 +194,11 @@ TEST_F(SelectTest, SelectLargeDataset) {
     EXPECT_EQ(it->name, "SelectPerson1");
     EXPECT_EQ(it->age, 21);
 
-    auto it_50 = std::ranges::next(people.begin(), 50);  // 51st element (index 50)
+    auto it_50 = std::ranges::next(people.begin(), 50); // 51st element (index 50)
     EXPECT_EQ(it_50->name, "SelectPerson51");
     EXPECT_EQ(it_50->age, 71);
 
-    auto it_99 = std::ranges::next(people.begin(), 99);  // 100th element (index 99)
+    auto it_99 = std::ranges::next(people.begin(), 99); // 100th element (index 99)
     EXPECT_EQ(it_99->name, "SelectPerson100");
     EXPECT_EQ(it_99->age, 120);
 }

@@ -380,13 +380,12 @@ export namespace storm::orm::statements {
         // FIX: Initialize all FK fields to default values before extraction
         // This ensures non-JOINed FK fields have proper default values instead of garbage
         template <size_t MemberIdx>
-        __attribute__((always_inline)) static inline void
-        init_fk_field_at(T& obj) noexcept {
+        __attribute__((always_inline)) static inline void init_fk_field_at(T& obj) noexcept {
             if constexpr (MemberIdx < Base::field_count_) {
                 constexpr auto member = Base::all_members_[MemberIdx];
                 if constexpr (Base::is_fk_field(member)) {
                     using FieldType = std::remove_cvref_t<decltype(obj.[:member:])>;
-                    obj.[:member:] = FieldType{}; // Default-construct FK object
+                    obj.[:member:]  = FieldType{}; // Default-construct FK object
                 }
             }
         }

@@ -102,7 +102,7 @@ TEST_F(OrderByTest, SingleFieldExplicitAsc) {
 
     // Verify ascending order
     auto prev_it = people.begin();
-    auto it = std::ranges::next(prev_it);
+    auto it      = std::ranges::next(prev_it);
     for (; it != people.end(); ++prev_it, ++it) {
         EXPECT_LE(prev_it->age, it->age);
     }
@@ -387,7 +387,7 @@ TEST_F(OrderByTest, ChainedWithMultipleClauses) {
 
     // Verify ordering maintained with all clauses
     auto prev_it = people.begin();
-    auto it = std::ranges::next(prev_it);
+    auto it      = std::ranges::next(prev_it);
     for (; it != people.end(); ++prev_it, ++it) {
         if (prev_it->age == it->age) {
             EXPECT_LE(prev_it->name, it->name);

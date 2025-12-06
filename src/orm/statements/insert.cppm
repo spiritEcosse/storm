@@ -153,7 +153,7 @@ export namespace storm::orm::statements {
 
             // Check cache first
             if (const auto* cached = cache.find(count)) {
-                return *cached;  // Return by reference - no copy
+                return *cached; // Return by reference - no copy
             }
 
             // Build optimized SQL with pre-allocation
@@ -182,7 +182,7 @@ export namespace storm::orm::statements {
 
             // Cache the result and return reference to it
             cache.insert(count, std::move(sql));
-            return *cache.find(count);  // Guaranteed to exist after insert
+            return *cache.find(count); // Guaranteed to exist after insert
         }
 
       public:
@@ -306,7 +306,7 @@ export namespace storm::orm::statements {
                 auto chunk = objects.subspan(offset, chunk_size);
 
                 // Execute bulk SQL for this chunk WITHOUT transaction (outer function handles it)
-                const auto& sql = get_bulk_insert_sql(chunk.size());  // Use reference to avoid copy
+                const auto& sql = get_bulk_insert_sql(chunk.size()); // Use reference to avoid copy
 
                 // Use prepare_cached to reuse prepared statements across chunks
                 auto chunk_result = conn_->prepare_cached(sql).and_then(

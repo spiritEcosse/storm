@@ -68,12 +68,12 @@ TEST_F(SelectLargeTest, SelectMoreThan10KRows) {
     EXPECT_EQ(it->value, 10);
     EXPECT_EQ(it->name, "Record_1");
 
-    auto it_10k = std::ranges::next(retrieved.begin(), 9999);  // 10000th element
-    EXPECT_EQ(it_10k->value, 100000); // 10K boundary
+    auto it_10k = std::ranges::next(retrieved.begin(), 9999); // 10000th element
+    EXPECT_EQ(it_10k->value, 100000);                         // 10K boundary
     EXPECT_EQ(it_10k->name, "Record_10000");
 
-    auto it_20k = std::ranges::next(retrieved.begin(), 19999);  // 20000th element
-    EXPECT_EQ(it_20k->value, 200000); // 20K boundary
+    auto it_20k = std::ranges::next(retrieved.begin(), 19999); // 20000th element
+    EXPECT_EQ(it_20k->value, 200000);                          // 20K boundary
     EXPECT_EQ(it_20k->name, "Record_20000");
 
     auto last_it = std::ranges::next(retrieved.begin(), RECORD_COUNT - 1);
