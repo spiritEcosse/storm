@@ -20,4 +20,8 @@ endfunction()
 # Loads tests from JSON at compile time, zero runtime overhead
 add_storm_benchmark(storm_bench "main.cpp")
 
+# Profiling tool for detailed INSERT performance analysis
+add_storm_benchmark(profile_insert "profile_insert.cpp")
+
 message(STATUS "Benchmark executable: storm_bench")
+message(STATUS "Profiling executable: profile_insert")

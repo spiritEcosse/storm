@@ -146,13 +146,14 @@ export namespace storm::orm::statements {
         }
 
         // Generate bulk INSERT SQL with multiple value sets (with caching)
-        static std::string get_bulk_insert_sql(size_t count) {
+        // Returns const reference to avoid expensive string copy
+        static const std::string& get_bulk_insert_sql(size_t count) {
             // Thread-local cache for common batch sizes
             static thread_local BulkSQLCache cache;
 
             // Check cache first
             if (const auto* cached = cache.find(count)) {
-                return *cached;
+                return *cached;  // Return by reference - no copy
             }
 
             // Build optimized SQL with pre-allocation
@@ -179,10 +180,9 @@ export namespace storm::orm::statements {
                 sql += value_template;
             }
 
-            // Cache the result for future use
-            cache.insert(count, sql);
-
-            return sql;
+            // Cache the result and return reference to it
+            cache.insert(count, std::move(sql));
+            return *cache.find(count);  // Guaranteed to exist after insert
         }
 
       public:
@@ -256,70 +256,36 @@ export namespace storm::orm::statements {
         }
 
         // Execute bulk INSERT with multiple VALUES clauses
+        // NOTE: No transaction wrapper needed - single INSERT statement is already atomic
         [[nodiscard]] __attribute__((hot)) auto execute_bulk(std::span<const T> objects) noexcept
                 -> std::expected<std::vector<int64_t>, Error> {
-            const auto sql = get_bulk_insert_sql(objects.size());
+            const auto& sql = get_bulk_insert_sql(objects.size());
 
-            return Base::template execute_with_transaction<ConnType>(
-                    *conn_,
-                    Base::should_use_transaction(objects),
-                    [this, &sql, objects]() -> std::expected<std::vector<int64_t>, Error> {
-                        return conn_->prepare(sql).and_then(
-                                [this, objects](Statement stmt) -> std::expected<std::vector<int64_t>, Error> {
-                                    return Base::template bind_non_pk_objects_bulk_impl<ConnType, Statement>(
-                                                   stmt, objects, typename Base::field_indices_t()
-                                    )
-                                            .and_then([&stmt]() { return stmt.execute(); })
-                                            .transform([this, objects]() {
-                                                // Get the last inserted row ID
-                                                // For bulk INSERT with multiple VALUES, last_insert_rowid() returns the
-                                                // ID of the LAST row We need to calculate the first ID by subtracting
-                                                // the count
-                                                int64_t last_id  = conn_->last_insert_rowid();
-                                                int64_t first_id = last_id - static_cast<int64_t>(objects.size()) + 1;
+            // Use prepare_cached to reuse prepared statements across iterations
+            return conn_->prepare_cached(sql).and_then(
+                    [this, objects](Statement* stmt) -> std::expected<std::vector<int64_t>, Error> {
+                        return Base::template bind_non_pk_objects_bulk_impl<ConnType, Statement>(
+                                       *stmt, objects, typename Base::field_indices_t()
+                        )
+                                .and_then([stmt]() { return stmt->execute(); })
+                                .transform([this, objects]() {
+                                    // Get the last inserted row ID
+                                    // For bulk INSERT with multiple VALUES, last_insert_rowid() returns the
+                                    // ID of the LAST row We need to calculate the first ID by subtracting
+                                    // the count
+                                    int64_t last_id  = conn_->last_insert_rowid();
+                                    int64_t first_id = last_id - static_cast<int64_t>(objects.size()) + 1;
 
-                                                // Generate consecutive IDs for bulk insert
-                                                std::vector<int64_t> ids(objects.size());
-                                                for (size_t i = 0; i < objects.size(); ++i) {
-                                                    ids[i] = first_id + static_cast<int64_t>(i);
-                                                }
+                                    // Generate consecutive IDs for bulk insert
+                                    std::vector<int64_t> ids(objects.size());
+                                    for (size_t i = 0; i < objects.size(); ++i) {
+                                        ids[i] = first_id + static_cast<int64_t>(i);
+                                    }
 
-                                                return ids;
-                                            });
-                                }
-                        );
+                                    return ids;
+                                });
                     }
             );
-        }
-
-        // Execute individual inserts for large batches (with transaction)
-        [[nodiscard]] auto execute_individual_batch(std::span<const T> objects) noexcept
-                -> std::expected<std::vector<int64_t>, Error> {
-            std::vector<int64_t> ids;
-            ids.reserve(objects.size());
-
-            auto result = Base::template execute_with_statement<ConnType>(
-                    *conn_, get_insert_sql(), [this, objects, &ids](auto& stmt) -> std::expected<void, Error> {
-                        for (const auto& obj : objects) {
-                            // Monadic composition: reset → bind → execute
-                            if (auto result = Base::reset_bind_and_execute(
-                                        stmt, [this, &obj](auto& s) { return bind_all_fields(s, obj); }
-                                );
-                                !result) {
-                                return std::unexpected(result.error());
-                            }
-                            // Get the generated ID after each insert
-                            ids.push_back(conn_->last_insert_rowid());
-                        }
-                        return {};
-                    }
-            );
-
-            if (!result) {
-                return std::unexpected(result.error());
-            }
-
-            return ids;
         }
 
         // Execute CHUNKED bulk inserts for very large batches (WITHOUT transaction wrapper)
@@ -341,14 +307,15 @@ export namespace storm::orm::statements {
                 auto chunk = objects.subspan(offset, chunk_size);
 
                 // Execute bulk SQL for this chunk WITHOUT transaction (outer function handles it)
-                const auto sql = get_bulk_insert_sql(chunk.size());
+                const auto& sql = get_bulk_insert_sql(chunk.size());  // Use reference to avoid copy
 
-                auto chunk_result = conn_->prepare(sql).and_then(
-                        [this, chunk](Statement stmt) -> std::expected<std::vector<int64_t>, Error> {
+                // Use prepare_cached to reuse prepared statements across chunks
+                auto chunk_result = conn_->prepare_cached(sql).and_then(
+                        [this, chunk](Statement* stmt) -> std::expected<std::vector<int64_t>, Error> {
                             return Base::template bind_non_pk_objects_bulk_impl<ConnType, Statement>(
-                                           stmt, chunk, typename Base::field_indices_t()
+                                           *stmt, chunk, typename Base::field_indices_t()
                             )
-                                    .and_then([&stmt]() { return stmt.execute(); })
+                                    .and_then([stmt]() { return stmt->execute(); })
                                     .transform([this, chunk]() {
                                         // Get the last inserted row ID
                                         int64_t last_id  = conn_->last_insert_rowid();

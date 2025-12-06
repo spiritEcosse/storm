@@ -671,3 +671,103 @@ struct Person {
 ---
 
 **This is the future of Storm ORM benchmarking: Pure C++26 with compile-time dispatch!** 🚀
+
+## Profiling and Performance Debugging
+
+### Using timing.hpp for Detailed Profiling
+
+When you need to profile specific functions or code sections, use the `timing.hpp` header:
+
+**1. Add timing to your code:**
+```cpp
+// In src/orm/statements/insert.cppm (or any file you want to profile)
+#include "benchmarks/timing.hpp"  // Add at top
+
+auto execute_bulk(std::span<const T> objects) noexcept -> ... {
+    STORM_TRACE("execute_bulk");  // Times entire function
+    
+    const auto& sql = get_bulk_insert_sql(objects.size());
+    STORM_TRACE("get_bulk_insert_sql");  // Times this call
+    
+    return conn_->prepare_cached(sql).and_then([...] {
+        STORM_TRACE("prepare_cached");  // Times prepare
+        // ...
+    });
+}
+```
+
+**2. Build with timing enabled:**
+```bash
+# Configure with timing flag
+cd build/release
+cmake ../.. -GNinja -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_CXX_FLAGS="-DSTORM_ENABLE_TIMING_TRACE" \
+    -DENABLE_BENCH=ON
+
+# Build
+ninja storm_bench
+
+# Run benchmark - will show timing output
+./benchmarks/storm_bench --filter=insert_batch_100 --iterations=100
+```
+
+**3. Example output:**
+```
+[TRACE] execute_bulk                        : 45.234 μs
+[TRACE]   get_bulk_insert_sql               : 0.412 μs
+[TRACE]   prepare_cached                    : 35.891 μs
+[TRACE]   bind_objects                      : 6.543 μs
+[TRACE]   execute                           : 2.103 μs
+```
+
+**4. Remove timing after profiling:**
+```bash
+# Remove timing includes and STORM_TRACE calls
+# Rebuild without the flag for clean benchmarks
+cmake ../.. -GNinja -DCMAKE_BUILD_TYPE=Release -DENABLE_BENCH=ON
+ninja storm_bench
+```
+
+**Tips:**
+- Use descriptive labels for STORM_TRACE
+- Nest traces to understand call hierarchy
+- Compare timings before/after optimizations
+- Only enable timing when actively profiling (adds overhead)
+- Remember to rebuild without timing for final benchmarks
+
+
+### Choosing Between timing.hpp and timing_trace.hpp
+
+There are two timing utilities available:
+
+**timing.hpp** - Compile-time control (recommended for most cases)
+- **Pros**: Zero overhead when disabled (macros compile to no-op)
+- **Cons**: Requires rebuild to enable/disable
+- **Use when**: You want minimal overhead and don't mind rebuilding
+
+```cpp
+#include "benchmarks/timing.hpp"
+
+void my_function() {
+    STORM_TRACE("my_function");  // Only active if -DSTORM_ENABLE_TIMING_TRACE
+    // ...
+}
+```
+
+**timing_trace.hpp** - Runtime control
+- **Pros**: Can enable/disable without rebuilding
+- **Cons**: Small overhead even when disabled (bool check)
+- **Use when**: You want to toggle timing on/off during execution
+
+```cpp
+#include "benchmarks/timing_trace.hpp"
+
+void my_function() {
+    const bool ENABLE_TIMING_TRACE = true;  // Control at runtime
+    STORM_TRACE_TIMER("my_function");
+    // ...
+}
+```
+
+**Recommendation**: Use `timing.hpp` for most profiling work. It has zero overhead when disabled and is simpler to use.
+
