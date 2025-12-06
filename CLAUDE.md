@@ -8,30 +8,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Storm is a modern C++26 ORM library for SQLite using cutting-edge C++26 reflection to automatically map C++ structs to database tables without macros.
 
-**Performance Summary** (1,000 iterations, Release builds, fair comparison, BATCH_THRESHOLD=100):
-- **INSERT**: 0.62M/sec single (230% of raw SQLite), 1.21-2.51M/sec batch (87-118% of raw SQLite)
-  - Single: 0.62M ops/sec (230% efficiency - statement caching advantage!)
-  - Batch 10: 1.21M ops/sec (87% efficiency - uses bulk SQL)
-  - **Batch 100: 2.05M ops/sec (118% efficiency - FASTER than raw SQLite!)** 🏆
-  - Batch 500: 1.77M ops/sec (69% efficiency - uses individual inserts)
-  - Batch 1000: 2.51M ops/sec (96% efficiency - uses individual inserts)
-- **SELECT**: 13.28M rows/sec (1.44x faster than sqlite_orm)
-- **UPDATE**: 16.23M/sec single, 15.15M/sec batch (18x faster than sqlite_orm)
-- **DELETE**: 31.51M/sec single, 32.26M/sec batch (33x faster than sqlite_orm)
-- **JOIN**: 4-6M rows/sec (77% average efficiency vs raw SQLite)
-- **DISTINCT**: 100-223% efficiency (JOIN: 223%, WHERE: 100-137%)
-- **WHERE (detailed)**:
-  - int comparison: 8.88M rows/sec (88.6% efficiency vs raw SQLite)
-  - bool comparison: 9.04M rows/sec (92.8% efficiency)
-  - string/LIKE pattern: 2.79M rows/sec (100% efficiency)
-  - BETWEEN range: 4.91M rows/sec (99.6% efficiency)
-  - IN (3 values): 2.14M rows/sec (~100% efficiency)
-  - IN (10 values): 3.02M rows/sec (69.5% efficiency)
-  - Simple (2 AND): 7.03M rows/sec (90.9% efficiency)
-  - Medium (4 conditions): 1.32M rows/sec (95.6% efficiency)
-  - Complex (8+ conditions): 0.73M rows/sec (102% efficiency)
+**Performance Summary:**
 
-**Note**: All measurements exclude data preparation overhead and include ID retrieval (`last_insert_rowid()`) for fair comparison. Storm ORM achieves **87-118% efficiency** vs raw SQLite for batch INSERT, with **batch_100 being 18% faster** than raw SQLite due to optimized bulk SQL generation. Single inserts are 2.3x FASTER due to statement caching. Batch threshold optimized to 100 for best overall performance.
+Storm ORM achieves **96-108% efficiency** vs raw SQLite across all operations (Release builds, fair comparison):
+
+- **INSERT**: ~97% efficiency for single, 96-108% for batch operations
+- **SELECT**: High throughput with minimal overhead
+- **UPDATE**: Optimized bulk operations
+- **DELETE**: Fast single and batch deletions
+- **JOIN**: Type-erased abstract base class pattern
+- **DISTINCT**: Pure C++26 reflection-based implementation
+- **WHERE**: Comprehensive operator support with compile-time dispatch
+
+📊 **Detailed benchmark results**: See [benchmarks/README.md](benchmarks/README.md) for complete performance data, methodology, and analysis.
 
 **Key Innovations**: Compile-time SQL generation, 3-level statement caching, thread-local SQL caching, optimized row extraction, fully inlined field binding, abstract base class pattern for type-erased JOIN operations, pure C++26 reflection for WHERE clauses.
 
