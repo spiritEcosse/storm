@@ -78,6 +78,36 @@
     "batch_size": 100
   },
   {
+    "test_name": "insert_batch_248",
+    "test_category": "INSERT",
+    "description": "Batch INSERT - just under chunk boundary (248 rows, 1 chunk)",
+    "model": "Person",
+    "operation": "insert",
+    "iterations": 50,
+    "dataset_size": 0,
+    "batch_size": 248
+  },
+  {
+    "test_name": "insert_batch_249",
+    "test_category": "INSERT",
+    "description": "Batch INSERT - exactly at chunk boundary (249 rows, 1 chunk)",
+    "model": "Person",
+    "operation": "insert",
+    "iterations": 50,
+    "dataset_size": 0,
+    "batch_size": 249
+  },
+  {
+    "test_name": "insert_batch_250",
+    "test_category": "INSERT",
+    "description": "Batch INSERT - just over chunk boundary (250 rows, 2 chunks)",
+    "model": "Person",
+    "operation": "insert",
+    "iterations": 50,
+    "dataset_size": 0,
+    "batch_size": 250
+  },
+  {
     "test_name": "insert_batch_500",
     "test_category": "INSERT",
     "description": "Batch INSERT operation (500 rows per batch)",

@@ -8,6 +8,9 @@
 #include <chrono>
 #include <iomanip>
 #include <type_traits>
+#include <vector>
+#include <algorithm>
+#include <cmath>
 #include "schema.hpp"
 #include "parser.hpp"
 #include "operations/select.hpp"
@@ -16,6 +19,45 @@
 #include "operations/delete.hpp"
 
 namespace storm::benchmark {
+
+// Number of runs per benchmark for statistical accuracy
+constexpr int NUM_RUNS = 5;
+
+// Statistical helper functions
+inline double calculate_median(std::vector<double>& values) {
+    std::sort(values.begin(), values.end());
+    size_t n = values.size();
+    if (n == 0) return 0.0;
+    return (n % 2 == 0)
+        ? (values[n/2 - 1] + values[n/2]) / 2.0
+        : values[n/2];
+}
+
+inline double calculate_mean(const std::vector<double>& values) {
+    if (values.empty()) return 0.0;
+    double sum = 0.0;
+    for (double v : values) sum += v;
+    return sum / values.size();
+}
+
+inline double calculate_stddev(const std::vector<double>& values, double mean) {
+    if (values.size() < 2) return 0.0;
+    double sum_sq = 0.0;
+    for (double v : values) {
+        sum_sq += (v - mean) * (v - mean);
+    }
+    return std::sqrt(sum_sq / values.size());
+}
+
+inline double calculate_min(const std::vector<double>& values) {
+    if (values.empty()) return 0.0;
+    return *std::min_element(values.begin(), values.end());
+}
+
+inline double calculate_max(const std::vector<double>& values) {
+    if (values.empty()) return 0.0;
+    return *std::max_element(values.begin(), values.end());
+}
 
 // ANSI color codes for terminal output
 namespace Color {
@@ -69,7 +111,7 @@ public:
     template<typename T>
     struct has_prepare<T, std::void_t<decltype(std::declval<T>().prepare(int{}))>> : std::true_type {};
 
-    // Common timing and reporting for all benchmarks
+    // Common timing and reporting for all benchmarks (with statistical analysis)
     template<typename BenchmarkClass>
     void run_benchmark(const char* test_name, BenchmarkClass&& bench, int iterations) {
         std::cout << "\n" << Color::BOLD_CYAN << "=== " << test_name << " ===" << Color::RESET << "\n";
@@ -81,54 +123,83 @@ public:
             bench.prepare(iterations);
         }
 
-        // ===== Storm ORM Execution =====
-        auto start_storm = std::chrono::steady_clock::now();
-        int operations_storm = bench.execute(iterations);
-        auto end_storm = std::chrono::steady_clock::now();
+        // Collect throughput samples from multiple runs
+        std::vector<double> storm_throughputs;
+        std::vector<double> raw_throughputs;
+        storm_throughputs.reserve(NUM_RUNS);
+        raw_throughputs.reserve(NUM_RUNS);
 
-        auto duration_storm = std::chrono::duration_cast<std::chrono::nanoseconds>(end_storm - start_storm);
-        double duration_storm_us = duration_storm.count() / 1000.0;
-        double storm_ops_per_sec = (operations_storm / (duration_storm.count() / 1e9));
-        double storm_throughput = storm_ops_per_sec / 1e6;
+        int operations_storm = 0;
+        int operations_raw = 0;
 
-        // ===== Raw SQLite Execution =====
-        auto start_raw = std::chrono::steady_clock::now();
-        int operations_raw = bench.execute_raw(iterations);
-        auto end_raw = std::chrono::steady_clock::now();
+        for (int run = 0; run < NUM_RUNS; run++) {
+            // ===== Storm ORM Execution =====
+            auto start_storm = std::chrono::steady_clock::now();
+            operations_storm = bench.execute(iterations);
+            auto end_storm = std::chrono::steady_clock::now();
 
-        auto duration_raw = std::chrono::duration_cast<std::chrono::nanoseconds>(end_raw - start_raw);
-        double duration_raw_us = duration_raw.count() / 1000.0;
-        double raw_ops_per_sec = (operations_raw / (duration_raw.count() / 1e9));
-        double raw_throughput = raw_ops_per_sec / 1e6;
+            auto duration_storm = std::chrono::duration_cast<std::chrono::nanoseconds>(end_storm - start_storm);
+            double storm_ops_per_sec = (operations_storm / (duration_storm.count() / 1e9));
+            storm_throughputs.push_back(storm_ops_per_sec / 1e6);
 
-        // Calculate efficiency
-        double efficiency = (storm_throughput / raw_throughput) * 100.0;
+            // ===== Raw SQLite Execution =====
+            auto start_raw = std::chrono::steady_clock::now();
+            operations_raw = bench.execute_raw(iterations);
+            auto end_raw = std::chrono::steady_clock::now();
+
+            auto duration_raw = std::chrono::duration_cast<std::chrono::nanoseconds>(end_raw - start_raw);
+            double raw_ops_per_sec = (operations_raw / (duration_raw.count() / 1e9));
+            raw_throughputs.push_back(raw_ops_per_sec / 1e6);
+        }
+
+        // Calculate statistics for Storm ORM
+        double storm_median = calculate_median(storm_throughputs);
+        double storm_mean = calculate_mean(storm_throughputs);
+        double storm_stddev = calculate_stddev(storm_throughputs, storm_mean);
+        double storm_min = calculate_min(storm_throughputs);
+        double storm_max = calculate_max(storm_throughputs);
+
+        // Calculate statistics for Raw SQLite
+        double raw_median = calculate_median(raw_throughputs);
+        double raw_mean = calculate_mean(raw_throughputs);
+        double raw_stddev = calculate_stddev(raw_throughputs, raw_mean);
+        double raw_min = calculate_min(raw_throughputs);
+        double raw_max = calculate_max(raw_throughputs);
+
+        // Calculate efficiency based on median (most stable metric)
+        double efficiency = (storm_median / raw_median) * 100.0;
 
         // Format output with colors
-        std::cout << "Iterations: " << Color::YELLOW << iterations << Color::RESET << "\n";
-        std::cout << "\n";
+        std::cout << "Iterations: " << Color::YELLOW << iterations << Color::RESET;
+        std::cout << " | Runs: " << Color::YELLOW << NUM_RUNS << Color::RESET << "\n\n";
 
         // Storm ORM results
         std::cout << Color::BOLD << "Storm ORM:" << Color::RESET << "\n";
         std::cout << "  Operations: " << Color::YELLOW << operations_storm << Color::RESET << "\n";
-        std::cout << "  Duration: " << Color::MAGENTA << std::fixed << std::setprecision(2)
-                  << duration_storm_us << " μs" << Color::RESET << "\n";
 
-        const char* storm_color = storm_throughput >= 5.0 ? Color::BOLD_GREEN :
-                                  storm_throughput >= 1.0 ? Color::GREEN : Color::YELLOW;
-        std::cout << "  Throughput: " << storm_color << std::fixed << std::setprecision(2)
-                  << storm_throughput << " M ops/sec" << Color::RESET << "\n";
+        const char* storm_color = storm_median >= 5.0 ? Color::BOLD_GREEN :
+                                  storm_median >= 1.0 ? Color::GREEN : Color::YELLOW;
+        std::cout << "  Median:  " << storm_color << std::fixed << std::setprecision(2)
+                  << storm_median << " M ops/sec" << Color::RESET << "\n";
+        std::cout << "  Mean:    " << storm_color << std::fixed << std::setprecision(2)
+                  << storm_mean << " M ops/sec" << Color::RESET
+                  << " (±" << std::setprecision(2) << storm_stddev << ")\n";
+        std::cout << "  Range:   [" << std::setprecision(2) << storm_min
+                  << " - " << storm_max << "]\n";
 
         // Raw SQLite results
         std::cout << "\n" << Color::BOLD << "Raw SQLite:" << Color::RESET << "\n";
         std::cout << "  Operations: " << Color::YELLOW << operations_raw << Color::RESET << "\n";
-        std::cout << "  Duration: " << Color::MAGENTA << std::fixed << std::setprecision(2)
-                  << duration_raw_us << " μs" << Color::RESET << "\n";
 
-        const char* raw_color = raw_throughput >= 5.0 ? Color::BOLD_GREEN :
-                                raw_throughput >= 1.0 ? Color::GREEN : Color::YELLOW;
-        std::cout << "  Throughput: " << raw_color << std::fixed << std::setprecision(2)
-                  << raw_throughput << " M ops/sec" << Color::RESET << "\n";
+        const char* raw_color = raw_median >= 5.0 ? Color::BOLD_GREEN :
+                                raw_median >= 1.0 ? Color::GREEN : Color::YELLOW;
+        std::cout << "  Median:  " << raw_color << std::fixed << std::setprecision(2)
+                  << raw_median << " M ops/sec" << Color::RESET << "\n";
+        std::cout << "  Mean:    " << raw_color << std::fixed << std::setprecision(2)
+                  << raw_mean << " M ops/sec" << Color::RESET
+                  << " (±" << std::setprecision(2) << raw_stddev << ")\n";
+        std::cout << "  Range:   [" << std::setprecision(2) << raw_min
+                  << " - " << raw_max << "]\n";
 
         // Efficiency comparison
         std::cout << "\n" << Color::BOLD << "Efficiency: " << Color::RESET;

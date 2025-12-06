@@ -16,6 +16,7 @@
  */
 
 #include <iostream>
+#include <cstdio>
 #include <meta>
 
 import storm;
@@ -45,6 +46,8 @@ int main(int argc, char* argv[]) {
         int iterations = 1000;
         bool list_tests = false;
         bool scale_test = false;  // Scale test mode (test performance degradation with increasing sizes)
+        bool use_disk = false;    // Use disk-based database instead of in-memory
+        std::string db_path = ":memory:";
 
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
@@ -56,6 +59,12 @@ int main(int argc, char* argv[]) {
                 list_tests = true;
             } else if (arg == "--scale-test") {
                 scale_test = true;
+            } else if (arg == "--disk") {
+                use_disk = true;
+                db_path = "benchmark_test.db";
+            } else if (arg.find("--db=") == 0) {
+                db_path = arg.substr(5);
+                use_disk = (db_path != ":memory:");
             } else if (arg == "--help" || arg == "-h") {
                 std::cout << "Storm ORM Benchmark System\n\n";
                 std::cout << "Usage: " << argv[0] << " [options]\n\n";
@@ -63,6 +72,8 @@ int main(int argc, char* argv[]) {
                 std::cout << "  --filter=<pattern>      Run only tests with EXACT name match\n";
                 std::cout << "  --scale-test            Test performance with increasing sizes (substring match)\n";
                 std::cout << "  --iterations=<n>        Number of iterations per test (default: 1000)\n";
+                std::cout << "  --disk                  Use disk-based database (default: in-memory)\n";
+                std::cout << "  --db=<path>             Use specific database file path\n";
                 std::cout << "  --list, -l              List all available tests\n";
                 std::cout << "  --help, -h              Show this help message\n\n";
                 std::cout << "Examples:\n";
@@ -70,6 +81,8 @@ int main(int argc, char* argv[]) {
                 std::cout << "  " << argv[0] << " --filter=insert_batch --scale-test       # Test degradation: 10,100,1000,10000...\n";
                 std::cout << "  " << argv[0] << " --filter=where_int --scale-test          # Run all where_int_* variants\n";
                 std::cout << "  " << argv[0] << " --iterations=5000\n";
+                std::cout << "  " << argv[0] << " --disk                                   # Use disk-based database\n";
+                std::cout << "  " << argv[0] << " --db=/tmp/bench.db                       # Use specific database file\n";
                 std::cout << "  " << argv[0] << " --list\n";
                 return 0;
             }
@@ -82,8 +95,16 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 
-        // Set up in-memory database
-        auto result = QuerySet<Person>::set_default_connection(":memory:");
+        // Remove old db file if using disk (clean slate)
+        if (use_disk) {
+            std::remove(db_path.c_str());
+            std::cout << "📁 Using disk database: " << db_path << "\n";
+        } else {
+            std::cout << "💾 Using in-memory database\n";
+        }
+
+        // Set up database connection
+        auto result = QuerySet<Person>::set_default_connection(db_path);
         if (!result.has_value()) {
             std::cerr << "Failed to open database: " << result.error().message() << "\n";
             return 1;
@@ -146,6 +167,12 @@ int main(int argc, char* argv[]) {
         std::cout << "  - Each test has its own specialized function\n";
         std::cout << "  - Field names resolved at compile time\n";
         std::cout << "  - Zero runtime string dispatch overhead\n";
+
+        // Cleanup disk database file if used
+        if (use_disk) {
+            std::remove(db_path.c_str());
+            std::cout << "🧹 Cleaned up database file: " << db_path << "\n";
+        }
 
         return 0;
 

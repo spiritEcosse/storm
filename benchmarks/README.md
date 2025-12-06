@@ -85,6 +85,8 @@ Options:
   --filter=<pattern>      Run only tests with EXACT name match
   --scale-test            Test performance with increasing sizes (substring match)
   --iterations=<n>        Number of iterations per test (default: 1000)
+  --disk                  Use disk-based database (default: in-memory)
+  --db=<path>             Use specific database file path
   --list, -l              List all available tests
   --help, -h              Show this help message
 
@@ -93,6 +95,8 @@ Examples:
   ./build/release/benchmarks/storm_bench --filter=insert_batch --scale-test       # Test degradation: 10,100,1000,10000...
   ./build/release/benchmarks/storm_bench --filter=where_int --scale-test          # Run all where_int_* variants
   ./build/release/benchmarks/storm_bench --iterations=5000
+  ./build/release/benchmarks/storm_bench --disk                                   # Use disk-based database
+  ./build/release/benchmarks/storm_bench --db=/tmp/bench.db                       # Use specific database file
   ./build/release/benchmarks/storm_bench --list
 ```
 
@@ -194,6 +198,18 @@ Throughput: 2.96329 M ops/sec
 - Each chunk: `INSERT INTO ... VALUES (...), (...), ... (up to 249 rows)`
 - All chunks executed within one transaction
 - **Both Storm ORM and Raw SQLite use identical chunking strategy** for fair comparison
+
+**⚠️ Chunking Boundary Performance:**
+
+Tests reveal a performance cliff at the chunking boundary:
+
+| Batch Size | Chunks | Efficiency | Notes |
+|------------|--------|------------|-------|
+| 248 | 1 | **98.6%** | Just under boundary |
+| 249 | 1 | **96.7%** | Exactly at boundary |
+| 250 | 2 | **74.5%** | ⚠️ Just over boundary - 25% drop! |
+
+This is expected behavior due to the overhead of preparing and executing multiple SQL statements when crossing the chunk boundary. Consider batch sizes that align with chunk boundaries for optimal performance.
 
 **Single INSERT Performance (verified 2025-12-06, 20,000 iterations, Release build):**
 
@@ -508,6 +524,64 @@ The benchmark system uses **`std::chrono::steady_clock`** for timing, which prov
 - We only need accurate timing, not the full benchmarking framework
 - Simpler integration without external dependencies breaking the build
 - Custom colored output and Storm-specific reporting
+
+## 📈 Statistical Analysis
+
+Each benchmark runs **5 times** and reports statistical metrics:
+
+- **Median**: Most stable metric, less affected by outliers
+- **Mean**: Average throughput with standard deviation (±)
+- **Range**: [min - max] shows variance between runs
+
+**Example output:**
+```
+Storm ORM:
+  Operations: 100
+  Median:  4.21 M ops/sec
+  Mean:    4.18 M ops/sec (±0.15)
+  Range:   [4.01 - 4.35]
+
+Raw SQLite:
+  Operations: 100
+  Median:  4.15 M ops/sec
+  Mean:    4.12 M ops/sec (±0.12)
+  Range:   [3.98 - 4.28]
+
+Efficiency: 101.4% (FASTER than raw SQLite)
+```
+
+**Why 5 runs?**
+- Enough samples for median/stddev calculation
+- Catches variance from system noise
+- Not too slow for development iteration
+
+## 💾 In-Memory vs Disk Benchmarks
+
+By default, benchmarks use **in-memory SQLite** (`:memory:`) because:
+
+| Aspect | In-Memory (default) | Disk (`--disk`) |
+|--------|---------------------|-----------------|
+| **Speed** | Fastest | Slower (I/O bound) |
+| **Reproducibility** | High (no disk variability) | Lower (depends on I/O) |
+| **Isolation** | No leftover files | Creates temp file (auto-cleaned) |
+| **Use case** | Development, CI/CD | Production-realistic testing |
+
+**When to use `--disk`:**
+- Testing real-world performance with disk I/O
+- Benchmarking with fsync/journaling overhead
+- Comparing WAL vs other journal modes
+
+**Example:**
+```bash
+# In-memory benchmark (default, fast)
+./build/release/benchmarks/storm_bench --filter=insert_single
+
+# Disk-based benchmark (realistic I/O)
+./build/release/benchmarks/storm_bench --filter=insert_single --disk
+
+# Specific database file
+./build/release/benchmarks/storm_bench --filter=insert_single --db=/tmp/bench.db
+```
 
 ## 📊 Storm ORM vs Raw SQLite Comparison
 
