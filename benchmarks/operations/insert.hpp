@@ -1,12 +1,9 @@
 #pragma once
 
-/**
- * INSERT Benchmark - Single and batch row insertions
- */
-
 #include <sqlite3.h>
 #include <vector>
 #include <algorithm>
+#include <unordered_map>
 
 import storm;
 
@@ -17,15 +14,6 @@ class InsertBenchmark {
     QuerySet<Model> qs_;
     std::vector<Model> data_;
 
-    // Single-row SQL (literal values, no prepared statement)
-    static std::string sql_insert_single(const Model& person) {
-        return "INSERT INTO Person (id, name, age, is_active, salary) VALUES (NULL, '" +
-            person.name + "', " + std::to_string(person.age) + ", " +
-            std::to_string(person.is_active ? 1 : 0) + ", " +
-            std::to_string(person.salary) + ")";
-    }
-
-    // Batch SQL (placeholders)
     static std::string sql_insert_batch(size_t count) {
         std::string sql = "INSERT INTO Person (id, name, age, is_active, salary) VALUES ";
         for (size_t i = 0; i < count; i++) {
@@ -35,9 +23,30 @@ class InsertBenchmark {
         return sql;
     }
 
-    // Factory function for creating Model instances
     static Model create_model() {
         return Model{.id = 0, .name = "BenchmarkPerson", .age = 30, .is_active = true, .salary = 50000.0};
+    }
+
+    // Bind a range of models starting at parameter index `idx`
+    static void bind_rows(sqlite3_stmt* stmt, const Model* data, size_t count, int idx = 1) {
+        for (size_t i = 0; i < count; i++) {
+            const auto& p = data[i];
+            sqlite3_bind_text(stmt, idx++, p.name.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(stmt, idx++, p.age);
+            sqlite3_bind_int(stmt, idx++, p.is_active ? 1 : 0);
+            sqlite3_bind_double(stmt, idx++, p.salary);
+        }
+    }
+
+    // Execute statement, reset, return row count on success
+    static int step_and_reset(sqlite3_stmt* stmt, sqlite3* db, int rows) {
+        if (sqlite3_step(stmt) == SQLITE_DONE) {
+            (void)sqlite3_last_insert_rowid(db);
+            sqlite3_reset(stmt);
+            return rows;
+        }
+        sqlite3_reset(stmt);
+        return 0;
     }
 
 public:
@@ -50,18 +59,10 @@ public:
 
     void prepare(int iterations) {
         data_.clear();
-
-        if constexpr (BatchSize == 1) {
-            data_.reserve(iterations);
-            for (int i = 0; i < iterations; i++) {
-                data_.push_back(create_model());
-            }
-        } else {
-            data_.reserve(BatchSize);
-            for (int i = 0; i < BatchSize; i++) {
-                data_.push_back(create_model());
-            }
-        }
+        int count = (BatchSize == 1) ? iterations : BatchSize;
+        data_.reserve(count);
+        for (int i = 0; i < count; i++)
+            data_.push_back(create_model());
     }
 
     int execute(int iterations) {
@@ -73,7 +74,7 @@ public:
             }
         } else {
             for (int i = 0; i < iterations; i++) {
-                qs_.insert(data_);  // Insert full batch
+                qs_.insert(data_);
                 total += data_.size();
             }
         }
@@ -85,135 +86,56 @@ public:
         sqlite3* db = conn->get();
         if (!db) return 0;
 
+        constexpr size_t fields_per_row = 4;
+        constexpr size_t max_bulk = 999 / fields_per_row;
+        constexpr size_t bulk_threshold = (max_bulk > 100) ? (max_bulk / 2) : 50;
+
         int total = 0;
 
-        if constexpr (BatchSize == 1) {
-            // Prepare statement ONCE (fair comparison with Storm's statement caching)
-            std::string sql = "INSERT INTO Person (id, name, age, is_active, salary) VALUES (NULL, ?, ?, ?, ?)";
+        // Single-row or small batch: one prepared statement
+        if constexpr (BatchSize == 1 || BatchSize <= bulk_threshold) {
+            size_t rows_per_stmt = (BatchSize == 1) ? 1 : std::min(max_bulk, data_.size());
+            std::string sql = sql_insert_batch(rows_per_stmt);
+
             sqlite3_stmt* stmt = nullptr;
-            if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
                 return 0;
-            }
 
             for (int i = 0; i < iterations; i++) {
-                const auto& p = data_[i];
-                sqlite3_bind_text(stmt, 1, p.name.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int(stmt, 2, p.age);
-                sqlite3_bind_int(stmt, 3, p.is_active ? 1 : 0);
-                sqlite3_bind_double(stmt, 4, p.salary);
-
-                if (sqlite3_step(stmt) == SQLITE_DONE) {
-                    (void)sqlite3_last_insert_rowid(db);
-                    total++;
-                }
-                sqlite3_reset(stmt);
+                bind_rows(stmt, &data_[(BatchSize == 1) ? i : 0], rows_per_stmt);
+                total += step_and_reset(stmt, db, rows_per_stmt);
             }
             sqlite3_finalize(stmt);
-        } else {
-            constexpr size_t fields_per_row = 4;
-            constexpr size_t max_bulk_size = 999 / fields_per_row;  // 249 for Person
-
-            // Storm ORM's adaptive threshold logic:
-            // bulk_sweet_spot = max(50, 249/2) = 124
-            constexpr size_t bulk_sweet_spot = (max_bulk_size > 100) ? (max_bulk_size / 2) : 50;
-
-            // Match Storm's adaptive strategy:
-            // - BatchSize <= bulk_sweet_spot: Use bulk SQL (INSERT VALUES (...), (...))
-            // - BatchSize > bulk_sweet_spot: Use individual INSERTs with transaction
-            if constexpr (BatchSize <= bulk_sweet_spot) {
-                // Strategy: BULK SQL (same as Storm for small/medium batches)
-                size_t chunk = std::min(max_bulk_size, data_.size());
-                std::string sql = sql_insert_batch(chunk);
-
-                sqlite3_stmt* stmt = nullptr;
-                if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-                    return 0;
-                }
-
-                for (int iter = 0; iter < iterations; iter++) {
-                    int idx = 1;
-                    for (size_t i = 0; i < data_.size(); i++) {
-                        const auto& p = data_[i];
-                        sqlite3_bind_text(stmt, idx++, p.name.c_str(), -1, SQLITE_TRANSIENT);
-                        sqlite3_bind_int(stmt, idx++, p.age);
-                        sqlite3_bind_int(stmt, idx++, p.is_active ? 1 : 0);
-                        sqlite3_bind_double(stmt, idx++, p.salary);
-                    }
-
-                    if (sqlite3_step(stmt) == SQLITE_DONE) {
-                        (void)sqlite3_last_insert_rowid(db);
-                        total += data_.size();
-                    }
-                    sqlite3_reset(stmt);
-                }
-                sqlite3_finalize(stmt);
-            } else {
-                // Strategy: CHUNKED BULK SQL with TRANSACTION (same as Storm for large batches)
-                // Split batch into chunks of max_bulk_size and execute bulk SQL for each chunk
-
-                // Pre-calculate all unique chunk sizes and prepare statements ONCE
-                std::vector<std::pair<size_t, sqlite3_stmt*>> chunk_stmts;
-                for (size_t offset = 0; offset < data_.size(); offset += max_bulk_size) {
-                    size_t chunk_size = std::min(max_bulk_size, data_.size() - offset);
-
-                    // Check if we already have a statement for this chunk size
-                    auto it = std::find_if(chunk_stmts.begin(), chunk_stmts.end(),
-                        [chunk_size](const auto& p) { return p.first == chunk_size; });
-
-                    if (it == chunk_stmts.end()) {
-                        // Prepare statement for this chunk size
-                        std::string sql = sql_insert_batch(chunk_size);
-                        sqlite3_stmt* stmt = nullptr;
-                        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
-                            chunk_stmts.push_back({chunk_size, stmt});
-                        }
-                    }
-                }
-
-                // Execute iterations with pre-prepared statements
-                for (int iter = 0; iter < iterations; iter++) {
-                    sqlite3_exec(db, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
-
-                    // Process in chunks of max_bulk_size
-                    for (size_t offset = 0; offset < data_.size(); offset += max_bulk_size) {
-                        size_t chunk_size = std::min(max_bulk_size, data_.size() - offset);
-
-                        // Find pre-prepared statement for this chunk size
-                        auto it = std::find_if(chunk_stmts.begin(), chunk_stmts.end(),
-                            [chunk_size](const auto& p) { return p.first == chunk_size; });
-
-                        if (it == chunk_stmts.end()) continue;
-
-                        sqlite3_stmt* stmt = it->second;
-
-                        // Bind all rows in this chunk
-                        int idx = 1;
-                        for (size_t i = 0; i < chunk_size; i++) {
-                            const auto& p = data_[offset + i];
-                            sqlite3_bind_text(stmt, idx++, p.name.c_str(), -1, SQLITE_TRANSIENT);
-                            sqlite3_bind_int(stmt, idx++, p.age);
-                            sqlite3_bind_int(stmt, idx++, p.is_active ? 1 : 0);
-                            sqlite3_bind_double(stmt, idx++, p.salary);
-                        }
-
-                        // Execute bulk insert for this chunk
-                        if (sqlite3_step(stmt) == SQLITE_DONE) {
-                            (void)sqlite3_last_insert_rowid(db);
-                            total += chunk_size;
-                        }
-
-                        // Reset for next iteration (not finalize!)
-                        sqlite3_reset(stmt);
-                    }
-
-                    sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr);
-                }
-
-                // Clean up prepared statements
-                for (auto& [size, stmt] : chunk_stmts) {
-                    sqlite3_finalize(stmt);
+        }
+        // Large batch: chunked with transaction
+        else {
+            // Prepare statements for each unique chunk size
+            std::unordered_map<size_t, sqlite3_stmt*> stmts;
+            for (size_t off = 0; off < data_.size(); off += max_bulk) {
+                size_t chunk = std::min(max_bulk, data_.size() - off);
+                if (!stmts.contains(chunk)) {
+                    sqlite3_stmt* stmt = nullptr;
+                    if (sqlite3_prepare_v2(db, sql_insert_batch(chunk).c_str(), -1, &stmt, nullptr) == SQLITE_OK)
+                        stmts[chunk] = stmt;
                 }
             }
+
+            for (int iter = 0; iter < iterations; iter++) {
+                sqlite3_exec(db, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
+
+                for (size_t off = 0; off < data_.size(); off += max_bulk) {
+                    size_t chunk = std::min(max_bulk, data_.size() - off);
+                    if (auto it = stmts.find(chunk); it != stmts.end()) {
+                        bind_rows(it->second, &data_[off], chunk);
+                        total += step_and_reset(it->second, db, chunk);
+                    }
+                }
+
+                sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr);
+            }
+
+            for (auto& [_, stmt] : stmts)
+                sqlite3_finalize(stmt);
         }
         return total;
     }
