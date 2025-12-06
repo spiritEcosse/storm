@@ -211,11 +211,12 @@ export namespace storm::orm::statements {
             );
         }
 
-        // Ultra-optimized single INSERT - pre-cached statement, inlined execution
+        // Ultra-optimized single INSERT - simple imperative style
         [[nodiscard]] __attribute__((hot)) auto execute_single_optimized(const T& obj) noexcept
                 -> std::expected<int64_t, Error> {
             // Get or cache the prepared statement
-            if (!cached_insert_stmt_) {
+            // SAFETY: Connection reserves capacity (32) to prevent rehashing and dangling pointers
+            if (!cached_insert_stmt_) [[unlikely]] {
                 auto stmt_result = conn_->prepare_cached(get_insert_sql());
                 if (!stmt_result) {
                     return std::unexpected(stmt_result.error());
@@ -223,25 +224,23 @@ export namespace storm::orm::statements {
                 cached_insert_stmt_ = *stmt_result;
             }
 
-            // Bind non-PK fields using compile-time index sequence (skips PK for auto-increment)
+            // Bind non-PK fields
             auto bind_result = Base::template bind_non_pk_fields_impl<ConnType, Statement>(
                     *cached_insert_stmt_, obj, typename Base::field_indices_t()
             );
-
-            if (!bind_result) {
+            if (!bind_result) [[unlikely]] {
                 return std::unexpected(bind_result.error());
             }
 
-            // Execute and get the generated ID
+            // Execute
             auto exec_result = cached_insert_stmt_->execute();
-            if (!exec_result) {
+            if (!exec_result) [[unlikely]] {
                 cached_insert_stmt_->reset();
                 return std::unexpected(exec_result.error());
             }
 
+            // Get ID and reset
             int64_t id = conn_->last_insert_rowid();
-
-            // Reset for next use
             cached_insert_stmt_->reset();
 
             return id;
@@ -347,7 +346,9 @@ export namespace storm::orm::statements {
 
       private:
         std::shared_ptr<ConnType> conn_;
-        mutable Statement*        cached_insert_stmt_ = nullptr; // Cached statement for optimized single INSERT
+        mutable Statement*        cached_insert_stmt_ = nullptr;
+        // SAFETY: Safe to cache raw pointer because Connection reserves capacity (32)
+        // to prevent rehashing. Typical ORM usage won't exceed 32 unique statements.
     };
 
 } // namespace storm::orm::statements

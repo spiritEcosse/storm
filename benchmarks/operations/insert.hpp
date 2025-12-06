@@ -6,6 +6,7 @@
 
 #include <sqlite3.h>
 #include <vector>
+#include <algorithm>
 
 import storm;
 
@@ -147,33 +148,71 @@ public:
                 }
                 sqlite3_finalize(stmt);
             } else {
-                // Strategy: INDIVIDUAL INSERTs with TRANSACTION (same as Storm for large batches)
-                std::string sql = "INSERT INTO Person (id, name, age, is_active, salary) VALUES (NULL, ?, ?, ?, ?)";
-                sqlite3_stmt* stmt = nullptr;
-                if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-                    return 0;
+                // Strategy: CHUNKED BULK SQL with TRANSACTION (same as Storm for large batches)
+                // Split batch into chunks of max_bulk_size and execute bulk SQL for each chunk
+
+                // Pre-calculate all unique chunk sizes and prepare statements ONCE
+                std::vector<std::pair<size_t, sqlite3_stmt*>> chunk_stmts;
+                for (size_t offset = 0; offset < data_.size(); offset += max_bulk_size) {
+                    size_t chunk_size = std::min(max_bulk_size, data_.size() - offset);
+
+                    // Check if we already have a statement for this chunk size
+                    auto it = std::find_if(chunk_stmts.begin(), chunk_stmts.end(),
+                        [chunk_size](const auto& p) { return p.first == chunk_size; });
+
+                    if (it == chunk_stmts.end()) {
+                        // Prepare statement for this chunk size
+                        std::string sql = sql_insert_batch(chunk_size);
+                        sqlite3_stmt* stmt = nullptr;
+                        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+                            chunk_stmts.push_back({chunk_size, stmt});
+                        }
+                    }
                 }
 
+                // Execute iterations with pre-prepared statements
                 for (int iter = 0; iter < iterations; iter++) {
                     sqlite3_exec(db, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
 
-                    for (size_t i = 0; i < data_.size(); i++) {
-                        const auto& p = data_[i];
-                        sqlite3_bind_text(stmt, 1, p.name.c_str(), -1, SQLITE_TRANSIENT);
-                        sqlite3_bind_int(stmt, 2, p.age);
-                        sqlite3_bind_int(stmt, 3, p.is_active ? 1 : 0);
-                        sqlite3_bind_double(stmt, 4, p.salary);
+                    // Process in chunks of max_bulk_size
+                    for (size_t offset = 0; offset < data_.size(); offset += max_bulk_size) {
+                        size_t chunk_size = std::min(max_bulk_size, data_.size() - offset);
 
+                        // Find pre-prepared statement for this chunk size
+                        auto it = std::find_if(chunk_stmts.begin(), chunk_stmts.end(),
+                            [chunk_size](const auto& p) { return p.first == chunk_size; });
+
+                        if (it == chunk_stmts.end()) continue;
+
+                        sqlite3_stmt* stmt = it->second;
+
+                        // Bind all rows in this chunk
+                        int idx = 1;
+                        for (size_t i = 0; i < chunk_size; i++) {
+                            const auto& p = data_[offset + i];
+                            sqlite3_bind_text(stmt, idx++, p.name.c_str(), -1, SQLITE_TRANSIENT);
+                            sqlite3_bind_int(stmt, idx++, p.age);
+                            sqlite3_bind_int(stmt, idx++, p.is_active ? 1 : 0);
+                            sqlite3_bind_double(stmt, idx++, p.salary);
+                        }
+
+                        // Execute bulk insert for this chunk
                         if (sqlite3_step(stmt) == SQLITE_DONE) {
                             (void)sqlite3_last_insert_rowid(db);
-                            total++;
+                            total += chunk_size;
                         }
+
+                        // Reset for next iteration (not finalize!)
                         sqlite3_reset(stmt);
                     }
 
                     sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr);
                 }
-                sqlite3_finalize(stmt);
+
+                // Clean up prepared statements
+                for (auto& [size, stmt] : chunk_stmts) {
+                    sqlite3_finalize(stmt);
+                }
             }
         }
         return total;

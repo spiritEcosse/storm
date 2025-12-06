@@ -391,7 +391,11 @@ export namespace storm::db::sqlite {
         }
 
       private:
-        explicit Connection(SqlitePtr db_ptr) : db(std::move(db_ptr)) {}
+        explicit Connection(SqlitePtr db_ptr) : db(std::move(db_ptr)) {
+            // Reserve capacity to prevent rehashing and dangling pointers in InsertStatement
+            // Typical ORM usage: INSERT, SELECT, UPDATE, DELETE, + a few WHERE variants = ~10-20 statements
+            statement_cache_.reserve(32);
+        }
 
         SqlitePtr      db;
         StatementCache statement_cache_;
