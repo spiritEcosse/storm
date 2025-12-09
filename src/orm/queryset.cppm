@@ -65,14 +65,22 @@ export namespace storm {
             return get_remove_statement().execute(objects);
         }
 
-        // Insert operations
-        std::expected<int64_t, Error> insert(const T& obj) {
-            return execute_insert(std::span<const T>{&obj, 1}).transform([](const auto& ids) { return ids[0]; });
+        // Insert single object (SFINAE: only accept T, not span/container)
+        template<typename U = T>
+        requires std::same_as<std::remove_cvref_t<U>, T>
+        std::expected<int64_t, Error> insert(const U& obj,
+                                               std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
+            // Use default options if not provided
+            orm::statements::InsertOptions options = opts.value_or(orm::statements::InsertOptions{});
+
+            // Call optimized single-object method with return_id flag
+            return get_insert_statement().execute_single_optimized(obj, options.return_ids);
         }
 
-        // Bulk insert operations
-        std::expected<std::vector<int64_t>, Error> insert(std::span<const T> objects) {
-            return execute_insert(objects);
+        // Bulk insert (span overload)
+        std::expected<std::vector<int64_t>, Error> insert(std::span<const T> objects,
+                                                           std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
+            return execute_insert(objects, opts);
         }
 
         // WHERE clause support - builder pattern with method chaining using type-safe expressions
@@ -374,8 +382,9 @@ export namespace storm {
         }
 
         [[nodiscard]] std::expected<std::vector<int64_t>, Error>
-        execute_insert(std::span<const T> objects) const noexcept {
-            return get_insert_statement().execute(objects);
+        execute_insert(std::span<const T> objects,
+                       std::optional<orm::statements::InsertOptions> opts = std::nullopt) const noexcept {
+            return get_insert_statement().execute(objects, opts);
         }
 
         // Lazy-initialize and return cached RemoveStatement for optimal performance

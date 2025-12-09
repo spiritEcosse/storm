@@ -28,6 +28,12 @@ export namespace storm::orm::statements {
     using storm::orm::utilities::BulkSQLCache;
     using storm::orm::utilities::ConstexprString;
 
+    // Configuration options for INSERT operations
+    struct InsertOptions {
+        std::optional<size_t> batch_size = std::nullopt;  // nullopt = automatic (999/field_count)
+        bool return_ids = true;  // true = return generated IDs (backward compatible default)
+    };
+
     // Statement class for ORM insert operations
     template <typename T, storm::db::DatabaseConnection ConnType> class InsertStatement : private BaseStatement<T> {
         friend class BaseStatement<T>; // Allow BaseStatement to access protected/private members
@@ -188,31 +194,33 @@ export namespace storm::orm::statements {
       public:
         explicit InsertStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
-        // Unified insert operation - handles both single and batch operations
-        [[nodiscard]] auto execute(std::span<const T> objects) noexcept -> std::expected<std::vector<int64_t>, Error> {
+        // Batch insert operation with optional configuration (QuerySet handles single-object optimization)
+        [[nodiscard]] auto execute(std::span<const T> objects,
+                                    std::optional<InsertOptions> opts = std::nullopt) noexcept
+                -> std::expected<std::vector<int64_t>, Error> {
             if (objects.empty()) {
                 return std::vector<int64_t>{};
             }
 
-            // Fast path for single object - use optimized cached statement
-            if (objects.size() == 1) {
-                return execute_single_optimized(objects[0]).transform([](int64_t id) {
-                    return std::vector<int64_t>{id};
-                });
-            }
+            // Use default options if not provided
+            InsertOptions options = opts.value_or(InsertOptions{});
 
-            // Batch path - use INSERT-specific optimized strategy with chunked bulk SQL
-            return Base::template execute_batch_optimized<Connection>(
-                    *conn_,
-                    objects,
-                    Base::field_count_,
-                    [this, objects]() { return execute_bulk(objects); },
-                    [this, objects]() { return execute_chunked_bulk(objects); }
-            );
+            // Calculate effective batch size
+            constexpr size_t max_allowed = Base::MAX_SQLITE_VARIABLES / Base::field_count_;
+            size_t effective_batch_size = options.batch_size.value_or(max_allowed);
+            effective_batch_size = std::min(effective_batch_size, max_allowed); // Cap at SQLite max
+
+            // Batch path with custom batch size
+            if (objects.size() <= effective_batch_size) {
+                // Fits in one bulk SQL
+                return execute_bulk(objects, options.return_ids);
+            }
+            // Need chunking with custom batch size
+            return execute_chunked_bulk_custom(objects, effective_batch_size, options.return_ids);
         }
 
         // Ultra-optimized single INSERT - simple imperative style
-        [[nodiscard]] __attribute__((hot)) auto execute_single_optimized(const T& obj) noexcept
+        [[nodiscard]] __attribute__((hot)) auto execute_single_optimized(const T& obj, bool return_id = true) noexcept
                 -> std::expected<int64_t, Error> {
             // Get or cache the prepared statement
             // SAFETY: Connection reserves capacity (32) to prevent rehashing and dangling pointers
@@ -239,8 +247,8 @@ export namespace storm::orm::statements {
                 return std::unexpected(exec_result.error());
             }
 
-            // Get ID and reset
-            int64_t id = conn_->last_insert_rowid();
+            // Get ID if requested, otherwise return 0
+            int64_t id = return_id ? conn_->last_insert_rowid() : 0;
             cached_insert_stmt_->reset();
 
             return id;
@@ -256,18 +264,22 @@ export namespace storm::orm::statements {
 
         // Execute bulk INSERT with multiple VALUES clauses
         // NOTE: No transaction wrapper needed - single INSERT statement is already atomic
-        [[nodiscard]] __attribute__((hot)) auto execute_bulk(std::span<const T> objects) noexcept
+        [[nodiscard]] __attribute__((hot)) auto execute_bulk(std::span<const T> objects, bool return_ids = true) noexcept
                 -> std::expected<std::vector<int64_t>, Error> {
             const auto& sql = get_bulk_insert_sql(objects.size());
 
             // Use prepare_cached to reuse prepared statements across iterations
             return conn_->prepare_cached(sql).and_then(
-                    [this, objects](Statement* stmt) -> std::expected<std::vector<int64_t>, Error> {
+                    [this, objects, return_ids](Statement* stmt) -> std::expected<std::vector<int64_t>, Error> {
                         return Base::template bind_non_pk_objects_bulk_impl<ConnType, Statement>(
                                        *stmt, objects, typename Base::field_indices_t()
                         )
                                 .and_then([stmt]() { return stmt->execute(); })
-                                .transform([this, objects]() {
+                                .transform([this, objects, return_ids]() {
+                                    if (!return_ids) {
+                                        return std::vector<int64_t>{};  // Return empty vector
+                                    }
+
                                     // Get the last inserted row ID
                                     // For bulk INSERT with multiple VALUES, last_insert_rowid() returns the
                                     // ID of the LAST row We need to calculate the first ID by subtracting
@@ -287,40 +299,35 @@ export namespace storm::orm::statements {
             );
         }
 
-        // Execute CHUNKED bulk inserts for very large batches (WITHOUT transaction wrapper)
-        // Splits batch into max-sized chunks and executes each as bulk SQL
-        // NOTE: This is called from execute_batch_optimized which provides the transaction wrapper
-        [[nodiscard]] auto execute_chunked_bulk(std::span<const T> objects) noexcept
+        // Execute CHUNKED bulk inserts with custom batch size
+        [[nodiscard]] auto execute_chunked_bulk_custom(std::span<const T> objects, size_t custom_bulk_size, bool return_ids = true) noexcept
                 -> std::expected<std::vector<int64_t>, Error> {
-            // Calculate max chunk size based on SQLite variable limit
-            constexpr size_t max_bulk_size = Base::MAX_SQLITE_VARIABLES / Base::field_count_;
-
             std::vector<int64_t> all_ids;
-            all_ids.reserve(objects.size());
+            if (return_ids) {
+                all_ids.reserve(objects.size());
+            }
 
-            // Process in chunks of max_bulk_size
-            for (size_t offset = 0; offset < objects.size(); offset += max_bulk_size) {
-                size_t chunk_size = std::min(max_bulk_size, objects.size() - offset);
-
-                // Create a span for this chunk
+            // Process in chunks of custom_bulk_size
+            for (size_t offset = 0; offset < objects.size(); offset += custom_bulk_size) {
+                size_t chunk_size = std::min(custom_bulk_size, objects.size() - offset);
                 auto chunk = objects.subspan(offset, chunk_size);
 
-                // Execute bulk SQL for this chunk WITHOUT transaction (outer function handles it)
-                const auto& sql = get_bulk_insert_sql(chunk.size()); // Use reference to avoid copy
+                const auto& sql = get_bulk_insert_sql(chunk.size());
 
-                // Use prepare_cached to reuse prepared statements across chunks
                 auto chunk_result = conn_->prepare_cached(sql).and_then(
-                        [this, chunk](Statement* stmt) -> std::expected<std::vector<int64_t>, Error> {
+                        [this, chunk, return_ids](Statement* stmt) -> std::expected<std::vector<int64_t>, Error> {
                             return Base::template bind_non_pk_objects_bulk_impl<ConnType, Statement>(
                                            *stmt, chunk, typename Base::field_indices_t()
                             )
                                     .and_then([stmt]() { return stmt->execute(); })
-                                    .transform([this, chunk]() {
-                                        // Get the last inserted row ID
+                                    .transform([this, chunk, return_ids]() {
+                                        if (!return_ids) {
+                                            return std::vector<int64_t>{};
+                                        }
+
                                         int64_t last_id  = conn_->last_insert_rowid();
                                         int64_t first_id = last_id - static_cast<int64_t>(chunk.size()) + 1;
 
-                                        // Generate consecutive IDs for bulk insert
                                         std::vector<int64_t> ids(chunk.size());
                                         for (size_t i = 0; i < chunk.size(); ++i) {
                                             ids[i] = first_id + static_cast<int64_t>(i);
@@ -335,9 +342,10 @@ export namespace storm::orm::statements {
                     return std::unexpected(chunk_result.error());
                 }
 
-                // Collect IDs from this chunk
-                for (const auto& id : *chunk_result) {
-                    all_ids.push_back(id);
+                if (return_ids) {
+                    for (const auto& id : *chunk_result) {
+                        all_ids.push_back(id);
+                    }
                 }
             }
 

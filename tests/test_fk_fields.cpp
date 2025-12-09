@@ -156,7 +156,7 @@ TEST_F(FKFieldTest, BatchInsertWithFKFields) {
 
     // Insert users
     std::vector<User> users       = {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Charlie", 35}, {4, "Dave", 40}};
-    auto              user_result = user_qs.insert(std::span<const User>(users));
+    auto              user_result = user_qs.insert(users);
     ASSERT_TRUE(user_result.has_value());
     const auto& user_ids = user_result.value();
 
@@ -171,7 +171,7 @@ TEST_F(FKFieldTest, BatchInsertWithFKFields) {
               User{static_cast<int>(user_ids[0]), "", 0},
               "FKMessage from Charlie to Dave"}};
 
-    auto msg_result = message_qs.insert(std::span<const FKMessage>(messages));
+    auto msg_result = message_qs.insert(messages);
     ASSERT_TRUE(msg_result.has_value()) << "Batch INSERT failed: " << msg_result.error().message();
 
     const auto& msg_ids = msg_result.value();
@@ -272,7 +272,7 @@ TEST_F(FKFieldTest, DeleteWithFKField) {
             {{1, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "FKMessage 1"},
              {2, User{static_cast<int>(alice_id), "", 0}, User{static_cast<int>(bob_id), "", 0}, "FKMessage 2"}};
 
-    auto msg_result = message_qs.insert(std::span<const FKMessage>(messages));
+    auto msg_result = message_qs.insert(messages);
     ASSERT_TRUE(msg_result.has_value());
     const auto& msg_ids = msg_result.value();
 
