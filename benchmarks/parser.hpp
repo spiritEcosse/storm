@@ -152,10 +152,49 @@ namespace storm::benchmark {
         return parse_string<64>(json, pos);
     }
 
+    // Helper: Parse and assign key-value pair to BenchmarkTest
+    constexpr void parse_and_assign_field(BenchmarkTest& test, std::string_view key, std::string_view json, size_t& pos) {
+        if (key == "test_name") {
+            test.test_name = parse_string<64>(json, pos);
+        } else if (key == "test_category") {
+            test.test_category = parse_string<32>(json, pos);
+        } else if (key == "description") {
+            test.description = parse_string<128>(json, pos);
+        } else if (key == "model") {
+            test.model = parse_string<32>(json, pos);
+        } else if (key == "operation") {
+            test.operation = parse_string<32>(json, pos);
+        } else if (key == "where_field") {
+            test.where.field = parse_string<32>(json, pos);
+        } else if (key == "where_op") {
+            test.where.op = parse_string<8>(json, pos);
+        } else if (key == "where_value_int") {
+            test.where.value_int  = parse_int(json, pos);
+            test.where.value_type = WhereClause::ValueType::Int;
+        } else if (key == "where_value_double") {
+            test.where.value_double = parse_double(json, pos);
+            test.where.value_type   = WhereClause::ValueType::Double;
+        } else if (key == "where_value_bool") {
+            test.where.value_bool = parse_bool(json, pos);
+            test.where.value_type = WhereClause::ValueType::Bool;
+        } else if (key == "where_value_string") {
+            test.where.value_string = parse_string<64>(json, pos);
+            test.where.value_type   = WhereClause::ValueType::String;
+        } else if (key == "iterations") {
+            test.iterations = parse_int(json, pos);
+        } else if (key == "dataset_size") {
+            test.dataset_size = parse_int(json, pos);
+        } else if (key == "batch_size") {
+            test.batch_size = parse_int(json, pos);
+        } else {
+            // Unknown key - skip value
+            skip_value(json, pos);
+        }
+    }
+
     // Parse single benchmark test object from flat JSON
     constexpr BenchmarkTest parse_test_object(std::string_view json, size_t& pos) {
         BenchmarkTest test;
-
         skip_char(json, pos, '{');
 
         while (pos < json.size()) {
@@ -166,47 +205,10 @@ namespace storm::benchmark {
                 break;
             }
 
-            // Parse key name
+            // Parse key-value pair and assign to test object
             auto key = parse_key(json, pos);
             skip_char(json, pos, ':');
-
-            // Match key and parse value
-            if (key == "test_name") {
-                test.test_name = parse_string<64>(json, pos);
-            } else if (key == "test_category") {
-                test.test_category = parse_string<32>(json, pos);
-            } else if (key == "description") {
-                test.description = parse_string<128>(json, pos);
-            } else if (key == "model") {
-                test.model = parse_string<32>(json, pos);
-            } else if (key == "operation") {
-                test.operation = parse_string<32>(json, pos);
-            } else if (key == "where_field") {
-                test.where.field = parse_string<32>(json, pos);
-            } else if (key == "where_op") {
-                test.where.op = parse_string<8>(json, pos);
-            } else if (key == "where_value_int") {
-                test.where.value_int  = parse_int(json, pos);
-                test.where.value_type = WhereClause::ValueType::Int;
-            } else if (key == "where_value_double") {
-                test.where.value_double = parse_double(json, pos);
-                test.where.value_type   = WhereClause::ValueType::Double;
-            } else if (key == "where_value_bool") {
-                test.where.value_bool = parse_bool(json, pos);
-                test.where.value_type = WhereClause::ValueType::Bool;
-            } else if (key == "where_value_string") {
-                test.where.value_string = parse_string<64>(json, pos);
-                test.where.value_type   = WhereClause::ValueType::String;
-            } else if (key == "iterations") {
-                test.iterations = parse_int(json, pos);
-            } else if (key == "dataset_size") {
-                test.dataset_size = parse_int(json, pos);
-            } else if (key == "batch_size") {
-                test.batch_size = parse_int(json, pos);
-            } else {
-                // Unknown key - skip value
-                skip_value(json, pos);
-            }
+            parse_and_assign_field(test, key.view(), json, pos);
 
             skip_whitespace(json, pos);
             if (pos < json.size() && json[pos] == ',') {
