@@ -45,7 +45,7 @@ namespace storm::benchmark {
 
             // 3. INSERT data to get valid primary keys
             // Use InsertOptions to get IDs back
-            auto insert_result = Base::qs_.insert(Base::data_, storm::orm::statements::InsertOptions{.return_ids = true});
+            auto insert_result = Base::qs().insert(Base::data(), storm::orm::statements::InsertOptions{.return_ids = true});
             if (!insert_result.has_value()) {
                 std::cerr << "Failed to insert test data for UPDATE benchmark\n";
                 return;
@@ -53,12 +53,12 @@ namespace storm::benchmark {
 
             // Store returned IDs back into data
             const auto& ids = insert_result.value();
-            for (size_t i = 0; i < Base::data_.size() && i < ids.size(); i++) {
-                Base::data_[i].id = ids[i];
+            for (size_t i = 0; i < Base::data().size() && i < ids.size(); i++) {
+                Base::data()[i].id = ids[i];
             }
 
             // 4. Modify data fields for update test (change values so UPDATE actually does work)
-            for (auto& obj : Base::data_) {
+            for (auto& obj : Base::data()) {
                 obj.name      = "UpdatedPerson";
                 obj.age       = obj.age + 5;
                 obj.salary    = obj.salary * 1.1;
@@ -70,13 +70,13 @@ namespace storm::benchmark {
             int total = 0;
             if constexpr (BatchSize == 1) {
                 for (int i = 0; i < iterations; i++) {
-                    Base::qs_.update(Base::data_[i]);
+                    Base::qs().update(Base::data()[i]);
                     total++;
                 }
             } else {
                 for (int i = 0; i < iterations; i++) {
-                    Base::qs_.update(Base::data_);
-                    total += Base::data_.size();
+                    Base::qs().update(Base::data());
+                    total += Base::data().size();
                 }
             }
             return total;
@@ -101,7 +101,7 @@ namespace storm::benchmark {
                     return 0;
 
                 for (int i = 0; i < iterations; i++) {
-                    const auto& p   = Base::data_[i];
+                    const auto& p   = Base::data()[i];
                     int         idx = 1;
                     sqlite3_bind_text(stmt, idx++, p.name.c_str(), -1, SQLITE_TRANSIENT);
                     sqlite3_bind_int(stmt, idx++, p.age);
@@ -124,7 +124,7 @@ namespace storm::benchmark {
                 for (int iter = 0; iter < iterations; iter++) {
                     sqlite3_exec(db, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
 
-                    for (const auto& p : Base::data_) {
+                    for (const auto& p : Base::data()) {
                         int idx = 1;
                         sqlite3_bind_text(stmt, idx++, p.name.c_str(), -1, SQLITE_TRANSIENT);
                         sqlite3_bind_int(stmt, idx++, p.age);

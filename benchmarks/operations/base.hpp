@@ -20,9 +20,16 @@ namespace storm::benchmark {
 
     // CRTP base class for data-driven benchmarks (Insert, UpdateByPK)
     template <typename Derived, typename Model, int BatchSize = 1, size_t FieldsPerRow = 4> class DataBenchmarkBase {
-      protected:
+      private:
         QuerySet<Model>    qs_;
         std::vector<Model> data_;
+
+      protected:
+        // Accessor methods for derived classes
+        QuerySet<Model>& qs() { return qs_; }
+        const QuerySet<Model>& qs() const { return qs_; }
+        std::vector<Model>& data() { return data_; }
+        const std::vector<Model>& data() const { return data_; }
 
         // SQLite binding limit constants
         // 999 is SQLite's default SQLITE_MAX_VARIABLE_NUMBER
@@ -61,11 +68,11 @@ namespace storm::benchmark {
         // For INSERT: creates fresh data
         // For UPDATE: derived class overrides to INSERT first, then modify
         void prepare(int iterations) {
-            data_.clear();
+            data().clear();
             int count = (BatchSize == 1) ? iterations : BatchSize;
-            data_.reserve(count);
+            data().reserve(count);
             for (int i = 0; i < count; i++) {
-                data_.push_back(Derived::create_model());
+                data().push_back(Derived::create_model());
             }
         }
     };

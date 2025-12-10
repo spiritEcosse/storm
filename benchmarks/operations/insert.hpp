@@ -51,13 +51,13 @@ namespace storm::benchmark {
             int total = 0;
             if constexpr (BatchSize == 1) {
                 for (int i = 0; i < iterations; i++) {
-                    Base::qs_.insert(Base::data_[i]);
+                    Base::qs().insert(Base::data()[i]);
                     total++;
                 }
             } else {
                 for (int i = 0; i < iterations; i++) {
-                    Base::qs_.insert(Base::data_);
-                    total += Base::data_.size();
+                    Base::qs().insert(Base::data());
+                    total += Base::data().size();
                 }
             }
             return total;
@@ -65,8 +65,8 @@ namespace storm::benchmark {
 
         // Helper: Prepare statements for unique chunk sizes (reduces nesting)
         void prepare_chunk_statements(sqlite3* db, std::unordered_map<size_t, sqlite3_stmt*>& stmts) {
-            for (size_t off = 0; off < Base::data_.size(); off += Base::max_bulk) {
-                size_t chunk = std::min(Base::max_bulk, Base::data_.size() - off);
+            for (size_t off = 0; off < Base::data().size(); off += Base::max_bulk) {
+                size_t chunk = std::min(Base::max_bulk, Base::data().size() - off);
                 if (stmts.contains(chunk))
                     continue;
 
@@ -79,13 +79,13 @@ namespace storm::benchmark {
         // Helper: Execute one batch iteration (reduces nesting)
         int execute_batch_iteration(sqlite3* db, const std::unordered_map<size_t, sqlite3_stmt*>& stmts) {
             int total = 0;
-            for (size_t off = 0; off < Base::data_.size(); off += Base::max_bulk) {
-                size_t chunk = std::min(Base::max_bulk, Base::data_.size() - off);
+            for (size_t off = 0; off < Base::data().size(); off += Base::max_bulk) {
+                size_t chunk = std::min(Base::max_bulk, Base::data().size() - off);
                 auto it = stmts.find(chunk);
                 if (it == stmts.end())
                     continue;
 
-                bind_rows(it->second, &Base::data_[off], chunk);
+                bind_rows(it->second, &Base::data()[off], chunk);
                 total += Base::step_and_reset(it->second, db, chunk);
             }
             return total;
@@ -101,7 +101,7 @@ namespace storm::benchmark {
 
             // Single-row or small batch: one prepared statement
             if constexpr (BatchSize == 1 || BatchSize <= Base::bulk_threshold) {
-                size_t      rows_per_stmt = (BatchSize == 1) ? 1 : std::min(Base::max_bulk, Base::data_.size());
+                size_t      rows_per_stmt = (BatchSize == 1) ? 1 : std::min(Base::max_bulk, Base::data().size());
                 std::string sql           = sql_insert_batch(rows_per_stmt);
 
                 sqlite3_stmt* stmt = nullptr;
@@ -109,7 +109,7 @@ namespace storm::benchmark {
                     return 0;
 
                 for (int i = 0; i < iterations; i++) {
-                    bind_rows(stmt, &Base::data_[(BatchSize == 1) ? i : 0], rows_per_stmt);
+                    bind_rows(stmt, &Base::data()[(BatchSize == 1) ? i : 0], rows_per_stmt);
                     total += Base::step_and_reset(stmt, db, rows_per_stmt);
                 }
                 sqlite3_finalize(stmt);
