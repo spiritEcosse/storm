@@ -18,8 +18,6 @@ import storm;
 
 namespace storm::benchmark {
 
-    using namespace storm;
-
     // CRTP base class for data-driven benchmarks (Insert, UpdateByPK)
     template <typename Derived, typename Model, int BatchSize = 1, size_t FieldsPerRow = 4> class DataBenchmarkBase {
       protected:
