@@ -1,108 +1,159 @@
 #pragma once
 
 /**
- * UPDATE Benchmark - Update operations with WHERE clause
+ * UPDATE-by-PK Benchmark
+ *
+ * Tests UPDATE performance using primary key WHERE clause.
+ * Inherits from DataBenchmarkBase with 5 fields (4 data + 1 PK for WHERE).
+ *
+ * Workflow:
+ * 1. prepare(): Clear table, insert test data, modify fields for update
+ * 2. execute(): Storm ORM update() - single or batch
+ * 3. execute_raw(): Raw SQLite UPDATE...WHERE id=?
+ *
+ * Raw SQLite uses transaction for batch (no multi-row UPDATE syntax).
  */
 
-#include <sqlite3.h>
-#include <meta>
-import storm;
+#include "base.hpp"
+#include <iostream>
+#include <chrono>
 
 namespace storm::benchmark {
 
-using storm::orm::where::field;
+    using namespace storm;
+    using storm::orm::statements::InsertOptions;
 
-// UPDATE benchmark with WHERE clause
-template<typename Model, std::meta::info FieldInfo, ConstexprString Op, typename ValueType>
-class UpdateBenchmark {
-    ValueType where_value_;
-    QuerySet<Model> qs_;
+    template <typename Model, int BatchSize = 1>
+    class UpdateBenchmark : public DataBenchmarkBase<UpdateBenchmark<Model, BatchSize>, Model, BatchSize, 5> {
+        using Base = DataBenchmarkBase<UpdateBenchmark<Model, BatchSize>, Model, BatchSize, 5>;
 
-public:
-    constexpr UpdateBenchmark(ValueType where_value) : where_value_(where_value) {}
+      public:
+        void print_info() const {
+            if constexpr (BatchSize == 1)
+                std::cout << "Operation: UPDATE by PK (single row)\n";
+            else
+                std::cout << "Operation: UPDATE by PK (batch, " << BatchSize << " rows per update)\n";
+        }
 
-    void print_info() const {
-        constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
-        constexpr std::string_view op_str = Op.view();
-        std::cout << "Operation: UPDATE with WHERE (" << field_name << " " << op_str << " " << where_value_ << ")\n";
-    }
+        void prepare(int iterations) {
+            // 1. Clear table first using raw SQLite
+            auto&    conn = QuerySet<Model>::get_default_connection();
+            sqlite3* db   = conn->get();
+            if (db) {
+                sqlite3_exec(db, "DELETE FROM Person", nullptr, nullptr, nullptr);
+            }
 
-    int execute(int iterations) {
-        constexpr std::string_view op_str = Op.view();
+            // 2. Generate test data using base class method
+            Base::prepare(iterations);
 
-        int total_updates = 0;
-        for (int i = 0; i < iterations; i++) {
-            // Build WHERE clause based on compile-time operator
-            auto where_clause = [&]() {
-                if constexpr (op_str == ">") {
-                    return field<FieldInfo>() > where_value_;
-                } else if constexpr (op_str == ">=") {
-                    return field<FieldInfo>() >= where_value_;
-                } else if constexpr (op_str == "<") {
-                    return field<FieldInfo>() < where_value_;
-                } else if constexpr (op_str == "<=") {
-                    return field<FieldInfo>() <= where_value_;
-                } else if constexpr (op_str == "==") {
-                    return field<FieldInfo>() == where_value_;
+            // 3. INSERT data to get valid primary keys
+            // Use InsertOptions to get IDs back
+            auto insert_result = Base::qs_.insert(Base::data_, InsertOptions{.return_ids = true});
+            if (!insert_result.has_value()) {
+                std::cerr << "Failed to insert test data for UPDATE benchmark\n";
+                return;
+            }
+
+            // Store returned IDs back into data
+            const auto& ids = insert_result.value();
+            for (size_t i = 0; i < Base::data_.size() && i < ids.size(); i++) {
+                Base::data_[i].id = ids[i];
+            }
+
+            // 4. Modify data fields for update test (change values so UPDATE actually does work)
+            for (auto& obj : Base::data_) {
+                obj.name      = "UpdatedPerson";
+                obj.age       = obj.age + 5;
+                obj.salary    = obj.salary * 1.1;
+                obj.is_active = !obj.is_active;
+            }
+        }
+
+        int execute(int iterations) {
+            int total = 0;
+            if constexpr (BatchSize == 1) {
+                // Single row update - loop through iterations
+                for (int i = 0; i < iterations; i++) {
+                    auto result = Base::qs_.update(Base::data_[i]);
+                    if (result.has_value()) {
+                        total++;
+                    }
                 }
-            }();
-
-            // Execute update (example: increment age)
-            Model update_data{
-                .id = 0,  // Not used in UPDATE
-                .name = "",
-                .age = 99,  // New value
-                .is_active = true,
-                .salary = 0.0
-            };
-
-            auto result = qs_.where(where_clause).update(update_data);
-            if (result.has_value()) {
-                total_updates += result.value();  // Number of rows updated
+            } else {
+                // Batch update - loop through iterations
+                for (int i = 0; i < iterations; i++) {
+                    auto result = Base::qs_.update(Base::data_);
+                    if (result.has_value()) {
+                        total += Base::data_.size();
+                    }
+                }
             }
-            qs_.reset();
+            return total;
         }
-        return total_updates;
-    }
 
-    // Raw SQLite execution for comparison
-    int execute_raw(int iterations) {
-        constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
-        constexpr std::string_view op_str = Op.view();
+        int execute_raw(int iterations) {
+            auto&    conn = QuerySet<Model>::get_default_connection();
+            sqlite3* db   = conn->get();
+            if (!db)
+                return 0;
 
-        auto& conn = QuerySet<Model>::get_default_connection();
+            int total = 0;
 
-        // Build SQL query ONCE
-        std::string sql = "UPDATE Person SET age = 99 WHERE ";
-        sql += std::string(field_name) + " " + std::string(op_str) + " ?";
+            // Raw SQLite UPDATE SQL: "UPDATE Person SET name=?, age=?, is_active=?, salary=? WHERE id=?"
+            const std::string sql = "UPDATE Person SET name=?, age=?, is_active=?, salary=? WHERE id=?";
 
-        // Prepare statement ONCE
-        auto stmt_result = conn->prepare(sql);
-        if (!stmt_result.has_value()) return 0;
+            // Single-row or small batch: one prepared statement, use transaction for batch
+            if constexpr (BatchSize == 1) {
+                // Single row - no transaction needed
+                sqlite3_stmt* stmt = nullptr;
+                if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+                    return 0;
 
-        auto& stmt = stmt_result.value();
+                for (int i = 0; i < iterations; i++) {
+                    const auto& p   = Base::data_[i];
+                    int         idx = 1;
+                    sqlite3_bind_text(stmt, idx++, p.name.c_str(), -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_int(stmt, idx++, p.age);
+                    sqlite3_bind_int(stmt, idx++, p.is_active ? 1 : 0);
+                    sqlite3_bind_double(stmt, idx++, p.salary);
+                    sqlite3_bind_int64(stmt, idx++, p.id);
 
-        int total_updates = 0;
-        for (int i = 0; i < iterations; i++) {
-            stmt.reset();
+                    if (sqlite3_step(stmt) == SQLITE_DONE) {
+                        total++;
+                    }
+                    sqlite3_reset(stmt);
+                }
+                sqlite3_finalize(stmt);
+            } else {
+                // Batch update - use transaction wrapper
+                sqlite3_stmt* stmt = nullptr;
+                if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+                    return 0;
 
-            // Bind parameter
-            if constexpr (std::is_same_v<ValueType, int>) {
-                if (!stmt.bind_int(1, where_value_).has_value()) continue;
-            } else if constexpr (std::is_same_v<ValueType, double>) {
-                if (!stmt.bind_double(1, where_value_).has_value()) continue;
-            } else if constexpr (std::is_same_v<ValueType, bool>) {
-                if (!stmt.bind_int(1, where_value_ ? 1 : 0).has_value()) continue;
+                for (int iter = 0; iter < iterations; iter++) {
+                    sqlite3_exec(db, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
+
+                    for (const auto& p : Base::data_) {
+                        int idx = 1;
+                        sqlite3_bind_text(stmt, idx++, p.name.c_str(), -1, SQLITE_TRANSIENT);
+                        sqlite3_bind_int(stmt, idx++, p.age);
+                        sqlite3_bind_int(stmt, idx++, p.is_active ? 1 : 0);
+                        sqlite3_bind_double(stmt, idx++, p.salary);
+                        sqlite3_bind_int64(stmt, idx++, p.id);
+
+                        if (sqlite3_step(stmt) == SQLITE_DONE) {
+                            total++;
+                        }
+                        sqlite3_reset(stmt);
+                    }
+
+                    sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr);
+                }
+
+                sqlite3_finalize(stmt);
             }
-
-            // Execute and get number of changes
-            auto step_result = stmt.step();
-            if (step_result.has_value()) {
-                total_updates += sqlite3_changes(conn->get());
-            }
+            return total;
         }
-        return total_updates;
-    }
-};
+    };
 
 } // namespace storm::benchmark

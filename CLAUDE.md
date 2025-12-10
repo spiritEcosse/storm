@@ -14,7 +14,7 @@ Storm ORM achieves **96-108% efficiency** vs raw SQLite across all operations (R
 
 - **INSERT**: ~97% efficiency for single, 96-108% for batch operations
 - **SELECT**: High throughput with minimal overhead
-- **UPDATE**: Optimized bulk operations
+- **UPDATE**: ~93-94% efficiency (optimized with flat code, cached statements)
 - **DELETE**: Fast single and batch deletions
 - **JOIN**: Type-erased abstract base class pattern
 - **DISTINCT**: Pure C++26 reflection-based implementation
@@ -323,6 +323,44 @@ git commit -m "feat: add FEATURE (85% of raw SQLite)"
 - If abstraction costs >10% performance → duplicate code
 - Complex optimizations justified if >20% performance gain
 - Always profile before optimizing
+
+### Flat Code vs Nested Lambdas
+
+**For hot paths, prefer flat code over nested lambdas.** Benchmarks show ~3-4% improvement.
+
+```cpp
+// ❌ SLOW: Nested lambdas (90% efficiency)
+execute_with_transaction(conn, true,
+    [this, objects]() {                          // Lambda 1: captures
+        return execute_with_statement(conn, sql,
+            [this, objects](auto& stmt) {        // Lambda 2: captures again
+                for (...) { ... }
+            });
+    });
+
+// ✅ FAST: Flat code (93-94% efficiency)
+if (!cached_stmt_) { cached_stmt_ = conn_->prepare_cached(sql); }
+conn_->execute("BEGIN TRANSACTION");
+for (const auto& obj : objects) {
+    cached_stmt_->reset();
+    bind(...);
+    cached_stmt_->execute();
+}
+conn_->execute("COMMIT");
+```
+
+**Why lambdas are slower:**
+- Capture storage overhead (storing `this`, spans, etc.)
+- Indirect call through function pointer
+- Compiler inlining barriers at lambda boundaries
+- Extra stack frame creation per lambda
+
+**When to use each:**
+| Flat Code | Lambdas |
+|-----------|---------|
+| Hot paths (millions of calls) | Cold paths (setup, config) |
+| Inner loops, batch operations | Callbacks, event handlers |
+| Performance-critical ORM ops | Code reuse across callers |
 
 See [Performance Guidelines](docs/development/performance-guidelines.md) for complete rules.
 

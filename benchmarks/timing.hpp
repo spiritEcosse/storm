@@ -2,12 +2,12 @@
 
 /**
  * Performance profiling utilities for Storm ORM
- * 
+ *
  * Usage:
  *   1. Add to code: STORM_TRACE("operation name");
  *   2. Build with: -DSTORM_ENABLE_TIMING_TRACE
  *   3. Outputs microsecond-precision timings to stdout
- * 
+ *
  * Example:
  *   void expensive_function() {
  *       STORM_TRACE("expensive_function");
@@ -23,22 +23,22 @@
 
 namespace storm::orm::profiling {
     class ScopedTimer {
-        const char* label_;
+        const char*                                    label_;
         std::chrono::high_resolution_clock::time_point start_;
-    public:
+
+      public:
         explicit ScopedTimer(const char* label) : label_(label) {
             start_ = std::chrono::high_resolution_clock::now();
         }
-        
+
         ~ScopedTimer() {
-            auto end = std::chrono::high_resolution_clock::now();
+            auto end      = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start_);
-            std::cout << "[TRACE] " << std::setw(40) << std::left << label_ << ": "
-                      << std::fixed << std::setprecision(3)
-                      << (duration.count() / 1000.0) << " μs\n";
+            std::cout << "[TRACE] " << std::setw(40) << std::left << label_ << ": " << std::fixed
+                      << std::setprecision(3) << (duration.count() / 1000.0) << " μs\n";
         }
     };
-}
+} // namespace storm::orm::profiling
 
 // Macro helpers for unique variable names
 #define STORM_TRACE_CONCAT(a, b) a##b

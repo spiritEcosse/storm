@@ -541,7 +541,7 @@ class InsertOptionsTest : public ::testing::Test {
 };
 
 TEST_F(InsertOptionsTest, InsertWithReturnIdsTrue) {
-    QuerySet<IntTypes> qs;
+    QuerySet<IntTypes>    qs;
     std::vector<IntTypes> batch = {{0, 100LL, 10}, {0, 200LL, 20}, {0, 300LL, 30}};
 
     auto result = qs.insert(batch, {{.return_ids = true}});
@@ -559,7 +559,7 @@ TEST_F(InsertOptionsTest, InsertWithReturnIdsTrue) {
 }
 
 TEST_F(InsertOptionsTest, InsertWithReturnIdsFalse) {
-    QuerySet<IntTypes> qs;
+    QuerySet<IntTypes>    qs;
     std::vector<IntTypes> batch = {{0, 100LL, 10}, {0, 200LL, 20}};
 
     auto result = qs.insert(batch, {{.return_ids = false}});
@@ -576,7 +576,7 @@ TEST_F(InsertOptionsTest, InsertWithReturnIdsFalse) {
 }
 
 TEST_F(InsertOptionsTest, InsertWithCustomBatchSize) {
-    QuerySet<IntTypes> qs;
+    QuerySet<IntTypes>    qs;
     std::vector<IntTypes> batch;
 
     // Create 100 objects
@@ -600,7 +600,7 @@ TEST_F(InsertOptionsTest, InsertWithCustomBatchSize) {
 }
 
 TEST_F(InsertOptionsTest, InsertBatchSizeCappedToMax) {
-    QuerySet<IntTypes> qs;
+    QuerySet<IntTypes>    qs;
     std::vector<IntTypes> batch = {{0, 100LL, 10}, {0, 200LL, 20}};
 
     // IntTypes has 2 non-PK fields, so max = 999/2 = 499
@@ -616,7 +616,7 @@ TEST_F(InsertOptionsTest, InsertBatchSizeCappedToMax) {
 
 TEST_F(InsertOptionsTest, SingleInsertWithOptions) {
     QuerySet<IntTypes> qs;
-    IntTypes obj{0, 999LL, 99};
+    IntTypes           obj{0, 999LL, 99};
 
     auto result = qs.insert(obj, {{.return_ids = true}});
     ASSERT_TRUE(result.has_value());
@@ -629,7 +629,7 @@ TEST_F(InsertOptionsTest, SingleInsertWithOptions) {
 }
 
 TEST_F(InsertOptionsTest, LargeBatchWithCustomChunkSize) {
-    QuerySet<IntTypes> qs;
+    QuerySet<IntTypes>    qs;
     std::vector<IntTypes> batch;
 
     // Create 1000 objects
@@ -652,7 +652,7 @@ TEST_F(InsertOptionsTest, LargeBatchWithCustomChunkSize) {
 }
 
 TEST_F(InsertOptionsTest, OptionsWithOnlyBatchSize) {
-    QuerySet<IntTypes> qs;
+    QuerySet<IntTypes>    qs;
     std::vector<IntTypes> batch = {{0, 100LL, 10}, {0, 200LL, 20}};
 
     // Only specify batch_size, return_ids should default to true

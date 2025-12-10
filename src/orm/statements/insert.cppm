@@ -30,8 +30,8 @@ export namespace storm::orm::statements {
 
     // Configuration options for INSERT operations
     struct InsertOptions {
-        std::optional<size_t> batch_size = std::nullopt;  // nullopt = automatic (999/field_count)
-        bool return_ids = true;  // true = return generated IDs (backward compatible default)
+        std::optional<size_t> batch_size = std::nullopt; // nullopt = automatic (999/field_count)
+        bool                  return_ids = true;         // true = return generated IDs (backward compatible default)
     };
 
     // Statement class for ORM insert operations
@@ -194,9 +194,9 @@ export namespace storm::orm::statements {
       public:
         explicit InsertStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
-        // Batch insert operation with optional configuration (QuerySet handles single-object optimization)
-        [[nodiscard]] auto execute(std::span<const T> objects,
-                                    std::optional<InsertOptions> opts = std::nullopt) noexcept
+        // Batch insert operation with optional configuration
+        [[nodiscard]] auto
+        execute(std::span<const T> objects, std::optional<InsertOptions> opts = std::nullopt) noexcept
                 -> std::expected<std::vector<int64_t>, Error> {
             if (objects.empty()) {
                 return std::vector<int64_t>{};
@@ -205,10 +205,19 @@ export namespace storm::orm::statements {
             // Use default options if not provided
             InsertOptions options = opts.value_or(InsertOptions{});
 
+            // Single object - use optimized path (no bulk SQL overhead)
+            if (objects.size() == 1) {
+                auto result = execute_single_optimized(objects[0], options.return_ids);
+                if (!result) {
+                    return std::unexpected(result.error());
+                }
+                return std::vector<int64_t>{result.value()};
+            }
+
             // Calculate effective batch size
-            constexpr size_t max_allowed = Base::MAX_SQLITE_VARIABLES / Base::field_count_;
-            size_t effective_batch_size = options.batch_size.value_or(max_allowed);
-            effective_batch_size = std::min(effective_batch_size, max_allowed); // Cap at SQLite max
+            constexpr size_t max_allowed          = Base::MAX_SQLITE_VARIABLES / Base::field_count_;
+            size_t           effective_batch_size = options.batch_size.value_or(max_allowed);
+            effective_batch_size                  = std::min(effective_batch_size, max_allowed); // Cap at SQLite max
 
             // Batch path with custom batch size
             if (objects.size() <= effective_batch_size) {
@@ -264,7 +273,8 @@ export namespace storm::orm::statements {
 
         // Execute bulk INSERT with multiple VALUES clauses
         // NOTE: No transaction wrapper needed - single INSERT statement is already atomic
-        [[nodiscard]] __attribute__((hot)) auto execute_bulk(std::span<const T> objects, bool return_ids = true) noexcept
+        [[nodiscard]] __attribute__((hot)) auto
+        execute_bulk(std::span<const T> objects, bool return_ids = true) noexcept
                 -> std::expected<std::vector<int64_t>, Error> {
             const auto& sql = get_bulk_insert_sql(objects.size());
 
@@ -277,7 +287,7 @@ export namespace storm::orm::statements {
                                 .and_then([stmt]() { return stmt->execute(); })
                                 .transform([this, objects, return_ids]() {
                                     if (!return_ids) {
-                                        return std::vector<int64_t>{};  // Return empty vector
+                                        return std::vector<int64_t>{}; // Return empty vector
                                     }
 
                                     // Get the last inserted row ID
@@ -300,8 +310,9 @@ export namespace storm::orm::statements {
         }
 
         // Execute CHUNKED bulk inserts with custom batch size
-        [[nodiscard]] auto execute_chunked_bulk_custom(std::span<const T> objects, size_t custom_bulk_size, bool return_ids = true) noexcept
-                -> std::expected<std::vector<int64_t>, Error> {
+        [[nodiscard]] auto execute_chunked_bulk_custom(
+                std::span<const T> objects, size_t custom_bulk_size, bool return_ids = true
+        ) noexcept -> std::expected<std::vector<int64_t>, Error> {
             std::vector<int64_t> all_ids;
             if (return_ids) {
                 all_ids.reserve(objects.size());
@@ -310,7 +321,7 @@ export namespace storm::orm::statements {
             // Process in chunks of custom_bulk_size
             for (size_t offset = 0; offset < objects.size(); offset += custom_bulk_size) {
                 size_t chunk_size = std::min(custom_bulk_size, objects.size() - offset);
-                auto chunk = objects.subspan(offset, chunk_size);
+                auto   chunk      = objects.subspan(offset, chunk_size);
 
                 const auto& sql = get_bulk_insert_sql(chunk.size());
 

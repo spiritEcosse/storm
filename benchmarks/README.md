@@ -21,6 +21,7 @@ The unified benchmark system is a **100% compile-time C++ solution** that loads 
 - ✅ **Raw SQLite Comparison** - Side-by-side Storm ORM vs Raw SQLite benchmarks
 - ✅ **Efficiency Metrics** - Automatic calculation of Storm ORM efficiency percentage
 - ✅ **Batch INSERT Support** - Benchmark single and batch insert operations (10, 100, 500, 1000 rows)
+- ✅ **Batch UPDATE Support** - Benchmark single and batch update-by-PK operations with CRTP base class
 - [ ] **Lower priority Parallel** - Run multiple benchmarks in parallel
 - [ ] **High priority Add aggregate** - Add aggregate benchmarks, add raw version, add accoringly in benchmark_tests.json
 - [ ] **High priority Add join** - Add join benchmarks, add raw version, add accoringly in benchmark_tests.json
@@ -41,8 +42,11 @@ benchmarks/
 ├── parser.hpp                  # Compile-time JSON parser using #embed
 ├── schema.hpp                  # Benchmark test schema (C++ structs)
 ├── operations/
+│   ├── base.hpp               # CRTP base class for data-driven benchmarks
 │   ├── select.hpp             # WHERE clause benchmark implementation
-│   └── insert.hpp             # INSERT benchmark implementation
+│   ├── insert.hpp             # INSERT benchmark implementation
+│   ├── update.hpp             # UPDATE by PK benchmark implementation
+│   └── delete.hpp             # DELETE benchmark implementation
 └── tests/
     └── benchmark_tests.json   # Test definitions (loaded at compile time)
 ```
@@ -109,7 +113,7 @@ Examples:
 **Output:**
 ```
 === Available Benchmark Tests ===
-Total: 5 tests
+Total: 28 tests
 
 Test Name                      Category         Operation
 ────────────────────────────────────────────────────────────
@@ -118,6 +122,13 @@ where_bool_equality            WHERE            where
 where_double_comparison        WHERE            where
 where_int_less_than            WHERE            where
 insert_single                  INSERT           insert
+insert_batch_10                INSERT           insert
+insert_batch_100               INSERT           insert
+...
+update_pk_single               UPDATE_PK        update_pk
+update_pk_batch_10             UPDATE_PK        update_pk
+update_pk_batch_100            UPDATE_PK        update_pk
+...
 ```
 
 ### Run All Benchmarks
@@ -132,7 +143,7 @@ insert_single                  INSERT           insert
 Inserting test data...
 ✅ Inserted 10,000 test records
 === Running All Benchmark Tests (Compile-Time Dispatch) ===
-Total tests: 5
+Total tests: 28
 Iterations per test: 1000
 Using compile-time JSON parsing with nested C++ structs
 
@@ -285,6 +296,110 @@ if constexpr (BatchSize <= bulk_sweet_spot) {  // bulk_sweet_spot = 124
 4. **Consistent 4.2-4.5 M ops/sec for large batches** - Performance plateaus around 4.3 M/s for batches ≥1000, likely hitting SQLite's internal bottleneck (disk I/O, B-tree operations, etc.)
 
 5. **Storm's overhead is only ~3% for both single and batch operations**, demonstrating that the ORM abstraction layer is extremely efficient!
+
+### Run Batch UPDATE Benchmarks
+
+**✅ NEW FEATURE!** Benchmark update-by-primary-key operations with various batch sizes:
+
+```bash
+# Run all UPDATE benchmarks (single + batch)
+./build/release/benchmarks/storm_bench --filter="update_pk" --scale-test
+
+# Run only single UPDATE benchmark
+./build/release/benchmarks/storm_bench --filter="update_pk_single"
+
+# Run specific batch size
+./build/release/benchmarks/storm_bench --filter="update_pk_batch_100"
+```
+
+**Available batch sizes:**
+- `update_pk_single` - Single row updates (1 row per operation)
+- `update_pk_batch_10` - Batch updates with 10 rows per batch
+- `update_pk_batch_100` - Batch updates with 100 rows per batch
+- `update_pk_batch_198` - Just under chunking boundary
+- `update_pk_batch_199` - Exactly at chunking boundary
+- `update_pk_batch_200` - Just over chunking boundary
+- `update_pk_batch_500` to `update_pk_batch_100000` - Large batch sizes
+
+**What's tested:**
+- **Storm ORM**: Uses `QuerySet::update(obj)` for single and `QuerySet::update(span)` for batch with automatic transaction management
+- **Raw SQLite**: Manual `UPDATE ... SET ... WHERE id=?` with transaction wrapping for batches
+- **Fair comparison**: Both versions use the SAME strategy (individual UPDATEs within transaction for batches)
+
+### Batch UPDATE Performance Characteristics
+
+**Architecture: CRTP Base Class**
+
+UPDATE and INSERT benchmarks share common code via CRTP (Curiously Recurring Template Pattern):
+
+```cpp
+// In operations/base.hpp
+template<typename Derived, typename Model, int BatchSize, size_t FieldsPerRow>
+class DataBenchmarkBase {
+    // Shared: data_, qs_, create_model(), prepare(), bind utilities
+};
+
+// INSERT: 4 fields (name, age, is_active, salary - id is auto-increment)
+class InsertBenchmark : public DataBenchmarkBase<..., 4> { ... };
+
+// UPDATE: 5 fields (name, age, is_active, salary + id for WHERE clause)
+class UpdateBenchmark : public DataBenchmarkBase<..., 5> { ... };
+```
+
+**Chunking Boundary for UPDATE:**
+- UPDATE binds 5 parameters per row (4 data fields + 1 PK for WHERE clause)
+- Max rows per transaction: 999 / 5 = **199 rows**
+- Compare to INSERT: 999 / 4 = **249 rows**
+
+**⚠️ Chunking Boundary Performance:**
+
+| Batch Size | Efficiency | Notes |
+|------------|------------|-------|
+| 198 | **~81%** | Just under boundary |
+| 199 | **~90%** | Exactly at max_bulk |
+| 200 | **~90%** | Just over boundary |
+
+**Note:** Unlike INSERT (which uses bulk SQL), UPDATE always executes individual statements within a transaction. The "chunking boundary" is less significant for UPDATE since there's no multi-row UPDATE syntax in SQLite.
+
+**Single UPDATE Performance (verified 2025-12-09, Release build):**
+
+| Operation | Storm ORM | Raw SQLite | Efficiency | Notes |
+|-----------|-----------|------------|------------|-------|
+| **Single UPDATE** | ~1.7 M/s | ~1.8 M/s | **~94%** | ✅ Excellent for full ORM! |
+
+**Batch UPDATE Performance (verified 2025-12-09, Release build):**
+
+| Batch Size | Storm ORM | Raw SQLite | Efficiency | Notes |
+|------------|-----------|------------|------------|-------|
+| 10 | ~2.5 M/s | ~2.5 M/s | **~100%** | ✅ Near parity |
+| 100 | ~3.0 M/s | ~3.2 M/s | **~95%** | ✅ Excellent |
+| 500 | ~3.5 M/s | ~3.8 M/s | **~93%** | ✅ Excellent |
+| 1000 | ~3.4 M/s | ~3.7 M/s | **~90%** | ✅ Good |
+| 10000 | ~3.4 M/s | ~3.7 M/s | **~93%** | ✅ Excellent |
+
+**Key Optimizations Applied (2025-12-09 Update):**
+
+1. **Flat Code Structure** - Removed nested lambda wrappers for ~3-4% improvement
+2. **Statement Pointer Caching** - Cached `sqlite3_stmt*` avoids hash lookup per row
+3. **Inline Binding** - `inline_bind_all_fields()` with compile-time type dispatch
+4. **Direct Transaction Control** - `BEGIN`/`COMMIT` without lambda indirection
+5. **CRTP Pattern** - Zero-overhead abstraction for shared functionality
+
+**Why Flat Code is Faster (measured ~3-4% improvement):**
+```cpp
+// ❌ SLOW: Nested lambdas (90% efficiency)
+execute_with_transaction(conn, true,
+    [this, objects]() {
+        return execute_with_statement(conn, sql,
+            [this, objects](auto& stmt) { /*loop*/ });
+    });
+
+// ✅ FAST: Flat code (93-94% efficiency)
+if (!cached_stmt_) { cached_stmt_ = conn_->prepare_cached(sql); }
+conn_->execute("BEGIN TRANSACTION");
+for (const auto& obj : objects) { /*bind+execute*/ }
+conn_->execute("COMMIT");
+```
 
 ### Run Benchmarks by Filter (Test Name)
 

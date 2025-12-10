@@ -166,5 +166,125 @@
     "iterations": 1,
     "dataset_size": 0,
     "batch_size": 100000
+  },
+  {
+    "test_name": "update_pk_single",
+    "test_category": "UPDATE_PK",
+    "description": "Single row UPDATE by primary key",
+    "model": "Person",
+    "operation": "update_pk",
+    "iterations": 10000,
+    "dataset_size": 0,
+    "batch_size": 1
+  },
+  {
+    "test_name": "update_pk_batch_10",
+    "test_category": "UPDATE_PK",
+    "description": "Batch UPDATE by primary key (10 rows per batch)",
+    "model": "Person",
+    "operation": "update_pk",
+    "iterations": 1000,
+    "dataset_size": 0,
+    "batch_size": 10
+  },
+  {
+    "test_name": "update_pk_batch_100",
+    "test_category": "UPDATE_PK",
+    "description": "Batch UPDATE by primary key (100 rows per batch)",
+    "model": "Person",
+    "operation": "update_pk",
+    "iterations": 100,
+    "dataset_size": 0,
+    "batch_size": 100
+  },
+  {
+    "test_name": "update_pk_batch_198",
+    "test_category": "UPDATE_PK",
+    "description": "Batch UPDATE - just under max_bulk for UPDATE (198 rows, 990 params)",
+    "model": "Person",
+    "operation": "update_pk",
+    "iterations": 50,
+    "dataset_size": 0,
+    "batch_size": 198
+  },
+  {
+    "test_name": "update_pk_batch_199",
+    "test_category": "UPDATE_PK",
+    "description": "Batch UPDATE - exactly at max_bulk for UPDATE (199 rows, 995 params)",
+    "model": "Person",
+    "operation": "update_pk",
+    "iterations": 50,
+    "dataset_size": 0,
+    "batch_size": 199
+  },
+  {
+    "test_name": "update_pk_batch_200",
+    "test_category": "UPDATE_PK",
+    "description": "Batch UPDATE - just over max_bulk threshold (200 rows, 1000 params)",
+    "model": "Person",
+    "operation": "update_pk",
+    "iterations": 50,
+    "dataset_size": 0,
+    "batch_size": 200
+  },
+  {
+    "test_name": "update_pk_batch_500",
+    "test_category": "UPDATE_PK",
+    "description": "Batch UPDATE by primary key (500 rows per batch)",
+    "model": "Person",
+    "operation": "update_pk",
+    "iterations": 10,
+    "dataset_size": 0,
+    "batch_size": 500
+  },
+  {
+    "test_name": "update_pk_batch_1000",
+    "test_category": "UPDATE_PK",
+    "description": "Batch UPDATE by primary key (1000 rows per batch)",
+    "model": "Person",
+    "operation": "update_pk",
+    "iterations": 10,
+    "dataset_size": 0,
+    "batch_size": 1000
+  },
+  {
+    "test_name": "update_pk_batch_5000",
+    "test_category": "UPDATE_PK",
+    "description": "Batch UPDATE by primary key (5000 rows per batch)",
+    "model": "Person",
+    "operation": "update_pk",
+    "iterations": 1,
+    "dataset_size": 0,
+    "batch_size": 5000
+  },
+  {
+    "test_name": "update_pk_batch_10000",
+    "test_category": "UPDATE_PK",
+    "description": "Batch UPDATE by primary key (10000 rows per batch)",
+    "model": "Person",
+    "operation": "update_pk",
+    "iterations": 1,
+    "dataset_size": 0,
+    "batch_size": 10000
+  },
+  {
+    "test_name": "update_pk_batch_50000",
+    "test_category": "UPDATE_PK",
+    "description": "Batch UPDATE by primary key (50000 rows per batch)",
+    "model": "Person",
+    "operation": "update_pk",
+    "iterations": 1,
+    "dataset_size": 0,
+    "batch_size": 50000
+  },
+  {
+    "test_name": "update_pk_batch_100000",
+    "test_category": "UPDATE_PK",
+    "description": "Batch UPDATE by primary key (100000 rows per batch)",
+    "model": "Person",
+    "operation": "update_pk",
+    "iterations": 1,
+    "dataset_size": 0,
+    "batch_size": 100000
   }
 ]

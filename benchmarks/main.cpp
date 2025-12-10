@@ -21,6 +21,7 @@
 
 import storm;
 import storm_db_sqlite;
+import storm_orm_statements_insert;
 import <expected>;
 import <string>;
 import <memory>;
@@ -33,26 +34,26 @@ using namespace storm::benchmark;
 // Test model
 struct Person {
     [[= storm::meta::FieldAttr::primary]] int id;
-    std::string name;
-    int age;
-    bool is_active;
-    double salary;
+    std::string                               name;
+    int                                       age;
+    bool                                      is_active;
+    double                                    salary;
 };
 
 int main(int argc, char* argv[]) {
     try {
         // Parse command-line arguments
         std::string filter;
-        int iterations = 1000;
-        bool list_tests = false;
-        bool scale_test = false;  // Scale test mode (test performance degradation with increasing sizes)
-        bool use_disk = false;    // Use disk-based database instead of in-memory
-        std::string db_path = ":memory:";
+        int         iterations = 1000;
+        bool        list_tests = false;
+        bool        scale_test = false; // Scale test mode (test performance degradation with increasing sizes)
+        bool        use_disk   = false; // Use disk-based database instead of in-memory
+        std::string db_path    = ":memory:";
 
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
             if (arg.find("--filter=") == 0) {
-                filter = arg.substr(9);  // Skip "--filter="
+                filter = arg.substr(9); // Skip "--filter="
             } else if (arg.find("--iterations=") == 0) {
                 iterations = std::stoi(arg.substr(13));
             } else if (arg == "--list" || arg == "-l") {
@@ -61,9 +62,9 @@ int main(int argc, char* argv[]) {
                 scale_test = true;
             } else if (arg == "--disk") {
                 use_disk = true;
-                db_path = "benchmark_test.db";
+                db_path  = "benchmark_test.db";
             } else if (arg.find("--db=") == 0) {
-                db_path = arg.substr(5);
+                db_path  = arg.substr(5);
                 use_disk = (db_path != ":memory:");
             } else if (arg == "--help" || arg == "-h") {
                 std::cout << "Storm ORM Benchmark System\n\n";
@@ -77,12 +78,16 @@ int main(int argc, char* argv[]) {
                 std::cout << "  --list, -l              List all available tests\n";
                 std::cout << "  --help, -h              Show this help message\n\n";
                 std::cout << "Examples:\n";
-                std::cout << "  " << argv[0] << " --filter=insert_batch_100                # Run only insert_batch_100\n";
-                std::cout << "  " << argv[0] << " --filter=insert_batch --scale-test       # Test degradation: 10,100,1000,10000...\n";
-                std::cout << "  " << argv[0] << " --filter=where_int --scale-test          # Run all where_int_* variants\n";
+                std::cout << "  " << argv[0]
+                          << " --filter=insert_batch_100                # Run only insert_batch_100\n";
+                std::cout << "  " << argv[0]
+                          << " --filter=insert_batch --scale-test       # Test degradation: 10,100,1000,10000...\n";
+                std::cout << "  " << argv[0]
+                          << " --filter=where_int --scale-test          # Run all where_int_* variants\n";
                 std::cout << "  " << argv[0] << " --iterations=5000\n";
                 std::cout << "  " << argv[0] << " --disk                                   # Use disk-based database\n";
-                std::cout << "  " << argv[0] << " --db=/tmp/bench.db                       # Use specific database file\n";
+                std::cout << "  " << argv[0]
+                          << " --db=/tmp/bench.db                       # Use specific database file\n";
                 std::cout << "  " << argv[0] << " --list\n";
                 return 0;
             }
@@ -114,12 +119,12 @@ int main(int argc, char* argv[]) {
 
         // Create table
         auto create_result = conn->execute(
-            "CREATE TABLE Person ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-            "name TEXT NOT NULL, "
-            "age INTEGER NOT NULL, "
-            "is_active INTEGER NOT NULL, "
-            "salary REAL NOT NULL)"
+                "CREATE TABLE Person ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "name TEXT NOT NULL, "
+                "age INTEGER NOT NULL, "
+                "is_active INTEGER NOT NULL, "
+                "salary REAL NOT NULL)"
         );
         if (!create_result.has_value()) {
             std::cerr << "Failed to create table: " << create_result.error().message() << "\n";
@@ -136,11 +141,11 @@ int main(int argc, char* argv[]) {
             QuerySet<Person> qs;
             for (int i = 1; i <= required_dataset_size; i++) {
                 Person p{
-                    .id = 0,  // Auto-increment
-                    .name = "Person" + std::to_string(i),
-                    .age = 20 + (i % 50),
-                    .is_active = (i % 2 == 0),
-                    .salary = 30000.0 + (i * 1000.0)
+                        .id        = 0, // Auto-increment
+                        .name      = "Person" + std::to_string(i),
+                        .age       = 20 + (i % 50),
+                        .is_active = (i % 2 == 0),
+                        .salary    = 30000.0 + (i * 1000.0)
                 };
                 auto insert_result = qs.insert(p);
                 if (!insert_result.has_value()) {

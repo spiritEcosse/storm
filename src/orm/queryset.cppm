@@ -66,10 +66,10 @@ export namespace storm {
         }
 
         // Insert single object (SFINAE: only accept T, not span/container)
-        template<typename U = T>
-        requires std::same_as<std::remove_cvref_t<U>, T>
-        std::expected<int64_t, Error> insert(const U& obj,
-                                               std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
+        template <typename U = T>
+            requires std::same_as<std::remove_cvref_t<U>, T>
+        std::expected<int64_t, Error>
+        insert(const U& obj, std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
             // Use default options if not provided
             orm::statements::InsertOptions options = opts.value_or(orm::statements::InsertOptions{});
 
@@ -78,8 +78,8 @@ export namespace storm {
         }
 
         // Bulk insert (span overload)
-        std::expected<std::vector<int64_t>, Error> insert(std::span<const T> objects,
-                                                           std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
+        std::expected<std::vector<int64_t>, Error>
+        insert(std::span<const T> objects, std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
             return execute_insert(objects, opts);
         }
 
@@ -262,8 +262,10 @@ export namespace storm {
             return self_cast(self);
         }
 
-        // Update operations
-        std::expected<void, Error> update(const T& obj) {
+        // Update operations (SFINAE: only accept T, not span/container)
+        template <typename U = T>
+            requires std::same_as<std::remove_cvref_t<U>, T>
+        std::expected<void, Error> update(const U& obj) {
             // Use cached UpdateStatement instance for optimal performance
             return get_update_statement().execute_single_optimized(obj);
         }
@@ -381,9 +383,9 @@ export namespace storm {
             return *insert_stmt_;
         }
 
-        [[nodiscard]] std::expected<std::vector<int64_t>, Error>
-        execute_insert(std::span<const T> objects,
-                       std::optional<orm::statements::InsertOptions> opts = std::nullopt) const noexcept {
+        [[nodiscard]] std::expected<std::vector<int64_t>, Error> execute_insert(
+                std::span<const T> objects, std::optional<orm::statements::InsertOptions> opts = std::nullopt
+        ) const noexcept {
             return get_insert_statement().execute(objects, opts);
         }
 

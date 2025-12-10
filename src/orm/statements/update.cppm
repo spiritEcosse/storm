@@ -128,22 +128,76 @@ export namespace storm::orm::statements {
       public:
         explicit UpdateStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
-        [[nodiscard]] auto execute(std::span<const T> objects) noexcept -> std::expected<void, Error> {
+        // Optimized batch execute - flattened, no nested lambdas
+        [[nodiscard]] __attribute__((hot)) auto execute(std::span<const T> objects) noexcept
+                -> std::expected<void, Error> {
             if (objects.empty()) {
                 return {};
             }
 
-            // Fast path for single update - use optimized execution
-            if (objects.size() == 1) {
-                return execute_single_optimized(objects[0]);
+            // Cache the statement pointer once (avoid hash lookup per row)
+            if (!cached_update_stmt_) {
+                auto stmt_result = conn_->prepare_cached(get_update_sql());
+                if (!stmt_result) {
+                    return std::unexpected(stmt_result.error());
+                }
+                cached_update_stmt_ = *stmt_result;
             }
 
-            // Multiple updates - use transaction wrapper with individual statements
-            return Base::template execute_with_transaction<ConnType>(
-                    *conn_,
-                    true, // Always use transaction for batch updates
-                    [this, objects]() -> std::expected<void, Error> { return execute_individual_batch(objects); }
-            );
+            // Single object - no transaction needed
+            if (objects.size() == 1) {
+                return execute_single_row(objects[0]);
+            }
+
+            // Multiple objects - use transaction (flattened, no lambda)
+            auto begin_result = conn_->execute("BEGIN TRANSACTION");
+            if (!begin_result) {
+                return std::unexpected(begin_result.error());
+            }
+
+            // Execute all updates with cached statement
+            for (const auto& obj : objects) {
+                cached_update_stmt_->reset();
+
+                auto bind_result = inline_bind_all_fields(cached_update_stmt_, obj, typename Base::field_indices_t{});
+                if (!bind_result) {
+                    (void)conn_->execute("ROLLBACK");
+                    return std::unexpected(bind_result.error());
+                }
+
+                auto exec_result = cached_update_stmt_->execute();
+                if (!exec_result) {
+                    (void)conn_->execute("ROLLBACK");
+                    return std::unexpected(exec_result.error());
+                }
+            }
+
+            // Commit transaction
+            auto commit_result = conn_->execute("COMMIT");
+            if (!commit_result) {
+                (void)conn_->execute("ROLLBACK");
+                return std::unexpected(commit_result.error());
+            }
+
+            return {};
+        }
+
+        // Execute single row with cached statement (no transaction)
+        [[nodiscard]] __attribute__((always_inline)) auto execute_single_row(const T& obj) noexcept
+                -> std::expected<void, Error> {
+            cached_update_stmt_->reset();
+
+            auto bind_result = inline_bind_all_fields(cached_update_stmt_, obj, typename Base::field_indices_t{});
+            if (!bind_result) {
+                return std::unexpected(bind_result.error());
+            }
+
+            auto exec_result = cached_update_stmt_->execute();
+            if (!exec_result) {
+                return std::unexpected(exec_result.error());
+            }
+
+            return {};
         }
 
         // Helper template for inline binding at compile-time index

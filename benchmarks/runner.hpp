@@ -20,310 +20,307 @@
 
 namespace storm::benchmark {
 
-// Number of runs per benchmark for statistical accuracy
-constexpr int NUM_RUNS = 5;
+    // Number of runs per benchmark for statistical accuracy
+    constexpr int NUM_RUNS = 5;
 
-// Statistical helper functions
-inline double calculate_median(std::vector<double>& values) {
-    std::sort(values.begin(), values.end());
-    size_t n = values.size();
-    if (n == 0) return 0.0;
-    return (n % 2 == 0)
-        ? (values[n/2 - 1] + values[n/2]) / 2.0
-        : values[n/2];
-}
-
-inline double calculate_mean(const std::vector<double>& values) {
-    if (values.empty()) return 0.0;
-    double sum = 0.0;
-    for (double v : values) sum += v;
-    return sum / values.size();
-}
-
-inline double calculate_stddev(const std::vector<double>& values, double mean) {
-    if (values.size() < 2) return 0.0;
-    double sum_sq = 0.0;
-    for (double v : values) {
-        sum_sq += (v - mean) * (v - mean);
+    // Statistical helper functions
+    inline double calculate_median(std::vector<double>& values) {
+        std::sort(values.begin(), values.end());
+        size_t n = values.size();
+        if (n == 0)
+            return 0.0;
+        return (n % 2 == 0) ? (values[n / 2 - 1] + values[n / 2]) / 2.0 : values[n / 2];
     }
-    return std::sqrt(sum_sq / values.size());
-}
 
-inline double calculate_min(const std::vector<double>& values) {
-    if (values.empty()) return 0.0;
-    return *std::min_element(values.begin(), values.end());
-}
+    inline double calculate_mean(const std::vector<double>& values) {
+        if (values.empty())
+            return 0.0;
+        double sum = 0.0;
+        for (double v : values)
+            sum += v;
+        return sum / values.size();
+    }
 
-inline double calculate_max(const std::vector<double>& values) {
-    if (values.empty()) return 0.0;
-    return *std::max_element(values.begin(), values.end());
-}
-
-// ANSI color codes for terminal output
-namespace Color {
-    constexpr const char* RESET   = "\033[0m";
-    constexpr const char* BOLD    = "\033[1m";
-    constexpr const char* RED     = "\033[31m";
-    constexpr const char* GREEN   = "\033[32m";
-    constexpr const char* YELLOW  = "\033[33m";
-    constexpr const char* BLUE    = "\033[34m";
-    constexpr const char* MAGENTA = "\033[35m";
-    constexpr const char* CYAN    = "\033[36m";
-    constexpr const char* WHITE   = "\033[37m";
-
-    // Bold colors
-    constexpr const char* BOLD_GREEN  = "\033[1;32m";
-    constexpr const char* BOLD_YELLOW = "\033[1;33m";
-    constexpr const char* BOLD_CYAN   = "\033[1;36m";
-    constexpr const char* BOLD_WHITE  = "\033[1;37m";
-}
-
-class BenchmarkRunner {
-public:
-    // List all available tests
-    void list_tests() {
-        std::cout << "=== Available Benchmark Tests ===\n";
-        std::cout << "Total: " << BENCHMARK_TESTS.size() << " tests\n\n";
-
-        std::cout << "Test Name                      Category         Operation\n";
-        std::cout << "────────────────────────────────────────────────────────────\n";
-
-        for (size_t i = 0; i < BENCHMARK_TESTS.size(); i++) {
-            const auto& test = BENCHMARK_TESTS[i];
-            std::string test_name(test.test_name.view());
-            std::string category(test.test_category.view());
-            std::string operation(test.operation.view());
-
-            // Format with padding
-            std::cout << test_name;
-            for (size_t j = test_name.size(); j < 31; j++) std::cout << " ";
-            std::cout << category;
-            for (size_t j = category.size(); j < 17; j++) std::cout << " ";
-            std::cout << operation << "\n";
+    inline double calculate_stddev(const std::vector<double>& values, double mean) {
+        if (values.size() < 2)
+            return 0.0;
+        double sum_sq = 0.0;
+        for (double v : values) {
+            sum_sq += (v - mean) * (v - mean);
         }
-        std::cout << "\n";
+        return std::sqrt(sum_sq / values.size());
     }
 
-    // Helper to detect if benchmark class has prepare() method
-    template<typename T, typename = void>
-    struct has_prepare : std::false_type {};
+    inline double calculate_min(const std::vector<double>& values) {
+        if (values.empty())
+            return 0.0;
+        return *std::min_element(values.begin(), values.end());
+    }
 
-    template<typename T>
-    struct has_prepare<T, std::void_t<decltype(std::declval<T>().prepare(int{}))>> : std::true_type {};
+    inline double calculate_max(const std::vector<double>& values) {
+        if (values.empty())
+            return 0.0;
+        return *std::max_element(values.begin(), values.end());
+    }
 
-    // Common timing and reporting for all benchmarks (with statistical analysis)
-    template<typename BenchmarkClass>
-    void run_benchmark(const char* test_name, BenchmarkClass&& bench, int iterations) {
-        std::cout << "\n" << Color::BOLD_CYAN << "=== " << test_name << " ===" << Color::RESET << "\n";
+    // ANSI color codes for terminal output
+    namespace Color {
+        constexpr const char* RESET   = "\033[0m";
+        constexpr const char* BOLD    = "\033[1m";
+        constexpr const char* RED     = "\033[31m";
+        constexpr const char* GREEN   = "\033[32m";
+        constexpr const char* YELLOW  = "\033[33m";
+        constexpr const char* BLUE    = "\033[34m";
+        constexpr const char* MAGENTA = "\033[35m";
+        constexpr const char* CYAN    = "\033[36m";
+        constexpr const char* WHITE   = "\033[37m";
 
-        bench.print_info();
+        // Bold colors
+        constexpr const char* BOLD_GREEN  = "\033[1;32m";
+        constexpr const char* BOLD_YELLOW = "\033[1;33m";
+        constexpr const char* BOLD_CYAN   = "\033[1;36m";
+        constexpr const char* BOLD_WHITE  = "\033[1;37m";
+    } // namespace Color
 
-        // Prepare data BEFORE timing (if benchmark has prepare() method)
-        if constexpr (has_prepare<BenchmarkClass>::value) {
-            bench.prepare(iterations);
+    class BenchmarkRunner {
+      public:
+        // List all available tests
+        void list_tests() {
+            std::cout << "=== Available Benchmark Tests ===\n";
+            std::cout << "Total: " << BENCHMARK_TESTS.size() << " tests\n\n";
+
+            std::cout << "Test Name                      Category         Operation\n";
+            std::cout << "────────────────────────────────────────────────────────────\n";
+
+            for (size_t i = 0; i < BENCHMARK_TESTS.size(); i++) {
+                const auto& test = BENCHMARK_TESTS[i];
+                std::string test_name(test.test_name.view());
+                std::string category(test.test_category.view());
+                std::string operation(test.operation.view());
+
+                // Format with padding
+                std::cout << test_name;
+                for (size_t j = test_name.size(); j < 31; j++)
+                    std::cout << " ";
+                std::cout << category;
+                for (size_t j = category.size(); j < 17; j++)
+                    std::cout << " ";
+                std::cout << operation << "\n";
+            }
+            std::cout << "\n";
         }
 
-        // Collect throughput samples from multiple runs
-        std::vector<double> storm_throughputs;
-        std::vector<double> raw_throughputs;
-        storm_throughputs.reserve(NUM_RUNS);
-        raw_throughputs.reserve(NUM_RUNS);
+        // Helper to detect if benchmark class has prepare() method
+        template <typename T, typename = void> struct has_prepare : std::false_type {};
 
-        int operations_storm = 0;
-        int operations_raw = 0;
+        template <typename T>
+        struct has_prepare<T, std::void_t<decltype(std::declval<T>().prepare(int{}))>> : std::true_type {};
 
-        for (int run = 0; run < NUM_RUNS; run++) {
-            // ===== Storm ORM Execution =====
-            auto start_storm = std::chrono::steady_clock::now();
-            operations_storm = bench.execute(iterations);
-            auto end_storm = std::chrono::steady_clock::now();
+        // Common timing and reporting for all benchmarks (with statistical analysis)
+        template <typename BenchmarkClass>
+        void run_benchmark(const char* test_name, BenchmarkClass&& bench, int iterations) {
+            std::cout << "\n" << Color::BOLD_CYAN << "=== " << test_name << " ===" << Color::RESET << "\n";
 
-            auto duration_storm = std::chrono::duration_cast<std::chrono::nanoseconds>(end_storm - start_storm);
-            double storm_ops_per_sec = (operations_storm / (duration_storm.count() / 1e9));
-            storm_throughputs.push_back(storm_ops_per_sec / 1e6);
+            bench.print_info();
 
-            // ===== Raw SQLite Execution =====
-            auto start_raw = std::chrono::steady_clock::now();
-            operations_raw = bench.execute_raw(iterations);
-            auto end_raw = std::chrono::steady_clock::now();
+            // Prepare data BEFORE timing (if benchmark has prepare() method)
+            if constexpr (has_prepare<BenchmarkClass>::value) {
+                bench.prepare(iterations);
+            }
 
-            auto duration_raw = std::chrono::duration_cast<std::chrono::nanoseconds>(end_raw - start_raw);
-            double raw_ops_per_sec = (operations_raw / (duration_raw.count() / 1e9));
-            raw_throughputs.push_back(raw_ops_per_sec / 1e6);
+            // Collect throughput samples from multiple runs
+            std::vector<double> storm_throughputs;
+            std::vector<double> raw_throughputs;
+            storm_throughputs.reserve(NUM_RUNS);
+            raw_throughputs.reserve(NUM_RUNS);
+
+            int operations_storm = 0;
+            int operations_raw   = 0;
+
+            for (int run = 0; run < NUM_RUNS; run++) {
+                // ===== Storm ORM Execution =====
+                auto start_storm = std::chrono::steady_clock::now();
+                operations_storm = bench.execute(iterations);
+                auto end_storm   = std::chrono::steady_clock::now();
+
+                auto   duration_storm = std::chrono::duration_cast<std::chrono::nanoseconds>(end_storm - start_storm);
+                double storm_ops_per_sec = (operations_storm / (duration_storm.count() / 1e9));
+                storm_throughputs.push_back(storm_ops_per_sec / 1e6);
+
+                // ===== Raw SQLite Execution =====
+                auto start_raw = std::chrono::steady_clock::now();
+                operations_raw = bench.execute_raw(iterations);
+                auto end_raw   = std::chrono::steady_clock::now();
+
+                auto   duration_raw    = std::chrono::duration_cast<std::chrono::nanoseconds>(end_raw - start_raw);
+                double raw_ops_per_sec = (operations_raw / (duration_raw.count() / 1e9));
+                raw_throughputs.push_back(raw_ops_per_sec / 1e6);
+            }
+
+            // Calculate statistics for Storm ORM
+            double storm_median = calculate_median(storm_throughputs);
+            double storm_mean   = calculate_mean(storm_throughputs);
+            double storm_stddev = calculate_stddev(storm_throughputs, storm_mean);
+            double storm_min    = calculate_min(storm_throughputs);
+            double storm_max    = calculate_max(storm_throughputs);
+
+            // Calculate statistics for Raw SQLite
+            double raw_median = calculate_median(raw_throughputs);
+            double raw_mean   = calculate_mean(raw_throughputs);
+            double raw_stddev = calculate_stddev(raw_throughputs, raw_mean);
+            double raw_min    = calculate_min(raw_throughputs);
+            double raw_max    = calculate_max(raw_throughputs);
+
+            // Calculate efficiency based on median (most stable metric)
+            double efficiency = (storm_median / raw_median) * 100.0;
+
+            // Format output with colors
+            std::cout << "Iterations: " << Color::YELLOW << iterations << Color::RESET;
+            std::cout << " | Runs: " << Color::YELLOW << NUM_RUNS << Color::RESET << "\n\n";
+
+            // Storm ORM results
+            std::cout << Color::BOLD << "Storm ORM:" << Color::RESET << "\n";
+            std::cout << "  Operations: " << Color::YELLOW << operations_storm << Color::RESET << "\n";
+
+            const char* storm_color = storm_median >= 5.0   ? Color::BOLD_GREEN
+                                      : storm_median >= 1.0 ? Color::GREEN
+                                                            : Color::YELLOW;
+            std::cout << "  Median:  " << storm_color << std::fixed << std::setprecision(2) << storm_median
+                      << " M ops/sec" << Color::RESET << "\n";
+            std::cout << "  Mean:    " << storm_color << std::fixed << std::setprecision(2) << storm_mean
+                      << " M ops/sec" << Color::RESET << " (±" << std::setprecision(2) << storm_stddev << ")\n";
+            std::cout << "  Range:   [" << std::setprecision(2) << storm_min << " - " << storm_max << "]\n";
+
+            // Raw SQLite results
+            std::cout << "\n" << Color::BOLD << "Raw SQLite:" << Color::RESET << "\n";
+            std::cout << "  Operations: " << Color::YELLOW << operations_raw << Color::RESET << "\n";
+
+            const char* raw_color = raw_median >= 5.0   ? Color::BOLD_GREEN
+                                    : raw_median >= 1.0 ? Color::GREEN
+                                                        : Color::YELLOW;
+            std::cout << "  Median:  " << raw_color << std::fixed << std::setprecision(2) << raw_median << " M ops/sec"
+                      << Color::RESET << "\n";
+            std::cout << "  Mean:    " << raw_color << std::fixed << std::setprecision(2) << raw_mean << " M ops/sec"
+                      << Color::RESET << " (±" << std::setprecision(2) << raw_stddev << ")\n";
+            std::cout << "  Range:   [" << std::setprecision(2) << raw_min << " - " << raw_max << "]\n";
+
+            // Efficiency comparison
+            std::cout << "\n" << Color::BOLD << "Efficiency: " << Color::RESET;
+            const char* eff_color = efficiency >= 90.0   ? Color::BOLD_GREEN
+                                    : efficiency >= 70.0 ? Color::GREEN
+                                    : efficiency >= 50.0 ? Color::YELLOW
+                                                         : Color::RED;
+            std::cout << eff_color << std::fixed << std::setprecision(1) << efficiency << "%" << Color::RESET;
+            std::cout << " (" << (efficiency >= 100.0 ? Color::BOLD_GREEN : Color::GREEN)
+                      << (efficiency >= 100.0 ? "FASTER" : "slower") << Color::RESET << " than raw SQLite)\n";
+
+            std::cout << Color::GREEN << "✅ Benchmark complete!" << Color::RESET << "\n";
         }
 
-        // Calculate statistics for Storm ORM
-        double storm_median = calculate_median(storm_throughputs);
-        double storm_mean = calculate_mean(storm_throughputs);
-        double storm_stddev = calculate_stddev(storm_throughputs, storm_mean);
-        double storm_min = calculate_min(storm_throughputs);
-        double storm_max = calculate_max(storm_throughputs);
+      private:
+        // Operation handlers - one function per operation type
+        // Clean, simple, easy to add new operations
 
-        // Calculate statistics for Raw SQLite
-        double raw_median = calculate_median(raw_throughputs);
-        double raw_mean = calculate_mean(raw_throughputs);
-        double raw_stddev = calculate_stddev(raw_throughputs, raw_mean);
-        double raw_min = calculate_min(raw_throughputs);
-        double raw_max = calculate_max(raw_throughputs);
+        template <typename Model, auto& test> static void run_where_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name = test.where.field.view();
+            constexpr auto             op_str     = test.where.op;
+            constexpr int              value      = test.where.value_int;
+            constexpr auto             field_info = dispatch_field<Model>(field_name);
 
-        // Calculate efficiency based on median (most stable metric)
-        double efficiency = (storm_median / raw_median) * 100.0;
+            runner.run_benchmark(
+                    test.test_name.c_str(), SelectBenchmark<Model, field_info, op_str, int>{value}, iterations
+            );
+        }
 
-        // Format output with colors
-        std::cout << "Iterations: " << Color::YELLOW << iterations << Color::RESET;
-        std::cout << " | Runs: " << Color::YELLOW << NUM_RUNS << Color::RESET << "\n\n";
+        template <typename Model, auto& test>
+        static void run_insert_operation(BenchmarkRunner& runner, int iterations) {
+            runner.run_benchmark(test.test_name.c_str(), InsertBenchmark<Model, test.batch_size>{}, iterations);
+        }
 
-        // Storm ORM results
-        std::cout << Color::BOLD << "Storm ORM:" << Color::RESET << "\n";
-        std::cout << "  Operations: " << Color::YELLOW << operations_storm << Color::RESET << "\n";
+        template <typename Model, auto& test>
+        static void run_delete_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name = test.where.field.view();
+            constexpr auto             op_str     = test.where.op;
+            constexpr int              value      = test.where.value_int;
+            constexpr auto             field_info = dispatch_field<Model>(field_name);
 
-        const char* storm_color = storm_median >= 5.0 ? Color::BOLD_GREEN :
-                                  storm_median >= 1.0 ? Color::GREEN : Color::YELLOW;
-        std::cout << "  Median:  " << storm_color << std::fixed << std::setprecision(2)
-                  << storm_median << " M ops/sec" << Color::RESET << "\n";
-        std::cout << "  Mean:    " << storm_color << std::fixed << std::setprecision(2)
-                  << storm_mean << " M ops/sec" << Color::RESET
-                  << " (±" << std::setprecision(2) << storm_stddev << ")\n";
-        std::cout << "  Range:   [" << std::setprecision(2) << storm_min
-                  << " - " << storm_max << "]\n";
+            runner.run_benchmark(
+                    test.test_name.c_str(), DeleteBenchmark<Model, field_info, op_str, int>{value}, iterations
+            );
+        }
 
-        // Raw SQLite results
-        std::cout << "\n" << Color::BOLD << "Raw SQLite:" << Color::RESET << "\n";
-        std::cout << "  Operations: " << Color::YELLOW << operations_raw << Color::RESET << "\n";
+        template <typename Model, auto& test>
+        static void run_update_pk_operation(BenchmarkRunner& runner, int iterations) {
+            runner.run_benchmark(test.test_name.c_str(), UpdateBenchmark<Model, test.batch_size>{}, iterations);
+        }
 
-        const char* raw_color = raw_median >= 5.0 ? Color::BOLD_GREEN :
-                                raw_median >= 1.0 ? Color::GREEN : Color::YELLOW;
-        std::cout << "  Median:  " << raw_color << std::fixed << std::setprecision(2)
-                  << raw_median << " M ops/sec" << Color::RESET << "\n";
-        std::cout << "  Mean:    " << raw_color << std::fixed << std::setprecision(2)
-                  << raw_mean << " M ops/sec" << Color::RESET
-                  << " (±" << std::setprecision(2) << raw_stddev << ")\n";
-        std::cout << "  Range:   [" << std::setprecision(2) << raw_min
-                  << " - " << raw_max << "]\n";
+      public:
+        // Template recursion to execute tests at compile time
+        template <typename Model, size_t TestIndex, size_t TotalTests> struct TestExecutor {
+            static void
+            execute(BenchmarkRunner& runner, int iterations, const std::string& filter = "", bool scale_test = false) {
+                constexpr auto&            test      = BENCHMARK_TESTS[TestIndex];
+                constexpr std::string_view test_name = test.test_name.view();
+                constexpr std::string_view operation = test.operation.view();
 
-        // Efficiency comparison
-        std::cout << "\n" << Color::BOLD << "Efficiency: " << Color::RESET;
-        const char* eff_color = efficiency >= 90.0 ? Color::BOLD_GREEN :
-                                efficiency >= 70.0 ? Color::GREEN :
-                                efficiency >= 50.0 ? Color::YELLOW : Color::RED;
-        std::cout << eff_color << std::fixed << std::setprecision(1)
-                  << efficiency << "%" << Color::RESET;
-        std::cout << " (" << (efficiency >= 100.0 ? Color::BOLD_GREEN : Color::GREEN)
-                  << (efficiency >= 100.0 ? "FASTER" : "slower") << Color::RESET
-                  << " than raw SQLite)\n";
+                // Check if test matches filter (runtime check, but minimal overhead)
+                // - Empty filter: run all tests
+                // - scale_test=true: substring match (e.g., "insert_batch" matches "insert_batch_100")
+                // - scale_test=false: exact match (e.g., "insert_batch_100" only matches "insert_batch_100")
+                std::string test_name_str(test_name.data(), test_name.size());
+                bool should_run = filter.empty() || (scale_test ? (test_name_str.find(filter) != std::string::npos)
+                                                                : (test_name_str == filter));
 
-        std::cout << Color::GREEN << "✅ Benchmark complete!" << Color::RESET << "\n";
-    }
+                if (should_run) {
+                    // Dispatch to handler - still compile-time, just cleaner
+                    if constexpr (operation == "where") {
+                        runner.run_where_operation<Model, test>(runner, iterations);
+                    } else if constexpr (operation == "insert") {
+                        runner.run_insert_operation<Model, test>(runner, iterations);
+                    } else if constexpr (operation == "update_pk") {
+                        runner.run_update_pk_operation<Model, test>(runner, iterations);
+                    } else if constexpr (operation == "delete") {
+                        runner.run_delete_operation<Model, test>(runner, iterations);
+                    }
+                }
 
-private:
-    // Operation handlers - one function per operation type
-    // Clean, simple, easy to add new operations
-
-    template<typename Model, auto& test>
-    static void run_where_operation(BenchmarkRunner& runner, int iterations) {
-        constexpr std::string_view field_name = test.where.field.view();
-        constexpr auto op_str = test.where.op;
-        constexpr int value = test.where.value_int;
-        constexpr auto field_info = dispatch_field<Model>(field_name);
-
-        runner.run_benchmark(test.test_name.c_str(), SelectBenchmark<Model, field_info, op_str, int>{value}, iterations);
-    }
-
-    template<typename Model, auto& test>
-    static void run_insert_operation(BenchmarkRunner& runner, int iterations) {
-        runner.run_benchmark(test.test_name.c_str(),
-            InsertBenchmark<Model, test.batch_size>{}, iterations);
-    }
-
-    template<typename Model, auto& test>
-    static void run_update_operation(BenchmarkRunner& runner, int iterations) {
-        constexpr std::string_view field_name = test.where.field.view();
-        constexpr auto op_str = test.where.op;
-        constexpr int value = test.where.value_int;
-        constexpr auto field_info = dispatch_field<Model>(field_name);
-
-        runner.run_benchmark(test.test_name.c_str(), UpdateBenchmark<Model, field_info, op_str, int>{value}, iterations);
-    }
-
-    template<typename Model, auto& test>
-    static void run_delete_operation(BenchmarkRunner& runner, int iterations) {
-        constexpr std::string_view field_name = test.where.field.view();
-        constexpr auto op_str = test.where.op;
-        constexpr int value = test.where.value_int;
-        constexpr auto field_info = dispatch_field<Model>(field_name);
-
-        runner.run_benchmark(test.test_name.c_str(), DeleteBenchmark<Model, field_info, op_str, int>{value}, iterations);
-    }
-
-public:
-    // Template recursion to execute tests at compile time
-    template<typename Model, size_t TestIndex, size_t TotalTests>
-    struct TestExecutor {
-        static void execute(BenchmarkRunner& runner, int iterations, const std::string& filter = "", bool scale_test = false) {
-            constexpr auto& test = BENCHMARK_TESTS[TestIndex];
-            constexpr std::string_view test_name = test.test_name.view();
-            constexpr std::string_view operation = test.operation.view();
-
-            // Check if test matches filter (runtime check, but minimal overhead)
-            // - Empty filter: run all tests
-            // - scale_test=true: substring match (e.g., "insert_batch" matches "insert_batch_100")
-            // - scale_test=false: exact match (e.g., "insert_batch_100" only matches "insert_batch_100")
-            std::string test_name_str(test_name.data(), test_name.size());
-            bool should_run = filter.empty() ||
-                             (scale_test ? (test_name_str.find(filter) != std::string::npos)
-                                         : (test_name_str == filter));
-
-            if (should_run) {
-                // Dispatch to handler - still compile-time, just cleaner
-                if constexpr (operation == "where") {
-                    runner.run_where_operation<Model, test>(runner, iterations);
-                } else if constexpr (operation == "insert") {
-                    runner.run_insert_operation<Model, test>(runner, iterations);
-                } else if constexpr (operation == "update") {
-                    runner.run_update_operation<Model, test>(runner, iterations);
-                } else if constexpr (operation == "delete") {
-                    runner.run_delete_operation<Model, test>(runner, iterations);
+                // Recurse to next test
+                if constexpr (TestIndex + 1 < TotalTests) {
+                    TestExecutor<Model, TestIndex + 1, TotalTests>::execute(runner, iterations, filter, scale_test);
                 }
             }
+        };
 
-            // Recurse to next test
-            if constexpr (TestIndex + 1 < TotalTests) {
-                TestExecutor<Model, TestIndex + 1, TotalTests>::execute(runner, iterations, filter, scale_test);
-            }
+        // Entry point for test execution (all tests)
+        template <typename Model> void run_all(int iterations = 1000) {
+            std::cout << "=== Running All Benchmark Tests (Compile-Time Dispatch) ===\n";
+            std::cout << "Total tests: " << BENCHMARK_TESTS.size() << "\n";
+            std::cout << "Iterations per test: " << iterations << "\n";
+            std::cout << "Using compile-time JSON parsing with nested C++ structs\n\n";
+
+            // Start template recursion from index 0
+            TestExecutor<Model, 0, BENCHMARK_TESTS.size()>::execute(*this, iterations);
+
+            std::cout << "\n✅ All tests completed with COMPILE-TIME dispatch!\n";
+            std::cout << "✅ Zero runtime string parsing overhead!\n";
+            std::cout << "✅ Each test has its own specialized function!\n";
+            std::cout << "✅ Tests loaded from JSON at compile time!\n";
+        }
+
+        // Entry point for filtered test execution
+        template <typename Model>
+        void run_filtered(const std::string& filter, int iterations = 1000, bool scale_test = false) {
+            std::cout << "=== Running Filtered Benchmark Tests ===\n";
+            std::cout << "Filter: \"" << filter << "\" (";
+            std::cout << (scale_test ? "substring match - scale testing mode" : "exact match") << ")\n";
+            std::cout << "Iterations per test: " << iterations << "\n";
+            std::cout << "Using compile-time dispatch with runtime filtering\n\n";
+
+            // Start template recursion with filter
+            TestExecutor<Model, 0, BENCHMARK_TESTS.size()>::execute(*this, iterations, filter, scale_test);
+
+            std::cout << "\n✅ Filtered tests completed!\n";
         }
     };
-
-    // Entry point for test execution (all tests)
-    template<typename Model>
-    void run_all(int iterations = 1000) {
-        std::cout << "=== Running All Benchmark Tests (Compile-Time Dispatch) ===\n";
-        std::cout << "Total tests: " << BENCHMARK_TESTS.size() << "\n";
-        std::cout << "Iterations per test: " << iterations << "\n";
-        std::cout << "Using compile-time JSON parsing with nested C++ structs\n\n";
-
-        // Start template recursion from index 0
-        TestExecutor<Model, 0, BENCHMARK_TESTS.size()>::execute(*this, iterations);
-
-        std::cout << "\n✅ All tests completed with COMPILE-TIME dispatch!\n";
-        std::cout << "✅ Zero runtime string parsing overhead!\n";
-        std::cout << "✅ Each test has its own specialized function!\n";
-        std::cout << "✅ Tests loaded from JSON at compile time!\n";
-    }
-
-    // Entry point for filtered test execution
-    template<typename Model>
-    void run_filtered(const std::string& filter, int iterations = 1000, bool scale_test = false) {
-        std::cout << "=== Running Filtered Benchmark Tests ===\n";
-        std::cout << "Filter: \"" << filter << "\" (";
-        std::cout << (scale_test ? "substring match - scale testing mode" : "exact match") << ")\n";
-        std::cout << "Iterations per test: " << iterations << "\n";
-        std::cout << "Using compile-time dispatch with runtime filtering\n\n";
-
-        // Start template recursion with filter
-        TestExecutor<Model, 0, BENCHMARK_TESTS.size()>::execute(*this, iterations, filter, scale_test);
-
-        std::cout << "\n✅ Filtered tests completed!\n";
-    }
-};
 
 } // namespace storm::benchmark
