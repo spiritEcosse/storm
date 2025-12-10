@@ -268,15 +268,15 @@ TEST_F(DistinctTest, VerifyReturnTypes) {
     // Insert test data
     queryset.insert(DistinctPerson{0, "Alice", 30});
 
-    // Verify distinct<&DistinctPerson::name>() returns plf::hive<std::string>
+    // Verify return type for distinct on name field is hive of strings
     auto names_result = queryset.distinct<^^DistinctPerson::name>().select();
     static_assert(std::is_same_v<decltype(names_result.value()), plf::hive<std::string>&>);
 
-    // Verify distinct<&DistinctPerson::age>() returns plf::hive<int>
+    // Verify return type for distinct on age field is hive of integers
     auto ages_result = queryset.distinct<^^DistinctPerson::age>().select();
     static_assert(std::is_same_v<decltype(ages_result.value()), plf::hive<int>&>);
 
-    // Verify distinct() (PK) returns plf::hive<int>
+    // Verify return type for distinct on primary key is hive of integers
     auto ids_result = queryset.distinct().select();
     static_assert(std::is_same_v<decltype(ids_result.value()), plf::hive<int>&>);
 }
@@ -442,12 +442,11 @@ TEST_F(DistinctTest, VerifyMultiFieldReturnTypes) {
     // Insert test data
     queryset.insert(DistinctPerson{0, "Alice", 30});
 
-    // Verify distinct<&DistinctPerson::name, &DistinctPerson::age>() returns plf::hive<std::tuple<std::string, int>>
+    // Verify return type for distinct on name and age is hive of tuples containing string and int
     auto pairs_result = queryset.distinct<^^DistinctPerson::name, ^^DistinctPerson::age>().select();
     static_assert(std::is_same_v<decltype(pairs_result.value()), plf::hive<std::tuple<std::string, int>>&>);
 
-    // Verify distinct<&DistinctPerson::age, &DistinctPerson::name>() returns plf::hive<std::tuple<int, std::string>>
-    // (reversed)
+    // Verify return type for distinct on age and name (reversed order) is hive of tuples containing int and string
     auto reversed_result = queryset.distinct<^^DistinctPerson::age, ^^DistinctPerson::name>().select();
     static_assert(std::is_same_v<decltype(reversed_result.value()), plf::hive<std::tuple<int, std::string>>&>);
 }
