@@ -72,20 +72,14 @@ namespace storm::benchmark {
         int execute(int iterations) {
             int total = 0;
             if constexpr (BatchSize == 1) {
-                // Single row update - loop through iterations
                 for (int i = 0; i < iterations; i++) {
-                    auto result = Base::qs_.update(Base::data_[i]);
-                    if (result.has_value()) {
-                        total++;
-                    }
+                    Base::qs_.update(Base::data_[i]);
+                    total++;
                 }
             } else {
-                // Batch update - loop through iterations
                 for (int i = 0; i < iterations; i++) {
-                    auto result = Base::qs_.update(Base::data_);
-                    if (result.has_value()) {
-                        total += Base::data_.size();
-                    }
+                    Base::qs_.update(Base::data_);
+                    total += Base::data_.size();
                 }
             }
             return total;
