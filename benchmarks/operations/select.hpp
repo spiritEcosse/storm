@@ -9,6 +9,7 @@
 
 #include <sqlite3.h>
 #include <iostream>
+#include <stdexcept>
 #include <meta>
 import storm;
 
@@ -27,7 +28,7 @@ namespace storm::benchmark {
             }
         }
 
-        throw "Field not found";
+        throw std::runtime_error("Field not found");
     }
 
     // SELECT benchmark with WHERE clause
