@@ -4,7 +4,7 @@ Utility scripts for the Storm ORM project.
 
 ## SonarCloud Check Script
 
-Check SonarCloud quality gate status and issues for **Pull Requests** or **Branches**.
+Check SonarCloud quality gate status and issues for **Pull Requests**.
 
 ### Setup
 
@@ -35,21 +35,9 @@ Check SonarCloud quality gate status and issues for **Pull Requests** or **Branc
 ./scripts/sonarcloud-check.sh --pr 48
 ```
 
-#### Check Branches
-```bash
-# Check specific branch
-./scripts/sonarcloud-check.sh --branch develop
-
-# Check current branch
-./scripts/sonarcloud-check.sh --branch $(git branch --show-current)
-
-# Smart detection (branch name, not a number)
-./scripts/sonarcloud-check.sh develop
-```
-
 #### Interactive Mode
 ```bash
-# Will prompt for PR or branch
+# Will prompt for PR number
 ./scripts/sonarcloud-check.sh
 ```
 
@@ -58,10 +46,9 @@ Check SonarCloud quality gate status and issues for **Pull Requests** or **Branc
 Inside Claude Code, you can use slash commands that call this script:
 
 ```
-/sonarcloud-status              # Check current branch
-/sonarcloud-branch develop      # Check specific branch
-/sonarcloud-branch 48           # Check PR #48
-/sonarcloud-branch PR #48       # Check PR #48 (alternative)
+/sonarcloud-status 48           # Check PR #48
+/sonarcloud-branch 48           # Check PR #48 (alias)
+/sonarcloud-status              # Interactive: prompt for PR number
 ```
 
 ### Output

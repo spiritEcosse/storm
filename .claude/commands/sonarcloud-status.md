@@ -1,14 +1,18 @@
 ---
-description: Check SonarCloud quality gate status and issues for current branch
+description: Check SonarCloud quality gate status for a pull request
 allowed-tools: Bash
 ---
 
-Check the current SonarCloud status for the Storm ORM project on the current git branch.
+Check the SonarCloud status for a Storm ORM pull request.
 
-Run the unified SonarCloud check script for the current branch:
+Usage:
+- /sonarcloud-status 48    - Check PR #48
+- /sonarcloud-status       - Interactive: prompt for PR number
+
+Run the unified SonarCloud check script:
 
 ```bash
-./scripts/sonarcloud-check.sh --branch $(git branch --show-current)
+./scripts/sonarcloud-check.sh "$@"
 ```
 
 Note: Requires SONAR_TOKEN environment variable to be set.

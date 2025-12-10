@@ -1,9 +1,9 @@
 #!/bin/bash
-# SonarCloud Check Script
+# SonarCloud Check Script - Pull Request Only
 # Usage:
-#   ./scripts/sonarcloud-check.sh --pr 48           # Check PR #48
-#   ./scripts/sonarcloud-check.sh --branch develop  # Check branch
-#   ./scripts/sonarcloud-check.sh 48                # Check PR #48 (shorthand)
+#   ./scripts/sonarcloud-check.sh 48        # Check PR #48
+#   ./scripts/sonarcloud-check.sh --pr 48   # Check PR #48 (explicit)
+#   ./scripts/sonarcloud-check.sh           # Interactive: prompt for PR number
 
 set -e
 
@@ -26,55 +26,34 @@ if [ -z "$SONAR_TOKEN" ]; then
 fi
 
 # Parse arguments
-MODE=""
-VALUE=""
+PR_NUMBER=""
 
 if [ "$1" = "--pr" ]; then
-    MODE="pr"
-    VALUE="$2"
-elif [ "$1" = "--branch" ]; then
-    MODE="branch"
-    VALUE="$2"
+    PR_NUMBER="$2"
 elif [ -n "$1" ]; then
-    # If it's a number, assume PR
+    # If it's a number, use it as PR number
     if [[ "$1" =~ ^[0-9]+$ ]]; then
-        MODE="pr"
-        VALUE="$1"
+        PR_NUMBER="$1"
     else
-        MODE="branch"
-        VALUE="$1"
+        echo -e "${RED}Error: Invalid PR number '${1}'. Must be a number.${NC}"
+        echo "Usage: $0 [PR_NUMBER]"
+        exit 1
     fi
 fi
 
 # Interactive mode if no arguments
-if [ -z "$MODE" ]; then
-    echo "Select mode:"
-    echo "  1) Check Pull Request"
-    echo "  2) Check Branch"
-    read -p "Enter choice (1 or 2): " CHOICE
-
-    if [ "$CHOICE" = "1" ]; then
-        MODE="pr"
-        read -p "Enter PR number: " VALUE
-    else
-        MODE="branch"
-        read -p "Enter branch name (or press Enter for current branch): " VALUE
-        if [ -z "$VALUE" ]; then
-            VALUE=$(git branch --show-current)
-        fi
+if [ -z "$PR_NUMBER" ]; then
+    read -p "Enter PR number: " PR_NUMBER
+    if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}Error: Invalid PR number. Must be a number.${NC}"
+        exit 1
     fi
 fi
 
-# Set query parameter based on mode
-if [ "$MODE" = "pr" ]; then
-    QUERY_PARAM="pullRequest=${VALUE}"
-    DISPLAY_NAME="PR #${VALUE}"
-    DASHBOARD_PARAM="pullRequest=${VALUE}"
-else
-    QUERY_PARAM="branch=${VALUE}"
-    DISPLAY_NAME="Branch: ${VALUE}"
-    DASHBOARD_PARAM="branch=${VALUE}"
-fi
+# Set query parameters
+QUERY_PARAM="pullRequest=${PR_NUMBER}"
+DISPLAY_NAME="PR #${PR_NUMBER}"
+DASHBOARD_PARAM="pullRequest=${PR_NUMBER}"
 
 echo -e "${BLUE}=== SonarCloud Analysis for ${DISPLAY_NAME} ===${NC}\n"
 
@@ -103,11 +82,7 @@ fi
 
 # 2. Metrics
 echo -e "\n${BLUE}📈 Metrics:${NC}"
-if [ "$MODE" = "pr" ]; then
-    METRIC_KEYS="new_coverage,new_bugs,new_vulnerabilities,new_code_smells,new_security_hotspots,new_lines,new_technical_debt,new_duplicated_lines_density"
-else
-    METRIC_KEYS="coverage,bugs,vulnerabilities,code_smells,security_hotspots,ncloc,sqale_index,duplicated_lines_density"
-fi
+METRIC_KEYS="new_coverage,new_bugs,new_vulnerabilities,new_code_smells,new_security_hotspots,new_lines,new_technical_debt,new_duplicated_lines_density"
 METRICS_RESPONSE=$(curl -s "${SONAR_API}/measures/component?component=${PROJECT_KEY}&${QUERY_PARAM}&metricKeys=${METRIC_KEYS}" \
     -H "Authorization: Bearer ${SONAR_TOKEN}")
 
