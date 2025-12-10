@@ -82,67 +82,70 @@ namespace storm::benchmark {
             return total;
         }
 
+      private:
+        // Helper: Bind model fields for UPDATE (name, age, is_active, salary, id)
+        static void bind_update_fields(sqlite3_stmt* stmt, const Model& p) {
+            int idx = 1;
+            sqlite3_bind_text(stmt, idx++, p.name.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(stmt, idx++, p.age);
+            sqlite3_bind_int(stmt, idx++, p.is_active ? 1 : 0);
+            sqlite3_bind_double(stmt, idx++, p.salary);
+            sqlite3_bind_int64(stmt, idx++, p.id);
+        }
+
+        // Helper: Execute single-row updates
+        int execute_single_row(sqlite3_stmt* stmt, int iterations) {
+            int total = 0;
+            for (int i = 0; i < iterations; i++) {
+                bind_update_fields(stmt, Base::data()[i]);
+                if (sqlite3_step(stmt) == SQLITE_DONE) {
+                    total++;
+                }
+                sqlite3_reset(stmt);
+            }
+            return total;
+        }
+
+        // Helper: Execute batch updates with transaction
+        int execute_batch(sqlite3_stmt* stmt, int iterations) {
+            int total = 0;
+            for (int iter = 0; iter < iterations; iter++) {
+                sqlite3_exec(sqlite3_db_handle(stmt), "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
+                for (const auto& p : Base::data()) {
+                    bind_update_fields(stmt, p);
+                    if (sqlite3_step(stmt) == SQLITE_DONE) {
+                        total++;
+                    }
+                    sqlite3_reset(stmt);
+                }
+                sqlite3_exec(sqlite3_db_handle(stmt), "COMMIT", nullptr, nullptr, nullptr);
+            }
+            return total;
+        }
+
+      public:
         int execute_raw(int iterations) {
             auto&    conn = storm::QuerySet<Model>::get_default_connection();
             sqlite3* db   = conn->get();
             if (!db)
                 return 0;
 
-            int total = 0;
-
             // Raw SQLite UPDATE SQL: "UPDATE Person SET name=?, age=?, is_active=?, salary=? WHERE id=?"
             const std::string sql = "UPDATE Person SET name=?, age=?, is_active=?, salary=? WHERE id=?";
 
-            // Single-row or small batch: one prepared statement, use transaction for batch
+            sqlite3_stmt* stmt = nullptr;
+            if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+                return 0;
+
+            // Execute single-row or batch updates based on BatchSize
+            int total;
             if constexpr (BatchSize == 1) {
-                // Single row - no transaction needed
-                sqlite3_stmt* stmt = nullptr;
-                if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
-                    return 0;
-
-                for (int i = 0; i < iterations; i++) {
-                    const auto& p   = Base::data()[i];
-                    int         idx = 1;
-                    sqlite3_bind_text(stmt, idx++, p.name.c_str(), -1, SQLITE_TRANSIENT);
-                    sqlite3_bind_int(stmt, idx++, p.age);
-                    sqlite3_bind_int(stmt, idx++, p.is_active ? 1 : 0);
-                    sqlite3_bind_double(stmt, idx++, p.salary);
-                    sqlite3_bind_int64(stmt, idx++, p.id);
-
-                    if (sqlite3_step(stmt) == SQLITE_DONE) {
-                        total++;
-                    }
-                    sqlite3_reset(stmt);
-                }
-                sqlite3_finalize(stmt);
+                total = execute_single_row(stmt, iterations);
             } else {
-                // Batch update - use transaction wrapper
-                sqlite3_stmt* stmt = nullptr;
-                if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
-                    return 0;
-
-                for (int iter = 0; iter < iterations; iter++) {
-                    sqlite3_exec(db, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
-
-                    for (const auto& p : Base::data()) {
-                        int idx = 1;
-                        sqlite3_bind_text(stmt, idx++, p.name.c_str(), -1, SQLITE_TRANSIENT);
-                        sqlite3_bind_int(stmt, idx++, p.age);
-                        sqlite3_bind_int(stmt, idx++, p.is_active ? 1 : 0);
-                        sqlite3_bind_double(stmt, idx++, p.salary);
-                        sqlite3_bind_int64(stmt, idx++, p.id);
-
-                        if (sqlite3_step(stmt) == SQLITE_DONE) {
-                            total++;
-                        }
-                        sqlite3_reset(stmt);
-                    }
-
-                    sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr);
-                }
-
-                sqlite3_finalize(stmt);
+                total = execute_batch(stmt, iterations);
             }
+
+            sqlite3_finalize(stmt);
             return total;
         }
     };
