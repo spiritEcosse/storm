@@ -30,23 +30,23 @@ namespace storm::benchmark {
         int execute(int iterations) {
             constexpr std::string_view op_str = Op.view();
 
+            // Build WHERE clause once (compile-time constant)
+            auto where_clause = [&]() {
+                if constexpr (op_str == ">") {
+                    return field<FieldInfo>() > where_value_;
+                } else if constexpr (op_str == ">=") {
+                    return field<FieldInfo>() >= where_value_;
+                } else if constexpr (op_str == "<") {
+                    return field<FieldInfo>() < where_value_;
+                } else if constexpr (op_str == "<=") {
+                    return field<FieldInfo>() <= where_value_;
+                } else if constexpr (op_str == "==") {
+                    return field<FieldInfo>() == where_value_;
+                }
+            }();
+
             int total_deletes = 0;
             for (int i = 0; i < iterations; i++) {
-                // Build WHERE clause based on compile-time operator
-                auto where_clause = [&]() {
-                    if constexpr (op_str == ">") {
-                        return field<FieldInfo>() > where_value_;
-                    } else if constexpr (op_str == ">=") {
-                        return field<FieldInfo>() >= where_value_;
-                    } else if constexpr (op_str == "<") {
-                        return field<FieldInfo>() < where_value_;
-                    } else if constexpr (op_str == "<=") {
-                        return field<FieldInfo>() <= where_value_;
-                    } else if constexpr (op_str == "==") {
-                        return field<FieldInfo>() == where_value_;
-                    }
-                }();
-
                 // Execute delete
                 auto result = qs_.where(where_clause).remove();
                 if (result.has_value()) {
