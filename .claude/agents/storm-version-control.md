@@ -28,9 +28,42 @@ Commit messages should be concise but descriptive. Include the scope when releva
 - `perf(insert): optimize bulk operations with VALUES clause`
 - `fix(reflection): handle nullable fields correctly`
 
-## Pre-Commit Workflow
+## Quick Commit Workflow (Recommended)
 
-Before creating any commit, you must execute this checklist:
+For standard commits, use the `quick_commit.sh` script which automates the entire workflow:
+
+```bash
+# Commit with custom message and push
+./quick_commit.sh "feat(queryset): add batch update support"
+
+# Commit without pushing (for review before push)
+./quick_commit.sh --no-push "fix(reflection): handle nullable fields"
+
+# Auto-generated commit message (based on changed files)
+./quick_commit.sh
+```
+
+The script automatically:
+1. Runs clang-format on all source files
+2. Executes the full test suite (fails if tests fail)
+3. Stages all changes
+4. Creates commit with proper format (includes Claude Code attribution)
+5. Pushes to remote (unless `--no-push` flag is used)
+
+**Use `quick_commit.sh` when:**
+- Making standard commits that don't require special handling
+- You want automated formatting and test verification
+- Commit message is straightforward
+
+**Use manual workflow when:**
+- You need selective file staging
+- Performance benchmarks are required before commit
+- Complex multi-commit operations
+- Hotfix or emergency procedures
+
+## Manual Pre-Commit Workflow
+
+For commits requiring more control, execute this checklist manually:
 
 ### 1. Code Formatting Check
 ```bash
