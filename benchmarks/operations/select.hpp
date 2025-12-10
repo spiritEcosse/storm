@@ -82,25 +82,25 @@ namespace storm::benchmark {
         int execute(int iterations) {
             constexpr std::string_view op_str = Op.view();
 
+            // Build WHERE clause once (compile-time constant)
+            auto where_clause = [&]() {
+                if constexpr (op_str == ">") {
+                    return field<FieldInfo>() > value_;
+                } else if constexpr (op_str == ">=") {
+                    return field<FieldInfo>() >= value_;
+                } else if constexpr (op_str == "<") {
+                    return field<FieldInfo>() < value_;
+                } else if constexpr (op_str == "<=") {
+                    return field<FieldInfo>() <= value_;
+                } else if constexpr (op_str == "==") {
+                    return field<FieldInfo>() == value_;
+                }
+            }();
+
             int total_rows = 0;
             for (int i = 0; i < iterations; i++) {
-                // Execute query based on compile-time operator
-                if constexpr (op_str == ">") {
-                    auto results = qs_.where(field<FieldInfo>() > value_).select();
-                    total_rows += results.value().size();
-                } else if constexpr (op_str == ">=") {
-                    auto results = qs_.where(field<FieldInfo>() >= value_).select();
-                    total_rows += results.value().size();
-                } else if constexpr (op_str == "<") {
-                    auto results = qs_.where(field<FieldInfo>() < value_).select();
-                    total_rows += results.value().size();
-                } else if constexpr (op_str == "<=") {
-                    auto results = qs_.where(field<FieldInfo>() <= value_).select();
-                    total_rows += results.value().size();
-                } else if constexpr (op_str == "==") {
-                    auto results = qs_.where(field<FieldInfo>() == value_).select();
-                    total_rows += results.value().size();
-                }
+                auto results = qs_.where(where_clause).select();
+                total_rows += results.value().size();
                 qs_.reset();
             }
             return total_rows;
