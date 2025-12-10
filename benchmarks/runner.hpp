@@ -82,6 +82,26 @@ namespace storm::benchmark {
         constexpr const char* BOLD_WHITE  = "\033[1;37m";
     } // namespace Color
 
+    // Helper: Get color based on throughput (M ops/sec)
+    inline const char* get_throughput_color(double throughput) {
+        if (throughput >= 5.0)
+            return Color::BOLD_GREEN;
+        if (throughput >= 1.0)
+            return Color::GREEN;
+        return Color::YELLOW;
+    }
+
+    // Helper: Get color based on efficiency percentage
+    inline const char* get_efficiency_color(double efficiency) {
+        if (efficiency >= 90.0)
+            return Color::BOLD_GREEN;
+        if (efficiency >= 70.0)
+            return Color::GREEN;
+        if (efficiency >= 50.0)
+            return Color::YELLOW;
+        return Color::RED;
+    }
+
     class BenchmarkRunner {
       public:
         // List all available tests
@@ -182,9 +202,7 @@ namespace storm::benchmark {
             std::cout << Color::BOLD << "Storm ORM:" << Color::RESET << "\n";
             std::cout << "  Operations: " << Color::YELLOW << operations_storm << Color::RESET << "\n";
 
-            const char* storm_color = storm_median >= 5.0   ? Color::BOLD_GREEN
-                                      : storm_median >= 1.0 ? Color::GREEN
-                                                            : Color::YELLOW;
+            const char* storm_color = get_throughput_color(storm_median);
             std::cout << "  Median:  " << storm_color << std::fixed << std::setprecision(2) << storm_median
                       << " M ops/sec" << Color::RESET << "\n";
             std::cout << "  Mean:    " << storm_color << std::fixed << std::setprecision(2) << storm_mean
@@ -195,9 +213,7 @@ namespace storm::benchmark {
             std::cout << "\n" << Color::BOLD << "Raw SQLite:" << Color::RESET << "\n";
             std::cout << "  Operations: " << Color::YELLOW << operations_raw << Color::RESET << "\n";
 
-            const char* raw_color = raw_median >= 5.0   ? Color::BOLD_GREEN
-                                    : raw_median >= 1.0 ? Color::GREEN
-                                                        : Color::YELLOW;
+            const char* raw_color = get_throughput_color(raw_median);
             std::cout << "  Median:  " << raw_color << std::fixed << std::setprecision(2) << raw_median << " M ops/sec"
                       << Color::RESET << "\n";
             std::cout << "  Mean:    " << raw_color << std::fixed << std::setprecision(2) << raw_mean << " M ops/sec"
@@ -206,13 +222,12 @@ namespace storm::benchmark {
 
             // Efficiency comparison
             std::cout << "\n" << Color::BOLD << "Efficiency: " << Color::RESET;
-            const char* eff_color = efficiency >= 90.0   ? Color::BOLD_GREEN
-                                    : efficiency >= 70.0 ? Color::GREEN
-                                    : efficiency >= 50.0 ? Color::YELLOW
-                                                         : Color::RED;
+            const char* eff_color = get_efficiency_color(efficiency);
             std::cout << eff_color << std::fixed << std::setprecision(1) << efficiency << "%" << Color::RESET;
-            std::cout << " (" << (efficiency >= 100.0 ? Color::BOLD_GREEN : Color::GREEN)
-                      << (efficiency >= 100.0 ? "FASTER" : "slower") << Color::RESET << " than raw SQLite)\n";
+
+            const char* comparison_color = (efficiency >= 100.0) ? Color::BOLD_GREEN : Color::GREEN;
+            const char* comparison_text  = (efficiency >= 100.0) ? "FASTER" : "slower";
+            std::cout << " (" << comparison_color << comparison_text << Color::RESET << " than raw SQLite)\n";
 
             std::cout << Color::GREEN << "✅ Benchmark complete!" << Color::RESET << "\n";
         }
