@@ -39,7 +39,7 @@ namespace storm::benchmark {
         QuerySet<Model> qs_;
 
       public:
-        constexpr SelectBenchmark(ValueType value) : value_(value) {}
+        explicit constexpr SelectBenchmark(ValueType value) : value_(value) {}
 
         // Prepare test data - called before timing
         void prepare([[maybe_unused]] int iterations) {
