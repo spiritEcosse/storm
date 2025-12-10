@@ -118,7 +118,7 @@ namespace storm::benchmark {
 
         // Common timing and reporting for all benchmarks (with statistical analysis)
         template <typename BenchmarkClass>
-        void run_benchmark(const char* test_name, BenchmarkClass&& bench, int iterations) {
+        void run_benchmark(const char* test_name, BenchmarkClass bench, int iterations) {
             std::cout << "\n" << Color::BOLD_CYAN << "=== " << test_name << " ===" << Color::RESET << "\n";
 
             bench.print_info();
