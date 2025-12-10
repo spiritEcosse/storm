@@ -2,8 +2,13 @@
 
 /**
  * SELECT Benchmark - WHERE clause queries
+ *
+ * Self-contained benchmark that inserts its own test data in prepare().
+ * Uses batch INSERT for efficient setup.
  */
 
+#include <sqlite3.h>
+#include <iostream>
 #include <meta>
 import storm;
 
@@ -26,12 +31,46 @@ namespace storm::benchmark {
     }
 
     // SELECT benchmark with WHERE clause
-    template <typename Model, std::meta::info FieldInfo, ConstexprString Op, typename ValueType> class SelectBenchmark {
+    // DatasetSize: number of records to insert for querying (0 = no data setup needed)
+    template <typename Model, std::meta::info FieldInfo, ConstexprString Op, typename ValueType, int DatasetSize = 0>
+    class SelectBenchmark {
         ValueType       value_;
         QuerySet<Model> qs_;
 
       public:
         constexpr SelectBenchmark(ValueType value) : value_(value) {}
+
+        // Prepare test data - called before timing
+        void prepare([[maybe_unused]] int iterations) {
+            if constexpr (DatasetSize > 0) {
+                // Clear existing data
+                auto&    conn = QuerySet<Model>::get_default_connection();
+                sqlite3* db   = conn->get();
+                if (db) {
+                    sqlite3_exec(db, "DELETE FROM Person", nullptr, nullptr, nullptr);
+                }
+
+                // Generate and batch insert test data
+                std::vector<Model> data;
+                data.reserve(DatasetSize);
+                for (int i = 1; i <= DatasetSize; i++) {
+                    data.push_back(Model{
+                            .id        = 0, // Auto-increment
+                            .name      = "Person" + std::to_string(i),
+                            .age       = 20 + (i % 50),
+                            .is_active = (i % 2 == 0),
+                            .salary    = 30000.0 + (i * 1000.0)
+                    });
+                }
+
+                // Batch insert - efficient, no IDs needed for SELECT
+                auto insert_result = qs_.insert(data);
+                if (!insert_result.has_value()) {
+                    std::cerr << "Failed to insert test data for SELECT benchmark\n";
+                    return;
+                }
+            }
+        }
 
         void print_info() const {
             constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);

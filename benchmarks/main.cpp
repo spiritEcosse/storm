@@ -131,34 +131,8 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        // Determine required dataset size based on filter
-        // Use runtime filter-aware calculation to avoid inserting unnecessary data
-        int required_dataset_size = get_filtered_dataset_size(BENCHMARK_TESTS, filter, scale_test);
-
-        // Insert test data only if required (skip if dataset_size is 0)
-        if (required_dataset_size > 0) {
-            std::cout << "Inserting test data (" << required_dataset_size << " records)...\n";
-            QuerySet<Person> qs;
-            for (int i = 1; i <= required_dataset_size; i++) {
-                Person p{
-                        .id        = 0, // Auto-increment
-                        .name      = "Person" + std::to_string(i),
-                        .age       = 20 + (i % 50),
-                        .is_active = (i % 2 == 0),
-                        .salary    = 30000.0 + (i * 1000.0)
-                };
-                auto insert_result = qs.insert(p);
-                if (!insert_result.has_value()) {
-                    std::cerr << "Failed to insert: " << insert_result.error().message() << "\n";
-                    return 1;
-                }
-            }
-            std::cout << "✅ Inserted " << required_dataset_size << " test records\n";
-        } else {
-            std::cout << "⏭️  Skipping test data insertion (dataset_size = 0)\n";
-        }
-
         // Run benchmark tests (with optional filter)
+        // Note: Each benchmark handles its own data setup in prepare() method
         BenchmarkRunner runner;
         if (filter.empty()) {
             runner.run_all<Person>(iterations);

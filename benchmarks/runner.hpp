@@ -222,13 +222,16 @@ namespace storm::benchmark {
         // Clean, simple, easy to add new operations
 
         template <typename Model, auto& test> static void run_where_operation(BenchmarkRunner& runner, int iterations) {
-            constexpr std::string_view field_name = test.where.field.view();
-            constexpr auto             op_str     = test.where.op;
-            constexpr int              value      = test.where.value_int;
-            constexpr auto             field_info = dispatch_field<Model>(field_name);
+            constexpr std::string_view field_name    = test.where.field.view();
+            constexpr auto             op_str        = test.where.op;
+            constexpr int              value         = test.where.value_int;
+            constexpr auto             field_info    = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size  = test.dataset_size;
 
             runner.run_benchmark(
-                    test.test_name.c_str(), SelectBenchmark<Model, field_info, op_str, int>{value}, iterations
+                    test.test_name.c_str(),
+                    SelectBenchmark<Model, field_info, op_str, int, dataset_size>{value},
+                    iterations
             );
         }
 
