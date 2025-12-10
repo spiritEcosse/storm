@@ -217,6 +217,23 @@ namespace storm::benchmark {
         return test;
     }
 
+    // Helper: Skip to end of JSON object (reduces nesting depth)
+    constexpr void skip_json_object(std::string_view json, size_t& pos) {
+        int brace_depth = 0;
+        while (pos < json.size()) {
+            if (json[pos] == '{')
+                brace_depth++;
+            if (json[pos] == '}') {
+                brace_depth--;
+                if (brace_depth == 0) {
+                    pos++;
+                    break;
+                }
+            }
+            pos++;
+        }
+    }
+
     // Count tests in JSON array (needed for std::array size)
     constexpr size_t count_tests(std::string_view json) {
         size_t count = 0;
@@ -233,20 +250,7 @@ namespace storm::benchmark {
 
             if (json[pos] == '{') {
                 count++;
-                // Skip to end of object
-                int brace_depth = 0;
-                while (pos < json.size()) {
-                    if (json[pos] == '{')
-                        brace_depth++;
-                    if (json[pos] == '}') {
-                        brace_depth--;
-                        if (brace_depth == 0) {
-                            pos++;
-                            break;
-                        }
-                    }
-                    pos++;
-                }
+                skip_json_object(json, pos);
             }
 
             skip_whitespace(json, pos);
