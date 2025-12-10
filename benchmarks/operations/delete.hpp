@@ -18,7 +18,7 @@ namespace storm::benchmark {
         QuerySet<Model> qs_;
 
       public:
-        constexpr DeleteBenchmark(ValueType where_value) : where_value_(where_value) {}
+        explicit constexpr DeleteBenchmark(ValueType where_value) : where_value_(where_value) {}
 
         void print_info() const {
             constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);

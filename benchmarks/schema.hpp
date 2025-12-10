@@ -22,7 +22,7 @@ namespace storm::benchmark {
 
         consteval ConstexprString() = default;
 
-        consteval ConstexprString(const char* str) {
+        explicit consteval ConstexprString(const char* str) {
             size_t i = 0;
             while (str[i] != '\0' && i < N - 1) {
                 data[i] = str[i];
