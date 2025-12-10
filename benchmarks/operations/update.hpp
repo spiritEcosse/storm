@@ -20,9 +20,6 @@
 
 namespace storm::benchmark {
 
-    using namespace storm;
-    using storm::orm::statements::InsertOptions;
-
     template <typename Model, int BatchSize = 1>
     class UpdateBenchmark : public DataBenchmarkBase<UpdateBenchmark<Model, BatchSize>, Model, BatchSize, 5> {
         using Base = DataBenchmarkBase<UpdateBenchmark<Model, BatchSize>, Model, BatchSize, 5>;
@@ -37,7 +34,7 @@ namespace storm::benchmark {
 
         void prepare(int iterations) {
             // 1. Clear table first using raw SQLite
-            auto&    conn = QuerySet<Model>::get_default_connection();
+            auto&    conn = storm::QuerySet<Model>::get_default_connection();
             sqlite3* db   = conn->get();
             if (db) {
                 sqlite3_exec(db, "DELETE FROM Person", nullptr, nullptr, nullptr);
@@ -48,7 +45,7 @@ namespace storm::benchmark {
 
             // 3. INSERT data to get valid primary keys
             // Use InsertOptions to get IDs back
-            auto insert_result = Base::qs_.insert(Base::data_, InsertOptions{.return_ids = true});
+            auto insert_result = Base::qs_.insert(Base::data_, storm::orm::statements::InsertOptions{.return_ids = true});
             if (!insert_result.has_value()) {
                 std::cerr << "Failed to insert test data for UPDATE benchmark\n";
                 return;
@@ -86,7 +83,7 @@ namespace storm::benchmark {
         }
 
         int execute_raw(int iterations) {
-            auto&    conn = QuerySet<Model>::get_default_connection();
+            auto&    conn = storm::QuerySet<Model>::get_default_connection();
             sqlite3* db   = conn->get();
             if (!db)
                 return 0;

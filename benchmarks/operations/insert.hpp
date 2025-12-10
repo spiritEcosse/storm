@@ -15,8 +15,6 @@
 
 namespace storm::benchmark {
 
-    using namespace storm;
-
     template <typename Model, int BatchSize = 1>
     class InsertBenchmark : public DataBenchmarkBase<InsertBenchmark<Model, BatchSize>, Model, BatchSize, 4> {
         using Base = DataBenchmarkBase<InsertBenchmark<Model, BatchSize>, Model, BatchSize, 4>;
@@ -66,7 +64,7 @@ namespace storm::benchmark {
         }
 
         int execute_raw(int iterations) {
-            auto&    conn = QuerySet<Model>::get_default_connection();
+            auto&    conn = storm::QuerySet<Model>::get_default_connection();
             sqlite3* db   = conn->get();
             if (!db)
                 return 0;
