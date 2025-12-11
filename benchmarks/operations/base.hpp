@@ -35,6 +35,8 @@ namespace storm::benchmark {
     // INSERT operation specialization
     template <>
     struct OperationDispatcher<OperationType::Insert> {
+        static constexpr std::string_view name() { return "INSERT"; }
+
         template <typename QS, typename Data>
         static auto call(QS& qs, const Data& data) {
             return qs.insert(data);
@@ -44,6 +46,8 @@ namespace storm::benchmark {
     // UPDATE operation specialization
     template <>
     struct OperationDispatcher<OperationType::UpdatePK> {
+        static constexpr std::string_view name() { return "UPDATE by PK"; }
+
         template <typename QS, typename Data>
         static auto call(QS& qs, const Data& data) {
             return qs.update(data);
@@ -53,6 +57,8 @@ namespace storm::benchmark {
     // DELETE operation specialization (for future use)
     template <>
     struct OperationDispatcher<OperationType::Delete> {
+        static constexpr std::string_view name() { return "DELETE"; }
+
         template <typename QS, typename Data>
         static auto call(QS& qs, const Data& data) {
             return qs.remove(data);
@@ -123,6 +129,18 @@ namespace storm::benchmark {
             for (int i = 0; i < count; i++) {
                 data().push_back(Derived::create_model());
             }
+        }
+
+        // ====================================================================
+        // Unified print_info() with compile-time operation name
+        // ====================================================================
+        template <OperationType Op>
+        void print_info_unified() const {
+            constexpr std::string_view op_name = OperationDispatcher<Op>::name();
+            if constexpr (BatchSize == 1)
+                std::cout << "Operation: " << op_name << " (single row)\n";
+            else
+                std::cout << "Operation: " << op_name << " (batch, " << BatchSize << " rows per operation)\n";
         }
 
         // ====================================================================

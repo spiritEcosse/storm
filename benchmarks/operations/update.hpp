@@ -25,11 +25,9 @@ namespace storm::benchmark {
         using Base = DataBenchmarkBase<UpdateBenchmark<Model, BatchSize>, Model, BatchSize, 5>;
 
       public:
+        // Use unified print_info with compile-time operation name
         void print_info() const {
-            if constexpr (BatchSize == 1)
-                std::cout << "Operation: UPDATE by PK (single row)\n";
-            else
-                std::cout << "Operation: UPDATE by PK (batch, " << BatchSize << " rows per update)\n";
+            Base::template print_info_unified<OperationType::UpdatePK>();
         }
 
         void prepare(int iterations) {

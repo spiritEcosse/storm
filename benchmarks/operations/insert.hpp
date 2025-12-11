@@ -40,11 +40,9 @@ namespace storm::benchmark {
         }
 
       public:
+        // Use unified print_info with compile-time operation name
         void print_info() const {
-            if constexpr (BatchSize == 1)
-                std::cout << "Operation: INSERT (single row)\n";
-            else
-                std::cout << "Operation: INSERT (batch, " << BatchSize << " rows per insert)\n";
+            Base::template print_info_unified<OperationType::Insert>();
         }
 
         // Use unified execute with compile-time operation binding
