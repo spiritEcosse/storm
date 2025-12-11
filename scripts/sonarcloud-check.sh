@@ -35,17 +35,17 @@ elif [ -n "$1" ]; then
     if [[ "$1" =~ ^[0-9]+$ ]]; then
         PR_NUMBER="$1"
     else
-        echo -e "${RED}Error: Invalid PR number '${1}'. Must be a number.${NC}"
-        echo "Usage: $0 [PR_NUMBER]"
+        echo -e "${RED}Error: Invalid PR number '${1}'. Must be a number.${NC}" >&2
+        echo "Usage: $0 [PR_NUMBER]" >&2
         exit 1
     fi
 fi
 
 # Interactive mode if no arguments
-if [ -z "$PR_NUMBER" ]; then
+if [[ -z "$PR_NUMBER" ]]; then
     read -p "Enter PR number: " PR_NUMBER
     if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
-        echo -e "${RED}Error: Invalid PR number. Must be a number.${NC}"
+        echo -e "${RED}Error: Invalid PR number. Must be a number.${NC}" >&2
         exit 1
     fi
 fi

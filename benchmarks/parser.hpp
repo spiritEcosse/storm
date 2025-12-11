@@ -107,7 +107,9 @@ namespace storm::benchmark {
 
             size_t i = 0;
             while (pos < json.size() && json[pos] != '"' && i < N - 1) {
-                result.data[i++] = json[pos++];
+                result.data[i] = json[pos];
+                i++;
+                pos++;
             }
             result.len     = i;
             result.data[i] = '\0';

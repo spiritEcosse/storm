@@ -7,6 +7,7 @@
 #include <iostream>
 #include <chrono>
 #include <iomanip>
+#include <format>
 #include <type_traits>
 #include <vector>
 #include <algorithm>
@@ -203,22 +204,22 @@ namespace storm::benchmark {
             std::cout << "  Operations: " << Color::YELLOW << operations_storm << Color::RESET << "\n";
 
             const char* storm_color = get_throughput_color(storm_median);
-            std::cout << "  Median:  " << storm_color << std::fixed << std::setprecision(2) << storm_median
+            std::cout << "  Median:  " << storm_color << std::format("{:.2f}", storm_median)
                       << " M ops/sec" << Color::RESET << "\n";
-            std::cout << "  Mean:    " << storm_color << std::fixed << std::setprecision(2) << storm_mean
-                      << " M ops/sec" << Color::RESET << " (±" << std::setprecision(2) << storm_stddev << ")\n";
-            std::cout << "  Range:   [" << std::setprecision(2) << storm_min << " - " << storm_max << "]\n";
+            std::cout << "  Mean:    " << storm_color << std::format("{:.2f}", storm_mean)
+                      << " M ops/sec" << Color::RESET << " (±" << std::format("{:.2f}", storm_stddev) << ")\n";
+            std::cout << "  Range:   [" << std::format("{:.2f}", storm_min) << " - " << std::format("{:.2f}", storm_max) << "]\n";
 
             // Raw SQLite results
             std::cout << "\n" << Color::BOLD << "Raw SQLite:" << Color::RESET << "\n";
             std::cout << "  Operations: " << Color::YELLOW << operations_raw << Color::RESET << "\n";
 
             const char* raw_color = get_throughput_color(raw_median);
-            std::cout << "  Median:  " << raw_color << std::fixed << std::setprecision(2) << raw_median << " M ops/sec"
+            std::cout << "  Median:  " << raw_color << std::format("{:.2f}", raw_median) << " M ops/sec"
                       << Color::RESET << "\n";
-            std::cout << "  Mean:    " << raw_color << std::fixed << std::setprecision(2) << raw_mean << " M ops/sec"
-                      << Color::RESET << " (±" << std::setprecision(2) << raw_stddev << ")\n";
-            std::cout << "  Range:   [" << std::setprecision(2) << raw_min << " - " << raw_max << "]\n";
+            std::cout << "  Mean:    " << raw_color << std::format("{:.2f}", raw_mean) << " M ops/sec"
+                      << Color::RESET << " (±" << std::format("{:.2f}", raw_stddev) << ")\n";
+            std::cout << "  Range:   [" << std::format("{:.2f}", raw_min) << " - " << std::format("{:.2f}", raw_max) << "]\n";
 
             // Efficiency comparison
             std::cout << "\n" << Color::BOLD << "Efficiency: " << Color::RESET;
@@ -286,7 +287,7 @@ namespace storm::benchmark {
                 // - scale_test=true: substring match (e.g., "insert_batch" matches "insert_batch_100")
                 // - scale_test=false: exact match (e.g., "insert_batch_100" only matches "insert_batch_100")
                 std::string test_name_str(test_name.data(), test_name.size());
-                bool should_run = filter.empty() || (scale_test ? (test_name_str.find(filter) != std::string::npos)
+                bool should_run = filter.empty() || (scale_test ? test_name_str.contains(filter)
                                                                 : (test_name_str == filter));
 
                 if (should_run) {
