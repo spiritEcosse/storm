@@ -51,7 +51,7 @@ TEST_F(SelectLargeTest, SelectMoreThan10KRows) {
     records.reserve(RECORD_COUNT);
 
     for (int i = 1; i <= RECORD_COUNT; ++i) {
-        records.emplace_back(i, i * 10, "Record_" + std::to_string(i));
+        records.emplace_back(i, i * 10, std::format("Record_{}", i));
     }
 
     auto insert_result = queryset.insert(std::span<const TestRecord>(records));

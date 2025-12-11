@@ -26,7 +26,7 @@ namespace storm::benchmark {
 
     // Statistical helper functions
     inline double calculate_median(std::vector<double>& values) {
-        std::sort(values.begin(), values.end());
+        std::ranges::sort(values);
         size_t n = values.size();
         if (n == 0)
             return 0.0;
@@ -55,13 +55,13 @@ namespace storm::benchmark {
     inline double calculate_min(const std::vector<double>& values) {
         if (values.empty())
             return 0.0;
-        return *std::min_element(values.begin(), values.end());
+        return *std::ranges::min_element(values);
     }
 
     inline double calculate_max(const std::vector<double>& values) {
         if (values.empty())
             return 0.0;
-        return *std::max_element(values.begin(), values.end());
+        return *std::ranges::max_element(values);
     }
 
     // ANSI color codes for terminal output
@@ -113,8 +113,7 @@ namespace storm::benchmark {
             std::cout << "Test Name                      Category         Operation\n";
             std::cout << "────────────────────────────────────────────────────────────\n";
 
-            for (size_t i = 0; i < BENCHMARK_TESTS.size(); i++) {
-                const auto& test = BENCHMARK_TESTS[i];
+            for (const auto& test : BENCHMARK_TESTS) {
                 std::string test_name(test.test_name.view());
                 std::string category(test.test_category.view());
                 std::string operation(test.operation.view());

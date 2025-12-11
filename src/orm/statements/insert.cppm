@@ -195,8 +195,8 @@ export namespace storm::orm::statements {
         explicit InsertStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
         // Batch insert operation with optional configuration
-        [[nodiscard]] auto
-        execute(std::span<const T> objects, std::optional<InsertOptions> opts = std::nullopt) noexcept
+        [[nodiscard]] auto execute(std::span<const T> objects,
+                                    std::optional<InsertOptions> opts = std::nullopt) noexcept
                 -> std::expected<std::vector<int64_t>, Error> {
             if (objects.empty()) {
                 return std::vector<int64_t>{};

@@ -760,7 +760,8 @@ TEST_F(DistinctTest, RawSQLWorkaround) {
     while (true) {
         int step = stmt.step_raw();
         if (step == decltype(stmt)::ROW_AVAILABLE) {
-            user_names.emplace_back(reinterpret_cast<const char*>(stmt.extract_text_ptr(0)));
+            const auto* text_bytes = stmt.extract_text_ptr(0);
+            user_names.emplace_back(static_cast<const char*>(static_cast<const void*>(text_bytes)));
         } else if (step == decltype(stmt)::NO_MORE_ROWS) {
             break;
         } else {
