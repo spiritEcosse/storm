@@ -55,13 +55,13 @@ namespace storm::benchmark {
                 std::vector<Model> data;
                 data.reserve(DatasetSize);
                 for (int i = 1; i <= DatasetSize; i++) {
-                    data.push_back(Model{
-                            .id        = 0, // Auto-increment
-                            .name      = "Person" + std::to_string(i),
-                            .age       = 20 + (i % 50),
-                            .is_active = (i % 2 == 0),
-                            .salary    = 30000.0 + (i * 1000.0)
-                    });
+                    data.push_back(
+                            Model{.id        = 0, // Auto-increment
+                                  .name      = "Person" + std::to_string(i),
+                                  .age       = 20 + (i % 50),
+                                  .is_active = (i % 2 == 0),
+                                  .salary    = 30000.0 + (i * 1000.0)}
+                    );
                 }
 
                 // Batch insert - efficient, no IDs needed for SELECT

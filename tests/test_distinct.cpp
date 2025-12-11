@@ -225,7 +225,7 @@ TEST_F(DistinctTest, DistinctWithLargeDataset) {
     std::vector<DistinctPerson> people_to_insert;
     for (int i = 1; i <= 1000; ++i) {
         int pattern = (i - 1) % 10;
-        people_to_insert.push_back({i, "Name" + std::to_string(pattern), 20 + pattern});
+        people_to_insert.emplace_back(i, "Name" + std::to_string(pattern), 20 + pattern);
     }
 
     auto insert_result = queryset.insert(std::span<const DistinctPerson>(people_to_insert));
@@ -356,7 +356,7 @@ TEST_F(DistinctTest, DistinctTwoFieldsAllDuplicates) {
     // Insert 10 people with the same (name, age) combination
     std::vector<DistinctPerson> people_to_insert;
     for (int i = 1; i <= 10; ++i) {
-        people_to_insert.push_back({i, "SameName", 42});
+        people_to_insert.emplace_back(i, "SameName", 42);
     }
 
     auto insert_result = queryset.insert(std::span<const DistinctPerson>(people_to_insert));
@@ -394,7 +394,7 @@ TEST_F(DistinctTest, DistinctTwoFieldsLargeDataset) {
     for (int i = 1; i <= 10000; ++i) {
         int combo_idx = (i - 1) % 100;
         // Generate 100 unique (name, age) combinations: 10 names × 10 ages
-        people_to_insert.push_back({i, "DistinctPerson" + std::to_string(combo_idx / 10), 20 + (combo_idx % 10)});
+        people_to_insert.emplace_back(i, "DistinctPerson" + std::to_string(combo_idx / 10), 20 + (combo_idx % 10));
     }
 
     auto insert_result = queryset.insert(std::span<const DistinctPerson>(people_to_insert));
@@ -759,7 +759,7 @@ TEST_F(DistinctTest, RawSQLWorkaround) {
     while (true) {
         int step = stmt.step_raw();
         if (step == decltype(stmt)::ROW_AVAILABLE) {
-            user_names.push_back(std::string(reinterpret_cast<const char*>(stmt.extract_text_ptr(0))));
+            user_names.emplace_back(reinterpret_cast<const char*>(stmt.extract_text_ptr(0)));
         } else if (step == decltype(stmt)::NO_MORE_ROWS) {
             break;
         } else {

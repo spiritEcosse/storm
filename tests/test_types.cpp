@@ -581,7 +581,7 @@ TEST_F(InsertOptionsTest, InsertWithCustomBatchSize) {
 
     // Create 100 objects
     for (int i = 0; i < 100; ++i) {
-        batch.push_back({0, static_cast<int64_t>(i * 10), static_cast<short>(i)});
+        batch.emplace_back(0, static_cast<int64_t>(i * 10), static_cast<short>(i));
     }
 
     // Use batch_size of 10
@@ -634,7 +634,7 @@ TEST_F(InsertOptionsTest, LargeBatchWithCustomChunkSize) {
 
     // Create 1000 objects
     for (int i = 0; i < 1000; ++i) {
-        batch.push_back({0, static_cast<int64_t>(i), static_cast<short>(i % 100)});
+        batch.emplace_back(0, static_cast<int64_t>(i), static_cast<short>(i % 100));
     }
 
     // Use small batch_size to force multiple chunks

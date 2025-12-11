@@ -39,7 +39,7 @@ class LimitOffsetTest : public ::testing::Test {
         QuerySet<LimitOffsetPerson>    queryset;
         std::vector<LimitOffsetPerson> people;
         for (int i = 1; i <= 20; i++) {
-            people.push_back({i, "Person" + std::to_string(i), 20 + i});
+            people.emplace_back(i, "Person" + std::to_string(i), 20 + i);
         }
         auto insert_result = queryset.insert(std::span<const LimitOffsetPerson>(people));
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data: " << insert_result.error().message();

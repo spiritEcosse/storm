@@ -45,7 +45,8 @@ namespace storm::benchmark {
 
             // 3. INSERT data to get valid primary keys
             // Use InsertOptions to get IDs back
-            auto insert_result = Base::qs().insert(Base::data(), storm::orm::statements::InsertOptions{.return_ids = true});
+            auto insert_result =
+                    Base::qs().insert(Base::data(), storm::orm::statements::InsertOptions{.return_ids = true});
             if (!insert_result.has_value()) {
                 std::cerr << "Failed to insert test data for UPDATE benchmark\n";
                 return;

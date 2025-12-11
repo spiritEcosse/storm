@@ -214,7 +214,7 @@ TEST_F(QuerySetRemoveTest, RemoveBatchSmall) {
     // Create batch of persons to remove (batch size ~10)
     std::vector<SqlitePerson> batch_to_remove;
     for (int i = 1; i <= 10; i++) {
-        batch_to_remove.push_back({i, "SqlitePerson" + std::to_string(i), 20 + i});
+        batch_to_remove.emplace_back(i, "SqlitePerson" + std::to_string(i), 20 + i);
     }
 
     // Remove batch using new batch API
@@ -256,7 +256,7 @@ TEST_F(QuerySetRemoveTest, RemoveBatchLarge) {
     // Create large batch of persons to remove (batch size ~100)
     std::vector<SqlitePerson> large_batch;
     for (int i = 1; i <= 100; i++) {
-        large_batch.push_back({i, "SqlitePerson" + std::to_string(i), 20 + (i % 60)});
+        large_batch.emplace_back(i, "SqlitePerson" + std::to_string(i), 20 + (i % 60));
     }
 
     // Remove large batch - should use individual statements with transaction
@@ -364,7 +364,7 @@ TEST_F(QuerySetRemoveTest, RemoveBatchPerformance) {
     // Prepare batch for batch remove
     std::vector<SqlitePerson> batch;
     for (int i = 51; i <= 100; i++) {
-        batch.push_back({i, "SqlitePerson" + std::to_string(i), 20 + (i % 60)});
+        batch.emplace_back(i, "SqlitePerson" + std::to_string(i), 20 + (i % 60));
     }
 
     // Measure batch remove
@@ -452,7 +452,7 @@ TEST_F(QuerySetRemoveTest, InsertMediumBatch) {
     // Create a medium batch (25 objects - should still use bulk INSERT)
     std::vector<SqlitePerson> medium_batch;
     for (int i = 4; i <= 28; ++i) {
-        medium_batch.push_back({i, "SqlitePerson" + std::to_string(i), 20 + (i % 30)});
+        medium_batch.emplace_back(i, "SqlitePerson" + std::to_string(i), 20 + (i % 30));
     }
 
     // Verify initial state
@@ -783,7 +783,7 @@ TEST_F(QuerySetUpdateTest, UpdateBatchMedium) {
     // Create batch of persons to update (batch size ~20)
     std::vector<SqlitePerson> batch_to_update;
     for (int i = 1; i <= 20; i++) {
-        batch_to_update.push_back({i, "Updated" + std::to_string(i), 100 + i});
+        batch_to_update.emplace_back(i, "Updated" + std::to_string(i), 100 + i);
     }
 
     // Update batch
@@ -832,7 +832,7 @@ TEST_F(QuerySetUpdateTest, UpdateBatchLarge) {
     // Create large batch of persons to update (batch size ~100)
     std::vector<SqlitePerson> large_batch;
     for (int i = 1; i <= 100; i++) {
-        large_batch.push_back({i, "LargeUpdate" + std::to_string(i), 200 + i});
+        large_batch.emplace_back(i, "LargeUpdate" + std::to_string(i), 200 + i);
     }
 
     // Update large batch - should use individual statements with transaction

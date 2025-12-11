@@ -26,10 +26,18 @@ namespace storm::benchmark {
 
       protected:
         // Accessor methods for derived classes
-        QuerySet<Model>& qs() { return qs_; }
-        const QuerySet<Model>& qs() const { return qs_; }
-        std::vector<Model>& data() { return data_; }
-        const std::vector<Model>& data() const { return data_; }
+        QuerySet<Model>& qs() {
+            return qs_;
+        }
+        const QuerySet<Model>& qs() const {
+            return qs_;
+        }
+        std::vector<Model>& data() {
+            return data_;
+        }
+        const std::vector<Model>& data() const {
+            return data_;
+        }
 
         // SQLite binding limit constants
         // 999 is SQLite's default SQLITE_MAX_VARIABLE_NUMBER

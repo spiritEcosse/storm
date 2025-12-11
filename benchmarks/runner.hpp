@@ -65,21 +65,21 @@ namespace storm::benchmark {
 
     // ANSI color codes for terminal output
     namespace Color {
-        constexpr const char* RESET   = "\033[0m";
-        constexpr const char* BOLD    = "\033[1m";
-        constexpr const char* RED     = "\033[31m";
-        constexpr const char* GREEN   = "\033[32m";
-        constexpr const char* YELLOW  = "\033[33m";
-        constexpr const char* BLUE    = "\033[34m";
-        constexpr const char* MAGENTA = "\033[35m";
-        constexpr const char* CYAN    = "\033[36m";
-        constexpr const char* WHITE   = "\033[37m";
+        constexpr const char* RESET   = "\o{33}[0m";
+        constexpr const char* BOLD    = "\o{33}[1m";
+        constexpr const char* RED     = "\o{33}[31m";
+        constexpr const char* GREEN   = "\o{33}[32m";
+        constexpr const char* YELLOW  = "\o{33}[33m";
+        constexpr const char* BLUE    = "\o{33}[34m";
+        constexpr const char* MAGENTA = "\o{33}[35m";
+        constexpr const char* CYAN    = "\o{33}[36m";
+        constexpr const char* WHITE   = "\o{33}[37m";
 
         // Bold colors
-        constexpr const char* BOLD_GREEN  = "\033[1;32m";
-        constexpr const char* BOLD_YELLOW = "\033[1;33m";
-        constexpr const char* BOLD_CYAN   = "\033[1;36m";
-        constexpr const char* BOLD_WHITE  = "\033[1;37m";
+        constexpr const char* BOLD_GREEN  = "\o{33}[1;32m";
+        constexpr const char* BOLD_YELLOW = "\o{33}[1;33m";
+        constexpr const char* BOLD_CYAN   = "\o{33}[1;36m";
+        constexpr const char* BOLD_WHITE  = "\o{33}[1;37m";
     } // namespace Color
 
     // Helper: Get color based on throughput (M ops/sec)
@@ -237,11 +237,11 @@ namespace storm::benchmark {
         // Clean, simple, easy to add new operations
 
         template <typename Model, auto& test> static void run_where_operation(BenchmarkRunner& runner, int iterations) {
-            constexpr std::string_view field_name    = test.where.field.view();
-            constexpr auto             op_str        = test.where.op;
-            constexpr int              value         = test.where.value_int;
-            constexpr auto             field_info    = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size  = test.dataset_size;
+            constexpr std::string_view field_name   = test.where.field.view();
+            constexpr auto             op_str       = test.where.op;
+            constexpr int              value        = test.where.value_int;
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
 
             runner.run_benchmark(
                     test.test_name.c_str(),

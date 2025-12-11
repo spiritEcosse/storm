@@ -153,7 +153,8 @@ namespace storm::benchmark {
     }
 
     // Helper: Parse and assign key-value pair to BenchmarkTest
-    constexpr void parse_and_assign_field(BenchmarkTest& test, std::string_view key, std::string_view json, size_t& pos) {
+    constexpr void
+    parse_and_assign_field(BenchmarkTest& test, std::string_view key, std::string_view json, size_t& pos) {
         if (key == "test_name") {
             test.test_name = parse_string<64>(json, pos);
         } else if (key == "test_category") {

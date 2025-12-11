@@ -81,7 +81,7 @@ namespace storm::benchmark {
             int total = 0;
             for (size_t off = 0; off < Base::data().size(); off += Base::max_bulk) {
                 size_t chunk = std::min(Base::max_bulk, Base::data().size() - off);
-                auto it = stmts.find(chunk);
+                auto   it    = stmts.find(chunk);
                 if (it == stmts.end())
                     continue;
 
