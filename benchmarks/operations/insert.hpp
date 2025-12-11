@@ -47,20 +47,9 @@ namespace storm::benchmark {
                 std::cout << "Operation: INSERT (batch, " << BatchSize << " rows per insert)\n";
         }
 
+        // Use unified execute with compile-time operation binding
         int execute(int iterations) {
-            int total = 0;
-            if constexpr (BatchSize == 1) {
-                for (int i = 0; i < iterations; i++) {
-                    Base::qs().insert(Base::data()[i]);
-                    total++;
-                }
-            } else {
-                for (int i = 0; i < iterations; i++) {
-                    Base::qs().insert(Base::data());
-                    total += Base::data().size();
-                }
-            }
-            return total;
+            return Base::template execute_unified<OperationType::Insert>(iterations);
         }
 
         // Helper: Prepare statements for unique chunk sizes (reduces nesting)

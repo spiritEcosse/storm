@@ -8,15 +8,56 @@
  * - QuerySet member
  * - SQLite binding utilities
  * - Common constants (SQLite limits)
+ * - Unified execute() with compile-time operation dispatch
  */
 
 #include <sqlite3.h>
 #include <vector>
 #include <iostream>
+#include <string_view>
 
 import storm;
 
 namespace storm::benchmark {
+
+    // ========================================================================
+    // OperationDispatcher: Compile-time binding of operation to method
+    // ========================================================================
+    enum class OperationType {
+        Insert,
+        UpdatePK,
+        Delete
+    };
+
+    template <OperationType Op>
+    struct OperationDispatcher;
+
+    // INSERT operation specialization
+    template <>
+    struct OperationDispatcher<OperationType::Insert> {
+        template <typename QS, typename Data>
+        static auto call(QS& qs, const Data& data) {
+            return qs.insert(data);
+        }
+    };
+
+    // UPDATE operation specialization
+    template <>
+    struct OperationDispatcher<OperationType::UpdatePK> {
+        template <typename QS, typename Data>
+        static auto call(QS& qs, const Data& data) {
+            return qs.update(data);
+        }
+    };
+
+    // DELETE operation specialization (for future use)
+    template <>
+    struct OperationDispatcher<OperationType::Delete> {
+        template <typename QS, typename Data>
+        static auto call(QS& qs, const Data& data) {
+            return qs.remove(data);
+        }
+    };
 
     // CRTP base class for data-driven benchmarks (Insert, UpdateByPK)
     template <typename Derived, typename Model, int BatchSize = 1, size_t FieldsPerRow = 4> class DataBenchmarkBase {
@@ -82,6 +123,26 @@ namespace storm::benchmark {
             for (int i = 0; i < count; i++) {
                 data().push_back(Derived::create_model());
             }
+        }
+
+        // ====================================================================
+        // Unified execute() with compile-time operation dispatch
+        // ====================================================================
+        template <OperationType Op>
+        int execute_unified(int iterations) {
+            int total = 0;
+            if constexpr (BatchSize == 1) {
+                for (int i = 0; i < iterations; i++) {
+                    OperationDispatcher<Op>::call(qs(), data()[i]);
+                    total++;
+                }
+            } else {
+                for (int i = 0; i < iterations; i++) {
+                    OperationDispatcher<Op>::call(qs(), data());
+                    total += data().size();
+                }
+            }
+            return total;
         }
     };
 
