@@ -286,5 +286,95 @@
     "iterations": 1,
     "dataset_size": 0,
     "batch_size": 100000
+  },
+  {
+    "test_name": "delete_pk_single",
+    "test_category": "DELETE_PK",
+    "description": "Single row DELETE by primary key",
+    "model": "Person",
+    "operation": "delete_pk",
+    "iterations": 10000,
+    "dataset_size": 0,
+    "batch_size": 1
+  },
+  {
+    "test_name": "delete_pk_batch_10",
+    "test_category": "DELETE_PK",
+    "description": "Batch DELETE by primary key (10 rows per batch)",
+    "model": "Person",
+    "operation": "delete_pk",
+    "iterations": 1000,
+    "dataset_size": 0,
+    "batch_size": 10
+  },
+  {
+    "test_name": "delete_pk_batch_100",
+    "test_category": "DELETE_PK",
+    "description": "Batch DELETE by primary key (100 rows per batch)",
+    "model": "Person",
+    "operation": "delete_pk",
+    "iterations": 100,
+    "dataset_size": 0,
+    "batch_size": 100
+  },
+  {
+    "test_name": "delete_pk_batch_500",
+    "test_category": "DELETE_PK",
+    "description": "Batch DELETE by primary key (500 rows per batch)",
+    "model": "Person",
+    "operation": "delete_pk",
+    "iterations": 20,
+    "dataset_size": 0,
+    "batch_size": 500
+  },
+  {
+    "test_name": "delete_pk_batch_1000",
+    "test_category": "DELETE_PK",
+    "description": "Batch DELETE by primary key (1000 rows per batch)",
+    "model": "Person",
+    "operation": "delete_pk",
+    "iterations": 10,
+    "dataset_size": 0,
+    "batch_size": 1000
+  },
+  {
+    "test_name": "delete_pk_batch_5000",
+    "test_category": "DELETE_PK",
+    "description": "Batch DELETE by primary key (5000 rows per batch)",
+    "model": "Person",
+    "operation": "delete_pk",
+    "iterations": 2,
+    "dataset_size": 0,
+    "batch_size": 5000
+  },
+  {
+    "test_name": "delete_pk_batch_10000",
+    "test_category": "DELETE_PK",
+    "description": "Batch DELETE by primary key (10000 rows per batch)",
+    "model": "Person",
+    "operation": "delete_pk",
+    "iterations": 1,
+    "dataset_size": 0,
+    "batch_size": 10000
+  },
+  {
+    "test_name": "delete_pk_batch_50000",
+    "test_category": "DELETE_PK",
+    "description": "Batch DELETE by primary key (50000 rows per batch)",
+    "model": "Person",
+    "operation": "delete_pk",
+    "iterations": 1,
+    "dataset_size": 0,
+    "batch_size": 50000
+  },
+  {
+    "test_name": "delete_pk_batch_100000",
+    "test_category": "DELETE_PK",
+    "description": "Batch DELETE by primary key (100000 rows per batch)",
+    "model": "Person",
+    "operation": "delete_pk",
+    "iterations": 1,
+    "dataset_size": 0,
+    "batch_size": 100000
   }
 ]

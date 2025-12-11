@@ -1,103 +1,99 @@
 #pragma once
 
 /**
- * DELETE Benchmark - Delete operations with WHERE clause
+ * DELETE Benchmark
+ *
+ * Tests DELETE performance for single and batch operations by primary key.
+ * Inherits from DataBenchmarkBase with 1 field (id for WHERE clause).
+ *
+ * Workflow:
+ * 1. prepare(): Clear table, insert test data
+ * 2. execute(): Storm ORM remove() - single or batch by PK
+ * 3. execute_raw(): Raw SQLite DELETE...WHERE id=?
+ *
+ * Note: DELETE is destructive. After first iteration, rows are gone.
+ * Both Storm and Raw have same behavior, so comparison is fair.
  */
 
-#include <sqlite3.h>
-#include <meta>
-import storm;
+#include "base.hpp"
 
 namespace storm::benchmark {
 
-    using storm::orm::where::field;
-
-    // DELETE benchmark with WHERE clause
-    template <typename Model, std::meta::info FieldInfo, ConstexprString Op, typename ValueType> class DeleteBenchmark {
-        ValueType       where_value_;
-        QuerySet<Model> qs_;
+    template <typename Model, int BatchSize = 1>
+    class DeleteBenchmark : public DataBenchmarkBase<DeleteBenchmark<Model, BatchSize>, Model, BatchSize, 1> {
+        using Base = DataBenchmarkBase<DeleteBenchmark<Model, BatchSize>, Model, BatchSize, 1>;
 
       public:
-        explicit constexpr DeleteBenchmark(ValueType where_value) : where_value_(where_value) {}
-
+        // Use unified print_info with compile-time operation name
         void print_info() const {
-            constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
-            constexpr std::string_view op_str     = Op.view();
-            std::cout << "Operation: DELETE with WHERE (" << field_name << " " << op_str << " " << where_value_
-                      << ")\n";
+            Base::template print_info_unified<OperationType::Delete>();
         }
 
+        void prepare(int iterations) {
+            // Clear table, generate data, insert to get IDs
+            Base::prepare_with_insert(iterations);
+        }
+
+        // Use unified execute with compile-time operation dispatch
         int execute(int iterations) {
-            constexpr std::string_view op_str = Op.view();
-
-            // Build WHERE clause once (compile-time constant)
-            auto where_clause = [&]() {
-                if constexpr (op_str == ">") {
-                    return field<FieldInfo>() > where_value_;
-                } else if constexpr (op_str == ">=") {
-                    return field<FieldInfo>() >= where_value_;
-                } else if constexpr (op_str == "<") {
-                    return field<FieldInfo>() < where_value_;
-                } else if constexpr (op_str == "<=") {
-                    return field<FieldInfo>() <= where_value_;
-                } else if constexpr (op_str == "==") {
-                    return field<FieldInfo>() == where_value_;
-                }
-            }();
-
-            int total_deletes = 0;
-            for (int i = 0; i < iterations; i++) {
-                // Execute delete
-                auto result = qs_.where(where_clause).remove();
-                if (result.has_value()) {
-                    total_deletes += result.value(); // Number of rows deleted
-                }
-                qs_.reset();
-            }
-            return total_deletes;
+            return Base::template execute_unified<OperationType::Delete>(iterations);
         }
 
-        // Raw SQLite execution for comparison
+      private:
+        // Helper: Execute single-row deletes
+        int execute_single_row(sqlite3_stmt* stmt, int iterations) {
+            int total = 0;
+            for (int i = 0; i < iterations; i++) {
+                sqlite3_bind_int64(stmt, 1, Base::data()[i].id);
+                if (sqlite3_step(stmt) == SQLITE_DONE) {
+                    total++;
+                }
+                sqlite3_reset(stmt);
+            }
+            return total;
+        }
+
+        // Helper: Execute batch deletes with transaction
+        int execute_batch(sqlite3_stmt* stmt, int iterations) {
+            int total = 0;
+            for (int iter = 0; iter < iterations; iter++) {
+                sqlite3_exec(sqlite3_db_handle(stmt), "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
+                for (const auto& p : Base::data()) {
+                    sqlite3_bind_int64(stmt, 1, p.id);
+                    if (sqlite3_step(stmt) == SQLITE_DONE) {
+                        total++;
+                    }
+                    sqlite3_reset(stmt);
+                }
+                sqlite3_exec(sqlite3_db_handle(stmt), "COMMIT", nullptr, nullptr, nullptr);
+            }
+            return total;
+        }
+
+      public:
         int execute_raw(int iterations) {
-            constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
-            constexpr std::string_view op_str     = Op.view();
-
-            auto& conn = QuerySet<Model>::get_default_connection();
-
-            // Build SQL query ONCE
-            std::string sql = "DELETE FROM Person WHERE ";
-            sql += std::string(field_name) + " " + std::string(op_str) + " ?";
-
-            // Prepare statement ONCE
-            auto stmt_result = conn->prepare(sql);
-            if (!stmt_result.has_value())
+            auto&    conn = storm::QuerySet<Model>::get_default_connection();
+            sqlite3* db   = conn->get();
+            if (!db)
                 return 0;
 
-            auto& stmt = stmt_result.value();
+            // Raw SQLite DELETE SQL: "DELETE FROM Person WHERE id = ?"
+            const std::string sql = "DELETE FROM Person WHERE id = ?";
 
-            int total_deletes = 0;
-            for (int i = 0; i < iterations; i++) {
-                stmt.reset();
+            sqlite3_stmt* stmt = nullptr;
+            if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+                return 0;
 
-                // Bind parameter
-                if constexpr (std::is_same_v<ValueType, int>) {
-                    if (!stmt.bind_int(1, where_value_).has_value())
-                        continue;
-                } else if constexpr (std::is_same_v<ValueType, double>) {
-                    if (!stmt.bind_double(1, where_value_).has_value())
-                        continue;
-                } else if constexpr (std::is_same_v<ValueType, bool>) {
-                    if (!stmt.bind_int(1, where_value_ ? 1 : 0).has_value())
-                        continue;
-                }
-
-                // Execute and get number of changes
-                auto step_result = stmt.step();
-                if (step_result.has_value()) {
-                    total_deletes += sqlite3_changes(conn->get());
-                }
+            // Execute single-row or batch deletes based on BatchSize
+            int total;
+            if constexpr (BatchSize == 1) {
+                total = execute_single_row(stmt, iterations);
+            } else {
+                total = execute_batch(stmt, iterations);
             }
-            return total_deletes;
+
+            sqlite3_finalize(stmt);
+            return total;
         }
     };
 

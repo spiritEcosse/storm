@@ -119,15 +119,40 @@ namespace storm::benchmark {
         }
 
       public:
-        // Prepare test data before timing
-        // For INSERT: creates fresh data
-        // For UPDATE: derived class overrides to INSERT first, then modify
+        // Basic prepare: generates test data only (for INSERT benchmark)
         void prepare(int iterations) {
             data().clear();
             int count = (BatchSize == 1) ? iterations : BatchSize;
             data().reserve(count);
             for (int i = 0; i < count; i++) {
                 data().push_back(Derived::create_model());
+            }
+        }
+
+        // Extended prepare: clears table, generates data, inserts to get IDs
+        // Used by UPDATE and DELETE benchmarks that need existing rows with valid PKs
+        void prepare_with_insert(int iterations) {
+            // 1. Clear table using raw SQLite
+            auto&    conn = storm::QuerySet<Model>::get_default_connection();
+            sqlite3* db   = conn->get();
+            if (db) {
+                sqlite3_exec(db, "DELETE FROM Person", nullptr, nullptr, nullptr);
+            }
+
+            // 2. Generate test data
+            prepare(iterations);
+
+            // 3. INSERT data to get valid primary keys
+            auto insert_result = qs().insert(data(), storm::orm::statements::InsertOptions{.return_ids = true});
+            if (!insert_result.has_value()) {
+                std::cerr << "Failed to insert test data for benchmark\n";
+                return;
+            }
+
+            // 4. Store returned IDs back into data
+            const auto& ids = insert_result.value();
+            for (size_t i = 0; i < data().size() && i < ids.size(); i++) {
+                data()[i].id = ids[i];
             }
         }
 

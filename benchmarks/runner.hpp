@@ -256,15 +256,8 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_delete_operation(BenchmarkRunner& runner, int iterations) {
-            constexpr std::string_view field_name = test.where.field.view();
-            constexpr auto             op_str     = test.where.op;
-            constexpr int              value      = test.where.value_int;
-            constexpr auto             field_info = dispatch_field<Model>(field_name);
-
-            runner.run_benchmark(
-                    test.test_name.c_str(), DeleteBenchmark<Model, field_info, op_str, int>{value}, iterations
-            );
+        static void run_delete_pk_operation(BenchmarkRunner& runner, int iterations) {
+            runner.run_benchmark(test.test_name.c_str(), DeleteBenchmark<Model, test.batch_size>{}, iterations);
         }
 
         template <typename Model, auto& test>
@@ -297,8 +290,8 @@ namespace storm::benchmark {
                         runner.run_insert_operation<Model, test>(runner, iterations);
                     } else if constexpr (operation == "update_pk") {
                         runner.run_update_pk_operation<Model, test>(runner, iterations);
-                    } else if constexpr (operation == "delete") {
-                        runner.run_delete_operation<Model, test>(runner, iterations);
+                    } else if constexpr (operation == "delete_pk") {
+                        runner.run_delete_pk_operation<Model, test>(runner, iterations);
                     }
                 }
 

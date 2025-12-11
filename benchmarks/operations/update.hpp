@@ -15,8 +15,6 @@
  */
 
 #include "base.hpp"
-#include <iostream>
-#include <chrono>
 
 namespace storm::benchmark {
 
@@ -31,32 +29,10 @@ namespace storm::benchmark {
         }
 
         void prepare(int iterations) {
-            // 1. Clear table first using raw SQLite
-            auto&    conn = storm::QuerySet<Model>::get_default_connection();
-            sqlite3* db   = conn->get();
-            if (db) {
-                sqlite3_exec(db, "DELETE FROM Person", nullptr, nullptr, nullptr);
-            }
+            // 1. Clear table, generate data, insert to get IDs
+            Base::prepare_with_insert(iterations);
 
-            // 2. Generate test data using base class method
-            Base::prepare(iterations);
-
-            // 3. INSERT data to get valid primary keys
-            // Use InsertOptions to get IDs back
-            auto insert_result =
-                    Base::qs().insert(Base::data(), storm::orm::statements::InsertOptions{.return_ids = true});
-            if (!insert_result.has_value()) {
-                std::cerr << "Failed to insert test data for UPDATE benchmark\n";
-                return;
-            }
-
-            // Store returned IDs back into data
-            const auto& ids = insert_result.value();
-            for (size_t i = 0; i < Base::data().size() && i < ids.size(); i++) {
-                Base::data()[i].id = ids[i];
-            }
-
-            // 4. Modify data fields for update test (change values so UPDATE actually does work)
+            // 2. Modify data fields for update test (change values so UPDATE actually does work)
             for (auto& obj : Base::data()) {
                 obj.name      = "UpdatedPerson";
                 obj.age       = obj.age + 5;
