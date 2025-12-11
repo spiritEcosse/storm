@@ -10,12 +10,20 @@
 #include <sqlite3.h>
 #include <iostream>
 #include <stdexcept>
+#include <format>
 #include <meta>
 import storm;
 
 namespace storm::benchmark {
 
     using storm::orm::where::field;
+
+    // Custom exception for field lookup failures
+    class FieldNotFoundException : public std::runtime_error {
+      public:
+        explicit FieldNotFoundException(std::string_view field_name)
+            : std::runtime_error(std::format("Field '{}' not found", field_name)) {}
+    };
 
     // Forward declare field dispatcher
     template <typename Model> consteval std::meta::info dispatch_field(std::string_view field_name) {
@@ -28,7 +36,7 @@ namespace storm::benchmark {
             }
         }
 
-        throw std::runtime_error("Field not found");
+        throw FieldNotFoundException(field_name);
     }
 
     // SELECT benchmark with WHERE clause
@@ -57,7 +65,7 @@ namespace storm::benchmark {
                 for (int i = 1; i <= DatasetSize; i++) {
                     data.push_back(
                             Model{.id        = 0, // Auto-increment
-                                  .name      = "Person" + std::to_string(i),
+                                  .name      = std::format("Person{}", i),
                                   .age       = 20 + (i % 50),
                                   .is_active = (i % 2 == 0),
                                   .salary    = 30000.0 + (i * 1000.0)}

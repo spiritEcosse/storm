@@ -8,6 +8,7 @@ import <expected>;
 import <algorithm>;
 import <set>;
 import <tuple>;
+import <format>;
 
 using namespace storm;
 using namespace storm::orm::where;
@@ -225,7 +226,7 @@ TEST_F(DistinctTest, DistinctWithLargeDataset) {
     std::vector<DistinctPerson> people_to_insert;
     for (int i = 1; i <= 1000; ++i) {
         int pattern = (i - 1) % 10;
-        people_to_insert.emplace_back(i, "Name" + std::to_string(pattern), 20 + pattern);
+        people_to_insert.emplace_back(i, std::format("Name{}", pattern), 20 + pattern);
     }
 
     auto insert_result = queryset.insert(std::span<const DistinctPerson>(people_to_insert));
@@ -394,7 +395,7 @@ TEST_F(DistinctTest, DistinctTwoFieldsLargeDataset) {
     for (int i = 1; i <= 10000; ++i) {
         int combo_idx = (i - 1) % 100;
         // Generate 100 unique (name, age) combinations: 10 names × 10 ages
-        people_to_insert.emplace_back(i, "DistinctPerson" + std::to_string(combo_idx / 10), 20 + (combo_idx % 10));
+        people_to_insert.emplace_back(i, std::format("DistinctPerson{}", combo_idx / 10), 20 + (combo_idx % 10));
     }
 
     auto insert_result = queryset.insert(std::span<const DistinctPerson>(people_to_insert));

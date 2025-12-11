@@ -224,7 +224,7 @@ namespace storm::benchmark {
             // Efficiency comparison
             std::cout << "\n" << Color::BOLD << "Efficiency: " << Color::RESET;
             const char* eff_color = get_efficiency_color(efficiency);
-            std::cout << eff_color << std::fixed << std::setprecision(1) << efficiency << "%" << Color::RESET;
+            std::cout << eff_color << std::format("{:.1f}", efficiency) << "%" << Color::RESET;
 
             const char* comparison_color = (efficiency >= 100.0) ? Color::BOLD_GREEN : Color::GREEN;
             const char* comparison_text  = (efficiency >= 100.0) ? "FASTER" : "slower";

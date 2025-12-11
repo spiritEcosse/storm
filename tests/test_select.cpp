@@ -4,6 +4,7 @@ import storm;
 import <string>;
 import <vector>;
 import <expected>;
+import <format>;
 
 using namespace storm;
 
@@ -176,7 +177,7 @@ TEST_F(SelectTest, SelectLargeDataset) {
     // Insert 100 people (use explicit IDs for batch insert)
     std::vector<SelectPerson> people_to_insert;
     for (int i = 1; i <= 100; ++i) {
-        people_to_insert.emplace_back(i, "SelectPerson" + std::to_string(i), 20 + i);
+        people_to_insert.emplace_back(i, std::format("SelectPerson{}", i), 20 + i);
     }
 
     auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert));

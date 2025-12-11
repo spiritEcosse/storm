@@ -4,6 +4,7 @@ import storm;
 import <string>;
 import <vector>;
 import <expected>;
+import <format>;
 
 using namespace storm;
 
@@ -90,7 +91,7 @@ TEST_F(SelectLargeTest, SelectExactly10KRows) {
     records.reserve(RECORD_COUNT);
 
     for (int i = 1; i <= RECORD_COUNT; ++i) {
-        records.emplace_back(i, i, "R" + std::to_string(i));
+        records.emplace_back(i, i, std::format("R{}", i));
     }
 
     auto insert_result = queryset.insert(std::span<const TestRecord>(records));
@@ -150,7 +151,7 @@ TEST_F(SelectLargeTest, SelectVeryLargeDataset) {
 
         for (int i = 1; i <= BATCH_SIZE; ++i) {
             int record_num = batch * BATCH_SIZE + i;
-            batch_records.emplace_back(record_num, record_num, "B" + std::to_string(batch));
+            batch_records.emplace_back(record_num, record_num, std::format("B{}", batch));
         }
 
         auto insert_result = queryset.insert(std::span<const TestRecord>(batch_records));

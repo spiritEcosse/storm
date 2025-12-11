@@ -62,7 +62,7 @@ namespace storm::benchmark {
         }
 
         // Execute statement, reset, return success count
-        static int step_and_reset(sqlite3_stmt* stmt, sqlite3* db, int rows) {
+        static int step_and_reset(sqlite3_stmt* stmt, [[maybe_unused]] sqlite3* db, int rows) {
             if (sqlite3_step(stmt) == SQLITE_DONE) {
                 sqlite3_reset(stmt);
                 return rows;
