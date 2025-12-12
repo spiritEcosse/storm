@@ -23,44 +23,39 @@ namespace storm::benchmark {
     // ========================================================================
     // OperationDispatcher: Compile-time binding of operation to method
     // ========================================================================
-    enum class OperationType {
-        Insert,
-        UpdatePK,
-        Delete
-    };
+    enum class OperationType { Insert, UpdatePK, Delete };
 
-    template <OperationType Op>
-    struct OperationDispatcher;
+    template <OperationType Op> struct OperationDispatcher;
 
     // INSERT operation specialization
-    template <>
-    struct OperationDispatcher<OperationType::Insert> {
-        static constexpr std::string_view name() { return "INSERT"; }
+    template <> struct OperationDispatcher<OperationType::Insert> {
+        static constexpr std::string_view name() {
+            return "INSERT";
+        }
 
-        template <typename QS, typename Data>
-        static auto call(QS& qs, const Data& data) {
+        template <typename QS, typename Data> static auto call(QS& qs, const Data& data) {
             return qs.insert(data);
         }
     };
 
     // UPDATE operation specialization
-    template <>
-    struct OperationDispatcher<OperationType::UpdatePK> {
-        static constexpr std::string_view name() { return "UPDATE by PK"; }
+    template <> struct OperationDispatcher<OperationType::UpdatePK> {
+        static constexpr std::string_view name() {
+            return "UPDATE by PK";
+        }
 
-        template <typename QS, typename Data>
-        static auto call(QS& qs, const Data& data) {
+        template <typename QS, typename Data> static auto call(QS& qs, const Data& data) {
             return qs.update(data);
         }
     };
 
     // DELETE operation specialization (for future use)
-    template <>
-    struct OperationDispatcher<OperationType::Delete> {
-        static constexpr std::string_view name() { return "DELETE"; }
+    template <> struct OperationDispatcher<OperationType::Delete> {
+        static constexpr std::string_view name() {
+            return "DELETE";
+        }
 
-        template <typename QS, typename Data>
-        static auto call(QS& qs, const Data& data) {
+        template <typename QS, typename Data> static auto call(QS& qs, const Data& data) {
             return qs.remove(data);
         }
     };
@@ -159,8 +154,7 @@ namespace storm::benchmark {
         // ====================================================================
         // Unified print_info() with compile-time operation name
         // ====================================================================
-        template <OperationType Op>
-        void print_info_unified() const {
+        template <OperationType Op> void print_info_unified() const {
             constexpr std::string_view op_name = OperationDispatcher<Op>::name();
             if constexpr (BatchSize == 1)
                 std::cout << "Operation: " << op_name << " (single row)\n";
@@ -171,8 +165,7 @@ namespace storm::benchmark {
         // ====================================================================
         // Unified execute() with compile-time operation dispatch
         // ====================================================================
-        template <OperationType Op>
-        int execute_unified(int iterations) {
+        template <OperationType Op> int execute_unified(int iterations) {
             int total = 0;
             if constexpr (BatchSize == 1) {
                 for (int i = 0; i < iterations; i++) {

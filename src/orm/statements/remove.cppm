@@ -206,13 +206,17 @@ export namespace storm::orm::statements {
         }
 
         // Bulk execute using IN clause for better performance on small batches
+        // Uses prepare_cached for statement reuse across iterations (critical for benchmark perf)
         [[nodiscard]] __attribute__((hot)) auto execute_bulk(std::span<const T> objects) noexcept
                 -> std::expected<void, Error> {
-            auto bulk_sql = get_bulk_delete_sql(objects.size());
+            const auto& bulk_sql = get_bulk_delete_sql(objects.size());
 
-            return conn_->prepare(bulk_sql).and_then([this, objects](Statement stmt) -> std::expected<void, Error> {
-                return bind_and_execute_bulk(std::move(stmt), objects);
-            });
+            // Use prepare_cached to reuse prepared statements across iterations
+            return conn_->prepare_cached(bulk_sql).and_then(
+                    [this, objects](Statement* stmt) -> std::expected<void, Error> {
+                        return bind_and_execute_bulk(*stmt, objects);
+                    }
+            );
         }
 
       protected: // Changed to protected so BaseStatement can access
@@ -235,8 +239,12 @@ export namespace storm::orm::statements {
         }
 
         // Bind and execute bulk operation (single statement, multiple parameters)
-        [[nodiscard]] auto bind_and_execute_bulk(Statement stmt, std::span<const T> objects) noexcept
+        // Note: Takes reference since we use prepare_cached which returns a pointer to cached statement
+        [[nodiscard]] auto bind_and_execute_bulk(Statement& stmt, std::span<const T> objects) noexcept
                 -> std::expected<void, Error> {
+            // Reset before binding - required for cached statement reuse
+            stmt.reset();
+
             // Bind all primary key values
             int param_index = 1;
             for (const auto& obj : objects) {
