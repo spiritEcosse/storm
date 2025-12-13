@@ -24,6 +24,7 @@ export namespace storm::orm::statements {
 
     // Import utilities for code convenience
     using storm::orm::utilities::ConstexprString;
+    using storm::orm::utilities::TransactionGuard;
 
     // Statement class for ORM update operations
     template <typename T, storm::db::DatabaseConnection ConnType> class UpdateStatement : private BaseStatement<T> {
@@ -149,37 +150,22 @@ export namespace storm::orm::statements {
                 return execute_single_row(objects[0]);
             }
 
-            // Multiple objects - use transaction (flattened, no lambda)
-            auto begin_result = conn_->execute("BEGIN TRANSACTION");
-            if (!begin_result) {
-                return std::unexpected(begin_result.error());
-            }
+            // Multiple objects - use RAII transaction guard
+            auto txn = TransactionGuard<ConnType>::begin(*conn_);
+            if (!txn) return std::unexpected(txn.error());
 
             // Execute all updates with cached statement
             for (const auto& obj : objects) {
                 cached_update_stmt_->reset();
 
                 auto bind_result = inline_bind_all_fields(cached_update_stmt_, obj, typename Base::field_indices_t{});
-                if (!bind_result) {
-                    (void)conn_->execute("ROLLBACK");
-                    return std::unexpected(bind_result.error());
-                }
+                if (!bind_result) return std::unexpected(bind_result.error());
 
                 auto exec_result = cached_update_stmt_->execute();
-                if (!exec_result) {
-                    (void)conn_->execute("ROLLBACK");
-                    return std::unexpected(exec_result.error());
-                }
+                if (!exec_result) return std::unexpected(exec_result.error());
             }
 
-            // Commit transaction
-            auto commit_result = conn_->execute("COMMIT");
-            if (!commit_result) {
-                (void)conn_->execute("ROLLBACK");
-                return std::unexpected(commit_result.error());
-            }
-
-            return {};
+            return txn->commit();
         }
 
         // Execute single row with cached statement (no transaction)

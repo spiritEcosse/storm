@@ -25,6 +25,7 @@ export namespace storm::orm::statements {
     // Import utilities for code convenience
     using storm::orm::utilities::BulkSQLCache;
     using storm::orm::utilities::ConstexprString;
+    using storm::orm::utilities::TransactionGuard;
 
     // Statement class for ORM remove operations
     template <typename T, storm::db::DatabaseConnection ConnType> class RemoveStatement : private BaseStatement<T> {
@@ -163,8 +164,19 @@ export namespace storm::orm::statements {
                 return execute_single_optimized(objects[0]);
             }
 
-            // Use BaseStatement's generic batch execution for multiple objects
-            return Base::execute_standard_batch(*this, objects, 1); // 1 variable per object (primary key)
+            // Strategy 2: Bulk IN clause (2-799 rows) - no transaction needed
+            if (objects.size() <= MAX_CHUNK_SIZE) {
+                return execute_bulk(objects);
+            }
+
+            // Strategy 3: Chunked IN clause (800+ rows) - RAII transaction guard
+            auto txn = TransactionGuard<ConnType>::begin(*conn_);
+            if (!txn) return std::unexpected(txn.error());
+
+            auto result = execute_individual_batch(objects);
+            if (!result) return result;  // ~TransactionGuard will ROLLBACK
+
+            return txn->commit();
         }
 
         // Ultra-optimized single DELETE - pre-cached statement, inlined execution

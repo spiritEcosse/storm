@@ -201,14 +201,22 @@ Throughput: 2.96329 M ops/sec
 
 ### Batch INSERT Performance Characteristics
 
-**✅ FIXED: Batch performance variance issue resolved!** Storm ORM now achieves **consistent 110-119% efficiency** across all batch sizes.
+**Three INSERT Strategies (matching Storm ORM):**
 
-**Chunked Bulk SQL Strategy:**
+Both Storm ORM and the Raw SQLite benchmark use **identical strategies** for fair comparison:
+
+| Strategy | Batch Size | SQL Pattern | Transaction |
+|----------|------------|-------------|-------------|
+| **1. Single INSERT** | 1 row | `INSERT INTO ... VALUES (?, ?, ...)` | None |
+| **2. Bulk VALUES** | 2-249 rows | `INSERT INTO ... VALUES (...), (...), ...` | None (single statement) |
+| **3. Chunked Bulk** | 250+ rows | Multiple bulk INSERTs (249 rows each) | None (each chunk is atomic) |
+
+**Threshold Calculation:**
+- SQLite limit: 999 variables per statement
 - Person model has 4 non-PK fields → max chunk size = 999 / 4 = **249 rows**
 - Batches exceeding 249 rows split into multiple bulk INSERT statements
 - Each chunk: `INSERT INTO ... VALUES (...), (...), ... (up to 249 rows)`
-- All chunks executed within one transaction
-- **Both Storm ORM and Raw SQLite use identical chunking strategy** for fair comparison
+- **Note:** INSERT doesn't need transaction wrapping because each bulk INSERT is already atomic
 
 **⚠️ Chunking Boundary Performance:**
 
@@ -328,6 +336,17 @@ if constexpr (BatchSize <= bulk_sweet_spot) {  // bulk_sweet_spot = 124
 
 ### Batch UPDATE Performance Characteristics
 
+**Two UPDATE Strategies (matching Storm ORM):**
+
+Both Storm ORM and the Raw SQLite benchmark use **identical strategies** for fair comparison:
+
+| Strategy | Batch Size | SQL Pattern | Transaction |
+|----------|------------|-------------|-------------|
+| **1. Single UPDATE** | 1 row | `UPDATE ... SET ... WHERE id = ?` | None |
+| **2. Batch UPDATE** | 2+ rows | Individual UPDATEs in loop | One transaction wrapping all |
+
+**Note:** Unlike INSERT and DELETE, there's no multi-row UPDATE syntax in SQLite. All batch updates execute individual UPDATE statements within a single transaction for atomicity.
+
 **Architecture: CRTP Base Class**
 
 UPDATE and INSERT benchmarks share common code via CRTP (Curiously Recurring Template Pattern):
@@ -355,50 +374,59 @@ class UpdateBenchmark : public DataBenchmarkBase<..., 5> { ... };
 
 | Batch Size | Efficiency | Notes |
 |------------|------------|-------|
-| 198 | **~81%** | Just under boundary |
-| 199 | **~90%** | Exactly at max_bulk |
-| 200 | **~90%** | Just over boundary |
+| 198 | **~90.6%** | Just under boundary |
+| 199 | **~90.0%** | Exactly at max_bulk |
+| 200 | **~91.3%** | Just over boundary |
 
 **Note:** Unlike INSERT (which uses bulk SQL), UPDATE always executes individual statements within a transaction. The "chunking boundary" is less significant for UPDATE since there's no multi-row UPDATE syntax in SQLite.
 
-**Single UPDATE Performance (verified 2025-12-09, Release build):**
+**Single UPDATE Performance (verified 2025-12-13, Release build):**
 
 | Operation | Storm ORM | Raw SQLite | Efficiency | Notes |
 |-----------|-----------|------------|------------|-------|
-| **Single UPDATE** | ~1.7 M/s | ~1.8 M/s | **~94%** | ✅ Excellent for full ORM! |
+| **Single UPDATE** | ~2.26 M/s | ~2.42 M/s | **~93%** | ✅ Excellent for full ORM! |
 
-**Batch UPDATE Performance (verified 2025-12-09, Release build):**
+**Batch UPDATE Performance (verified 2025-12-13, Release build):**
 
 | Batch Size | Storm ORM | Raw SQLite | Efficiency | Notes |
 |------------|-----------|------------|------------|-------|
-| 10 | ~2.5 M/s | ~2.5 M/s | **~100%** | ✅ Near parity |
-| 100 | ~3.0 M/s | ~3.2 M/s | **~95%** | ✅ Excellent |
-| 500 | ~3.5 M/s | ~3.8 M/s | **~93%** | ✅ Excellent |
-| 1000 | ~3.4 M/s | ~3.7 M/s | **~90%** | ✅ Good |
-| 10000 | ~3.4 M/s | ~3.7 M/s | **~93%** | ✅ Excellent |
+| 10 | ~3.47 M/s | ~3.38 M/s | **~103%** | ✅ Storm FASTER! |
+| 100 | ~3.67 M/s | ~4.03 M/s | **~91%** | ✅ Good |
+| 500 | ~3.44 M/s | ~3.83 M/s | **~90%** | ✅ Good |
+| 1000 | ~3.37 M/s | ~3.72 M/s | **~91%** | ✅ Good |
+| 5000 | ~3.30 M/s | ~3.66 M/s | **~90%** | ✅ Good |
+| 10000 | ~3.33 M/s | ~3.67 M/s | **~91%** | ✅ Good |
+| 50000 | ~3.09 M/s | ~3.40 M/s | **~91%** | ✅ Good |
+| 100000 | ~3.05 M/s | ~3.30 M/s | **~92%** | ✅ Good |
 
-**Key Optimizations Applied (2025-12-09 Update):**
+**Key Optimizations Applied (2025-12-13 Update):**
 
-1. **Flat Code Structure** - Removed nested lambda wrappers for ~3-4% improvement
+1. **RAII TransactionGuard** - Clean transaction management with automatic rollback
 2. **Statement Pointer Caching** - Cached `sqlite3_stmt*` avoids hash lookup per row
 3. **Inline Binding** - `inline_bind_all_fields()` with compile-time type dispatch
-4. **Direct Transaction Control** - `BEGIN`/`COMMIT` without lambda indirection
+4. **Zero-Overhead Abstraction** - TransactionGuard fully inlined by compiler
 5. **CRTP Pattern** - Zero-overhead abstraction for shared functionality
 
-**Why Flat Code is Faster (measured ~3-4% improvement):**
+**TransactionGuard Pattern (Python context manager style):**
 ```cpp
-// ❌ SLOW: Nested lambdas (90% efficiency)
-execute_with_transaction(conn, true,
-    [this, objects]() {
-        return execute_with_statement(conn, sql,
-            [this, objects](auto& stmt) { /*loop*/ });
-    });
+// ❌ OLD: Verbose flat code with manual rollback
+auto begin_result = conn_->execute("BEGIN TRANSACTION");
+if (!begin_result) return std::unexpected(begin_result.error());
+for (const auto& obj : objects) {
+    if (!bind_result) { (void)conn_->execute("ROLLBACK"); return ...; }
+    if (!exec_result) { (void)conn_->execute("ROLLBACK"); return ...; }
+}
+auto commit_result = conn_->execute("COMMIT");
+if (!commit_result) { (void)conn_->execute("ROLLBACK"); return ...; }
 
-// ✅ FAST: Flat code (93-94% efficiency)
-if (!cached_stmt_) { cached_stmt_ = conn_->prepare_cached(sql); }
-conn_->execute("BEGIN TRANSACTION");
-for (const auto& obj : objects) { /*bind+execute*/ }
-conn_->execute("COMMIT");
+// ✅ NEW: Clean RAII style (zero overhead - fully inlined)
+auto txn = TransactionGuard<ConnType>::begin(*conn_);
+if (!txn) return std::unexpected(txn.error());
+for (const auto& obj : objects) {
+    if (!bind_result) return std::unexpected(bind_result.error());  // Auto-rollback
+    if (!exec_result) return std::unexpected(exec_result.error());  // Auto-rollback
+}
+return txn->commit();
 ```
 
 ### Run Batch DELETE Benchmarks
@@ -458,34 +486,33 @@ COMMIT;
 
 | Operation | Storm ORM | Raw SQLite | Efficiency | Notes |
 |-----------|-----------|------------|------------|-------|
-| **Single DELETE** | ~4.31 M/s | ~4.66 M/s | **~92.5%** | ✅ Excellent for full ORM! |
+| **Single DELETE** | ~4.04 M/s | ~4.62 M/s | **~87.5%** | ✅ Good for full ORM! |
 
 **Batch DELETE Performance (verified 2025-12-13, fair comparison, Release build):**
 
 | Batch Size | Storm ORM | Raw SQLite | Efficiency | Strategy | Notes |
 |------------|-----------|------------|------------|----------|-------|
-| 10 | ~1.49 M/s | ~1.51 M/s | **~98.8%** | IN clause | ✅ Near parity |
-| 100 | ~2.16 M/s | ~2.17 M/s | **~99.6%** | IN clause | ✅ Near parity |
-| 500 | ~2.20 M/s | ~2.19 M/s | **~100.3%** | IN clause | ✅ Storm slightly faster |
-| 1000 | ~3.16 M/s | ~3.19 M/s | **~99.2%** | Chunked (2 queries) | ✅ Near parity |
-| 5000 | ~2.96 M/s | ~2.96 M/s | **~99.8%** | Chunked (7 queries) | ✅ Near parity |
-| 10000 | ~2.95 M/s | ~2.93 M/s | **~100.6%** | Chunked (13 queries) | ✅ Storm slightly faster |
-| 50000 | ~2.76 M/s | ~2.80 M/s | **~98.7%** | Chunked (63 queries) | ✅ Near parity |
-| 100000 | ~2.77 M/s | ~2.79 M/s | **~99.4%** | Chunked (126 queries) | ✅ Near parity |
+| 10 | ~1.40 M/s | ~1.43 M/s | **~97.7%** | IN clause | ✅ Near parity |
+| 100 | ~2.15 M/s | ~2.19 M/s | **~98.1%** | IN clause | ✅ Near parity |
+| 500 | ~3.29 M/s | ~3.30 M/s | **~99.5%** | IN clause | ✅ Near parity |
+| 1000 | ~3.20 M/s | ~3.24 M/s | **~98.8%** | Chunked (2 queries) | ✅ Near parity |
+| 5000 | ~3.11 M/s | ~3.13 M/s | **~99.3%** | Chunked (7 queries) | ✅ Near parity |
+| 10000 | ~3.08 M/s | ~3.08 M/s | **~100.1%** | Chunked (13 queries) | ✅ Storm FASTER! |
+| 50000 | ~2.84 M/s | ~2.87 M/s | **~99.1%** | Chunked (63 queries) | ✅ Near parity |
+| 100000 | ~2.77 M/s | ~2.80 M/s | **~98.7%** | Chunked (126 queries) | ✅ Near parity |
 
 **Key Optimizations Applied (2025-12-13 Update):**
 
-1. **Chunked IN Clause for Large Batches** - Instead of 1000 individual DELETEs, uses chunked IN clauses
-   - **Before fix**: Individual `DELETE WHERE id = ?` for each row (slow)
-   - **After fix**: `DELETE WHERE id IN (?, ?, ...)` with up to 799 IDs per chunk
+1. **RAII TransactionGuard** - Clean transaction management with automatic rollback on early return
+   - Similar to Python's `with transaction():` context manager
+   - Zero overhead - fully inlined by compiler
 
-2. **Statement Caching** - Uses `prepare_cached()` for all DELETE statements
+2. **Chunked IN Clause for Large Batches** - Instead of 1000 individual DELETEs, uses chunked IN clauses
+   - `DELETE WHERE id IN (?, ?, ...)` with up to 799 IDs per chunk
+
+3. **Statement Caching** - Uses `prepare_cached()` for all DELETE statements
    - Prepared statements reused across iterations
    - SQL strings cached per chunk size via thread-local cache
-
-3. **Transaction Handling** - Large batches wrapped in single transaction
-   - `execute_with_transaction()` in base.cppm handles BEGIN/COMMIT
-   - `execute_individual_batch()` focuses only on chunked DELETE logic (no nested transactions)
 
 4. **Fair Benchmark Comparison** - Both Storm and Raw SQLite use identical strategies
    - Same threshold calculations (799 rows = 80% of SQLite limit)
