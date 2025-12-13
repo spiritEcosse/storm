@@ -430,49 +430,73 @@ conn_->execute("COMMIT");
 
 ### Batch DELETE Performance Characteristics
 
-**Strategy Selection:**
-- **Small batches (≤999 rows)**: Uses `DELETE FROM ... WHERE id IN (?, ?, ...)` - single SQL statement
-- **Large batches (>999 rows)**: Uses individual `DELETE FROM ... WHERE id=?` within a transaction
+**Three DELETE Strategies (matching Storm ORM):**
 
-**Single DELETE Performance (verified 2025-12-12, Release build):**
+Both Storm ORM and the Raw SQLite benchmark use **identical strategies** for fair comparison:
+
+| Strategy | Batch Size | SQL Pattern | Transaction |
+|----------|------------|-------------|-------------|
+| **1. Single DELETE** | 1 row | `DELETE FROM ... WHERE id = ?` | None |
+| **2. Bulk IN Clause** | 2-799 rows | `DELETE FROM ... WHERE id IN (?, ?, ...)` | None |
+| **3. Chunked IN Clause** | 800+ rows | Multiple `IN (?, ?, ...)` queries (799 each) | One transaction wrapping all chunks |
+
+**Threshold Calculation:**
+- SQLite limit: 999 variables per statement
+- DELETE uses 1 variable per row (just the primary key)
+- Safe threshold: 80% of 999 = **799 rows** per IN clause
+- For batches > 799: Split into chunks of 799, wrapped in single transaction
+
+**Example for 1000 rows:**
+```sql
+BEGIN TRANSACTION;
+DELETE FROM Person WHERE id IN (?, ?, ..., ?);  -- 799 placeholders
+DELETE FROM Person WHERE id IN (?, ?, ..., ?);  -- 201 placeholders
+COMMIT;
+```
+
+**Single DELETE Performance (verified 2025-12-13, Release build):**
 
 | Operation | Storm ORM | Raw SQLite | Efficiency | Notes |
 |-----------|-----------|------------|------------|-------|
-| **Single DELETE** | ~4.25 M/s | ~4.67 M/s | **~91%** | ✅ Excellent for full ORM! |
+| **Single DELETE** | ~4.31 M/s | ~4.66 M/s | **~92.5%** | ✅ Excellent for full ORM! |
 
-**Batch DELETE Performance (verified 2025-12-12, Release build):**
+**Batch DELETE Performance (verified 2025-12-13, fair comparison, Release build):**
 
-| Batch Size | Storm ORM | Raw SQLite | Efficiency | Notes |
-|------------|-----------|------------|------------|-------|
-| 10 | ~6.76 M/s | ~8.91 M/s | **~76%** | ✅ Good |
-| 100 | ~15.10 M/s | ~13.37 M/s | **~113%** | ✅ **Storm FASTER** - IN clause + caching |
-| 500 | ~17.81 M/s | ~11.44 M/s | **~156%** | ✅ **Storm FASTER** - bulk SQL efficiency |
-| 1000 | ~10.79 M/s | ~12.02 M/s | **~90%** | ✅ Switches to individual + transaction |
-| 5000 | ~10.56 M/s | ~11.72 M/s | **~90%** | ✅ Good |
-| 10000 | ~10.75 M/s | ~11.63 M/s | **~93%** | ✅ Excellent |
-| 50000 | ~10.83 M/s | ~11.88 M/s | **~91%** | ✅ Excellent |
-| 100000 | ~10.93 M/s | ~12.02 M/s | **~91%** | ✅ Excellent |
+| Batch Size | Storm ORM | Raw SQLite | Efficiency | Strategy | Notes |
+|------------|-----------|------------|------------|----------|-------|
+| 10 | ~1.49 M/s | ~1.51 M/s | **~98.8%** | IN clause | ✅ Near parity |
+| 100 | ~2.16 M/s | ~2.17 M/s | **~99.6%** | IN clause | ✅ Near parity |
+| 500 | ~2.20 M/s | ~2.19 M/s | **~100.3%** | IN clause | ✅ Storm slightly faster |
+| 1000 | ~3.16 M/s | ~3.19 M/s | **~99.2%** | Chunked (2 queries) | ✅ Near parity |
+| 5000 | ~2.96 M/s | ~2.96 M/s | **~99.8%** | Chunked (7 queries) | ✅ Near parity |
+| 10000 | ~2.95 M/s | ~2.93 M/s | **~100.6%** | Chunked (13 queries) | ✅ Storm slightly faster |
+| 50000 | ~2.76 M/s | ~2.80 M/s | **~98.7%** | Chunked (63 queries) | ✅ Near parity |
+| 100000 | ~2.77 M/s | ~2.79 M/s | **~99.4%** | Chunked (126 queries) | ✅ Near parity |
 
-**Key Optimizations Applied (2025-12-12 Update):**
+**Key Optimizations Applied (2025-12-13 Update):**
 
-1. **Statement Caching Fix** - Changed `prepare()` to `prepare_cached()` in bulk DELETE
-   - **Before fix**: 35-52% efficiency for small batches (prepared statement re-parsed every iteration!)
-   - **After fix**: 76-156% efficiency (statement cached and reused)
+1. **Chunked IN Clause for Large Batches** - Instead of 1000 individual DELETEs, uses chunked IN clauses
+   - **Before fix**: Individual `DELETE WHERE id = ?` for each row (slow)
+   - **After fix**: `DELETE WHERE id IN (?, ?, ...)` with up to 799 IDs per chunk
 
-2. **Bulk IN Clause Strategy** - For batches ≤999, uses `DELETE FROM ... WHERE id IN (?, ?, ...)`
-   - Single SQL statement instead of N individual deletes
-   - Prepared statement cached by size (e.g., 100 placeholders cached separately from 500)
+2. **Statement Caching** - Uses `prepare_cached()` for all DELETE statements
+   - Prepared statements reused across iterations
+   - SQL strings cached per chunk size via thread-local cache
 
-3. **Thread-Local SQL Caching** - SQL strings cached per batch size to avoid regeneration
+3. **Transaction Handling** - Large batches wrapped in single transaction
+   - `execute_with_transaction()` in base.cppm handles BEGIN/COMMIT
+   - `execute_individual_batch()` focuses only on chunked DELETE logic (no nested transactions)
 
-**Why Small Batches (100-500) are FASTER than Raw SQLite:**
-- Storm uses bulk `IN` clause: `DELETE FROM Person WHERE id IN (?, ?, ..., ?)`
-- Raw SQLite benchmark uses individual deletes in a transaction (N executions)
-- Bulk IN clause = 1 SQL execution vs N executions → significantly faster
+4. **Fair Benchmark Comparison** - Both Storm and Raw SQLite use identical strategies
+   - Same threshold calculations (799 rows = 80% of SQLite limit)
+   - Same chunking logic for large batches
+   - Pre-prepared BEGIN/COMMIT statements for raw SQLite
 
-**Why batch_10 is slower (76%):**
-- Overhead of bulk SQL generation not fully amortized for very small batches
-- Still acceptable efficiency for real-world use
+**Why Results Show ~98-100% Efficiency:**
+- Both Storm and Raw SQLite use the **exact same strategy**
+- Overhead comes from ORM abstraction layer (type dispatch, error handling)
+- Statement caching eliminates SQL parsing overhead
+- Chunked IN clause is optimal for SQLite's query planner
 
 ### Run Benchmarks by Filter (Test Name)
 

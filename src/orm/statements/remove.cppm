@@ -220,22 +220,37 @@ export namespace storm::orm::statements {
         }
 
       protected: // Changed to protected so BaseStatement can access
-        // Execute individual deletes for large batches (caller handles transaction)
-        [[nodiscard]] auto execute_individual_batch(std::span<const T> objects) noexcept -> std::expected<void, Error> {
-            return Base::template execute_with_statement<ConnType>(
-                    *conn_, get_delete_sql(), [this, objects](auto& stmt) -> std::expected<void, Error> {
-                        for (const auto& obj : objects) {
-                            // Monadic composition: reset → bind → execute
-                            if (auto result = Base::reset_bind_and_execute(
-                                        stmt, [this, &obj](auto& s) { return bind_primary_key(s, obj); }
-                                );
-                                !result) {
-                                return std::unexpected(result.error());
-                            }
-                        }
-                        return {};
-                    }
-            );
+        // Maximum chunk size for IN clause (80% of SQLite limit for safety)
+        static constexpr size_t MAX_CHUNK_SIZE = (Base::MAX_SQLITE_VARIABLES * 4) / 5; // 799
+
+        // Execute large batches using chunked IN clauses
+        // NOTE: Transaction is handled by caller (execute_with_transaction in base.cppm)
+        // Flat code for maximum performance - no nested lambdas
+        [[nodiscard]] __attribute__((hot)) auto execute_individual_batch(std::span<const T> objects) noexcept
+                -> std::expected<void, Error> {
+            // Process in chunks using IN clause
+            size_t offset = 0;
+            while (offset < objects.size()) {
+                const size_t remaining  = objects.size() - offset;
+                const size_t chunk_size = std::min(MAX_CHUNK_SIZE, remaining);
+                auto         chunk      = objects.subspan(offset, chunk_size);
+
+                // Get cached SQL for this chunk size
+                const auto& bulk_sql    = get_bulk_delete_sql(chunk_size);
+                auto        stmt_result = conn_->prepare_cached(bulk_sql);
+                if (!stmt_result) {
+                    return std::unexpected(stmt_result.error());
+                }
+
+                // Bind and execute chunk
+                if (auto result = bind_and_execute_bulk(*stmt_result.value(), chunk); !result) {
+                    return std::unexpected(result.error());
+                }
+
+                offset += chunk_size;
+            }
+
+            return {};
         }
 
         // Bind and execute bulk operation (single statement, multiple parameters)
