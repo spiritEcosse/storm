@@ -524,7 +524,8 @@ export namespace storm::orm::statements {
             return conn.execute("COMMIT");
         }
 
-        template <typename ConnType> static void rollback_transaction(ConnType& conn) noexcept {
+        template <typename ConnType> static void rollback_transaction(ConnType& conn) noexcept { 
+            // TODO: Remove this func in favour of TransactionGuard
             (void)conn.execute("ROLLBACK");
         }
 
@@ -558,6 +559,7 @@ export namespace storm::orm::statements {
         }
 
         // Unified transaction wrapper for batch operations
+        // TODO: remove it
         template <typename ConnType, typename Operation>
         [[nodiscard]] static auto
         execute_with_transaction(ConnType& conn, bool use_transaction, Operation&& op) noexcept -> decltype(op()) {
@@ -614,6 +616,7 @@ export namespace storm::orm::statements {
         }
 
         // Generic batch execution template for statement classes
+        // TODO: Remove it
         template <typename StatementType, typename Objects>
         [[nodiscard]] static auto execute_standard_batch(
                 StatementType& statement_instance, Objects&& objects, size_t variables_per_object
@@ -629,7 +632,8 @@ export namespace storm::orm::statements {
         }
 
         // Execute batch operations with optimal strategy selection
-        template <typename ConnType, typename ContainerType, typename BulkExecutor, typename IndividualExecutor>
+        // TODO: Remove it
+        template <typename ConnType, typename ContainerType, typename BulkExecutor, typename IndividualExecutor> 
         [[nodiscard]] static auto execute_batch_optimized(
                 ConnType&            conn,
                 const ContainerType& items,

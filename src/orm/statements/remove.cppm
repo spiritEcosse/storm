@@ -300,6 +300,7 @@ export namespace storm::orm::statements {
         }
 
         // Bind primary key value using pre-computed reflection data
+        // TODO: Remove this method as it's redundant with bind_primary_key_at_index
         [[nodiscard]] auto bind_primary_key(Statement& stmt, const T& obj) noexcept -> std::expected<void, Error> {
             // Get primary key value using pre-computed reflection
             auto pk_value = obj.[:Base::primary_key_:];
