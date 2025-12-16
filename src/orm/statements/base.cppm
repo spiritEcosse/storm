@@ -620,14 +620,14 @@ export namespace storm::orm::statements {
         template <typename StatementType, typename Objects>
         [[nodiscard]] static auto execute_standard_batch(
                 StatementType& statement_instance, Objects&& objects, size_t variables_per_object
-        ) noexcept -> decltype(statement_instance.execute_individual_batch(objects)) {
+        ) noexcept -> decltype(statement_instance.execute_chunked(objects)) {
             using ConnType = typename StatementType::Connection;
             return execute_batch_optimized<ConnType>(
                     *statement_instance.conn_,
                     objects,
                     variables_per_object,
                     [&statement_instance, &objects]() { return statement_instance.execute_bulk(objects); },
-                    [&statement_instance, &objects]() { return statement_instance.execute_individual_batch(objects); }
+                    [&statement_instance, &objects]() { return statement_instance.execute_chunked(objects); }
             );
         }
 

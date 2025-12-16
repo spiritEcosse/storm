@@ -107,7 +107,7 @@ namespace storm::benchmark {
         static constexpr size_t max_chunk_size = (999 * 4) / 5; // 799
 
         // Helper: Execute large batch using chunked IN clauses with transaction
-        // (matches Storm ORM's execute_individual_batch strategy)
+        // (matches Storm ORM's execute_chunked strategy)
         int execute_chunked_batch(sqlite3* db, int iterations) {
             int total = 0;
 

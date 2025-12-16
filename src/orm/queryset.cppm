@@ -57,7 +57,7 @@ export namespace storm {
 
         std::expected<void, Error> remove(const T& obj) {
             // Use cached RemoveStatement instance for optimal performance
-            return get_remove_statement().execute_single_optimized(obj);
+            return get_remove_statement().execute_one(obj);
         }
 
         // Bulk remove operations

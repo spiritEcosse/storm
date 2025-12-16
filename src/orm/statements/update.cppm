@@ -323,7 +323,7 @@ export namespace storm::orm::statements {
 
       protected:
         // Execute individual updates for batch operations (caller handles transaction)
-        [[nodiscard]] auto execute_individual_batch(std::span<const T> objects) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] auto execute_chunked(std::span<const T> objects) noexcept -> std::expected<void, Error> {
             return Base::template execute_with_statement<ConnType>(
                     *conn_, get_update_sql(), [this, objects](auto& stmt) -> std::expected<void, Error> {
                         for (const auto& obj : objects) {

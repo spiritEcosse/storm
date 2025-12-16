@@ -48,7 +48,7 @@ execute_single_optimized(obj)
 
 **Batch UPDATE Path (Before Optimization):**
 ```cpp
-execute_individual_batch(objects)
+execute_chunked(objects)
   → execute_with_statement() → prepare_cached() (hash lookup)
   → bind_updatable_fields() WITHOUT inline attribute
   → Loop-based binding with fold expressions
@@ -79,11 +79,11 @@ execute_individual_batch(objects)
 ### Changes Made
 
 **File**: `/home/ihor/projects/storm/storm_develop/src/orm/statements/update.cppm`
-**Method**: `execute_individual_batch()` (lines 287-317)
+**Method**: `execute_chunked()` (lines 287-317)
 
 **Before:**
 ```cpp
-[[nodiscard]] auto execute_individual_batch(std::span<const T> objects) noexcept
+[[nodiscard]] auto execute_chunked(std::span<const T> objects) noexcept
         -> std::expected<void, Error> {
     return Base::template execute_with_statement<ConnType>(
         *conn_, get_update_sql(), [this, objects](auto& stmt) -> std::expected<void, Error> {
@@ -106,7 +106,7 @@ execute_individual_batch(objects)
 
 **After:**
 ```cpp
-[[nodiscard]] auto execute_individual_batch(std::span<const T> objects) noexcept
+[[nodiscard]] auto execute_chunked(std::span<const T> objects) noexcept
         -> std::expected<void, Error> {
     // Get or cache the prepared statement (same optimization as single path)
     if (!cached_update_stmt_) {
