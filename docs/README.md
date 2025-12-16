@@ -66,7 +66,7 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 
 
 ## TODO:
-- [ ] Consider adding  ../clang-p2996/clang-tools-extra/clang-tidy/tool/run-clang-tidy.py   -clang-tidy-binary /home/ihor/projects/storm/clang-p2996/build/bin/clang-tidy   -p build/release   -j $(nproc)   -header-filter=.*   -checks='-* ,modernize-*' in quick commit.sh, but exclude third_party
+- [x] ~~Consider adding clang-tidy in quick_commit.sh, but exclude third_party~~ - ✅ **DONE** - Added `scripts/run_clang_tidy.sh` with parallel execution, modernize checks, third_party exclusion. Runs by default in `quick_commit.sh` (use `--no-tidy` to skip)
 - [ ] Replace all std::vector with plf::hive
 - [ ] Lets think how to add true sttistics in README files (like benchmarks)
 - [x] **Batch INSERT Performance Variance** - ✅ **SOLVED**
