@@ -280,8 +280,8 @@ export namespace storm::orm::statements {
 
         // Bind and execute bulk operation (single statement, multiple parameters)
         // Note: Takes reference since we use prepare_cached which returns a pointer to cached statement
-        [[nodiscard]] auto bind_pks_and_execute(Statement& stmt, std::span<const T> objects) noexcept
-                -> std::expected<void, Error> {
+        [[nodiscard]] __attribute__((always_inline)) auto
+        bind_pks_and_execute(Statement& stmt, std::span<const T> objects) noexcept -> std::expected<void, Error> {
             // Reset before binding - required for cached statement reuse
             stmt.reset();
 
