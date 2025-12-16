@@ -384,6 +384,51 @@ conn_->execute("COMMIT");
 | Inner loops, batch operations | Callbacks, event handlers |
 | Performance-critical ORM ops | Code reuse across callers |
 
+### Statement Pointer Caching (MANDATORY for Hot Paths)
+
+**For single-row operations called in loops, cache the statement pointer locally.** Benchmarks show ~23% improvement.
+
+```cpp
+// ❌ SLOW: Hash lookup every call (78% efficiency)
+auto execute_one(const T& obj) {
+    auto stmt = conn_->prepare_cached(sql);  // Hash lookup EVERY call
+    stmt->reset();
+    bind(...);
+    stmt->execute();
+}
+
+// ✅ FAST: Cache pointer, skip hash lookup (96% efficiency)
+auto execute_one(const T& obj) {
+    if (!cached_stmt_) {                              // First call only
+        cached_stmt_ = conn_->prepare_cached(sql);   // Hash lookup once
+    }
+    cached_stmt_->reset();                           // Direct pointer access
+    bind(...);
+    cached_stmt_->execute();
+}
+```
+
+**Why this matters:**
+- `prepare_cached()` does hash lookup using SQL string as key
+- String hashing + hash table lookup costs ~20-30 cycles per call
+- For 10,000 single deletes: 200,000-300,000 wasted cycles
+
+**Benchmark evidence (single DELETE):**
+| Pattern | Ops/sec | Efficiency |
+|---------|---------|------------|
+| Without pointer cache | 5.02 M | 78.2% |
+| With pointer cache | 6.18 M | 96.3% |
+
+**When to use:**
+- Single-row operations (`execute_one`, `remove_one`, etc.)
+- Any method called repeatedly in a loop
+- Hot paths with millions of potential calls
+
+**When NOT needed:**
+- Batch operations (hash lookup amortized over many rows)
+- Cold paths (setup, initialization)
+- Operations called once per request
+
 See [Performance Guidelines](docs/development/performance-guidelines.md) for complete rules.
 
 ## Common Development Tasks
