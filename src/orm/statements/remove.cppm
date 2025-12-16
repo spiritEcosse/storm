@@ -248,6 +248,9 @@ export namespace storm::orm::statements {
                 auto         chunk      = objects.subspan(offset, chunk_size);
 
                 // Get cached SQL for this chunk size
+                // TOOD: move it outside, to have 2 stmt , one for full size and second for the rest. 
+                // And i guess we can prepare bulk_sql for the first one at compile time - we know the chunk sizes at compile time, 
+                // then just use the prepared statement
                 const auto& bulk_sql    = get_bulk_delete_sql(chunk_size);
                 auto        stmt_result = conn_->prepare_cached(bulk_sql);
                 if (!stmt_result) {
