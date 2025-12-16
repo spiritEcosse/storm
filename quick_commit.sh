@@ -30,7 +30,7 @@ find src tests benchmarks -type f \( -name "*.cpp" -o -name "*.cppm" -o -name "*
 # Clang-tidy check (runs by default)
 if [[ "$RUN_TIDY" == true ]]; then
     echo ""
-    echo "🔍 Running clang-tidy (modernize checks)..."
+    echo "🔍 Running clang-tidy (comprehensive checks)..."
     ./scripts/run_clang_tidy.sh || {
         echo "❌ clang-tidy failed. Fix issues or run with --no-tidy to skip"
         exit 1

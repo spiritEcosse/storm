@@ -51,7 +51,7 @@ int main(int argc, char* argv[]) {
         std::string db_path    = ":memory:";
 
         for (int i = 1; i < argc; i++) {
-            std::string arg = argv[i];
+            const std::string arg = argv[i];
             if (arg.starts_with("--filter=")) {
                 filter = arg.substr(9); // Skip "--filter="
             } else if (arg.starts_with("--iterations=")) {
@@ -115,7 +115,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        auto& conn = QuerySet<Person>::get_default_connection();
+        const auto& conn = QuerySet<Person>::get_default_connection();
 
         // Create table
         auto create_result = conn->execute(

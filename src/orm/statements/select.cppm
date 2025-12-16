@@ -258,7 +258,7 @@ export namespace storm::orm::statements {
             // - Optimal for scenarios with frequent insertions during result processing
             plf::hive<T> results;
 
-            int step_result;
+            int step_result = 0;
 
             // Simple loop: insert directly into hive
             while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {

@@ -216,7 +216,7 @@ export namespace storm::orm::statements {
 
         // Helper: Inject DISTINCT keyword into JOIN SQL (after SELECT)
         [[nodiscard]] static auto inject_distinct_keyword(const std::string& sql) -> std::expected<std::string, Error> {
-            size_t select_pos = sql.find("SELECT ");
+            const size_t select_pos = sql.find("SELECT ");
             if (select_pos == std::string::npos) [[unlikely]] {
                 // This should NEVER happen with correct compile-time JOIN SQL generation
                 // But if it does, fail loudly rather than silently producing incorrect SQL

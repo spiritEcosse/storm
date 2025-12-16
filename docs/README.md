@@ -69,6 +69,9 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 - [x] ~~Consider adding clang-tidy in quick_commit.sh, but exclude third_party~~ - ✅ **DONE** - Added `scripts/run_clang_tidy.sh` with parallel execution, modernize checks, third_party exclusion. Runs by default in `quick_commit.sh` (use `--no-tidy` to skip)
 - [ ] Replace all std::vector with plf::hive
 - [ ] Lets think how to add true sttistics in README files (like benchmarks)
+- [ ] **Enable `modernize-use-trailing-return-type`** - Convert all functions to trailing return type syntax (`auto foo() -> int` instead of `int foo()`) for consistent modern style (~50+ functions)
+- [x] ~~**Enable `modernize-avoid-c-arrays`**~~ - ✅ **DONE** - Enabled (0 warnings, prevents future C-array usage)
+- [ ] **Enable `bugprone-easily-swappable-parameters`** - Add strong types to prevent parameter swapping bugs (e.g., `FieldCount`, `BatchSize` wrappers instead of raw `size_t`)
 - [x] **Batch INSERT Performance Variance** - ✅ **SOLVED**
 
   **Problem**: Small batch operations (batch_10) showed high measurement variance (72-88% efficiency range across runs).

@@ -47,7 +47,7 @@ export namespace storm::orm::statements {
       protected:
         // Helper to find primary key using storm::meta attributes
         static consteval std::meta::info find_primary_key_impl() {
-            for (std::meta::info member :
+            for (const std::meta::info member :
                  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
                 auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
                 if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::primary) {
@@ -65,13 +65,13 @@ export namespace storm::orm::statements {
 
         // Get database column name for FK field: User sender → "sender_id"
         static consteval std::string get_fk_column_name(std::meta::info member) {
-            std::string field_name(std::meta::identifier_of(member));
+            const std::string field_name(std::meta::identifier_of(member));
             return field_name + "_id";
         }
 
         // Find primary key of a FK type
         template <typename FKType> static consteval std::meta::info find_fk_primary_key() {
-            for (std::meta::info member :
+            for (const std::meta::info member :
                  std::meta::nonstatic_data_members_of(^^FKType, std::meta::access_context::unchecked())) {
                 auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
                 if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::primary) {
@@ -537,7 +537,10 @@ export namespace storm::orm::statements {
         // Unified statement execution logic for cached/non-cached connections
         template <typename ConnType, typename PrepareFunc, typename BindExecuteFunc>
         [[nodiscard]] static auto execute_statement(
-                ConnType& conn, const std::string& sql, PrepareFunc&& prepare_func, BindExecuteFunc&& bind_execute_func
+                ConnType&                      conn,
+                const std::string&             sql,
+                [[maybe_unused]] PrepareFunc&& prepare_func,
+                BindExecuteFunc&&              bind_execute_func
         ) noexcept -> decltype(bind_execute_func(std::declval<typename ConnType::Statement>())) {
             // Use cached prepared statement if available
             if constexpr (requires { conn.prepare_cached(sql); }) {

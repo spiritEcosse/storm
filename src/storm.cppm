@@ -33,7 +33,7 @@ export namespace storm {
 
         // Find primary key member with compile-time error if not found
         consteval std::meta::info find_primary_key(std::meta::info type) {
-            for (std::meta::info member :
+            for (const std::meta::info member :
                  std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())) {
                 if (has_primary_attr(member)) {
                     return member;

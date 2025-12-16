@@ -18,8 +18,9 @@ export namespace storm::db::sqlite {
     // Custom deleter for sqlite3
     struct SqliteDeleter {
         void operator()(sqlite3* db) const noexcept {
-            if (db)
+            if (db != nullptr) {
                 sqlite3_close_v2(db);
+            }
         }
     };
 
@@ -48,6 +49,9 @@ export namespace storm::db::sqlite {
 
         explicit Statement(sqlite3_stmt* stmt) : stmt_(stmt, sqlite3_finalize) {}
 
+        // Destructor - unique_ptr handles cleanup via sqlite3_finalize
+        ~Statement() = default;
+
         // Move semantics
         Statement(Statement&&)            = default;
         Statement& operator=(Statement&&) = default;
@@ -58,7 +62,7 @@ export namespace storm::db::sqlite {
 
         // DatabaseStatement concept implementation
         [[nodiscard]] auto bind_int(int index, int value) noexcept -> std::expected<void, Error> {
-            int rc = sqlite3_bind_int(stmt_.get(), index, value);
+            const int rc = sqlite3_bind_int(stmt_.get(), index, value);
             if (rc != SQLITE_OK) {
                 return std::unexpected(Error{rc, "Failed to bind integer parameter"});
             }
@@ -66,7 +70,7 @@ export namespace storm::db::sqlite {
         }
 
         [[nodiscard]] auto bind_text(int index, std::string_view value) noexcept -> std::expected<void, Error> {
-            int rc = sqlite3_bind_text(
+            const int rc = sqlite3_bind_text(
                     stmt_.get(), index, value.data(), static_cast<int>(value.size()), SQLITE_TRANSIENT
             );
             if (rc != SQLITE_OK) {
@@ -76,7 +80,7 @@ export namespace storm::db::sqlite {
         }
 
         [[nodiscard]] auto bind_int64(int index, int64_t value) noexcept -> std::expected<void, Error> {
-            int rc = sqlite3_bind_int64(stmt_.get(), index, value);
+            const int rc = sqlite3_bind_int64(stmt_.get(), index, value);
             if (rc != SQLITE_OK) {
                 return std::unexpected(Error{rc, "Failed to bind int64 parameter"});
             }
@@ -84,7 +88,7 @@ export namespace storm::db::sqlite {
         }
 
         [[nodiscard]] auto bind_double(int index, double value) noexcept -> std::expected<void, Error> {
-            int rc = sqlite3_bind_double(stmt_.get(), index, value);
+            const int rc = sqlite3_bind_double(stmt_.get(), index, value);
             if (rc != SQLITE_OK) {
                 return std::unexpected(Error{rc, "Failed to bind double parameter"});
             }
@@ -92,7 +96,7 @@ export namespace storm::db::sqlite {
         }
 
         [[nodiscard]] auto bind_null(int index) noexcept -> std::expected<void, Error> {
-            int rc = sqlite3_bind_null(stmt_.get(), index);
+            const int rc = sqlite3_bind_null(stmt_.get(), index);
             if (rc != SQLITE_OK) {
                 return std::unexpected(Error{rc, "Failed to bind null parameter"});
             }
@@ -100,7 +104,7 @@ export namespace storm::db::sqlite {
         }
 
         [[nodiscard]] auto bind_blob(int index, const void* data, size_t size) noexcept -> std::expected<void, Error> {
-            int rc = sqlite3_bind_blob(stmt_.get(), index, data, static_cast<int>(size), SQLITE_TRANSIENT);
+            const int rc = sqlite3_bind_blob(stmt_.get(), index, data, static_cast<int>(size), SQLITE_TRANSIENT);
             if (rc != SQLITE_OK) {
                 return std::unexpected(Error{rc, "Failed to bind blob parameter"});
             }
@@ -108,7 +112,7 @@ export namespace storm::db::sqlite {
         }
 
         [[nodiscard]] auto execute() noexcept -> std::expected<void, Error> {
-            int rc = sqlite3_step(stmt_.get());
+            const int rc = sqlite3_step(stmt_.get());
             if (rc != SQLITE_DONE) {
                 return std::unexpected(Error{rc, "Failed to execute statement"});
             }
@@ -116,14 +120,14 @@ export namespace storm::db::sqlite {
         }
 
         [[nodiscard]] auto step() noexcept -> std::expected<bool, Error> {
-            int rc = sqlite3_step(stmt_.get());
+            const int rc = sqlite3_step(stmt_.get());
             if (rc == SQLITE_ROW) {
                 return true; // Row available
-            } else if (rc == SQLITE_DONE) {
-                return false; // No more rows
-            } else {
-                return std::unexpected(Error{rc, "Failed to step statement"});
             }
+            if (rc == SQLITE_DONE) {
+                return false; // No more rows
+            }
+            return std::unexpected(Error{rc, "Failed to step statement"});
         }
 
         auto reset() noexcept -> void {
@@ -145,66 +149,63 @@ export namespace storm::db::sqlite {
         // zero-cost abstraction through aggressive inlining
 
         // Step with raw return value (no std::expected overhead in hot loop)
-        [[nodiscard]] __attribute__((always_inline)) inline auto step_raw() noexcept -> int {
+        [[nodiscard]] __attribute__((always_inline)) auto step_raw() noexcept -> int {
             return sqlite3_step(stmt_.get());
         }
 
         // Column extraction methods - fully inlined for zero overhead
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_int(int col_index) const noexcept -> int {
+        [[nodiscard]] __attribute__((always_inline)) auto extract_int(int col_index) const noexcept -> int {
             return sqlite3_column_int(stmt_.get(), col_index);
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_int64(int col_index) const noexcept
-                -> int64_t {
+        [[nodiscard]] __attribute__((always_inline)) auto extract_int64(int col_index) const noexcept -> int64_t {
             return sqlite3_column_int64(stmt_.get(), col_index);
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_double(int col_index) const noexcept
-                -> double {
+        [[nodiscard]] __attribute__((always_inline)) auto extract_double(int col_index) const noexcept -> double {
             return sqlite3_column_double(stmt_.get(), col_index);
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_text_ptr(int col_index) const noexcept -> const
+        [[nodiscard]] __attribute__((always_inline)) auto extract_text_ptr(int col_index) const noexcept -> const
                 unsigned char* {
             return sqlite3_column_text(stmt_.get(), col_index);
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_text_view(int col_index) const noexcept
+        [[nodiscard]] __attribute__((always_inline)) auto extract_text_view(int col_index) const noexcept
                 -> std::string_view {
             const unsigned char* text = sqlite3_column_text(stmt_.get(), col_index);
-            if (text) {
-                auto len = static_cast<size_t>(sqlite3_column_bytes(stmt_.get(), col_index));
+            if (text != nullptr) {
+                const auto len = static_cast<size_t>(sqlite3_column_bytes(stmt_.get(), col_index));
                 return {reinterpret_cast<const char*>(text), len};
             }
             return {};
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_bool(int col_index) const noexcept -> bool {
+        [[nodiscard]] __attribute__((always_inline)) auto extract_bool(int col_index) const noexcept -> bool {
             return sqlite3_column_int(stmt_.get(), col_index) != 0;
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_float(int col_index) const noexcept -> float {
+        [[nodiscard]] __attribute__((always_inline)) auto extract_float(int col_index) const noexcept -> float {
             return static_cast<float>(sqlite3_column_double(stmt_.get(), col_index));
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_blob(int col_index) const noexcept
+        [[nodiscard]] __attribute__((always_inline)) auto extract_blob(int col_index) const noexcept
                 -> std::pair<const void*, int> {
             const void* blob = sqlite3_column_blob(stmt_.get(), col_index);
-            int         size = sqlite3_column_bytes(stmt_.get(), col_index);
+            const int   size = sqlite3_column_bytes(stmt_.get(), col_index);
             return {blob, size};
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_column_type(int col_index) const noexcept
-                -> int {
+        [[nodiscard]] __attribute__((always_inline)) auto extract_column_type(int col_index) const noexcept -> int {
             return sqlite3_column_type(stmt_.get(), col_index);
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto is_null(int col_index) const noexcept -> bool {
+        [[nodiscard]] __attribute__((always_inline)) auto is_null(int col_index) const noexcept -> bool {
             return sqlite3_column_type(stmt_.get(), col_index) == SQLITE_NULL;
         }
 
         // Error message extraction
-        [[nodiscard]] inline auto get_error_message() const noexcept -> const char* {
+        [[nodiscard]] auto get_error_message() const noexcept -> const char* {
             return sqlite3_errmsg(sqlite3_db_handle(stmt_.get()));
         }
 
@@ -250,7 +251,7 @@ export namespace storm::db::sqlite {
         [[nodiscard]] static auto open(std::string_view db_path) noexcept -> std::expected<Connection, Error> {
             sqlite3* raw_db = nullptr;
             // Add SQLITE_OPEN_FULLMUTEX for serialized mode (thread-safe)
-            int rc = sqlite3_open_v2(
+            const int rc = sqlite3_open_v2(
                     db_path.data(),
                     &raw_db,
                     SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_URI | SQLITE_OPEN_FULLMUTEX,
@@ -258,14 +259,18 @@ export namespace storm::db::sqlite {
             );
 
             if (rc != SQLITE_OK) {
-                auto error = Error{rc, sqlite3_errmsg(raw_db)};
-                if (raw_db)
+                const auto error = Error{rc, sqlite3_errmsg(raw_db)};
+                if (raw_db != nullptr) {
                     sqlite3_close_v2(raw_db);
+                }
                 return std::unexpected(error);
             }
 
             return Connection{SqlitePtr{raw_db}};
         }
+
+        // Destructor - unique_ptr handles cleanup via SqliteDeleter
+        ~Connection() = default;
 
         // Move semantics (smart pointer handles cleanup)
         Connection(Connection&&)            = default;
@@ -286,7 +291,7 @@ export namespace storm::db::sqlite {
             }
 
             sqlite3_stmt* stmt = nullptr;
-            int           rc   = sqlite3_prepare_v2(db.get(), sql.data(), -1, &stmt, nullptr);
+            const int     rc   = sqlite3_prepare_v2(db.get(), sql.data(), -1, &stmt, nullptr);
 
             if (rc != SQLITE_OK) {
                 return std::unexpected(Error{rc, sqlite3_errmsg(db.get())});
@@ -313,7 +318,7 @@ export namespace storm::db::sqlite {
 
             // Cache miss - create new statement and cache it
             sqlite3_stmt* stmt = nullptr;
-            int           rc   = sqlite3_prepare_v2(db.get(), sql.data(), -1, &stmt, nullptr);
+            const int     rc   = sqlite3_prepare_v2(db.get(), sql.data(), -1, &stmt, nullptr);
 
             if (rc != SQLITE_OK) {
                 return std::unexpected(Error{rc, sqlite3_errmsg(db.get())});
@@ -368,11 +373,11 @@ export namespace storm::db::sqlite {
             }
 
             // Regular execution for non-cached operations
-            char* errmsg = nullptr;
-            int   rc     = sqlite3_exec(db.get(), sql.data(), nullptr, nullptr, &errmsg);
+            char*     errmsg = nullptr;
+            const int rc     = sqlite3_exec(db.get(), sql.data(), nullptr, nullptr, &errmsg);
 
             if (rc != SQLITE_OK) {
-                Error error{rc, errmsg ? errmsg : "Unknown error"};
+                const Error error{rc, errmsg != nullptr ? errmsg : "Unknown error"};
                 sqlite3_free(errmsg);
                 return std::unexpected(error);
             }

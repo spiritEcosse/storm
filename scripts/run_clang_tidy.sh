@@ -53,7 +53,7 @@ if [[ ! -x "$CLANG_TIDY" ]]; then
     exit 1
 fi
 
-echo "🔍 Running clang-tidy with modernize checks..."
+echo "🔍 Running clang-tidy with comprehensive checks..."
 echo "   Build directory: $BUILD_DIR"
 echo "   Excluding: third_party/"
 echo "   Parallel jobs: $JOBS"
@@ -90,8 +90,56 @@ FILE_COUNT=$(echo "$FILES" | wc -l)
 echo "📁 Found $FILE_COUNT source files to check"
 echo ""
 
-# Checks: modernize-* but excluding noisy/incompatible ones
-CHECKS="-*,modernize-*,-modernize-use-trailing-return-type,-modernize-avoid-c-arrays"
+# Comprehensive checks for C++26 ORM project
+# Categories: bugprone, cert, concurrency, cppcoreguidelines, misc, modernize, performance, readability
+# Excluded categories: android, fuchsia, llvm, abseil, google, objc, etc. (platform/library-specific)
+#
+# Exclusion policy:
+# - Keep checks that catch real bugs
+# - Exclude stylistic checks that are subjective or would require massive refactoring
+# - Exclude false positives (e.g., bugprone-exception-escape for std::string in noexcept)
+CHECKS="-*,\
+bugprone-*,\
+-bugprone-easily-swappable-parameters,\
+-bugprone-exception-escape,\
+-bugprone-suspicious-stringview-data-usage,\
+-bugprone-branch-clone,\
+-bugprone-inc-dec-in-conditions,\
+-bugprone-unused-return-value,\
+cert-*,\
+-cert-err33-c,\
+-cert-err58-cpp,\
+concurrency-*,\
+cppcoreguidelines-*,\
+-cppcoreguidelines-avoid-const-or-ref-data-members,\
+-cppcoreguidelines-avoid-magic-numbers,\
+-cppcoreguidelines-missing-std-forward,\
+-cppcoreguidelines-non-private-member-variables-in-classes,\
+-cppcoreguidelines-prefer-member-initializer,\
+-cppcoreguidelines-pro-bounds-array-to-pointer-decay,\
+-cppcoreguidelines-pro-bounds-constant-array-index,\
+-cppcoreguidelines-pro-bounds-pointer-arithmetic,\
+-cppcoreguidelines-pro-type-member-init,\
+-cppcoreguidelines-pro-type-reinterpret-cast,\
+misc-*,\
+-misc-include-cleaner,\
+-misc-non-private-member-variables-in-classes,\
+modernize-*,\
+-modernize-use-trailing-return-type,\
+performance-*,\
+-performance-enum-size,\
+readability-*,\
+-readability-braces-around-statements,\
+-readability-else-after-return,\
+-readability-function-cognitive-complexity,\
+-readability-identifier-length,\
+-readability-implicit-bool-conversion,\
+-readability-magic-numbers,\
+-readability-math-missing-parentheses,\
+-readability-named-parameter,\
+-readability-qualified-auto,\
+-readability-redundant-access-specifiers,\
+-readability-redundant-inline-specifier"
 
 # Create temp directory for output files
 TEMP_DIR=$(mktemp -d)
