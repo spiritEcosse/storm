@@ -197,6 +197,28 @@ Storm ORM achieves **96-108% efficiency** vs raw SQLite across all operations (R
    - [ ] Feature lists match actual capabilities
    - [ ] No outdated information remains
 
+5. **MANDATORY: Use quick_commit.sh for All Commits**
+   - **ALWAYS use `./quick_commit.sh "commit message"` instead of manual git commands**
+   - Do NOT use `git add`, `git commit` manually - use the script
+   - The script automatically:
+     - Runs clang-format on all source files
+     - Runs unit tests (fails if any test fails)
+     - Creates commit with proper formatting
+     - Pushes to remote
+
+   ```bash
+   # Correct way to commit:
+   ./quick_commit.sh "fix: resolve SonarCloud issues"
+
+   # WRONG - do not use manual git commands:
+   # git add . && git commit -m "message" && git push
+   ```
+
+   **Why This Matters:**
+   - Ensures code formatting is always consistent
+   - Prevents commits with failing tests
+   - Standardizes commit workflow across the project
+
 ## Quick Start
 
 ### Build & Test
