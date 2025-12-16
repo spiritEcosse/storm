@@ -43,13 +43,13 @@ done
 
 # Check prerequisites
 if [[ ! -f "$COMPILE_COMMANDS" ]]; then
-    echo "❌ Error: compile_commands.json not found at $COMPILE_COMMANDS"
-    echo "   Run: cmake --preset ninja-release"
+    echo "❌ Error: compile_commands.json not found at $COMPILE_COMMANDS" >&2
+    echo "   Run: cmake --preset ninja-release" >&2
     exit 1
 fi
 
 if [[ ! -x "$CLANG_TIDY" ]]; then
-    echo "❌ Error: clang-tidy not found at $CLANG_TIDY"
+    echo "❌ Error: clang-tidy not found at $CLANG_TIDY" >&2
     exit 1
 fi
 
@@ -122,6 +122,8 @@ run_tidy() {
     else
         echo "  ✓ $file"
     fi
+
+    return 0
 }
 export -f run_tidy
 

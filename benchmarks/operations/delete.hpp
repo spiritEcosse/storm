@@ -36,6 +36,13 @@ namespace storm::benchmark {
             Base::prepare_with_insert(iterations);
         }
 
+        // Helper: Update IDs in data after re-insert
+        void update_ids_from_insert(const std::vector<int64_t>& ids) {
+            for (size_t j = 0; j < Base::data().size() && j < ids.size(); j++) {
+                Base::data()[j].id = ids[j];
+            }
+        }
+
         // DELETE needs special handling: re-insert data before each batch iteration
         // because after one DELETE, all rows are gone
         int execute(int iterations) {
@@ -53,11 +60,7 @@ namespace storm::benchmark {
                     auto insert_result =
                             Base::qs().insert(Base::data(), storm::orm::statements::InsertOptions{.return_ids = true});
                     if (insert_result.has_value()) {
-                        // Update IDs in data
-                        const auto& ids = insert_result.value();
-                        for (size_t j = 0; j < Base::data().size() && j < ids.size(); j++) {
-                            Base::data()[j].id = ids[j];
-                        }
+                        update_ids_from_insert(insert_result.value());
                     }
                     // Now delete the batch
                     Base::qs().remove(Base::data());
@@ -159,7 +162,7 @@ namespace storm::benchmark {
             // Cleanup
             sqlite3_finalize(begin_stmt);
             sqlite3_finalize(commit_stmt);
-            for (auto& [_, stmt] : stmts) {
+            for (const auto& [_, stmt] : stmts) {
                 sqlite3_finalize(stmt);
             }
 
