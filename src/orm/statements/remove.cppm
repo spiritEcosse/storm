@@ -198,44 +198,34 @@ export namespace storm::orm::statements {
                 cached_single_stmt_ = *stmt_result;
             }
 
-            // Direct inline bind and execute - minimal overhead
-            auto pk_value = obj.[:Base::primary_key_:];
+            // Reset, bind PK, and execute
+            cached_single_stmt_->reset();
 
-            // Inline bind without template dispatch
-            std::expected<void, Error> bind_result;
-            if constexpr (std::is_same_v<decltype(pk_value), int>) {
-                bind_result = cached_single_stmt_->bind_int(1, pk_value);
-            } else if constexpr (std::is_convertible_v<decltype(pk_value), std::string_view>) {
-                bind_result = cached_single_stmt_->bind_text(1, std::string_view{pk_value});
-            }
-
-            if (!bind_result) {
+            if (auto bind_result = bind_pk_at(*cached_single_stmt_, obj, 1); !bind_result) {
                 return std::unexpected(bind_result.error());
             }
 
-            // Execute and reset for next use
             auto exec_result = cached_single_stmt_->execute();
             if (!exec_result) {
-                cached_single_stmt_->reset();
                 return std::unexpected(exec_result.error());
             }
 
-            cached_single_stmt_->reset();
             return {};
         }
 
         // Bulk execute using IN clause for better performance on small batches
-        // Uses prepare_cached for statement reuse across iterations (critical for benchmark perf)
+        // Flat code pattern for hot path performance (avoids lambda overhead)
         [[nodiscard]] __attribute__((hot)) auto execute_bulk(std::span<const T> objects) noexcept
                 -> std::expected<void, Error> {
             const auto& bulk_sql = get_bulk_delete_sql(objects.size());
 
-            // Use prepare_cached to reuse prepared statements across iterations
-            return conn_->prepare_cached(bulk_sql).and_then(
-                    [this, objects](Statement* stmt) -> std::expected<void, Error> {
-                        return bind_pks_and_execute(*stmt, objects);
-                    }
-            );
+            // Prepare statement (cached internally by connection)
+            auto stmt_result = conn_->prepare_cached(bulk_sql);
+            if (!stmt_result) {
+                return std::unexpected(stmt_result.error());
+            }
+
+            return bind_pks_and_execute(**stmt_result, objects);
         }
 
       protected: // Changed to protected so BaseStatement can access
@@ -313,7 +303,8 @@ export namespace storm::orm::statements {
         }
 
         // Bind primary key value at specific parameter index
-        [[nodiscard]] auto bind_pk_at(Statement& stmt, const T& obj, int index) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] __attribute__((always_inline)) auto bind_pk_at(Statement& stmt, const T& obj, int index) noexcept
+                -> std::expected<void, Error> {
             // Get primary key value using pre-computed reflection
             auto pk_value = obj.[:Base::primary_key_:];
 

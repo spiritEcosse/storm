@@ -482,24 +482,24 @@ DELETE FROM Person WHERE id IN (?, ?, ..., ?);  -- 201 placeholders
 COMMIT;
 ```
 
-**Single DELETE Performance (verified 2025-12-13, Release build):**
+**Single DELETE Performance (verified 2025-12-16, Release build):**
 
 | Operation | Storm ORM | Raw SQLite | Efficiency | Notes |
 |-----------|-----------|------------|------------|-------|
-| **Single DELETE** | ~4.04 M/s | ~4.62 M/s | **~87.5%** | ✅ Good for full ORM! |
+| **Single DELETE** | ~6.01 M/s | ~6.29 M/s | **~95.5%** | ✅ Excellent for full ORM! |
 
-**Batch DELETE Performance (verified 2025-12-13, fair comparison, Release build):**
+**Batch DELETE Performance (verified 2025-12-16, fair comparison, Release build):**
 
 | Batch Size | Storm ORM | Raw SQLite | Efficiency | Strategy | Notes |
 |------------|-----------|------------|------------|----------|-------|
-| 10 | ~1.40 M/s | ~1.43 M/s | **~97.7%** | IN clause | ✅ Near parity |
-| 100 | ~2.15 M/s | ~2.19 M/s | **~98.1%** | IN clause | ✅ Near parity |
-| 500 | ~3.29 M/s | ~3.30 M/s | **~99.5%** | IN clause | ✅ Near parity |
-| 1000 | ~3.20 M/s | ~3.24 M/s | **~98.8%** | Chunked (2 queries) | ✅ Near parity |
-| 5000 | ~3.11 M/s | ~3.13 M/s | **~99.3%** | Chunked (7 queries) | ✅ Near parity |
-| 10000 | ~3.08 M/s | ~3.08 M/s | **~100.1%** | Chunked (13 queries) | ✅ Storm FASTER! |
-| 50000 | ~2.84 M/s | ~2.87 M/s | **~99.1%** | Chunked (63 queries) | ✅ Near parity |
-| 100000 | ~2.77 M/s | ~2.80 M/s | **~98.7%** | Chunked (126 queries) | ✅ Near parity |
+| 10 | ~2.07 M/s | ~2.12 M/s | **~97.7%** | IN clause | ✅ Near parity |
+| 100 | ~3.11 M/s | ~3.15 M/s | **~98.8%** | IN clause | ✅ Near parity |
+| 500 | ~3.18 M/s | ~3.28 M/s | **~97.2%** | IN clause | ✅ Near parity |
+| 1000 | ~3.23 M/s | ~3.27 M/s | **~98.7%** | Chunked (2 queries) | ✅ Near parity |
+| 5000 | ~2.99 M/s | ~2.97 M/s | **~100.7%** | Chunked (7 queries) | ✅ Storm FASTER! |
+| 10000 | ~3.10 M/s | ~3.09 M/s | **~100.2%** | Chunked (13 queries) | ✅ Storm FASTER! |
+| 50000 | ~2.75 M/s | ~2.76 M/s | **~99.6%** | Chunked (63 queries) | ✅ Near parity |
+| 100000 | ~2.68 M/s | ~2.72 M/s | **~98.5%** | Chunked (126 queries) | ✅ Near parity |
 
 **Key Optimizations Applied (2025-12-13 Update):**
 
