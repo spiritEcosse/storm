@@ -52,9 +52,9 @@ int main(int argc, char* argv[]) {
 
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
-            if (arg.find("--filter=") == 0) {
+            if (arg.starts_with("--filter=")) {
                 filter = arg.substr(9); // Skip "--filter="
-            } else if (arg.find("--iterations=") == 0) {
+            } else if (arg.starts_with("--iterations=")) {
                 iterations = std::stoi(arg.substr(13));
             } else if (arg == "--list" || arg == "-l") {
                 list_tests = true;
@@ -63,7 +63,7 @@ int main(int argc, char* argv[]) {
             } else if (arg == "--disk") {
                 use_disk = true;
                 db_path  = "benchmark_test.db";
-            } else if (arg.find("--db=") == 0) {
+            } else if (arg.starts_with("--db=")) {
                 db_path  = arg.substr(5);
                 use_disk = (db_path != ":memory:");
             } else if (arg == "--help" || arg == "-h") {

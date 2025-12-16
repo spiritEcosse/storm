@@ -2,6 +2,7 @@ module;
 
 #include <sqlite3.h>
 #include <meta>
+#include <utility>
 #include <plf_hive/plf_hive.h>
 
 export module storm_orm_statements_distinct;
@@ -135,14 +136,14 @@ export namespace storm::orm::statements {
 
         explicit DistinctStatement(
                 std::shared_ptr<ConnType>                  conn,
-                const orm::where::ExpressionVariantPtr&    where_expr       = nullptr,
+                orm::where::ExpressionVariantPtr           where_expr       = nullptr,
                 const std::optional<JoinStatementWrapper>& join_stmt        = std::nullopt,
                 const std::optional<int>&                  limit            = std::nullopt,
                 const std::optional<int>&                  offset           = std::nullopt,
                 const std::optional<OrderByWrapper>&       order_by_wrapper = std::nullopt
         )
             : conn_(std::move(conn))
-            , where_expr_(where_expr)
+            , where_expr_(std::move(where_expr))
             , join_stmt_(join_stmt)
             , limit_(limit)
             , offset_(offset)

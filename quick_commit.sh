@@ -1,16 +1,23 @@
 #!/bin/bash
-# Quick commit workflow: format -> test -> commit -> push
-# Usage: ./quick_commit.sh [--no-push] [commit message]
+# Quick commit workflow: format -> tidy -> test -> commit -> push
+# Usage: ./quick_commit.sh [--no-push] [--no-tidy] [commit message]
+#
+# Options:
+#   --no-push   Skip pushing to remote after commit
+#   --no-tidy   Skip clang-tidy checks (runs by default)
 
 set -e  # Exit on any error
 
 # Parse flags
 NO_PUSH=false
+RUN_TIDY=true
 COMMIT_MSG_ARG=""
 
 for arg in "$@"; do
     if [[ "$arg" == "--no-push" ]]; then
         NO_PUSH=true
+    elif [[ "$arg" == "--no-tidy" ]]; then
+        RUN_TIDY=false
     else
         COMMIT_MSG_ARG="$COMMIT_MSG_ARG $arg"
     fi
@@ -19,6 +26,16 @@ COMMIT_MSG_ARG=$(echo "$COMMIT_MSG_ARG" | xargs)  # Trim whitespace
 
 echo "📝 Running clang-format..."
 find src tests benchmarks -type f \( -name "*.cpp" -o -name "*.cppm" -o -name "*.h" -o -name "*.hpp" \) -exec ../clang-p2996/build/bin/clang-format -i --style=file {} +
+
+# Clang-tidy check (runs by default)
+if [[ "$RUN_TIDY" == true ]]; then
+    echo ""
+    echo "🔍 Running clang-tidy (modernize checks)..."
+    ./scripts/run_clang_tidy.sh || {
+        echo "❌ clang-tidy failed. Fix issues or run with --no-tidy to skip"
+        exit 1
+    }
+fi
 
 echo ""
 echo "🧪 Running unit tests..."

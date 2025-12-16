@@ -21,11 +21,11 @@ export namespace storm::orm::statements {
     struct OrderByWrapper {
         const std::string& (*get_order_by_sql_fn)();
 
-        const std::string& get_order_by_sql() const {
+        [[nodiscard]] const std::string& get_order_by_sql() const {
             return get_order_by_sql_fn();
         }
 
-        bool empty() const {
+        [[nodiscard]] bool empty() const {
             return get_order_by_sql().empty();
         }
     };

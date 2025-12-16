@@ -2,6 +2,53 @@
 
 Utility scripts for the Storm ORM project.
 
+## Clang-Tidy Script
+
+Run clang-tidy with modernize checks on the Storm codebase, excluding third_party code.
+
+### Prerequisites
+
+- Release build with compile_commands.json: `cmake --preset ninja-release`
+
+### Usage
+
+```bash
+# Check only (default)
+./scripts/run_clang_tidy.sh
+
+# Auto-apply fixes
+./scripts/run_clang_tidy.sh --fix
+
+# Limit parallel jobs
+./scripts/run_clang_tidy.sh -j 4
+
+# Include tests directory
+./scripts/run_clang_tidy.sh --include-tests
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--fix` | Apply suggested fixes automatically (use with caution) |
+| `-j N` | Number of parallel jobs (default: all cores) |
+| `--include-tests` | Include tests/ directory (disabled by default due to gtest setup) |
+
+### What it checks
+
+- **Checks**: `modernize-*` (excluding `use-trailing-return-type`, `avoid-c-arrays`)
+- **Files**: `src/*.cppm`, `benchmarks/*.cpp`
+- **Excludes**: `third_party/`, test files (unless `--include-tests`)
+
+### Notes
+
+- Runs in parallel using all available CPU cores by default
+- Filters out noisy clang-tidy meta-messages
+- Handles clang-tidy crashes gracefully (skips crashed files)
+- C++26 module support is limited - some warnings may be suppressed
+
+---
+
 ## SonarCloud Check Script
 
 Check SonarCloud quality gate status and issues for **Pull Requests**.

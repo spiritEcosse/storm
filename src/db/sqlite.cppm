@@ -173,8 +173,8 @@ export namespace storm::db::sqlite {
                 -> std::string_view {
             const unsigned char* text = sqlite3_column_text(stmt_.get(), col_index);
             if (text) {
-                int len = sqlite3_column_bytes(stmt_.get(), col_index);
-                return std::string_view(reinterpret_cast<const char*>(text), len);
+                auto len = static_cast<size_t>(sqlite3_column_bytes(stmt_.get(), col_index));
+                return {reinterpret_cast<const char*>(text), len};
             }
             return {};
         }

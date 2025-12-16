@@ -107,7 +107,7 @@ export namespace storm::orm::statements {
 
         // Build max bulk DELETE SQL at compile-time (799 placeholders)
         static consteval auto build_max_bulk_delete_sql() {
-            constexpr size_t sql_size = calculate_max_bulk_delete_sql_size() + 50; // Safety buffer
+            constexpr size_t          sql_size = calculate_max_bulk_delete_sql_size() + 50; // Safety buffer
             ConstexprString<sql_size> result;
 
             // Reuse bulk delete prefix
@@ -177,17 +177,18 @@ export namespace storm::orm::statements {
 
             // Strategy 3: Chunked IN clause (800+ rows) - RAII transaction guard
             auto txn = TransactionGuard<ConnType>::begin(*conn_);
-            if (!txn) return std::unexpected(txn.error());
+            if (!txn)
+                return std::unexpected(txn.error());
 
             auto result = execute_chunked(objects);
-            if (!result) return result;  // ~TransactionGuard will ROLLBACK
+            if (!result)
+                return result; // ~TransactionGuard will ROLLBACK
 
             return txn->commit();
         }
 
         // Single DELETE - pre-cached statement, inlined execution
-        [[nodiscard]] __attribute__((hot)) auto execute_one(const T& obj) noexcept
-                -> std::expected<void, Error> {
+        [[nodiscard]] __attribute__((hot)) auto execute_one(const T& obj) noexcept -> std::expected<void, Error> {
             // Get or cache the prepared statement
             if (!cached_single_stmt_) {
                 auto stmt_result = conn_->prepare_cached(get_single_delete_sql());
@@ -254,12 +255,12 @@ export namespace storm::orm::statements {
 
             // Calculate remainder size upfront
             const size_t remainder_size = objects.size() % MAX_CHUNK_SIZE;
-            Statement* remainder_stmt = nullptr;
+            Statement*   remainder_stmt = nullptr;
 
             // Cache remainder statement if needed (only one hash lookup per batch)
             if (remainder_size > 0) {
                 const auto& remainder_sql = get_bulk_delete_sql(remainder_size);
-                auto stmt_result = conn_->prepare_cached(remainder_sql);
+                auto        stmt_result   = conn_->prepare_cached(remainder_sql);
                 if (!stmt_result) {
                     return std::unexpected(stmt_result.error());
                 }
@@ -312,8 +313,7 @@ export namespace storm::orm::statements {
         }
 
         // Bind primary key value at specific parameter index
-        [[nodiscard]] auto bind_pk_at(Statement& stmt, const T& obj, int index) noexcept
-                -> std::expected<void, Error> {
+        [[nodiscard]] auto bind_pk_at(Statement& stmt, const T& obj, int index) noexcept -> std::expected<void, Error> {
             // Get primary key value using pre-computed reflection
             auto pk_value = obj.[:Base::primary_key_:];
 
@@ -322,8 +322,8 @@ export namespace storm::orm::statements {
         }
 
         std::shared_ptr<ConnType> conn_;
-        mutable Statement*        cached_single_stmt_    = nullptr; // Cached statement for single DELETE
-        mutable Statement*        cached_max_bulk_stmt_  = nullptr; // Cached statement for max bulk (799) DELETE
+        mutable Statement*        cached_single_stmt_   = nullptr; // Cached statement for single DELETE
+        mutable Statement*        cached_max_bulk_stmt_ = nullptr; // Cached statement for max bulk (799) DELETE
     };
 
 } // namespace storm::orm::statements

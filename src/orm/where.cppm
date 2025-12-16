@@ -305,7 +305,7 @@ export namespace storm::orm::where {
 
     [[nodiscard]] inline auto bind_params_direct(const ExpressionVariant& expr, void* stmt_ptr, int& param_index)
             -> std::expected<void, storm::db::sqlite::Error> {
-        return std::visit(BindParamsVisitor{stmt_ptr, param_index}, expr);
+        return std::visit(BindParamsVisitor{.stmt_ptr = stmt_ptr, .param_index = param_index}, expr);
     }
 
     // Expression wrapper to enable natural && and || operators without ambiguity
@@ -325,12 +325,12 @@ export namespace storm::orm::where {
 
         // Logical AND operator (also accessible via 'and' keyword)
         Expr operator&&(const Expr& other) const {
-            return Expr(std::make_shared<ExpressionVariant>(LogicalExpr{expr_, LogicalOp::And, other.expr_}));
+            return {std::make_shared<ExpressionVariant>(LogicalExpr{expr_, LogicalOp::And, other.expr_})};
         }
 
         // Logical OR operator (also accessible via 'or' keyword)
         Expr operator||(const Expr& other) const {
-            return Expr(std::make_shared<ExpressionVariant>(LogicalExpr{expr_, LogicalOp::Or, other.expr_}));
+            return {std::make_shared<ExpressionVariant>(LogicalExpr{expr_, LogicalOp::Or, other.expr_})};
         }
 
         // Access the underlying expression
@@ -413,7 +413,7 @@ export namespace storm::orm::where {
         }
 
         // Special methods - return VARIANT-BASED Expr
-        Expr like(std::string_view pattern) const {
+        [[nodiscard]] Expr like(std::string_view pattern) const {
             return Expr(std::make_shared<ExpressionVariant>(LikeExpr{std::string(field_name_sv), pattern}));
         }
 

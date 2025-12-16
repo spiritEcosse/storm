@@ -441,8 +441,7 @@ export namespace storm::orm::utilities {
 
       public:
         // Factory method - begins transaction, returns expected
-        [[nodiscard]] static auto begin(ConnType& conn) noexcept
-                -> std::expected<TransactionGuard, Error> {
+        [[nodiscard]] static auto begin(ConnType& conn) noexcept -> std::expected<TransactionGuard, Error> {
             if (auto result = conn.execute("BEGIN TRANSACTION"); !result) {
                 return std::unexpected(result.error());
             }
@@ -453,16 +452,15 @@ export namespace storm::orm::utilities {
         TransactionGuard(const TransactionGuard&)            = delete;
         TransactionGuard& operator=(const TransactionGuard&) = delete;
 
-        TransactionGuard(TransactionGuard&& other) noexcept
-            : conn_(other.conn_), committed_(other.committed_) {
-            other.conn_ = nullptr;  // Prevent double-rollback
+        TransactionGuard(TransactionGuard&& other) noexcept : conn_(other.conn_), committed_(other.committed_) {
+            other.conn_ = nullptr; // Prevent double-rollback
         }
 
         TransactionGuard& operator=(TransactionGuard&& other) noexcept {
             if (this != &other) {
                 rollback_if_needed();
-                conn_      = other.conn_;
-                committed_ = other.committed_;
+                conn_       = other.conn_;
+                committed_  = other.committed_;
                 other.conn_ = nullptr;
             }
             return *this;
@@ -476,7 +474,7 @@ export namespace storm::orm::utilities {
         // Explicit commit - must be called for successful transaction
         [[nodiscard]] auto commit() noexcept -> std::expected<void, Error> {
             if (!conn_ || committed_) {
-                return {};  // Already committed or moved-from
+                return {}; // Already committed or moved-from
             }
 
             if (auto result = conn_->execute("COMMIT"); !result) {

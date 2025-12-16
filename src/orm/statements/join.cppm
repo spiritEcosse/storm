@@ -31,16 +31,16 @@ export namespace storm::orm::statements {
         const std::string& (*get_complete_sql_fn)(); // NEW: Complete SELECT...JOIN SQL
         void (*extract_row_fn)(void*, void*);
 
-        const std::string& to_sql() const {
+        [[nodiscard]] const std::string& to_sql() const {
             return get_join_sql_fn();
         }
 
-        const std::string& build_qualified_select_fields() const {
+        [[nodiscard]] const std::string& build_qualified_select_fields() const {
             return get_select_fields_fn();
         }
 
         // NEW: Get complete pre-computed SELECT...JOIN SQL
-        const std::string& get_complete_sql() const {
+        [[nodiscard]] const std::string& get_complete_sql() const {
             return get_complete_sql_fn();
         }
 

@@ -152,17 +152,20 @@ export namespace storm::orm::statements {
 
             // Multiple objects - use RAII transaction guard
             auto txn = TransactionGuard<ConnType>::begin(*conn_);
-            if (!txn) return std::unexpected(txn.error());
+            if (!txn)
+                return std::unexpected(txn.error());
 
             // Execute all updates with cached statement
             for (const auto& obj : objects) {
                 cached_update_stmt_->reset();
 
                 auto bind_result = inline_bind_all_fields(cached_update_stmt_, obj, typename Base::field_indices_t{});
-                if (!bind_result) return std::unexpected(bind_result.error());
+                if (!bind_result)
+                    return std::unexpected(bind_result.error());
 
                 auto exec_result = cached_update_stmt_->execute();
-                if (!exec_result) return std::unexpected(exec_result.error());
+                if (!exec_result)
+                    return std::unexpected(exec_result.error());
             }
 
             return txn->commit();

@@ -484,7 +484,7 @@ export namespace storm::orm::statements {
                                std::is_same_v<FieldType, std::vector<unsigned char>>) {
                 auto [blob_ptr, blob_size] = stmt.extract_blob(col_idx);
                 if (blob_ptr && blob_size > 0) {
-                    const uint8_t* data = static_cast<const uint8_t*>(blob_ptr);
+                    const auto* data = static_cast<const uint8_t*>(blob_ptr);
                     return FieldType(data, data + blob_size);
                 } else {
                     return FieldType{};
@@ -524,7 +524,7 @@ export namespace storm::orm::statements {
             return conn.execute("COMMIT");
         }
 
-        template <typename ConnType> static void rollback_transaction(ConnType& conn) noexcept { 
+        template <typename ConnType> static void rollback_transaction(ConnType& conn) noexcept {
             // TODO: Remove this func in favour of TransactionGuard
             (void)conn.execute("ROLLBACK");
         }
@@ -633,7 +633,7 @@ export namespace storm::orm::statements {
 
         // Execute batch operations with optimal strategy selection
         // TODO: Remove it
-        template <typename ConnType, typename ContainerType, typename BulkExecutor, typename IndividualExecutor> 
+        template <typename ConnType, typename ContainerType, typename BulkExecutor, typename IndividualExecutor>
         [[nodiscard]] static auto execute_batch_optimized(
                 ConnType&            conn,
                 const ContainerType& items,
