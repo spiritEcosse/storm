@@ -51,16 +51,21 @@ Run clang-tidy with modernize checks on the Storm codebase, excluding third_part
 
 ## SonarCloud Check Script
 
-Check SonarCloud quality gate status and issues for **Pull Requests**.
+Check SonarCloud quality gate status, issues, and **code duplications** for Pull Requests.
 
-### Setup
+### Prerequisites
 
-1. **Get your SonarCloud token**:
+1. **GitHub CLI (`gh`)** - Required for auto-detecting PR from current branch
+   ```bash
+   # Install (see https://cli.github.com/)
+   # Then authenticate:
+   gh auth login
+   ```
+
+2. **SonarCloud Token**:
    - Go to https://sonarcloud.io/account/security
    - Generate a new token
-   - Copy the token
-
-2. **Set the environment variable**:
+   - Set the environment variable:
    ```bash
    export SONAR_TOKEN=your_token_here
    ```
@@ -73,19 +78,15 @@ Check SonarCloud quality gate status and issues for **Pull Requests**.
 
 ### Usage
 
-#### Check Pull Requests
 ```bash
-# Check PR by number (shorthand)
+# Auto-detect PR from current branch (recommended)
+./scripts/sonarcloud-check.sh
+
+# Override with specific PR number
 ./scripts/sonarcloud-check.sh 48
 
-# Check PR (explicit)
+# Explicit PR number
 ./scripts/sonarcloud-check.sh --pr 48
-```
-
-#### Interactive Mode
-```bash
-# Will prompt for PR number
-./scripts/sonarcloud-check.sh
 ```
 
 ### Using with Claude Code Slash Commands
@@ -93,60 +94,76 @@ Check SonarCloud quality gate status and issues for **Pull Requests**.
 Inside Claude Code, you can use slash commands that call this script:
 
 ```
+/sonarcloud-status              # Auto-detect PR from current branch
 /sonarcloud-status 48           # Check PR #48
-/sonarcloud-branch 48           # Check PR #48 (alias)
-/sonarcloud-status              # Interactive: prompt for PR number
+/sonarcloud-branch              # Alias for sonarcloud-status
 ```
 
 ### Output
 
 The script displays:
-- ✅/❌ Quality Gate status (PASSED/FAILED)
-- 📈 Metrics (coverage, bugs, code smells, duplication, etc.)
+- 📊 Quality Gate status (PASSED/FAILED)
+- 📈 Metrics (coverage, bugs, code smells, duplication density, etc.)
 - 🐛 Top 10 issues with severity, file, line number, and effort
+- 📋 Code duplications with exact line locations
 - 🔗 Direct links to SonarCloud dashboard
 
 ### Example
 
 ```bash
-$ ./scripts/sonarcloud-check.sh 48
+$ ./scripts/sonarcloud-check.sh
+
+Detecting PR for branch: claude/my-feature-branch
+Found PR #48
 
 === SonarCloud Analysis for PR #48 ===
 
 📊 Quality Gate Status:
-❌ FAILED
-
-Failed Conditions:
-  ❌ new_reliability_rating: 4 (threshold: 1)
-  ❌ new_duplicated_lines_density: 7.0 (threshold: 3)
-
-Passed Conditions:
-  ✅ new_security_rating: 1 (threshold: 1)
-  ✅ new_maintainability_rating: 1 (threshold: 1)
+✅ PASSED
 
 📈 Metrics:
   new_bugs: 0
-  new_code_smells: 52
-  new_coverage: N/A
-  new_duplicated_lines_density: 7.0
+  new_vulnerabilities: 0
+  new_code_smells: 5
+  new_duplicated_lines_density: 1.21
 
 🐛 Issues Summary:
-  Total Issues: 52
+  Total Issues: 5
 
 Top 10 Issues:
 
-[CRITICAL] CODE_SMELL: Refactor function to reduce Cognitive Complexity
-  File: benchmarks/main.cpp (Line 42)
-  Rule: cpp:S3776
-  Effort: 7min
+[MINOR] CODE_SMELL: Define each identifier in a dedicated statement.
+  File: src/orm/statements/insert.cppm (Line 198)
+  Rule: cpp:S1659
+  Effort: 5min
 
 ...
+
+📋 Code Duplications:
+  New duplicated blocks: 4
+  New duplicated lines: 44
+  Duplication density: 1.21%
+
+Duplication details (from PR files):
+
+  src/orm/statements/base.cppm:
+    Lines 105-119 in src/orm/statements/base.cppm
+    ↔     Lines 130-144 in src/orm/statements/base.cppm
+
+  src/orm/statements/distinct.cppm:
+    Lines 194-214 in src/orm/statements/distinct.cppm
+    ↔     Lines 283-303 in src/orm/statements/select.cppm
 
 🔗 Links:
   Dashboard: https://sonarcloud.io/dashboard?id=spiritEcosse_storm&pullRequest=48
   Issues: https://sonarcloud.io/project/issues?pullRequest=48&...
 
 === Summary ===
-❌ PR #48 needs attention (quality gate failed)
-   Please fix the issues above
+✅ PR #48 is ready (quality gate passed)
 ```
+
+### Notes
+
+- **Auto-detection**: When run without arguments, the script uses `gh pr view` to find the PR associated with the current Git branch
+- **Duplication details**: Shows exact line ranges where code is duplicated, including cross-file duplications
+- **PR-specific metrics**: The summary metrics (blocks, lines, density) are specific to new code in the PR; detailed locations show all duplications in modified files
