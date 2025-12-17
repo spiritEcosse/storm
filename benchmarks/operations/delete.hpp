@@ -13,6 +13,9 @@
  *
  * Note: DELETE is destructive. After first iteration, rows are gone.
  * Both Storm and Raw use the same IN clause strategy for fair comparison.
+ *
+ * FAIR COMPARISON: Both Storm ORM and raw SQLite now use RUNTIME checks
+ * for batch size decisions. No compile-time advantages for raw SQLite.
  */
 
 #include "base.hpp"
@@ -21,11 +24,13 @@
 
 namespace storm::benchmark {
 
-    template <typename Model, int BatchSize = 1>
-    class DeleteBenchmark : public DataBenchmarkBase<DeleteBenchmark<Model, BatchSize>, Model, BatchSize, 1> {
-        using Base = DataBenchmarkBase<DeleteBenchmark<Model, BatchSize>, Model, BatchSize, 1>;
+    template <typename Model> class DeleteBenchmark : public DataBenchmarkBase<DeleteBenchmark<Model>, Model, 1> {
+        using Base = DataBenchmarkBase<DeleteBenchmark<Model>, Model, 1>;
 
       public:
+        // Constructor with runtime batch size
+        explicit DeleteBenchmark(int batch_size = 1) : Base(batch_size) {}
+
         // Use unified print_info with compile-time operation name
         void print_info() const {
             Base::template print_info_unified<OperationType::Delete>();
@@ -40,7 +45,8 @@ namespace storm::benchmark {
         // because after one DELETE, all rows are gone
         int execute(int iterations) {
             int total = 0;
-            if constexpr (BatchSize == 1) {
+            // Runtime check - same as Storm ORM
+            if (Base::batch_size() == 1) {
                 // Single-row: delete one row per iteration (standard behavior)
                 for (int i = 0; i < iterations; i++) {
                     Base::qs().remove(Base::data()[i]);
@@ -156,24 +162,26 @@ namespace storm::benchmark {
             return total;
         }
 
-        // Match Storm ORM's adaptive threshold calculation for fair comparison
+        // Runtime check for bulk SQL strategy (matches Storm ORM's logic)
         // Returns true if batch should use bulk IN clause, false for individual deletes
-        static constexpr bool should_use_bulk_sql() {
-            // max_bulk_size = 999 / fields_per_row = 999 for DELETE
+        bool should_use_bulk_sql() const {
+            // max_bulk_size = 999 / fields_per_row = 999 for DELETE (1 field per row)
             constexpr size_t max_bulk_size   = 999 / Base::fields_per_row;
             constexpr size_t bulk_sweet_spot = std::max(size_t(50), max_bulk_size / 2);
             constexpr size_t bulk_max_safe   = (max_bulk_size * 4) / 5; // 80% of max
 
-            // Storm's adaptive logic:
+            const int batch_size = Base::batch_size();
+
+            // Storm's adaptive logic (now runtime, same as Storm ORM):
             // - Batches ≤ 10: always use bulk
             // - Batches ≤ bulk_sweet_spot: use bulk
             // - Batches ≤ bulk_max_safe: use bulk
-            // - Larger batches: use individual inserts
-            if constexpr (BatchSize <= 10)
+            // - Larger batches: use chunked with transaction
+            if (batch_size <= 10)
                 return true;
-            if constexpr (BatchSize <= bulk_sweet_spot)
+            if (static_cast<size_t>(batch_size) <= bulk_sweet_spot)
                 return true;
-            if constexpr (BatchSize <= bulk_max_safe)
+            if (static_cast<size_t>(batch_size) <= bulk_max_safe)
                 return true;
             return false;
         }
@@ -199,8 +207,9 @@ namespace storm::benchmark {
 
             int total = 0;
 
+            // Runtime check - FAIR comparison with Storm ORM
             // Single-row: simple DELETE WHERE id = ?
-            if constexpr (BatchSize == 1) {
+            if (Base::batch_size() == 1) {
                 const std::string sql  = sql_delete_batch(1);
                 sqlite3_stmt*     stmt = nullptr;
                 if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
@@ -209,8 +218,8 @@ namespace storm::benchmark {
                 total = execute_single_row(stmt, iterations);
                 sqlite3_finalize(stmt);
             }
-            // Batch: use bulk IN clause if within Storm's adaptive threshold
-            else if constexpr (should_use_bulk_sql()) {
+            // Batch: use bulk IN clause if within adaptive threshold (runtime check)
+            else if (should_use_bulk_sql()) {
                 size_t      rows_per_stmt = std::min(Base::max_bulk, Base::data().size());
                 std::string sql           = sql_delete_batch(rows_per_stmt);
 

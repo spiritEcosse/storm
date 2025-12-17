@@ -61,10 +61,12 @@ namespace storm::benchmark {
     };
 
     // CRTP base class for data-driven benchmarks (Insert, UpdateByPK)
-    template <typename Derived, typename Model, int BatchSize = 1, size_t FieldsPerRow = 4> class DataBenchmarkBase {
+    // BatchSize is now a runtime parameter for fair comparison with Storm ORM
+    template <typename Derived, typename Model, size_t FieldsPerRow = 4> class DataBenchmarkBase {
       private:
         QuerySet<Model>    qs_;
         std::vector<Model> data_;
+        int                batch_size_ = 1; // Runtime batch size
 
       protected:
         // Accessor methods for derived classes
@@ -79,6 +81,12 @@ namespace storm::benchmark {
         }
         const std::vector<Model>& data() const {
             return data_;
+        }
+        int batch_size() const {
+            return batch_size_;
+        }
+        void set_batch_size(int size) {
+            batch_size_ = size;
         }
 
         // SQLite binding limit constants
@@ -114,10 +122,13 @@ namespace storm::benchmark {
         }
 
       public:
+        // Constructor with optional batch size
+        explicit DataBenchmarkBase(int batch_size = 1) : batch_size_(batch_size) {}
+
         // Basic prepare: generates test data only (for INSERT benchmark)
         void prepare(int iterations) {
             data().clear();
-            int count = (BatchSize == 1) ? iterations : BatchSize;
+            int count = (batch_size_ == 1) ? iterations : batch_size_;
             data().reserve(count);
             for (int i = 0; i < count; i++) {
                 data().push_back(Derived::create_model());
@@ -156,18 +167,19 @@ namespace storm::benchmark {
         // ====================================================================
         template <OperationType Op> void print_info_unified() const {
             constexpr std::string_view op_name = OperationDispatcher<Op>::name();
-            if constexpr (BatchSize == 1)
+            if (batch_size_ == 1)
                 std::cout << "Operation: " << op_name << " (single row)\n";
             else
-                std::cout << "Operation: " << op_name << " (batch, " << BatchSize << " rows per operation)\n";
+                std::cout << "Operation: " << op_name << " (batch, " << batch_size_ << " rows per operation)\n";
         }
 
         // ====================================================================
         // Unified execute() with compile-time operation dispatch
+        // Runtime batch size check (same as Storm ORM for fair comparison)
         // ====================================================================
         template <OperationType Op> int execute_unified(int iterations) {
             int total = 0;
-            if constexpr (BatchSize == 1) {
+            if (batch_size_ == 1) {
                 for (int i = 0; i < iterations; i++) {
                     OperationDispatcher<Op>::call(qs(), data()[i]);
                     total++;

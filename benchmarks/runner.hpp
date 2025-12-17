@@ -254,17 +254,20 @@ namespace storm::benchmark {
 
         template <typename Model, auto& test>
         static void run_insert_operation(BenchmarkRunner& runner, int iterations) {
-            runner.run_benchmark(test.test_name.c_str(), InsertBenchmark<Model, test.batch_size>{}, iterations);
+            // Runtime batch_size - fair comparison with Storm ORM
+            runner.run_benchmark(test.test_name.c_str(), InsertBenchmark<Model>{test.batch_size}, iterations);
         }
 
         template <typename Model, auto& test>
         static void run_delete_pk_operation(BenchmarkRunner& runner, int iterations) {
-            runner.run_benchmark(test.test_name.c_str(), DeleteBenchmark<Model, test.batch_size>{}, iterations);
+            // Runtime batch_size - fair comparison with Storm ORM
+            runner.run_benchmark(test.test_name.c_str(), DeleteBenchmark<Model>{test.batch_size}, iterations);
         }
 
         template <typename Model, auto& test>
         static void run_update_pk_operation(BenchmarkRunner& runner, int iterations) {
-            runner.run_benchmark(test.test_name.c_str(), UpdateBenchmark<Model, test.batch_size>{}, iterations);
+            // Runtime batch_size - fair comparison with Storm ORM
+            runner.run_benchmark(test.test_name.c_str(), UpdateBenchmark<Model>{test.batch_size}, iterations);
         }
 
       public:

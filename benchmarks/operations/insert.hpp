@@ -5,6 +5,9 @@
  *
  * Tests INSERT performance for single and batch operations.
  * Inherits from DataBenchmarkBase with 4 fields (id is auto-increment).
+ *
+ * FAIR COMPARISON: Both Storm ORM and raw SQLite now use RUNTIME checks
+ * for batch size decisions. No compile-time advantages for raw SQLite.
  */
 
 #include "base.hpp"
@@ -15,9 +18,8 @@
 
 namespace storm::benchmark {
 
-    template <typename Model, int BatchSize = 1>
-    class InsertBenchmark : public DataBenchmarkBase<InsertBenchmark<Model, BatchSize>, Model, BatchSize, 4> {
-        using Base = DataBenchmarkBase<InsertBenchmark<Model, BatchSize>, Model, BatchSize, 4>;
+    template <typename Model> class InsertBenchmark : public DataBenchmarkBase<InsertBenchmark<Model>, Model, 4> {
+        using Base = DataBenchmarkBase<InsertBenchmark<Model>, Model, 4>;
 
         // Build multi-row INSERT SQL for bulk operations
         static std::string sql_insert_batch(size_t count) {
@@ -40,6 +42,9 @@ namespace storm::benchmark {
         }
 
       public:
+        // Constructor with runtime batch size
+        explicit InsertBenchmark(int batch_size = 1) : Base(batch_size) {}
+
         // Use unified print_info with compile-time operation name
         void print_info() const {
             Base::template print_info_unified<OperationType::Insert>();
@@ -86,17 +91,18 @@ namespace storm::benchmark {
 
             int total = 0;
 
+            // Runtime check - FAIR comparison with Storm ORM
             // Single-row or small batch: one prepared statement
-            if constexpr (BatchSize == 1 || BatchSize <= Base::bulk_threshold) {
-                size_t      rows_per_stmt = (BatchSize == 1) ? 1 : std::min(Base::max_bulk, Base::data().size());
-                std::string sql           = sql_insert_batch(rows_per_stmt);
+            if (Base::batch_size() == 1 || static_cast<size_t>(Base::batch_size()) <= Base::bulk_threshold) {
+                size_t rows_per_stmt = (Base::batch_size() == 1) ? 1 : std::min(Base::max_bulk, Base::data().size());
+                std::string sql      = sql_insert_batch(rows_per_stmt);
 
                 sqlite3_stmt* stmt = nullptr;
                 if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
                     return 0;
 
                 for (int i = 0; i < iterations; i++) {
-                    bind_rows(stmt, &Base::data()[(BatchSize == 1) ? i : 0], rows_per_stmt);
+                    bind_rows(stmt, &Base::data()[(Base::batch_size() == 1) ? i : 0], rows_per_stmt);
                     total += Base::step_and_reset(stmt, db, rows_per_stmt);
                 }
                 sqlite3_finalize(stmt);

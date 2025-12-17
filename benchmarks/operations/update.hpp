@@ -12,17 +12,22 @@
  * 3. execute_raw(): Raw SQLite UPDATE...WHERE id=?
  *
  * Raw SQLite uses transaction for batch (no multi-row UPDATE syntax).
+ *
+ * FAIR COMPARISON: Both Storm ORM and raw SQLite now use RUNTIME checks
+ * for batch size decisions. No compile-time advantages for raw SQLite.
  */
 
 #include "base.hpp"
 
 namespace storm::benchmark {
 
-    template <typename Model, int BatchSize = 1>
-    class UpdateBenchmark : public DataBenchmarkBase<UpdateBenchmark<Model, BatchSize>, Model, BatchSize, 5> {
-        using Base = DataBenchmarkBase<UpdateBenchmark<Model, BatchSize>, Model, BatchSize, 5>;
+    template <typename Model> class UpdateBenchmark : public DataBenchmarkBase<UpdateBenchmark<Model>, Model, 5> {
+        using Base = DataBenchmarkBase<UpdateBenchmark<Model>, Model, 5>;
 
       public:
+        // Constructor with runtime batch size
+        explicit UpdateBenchmark(int batch_size = 1) : Base(batch_size) {}
+
         // Use unified print_info with compile-time operation name
         void print_info() const {
             Base::template print_info_unified<OperationType::UpdatePK>();
@@ -101,9 +106,10 @@ namespace storm::benchmark {
             if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
                 return 0;
 
-            // Execute single-row or batch updates based on BatchSize
+            // Runtime check - FAIR comparison with Storm ORM
+            // Execute single-row or batch updates based on batch_size
             int total;
-            if constexpr (BatchSize == 1) {
+            if (Base::batch_size() == 1) {
                 total = execute_single_row(stmt, iterations);
             } else {
                 total = execute_batch(stmt, iterations);
