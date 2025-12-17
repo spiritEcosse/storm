@@ -19,32 +19,32 @@ PROJECT_KEY="spiritEcosse_storm"
 SONAR_API="https://sonarcloud.io/api"
 
 # Check if SONAR_TOKEN is set
-if [ -z "$SONAR_TOKEN" ]; then
-    echo -e "${RED}Error: SONAR_TOKEN environment variable not set${NC}"
-    echo "Please set it: export SONAR_TOKEN=your_token"
+if [[ -z "$SONAR_TOKEN" ]]; then
+    echo -e "${RED}Error: SONAR_TOKEN environment variable not set${NC}" >&2
+    echo "Please set it: export SONAR_TOKEN=your_token" >&2
     exit 1
 fi
 
 # Check if gh is available
 if ! command -v gh &> /dev/null; then
-    echo -e "${RED}Error: 'gh' CLI not found${NC}"
-    echo "Install it: https://cli.github.com/"
+    echo -e "${RED}Error: 'gh' CLI not found${NC}" >&2
+    echo "Install it: https://cli.github.com/" >&2
     exit 1
 fi
 
 # Check if gh is authenticated
 if ! gh auth status &> /dev/null; then
-    echo -e "${RED}Error: 'gh' CLI not authenticated${NC}"
-    echo "Run: gh auth login"
+    echo -e "${RED}Error: 'gh' CLI not authenticated${NC}" >&2
+    echo "Run: gh auth login" >&2
     exit 1
 fi
 
 # Parse arguments
 PR_NUMBER=""
 
-if [ "$1" = "--pr" ]; then
+if [[ "$1" == "--pr" ]]; then
     PR_NUMBER="$2"
-elif [ -n "$1" ]; then
+elif [[ -n "$1" ]]; then
     # If it's a number, use it as PR number
     if [[ "$1" =~ ^[0-9]+$ ]]; then
         PR_NUMBER="$1"
@@ -58,7 +58,7 @@ fi
 # Auto-detect PR from current branch if not provided
 if [[ -z "$PR_NUMBER" ]]; then
     CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
-    if [ -z "$CURRENT_BRANCH" ]; then
+    if [[ -z "$CURRENT_BRANCH" ]]; then
         echo -e "${RED}Error: Not in a git repository or no branch checked out${NC}" >&2
         exit 1
     fi
@@ -68,7 +68,7 @@ if [[ -z "$PR_NUMBER" ]]; then
     # Get PR number for current branch
     PR_NUMBER=$(gh pr view --json number -q '.number' 2>/dev/null || echo "")
 
-    if [ -z "$PR_NUMBER" ]; then
+    if [[ -z "$PR_NUMBER" ]]; then
         echo -e "${RED}Error: No PR found for branch '${CURRENT_BRANCH}'${NC}" >&2
         echo -e "${YELLOW}Create a PR first or specify PR number: $0 <PR_NUMBER>${NC}" >&2
         exit 1
@@ -91,9 +91,9 @@ QG_RESPONSE=$(curl -s "${SONAR_API}/qualitygates/project_status?projectKey=${PRO
 
 QG_STATUS=$(echo "$QG_RESPONSE" | jq -r '.projectStatus.status // "UNKNOWN"')
 
-if [ "$QG_STATUS" = "OK" ]; then
+if [[ "$QG_STATUS" == "OK" ]]; then
     echo -e "${GREEN}✅ PASSED${NC}\n"
-elif [ "$QG_STATUS" = "ERROR" ]; then
+elif [[ "$QG_STATUS" == "ERROR" ]]; then
     echo -e "${RED}❌ FAILED${NC}\n"
 
     echo -e "${YELLOW}Failed Conditions:${NC}"
@@ -124,7 +124,7 @@ ISSUES_RESPONSE=$(curl -s "${SONAR_API}/issues/search?componentKeys=${PROJECT_KE
 TOTAL_ISSUES=$(echo "$ISSUES_RESPONSE" | jq -r '.total // 0')
 echo -e "  Total Issues: ${YELLOW}${TOTAL_ISSUES}${NC}"
 
-if [ "$TOTAL_ISSUES" -gt 0 ]; then
+if [[ "$TOTAL_ISSUES" -gt 0 ]]; then
     echo ""
     echo -e "${YELLOW}Top 10 Issues:${NC}"
     echo "$ISSUES_RESPONSE" | jq -r '.issues[0:10]? | .[] |
@@ -145,7 +145,7 @@ echo -e "  New duplicated lines: ${YELLOW}${NEW_DUP_LINES:-0}${NC}"
 echo -e "  Duplication density: ${YELLOW}${NEW_DUP_DENSITY:-0}%${NC}"
 
 # Get files with duplications in the PR using GitHub API
-if [ "${NEW_DUP_BLOCKS:-0}" != "0" ] && [ "${NEW_DUP_BLOCKS:-0}" != "" ]; then
+if [[ "${NEW_DUP_BLOCKS:-0}" != "0" && "${NEW_DUP_BLOCKS:-0}" != "" ]]; then
     echo ""
     echo -e "${YELLOW}Duplication details (from PR files):${NC}"
 
@@ -154,7 +154,7 @@ if [ "${NEW_DUP_BLOCKS:-0}" != "0" ] && [ "${NEW_DUP_BLOCKS:-0}" != "" ]; then
         # Get source files changed in the PR
         PR_FILES=$(gh pr view "${PR_NUMBER}" --json files -q '.files[].path' 2>/dev/null | grep -E '\.(cpp|cppm|h|hpp|c)$' || true)
 
-        if [ -n "$PR_FILES" ]; then
+        if [[ -n "$PR_FILES" ]]; then
             FOUND_DUP=false
             for FILE_PATH in $PR_FILES; do
                 FILE_KEY="${PROJECT_KEY}:${FILE_PATH}"
@@ -163,7 +163,7 @@ if [ "${NEW_DUP_BLOCKS:-0}" != "0" ] && [ "${NEW_DUP_BLOCKS:-0}" != "" ]; then
 
                 # Check if there are duplications
                 DUP_COUNT=$(echo "$DUP_DETAILS" | jq '.duplications | length' 2>/dev/null || echo "0")
-                if [ "${DUP_COUNT:-0}" -gt 0 ]; then
+                if [[ "${DUP_COUNT:-0}" -gt 0 ]]; then
                     FOUND_DUP=true
                     echo -e "\n  ${BLUE}${FILE_PATH}:${NC}"
                     echo "$DUP_DETAILS" | jq -r '
@@ -177,7 +177,7 @@ if [ "${NEW_DUP_BLOCKS:-0}" != "0" ] && [ "${NEW_DUP_BLOCKS:-0}" != "" ]; then
                 fi
             done
 
-            if [ "$FOUND_DUP" = false ]; then
+            if [[ "$FOUND_DUP" == false ]]; then
                 echo "  No duplications found in PR source files"
             fi
         else
@@ -196,9 +196,9 @@ echo "  Issues: https://sonarcloud.io/project/issues?${DASHBOARD_PARAM}&id=${PRO
 
 # Summary
 echo -e "\n${BLUE}=== Summary ===${NC}"
-if [ "$QG_STATUS" = "OK" ]; then
+if [[ "$QG_STATUS" == "OK" ]]; then
     echo -e "${GREEN}✅ ${DISPLAY_NAME} is ready (quality gate passed)${NC}"
-elif [ "$QG_STATUS" = "ERROR" ]; then
+elif [[ "$QG_STATUS" == "ERROR" ]]; then
     echo -e "${RED}❌ ${DISPLAY_NAME} needs attention (quality gate failed)${NC}"
     echo -e "${YELLOW}   Please fix the issues above${NC}"
 else
