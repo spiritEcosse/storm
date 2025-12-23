@@ -247,7 +247,7 @@ namespace storm::benchmark {
 
             runner.run_benchmark(
                     test.test_name.c_str(),
-                    SelectBenchmark<Model, field_info, op_str, int, dataset_size>{value},
+                    SelectBenchmark<Model, field_info, op_str, int>{value, dataset_size},
                     iterations
             );
         }

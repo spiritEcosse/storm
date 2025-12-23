@@ -23,7 +23,7 @@ namespace storm::benchmark {
     // ========================================================================
     // OperationDispatcher: Compile-time binding of operation to method
     // ========================================================================
-    enum class OperationType { Insert, UpdatePK, Delete };
+    enum class OperationType { Insert, UpdatePK, Delete, Select };
 
     template <OperationType Op> struct OperationDispatcher;
 
@@ -57,6 +57,13 @@ namespace storm::benchmark {
 
         template <typename QS, typename Data> static auto call(QS& qs, const Data& data) {
             return qs.remove(data);
+        }
+    };
+
+    // SELECT operation specialization
+    template <> struct OperationDispatcher<OperationType::Select> {
+        static constexpr std::string_view name() {
+            return "SELECT WHERE";
         }
     };
 
@@ -98,7 +105,8 @@ namespace storm::benchmark {
         static constexpr size_t bulk_threshold = (max_bulk > 100) ? (max_bulk / 2) : 50;
 
         // Default model creation - derived classes can override via static method hiding
-        static Model create_model() {
+        // index parameter allows generating varied data (useful for SELECT WHERE benchmarks)
+        static Model create_model([[maybe_unused]] int index = 0) {
             return Model{.id = 0, .name = "BenchmarkPerson", .age = 30, .is_active = true, .salary = 50000.0};
         }
 
@@ -131,7 +139,7 @@ namespace storm::benchmark {
             int count = (batch_size_ == 1) ? iterations : batch_size_;
             data().reserve(count);
             for (int i = 0; i < count; i++) {
-                data().push_back(Derived::create_model());
+                data().push_back(Derived::create_model(i));
             }
         }
 
