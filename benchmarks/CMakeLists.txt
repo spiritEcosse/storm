@@ -20,12 +20,4 @@ endfunction()
 # Loads tests from JSON at compile time, zero runtime overhead
 add_storm_benchmark(storm_bench "main.cpp")
 
-# Microbenchmarks for SELECT performance analysis
-add_storm_benchmark(microbench_select_trace "microbench_select_trace.cpp")
-add_storm_benchmark(microbench_select_clean "microbench_select_clean.cpp")
-add_storm_benchmark(microbench_extraction "microbench_extraction.cpp")
-
 message(STATUS "Benchmark executable: storm_bench")
-message(STATUS "Microbenchmarks: microbench_select_trace, microbench_select_clean, microbench_extraction")
-add_storm_benchmark(microbench_raw_vs_wrapper "microbench_raw_vs_wrapper.cpp")
-add_storm_benchmark(microbench_callback "microbench_callback.cpp")
