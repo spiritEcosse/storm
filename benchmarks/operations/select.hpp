@@ -118,6 +118,13 @@ namespace storm::benchmark {
             auto where_clause = build_where_clause();
 
             int total_rows = 0;
+            // TODO: what if we put outside Base::qs().reset();, we need this because of
+            // Base::qs().where(where_clause).select(); in cycle what if we leave in cycle only select method - would it
+            // be fair ? maybe its another type of test ? looks not pretty fair - raw sql created once sql string -
+            // storm creates everytime and check it in cache. then main issue is : how to avoid create string everytime
+            // in storm ? i  guess i know what if Statement* stmt_ptr = nullptr;
+            //   if (cached_where_stmt_) {
+            // will be first check if not then create a string and check it as is
             for (int i = 0; i < iterations; i++) {
                 auto results = Base::qs().where(where_clause).select();
                 total_rows += results.value().size();
@@ -180,7 +187,7 @@ namespace storm::benchmark {
             if (!db)
                 return 0;
 
-            std::string sql = build_select_sql();
+            const std::string sql = build_select_sql();
 
             sqlite3_stmt* stmt = nullptr;
             if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -189,7 +196,7 @@ namespace storm::benchmark {
 
             int total_rows = 0;
             for (int i = 0; i < iterations; i++) {
-                sqlite3_reset(stmt);
+                sqlite3_reset(stmt); // TODO: are you sure we need this call ? why ?
                 bind_where_value(stmt, value_);
 
                 plf::hive<Model> results;

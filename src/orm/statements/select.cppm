@@ -337,6 +337,12 @@ export namespace storm::orm::statements {
                 const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt
         ) noexcept -> std::expected<plf::hive<T>, Error> {
             // Generate WHERE clause SQL from expression using helper
+            // TODO: looks strange , why do we need this part, i guess we can add cached_where_stmt_ to queryset reset
+            // then main issue is : how to avoid create string everytime in storm ? i  guess i know
+            // what if
+            // Statement* stmt_ptr = nullptr;
+            //   if (cached_where_stmt_) {
+            // will be first check if not then create a string and check it as is
             std::string where_sql = build_where_sql(get_select_sql(), where_expr);
             append_order_by(where_sql, order_by_wrapper);
             append_limit_offset(where_sql, limit, offset);
