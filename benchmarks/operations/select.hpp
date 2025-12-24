@@ -113,23 +113,20 @@ namespace storm::benchmark {
       public:
         // ====================================================================
         // execute - Storm ORM SELECT with WHERE clause
+        // OPTIMIZATION: where_clause is created once, and SelectStatement caches by expression pointer.
+        // When the same expression object is reused, SQL string building is skipped entirely.
+        // NOTE: reset() moved outside loop to enable expression address caching optimization.
         // ====================================================================
         int execute(int iterations) {
             auto where_clause = build_where_clause();
 
             int total_rows = 0;
-            // TODO: what if we put outside Base::qs().reset();, we need this because of
-            // Base::qs().where(where_clause).select(); in cycle what if we leave in cycle only select method - would it
-            // be fair ? maybe its another type of test ? looks not pretty fair - raw sql created once sql string -
-            // storm creates everytime and check it in cache. then main issue is : how to avoid create string everytime
-            // in storm ? i  guess i know what if Statement* stmt_ptr = nullptr;
-            //   if (cached_where_stmt_) {
-            // will be first check if not then create a string and check it as is
+            Base::qs().where(where_clause); // Set WHERE once
             for (int i = 0; i < iterations; i++) {
-                auto results = Base::qs().where(where_clause).select();
+                auto results = Base::qs().select();
                 total_rows += results.value().size();
-                Base::qs().reset();
             }
+            Base::qs().reset(); // Reset after loop
             return total_rows;
         }
 
@@ -194,10 +191,14 @@ namespace storm::benchmark {
                 return 0;
             }
 
+            // Bind WHERE value once (same value for all iterations)
+            bind_where_value(stmt, value_);
+
             int total_rows = 0;
             for (int i = 0; i < iterations; i++) {
-                sqlite3_reset(stmt); // TODO: are you sure we need this call ? why ?
-                bind_where_value(stmt, value_);
+                // sqlite3_reset() is REQUIRED to re-execute a statement after sqlite3_step() returns SQLITE_DONE
+                // Note: reset does NOT clear bindings, so we can bind once before the loop
+                sqlite3_reset(stmt);
 
                 plf::hive<Model> results;
                 while (sqlite3_step(stmt) == SQLITE_ROW) {

@@ -87,6 +87,14 @@ export namespace storm::orm::statements {
       public:
         explicit SelectStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
+        // Invalidate WHERE expression address cache
+        // Call this when QuerySet::reset() is invoked to prevent ABA problem
+        // (new expression allocated at same address as freed expression)
+        void invalidate_where_cache() noexcept {
+            cached_where_expr_addr_      = nullptr;
+            cached_where_join_expr_addr_ = nullptr;
+        }
+
         // Optimized SELECT execution without JOIN
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_optimized(
                 const std::optional<int>&            limit            = std::nullopt,
@@ -160,13 +168,11 @@ export namespace storm::orm::statements {
                 stmt_ptr = cached_select_stmt_;
             }
 
-            // Use unified query loop with fast extraction
-            return execute_query_loop(stmt_ptr, [](Statement* stmt, T& obj) {
-                extract_all_columns_inline_fast(stmt, obj);
-            });
+            // Direct query loop - no lambda indirection
+            return execute_query_loop_direct(stmt_ptr);
         }
 
-        // JOIN execution with compile-time SQL (uses unified query loop)
+        // JOIN execution with compile-time SQL
         // OPTIMIZATION: Uses pre-computed complete SQL from JoinStatement (zero runtime concatenation)
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_with_join_impl(
                 JoinStatementWrapper                 join_wrapper,
@@ -199,75 +205,184 @@ export namespace storm::orm::statements {
                 stmt_ptr = cached_join_stmt_;
             }
 
-            // Use unified query loop with JOIN extraction
-            return execute_query_loop(stmt_ptr, [&join_wrapper](Statement* stmt, T& obj) {
-                join_wrapper.extract_row(stmt, &obj);
-            });
+            // JOIN query loop with type-erased extraction
+            return execute_query_loop_join(stmt_ptr, join_wrapper);
         }
 
       private:
-        // OPTIMIZATION: Fast column extraction using shared BaseStatement utility
-        // Compiler inlines extract_column_value across modules for zero overhead
+        // =====================================================================
+        // RAW POINTER EXTRACTION - Eliminates unique_ptr::get() overhead
+        // These functions take sqlite3_stmt* directly for maximum performance
+        // =====================================================================
+
+        // Extract single column value using raw sqlite3_stmt* pointer
+        template <typename FieldType>
+        __attribute__((always_inline)) static inline FieldType
+        extract_column_raw(sqlite3_stmt* raw_stmt, int col_idx) noexcept {
+            // Handle std::optional types first
+            if constexpr (storm::orm::utilities::is_optional_v<FieldType>) {
+                using InnerType = typename FieldType::value_type;
+                if (sqlite3_column_type(raw_stmt, col_idx) == SQLITE_NULL) {
+                    return std::nullopt;
+                }
+                return FieldType{extract_column_raw<InnerType>(raw_stmt, col_idx)};
+            }
+            // Handle BLOB types (vector<uint8_t>)
+            else if constexpr (std::is_same_v<FieldType, std::vector<uint8_t>> ||
+                               std::is_same_v<FieldType, std::vector<unsigned char>>) {
+                const void* blob = sqlite3_column_blob(raw_stmt, col_idx);
+                const int   size = sqlite3_column_bytes(raw_stmt, col_idx);
+                if (blob && size > 0) {
+                    const auto* data = static_cast<const uint8_t*>(blob);
+                    return FieldType(data, data + size);
+                }
+                return FieldType{};
+            }
+            // Boolean type (stored as INTEGER 0/1)
+            else if constexpr (std::is_same_v<FieldType, bool>) {
+                return sqlite3_column_int(raw_stmt, col_idx) != 0;
+            }
+            // Integer types
+            else if constexpr (std::is_same_v<FieldType, int>) {
+                return sqlite3_column_int(raw_stmt, col_idx);
+            } else if constexpr (std::is_same_v<FieldType, int64_t> || std::is_same_v<FieldType, long> ||
+                                 std::is_same_v<FieldType, long long>) {
+                return static_cast<FieldType>(sqlite3_column_int64(raw_stmt, col_idx));
+            } else if constexpr (std::is_same_v<FieldType, uint64_t> || std::is_same_v<FieldType, unsigned long> ||
+                                 std::is_same_v<FieldType, unsigned long long>) {
+                return static_cast<FieldType>(sqlite3_column_int64(raw_stmt, col_idx));
+            } else if constexpr (std::is_same_v<FieldType, short>) {
+                return static_cast<short>(sqlite3_column_int(raw_stmt, col_idx));
+            } else if constexpr (std::is_same_v<FieldType, unsigned short>) {
+                return static_cast<unsigned short>(sqlite3_column_int(raw_stmt, col_idx));
+            } else if constexpr (std::is_same_v<FieldType, unsigned int>) {
+                return static_cast<unsigned int>(sqlite3_column_int(raw_stmt, col_idx));
+            }
+            // Floating point types
+            else if constexpr (std::is_same_v<FieldType, double>) {
+                return sqlite3_column_double(raw_stmt, col_idx);
+            } else if constexpr (std::is_same_v<FieldType, float>) {
+                return static_cast<float>(sqlite3_column_double(raw_stmt, col_idx));
+            }
+            // String type
+            else if constexpr (std::is_same_v<FieldType, std::string>) {
+                const unsigned char* text = sqlite3_column_text(raw_stmt, col_idx);
+                if (text) {
+                    const auto len = static_cast<size_t>(sqlite3_column_bytes(raw_stmt, col_idx));
+                    return std::string(reinterpret_cast<const char*>(text), len);
+                }
+                return std::string{};
+            } else {
+                // Fallback for other types
+                return FieldType{};
+            }
+        }
+
+        // Extract single column using raw pointer
         template <size_t Index>
-        __attribute__((always_inline)) static inline void extract_column_inline_fast(Statement* stmt, T& obj) noexcept {
+        __attribute__((always_inline)) static inline void
+        extract_column_raw_fast(sqlite3_stmt* raw_stmt, T& obj) noexcept {
             if constexpr (Index < Base::field_count_) {
                 constexpr auto member = Base::all_members_[Index];
                 using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
 
                 // Handle FK fields - populate only the primary key
                 if constexpr (Base::is_fk_field(member)) {
-                    // FIX: Default-construct FK object first to ensure all fields are zero-initialized
-                    obj.[:member:] = FieldType{};
-
-                    constexpr auto fk_pk_member = Base::template find_fk_primary_key<FieldType>();
-                    using PKType                = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
-
-                    // Extract PK value using shared utility
-                    obj.[:member:].[:fk_pk_member:] = Base::template extract_column_value<PKType>(*stmt, Index);
-                    // Other FK fields are now properly default-initialized (0 for int, "" for string, etc.)
+                    obj.[:member:]                  = FieldType{};
+                    constexpr auto fk_pk_member     = Base::template find_fk_primary_key<FieldType>();
+                    using PKType                    = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
+                    obj.[:member:].[:fk_pk_member:] = extract_column_raw<PKType>(raw_stmt, Index);
+                } else {
+                    obj.[:member:] = extract_column_raw<FieldType>(raw_stmt, Index);
                 }
-                // All other types: use shared extraction utility from BaseStatement
-                else {
+            }
+        }
+
+        // Extract all columns using raw pointer with fold expression
+        template <size_t... Is>
+        __attribute__((always_inline)) static inline void
+        extract_all_columns_raw_impl(sqlite3_stmt* raw_stmt, T& obj, std::index_sequence<Is...>) noexcept {
+            ((extract_column_raw_fast<Is>(raw_stmt, obj)), ...);
+        }
+
+        // Fast extraction entry point using raw pointer
+        __attribute__((always_inline)) static inline void
+        extract_all_columns_raw(sqlite3_stmt* raw_stmt, T& obj) noexcept {
+            extract_all_columns_raw_impl(raw_stmt, obj, typename Base::field_indices_t{});
+        }
+
+        // =====================================================================
+        // LEGACY EXTRACTION (kept for JOIN which needs Statement wrapper)
+        // =====================================================================
+
+        template <size_t Index>
+        __attribute__((always_inline)) static inline void extract_column_inline_fast(Statement* stmt, T& obj) noexcept {
+            if constexpr (Index < Base::field_count_) {
+                constexpr auto member = Base::all_members_[Index];
+                using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
+
+                if constexpr (Base::is_fk_field(member)) {
+                    obj.[:member:]                  = FieldType{};
+                    constexpr auto fk_pk_member     = Base::template find_fk_primary_key<FieldType>();
+                    using PKType                    = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
+                    obj.[:member:].[:fk_pk_member:] = Base::template extract_column_value<PKType>(*stmt, Index);
+                } else {
                     obj.[:member:] = Base::template extract_column_value<FieldType>(*stmt, Index);
                 }
             }
         }
 
-        // OPTIMIZATION: Fast extraction wrapper with fold expression
         template <size_t... Is>
         __attribute__((always_inline)) static inline void
         extract_all_columns_inline_fast_impl(Statement* stmt, T& obj, std::index_sequence<Is...>) noexcept {
-            // Direct extraction without error checking using comma operator fold
             ((extract_column_inline_fast<Is>(stmt, obj)), ...);
         }
 
-        // OPTIMIZATION: Fast extraction entry point
         __attribute__((always_inline)) static inline void
         extract_all_columns_inline_fast(Statement* stmt, T& obj) noexcept {
             extract_all_columns_inline_fast_impl(stmt, obj, typename Base::field_indices_t{});
         }
 
-        // Unified query execution loop - eliminates code duplication across all execution paths
-        // Takes extraction function as template parameter for zero-overhead abstraction
-        template <typename ExtractFunc>
+        // =====================================================================
+        // QUERY LOOPS
+        // =====================================================================
+
+        // OPTIMIZATION: Direct query loop with raw pointer - eliminates unique_ptr::get() overhead
+        // Caches sqlite3_stmt* once and uses direct SQLite calls in hot loop
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
-        execute_query_loop(Statement* stmt, ExtractFunc&& extract_func) noexcept -> std::expected<plf::hive<T>, Error> {
-            // plf::hive OPTIMIZATION: Stable pointers + fast insertion/iteration
-            // - No reallocation overhead (multi-block architecture)
-            // - Superior cache locality during iteration vs std::list/std::deque
-            // - Optimal for scenarios with frequent insertions during result processing
-            plf::hive<T> results;
+        execute_query_loop_direct(Statement* stmt) noexcept -> std::expected<plf::hive<T>, Error> {
+            plf::hive<T>  results;
+            sqlite3_stmt* raw_stmt    = stmt->handle(); // Cache raw pointer ONCE
+            int           step_result = 0;
 
-            int step_result = 0;
-
-            // Simple loop: insert directly into hive
-            while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
+            while ((step_result = sqlite3_step(raw_stmt)) == SQLITE_ROW) {
                 T obj;
-                extract_func(stmt, obj);
+                extract_all_columns_raw(raw_stmt, obj);
                 results.insert(std::move(obj));
             }
 
-            // Error handling
+            if (step_result != SQLITE_DONE) {
+                sqlite3_reset(raw_stmt);
+                return std::unexpected(Error{step_result, stmt->get_error_message()});
+            }
+
+            stmt->reset();
+            return results;
+        }
+
+        // Query execution loop for JOIN - requires extraction via join_wrapper
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
+        execute_query_loop_join(Statement* stmt, JoinStatementWrapper& join_wrapper) noexcept
+                -> std::expected<plf::hive<T>, Error> {
+            plf::hive<T> results;
+            int          step_result = 0;
+
+            while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
+                T obj;
+                join_wrapper.extract_row(stmt, &obj);
+                results.insert(std::move(obj));
+            }
+
             if (step_result != Statement::NO_MORE_ROWS) {
                 stmt->reset();
                 return std::unexpected(Error{step_result, stmt->get_error_message()});
@@ -336,31 +451,37 @@ export namespace storm::orm::statements {
                 const std::optional<int>&               offset           = std::nullopt,
                 const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt
         ) noexcept -> std::expected<plf::hive<T>, Error> {
-            // Generate WHERE clause SQL from expression using helper
-            // TODO: looks strange , why do we need this part, i guess we can add cached_where_stmt_ to queryset reset
-            // then main issue is : how to avoid create string everytime in storm ? i  guess i know
-            // what if
-            // Statement* stmt_ptr = nullptr;
-            //   if (cached_where_stmt_) {
-            // will be first check if not then create a string and check it as is
-            std::string where_sql = build_where_sql(get_select_sql(), where_expr);
-            append_order_by(where_sql, order_by_wrapper);
-            append_limit_offset(where_sql, limit, offset);
+            // OPTIMIZATION: Check expression identity FIRST to skip string building
+            // If same expression object is reused (same pointer), we can skip SQL generation entirely
+            // Compare the actual expression object address, not the shared_ptr container address
+            const void* expr_addr = static_cast<const void*>(where_expr.get());
+            Statement*  stmt_ptr  = nullptr;
 
-            // OPTIMIZATION: Cache WHERE statement if SQL matches previous query
-            Statement* stmt_ptr = nullptr;
-            if (cached_where_stmt_ && cached_where_sql_ == where_sql) {
-                // Reuse cached statement for same WHERE clause
+            if (cached_where_stmt_ && expr_addr && cached_where_expr_addr_ == expr_addr) {
+                // Same expression object - skip string building, reuse cached statement
                 stmt_ptr = cached_where_stmt_;
             } else {
-                // Different WHERE clause or first query - prepare new statement
-                auto prepare_result = conn_->prepare_cached(where_sql);
-                if (!prepare_result) [[unlikely]] {
-                    return std::unexpected(prepare_result.error());
+                // Different expression or first query - build SQL string
+                std::string where_sql = build_where_sql(get_select_sql(), where_expr);
+                append_order_by(where_sql, order_by_wrapper);
+                append_limit_offset(where_sql, limit, offset);
+
+                // Check if SQL matches (different expression object but same SQL)
+                if (cached_where_stmt_ && cached_where_sql_ == where_sql) {
+                    // SQL matches - update expression address, reuse statement
+                    cached_where_expr_addr_ = expr_addr;
+                    stmt_ptr                = cached_where_stmt_;
+                } else {
+                    // Different SQL - prepare new statement
+                    auto prepare_result = conn_->prepare_cached(where_sql);
+                    if (!prepare_result) [[unlikely]] {
+                        return std::unexpected(prepare_result.error());
+                    }
+                    cached_where_stmt_      = *prepare_result;
+                    cached_where_sql_       = std::move(where_sql);
+                    cached_where_expr_addr_ = expr_addr;
+                    stmt_ptr                = cached_where_stmt_;
                 }
-                cached_where_stmt_ = *prepare_result;
-                cached_where_sql_  = std::move(where_sql);
-                stmt_ptr           = cached_where_stmt_;
             }
 
             // OPTIMIZATION: Direct parameter binding using helper
@@ -369,14 +490,11 @@ export namespace storm::orm::statements {
                 return std::unexpected(bind_result.error());
             }
 
-            // Use unified query loop with fast extraction
-            auto result = execute_query_loop(stmt_ptr, [](Statement* stmt, T& obj) {
-                extract_all_columns_inline_fast(stmt, obj);
-            });
-            return result;
+            // Direct query loop - no lambda indirection
+            return execute_query_loop_direct(stmt_ptr);
         }
 
-        // SELECT with WHERE clause and JOIN - uses unified query loop
+        // SELECT with WHERE clause and JOIN
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_where_join_impl(
                 JoinStatementWrapper                    join_wrapper,
                 const orm::where::ExpressionVariantPtr& where_expr,
@@ -384,25 +502,37 @@ export namespace storm::orm::statements {
                 const std::optional<int>&               offset           = std::nullopt,
                 const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt
         ) noexcept -> std::expected<plf::hive<T>, Error> {
-            // Generate WHERE clause SQL from expression using helper
-            std::string join_where_sql = build_where_sql(join_wrapper.get_complete_sql(), where_expr);
-            append_order_by(join_where_sql, order_by_wrapper);
-            append_limit_offset(join_where_sql, limit, offset);
+            // OPTIMIZATION: Check expression identity FIRST to skip string building
+            // If same expression object is reused (same pointer), we can skip SQL generation entirely
+            // Compare the actual expression object address, not the shared_ptr container address
+            const void* expr_addr = static_cast<const void*>(where_expr.get());
+            Statement*  stmt_ptr  = nullptr;
 
-            // OPTIMIZATION: Cache WHERE+JOIN statement if SQL matches previous query
-            Statement* stmt_ptr = nullptr;
-            if (cached_where_join_stmt_ && cached_where_join_sql_ == join_where_sql) {
-                // Reuse cached statement for same WHERE+JOIN clause
+            if (cached_where_join_stmt_ && expr_addr && cached_where_join_expr_addr_ == expr_addr) {
+                // Same expression object - skip string building, reuse cached statement
                 stmt_ptr = cached_where_join_stmt_;
             } else {
-                // Different WHERE+JOIN clause or first query - prepare new statement
-                auto prepare_result = conn_->prepare_cached(join_where_sql);
-                if (!prepare_result) [[unlikely]] {
-                    return std::unexpected(prepare_result.error());
+                // Different expression or first query - build SQL string
+                std::string join_where_sql = build_where_sql(join_wrapper.get_complete_sql(), where_expr);
+                append_order_by(join_where_sql, order_by_wrapper);
+                append_limit_offset(join_where_sql, limit, offset);
+
+                // Check if SQL matches (different expression object but same SQL)
+                if (cached_where_join_stmt_ && cached_where_join_sql_ == join_where_sql) {
+                    // SQL matches - update expression address, reuse statement
+                    cached_where_join_expr_addr_ = expr_addr;
+                    stmt_ptr                     = cached_where_join_stmt_;
+                } else {
+                    // Different SQL - prepare new statement
+                    auto prepare_result = conn_->prepare_cached(join_where_sql);
+                    if (!prepare_result) [[unlikely]] {
+                        return std::unexpected(prepare_result.error());
+                    }
+                    cached_where_join_stmt_      = *prepare_result;
+                    cached_where_join_sql_       = std::move(join_where_sql);
+                    cached_where_join_expr_addr_ = expr_addr;
+                    stmt_ptr                     = cached_where_join_stmt_;
                 }
-                cached_where_join_stmt_ = *prepare_result;
-                cached_where_join_sql_  = std::move(join_where_sql);
-                stmt_ptr                = cached_where_join_stmt_;
             }
 
             // OPTIMIZATION: Direct parameter binding using helper
@@ -411,10 +541,8 @@ export namespace storm::orm::statements {
                 return std::unexpected(bind_result.error());
             }
 
-            // Use unified query loop with JOIN extraction
-            return execute_query_loop(stmt_ptr, [&join_wrapper](Statement* stmt, T& obj) {
-                join_wrapper.extract_row(stmt, &obj);
-            });
+            // JOIN query loop with type-erased extraction
+            return execute_query_loop_join(stmt_ptr, join_wrapper);
         }
 
         std::shared_ptr<ConnType> conn_;
@@ -424,6 +552,9 @@ export namespace storm::orm::statements {
         mutable Statement*        cached_where_join_stmt_ = nullptr; // Cache for WHERE + JOIN
         mutable std::string       cached_where_sql_;                 // Remember last WHERE SQL for cache validation
         mutable std::string       cached_where_join_sql_; // Remember last WHERE+JOIN SQL for cache validation
+        // OPTIMIZATION: Track expression identity to skip string building when same expression is reused
+        mutable const void* cached_where_expr_addr_      = nullptr; // Address of last WHERE expression
+        mutable const void* cached_where_join_expr_addr_ = nullptr; // Address of last WHERE+JOIN expression
     };
 
 } // namespace storm::orm::statements

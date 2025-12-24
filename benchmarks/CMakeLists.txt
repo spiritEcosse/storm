@@ -13,6 +13,7 @@ function(add_storm_benchmark target_name source_file)
     apply_clang_flags(${target_name})
     target_include_directories(${target_name} PRIVATE
         "${CMAKE_SOURCE_DIR}/src"
+        "${CMAKE_SOURCE_DIR}/third_party"
     )
 endfunction()
 

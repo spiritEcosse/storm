@@ -287,6 +287,12 @@ export namespace storm {
             where_expr_.reset();
             limit_value_.reset();
             offset_value_.reset();
+            order_by_wrapper_.reset();
+            // Invalidate SelectStatement's WHERE expression address cache to prevent ABA problem
+            // (new expression allocated at same address as freed expression)
+            if (select_stmt_) {
+                select_stmt_->invalidate_where_cache();
+            }
         }
 
         // Aggregate functions - fluent builder pattern for multiple aggregates
