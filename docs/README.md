@@ -68,6 +68,18 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 ## TODO:
 - [x] ~~Consider adding clang-tidy in quick_commit.sh, but exclude third_party~~ - ✅ **DONE** - Added `scripts/run_clang_tidy.sh` with parallel execution, modernize checks, third_party exclusion. Runs by default in `quick_commit.sh` (use `--no-tidy` to skip)
 - [ ] Replace all std::vector with plf::hive
+- [ ] **Verify Performance Code Compliance** - Audit all statement implementations against CLAUDE.md performance rules:
+  - [ ] Raw pointer caching in hot loops (SELECT, DISTINCT extraction loops)
+  - [ ] Statement pointer caching for single-row operations (execute_one, remove_one)
+  - [ ] Expression address caching for WHERE clause reuse
+  - [ ] Flat code pattern in hot paths (no nested lambdas)
+  - [ ] Cache invalidation on reset() to prevent ABA problem
+- [ ] **Verify Benchmark Fairness** - Audit all benchmarks against CLAUDE.md fair benchmark rules:
+  - [ ] Setup outside loop, execute inside (WHERE, bind, prepare)
+  - [ ] Same algorithm for Storm and raw SQLite
+  - [ ] Same container types (plf::hive for both)
+  - [ ] Runtime decision logic for both (no compile-time advantages for raw)
+  - [ ] Correct metric (latency for different result sizes)
 - [ ] Lets think how to add true sttistics in README files (like benchmarks)
 - [ ] **Enable `modernize-use-trailing-return-type`** - Convert all functions to trailing return type syntax (`auto foo() -> int` instead of `int foo()`) for consistent modern style (~50+ functions)
 - [x] ~~**Enable `modernize-avoid-c-arrays`**~~ - ✅ **DONE** - Enabled (0 warnings, prevents future C-array usage)

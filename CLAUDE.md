@@ -13,7 +13,7 @@ Storm is a modern C++26 ORM library for SQLite using cutting-edge C++26 reflecti
 Storm ORM achieves **96-108% efficiency** vs raw SQLite across all operations (Release builds, fair comparison):
 
 - **INSERT**: ~97% efficiency for single, 96-108% for batch operations
-- **SELECT**: High throughput with minimal overhead
+- **SELECT**: ~96% efficiency (raw pointer caching, expression address tracking)
 - **UPDATE**: ~93-94% efficiency (optimized with flat code, cached statements)
 - **DELETE**: Fast single and batch deletions
 - **JOIN**: Type-erased abstract base class pattern
@@ -428,6 +428,189 @@ auto execute_one(const T& obj) {
 - Batch operations (hash lookup amortized over many rows)
 - Cold paths (setup, initialization)
 - Operations called once per request
+
+### Raw Pointer Caching in Hot Loops (5-6% improvement)
+
+**For query loops extracting many rows, cache the raw `sqlite3_stmt*` pointer.** Benchmarks show ~5-6% improvement.
+
+```cpp
+// ❌ SLOW: unique_ptr::get() called on every column (90.6% efficiency)
+while (stmt->step() == SQLITE_ROW) {
+    obj.id = sqlite3_column_int64(stmt->handle(), 0);    // handle() = unique_ptr::get()
+    obj.name = sqlite3_column_text(stmt->handle(), 1);   // handle() again
+    obj.age = sqlite3_column_int(stmt->handle(), 2);     // handle() again
+    // ... 6+ calls per row × millions of rows
+}
+
+// ✅ FAST: Cache raw pointer once (96% efficiency)
+sqlite3_stmt* raw_stmt = stmt->handle();  // Cache ONCE before loop
+while (sqlite3_step(raw_stmt) == SQLITE_ROW) {
+    obj.id = sqlite3_column_int64(raw_stmt, 0);    // Direct pointer
+    obj.name = sqlite3_column_text(raw_stmt, 1);   // No indirection
+    obj.age = sqlite3_column_int(raw_stmt, 2);     // Maximum speed
+}
+```
+
+**Why this matters:**
+- `unique_ptr::get()` is not free - it's a function call with pointer dereference
+- Called 6+ times per row (once per column)
+- For 10,000 rows: 60,000+ unnecessary function calls
+- Compiler may not inline across translation units
+
+**Benchmark evidence (SELECT WHERE with 10K rows):**
+| Pattern | Efficiency |
+|---------|------------|
+| Without raw pointer cache | 90.6% |
+| With raw pointer cache | 96% |
+
+### Expression Address Caching (Skip SQL Building)
+
+**For repeated queries with same WHERE expression, track expression address to skip SQL string building.**
+
+```cpp
+// Inside statement class
+mutable const void* cached_expr_addr_ = nullptr;
+mutable Statement* cached_stmt_ = nullptr;
+
+auto execute(const WhereExpr& expr) {
+    const void* expr_addr = static_cast<const void*>(expr.get());
+
+    // Cache hit: same expression object, skip SQL building
+    if (expr_addr == cached_expr_addr_ && cached_stmt_) {
+        cached_stmt_->reset();
+        bind_params(cached_stmt_, expr);
+        return execute_loop(cached_stmt_);
+    }
+
+    // Cache miss: build SQL, prepare statement
+    std::string sql = build_sql(expr);
+    cached_stmt_ = conn_->prepare_cached(sql);
+    cached_expr_addr_ = expr_addr;
+    bind_params(cached_stmt_, expr);
+    return execute_loop(cached_stmt_);
+}
+```
+
+**Critical: Invalidate cache on reset() to prevent ABA problem:**
+```cpp
+void invalidate_cache() {
+    cached_expr_addr_ = nullptr;
+    // Note: don't clear cached_stmt_ - it's still valid in connection cache
+}
+
+// In QuerySet::reset()
+void reset() {
+    where_expr_.reset();
+    select_stmt_->invalidate_cache();  // CRITICAL: prevent stale pointer match
+}
+```
+
+**ABA Problem**: New expression allocated at same address as freed expression → stale cache hit → wrong SQL used.
+
+## Writing Fair Benchmarks
+
+**⚠️ CRITICAL: Unfair benchmarks lead to wrong optimization decisions.**
+
+### 1. Setup Outside Loop, Execute Inside
+
+```cpp
+// ❌ UNFAIR: Storm does setup inside, raw SQLite does setup outside
+int storm_benchmark(int iterations) {
+    for (int i = 0; i < iterations; i++) {
+        qs.where(age > 30).select();  // WHERE built every iteration
+    }
+}
+
+int raw_benchmark(int iterations) {
+    sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);  // Prepared ONCE
+    for (int i = 0; i < iterations; i++) {
+        sqlite3_reset(stmt);
+        sqlite3_step(stmt);
+    }
+}
+
+// ✅ FAIR: Both do setup once, execute in loop
+int storm_benchmark(int iterations) {
+    auto where_clause = build_where();
+    qs.where(where_clause);           // Set WHERE once
+    for (int i = 0; i < iterations; i++) {
+        qs.select();                  // Only execute in loop
+    }
+    qs.reset();                       // Cleanup after
+}
+
+int raw_benchmark(int iterations) {
+    sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    sqlite3_bind_int(stmt, 1, value); // Bind once
+    for (int i = 0; i < iterations; i++) {
+        sqlite3_reset(stmt);          // Reset required for re-execution
+        while (sqlite3_step(stmt) == SQLITE_ROW) { ... }
+    }
+}
+```
+
+### 2. Same Algorithm for Both
+
+```cpp
+// ❌ UNFAIR: Storm uses chunked bulk SQL, raw uses single inserts
+// Storm: INSERT INTO t VALUES (?,?),(?,?),(?,?)  -- 3 rows at once
+// Raw:   INSERT INTO t VALUES (?,?) × 3          -- 3 separate statements
+
+// ✅ FAIR: Both use same strategy
+// Storm: INSERT INTO t VALUES (?,?),(?,?),(?,?)
+// Raw:   INSERT INTO t VALUES (?,?),(?,?),(?,?)
+```
+
+### 3. Same Container Types
+
+```cpp
+// ❌ UNFAIR: Storm uses plf::hive, raw uses std::vector
+plf::hive<Model> storm_results;  // O(1) insert, stable iterators
+std::vector<Model> raw_results;  // O(1) amortized, may reallocate
+
+// ✅ FAIR: Both use same container
+plf::hive<Model> storm_results;
+plf::hive<Model> raw_results;
+```
+
+### 4. Measure Same Work
+
+```cpp
+// ❌ MISLEADING: Comparing throughput with different result sizes
+// DISTINCT + WHERE: 78 rows → 0.13M rows/sec (looks slow)
+// DISTINCT + JOIN:  10K rows → 8.75M rows/sec (looks fast)
+
+// ✅ CORRECT: Use latency (ms/query) for queries with different result sizes
+// DISTINCT + WHERE: 0.588ms/query (actually FASTEST)
+// DISTINCT + JOIN:  1.143ms/query (actually slower)
+```
+
+### 5. Runtime vs Compile-Time Fairness
+
+```cpp
+// ❌ UNFAIR: Storm uses runtime batch_size, raw uses compile-time
+template <int BatchSize>  // Raw gets free compile-time optimization
+void raw_benchmark() {
+    if constexpr (BatchSize < 100) { ... }  // Compiled away
+}
+
+void storm_benchmark(int batch_size) {  // Runtime check every call
+    if (batch_size < 100) { ... }
+}
+
+// ✅ FAIR: Both use runtime values
+void storm_benchmark(int batch_size) { ... }
+void raw_benchmark(int batch_size) { ... }  // Same decision logic
+```
+
+### Benchmark Checklist
+
+- [ ] **Setup outside loop**: WHERE clauses, statement preparation, parameter binding
+- [ ] **Same algorithm**: Both use identical strategies (chunked bulk, single row, etc.)
+- [ ] **Same containers**: plf::hive vs plf::hive, not plf::hive vs std::vector
+- [ ] **Same decision logic**: Runtime vs runtime, not runtime vs compile-time
+- [ ] **Correct metric**: Latency for different result sizes, throughput for same sizes
+- [ ] **Multiple runs**: 5+ runs to establish variance, report median not just mean
 
 See [Performance Guidelines](docs/development/performance-guidelines.md) for complete rules.
 
