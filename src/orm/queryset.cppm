@@ -148,27 +148,8 @@ export namespace storm {
         // NOTE: WHERE and JOIN state is preserved after select() for query reusability.
         // Call reset() to clear state when needed.
         [[nodiscard]] __attribute__((hot)) std::expected<plf::hive<T>, Error> select() {
-            std::expected<plf::hive<T>, Error> result;
-
-            if (join_stmt_.has_value() && where_expr_) {
-                // JOIN + WHERE
-                result = get_select_statement().execute_with_where_and_join(
-                        *join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_
-                );
-            } else if (join_stmt_.has_value()) {
-                // JOIN only (no WHERE)
-                result = get_select_statement()
-                                 .execute_optimized(*join_stmt_, limit_value_, offset_value_, order_by_wrapper_);
-            } else if (where_expr_) {
-                // WHERE only (no JOIN)
-                result = get_select_statement()
-                                 .execute_with_where(where_expr_, limit_value_, offset_value_, order_by_wrapper_);
-            } else {
-                // Simple SELECT (no JOIN, no WHERE)
-                result = get_select_statement().execute_optimized(limit_value_, offset_value_, order_by_wrapper_);
-            }
-
-            return result;
+            return get_select_statement()
+                    .execute(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_);
         }
 
         // Field-specific DISTINCT support using reflection
@@ -288,10 +269,9 @@ export namespace storm {
             limit_value_.reset();
             offset_value_.reset();
             order_by_wrapper_.reset();
-            // Invalidate SelectStatement's WHERE expression address cache to prevent ABA problem
-            // (new expression allocated at same address as freed expression)
+            // Invalidate SelectStatement's cache to ensure fresh query on next execute
             if (select_stmt_) {
-                select_stmt_->invalidate_where_cache();
+                select_stmt_->invalidate_cache();
             }
         }
 
