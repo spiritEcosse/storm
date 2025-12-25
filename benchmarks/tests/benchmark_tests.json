@@ -406,5 +406,44 @@
     "iterations": 100,
     "dataset_size": 10000,
     "batch_size": 1
+  },
+  {
+    "test_name": "select_where_join_1000",
+    "test_category": "SELECT_WHERE_JOIN",
+    "description": "SELECT with WHERE + JOIN (User.age > 30, 1000 messages)",
+    "model": "FKMessage",
+    "operation": "select_where_join",
+    "where_field": "age",
+    "where_op": ">",
+    "where_value_int": 30,
+    "iterations": 1000,
+    "dataset_size": 1000,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_where_join_5000",
+    "test_category": "SELECT_WHERE_JOIN",
+    "description": "SELECT with WHERE + JOIN (User.age > 30, 5000 messages)",
+    "model": "FKMessage",
+    "operation": "select_where_join",
+    "where_field": "age",
+    "where_op": ">",
+    "where_value_int": 30,
+    "iterations": 200,
+    "dataset_size": 5000,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_where_join_10000",
+    "test_category": "SELECT_WHERE_JOIN",
+    "description": "SELECT with WHERE + JOIN (User.age > 30, 10000 messages)",
+    "model": "FKMessage",
+    "operation": "select_where_join",
+    "where_field": "age",
+    "where_op": ">",
+    "where_value_int": 30,
+    "iterations": 100,
+    "dataset_size": 10000,
+    "batch_size": 1
   }
 ]
