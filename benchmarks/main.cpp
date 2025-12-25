@@ -31,14 +31,7 @@ import <memory>;
 using namespace storm;
 using namespace storm::benchmark;
 
-// Test model
-struct Person {
-    [[= storm::meta::FieldAttr::primary]] int id;
-    std::string                               name;
-    int                                       age;
-    bool                                      is_active;
-    double                                    salary;
-};
+// Models are defined in models.hpp and included via runner.hpp
 
 int main(int argc, char* argv[]) {
     try {
@@ -117,7 +110,7 @@ int main(int argc, char* argv[]) {
 
         const auto& conn = QuerySet<Person>::get_default_connection();
 
-        // Create table
+        // Create Person table
         auto create_result = conn->execute(
                 "CREATE TABLE Person ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -127,7 +120,32 @@ int main(int argc, char* argv[]) {
                 "salary REAL NOT NULL)"
         );
         if (!create_result.has_value()) {
-            std::cerr << "Failed to create table: " << create_result.error().message() << "\n";
+            std::cerr << "Failed to create Person table: " << create_result.error().message() << "\n";
+            return 1;
+        }
+
+        // Create User table (for JOIN benchmarks)
+        auto create_user_result = conn->execute(
+                "CREATE TABLE User ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "name TEXT NOT NULL, "
+                "age INTEGER NOT NULL)"
+        );
+        if (!create_user_result.has_value()) {
+            std::cerr << "Failed to create User table: " << create_user_result.error().message() << "\n";
+            return 1;
+        }
+
+        // Create FKMessage table (for JOIN benchmarks)
+        auto create_msg_result = conn->execute(
+                "CREATE TABLE FKMessage ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "sender_id INTEGER NOT NULL, "
+                "receiver_id INTEGER NOT NULL, "
+                "text TEXT NOT NULL)"
+        );
+        if (!create_msg_result.has_value()) {
+            std::cerr << "Failed to create FKMessage table: " << create_msg_result.error().message() << "\n";
             return 1;
         }
 

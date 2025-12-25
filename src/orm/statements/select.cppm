@@ -75,6 +75,7 @@ export namespace storm::orm::statements {
         void invalidate_cache() noexcept {
             cached_stmt_ = nullptr;
             cached_sql_.clear();
+            cached_join_sql_ptr_ = nullptr;
         }
 
         // Unified SELECT execution - handles all combinations of JOIN and WHERE
@@ -92,6 +93,11 @@ export namespace storm::orm::statements {
             const bool is_simple = !where_expr && !join_wrapper && !order_by_wrapper.has_value() &&
                                    !limit.has_value() && !offset.has_value();
 
+            // Fast path for JOIN-only queries (no WHERE, LIMIT, etc.)
+            // JOIN SQL is compile-time constant, so we cache by pointer address
+            const bool is_join_only = join_wrapper.has_value() && !where_expr && !order_by_wrapper.has_value() &&
+                                      !limit.has_value() && !offset.has_value();
+
             if (is_simple) {
                 if (!cached_simple_stmt_) {
                     auto prepare_result = conn_->prepare_cached(get_select_sql());
@@ -101,6 +107,21 @@ export namespace storm::orm::statements {
                     cached_simple_stmt_ = *prepare_result;
                 }
                 stmt_ptr = cached_simple_stmt_;
+            } else if (is_join_only) {
+                // OPTIMIZATION: JOIN SQL is static, cache by SQL pointer address (no string compare)
+                const std::string* join_sql_ptr = &join_wrapper->get_complete_sql();
+                if (cached_stmt_ && cached_join_sql_ptr_ == join_sql_ptr) {
+                    stmt_ptr = cached_stmt_;
+                } else {
+                    auto prepare_result = conn_->prepare_cached(*join_sql_ptr);
+                    if (!prepare_result) [[unlikely]] {
+                        return std::unexpected(prepare_result.error());
+                    }
+                    cached_stmt_         = *prepare_result;
+                    cached_join_sql_ptr_ = join_sql_ptr;
+                    cached_sql_.clear(); // Invalidate dynamic cache
+                    stmt_ptr = cached_stmt_;
+                }
             } else {
                 // Dynamic path: build SQL and validate cache
                 std::string sql = join_wrapper ? join_wrapper->get_complete_sql() : std::string(get_select_sql());
@@ -120,9 +141,10 @@ export namespace storm::orm::statements {
                     if (!prepare_result) [[unlikely]] {
                         return std::unexpected(prepare_result.error());
                     }
-                    cached_stmt_ = *prepare_result;
-                    cached_sql_  = std::move(sql);
-                    stmt_ptr     = cached_stmt_;
+                    cached_stmt_         = *prepare_result;
+                    cached_sql_          = std::move(sql);
+                    cached_join_sql_ptr_ = nullptr; // Invalidate JOIN-only cache
+                    stmt_ptr             = cached_stmt_;
                 }
 
                 // Bind WHERE parameters if present
@@ -136,8 +158,9 @@ export namespace storm::orm::statements {
 
             // Execute query with appropriate extractor
             if (join_wrapper) {
-                return execute_query_loop(stmt_ptr, [&join_wrapper](sqlite3_stmt*, Statement* s, T& obj) {
-                    join_wrapper->extract_row(s, &obj);
+                // OPTIMIZATION: Use raw pointer extraction for JOIN (eliminates wrapper overhead)
+                return execute_query_loop(stmt_ptr, [&join_wrapper](sqlite3_stmt* raw, Statement*, T& obj) {
+                    join_wrapper->extract_row_raw(raw, &obj);
                 });
             }
             return execute_query_loop(stmt_ptr, [](sqlite3_stmt* raw, Statement*, T& obj) {
@@ -327,6 +350,9 @@ export namespace storm::orm::statements {
         // Cache for dynamic queries (WHERE, JOIN, modifiers) - validated by SQL comparison
         mutable Statement*  cached_stmt_ = nullptr;
         mutable std::string cached_sql_;
+
+        // Cache for JOIN-only queries - validated by pointer comparison (faster than string)
+        mutable const std::string* cached_join_sql_ptr_ = nullptr;
     };
 
 } // namespace storm::orm::statements

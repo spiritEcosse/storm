@@ -14,7 +14,9 @@
 #include <cmath>
 #include "schema.hpp"
 #include "parser.hpp"
+#include "models.hpp"
 #include "operations/select.hpp"
+#include "operations/select_join.hpp"
 #include "operations/insert.hpp"
 #include "operations/update.hpp"
 #include "operations/delete.hpp"
@@ -270,6 +272,18 @@ namespace storm::benchmark {
             runner.run_benchmark(test.test_name.c_str(), UpdateBenchmark<Model>{test.batch_size}, iterations);
         }
 
+        template <typename Model, auto& test>
+        static void run_select_join_operation(BenchmarkRunner& runner, int iterations) {
+            // SELECT JOIN benchmark using FKMessage and User models
+            // FKFieldPtr is &FKMessage::sender for single JOIN
+            constexpr int dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    SelectJoinBenchmark<FKMessage, User, &FKMessage::sender>{dataset_size},
+                    iterations
+            );
+        }
+
       public:
         // Template recursion to execute tests at compile time
         template <typename Model, size_t TestIndex, size_t TotalTests> struct TestExecutor {
@@ -297,6 +311,8 @@ namespace storm::benchmark {
                         runner.run_update_pk_operation<Model, test>(runner, iterations);
                     } else if constexpr (operation == "delete_pk") {
                         runner.run_delete_pk_operation<Model, test>(runner, iterations);
+                    } else if constexpr (operation == "select_join") {
+                        runner.run_select_join_operation<Model, test>(runner, iterations);
                     }
                 }
 
