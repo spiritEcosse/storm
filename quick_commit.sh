@@ -217,8 +217,13 @@ else
 fi
 
 echo "📦 Staging approved files..."
-git add $KNOWN_DIRS 2>/dev/null || true
-git add $KNOWN_FILES 2>/dev/null || true
+# Add each directory/file separately to avoid "empty pathspec" errors
+for dir in $KNOWN_DIRS; do
+    [[ -d "$dir" ]] && git add "$dir" 2>/dev/null || true
+done
+for file in $KNOWN_FILES; do
+    [[ -f "$file" ]] && git add "$file" 2>/dev/null || true
+done
 
 echo "📦 Committing..."
 git commit -m "$commit_msg

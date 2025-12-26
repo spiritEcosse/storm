@@ -205,8 +205,8 @@ TEST_F(DistinctTest, DistinctWithSingleRow) {
     QuerySet<DistinctPerson> queryset;
 
     // Insert one person
-    DistinctPerson const alice{.id=0, .name="Alice", .age=30};
-    auto           insert_result = queryset.insert(alice);
+    DistinctPerson const alice{.id = 0, .name = "Alice", .age = 30};
+    auto                 insert_result = queryset.insert(alice);
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name
@@ -267,7 +267,7 @@ TEST_F(DistinctTest, VerifyReturnTypes) {
     QuerySet<DistinctPerson> queryset;
 
     // Insert test data
-    queryset.insert(DistinctPerson{.id=0, .name="Alice", .age=30});
+    queryset.insert(DistinctPerson{.id = 0, .name = "Alice", .age = 30});
 
     // Verify return type for distinct on name field is hive of strings
     auto names_result = queryset.distinct<^^DistinctPerson::name>().select();
@@ -441,7 +441,7 @@ TEST_F(DistinctTest, VerifyMultiFieldReturnTypes) {
     QuerySet<DistinctPerson> queryset;
 
     // Insert test data
-    queryset.insert(DistinctPerson{.id=0, .name="Alice", .age=30});
+    queryset.insert(DistinctPerson{.id = 0, .name = "Alice", .age = 30});
 
     // Verify return type for distinct on name and age is hive of tuples containing string and int
     auto pairs_result = queryset.distinct<^^DistinctPerson::name, ^^DistinctPerson::age>().select();
@@ -456,8 +456,8 @@ TEST_F(DistinctTest, VerifyMultiFieldReturnTypes) {
 TEST_F(DistinctTest, DistinctTwoFieldsWithSingleRow) {
     QuerySet<DistinctPerson> queryset;
 
-    DistinctPerson const alice{.id=0, .name="Alice", .age=30};
-    auto           insert_result = queryset.insert(alice);
+    DistinctPerson const alice{.id = 0, .name = "Alice", .age = 30};
+    auto                 insert_result = queryset.insert(alice);
     ASSERT_TRUE(insert_result.has_value());
 
     auto result = queryset.distinct<^^DistinctPerson::name, ^^DistinctPerson::age>().select();
@@ -559,7 +559,7 @@ TEST_F(DistinctTest, CrossStructFieldAccessPrevented) {
 // Test: Return type verification for duplicate fields
 TEST_F(DistinctTest, VerifyDuplicateFieldReturnTypes) {
     QuerySet<DistinctPerson> queryset;
-    queryset.insert(DistinctPerson{.id=0, .name="Alice", .age=30});
+    queryset.insert(DistinctPerson{.id = 0, .name = "Alice", .age = 30});
 
     // Duplicate field returns tuple with same type repeated
     auto dup_result = queryset.distinct<^^DistinctPerson::name, ^^DistinctPerson::name>().select();
@@ -748,8 +748,8 @@ TEST_F(DistinctTest, RawSQLWorkaround) {
 
     // Workaround: Use raw SQL for DISTINCT + JOIN
     std::string const sql = "SELECT DISTINCT User.name "
-                      "FROM Message "
-                      "INNER JOIN User ON User.id = Message.sender_id";
+                            "FROM Message "
+                            "INNER JOIN User ON User.id = Message.sender_id";
 
     auto stmt_result = conn->prepare(sql);
     ASSERT_TRUE(stmt_result.has_value());
@@ -1081,7 +1081,7 @@ TEST_F(DistinctTest, MultipleWhereClausesWithDistinct) {
                           .select();
     ASSERT_TRUE(result.has_value());
 
-    const auto&           names = result.value();
+    const auto&                 names = result.value();
     std::set<std::string> const unique_names(names.begin(), names.end());
 
     // Should only include Alice (25) and Bob (30)

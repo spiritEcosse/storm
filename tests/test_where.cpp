@@ -276,7 +276,7 @@ TEST_F(WhereTest, WhereStringView) {
     QuerySet<WherePerson> queryset;
 
     std::string_view const name_view = "Charlie";
-    auto             result    = queryset.where(field<^^WherePerson::name>() == name_view).select();
+    auto                   result    = queryset.where(field<^^WherePerson::name>() == name_view).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -358,32 +358,50 @@ class WhereJoinTest : public ::testing::Test {
 
         // Insert users (use ID 0 to let AUTOINCREMENT generate IDs)
         QuerySet<WhereUser> user_qs;
-        auto                alice_id = user_qs.insert(WhereUser{.id=0, .username="alice", .level=10});
+        auto                alice_id = user_qs.insert(WhereUser{.id = 0, .username = "alice", .level = 10});
         ASSERT_TRUE(alice_id.has_value()) << "Failed to insert alice: " << alice_id.error().message();
 
-        auto bob_id = user_qs.insert(WhereUser{.id=0, .username="bob", .level=5});
+        auto bob_id = user_qs.insert(WhereUser{.id = 0, .username = "bob", .level = 5});
         ASSERT_TRUE(bob_id.has_value()) << "Failed to insert bob: " << bob_id.error().message();
 
-        auto charlie_id = user_qs.insert(WhereUser{.id=0, .username="charlie", .level=15});
+        auto charlie_id = user_qs.insert(WhereUser{.id = 0, .username = "charlie", .level = 15});
         ASSERT_TRUE(charlie_id.has_value()) << "Failed to insert charlie: " << charlie_id.error().message();
 
         // Insert messages (use generated user IDs)
         QuerySet<WhereMessage> msg_qs;
         auto                   msg1 = msg_qs.insert(
-                WhereMessage{.id=0, .content="Hello from Alice", .sender=WhereUser{.id=static_cast<int>(alice_id.value()), .username="", .level=0}}
+                WhereMessage{
+                                          .id      = 0,
+                                          .content = "Hello from Alice",
+                                          .sender = WhereUser{.id = static_cast<int>(alice_id.value()), .username = "", .level = 0}
+                }
         );
         ASSERT_TRUE(msg1.has_value()) << "Failed to insert message 1: " << msg1.error().message();
 
-        auto msg2 = msg_qs.insert(WhereMessage{.id=0, .content="Hi from Bob", .sender=WhereUser{.id=static_cast<int>(bob_id.value()), .username="", .level=0}});
+        auto msg2 = msg_qs.insert(
+                WhereMessage{
+                        .id      = 0,
+                        .content = "Hi from Bob",
+                        .sender  = WhereUser{.id = static_cast<int>(bob_id.value()), .username = "", .level = 0}
+                }
+        );
         ASSERT_TRUE(msg2.has_value()) << "Failed to insert message 2: " << msg2.error().message();
 
         auto msg3 = msg_qs.insert(
-                WhereMessage{.id=0, .content="Greetings from Alice", .sender=WhereUser{.id=static_cast<int>(alice_id.value()), .username="", .level=0}}
+                WhereMessage{
+                        .id      = 0,
+                        .content = "Greetings from Alice",
+                        .sender  = WhereUser{.id = static_cast<int>(alice_id.value()), .username = "", .level = 0}
+                }
         );
         ASSERT_TRUE(msg3.has_value()) << "Failed to insert message 3: " << msg3.error().message();
 
         auto msg4 = msg_qs.insert(
-                WhereMessage{.id=0, .content="Greetings Charlie", .sender=WhereUser{.id=static_cast<int>(charlie_id.value()), .username="", .level=0}}
+                WhereMessage{
+                        .id      = 0,
+                        .content = "Greetings Charlie",
+                        .sender  = WhereUser{.id = static_cast<int>(charlie_id.value()), .username = "", .level = 0}
+                }
         );
         ASSERT_TRUE(msg4.has_value()) << "Failed to insert message 4: " << msg4.error().message();
     }

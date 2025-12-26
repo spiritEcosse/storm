@@ -296,7 +296,8 @@ TEST_F(AggregateTest, EmptyTable_Avg) {
 
 TEST_F(AggregateTest, SingleRow_AllAggregates) {
     // Insert single row
-    auto insert_result = qs->insert(AggregatePerson{.id=0, .name="Alice", .age=25, .salary=50000.0, .years_experience=3});
+    auto insert_result =
+            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 3});
     ASSERT_TRUE(insert_result.has_value());
 
     // Test all aggregate types
@@ -328,7 +329,15 @@ TEST_F(AggregateTest, SingleRow_AllAggregates) {
 TEST_F(AggregateTest, LargeDataset_Sum) {
     // Insert 1000 people with ages 1-1000
     for (int i = 1; i <= 1000; ++i) {
-        auto result = qs->insert(AggregatePerson{.id=0, .name="AggregatePerson" + std::to_string(i), .age=i, .salary=50000.0, .years_experience=5});
+        auto result = qs->insert(
+                AggregatePerson{
+                        .id               = 0,
+                        .name             = "AggregatePerson" + std::to_string(i),
+                        .age              = i,
+                        .salary           = 50000.0,
+                        .years_experience = 5
+                }
+        );
         ASSERT_TRUE(result.has_value());
     }
 
@@ -341,7 +350,15 @@ TEST_F(AggregateTest, LargeDataset_Sum) {
 TEST_F(AggregateTest, LargeDataset_Count) {
     // Insert 10000 people
     for (int i = 1; i <= 10000; ++i) {
-        auto result = qs->insert(AggregatePerson{.id=0, .name="AggregatePerson" + std::to_string(i), .age=25, .salary=50000.0, .years_experience=5});
+        auto result = qs->insert(
+                AggregatePerson{
+                        .id               = 0,
+                        .name             = "AggregatePerson" + std::to_string(i),
+                        .age              = 25,
+                        .salary           = 50000.0,
+                        .years_experience = 5
+                }
+        );
         ASSERT_TRUE(result.has_value());
     }
 
@@ -447,7 +464,15 @@ TEST_F(AggregateTest, StatementCaching_DifferentAggregates) {
 TEST_F(AggregateTest, Integration_AfterInsert) {
     // Insert and immediately aggregate
     for (int i = 1; i <= 5; ++i) {
-        auto insert_result = qs->insert(AggregatePerson{.id=0, .name="AggregatePerson" + std::to_string(i), .age=i * 10, .salary=50000.0, .years_experience=5});
+        auto insert_result = qs->insert(
+                AggregatePerson{
+                        .id               = 0,
+                        .name             = "AggregatePerson" + std::to_string(i),
+                        .age              = i * 10,
+                        .salary           = 50000.0,
+                        .years_experience = 5
+                }
+        );
         ASSERT_TRUE(insert_result.has_value());
 
         auto count = qs->count().select();
@@ -984,11 +1009,17 @@ TEST_F(AggregateTest, CountDistinctAge) {
 
 TEST_F(AggregateTest, CountDistinctWithDuplicates) {
     // Insert data with duplicate ages
-    qs->insert(AggregatePerson{.id=0, .name="Alice", .age=30, .salary=50000.0, .years_experience=3});
-    qs->insert(AggregatePerson{.id=0, .name="Bob", .age=30, .salary=60000.0, .years_experience=5}); // Same age as Alice
-    qs->insert(AggregatePerson{.id=0, .name="Charlie", .age=35, .salary=70000.0, .years_experience=7});
-    qs->insert(AggregatePerson{.id=0, .name="Dave", .age=30, .salary=80000.0, .years_experience=10}); // Same age as Alice and Bob
-    qs->insert(AggregatePerson{.id=0, .name="Eve", .age=35, .salary=90000.0, .years_experience=15});  // Same age as Charlie
+    qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = 30, .salary = 50000.0, .years_experience = 3});
+    qs->insert(
+            AggregatePerson{.id = 0, .name = "Bob", .age = 30, .salary = 60000.0, .years_experience = 5}
+    ); // Same age as Alice
+    qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0, .years_experience = 7});
+    qs->insert(
+            AggregatePerson{.id = 0, .name = "Dave", .age = 30, .salary = 80000.0, .years_experience = 10}
+    ); // Same age as Alice and Bob
+    qs->insert(
+            AggregatePerson{.id = 0, .name = "Eve", .age = 35, .salary = 90000.0, .years_experience = 15}
+    ); // Same age as Charlie
 
     auto result = qs->count_distinct<^^AggregatePerson::age>().select();
     ASSERT_TRUE(result.has_value()) << "COUNT(DISTINCT) with duplicates failed";
@@ -1075,10 +1106,10 @@ class OptionalAggregateTest : public ::testing::Test {
 
 TEST_F(OptionalAggregateTest, CountWithNullValues) {
     // Insert with NULL ages
-    qs->insert(OptionalPerson{.id=0, .name="Alice", .age=25, .salary=50000.0});
-    qs->insert(OptionalPerson{.id=0, .name="Bob", .age=std::nullopt, .salary=60000.0}); // NULL age
-    qs->insert(OptionalPerson{.id=0, .name="Charlie", .age=35, .salary=70000.0});
-    qs->insert(OptionalPerson{.id=0, .name="Dave", .age=std::nullopt, .salary=80000.0}); // NULL age
+    qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
+    qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
+    qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0});
+    qs->insert(OptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0}); // NULL age
 
     // COUNT(*) includes all rows
     auto count_all = qs->count().select();
@@ -1092,9 +1123,9 @@ TEST_F(OptionalAggregateTest, CountWithNullValues) {
 }
 
 TEST_F(OptionalAggregateTest, SumWithNullValues) {
-    qs->insert(OptionalPerson{.id=0, .name="Alice", .age=25, .salary=50000.0});
-    qs->insert(OptionalPerson{.id=0, .name="Bob", .age=std::nullopt, .salary=60000.0}); // NULL age
-    qs->insert(OptionalPerson{.id=0, .name="Charlie", .age=35, .salary=70000.0});
+    qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
+    qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
+    qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0});
 
     auto sum = qs->sum<^^OptionalPerson::age>().select();
     ASSERT_TRUE(sum.has_value());
@@ -1102,9 +1133,9 @@ TEST_F(OptionalAggregateTest, SumWithNullValues) {
 }
 
 TEST_F(OptionalAggregateTest, AvgWithNullValues) {
-    qs->insert(OptionalPerson{.id=0, .name="Alice", .age=20, .salary=50000.0});
-    qs->insert(OptionalPerson{.id=0, .name="Bob", .age=std::nullopt, .salary=60000.0}); // NULL age
-    qs->insert(OptionalPerson{.id=0, .name="Charlie", .age=40, .salary=70000.0});
+    qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 20, .salary = 50000.0});
+    qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
+    qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 40, .salary = 70000.0});
 
     auto avg = qs->avg<^^OptionalPerson::age>().select();
     ASSERT_TRUE(avg.has_value());
@@ -1112,10 +1143,10 @@ TEST_F(OptionalAggregateTest, AvgWithNullValues) {
 }
 
 TEST_F(OptionalAggregateTest, MinMaxWithNullValues) {
-    qs->insert(OptionalPerson{.id=0, .name="Alice", .age=25, .salary=50000.0});
-    qs->insert(OptionalPerson{.id=0, .name="Bob", .age=std::nullopt, .salary=60000.0}); // NULL age
-    qs->insert(OptionalPerson{.id=0, .name="Charlie", .age=45, .salary=70000.0});
-    qs->insert(OptionalPerson{.id=0, .name="Dave", .age=std::nullopt, .salary=80000.0}); // NULL age
+    qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
+    qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
+    qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 45, .salary = 70000.0});
+    qs->insert(OptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0}); // NULL age
 
     auto min_val = qs->min<^^OptionalPerson::age>().select();
     ASSERT_TRUE(min_val.has_value());
@@ -1127,11 +1158,11 @@ TEST_F(OptionalAggregateTest, MinMaxWithNullValues) {
 }
 
 TEST_F(OptionalAggregateTest, CountDistinctWithNullValues) {
-    qs->insert(OptionalPerson{.id=0, .name="Alice", .age=30, .salary=50000.0});
-    qs->insert(OptionalPerson{.id=0, .name="Bob", .age=std::nullopt, .salary=60000.0});  // NULL age
-    qs->insert(OptionalPerson{.id=0, .name="Charlie", .age=30, .salary=70000.0});        // Same as Alice
-    qs->insert(OptionalPerson{.id=0, .name="Dave", .age=std::nullopt, .salary=80000.0}); // NULL age
-    qs->insert(OptionalPerson{.id=0, .name="Eve", .age=40, .salary=90000.0});
+    qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 30, .salary = 50000.0});
+    qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0});  // NULL age
+    qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 30, .salary = 70000.0});        // Same as Alice
+    qs->insert(OptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0}); // NULL age
+    qs->insert(OptionalPerson{.id = 0, .name = "Eve", .age = 40, .salary = 90000.0});
 
     // COUNT(DISTINCT age) - NULL excluded, should count 2 (30, 40)
     auto result = qs->count_distinct<^^OptionalPerson::age>().select();
@@ -1141,9 +1172,9 @@ TEST_F(OptionalAggregateTest, CountDistinctWithNullValues) {
 
 // Negative number tests using the main AggregatePerson model
 TEST_F(AggregateTest, NegativeNumbersInSum) {
-    qs->insert(AggregatePerson{.id=0, .name="Alice", .age=-10, .salary=50000.0, .years_experience=3});
-    qs->insert(AggregatePerson{.id=0, .name="Bob", .age=5, .salary=60000.0, .years_experience=5});
-    qs->insert(AggregatePerson{.id=0, .name="Charlie", .age=-3, .salary=70000.0, .years_experience=7});
+    qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3});
+    qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 5, .salary = 60000.0, .years_experience = 5});
+    qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = -3, .salary = 70000.0, .years_experience = 7});
 
     auto sum = qs->sum<^^AggregatePerson::age>().select();
     ASSERT_TRUE(sum.has_value());
@@ -1151,9 +1182,9 @@ TEST_F(AggregateTest, NegativeNumbersInSum) {
 }
 
 TEST_F(AggregateTest, NegativeNumbersInAvg) {
-    qs->insert(AggregatePerson{.id=0, .name="Alice", .age=-12, .salary=50000.0, .years_experience=3});
-    qs->insert(AggregatePerson{.id=0, .name="Bob", .age=6, .salary=60000.0, .years_experience=5});
-    qs->insert(AggregatePerson{.id=0, .name="Charlie", .age=0, .salary=70000.0, .years_experience=7});
+    qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -12, .salary = 50000.0, .years_experience = 3});
+    qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 6, .salary = 60000.0, .years_experience = 5});
+    qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7});
 
     auto avg = qs->avg<^^AggregatePerson::age>().select();
     ASSERT_TRUE(avg.has_value());
@@ -1161,10 +1192,10 @@ TEST_F(AggregateTest, NegativeNumbersInAvg) {
 }
 
 TEST_F(AggregateTest, NegativeNumbersInMinMax) {
-    qs->insert(AggregatePerson{.id=0, .name="Alice", .age=-10, .salary=50000.0, .years_experience=3});
-    qs->insert(AggregatePerson{.id=0, .name="Bob", .age=5, .salary=60000.0, .years_experience=5});
-    qs->insert(AggregatePerson{.id=0, .name="Charlie", .age=-20, .salary=70000.0, .years_experience=7});
-    qs->insert(AggregatePerson{.id=0, .name="Dave", .age=15, .salary=80000.0, .years_experience=10});
+    qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3});
+    qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 5, .salary = 60000.0, .years_experience = 5});
+    qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = -20, .salary = 70000.0, .years_experience = 7});
+    qs->insert(AggregatePerson{.id = 0, .name = "Dave", .age = 15, .salary = 80000.0, .years_experience = 10});
 
     auto min_val = qs->min<^^AggregatePerson::age>().select();
     ASSERT_TRUE(min_val.has_value());
@@ -1176,9 +1207,9 @@ TEST_F(AggregateTest, NegativeNumbersInMinMax) {
 }
 
 TEST_F(AggregateTest, NegativeNumbersInCount) {
-    qs->insert(AggregatePerson{.id=0, .name="Alice", .age=-10, .salary=50000.0, .years_experience=3});
-    qs->insert(AggregatePerson{.id=0, .name="Bob", .age=-5, .salary=60000.0, .years_experience=5});
-    qs->insert(AggregatePerson{.id=0, .name="Charlie", .age=0, .salary=70000.0, .years_experience=7});
+    qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3});
+    qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = -5, .salary = 60000.0, .years_experience = 5});
+    qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7});
 
     // Count should still count all rows regardless of negative values
     auto count = qs->count().select();
@@ -1192,11 +1223,11 @@ TEST_F(AggregateTest, NegativeNumbersInCount) {
 }
 
 TEST_F(AggregateTest, NegativeNumbersInWhere) {
-    qs->insert(AggregatePerson{.id=0, .name="Alice", .age=-10, .salary=50000.0, .years_experience=3});
-    qs->insert(AggregatePerson{.id=0, .name="Bob", .age=-5, .salary=60000.0, .years_experience=5});
-    qs->insert(AggregatePerson{.id=0, .name="Charlie", .age=0, .salary=70000.0, .years_experience=7});
-    qs->insert(AggregatePerson{.id=0, .name="Dave", .age=5, .salary=80000.0, .years_experience=10});
-    qs->insert(AggregatePerson{.id=0, .name="Eve", .age=10, .salary=90000.0, .years_experience=15});
+    qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3});
+    qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = -5, .salary = 60000.0, .years_experience = 5});
+    qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7});
+    qs->insert(AggregatePerson{.id = 0, .name = "Dave", .age = 5, .salary = 80000.0, .years_experience = 10});
+    qs->insert(AggregatePerson{.id = 0, .name = "Eve", .age = 10, .salary = 90000.0, .years_experience = 15});
 
     // Count where age < 0
     auto result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() < 0).count().select();

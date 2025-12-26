@@ -66,10 +66,10 @@ TEST_F(FKFieldTest, InsertWithFKField) {
     QuerySet<FKMessage> message_qs;
 
     // Insert users first
-    User const alice{.id=0, .name="Alice", .age=30};
-    User const bob{.id=0, .name="Bob", .age=25};
-    auto alice_result = user_qs.insert(alice);
-    auto bob_result   = user_qs.insert(bob);
+    User const alice{.id = 0, .name = "Alice", .age = 30};
+    User const bob{.id = 0, .name = "Bob", .age = 25};
+    auto       alice_result = user_qs.insert(alice);
+    auto       bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value()) << "Alice INSERT failed: " << alice_result.error().message();
     ASSERT_TRUE(bob_result.has_value()) << "Bob INSERT failed: " << bob_result.error().message();
 
@@ -79,10 +79,10 @@ TEST_F(FKFieldTest, InsertWithFKField) {
     // Insert a message with FK to Alice (sender) and Bob (receiver)
     // Only sender.id and receiver.id are used, name and age are ignored
     FKMessage const msg{
-            .id=0,
-            .sender=User{.id=static_cast<int>(alice_id), .name="ignored", .age=0},
-            .receiver=User{.id=static_cast<int>(bob_id), .name="ignored", .age=0},
-            .text="Hello World"
+            .id       = 0,
+            .sender   = User{.id = static_cast<int>(alice_id), .name = "ignored", .age = 0},
+            .receiver = User{.id = static_cast<int>(bob_id), .name = "ignored", .age = 0},
+            .text     = "Hello World"
     };
 
     auto msg_result = message_qs.insert(msg);
@@ -114,18 +114,23 @@ TEST_F(FKFieldTest, SelectWithFKFieldPartialPopulation) {
     QuerySet<FKMessage> message_qs;
 
     // Insert users
-    User const bob{.id=0, .name="Bob", .age=25};
-    User const charlie{.id=0, .name="Charlie", .age=35};
-    auto bob_result     = user_qs.insert(bob);
-    auto charlie_result = user_qs.insert(charlie);
+    User const bob{.id = 0, .name = "Bob", .age = 25};
+    User const charlie{.id = 0, .name = "Charlie", .age = 35};
+    auto       bob_result     = user_qs.insert(bob);
+    auto       charlie_result = user_qs.insert(charlie);
     ASSERT_TRUE(bob_result.has_value());
     ASSERT_TRUE(charlie_result.has_value());
     int64_t const bob_id     = bob_result.value();
     int64_t const charlie_id = charlie_result.value();
 
     // Insert a message from Bob to Charlie
-    FKMessage const msg{.id=0, .sender=User{.id=static_cast<int>(bob_id), .name="", .age=0}, .receiver=User{.id=static_cast<int>(charlie_id), .name="", .age=0}, .text="Test message"};
-    auto      msg_result = message_qs.insert(msg);
+    FKMessage const msg{
+            .id       = 0,
+            .sender   = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .receiver = User{.id = static_cast<int>(charlie_id), .name = "", .age = 0},
+            .text     = "Test message"
+    };
+    auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
 
     // SELECT messages
@@ -163,12 +168,12 @@ TEST_F(FKFieldTest, BatchInsertWithFKFields) {
     // Insert messages with FK references (Alice to Bob, Charlie to Dave)
     std::vector<FKMessage> messages =
             {{1,
-              User{.id=static_cast<int>(user_ids[0]), .name="", .age=0},
-              User{.id=static_cast<int>(user_ids[0]), .name="", .age=0},
+              User{.id = static_cast<int>(user_ids[0]), .name = "", .age = 0},
+              User{.id = static_cast<int>(user_ids[0]), .name = "", .age = 0},
               "FKMessage from Alice to Bob"},
              {2,
-              User{.id=static_cast<int>(user_ids[0]), .name="", .age=0},
-              User{.id=static_cast<int>(user_ids[0]), .name="", .age=0},
+              User{.id = static_cast<int>(user_ids[0]), .name = "", .age = 0},
+              User{.id = static_cast<int>(user_ids[0]), .name = "", .age = 0},
               "FKMessage from Charlie to Dave"}};
 
     auto msg_result = message_qs.insert(messages);
@@ -199,10 +204,10 @@ TEST_F(FKFieldTest, UpdateWithFKField) {
     QuerySet<FKMessage> message_qs;
 
     // Insert users
-    User const alice{.id=0, .name="Alice", .age=30};
-    User const bob{.id=0, .name="Bob", .age=25};
-    User const charlie{.id=0, .name="Charlie", .age=35};
-    User const dave{.id=0, .name="Dave", .age=40};
+    User const alice{.id = 0, .name = "Alice", .age = 30};
+    User const bob{.id = 0, .name = "Bob", .age = 25};
+    User const charlie{.id = 0, .name = "Charlie", .age = 35};
+    User const dave{.id = 0, .name = "Dave", .age = 40};
 
     auto alice_result   = user_qs.insert(alice);
     auto bob_result     = user_qs.insert(bob);
@@ -221,7 +226,10 @@ TEST_F(FKFieldTest, UpdateWithFKField) {
 
     // Insert message from Alice to Bob
     FKMessage const msg{
-            .id=0, .sender=User{.id=static_cast<int>(alice_id), .name="", .age=0}, .receiver=User{.id=static_cast<int>(bob_id), .name="", .age=0}, .text="Original message"
+            .id       = 0,
+            .sender   = User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+            .receiver = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .text     = "Original message"
     };
     auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
@@ -230,10 +238,10 @@ TEST_F(FKFieldTest, UpdateWithFKField) {
 
     // Update message: change sender to Charlie, receiver to Dave, and text
     FKMessage const updated_msg{
-            .id=static_cast<int>(msg_id),
-            .sender=User{.id=static_cast<int>(charlie_id), .name="", .age=0},
-            .receiver=User{.id=static_cast<int>(dave_id), .name="", .age=0},
-            .text="Updated message"
+            .id       = static_cast<int>(msg_id),
+            .sender   = User{.id = static_cast<int>(charlie_id), .name = "", .age = 0},
+            .receiver = User{.id = static_cast<int>(dave_id), .name = "", .age = 0},
+            .text     = "Updated message"
     };
 
     auto update_result = message_qs.update(updated_msg);
@@ -258,10 +266,10 @@ TEST_F(FKFieldTest, DeleteWithFKField) {
     QuerySet<FKMessage> message_qs;
 
     // Insert users
-    User const alice{.id=0, .name="Alice", .age=30};
-    User const bob{.id=0, .name="Bob", .age=25};
-    auto alice_result = user_qs.insert(alice);
-    auto bob_result   = user_qs.insert(bob);
+    User const alice{.id = 0, .name = "Alice", .age = 30};
+    User const bob{.id = 0, .name = "Bob", .age = 25};
+    auto       alice_result = user_qs.insert(alice);
+    auto       bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
@@ -269,8 +277,14 @@ TEST_F(FKFieldTest, DeleteWithFKField) {
 
     // Insert messages from Alice to Bob
     std::vector<FKMessage> messages =
-            {{1, User{.id=static_cast<int>(alice_id), .name="", .age=0}, User{.id=static_cast<int>(bob_id), .name="", .age=0}, "FKMessage 1"},
-             {2, User{.id=static_cast<int>(alice_id), .name="", .age=0}, User{.id=static_cast<int>(bob_id), .name="", .age=0}, "FKMessage 2"}};
+            {{1,
+              User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+              User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+              "FKMessage 1"},
+             {2,
+              User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+              User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+              "FKMessage 2"}};
 
     auto msg_result = message_qs.insert(messages);
     ASSERT_TRUE(msg_result.has_value());
@@ -278,10 +292,10 @@ TEST_F(FKFieldTest, DeleteWithFKField) {
 
     // Delete first message
     FKMessage const to_delete{
-            .id=static_cast<int>(msg_ids[0]),
-            .sender=User{.id=static_cast<int>(alice_id), .name="", .age=0},
-            .receiver=User{.id=static_cast<int>(bob_id), .name="", .age=0},
-            .text=""
+            .id       = static_cast<int>(msg_ids[0]),
+            .sender   = User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+            .receiver = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .text     = ""
     };
 
     auto delete_result = message_qs.remove(to_delete);
@@ -323,8 +337,8 @@ TEST_F(FKFieldTest, MultipleFKFieldsToSameType) {
     ASSERT_TRUE(create_conv_result.has_value());
 
     // Insert users
-    User const alice{.id=0, .name="Alice", .age=30};
-    User const bob{.id=0, .name="Bob", .age=25};
+    User const alice{.id = 0, .name = "Alice", .age = 30};
+    User const bob{.id = 0, .name = "Bob", .age = 25};
 
     auto alice_result = user_qs.insert(alice);
     auto bob_result   = user_qs.insert(bob);
@@ -336,7 +350,12 @@ TEST_F(FKFieldTest, MultipleFKFieldsToSameType) {
     int64_t const bob_id   = bob_result.value();
 
     // Insert conversation from Alice to Bob
-    Conversation const conv{.id=0, .sender=User{.id=static_cast<int>(alice_id), .name="", .age=0}, .receiver=User{.id=static_cast<int>(bob_id), .name="", .age=0}, .message="Hello Bob!"};
+    Conversation const conv{
+            .id       = 0,
+            .sender   = User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+            .receiver = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .message  = "Hello Bob!"
+    };
 
     auto conv_result = conv_qs.insert(conv);
     ASSERT_TRUE(conv_result.has_value()) << "Conversation INSERT failed: " << conv_result.error().message();
@@ -359,10 +378,10 @@ TEST_F(FKFieldTest, JoinFullyPopulatesFKObject) {
     QuerySet<FKMessage> message_qs;
 
     // Insert users
-    User const alice{.id=0, .name="Alice", .age=30};
-    User const bob{.id=0, .name="Bob", .age=25};
-    auto alice_result = user_qs.insert(alice);
-    auto bob_result   = user_qs.insert(bob);
+    User const alice{.id = 0, .name = "Alice", .age = 30};
+    User const bob{.id = 0, .name = "Bob", .age = 25};
+    auto       alice_result = user_qs.insert(alice);
+    auto       bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
@@ -370,7 +389,10 @@ TEST_F(FKFieldTest, JoinFullyPopulatesFKObject) {
 
     // Insert message from Alice to Bob
     FKMessage const msg{
-            .id=0, .sender=User{.id=static_cast<int>(alice_id), .name="", .age=0}, .receiver=User{.id=static_cast<int>(bob_id), .name="", .age=0}, .text="Hello from JOIN!"
+            .id       = 0,
+            .sender   = User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+            .receiver = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .text     = "Hello from JOIN!"
     };
     auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
@@ -404,10 +426,10 @@ TEST_F(FKFieldTest, JoinMultipleFKFields) {
     QuerySet<FKMessage> message_qs;
 
     // Insert users
-    User const alice{.id=0, .name="Alice", .age=30};
-    User const bob{.id=0, .name="Bob", .age=25};
-    auto alice_result = user_qs.insert(alice);
-    auto bob_result   = user_qs.insert(bob);
+    User const alice{.id = 0, .name = "Alice", .age = 30};
+    User const bob{.id = 0, .name = "Bob", .age = 25};
+    auto       alice_result = user_qs.insert(alice);
+    auto       bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
@@ -415,7 +437,10 @@ TEST_F(FKFieldTest, JoinMultipleFKFields) {
 
     // Insert message from Alice to Bob
     FKMessage const msg{
-            .id=0, .sender=User{.id=static_cast<int>(alice_id), .name="", .age=0}, .receiver=User{.id=static_cast<int>(bob_id), .name="", .age=0}, .text="Hello from multi-JOIN!"
+            .id       = 0,
+            .sender   = User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+            .receiver = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .text     = "Hello from multi-JOIN!"
     };
     auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
@@ -448,8 +473,8 @@ TEST_F(FKFieldTest, LeftJoinReturnsAllMessages) {
     QuerySet<FKMessage> message_qs;
 
     // Insert only one user (Alice)
-    User const alice{.id=0, .name="Alice", .age=30};
-    auto alice_result = user_qs.insert(alice);
+    User const alice{.id = 0, .name = "Alice", .age = 30};
+    auto       alice_result = user_qs.insert(alice);
     ASSERT_TRUE(alice_result.has_value());
     int64_t const alice_id = alice_result.value();
 
@@ -493,10 +518,10 @@ TEST_F(FKFieldTest, LeftJoinMultipleFKFields) {
     QuerySet<FKMessage> message_qs;
 
     // Insert users
-    User const alice{.id=0, .name="Alice", .age=30};
-    User const bob{.id=0, .name="Bob", .age=25};
-    auto alice_result = user_qs.insert(alice);
-    auto bob_result   = user_qs.insert(bob);
+    User const alice{.id = 0, .name = "Alice", .age = 30};
+    User const bob{.id = 0, .name = "Bob", .age = 25};
+    auto       alice_result = user_qs.insert(alice);
+    auto       bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
@@ -504,7 +529,10 @@ TEST_F(FKFieldTest, LeftJoinMultipleFKFields) {
 
     // Insert message from Alice to Bob
     FKMessage const msg{
-            .id=0, .sender=User{.id=static_cast<int>(alice_id), .name="", .age=0}, .receiver=User{.id=static_cast<int>(bob_id), .name="", .age=0}, .text="Hello with LEFT JOIN"
+            .id       = 0,
+            .sender   = User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+            .receiver = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .text     = "Hello with LEFT JOIN"
     };
     auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
@@ -536,12 +564,12 @@ TEST_F(FKFieldTest, RightJoinBehavior) {
     QuerySet<FKMessage> message_qs;
 
     // Insert users first
-    User const alice{.id=0, .name="Alice", .age=30};
-    User const bob{.id=0, .name="Bob", .age=25};
-    User const charlie{.id=0, .name="Charlie", .age=35}; // Charlie has no messages
-    auto alice_result   = user_qs.insert(alice);
-    auto bob_result     = user_qs.insert(bob);
-    auto charlie_result = user_qs.insert(charlie);
+    User const alice{.id = 0, .name = "Alice", .age = 30};
+    User const bob{.id = 0, .name = "Bob", .age = 25};
+    User const charlie{.id = 0, .name = "Charlie", .age = 35}; // Charlie has no messages
+    auto       alice_result   = user_qs.insert(alice);
+    auto       bob_result     = user_qs.insert(bob);
+    auto       charlie_result = user_qs.insert(charlie);
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     ASSERT_TRUE(charlie_result.has_value());
@@ -551,7 +579,10 @@ TEST_F(FKFieldTest, RightJoinBehavior) {
 
     // Insert messages from Alice to Bob (Charlie is not referenced)
     FKMessage const msg{
-            .id=0, .sender=User{.id=static_cast<int>(alice_id), .name="", .age=0}, .receiver=User{.id=static_cast<int>(bob_id), .name="", .age=0}, .text="FKMessage to Bob"
+            .id       = 0,
+            .sender   = User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+            .receiver = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .text     = "FKMessage to Bob"
     };
     auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
@@ -588,10 +619,10 @@ TEST_F(FKFieldTest, RightJoinMultipleFKFields) {
     QuerySet<FKMessage> message_qs;
 
     // Insert users
-    User const alice{.id=0, .name="Alice", .age=30};
-    User const bob{.id=0, .name="Bob", .age=25};
-    auto alice_result = user_qs.insert(alice);
-    auto bob_result   = user_qs.insert(bob);
+    User const alice{.id = 0, .name = "Alice", .age = 30};
+    User const bob{.id = 0, .name = "Bob", .age = 25};
+    auto       alice_result = user_qs.insert(alice);
+    auto       bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
@@ -599,7 +630,10 @@ TEST_F(FKFieldTest, RightJoinMultipleFKFields) {
 
     // Insert message from Alice to Bob
     FKMessage const msg{
-            .id=0, .sender=User{.id=static_cast<int>(alice_id), .name="", .age=0}, .receiver=User{.id=static_cast<int>(bob_id), .name="", .age=0}, .text="Hello with RIGHT JOIN"
+            .id       = 0,
+            .sender   = User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+            .receiver = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .text     = "Hello with RIGHT JOIN"
     };
     auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
@@ -701,8 +735,8 @@ TEST_F(NullableFKTest, LeftJoinWithNullFKField) {
     QuerySet<FKMessage> message_qs;
 
     // Insert a user
-    User const alice{.id=0, .name="Alice", .age=30};
-    auto alice_result = user_qs.insert(alice);
+    User const alice{.id = 0, .name = "Alice", .age = 30};
+    auto       alice_result = user_qs.insert(alice);
     ASSERT_TRUE(alice_result.has_value());
     int64_t const alice_id = alice_result.value();
 
@@ -739,10 +773,10 @@ TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     QuerySet<FKMessage> message_qs;
 
     // Insert users
-    User const alice{.id=0, .name="Alice", .age=30};
-    User const bob{.id=0, .name="Bob", .age=25};
-    auto alice_result = user_qs.insert(alice);
-    auto bob_result   = user_qs.insert(bob);
+    User const alice{.id = 0, .name = "Alice", .age = 30};
+    User const bob{.id = 0, .name = "Bob", .age = 25};
+    auto       alice_result = user_qs.insert(alice);
+    auto       bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
@@ -776,7 +810,7 @@ TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
 
     // Find and verify each message
     bool found_alice = false;
-    bool found_null = false;
+    bool found_null  = false;
     for (const auto& m : messages) {
         if (m.text == "From Alice") {
             found_alice = true;
@@ -856,8 +890,10 @@ TEST_F(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
     QuerySet<Project>  project_qs;
 
     // Insert employees with extended types
-    Employee const alice{.id=0, .name="Alice Smith", .salary=95000.50, .is_active=true, .nickname="Ally"};
-    Employee const bob{.id=0, .name="Bob Johnson", .salary=87500.75, .is_active=false, .nickname=std::nullopt};
+    Employee const alice{.id = 0, .name = "Alice Smith", .salary = 95000.50, .is_active = true, .nickname = "Ally"};
+    Employee const bob{
+            .id = 0, .name = "Bob Johnson", .salary = 87500.75, .is_active = false, .nickname = std::nullopt
+    };
 
     auto alice_result = employee_qs.insert(alice);
     auto bob_result   = employee_qs.insert(bob);
@@ -869,8 +905,32 @@ TEST_F(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
     int64_t const bob_id   = bob_result.value();
 
     // Insert projects managed by Alice and Bob
-    Project const proj1{.id=0, .manager=Employee{.id=static_cast<int>(alice_id), .name="", .salary=0.0, .is_active=false, .nickname=std::nullopt}, .title="Web Redesign", .budget=50000.0};
-    Project const proj2{.id=0, .manager=Employee{.id=static_cast<int>(bob_id), .name="", .salary=0.0, .is_active=false, .nickname=std::nullopt}, .title="Mobile App", .budget=75000.0};
+    Project const proj1{
+            .id = 0,
+            .manager =
+                    Employee{
+                            .id        = static_cast<int>(alice_id),
+                            .name      = "",
+                            .salary    = 0.0,
+                            .is_active = false,
+                            .nickname  = std::nullopt
+                    },
+            .title  = "Web Redesign",
+            .budget = 50000.0
+    };
+    Project const proj2{
+            .id = 0,
+            .manager =
+                    Employee{
+                            .id        = static_cast<int>(bob_id),
+                            .name      = "",
+                            .salary    = 0.0,
+                            .is_active = false,
+                            .nickname  = std::nullopt
+                    },
+            .title  = "Mobile App",
+            .budget = 75000.0
+    };
 
     auto proj1_result = project_qs.insert(proj1);
     auto proj2_result = project_qs.insert(proj2);
@@ -968,8 +1028,8 @@ TEST_F(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
     ASSERT_TRUE(create_task_result.has_value());
 
     // Insert employees
-    Employee const alice{.id=0, .name="Alice", .salary=95000.0, .is_active=true, .nickname="Ally"};
-    Employee const bob{.id=0, .name="Bob", .salary=87500.0, .is_active=false, .nickname=std::nullopt};
+    Employee const alice{.id = 0, .name = "Alice", .salary = 95000.0, .is_active = true, .nickname = "Ally"};
+    Employee const bob{.id = 0, .name = "Bob", .salary = 87500.0, .is_active = false, .nickname = std::nullopt};
 
     auto alice_result = employee_qs.insert(alice);
     auto bob_result   = employee_qs.insert(bob);
@@ -982,10 +1042,24 @@ TEST_F(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
 
     // Insert task: Alice assigned, Bob reviewing
     Task const task{
-            .id=0,
-            .assignee=Employee{.id=static_cast<int>(alice_id), .name="", .salary=0.0, .is_active=false, .nickname=std::nullopt},
-            .reviewer=Employee{.id=static_cast<int>(bob_id), .name="", .salary=0.0, .is_active=false, .nickname=std::nullopt},
-            .description="Implement feature X"
+            .id = 0,
+            .assignee =
+                    Employee{
+                            .id        = static_cast<int>(alice_id),
+                            .name      = "",
+                            .salary    = 0.0,
+                            .is_active = false,
+                            .nickname  = std::nullopt
+                    },
+            .reviewer =
+                    Employee{
+                            .id        = static_cast<int>(bob_id),
+                            .name      = "",
+                            .salary    = 0.0,
+                            .is_active = false,
+                            .nickname  = std::nullopt
+                    },
+            .description = "Implement feature X"
     };
 
     auto task_result = task_qs.insert(task);

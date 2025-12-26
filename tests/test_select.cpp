@@ -57,8 +57,8 @@ TEST_F(SelectTest, SelectSingleRow) {
     QuerySet<SelectPerson> queryset;
 
     // Insert one person
-    SelectPerson const alice{.id=0, .name="Alice", .age=30};
-    auto         insert_result = queryset.insert(alice);
+    SelectPerson const alice{.id = 0, .name = "Alice", .age = 30};
+    auto               insert_result = queryset.insert(alice);
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     int64_t const inserted_id = insert_result.value();
@@ -119,8 +119,8 @@ TEST_F(SelectTest, SelectDifferentFieldTypes) {
     QuerySet<SelectPerson> queryset;
 
     // Insert person with specific values
-    SelectPerson const dave{.id=0, .name="Dave", .age=40};
-    auto         insert_result = queryset.insert(dave);
+    SelectPerson const dave{.id = 0, .name = "Dave", .age = 40};
+    auto               insert_result = queryset.insert(dave);
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     // Select and verify field types are correctly handled
@@ -152,8 +152,8 @@ TEST_F(SelectTest, SelectAfterInsertAndDelete) {
     const auto& inserted_ids = insert_result.value();
 
     // Delete Bob (middle row)
-    SelectPerson const bob_to_delete{.id=static_cast<int>(inserted_ids[1]), .name="Bob", .age=25};
-    auto         delete_result = queryset.remove(bob_to_delete);
+    SelectPerson const bob_to_delete{.id = static_cast<int>(inserted_ids[1]), .name = "Bob", .age = 25};
+    auto               delete_result = queryset.remove(bob_to_delete);
     ASSERT_TRUE(delete_result.has_value()) << "DELETE failed: " << delete_result.error().message();
 
     // Select all rows
@@ -209,8 +209,8 @@ TEST_F(SelectTest, MultipleSelectCallsUseCaching) {
     QuerySet<SelectPerson> queryset;
 
     // Insert test data
-    SelectPerson const alice{.id=0, .name="Alice", .age=30};
-    auto         insert_result = queryset.insert(alice);
+    SelectPerson const alice{.id = 0, .name = "Alice", .age = 30};
+    auto               insert_result = queryset.insert(alice);
     ASSERT_TRUE(insert_result.has_value());
 
     // First SELECT
@@ -234,8 +234,8 @@ TEST_F(SelectTest, SelectWithEmptyString) {
     QuerySet<SelectPerson> queryset;
 
     // Insert person with empty name
-    SelectPerson const anonymous{.id=0, .name="", .age=25};
-    auto         insert_result = queryset.insert(anonymous);
+    SelectPerson const anonymous{.id = 0, .name = "", .age = 25};
+    auto               insert_result = queryset.insert(anonymous);
     ASSERT_TRUE(insert_result.has_value());
 
     // Select and verify

@@ -69,7 +69,7 @@ class IntTypesInsertUpdateTest : public ::testing::Test {
 
 TEST_F(IntTypesInsertUpdateTest, InsertSingleIntTypes) {
     QuerySet<IntTypes> qs;
-    IntTypes           const obj{.id=0, .big_num=9223372036854775807LL, .small_num=32767};
+    IntTypes const     obj{.id = 0, .big_num = 9223372036854775807LL, .small_num = 32767};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
@@ -97,7 +97,7 @@ TEST_F(IntTypesInsertUpdateTest, InsertBatchIntTypes) {
 
 TEST_F(IntTypesInsertUpdateTest, UpdateSingleIntTypes) {
     QuerySet<IntTypes> qs;
-    IntTypes           const obj{.id=0, .big_num=100LL, .small_num=10};
+    IntTypes const     obj{.id = 0, .big_num = 100LL, .small_num = 10};
 
     auto insert_result = qs.insert(obj);
     ASSERT_TRUE(insert_result.has_value());
@@ -111,8 +111,8 @@ TEST_F(IntTypesInsertUpdateTest, UpdateSingleIntTypes) {
     EXPECT_EQ(it1->small_num, 10);
 
     // Update with the returned ID
-    IntTypes const updated{.id=static_cast<int>(id), .big_num=999LL, .small_num=99};
-    auto     update_result = qs.update(updated);
+    IntTypes const updated{.id = static_cast<int>(id), .big_num = 999LL, .small_num = 99};
+    auto           update_result = qs.update(updated);
     ASSERT_TRUE(update_result.has_value());
 
     auto selected = qs.select();
@@ -166,7 +166,7 @@ class FloatTypesInsertUpdateTest : public ::testing::Test {
 
 TEST_F(FloatTypesInsertUpdateTest, InsertSingleFloatTypes) {
     QuerySet<FloatTypes> qs;
-    FloatTypes           const obj{.id=0, .precise=std::numbers::pi, .approx=std::numbers::e_v<float>};
+    FloatTypes const     obj{.id = 0, .precise = std::numbers::pi, .approx = std::numbers::e_v<float>};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
@@ -179,14 +179,16 @@ TEST_F(FloatTypesInsertUpdateTest, InsertSingleFloatTypes) {
 
 TEST_F(FloatTypesInsertUpdateTest, UpdateSingleFloatTypes) {
     QuerySet<FloatTypes> qs;
-    FloatTypes           const obj{.id=0, .precise=1.0, .approx=1.0F};
+    FloatTypes const     obj{.id = 0, .precise = 1.0, .approx = 1.0F};
 
     auto insert_result = qs.insert(obj);
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
-    FloatTypes const updated{.id=static_cast<int>(id), .precise=std::numbers::e, .approx=std::numbers::pi_v<float>};
-    auto       update_result = qs.update(updated);
+    FloatTypes const updated{
+            .id = static_cast<int>(id), .precise = std::numbers::e, .approx = std::numbers::pi_v<float>
+    };
+    auto update_result = qs.update(updated);
     ASSERT_TRUE(update_result.has_value());
 
     auto selected = qs.select();
@@ -217,7 +219,7 @@ class MixedTypesInsertUpdateTest : public ::testing::Test {
 
 TEST_F(MixedTypesInsertUpdateTest, InsertBooleanTrue) {
     QuerySet<MixedTypes> qs;
-    MixedTypes           const obj{.id=0, .active=true, .name="active_user"};
+    MixedTypes const     obj{.id = 0, .active = true, .name = "active_user"};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
@@ -230,7 +232,7 @@ TEST_F(MixedTypesInsertUpdateTest, InsertBooleanTrue) {
 
 TEST_F(MixedTypesInsertUpdateTest, InsertBooleanFalse) {
     QuerySet<MixedTypes> qs;
-    MixedTypes           const obj{.id=0, .active=false, .name="inactive_user"};
+    MixedTypes const     obj{.id = 0, .active = false, .name = "inactive_user"};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
@@ -243,14 +245,14 @@ TEST_F(MixedTypesInsertUpdateTest, InsertBooleanFalse) {
 
 TEST_F(MixedTypesInsertUpdateTest, UpdateBooleanAndString) {
     QuerySet<MixedTypes> qs;
-    MixedTypes           const obj{.id=0, .active=false, .name="old_name"};
+    MixedTypes const     obj{.id = 0, .active = false, .name = "old_name"};
 
     auto insert_result = qs.insert(obj);
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
-    MixedTypes const updated{.id=static_cast<int>(id), .active=true, .name="new_name"};
-    auto       update_result = qs.update(updated);
+    MixedTypes const updated{.id = static_cast<int>(id), .active = true, .name = "new_name"};
+    auto             update_result = qs.update(updated);
     ASSERT_TRUE(update_result.has_value());
 
     auto selected = qs.select();
@@ -299,7 +301,7 @@ class OptTypesInsertUpdateTest : public ::testing::Test {
 
 TEST_F(OptTypesInsertUpdateTest, InsertWithValues) {
     QuerySet<OptTypes> qs;
-    OptTypes           const obj{.id=0, .maybe_num=std::optional<int>(42), .name="with_value"};
+    OptTypes const     obj{.id = 0, .maybe_num = std::optional<int>(42), .name = "with_value"};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
@@ -313,7 +315,7 @@ TEST_F(OptTypesInsertUpdateTest, InsertWithValues) {
 
 TEST_F(OptTypesInsertUpdateTest, InsertWithNull) {
     QuerySet<OptTypes> qs;
-    OptTypes           const obj{.id=0, .maybe_num=std::nullopt, .name="null_value"};
+    OptTypes const     obj{.id = 0, .maybe_num = std::nullopt, .name = "null_value"};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
@@ -326,15 +328,15 @@ TEST_F(OptTypesInsertUpdateTest, InsertWithNull) {
 
 TEST_F(OptTypesInsertUpdateTest, UpdateFromValueToNull) {
     QuerySet<OptTypes> qs;
-    OptTypes           const obj{.id=0, .maybe_num=std::optional<int>(100), .name="original"};
+    OptTypes const     obj{.id = 0, .maybe_num = std::optional<int>(100), .name = "original"};
 
     auto insert_result = qs.insert(obj);
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
     // Update to NULL
-    OptTypes const updated{.id=static_cast<int>(id), .maybe_num=std::nullopt, .name="updated_to_null"};
-    auto     update_result = qs.update(updated);
+    OptTypes const updated{.id = static_cast<int>(id), .maybe_num = std::nullopt, .name = "updated_to_null"};
+    auto           update_result = qs.update(updated);
     ASSERT_TRUE(update_result.has_value());
 
     auto selected = qs.select();
@@ -345,15 +347,17 @@ TEST_F(OptTypesInsertUpdateTest, UpdateFromValueToNull) {
 
 TEST_F(OptTypesInsertUpdateTest, UpdateFromNullToValue) {
     QuerySet<OptTypes> qs;
-    OptTypes           const obj{.id=0, .maybe_num=std::nullopt, .name="null_start"};
+    OptTypes const     obj{.id = 0, .maybe_num = std::nullopt, .name = "null_start"};
 
     auto insert_result = qs.insert(obj);
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
     // Update from NULL to value
-    OptTypes const updated{.id=static_cast<int>(id), .maybe_num=std::optional<int>(999), .name="updated_to_value"};
-    auto     update_result = qs.update(updated);
+    OptTypes const updated{
+            .id = static_cast<int>(id), .maybe_num = std::optional<int>(999), .name = "updated_to_value"
+    };
+    auto update_result = qs.update(updated);
     ASSERT_TRUE(update_result.has_value());
 
     auto selected = qs.select();
@@ -411,7 +415,7 @@ class DataTypesInsertUpdateTest : public ::testing::Test {
 
 TEST_F(DataTypesInsertUpdateTest, InsertSmallBlob) {
     QuerySet<DataTypes> qs;
-    DataTypes           const obj{.id=0, .binary={0xDE, 0xAD, 0xBE, 0xEF}, .label="test_blob"};
+    DataTypes const     obj{.id = 0, .binary = {0xDE, 0xAD, 0xBE, 0xEF}, .label = "test_blob"};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
@@ -430,8 +434,8 @@ TEST_F(DataTypesInsertUpdateTest, InsertLargeBlob) {
         large_data[i] = static_cast<uint8_t>(i % 256);
     }
 
-    DataTypes const obj{.id=0, .binary=large_data, .label="large"};
-    auto      result = qs.insert(obj);
+    DataTypes const obj{.id = 0, .binary = large_data, .label = "large"};
+    auto            result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
 
     auto selected = qs.select();
@@ -446,7 +450,7 @@ TEST_F(DataTypesInsertUpdateTest, InsertLargeBlob) {
 
 TEST_F(DataTypesInsertUpdateTest, InsertEmptyBlob) {
     QuerySet<DataTypes> qs;
-    DataTypes           const obj{.id=0, .binary={}, .label="empty"};
+    DataTypes const     obj{.id = 0, .binary = {}, .label = "empty"};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
@@ -458,15 +462,15 @@ TEST_F(DataTypesInsertUpdateTest, InsertEmptyBlob) {
 
 TEST_F(DataTypesInsertUpdateTest, UpdateBlob) {
     QuerySet<DataTypes> qs;
-    DataTypes           const obj{.id=0, .binary={0x01, 0x02}, .label="original"};
+    DataTypes const     obj{.id = 0, .binary = {0x01, 0x02}, .label = "original"};
 
     auto insert_result = qs.insert(obj);
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
     // Update with different blob
-    DataTypes const updated{.id=static_cast<int>(id), .binary={0xFF, 0xEE, 0xDD}, .label="updated"};
-    auto      update_result = qs.update(updated);
+    DataTypes const updated{.id = static_cast<int>(id), .binary = {0xFF, 0xEE, 0xDD}, .label = "updated"};
+    auto            update_result = qs.update(updated);
     ASSERT_TRUE(update_result.has_value());
 
     auto selected = qs.select();
@@ -499,8 +503,8 @@ TEST_F(IntTypesInsertUpdateTest, ExtremeIntegerValues) {
     QuerySet<IntTypes> qs;
 
     // Min values
-    IntTypes const min_obj{.id=0, .big_num=-9223372036854775807LL - 1, .small_num=-32768};
-    auto     result = qs.insert(min_obj);
+    IntTypes const min_obj{.id = 0, .big_num = -9223372036854775807LL - 1, .small_num = -32768};
+    auto           result = qs.insert(min_obj);
     ASSERT_TRUE(result.has_value());
 
     auto selected = qs.select();
@@ -514,8 +518,8 @@ TEST_F(FloatTypesInsertUpdateTest, SpecialFloatValues) {
     QuerySet<FloatTypes> qs;
 
     // Zero, negative, very small
-    FloatTypes const obj{.id=0, .precise=0.0, .approx=-0.0F};
-    auto       result = qs.insert(obj);
+    FloatTypes const obj{.id = 0, .precise = 0.0, .approx = -0.0F};
+    auto             result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
 
     auto selected = qs.select();
@@ -583,7 +587,7 @@ TEST_F(InsertOptionsTest, InsertWithCustomBatchSize) {
 
     // Create 100 objects
     batch.reserve(100);
-for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < 100; ++i) {
         batch.emplace_back(0, static_cast<int64_t>(i * 10), static_cast<short>(i));
     }
 
@@ -619,7 +623,7 @@ TEST_F(InsertOptionsTest, InsertBatchSizeCappedToMax) {
 
 TEST_F(InsertOptionsTest, SingleInsertWithOptions) {
     QuerySet<IntTypes> qs;
-    IntTypes           const obj{.id=0, .big_num=999LL, .small_num=99};
+    IntTypes const     obj{.id = 0, .big_num = 999LL, .small_num = 99};
 
     auto result = qs.insert(obj, {{.return_ids = true}});
     ASSERT_TRUE(result.has_value());
@@ -637,7 +641,7 @@ TEST_F(InsertOptionsTest, LargeBatchWithCustomChunkSize) {
 
     // Create 1000 objects
     batch.reserve(1000);
-for (int i = 0; i < 1000; ++i) {
+    for (int i = 0; i < 1000; ++i) {
         batch.emplace_back(0, static_cast<int64_t>(i), static_cast<short>(i % 100));
     }
 
