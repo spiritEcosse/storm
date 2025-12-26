@@ -1,14 +1,13 @@
 #!/bin/bash
 # Run clang-tidy with modernize checks, excluding third_party
-# Usage: ./run_clang_tidy.sh [--fix] [-j N] [--include-tests]
+# Usage: ./run_clang_tidy.sh [--fix] [-j N]
 #
 # Prerequisites:
 #   - Release build with compile_commands.json: cmake --preset ninja-release
 #
 # Options:
-#   --fix            Apply suggested fixes automatically (use with caution)
-#   -j N             Number of parallel jobs (default: all cores)
-#   --include-tests  Include tests/ directory (disabled by default due to gtest setup)
+#   --fix  Apply suggested fixes automatically (use with caution)
+#   -j N   Number of parallel jobs (default: all cores)
 
 set -e
 
@@ -19,7 +18,6 @@ COMPILE_COMMANDS="$BUILD_DIR/compile_commands.json"
 # Parse arguments
 FIX_FLAG=""
 JOBS=$(nproc)
-INCLUDE_TESTS=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -30,10 +28,6 @@ while [[ $# -gt 0 ]]; do
         -j)
             JOBS="$2"
             shift 2
-            ;;
-        --include-tests)
-            INCLUDE_TESTS=true
-            shift
             ;;
         *)
             shift
@@ -57,11 +51,7 @@ echo "🔍 Running clang-tidy with comprehensive checks..."
 echo "   Build directory: $BUILD_DIR"
 echo "   Excluding: third_party/"
 echo "   Parallel jobs: $JOBS"
-if [[ "$INCLUDE_TESTS" == true ]]; then
-    echo "   Tests: included"
-else
-    echo "   Tests: excluded (use --include-tests to include)"
-fi
+echo "   Directories: src/ tests/ benchmarks/"
 if [[ -n "$FIX_FLAG" ]]; then
     echo "   Mode: AUTO-FIX enabled"
 else
@@ -71,11 +61,7 @@ echo ""
 
 # Find source files, excluding third_party
 # File types: .cpp, .cppm only (headers excluded - they need module context clang-tidy can't provide)
-if [[ "$INCLUDE_TESTS" == true ]]; then
-    SEARCH_DIRS="src tests benchmarks"
-else
-    SEARCH_DIRS="src benchmarks"
-fi
+SEARCH_DIRS="src tests benchmarks"
 
 FILES=$(find $SEARCH_DIRS -type f \( -name "*.cpp" -o -name "*.cppm" \) \
     ! -path "*/third_party/*" \

@@ -1,16 +1,18 @@
 #!/bin/bash
-# Quick commit workflow: format -> tidy -> test -> commit -> push
-# Usage: ./quick_commit.sh [--no-push] [--no-tidy] [commit message]
+# Quick commit workflow: format -> tidy --fix -> test -> bench -> commit -> push
+# Usage: ./quick_commit.sh [--no-push] [--no-tidy] [--no-bench] [commit message]
 #
 # Options:
 #   --no-push   Skip pushing to remote after commit
-#   --no-tidy   Skip clang-tidy checks (runs by default)
+#   --no-tidy   Skip clang-tidy auto-fix (runs by default)
+#   --no-bench  Skip quick benchmark sanity check (runs by default)
 
 set -e  # Exit on any error
 
 # Parse flags
 NO_PUSH=false
 RUN_TIDY=true
+RUN_BENCH=true
 COMMIT_MSG_ARG=""
 
 for arg in "$@"; do
@@ -18,6 +20,8 @@ for arg in "$@"; do
         NO_PUSH=true
     elif [[ "$arg" == "--no-tidy" ]]; then
         RUN_TIDY=false
+    elif [[ "$arg" == "--no-bench" ]]; then
+        RUN_BENCH=false
     else
         COMMIT_MSG_ARG="$COMMIT_MSG_ARG $arg"
     fi
@@ -27,11 +31,11 @@ COMMIT_MSG_ARG=$(echo "$COMMIT_MSG_ARG" | xargs)  # Trim whitespace
 echo "📝 Running clang-format..."
 find src tests benchmarks -type f \( -name "*.cpp" -o -name "*.cppm" -o -name "*.h" -o -name "*.hpp" \) -exec ../clang-p2996/build/bin/clang-format -i --style=file {} +
 
-# Clang-tidy check (runs by default)
+# Clang-tidy with auto-fix (runs by default)
 if [[ "$RUN_TIDY" == true ]]; then
     echo ""
-    echo "🔍 Running clang-tidy (comprehensive checks)..."
-    ./scripts/run_clang_tidy.sh || {
+    echo "🔍 Running clang-tidy --fix (auto-fixing issues)..."
+    ./scripts/run_clang_tidy.sh --fix || {
         echo "❌ clang-tidy failed. Fix issues or run with --no-tidy to skip"
         exit 1
     }
@@ -41,8 +45,24 @@ echo ""
 echo "🧪 Running unit tests..."
 ctest --test-dir build/debug --output-on-failure
 
+# Quick benchmark sanity check (runs by default)
+if [[ "$RUN_BENCH" == true ]]; then
+    BENCH_BIN="./build/release/benchmarks/storm_bench"
+    if [[ -x "$BENCH_BIN" ]]; then
+        echo ""
+        echo "⚡ Running quick benchmark sanity check (100 iterations)..."
+        for test in insert_batch_100 update_pk_batch_100 delete_pk_batch_100 select_join_1000; do
+            result=$($BENCH_BIN --filter=$test --iterations=100 2>&1 | grep -E "Efficiency:|PASSED|FAILED" | head -1)
+            printf "   %-25s %s\n" "$test:" "$result"
+        done
+        echo "✅ Benchmark sanity check complete"
+    else
+        echo "⚠️  Benchmark binary not found, skipping (build with -DENABLE_BENCH=ON)"
+    fi
+fi
+
 echo ""
-echo "✅ All tests passed!"
+echo "✅ All checks passed!"
 echo ""
 
 # Check if there are changes to commit
