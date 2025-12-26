@@ -158,10 +158,6 @@ namespace storm::benchmark {
             if (!db)
                 return 0;
 
-            // Build JOIN SQL
-            // SELECT fm.id, fm.sender_id, fm.receiver_id, fm.text, u.id, u.name, u.age
-            // FROM FKMessage fm
-            // INNER JOIN User u ON fm.sender_id = u.id
             const std::string sql = "SELECT fm.id, fm.sender_id, fm.receiver_id, fm.text, "
                                     "u.id, u.name, u.age "
                                     "FROM FKMessage fm "

@@ -25,12 +25,19 @@ export namespace storm::orm::statements {
 
     enum class JoinType { Inner, Left, Right };
 
+    // Type alias for type-erased pointers used in polymorphic JOIN wrapper.
+    // void* is intentional here: JoinStatementWrapper must work with any model type T
+    // without knowing T at compile time. The actual T* conversion happens in the
+    // function pointers stored in make_join_wrapper().
+    using ErasedObjectPtr    = void*;
+    using ErasedStatementPtr = void*;
+
     struct JoinStatementWrapper {
         const std::string& (*get_join_sql_fn)();
         const std::string& (*get_select_fields_fn)();
-        const std::string& (*get_complete_sql_fn)(); // NEW: Complete SELECT...JOIN SQL
-        void (*extract_row_fn)(void*, void*);
-        void (*extract_row_raw_fn)(sqlite3_stmt*, void*); // NEW: Raw pointer extraction
+        const std::string& (*get_complete_sql_fn)();
+        void (*extract_row_fn)(ErasedStatementPtr, ErasedObjectPtr);
+        void (*extract_row_raw_fn)(sqlite3_stmt*, ErasedObjectPtr);
 
         [[nodiscard]] const std::string& to_sql() const {
             return get_join_sql_fn();
@@ -45,12 +52,12 @@ export namespace storm::orm::statements {
             return get_complete_sql_fn();
         }
 
-        void extract_row(void* stmt, void* obj) const {
+        void extract_row(ErasedStatementPtr stmt, ErasedObjectPtr obj) const {
             extract_row_fn(stmt, obj);
         }
 
-        // NEW: Extract row using raw sqlite3_stmt* pointer (faster)
-        void extract_row_raw(sqlite3_stmt* raw_stmt, void* obj) const {
+        // Extract row using raw sqlite3_stmt* pointer (faster)
+        void extract_row_raw(sqlite3_stmt* raw_stmt, ErasedObjectPtr obj) const {
             extract_row_raw_fn(raw_stmt, obj);
         }
     };
@@ -544,11 +551,12 @@ export namespace storm::orm::statements {
                 +[]() -> const std::string& { return JS::get_join_sql(); },
                 +[]() -> const std::string& { return JS::get_select_fields(); },
                 +[]() -> const std::string& { return JS::get_complete_sql(); },
-                +[](void* stmt, void* obj) {
+                +[](ErasedStatementPtr stmt, ErasedObjectPtr obj) {
                     JS::extract_joined_row(static_cast<typename ConnType::Statement*>(stmt), *static_cast<T*>(obj));
                 },
-                // NEW: Raw pointer extraction for maximum performance
-                +[](sqlite3_stmt* raw_stmt, void* obj) { JS::extract_joined_row_raw(raw_stmt, *static_cast<T*>(obj)); }
+                +[](sqlite3_stmt* raw_stmt, ErasedObjectPtr obj) {
+                    JS::extract_joined_row_raw(raw_stmt, *static_cast<T*>(obj));
+                }
         };
     }
 

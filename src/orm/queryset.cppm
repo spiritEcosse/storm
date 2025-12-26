@@ -275,6 +275,17 @@ export namespace storm {
             }
         }
 
+        // GROUP BY - returns GroupByBuilder for fluent aggregate chaining
+        // Usage:
+        //   qs.group_by<^^Person::department>().count().select()
+        //   qs.group_by<^^Person::dept, ^^Person::role>().sum<^^Person::salary>().select()
+        //   qs.where(age > 25).group_by<^^Person::years_exp>().count().select()
+        template <std::meta::info... GroupFieldInfos>
+            requires(sizeof...(GroupFieldInfos) > 0)
+        auto group_by() {
+            return orm::statements::GroupByBuilder<T, ConnType, GroupFieldInfos...>{conn_, where_expr_, join_stmt_};
+        }
+
         // Aggregate functions - fluent builder pattern for multiple aggregates
         // Usage: queryset.aggregate().sum<^^Person::age>().count().avg<^^Person::salary>().select()
         constexpr auto aggregate() {
@@ -282,40 +293,131 @@ export namespace storm {
         }
 
         // Shortcut: SUM aggregate (multi-field: SUM(f1 + f2 + ...))
+        // Supports WHERE and JOIN clauses
         // Usage: queryset.sum<^^Person::age>().select()
-        //        queryset.sum<^^Person::age, ^^Person::years>().select()  // SUM(age + years)
-        template <std::meta::info... FieldInfos> constexpr auto sum() {
-            return orm::statements::
-                    SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::SUM, FieldInfos...>{conn_};
+        //        queryset.where(age > 30).sum<^^Person::age>().select()
+        //        queryset.join<FK>().sum<^^Person::salary>().select()
+        template <std::meta::info... FieldInfos> auto sum() {
+            using StmtType = orm::statements::AggregateStatement<
+                    T,
+                    ConnType,
+                    orm::statements::AggregateOp<orm::statements::AggregateType::SUM, FieldInfos...>>;
+
+            static thread_local std::optional<StmtType> cached_stmt;
+
+            if (!cached_stmt.has_value()) {
+                cached_stmt.emplace(conn_, where_expr_, join_stmt_);
+            } else {
+                cached_stmt->update_state(conn_, where_expr_, join_stmt_);
+            }
+
+            return *cached_stmt;
         }
 
         // Shortcut: COUNT aggregate (defaults to COUNT(*) if no fields)
+        // Supports WHERE and JOIN clauses
         // Usage: queryset.count().select()  // COUNT(*)
-        //        queryset.count<^^Person::id>().select()  // COUNT(id)
-        template <std::meta::info... FieldInfos> constexpr auto count() {
-            return orm::statements::
-                    SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::COUNT, FieldInfos...>{conn_};
+        //        queryset.where(age > 30).count().select()
+        //        queryset.join<FK>().count().select()
+        template <std::meta::info... FieldInfos> auto count() {
+            using StmtType = orm::statements::AggregateStatement<
+                    T,
+                    ConnType,
+                    orm::statements::AggregateOp<orm::statements::AggregateType::COUNT, FieldInfos...>>;
+
+            static thread_local std::optional<StmtType> cached_stmt;
+
+            if (!cached_stmt.has_value()) {
+                cached_stmt.emplace(conn_, where_expr_, join_stmt_);
+            } else {
+                cached_stmt->update_state(conn_, where_expr_, join_stmt_);
+            }
+
+            return *cached_stmt;
         }
 
         // Shortcut: AVG aggregate (multi-field: AVG(f1 + f2 + ...))
+        // Supports WHERE and JOIN clauses
         // Usage: queryset.avg<^^Person::salary>().select()
-        template <std::meta::info... FieldInfos> constexpr auto avg() {
-            return orm::statements::
-                    SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::AVG, FieldInfos...>{conn_};
+        //        queryset.where(department == "Engineering").avg<^^Person::salary>().select()
+        template <std::meta::info... FieldInfos> auto avg() {
+            using StmtType = orm::statements::AggregateStatement<
+                    T,
+                    ConnType,
+                    orm::statements::AggregateOp<orm::statements::AggregateType::AVG, FieldInfos...>>;
+
+            static thread_local std::optional<StmtType> cached_stmt;
+
+            if (!cached_stmt.has_value()) {
+                cached_stmt.emplace(conn_, where_expr_, join_stmt_);
+            } else {
+                cached_stmt->update_state(conn_, where_expr_, join_stmt_);
+            }
+
+            return *cached_stmt;
         }
 
         // Shortcut: MIN aggregate (multi-field: MIN(f1 + f2 + ...))
+        // Supports WHERE and JOIN clauses
         // Usage: queryset.min<^^Person::age>().select()
-        template <std::meta::info... FieldInfos> constexpr auto min() {
-            return orm::statements::
-                    SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::MIN, FieldInfos...>{conn_};
+        //        queryset.where(active == true).min<^^Person::age>().select()
+        template <std::meta::info... FieldInfos> auto min() {
+            using StmtType = orm::statements::AggregateStatement<
+                    T,
+                    ConnType,
+                    orm::statements::AggregateOp<orm::statements::AggregateType::MIN, FieldInfos...>>;
+
+            static thread_local std::optional<StmtType> cached_stmt;
+
+            if (!cached_stmt.has_value()) {
+                cached_stmt.emplace(conn_, where_expr_, join_stmt_);
+            } else {
+                cached_stmt->update_state(conn_, where_expr_, join_stmt_);
+            }
+
+            return *cached_stmt;
         }
 
         // Shortcut: MAX aggregate (multi-field: MAX(f1 + f2 + ...))
+        // Supports WHERE and JOIN clauses
         // Usage: queryset.max<^^Person::age>().select()
-        template <std::meta::info... FieldInfos> constexpr auto max() {
-            return orm::statements::
-                    SingleAggregateStatement<T, ConnType, orm::statements::AggregateType::MAX, FieldInfos...>{conn_};
+        //        queryset.where(department == "Sales").max<^^Person::salary>().select()
+        template <std::meta::info... FieldInfos> auto max() {
+            using StmtType = orm::statements::AggregateStatement<
+                    T,
+                    ConnType,
+                    orm::statements::AggregateOp<orm::statements::AggregateType::MAX, FieldInfos...>>;
+
+            static thread_local std::optional<StmtType> cached_stmt;
+
+            if (!cached_stmt.has_value()) {
+                cached_stmt.emplace(conn_, where_expr_, join_stmt_);
+            } else {
+                cached_stmt->update_state(conn_, where_expr_, join_stmt_);
+            }
+
+            return *cached_stmt;
+        }
+
+        // Shortcut: COUNT(DISTINCT field) aggregate
+        // Supports WHERE and JOIN clauses
+        // Usage: queryset.count_distinct<^^Person::age>().select()
+        //        queryset.where(active == true).count_distinct<^^Person::department>().select()
+        template <std::meta::info FieldInfo> auto count_distinct() {
+            using StmtType = orm::statements::AggregateStatement<
+                    T,
+                    ConnType,
+                    orm::statements::AggregateOp<orm::statements::AggregateType::COUNT_DISTINCT, FieldInfo>>;
+
+            static thread_local std::optional<StmtType> cached_stmt;
+
+            if (!cached_stmt.has_value()) {
+                cached_stmt.emplace(conn_, where_expr_, join_stmt_);
+            } else {
+                cached_stmt->update_state(conn_, where_expr_, join_stmt_);
+            }
+
+            return *cached_stmt;
         }
 
         // Static methods for connection management

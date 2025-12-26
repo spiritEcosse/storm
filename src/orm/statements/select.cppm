@@ -87,78 +87,15 @@ export namespace storm::orm::statements {
                 const std::optional<int>&               offset           = std::nullopt,
                 const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt) noexcept
                 -> std::expected<plf::hive<T>, Error> {
-            Statement* stmt_ptr = nullptr;
-
-            // Fast path: simple SELECT with no modifiers (static SQL, compile-time constant)
-            const bool is_simple = !where_expr && !join_wrapper && !order_by_wrapper.has_value() &&
-                                   !limit.has_value() && !offset.has_value();
-
-            // Fast path for JOIN-only queries (no WHERE, LIMIT, etc.)
-            // JOIN SQL is compile-time constant, so we cache by pointer address
-            const bool is_join_only = join_wrapper.has_value() && !where_expr && !order_by_wrapper.has_value() &&
-                                      !limit.has_value() && !offset.has_value();
-
-            if (is_simple) {
-                if (!cached_simple_stmt_) {
-                    auto prepare_result = conn_->prepare_cached(get_select_sql());
-                    if (!prepare_result) [[unlikely]] {
-                        return std::unexpected(prepare_result.error());
-                    }
-                    cached_simple_stmt_ = *prepare_result;
-                }
-                stmt_ptr = cached_simple_stmt_;
-            } else if (is_join_only) {
-                // OPTIMIZATION: JOIN SQL is static, cache by SQL pointer address (no string compare)
-                const std::string* join_sql_ptr = &join_wrapper->get_complete_sql();
-                if (cached_stmt_ && cached_join_sql_ptr_ == join_sql_ptr) {
-                    stmt_ptr = cached_stmt_;
-                } else {
-                    auto prepare_result = conn_->prepare_cached(*join_sql_ptr);
-                    if (!prepare_result) [[unlikely]] {
-                        return std::unexpected(prepare_result.error());
-                    }
-                    cached_stmt_         = *prepare_result;
-                    cached_join_sql_ptr_ = join_sql_ptr;
-                    cached_sql_.clear(); // Invalidate dynamic cache
-                    stmt_ptr = cached_stmt_;
-                }
-            } else {
-                // Dynamic path: build SQL and validate cache
-                std::string sql = join_wrapper ? join_wrapper->get_complete_sql() : std::string(get_select_sql());
-
-                if (where_expr) {
-                    sql += " WHERE ";
-                    sql += orm::where::to_sql(*where_expr);
-                }
-                append_order_by(sql, order_by_wrapper);
-                append_limit_offset(sql, limit, offset);
-
-                // Check cache - reuse statement if SQL matches
-                if (cached_stmt_ && cached_sql_ == sql) {
-                    stmt_ptr = cached_stmt_;
-                } else {
-                    auto prepare_result = conn_->prepare_cached(sql);
-                    if (!prepare_result) [[unlikely]] {
-                        return std::unexpected(prepare_result.error());
-                    }
-                    cached_stmt_         = *prepare_result;
-                    cached_sql_          = std::move(sql);
-                    cached_join_sql_ptr_ = nullptr; // Invalidate JOIN-only cache
-                    stmt_ptr             = cached_stmt_;
-                }
-
-                // Bind WHERE parameters if present
-                if (where_expr) {
-                    auto bind_result = bind_where_params(stmt_ptr, where_expr);
-                    if (!bind_result) [[unlikely]] {
-                        return std::unexpected(bind_result.error());
-                    }
-                }
+            // Prepare statement based on query type
+            auto stmt_result = prepare_statement(join_wrapper, where_expr, limit, offset, order_by_wrapper);
+            if (!stmt_result) [[unlikely]] {
+                return std::unexpected(stmt_result.error());
             }
+            Statement* stmt_ptr = *stmt_result;
 
             // Execute query with appropriate extractor
             if (join_wrapper) {
-                // OPTIMIZATION: Use raw pointer extraction for JOIN (eliminates wrapper overhead)
                 return execute_query_loop(stmt_ptr, [&join_wrapper](sqlite3_stmt* raw, Statement*, T& obj) {
                     join_wrapper->extract_row_raw(raw, &obj);
                 });
@@ -169,6 +106,114 @@ export namespace storm::orm::statements {
         }
 
       private:
+        // =====================================================================
+        // STATEMENT PREPARATION - Handles caching for all query types
+        // =====================================================================
+
+        // Prepare and cache statement based on query type
+        [[nodiscard]] __attribute__((always_inline)) inline auto prepare_statement(
+                const std::optional<JoinStatementWrapper>& join_wrapper,
+                const orm::where::ExpressionVariantPtr&    where_expr,
+                const std::optional<int>&                  limit,
+                const std::optional<int>&                  offset,
+                const std::optional<OrderByWrapper>&       order_by_wrapper
+        ) noexcept -> std::expected<Statement*, Error> {
+            const bool has_modifiers = order_by_wrapper.has_value() || limit.has_value() || offset.has_value();
+
+            // Fast path: simple SELECT with no modifiers
+            if (!where_expr && !join_wrapper && !has_modifiers) {
+                return prepare_simple_select();
+            }
+
+            // Fast path: JOIN-only queries (no WHERE, LIMIT, etc.)
+            if (join_wrapper.has_value() && !where_expr && !has_modifiers) {
+                return prepare_join_only_select(join_wrapper);
+            }
+
+            // Dynamic path: build SQL with modifiers
+            return prepare_dynamic_select(join_wrapper, where_expr, limit, offset, order_by_wrapper);
+        }
+
+        // Prepare simple SELECT statement (static SQL)
+        [[nodiscard]] __attribute__((always_inline)) inline auto prepare_simple_select() noexcept
+                -> std::expected<Statement*, Error> {
+            if (!cached_simple_stmt_) {
+                auto prepare_result = conn_->prepare_cached(get_select_sql());
+                if (!prepare_result) [[unlikely]] {
+                    return std::unexpected(prepare_result.error());
+                }
+                cached_simple_stmt_ = *prepare_result;
+            }
+            return cached_simple_stmt_;
+        }
+
+        // Prepare JOIN-only SELECT statement (cached by pointer address)
+        [[nodiscard]] __attribute__((always_inline)) inline auto
+        prepare_join_only_select(const std::optional<JoinStatementWrapper>& join_wrapper) noexcept
+                -> std::expected<Statement*, Error> {
+            const std::string* join_sql_ptr = &join_wrapper->get_complete_sql();
+            if (cached_stmt_ && cached_join_sql_ptr_ == join_sql_ptr) {
+                return cached_stmt_;
+            }
+
+            auto prepare_result = conn_->prepare_cached(*join_sql_ptr);
+            if (!prepare_result) [[unlikely]] {
+                return std::unexpected(prepare_result.error());
+            }
+            cached_stmt_         = *prepare_result;
+            cached_join_sql_ptr_ = join_sql_ptr;
+            cached_sql_.clear();
+            return cached_stmt_;
+        }
+
+        // Prepare dynamic SELECT statement (with WHERE, ORDER BY, etc.)
+        [[nodiscard]] __attribute__((always_inline)) inline auto prepare_dynamic_select(
+                const std::optional<JoinStatementWrapper>& join_wrapper,
+                const orm::where::ExpressionVariantPtr&    where_expr,
+                const std::optional<int>&                  limit,
+                const std::optional<int>&                  offset,
+                const std::optional<OrderByWrapper>&       order_by_wrapper
+        ) noexcept -> std::expected<Statement*, Error> {
+            std::string sql = join_wrapper ? join_wrapper->get_complete_sql() : std::string(get_select_sql());
+
+            if (where_expr) {
+                sql += " WHERE ";
+                sql += orm::where::to_sql(*where_expr);
+            }
+            append_order_by(sql, order_by_wrapper);
+            append_limit_offset(sql, limit, offset);
+
+            Statement* stmt_ptr = get_or_prepare_cached_statement(sql);
+            if (!stmt_ptr) [[unlikely]] {
+                return std::unexpected(Error{-1, "Failed to prepare statement"});
+            }
+
+            if (where_expr) {
+                auto bind_result = bind_where_params(stmt_ptr, where_expr);
+                if (!bind_result) [[unlikely]] {
+                    return std::unexpected(bind_result.error());
+                }
+            }
+            return stmt_ptr;
+        }
+
+        // Get cached statement or prepare new one
+        [[nodiscard]] __attribute__((always_inline)) inline Statement*
+        get_or_prepare_cached_statement(std::string& sql) noexcept {
+            if (cached_stmt_ && cached_sql_ == sql) {
+                return cached_stmt_;
+            }
+
+            auto prepare_result = conn_->prepare_cached(sql);
+            if (!prepare_result) [[unlikely]] {
+                return nullptr;
+            }
+            cached_stmt_         = *prepare_result;
+            cached_sql_          = std::move(sql);
+            cached_join_sql_ptr_ = nullptr;
+            return cached_stmt_;
+        }
+
         // =====================================================================
         // RAW POINTER EXTRACTION - Eliminates unique_ptr::get() overhead
         // These functions take sqlite3_stmt* directly for maximum performance

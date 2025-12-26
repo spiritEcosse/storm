@@ -200,10 +200,6 @@ namespace storm::benchmark {
             constexpr std::string_view where_field = std::meta::identifier_of(WhereFieldInfo);
             constexpr std::string_view op_str      = Op.view();
 
-            // SELECT fm.id, fm.sender_id, fm.receiver_id, fm.text, u.id, u.name, u.age
-            // FROM FKMessage fm
-            // INNER JOIN User u ON fm.sender_id = u.id
-            // WHERE u.<field> <op> ?
             std::string sql = "SELECT fm.id, fm.sender_id, fm.receiver_id, fm.text, "
                               "u.id, u.name, u.age "
                               "FROM FKMessage fm "

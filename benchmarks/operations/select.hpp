@@ -18,6 +18,7 @@
 #include "base.hpp"
 #include <format>
 #include <meta>
+#include <stdexcept>
 #include <plf_hive/plf_hive.h>
 
 namespace storm::benchmark {
@@ -36,7 +37,7 @@ namespace storm::benchmark {
         }
 
         // Field not found - compile error at consteval time
-        throw "Field not found";
+        throw std::runtime_error("Field not found");
     }
 
     // SELECT benchmark with WHERE clause

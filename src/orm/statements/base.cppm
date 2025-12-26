@@ -97,18 +97,23 @@ export namespace storm::orm::statements {
             return result;
         }
 
-        // Calculate size of field names string at compile-time (for constexpr SQL size calculations)
-        static consteval size_t calculate_field_names_size() {
+        // Unified field name size calculation at compile-time
+        // Template parameter controls whether to skip primary key (for INSERT vs SELECT)
+        template <bool SkipPrimaryKey> static consteval size_t calculate_field_names_size_impl() {
             size_t size  = 0;
             bool   first = true;
             for (size_t i = 0; i < field_count_; ++i) {
+                if constexpr (SkipPrimaryKey) {
+                    if (all_members_[i] == primary_key_) {
+                        continue;
+                    }
+                }
                 if (!first) {
                     size += 2; // ", "
                 }
                 // Check if this is a FK field
                 auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
                 if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
-                    // FK field: field_name + "_id"
                     size += std::meta::identifier_of(all_members_[i]).size() + 3; // +3 for "_id"
                 } else {
                     size += std::meta::identifier_of(all_members_[i]).size();
@@ -118,82 +123,54 @@ export namespace storm::orm::statements {
             return size;
         }
 
+        // Calculate size of all field names string at compile-time
+        static consteval size_t calculate_field_names_size() {
+            return calculate_field_names_size_impl<false>();
+        }
+
         // Calculate size of non-PK field names string at compile-time
         static consteval size_t calculate_non_pk_field_names_size() {
-            size_t size  = 0;
-            bool   first = true;
+            return calculate_field_names_size_impl<true>();
+        }
+
+        // Unified field name list builder at compile-time
+        // Template parameter controls whether to skip primary key (for INSERT vs SELECT)
+        template <bool SkipPrimaryKey> static consteval auto build_field_names_list_impl() {
+            constexpr size_t      size = calculate_field_names_size_impl<SkipPrimaryKey>() + 10;
+            ConstexprString<size> result;
+            bool                  first = true;
             for (size_t i = 0; i < field_count_; ++i) {
-                // Skip primary key field
-                if (all_members_[i] == primary_key_) {
-                    continue;
+                if constexpr (SkipPrimaryKey) {
+                    if (all_members_[i] == primary_key_) {
+                        continue;
+                    }
                 }
                 if (!first) {
-                    size += 2; // ", "
+                    result.append(", ");
                 }
                 // Check if this is a FK field
                 auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
                 if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
-                    // FK field: field_name + "_id"
-                    size += std::meta::identifier_of(all_members_[i]).size() + 3; // +3 for "_id"
+                    result.append(std::meta::identifier_of(all_members_[i]));
+                    result.append("_id");
                 } else {
-                    size += std::meta::identifier_of(all_members_[i]).size();
+                    result.append(std::meta::identifier_of(all_members_[i]));
                 }
                 first = false;
             }
-            return size;
+            return result;
         }
 
         // Build comma-separated list of all field names (for SELECT statements)
         // FK fields are mapped to their column names (User sender → sender_id)
         static consteval auto build_all_field_names_list() {
-            constexpr size_t      size = calculate_field_names_size() + 10; // Add buffer
-            ConstexprString<size> result;
-            bool                  first = true;
-            for (size_t i = 0; i < field_count_; ++i) {
-                if (!first) {
-                    result.append(", ");
-                }
-                // Check if this is a FK field
-                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
-                if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
-                    // FK field: append field_name + "_id"
-                    result.append(std::meta::identifier_of(all_members_[i]));
-                    result.append("_id");
-                } else {
-                    result.append(std::meta::identifier_of(all_members_[i]));
-                }
-                first = false;
-            }
-            return result;
+            return build_field_names_list_impl<false>();
         }
 
         // Build comma-separated list of NON-PRIMARY KEY fields (for INSERT statements)
         // Excludes primary key to allow auto-increment
         static consteval auto build_non_pk_field_names_list() {
-            constexpr size_t      size = calculate_non_pk_field_names_size() + 10; // Add buffer
-            ConstexprString<size> result;
-            bool                  first = true;
-            for (size_t i = 0; i < field_count_; ++i) {
-                // Skip primary key field
-                if (all_members_[i] == primary_key_) {
-                    continue;
-                }
-
-                if (!first) {
-                    result.append(", ");
-                }
-                // Check if this is a FK field
-                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
-                if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
-                    // FK field: append field_name + "_id"
-                    result.append(std::meta::identifier_of(all_members_[i]));
-                    result.append("_id");
-                } else {
-                    result.append(std::meta::identifier_of(all_members_[i]));
-                }
-                first = false;
-            }
-            return result;
+            return build_field_names_list_impl<true>();
         }
 
       public:
