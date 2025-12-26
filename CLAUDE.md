@@ -219,6 +219,27 @@ Storm ORM achieves **96-108% efficiency** vs raw SQLite across all operations (R
    - Prevents commits with failing tests
    - Standardizes commit workflow across the project
 
+6. **MANDATORY: Show Files and Get Approval Before Committing**
+   - **Before running `quick_commit.sh`, ALWAYS show the user what will be committed**
+   - The script runs in non-interactive mode when executed by Claude, bypassing its built-in approval
+   - User must explicitly approve the file list before commit proceeds
+
+   **Required Workflow:**
+   ```bash
+   # Step 1: Show files that will be committed
+   git status --short
+
+   # Step 2: Ask user: "Proceed with commit?"
+
+   # Step 3: Only after user says "yes":
+   ./quick_commit.sh "commit message"
+   ```
+
+   **Why This Matters:**
+   - Prevents accidental commits of unintended files
+   - User maintains control over what gets committed
+   - Script's interactive approval is bypassed in automation
+
 ## Quick Start
 
 ### Build & Test
