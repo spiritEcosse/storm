@@ -79,7 +79,7 @@ class DistinctTest : public ::testing::Test {
         QuerySet<DistinctPerson>::clear_default_connection();
     }
 
-    void populate_join_test_data() {
+    static void populate_join_test_data() {
         auto& conn = QuerySet<DistinctPerson>::get_default_connection();
 
         // Insert users
@@ -115,7 +115,7 @@ TEST_F(DistinctTest, DistinctNameFieldWithDuplicates) {
     EXPECT_EQ(names.size(), 3) << "Expected 3 unique names";
 
     // Convert to set for easier verification
-    std::set<std::string> unique_names(names.begin(), names.end());
+    std::set<std::string> const unique_names(names.begin(), names.end());
     EXPECT_EQ(unique_names.count("Alice"), 1);
     EXPECT_EQ(unique_names.count("Bob"), 1);
     EXPECT_EQ(unique_names.count("Charlie"), 1);
@@ -140,7 +140,7 @@ TEST_F(DistinctTest, DistinctAgeFieldWithDuplicates) {
     EXPECT_EQ(ages.size(), 3) << "Expected 3 unique ages";
 
     // Convert to set for verification
-    std::set<int> unique_ages(ages.begin(), ages.end());
+    std::set<int> const unique_ages(ages.begin(), ages.end());
     EXPECT_EQ(unique_ages.count(25), 1);
     EXPECT_EQ(unique_ages.count(30), 1);
     EXPECT_EQ(unique_ages.count(35), 1);
@@ -164,7 +164,7 @@ TEST_F(DistinctTest, DistinctDefaultsToPrimaryKey) {
     EXPECT_EQ(ids.size(), 3) << "Expected 3 unique IDs";
 
     // IDs should match what we inserted
-    std::set<int> id_set(ids.begin(), ids.end());
+    std::set<int> const id_set(ids.begin(), ids.end());
     EXPECT_TRUE(id_set.count(1));
     EXPECT_TRUE(id_set.count(2));
     EXPECT_TRUE(id_set.count(3));
@@ -205,7 +205,7 @@ TEST_F(DistinctTest, DistinctWithSingleRow) {
     QuerySet<DistinctPerson> queryset;
 
     // Insert one person
-    DistinctPerson alice{0, "Alice", 30};
+    DistinctPerson const alice{.id=0, .name="Alice", .age=30};
     auto           insert_result = queryset.insert(alice);
     ASSERT_TRUE(insert_result.has_value());
 
@@ -257,7 +257,7 @@ TEST_F(DistinctTest, DistinctWithEmptyStrings) {
     const auto& names = result.value();
     EXPECT_EQ(names.size(), 2) << "Expected 2 unique names (empty string and 'Alice')";
 
-    std::set<std::string> name_set(names.begin(), names.end());
+    std::set<std::string> const name_set(names.begin(), names.end());
     EXPECT_TRUE(name_set.count(""));
     EXPECT_TRUE(name_set.count("Alice"));
 }
@@ -267,7 +267,7 @@ TEST_F(DistinctTest, VerifyReturnTypes) {
     QuerySet<DistinctPerson> queryset;
 
     // Insert test data
-    queryset.insert(DistinctPerson{0, "Alice", 30});
+    queryset.insert(DistinctPerson{.id=0, .name="Alice", .age=30});
 
     // Verify return type for distinct on name field is hive of strings
     auto names_result = queryset.distinct<^^DistinctPerson::name>().select();
@@ -311,7 +311,7 @@ TEST_F(DistinctTest, DistinctTwoFieldsNameAndAge) {
     EXPECT_EQ(pairs.size(), 4) << "Expected 4 unique (name, age) pairs";
 
     // Convert to set for verification
-    std::set<std::tuple<std::string, int>> unique_pairs(pairs.begin(), pairs.end());
+    std::set<std::tuple<std::string, int>> const unique_pairs(pairs.begin(), pairs.end());
     EXPECT_TRUE(unique_pairs.count(std::make_tuple("Alice", 30)));
     EXPECT_TRUE(unique_pairs.count(std::make_tuple("Bob", 25)));
     EXPECT_TRUE(unique_pairs.count(std::make_tuple("Alice", 35)));
@@ -343,7 +343,7 @@ TEST_F(DistinctTest, DistinctThreeFieldsAllFields) {
     EXPECT_EQ(pairs.size(), 4) << "Expected 4 unique (name, age) combinations";
 
     // Verify we got the expected tuples
-    std::set<std::tuple<std::string, int>> unique_pairs(pairs.begin(), pairs.end());
+    std::set<std::tuple<std::string, int>> const unique_pairs(pairs.begin(), pairs.end());
     EXPECT_TRUE(unique_pairs.count(std::make_tuple("Alice", 30)));
     EXPECT_TRUE(unique_pairs.count(std::make_tuple("Bob", 25)));
     EXPECT_TRUE(unique_pairs.count(std::make_tuple("Alice", 25)));
@@ -393,7 +393,7 @@ TEST_F(DistinctTest, DistinctTwoFieldsLargeDataset) {
     // Insert 10,000 people with 100 unique (name, age) combinations (100 duplicates each)
     std::vector<DistinctPerson> people_to_insert;
     for (int i = 1; i <= 10000; ++i) {
-        int combo_idx = (i - 1) % 100;
+        int const combo_idx = (i - 1) % 100;
         // Generate 100 unique (name, age) combinations: 10 names × 10 ages
         people_to_insert.emplace_back(i, std::format("DistinctPerson{}", combo_idx / 10), 20 + (combo_idx % 10));
     }
@@ -430,7 +430,7 @@ TEST_F(DistinctTest, DistinctTwoFieldsDifferentOrder) {
     EXPECT_EQ(pairs.size(), 3) << "Expected 3 unique (age, name) pairs";
 
     // Verify we got the expected tuples (age first, then name)
-    std::set<std::tuple<int, std::string>> unique_pairs(pairs.begin(), pairs.end());
+    std::set<std::tuple<int, std::string>> const unique_pairs(pairs.begin(), pairs.end());
     EXPECT_TRUE(unique_pairs.count(std::make_tuple(30, "Alice")));
     EXPECT_TRUE(unique_pairs.count(std::make_tuple(25, "Bob")));
     EXPECT_TRUE(unique_pairs.count(std::make_tuple(25, "Charlie")));
@@ -441,7 +441,7 @@ TEST_F(DistinctTest, VerifyMultiFieldReturnTypes) {
     QuerySet<DistinctPerson> queryset;
 
     // Insert test data
-    queryset.insert(DistinctPerson{0, "Alice", 30});
+    queryset.insert(DistinctPerson{.id=0, .name="Alice", .age=30});
 
     // Verify return type for distinct on name and age is hive of tuples containing string and int
     auto pairs_result = queryset.distinct<^^DistinctPerson::name, ^^DistinctPerson::age>().select();
@@ -456,7 +456,7 @@ TEST_F(DistinctTest, VerifyMultiFieldReturnTypes) {
 TEST_F(DistinctTest, DistinctTwoFieldsWithSingleRow) {
     QuerySet<DistinctPerson> queryset;
 
-    DistinctPerson alice{0, "Alice", 30};
+    DistinctPerson const alice{.id=0, .name="Alice", .age=30};
     auto           insert_result = queryset.insert(alice);
     ASSERT_TRUE(insert_result.has_value());
 
@@ -559,7 +559,7 @@ TEST_F(DistinctTest, CrossStructFieldAccessPrevented) {
 // Test: Return type verification for duplicate fields
 TEST_F(DistinctTest, VerifyDuplicateFieldReturnTypes) {
     QuerySet<DistinctPerson> queryset;
-    queryset.insert(DistinctPerson{0, "Alice", 30});
+    queryset.insert(DistinctPerson{.id=0, .name="Alice", .age=30});
 
     // Duplicate field returns tuple with same type repeated
     auto dup_result = queryset.distinct<^^DistinctPerson::name, ^^DistinctPerson::name>().select();
@@ -652,7 +652,7 @@ TEST_F(DistinctTest, DistinctOnBaseTableWithoutJoin) {
     const auto& contents = result.value();
     EXPECT_EQ(contents.size(), 5); // 5 unique message contents
 
-    std::set<std::string> content_set(contents.begin(), contents.end());
+    std::set<std::string> const content_set(contents.begin(), contents.end());
     EXPECT_TRUE(content_set.count("Hello"));
     EXPECT_TRUE(content_set.count("World"));
     EXPECT_TRUE(content_set.count("Hi there"));
@@ -747,7 +747,7 @@ TEST_F(DistinctTest, RawSQLWorkaround) {
     auto& conn = QuerySet<Message>::get_default_connection();
 
     // Workaround: Use raw SQL for DISTINCT + JOIN
-    std::string sql = "SELECT DISTINCT User.name "
+    std::string const sql = "SELECT DISTINCT User.name "
                       "FROM Message "
                       "INNER JOIN User ON User.id = Message.sender_id";
 
@@ -758,7 +758,7 @@ TEST_F(DistinctTest, RawSQLWorkaround) {
     std::vector<std::string> user_names;
 
     while (true) {
-        int step = stmt.step_raw();
+        int const step = stmt.step_raw();
         if (step == decltype(stmt)::ROW_AVAILABLE) {
             const auto* text_bytes = stmt.extract_text_ptr(0);
             user_names.emplace_back(static_cast<const char*>(static_cast<const void*>(text_bytes)));
@@ -772,7 +772,7 @@ TEST_F(DistinctTest, RawSQLWorkaround) {
     // We have 3 users (Alice, Bob, Charlie) who all sent messages
     EXPECT_EQ(user_names.size(), 3);
 
-    std::set<std::string> name_set(user_names.begin(), user_names.end());
+    std::set<std::string> const name_set(user_names.begin(), user_names.end());
     EXPECT_TRUE(name_set.count("Alice"));
     EXPECT_TRUE(name_set.count("Bob"));
     EXPECT_TRUE(name_set.count("Charlie"));
@@ -876,7 +876,7 @@ TEST_F(DistinctTest, DistinctWithWhereSingleField) {
     // Should return 3 unique names: Alice, Bob, David (Charlie filtered out by WHERE)
     EXPECT_EQ(names.size(), 3);
 
-    std::set<std::string> unique_names(names.begin(), names.end());
+    std::set<std::string> const unique_names(names.begin(), names.end());
     EXPECT_EQ(unique_names.size(), 3);
     EXPECT_TRUE(unique_names.count("Alice") > 0);
     EXPECT_TRUE(unique_names.count("Bob") > 0);
@@ -911,7 +911,7 @@ TEST_F(DistinctTest, DistinctWithWhereMultipleFields) {
     // Should return 3 unique (name, age) pairs: (Alice, 25), (Bob, 30), (Alice, 35)
     EXPECT_EQ(pairs.size(), 3);
 
-    std::set<std::tuple<std::string, int>> unique_pairs(pairs.begin(), pairs.end());
+    std::set<std::tuple<std::string, int>> const unique_pairs(pairs.begin(), pairs.end());
     EXPECT_EQ(unique_pairs.size(), 3);
     EXPECT_TRUE(unique_pairs.count(std::make_tuple("Alice", 25)) > 0);
     EXPECT_TRUE(unique_pairs.count(std::make_tuple("Bob", 30)) > 0);
@@ -962,7 +962,7 @@ TEST_F(DistinctTest, DistinctWithComplexWhere) {
 
     const auto& names = result.value();
 
-    std::set<std::string> unique_names(names.begin(), names.end());
+    std::set<std::string> const unique_names(names.begin(), names.end());
     // Alice (25), Bob (30), Charlie (35) - Charlie (20) and David (40) filtered out
     EXPECT_GE(unique_names.size(), 3);
     EXPECT_TRUE(unique_names.count("Alice") > 0);
@@ -985,7 +985,7 @@ TEST_F(DistinctTest, DistinctWithJoinSingleField) {
     const auto& contents = result.value();
 
     // Should return distinct message contents
-    std::set<std::string> unique_contents(contents.begin(), contents.end());
+    std::set<std::string> const unique_contents(contents.begin(), contents.end());
     EXPECT_EQ(unique_contents.size(), contents.size()); // All should be unique
 }
 
@@ -1082,7 +1082,7 @@ TEST_F(DistinctTest, MultipleWhereClausesWithDistinct) {
     ASSERT_TRUE(result.has_value());
 
     const auto&           names = result.value();
-    std::set<std::string> unique_names(names.begin(), names.end());
+    std::set<std::string> const unique_names(names.begin(), names.end());
 
     // Should only include Alice (25) and Bob (30)
     EXPECT_EQ(unique_names.size(), 2);
@@ -1123,6 +1123,6 @@ TEST_F(DistinctTest, DistinctKeywordInjectionInJoinQueries) {
     EXPECT_GT(contents.size(), 0) << "Should return some results";
 
     // Verify no duplicates in result
-    std::set<std::string> unique_contents(contents.begin(), contents.end());
+    std::set<std::string> const unique_contents(contents.begin(), contents.end());
     EXPECT_EQ(unique_contents.size(), contents.size()) << "DISTINCT should eliminate duplicates";
 }

@@ -52,31 +52,31 @@ class QuerySetRemoveTest : public ::testing::Test {
     }
 
     // Helper function to count records using the default connection
-    int countSqlitePersons() {
+    static int countSqlitePersons() {
         auto&         conn = storm::QuerySet<SqlitePerson>::get_default_connection();
-        sqlite3_stmt* stmt;
+        sqlite3_stmt* stmt = nullptr;
         int           rc = sqlite3_prepare_v2(conn->get(), "SELECT COUNT(*) FROM SqlitePerson", -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
             return -1;
 
         rc        = sqlite3_step(stmt);
-        int count = (rc == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : -1;
+        int const count = (rc == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : -1;
 
         sqlite3_finalize(stmt);
         return count;
     }
 
     // Helper function to check if person exists using the default connection
-    bool personExists(int id) {
+    static bool personExists(int id) {
         auto&         conn = storm::QuerySet<SqlitePerson>::get_default_connection();
-        sqlite3_stmt* stmt;
+        sqlite3_stmt* stmt = nullptr;
         int rc = sqlite3_prepare_v2(conn->get(), "SELECT COUNT(*) FROM SqlitePerson WHERE id = ?", -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
             return false;
 
         sqlite3_bind_int(stmt, 1, id);
         rc          = sqlite3_step(stmt);
-        bool exists = (rc == SQLITE_ROW) && (sqlite3_column_int(stmt, 0) > 0);
+        bool const exists = (rc == SQLITE_ROW) && (sqlite3_column_int(stmt, 0) > 0);
 
         sqlite3_finalize(stmt);
         return exists;
@@ -99,7 +99,7 @@ TEST_F(QuerySetRemoveTest, RemoveExistingSqlitePerson) {
     auto queryset = storm::QuerySet<SqlitePerson>{};
 
     // Create person object to remove (Alice with id=1)
-    SqlitePerson alice{1, "Alice", 30};
+    SqlitePerson const alice{.id=1, .name="Alice", .age=30};
 
     // Verify Alice exists before removal
     EXPECT_TRUE(personExists(1)) << "Alice should exist before removal";
@@ -126,7 +126,7 @@ TEST_F(QuerySetRemoveTest, RemoveNonExistentSqlitePerson) {
     auto queryset = storm::QuerySet<SqlitePerson>{};
 
     // Create person object that doesn't exist in database
-    SqlitePerson nonexistent{999, "NonExistent", 99};
+    SqlitePerson const nonexistent{.id=999, .name="NonExistent", .age=99};
 
     // Verify person doesn't exist
     EXPECT_FALSE(personExists(999)) << "SqlitePerson with id 999 should not exist";
@@ -150,8 +150,8 @@ TEST_F(QuerySetRemoveTest, RemoveMultipleSqlitePersonsSequentially) {
     auto queryset = storm::QuerySet<SqlitePerson>{};
 
     // Create person objects to remove
-    SqlitePerson alice{1, "Alice", 30};
-    SqlitePerson bob{2, "Bob", 25};
+    SqlitePerson const alice{.id=1, .name="Alice", .age=30};
+    SqlitePerson const bob{.id=2, .name="Bob", .age=25};
 
     // Verify initial state
     EXPECT_EQ(countSqlitePersons(), 3) << "Should have 3 persons initially";
@@ -179,7 +179,7 @@ TEST_F(QuerySetRemoveTest, RemoveWithZeroId) {
     auto queryset = storm::QuerySet<SqlitePerson>{};
 
     // Create person object with id 0 (which doesn't exist)
-    SqlitePerson zero_person{0, "Zero", 0};
+    SqlitePerson const zero_person{.id=0, .name="Zero", .age=0};
 
     // Verify initial state
     EXPECT_EQ(countSqlitePersons(), 3) << "Should have 3 persons initially";
@@ -264,7 +264,7 @@ TEST_F(QuerySetRemoveTest, RemoveBatchLarge) {
 
     // Verify removal was successful
     if (!result.has_value()) {
-        std::cout << "Error: " << result.error().message() << std::endl;
+        std::cout << "Error: " << result.error().message() << '\n';
     }
     ASSERT_TRUE(result.has_value()) << "Large batch remove operation should succeed: "
                                     << (result.has_value() ? "" : result.error().message());
@@ -353,7 +353,7 @@ TEST_F(QuerySetRemoveTest, RemoveBatchPerformance) {
     // Measure individual removes
     auto start_individual = std::chrono::steady_clock::now();
     for (int i = 1; i <= 50; i++) {
-        SqlitePerson p{i, "SqlitePerson" + std::to_string(i), 20 + (i % 60)};
+        SqlitePerson const p{.id=i, .name="SqlitePerson" + std::to_string(i), .age=20 + (i % 60)};
         auto         result = queryset.remove(p);
         ASSERT_TRUE(result.has_value()) << "Individual remove should succeed";
     }
@@ -375,11 +375,11 @@ TEST_F(QuerySetRemoveTest, RemoveBatchPerformance) {
     auto duration_batch = std::chrono::duration_cast<std::chrono::microseconds>(end_batch - start_batch).count();
 
     // Log performance comparison (batch should be faster)
-    std::cout << "\nPerformance Comparison (50 deletes):" << std::endl;
-    std::cout << "  Individual removes: " << duration_individual << " μs" << std::endl;
-    std::cout << "  Batch remove: " << duration_batch << " μs" << std::endl;
+    std::cout << "\nPerformance Comparison (50 deletes):" << '\n';
+    std::cout << "  Individual removes: " << duration_individual << " μs" << '\n';
+    std::cout << "  Batch remove: " << duration_batch << " μs" << '\n';
     std::cout << "  Speedup: " << std::fixed << std::setprecision(2)
-              << static_cast<double>(duration_individual) / duration_batch << "x" << std::endl;
+              << static_cast<double>(duration_individual) / duration_batch << "x" << '\n';
 
     // Verify correct deletions
     EXPECT_EQ(countSqlitePersons(), num_records - 100) << "Should have correct number of persons after removes";
@@ -391,7 +391,7 @@ TEST_F(QuerySetRemoveTest, InsertSingleSqlitePerson) {
     auto queryset = storm::QuerySet<SqlitePerson>{};
 
     // Create person object to insert (with explicit ID)
-    SqlitePerson dave{4, "Dave", 40};
+    SqlitePerson const dave{.id=4, .name="Dave", .age=40};
 
     // Verify initially have 3 persons
     EXPECT_EQ(countSqlitePersons(), 3) << "Should have 3 persons initially";
@@ -403,7 +403,7 @@ TEST_F(QuerySetRemoveTest, InsertSingleSqlitePerson) {
     ASSERT_TRUE(result.has_value()) << "Insert operation should succeed: "
                                     << (result.has_value() ? "success" : result.error().message());
 
-    int64_t returned_id = result.value();
+    int64_t const returned_id = result.value();
     EXPECT_GT(returned_id, 0) << "Returned ID should be positive";
     EXPECT_EQ(returned_id, 4) << "Returned ID should be 4";
 
@@ -571,24 +571,24 @@ class QuerySetUpdateTest : public ::testing::Test {
     }
 
     // Helper function to count records using the default connection
-    int countSqlitePersons() {
+    static int countSqlitePersons() {
         auto&         conn = storm::QuerySet<SqlitePerson>::get_default_connection();
-        sqlite3_stmt* stmt;
+        sqlite3_stmt* stmt = nullptr;
         int           rc = sqlite3_prepare_v2(conn->get(), "SELECT COUNT(*) FROM SqlitePerson", -1, &stmt, nullptr);
         if (rc != SQLITE_OK)
             return -1;
 
         rc        = sqlite3_step(stmt);
-        int count = (rc == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : -1;
+        int const count = (rc == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : -1;
 
         sqlite3_finalize(stmt);
         return count;
     }
 
     // Helper function to get person by ID
-    std::optional<SqlitePerson> getSqlitePerson(int id) {
+    static std::optional<SqlitePerson> getSqlitePerson(int id) {
         auto&         conn = storm::QuerySet<SqlitePerson>::get_default_connection();
-        sqlite3_stmt* stmt;
+        sqlite3_stmt* stmt = nullptr;
         int           rc = sqlite3_prepare_v2(
                 conn->get(), "SELECT id, name, age FROM SqlitePerson WHERE id = ?", -1, &stmt, nullptr
         );
@@ -601,9 +601,9 @@ class QuerySetUpdateTest : public ::testing::Test {
         std::optional<SqlitePerson> result;
         if (rc == SQLITE_ROW) {
             result = SqlitePerson{
-                    sqlite3_column_int(stmt, 0),
-                    std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))),
-                    sqlite3_column_int(stmt, 2)
+                    .id=sqlite3_column_int(stmt, 0),
+                    .name=std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))),
+                    .age=sqlite3_column_int(stmt, 2)
             };
         }
 
@@ -651,7 +651,7 @@ TEST_F(QuerySetUpdateTest, UpdateExistingSqlitePerson) {
     EXPECT_EQ(alice_before->age, 30);
 
     // Update Alice's information
-    SqlitePerson updated_alice{1, "Alice Smith", 31};
+    SqlitePerson const updated_alice{.id=1, .name="Alice Smith", .age=31};
     auto         result = queryset.update(updated_alice);
 
     // Verify update was successful
@@ -682,7 +682,7 @@ TEST_F(QuerySetUpdateTest, UpdateNonExistingSqlitePerson) {
     EXPECT_FALSE(personExists(999)) << "SqlitePerson 999 should not exist";
 
     // Attempt to update non-existing person
-    SqlitePerson non_existing{999, "Ghost SqlitePerson", 99};
+    SqlitePerson const non_existing{.id=999, .name="Ghost SqlitePerson", .age=99};
     auto         result = queryset.update(non_existing);
 
     // Verify operation completes without error (UPDATE of non-existing row is not an error in SQL)
@@ -698,7 +698,7 @@ TEST_F(QuerySetUpdateTest, UpdateMultipleTimes) {
     auto queryset = storm::QuerySet<SqlitePerson>{};
 
     // Update Alice multiple times
-    SqlitePerson alice_v1{1, "Alice A", 31};
+    SqlitePerson const alice_v1{.id=1, .name="Alice A", .age=31};
     auto         result1 = queryset.update(alice_v1);
     ASSERT_TRUE(result1.has_value()) << "First update should succeed";
 
@@ -707,7 +707,7 @@ TEST_F(QuerySetUpdateTest, UpdateMultipleTimes) {
     EXPECT_EQ(check1->name, "Alice A");
     EXPECT_EQ(check1->age, 31);
 
-    SqlitePerson alice_v2{1, "Alice B", 32};
+    SqlitePerson const alice_v2{.id=1, .name="Alice B", .age=32};
     auto         result2 = queryset.update(alice_v2);
     ASSERT_TRUE(result2.has_value()) << "Second update should succeed";
 
@@ -716,7 +716,7 @@ TEST_F(QuerySetUpdateTest, UpdateMultipleTimes) {
     EXPECT_EQ(check2->name, "Alice B");
     EXPECT_EQ(check2->age, 32);
 
-    SqlitePerson alice_v3{1, "Alice C", 33};
+    SqlitePerson const alice_v3{.id=1, .name="Alice C", .age=33};
     auto         result3 = queryset.update(alice_v3);
     ASSERT_TRUE(result3.has_value()) << "Third update should succeed";
 
@@ -840,7 +840,7 @@ TEST_F(QuerySetUpdateTest, UpdateBatchLarge) {
 
     // Verify update was successful
     if (!result.has_value()) {
-        std::cout << "Error: " << result.error().message() << std::endl;
+        std::cout << "Error: " << result.error().message() << '\n';
     }
     ASSERT_TRUE(result.has_value()) << "Large batch update operation should succeed: "
                                     << (result.has_value() ? "" : result.error().message());
@@ -940,7 +940,7 @@ TEST_F(QuerySetUpdateTest, UpdateCachedStatementReuse) {
 
     // Perform multiple updates to verify statement caching works correctly
     for (int i = 0; i < 10; ++i) {
-        SqlitePerson updated_alice{1, "Alice V" + std::to_string(i), 30 + i};
+        SqlitePerson const updated_alice{.id=1, .name="Alice V" + std::to_string(i), .age=30 + i};
         auto         result = queryset.update(updated_alice);
         ASSERT_TRUE(result.has_value()) << "Update iteration " << i << " should succeed";
 

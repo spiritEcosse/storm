@@ -38,7 +38,7 @@ class OrderByTest : public ::testing::Test {
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
         // Insert test data with varying values
-        std::vector<OrderByPerson> test_data = {
+        std::vector<OrderByPerson> const test_data = {
                 {1, "Alice", 30, true},
                 {2, "Bob", 25, true},
                 {3, "Charlie", 35, false},
@@ -353,7 +353,7 @@ TEST_F(OrderByTest, EmptyResult) {
     auto result = qs.where(field<^^OrderByPerson::age>() > 100).order_by<^^OrderByPerson::name>().select();
     ASSERT_TRUE(result.has_value());
 
-    auto people = result.value();
+    const auto& people = result.value();
     EXPECT_EQ(people.size(), 0);
 }
 

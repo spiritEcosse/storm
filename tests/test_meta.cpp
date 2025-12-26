@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <meta>
+#include <print>
 
 import storm;
 
@@ -28,7 +29,7 @@ TEST(AuthorReflection, PrimaryKeyTest) {
     EXPECT_FALSE(primary_key_name.empty()) << "Primary key field should be found";
 
     // Print for debugging
-    printf("Author primary key found: %.*s\n", static_cast<int>(primary_key_name.size()), primary_key_name.data());
+    std::println("Author primary key found: {:.{}}", primary_key_name.data(), static_cast<int>(primary_key_name.size()));
 }
 
 // Simple field count test without runtime reflection

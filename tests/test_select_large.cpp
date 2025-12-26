@@ -150,7 +150,7 @@ TEST_F(SelectLargeTest, SelectVeryLargeDataset) {
         batch_records.reserve(BATCH_SIZE);
 
         for (int i = 1; i <= BATCH_SIZE; ++i) {
-            int record_num = batch * BATCH_SIZE + i;
+            int const record_num = batch * BATCH_SIZE + i;
             batch_records.emplace_back(record_num, record_num, std::format("B{}", batch));
         }
 

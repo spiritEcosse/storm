@@ -820,7 +820,7 @@ export namespace storm::orm::statements {
             sql.reserve(base_sql.size() + 100);
 
             // Insert WHERE before GROUP BY
-            size_t group_by_pos = base_sql.find(" GROUP BY ");
+            size_t const group_by_pos = base_sql.find(" GROUP BY ");
             if (group_by_pos != std::string::npos) {
                 sql = base_sql.substr(0, group_by_pos);
                 sql += " WHERE ";

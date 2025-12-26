@@ -71,8 +71,57 @@ if [[ -z $(git status --porcelain) ]]; then
     exit 0
 fi
 
-echo "📊 Changed files:"
-git status --short
+# Define known project paths ONCE (used for preview AND staging)
+KNOWN_DIRS="src/ tests/ benchmarks/ docs/ scripts/ cmake/"
+KNOWN_FILES="CLAUDE.md README.md CMakeLists.txt .clang-format .clang-tidy .gitignore quick_commit.sh rules.md"
+KNOWN_PATTERN="^.. (src/|tests/|benchmarks/|docs/|scripts/|cmake/|CLAUDE\.md|README\.md|CMakeLists\.txt|\.clang-format|\.clang-tidy|\.gitignore|quick_commit\.sh|rules\.md)"
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "📊 FILES THAT WILL BE STAGED (known project paths):"
+echo "═══════════════════════════════════════════════════════════════"
+
+# Show files that WILL be staged (in known directories)
+will_stage=$(git status --porcelain | grep -E "$KNOWN_PATTERN" || true)
+if [[ -n "$will_stage" ]]; then
+    echo "$will_stage" | while IFS= read -r line; do
+        status="${line:0:2}"
+        file="${line:3}"
+        case "$status" in
+            "??") echo "   [NEW]      $file" ;;
+            " M"|"M "|"MM") echo "   [MODIFIED] $file" ;;
+            " D"|"D ") echo "   [DELETED]  $file" ;;
+            "A "|" A") echo "   [ADDED]    $file" ;;
+            *)    echo "   [$status]  $file" ;;
+        esac
+    done
+else
+    echo "   (none)"
+fi
+
+# Show files that will NOT be staged
+wont_stage=$(git status --porcelain | grep -v -E "$KNOWN_PATTERN" || true)
+if [[ -n "$wont_stage" ]]; then
+    echo ""
+    echo "⚠️  FILES THAT WILL BE SKIPPED (outside known paths):"
+    echo "$wont_stage" | while IFS= read -r line; do
+        file="${line:3}"
+        echo "   ⊘ $file"
+    done
+fi
+
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Ask for approval
+if [[ -t 0 ]]; then
+    read -p "Proceed with commit? [Y/n] " approval
+    if [[ "$approval" =~ ^[Nn]$ ]]; then
+        echo "❌ Aborted by user"
+        exit 1
+    fi
+else
+    echo "✓ Non-interactive mode - proceeding automatically"
+fi
 
 echo ""
 
@@ -167,9 +216,11 @@ else
     fi
 fi
 
-echo ""
-echo "📦 Committing changes..."
-git add -A
+echo "📦 Staging approved files..."
+git add $KNOWN_DIRS 2>/dev/null || true
+git add $KNOWN_FILES 2>/dev/null || true
+
+echo "📦 Committing..."
 git commit -m "$commit_msg
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
