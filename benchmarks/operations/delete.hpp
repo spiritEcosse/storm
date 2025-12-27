@@ -188,12 +188,19 @@ namespace storm::benchmark {
 
         // Helper: Re-insert data using Storm ORM (not timed - just setup)
         void reinsert_data() {
-            auto insert_result =
-                    Base::qs().insert(Base::data(), storm::orm::statements::InsertOptions{.return_ids = true});
+            auto insert_result = Base::qs().insert(Base::data());
             if (insert_result.has_value()) {
-                const auto& ids = insert_result.value();
-                for (size_t j = 0; j < Base::data().size() && j < ids.size(); j++) {
-                    Base::data()[j].id = ids[j];
+                // SELECT back to get the auto-generated IDs
+                auto select_result = Base::qs().select();
+                if (select_result.has_value()) {
+                    const auto& selected = select_result.value();
+                    size_t      j        = 0;
+                    for (const auto& row : selected) {
+                        if (j >= Base::data().size())
+                            break;
+                        Base::data()[j].id = row.id;
+                        j++;
+                    }
                 }
             }
         }

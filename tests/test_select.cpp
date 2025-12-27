@@ -80,15 +80,12 @@ TEST_F(SelectTest, SelectSingleRow) {
 TEST_F(SelectTest, SelectMultipleRows) {
     QuerySet<SelectPerson> queryset;
 
-    // Insert multiple people (use explicit IDs for batch insert)
-    std::vector<SelectPerson> people_to_insert = {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Charlie", 35}};
+    // Insert multiple people
+    std::vector<SelectPerson> people_to_insert = {{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}};
 
     auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert));
     ASSERT_TRUE(insert_result.has_value())
             << "INSERT failed: code=" << insert_result.error().code() << " message=" << insert_result.error().message();
-
-    const auto& inserted_ids = insert_result.value();
-    ASSERT_EQ(inserted_ids.size(), 3) << "Expected 3 IDs";
 
     // Select all rows
     auto result = queryset.select();
@@ -97,19 +94,19 @@ TEST_F(SelectTest, SelectMultipleRows) {
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 3) << "Expected exactly 3 rows";
 
-    // Verify row contents
+    // Verify row contents (IDs are auto-generated, so just check they exist)
     auto it = people.begin();
-    EXPECT_EQ(it->id, inserted_ids[0]);
+    EXPECT_GT(it->id, 0);
     EXPECT_EQ(it->name, "Alice");
     EXPECT_EQ(it->age, 30);
 
     ++it;
-    EXPECT_EQ(it->id, inserted_ids[1]);
+    EXPECT_GT(it->id, 0);
     EXPECT_EQ(it->name, "Bob");
     EXPECT_EQ(it->age, 25);
 
     ++it;
-    EXPECT_EQ(it->id, inserted_ids[2]);
+    EXPECT_GT(it->id, 0);
     EXPECT_EQ(it->name, "Charlie");
     EXPECT_EQ(it->age, 35);
 }
@@ -143,20 +140,32 @@ TEST_F(SelectTest, SelectDifferentFieldTypes) {
 TEST_F(SelectTest, SelectAfterInsertAndDelete) {
     QuerySet<SelectPerson> queryset;
 
-    // Insert multiple people (use explicit IDs for batch insert)
-    std::vector<SelectPerson> people_to_insert = {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Charlie", 35}};
+    // Insert multiple people
+    std::vector<SelectPerson> people_to_insert = {{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}};
 
     auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert));
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
-    const auto& inserted_ids = insert_result.value();
+    // Select to get the auto-generated IDs
+    auto select_result = queryset.select();
+    ASSERT_TRUE(select_result.has_value()) << "SELECT failed: " << select_result.error().message();
 
-    // Delete Bob (middle row)
-    SelectPerson const bob_to_delete{.id = static_cast<int>(inserted_ids[1]), .name = "Bob", .age = 25};
+    // Find Bob's ID
+    int bob_id = 0;
+    for (const auto& person : select_result.value()) {
+        if (person.name == "Bob") {
+            bob_id = person.id;
+            break;
+        }
+    }
+    ASSERT_GT(bob_id, 0) << "Bob not found";
+
+    // Delete Bob
+    SelectPerson const bob_to_delete{.id = bob_id, .name = "Bob", .age = 25};
     auto               delete_result = queryset.remove(bob_to_delete);
     ASSERT_TRUE(delete_result.has_value()) << "DELETE failed: " << delete_result.error().message();
 
-    // Select all rows
+    // Select all rows again
     auto result = queryset.select();
     ASSERT_TRUE(result.has_value()) << "SELECT failed: " << result.error().message();
 

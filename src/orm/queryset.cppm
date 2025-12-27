@@ -26,7 +26,6 @@ import <string_view>;
 import <span>;
 import <concepts>;
 import <memory>;
-import <vector>;
 import <variant>;
 import <optional>;
 import <functional>;
@@ -65,20 +64,18 @@ export namespace storm {
             return get_remove_statement().execute(objects);
         }
 
-        // Insert single object (SFINAE: only accept T, not span/container)
+        // Insert single object - returns the auto-generated ID
+        // (SFINAE: only accept T, not span/container)
         template <typename U = T>
             requires std::same_as<std::remove_cvref_t<U>, T>
-        std::expected<int64_t, Error>
-        insert(const U& obj, std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
-            // Use default options if not provided
-            orm::statements::InsertOptions options = opts.value_or(orm::statements::InsertOptions{});
-
-            // Call optimized single-object method with return_id flag
-            return get_insert_statement().execute_single_optimized(obj, options.return_ids);
+        std::expected<int64_t, Error> insert(const U& obj) {
+            return get_insert_statement().execute_single_optimized(obj, true);
         }
 
         // Bulk insert (span overload)
-        std::expected<std::vector<int64_t>, Error>
+        // NOTE: Returns void because SQLite's last_insert_rowid() only gives the last ID,
+        // and assuming consecutive IDs is unreliable (triggers, gaps, etc.)
+        std::expected<void, Error>
         insert(std::span<const T> objects, std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
             return execute_insert(objects, opts);
         }
@@ -154,10 +151,10 @@ export namespace storm {
 
         // Field-specific DISTINCT support using reflection
         // Usage:
-        //   auto names = queryset.distinct<^^Person::name>().select();  // std::vector<std::string>
-        //   auto pairs = queryset.distinct<^^Person::name, ^^Person::age>().select();  //
-        //   std::vector<std::tuple<std::string, int>> auto ids = queryset.distinct().select();  // std::vector<int>
-        //   (defaults to PK)
+        //   auto names = queryset.distinct<^^Person::name>().select();  // plf::hive<std::string>
+        //   auto pairs = queryset.distinct<^^Person::name, ^^Person::age>().select();
+        //   // Returns plf::hive<std::tuple<std::string, int>>
+        //   auto ids = queryset.distinct().select();  // plf::hive<int> (defaults to PK)
         //
         // OPTIMIZATION: Returns cached DistinctStatement for optimal performance
         // - Thread-local caching eliminates DistinctQuerySet wrapper overhead
@@ -471,7 +468,7 @@ export namespace storm {
             return *insert_stmt_;
         }
 
-        [[nodiscard]] std::expected<std::vector<int64_t>, Error> execute_insert(
+        [[nodiscard]] std::expected<void, Error> execute_insert(
                 std::span<const T> objects, std::optional<orm::statements::InsertOptions> opts = std::nullopt
         ) const noexcept {
             return get_insert_statement().execute(objects, opts);

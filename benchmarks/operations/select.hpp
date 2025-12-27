@@ -35,6 +35,7 @@
 #include <plf_hive/plf_hive.h>
 #include <stdexcept>
 #include <variant>
+#include <vector>
 
 namespace storm::benchmark {
 
@@ -242,12 +243,25 @@ namespace storm::benchmark {
                     users.push_back(RelatedModel{.id = 0, .name = std::format("User{}", i + 1), .age = 20 + (i % 50)});
                 }
 
-                auto user_result = related_qs_.insert(users, storm::orm::statements::InsertOptions{.return_ids = true});
+                auto user_result = related_qs_.insert(users);
                 if (!user_result.has_value()) {
                     std::cerr << "Failed to insert users for JOIN benchmark\n";
                     return;
                 }
-                const auto& user_ids = user_result.value();
+
+                // SELECT back to get the auto-generated user IDs
+                auto user_select = related_qs_.select();
+                if (!user_select.has_value()) {
+                    std::cerr << "Failed to select users for JOIN benchmark\n";
+                    return;
+                }
+
+                // Extract user IDs into a vector for FK references
+                std::vector<int64_t> user_ids;
+                user_ids.reserve(user_select.value().size());
+                for (const auto& user : user_select.value()) {
+                    user_ids.push_back(user.id);
+                }
 
                 // Insert base records with FK references
                 std::vector<BaseModel> messages;

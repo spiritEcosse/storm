@@ -83,12 +83,12 @@ TEST_F(IntTypesInsertUpdateTest, InsertSingleIntTypes) {
 
 TEST_F(IntTypesInsertUpdateTest, InsertBatchIntTypes) {
     QuerySet<IntTypes>    qs;
-    std::vector<IntTypes> batch = {{1, 100LL, 10}, {2, 200LL, 20}, {3, 300LL, 30}};
+    std::vector<IntTypes> batch = {{0, 100LL, 10}, {0, 200LL, 20}, {0, 300LL, 30}};
 
     auto result = qs.insert(batch);
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result.value().size(), 3);
 
+    // Batch insert returns void, verify via SELECT
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 3);
@@ -546,39 +546,18 @@ class InsertOptionsTest : public ::testing::Test {
     }
 };
 
-TEST_F(InsertOptionsTest, InsertWithReturnIdsTrue) {
+TEST_F(InsertOptionsTest, BatchInsertReturnsVoid) {
     QuerySet<IntTypes>    qs;
     std::vector<IntTypes> batch = {{0, 100LL, 10}, {0, 200LL, 20}, {0, 300LL, 30}};
 
-    auto result = qs.insert(batch, {{.return_ids = true}});
+    // Batch insert returns void (no IDs - SQLite's last_insert_rowid is unreliable for batch)
+    auto result = qs.insert(batch);
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result.value().size(), 3);
 
-    // Verify IDs are consecutive
-    EXPECT_EQ(result.value()[0], 1);
-    EXPECT_EQ(result.value()[1], 2);
-    EXPECT_EQ(result.value()[2], 3);
-
+    // Verify data was inserted by selecting
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 3);
-}
-
-TEST_F(InsertOptionsTest, InsertWithReturnIdsFalse) {
-    QuerySet<IntTypes>    qs;
-    std::vector<IntTypes> batch = {{0, 100LL, 10}, {0, 200LL, 20}};
-
-    auto result = qs.insert(batch, {{.return_ids = false}});
-    ASSERT_TRUE(result.has_value());
-
-    // Should return empty vector when return_ids=false
-    EXPECT_EQ(result.value().size(), 0);
-
-    // But data should still be inserted
-    auto selected = qs.select();
-    ASSERT_TRUE(selected.has_value());
-    EXPECT_EQ(selected.value().size(), 2);
-    EXPECT_EQ(selected.value().begin()->big_num, 100LL);
 }
 
 TEST_F(InsertOptionsTest, InsertWithCustomBatchSize) {
@@ -592,14 +571,8 @@ TEST_F(InsertOptionsTest, InsertWithCustomBatchSize) {
     }
 
     // Use batch_size of 10
-    auto result = qs.insert(batch, {{.batch_size = 10, .return_ids = true}});
+    auto result = qs.insert(batch, {{.batch_size = 10}});
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result.value().size(), 100);
-
-    // Verify IDs are consecutive
-    for (size_t i = 0; i < 100; ++i) {
-        EXPECT_EQ(result.value()[i], static_cast<int64_t>(i + 1));
-    }
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
@@ -612,20 +585,20 @@ TEST_F(InsertOptionsTest, InsertBatchSizeCappedToMax) {
 
     // IntTypes has 2 non-PK fields, so max = 999/2 = 499
     // Request batch_size of 1000, should be capped to 499
-    auto result = qs.insert(batch, {{.batch_size = 1000, .return_ids = true}});
+    auto result = qs.insert(batch, {{.batch_size = 1000}});
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result.value().size(), 2);
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 2);
 }
 
-TEST_F(InsertOptionsTest, SingleInsertWithOptions) {
+TEST_F(InsertOptionsTest, SingleInsertReturnsId) {
     QuerySet<IntTypes> qs;
     IntTypes const     obj{.id = 0, .big_num = 999LL, .small_num = 99};
 
-    auto result = qs.insert(obj, {{.return_ids = true}});
+    // Single insert still returns the auto-generated ID
+    auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 1);
 
@@ -646,13 +619,8 @@ TEST_F(InsertOptionsTest, LargeBatchWithCustomChunkSize) {
     }
 
     // Use small batch_size to force multiple chunks
-    auto result = qs.insert(batch, {{.batch_size = 50, .return_ids = true}});
+    auto result = qs.insert(batch, {{.batch_size = 50}});
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result.value().size(), 1000);
-
-    // Verify first and last IDs
-    EXPECT_EQ(result.value()[0], 1);
-    EXPECT_EQ(result.value()[999], 1000);
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
@@ -663,12 +631,9 @@ TEST_F(InsertOptionsTest, OptionsWithOnlyBatchSize) {
     QuerySet<IntTypes>    qs;
     std::vector<IntTypes> batch = {{0, 100LL, 10}, {0, 200LL, 20}};
 
-    // Only specify batch_size, return_ids should default to true
+    // Only specify batch_size
     auto result = qs.insert(batch, {{.batch_size = 1}});
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result.value().size(), 2);
-    EXPECT_EQ(result.value()[0], 1);
-    EXPECT_EQ(result.value()[1], 2);
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());

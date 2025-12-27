@@ -159,28 +159,32 @@ TEST_F(FKFieldTest, BatchInsertWithFKFields) {
     QuerySet<User>      user_qs;
     QuerySet<FKMessage> message_qs;
 
-    // Insert users
-    std::vector<User> users       = {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Charlie", 35}, {4, "Dave", 40}};
+    // Insert users (IDs will be auto-generated)
+    std::vector<User> users       = {{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}, {0, "Dave", 40}};
     auto              user_result = user_qs.insert(users);
     ASSERT_TRUE(user_result.has_value());
-    const auto& user_ids = user_result.value();
 
-    // Insert messages with FK references (Alice to Bob, Charlie to Dave)
+    // SELECT to get auto-generated user IDs
+    auto user_select = user_qs.select();
+    ASSERT_TRUE(user_select.has_value());
+    ASSERT_EQ(user_select.value().size(), 4);
+
+    // Get first user's ID for FK references
+    int first_user_id = user_select.value().begin()->id;
+
+    // Insert messages with FK references
     std::vector<FKMessage> messages =
-            {{1,
-              User{.id = static_cast<int>(user_ids[0]), .name = "", .age = 0},
-              User{.id = static_cast<int>(user_ids[0]), .name = "", .age = 0},
+            {{0,
+              User{.id = first_user_id, .name = "", .age = 0},
+              User{.id = first_user_id, .name = "", .age = 0},
               "FKMessage from Alice to Bob"},
-             {2,
-              User{.id = static_cast<int>(user_ids[0]), .name = "", .age = 0},
-              User{.id = static_cast<int>(user_ids[0]), .name = "", .age = 0},
+             {0,
+              User{.id = first_user_id, .name = "", .age = 0},
+              User{.id = first_user_id, .name = "", .age = 0},
               "FKMessage from Charlie to Dave"}};
 
     auto msg_result = message_qs.insert(messages);
     ASSERT_TRUE(msg_result.has_value()) << "Batch INSERT failed: " << msg_result.error().message();
-
-    const auto& msg_ids = msg_result.value();
-    EXPECT_EQ(msg_ids.size(), 2) << "Expected 2 message IDs";
 
     // Verify messages were stored
     auto select_result = message_qs.select();
@@ -191,11 +195,11 @@ TEST_F(FKFieldTest, BatchInsertWithFKFields) {
 
     // Verify FK values
     auto it = retrieved_messages.begin();
-    EXPECT_EQ(it->sender.id, user_ids[0]);
-    EXPECT_EQ(it->receiver.id, user_ids[0]);
+    EXPECT_EQ(it->sender.id, first_user_id);
+    EXPECT_EQ(it->receiver.id, first_user_id);
     ++it;
-    EXPECT_EQ(it->sender.id, user_ids[0]);
-    EXPECT_EQ(it->receiver.id, user_ids[0]);
+    EXPECT_EQ(it->sender.id, first_user_id);
+    EXPECT_EQ(it->receiver.id, first_user_id);
 }
 
 // Test: UPDATE with FK field
@@ -277,22 +281,32 @@ TEST_F(FKFieldTest, DeleteWithFKField) {
 
     // Insert messages from Alice to Bob
     std::vector<FKMessage> messages =
-            {{1,
+            {{0,
               User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
               User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
               "FKMessage 1"},
-             {2,
+             {0,
               User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
               User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
               "FKMessage 2"}};
 
     auto msg_result = message_qs.insert(messages);
     ASSERT_TRUE(msg_result.has_value());
-    const auto& msg_ids = msg_result.value();
+
+    // SELECT to get auto-generated message IDs
+    auto msg_select = message_qs.select();
+    ASSERT_TRUE(msg_select.has_value());
+    ASSERT_EQ(msg_select.value().size(), 2);
+
+    // Get the first message's ID to delete
+    auto it           = msg_select.value().begin();
+    int  first_msg_id = it->id;
+    ++it;
+    int second_msg_id = it->id;
 
     // Delete first message
     FKMessage const to_delete{
-            .id       = static_cast<int>(msg_ids[0]),
+            .id       = first_msg_id,
             .sender   = User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
             .receiver = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
             .text     = ""
@@ -307,7 +321,7 @@ TEST_F(FKFieldTest, DeleteWithFKField) {
 
     const auto& remaining_messages = select_result.value();
     ASSERT_EQ(remaining_messages.size(), 1);
-    EXPECT_EQ(remaining_messages.begin()->id, msg_ids[1]);
+    EXPECT_EQ(remaining_messages.begin()->id, second_msg_id);
     EXPECT_EQ(remaining_messages.begin()->text, "FKMessage 2");
 }
 

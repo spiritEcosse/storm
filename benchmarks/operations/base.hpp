@@ -12,9 +12,10 @@
  */
 
 #include <sqlite3.h>
-#include <vector>
+#include <plf_hive/plf_hive.h>
 #include <iostream>
 #include <string_view>
+#include <vector>
 
 import storm;
 
@@ -151,7 +152,7 @@ namespace storm::benchmark {
             }
         }
 
-        // Extended prepare: clears table, generates data, inserts to get IDs
+        // Extended prepare: clears table, generates data, inserts and retrieves IDs
         // Used by UPDATE and DELETE benchmarks that need existing rows with valid PKs
         void prepare_with_insert(int iterations) {
             // 1. Clear table using raw SQLite
@@ -162,17 +163,28 @@ namespace storm::benchmark {
             // 2. Generate test data
             prepare(iterations);
 
-            // 3. INSERT data to get valid primary keys
-            auto insert_result = qs().insert(data(), storm::orm::statements::InsertOptions{.return_ids = true});
+            // 3. INSERT data
+            auto insert_result = qs().insert(data());
             if (!insert_result.has_value()) {
                 std::cerr << "Failed to insert test data for benchmark\n";
                 return;
             }
 
-            // 4. Store returned IDs back into data
-            const auto& ids = insert_result.value();
-            for (size_t i = 0; i < data().size() && i < ids.size(); i++) {
-                data()[i].id = ids[i];
+            // 4. SELECT back to get the auto-generated IDs
+            auto select_result = qs().select();
+            if (!select_result.has_value()) {
+                std::cerr << "Failed to select test data for benchmark\n";
+                return;
+            }
+
+            // 5. Store retrieved IDs back into data
+            const auto& selected = select_result.value();
+            size_t      i        = 0;
+            for (const auto& row : selected) {
+                if (i >= data().size())
+                    break;
+                data()[i].id = row.id;
+                i++;
             }
         }
 

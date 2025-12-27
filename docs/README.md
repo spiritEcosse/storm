@@ -67,7 +67,7 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 
 ## TODO:
 - [x] ~~Consider adding clang-tidy in quick_commit.sh, but exclude third_party~~ - ✅ **DONE** - Added `scripts/run_clang_tidy.sh` with parallel execution, modernize checks, third_party exclusion. Runs by default in `quick_commit.sh` (use `--no-tidy` to skip)
-- [ ] Replace all std::vector with plf::hive
+- [x] ~~Replace all std::vector with plf::hive~~ - ✅ **DONE** - All QuerySet `select()` methods now return `plf::hive<T>` for stable iterators and efficient insertion
 - [ ] **Verify Performance Code Compliance** - Audit all statement implementations against CLAUDE.md performance rules:
   - [ ] Raw pointer caching in hot loops (SELECT, DISTINCT extraction loops)
   - [ ] Statement pointer caching for single-row operations (execute_one, remove_one)
