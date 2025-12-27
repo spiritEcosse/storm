@@ -17,7 +17,6 @@
 
 #include "base.hpp"
 #include <format>
-#include <meta>
 #include <plf_hive/plf_hive.h>
 
 namespace storm::benchmark {
@@ -47,8 +46,7 @@ namespace storm::benchmark {
         // prepare - Create related records and base records with FKs
         // ====================================================================
         void prepare([[maybe_unused]] int iterations) {
-            auto&    conn = storm::QuerySet<BaseModel>::get_default_connection();
-            sqlite3* db   = conn->get();
+            sqlite3* db = get_db<BaseModel>();
             if (!db)
                 return;
 
@@ -102,10 +100,7 @@ namespace storm::benchmark {
             base_qs_.template join<FKFieldPtr>();
 
             for (int i = 0; i < iterations; i++) {
-                auto results = base_qs_.select();
-                if (results.has_value()) {
-                    total_rows += results.value().size();
-                }
+                total_rows += base_qs_.select()->size();
             }
             return total_rows;
         }
@@ -114,23 +109,6 @@ namespace storm::benchmark {
         // execute_raw - Raw SQLite SELECT with JOIN using ONLY native sqlite3 API
         // ====================================================================
       private:
-        // Get FK field name at compile time
-        static constexpr std::string_view get_fk_field_name() {
-            constexpr auto member_ptr = FKFieldPtr;
-            constexpr auto ptr_info   = ^^member_ptr;
-
-            // Get the data member info from the pointer-to-member
-            template for (constexpr auto dm :
-                          std::meta::nonstatic_data_members_of(^^BaseModel, std::meta::access_context::unchecked())) {
-                // Compare member pointers by checking if this is the FK field
-                if constexpr (std::is_same_v<typename[:std::meta::type_of(dm):], RelatedModel>) {
-                    // Check if the member offset matches (simplified check)
-                    return std::meta::identifier_of(dm);
-                }
-            }
-            return "";
-        }
-
         // Row extraction - manual hardcoded extraction for JOIN result
         __attribute__((always_inline)) static BaseModel extract_row(sqlite3_stmt* stmt) {
             BaseModel obj;
@@ -153,8 +131,7 @@ namespace storm::benchmark {
 
       public:
         int execute_raw(int iterations) {
-            auto&    conn = storm::QuerySet<BaseModel>::get_default_connection();
-            sqlite3* db   = conn->get();
+            sqlite3* db = get_db<BaseModel>();
             if (!db)
                 return 0;
 

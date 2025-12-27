@@ -200,8 +200,7 @@ namespace storm::benchmark {
 
       public:
         int execute_raw(int iterations) {
-            auto&    conn = storm::QuerySet<Model>::get_default_connection();
-            sqlite3* db   = conn->get();
+            sqlite3* db = get_db<Model>();
             if (!db)
                 return 0;
 

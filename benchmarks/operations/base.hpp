@@ -21,6 +21,14 @@ import storm;
 namespace storm::benchmark {
 
     // ========================================================================
+    // get_db: Helper to get raw sqlite3* from default connection
+    // ========================================================================
+    template <typename Model> sqlite3* get_db() {
+        auto& conn = storm::QuerySet<Model>::get_default_connection();
+        return conn->get();
+    }
+
+    // ========================================================================
     // OperationDispatcher: Compile-time binding of operation to method
     // ========================================================================
     enum class OperationType { Insert, UpdatePK, Delete, Select };
@@ -147,9 +155,7 @@ namespace storm::benchmark {
         // Used by UPDATE and DELETE benchmarks that need existing rows with valid PKs
         void prepare_with_insert(int iterations) {
             // 1. Clear table using raw SQLite
-            auto&    conn = storm::QuerySet<Model>::get_default_connection();
-            sqlite3* db   = conn->get();
-            if (db) {
+            if (sqlite3* db = get_db<Model>()) {
                 sqlite3_exec(db, "DELETE FROM Person", nullptr, nullptr, nullptr);
             }
 
