@@ -19,6 +19,7 @@
 #include "operations/insert.hpp"
 #include "operations/update.hpp"
 #include "operations/delete.hpp"
+#include "operations/aggregate.hpp"
 
 namespace storm::benchmark {
 
@@ -302,6 +303,68 @@ namespace storm::benchmark {
             );
         }
 
+        // ====================================================================
+        // Aggregate operation handlers
+        // ====================================================================
+
+        template <typename Model, auto& test>
+        static void run_aggregate_count_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr int dataset_size = test.dataset_size;
+            runner.run_benchmark(test.test_name.c_str(), CountBenchmark<Model>{dataset_size}, iterations);
+        }
+
+        template <typename Model, auto& test>
+        static void run_aggregate_count_field_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.aggregate_field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(), CountFieldBenchmark<Model, field_info>{dataset_size}, iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_aggregate_count_distinct_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.aggregate_field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(), CountDistinctBenchmark<Model, field_info>{dataset_size}, iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_aggregate_sum_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.aggregate_field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(test.test_name.c_str(), SumBenchmark<Model, field_info>{dataset_size}, iterations);
+        }
+
+        template <typename Model, auto& test>
+        static void run_aggregate_avg_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.aggregate_field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(test.test_name.c_str(), AvgBenchmark<Model, field_info>{dataset_size}, iterations);
+        }
+
+        template <typename Model, auto& test>
+        static void run_aggregate_min_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.aggregate_field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(test.test_name.c_str(), MinBenchmark<Model, field_info>{dataset_size}, iterations);
+        }
+
+        template <typename Model, auto& test>
+        static void run_aggregate_max_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.aggregate_field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(test.test_name.c_str(), MaxBenchmark<Model, field_info>{dataset_size}, iterations);
+        }
+
       public:
         // Template recursion to execute tests at compile time
         template <typename Model, size_t TestIndex, size_t TotalTests> struct TestExecutor {
@@ -333,6 +396,20 @@ namespace storm::benchmark {
                         runner.run_select_join_operation<Model, test>(runner, iterations);
                     } else if constexpr (operation == "select_where_join") {
                         runner.run_select_where_join_operation<Model, test>(runner, iterations);
+                    } else if constexpr (operation == "aggregate_count") {
+                        runner.run_aggregate_count_operation<Model, test>(runner, iterations);
+                    } else if constexpr (operation == "aggregate_count_field") {
+                        runner.run_aggregate_count_field_operation<Model, test>(runner, iterations);
+                    } else if constexpr (operation == "aggregate_count_distinct") {
+                        runner.run_aggregate_count_distinct_operation<Model, test>(runner, iterations);
+                    } else if constexpr (operation == "aggregate_sum") {
+                        runner.run_aggregate_sum_operation<Model, test>(runner, iterations);
+                    } else if constexpr (operation == "aggregate_avg") {
+                        runner.run_aggregate_avg_operation<Model, test>(runner, iterations);
+                    } else if constexpr (operation == "aggregate_min") {
+                        runner.run_aggregate_min_operation<Model, test>(runner, iterations);
+                    } else if constexpr (operation == "aggregate_max") {
+                        runner.run_aggregate_max_operation<Model, test>(runner, iterations);
                     }
                 }
 

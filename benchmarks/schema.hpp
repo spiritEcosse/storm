@@ -73,6 +73,9 @@ namespace storm::benchmark {
         // Nested WHERE clause
         WhereClause where;
 
+        // Aggregate field (for SUM, AVG, MIN, MAX, COUNT(field), COUNT(DISTINCT))
+        ConstexprString<32> aggregate_field;
+
         // Test parameters
         int iterations   = 1000;
         int dataset_size = 10000;

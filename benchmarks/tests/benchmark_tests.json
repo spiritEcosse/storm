@@ -445,5 +445,143 @@
     "iterations": 100,
     "dataset_size": 10000,
     "batch_size": 1
+  },
+  {
+    "test_name": "aggregate_count_1000",
+    "test_category": "AGGREGATE",
+    "description": "COUNT(*) aggregate over 1000 rows",
+    "model": "Person",
+    "operation": "aggregate_count",
+    "iterations": 10000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "aggregate_count_10000",
+    "test_category": "AGGREGATE",
+    "description": "COUNT(*) aggregate over 10000 rows",
+    "model": "Person",
+    "operation": "aggregate_count",
+    "iterations": 5000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "aggregate_count_field_1000",
+    "test_category": "AGGREGATE",
+    "description": "COUNT(age) aggregate over 1000 rows",
+    "model": "Person",
+    "operation": "aggregate_count_field",
+    "aggregate_field": "age",
+    "iterations": 10000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "aggregate_count_field_10000",
+    "test_category": "AGGREGATE",
+    "description": "COUNT(age) aggregate over 10000 rows",
+    "model": "Person",
+    "operation": "aggregate_count_field",
+    "aggregate_field": "age",
+    "iterations": 5000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "aggregate_count_distinct_1000",
+    "test_category": "AGGREGATE",
+    "description": "COUNT(DISTINCT age) aggregate over 1000 rows",
+    "model": "Person",
+    "operation": "aggregate_count_distinct",
+    "aggregate_field": "age",
+    "iterations": 10000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "aggregate_count_distinct_10000",
+    "test_category": "AGGREGATE",
+    "description": "COUNT(DISTINCT age) aggregate over 10000 rows",
+    "model": "Person",
+    "operation": "aggregate_count_distinct",
+    "aggregate_field": "age",
+    "iterations": 5000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "aggregate_sum_1000",
+    "test_category": "AGGREGATE",
+    "description": "SUM(age) aggregate over 1000 rows",
+    "model": "Person",
+    "operation": "aggregate_sum",
+    "aggregate_field": "age",
+    "iterations": 10000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "aggregate_sum_10000",
+    "test_category": "AGGREGATE",
+    "description": "SUM(age) aggregate over 10000 rows",
+    "model": "Person",
+    "operation": "aggregate_sum",
+    "aggregate_field": "age",
+    "iterations": 5000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "aggregate_avg_1000",
+    "test_category": "AGGREGATE",
+    "description": "AVG(salary) aggregate over 1000 rows",
+    "model": "Person",
+    "operation": "aggregate_avg",
+    "aggregate_field": "salary",
+    "iterations": 10000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "aggregate_avg_10000",
+    "test_category": "AGGREGATE",
+    "description": "AVG(salary) aggregate over 10000 rows",
+    "model": "Person",
+    "operation": "aggregate_avg",
+    "aggregate_field": "salary",
+    "iterations": 5000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "aggregate_min_1000",
+    "test_category": "AGGREGATE",
+    "description": "MIN(age) aggregate over 1000 rows",
+    "model": "Person",
+    "operation": "aggregate_min",
+    "aggregate_field": "age",
+    "iterations": 10000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "aggregate_min_10000",
+    "test_category": "AGGREGATE",
+    "description": "MIN(age) aggregate over 10000 rows",
+    "model": "Person",
+    "operation": "aggregate_min",
+    "aggregate_field": "age",
+    "iterations": 5000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "aggregate_max_1000",
+    "test_category": "AGGREGATE",
+    "description": "MAX(salary) aggregate over 1000 rows",
+    "model": "Person",
+    "operation": "aggregate_max",
+    "aggregate_field": "salary",
+    "iterations": 10000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "aggregate_max_10000",
+    "test_category": "AGGREGATE",
+    "description": "MAX(salary) aggregate over 10000 rows",
+    "model": "Person",
+    "operation": "aggregate_max",
+    "aggregate_field": "salary",
+    "iterations": 5000,
+    "dataset_size": 10000
   }
 ]

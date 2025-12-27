@@ -189,6 +189,8 @@ namespace storm::benchmark {
             test.dataset_size = parse_int(json, pos);
         } else if (key == "batch_size") {
             test.batch_size = parse_int(json, pos);
+        } else if (key == "aggregate_field") {
+            test.aggregate_field = parse_string<32>(json, pos);
         } else {
             // Unknown key - skip value
             skip_value(json, pos);
