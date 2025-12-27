@@ -26,13 +26,13 @@ export namespace storm {
         using FieldAttr = orm::statements::meta::FieldAttr;
 
         // Check if member has primary attribute
-        consteval bool has_primary_attr(std::meta::info member) {
+        consteval auto has_primary_attr(std::meta::info member) -> bool {
             auto field_attr = std::meta::annotation_of_type<FieldAttr>(member);
             return field_attr.has_value() && field_attr.value() == FieldAttr::primary;
         }
 
         // Find primary key member with compile-time error if not found
-        consteval std::meta::info find_primary_key(std::meta::info type) {
+        consteval auto find_primary_key(std::meta::info type) -> std::meta::info {
             for (const std::meta::info member :
                  std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())) {
                 if (has_primary_attr(member)) {

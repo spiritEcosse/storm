@@ -17,7 +17,7 @@ export namespace storm::db::sqlite {
 
     // Custom deleter for sqlite3
     struct SqliteDeleter {
-        void operator()(sqlite3* db) const noexcept {
+        auto operator()(sqlite3* db) const noexcept -> void {
             if (db != nullptr) {
                 sqlite3_close_v2(db);
             }
@@ -140,7 +140,7 @@ export namespace storm::db::sqlite {
         }
 
         // Access raw handle for advanced operations
-        [[nodiscard]] sqlite3_stmt* handle() const noexcept {
+        [[nodiscard]] auto handle() const noexcept -> sqlite3_stmt* {
             return stmt_.get();
         }
 
@@ -222,11 +222,11 @@ export namespace storm::db::sqlite {
         using is_transparent = void;
         using hash_type      = std::hash<std::string_view>;
 
-        [[nodiscard]] size_t operator()(std::string_view str) const noexcept {
+        [[nodiscard]] auto operator()(std::string_view str) const noexcept -> size_t {
             return hash_type{}(str);
         }
 
-        [[nodiscard]] size_t operator()(const std::string& str) const noexcept {
+        [[nodiscard]] auto operator()(const std::string& str) const noexcept -> size_t {
             return hash_type{}(str);
         }
     };
@@ -234,7 +234,7 @@ export namespace storm::db::sqlite {
     struct string_equal {
         using is_transparent = void;
 
-        [[nodiscard]] bool operator()(std::string_view lhs, std::string_view rhs) const noexcept {
+        [[nodiscard]] auto operator()(std::string_view lhs, std::string_view rhs) const noexcept -> bool {
             return lhs == rhs;
         }
     };
@@ -334,17 +334,17 @@ export namespace storm::db::sqlite {
         }
 
         // Clear statement cache (useful for memory management)
-        void clear_statement_cache() noexcept {
+        auto clear_statement_cache() noexcept -> void {
             statement_cache_.clear();
         }
 
         // Get cache statistics
-        [[nodiscard]] size_t cached_statement_count() const noexcept {
+        [[nodiscard]] auto cached_statement_count() const noexcept -> size_t {
             return statement_cache_.size();
         }
 
         // Pre-populate statement cache with common operations
-        void prepare_common_statements() noexcept {
+        auto prepare_common_statements() noexcept -> void {
             // Common patterns that benefit from pre-compilation
             static const std::vector<std::string> common_patterns = {"BEGIN TRANSACTION", "COMMIT", "ROLLBACK"};
 
@@ -386,12 +386,12 @@ export namespace storm::db::sqlite {
         }
 
         // Access raw SQLite handle for advanced operations
-        [[nodiscard]] sqlite3* get() const noexcept {
+        [[nodiscard]] auto get() const noexcept -> sqlite3* {
             return db.get();
         }
 
         // Get the row ID of the most recent successful INSERT
-        [[nodiscard]] int64_t last_insert_rowid() const noexcept {
+        [[nodiscard]] auto last_insert_rowid() const noexcept -> int64_t {
             return sqlite3_last_insert_rowid(db.get());
         }
 

@@ -83,7 +83,7 @@ export namespace storm::orm::where {
             sql_ += "?";
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline std::string to_sql() const noexcept {
+        [[nodiscard]] __attribute__((always_inline)) inline auto to_sql() const noexcept -> std::string {
             return sql_;
         }
 
@@ -110,7 +110,7 @@ export namespace storm::orm::where {
             sql_ += " LIKE ?";
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline std::string to_sql() const noexcept {
+        [[nodiscard]] __attribute__((always_inline)) inline auto to_sql() const noexcept -> std::string {
             return sql_;
         }
 
@@ -136,7 +136,7 @@ export namespace storm::orm::where {
             sql_ += " BETWEEN ? AND ?";
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline std::string to_sql() const noexcept {
+        [[nodiscard]] __attribute__((always_inline)) inline auto to_sql() const noexcept -> std::string {
             return sql_;
         }
 
@@ -182,7 +182,7 @@ export namespace storm::orm::where {
             }
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline std::string to_sql() const noexcept {
+        [[nodiscard]] __attribute__((always_inline)) inline auto to_sql() const noexcept -> std::string {
             return sql_; // Return pre-generated SQL
         }
 
@@ -299,7 +299,7 @@ export namespace storm::orm::where {
     };
 
     // Main visitor entry points (called by users and recursively by LogicalExpr)
-    [[nodiscard]] inline std::string to_sql(const ExpressionVariant& expr) {
+    [[nodiscard]] inline auto to_sql(const ExpressionVariant& expr) -> std::string {
         return std::visit(ToSqlVisitor{}, expr);
     }
 

@@ -41,7 +41,7 @@ export namespace storm::orm::statements {
         using Statement  = typename ConnType::Statement;
 
         // Pre-compute placeholders for SQL VALUES clause (excluding PK for auto-increment)
-        static consteval std::string build_placeholders() {
+        static consteval auto build_placeholders() -> std::string {
             std::string result;
             bool        first = true;
             for (size_t i = 0; i < Base::field_count_; ++i) {
@@ -62,7 +62,7 @@ export namespace storm::orm::statements {
         static constexpr auto placeholders_ = build_placeholders();
 
         // Compile-time SQL size calculation
-        static consteval size_t calculate_insert_sql_size() {
+        static consteval auto calculate_insert_sql_size() -> size_t {
             size_t size = 0;
             size += 12; // "INSERT INTO "
 
@@ -107,13 +107,13 @@ export namespace storm::orm::statements {
 
       public:
         // Public access to INSERT SQL for QuerySet optimization
-        static const std::string& get_insert_sql_static() {
+        static auto get_insert_sql_static() -> const std::string& {
             return insert_sql_string;
         }
 
       private:
         // Compile-time bulk INSERT prefix calculation
-        static consteval size_t calculate_bulk_insert_prefix_size() {
+        static consteval auto calculate_bulk_insert_prefix_size() -> size_t {
             size_t size = 0;
             size += 12; // "INSERT INTO "
             size += Base::table_name_.size();
@@ -145,13 +145,13 @@ export namespace storm::orm::statements {
                 calculate_bulk_insert_prefix_size() - 1; // Exclude null terminator
 
         // Generate INSERT SQL string (compile-time computed, runtime accessible)
-        static const std::string& get_insert_sql() {
+        static auto get_insert_sql() -> const std::string& {
             return insert_sql_string;
         }
 
         // Generate bulk INSERT SQL with multiple value sets (with caching)
         // Returns const reference to avoid expensive string copy
-        static const std::string& get_bulk_insert_sql(size_t count) {
+        static auto get_bulk_insert_sql(size_t count) -> const std::string& {
             // Thread-local cache for common batch sizes
             static thread_local BulkSQLCache cache;
 

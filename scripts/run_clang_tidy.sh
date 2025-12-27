@@ -1,9 +1,10 @@
 #!/bin/bash
-# Run clang-tidy with modernize checks, excluding third_party
+# Run clang-tidy using .clang-tidy configuration file
 # Usage: ./run_clang_tidy.sh [--fix] [-j N]
 #
 # Prerequisites:
 #   - Release build with compile_commands.json: cmake --preset ninja-release
+#   - .clang-tidy file in project root (contains all check configurations)
 #
 # Options:
 #   --fix  Apply suggested fixes automatically (use with caution)
@@ -14,6 +15,7 @@ set -e
 CLANG_TIDY="../clang-p2996/build/bin/clang-tidy"
 BUILD_DIR="build/release"
 COMPILE_COMMANDS="$BUILD_DIR/compile_commands.json"
+CLANG_TIDY_CONFIG=".clang-tidy"
 
 # Parse arguments
 FIX_FLAG=""
@@ -47,9 +49,14 @@ if [[ ! -x "$CLANG_TIDY" ]]; then
     exit 1
 fi
 
-echo "🔍 Running clang-tidy with comprehensive checks..."
+if [[ ! -f "$CLANG_TIDY_CONFIG" ]]; then
+    echo "❌ Error: .clang-tidy config not found at $CLANG_TIDY_CONFIG" >&2
+    exit 1
+fi
+
+echo "🔍 Running clang-tidy using .clang-tidy configuration..."
+echo "   Config file: $CLANG_TIDY_CONFIG"
 echo "   Build directory: $BUILD_DIR"
-echo "   Excluding: third_party/"
 echo "   Parallel jobs: $JOBS"
 echo "   Directories: src/ tests/ benchmarks/"
 if [[ -n "$FIX_FLAG" ]]; then
@@ -76,76 +83,25 @@ FILE_COUNT=$(echo "$FILES" | wc -l)
 echo "📁 Found $FILE_COUNT source files to check"
 echo ""
 
-# Comprehensive checks for C++26 ORM project
-# Categories: bugprone, cert, concurrency, cppcoreguidelines, misc, modernize, performance, readability
-# Excluded categories: android, fuchsia, llvm, abseil, google, objc, etc. (platform/library-specific)
-#
-# Exclusion policy:
-# - Keep checks that catch real bugs
-# - Exclude stylistic checks that are subjective or would require massive refactoring
-# - Exclude false positives (e.g., bugprone-exception-escape for std::string in noexcept)
-CHECKS="-*,\
-bugprone-*,\
--bugprone-easily-swappable-parameters,\
--bugprone-exception-escape,\
--bugprone-suspicious-stringview-data-usage,\
--bugprone-branch-clone,\
--bugprone-inc-dec-in-conditions,\
--bugprone-unused-return-value,\
-cert-*,\
--cert-err33-c,\
--cert-err58-cpp,\
-concurrency-*,\
-cppcoreguidelines-*,\
--cppcoreguidelines-avoid-const-or-ref-data-members,\
--cppcoreguidelines-avoid-magic-numbers,\
--cppcoreguidelines-missing-std-forward,\
--cppcoreguidelines-non-private-member-variables-in-classes,\
--cppcoreguidelines-prefer-member-initializer,\
--cppcoreguidelines-pro-bounds-array-to-pointer-decay,\
--cppcoreguidelines-pro-bounds-constant-array-index,\
--cppcoreguidelines-pro-bounds-pointer-arithmetic,\
--cppcoreguidelines-pro-type-member-init,\
--cppcoreguidelines-pro-type-reinterpret-cast,\
-misc-*,\
--misc-include-cleaner,\
--misc-non-private-member-variables-in-classes,\
-modernize-*,\
--modernize-use-trailing-return-type,\
-performance-*,\
--performance-enum-size,\
-readability-*,\
--readability-braces-around-statements,\
--readability-else-after-return,\
--readability-function-cognitive-complexity,\
--readability-identifier-length,\
--readability-implicit-bool-conversion,\
--readability-magic-numbers,\
--readability-math-missing-parentheses,\
--readability-named-parameter,\
--readability-qualified-auto,\
--readability-redundant-access-specifiers,\
--readability-redundant-inline-specifier"
-
 # Create temp directory for output files
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
 
 # Export variables for subshells
-export CLANG_TIDY BUILD_DIR CHECKS FIX_FLAG TEMP_DIR
+export CLANG_TIDY BUILD_DIR FIX_FLAG TEMP_DIR
 
 # Function to run clang-tidy on a single file (called in parallel)
+# Uses .clang-tidy config file automatically (clang-tidy searches parent directories)
 run_tidy() {
     local file="$1"
     local basename=$(echo "$file" | tr '/' '_')
     local outfile="$TEMP_DIR/$basename.out"
 
     # Run clang-tidy, capturing output and ignoring crashes
+    # clang-tidy automatically reads .clang-tidy from project root
     # Filter out noisy clang-tidy meta-messages (but keep actual warnings/errors)
     timeout 60 "$CLANG_TIDY" \
         -p "$BUILD_DIR" \
-        --checks="$CHECKS" \
-        --header-filter="^(?!.*third_party).*" \
         $FIX_FLAG \
         "$file" 2>&1 | grep -v -E "^[0-9]+ warnings? (generated|and)|^Suppressed [0-9]+|^Use -header-filter|^Use -system-headers" > "$outfile" || true
 

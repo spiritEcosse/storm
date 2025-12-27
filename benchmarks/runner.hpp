@@ -27,7 +27,7 @@ namespace storm::benchmark {
     constexpr int NUM_RUNS = 5;
 
     // Statistical helper functions
-    inline double calculate_median(std::vector<double>& values) {
+    inline auto calculate_median(std::vector<double>& values) -> double {
         std::ranges::sort(values);
         size_t n = values.size();
         if (n == 0)
@@ -35,7 +35,7 @@ namespace storm::benchmark {
         return (n % 2 == 0) ? (values[n / 2 - 1] + values[n / 2]) / 2.0 : values[n / 2];
     }
 
-    inline double calculate_mean(const std::vector<double>& values) {
+    inline auto calculate_mean(const std::vector<double>& values) -> double {
         if (values.empty())
             return 0.0;
         double sum = 0.0;
@@ -44,7 +44,7 @@ namespace storm::benchmark {
         return sum / values.size();
     }
 
-    inline double calculate_stddev(const std::vector<double>& values, double mean) {
+    inline auto calculate_stddev(const std::vector<double>& values, double mean) -> double {
         if (values.size() < 2)
             return 0.0;
         double sum_sq = 0.0;
@@ -54,13 +54,13 @@ namespace storm::benchmark {
         return std::sqrt(sum_sq / values.size());
     }
 
-    inline double calculate_min(const std::vector<double>& values) {
+    inline auto calculate_min(const std::vector<double>& values) -> double {
         if (values.empty())
             return 0.0;
         return *std::ranges::min_element(values);
     }
 
-    inline double calculate_max(const std::vector<double>& values) {
+    inline auto calculate_max(const std::vector<double>& values) -> double {
         if (values.empty())
             return 0.0;
         return *std::ranges::max_element(values);
@@ -86,7 +86,7 @@ namespace storm::benchmark {
     } // namespace Color
 
     // Helper: Get color based on throughput (M ops/sec)
-    inline const char* get_throughput_color(double throughput) {
+    inline auto get_throughput_color(double throughput) -> const char* {
         if (throughput >= 5.0)
             return Color::BOLD_GREEN;
         if (throughput >= 1.0)
@@ -95,7 +95,7 @@ namespace storm::benchmark {
     }
 
     // Helper: Get color based on efficiency percentage
-    inline const char* get_efficiency_color(double efficiency) {
+    inline auto get_efficiency_color(double efficiency) -> const char* {
         if (efficiency >= 90.0)
             return Color::BOLD_GREEN;
         if (efficiency >= 70.0)
@@ -108,7 +108,7 @@ namespace storm::benchmark {
     class BenchmarkRunner {
       public:
         // List all available tests
-        void list_tests() {
+        auto list_tests() -> void {
             std::cout << "=== Available Benchmark Tests ===\n";
             std::cout << "Total: " << BENCHMARK_TESTS.size() << " tests\n\n";
 
@@ -140,7 +140,7 @@ namespace storm::benchmark {
 
         // Common timing and reporting for all benchmarks (with statistical analysis)
         template <typename BenchmarkClass>
-        void run_benchmark(const char* test_name, BenchmarkClass bench, int iterations) {
+        auto run_benchmark(const char* test_name, BenchmarkClass bench, int iterations) -> void {
             std::cout << "\n" << Color::BOLD_CYAN << "=== " << test_name << " ===" << Color::RESET << "\n";
 
             bench.print_info();
@@ -421,7 +421,7 @@ namespace storm::benchmark {
         };
 
         // Entry point for test execution (all tests)
-        template <typename Model> void run_all(int iterations = 1000) {
+        template <typename Model> auto run_all(int iterations = 1000) -> void {
             std::cout << "=== Running All Benchmark Tests (Compile-Time Dispatch) ===\n";
             std::cout << "Total tests: " << BENCHMARK_TESTS.size() << "\n";
             std::cout << "Iterations per test: " << iterations << "\n";
@@ -438,7 +438,7 @@ namespace storm::benchmark {
 
         // Entry point for filtered test execution
         template <typename Model>
-        void run_filtered(const std::string& filter, int iterations = 1000, bool scale_test = false) {
+        auto run_filtered(const std::string& filter, int iterations = 1000, bool scale_test = false) -> void {
             std::cout << "=== Running Filtered Benchmark Tests ===\n";
             std::cout << "Filter: \"" << filter << "\" (";
             std::cout << (scale_test ? "substring match - scale testing mode" : "exact match") << ")\n";

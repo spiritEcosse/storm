@@ -20,7 +20,7 @@ struct SqlitePerson {
 // Test QuerySet.remove() functionality
 class QuerySetRemoveTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         // Set up default connection using QuerySet
         auto result = storm::QuerySet<SqlitePerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to set default connection: " << result.error().message();
@@ -46,13 +46,13 @@ class QuerySetRemoveTest : public ::testing::Test {
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data: " << insert_result.error().message();
     }
 
-    void TearDown() override {
+    auto TearDown() -> void override {
         // Clear all connections
         storm::QuerySet<SqlitePerson>::clear_default_connection();
     }
 
     // Helper function to count records using the default connection
-    static int countSqlitePersons() {
+    static auto countSqlitePersons() -> int {
         auto&         conn = storm::QuerySet<SqlitePerson>::get_default_connection();
         sqlite3_stmt* stmt = nullptr;
         int           rc   = sqlite3_prepare_v2(conn->get(), "SELECT COUNT(*) FROM SqlitePerson", -1, &stmt, nullptr);
@@ -67,7 +67,7 @@ class QuerySetRemoveTest : public ::testing::Test {
     }
 
     // Helper function to check if person exists using the default connection
-    static bool personExists(int id) {
+    static auto personExists(int id) -> bool {
         auto&         conn = storm::QuerySet<SqlitePerson>::get_default_connection();
         sqlite3_stmt* stmt = nullptr;
         int rc = sqlite3_prepare_v2(conn->get(), "SELECT COUNT(*) FROM SqlitePerson WHERE id = ?", -1, &stmt, nullptr);
@@ -521,7 +521,7 @@ TEST_F(QuerySetRemoveTest, InsertEmptyBatch) {
 // Test QuerySet.update() functionality
 class QuerySetUpdateTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         // Set up default connection using QuerySet
         auto result = storm::QuerySet<SqlitePerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to set default connection: " << result.error().message();
@@ -547,13 +547,13 @@ class QuerySetUpdateTest : public ::testing::Test {
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data: " << insert_result.error().message();
     }
 
-    void TearDown() override {
+    auto TearDown() -> void override {
         // Clear all connections
         storm::QuerySet<SqlitePerson>::clear_default_connection();
     }
 
     // Helper function to count records using the default connection
-    static int countSqlitePersons() {
+    static auto countSqlitePersons() -> int {
         auto&         conn = storm::QuerySet<SqlitePerson>::get_default_connection();
         sqlite3_stmt* stmt = nullptr;
         int           rc   = sqlite3_prepare_v2(conn->get(), "SELECT COUNT(*) FROM SqlitePerson", -1, &stmt, nullptr);

@@ -19,7 +19,7 @@ struct OrderByPerson {
 
 class OrderByTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         // Set up in-memory SQLite database
         auto result = QuerySet<OrderByPerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
@@ -58,7 +58,7 @@ class OrderByTest : public ::testing::Test {
         }
     }
 
-    void TearDown() override {
+    auto TearDown() -> void override {
         QuerySet<OrderByPerson>::clear_default_connection();
     }
 };

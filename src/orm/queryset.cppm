@@ -54,13 +54,13 @@ export namespace storm {
             requires std::same_as<ConnType, storm::db::sqlite::Connection>
             : conn_(get_default_connection()) {}
 
-        std::expected<void, Error> remove(const T& obj) {
+        auto remove(const T& obj) -> std::expected<void, Error> {
             // Use cached RemoveStatement instance for optimal performance
             return get_remove_statement().execute_one(obj);
         }
 
         // Bulk remove operations
-        std::expected<void, Error> remove(std::span<const T> objects) {
+        auto remove(std::span<const T> objects) -> std::expected<void, Error> {
             return get_remove_statement().execute(objects);
         }
 
@@ -68,15 +68,15 @@ export namespace storm {
         // (SFINAE: only accept T, not span/container)
         template <typename U = T>
             requires std::same_as<std::remove_cvref_t<U>, T>
-        std::expected<int64_t, Error> insert(const U& obj) {
+        auto insert(const U& obj) -> std::expected<int64_t, Error> {
             return get_insert_statement().execute_single_optimized(obj, true);
         }
 
         // Bulk insert (span overload)
         // NOTE: Returns void because SQLite's last_insert_rowid() only gives the last ID,
         // and assuming consecutive IDs is unreliable (triggers, gaps, etc.)
-        std::expected<void, Error>
-        insert(std::span<const T> objects, std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
+        auto insert(std::span<const T> objects, std::optional<orm::statements::InsertOptions> opts = std::nullopt)
+                -> std::expected<void, Error> {
             return execute_insert(objects, opts);
         }
 
@@ -243,13 +243,13 @@ export namespace storm {
         // Update operations (SFINAE: only accept T, not span/container)
         template <typename U = T>
             requires std::same_as<std::remove_cvref_t<U>, T>
-        std::expected<void, Error> update(const U& obj) {
+        auto update(const U& obj) -> std::expected<void, Error> {
             // Use cached UpdateStatement instance for optimal performance
             return get_update_statement().execute_single_optimized(obj);
         }
 
         // Bulk update operations
-        std::expected<void, Error> update(std::span<const T> objects) {
+        auto update(std::span<const T> objects) -> std::expected<void, Error> {
             return get_update_statement().execute(objects);
         }
 
@@ -260,7 +260,7 @@ export namespace storm {
         //   qs.where(age > 25).limit(10).select();  // WHERE age > 25 LIMIT 10
         //   qs.reset();                              // Clear state
         //   qs.select();                             // No WHERE, no LIMIT
-        void reset() noexcept {
+        auto reset() noexcept -> void {
             join_stmt_.reset();
             where_expr_.reset();
             limit_value_.reset();
@@ -446,11 +446,11 @@ export namespace storm {
             return detail::get_default_connection_ptr();
         }
 
-        [[nodiscard]] static bool has_default_connection() noexcept {
+        [[nodiscard]] static auto has_default_connection() noexcept -> bool {
             return static_cast<bool>(detail::get_default_connection_ptr());
         }
 
-        static void clear_default_connection() noexcept {
+        static auto clear_default_connection() noexcept -> void {
             detail::get_default_connection_ptr().reset();
         }
 
@@ -468,9 +468,9 @@ export namespace storm {
             return *insert_stmt_;
         }
 
-        [[nodiscard]] std::expected<void, Error> execute_insert(
+        [[nodiscard]] auto execute_insert(
                 std::span<const T> objects, std::optional<orm::statements::InsertOptions> opts = std::nullopt
-        ) const noexcept {
+        ) const noexcept -> std::expected<void, Error> {
             return get_insert_statement().execute(objects, opts);
         }
 

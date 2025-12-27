@@ -501,13 +501,14 @@ export namespace storm::orm::statements {
             return conn.execute("COMMIT");
         }
 
-        template <typename ConnType> static void rollback_transaction(ConnType& conn) noexcept {
+        template <typename ConnType> static auto rollback_transaction(ConnType& conn) noexcept -> void {
             // TODO: Remove this func in favour of TransactionGuard
             (void)conn.execute("ROLLBACK");
         }
 
         // Utility to determine if transaction should be used
-        template <typename ContainerType> static constexpr bool should_use_transaction(const ContainerType& container) {
+        template <typename ContainerType>
+        static constexpr auto should_use_transaction(const ContainerType& container) -> bool {
             return container.size() > 1;
         }
 

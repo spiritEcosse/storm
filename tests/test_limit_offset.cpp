@@ -18,7 +18,7 @@ struct LimitOffsetPerson {
 // Test fixture for LIMIT/OFFSET operations
 class LimitOffsetTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         // Set up in-memory SQLite database
         auto result = QuerySet<LimitOffsetPerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
@@ -45,7 +45,7 @@ class LimitOffsetTest : public ::testing::Test {
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data: " << insert_result.error().message();
     }
 
-    void TearDown() override {
+    auto TearDown() -> void override {
         QuerySet<LimitOffsetPerson>::clear_default_connection();
     }
 };

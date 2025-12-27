@@ -35,7 +35,7 @@ struct Message {
 // Test fixture for DISTINCT operations
 class DistinctTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         // Set up in-memory SQLite database
         auto result = QuerySet<DistinctPerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
@@ -75,7 +75,7 @@ class DistinctTest : public ::testing::Test {
         ASSERT_TRUE(create_msg.has_value());
     }
 
-    void TearDown() override {
+    auto TearDown() -> void override {
         QuerySet<DistinctPerson>::clear_default_connection();
     }
 

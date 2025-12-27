@@ -33,7 +33,7 @@ using namespace storm::benchmark;
 
 // Models are defined in models.hpp and included via runner.hpp
 
-int main(int argc, char* argv[]) {
+auto main(int argc, char* argv[]) -> int {
     try {
         // Parse command-line arguments
         std::string filter;

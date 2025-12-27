@@ -113,7 +113,7 @@ export namespace storm::orm::utilities {
             data[len] = '\0';
         }
 
-        consteval void append(const char* str) {
+        consteval auto append(const char* str) -> void {
             size_t i = 0;
             while (str[i] != '\0' && len < N - 1) {
                 data[len] = str[i];
@@ -123,7 +123,7 @@ export namespace storm::orm::utilities {
             data[len] = '\0';
         }
 
-        consteval void append(const std::string_view& str) {
+        consteval auto append(const std::string_view& str) -> void {
             for (char c : str) {
                 if (len < N - 1) {
                     data[len] = c;
@@ -134,7 +134,7 @@ export namespace storm::orm::utilities {
         }
 
         // Append another ConstexprString
-        template <size_t M> consteval void append(const ConstexprString<M>& other) {
+        template <size_t M> consteval auto append(const ConstexprString<M>& other) -> void {
             for (size_t i = 0; i < other.len && len < N - 1; ++i) {
                 data[len] = other.data[i];
                 ++len;
@@ -143,23 +143,23 @@ export namespace storm::orm::utilities {
         }
 
         // Operator+= overloads (for convenient syntax)
-        consteval ConstexprString& operator+=(const char* str) {
+        consteval auto operator+=(const char* str) -> ConstexprString& {
             append(str);
             return *this;
         }
 
-        consteval ConstexprString& operator+=(const std::string_view& str) {
+        consteval auto operator+=(const std::string_view& str) -> ConstexprString& {
             append(str);
             return *this;
         }
 
-        template <size_t M> consteval ConstexprString& operator+=(const ConstexprString<M>& other) {
+        template <size_t M> consteval auto operator+=(const ConstexprString<M>& other) -> ConstexprString& {
             append(other);
             return *this;
         }
 
         // Append a single digit (0-9) for compile-time number formatting
-        consteval void append_digit(size_t digit) {
+        consteval auto append_digit(size_t digit) -> void {
             if (digit <= 9 && len < N - 1) {
                 data[len] = '0' + static_cast<char>(digit);
                 ++len;
@@ -183,7 +183,7 @@ export namespace storm::orm::utilities {
         std::array<Entry, CACHE_SIZE> entries{};
         size_t                        next_slot = 0; // For round-robin replacement
 
-        const std::string* find(const KeyType& key) const {
+        auto find(const KeyType& key) const -> const std::string* {
             for (const auto& entry : entries) {
                 if (entry.key == key && !entry.sql.empty()) {
                     return &entry.sql;
@@ -192,7 +192,7 @@ export namespace storm::orm::utilities {
             return nullptr;
         }
 
-        void insert(KeyType key, std::string sql) {
+        auto insert(KeyType key, std::string sql) -> void {
             // Try to find empty slot first
             for (auto& entry : entries) {
                 if (entry.key == KeyType{} && entry.sql.empty()) {
@@ -207,7 +207,7 @@ export namespace storm::orm::utilities {
             next_slot              = (next_slot + 1) % CACHE_SIZE;
         }
 
-        void clear() {
+        auto clear() -> void {
             for (auto& entry : entries) {
                 entry.key = KeyType{};
                 entry.sql.clear();
@@ -234,14 +234,14 @@ export namespace storm::orm::utilities {
     }
 
     // Helper function for calculating placeholder string size
-    consteval size_t calculate_placeholders_size(size_t count) {
+    consteval auto calculate_placeholders_size(size_t count) -> size_t {
         if (count == 0)
             return 1;                               // Null terminator
         return (count * 1) + ((count - 1) * 2) + 1; // count * "?" + (count-1) * ", " + null terminator
     }
 
     // Helper function for building SQL IN clause placeholders
-    template <size_t N> consteval ConstexprString<N> build_in_clause_string(size_t count) {
+    template <size_t N> consteval auto build_in_clause_string(size_t count) -> ConstexprString<N> {
         ConstexprString<N> result;
         result.append("(");
 
@@ -257,7 +257,7 @@ export namespace storm::orm::utilities {
     }
 
     // Helper function for calculating IN clause size
-    consteval size_t calculate_in_clause_size(size_t count) {
+    consteval auto calculate_in_clause_size(size_t count) -> size_t {
         if (count == 0)
             return 3;                                   // "()" + null terminator
         return 2 + (count * 1) + ((count - 1) * 1) + 1; // "()" + count * "?" + (count-1) * "," + null terminator
@@ -326,12 +326,12 @@ export namespace storm::orm::utilities {
         static constexpr auto   fields = Parser::fields;
 
         // Check if clause is empty
-        static constexpr bool empty() {
+        static constexpr auto empty() -> bool {
             return count == 0;
         }
 
         // Generate ORDER BY SQL fragment at compile-time
-        template <size_t BufferSize = 1024> static consteval ConstexprString<BufferSize> to_sql() {
+        template <size_t BufferSize = 1024> static consteval auto to_sql() -> ConstexprString<BufferSize> {
             ConstexprString<BufferSize> result;
 
             if constexpr (count == 0) {
@@ -363,7 +363,7 @@ export namespace storm::orm::utilities {
         }
 
         // Generate ORDER BY SQL fragment at runtime
-        static std::string to_sql_runtime() {
+        static auto to_sql_runtime() -> std::string {
             if constexpr (count == 0) {
                 return "";
             }
@@ -380,7 +380,7 @@ export namespace storm::orm::utilities {
 
       private:
         // Helper to append a single field's ORDER BY clause
-        template <size_t I> static void append_field(std::string& result, bool add_comma) {
+        template <size_t I> static auto append_field(std::string& result, bool add_comma) -> void {
             if (add_comma) {
                 result += ", ";
             }
@@ -402,15 +402,15 @@ export namespace storm::orm::utilities {
         static constexpr size_t                                          count = 0;
         static constexpr std::array<std::pair<std::meta::info, bool>, 0> fields{};
 
-        static constexpr bool empty() {
+        static constexpr auto empty() -> bool {
             return true;
         }
 
-        template <size_t BufferSize = 1024> static consteval ConstexprString<BufferSize> to_sql() {
+        template <size_t BufferSize = 1024> static consteval auto to_sql() -> ConstexprString<BufferSize> {
             return ConstexprString<BufferSize>{};
         }
 
-        static std::string to_sql_runtime() {
+        static auto to_sql_runtime() -> std::string {
             return "";
         }
     };
@@ -487,7 +487,7 @@ export namespace storm::orm::utilities {
         }
 
       private:
-        void rollback_if_needed() noexcept {
+        auto rollback_if_needed() noexcept -> void {
             if (conn_ && !committed_) {
                 (void)conn_->execute("ROLLBACK");
             }

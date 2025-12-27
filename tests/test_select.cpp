@@ -18,7 +18,7 @@ struct SelectPerson {
 // Test fixture for SELECT operations
 class SelectTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         // Set up in-memory SQLite database
         auto result = QuerySet<SelectPerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
@@ -36,7 +36,7 @@ class SelectTest : public ::testing::Test {
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
     }
 
-    void TearDown() override {
+    auto TearDown() -> void override {
         QuerySet<SelectPerson>::clear_default_connection();
     }
 };

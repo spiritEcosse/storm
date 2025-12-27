@@ -37,7 +37,7 @@ struct AggMessage {
 // Test fixture for aggregate functions
 class AggregateTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         // Open in-memory database
         auto result = QuerySet<AggregatePerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
@@ -79,14 +79,14 @@ class AggregateTest : public ::testing::Test {
         msg_qs = std::make_unique<QuerySet<AggMessage>>();
     }
 
-    void TearDown() override {
+    auto TearDown() -> void override {
         qs.reset();
         msg_qs.reset();
         QuerySet<AggregatePerson>::clear_default_connection();
     }
 
     // Helper to insert test data
-    void insert_test_data() {
+    auto insert_test_data() -> void {
         std::vector<AggregatePerson> const people =
                 {{0, "Alice", 25, 50000.0, 3},
                  {0, "Bob", 30, 60000.0, 5},
@@ -1078,7 +1078,7 @@ struct OptionalPerson {
 
 class OptionalAggregateTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         auto result = QuerySet<OptionalPerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database";
 
@@ -1096,7 +1096,7 @@ class OptionalAggregateTest : public ::testing::Test {
         qs = std::make_unique<QuerySet<OptionalPerson>>();
     }
 
-    void TearDown() override {
+    auto TearDown() -> void override {
         qs.reset();
         QuerySet<OptionalPerson>::clear_default_connection();
     }

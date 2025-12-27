@@ -19,7 +19,7 @@ struct WherePerson {
 // Test fixture for WHERE operations
 class WhereTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         // Set up in-memory SQLite database
         auto result = QuerySet<WherePerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
@@ -48,7 +48,7 @@ class WhereTest : public ::testing::Test {
         }
     }
 
-    void TearDown() override {
+    auto TearDown() -> void override {
         QuerySet<WherePerson>::clear_default_connection();
     }
 };
@@ -330,7 +330,7 @@ struct WhereMessage {
 // Test fixture for WHERE + JOIN operations
 class WhereJoinTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         auto result = QuerySet<WhereMessage>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
 
@@ -406,7 +406,7 @@ class WhereJoinTest : public ::testing::Test {
         ASSERT_TRUE(msg4.has_value()) << "Failed to insert message 4: " << msg4.error().message();
     }
 
-    void TearDown() override {
+    auto TearDown() -> void override {
         QuerySet<WhereMessage>::clear_default_connection();
     }
 };

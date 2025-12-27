@@ -98,10 +98,10 @@ namespace storm::benchmark {
         const std::vector<Model>& data() const {
             return data_;
         }
-        int batch_size() const {
+        auto batch_size() const -> int {
             return batch_size_;
         }
-        void set_batch_size(int size) {
+        auto set_batch_size(int size) -> void {
             batch_size_ = size;
         }
 
@@ -143,7 +143,7 @@ namespace storm::benchmark {
         explicit DataBenchmarkBase(int batch_size = 1) : batch_size_(batch_size) {}
 
         // Basic prepare: generates test data only (for INSERT benchmark)
-        void prepare(int iterations) {
+        auto prepare(int iterations) -> void {
             data().clear();
             int count = (batch_size_ == 1) ? iterations : batch_size_;
             data().reserve(count);
@@ -154,7 +154,7 @@ namespace storm::benchmark {
 
         // Extended prepare: clears table, generates data, inserts and retrieves IDs
         // Used by UPDATE and DELETE benchmarks that need existing rows with valid PKs
-        void prepare_with_insert(int iterations) {
+        auto prepare_with_insert(int iterations) -> void {
             // 1. Clear table using raw SQLite
             if (sqlite3* db = get_db<Model>()) {
                 sqlite3_exec(db, "DELETE FROM Person", nullptr, nullptr, nullptr);

@@ -35,7 +35,7 @@ export namespace storm::orm::statements {
         using Statement  = typename ConnType::Statement;
 
         // Compile-time single DELETE SQL size calculation
-        static consteval size_t calculate_single_delete_sql_size() {
+        static consteval auto calculate_single_delete_sql_size() -> size_t {
             size_t size = 0;
             size += 12; // "DELETE FROM "
             size += Base::table_name_.size();
@@ -65,7 +65,7 @@ export namespace storm::orm::statements {
 
       private:
         // Compile-time bulk DELETE prefix calculation
-        static consteval size_t calculate_bulk_delete_prefix_size() {
+        static consteval auto calculate_bulk_delete_prefix_size() -> size_t {
             size_t size = 0;
             size += 12; // "DELETE FROM "
             size += Base::table_name_.size();
@@ -100,7 +100,7 @@ export namespace storm::orm::statements {
         static constexpr size_t MAX_CHUNK_SIZE = (Base::MAX_SQLITE_VARIABLES * 4) / 5; // 799
 
         // Compile-time max bulk DELETE SQL size calculation
-        static consteval size_t calculate_max_bulk_delete_sql_size() {
+        static consteval auto calculate_max_bulk_delete_sql_size() -> size_t {
             // prefix + (MAX_CHUNK_SIZE placeholders) + (MAX_CHUNK_SIZE-1 commas) + closing paren + null
             return bulk_delete_prefix_size + MAX_CHUNK_SIZE + (MAX_CHUNK_SIZE - 1) + 1 + 1;
         }
@@ -129,12 +129,12 @@ export namespace storm::orm::statements {
         static inline const std::string max_bulk_delete_sql = std::string(build_max_bulk_delete_sql());
 
         // Generate single DELETE SQL string (compile-time computed, runtime accessible)
-        static const std::string& get_single_delete_sql() {
+        static auto get_single_delete_sql() -> const std::string& {
             return single_delete_sql_string;
         }
 
         // Generate bulk DELETE SQL string for IN clause (size-specific)
-        static std::string get_bulk_delete_sql(size_t count) {
+        static auto get_bulk_delete_sql(size_t count) -> std::string {
             if (count == 1) {
                 return get_single_delete_sql();
             }

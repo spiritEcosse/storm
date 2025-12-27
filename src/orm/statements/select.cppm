@@ -35,7 +35,7 @@ export namespace storm::orm::statements {
         using Statement = typename ConnType::Statement;
 
         // Compile-time SQL size calculation for SELECT statement
-        static consteval size_t calculate_select_sql_size() {
+        static consteval auto calculate_select_sql_size() -> size_t {
             size_t size = 0;
             size += 7; // "SELECT "
             size += Base::calculate_field_names_size();
@@ -63,7 +63,7 @@ export namespace storm::orm::statements {
         static inline const std::string select_sql_string = std::string(select_sql_array);
 
         // Generate SELECT SQL string (compile-time computed, runtime accessible)
-        static const std::string& get_select_sql() {
+        static auto get_select_sql() -> const std::string& {
             return select_sql_string;
         }
 
@@ -72,7 +72,7 @@ export namespace storm::orm::statements {
 
         // Invalidate dynamic query cache
         // Call this when QuerySet::reset() is invoked to ensure fresh query on next execute
-        void invalidate_cache() noexcept {
+        auto invalidate_cache() noexcept -> void {
             cached_stmt_ = nullptr;
             cached_sql_.clear();
             cached_join_sql_ptr_ = nullptr;

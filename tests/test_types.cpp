@@ -52,7 +52,7 @@ struct DataTypes {
 
 class IntTypesInsertUpdateTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         auto result = QuerySet<IntTypes>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
         auto& conn = QuerySet<IntTypes>::get_default_connection();
@@ -62,7 +62,7 @@ class IntTypesInsertUpdateTest : public ::testing::Test {
         )
                             .has_value());
     }
-    void TearDown() override {
+    auto TearDown() -> void override {
         QuerySet<IntTypes>::clear_default_connection();
     }
 };
@@ -148,7 +148,7 @@ TEST_F(IntTypesInsertUpdateTest, UpdateBatchIntTypes) {
 
 class FloatTypesInsertUpdateTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         auto result = QuerySet<FloatTypes>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
         auto& conn = QuerySet<FloatTypes>::get_default_connection();
@@ -159,7 +159,7 @@ class FloatTypesInsertUpdateTest : public ::testing::Test {
                         .has_value()
         );
     }
-    void TearDown() override {
+    auto TearDown() -> void override {
         QuerySet<FloatTypes>::clear_default_connection();
     }
 };
@@ -201,7 +201,7 @@ TEST_F(FloatTypesInsertUpdateTest, UpdateSingleFloatTypes) {
 
 class MixedTypesInsertUpdateTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         auto result = QuerySet<MixedTypes>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
         auto& conn = QuerySet<MixedTypes>::get_default_connection();
@@ -212,7 +212,7 @@ class MixedTypesInsertUpdateTest : public ::testing::Test {
                         .has_value()
         );
     }
-    void TearDown() override {
+    auto TearDown() -> void override {
         QuerySet<MixedTypes>::clear_default_connection();
     }
 };
@@ -283,7 +283,7 @@ TEST_F(MixedTypesInsertUpdateTest, InsertBatchMixedTypes) {
 
 class OptTypesInsertUpdateTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         auto result = QuerySet<OptTypes>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
         auto& conn = QuerySet<OptTypes>::get_default_connection();
@@ -294,7 +294,7 @@ class OptTypesInsertUpdateTest : public ::testing::Test {
                         .has_value()
         );
     }
-    void TearDown() override {
+    auto TearDown() -> void override {
         QuerySet<OptTypes>::clear_default_connection();
     }
 };
@@ -399,7 +399,7 @@ TEST_F(OptTypesInsertUpdateTest, InsertBatchMixedNulls) {
 
 class DataTypesInsertUpdateTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         auto result = QuerySet<DataTypes>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
         auto& conn = QuerySet<DataTypes>::get_default_connection();
@@ -408,7 +408,7 @@ class DataTypesInsertUpdateTest : public ::testing::Test {
                         .has_value()
         );
     }
-    void TearDown() override {
+    auto TearDown() -> void override {
         QuerySet<DataTypes>::clear_default_connection();
     }
 };
@@ -531,7 +531,7 @@ TEST_F(FloatTypesInsertUpdateTest, SpecialFloatValues) {
 
 class InsertOptionsTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         auto result = QuerySet<IntTypes>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
         auto& conn = QuerySet<IntTypes>::get_default_connection();
@@ -541,7 +541,7 @@ class InsertOptionsTest : public ::testing::Test {
         )
                             .has_value());
     }
-    void TearDown() override {
+    auto TearDown() -> void override {
         QuerySet<IntTypes>::clear_default_connection();
     }
 };

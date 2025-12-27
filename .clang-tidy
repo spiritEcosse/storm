@@ -1,0 +1,63 @@
+---
+# Clang-Tidy configuration for Storm ORM
+# Comprehensive checks for C++26 ORM project
+#
+# Categories enabled: bugprone, cert, concurrency, cppcoreguidelines, misc, modernize, performance, readability
+# Excluded categories: android, fuchsia, llvm, abseil, google, objc, etc. (platform/library-specific)
+#
+# Exclusion policy:
+# - Keep checks that catch real bugs
+# - Exclude stylistic checks that are subjective or would require massive refactoring
+# - Exclude false positives (e.g., bugprone-exception-escape for std::string in noexcept)
+
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
+  -bugprone-suspicious-stringview-data-usage,
+  -bugprone-branch-clone,
+  -bugprone-inc-dec-in-conditions,
+  -bugprone-unused-return-value,
+  cert-*,
+  -cert-err33-c,
+  -cert-err58-cpp,
+  concurrency-*,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-avoid-const-or-ref-data-members,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-missing-std-forward,
+  -cppcoreguidelines-non-private-member-variables-in-classes,
+  -cppcoreguidelines-prefer-member-initializer,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-member-init,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  misc-*,
+  -misc-include-cleaner,
+  -misc-non-private-member-variables-in-classes,
+  modernize-*,
+  performance-*,
+  -performance-enum-size,
+  readability-*,
+  -readability-braces-around-statements,
+  -readability-else-after-return,
+  -readability-function-cognitive-complexity,
+  -readability-identifier-length,
+  -readability-implicit-bool-conversion,
+  -readability-magic-numbers,
+  -readability-math-missing-parentheses,
+  -readability-named-parameter,
+  -readability-qualified-auto,
+  -readability-redundant-access-specifiers,
+  -readability-redundant-inline-specifier
+
+# Header filter - apply to project headers, exclude third_party
+HeaderFilterRegex: '^(?!.*third_party).*'
+
+# Format style for fix suggestions
+FormatStyle: file
+
+# Treat warnings as errors (optional, can be disabled)
+WarningsAsErrors: ''

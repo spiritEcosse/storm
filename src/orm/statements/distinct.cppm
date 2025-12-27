@@ -60,7 +60,7 @@ export namespace storm::orm::statements {
         using FieldTypesTuple = decltype(get_field_types_helper(std::make_index_sequence<NumFields>{}));
 
         // Calculate field size at compile-time
-        template <size_t I> static consteval size_t get_field_size() {
+        template <size_t I> static consteval auto get_field_size() -> size_t {
             size_t         size       = std::meta::identifier_of(member_infos_[I]).size();
             constexpr auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member_infos_[I]);
             if constexpr (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
@@ -73,7 +73,7 @@ export namespace storm::orm::statements {
         }
 
         // Calculate total size of all fields
-        template <size_t... Is> static consteval size_t calculate_field_list_size(std::index_sequence<Is...>) {
+        template <size_t... Is> static consteval auto calculate_field_list_size(std::index_sequence<Is...>) -> size_t {
             return (get_field_size<Is>() + ...);
         }
 
@@ -99,7 +99,7 @@ export namespace storm::orm::statements {
         }
 
         // Calculate SQL size at compile-time
-        static consteval size_t calculate_select_sql_size() {
+        static consteval auto calculate_select_sql_size() -> size_t {
             constexpr auto field_list = build_field_list_constexpr(std::make_index_sequence<NumFields>{});
             size_t         size       = 0;
             size += 16; // "SELECT DISTINCT " (max length, DISTINCT is optional)
@@ -189,7 +189,7 @@ export namespace storm::orm::statements {
       private:
         // Helper: Append ORDER BY clause to SQL from wrapper
         // NOTE: ORDER BY must come before LIMIT/OFFSET in SQLite
-        __attribute__((always_inline)) inline void append_order_by(std::string& sql) const {
+        __attribute__((always_inline)) inline auto append_order_by(std::string& sql) const -> void {
             if (order_by_wrapper_.has_value() && !order_by_wrapper_->empty()) {
                 sql += order_by_wrapper_->get_order_by_sql();
             }
@@ -198,8 +198,9 @@ export namespace storm::orm::statements {
         // Helper: Append LIMIT/OFFSET clauses to SQL
         // NOTE: SQLite requires LIMIT when using OFFSET, so we use LIMIT -1 (meaning unlimited) when OFFSET is used
         // alone
-        __attribute__((always_inline)) static inline void
-        append_limit_offset(std::string& sql, const std::optional<int>& limit, const std::optional<int>& offset) {
+        __attribute__((always_inline)) static inline auto
+        append_limit_offset(std::string& sql, const std::optional<int>& limit, const std::optional<int>& offset)
+                -> void {
             if (limit.has_value()) {
                 sql += " LIMIT ";
                 sql += std::to_string(limit.value());

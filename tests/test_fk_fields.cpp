@@ -24,7 +24,7 @@ struct FKMessage {
 // Test fixture for FK field operations
 class FKFieldTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         // Set up in-memory SQLite database
         auto result = QuerySet<User>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
@@ -55,7 +55,7 @@ class FKFieldTest : public ::testing::Test {
                 << "Failed to create Message table: " << create_message_result.error().message();
     }
 
-    void TearDown() override {
+    auto TearDown() -> void override {
         QuerySet<User>::clear_default_connection();
     }
 };
@@ -679,7 +679,7 @@ TEST_F(FKFieldTest, RightJoinMultipleFKFields) {
 // Test fixture for nullable FK fields
 class NullableFKTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         auto result = QuerySet<User>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
 
@@ -707,7 +707,7 @@ class NullableFKTest : public ::testing::Test {
         ASSERT_TRUE(create_message_result.has_value());
     }
 
-    void TearDown() override {
+    auto TearDown() -> void override {
         QuerySet<User>::clear_default_connection();
     }
 };
@@ -845,7 +845,7 @@ TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
 // Test fixture for extended type support in JOINs
 class ExtendedTypesJoinTest : public ::testing::Test {
   protected:
-    void SetUp() override {
+    auto SetUp() -> void override {
         auto result = QuerySet<User>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
 
@@ -877,7 +877,7 @@ class ExtendedTypesJoinTest : public ::testing::Test {
                 << "Failed to create Project table: " << create_project_result.error().message();
     }
 
-    void TearDown() override {
+    auto TearDown() -> void override {
         QuerySet<User>::clear_default_connection();
     }
 };
