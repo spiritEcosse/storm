@@ -173,8 +173,8 @@ TEST_F(FloatTypesInsertUpdateTest, InsertSingleFloatTypes) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_NEAR(selected.value().begin()->precise, 3.141592653589793, 1e-10);
-    EXPECT_NEAR(selected.value().begin()->approx, 2.718F, 1e-4);
+    EXPECT_NEAR(selected.value().begin()->precise, std::numbers::pi, 1e-10);
+    EXPECT_NEAR(selected.value().begin()->approx, std::numbers::e_v<float>, 1e-6);
 }
 
 TEST_F(FloatTypesInsertUpdateTest, UpdateSingleFloatTypes) {
@@ -193,8 +193,8 @@ TEST_F(FloatTypesInsertUpdateTest, UpdateSingleFloatTypes) {
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_NEAR(selected.value().begin()->precise, 2.71828, 1e-5);
-    EXPECT_NEAR(selected.value().begin()->approx, 3.14159F, 1e-4);
+    EXPECT_NEAR(selected.value().begin()->precise, std::numbers::e, 1e-10);
+    EXPECT_NEAR(selected.value().begin()->approx, std::numbers::pi_v<float>, 1e-6);
 }
 
 // ===== BOOLEAN AND STRING TYPES TESTS =====
