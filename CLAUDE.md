@@ -206,6 +206,12 @@ Storm ORM achieves **96-108% efficiency** vs raw SQLite across all operations (R
      - Creates commit with proper formatting
      - Pushes to remote
 
+   **Error Handling:**
+   - If quick_commit.sh fails, try to fix the issue and retry
+   - Common fixes: simplify commit message (avoid special characters), fix failing tests
+   - If unable to fix, inform the user about the specific error
+   - NEVER fall back to manual git commands - always use quick_commit.sh
+
    ```bash
    # Correct way to commit:
    ./quick_commit.sh "fix: resolve SonarCloud issues"
