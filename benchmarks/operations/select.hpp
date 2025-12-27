@@ -1,31 +1,77 @@
 #pragma once
 
 /**
- * SELECT Benchmark - WHERE clause queries
+ * Unified SELECT Benchmark - Compile-Time Feature Configuration
  *
- * Tests SELECT performance with various WHERE clause patterns.
- * Inherits from DataBenchmarkBase for consistent data management.
+ * Single class handles all SELECT variations:
+ * - Basic SELECT (no filters)
+ * - SELECT + WHERE
+ * - SELECT + JOIN
+ * - SELECT + WHERE + JOIN
  *
- * Workflow:
- * 1. prepare(): Clear table, insert test data (using base class)
- * 2. execute(): Storm ORM where().select()
- * 3. execute_raw(): Raw SQLite SELECT...WHERE - native sqlite3 API only
+ * Features are configured via template parameters at compile time.
+ * Uses `if constexpr` for zero-overhead feature dispatch.
  *
- * FAIR COMPARISON: Both Storm ORM and raw SQLite use prepared statements
- * with parameter binding for WHERE clause values.
+ * Usage:
+ *   // WHERE only
+ *   SelectBenchmark<Person, NoJoin, WhereConfig<^^Person::age, ">", int>>{30, 1000}
+ *
+ *   // JOIN only
+ *   SelectBenchmark<FKMessage, JoinConfig<&FKMessage::sender, User>, NoWhere>{1000}
+ *
+ *   // WHERE + JOIN
+ *   SelectBenchmark<FKMessage, JoinConfig<&FKMessage::sender, User>,
+ *                   WhereConfig<^^User::age, ">", int>>{30, 1000}
+ *
+ *   // Builder pattern (returns new types)
+ *   SelectBenchmark<Person>(1000)
+ *       .with_join<&FKMessage::sender, User>()
+ *       .with_where<^^User::age, ">">(30)
  */
 
 #include "base.hpp"
 #include <format>
 #include <meta>
-#include <stdexcept>
 #include <plf_hive/plf_hive.h>
+#include <stdexcept>
+#include <variant>
 
 namespace storm::benchmark {
 
     using storm::orm::where::field;
 
-    // Forward declare field dispatcher - compile-time field lookup by name
+    // ========================================================================
+    // Feature Configuration Tags (zero-size types for compile-time dispatch)
+    // ========================================================================
+
+    // No JOIN configured
+    struct NoJoin {
+        static constexpr bool enabled = false;
+    };
+
+    // No WHERE configured
+    struct NoWhere {
+        static constexpr bool enabled = false;
+    };
+
+    // JOIN configuration - encodes FK field and related model type
+    template <auto FKFieldPtr, typename RelatedModel> struct JoinConfig {
+        static constexpr bool enabled = true;
+        static constexpr auto fk_ptr  = FKFieldPtr;
+        using related_type            = RelatedModel;
+    };
+
+    // WHERE configuration - encodes field, operator, and value type
+    template <std::meta::info FieldInfo, auto Op, typename ValueType> struct WhereConfig {
+        static constexpr bool            enabled    = true;
+        static constexpr std::meta::info field_info = FieldInfo;
+        static constexpr auto            op         = Op;
+        using value_type                            = ValueType;
+    };
+
+    // ========================================================================
+    // Field dispatcher - compile-time field lookup by name
+    // ========================================================================
     template <typename Model> consteval std::meta::info dispatch_field(std::string_view field_name) {
         constexpr auto model_info = ^^Model;
 
@@ -36,139 +82,314 @@ namespace storm::benchmark {
             }
         }
 
-        // Field not found - compile error at consteval time
         throw std::runtime_error("Field not found");
     }
 
-    // SELECT benchmark with WHERE clause
-    // FieldInfo: compile-time field reflection info
-    // Op: comparison operator as ConstexprString (">", ">=", "<", "<=", "==") - use auto for NTTP deduction
-    // ValueType: type of WHERE clause value (int, double, bool)
-    template <typename Model, std::meta::info FieldInfo, auto Op, typename ValueType>
-    class SelectBenchmark : public DataBenchmarkBase<SelectBenchmark<Model, FieldInfo, Op, ValueType>, Model, 1> {
-        using Base = DataBenchmarkBase<SelectBenchmark<Model, FieldInfo, Op, ValueType>, Model, 1>;
+    // ========================================================================
+    // Type helpers to avoid std::conditional_t evaluating invalid types
+    // ========================================================================
 
-        ValueType value_;
+    template <typename Cfg, bool Enabled = Cfg::enabled> struct WhereValueHelper {
+        using type = typename Cfg::value_type;
+    };
+
+    template <typename Cfg> struct WhereValueHelper<Cfg, false> {
+        using type = std::monostate;
+    };
+
+    template <typename Cfg, bool Enabled = Cfg::enabled> struct RelatedModelHelper {
+        using type = typename Cfg::related_type;
+    };
+
+    template <typename Cfg> struct RelatedModelHelper<Cfg, false> {
+        using type = std::monostate;
+    };
+
+    template <typename Cfg, typename Default, bool Enabled = Cfg::enabled> struct RelatedQSHelper {
+        using type = QuerySet<typename Cfg::related_type>;
+    };
+
+    template <typename Cfg, typename Default> struct RelatedQSHelper<Cfg, Default, false> {
+        using type = std::monostate;
+    };
+
+    // ========================================================================
+    // Unified SelectBenchmark - Compile-Time Feature Configuration
+    // ========================================================================
+    template <typename BaseModel, typename JoinCfg = NoJoin, typename WhereCfg = NoWhere>
+    class SelectBenchmark : public DataBenchmarkBase<SelectBenchmark<BaseModel, JoinCfg, WhereCfg>, BaseModel, 1> {
+        using Base = DataBenchmarkBase<SelectBenchmark<BaseModel, JoinCfg, WhereCfg>, BaseModel, 1>;
+
+        // WHERE value storage - zero size if NoWhere, otherwise stores the value
+        using WhereValueType = typename WhereValueHelper<WhereCfg>::type;
+
+        [[no_unique_address]] WhereValueType where_value_{};
+
+        // QuerySets - use BaseModel's QuerySet, and RelatedModel's if JOIN enabled
+        using RelatedModel = typename RelatedModelHelper<JoinCfg>::type;
+
+        // For JOIN operations, we need a separate QuerySet for related model insertion
+        [[no_unique_address]] typename RelatedQSHelper<JoinCfg, std::monostate>::type related_qs_{};
 
       public:
-        // dataset_size: number of records to insert for querying
-        explicit constexpr SelectBenchmark(ValueType value, int dataset_size = 1000)
-            : Base(dataset_size), value_(value) {}
+        // ====================================================================
+        // Constructors
+        // ====================================================================
 
-        // Override create_model to generate varied data for WHERE clause testing
-        static Model create_model(int index = 0) {
-            int i = index + 1;
-            return Model{
-                    .id        = 0,
-                    .name      = std::format("Person{}", i),
-                    .age       = 20 + (i % 50),
-                    .is_active = (i % 2 == 0),
-                    .salary    = 30000.0 + (i * 1000.0)
-            };
+        // Basic SELECT (no WHERE) - dataset_size only
+        explicit constexpr SelectBenchmark(int dataset_size = 1000)
+            requires(!WhereCfg::enabled)
+            : Base(dataset_size) {}
+
+        // SELECT with WHERE - value + dataset_size
+        template <typename V>
+        explicit constexpr SelectBenchmark(V value, int dataset_size = 1000)
+            requires(WhereCfg::enabled)
+            : Base(dataset_size), where_value_(value) {}
+
+        // ====================================================================
+        // Builder Methods (return NEW types for compile-time chaining)
+        // ====================================================================
+
+        // Add JOIN - returns new SelectBenchmark type with JOIN enabled
+        template <auto FK, typename Related> auto with_join() const {
+            using NewJoinCfg = JoinConfig<FK, Related>;
+
+            if constexpr (WhereCfg::enabled) {
+                return SelectBenchmark<BaseModel, NewJoinCfg, WhereCfg>{where_value_, Base::batch_size()};
+            } else {
+                return SelectBenchmark<BaseModel, NewJoinCfg, WhereCfg>{Base::batch_size()};
+            }
+        }
+
+        // Add WHERE - returns new SelectBenchmark type with WHERE enabled
+        template <std::meta::info FieldInfo, auto Op, typename V> auto with_where(V value) const {
+            using NewWhereCfg = WhereConfig<FieldInfo, Op, V>;
+            return SelectBenchmark<BaseModel, JoinCfg, NewWhereCfg>{value, Base::batch_size()};
         }
 
         // ====================================================================
-        // print_info - SELECT-specific info with field, operator, value
+        // print_info - Feature-aware info output
         // ====================================================================
         void print_info() const {
-            constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
-            constexpr std::string_view op_str     = Op.view();
-            constexpr std::string_view op_name    = OperationDispatcher<OperationType::Select>::name();
+            std::cout << "Operation: SELECT";
 
-            std::cout << "Operation: " << op_name << "\n";
-            std::cout << "  Field: " << field_name << ", Operator: " << op_str << ", Value: " << value_ << "\n";
+            if constexpr (WhereCfg::enabled) {
+                constexpr std::string_view field_name = std::meta::identifier_of(WhereCfg::field_info);
+                constexpr std::string_view op_str     = WhereCfg::op.view();
+                std::cout << " WHERE " << field_name << " " << op_str << " " << where_value_;
+            }
+
+            if constexpr (JoinCfg::enabled) {
+                std::cout << " + JOIN";
+            }
+
+            std::cout << "\n";
             std::cout << "  Dataset: " << Base::batch_size() << " rows\n";
         }
 
         // ====================================================================
-        // prepare - clear table, generate varied data, insert for querying
-        // Uses create_model(index) override for varied data (age, is_active)
+        // create_model - Generate varied data for WHERE clause testing
         // ====================================================================
-        void prepare(int iterations) {
-            Base::prepare_with_insert(iterations);
+        static BaseModel create_model(int index = 0) {
+            int i = index + 1;
+
+            if constexpr (JoinCfg::enabled) {
+                // For JOIN benchmarks, create with FK stubs
+                // This will be overwritten in prepare() with real FK references
+                return BaseModel{};
+            } else {
+                // For basic SELECT WHERE, create Person-like model
+                return BaseModel{
+                        .id        = 0,
+                        .name      = std::format("Person{}", i),
+                        .age       = 20 + (i % 50),
+                        .is_active = (i % 2 == 0),
+                        .salary    = 30000.0 + (i * 1000.0)
+                };
+            }
         }
 
         // ====================================================================
-        // build_where_clause - extract WHERE clause building to separate function
-        // Returns the WHERE expression based on compile-time operator
+        // prepare - Feature-aware data preparation
         // ====================================================================
+        void prepare(int iterations) {
+            if constexpr (JoinCfg::enabled) {
+                prepare_join_data(iterations);
+            } else {
+                Base::prepare_with_insert(iterations);
+            }
+        }
+
       private:
-        auto build_where_clause() const {
-            constexpr std::string_view op_str = Op.view();
+        // Prepare data for JOIN benchmarks (creates related records + FK references)
+        void prepare_join_data([[maybe_unused]] int iterations) {
+            if constexpr (JoinCfg::enabled) {
+                sqlite3* db = get_db<BaseModel>();
+                if (!db)
+                    return;
+
+                int dataset_size = Base::batch_size();
+
+                // Clear tables
+                sqlite3_exec(db, "DELETE FROM FKMessage", nullptr, nullptr, nullptr);
+                sqlite3_exec(db, "DELETE FROM User", nullptr, nullptr, nullptr);
+
+                // Insert related records (users)
+                std::vector<RelatedModel> users;
+                users.reserve(dataset_size);
+                for (int i = 0; i < dataset_size; i++) {
+                    users.push_back(RelatedModel{.id = 0, .name = std::format("User{}", i + 1), .age = 20 + (i % 50)});
+                }
+
+                auto user_result = related_qs_.insert(users, storm::orm::statements::InsertOptions{.return_ids = true});
+                if (!user_result.has_value()) {
+                    std::cerr << "Failed to insert users for JOIN benchmark\n";
+                    return;
+                }
+                const auto& user_ids = user_result.value();
+
+                // Insert base records with FK references
+                std::vector<BaseModel> messages;
+                messages.reserve(dataset_size);
+                for (int i = 0; i < dataset_size; i++) {
+                    RelatedModel sender{static_cast<int>(user_ids[i % user_ids.size()]), "", 0};
+                    RelatedModel receiver{static_cast<int>(user_ids[(i + 1) % user_ids.size()]), "", 0};
+
+                    messages.push_back(
+                            BaseModel{
+                                    .id       = 0,
+                                    .sender   = sender,
+                                    .receiver = receiver,
+                                    .text     = std::format("Message{}", i + 1)
+                            }
+                    );
+                }
+
+                auto msg_result = Base::qs().insert(messages);
+                if (!msg_result.has_value()) {
+                    std::cerr << "Failed to insert messages for JOIN benchmark\n";
+                }
+            }
+        }
+
+        // ====================================================================
+        // WHERE clause helpers
+        // ====================================================================
+        auto build_where_clause() const
+            requires(WhereCfg::enabled)
+        {
+            constexpr std::string_view op_str = WhereCfg::op.view();
 
             if constexpr (op_str == ">") {
-                return field<FieldInfo>() > value_;
+                return field<WhereCfg::field_info>() > where_value_;
             } else if constexpr (op_str == ">=") {
-                return field<FieldInfo>() >= value_;
+                return field<WhereCfg::field_info>() >= where_value_;
             } else if constexpr (op_str == "<") {
-                return field<FieldInfo>() < value_;
+                return field<WhereCfg::field_info>() < where_value_;
             } else if constexpr (op_str == "<=") {
-                return field<FieldInfo>() <= value_;
+                return field<WhereCfg::field_info>() <= where_value_;
             } else if constexpr (op_str == "==") {
-                return field<FieldInfo>() == value_;
+                return field<WhereCfg::field_info>() == where_value_;
             } else if constexpr (op_str == "!=") {
-                return field<FieldInfo>() != value_;
+                return field<WhereCfg::field_info>() != where_value_;
             }
         }
 
       public:
         // ====================================================================
-        // execute - Storm ORM SELECT with WHERE clause
-        // OPTIMIZATION: where_clause is created once, and SelectStatement caches by expression pointer.
-        // When the same expression object is reused, SQL string building is skipped entirely.
-        // NOTE: reset() moved outside loop to enable expression address caching optimization.
+        // execute - Storm ORM SELECT with compile-time feature dispatch
         // ====================================================================
         int execute(int iterations) {
-            auto where_clause = build_where_clause();
-
             int total_rows = 0;
-            Base::qs().where(where_clause); // Set WHERE once
+
+            // Apply JOIN if configured (compile-time check)
+            if constexpr (JoinCfg::enabled) {
+                Base::qs().template join<JoinCfg::fk_ptr>();
+            }
+
+            // Apply WHERE if configured (compile-time check)
+            if constexpr (WhereCfg::enabled) {
+                auto where_clause = build_where_clause();
+                Base::qs().where(where_clause);
+            }
+
+            // Execute query loop
             for (int i = 0; i < iterations; i++) {
                 auto results = Base::qs().select();
                 total_rows += results.value().size();
             }
-            Base::qs().reset(); // Reset after loop
+
+            Base::qs().reset();
             return total_rows;
         }
 
         // ====================================================================
-        // execute_raw - Raw SQLite using ONLY native sqlite3 API
-        // No Storm features - pure sqlite3_* functions
+        // execute_raw - Raw SQLite with compile-time feature dispatch
         // ====================================================================
       private:
-        // Helper: Build SQL query string
+        // Build SQL string based on enabled features
         static std::string build_select_sql() {
-            constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
-            constexpr std::string_view op_str     = Op.view();
+            std::string sql;
 
-            std::string sql = "SELECT id, name, age, is_active, salary FROM Person WHERE ";
-            sql += std::string(field_name);
-            sql += " ";
-            sql += std::string(op_str);
-            sql += " ?";
+            if constexpr (JoinCfg::enabled) {
+                // JOIN query
+                sql = "SELECT fm.id, fm.sender_id, fm.receiver_id, fm.text, "
+                      "u.id, u.name, u.age "
+                      "FROM FKMessage fm "
+                      "INNER JOIN User u ON fm.sender_id = u.id";
+
+                if constexpr (WhereCfg::enabled) {
+                    constexpr std::string_view where_field = std::meta::identifier_of(WhereCfg::field_info);
+                    constexpr std::string_view op_str      = WhereCfg::op.view();
+                    sql += " WHERE u.";
+                    sql += std::string(where_field);
+                    sql += " ";
+                    sql += std::string(op_str);
+                    sql += " ?";
+                }
+            } else {
+                // Basic SELECT query
+                sql = "SELECT id, name, age, is_active, salary FROM Person";
+
+                if constexpr (WhereCfg::enabled) {
+                    constexpr std::string_view where_field = std::meta::identifier_of(WhereCfg::field_info);
+                    constexpr std::string_view op_str      = WhereCfg::op.view();
+                    sql += " WHERE ";
+                    sql += std::string(where_field);
+                    sql += " ";
+                    sql += std::string(op_str);
+                    sql += " ?";
+                }
+            }
+
             return sql;
         }
 
-        // Helper: Bind WHERE clause value using native sqlite3 API
-        static void bind_where_value(sqlite3_stmt* stmt, const ValueType& value) {
-            if constexpr (std::is_same_v<ValueType, int>) {
-                sqlite3_bind_int(stmt, 1, value);
-            } else if constexpr (std::is_same_v<ValueType, double>) {
-                sqlite3_bind_double(stmt, 1, value);
-            } else if constexpr (std::is_same_v<ValueType, bool>) {
-                sqlite3_bind_int(stmt, 1, value ? 1 : 0);
-            } else if constexpr (std::is_same_v<ValueType, std::string> || std::is_same_v<ValueType, const char*>) {
-                if constexpr (std::is_same_v<ValueType, std::string>) {
-                    sqlite3_bind_text(stmt, 1, value.c_str(), -1, SQLITE_TRANSIENT);
+        // Bind WHERE value
+        void bind_where_value(sqlite3_stmt* stmt) const
+            requires(WhereCfg::enabled)
+        {
+            using V = typename WhereCfg::value_type;
+
+            if constexpr (std::is_same_v<V, int>) {
+                sqlite3_bind_int(stmt, 1, where_value_);
+            } else if constexpr (std::is_same_v<V, double>) {
+                sqlite3_bind_double(stmt, 1, where_value_);
+            } else if constexpr (std::is_same_v<V, bool>) {
+                sqlite3_bind_int(stmt, 1, where_value_ ? 1 : 0);
+            } else if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, const char*>) {
+                if constexpr (std::is_same_v<V, std::string>) {
+                    sqlite3_bind_text(stmt, 1, where_value_.c_str(), -1, SQLITE_TRANSIENT);
                 } else {
-                    sqlite3_bind_text(stmt, 1, value, -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_text(stmt, 1, where_value_, -1, SQLITE_TRANSIENT);
                 }
             }
         }
 
-        // Row extraction - manual hardcoded extraction (fastest approach)
-        __attribute__((always_inline)) static Model extract_row(sqlite3_stmt* stmt) {
-            Model obj;
+        // Extract row for basic SELECT (Person model)
+        __attribute__((always_inline)) static BaseModel extract_row_basic(sqlite3_stmt* stmt) {
+            BaseModel obj;
             obj.id        = sqlite3_column_int64(stmt, 0);
             obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
             obj.age       = sqlite3_column_int(stmt, 2);
@@ -177,10 +398,30 @@ namespace storm::benchmark {
             return obj;
         }
 
+        // Extract row for JOIN SELECT (FKMessage model with joined User)
+        __attribute__((always_inline)) static BaseModel extract_row_join(sqlite3_stmt* stmt)
+            requires(JoinCfg::enabled)
+        {
+            BaseModel obj;
+
+            // Base model fields
+            obj.id   = sqlite3_column_int64(stmt, 0);
+            obj.text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+
+            // Joined FK object (columns 4, 5, 6)
+            obj.sender.id   = sqlite3_column_int(stmt, 4);
+            obj.sender.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+            obj.sender.age  = sqlite3_column_int(stmt, 6);
+
+            // Receiver (not joined, just ID)
+            obj.receiver.id = sqlite3_column_int(stmt, 2);
+
+            return obj;
+        }
+
       public:
-        // execute_raw - Raw SQLite benchmark
         int execute_raw(int iterations) {
-            sqlite3* db = get_db<Model>();
+            sqlite3* db = get_db<BaseModel>();
             if (!db)
                 return 0;
 
@@ -191,18 +432,22 @@ namespace storm::benchmark {
                 return 0;
             }
 
-            // Bind WHERE value once (same value for all iterations)
-            bind_where_value(stmt, value_);
+            // Bind WHERE value if configured
+            if constexpr (WhereCfg::enabled) {
+                bind_where_value(stmt);
+            }
 
             int total_rows = 0;
             for (int i = 0; i < iterations; i++) {
-                // sqlite3_reset() is REQUIRED to re-execute a statement after sqlite3_step() returns SQLITE_DONE
-                // Note: reset does NOT clear bindings, so we can bind once before the loop
                 sqlite3_reset(stmt);
 
-                plf::hive<Model> results;
+                plf::hive<BaseModel> results;
                 while (sqlite3_step(stmt) == SQLITE_ROW) {
-                    results.insert(extract_row(stmt));
+                    if constexpr (JoinCfg::enabled) {
+                        results.insert(extract_row_join(stmt));
+                    } else {
+                        results.insert(extract_row_basic(stmt));
+                    }
                 }
                 total_rows += results.size();
             }
@@ -211,5 +456,30 @@ namespace storm::benchmark {
             return total_rows;
         }
     };
+
+    // ========================================================================
+    // Type Aliases for Common Configurations (backward compatibility)
+    // ========================================================================
+
+    // SELECT WHERE - equivalent to old SelectBenchmark
+    template <typename Model, std::meta::info FieldInfo, auto Op, typename ValueType>
+    using SelectWhereBenchmark = SelectBenchmark<Model, NoJoin, WhereConfig<FieldInfo, Op, ValueType>>;
+
+    // SELECT JOIN - equivalent to old SelectJoinBenchmark
+    template <typename BaseModel, typename RelatedModel, auto FKFieldPtr>
+    using SelectJoinBenchmark = SelectBenchmark<BaseModel, JoinConfig<FKFieldPtr, RelatedModel>, NoWhere>;
+
+    // SELECT WHERE + JOIN - equivalent to old SelectWhereJoinBenchmark
+    template <
+            typename BaseModel,
+            typename RelatedModel,
+            auto            FKFieldPtr,
+            std::meta::info WhereFieldInfo,
+            auto            Op,
+            typename ValueType>
+    using SelectWhereJoinBenchmark = SelectBenchmark<
+            BaseModel,
+            JoinConfig<FKFieldPtr, RelatedModel>,
+            WhereConfig<WhereFieldInfo, Op, ValueType>>;
 
 } // namespace storm::benchmark

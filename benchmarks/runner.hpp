@@ -15,9 +15,7 @@
 #include "schema.hpp"
 #include "parser.hpp"
 #include "models.hpp"
-#include "operations/select.hpp"
-#include "operations/select_join.hpp"
-#include "operations/select_where_join.hpp"
+#include "operations/select.hpp" // Unified SELECT benchmark (WHERE, JOIN, WHERE+JOIN)
 #include "operations/insert.hpp"
 #include "operations/update.hpp"
 #include "operations/delete.hpp"
@@ -248,9 +246,10 @@ namespace storm::benchmark {
             constexpr auto             field_info   = dispatch_field<Model>(field_name);
             constexpr int              dataset_size = test.dataset_size;
 
+            // Use new unified SelectBenchmark with WhereConfig
             runner.run_benchmark(
                     test.test_name.c_str(),
-                    SelectBenchmark<Model, field_info, op_str, int>{value, dataset_size},
+                    SelectWhereBenchmark<Model, field_info, op_str, int>{value, dataset_size},
                     iterations
             );
         }
