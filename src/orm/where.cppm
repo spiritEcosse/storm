@@ -83,7 +83,7 @@ export namespace storm::orm::where {
             sql_ += "?";
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto to_sql() const noexcept -> std::string {
+        [[nodiscard]] __attribute__((always_inline)) inline auto to_sql() const -> std::string {
             return sql_;
         }
 
@@ -110,7 +110,7 @@ export namespace storm::orm::where {
             sql_ += " LIKE ?";
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto to_sql() const noexcept -> std::string {
+        [[nodiscard]] __attribute__((always_inline)) inline auto to_sql() const -> std::string {
             return sql_;
         }
 
@@ -136,7 +136,7 @@ export namespace storm::orm::where {
             sql_ += " BETWEEN ? AND ?";
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto to_sql() const noexcept -> std::string {
+        [[nodiscard]] __attribute__((always_inline)) inline auto to_sql() const -> std::string {
             return sql_;
         }
 
@@ -182,7 +182,7 @@ export namespace storm::orm::where {
             }
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto to_sql() const noexcept -> std::string {
+        [[nodiscard]] __attribute__((always_inline)) inline auto to_sql() const -> std::string {
             return sql_; // Return pre-generated SQL
         }
 
@@ -316,7 +316,7 @@ export namespace storm::orm::where {
         Expr(ExpressionVariantPtr expr) noexcept : expr_(std::move(expr)) {}
 
         // Constructor from ExpressionVariant (wraps in shared_ptr)
-        Expr(ExpressionVariant&& expr) noexcept : expr_(std::make_shared<ExpressionVariant>(std::move(expr))) {}
+        Expr(ExpressionVariant&& expr) : expr_(std::make_shared<ExpressionVariant>(std::move(expr))) {}
 
         // Implicit conversion to ExpressionVariantPtr for where() calls
         operator ExpressionVariantPtr() const noexcept { // NOLINT(google-explicit-constructor)

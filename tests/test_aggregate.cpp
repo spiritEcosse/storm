@@ -105,20 +105,20 @@ class AggregateTest : public ::testing::Test {
         auto& conn = QuerySet<AggregatePerson>::get_default_connection();
 
         // Insert users
-        conn->execute("INSERT INTO AggUser (name, age) VALUES ('Alice', 30)");
-        conn->execute("INSERT INTO AggUser (name, age) VALUES ('Bob', 25)");
-        conn->execute("INSERT INTO AggUser (name, age) VALUES ('Charlie', 35)");
+        std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Alice', 30)");
+        std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Bob', 25)");
+        std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Charlie', 35)");
 
         // Insert messages with different values
         // Alice: 2 messages, values 10 and 20
         // Bob: 3 messages, values 30, 40, 50
         // Charlie: 1 message, value 60
-        conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('Hello', 10, 1)");
-        conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('World', 20, 1)");
-        conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('Hi', 30, 2)");
-        conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('There', 40, 2)");
-        conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('Foo', 50, 2)");
-        conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('Bar', 60, 3)");
+        std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('Hello', 10, 1)");
+        std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('World', 20, 1)");
+        std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('Hi', 30, 2)");
+        std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('There', 40, 2)");
+        std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('Foo', 50, 2)");
+        std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('Bar', 60, 3)");
     }
 
     std::unique_ptr<QuerySet<AggregatePerson>> qs;
@@ -1009,15 +1009,18 @@ TEST_F(AggregateTest, CountDistinctAge) {
 
 TEST_F(AggregateTest, CountDistinctWithDuplicates) {
     // Insert data with duplicate ages
-    qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = 30, .salary = 50000.0, .years_experience = 3});
-    qs->insert(
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = 30, .salary = 50000.0, .years_experience = 3});
+    std::ignore = qs->insert(
             AggregatePerson{.id = 0, .name = "Bob", .age = 30, .salary = 60000.0, .years_experience = 5}
     ); // Same age as Alice
-    qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0, .years_experience = 7});
-    qs->insert(
+    std::ignore = qs->insert(
+            AggregatePerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0, .years_experience = 7}
+    );
+    std::ignore = qs->insert(
             AggregatePerson{.id = 0, .name = "Dave", .age = 30, .salary = 80000.0, .years_experience = 10}
     ); // Same age as Alice and Bob
-    qs->insert(
+    std::ignore = qs->insert(
             AggregatePerson{.id = 0, .name = "Eve", .age = 35, .salary = 90000.0, .years_experience = 15}
     ); // Same age as Charlie
 
@@ -1106,10 +1109,12 @@ class OptionalAggregateTest : public ::testing::Test {
 
 TEST_F(OptionalAggregateTest, CountWithNullValues) {
     // Insert with NULL ages
-    qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
-    qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
-    qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0});
-    qs->insert(OptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0}); // NULL age
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
+    std::ignore =
+            qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0});
+    std::ignore =
+            qs->insert(OptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0}); // NULL age
 
     // COUNT(*) includes all rows
     auto count_all = qs->count().select();
@@ -1123,9 +1128,10 @@ TEST_F(OptionalAggregateTest, CountWithNullValues) {
 }
 
 TEST_F(OptionalAggregateTest, SumWithNullValues) {
-    qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
-    qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
-    qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0});
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
+    std::ignore =
+            qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0});
 
     auto sum = qs->sum<^^OptionalPerson::age>().select();
     ASSERT_TRUE(sum.has_value());
@@ -1133,9 +1139,10 @@ TEST_F(OptionalAggregateTest, SumWithNullValues) {
 }
 
 TEST_F(OptionalAggregateTest, AvgWithNullValues) {
-    qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 20, .salary = 50000.0});
-    qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
-    qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 40, .salary = 70000.0});
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 20, .salary = 50000.0});
+    std::ignore =
+            qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 40, .salary = 70000.0});
 
     auto avg = qs->avg<^^OptionalPerson::age>().select();
     ASSERT_TRUE(avg.has_value());
@@ -1143,10 +1150,12 @@ TEST_F(OptionalAggregateTest, AvgWithNullValues) {
 }
 
 TEST_F(OptionalAggregateTest, MinMaxWithNullValues) {
-    qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
-    qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
-    qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 45, .salary = 70000.0});
-    qs->insert(OptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0}); // NULL age
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
+    std::ignore =
+            qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 45, .salary = 70000.0});
+    std::ignore =
+            qs->insert(OptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0}); // NULL age
 
     auto min_val = qs->min<^^OptionalPerson::age>().select();
     ASSERT_TRUE(min_val.has_value());
@@ -1158,11 +1167,13 @@ TEST_F(OptionalAggregateTest, MinMaxWithNullValues) {
 }
 
 TEST_F(OptionalAggregateTest, CountDistinctWithNullValues) {
-    qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 30, .salary = 50000.0});
-    qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0});  // NULL age
-    qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 30, .salary = 70000.0});        // Same as Alice
-    qs->insert(OptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0}); // NULL age
-    qs->insert(OptionalPerson{.id = 0, .name = "Eve", .age = 40, .salary = 90000.0});
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 30, .salary = 50000.0});
+    std::ignore =
+            qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 30, .salary = 70000.0}); // Same as Alice
+    std::ignore =
+            qs->insert(OptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0}); // NULL age
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Eve", .age = 40, .salary = 90000.0});
 
     // COUNT(DISTINCT age) - NULL excluded, should count 2 (30, 40)
     auto result = qs->count_distinct<^^OptionalPerson::age>().select();
@@ -1172,9 +1183,13 @@ TEST_F(OptionalAggregateTest, CountDistinctWithNullValues) {
 
 // Negative number tests using the main AggregatePerson model
 TEST_F(AggregateTest, NegativeNumbersInSum) {
-    qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3});
-    qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 5, .salary = 60000.0, .years_experience = 5});
-    qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = -3, .salary = 70000.0, .years_experience = 7});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 5, .salary = 60000.0, .years_experience = 5});
+    std::ignore = qs->insert(
+            AggregatePerson{.id = 0, .name = "Charlie", .age = -3, .salary = 70000.0, .years_experience = 7}
+    );
 
     auto sum = qs->sum<^^AggregatePerson::age>().select();
     ASSERT_TRUE(sum.has_value());
@@ -1182,9 +1197,12 @@ TEST_F(AggregateTest, NegativeNumbersInSum) {
 }
 
 TEST_F(AggregateTest, NegativeNumbersInAvg) {
-    qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -12, .salary = 50000.0, .years_experience = 3});
-    qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 6, .salary = 60000.0, .years_experience = 5});
-    qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -12, .salary = 50000.0, .years_experience = 3});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 6, .salary = 60000.0, .years_experience = 5});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7});
 
     auto avg = qs->avg<^^AggregatePerson::age>().select();
     ASSERT_TRUE(avg.has_value());
@@ -1192,10 +1210,15 @@ TEST_F(AggregateTest, NegativeNumbersInAvg) {
 }
 
 TEST_F(AggregateTest, NegativeNumbersInMinMax) {
-    qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3});
-    qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 5, .salary = 60000.0, .years_experience = 5});
-    qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = -20, .salary = 70000.0, .years_experience = 7});
-    qs->insert(AggregatePerson{.id = 0, .name = "Dave", .age = 15, .salary = 80000.0, .years_experience = 10});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 5, .salary = 60000.0, .years_experience = 5});
+    std::ignore = qs->insert(
+            AggregatePerson{.id = 0, .name = "Charlie", .age = -20, .salary = 70000.0, .years_experience = 7}
+    );
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Dave", .age = 15, .salary = 80000.0, .years_experience = 10});
 
     auto min_val = qs->min<^^AggregatePerson::age>().select();
     ASSERT_TRUE(min_val.has_value());
@@ -1207,9 +1230,12 @@ TEST_F(AggregateTest, NegativeNumbersInMinMax) {
 }
 
 TEST_F(AggregateTest, NegativeNumbersInCount) {
-    qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3});
-    qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = -5, .salary = 60000.0, .years_experience = 5});
-    qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = -5, .salary = 60000.0, .years_experience = 5});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7});
 
     // Count should still count all rows regardless of negative values
     auto count = qs->count().select();
@@ -1223,11 +1249,16 @@ TEST_F(AggregateTest, NegativeNumbersInCount) {
 }
 
 TEST_F(AggregateTest, NegativeNumbersInWhere) {
-    qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3});
-    qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = -5, .salary = 60000.0, .years_experience = 5});
-    qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7});
-    qs->insert(AggregatePerson{.id = 0, .name = "Dave", .age = 5, .salary = 80000.0, .years_experience = 10});
-    qs->insert(AggregatePerson{.id = 0, .name = "Eve", .age = 10, .salary = 90000.0, .years_experience = 15});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = -5, .salary = 60000.0, .years_experience = 5});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Dave", .age = 5, .salary = 80000.0, .years_experience = 10});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Eve", .age = 10, .salary = 90000.0, .years_experience = 15});
 
     // Count where age < 0
     auto result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() < 0).count().select();

@@ -216,8 +216,9 @@ export namespace storm::orm::statements {
             ((bind_ok = bind_ok && [&]() -> bool {
                  if constexpr (Is < field_count_) {
                      if (all_members_[Is] != primary_key_) {
-                         bool result = bind_field_at_index<ConnType, Is>(stmt, obj, param_index);
-                         param_index++;
+                         // Capture current index, then increment for next iteration
+                         int  current_idx = param_index++;
+                         bool result      = bind_field_at_index<ConnType, Is>(stmt, obj, current_idx);
                          return result;
                      }
                  }
@@ -322,8 +323,9 @@ export namespace storm::orm::statements {
                 ((bind_ok = bind_ok && [&]() -> bool {
                      if constexpr (Is < field_count_) {
                          if (all_members_[Is] != primary_key_) {
-                             bool result = bind_field_at_index<ConnType, Is>(stmt, obj, field_param);
-                             field_param++;
+                             // Capture current index, then increment for next iteration
+                             int  current_idx = field_param++;
+                             bool result      = bind_field_at_index<ConnType, Is>(stmt, obj, current_idx);
                              return result;
                          }
                      }
@@ -439,10 +441,10 @@ export namespace storm::orm::statements {
             else if constexpr (std::is_same_v<FieldType, int>) {
                 return stmt.extract_int(col_idx);
             } else if constexpr (std::is_same_v<FieldType, int64_t> || std::is_same_v<FieldType, long> ||
-                                 std::is_same_v<FieldType, long long>) {
-                return static_cast<FieldType>(stmt.extract_int64(col_idx));
-            } else if constexpr (std::is_same_v<FieldType, uint64_t> || std::is_same_v<FieldType, unsigned long> ||
+                                 std::is_same_v<FieldType, long long> || std::is_same_v<FieldType, uint64_t> ||
+                                 std::is_same_v<FieldType, unsigned long> ||
                                  std::is_same_v<FieldType, unsigned long long>) {
+                // All 64-bit types (signed and unsigned) use extract_int64
                 return static_cast<FieldType>(stmt.extract_int64(col_idx));
             } else if constexpr (std::is_same_v<FieldType, short> || std::is_same_v<FieldType, unsigned short> ||
                                  std::is_same_v<FieldType, unsigned int>) {

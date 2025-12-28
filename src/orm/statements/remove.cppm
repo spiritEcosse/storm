@@ -160,7 +160,7 @@ export namespace storm::orm::statements {
       public:
         explicit RemoveStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
-        [[nodiscard]] auto execute(std::span<const T> objects) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] auto execute(std::span<const T> objects) -> std::expected<void, Error> {
             if (objects.empty()) {
                 return {};
             }
@@ -215,8 +215,7 @@ export namespace storm::orm::statements {
 
         // Bulk execute using IN clause for better performance on small batches
         // Flat code pattern for hot path performance (avoids lambda overhead)
-        [[nodiscard]] __attribute__((hot)) auto execute_bulk(std::span<const T> objects) noexcept
-                -> std::expected<void, Error> {
+        [[nodiscard]] __attribute__((hot)) auto execute_bulk(std::span<const T> objects) -> std::expected<void, Error> {
             const auto& bulk_sql = get_bulk_delete_sql(objects.size());
 
             // Prepare statement (cached internally by connection)
@@ -232,7 +231,7 @@ export namespace storm::orm::statements {
         // Execute large batches using chunked IN clauses
         // NOTE: Transaction is handled by caller (execute_with_transaction in base.cppm)
         // Optimized: pre-cache max bulk statement, only lookup remainder once
-        [[nodiscard]] __attribute__((hot)) auto execute_chunked(std::span<const T> objects) noexcept
+        [[nodiscard]] __attribute__((hot)) auto execute_chunked(std::span<const T> objects)
                 -> std::expected<void, Error> {
             // Cache max bulk statement pointer (compile-time SQL, no hash lookup after first call)
             if (!cached_max_bulk_stmt_) {

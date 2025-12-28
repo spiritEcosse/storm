@@ -51,10 +51,10 @@ export namespace storm::orm::utilities {
         else if constexpr (std::is_same_v<ValueType, int>) {
             return stmt.bind_int(param_index, value);
         } else if constexpr (std::is_same_v<ValueType, int64_t> || std::is_same_v<ValueType, long> ||
-                             std::is_same_v<ValueType, long long>) {
-            return stmt.bind_int64(param_index, static_cast<int64_t>(value));
-        } else if constexpr (std::is_same_v<ValueType, uint64_t> || std::is_same_v<ValueType, unsigned long> ||
+                             std::is_same_v<ValueType, long long> || std::is_same_v<ValueType, uint64_t> ||
+                             std::is_same_v<ValueType, unsigned long> ||
                              std::is_same_v<ValueType, unsigned long long>) {
+            // All 64-bit types (signed and unsigned) use bind_int64
             return stmt.bind_int64(param_index, static_cast<int64_t>(value));
         } else if constexpr (std::is_same_v<ValueType, short> || std::is_same_v<ValueType, unsigned short> ||
                              std::is_same_v<ValueType, unsigned int>) {

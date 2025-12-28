@@ -195,8 +195,7 @@ export namespace storm::orm::statements {
         // Batch insert operation with optional configuration
         // NOTE: Returns void because SQLite's last_insert_rowid() only gives the last ID,
         // and assuming consecutive IDs is unreliable (triggers, gaps, etc.)
-        [[nodiscard]] auto
-        execute(std::span<const T> objects, std::optional<InsertOptions> opts = std::nullopt) noexcept
+        [[nodiscard]] auto execute(std::span<const T> objects, std::optional<InsertOptions> opts = std::nullopt)
                 -> std::expected<void, Error> {
             if (objects.empty()) {
                 return {};
@@ -264,8 +263,7 @@ export namespace storm::orm::statements {
 
         // Execute bulk INSERT with multiple VALUES clauses
         // NOTE: No transaction wrapper needed - single INSERT statement is already atomic
-        [[nodiscard]] __attribute__((hot)) auto execute_bulk(std::span<const T> objects) noexcept
-                -> std::expected<void, Error> {
+        [[nodiscard]] __attribute__((hot)) auto execute_bulk(std::span<const T> objects) -> std::expected<void, Error> {
             const auto& sql = get_bulk_insert_sql(objects.size());
 
             // Use prepare_cached to reuse prepared statements across iterations
@@ -278,7 +276,7 @@ export namespace storm::orm::statements {
         }
 
         // Execute CHUNKED bulk inserts with custom batch size
-        [[nodiscard]] auto execute_chunked_bulk_custom(std::span<const T> objects, size_t custom_bulk_size) noexcept
+        [[nodiscard]] auto execute_chunked_bulk_custom(std::span<const T> objects, size_t custom_bulk_size)
                 -> std::expected<void, Error> {
             // Process in chunks of custom_bulk_size
             for (size_t offset = 0; offset < objects.size(); offset += custom_bulk_size) {

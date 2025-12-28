@@ -11,6 +11,7 @@ import <memory>;
 import <unordered_map>;
 import <unordered_set>;
 import <vector>;
+import <array>;
 import <cstdint>;
 
 export namespace storm::db::sqlite {
@@ -248,11 +249,12 @@ export namespace storm::db::sqlite {
         using Statement = sqlite::Statement;
 
         // Factory method with error handling and thread-safe flags
-        [[nodiscard]] static auto open(std::string_view db_path) noexcept -> std::expected<Connection, Error> {
-            sqlite3* raw_db = nullptr;
+        [[nodiscard]] static auto open(std::string_view db_path) -> std::expected<Connection, Error> {
+            sqlite3*          raw_db = nullptr;
+            const std::string db_path_str(db_path); // Ensure null-termination
             // Add SQLITE_OPEN_FULLMUTEX for serialized mode (thread-safe)
             const int rc = sqlite3_open_v2(
-                    db_path.data(),
+                    db_path_str.c_str(),
                     &raw_db,
                     SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_URI | SQLITE_OPEN_FULLMUTEX,
                     nullptr
@@ -285,13 +287,13 @@ export namespace storm::db::sqlite {
             return static_cast<bool>(db);
         }
 
-        [[nodiscard]] auto prepare(std::string_view sql) noexcept -> std::expected<Statement, Error> {
+        [[nodiscard]] auto prepare(std::string_view sql) -> std::expected<Statement, Error> {
             if (!is_open()) {
                 return std::unexpected(Error{SQLITE_MISUSE, "Connection not open"});
             }
 
             sqlite3_stmt* stmt = nullptr;
-            const int     rc   = sqlite3_prepare_v2(db.get(), sql.data(), -1, &stmt, nullptr);
+            const int     rc   = sqlite3_prepare_v2(db.get(), sql.data(), static_cast<int>(sql.size()), &stmt, nullptr);
 
             if (rc != SQLITE_OK) {
                 return std::unexpected(Error{rc, sqlite3_errmsg(db.get())});
@@ -302,7 +304,7 @@ export namespace storm::db::sqlite {
 
         // Prepare statement with caching - reuses statements for identical SQL
         // OPTIMIZATION: Uses heterogeneous lookup to avoid string allocation on cache hit
-        [[nodiscard]] auto prepare_cached(std::string_view sql) noexcept -> std::expected<Statement*, Error> {
+        [[nodiscard]] auto prepare_cached(std::string_view sql) -> std::expected<Statement*, Error> {
             if (!is_open()) {
                 return std::unexpected(Error{SQLITE_MISUSE, "Connection not open"});
             }
@@ -318,7 +320,7 @@ export namespace storm::db::sqlite {
 
             // Cache miss - create new statement and cache it
             sqlite3_stmt* stmt = nullptr;
-            const int     rc   = sqlite3_prepare_v2(db.get(), sql.data(), -1, &stmt, nullptr);
+            const int     rc   = sqlite3_prepare_v2(db.get(), sql.data(), static_cast<int>(sql.size()), &stmt, nullptr);
 
             if (rc != SQLITE_OK) {
                 return std::unexpected(Error{rc, sqlite3_errmsg(db.get())});
@@ -344,18 +346,19 @@ export namespace storm::db::sqlite {
         }
 
         // Pre-populate statement cache with common operations
-        auto prepare_common_statements() noexcept -> void {
+        auto prepare_common_statements() -> void {
             // Common patterns that benefit from pre-compilation
-            static const std::vector<std::string> common_patterns = {"BEGIN TRANSACTION", "COMMIT", "ROLLBACK"};
+            static const std::array<std::string_view, 3> common_patterns = {"BEGIN TRANSACTION", "COMMIT", "ROLLBACK"};
 
             for (const auto& sql : common_patterns) {
                 // Pre-populate cache (ignore errors for optional optimization)
+                // NOLINTNEXTLINE(bugprone-unused-return-value)
                 (void)prepare_cached(sql);
             }
         }
 
         // Execute SQL with error handling (optimized to use cached statements for common operations)
-        [[nodiscard]] auto execute(std::string_view sql) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] auto execute(std::string_view sql) -> std::expected<void, Error> {
             if (!is_open()) {
                 return std::unexpected(Error{SQLITE_MISUSE, "Connection not open"});
             }
@@ -373,8 +376,10 @@ export namespace storm::db::sqlite {
             }
 
             // Regular execution for non-cached operations
-            char*     errmsg = nullptr;
-            const int rc     = sqlite3_exec(db.get(), sql.data(), nullptr, nullptr, &errmsg);
+            // sqlite3_exec requires null-terminated string
+            const std::string sql_str(sql);
+            char*             errmsg = nullptr;
+            const int         rc     = sqlite3_exec(db.get(), sql_str.c_str(), nullptr, nullptr, &errmsg);
 
             if (rc != SQLITE_OK) {
                 const Error error{rc, errmsg != nullptr ? errmsg : "Unknown error"};

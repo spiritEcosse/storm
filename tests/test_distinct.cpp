@@ -83,16 +83,16 @@ class DistinctTest : public ::testing::Test {
         auto& conn = QuerySet<DistinctPerson>::get_default_connection();
 
         // Insert users
-        conn->execute("INSERT INTO User (name, age) VALUES ('Alice', 30)");
-        conn->execute("INSERT INTO User (name, age) VALUES ('Bob', 25)");
-        conn->execute("INSERT INTO User (name, age) VALUES ('Charlie', 35)");
+        std::ignore = conn->execute("INSERT INTO User (name, age) VALUES ('Alice', 30)");
+        std::ignore = conn->execute("INSERT INTO User (name, age) VALUES ('Bob', 25)");
+        std::ignore = conn->execute("INSERT INTO User (name, age) VALUES ('Charlie', 35)");
 
         // Insert messages (multiple messages per user to test DISTINCT)
-        conn->execute("INSERT INTO Message (content, sender_id) VALUES ('Hello', 1)");    // Alice
-        conn->execute("INSERT INTO Message (content, sender_id) VALUES ('World', 1)");    // Alice
-        conn->execute("INSERT INTO Message (content, sender_id) VALUES ('Hi there', 2)"); // Bob
-        conn->execute("INSERT INTO Message (content, sender_id) VALUES ('Goodbye', 2)");  // Bob
-        conn->execute("INSERT INTO Message (content, sender_id) VALUES ('Test', 3)");     // Charlie
+        std::ignore = conn->execute("INSERT INTO Message (content, sender_id) VALUES ('Hello', 1)");    // Alice
+        std::ignore = conn->execute("INSERT INTO Message (content, sender_id) VALUES ('World', 1)");    // Alice
+        std::ignore = conn->execute("INSERT INTO Message (content, sender_id) VALUES ('Hi there', 2)"); // Bob
+        std::ignore = conn->execute("INSERT INTO Message (content, sender_id) VALUES ('Goodbye', 2)");  // Bob
+        std::ignore = conn->execute("INSERT INTO Message (content, sender_id) VALUES ('Test', 3)");     // Charlie
     }
 };
 
@@ -267,7 +267,7 @@ TEST_F(DistinctTest, VerifyReturnTypes) {
     QuerySet<DistinctPerson> queryset;
 
     // Insert test data
-    queryset.insert(DistinctPerson{.id = 0, .name = "Alice", .age = 30});
+    std::ignore = queryset.insert(DistinctPerson{.id = 0, .name = "Alice", .age = 30});
 
     // Verify return type for distinct on name field is hive of strings
     auto names_result = queryset.distinct<^^DistinctPerson::name>().select();
@@ -441,7 +441,7 @@ TEST_F(DistinctTest, VerifyMultiFieldReturnTypes) {
     QuerySet<DistinctPerson> queryset;
 
     // Insert test data
-    queryset.insert(DistinctPerson{.id = 0, .name = "Alice", .age = 30});
+    std::ignore = queryset.insert(DistinctPerson{.id = 0, .name = "Alice", .age = 30});
 
     // Verify return type for distinct on name and age is hive of tuples containing string and int
     auto pairs_result = queryset.distinct<^^DistinctPerson::name, ^^DistinctPerson::age>().select();
@@ -509,7 +509,7 @@ TEST_F(DistinctTest, TriplicateFieldSpecification) {
     QuerySet<DistinctPerson> queryset;
 
     std::vector<DistinctPerson> people = {{1, "Alice", 30}, {2, "Bob", 25}};
-    queryset.insert(std::span<const DistinctPerson>(people));
+    std::ignore                        = queryset.insert(std::span<const DistinctPerson>(people));
 
     // SELECT DISTINCT age, age, age (extreme redundancy)
     auto result = queryset.distinct<^^DistinctPerson::age, ^^DistinctPerson::age, ^^DistinctPerson::age>().select();
@@ -559,7 +559,7 @@ TEST_F(DistinctTest, CrossStructFieldAccessPrevented) {
 // Test: Return type verification for duplicate fields
 TEST_F(DistinctTest, VerifyDuplicateFieldReturnTypes) {
     QuerySet<DistinctPerson> queryset;
-    queryset.insert(DistinctPerson{.id = 0, .name = "Alice", .age = 30});
+    std::ignore = queryset.insert(DistinctPerson{.id = 0, .name = "Alice", .age = 30});
 
     // Duplicate field returns tuple with same type repeated
     auto dup_result = queryset.distinct<^^DistinctPerson::name, ^^DistinctPerson::name>().select();
@@ -578,7 +578,7 @@ TEST_F(DistinctTest, MixedDuplicateFields) {
     std::vector<DistinctPerson> people = {
             {1, "Alice", 30}, {2, "Bob", 25}, {3, "Alice", 30} // Duplicate (name, age)
     };
-    queryset.insert(std::span<const DistinctPerson>(people));
+    std::ignore = queryset.insert(std::span<const DistinctPerson>(people));
 
     // SELECT DISTINCT name, age, name (name appears twice)
     auto result = queryset.distinct<^^DistinctPerson::name, ^^DistinctPerson::age, ^^DistinctPerson::name>().select();

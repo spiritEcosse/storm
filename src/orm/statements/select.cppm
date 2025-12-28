@@ -85,7 +85,7 @@ export namespace storm::orm::statements {
                 const orm::where::ExpressionVariantPtr& where_expr       = nullptr,
                 const std::optional<int>&               limit            = std::nullopt,
                 const std::optional<int>&               offset           = std::nullopt,
-                const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt) noexcept
+                const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt)
                 -> std::expected<plf::hive<T>, Error> {
             // Prepare statement based on query type
             auto stmt_result = prepare_statement(join_wrapper, where_expr, limit, offset, order_by_wrapper);
@@ -117,7 +117,7 @@ export namespace storm::orm::statements {
                 const std::optional<int>&                  limit,
                 const std::optional<int>&                  offset,
                 const std::optional<OrderByWrapper>&       order_by_wrapper
-        ) noexcept -> std::expected<Statement*, Error> {
+        ) -> std::expected<Statement*, Error> {
             const bool has_modifiers = order_by_wrapper.has_value() || limit.has_value() || offset.has_value();
 
             // Fast path: simple SELECT with no modifiers
@@ -173,7 +173,7 @@ export namespace storm::orm::statements {
                 const std::optional<int>&                  limit,
                 const std::optional<int>&                  offset,
                 const std::optional<OrderByWrapper>&       order_by_wrapper
-        ) noexcept -> std::expected<Statement*, Error> {
+        ) -> std::expected<Statement*, Error> {
             std::string sql = join_wrapper ? join_wrapper->get_complete_sql() : std::string(get_select_sql());
 
             if (where_expr) {
@@ -221,8 +221,8 @@ export namespace storm::orm::statements {
 
         // Extract single column value using raw sqlite3_stmt* pointer
         template <typename FieldType>
-        __attribute__((always_inline)) static inline auto
-        extract_column_raw(sqlite3_stmt* raw_stmt, int col_idx) noexcept -> FieldType {
+        __attribute__((always_inline)) static inline auto extract_column_raw(sqlite3_stmt* raw_stmt, int col_idx)
+                -> FieldType {
             // Handle std::optional types first
             if constexpr (storm::orm::utilities::is_optional_v<FieldType>) {
                 using InnerType = typename FieldType::value_type;
@@ -250,10 +250,10 @@ export namespace storm::orm::statements {
             else if constexpr (std::is_same_v<FieldType, int>) {
                 return sqlite3_column_int(raw_stmt, col_idx);
             } else if constexpr (std::is_same_v<FieldType, int64_t> || std::is_same_v<FieldType, long> ||
-                                 std::is_same_v<FieldType, long long>) {
-                return static_cast<FieldType>(sqlite3_column_int64(raw_stmt, col_idx));
-            } else if constexpr (std::is_same_v<FieldType, uint64_t> || std::is_same_v<FieldType, unsigned long> ||
+                                 std::is_same_v<FieldType, long long> || std::is_same_v<FieldType, uint64_t> ||
+                                 std::is_same_v<FieldType, unsigned long> ||
                                  std::is_same_v<FieldType, unsigned long long>) {
+                // All 64-bit types (signed and unsigned) use sqlite3_column_int64
                 return static_cast<FieldType>(sqlite3_column_int64(raw_stmt, col_idx));
             } else if constexpr (std::is_same_v<FieldType, short>) {
                 return static_cast<short>(sqlite3_column_int(raw_stmt, col_idx));
