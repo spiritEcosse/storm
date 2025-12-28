@@ -66,11 +66,11 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 
 
 ## TODO:
-- [ ] lets enable bugprone-exception-escape
-- [ ] enable bugprone-suspicious-stringview-data-usage
-- [ ] enable bugprone-branch-clone
-- [ ] enable bugprone-inc-dec-in-conditions
-- [ ] enable bugprone-unused-return-value
+- [x] ~~enable bugprone-exception-escape~~ - ✅ **DONE** - Removed `noexcept` from functions that may allocate std::string
+- [x] ~~enable bugprone-suspicious-stringview-data-usage~~ - ✅ **DONE** - Use `sql.size()` with `sqlite3_prepare_v2` or convert to `std::string`
+- [x] ~~enable bugprone-branch-clone~~ - ✅ **DONE** - Combined identical int64/uint64 branches in type extraction
+- [x] ~~enable bugprone-inc-dec-in-conditions~~ - ✅ **DONE** - Separated increment into local variable assignment in fold expressions
+- [x] ~~enable bugprone-unused-return-value~~ - ✅ **DONE** - Added `std::ignore =` for intentionally ignored returns in tests
 - [x] ~~Consider adding clang-tidy in quick_commit.sh, but exclude third_party~~ - ✅ **DONE** - Added `scripts/run_clang_tidy.sh` with parallel execution, modernize checks, third_party exclusion. Runs by default in `quick_commit.sh` (use `--no-tidy` to skip)
 - [x] ~~Replace all std::vector with plf::hive~~ - ✅ **DONE** - All QuerySet `select()` methods now return `plf::hive<T>` for stable iterators and efficient insertion
 - [ ] **Verify Performance Code Compliance** - Audit all statement implementations against CLAUDE.md performance rules:
