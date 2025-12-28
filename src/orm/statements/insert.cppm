@@ -273,7 +273,7 @@ export namespace storm::orm::statements {
                 return Base::template bind_non_pk_objects_bulk_impl<ConnType, Statement>(
                                *stmt, objects, typename Base::field_indices_t()
                 )
-                        .and_then([stmt]() { return stmt->execute(); });
+                        .and_then([stmt]() -> decltype(auto) { return stmt->execute(); });
             });
         }
 
@@ -292,7 +292,7 @@ export namespace storm::orm::statements {
                             return Base::template bind_non_pk_objects_bulk_impl<ConnType, Statement>(
                                            *stmt, chunk, typename Base::field_indices_t()
                             )
-                                    .and_then([stmt]() { return stmt->execute(); });
+                                    .and_then([stmt]() -> decltype(auto) { return stmt->execute(); });
                         }
                 );
 

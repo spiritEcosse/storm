@@ -32,7 +32,7 @@ export namespace storm::orm::statements {
 
     // Helper to get SQL function name from AggregateType
     // Note: COUNT_DISTINCT is handled specially in build_operation_sql
-    constexpr std::string_view get_agg_function_name(AggregateType type) {
+    constexpr auto get_agg_function_name(AggregateType type) -> std::string_view {
         switch (type) {
         case AggregateType::SUM:
             return "SUM";
@@ -54,7 +54,7 @@ export namespace storm::orm::statements {
     template <AggregateType Type, std::meta::info... FieldInfos> struct AggregateOp {
         static constexpr AggregateType agg_type    = Type;
         static constexpr size_t        field_count = sizeof...(FieldInfos);
-        static constexpr auto          get_field_infos() {
+        static constexpr auto          get_field_infos() -> std::array<std::meta::info, sizeof...(FieldInfos)> {
             if constexpr (sizeof...(FieldInfos) > 0) {
                 return std::array{FieldInfos...};
             } else {
@@ -70,7 +70,7 @@ export namespace storm::orm::statements {
         static constexpr size_t                                        size = sizeof...(Infos);
         static constexpr std::array<std::meta::info, sizeof...(Infos)> values{Infos...};
 
-        template <size_t I> static consteval auto at() {
+        template <size_t I> static consteval auto at() -> std::meta::info {
             static_assert(I < size, "Index out of bounds");
             return values[I];
         }
@@ -193,7 +193,7 @@ export namespace storm::orm::statements {
             result.append("SELECT ");
 
             // Add each operation
-            (([&result]() {
+            (([&result]() -> void {
                  if constexpr (Is > 0) {
                      result.append(", ");
                  }
@@ -211,7 +211,7 @@ export namespace storm::orm::statements {
         static constexpr auto sql_array = build_aggregate_sql(std::make_index_sequence<sizeof...(Ops)>{});
 
         // Extract single result value based on type
-        template <typename ResultT> static ResultT extract_result(Statement& stmt, int col_idx) {
+        template <typename ResultT> static auto extract_result(Statement& stmt, int col_idx) -> ResultT {
             if constexpr (std::is_same_v<ResultT, int64_t>) {
                 return stmt.extract_int64(col_idx);
             } else if constexpr (std::is_same_v<ResultT, double>) {
@@ -409,7 +409,7 @@ export namespace storm::orm::statements {
             result.append("SELECT ");
 
             // Add each operation
-            (([&result]() {
+            (([&result]() -> void {
                  if constexpr (Is > 0) {
                      result.append(", ");
                  }
@@ -430,7 +430,7 @@ export namespace storm::orm::statements {
         template <size_t... Is> static consteval auto build_aggregate_select_clause(std::index_sequence<Is...>) {
             ConstexprString<1024> result;
 
-            (([&result]() {
+            (([&result]() -> void {
                  if constexpr (Is > 0) {
                      result.append(", ");
                  }
@@ -446,7 +446,7 @@ export namespace storm::orm::statements {
                 build_aggregate_select_clause(std::make_index_sequence<sizeof...(Ops)>{});
 
         // Extract single result value based on type
-        template <typename ResultT> static ResultT extract_result(Statement& stmt, int col_idx) {
+        template <typename ResultT> static auto extract_result(Statement& stmt, int col_idx) -> ResultT {
             if constexpr (std::is_same_v<ResultT, int64_t>) {
                 return stmt.extract_int64(col_idx);
             } else if constexpr (std::is_same_v<ResultT, double>) {
@@ -701,7 +701,7 @@ export namespace storm::orm::statements {
         // Build GROUP BY field list
         template <size_t... Is> static consteval auto build_group_by_fields(std::index_sequence<Is...>) {
             ConstexprString<512> result;
-            (([&result]() {
+            (([&result]() -> void {
                  if constexpr (Is > 0) {
                      result.append(", ");
                  }
@@ -718,7 +718,7 @@ export namespace storm::orm::statements {
             ConstexprString<2048> result;
 
             // Add group by fields first
-            (([&result]() {
+            (([&result]() -> void {
                  if constexpr (GIs > 0) {
                      result.append(", ");
                  }
@@ -728,7 +728,7 @@ export namespace storm::orm::statements {
              ...);
 
             // Add aggregate functions
-            (([&result]() {
+            (([&result]() -> void {
                  result.append(", ");
                  constexpr auto op       = std::tuple_element_t<AIs, std::tuple<Ops...>>{};
                  constexpr auto agg_name = get_agg_function_name(op.agg_type);
@@ -774,13 +774,14 @@ export namespace storm::orm::statements {
         static constexpr auto sql_array = build_group_by_sql();
 
         // Extract a single column value based on type - delegates to BaseStatement
-        template <typename FieldType> static FieldType extract_column(Statement& stmt, int col_idx) {
+        template <typename FieldType> static auto extract_column(Statement& stmt, int col_idx) -> FieldType {
             return Base::template extract_column_value<FieldType>(stmt, col_idx);
         }
 
         // Extract one row into tuple
         template <size_t... GIs, size_t... AIs>
-        static TupleType extract_row(Statement& stmt, std::index_sequence<GIs...>, std::index_sequence<AIs...>) {
+        static auto extract_row(Statement& stmt, std::index_sequence<GIs...>, std::index_sequence<AIs...>)
+                -> TupleType {
             return TupleType{
                     extract_column<typename GroupFieldType<GIs>::type>(stmt, GIs)...,
                     extract_column<typename OpResultType<AIs>::type>(stmt, NumGroupFields + AIs)...

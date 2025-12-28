@@ -29,10 +29,10 @@ export namespace storm::db::sqlite {
         int         code_;
         std::string message_;
 
-        [[nodiscard]] constexpr int code() const noexcept {
+        [[nodiscard]] constexpr auto code() const noexcept -> int {
             return code_;
         }
-        [[nodiscard]] constexpr std::string_view message() const noexcept {
+        [[nodiscard]] constexpr auto message() const noexcept -> std::string_view {
             return message_;
         }
     };
@@ -281,7 +281,7 @@ export namespace storm::db::sqlite {
         Connection& operator=(const Connection&) = delete;
 
         // DatabaseConnection concept implementation
-        [[nodiscard]] constexpr bool is_open() const noexcept {
+        [[nodiscard]] constexpr auto is_open() const noexcept -> bool {
             return static_cast<bool>(db);
         }
 

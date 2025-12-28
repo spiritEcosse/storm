@@ -81,7 +81,7 @@ export namespace storm::orm::statements {
         template <size_t... Is> static consteval auto build_field_list_constexpr(std::index_sequence<Is...>) {
             constexpr size_t total_size = calculate_field_list_size(std::make_index_sequence<NumFields>{});
             ConstexprString<total_size + 10> result;
-            auto                             append_field = [&result]<size_t I>() {
+            auto                             append_field = [&result]<size_t I>() -> void {
                 if constexpr (I > 0) {
                     result.append(", ");
                 }

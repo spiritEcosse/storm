@@ -33,31 +33,31 @@ export namespace storm::orm::statements {
     using ErasedStatementPtr = void*;
 
     struct JoinStatementWrapper {
-        const std::string& (*get_join_sql_fn)();
-        const std::string& (*get_select_fields_fn)();
-        const std::string& (*get_complete_sql_fn)();
-        void (*extract_row_fn)(ErasedStatementPtr, ErasedObjectPtr);
-        void (*extract_row_raw_fn)(sqlite3_stmt*, ErasedObjectPtr);
+        auto (*get_join_sql_fn)() -> const std::string&;
+        auto (*get_select_fields_fn)() -> const std::string&;
+        auto (*get_complete_sql_fn)() -> const std::string&;
+        auto (*extract_row_fn)(ErasedStatementPtr, ErasedObjectPtr) -> void;
+        auto (*extract_row_raw_fn)(sqlite3_stmt*, ErasedObjectPtr) -> void;
 
-        [[nodiscard]] const std::string& to_sql() const {
+        [[nodiscard]] auto to_sql() const -> const std::string& {
             return get_join_sql_fn();
         }
 
-        [[nodiscard]] const std::string& build_qualified_select_fields() const {
+        [[nodiscard]] auto build_qualified_select_fields() const -> const std::string& {
             return get_select_fields_fn();
         }
 
         // NEW: Get complete pre-computed SELECT...JOIN SQL
-        [[nodiscard]] const std::string& get_complete_sql() const {
+        [[nodiscard]] auto get_complete_sql() const -> const std::string& {
             return get_complete_sql_fn();
         }
 
-        void extract_row(ErasedStatementPtr stmt, ErasedObjectPtr obj) const {
+        auto extract_row(ErasedStatementPtr stmt, ErasedObjectPtr obj) const -> void {
             extract_row_fn(stmt, obj);
         }
 
         // Extract row using raw sqlite3_stmt* pointer (faster)
-        void extract_row_raw(sqlite3_stmt* raw_stmt, ErasedObjectPtr obj) const {
+        auto extract_row_raw(sqlite3_stmt* raw_stmt, ErasedObjectPtr obj) const -> void {
             extract_row_raw_fn(raw_stmt, obj);
         }
     };
@@ -83,7 +83,7 @@ export namespace storm::orm::statements {
                 "FK pointers must be member object pointers"
         );
 
-        static consteval size_t count_non_fk_fields() {
+        static consteval auto count_non_fk_fields() -> size_t {
             size_t count = 0;
             for (size_t i = 0; i < Base::field_count_; ++i) {
                 if (!Base::is_fk_field(Base::all_members_[i])) {
@@ -125,7 +125,7 @@ export namespace storm::orm::statements {
 
         static constexpr auto fk_field_names_ = build_fk_field_names();
 
-        static constexpr std::string_view get_join_keyword() {
+        static constexpr auto get_join_keyword() -> std::string_view {
             if constexpr (Type == JoinType::Inner)
                 return " INNER JOIN ";
             else if constexpr (Type == JoinType::Left)
@@ -135,7 +135,7 @@ export namespace storm::orm::statements {
         }
 
         // Compile-time SQL generation with ConstexprString
-        static consteval size_t calculate_join_sql_size() {
+        static consteval auto calculate_join_sql_size() -> size_t {
             size_t total = 0;
 
             [&]<size_t... Is>(std::index_sequence<Is...>) {
@@ -169,7 +169,7 @@ export namespace storm::orm::statements {
             return result;
         }
 
-        static consteval size_t calculate_select_fields_size() {
+        static consteval auto calculate_select_fields_size() -> size_t {
             size_t total = 0;
 
             // Base fields
@@ -242,7 +242,7 @@ export namespace storm::orm::statements {
         static constexpr auto select_fields_array = build_select_fields_array();
 
         // NEW: Compile-time complete SQL generation
-        static consteval size_t calculate_complete_sql_size() {
+        static consteval auto calculate_complete_sql_size() -> size_t {
             size_t total = 0;
             total += 7; // "SELECT "
             total += calculate_select_fields_size();
@@ -270,33 +270,33 @@ export namespace storm::orm::statements {
         static constexpr auto complete_sql_array = build_complete_sql_array();
 
         // Lazy initialization to avoid duplicate storage
-        static const std::string& get_join_sql_cached() {
+        static auto get_join_sql_cached() -> const std::string& {
             static const std::string str{join_sql_array.data.data(), join_sql_array.len};
             return str;
         }
 
-        static const std::string& get_select_fields_cached() {
+        static auto get_select_fields_cached() -> const std::string& {
             static const std::string str{select_fields_array.data.data(), select_fields_array.len};
             return str;
         }
 
         // NEW: Get complete SQL with lazy initialization
-        static const std::string& get_complete_sql_cached() {
+        static auto get_complete_sql_cached() -> const std::string& {
             static const std::string str{complete_sql_array.data.data(), complete_sql_array.len};
             return str;
         }
 
       public:
-        static const std::string& get_join_sql() {
+        static auto get_join_sql() -> const std::string& {
             return get_join_sql_cached();
         }
 
-        static const std::string& get_select_fields() {
+        static auto get_select_fields() -> const std::string& {
             return get_select_fields_cached();
         }
 
         // NEW: Get complete pre-computed SELECT...JOIN SQL
-        static const std::string& get_complete_sql() {
+        static auto get_complete_sql() -> const std::string& {
             return get_complete_sql_cached();
         }
 
@@ -399,8 +399,8 @@ export namespace storm::orm::statements {
 
       public:
         // NEW: Raw pointer extraction for maximum performance
-        __attribute__((hot)) __attribute__((flatten)) static void
-        extract_joined_row_raw(sqlite3_stmt* raw_stmt, T& obj) noexcept {
+        __attribute__((hot)) __attribute__((flatten)) static auto
+        extract_joined_row_raw(sqlite3_stmt* raw_stmt, T& obj) noexcept -> void {
             // Initialize ALL FK fields to defaults first
             init_all_fk_fields(obj, typename Base::field_indices_t{});
             // Extract base fields and FK fields using raw pointers
@@ -523,10 +523,11 @@ export namespace storm::orm::statements {
         }
 
       public:
-        __attribute__((hot)) __attribute__((flatten)) static void extract_joined_row(Statement* stmt, T& obj) noexcept {
+        __attribute__((hot)) __attribute__((flatten)) static auto extract_joined_row(Statement* stmt, T& obj) noexcept
+                -> void {
 #ifndef NDEBUG
             size_t expected_cols = non_fk_field_count_;
-            [&]<size_t... Is>(std::index_sequence<Is...>) {
+            [&]<size_t... Is>(std::index_sequence<Is...>) -> void {
                 ((expected_cols += FKBase_at<Is>::field_count_), ...);
             }(std::make_index_sequence<fk_count_>{});
 
@@ -551,10 +552,10 @@ export namespace storm::orm::statements {
                 +[]() -> const std::string& { return JS::get_join_sql(); },
                 +[]() -> const std::string& { return JS::get_select_fields(); },
                 +[]() -> const std::string& { return JS::get_complete_sql(); },
-                +[](ErasedStatementPtr stmt, ErasedObjectPtr obj) {
+                +[](ErasedStatementPtr stmt, ErasedObjectPtr obj) -> void {
                     JS::extract_joined_row(static_cast<typename ConnType::Statement*>(stmt), *static_cast<T*>(obj));
                 },
-                +[](sqlite3_stmt* raw_stmt, ErasedObjectPtr obj) {
+                +[](sqlite3_stmt* raw_stmt, ErasedObjectPtr obj) -> void {
                     JS::extract_joined_row_raw(raw_stmt, *static_cast<T*>(obj));
                 }
         };

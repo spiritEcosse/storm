@@ -34,19 +34,19 @@ export namespace storm::orm::statements {
     template <typename T> class BaseStatement {
       public:
         // Public accessors for optimization
-        static constexpr auto get_primary_key() {
+        static constexpr auto get_primary_key() -> std::meta::info {
             return primary_key_;
         }
-        static constexpr auto get_pk_name() {
+        static constexpr auto get_pk_name() -> std::string_view {
             return pk_name_;
         }
-        static constexpr auto get_table_name() {
+        static constexpr auto get_table_name() -> std::string_view {
             return table_name_;
         }
 
       protected:
         // Helper to find primary key using storm::meta attributes
-        static consteval std::meta::info find_primary_key_impl() {
+        static consteval auto find_primary_key_impl() -> std::meta::info {
             for (const std::meta::info member :
                  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
                 auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
@@ -58,19 +58,19 @@ export namespace storm::orm::statements {
         }
 
         // FK field detection utilities
-        static consteval bool is_fk_field(std::meta::info member) {
+        static consteval auto is_fk_field(std::meta::info member) -> bool {
             auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
             return field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk;
         }
 
         // Get database column name for FK field: User sender → "sender_id"
-        static consteval std::string get_fk_column_name(std::meta::info member) {
+        static consteval auto get_fk_column_name(std::meta::info member) -> std::string {
             const std::string field_name(std::meta::identifier_of(member));
             return field_name + "_id";
         }
 
         // Find primary key of a FK type
-        template <typename FKType> static consteval std::meta::info find_fk_primary_key() {
+        template <typename FKType> static consteval auto find_fk_primary_key() -> std::meta::info {
             for (const std::meta::info member :
                  std::meta::nonstatic_data_members_of(^^FKType, std::meta::access_context::unchecked())) {
                 auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
@@ -82,12 +82,12 @@ export namespace storm::orm::statements {
         }
 
         // Helper to get the number of fields
-        static consteval size_t get_field_count() {
+        static consteval auto get_field_count() -> size_t {
             return std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()).size();
         }
 
         // Pre-compute all field members at compile-time
-        template <size_t N> static consteval std::array<std::meta::info, N> get_all_field_members() {
+        template <size_t N> static consteval auto get_all_field_members() -> std::array<std::meta::info, N> {
             std::array<std::meta::info, N> result{};
             auto members = std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked());
 
@@ -99,7 +99,7 @@ export namespace storm::orm::statements {
 
         // Unified field name size calculation at compile-time
         // Template parameter controls whether to skip primary key (for INSERT vs SELECT)
-        template <bool SkipPrimaryKey> static consteval size_t calculate_field_names_size_impl() {
+        template <bool SkipPrimaryKey> static consteval auto calculate_field_names_size_impl() -> size_t {
             size_t size  = 0;
             bool   first = true;
             for (size_t i = 0; i < field_count_; ++i) {
@@ -124,12 +124,12 @@ export namespace storm::orm::statements {
         }
 
         // Calculate size of all field names string at compile-time
-        static consteval size_t calculate_field_names_size() {
+        static consteval auto calculate_field_names_size() -> size_t {
             return calculate_field_names_size_impl<false>();
         }
 
         // Calculate size of non-PK field names string at compile-time
-        static consteval size_t calculate_non_pk_field_names_size() {
+        static consteval auto calculate_non_pk_field_names_size() -> size_t {
             return calculate_field_names_size_impl<true>();
         }
 
@@ -213,17 +213,16 @@ export namespace storm::orm::statements {
             bool bind_ok     = true;
 
             // Bind each field, skipping the PK
-            ((bind_ok = bind_ok &&
-                        [&]() {
-                            if constexpr (Is < field_count_) {
-                                if (all_members_[Is] != primary_key_) {
-                                    bool result = bind_field_at_index<ConnType, Is>(stmt, obj, param_index);
-                                    param_index++;
-                                    return result;
-                                }
-                            }
-                            return true;
-                        }()),
+            ((bind_ok = bind_ok && [&]() -> bool {
+                 if constexpr (Is < field_count_) {
+                     if (all_members_[Is] != primary_key_) {
+                         bool result = bind_field_at_index<ConnType, Is>(stmt, obj, param_index);
+                         param_index++;
+                         return result;
+                     }
+                 }
+                 return true;
+             }()),
              ...);
 
             if (!bind_ok) {
@@ -320,17 +319,16 @@ export namespace storm::orm::statements {
                 bool bind_ok     = true;
 
                 // Bind fields skipping PK
-                ((bind_ok = bind_ok &&
-                            [&]() {
-                                if constexpr (Is < field_count_) {
-                                    if (all_members_[Is] != primary_key_) {
-                                        bool result = bind_field_at_index<ConnType, Is>(stmt, obj, field_param);
-                                        field_param++;
-                                        return result;
-                                    }
-                                }
-                                return true;
-                            }()),
+                ((bind_ok = bind_ok && [&]() -> bool {
+                     if constexpr (Is < field_count_) {
+                         if (all_members_[Is] != primary_key_) {
+                             bool result = bind_field_at_index<ConnType, Is>(stmt, obj, field_param);
+                             field_param++;
+                             return result;
+                         }
+                     }
+                     return true;
+                 }()),
                  ...);
 
                 if (!bind_ok) {
@@ -378,7 +376,7 @@ export namespace storm::orm::statements {
 
         // Adaptive threshold calculation based on batch size and field count
         // Returns the optimal threshold for deciding between bulk SQL and individual inserts
-        static constexpr size_t calculate_adaptive_threshold(size_t batch_size, size_t max_bulk_size) {
+        static constexpr auto calculate_adaptive_threshold(size_t batch_size, size_t max_bulk_size) -> size_t {
             // For very small batches (≤10), always use bulk SQL up to the SQLite limit
             if (batch_size <= 10)
                 return max_bulk_size;
@@ -573,19 +571,23 @@ export namespace storm::orm::statements {
                 -> decltype(execute_func(std::declval<typename ConnType::Statement&>())) {
             // Try cached statement first if available
             if constexpr (requires { conn.prepare_cached(sql); }) {
-                return conn.prepare_cached(sql).and_then([&execute_func](auto* stmt) { return execute_func(*stmt); });
+                return conn.prepare_cached(sql).and_then([&execute_func](auto* stmt) -> decltype(auto) {
+                    return execute_func(*stmt);
+                });
             } else {
                 // Fallback to regular prepare
-                return conn.prepare(sql).and_then([&execute_func](typename ConnType::Statement stmt) mutable {
-                    return execute_func(stmt);
-                });
+                return conn.prepare(sql).and_then(
+                        [&execute_func](typename ConnType::Statement stmt) mutable -> decltype(auto) {
+                            return execute_func(stmt);
+                        }
+                );
             }
         }
 
         // Monadic helper for bind and execute operations
         template <typename BindResult, typename Statement>
         [[nodiscard]] static auto bind_and_execute(BindResult bind_result, Statement& stmt) noexcept -> BindResult {
-            return bind_result.and_then([&stmt]() { return stmt.execute(); });
+            return bind_result.and_then([&stmt]() -> decltype(auto) { return stmt.execute(); });
         }
 
         // Monadic helper for reset, bind, and execute sequence
@@ -593,7 +595,7 @@ export namespace storm::orm::statements {
         [[nodiscard]] static auto reset_bind_and_execute(Statement& stmt, BindFunc&& bind_func) noexcept
                 -> decltype(bind_func(stmt)) {
             stmt.reset();
-            return bind_func(stmt).and_then([&stmt]() { return stmt.execute(); });
+            return bind_func(stmt).and_then([&stmt]() -> decltype(auto) { return stmt.execute(); });
         }
 
         // Generic batch execution template for statement classes
@@ -607,8 +609,12 @@ export namespace storm::orm::statements {
                     *statement_instance.conn_,
                     objects,
                     variables_per_object,
-                    [&statement_instance, &objects]() { return statement_instance.execute_bulk(objects); },
-                    [&statement_instance, &objects]() { return statement_instance.execute_chunked(objects); }
+                    [&statement_instance, &objects]() -> decltype(auto) {
+                        return statement_instance.execute_bulk(objects);
+                    },
+                    [&statement_instance, &objects]() -> decltype(auto) {
+                        return statement_instance.execute_chunked(objects);
+                    }
             );
         }
 
