@@ -761,7 +761,7 @@ TEST_F(DistinctTest, RawSQLWorkaround) {
         int const step = stmt.step_raw();
         if (step == decltype(stmt)::ROW_AVAILABLE) {
             const auto* text_bytes = stmt.extract_text_ptr(0);
-            user_names.emplace_back(static_cast<const char*>(static_cast<const void*>(text_bytes)));
+            user_names.emplace_back(reinterpret_cast<const char*>(text_bytes));
         } else if (step == decltype(stmt)::NO_MORE_ROWS) {
             break;
         } else {
@@ -878,10 +878,10 @@ TEST_F(DistinctTest, DistinctWithWhereSingleField) {
 
     std::set<std::string> const unique_names(names.begin(), names.end());
     EXPECT_EQ(unique_names.size(), 3);
-    EXPECT_TRUE(unique_names.count("Alice") > 0);
-    EXPECT_TRUE(unique_names.count("Bob") > 0);
-    EXPECT_TRUE(unique_names.count("David") > 0);
-    EXPECT_FALSE(unique_names.count("Charlie") > 0); // Filtered out by WHERE
+    EXPECT_TRUE(unique_names.contains("Alice"));
+    EXPECT_TRUE(unique_names.contains("Bob"));
+    EXPECT_TRUE(unique_names.contains("David"));
+    EXPECT_FALSE(unique_names.contains("Charlie")); // Filtered out by WHERE
 }
 
 // Test DISTINCT with WHERE clause - multiple fields
@@ -913,9 +913,9 @@ TEST_F(DistinctTest, DistinctWithWhereMultipleFields) {
 
     std::set<std::tuple<std::string, int>> const unique_pairs(pairs.begin(), pairs.end());
     EXPECT_EQ(unique_pairs.size(), 3);
-    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Alice", 25)) > 0);
-    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Bob", 30)) > 0);
-    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Alice", 35)) > 0);
+    EXPECT_TRUE(unique_pairs.contains(std::make_tuple("Alice", 25)));
+    EXPECT_TRUE(unique_pairs.contains(std::make_tuple("Bob", 30)));
+    EXPECT_TRUE(unique_pairs.contains(std::make_tuple("Alice", 35)));
 }
 
 // Test DISTINCT with WHERE clause - no results
@@ -965,9 +965,9 @@ TEST_F(DistinctTest, DistinctWithComplexWhere) {
     std::set<std::string> const unique_names(names.begin(), names.end());
     // Alice (25), Bob (30), Charlie (35) - Charlie (20) and David (40) filtered out
     EXPECT_GE(unique_names.size(), 3);
-    EXPECT_TRUE(unique_names.count("Alice") > 0);
-    EXPECT_TRUE(unique_names.count("Bob") > 0);
-    EXPECT_TRUE(unique_names.count("Charlie") > 0);
+    EXPECT_TRUE(unique_names.contains("Alice"));
+    EXPECT_TRUE(unique_names.contains("Bob"));
+    EXPECT_TRUE(unique_names.contains("Charlie"));
 }
 
 // Test DISTINCT with JOIN - single field
@@ -1086,8 +1086,8 @@ TEST_F(DistinctTest, MultipleWhereClausesWithDistinct) {
 
     // Should only include Alice (25) and Bob (30)
     EXPECT_EQ(unique_names.size(), 2);
-    EXPECT_TRUE(unique_names.count("Alice") > 0);
-    EXPECT_TRUE(unique_names.count("Bob") > 0);
+    EXPECT_TRUE(unique_names.contains("Alice"));
+    EXPECT_TRUE(unique_names.contains("Bob"));
 }
 
 // Test: Validate DISTINCT keyword injection in JOIN queries

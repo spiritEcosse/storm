@@ -170,7 +170,7 @@ TEST_F(FKFieldTest, BatchInsertWithFKFields) {
     ASSERT_EQ(user_select.value().size(), 4);
 
     // Get first user's ID for FK references
-    int first_user_id = user_select.value().begin()->id;
+    int const first_user_id = user_select.value().begin()->id;
 
     // Insert messages with FK references
     std::vector<FKMessage> messages =
@@ -299,10 +299,10 @@ TEST_F(FKFieldTest, DeleteWithFKField) {
     ASSERT_EQ(msg_select.value().size(), 2);
 
     // Get the first message's ID to delete
-    auto it           = msg_select.value().begin();
-    int  first_msg_id = it->id;
+    auto      it           = msg_select.value().begin();
+    int const first_msg_id = it->id;
     ++it;
-    int second_msg_id = it->id;
+    int const second_msg_id = it->id;
 
     // Delete first message
     FKMessage const to_delete{

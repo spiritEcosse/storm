@@ -379,7 +379,7 @@ TEST_F(QuerySetRemoveTest, RemoveBatchPerformance) {
     std::cout << "  Individual removes: " << duration_individual << " μs" << '\n';
     std::cout << "  Batch remove: " << duration_batch << " μs" << '\n';
     std::cout << "  Speedup: " << std::fixed << std::setprecision(2)
-              << static_cast<double>(duration_individual) / duration_batch << "x" << '\n';
+              << static_cast<double>(duration_individual) / static_cast<double>(duration_batch) << "x" << '\n';
 
     // Verify correct deletions
     EXPECT_EQ(countSqlitePersons(), num_records - 100) << "Should have correct number of persons after removes";
@@ -436,7 +436,9 @@ TEST_F(QuerySetRemoveTest, InsertSmallBatch) {
     // Verify persons exist by selecting and checking names
     auto select_result = queryset.select();
     ASSERT_TRUE(select_result.has_value());
-    bool found_dave = false, found_eve = false, found_frank = false;
+    bool found_dave  = false;
+    bool found_eve   = false;
+    bool found_frank = false;
     for (const auto& person : select_result.value()) {
         if (person.name == "Dave")
             found_dave = true;

@@ -9,15 +9,19 @@
 # - Keep checks that catch real bugs
 # - Exclude stylistic checks that are subjective or would require massive refactoring
 # - Exclude false positives (e.g., bugprone-exception-escape for std::string in noexcept)
+# - Exclude checks that crash on C++26 modules (bugprone-argument-comment)
+# - Exclude false positives in tests (bugprone-unchecked-optional-access doesn't understand ASSERT_TRUE)
 
 Checks: >
   -*,
   bugprone-*,
+  -bugprone-argument-comment,
   -bugprone-easily-swappable-parameters,
   -bugprone-exception-escape,
   -bugprone-suspicious-stringview-data-usage,
   -bugprone-branch-clone,
   -bugprone-inc-dec-in-conditions,
+  -bugprone-unchecked-optional-access,
   -bugprone-unused-return-value,
   cert-*,
   -cert-err33-c,
@@ -38,6 +42,7 @@ Checks: >
   -misc-include-cleaner,
   -misc-non-private-member-variables-in-classes,
   modernize-*,
+  -modernize-use-trailing-return-type,
   performance-*,
   -performance-enum-size,
   readability-*,

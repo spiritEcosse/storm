@@ -17,6 +17,17 @@ BUILD_DIR="build/release"
 COMPILE_COMMANDS="$BUILD_DIR/compile_commands.json"
 CLANG_TIDY_CONFIG=".clang-tidy"
 
+# Known patterns for files that use C++26 modules/reflection features not supported by clang-tidy
+# These files will show a specific message instead of "crashed"
+# clang-tidy fails on these due to: __has_feature parsing, std::meta::info, ^^ splice operator, import statements
+#
+# Patterns:
+#   - All .cppm files (C++26 modules not supported by clang-tidy)
+#   - All test files (they import Storm modules)
+#   - All benchmark files (they import Storm modules)
+#
+# Only files that DON'T import Storm modules can be checked (currently none in this project)
+
 # Parse arguments
 FIX_FLAG=""
 JOBS=$(nproc)
@@ -90,12 +101,37 @@ trap "rm -rf $TEMP_DIR" EXIT
 # Export variables for subshells
 export CLANG_TIDY BUILD_DIR FIX_FLAG TEMP_DIR
 
+# Function to check if file uses C++26 modules/reflection (pattern-based)
+# Returns 0 (true) if file is expected to fail clang-tidy
+is_cpp26_module_file() {
+    local file="$1"
+
+    # All .cppm files are C++26 modules
+    if [[ "$file" == *.cppm ]]; then
+        return 0
+    fi
+
+    # All test files import Storm modules
+    if [[ "$file" == tests/*.cpp ]]; then
+        return 0
+    fi
+
+    # All benchmark files import Storm modules
+    if [[ "$file" == benchmarks/*.cpp ]]; then
+        return 0
+    fi
+
+    return 1
+}
+export -f is_cpp26_module_file
+
 # Function to run clang-tidy on a single file (called in parallel)
 # Uses .clang-tidy config file automatically (clang-tidy searches parent directories)
 run_tidy() {
     local file="$1"
     local basename=$(echo "$file" | tr '/' '_')
     local outfile="$TEMP_DIR/$basename.out"
+    local statusfile="$TEMP_DIR/$basename.status"
 
     # Run clang-tidy, capturing output and ignoring crashes
     # clang-tidy automatically reads .clang-tidy from project root
@@ -105,12 +141,61 @@ run_tidy() {
         $FIX_FLAG \
         "$file" 2>&1 | grep -v -E "^[0-9]+ warnings? (generated|and)|^Suppressed [0-9]+|^Use -header-filter|^Use -system-headers" > "$outfile" || true
 
-    # Check if it crashed
-    if grep -q "PLEASE submit a bug report" "$outfile" 2>/dev/null; then
-        echo "  ⚠ $file (clang-tidy crashed - skipped)"
-        echo "" > "$outfile"  # Clear output to not count as errors
+    # Check for different failure modes:
+    # 1. "Found compiler error" = clang-tidy couldn't parse the file (C++26 modules)
+    # 2. "PLEASE submit a bug report" = clang-tidy crashed AFTER processing (warnings may exist)
+
+    local has_compile_error=false
+    local has_crash=false
+    local has_warnings=false
+
+    grep -q "Found compiler error" "$outfile" 2>/dev/null && has_compile_error=true
+    grep -q "PLEASE submit a bug report" "$outfile" 2>/dev/null && has_crash=true
+    grep -q ": warning:" "$outfile" 2>/dev/null && has_warnings=true
+
+    if [[ "$has_compile_error" == true ]]; then
+        # Has compiler errors from C++26 headers, but may still have useful warnings
+        if [[ "$has_warnings" == true ]]; then
+            # clang-tidy found issues despite header errors - keep them!
+            echo "  ✓ $file (with C++26 header errors)"
+            echo "ok" > "$statusfile"
+            # Remove error lines from output, keep warnings
+            sed -i '/: error:/d' "$outfile"
+            sed -i '/Found compiler error/d' "$outfile"
+        else
+            # No warnings, just errors - skip
+            if is_cpp26_module_file "$file"; then
+                echo "  ⊘ $file (C++26 modules - skipped)"
+                echo "known" > "$statusfile"
+            else
+                echo "  ⚠ $file (parse error - UNEXPECTED)"
+                echo "crashed" > "$statusfile"
+            fi
+            echo "" > "$outfile"
+        fi
+    elif [[ "$has_crash" == true ]]; then
+        # Crashed after processing - may still have useful warnings
+        if [[ "$has_warnings" == true ]]; then
+            echo "  ✓ $file (with crash after analysis)"
+            echo "ok" > "$statusfile"
+            # Keep output - it has warnings
+            # Remove crash backtrace from output
+            sed -i '/PLEASE submit a bug report/,$d' "$outfile"
+        else
+            # Crashed with no warnings
+            if is_cpp26_module_file "$file"; then
+                echo "  ⊘ $file (C++26 modules - skipped)"
+                echo "known" > "$statusfile"
+            else
+                echo "  ⚠ $file (clang-tidy crashed - UNEXPECTED)"
+                echo "crashed" > "$statusfile"
+            fi
+            echo "" > "$outfile"
+        fi
     else
+        # No crash, no compile error - success
         echo "  ✓ $file"
+        echo "ok" > "$statusfile"
     fi
 
     return 0
@@ -129,6 +214,11 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 WARNINGS=$(cat "$TEMP_DIR"/*.out 2>/dev/null | grep -c ": warning:") || WARNINGS=0
 ERRORS=$(cat "$TEMP_DIR"/*.out 2>/dev/null | grep -c ": error:") || ERRORS=0
 
+# Count file statuses
+KNOWN_SKIPPED=$(grep -l "known" "$TEMP_DIR"/*.status 2>/dev/null | wc -l) || KNOWN_SKIPPED=0
+UNEXPECTED_CRASHES=$(grep -l "crashed" "$TEMP_DIR"/*.status 2>/dev/null | wc -l) || UNEXPECTED_CRASHES=0
+FILES_OK=$(grep -l "ok" "$TEMP_DIR"/*.status 2>/dev/null | wc -l) || FILES_OK=0
+
 # Show actual warnings/errors (deduplicated, limited output)
 if [[ $ERRORS -gt 0 ]] || [[ $WARNINGS -gt 0 ]]; then
     echo ""
@@ -140,16 +230,31 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "📊 Summary:"
 echo "   Files checked: $FILE_COUNT"
+echo "   Files passed: $FILES_OK"
+echo "   C++26 skipped: $KNOWN_SKIPPED (expected - modules/reflection not supported)"
+if [[ $UNEXPECTED_CRASHES -gt 0 ]]; then
+    echo "   Unexpected crashes: $UNEXPECTED_CRASHES ⚠️"
+fi
 echo "   Warnings: $WARNINGS"
 echo "   Errors: $ERRORS"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+# Exit logic:
+# 1. Errors always fail
+# 2. Unexpected crashes fail (not in known list)
+# 3. Warnings BLOCK commits (must fix or acknowledge)
+# 4. Known C++26 skips are OK
+
 if [[ $ERRORS -gt 0 ]]; then
     echo "❌ clang-tidy found errors"
     exit 1
+elif [[ $UNEXPECTED_CRASHES -gt 0 ]]; then
+    echo "❌ clang-tidy crashed on unexpected files (update is_cpp26_module_file if valid)"
+    exit 1
 elif [[ $WARNINGS -gt 0 ]]; then
-    echo "⚠️  clang-tidy found warnings (not blocking)"
-    exit 0
+    echo "❌ clang-tidy found $WARNINGS warning(s) - fix before committing"
+    echo "   Run with --fix to auto-fix some issues, or update .clang-tidy to exclude checks"
+    exit 1
 else
     echo "✅ clang-tidy passed with no issues"
     exit 0
