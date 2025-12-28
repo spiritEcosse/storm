@@ -35,7 +35,7 @@ export namespace storm::orm::statements {
         using Statement  = typename ConnType::Statement;
 
         // Helper to get non-primary-key field count
-        static consteval size_t get_updatable_field_count() {
+        static consteval auto get_updatable_field_count() -> size_t {
             size_t count = 0;
             for (const auto& member : Base::all_members_) {
                 if (member != Base::primary_key_) {
@@ -81,7 +81,7 @@ export namespace storm::orm::statements {
         static constexpr auto field_assignments_ = build_field_assignments();
 
         // Compile-time UPDATE SQL size calculation
-        static consteval size_t calculate_update_sql_size() {
+        static consteval auto calculate_update_sql_size() -> size_t {
             size_t size = 0;
             size += 7; // "UPDATE "
             size += Base::table_name_.size();
@@ -116,13 +116,13 @@ export namespace storm::orm::statements {
 
       public:
         // Public access to UPDATE SQL for QuerySet optimization
-        static const std::string& get_update_sql_static() {
+        static auto get_update_sql_static() -> const std::string& {
             return update_sql_string;
         }
 
       private:
         // Generate UPDATE SQL string (compile-time computed, runtime accessible)
-        static const std::string& get_update_sql() {
+        static auto get_update_sql() -> const std::string& {
             return update_sql_string;
         }
 

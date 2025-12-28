@@ -551,7 +551,7 @@ export namespace storm::orm::statements {
         }
 
         // Helper: Build aggregate SQL from JOIN SQL by replacing SELECT clause
-        [[nodiscard]] std::string build_aggregate_join_sql(const std::string& join_sql) const {
+        [[nodiscard]] auto build_aggregate_join_sql(const std::string& join_sql) const -> std::string {
             // Find position after "SELECT " and before " FROM"
             const size_t select_pos = join_sql.find("SELECT ");
             const size_t from_pos   = join_sql.find(" FROM ");

@@ -35,7 +35,7 @@ export namespace storm::orm::where {
     // Comparison operators
     enum class CompOp { Equal, NotEqual, Greater, GreaterEqual, Less, LessEqual };
 
-    constexpr std::string_view comp_op_to_sql(CompOp op) noexcept {
+    constexpr auto comp_op_to_sql(CompOp op) noexcept -> std::string_view {
         switch (op) {
         case CompOp::Equal:
             return " = ";
@@ -56,7 +56,7 @@ export namespace storm::orm::where {
     // Logical operators
     enum class LogicalOp { And, Or };
 
-    constexpr std::string_view logical_op_to_sql(LogicalOp op) noexcept {
+    constexpr auto logical_op_to_sql(LogicalOp op) noexcept -> std::string_view {
         switch (op) {
         case LogicalOp::And:
             return " AND ";
@@ -251,13 +251,13 @@ export namespace storm::orm::where {
     // ============================================================================
 
     // Forward declare visitor functions
-    [[nodiscard]] std::string to_sql(const ExpressionVariant& expr);
-    [[nodiscard]] auto        bind_params_direct(const ExpressionVariant& expr, void* stmt_ptr, int& param_index)
+    [[nodiscard]] auto to_sql(const ExpressionVariant& expr) -> std::string;
+    [[nodiscard]] auto bind_params_direct(const ExpressionVariant& expr, void* stmt_ptr, int& param_index)
             -> std::expected<void, storm::db::sqlite::Error>;
 
     // Visitor for to_sql() - called via std::visit
     struct ToSqlVisitor {
-        [[nodiscard]] std::string operator()(const LogicalExpr& expr) const {
+        [[nodiscard]] auto operator()(const LogicalExpr& expr) const -> std::string {
             // Recursive case: visit left and right expressions
             auto left_sql  = to_sql(*expr.left);
             auto right_sql = to_sql(*expr.right);
@@ -273,7 +273,7 @@ export namespace storm::orm::where {
         }
 
         // All other expression types have their own to_sql() method
-        template <typename T> [[nodiscard]] std::string operator()(const T& expr) const {
+        template <typename T> [[nodiscard]] auto operator()(const T& expr) const -> std::string {
             return expr.to_sql();
         }
     };
@@ -319,22 +319,22 @@ export namespace storm::orm::where {
         Expr(ExpressionVariant&& expr) noexcept : expr_(std::make_shared<ExpressionVariant>(std::move(expr))) {}
 
         // Implicit conversion to ExpressionVariantPtr for where() calls
-        operator ExpressionVariantPtr() const noexcept {
+        operator ExpressionVariantPtr() const noexcept { // NOLINT(google-explicit-constructor)
             return expr_;
         }
 
         // Logical AND operator (also accessible via 'and' keyword)
-        Expr operator&&(const Expr& other) const {
+        auto operator&&(const Expr& other) const -> Expr {
             return {std::make_shared<ExpressionVariant>(LogicalExpr{expr_, LogicalOp::And, other.expr_})};
         }
 
         // Logical OR operator (also accessible via 'or' keyword)
-        Expr operator||(const Expr& other) const {
+        auto operator||(const Expr& other) const -> Expr {
             return {std::make_shared<ExpressionVariant>(LogicalExpr{expr_, LogicalOp::Or, other.expr_})};
         }
 
         // Access the underlying expression
-        [[nodiscard]] const ExpressionVariantPtr& get() const noexcept {
+        [[nodiscard]] auto get() const noexcept -> const ExpressionVariantPtr& {
             return expr_;
         }
 
@@ -364,7 +364,7 @@ export namespace storm::orm::where {
         }
 
         // Comparison operators - return runtime Expr for flexibility
-        template <typename V> Expr operator==(V&& value) const {
+        template <typename V> auto operator==(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
                             std::string(field_name_sv), CompOp::Equal, std::forward<V>(value)
@@ -372,7 +372,7 @@ export namespace storm::orm::where {
             );
         }
 
-        template <typename V> Expr operator!=(V&& value) const {
+        template <typename V> auto operator!=(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
                             std::string(field_name_sv), CompOp::NotEqual, std::forward<V>(value)
@@ -380,7 +380,7 @@ export namespace storm::orm::where {
             );
         }
 
-        template <typename V> Expr operator>(V&& value) const {
+        template <typename V> auto operator>(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
                             std::string(field_name_sv), CompOp::Greater, std::forward<V>(value)
@@ -388,7 +388,7 @@ export namespace storm::orm::where {
             );
         }
 
-        template <typename V> Expr operator>=(V&& value) const {
+        template <typename V> auto operator>=(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
                             std::string(field_name_sv), CompOp::GreaterEqual, std::forward<V>(value)
@@ -396,7 +396,7 @@ export namespace storm::orm::where {
             );
         }
 
-        template <typename V> Expr operator<(V&& value) const {
+        template <typename V> auto operator<(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
                             std::string(field_name_sv), CompOp::Less, std::forward<V>(value)
@@ -404,7 +404,7 @@ export namespace storm::orm::where {
             );
         }
 
-        template <typename V> Expr operator<=(V&& value) const {
+        template <typename V> auto operator<=(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
                             std::string(field_name_sv), CompOp::LessEqual, std::forward<V>(value)
@@ -413,11 +413,11 @@ export namespace storm::orm::where {
         }
 
         // Special methods - return VARIANT-BASED Expr
-        [[nodiscard]] Expr like(std::string_view pattern) const {
+        [[nodiscard]] auto like(std::string_view pattern) const -> Expr {
             return Expr(std::make_shared<ExpressionVariant>(LikeExpr{std::string(field_name_sv), pattern}));
         }
 
-        template <typename V> Expr between(V&& min_val, V&& max_val) const {
+        template <typename V> auto between(V&& min_val, V&& max_val) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(BetweenExpr<std::decay_t<V>>{
                             std::string(field_name_sv), std::forward<V>(min_val), std::forward<V>(max_val)
@@ -431,11 +431,11 @@ export namespace storm::orm::where {
     // These functions remain for backward compatibility and explicit composition
 
     // Expr overloads (efficient - uses natural operators)
-    inline Expr and_(const Expr& left, const Expr& right) {
+    inline auto and_(const Expr& left, const Expr& right) -> Expr {
         return left && right; // Calls Expr::operator&&
     }
 
-    inline Expr or_(const Expr& left, const Expr& right) {
+    inline auto or_(const Expr& left, const Expr& right) -> Expr {
         return left || right; // Calls Expr::operator||
     }
 

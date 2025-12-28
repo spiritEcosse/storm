@@ -220,7 +220,7 @@ export namespace storm::orm::utilities {
     using BulkSQLCache = SQLCache<size_t, 8>;
 
     // Helper function for building SQL placeholders at compile-time
-    template <size_t N> consteval ConstexprString<N> build_placeholders_string(size_t count) {
+    template <size_t N> consteval auto build_placeholders_string(size_t count) -> ConstexprString<N> {
         ConstexprString<N> result;
 
         for (size_t i = 0; i < count; ++i) {
@@ -290,7 +290,7 @@ export namespace storm::orm::utilities {
             using RestParser              = OrderByParser<Rest...>;
             static constexpr size_t count = 1 + RestParser::count;
 
-            static constexpr auto fields = []() consteval {
+            static constexpr auto fields = []() consteval -> std::array<std::pair<std::meta::info, bool>, count> {
                 std::array<std::pair<std::meta::info, bool>, count> result{};
                 result[0] = {Field, Dir};
                 for (size_t i = 0; i < RestParser::count; ++i) {
@@ -307,7 +307,7 @@ export namespace storm::orm::utilities {
             using RestParser              = OrderByParser<Next, Rest...>;
             static constexpr size_t count = 1 + RestParser::count;
 
-            static constexpr auto fields = []() consteval {
+            static constexpr auto fields = []() consteval -> std::array<std::pair<std::meta::info, bool>, count> {
                 std::array<std::pair<std::meta::info, bool>, count> result{};
                 result[0] = {Field, true}; // default ASC
                 for (size_t i = 0; i < RestParser::count; ++i) {
@@ -371,7 +371,7 @@ export namespace storm::orm::utilities {
             std::string result = " ORDER BY ";
 
             // Use index_sequence to generate code for each field at compile-time
-            [&]<size_t... Is>(std::index_sequence<Is...>) {
+            [&]<size_t... Is>(std::index_sequence<Is...>) -> void {
                 ((append_field<Is>(result, Is > 0)), ...);
             }(std::make_index_sequence<count>{});
 
@@ -449,14 +449,14 @@ export namespace storm::orm::utilities {
         }
 
         // Move-only (no copying)
-        TransactionGuard(const TransactionGuard&)            = delete;
-        TransactionGuard& operator=(const TransactionGuard&) = delete;
+        TransactionGuard(const TransactionGuard&)                    = delete;
+        auto operator=(const TransactionGuard&) -> TransactionGuard& = delete;
 
         TransactionGuard(TransactionGuard&& other) noexcept : conn_(other.conn_), committed_(other.committed_) {
             other.conn_ = nullptr; // Prevent double-rollback
         }
 
-        TransactionGuard& operator=(TransactionGuard&& other) noexcept {
+        auto operator=(TransactionGuard&& other) noexcept -> TransactionGuard& {
             if (this != &other) {
                 rollback_if_needed();
                 conn_       = other.conn_;

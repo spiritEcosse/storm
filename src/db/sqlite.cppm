@@ -53,12 +53,12 @@ export namespace storm::db::sqlite {
         ~Statement() = default;
 
         // Move semantics
-        Statement(Statement&&)            = default;
-        Statement& operator=(Statement&&) = default;
+        Statement(Statement&&)                    = default;
+        auto operator=(Statement&&) -> Statement& = default;
 
         // Delete copy operations
-        Statement(const Statement&)            = delete;
-        Statement& operator=(const Statement&) = delete;
+        Statement(const Statement&)                    = delete;
+        auto operator=(const Statement&) -> Statement& = delete;
 
         // DatabaseStatement concept implementation
         [[nodiscard]] auto bind_int(int index, int value) noexcept -> std::expected<void, Error> {
@@ -273,12 +273,12 @@ export namespace storm::db::sqlite {
         ~Connection() = default;
 
         // Move semantics (smart pointer handles cleanup)
-        Connection(Connection&&)            = default;
-        Connection& operator=(Connection&&) = default;
+        Connection(Connection&&)                    = default;
+        auto operator=(Connection&&) -> Connection& = default;
 
         // Delete copy operations
-        Connection(const Connection&)            = delete;
-        Connection& operator=(const Connection&) = delete;
+        Connection(const Connection&)                    = delete;
+        auto operator=(const Connection&) -> Connection& = delete;
 
         // DatabaseConnection concept implementation
         [[nodiscard]] constexpr auto is_open() const noexcept -> bool {

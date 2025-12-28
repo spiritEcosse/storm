@@ -19,20 +19,20 @@ export namespace storm::orm::statements {
     // Lightweight type-erased wrapper for ORDER BY clauses
     // Uses function pointer to static compile-time generated SQL (zero heap allocation)
     struct OrderByWrapper {
-        const std::string& (*get_order_by_sql_fn)();
+        auto (*get_order_by_sql_fn)() -> const std::string&;
 
-        [[nodiscard]] const std::string& get_order_by_sql() const {
+        [[nodiscard]] auto get_order_by_sql() const -> const std::string& {
             return get_order_by_sql_fn();
         }
 
-        [[nodiscard]] bool empty() const {
+        [[nodiscard]] auto empty() const -> bool {
             return get_order_by_sql().empty();
         }
     };
 
     // Helper to create OrderByWrapper from template args
     // Each unique Args... combination gets its own static SQL string
-    template <auto... Args> inline OrderByWrapper make_order_by_wrapper() {
+    template <auto... Args> inline auto make_order_by_wrapper() -> OrderByWrapper {
         // Static compile-time generated SQL (one instance per unique Args... combination)
         // Stored in .rodata section (no heap allocation)
         static const std::string order_by_sql = OrderByClause<Args...>::to_sql_runtime();

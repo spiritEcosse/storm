@@ -96,11 +96,11 @@ export namespace storm::orm::statements {
 
             // Execute query with appropriate extractor
             if (join_wrapper) {
-                return execute_query_loop(stmt_ptr, [&join_wrapper](sqlite3_stmt* raw, Statement*, T& obj) {
+                return execute_query_loop(stmt_ptr, [&join_wrapper](sqlite3_stmt* raw, Statement*, T& obj) -> void {
                     join_wrapper->extract_row_raw(raw, &obj);
                 });
             }
-            return execute_query_loop(stmt_ptr, [](sqlite3_stmt* raw, Statement*, T& obj) {
+            return execute_query_loop(stmt_ptr, [](sqlite3_stmt* raw, Statement*, T& obj) -> void {
                 extract_all_columns_raw(raw, obj);
             });
         }
@@ -198,8 +198,8 @@ export namespace storm::orm::statements {
         }
 
         // Get cached statement or prepare new one
-        [[nodiscard]] __attribute__((always_inline)) inline Statement*
-        get_or_prepare_cached_statement(std::string& sql) noexcept {
+        [[nodiscard]] __attribute__((always_inline)) inline auto
+        get_or_prepare_cached_statement(std::string& sql) noexcept -> Statement* {
             if (cached_stmt_ && cached_sql_ == sql) {
                 return cached_stmt_;
             }
@@ -221,8 +221,8 @@ export namespace storm::orm::statements {
 
         // Extract single column value using raw sqlite3_stmt* pointer
         template <typename FieldType>
-        __attribute__((always_inline)) static inline FieldType
-        extract_column_raw(sqlite3_stmt* raw_stmt, int col_idx) noexcept {
+        __attribute__((always_inline)) static inline auto
+        extract_column_raw(sqlite3_stmt* raw_stmt, int col_idx) noexcept -> FieldType {
             // Handle std::optional types first
             if constexpr (storm::orm::utilities::is_optional_v<FieldType>) {
                 using InnerType = typename FieldType::value_type;
