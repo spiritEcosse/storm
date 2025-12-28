@@ -80,8 +80,8 @@ class AggregateTest : public ::testing::Test {
     }
 
     auto TearDown() -> void override {
-        qs.reset();
-        msg_qs.reset();
+        qs     = nullptr;
+        msg_qs = nullptr;
         QuerySet<AggregatePerson>::clear_default_connection();
     }
 
@@ -651,13 +651,13 @@ TEST_F(AggregateTest, WhereDifferentConditions) {
     ASSERT_TRUE(result1.has_value());
     EXPECT_EQ(result1.value(), 3); // Charlie, Dave, Eve
 
-    qs->reset(); // Clear WHERE clause
+    (*qs).reset(); // Clear WHERE clause
 
     auto result2 = qs->where(storm::orm::where::field<^^AggregatePerson::age>() < 30).count().select();
     ASSERT_TRUE(result2.has_value());
     EXPECT_EQ(result2.value(), 1); // Only Alice
 
-    qs->reset();
+    (*qs).reset();
 
     auto result3 = qs->where(storm::orm::where::field<^^AggregatePerson::age>() == 30).count().select();
     ASSERT_TRUE(result3.has_value());
@@ -1097,7 +1097,7 @@ class OptionalAggregateTest : public ::testing::Test {
     }
 
     auto TearDown() -> void override {
-        qs.reset();
+        qs = nullptr;
         QuerySet<OptionalPerson>::clear_default_connection();
     }
 
