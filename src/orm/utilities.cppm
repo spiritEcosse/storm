@@ -18,6 +18,76 @@ import <meta>;
 export namespace storm::orm::utilities {
 
     // ============================================================================
+    // SQL Fragment Length Constants (for compile-time SQL size calculations)
+    // ============================================================================
+
+    namespace sql_len {
+        // SELECT-related lengths
+        inline constexpr size_t SELECT          = 7;  // "SELECT "
+        inline constexpr size_t SELECT_DISTINCT = 16; // "SELECT DISTINCT "
+        inline constexpr size_t DISTINCT        = 9;  // "DISTINCT "
+        inline constexpr size_t FROM            = 6;  // " FROM "
+
+        // INSERT-related lengths
+        inline constexpr size_t INSERT_INTO = 12; // "INSERT INTO "
+        inline constexpr size_t VALUES_OPEN = 10; // ") VALUES ("
+
+        // UPDATE-related lengths
+        inline constexpr size_t UPDATE = 7; // "UPDATE "
+        inline constexpr size_t SET    = 5; // " SET "
+
+        // DELETE-related lengths
+        inline constexpr size_t DELETE_FROM = 12; // "DELETE FROM "
+
+        // WHERE-related lengths
+        inline constexpr size_t WHERE             = 7;  // " WHERE "
+        inline constexpr size_t IN_OPEN           = 5;  // " IN ("
+        inline constexpr size_t IN_CLAUSE         = 10; // " IN (" + buffer for placeholders base
+        inline constexpr size_t AND               = 5;  // " AND "
+        inline constexpr size_t EQ_PARAM_AND      = 8;  // " = ? AND "
+        inline constexpr size_t LIKE_PATTERN      = 8;  // " LIKE ?"
+        inline constexpr size_t BETWEEN_PATTERN   = 17; // " BETWEEN ? AND ?"
+        inline constexpr size_t IS_NOT_NULL_AND   = 17; // " IS NOT NULL AND "
+        inline constexpr size_t LOGICAL_OP_PARENS = 8;  // "(" + " AND " or " OR " + ")"
+
+        // JOIN-related lengths
+        inline constexpr size_t ON_EQUALS = 5; // " ON " + " = " partial
+
+        // Misc lengths
+        inline constexpr size_t SMALL_BUFFER  = 10;  // Small buffer/padding
+        inline constexpr size_t MEDIUM_BUFFER = 30;  // Medium reserve hint
+        inline constexpr size_t LARGE_BUFFER  = 50;  // Large reserve hint
+        inline constexpr size_t XL_BUFFER     = 100; // Extra large reserve hint
+    } // namespace sql_len
+
+    // ============================================================================
+    // Buffer Size Constants
+    // ============================================================================
+
+    namespace buffer_size {
+        inline constexpr size_t SQL_SMALL  = 512;  // Small SQL buffer
+        inline constexpr size_t SQL_MEDIUM = 1024; // Medium SQL buffer (default)
+        inline constexpr size_t SQL_LARGE  = 4096; // Large SQL buffer (for complex queries)
+
+        inline constexpr size_t CACHE_DEFAULT = 8;  // Default SQL cache size
+        inline constexpr size_t STMT_CACHE    = 32; // Statement cache reserve size
+    } // namespace buffer_size
+
+    // ============================================================================
+    // Batch Operation Constants
+    // ============================================================================
+
+    namespace batch {
+        inline constexpr size_t SMALL_THRESHOLD     = 10; // Batch size considered "small"
+        inline constexpr size_t FALLBACK_BATCH_SIZE = 50; // Safe fallback for any field count
+    } // namespace batch
+
+    // Numeric constants
+    namespace numeric {
+        inline constexpr size_t MAX_SINGLE_DIGIT = 9; // Maximum single digit value (0-9)
+    } // namespace numeric
+
+    // ============================================================================
     // Parameter Binding Utilities
     // ============================================================================
 
@@ -160,7 +230,7 @@ export namespace storm::orm::utilities {
 
         // Append a single digit (0-9) for compile-time number formatting
         consteval auto append_digit(size_t digit) -> void {
-            if (digit <= 9 && len < N - 1) {
+            if (digit <= numeric::MAX_SINGLE_DIGIT && len < N - 1) {
                 data[len] = '0' + static_cast<char>(digit);
                 ++len;
                 data[len] = '\0';
@@ -174,7 +244,7 @@ export namespace storm::orm::utilities {
     };
 
     // Generic thread-local SQL cache template
-    template <typename KeyType = size_t, size_t CACHE_SIZE = 8> struct SQLCache {
+    template <typename KeyType = size_t, size_t CACHE_SIZE = buffer_size::CACHE_DEFAULT> struct SQLCache {
         struct Entry {
             KeyType     key{};
             std::string sql;
@@ -217,7 +287,7 @@ export namespace storm::orm::utilities {
     };
 
     // Specialized type aliases for common use cases
-    using BulkSQLCache = SQLCache<size_t, 8>;
+    using BulkSQLCache = SQLCache<size_t, buffer_size::CACHE_DEFAULT>;
 
     // Helper function for building SQL placeholders at compile-time
     template <size_t N> consteval auto build_placeholders_string(size_t count) -> ConstexprString<N> {
@@ -331,7 +401,8 @@ export namespace storm::orm::utilities {
         }
 
         // Generate ORDER BY SQL fragment at compile-time
-        template <size_t BufferSize = 1024> static consteval auto to_sql() -> ConstexprString<BufferSize> {
+        template <size_t BufferSize = buffer_size::SQL_MEDIUM>
+        static consteval auto to_sql() -> ConstexprString<BufferSize> {
             ConstexprString<BufferSize> result;
 
             if constexpr (count == 0) {
@@ -406,7 +477,8 @@ export namespace storm::orm::utilities {
             return true;
         }
 
-        template <size_t BufferSize = 1024> static consteval auto to_sql() -> ConstexprString<BufferSize> {
+        template <size_t BufferSize = buffer_size::SQL_MEDIUM>
+        static consteval auto to_sql() -> ConstexprString<BufferSize> {
             return ConstexprString<BufferSize>{};
         }
 

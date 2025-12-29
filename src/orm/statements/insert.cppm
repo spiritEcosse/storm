@@ -63,8 +63,10 @@ export namespace storm::orm::statements {
 
         // Compile-time SQL size calculation
         static consteval auto calculate_insert_sql_size() -> size_t {
+            using utilities::sql_len::INSERT_INTO;
+            using utilities::sql_len::VALUES_OPEN;
             size_t size = 0;
-            size += 12; // "INSERT INTO "
+            size += INSERT_INTO; // "INSERT INTO "
 
             // Table name length
             size += Base::table_name_.size();
@@ -74,7 +76,7 @@ export namespace storm::orm::statements {
             // Field names length
             size += Base::calculate_field_names_size();
 
-            size += 10; // ") VALUES ("
+            size += VALUES_OPEN; // ") VALUES ("
 
             // Placeholders length
             size += placeholders_.size();
@@ -87,7 +89,7 @@ export namespace storm::orm::statements {
 
         // Build INSERT SQL at compile-time using ConstexprString
         static consteval auto build_insert_sql_array() {
-            constexpr size_t          sql_size = calculate_insert_sql_size() + 100; // Add buffer for safety
+            constexpr size_t          sql_size = calculate_insert_sql_size() + utilities::sql_len::XL_BUFFER;
             ConstexprString<sql_size> result;
 
             result.append("INSERT INTO ");
@@ -114,19 +116,21 @@ export namespace storm::orm::statements {
       private:
         // Compile-time bulk INSERT prefix calculation
         static consteval auto calculate_bulk_insert_prefix_size() -> size_t {
+            using utilities::sql_len::INSERT_INTO;
+            using utilities::sql_len::VALUES_OPEN;
             size_t size = 0;
-            size += 12; // "INSERT INTO "
+            size += INSERT_INTO; // "INSERT INTO "
             size += Base::table_name_.size();
             size += 2; // " ("
             size += Base::calculate_field_names_size();
-            size += 10; // ") VALUES "
-            size += 1;  // null terminator
+            size += VALUES_OPEN; // ") VALUES "
+            size += 1;           // null terminator
             return size;
         }
 
         // Build bulk INSERT prefix at compile-time using ConstexprString
         static consteval auto build_bulk_insert_prefix() {
-            constexpr size_t prefix_size = calculate_bulk_insert_prefix_size() + 50; // Add buffer for safety
+            constexpr size_t prefix_size = calculate_bulk_insert_prefix_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<prefix_size> result;
 
             result.append("INSERT INTO ");

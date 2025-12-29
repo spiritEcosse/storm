@@ -16,6 +16,11 @@ import <cstdint>;
 
 export namespace storm::db::sqlite {
 
+    // Cache size constants
+    namespace cache {
+        inline constexpr size_t STMT_CACHE_RESERVE = 32; // Initial statement cache capacity
+    } // namespace cache
+
     // Custom deleter for sqlite3
     struct SqliteDeleter {
         auto operator()(sqlite3* db) const noexcept -> void {
@@ -404,7 +409,7 @@ export namespace storm::db::sqlite {
         explicit Connection(SqlitePtr db_ptr) : db(std::move(db_ptr)) {
             // Reserve capacity to prevent rehashing and dangling pointers in InsertStatement
             // Typical ORM usage: INSERT, SELECT, UPDATE, DELETE, + a few WHERE variants = ~10-20 statements
-            statement_cache_.reserve(32);
+            statement_cache_.reserve(cache::STMT_CACHE_RESERVE);
         }
 
         SqlitePtr      db;

@@ -136,15 +136,17 @@ export namespace storm::orm::statements {
 
         // Compile-time SQL generation with ConstexprString
         static consteval auto calculate_join_sql_size() -> size_t {
+            using utilities::sql_len::ON_EQUALS;
+            using utilities::sql_len::SMALL_BUFFER;
             size_t total = 0;
 
             [&]<size_t... Is>(std::index_sequence<Is...>) -> void {
                 ((total += get_join_keyword().size() + FKBase_at<Is>::table_name_.size() + 2 + 1 + 4 + 1 + 1 + 1 +
-                           FKBase_at<Is>::pk_name_.size() + 5 + fk_field_names_[Is].size() + 3),
+                           FKBase_at<Is>::pk_name_.size() + ON_EQUALS + fk_field_names_[Is].size() + 3),
                  ...);
             }(std::make_index_sequence<fk_count_>{});
 
-            return total + 10; // Small buffer
+            return total + SMALL_BUFFER;
         }
 
         static consteval auto build_join_sql_array() {
@@ -195,7 +197,7 @@ export namespace storm::orm::statements {
                 );
             }(std::make_index_sequence<fk_count_>{});
 
-            return total + 10;
+            return total + utilities::sql_len::SMALL_BUFFER;
         }
 
         static consteval auto build_select_fields_array() {
@@ -243,14 +245,17 @@ export namespace storm::orm::statements {
 
         // NEW: Compile-time complete SQL generation
         static consteval auto calculate_complete_sql_size() -> size_t {
+            using utilities::sql_len::FROM;
+            using utilities::sql_len::SELECT;
+            using utilities::sql_len::SMALL_BUFFER;
             size_t total = 0;
-            total += 7; // "SELECT "
+            total += SELECT; // "SELECT "
             total += calculate_select_fields_size();
-            total += 6; // " FROM "
+            total += FROM; // " FROM "
             total += Base::table_name_.size();
             total += 3; // " t1"
             total += calculate_join_sql_size();
-            return total + 10; // Buffer
+            return total + SMALL_BUFFER;
         }
 
         static consteval auto build_complete_sql_array() {

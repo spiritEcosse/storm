@@ -36,10 +36,12 @@ export namespace storm::orm::statements {
 
         // Compile-time single DELETE SQL size calculation
         static consteval auto calculate_single_delete_sql_size() -> size_t {
+            using utilities::sql_len::DELETE_FROM;
+            using utilities::sql_len::WHERE;
             size_t size = 0;
-            size += 12; // "DELETE FROM "
+            size += DELETE_FROM; // "DELETE FROM "
             size += Base::table_name_.size();
-            size += 7; // " WHERE "
+            size += WHERE; // " WHERE "
             size += Base::pk_name_.size();
             size += 4; // " = ?"
             size += 1; // null terminator
@@ -48,7 +50,7 @@ export namespace storm::orm::statements {
 
         // Build single DELETE SQL at compile-time using ConstexprString
         static consteval auto build_single_delete_sql_array() {
-            constexpr size_t          sql_size = calculate_single_delete_sql_size() + 50; // Add buffer for safety
+            constexpr size_t          sql_size = calculate_single_delete_sql_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<sql_size> result;
 
             result.append("DELETE FROM ");
@@ -66,19 +68,22 @@ export namespace storm::orm::statements {
       private:
         // Compile-time bulk DELETE prefix calculation
         static consteval auto calculate_bulk_delete_prefix_size() -> size_t {
+            using utilities::sql_len::DELETE_FROM;
+            using utilities::sql_len::IN_OPEN;
+            using utilities::sql_len::WHERE;
             size_t size = 0;
-            size += 12; // "DELETE FROM "
+            size += DELETE_FROM; // "DELETE FROM "
             size += Base::table_name_.size();
-            size += 7; // " WHERE "
+            size += WHERE; // " WHERE "
             size += Base::pk_name_.size();
-            size += 5; // " IN ("
-            size += 1; // null terminator
+            size += IN_OPEN; // " IN ("
+            size += 1;       // null terminator
             return size;
         }
 
         // Build bulk DELETE prefix at compile-time using ConstexprString
         static consteval auto build_bulk_delete_prefix() {
-            constexpr size_t prefix_size = calculate_bulk_delete_prefix_size() + 50; // Add buffer for safety
+            constexpr size_t prefix_size = calculate_bulk_delete_prefix_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<prefix_size> result;
 
             result.append("DELETE FROM ");

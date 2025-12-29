@@ -36,10 +36,12 @@ export namespace storm::orm::statements {
 
         // Compile-time SQL size calculation for SELECT statement
         static consteval auto calculate_select_sql_size() -> size_t {
+            using utilities::sql_len::FROM;
+            using utilities::sql_len::SELECT;
             size_t size = 0;
-            size += 7; // "SELECT "
+            size += SELECT; // "SELECT "
             size += Base::calculate_field_names_size();
-            size += 6; // " FROM "
+            size += FROM; // " FROM "
             size += Base::table_name_.size();
             size += 1; // null terminator
             return size;
@@ -47,7 +49,7 @@ export namespace storm::orm::statements {
 
         // Build SELECT SQL at compile-time using ConstexprString
         static consteval auto build_select_sql_array() {
-            constexpr size_t          sql_size = calculate_select_sql_size() + 50; // Add buffer for safety
+            constexpr size_t          sql_size = calculate_select_sql_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<sql_size> result;
 
             result.append("SELECT ");

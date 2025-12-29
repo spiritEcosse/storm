@@ -105,7 +105,7 @@ export namespace storm::orm::where {
 
         LikeExpr(std::string_view field_name, std::string_view pattern) : field_name_(field_name), pattern_(pattern) {
             // Pre-generate SQL in constructor for consistency with ComparisonExpr
-            sql_.reserve(field_name_.size() + 8);
+            sql_.reserve(field_name_.size() + utilities::sql_len::LIKE_PATTERN);
             sql_ = field_name;
             sql_ += " LIKE ?";
         }
@@ -131,7 +131,7 @@ export namespace storm::orm::where {
         BetweenExpr(std::string_view field_name, ValueType min_val, ValueType max_val)
             : field_name_(field_name), min_val_(std::move(min_val)), max_val_(std::move(max_val)) {
             // Pre-generate SQL in constructor for consistency with ComparisonExpr
-            sql_.reserve(field_name_.size() + 17);
+            sql_.reserve(field_name_.size() + utilities::sql_len::BETWEEN_PATTERN);
             sql_ = field_name;
             sql_ += " BETWEEN ? AND ?";
         }
@@ -170,7 +170,7 @@ export namespace storm::orm::where {
                 sql_ = "1 = 0"; // SQL that always evaluates to false
             } else {
                 // Reserve capacity to avoid reallocations
-                sql_.reserve(field_name_.size() + 10 + values_.size() * 3);
+                sql_.reserve(field_name_.size() + utilities::sql_len::IN_CLAUSE + values_.size() * 3);
                 sql_ = field_name_;
                 sql_ += " IN (";
                 for (size_t i = 0; i < values_.size(); ++i) {
@@ -263,7 +263,7 @@ export namespace storm::orm::where {
             auto right_sql = to_sql(*expr.right);
 
             std::string result;
-            result.reserve(left_sql.size() + right_sql.size() + 8);
+            result.reserve(left_sql.size() + right_sql.size() + utilities::sql_len::LOGICAL_OP_PARENS);
             result = "(";
             result += left_sql;
             result += logical_op_to_sql(expr.op);

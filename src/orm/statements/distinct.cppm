@@ -100,11 +100,13 @@ export namespace storm::orm::statements {
 
         // Calculate SQL size at compile-time
         static consteval auto calculate_select_sql_size() -> size_t {
+            using utilities::sql_len::FROM;
+            using utilities::sql_len::SELECT_DISTINCT;
             constexpr auto field_list = build_field_list_constexpr(std::make_index_sequence<NumFields>{});
             size_t         size       = 0;
-            size += 16; // "SELECT DISTINCT " (max length, DISTINCT is optional)
+            size += SELECT_DISTINCT; // "SELECT DISTINCT " (max length, DISTINCT is optional)
             size += field_list.len;
-            size += 6; // " FROM "
+            size += FROM; // " FROM "
             size += Base::table_name_.size();
             size += 1; // null terminator
             return size;
@@ -112,7 +114,7 @@ export namespace storm::orm::statements {
 
         // Build SELECT DISTINCT at compile-time
         static consteval auto build_distinct_sql_array() {
-            constexpr size_t          sql_size = calculate_select_sql_size() + 50; // Safety buffer
+            constexpr size_t          sql_size = calculate_select_sql_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<sql_size> result;
 
             result.append("SELECT DISTINCT ");
@@ -230,10 +232,10 @@ export namespace storm::orm::statements {
             }
 
             std::string result;
-            result.reserve(sql.size() + 10); // "DISTINCT " = 9 chars + null terminator
-            result = sql.substr(0, select_pos + 7);
+            result.reserve(sql.size() + utilities::sql_len::SMALL_BUFFER); // "DISTINCT " + buffer
+            result = sql.substr(0, select_pos + utilities::sql_len::SELECT);
             result += "DISTINCT ";
-            result += sql.substr(select_pos + 7);
+            result += sql.substr(select_pos + utilities::sql_len::SELECT);
             return result;
         }
 
@@ -282,7 +284,7 @@ export namespace storm::orm::statements {
 
             // Build WHERE SQL - connection's prepare_cached() handles caching efficiently
             std::string sql;
-            sql.reserve(base_sql.size() + 50);
+            sql.reserve(base_sql.size() + utilities::sql_len::LARGE_BUFFER);
             sql = base_sql;
             sql += " WHERE ";
             sql += orm::where::to_sql(*where_expr_);
@@ -341,7 +343,7 @@ export namespace storm::orm::statements {
 
             // Add WHERE clause
             std::string sql = std::move(distinct_join_sql_result.value());
-            sql.reserve(sql.size() + 50);
+            sql.reserve(sql.size() + utilities::sql_len::LARGE_BUFFER);
             sql += " WHERE ";
             sql += orm::where::to_sql(*where_expr_);
             append_order_by(sql);

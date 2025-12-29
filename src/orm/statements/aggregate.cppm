@@ -168,7 +168,7 @@ export namespace storm::orm::statements {
                 size += field_expr_size + 1; // ")"
             }
 
-            ConstexprString<512> result;
+            ConstexprString<utilities::buffer_size::SQL_SMALL> result;
             result.append(agg_name);
             result.append("(");
 
@@ -378,7 +378,7 @@ export namespace storm::orm::statements {
             constexpr auto op       = std::tuple_element_t<OpIdx, std::tuple<Ops...>>{};
             constexpr auto agg_name = get_agg_function_name(op.agg_type);
 
-            ConstexprString<512> result;
+            ConstexprString<utilities::buffer_size::SQL_SMALL> result;
             result.append(agg_name);
             result.append("(");
 
@@ -428,7 +428,7 @@ export namespace storm::orm::statements {
 
         // Build aggregate SELECT clause only (for JOIN queries)
         template <size_t... Is> static consteval auto build_aggregate_select_clause(std::index_sequence<Is...>) {
-            ConstexprString<1024> result;
+            ConstexprString<utilities::buffer_size::SQL_MEDIUM> result;
 
             (([&result]() -> void {
                  if constexpr (Is > 0) {
@@ -489,7 +489,7 @@ export namespace storm::orm::statements {
 
             // Build WHERE SQL
             std::string sql;
-            sql.reserve(base_sql.size() + 50);
+            sql.reserve(base_sql.size() + utilities::sql_len::LARGE_BUFFER);
             sql = base_sql;
             sql += " WHERE ";
             sql += orm::where::to_sql(*where_expr_);
@@ -565,7 +565,7 @@ export namespace storm::orm::statements {
             static const std::string agg_clause{select_clause_array.data.data(), select_clause_array.len};
 
             std::string result;
-            result.reserve(7 + agg_clause.size() + (join_sql.size() - from_pos));
+            result.reserve(utilities::sql_len::SELECT + agg_clause.size() + (join_sql.size() - from_pos));
             result = "SELECT ";
             result += agg_clause;
             result += join_sql.substr(from_pos); // " FROM ..." onwards
@@ -700,7 +700,7 @@ export namespace storm::orm::statements {
       private:
         // Build GROUP BY field list
         template <size_t... Is> static consteval auto build_group_by_fields(std::index_sequence<Is...>) {
-            ConstexprString<512> result;
+            ConstexprString<utilities::buffer_size::SQL_SMALL> result;
             (([&result]() -> void {
                  if constexpr (Is > 0) {
                      result.append(", ");
@@ -753,7 +753,7 @@ export namespace storm::orm::statements {
 
         // Build full SQL: SELECT fields, aggs FROM table GROUP BY fields
         static consteval auto build_group_by_sql() {
-            ConstexprString<4096> result;
+            ConstexprString<utilities::buffer_size::SQL_LARGE> result;
             result.append("SELECT ");
 
             constexpr auto select_clause = build_select_clause(
@@ -818,7 +818,7 @@ export namespace storm::orm::statements {
             static const std::string base_sql{sql_array.data.data(), sql_array.len};
 
             std::string sql;
-            sql.reserve(base_sql.size() + 100);
+            sql.reserve(base_sql.size() + utilities::sql_len::XL_BUFFER);
 
             // Insert WHERE before GROUP BY
             size_t const group_by_pos = base_sql.find(" GROUP BY ");
@@ -873,7 +873,9 @@ export namespace storm::orm::statements {
             };
 
             std::string sql;
-            sql.reserve(select_clause.size() + join_sql.size() + group_clause.size() + 30);
+            sql.reserve(
+                    select_clause.size() + join_sql.size() + group_clause.size() + utilities::sql_len::MEDIUM_BUFFER
+            );
             sql = "SELECT ";
             sql += select_clause;
             sql += join_sql.substr(from_pos);
@@ -913,7 +915,7 @@ export namespace storm::orm::statements {
             };
 
             std::string sql;
-            sql.reserve(select_clause.size() + join_sql.size() + group_clause.size() + 100);
+            sql.reserve(select_clause.size() + join_sql.size() + group_clause.size() + utilities::sql_len::XL_BUFFER);
             sql = "SELECT ";
             sql += select_clause;
             sql += join_sql.substr(from_pos);

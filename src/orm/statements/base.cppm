@@ -379,8 +379,11 @@ export namespace storm::orm::statements {
         // Adaptive threshold calculation based on batch size and field count
         // Returns the optimal threshold for deciding between bulk SQL and individual inserts
         static constexpr auto calculate_adaptive_threshold(size_t batch_size, size_t max_bulk_size) -> size_t {
-            // For very small batches (≤10), always use bulk SQL up to the SQLite limit
-            if (batch_size <= 10)
+            using utilities::batch::FALLBACK_BATCH_SIZE;
+            using utilities::batch::SMALL_THRESHOLD;
+
+            // For very small batches, always use bulk SQL up to the SQLite limit
+            if (batch_size <= SMALL_THRESHOLD)
                 return max_bulk_size;
 
             // Calculate safe thresholds based on max_bulk_size (which already accounts for field count)
@@ -388,7 +391,7 @@ export namespace storm::orm::statements {
 
             // For small-medium batches, use bulk SQL if safe
             // Use 50% of max_bulk_size as the sweet spot for bulk operations
-            const size_t bulk_sweet_spot = std::max(size_t(50), max_bulk_size / 2);
+            const size_t bulk_sweet_spot = std::max(FALLBACK_BATCH_SIZE, max_bulk_size / 2);
 
             if (batch_size <= bulk_sweet_spot) {
                 return bulk_sweet_spot; // Use bulk SQL - most efficient
@@ -403,7 +406,7 @@ export namespace storm::orm::statements {
 
             // For large batches (>80% of SQLite limit), use individual inserts with transaction
             // Avoids hitting SQLite variable limits and better memory usage
-            return 50; // Force individual insert path - safe for any field count
+            return FALLBACK_BATCH_SIZE; // Force individual insert path - safe for any field count
         }
 
         // Common binding utilities for different types

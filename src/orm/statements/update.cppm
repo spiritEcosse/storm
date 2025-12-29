@@ -53,8 +53,8 @@ export namespace storm::orm::statements {
             auto members = std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked());
             auto pk      = Base::primary_key_;
 
-            ConstexprString<1024> result;
-            bool                  first = true;
+            ConstexprString<utilities::buffer_size::SQL_MEDIUM> result;
+            bool                                                first = true;
 
             for (const auto& member : members) {
                 if (member != pk) {
@@ -82,12 +82,15 @@ export namespace storm::orm::statements {
 
         // Compile-time UPDATE SQL size calculation
         static consteval auto calculate_update_sql_size() -> size_t {
+            using utilities::sql_len::SET;
+            using utilities::sql_len::UPDATE;
+            using utilities::sql_len::WHERE;
             size_t size = 0;
-            size += 7; // "UPDATE "
+            size += UPDATE; // "UPDATE "
             size += Base::table_name_.size();
-            size += 5; // " SET "
+            size += SET; // " SET "
             size += field_assignments_.len;
-            size += 7; // " WHERE "
+            size += WHERE; // " WHERE "
             size += Base::pk_name_.size();
             size += 4; // " = ?"
             size += 1; // null terminator
@@ -96,7 +99,7 @@ export namespace storm::orm::statements {
 
         // Build UPDATE SQL at compile-time using ConstexprString
         static consteval auto build_update_sql_array() {
-            constexpr size_t          sql_size = calculate_update_sql_size() + 50; // Add buffer for safety
+            constexpr size_t          sql_size = calculate_update_sql_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<sql_size> result;
 
             result.append("UPDATE ");
