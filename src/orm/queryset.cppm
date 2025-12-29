@@ -38,7 +38,7 @@ export namespace storm {
     // Default connection management for QuerySet
     // WARNING: Not thread-safe - use external synchronization in multi-threaded environments
     namespace detail {
-        inline auto& get_default_connection_ptr() {
+        inline auto get_default_connection_ptr() -> auto& {
             static std::shared_ptr<db::sqlite::Connection> conn_;
             return conn_;
         }
@@ -97,7 +97,7 @@ export namespace storm {
         //   queryset.where(field<^^Person::age>() > 25 and field<^^Person::is_active>() == true).select()
         //   queryset.where((field<^^Person::age>() > 25) or (field<^^Person::name>().like("A%"))).select()
         //
-        constexpr auto&& where(this auto&& self, orm::where::ExpressionVariantPtr expr) {
+        constexpr auto where(this auto&& self, orm::where::ExpressionVariantPtr expr) -> auto&& {
             if (self.where_expr_) {
                 // Combine with existing expression using AND
                 self.where_expr_ = orm::where::and_(self.where_expr_, expr);
@@ -110,7 +110,7 @@ export namespace storm {
         // LIMIT clause support - builder pattern with method chaining
         // Usage: queryset.limit(10).select()
         //        queryset.where(age > 25).limit(10).select()
-        constexpr auto&& limit(this auto&& self, int n) {
+        constexpr auto limit(this auto&& self, int n) -> auto&& {
             self.limit_value_ = n;
             return self_cast(self);
         }
@@ -118,7 +118,7 @@ export namespace storm {
         // OFFSET clause support - builder pattern with method chaining
         // Usage: queryset.offset(5).select()
         //        queryset.limit(10).offset(5).select()
-        constexpr auto&& offset(this auto&& self, int n) {
+        constexpr auto offset(this auto&& self, int n) -> auto&& {
             self.offset_value_ = n;
             return self_cast(self);
         }
@@ -135,7 +135,7 @@ export namespace storm {
         //   queryset.where(age > 25).order_by<^^Person::name>().select()
         //   queryset.order_by<^^Person::age, false>().limit(10).select()
         //
-        template <auto... Args> constexpr auto&& order_by(this auto&& self) {
+        template <auto... Args> constexpr auto order_by(this auto&& self) -> auto&& {
             // Create lightweight wrapper to compile-time generated static SQL
             self.order_by_wrapper_ = orm::statements::make_order_by_wrapper<Args...>();
             return self_cast(self);
@@ -144,7 +144,7 @@ export namespace storm {
         // Select operations - returns all rows (optimized with statement caching)
         // NOTE: WHERE and JOIN state is preserved after select() for query reusability.
         // Call reset() to clear state when needed.
-        [[nodiscard]] __attribute__((hot)) std::expected<plf::hive<T>, Error> select() {
+        [[nodiscard]] __attribute__((hot)) auto select() -> std::expected<plf::hive<T>, Error> {
             return get_select_statement()
                     .execute(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_);
         }
@@ -160,7 +160,7 @@ export namespace storm {
         // - Thread-local caching eliminates DistinctQuerySet wrapper overhead
         // - Statement pointer caching avoids prepare_cached() hash lookup
         // - SQL string caching avoids repeated to_sql() calls
-        template <std::meta::info... FieldInfos> constexpr auto& distinct() {
+        template <std::meta::info... FieldInfos> constexpr auto distinct() -> auto& {
             if constexpr (sizeof...(FieldInfos) == 0) {
                 // Default to primary key when no fields specified
                 using StmtType = orm::statements::
@@ -207,7 +207,7 @@ export namespace storm {
         //   Multi FK:  message_qs.join<&Message::sender, &Message::receiver>().select()
         template <auto... FKFieldPtrs>
             requires(sizeof...(FKFieldPtrs) >= 1)
-        constexpr auto&& join(this auto&& self) {
+        constexpr auto join(this auto&& self) -> auto&& {
             // Create type-erased wrapper with compile-time generated SQL (INNER JOIN)
             self.join_stmt_ =
                     orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Inner, FKFieldPtrs...>();
@@ -220,7 +220,7 @@ export namespace storm {
         //   Multi FK:  message_qs.left_join<&Message::sender, &Message::receiver>().select()
         template <auto... FKFieldPtrs>
             requires(sizeof...(FKFieldPtrs) >= 1)
-        constexpr auto&& left_join(this auto&& self) {
+        constexpr auto left_join(this auto&& self) -> auto&& {
             // Create type-erased wrapper with compile-time generated SQL (LEFT JOIN)
             self.join_stmt_ =
                     orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Left, FKFieldPtrs...>();
@@ -233,7 +233,7 @@ export namespace storm {
         //   Multi FK:  message_qs.right_join<&Message::sender, &Message::receiver>().select()
         template <auto... FKFieldPtrs>
             requires(sizeof...(FKFieldPtrs) >= 1)
-        constexpr auto&& right_join(this auto&& self) {
+        constexpr auto right_join(this auto&& self) -> auto&& {
             // Create type-erased wrapper with compile-time generated SQL (RIGHT JOIN)
             self.join_stmt_ =
                     orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Right, FKFieldPtrs...>();
@@ -456,7 +456,7 @@ export namespace storm {
 
       private:
         // Helper for perfect forwarding in method chaining (deducing this pattern)
-        template <typename Self> static constexpr decltype(auto) self_cast(Self&& self) {
+        template <typename Self> static constexpr auto self_cast(Self&& self) -> decltype(auto) {
             return std::forward<Self>(self);
         }
 

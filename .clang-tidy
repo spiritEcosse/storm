@@ -34,7 +34,6 @@ Checks: >
   -misc-include-cleaner,
   -misc-non-private-member-variables-in-classes,
   modernize-*,
-  -modernize-use-trailing-return-type,
   performance-*,
   -performance-enum-size,
   readability-*,
