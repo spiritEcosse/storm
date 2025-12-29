@@ -11,10 +11,10 @@ using namespace storm::orm::where;
 
 // Test model
 struct OrderByPerson {
-    [[= storm::meta::FieldAttr::primary]] int id;
+    [[= storm::meta::FieldAttr::primary]] int id{};
     std::string                               name;
-    int                                       age;
-    bool                                      is_active;
+    int                                       age{};
+    bool                                      is_active{};
 };
 
 class OrderByTest : public ::testing::Test {

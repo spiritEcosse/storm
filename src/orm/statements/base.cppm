@@ -546,7 +546,7 @@ export namespace storm::orm::statements {
         // TODO: remove it
         template <typename ConnType, typename Operation>
         [[nodiscard]] static auto
-        execute_with_transaction(ConnType& conn, bool use_transaction, Operation&& op) noexcept -> decltype(op()) {
+        execute_with_transaction(ConnType& conn, bool use_transaction, const Operation& op) noexcept -> decltype(op()) {
             if (!use_transaction) {
                 return op();
             }
@@ -572,7 +572,7 @@ export namespace storm::orm::statements {
         // Generic helper for executing with cached or non-cached statements
         template <typename ConnType, typename ExecuteFunc>
         [[nodiscard]] static auto
-        execute_with_statement(ConnType& conn, const std::string& sql, ExecuteFunc&& execute_func) noexcept
+        execute_with_statement(ConnType& conn, const std::string& sql, const ExecuteFunc& execute_func) noexcept
                 -> decltype(execute_func(std::declval<typename ConnType::Statement&>())) {
             // Try cached statement first if available
             if constexpr (requires { conn.prepare_cached(sql); }) {
@@ -597,7 +597,7 @@ export namespace storm::orm::statements {
 
         // Monadic helper for reset, bind, and execute sequence
         template <typename Statement, typename BindFunc>
-        [[nodiscard]] static auto reset_bind_and_execute(Statement& stmt, BindFunc&& bind_func) noexcept
+        [[nodiscard]] static auto reset_bind_and_execute(Statement& stmt, const BindFunc& bind_func) noexcept
                 -> decltype(bind_func(stmt)) {
             stmt.reset();
             return bind_func(stmt).and_then([&stmt]() -> decltype(auto) { return stmt.execute(); });
@@ -607,7 +607,7 @@ export namespace storm::orm::statements {
         // TODO: Remove it
         template <typename StatementType, typename Objects>
         [[nodiscard]] static auto execute_standard_batch(
-                StatementType& statement_instance, Objects&& objects, size_t variables_per_object
+                StatementType& statement_instance, const Objects& objects, size_t variables_per_object
         ) noexcept -> decltype(statement_instance.execute_chunked(objects)) {
             using ConnType = typename StatementType::Connection;
             return execute_batch_optimized<ConnType>(
@@ -627,11 +627,11 @@ export namespace storm::orm::statements {
         // TODO: Remove it
         template <typename ConnType, typename ContainerType, typename BulkExecutor, typename IndividualExecutor>
         [[nodiscard]] static auto execute_batch_optimized(
-                ConnType&            conn,
-                const ContainerType& items,
-                size_t               items_per_variable, // How many variables each item uses
-                BulkExecutor&&       bulk_executor,
-                IndividualExecutor&& individual_executor
+                ConnType&                 conn,
+                const ContainerType&      items,
+                size_t                    items_per_variable, // How many variables each item uses
+                const BulkExecutor&       bulk_executor,
+                const IndividualExecutor& individual_executor
         ) noexcept -> decltype(individual_executor()) {
             if (items.empty()) {
                 return {};

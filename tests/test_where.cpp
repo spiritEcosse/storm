@@ -11,9 +11,9 @@ using namespace storm::orm::where;
 
 // Test model for WHERE clause operations (matching test_select.cpp)
 struct WherePerson {
-    [[= storm::meta::FieldAttr::primary]] int id;
+    [[= storm::meta::FieldAttr::primary]] int id{};
     std::string                               name;
-    int                                       age;
+    int                                       age{};
 };
 
 // Test fixture for WHERE operations
@@ -316,13 +316,13 @@ TEST_F(WhereTest, WhereMixedTypes) {
 // Test model with FK for JOIN + WHERE tests
 // Note: Named WhereUser/WhereMessage to avoid ODR violation with test_fk_fields.cpp
 struct WhereUser {
-    [[= storm::meta::FieldAttr::primary]] int id;
+    [[= storm::meta::FieldAttr::primary]] int id{};
     std::string                               username;
-    int                                       level;
+    int                                       level{};
 };
 
 struct WhereMessage {
-    [[= storm::meta::FieldAttr::primary]] int  id;
+    [[= storm::meta::FieldAttr::primary]] int  id{};
     std::string                                content;
     [[= storm::meta::FieldAttr::fk]] WhereUser sender;
 };

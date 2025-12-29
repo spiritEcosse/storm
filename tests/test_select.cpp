@@ -10,9 +10,9 @@ using namespace storm;
 
 // Test model with various field types
 struct SelectPerson {
-    [[= storm::meta::FieldAttr::primary]] int id;
+    [[= storm::meta::FieldAttr::primary]] int id{};
     std::string                               name;
-    int                                       age;
+    int                                       age{};
 };
 
 // Test fixture for SELECT operations

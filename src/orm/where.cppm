@@ -74,11 +74,9 @@ export namespace storm::orm::where {
         std::string sql_; // Cached SQL string (pre-generated in constructor)
 
         ComparisonExpr(std::string_view field_name, CompOp op, ValueType value)
-            : field_name_(field_name), op_(op), value_(std::move(value)) {
+            : field_name_(field_name), op_(op), value_(std::move(value)), sql_(field_name) {
             // Pre-generate SQL in constructor for consistency with InExpression
             // and to benchmark whether simple concatenation benefits from caching
-            sql_.reserve(field_name_.size() + 4);
-            sql_ = field_name;
             sql_ += comp_op_to_sql(op);
             sql_ += "?";
         }
@@ -103,10 +101,9 @@ export namespace storm::orm::where {
         std::string pattern_;
         std::string sql_; // Cached SQL string (pre-generated in constructor)
 
-        LikeExpr(std::string_view field_name, std::string_view pattern) : field_name_(field_name), pattern_(pattern) {
+        LikeExpr(std::string_view field_name, std::string_view pattern)
+            : field_name_(field_name), pattern_(pattern), sql_(field_name) {
             // Pre-generate SQL in constructor for consistency with ComparisonExpr
-            sql_.reserve(field_name_.size() + utilities::sql_len::LIKE_PATTERN);
-            sql_ = field_name;
             sql_ += " LIKE ?";
         }
 
@@ -129,10 +126,8 @@ export namespace storm::orm::where {
         std::string sql_; // Cached SQL string (pre-generated in constructor)
 
         BetweenExpr(std::string_view field_name, ValueType min_val, ValueType max_val)
-            : field_name_(field_name), min_val_(std::move(min_val)), max_val_(std::move(max_val)) {
+            : field_name_(field_name), min_val_(std::move(min_val)), max_val_(std::move(max_val)), sql_(field_name) {
             // Pre-generate SQL in constructor for consistency with ComparisonExpr
-            sql_.reserve(field_name_.size() + utilities::sql_len::BETWEEN_PATTERN);
-            sql_ = field_name;
             sql_ += " BETWEEN ? AND ?";
         }
 

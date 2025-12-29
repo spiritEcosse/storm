@@ -9,13 +9,13 @@ using namespace storm;
 
 // Test models for FK relationships
 struct User {
-    [[= storm::meta::FieldAttr::primary]] int id;
+    [[= storm::meta::FieldAttr::primary]] int id{};
     std::string                               name;
-    int                                       age;
+    int                                       age{};
 };
 
 struct FKMessage {
-    [[= storm::meta::FieldAttr::primary]] int id;
+    [[= storm::meta::FieldAttr::primary]] int id{};
     [[= storm::meta::FieldAttr::fk]] User     sender;
     [[= storm::meta::FieldAttr::fk]] User     receiver;
     std::string                               text;
@@ -329,7 +329,7 @@ TEST_F(FKFieldTest, DeleteWithFKField) {
 TEST_F(FKFieldTest, MultipleFKFieldsToSameType) {
     // Create a conversation struct with two FK fields to User
     struct Conversation {
-        [[= storm::meta::FieldAttr::primary]] int id;
+        [[= storm::meta::FieldAttr::primary]] int id{};
         [[= storm::meta::FieldAttr::fk]] User     sender;
         [[= storm::meta::FieldAttr::fk]] User     receiver;
         std::string                               message;
@@ -886,18 +886,18 @@ class ExtendedTypesJoinTest : public ::testing::Test {
 TEST_F(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
     // Define structs with extended types
     struct Employee {
-        [[= storm::meta::FieldAttr::primary]] int id;
+        [[= storm::meta::FieldAttr::primary]] int id{};
         std::string                               name;
-        double                                    salary;
-        bool                                      is_active;
+        double                                    salary{};
+        bool                                      is_active{};
         std::optional<std::string>                nickname;
     };
 
     struct Project {
-        [[= storm::meta::FieldAttr::primary]] int id;
+        [[= storm::meta::FieldAttr::primary]] int id{};
         [[= storm::meta::FieldAttr::fk]] Employee manager;
         std::string                               title;
-        double                                    budget;
+        double                                    budget{};
     };
 
     QuerySet<Employee> employee_qs;
@@ -1012,15 +1012,15 @@ TEST_F(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
 // Test: Multi-JOIN with extended types
 TEST_F(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
     struct Employee {
-        [[= storm::meta::FieldAttr::primary]] int id;
+        [[= storm::meta::FieldAttr::primary]] int id{};
         std::string                               name;
-        double                                    salary;
-        bool                                      is_active;
+        double                                    salary{};
+        bool                                      is_active{};
         std::optional<std::string>                nickname;
     };
 
     struct Task {
-        [[= storm::meta::FieldAttr::primary]] int id;
+        [[= storm::meta::FieldAttr::primary]] int id{};
         [[= storm::meta::FieldAttr::fk]] Employee assignee;
         [[= storm::meta::FieldAttr::fk]] Employee reviewer;
         std::string                               description;

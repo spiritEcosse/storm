@@ -10,8 +10,8 @@ using namespace storm;
 
 // Test model for large dataset testing
 struct TestRecord {
-    [[= storm::meta::FieldAttr::primary]] int id;
-    int                                       value;
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    int                                       value{};
     std::string                               name;
 };
 

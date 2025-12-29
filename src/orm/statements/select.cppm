@@ -328,7 +328,7 @@ export namespace storm::orm::statements {
         //   - JOIN extraction uses Statement* for type-erased access
         template <typename Extractor>
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
-        execute_query_loop(Statement* stmt, Extractor&& extractor) noexcept -> std::expected<plf::hive<T>, Error> {
+        execute_query_loop(Statement* stmt, const Extractor& extractor) noexcept -> std::expected<plf::hive<T>, Error> {
             plf::hive<T>  results;
             sqlite3_stmt* raw_stmt    = stmt->handle(); // Cache raw pointer ONCE
             int           step_result = 0;

@@ -10,9 +10,9 @@ using namespace storm::orm::where;
 
 // Test model for LIMIT/OFFSET operations
 struct LimitOffsetPerson {
-    [[= storm::meta::FieldAttr::primary]] int id;
+    [[= storm::meta::FieldAttr::primary]] int id{};
     std::string                               name;
-    int                                       age;
+    int                                       age{};
 };
 
 // Test fixture for LIMIT/OFFSET operations

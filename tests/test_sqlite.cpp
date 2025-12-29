@@ -12,9 +12,9 @@ import <iomanip>;
 
 // Test struct with proper Storm attribute syntax
 struct SqlitePerson {
-    [[= storm::meta::FieldAttr::primary]] int id;
+    [[= storm::meta::FieldAttr::primary]] int id{};
     std::string                               name;
-    int                                       age;
+    int                                       age{};
 };
 
 // Test QuerySet.remove() functionality
@@ -570,7 +570,7 @@ class QuerySetUpdateTest : public ::testing::Test {
     }
 
     // Helper function to get person by ID
-    static std::optional<SqlitePerson> getSqlitePerson(int id) {
+    static auto getSqlitePerson(int id) -> std::optional<SqlitePerson> {
         auto&         conn = storm::QuerySet<SqlitePerson>::get_default_connection();
         sqlite3_stmt* stmt = nullptr;
         int           rc   = sqlite3_prepare_v2(
@@ -596,7 +596,7 @@ class QuerySetUpdateTest : public ::testing::Test {
     }
 
     // Helper function to check if person exists
-    static bool personExists(int id) {
+    static auto personExists(int id) -> bool {
         return getSqlitePerson(id).has_value();
     }
 };

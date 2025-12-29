@@ -29,21 +29,21 @@ struct FloatTypes {
 
 // Boolean and string model
 struct MixedTypes {
-    [[= storm::meta::FieldAttr::primary]] int id;
-    bool                                      active;
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    bool                                      active{};
     std::string                               name;
 };
 
 // Optional types model (simplified to avoid compiler constexpr bug)
 struct OptTypes {
-    [[= storm::meta::FieldAttr::primary]] int id;
+    [[= storm::meta::FieldAttr::primary]] int id{};
     std::optional<int>                        maybe_num;
     std::string                               name; // Use regular string instead of optional to reduce complexity
 };
 
 // BLOB types model
 struct DataTypes {
-    [[= storm::meta::FieldAttr::primary]] int id;
+    [[= storm::meta::FieldAttr::primary]] int id{};
     std::vector<uint8_t>                      binary;
     std::string                               label;
 };

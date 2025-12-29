@@ -13,11 +13,11 @@ using namespace storm;
 
 // Test model: AggregatePerson with multiple numeric fields
 struct AggregatePerson {
-    [[= storm::meta::FieldAttr::primary]] int id;
+    [[= storm::meta::FieldAttr::primary]] int id{};
     std::string                               name;
-    int                                       age;
-    double                                    salary;
-    int                                       years_experience;
+    int                                       age{};
+    double                                    salary{};
+    int                                       years_experience{};
 };
 
 // Test models for JOIN + Aggregate tests

@@ -10,11 +10,19 @@
 # - Exclude stylistic checks that are subjective or would require massive refactoring
 # - Exclude checks that crash on C++26 modules (bugprone-argument-comment)
 # - Exclude false positives in tests (bugprone-unchecked-optional-access doesn't understand ASSERT_TRUE)
+#
+# C++26 False Positive Exclusions:
+# - cppcoreguidelines-init-variables: false positives on constexpr initialization
+# - cppcoreguidelines-missing-std-forward: false positives when std::forward is used inside expressions
+# - cppcoreguidelines-pro-type-member-init: too many false positives in test files
+# - cppcoreguidelines-rvalue-reference-param-not-moved: false positives when std::move is used in initializer
+# - bugprone-branch-clone: intentional similar branching in different aggregate classes
 
 Checks: >
   -*,
   bugprone-*,
   -bugprone-argument-comment,
+  -bugprone-branch-clone,
   -bugprone-easily-swappable-parameters,
   -bugprone-unchecked-optional-access,
   cert-*,
@@ -22,15 +30,17 @@ Checks: >
   -cert-err58-cpp,
   concurrency-*,
   cppcoreguidelines-*,
+  -cppcoreguidelines-init-variables,
   -cppcoreguidelines-missing-std-forward,
-  -cppcoreguidelines-prefer-member-initializer,
   -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
   -cppcoreguidelines-pro-bounds-constant-array-index,
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
   -cppcoreguidelines-pro-type-member-init,
   -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-rvalue-reference-param-not-moved,
   misc-*,
-  -misc-include-cleaner,  # Incompatible with C++26 modules - doesn't understand "import <header>" syntax
+  -misc-const-correctness,
+  -misc-include-cleaner,
   modernize-*,
   performance-*,
   -performance-enum-size,
