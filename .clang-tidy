@@ -22,7 +22,6 @@ Checks: >
   -cert-err58-cpp,
   concurrency-*,
   cppcoreguidelines-*,
-  -cppcoreguidelines-avoid-const-or-ref-data-members,
   -cppcoreguidelines-avoid-magic-numbers,
   -cppcoreguidelines-missing-std-forward,
   -cppcoreguidelines-non-private-member-variables-in-classes,

@@ -281,20 +281,20 @@ export namespace storm::orm::where {
     // Visitor for bind_params_direct() - called via std::visit
     struct BindParamsVisitor {
         void* stmt_ptr;
-        int&  param_index;
+        int*  param_index; // Pointer instead of reference (cppcoreguidelines-avoid-const-or-ref-data-members)
 
         [[nodiscard]] auto operator()(const LogicalExpr& expr) const -> std::expected<void, storm::db::sqlite::Error> {
             // Recursive case: bind left then right
-            if (auto result = bind_params_direct(*expr.left, stmt_ptr, param_index); !result) {
+            if (auto result = bind_params_direct(*expr.left, stmt_ptr, *param_index); !result) {
                 return result;
             }
-            return bind_params_direct(*expr.right, stmt_ptr, param_index);
+            return bind_params_direct(*expr.right, stmt_ptr, *param_index);
         }
 
         // All other expression types have their own bind_params_direct() method
         template <typename T>
         [[nodiscard]] auto operator()(const T& expr) const -> std::expected<void, storm::db::sqlite::Error> {
-            return expr.bind_params_direct(stmt_ptr, param_index);
+            return expr.bind_params_direct(stmt_ptr, *param_index);
         }
     };
 
@@ -305,7 +305,7 @@ export namespace storm::orm::where {
 
     [[nodiscard]] inline auto bind_params_direct(const ExpressionVariant& expr, void* stmt_ptr, int& param_index)
             -> std::expected<void, storm::db::sqlite::Error> {
-        return std::visit(BindParamsVisitor{.stmt_ptr = stmt_ptr, .param_index = param_index}, expr);
+        return std::visit(BindParamsVisitor{.stmt_ptr = stmt_ptr, .param_index = &param_index}, expr);
     }
 
     // Expression wrapper to enable natural && and || operators without ambiguity
