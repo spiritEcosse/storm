@@ -316,6 +316,7 @@ export namespace storm::orm::statements {
             return Base::template bind_value_by_type<ConnType>(stmt, index, pk_value);
         }
 
+      private:
         std::shared_ptr<ConnType> conn_;
         mutable Statement*        cached_single_stmt_   = nullptr; // Cached statement for single DELETE
         mutable Statement*        cached_max_bulk_stmt_ = nullptr; // Cached statement for max bulk (799) DELETE

@@ -23,7 +23,6 @@ Checks: >
   concurrency-*,
   cppcoreguidelines-*,
   -cppcoreguidelines-missing-std-forward,
-  -cppcoreguidelines-non-private-member-variables-in-classes,
   -cppcoreguidelines-prefer-member-initializer,
   -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
   -cppcoreguidelines-pro-bounds-constant-array-index,
@@ -31,8 +30,7 @@ Checks: >
   -cppcoreguidelines-pro-type-member-init,
   -cppcoreguidelines-pro-type-reinterpret-cast,
   misc-*,
-  -misc-include-cleaner,
-  -misc-non-private-member-variables-in-classes,
+  -misc-include-cleaner,  # Incompatible with C++26 modules - doesn't understand "import <header>" syntax
   modernize-*,
   performance-*,
   -performance-enum-size,
@@ -56,3 +54,11 @@ FormatStyle: file
 
 # Treat warnings as errors (optional, can be disabled)
 WarningsAsErrors: ''
+
+# Check-specific options
+CheckOptions:
+  # Allow pure data types (struct-like classes with all public members)
+  - key: misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
+    value: true
+  - key: cppcoreguidelines-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
+    value: true

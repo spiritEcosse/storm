@@ -121,8 +121,11 @@ class AggregateTest : public ::testing::Test {
         std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('Bar', 60, 3)");
     }
 
+    // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
+    // GoogleTest fixtures conventionally use protected members for TEST_F access
     std::unique_ptr<QuerySet<AggregatePerson>> qs;
     std::unique_ptr<QuerySet<AggMessage>>      msg_qs;
+    // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
 };
 
 // ============================================================================
@@ -1104,6 +1107,7 @@ class OptionalAggregateTest : public ::testing::Test {
         QuerySet<OptionalPerson>::clear_default_connection();
     }
 
+    // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
     std::unique_ptr<QuerySet<OptionalPerson>> qs;
 };
 
