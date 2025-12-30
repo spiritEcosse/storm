@@ -231,7 +231,7 @@ export namespace storm::orm::statements {
         // Helper to unroll inline binding for all fields
         template <size_t... Is>
         [[nodiscard]] __attribute__((always_inline)) static auto
-        inline_bind_all_fields(Statement* stmt, const T& obj, std::index_sequence<Is...>) noexcept
+        inline_bind_all_fields(Statement* stmt, const T& obj, std::index_sequence<Is...> /*unused*/) noexcept
                 -> std::expected<void, Error> {
             int param_index = 1;
 
@@ -308,7 +308,7 @@ export namespace storm::orm::statements {
         // Helper to bind all updatable fields using index sequence
         template <size_t... Is>
         [[nodiscard]] auto
-        bind_updatable_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...>) noexcept
+        bind_updatable_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...> /*unused*/) noexcept
                 -> std::expected<void, Error> {
             int param_index = 1;
 

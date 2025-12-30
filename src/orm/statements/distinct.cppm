@@ -53,7 +53,7 @@ export namespace storm::orm::statements {
         static constexpr auto member_infos_ = std::array{FieldInfos...};
 
         // Deduce field types from member_info array
-        template <size_t... Is> static consteval auto get_field_types_helper(std::index_sequence<Is...>) {
+        template <size_t... Is> static consteval auto get_field_types_helper(std::index_sequence<Is...> /*unused*/) {
             return std::tuple<std::remove_cvref_t<decltype(std::declval<T>().[:member_infos_[Is]:])>...>{};
         }
 
@@ -73,12 +73,14 @@ export namespace storm::orm::statements {
         }
 
         // Calculate total size of all fields
-        template <size_t... Is> static consteval auto calculate_field_list_size(std::index_sequence<Is...>) -> size_t {
+        template <size_t... Is>
+        static consteval auto calculate_field_list_size(std::index_sequence<Is...> /*unused*/) -> size_t {
             return (get_field_size<Is>() + ...);
         }
 
         // Compile-time field list generation (returns ConstexprString)
-        template <size_t... Is> static consteval auto build_field_list_constexpr(std::index_sequence<Is...>) {
+        template <size_t... Is>
+        static consteval auto build_field_list_constexpr(std::index_sequence<Is...> /*unused*/) {
             constexpr size_t total_size = calculate_field_list_size(std::make_index_sequence<NumFields>{});
             ConstexprString<total_size + 10> result;
             auto                             append_field = [&result]<size_t I>() -> void {
@@ -405,7 +407,7 @@ export namespace storm::orm::statements {
         // Constructs tuple directly in hive without intermediate temporaries
         // Template parameter R delays evaluation until method is called (avoids void& when NumFields == 0)
         template <size_t... Is, typename R = ResultType>
-        void insert_tuple_from_columns(R& results, Statement* stmt, std::index_sequence<Is...>)
+        void insert_tuple_from_columns(R& results, Statement* stmt, std::index_sequence<Is...> /*unused*/)
             requires(NumFields > 0)
         {
             results.insert(

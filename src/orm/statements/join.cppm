@@ -101,7 +101,7 @@ export namespace storm::orm::statements {
             size_t                        current_offset = non_fk_field_count_;
             size_t                        idx            = 0;
 
-            [&]<size_t... Is>(std::index_sequence<Is...>) -> void {
+            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) -> void {
                 ((offsets[idx++] = current_offset, current_offset += FKBase_at<Is>::field_count_), ...);
             }(std::make_index_sequence<fk_count_>{});
 
@@ -142,7 +142,7 @@ export namespace storm::orm::statements {
             // NOLINTNEXTLINE(misc-const-correctness) - total IS modified in fold expression below
             size_t total = 0;
 
-            [&]<size_t... Is>(std::index_sequence<Is...>) -> void {
+            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) -> void {
                 ((total += get_join_keyword().size() + FKBase_at<Is>::table_name_.size() + 2 + 1 + 4 + 1 + 1 + 1 +
                            FKBase_at<Is>::pk_name_.size() + ON_EQUALS + fk_field_names_[Is].size() + 3),
                  ...);
@@ -156,7 +156,7 @@ export namespace storm::orm::statements {
             constexpr size_t          sql_size = calculate_join_sql_size();
             ConstexprString<sql_size> result;
 
-            [&]<size_t... Is>(std::index_sequence<Is...>) -> void {
+            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) -> void {
                 ((result.append(get_join_keyword()),
                   result.append(FKBase_at<Is>::table_name_),
                   result.append(" t"),
@@ -186,11 +186,11 @@ export namespace storm::orm::statements {
             }
 
             // FK fields
-            [&]<size_t... Is>(std::index_sequence<Is...>) -> void {
+            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) -> void {
                 (
                         [&]<size_t I>() -> void {
                             total += 2; // ", "
-                            [&]<size_t... FieldIs>(std::index_sequence<FieldIs...>) -> void {
+                            [&]<size_t... FieldIs>(std::index_sequence<FieldIs...> /*unused*/) -> void {
                                 ((total += (FieldIs > 0 ? 2 : 0) + 3 + 1 +
                                            std::meta::identifier_of(FKBase_at<I>::all_members_[FieldIs]).size()),
                                  ...);
@@ -222,11 +222,11 @@ export namespace storm::orm::statements {
             }
 
             // FK fields
-            [&]<size_t... Is>(std::index_sequence<Is...>) -> void {
+            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) -> void {
                 (
                         [&]<size_t I>() -> void {
                             result.append(", ");
-                            [&]<size_t... FieldIs>(std::index_sequence<FieldIs...>) -> void {
+                            [&]<size_t... FieldIs>(std::index_sequence<FieldIs...> /*unused*/) -> void {
                                 // NOLINTNEXTLINE(misc-const-correctness) - first_in_table IS modified in fold expression
                                 bool first_in_table = true;
                                 (((first_in_table ? (void)0 : result.append(", ")),
@@ -369,7 +369,7 @@ export namespace storm::orm::statements {
 
         template <size_t... Is>
         __attribute__((always_inline)) static inline void
-        extract_t_fields_raw(sqlite3_stmt* raw_stmt, T& obj, std::index_sequence<Is...>) noexcept {
+        extract_t_fields_raw(sqlite3_stmt* raw_stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
             int col_idx = 0;
             ((extract_column_at_raw<Is>(raw_stmt, obj, col_idx)), ...);
         }
@@ -387,7 +387,10 @@ export namespace storm::orm::statements {
 
         template <size_t FKIdx, size_t... FieldIs>
         __attribute__((always_inline)) static inline void extract_fk_fields_impl_raw(
-                sqlite3_stmt* raw_stmt, FK_type<FKIdx>& fk_obj, size_t col_offset, std::index_sequence<FieldIs...>
+                sqlite3_stmt*   raw_stmt,
+                FK_type<FKIdx>& fk_obj,
+                size_t          col_offset,
+                std::index_sequence<FieldIs...> /*unused*/
         ) noexcept {
             using FKBase = FKBase_at<FKIdx>;
             ((extract_fk_field_at_raw<FKBase, FieldIs>(raw_stmt, fk_obj, col_offset + FieldIs)), ...);
@@ -404,7 +407,7 @@ export namespace storm::orm::statements {
 
         template <size_t... Is>
         __attribute__((always_inline)) static inline void
-        extract_all_fks_raw(sqlite3_stmt* raw_stmt, T& obj, std::index_sequence<Is...>) noexcept {
+        extract_all_fks_raw(sqlite3_stmt* raw_stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
             (extract_fk_at_raw<Is>(raw_stmt, obj), ...);
         }
 
@@ -462,7 +465,7 @@ export namespace storm::orm::statements {
 
         template <size_t... Is>
         __attribute__((always_inline)) static inline void
-        extract_t_fields(Statement* stmt, T& obj, std::index_sequence<Is...>) noexcept {
+        extract_t_fields(Statement* stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
             int col_idx = 0;
             ((extract_column_at<Is>(stmt, obj, col_idx)), ...);
         }
@@ -484,7 +487,7 @@ export namespace storm::orm::statements {
 
         template <size_t FKIdx, size_t... FieldIs>
         __attribute__((always_inline)) static inline void extract_fk_fields_impl(
-                Statement* stmt, FK_type<FKIdx>& fk_obj, size_t col_offset, std::index_sequence<FieldIs...>
+                Statement* stmt, FK_type<FKIdx>& fk_obj, size_t col_offset, std::index_sequence<FieldIs...> /*unused*/
         ) noexcept {
             using FKBase = FKBase_at<FKIdx>;
             ((extract_fk_field_at<FKBase, FieldIs>(stmt, fk_obj, col_offset + FieldIs)), ...);
@@ -510,7 +513,7 @@ export namespace storm::orm::statements {
 
         template <size_t... Is>
         __attribute__((always_inline)) static inline void
-        extract_all_fks(Statement* stmt, T& obj, std::index_sequence<Is...>) noexcept {
+        extract_all_fks(Statement* stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
             (extract_fk_at<Is>(stmt, obj), ...);
         }
 
@@ -529,7 +532,7 @@ export namespace storm::orm::statements {
 
         template <size_t... Is>
         __attribute__((always_inline)) static inline void
-        init_all_fk_fields(T& obj, std::index_sequence<Is...>) noexcept {
+        init_all_fk_fields(T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
             (init_fk_field_at<Is>(obj), ...);
         }
 
@@ -538,7 +541,7 @@ export namespace storm::orm::statements {
                 -> void {
 #ifndef NDEBUG
             size_t expected_cols = non_fk_field_count_;
-            [&]<size_t... Is>(std::index_sequence<Is...>) -> void {
+            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) -> void {
                 ((expected_cols += FKBase_at<Is>::field_count_), ...);
             }(std::make_index_sequence<fk_count_>{});
 

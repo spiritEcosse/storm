@@ -42,7 +42,6 @@ Checks: >
   -readability-identifier-length,
   -readability-implicit-bool-conversion,
   -readability-math-missing-parentheses,
-  -readability-named-parameter,
   -readability-qualified-auto,
   -readability-redundant-access-specifiers,
   -readability-redundant-inline-specifier

@@ -308,7 +308,7 @@ export namespace storm::orm::statements {
         // Extract all columns using raw pointer with fold expression
         template <size_t... Is>
         __attribute__((always_inline)) static inline void
-        extract_all_columns_raw_impl(sqlite3_stmt* raw_stmt, T& obj, std::index_sequence<Is...>) noexcept {
+        extract_all_columns_raw_impl(sqlite3_stmt* raw_stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
             ((extract_column_raw_fast<Is>(raw_stmt, obj)), ...);
         }
 

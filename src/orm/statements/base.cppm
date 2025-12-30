@@ -192,7 +192,7 @@ export namespace storm::orm::statements {
         // Helper template for compile-time field binding with index sequence
         template <typename ConnType, typename Statement, size_t... Is>
         [[nodiscard]] static auto
-        bind_all_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...>) noexcept
+        bind_all_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...> /*unused*/) noexcept
                 -> std::expected<void, typename ConnType::Error> {
             // Use fold expression to bind all fields at compile-time indices
             // Each field binds at parameter index (Is + 1) since SQLite parameters start at 1
@@ -207,7 +207,7 @@ export namespace storm::orm::statements {
         // Helper template for INSERT binding (skips primary key for auto-increment)
         template <typename ConnType, typename Statement, size_t... Is>
         [[nodiscard]] static auto
-        bind_non_pk_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...>) noexcept
+        bind_non_pk_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...> /*unused*/) noexcept
                 -> std::expected<void, typename ConnType::Error> {
             int  param_index = 1;
             bool bind_ok     = true;
@@ -288,9 +288,9 @@ export namespace storm::orm::statements {
 
         // Helper for bulk binding multiple objects with index sequence
         template <typename ConnType, typename Statement, typename ContainerType, size_t... Is>
-        [[nodiscard]] static auto
-        bind_all_objects_bulk_impl(Statement& stmt, const ContainerType& objects, std::index_sequence<Is...>) noexcept
-                -> std::expected<void, typename ConnType::Error> {
+        [[nodiscard]] static auto bind_all_objects_bulk_impl(
+                Statement& stmt, const ContainerType& objects, std::index_sequence<Is...> /*unused*/
+        ) noexcept -> std::expected<void, typename ConnType::Error> {
             int param_index = 1;
 
             // Bind each object's fields sequentially
@@ -309,7 +309,7 @@ export namespace storm::orm::statements {
         // Helper for bulk INSERT binding (skips PK for auto-increment)
         template <typename ConnType, typename Statement, typename ContainerType, size_t... Is>
         [[nodiscard]] static auto bind_non_pk_objects_bulk_impl(
-                Statement& stmt, const ContainerType& objects, std::index_sequence<Is...>
+                Statement& stmt, const ContainerType& objects, std::index_sequence<Is...> /*unused*/
         ) noexcept -> std::expected<void, typename ConnType::Error> {
             int              param_index  = 1;
             constexpr size_t non_pk_count = field_count_ - 1;

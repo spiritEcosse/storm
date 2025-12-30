@@ -96,7 +96,7 @@ export namespace storm::orm::statements {
 
         // Deduce result type based on number of operations
         // Returns: single scalar for 1 op, tuple for multiple ops, void for 0 ops
-        template <size_t... Is> static consteval auto deduce_result_type_helper(std::index_sequence<Is...>) {
+        template <size_t... Is> static consteval auto deduce_result_type_helper(std::index_sequence<Is...> /*unused*/) {
             if constexpr (sizeof...(Ops) == 0) {
                 struct EmptyTag {};
                 return EmptyTag{}; // Should never be used (select() has requires clause)
@@ -188,7 +188,7 @@ export namespace storm::orm::statements {
         }
 
         // Build full SELECT statement
-        template <size_t... Is> static consteval auto build_aggregate_sql(std::index_sequence<Is...>) {
+        template <size_t... Is> static consteval auto build_aggregate_sql(std::index_sequence<Is...> /*unused*/) {
             ConstexprString<2048> result;
             result.append("SELECT ");
 
@@ -220,7 +220,8 @@ export namespace storm::orm::statements {
         }
 
         // Execute and extract results
-        template <size_t... Is> auto execute_impl(std::index_sequence<Is...>) -> std::expected<ResultType, Error> {
+        template <size_t... Is>
+        auto execute_impl(std::index_sequence<Is...> /*unused*/) -> std::expected<ResultType, Error> {
             static const std::string sql{sql_array.data.data(), sql_array.len};
 
             // Cache statement on first use
@@ -325,7 +326,7 @@ export namespace storm::orm::statements {
         };
 
         // Deduce result type based on number of operations
-        template <size_t... Is> static consteval auto deduce_result_type_helper(std::index_sequence<Is...>) {
+        template <size_t... Is> static consteval auto deduce_result_type_helper(std::index_sequence<Is...> /*unused*/) {
             if constexpr (sizeof...(Ops) == 1) {
                 return typename OpResultType<0>::type{}; // Single scalar value
             } else {
@@ -403,7 +404,7 @@ export namespace storm::orm::statements {
         }
 
         // Build full SELECT statement (base SQL without WHERE/JOIN)
-        template <size_t... Is> static consteval auto build_aggregate_sql(std::index_sequence<Is...>) {
+        template <size_t... Is> static consteval auto build_aggregate_sql(std::index_sequence<Is...> /*unused*/) {
             ConstexprString<2048> result;
             result.append("SELECT ");
 
@@ -426,7 +427,8 @@ export namespace storm::orm::statements {
         static constexpr auto sql_array = build_aggregate_sql(std::make_index_sequence<sizeof...(Ops)>{});
 
         // Build aggregate SELECT clause only (for JOIN queries)
-        template <size_t... Is> static consteval auto build_aggregate_select_clause(std::index_sequence<Is...>) {
+        template <size_t... Is>
+        static consteval auto build_aggregate_select_clause(std::index_sequence<Is...> /*unused*/) {
             ConstexprString<utilities::buffer_size::SQL_MEDIUM> result;
 
             (([&result]() -> void {
@@ -574,7 +576,8 @@ export namespace storm::orm::statements {
 
         // Common execution and extraction logic
         template <size_t... Is>
-        [[nodiscard]] __attribute__((hot)) auto execute_and_extract_impl(Statement* stmt, std::index_sequence<Is...>)
+        [[nodiscard]] __attribute__((hot)) auto
+        execute_and_extract_impl(Statement* stmt, std::index_sequence<Is...> /*unused*/)
                 -> std::expected<ResultType, Error> {
             int step_result = stmt->step_raw();
 
@@ -652,7 +655,8 @@ export namespace storm::orm::statements {
 
         // Build the combined result type: tuple<GroupKeys..., AggResults...>
         template <size_t... GIs, size_t... AIs>
-        static consteval auto build_result_tuple_type(std::index_sequence<GIs...>, std::index_sequence<AIs...>) {
+        static consteval auto
+        build_result_tuple_type(std::index_sequence<GIs...> /*unused*/, std::index_sequence<AIs...> /*unused*/) {
             return std::tuple<typename GroupFieldType<GIs>::type..., typename OpResultType<AIs>::type...>{};
         }
 
@@ -697,7 +701,7 @@ export namespace storm::orm::statements {
 
       private:
         // Build GROUP BY field list
-        template <size_t... Is> static consteval auto build_group_by_fields(std::index_sequence<Is...>) {
+        template <size_t... Is> static consteval auto build_group_by_fields(std::index_sequence<Is...> /*unused*/) {
             ConstexprString<utilities::buffer_size::SQL_SMALL> result;
             (([&result]() -> void {
                  if constexpr (Is > 0) {
@@ -712,7 +716,8 @@ export namespace storm::orm::statements {
 
         // Build SELECT clause with group fields and aggregates
         template <size_t... GIs, size_t... AIs>
-        static consteval auto build_select_clause(std::index_sequence<GIs...>, std::index_sequence<AIs...>) {
+        static consteval auto
+        build_select_clause(std::index_sequence<GIs...> /*unused*/, std::index_sequence<AIs...> /*unused*/) {
             ConstexprString<2048> result;
 
             // Add group by fields first
@@ -778,7 +783,8 @@ export namespace storm::orm::statements {
 
         // Extract one row into tuple
         template <size_t... GIs, size_t... AIs>
-        static auto extract_row(Statement& stmt, std::index_sequence<GIs...>, std::index_sequence<AIs...>)
+        static auto
+        extract_row(Statement& stmt, std::index_sequence<GIs...> /*unused*/, std::index_sequence<AIs...> /*unused*/)
                 -> TupleType {
             return TupleType{
                     extract_column<typename GroupFieldType<GIs>::type>(stmt, GIs)...,
