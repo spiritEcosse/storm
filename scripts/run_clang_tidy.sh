@@ -157,7 +157,7 @@ run_tidy() {
         # Has compiler errors from C++26 headers, but may still have useful warnings
         if [[ "$has_warnings" == true ]]; then
             # clang-tidy found issues despite header errors - keep them!
-            echo "  ✓ $file (with C++26 header errors)"
+            echo "  ❌ $file (with C++26 header errors)"
             echo "ok" > "$statusfile"
             # Remove error lines from output, keep warnings
             sed -i '/: error:/d' "$outfile"
@@ -165,7 +165,7 @@ run_tidy() {
         else
             # No warnings, just errors - skip
             if is_cpp26_module_file "$file"; then
-                echo "  ⊘ $file (C++26 modules - skipped)"
+                echo "  ✓ $file (C++26 modules - skipped)"
                 echo "known" > "$statusfile"
             else
                 echo "  ⚠ $file (parse error - UNEXPECTED)"
@@ -176,7 +176,7 @@ run_tidy() {
     elif [[ "$has_crash" == true ]]; then
         # Crashed after processing - may still have useful warnings
         if [[ "$has_warnings" == true ]]; then
-            echo "  ✓ $file (with crash after analysis)"
+            echo "  ❌ $file (with crash after analysis)"
             echo "ok" > "$statusfile"
             # Keep output - it has warnings
             # Remove crash backtrace from output
@@ -184,7 +184,7 @@ run_tidy() {
         else
             # Crashed with no warnings
             if is_cpp26_module_file "$file"; then
-                echo "  ⊘ $file (C++26 modules - skipped)"
+                echo "  ✓ $file (C++26 modules - skipped)"
                 echo "known" > "$statusfile"
             else
                 echo "  ⚠ $file (clang-tidy crashed - UNEXPECTED)"
