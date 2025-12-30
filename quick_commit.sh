@@ -1,10 +1,11 @@
 #!/bin/bash
-# Quick commit workflow: format -> tidy --fix -> test -> bench -> commit -> push
-# Usage: ./quick_commit.sh [--no-push] [--no-tidy] [--no-bench] [commit message]
+# Quick commit workflow: format -> tidy --fix -> test -> sonar -> bench -> commit -> push
+# Usage: ./quick_commit.sh [--no-push] [--no-tidy] [--no-sonar] [--no-bench] [commit message]
 #
 # Options:
 #   --no-push   Skip pushing to remote after commit
 #   --no-tidy   Skip clang-tidy auto-fix (runs by default)
+#   --no-sonar  Skip local sonar check (runs by default)
 #   --no-bench  Skip quick benchmark sanity check (runs by default)
 
 set -e  # Exit on any error
@@ -12,6 +13,7 @@ set -e  # Exit on any error
 # Parse flags
 NO_PUSH=false
 RUN_TIDY=true
+RUN_SONAR=true
 RUN_BENCH=true
 COMMIT_MSG_ARG=""
 
@@ -20,6 +22,8 @@ for arg in "$@"; do
         NO_PUSH=true
     elif [[ "$arg" == "--no-tidy" ]]; then
         RUN_TIDY=false
+    elif [[ "$arg" == "--no-sonar" ]]; then
+        RUN_SONAR=false
     elif [[ "$arg" == "--no-bench" ]]; then
         RUN_BENCH=false
     else
@@ -44,6 +48,16 @@ fi
 echo ""
 echo "🧪 Running unit tests..."
 ctest --test-dir build/debug --output-on-failure
+
+# Local sonar check (runs by default)
+if [[ "$RUN_SONAR" == true ]]; then
+    echo ""
+    echo "🔍 Running local sonar check..."
+    ./scripts/sonar-check.sh src tests benchmarks || {
+        echo "❌ Sonar check failed. Fix issues or run with --no-sonar to skip"
+        exit 1
+    }
+fi
 
 # Quick benchmark sanity check (runs by default)
 if [[ "$RUN_BENCH" == true ]]; then
