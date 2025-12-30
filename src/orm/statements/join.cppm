@@ -151,6 +151,7 @@ export namespace storm::orm::statements {
         }
 
         static consteval auto build_join_sql_array() {
+            // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
             constexpr size_t          sql_size = calculate_join_sql_size();
             ConstexprString<sql_size> result;
 
@@ -261,6 +262,7 @@ export namespace storm::orm::statements {
         }
 
         static consteval auto build_complete_sql_array() {
+            // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
             constexpr size_t          sql_size = calculate_complete_sql_size();
             ConstexprString<sql_size> result;
 
