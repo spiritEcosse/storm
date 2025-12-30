@@ -140,7 +140,7 @@ export namespace storm::orm::statements {
         // Prepare simple SELECT statement (static SQL)
         [[nodiscard]] __attribute__((always_inline)) inline auto prepare_simple_select() noexcept
                 -> std::expected<Statement*, Error> {
-            if (!cached_simple_stmt_) {
+            if (cached_simple_stmt_ == nullptr) {
                 auto prepare_result = conn_->prepare_cached(get_select_sql());
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
@@ -187,7 +187,7 @@ export namespace storm::orm::statements {
             append_limit_offset(sql, limit, offset);
 
             Statement* stmt_ptr = get_or_prepare_cached_statement(sql);
-            if (!stmt_ptr) [[unlikely]] {
+            if (stmt_ptr == nullptr) [[unlikely]] {
                 return std::unexpected(Error{-1, "Failed to prepare statement"});
             }
 

@@ -200,7 +200,7 @@ export namespace storm::orm::statements {
         // Single DELETE - pre-cached statement, inlined execution
         [[nodiscard]] __attribute__((hot)) auto execute_one(const T& obj) noexcept -> std::expected<void, Error> {
             // Get or cache the prepared statement
-            if (!cached_single_stmt_) {
+            if (cached_single_stmt_ == nullptr) {
                 auto stmt_result = conn_->prepare_cached(get_single_delete_sql());
                 if (!stmt_result) {
                     return std::unexpected(stmt_result.error());
@@ -244,7 +244,7 @@ export namespace storm::orm::statements {
         [[nodiscard]] __attribute__((hot)) auto execute_chunked(std::span<const T> objects)
                 -> std::expected<void, Error> {
             // Cache max bulk statement pointer (compile-time SQL, no hash lookup after first call)
-            if (!cached_max_bulk_stmt_) {
+            if (cached_max_bulk_stmt_ == nullptr) {
                 auto stmt_result = conn_->prepare_cached(max_bulk_delete_sql);
                 if (!stmt_result) {
                     return std::unexpected(stmt_result.error());

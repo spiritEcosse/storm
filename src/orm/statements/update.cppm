@@ -141,7 +141,7 @@ export namespace storm::orm::statements {
             }
 
             // Cache the statement pointer once (avoid hash lookup per row)
-            if (!cached_update_stmt_) {
+            if (cached_update_stmt_ == nullptr) {
                 auto stmt_result = conn_->prepare_cached(get_update_sql());
                 if (!stmt_result) {
                     return std::unexpected(stmt_result.error());
@@ -261,7 +261,7 @@ export namespace storm::orm::statements {
         [[nodiscard]] __attribute__((hot)) auto execute_single_optimized(const T& obj) noexcept
                 -> std::expected<void, Error> {
             // Get or cache the prepared statement
-            if (!cached_update_stmt_) {
+            if (cached_update_stmt_ == nullptr) {
                 auto stmt_result = conn_->prepare_cached(get_update_sql());
                 if (!stmt_result) {
                     return std::unexpected(stmt_result.error());

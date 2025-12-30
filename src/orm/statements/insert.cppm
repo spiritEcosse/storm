@@ -229,7 +229,7 @@ export namespace storm::orm::statements {
                 -> std::expected<int64_t, Error> {
             // Get or cache the prepared statement
             // SAFETY: Connection reserves capacity (32) to prevent rehashing and dangling pointers
-            if (!cached_insert_stmt_) [[unlikely]] {
+            if (cached_insert_stmt_ == nullptr) [[unlikely]] {
                 auto stmt_result = conn_->prepare_cached(get_insert_sql());
                 if (!stmt_result) {
                     return std::unexpected(stmt_result.error());

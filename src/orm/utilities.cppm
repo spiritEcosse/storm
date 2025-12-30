@@ -546,7 +546,7 @@ export namespace storm::orm::utilities {
 
         // Explicit commit - must be called for successful transaction
         [[nodiscard]] auto commit() noexcept -> std::expected<void, Error> {
-            if (!conn_ || committed_) {
+            if (conn_ == nullptr || committed_) {
                 return {}; // Already committed or moved-from
             }
 

@@ -225,7 +225,7 @@ export namespace storm::orm::statements {
             static const std::string sql{sql_array.data.data(), sql_array.len};
 
             // Cache statement on first use
-            if (!cached_stmt_) {
+            if (cached_stmt_ == nullptr) {
                 auto prepare_result = conn_->prepare_cached(sql);
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
@@ -473,7 +473,7 @@ export namespace storm::orm::statements {
             static const std::string sql{sql_array.data.data(), sql_array.len};
 
             // Cache statement on first use
-            if (!cached_stmt_) {
+            if (cached_stmt_ == nullptr) {
                 auto prepare_result = conn_->prepare_cached(sql);
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
