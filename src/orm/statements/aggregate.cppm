@@ -456,7 +456,7 @@ export namespace storm::orm::statements {
         }
 
         // Helper: Bind WHERE expression parameters to statement
-        [[nodiscard]] __attribute__((always_inline)) __attribute__((hot)) static inline auto
+        [[nodiscard]] __attribute__((always_inline)) __attribute__((hot)) static auto
         bind_where_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& where_expr)
                 -> std::expected<void, Error> {
             int  param_index = 1;

@@ -202,7 +202,7 @@ TEST_F(QuerySetRemoveTest, RemoveBatchSmall) {
     auto queryset = storm::QuerySet<SqlitePerson>{};
 
     // Add more test data for batch testing
-    const const auto& conn = storm::QuerySet<SqlitePerson>::get_default_connection();
+    const auto& conn = storm::QuerySet<SqlitePerson>::get_default_connection();
     for (int i = 4; i <= 12; i++) {
         auto insert_result = conn->execute(
                 "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" +
@@ -245,7 +245,7 @@ TEST_F(QuerySetRemoveTest, RemoveBatchLarge) {
     auto queryset = storm::QuerySet<SqlitePerson>{};
 
     // Add many test records for large batch testing
-    const const auto& conn = storm::QuerySet<SqlitePerson>::get_default_connection();
+    const auto& conn = storm::QuerySet<SqlitePerson>::get_default_connection();
     for (int i = 4; i <= 103; i++) {
         auto insert_result = conn->execute(
                 "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" +
@@ -764,7 +764,7 @@ TEST_F(QuerySetUpdateTest, UpdateBatchMedium) {
     auto queryset = storm::QuerySet<SqlitePerson>{};
 
     // Add more test data for batch testing
-    const const auto& conn = storm::QuerySet<SqlitePerson>::get_default_connection();
+    const auto& conn = storm::QuerySet<SqlitePerson>::get_default_connection();
     for (int i = 4; i <= 25; i++) {
         auto insert_result = conn->execute(
                 "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" +
@@ -814,7 +814,7 @@ TEST_F(QuerySetUpdateTest, UpdateBatchLarge) {
     auto queryset = storm::QuerySet<SqlitePerson>{};
 
     // Add many test records for large batch testing
-    const const auto& conn = storm::QuerySet<SqlitePerson>::get_default_connection();
+    const auto& conn = storm::QuerySet<SqlitePerson>::get_default_connection();
     for (int i = 4; i <= 103; i++) {
         auto insert_result = conn->execute(
                 "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" +

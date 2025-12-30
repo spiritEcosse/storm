@@ -424,7 +424,7 @@ export namespace storm::orm::statements {
         // Shared column extraction utility - returns value of specified type from given column index
         // Handles: int, int64_t, uint64_t, short, float, double, bool, string, optional<T>, vector<uint8_t>
         template <typename FieldType, typename Statement>
-        [[nodiscard]] __attribute__((always_inline)) static inline auto
+        [[nodiscard]] __attribute__((always_inline)) static auto
         extract_column_value(Statement& stmt, int col_idx) noexcept -> FieldType {
             // Handle std::optional types first
             if constexpr (utilities::is_optional_v<FieldType>) {

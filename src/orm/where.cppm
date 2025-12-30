@@ -81,12 +81,12 @@ export namespace storm::orm::where {
             sql_ += "?";
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto to_sql() const -> std::string {
+        [[nodiscard]] __attribute__((always_inline)) auto to_sql() const -> std::string {
             return sql_;
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto
-        bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> {
+        [[nodiscard]] __attribute__((always_inline)) auto bind_params_direct(void* stmt_ptr, int& param_index) const
+                -> std::expected<void, storm::db::sqlite::Error> {
             // Cast stmt_ptr to Statement* (type-erased binding)
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
             return utilities::bind_parameter_value<storm::db::sqlite::Statement, storm::db::sqlite::Error>(
@@ -107,12 +107,12 @@ export namespace storm::orm::where {
             sql_ += " LIKE ?";
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto to_sql() const -> std::string {
+        [[nodiscard]] __attribute__((always_inline)) auto to_sql() const -> std::string {
             return sql_;
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto
-        bind_params_direct(void* stmt_ptr, int& param_index) const -> std::expected<void, storm::db::sqlite::Error> {
+        [[nodiscard]] __attribute__((always_inline)) auto bind_params_direct(void* stmt_ptr, int& param_index) const
+                -> std::expected<void, storm::db::sqlite::Error> {
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
             return stmt->bind_text(param_index++, pattern_);
         }
@@ -131,7 +131,7 @@ export namespace storm::orm::where {
             sql_ += " BETWEEN ? AND ?";
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto to_sql() const -> std::string {
+        [[nodiscard]] __attribute__((always_inline)) auto to_sql() const -> std::string {
             return sql_;
         }
 
@@ -178,7 +178,7 @@ export namespace storm::orm::where {
             }
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto to_sql() const -> std::string {
+        [[nodiscard]] __attribute__((always_inline)) auto to_sql() const -> std::string {
             return sql_; // Return pre-generated SQL
         }
 

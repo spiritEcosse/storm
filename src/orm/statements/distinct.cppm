@@ -195,7 +195,7 @@ export namespace storm::orm::statements {
       private:
         // Helper: Append ORDER BY clause to SQL from wrapper
         // NOTE: ORDER BY must come before LIMIT/OFFSET in SQLite
-        __attribute__((always_inline)) inline auto append_order_by(std::string& sql) const -> void {
+        __attribute__((always_inline)) auto append_order_by(std::string& sql) const -> void {
             if (order_by_wrapper_.has_value() && !order_by_wrapper_->empty()) {
                 sql += order_by_wrapper_->get_order_by_sql();
             }
@@ -204,7 +204,7 @@ export namespace storm::orm::statements {
         // Helper: Append LIMIT/OFFSET clauses to SQL
         // NOTE: SQLite requires LIMIT when using OFFSET, so we use LIMIT -1 (meaning unlimited) when OFFSET is used
         // alone
-        __attribute__((always_inline)) static inline auto
+        __attribute__((always_inline)) static auto
         append_limit_offset(std::string& sql, const std::optional<int>& limit, const std::optional<int>& offset)
                 -> void {
             if (limit.has_value()) {
@@ -244,7 +244,7 @@ export namespace storm::orm::statements {
         }
 
         // Helper: Bind WHERE expression parameters to statement
-        [[nodiscard]] __attribute__((always_inline)) __attribute__((hot)) static inline auto
+        [[nodiscard]] __attribute__((always_inline)) __attribute__((hot)) static auto
         bind_where_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& where_expr)
                 -> std::expected<void, Error> {
             int  param_index = 1;
@@ -402,7 +402,6 @@ export namespace storm::orm::statements {
             return results;
         }
 
-      private:
         // OPTIMIZATION: Insert tuple by extracting columns in-place
         // Constructs tuple directly in hive without intermediate temporaries
         // Template parameter R delays evaluation until method is called (avoids void& when NumFields == 0)

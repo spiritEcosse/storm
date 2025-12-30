@@ -114,7 +114,7 @@ export namespace storm::orm::statements {
         // =====================================================================
 
         // Prepare and cache statement based on query type
-        [[nodiscard]] __attribute__((always_inline)) inline auto prepare_statement(
+        [[nodiscard]] __attribute__((always_inline)) auto prepare_statement(
                 const std::optional<JoinStatementWrapper>& join_wrapper,
                 const orm::where::ExpressionVariantPtr&    where_expr,
                 const std::optional<int>&                  limit,
@@ -138,7 +138,7 @@ export namespace storm::orm::statements {
         }
 
         // Prepare simple SELECT statement (static SQL)
-        [[nodiscard]] __attribute__((always_inline)) inline auto prepare_simple_select() noexcept
+        [[nodiscard]] __attribute__((always_inline)) auto prepare_simple_select() noexcept
                 -> std::expected<Statement*, Error> {
             if (cached_simple_stmt_ == nullptr) {
                 auto prepare_result = conn_->prepare_cached(get_select_sql());
@@ -151,7 +151,7 @@ export namespace storm::orm::statements {
         }
 
         // Prepare JOIN-only SELECT statement (cached by pointer address)
-        [[nodiscard]] __attribute__((always_inline)) inline auto
+        [[nodiscard]] __attribute__((always_inline)) auto
         prepare_join_only_select(const std::optional<JoinStatementWrapper>& join_wrapper) noexcept
                 -> std::expected<Statement*, Error> {
             const std::string* join_sql_ptr = &join_wrapper->get_complete_sql();
@@ -170,7 +170,7 @@ export namespace storm::orm::statements {
         }
 
         // Prepare dynamic SELECT statement (with WHERE, ORDER BY, etc.)
-        [[nodiscard]] __attribute__((always_inline)) inline auto prepare_dynamic_select(
+        [[nodiscard]] __attribute__((always_inline)) auto prepare_dynamic_select(
                 const std::optional<JoinStatementWrapper>& join_wrapper,
                 const orm::where::ExpressionVariantPtr&    where_expr,
                 const std::optional<int>&                  limit,
@@ -201,8 +201,8 @@ export namespace storm::orm::statements {
         }
 
         // Get cached statement or prepare new one
-        [[nodiscard]] __attribute__((always_inline)) inline auto
-        get_or_prepare_cached_statement(std::string& sql) noexcept -> Statement* {
+        [[nodiscard]] __attribute__((always_inline)) auto get_or_prepare_cached_statement(std::string& sql) noexcept
+                -> Statement* {
             if (cached_stmt_ && cached_sql_ == sql) {
                 return cached_stmt_;
             }
@@ -224,7 +224,7 @@ export namespace storm::orm::statements {
 
         // Extract single column value using raw sqlite3_stmt* pointer
         template <typename FieldType>
-        __attribute__((always_inline)) static inline auto extract_column_raw(sqlite3_stmt* raw_stmt, int col_idx)
+        __attribute__((always_inline)) static auto extract_column_raw(sqlite3_stmt* raw_stmt, int col_idx)
                 -> FieldType {
             // Handle std::optional types first
             if constexpr (storm::orm::utilities::is_optional_v<FieldType>) {
@@ -287,8 +287,7 @@ export namespace storm::orm::statements {
 
         // Extract single column using raw pointer
         template <size_t Index>
-        __attribute__((always_inline)) static inline void
-        extract_column_raw_fast(sqlite3_stmt* raw_stmt, T& obj) noexcept {
+        __attribute__((always_inline)) static void extract_column_raw_fast(sqlite3_stmt* raw_stmt, T& obj) noexcept {
             if constexpr (Index < Base::field_count_) {
                 constexpr auto member = Base::all_members_[Index];
                 using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
@@ -307,14 +306,13 @@ export namespace storm::orm::statements {
 
         // Extract all columns using raw pointer with fold expression
         template <size_t... Is>
-        __attribute__((always_inline)) static inline void
+        __attribute__((always_inline)) static void
         extract_all_columns_raw_impl(sqlite3_stmt* raw_stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
             ((extract_column_raw_fast<Is>(raw_stmt, obj)), ...);
         }
 
         // Fast extraction entry point using raw pointer
-        __attribute__((always_inline)) static inline void
-        extract_all_columns_raw(sqlite3_stmt* raw_stmt, T& obj) noexcept {
+        __attribute__((always_inline)) static void extract_all_columns_raw(sqlite3_stmt* raw_stmt, T& obj) noexcept {
             extract_all_columns_raw_impl(raw_stmt, obj, typename Base::field_indices_t{});
         }
 
@@ -351,7 +349,7 @@ export namespace storm::orm::statements {
 
         // Helper: Append ORDER BY clause to SQL from wrapper
         // NOTE: ORDER BY must come before LIMIT/OFFSET in SQLite
-        __attribute__((always_inline)) static inline void
+        __attribute__((always_inline)) static void
         append_order_by(std::string& sql, const std::optional<OrderByWrapper>& order_by_wrapper) {
             if (order_by_wrapper.has_value() && !order_by_wrapper->empty()) {
                 sql += order_by_wrapper->get_order_by_sql();
@@ -361,7 +359,7 @@ export namespace storm::orm::statements {
         // Helper: Append LIMIT/OFFSET clauses to SQL
         // NOTE: SQLite requires LIMIT when using OFFSET, so we use LIMIT -1 (meaning unlimited) when OFFSET is used
         // alone
-        __attribute__((always_inline)) static inline void
+        __attribute__((always_inline)) static void
         append_limit_offset(std::string& sql, const std::optional<int>& limit, const std::optional<int>& offset) {
             if (limit.has_value()) {
                 sql += " LIMIT ";
@@ -378,7 +376,7 @@ export namespace storm::orm::statements {
         }
 
         // Helper: Bind WHERE expression parameters to statement
-        [[nodiscard]] __attribute__((always_inline)) static inline auto
+        [[nodiscard]] __attribute__((always_inline)) static auto
         bind_where_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& where_expr)
                 -> std::expected<void, Error> {
             int  param_index = 1;

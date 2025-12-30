@@ -38,9 +38,7 @@ Checks: >
   modernize-*,
   performance-*,
   -performance-enum-size,
-  readability-*,
-  -readability-redundant-access-specifiers,
-  -readability-redundant-inline-specifier
+  readability-*
 
 # Header filter - apply to project headers, exclude third_party
 HeaderFilterRegex: '^(?!.*third_party).*'

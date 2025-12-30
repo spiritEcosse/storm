@@ -23,41 +23,41 @@ export namespace storm::orm::utilities {
 
     namespace sql_len {
         // SELECT-related lengths
-        inline constexpr size_t SELECT          = 7;  // "SELECT "
-        inline constexpr size_t SELECT_DISTINCT = 16; // "SELECT DISTINCT "
-        inline constexpr size_t DISTINCT        = 9;  // "DISTINCT "
-        inline constexpr size_t FROM            = 6;  // " FROM "
+        constexpr size_t SELECT          = 7;  // "SELECT "
+        constexpr size_t SELECT_DISTINCT = 16; // "SELECT DISTINCT "
+        constexpr size_t DISTINCT        = 9;  // "DISTINCT "
+        constexpr size_t FROM            = 6;  // " FROM "
 
         // INSERT-related lengths
-        inline constexpr size_t INSERT_INTO = 12; // "INSERT INTO "
-        inline constexpr size_t VALUES_OPEN = 10; // ") VALUES ("
+        constexpr size_t INSERT_INTO = 12; // "INSERT INTO "
+        constexpr size_t VALUES_OPEN = 10; // ") VALUES ("
 
         // UPDATE-related lengths
-        inline constexpr size_t UPDATE = 7; // "UPDATE "
-        inline constexpr size_t SET    = 5; // " SET "
+        constexpr size_t UPDATE = 7; // "UPDATE "
+        constexpr size_t SET    = 5; // " SET "
 
         // DELETE-related lengths
-        inline constexpr size_t DELETE_FROM = 12; // "DELETE FROM "
+        constexpr size_t DELETE_FROM = 12; // "DELETE FROM "
 
         // WHERE-related lengths
-        inline constexpr size_t WHERE             = 7;  // " WHERE "
-        inline constexpr size_t IN_OPEN           = 5;  // " IN ("
-        inline constexpr size_t IN_CLAUSE         = 10; // " IN (" + buffer for placeholders base
-        inline constexpr size_t AND               = 5;  // " AND "
-        inline constexpr size_t EQ_PARAM_AND      = 8;  // " = ? AND "
-        inline constexpr size_t LIKE_PATTERN      = 8;  // " LIKE ?"
-        inline constexpr size_t BETWEEN_PATTERN   = 17; // " BETWEEN ? AND ?"
-        inline constexpr size_t IS_NOT_NULL_AND   = 17; // " IS NOT NULL AND "
-        inline constexpr size_t LOGICAL_OP_PARENS = 8;  // "(" + " AND " or " OR " + ")"
+        constexpr size_t WHERE             = 7;  // " WHERE "
+        constexpr size_t IN_OPEN           = 5;  // " IN ("
+        constexpr size_t IN_CLAUSE         = 10; // " IN (" + buffer for placeholders base
+        constexpr size_t AND               = 5;  // " AND "
+        constexpr size_t EQ_PARAM_AND      = 8;  // " = ? AND "
+        constexpr size_t LIKE_PATTERN      = 8;  // " LIKE ?"
+        constexpr size_t BETWEEN_PATTERN   = 17; // " BETWEEN ? AND ?"
+        constexpr size_t IS_NOT_NULL_AND   = 17; // " IS NOT NULL AND "
+        constexpr size_t LOGICAL_OP_PARENS = 8;  // "(" + " AND " or " OR " + ")"
 
         // JOIN-related lengths
-        inline constexpr size_t ON_EQUALS = 5; // " ON " + " = " partial
+        constexpr size_t ON_EQUALS = 5; // " ON " + " = " partial
 
         // Misc lengths
-        inline constexpr size_t SMALL_BUFFER  = 10;  // Small buffer/padding
-        inline constexpr size_t MEDIUM_BUFFER = 30;  // Medium reserve hint
-        inline constexpr size_t LARGE_BUFFER  = 50;  // Large reserve hint
-        inline constexpr size_t XL_BUFFER     = 100; // Extra large reserve hint
+        constexpr size_t SMALL_BUFFER  = 10;  // Small buffer/padding
+        constexpr size_t MEDIUM_BUFFER = 30;  // Medium reserve hint
+        constexpr size_t LARGE_BUFFER  = 50;  // Large reserve hint
+        constexpr size_t XL_BUFFER     = 100; // Extra large reserve hint
     } // namespace sql_len
 
     // ============================================================================
@@ -65,12 +65,12 @@ export namespace storm::orm::utilities {
     // ============================================================================
 
     namespace buffer_size {
-        inline constexpr size_t SQL_SMALL  = 512;  // Small SQL buffer
-        inline constexpr size_t SQL_MEDIUM = 1024; // Medium SQL buffer (default)
-        inline constexpr size_t SQL_LARGE  = 4096; // Large SQL buffer (for complex queries)
+        constexpr size_t SQL_SMALL  = 512;  // Small SQL buffer
+        constexpr size_t SQL_MEDIUM = 1024; // Medium SQL buffer (default)
+        constexpr size_t SQL_LARGE  = 4096; // Large SQL buffer (for complex queries)
 
-        inline constexpr size_t CACHE_DEFAULT = 8;  // Default SQL cache size
-        inline constexpr size_t STMT_CACHE    = 32; // Statement cache reserve size
+        constexpr size_t CACHE_DEFAULT = 8;  // Default SQL cache size
+        constexpr size_t STMT_CACHE    = 32; // Statement cache reserve size
     } // namespace buffer_size
 
     // ============================================================================
@@ -78,13 +78,13 @@ export namespace storm::orm::utilities {
     // ============================================================================
 
     namespace batch {
-        inline constexpr size_t SMALL_THRESHOLD     = 10; // Batch size considered "small"
-        inline constexpr size_t FALLBACK_BATCH_SIZE = 50; // Safe fallback for any field count
+        constexpr size_t SMALL_THRESHOLD     = 10; // Batch size considered "small"
+        constexpr size_t FALLBACK_BATCH_SIZE = 50; // Safe fallback for any field count
     } // namespace batch
 
     // Numeric constants
     namespace numeric {
-        inline constexpr size_t MAX_SINGLE_DIGIT = 9; // Maximum single digit value (0-9)
+        constexpr size_t MAX_SINGLE_DIGIT = 9; // Maximum single digit value (0-9)
     } // namespace numeric
 
     // ============================================================================

@@ -317,7 +317,7 @@ export namespace storm::orm::statements {
 
         // Extract field using raw sqlite3_stmt* pointer (no wrapper overhead)
         template <typename FieldType>
-        __attribute__((always_inline)) static inline void
+        __attribute__((always_inline)) static void
         extract_typed_field_raw(sqlite3_stmt* raw_stmt, FieldType& field, int col_idx) noexcept {
             // Handle std::optional types first
             if constexpr (storm::orm::utilities::is_optional_v<FieldType>) {
@@ -355,7 +355,7 @@ export namespace storm::orm::statements {
 
         // Extract base model fields using raw pointer
         template <size_t MemberIdx>
-        __attribute__((always_inline)) static inline void
+        __attribute__((always_inline)) static void
         extract_column_at_raw(sqlite3_stmt* raw_stmt, T& obj, int& col_idx) noexcept {
             if constexpr (MemberIdx < Base::field_count_) {
                 constexpr auto member = Base::all_members_[MemberIdx];
@@ -368,7 +368,7 @@ export namespace storm::orm::statements {
         }
 
         template <size_t... Is>
-        __attribute__((always_inline)) static inline void
+        __attribute__((always_inline)) static void
         extract_t_fields_raw(sqlite3_stmt* raw_stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
             int col_idx = 0;
             ((extract_column_at_raw<Is>(raw_stmt, obj, col_idx)), ...);
@@ -376,7 +376,7 @@ export namespace storm::orm::statements {
 
         // Extract FK fields using raw pointer
         template <typename FKBase, size_t FieldIdx>
-        __attribute__((always_inline)) static inline void
+        __attribute__((always_inline)) static void
         extract_fk_field_at_raw(sqlite3_stmt* raw_stmt, auto& fk_obj, int col_idx) noexcept {
             if constexpr (FieldIdx < FKBase::field_count_) {
                 constexpr auto member = FKBase::all_members_[FieldIdx];
@@ -386,7 +386,7 @@ export namespace storm::orm::statements {
         }
 
         template <size_t FKIdx, size_t... FieldIs>
-        __attribute__((always_inline)) static inline void extract_fk_fields_impl_raw(
+        __attribute__((always_inline)) static void extract_fk_fields_impl_raw(
                 sqlite3_stmt*   raw_stmt,
                 FK_type<FKIdx>& fk_obj,
                 size_t          col_offset,
@@ -397,7 +397,7 @@ export namespace storm::orm::statements {
         }
 
         template <size_t Idx>
-        __attribute__((always_inline)) static inline void extract_fk_at_raw(sqlite3_stmt* raw_stmt, T& obj) noexcept {
+        __attribute__((always_inline)) static void extract_fk_at_raw(sqlite3_stmt* raw_stmt, T& obj) noexcept {
             constexpr auto FKPtr  = FKFieldPtrs...[Idx];
             auto&          fk_obj = obj.*FKPtr;
             extract_fk_fields_impl_raw<Idx>(
@@ -406,12 +406,11 @@ export namespace storm::orm::statements {
         }
 
         template <size_t... Is>
-        __attribute__((always_inline)) static inline void
+        __attribute__((always_inline)) static void
         extract_all_fks_raw(sqlite3_stmt* raw_stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
             (extract_fk_at_raw<Is>(raw_stmt, obj), ...);
         }
 
-      public:
         // NEW: Raw pointer extraction for maximum performance
         __attribute__((hot)) __attribute__((flatten)) static auto
         extract_joined_row_raw(sqlite3_stmt* raw_stmt, T& obj) noexcept -> void {
@@ -429,7 +428,7 @@ export namespace storm::orm::statements {
 
         // Enhanced type extraction with NULL handling (optimized for inlining)
         template <typename FieldType>
-        __attribute__((always_inline)) static inline void
+        __attribute__((always_inline)) static void
         extract_typed_field(Statement* stmt, FieldType& field, int col_idx) noexcept {
             if (stmt->is_null(col_idx)) {
                 if constexpr (requires { field = std::nullopt; }) {
@@ -464,15 +463,14 @@ export namespace storm::orm::statements {
         }
 
         template <size_t... Is>
-        __attribute__((always_inline)) static inline void
+        __attribute__((always_inline)) static void
         extract_t_fields(Statement* stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
             int col_idx = 0;
             ((extract_column_at<Is>(stmt, obj, col_idx)), ...);
         }
 
         template <size_t MemberIdx>
-        __attribute__((always_inline)) static inline void
-        extract_column_at(Statement* stmt, T& obj, int& col_idx) noexcept {
+        __attribute__((always_inline)) static void extract_column_at(Statement* stmt, T& obj, int& col_idx) noexcept {
             if constexpr (MemberIdx < Base::field_count_) {
                 constexpr auto member = Base::all_members_[MemberIdx];
 
@@ -486,7 +484,7 @@ export namespace storm::orm::statements {
         }
 
         template <size_t FKIdx, size_t... FieldIs>
-        __attribute__((always_inline)) static inline void extract_fk_fields_impl(
+        __attribute__((always_inline)) static void extract_fk_fields_impl(
                 Statement* stmt, FK_type<FKIdx>& fk_obj, size_t col_offset, std::index_sequence<FieldIs...> /*unused*/
         ) noexcept {
             using FKBase = FKBase_at<FKIdx>;
@@ -494,7 +492,7 @@ export namespace storm::orm::statements {
         }
 
         template <typename FKBase, size_t FieldIdx>
-        __attribute__((always_inline)) static inline void
+        __attribute__((always_inline)) static void
         extract_fk_field_at(Statement* stmt, auto& fk_obj, int col_idx) noexcept {
             if constexpr (FieldIdx < FKBase::field_count_) {
                 constexpr auto member = FKBase::all_members_[FieldIdx];
@@ -503,7 +501,7 @@ export namespace storm::orm::statements {
         }
 
         template <size_t Idx>
-        __attribute__((always_inline)) static inline void extract_fk_at(Statement* stmt, T& obj) noexcept {
+        __attribute__((always_inline)) static void extract_fk_at(Statement* stmt, T& obj) noexcept {
             constexpr auto FKPtr  = FKFieldPtrs...[Idx]; // C++26 pack indexing
             auto&          fk_obj = obj.*FKPtr;
             extract_fk_fields_impl<Idx>(
@@ -512,15 +510,14 @@ export namespace storm::orm::statements {
         }
 
         template <size_t... Is>
-        __attribute__((always_inline)) static inline void
+        __attribute__((always_inline)) static void
         extract_all_fks(Statement* stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
             (extract_fk_at<Is>(stmt, obj), ...);
         }
 
         // FIX: Initialize all FK fields to default values before extraction
         // This ensures non-JOINed FK fields have proper default values instead of garbage
-        template <size_t MemberIdx>
-        __attribute__((always_inline)) static inline void init_fk_field_at(T& obj) noexcept {
+        template <size_t MemberIdx> __attribute__((always_inline)) static void init_fk_field_at(T& obj) noexcept {
             if constexpr (MemberIdx < Base::field_count_) {
                 constexpr auto member = Base::all_members_[MemberIdx];
                 if constexpr (Base::is_fk_field(member)) {
@@ -531,7 +528,7 @@ export namespace storm::orm::statements {
         }
 
         template <size_t... Is>
-        __attribute__((always_inline)) static inline void
+        __attribute__((always_inline)) static void
         init_all_fk_fields(T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
             (init_fk_field_at<Is>(obj), ...);
         }

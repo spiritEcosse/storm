@@ -18,7 +18,7 @@ export namespace storm::db::sqlite {
 
     // Cache size constants
     namespace cache {
-        inline constexpr size_t STMT_CACHE_RESERVE = 32; // Initial statement cache capacity
+        constexpr size_t STMT_CACHE_RESERVE = 32; // Initial statement cache capacity
     } // namespace cache
 
     // Custom deleter for sqlite3
