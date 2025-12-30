@@ -138,6 +138,7 @@ export namespace storm::orm::statements {
         static consteval auto calculate_join_sql_size() -> size_t {
             using utilities::sql_len::ON_EQUALS;
             using utilities::sql_len::SMALL_BUFFER;
+            // NOLINTNEXTLINE(misc-const-correctness) - total IS modified in fold expression below
             size_t total = 0;
 
             [&]<size_t... Is>(std::index_sequence<Is...>) -> void {
@@ -223,6 +224,7 @@ export namespace storm::orm::statements {
                         [&]<size_t I>() -> void {
                             result.append(", ");
                             [&]<size_t... FieldIs>(std::index_sequence<FieldIs...>) -> void {
+                                // NOLINTNEXTLINE(misc-const-correctness) - first_in_table IS modified in fold expression
                                 bool first_in_table = true;
                                 (((first_in_table ? (void)0 : result.append(", ")),
                                   result.append("t"),

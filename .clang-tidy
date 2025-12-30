@@ -16,6 +16,7 @@
 # - cppcoreguidelines-missing-std-forward: false positives when std::forward is used inside expressions
 # - cppcoreguidelines-pro-type-member-init: too many false positives in test files
 # - bugprone-branch-clone: intentional similar branching in different aggregate classes
+# Note: misc-const-correctness has targeted NOLINT in join.cppm (fold expression false positives)
 
 Checks: >
   -*,
@@ -37,7 +38,6 @@ Checks: >
   -cppcoreguidelines-pro-type-member-init,
   -cppcoreguidelines-pro-type-reinterpret-cast,
   misc-*,
-  -misc-const-correctness,
   -misc-include-cleaner,
   modernize-*,
   performance-*,
