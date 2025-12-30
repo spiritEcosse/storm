@@ -441,6 +441,7 @@ TEST_F(AggregateTest, StatementCaching_RepeatedQueries) {
     }
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(AggregateTest, StatementCaching_DifferentAggregates) {
     insert_test_data();
 
@@ -464,6 +465,7 @@ TEST_F(AggregateTest, StatementCaching_DifferentAggregates) {
 // Integration with Other ORM Features
 // ============================================================================
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(AggregateTest, Integration_AfterInsert) {
     // Insert and immediately aggregate
     for (int i = 1; i <= 5; ++i) {

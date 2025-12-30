@@ -470,6 +470,7 @@ TEST_F(DistinctTest, DistinctTwoFieldsWithSingleRow) {
 }
 // Test: Duplicate field specification (same field twice)
 // This should compile and work, but return redundant data
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(DistinctTest, DuplicateFieldSpecification) {
     QuerySet<DistinctPerson> queryset;
 

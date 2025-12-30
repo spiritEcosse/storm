@@ -137,6 +137,7 @@ TEST_F(SelectTest, SelectDifferentFieldTypes) {
 }
 
 // Test: SELECT after INSERT and DELETE
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(SelectTest, SelectAfterInsertAndDelete) {
     QuerySet<SelectPerson> queryset;
 
@@ -180,6 +181,7 @@ TEST_F(SelectTest, SelectAfterInsertAndDelete) {
 }
 
 // Test: SELECT with large dataset
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(SelectTest, SelectLargeDataset) {
     QuerySet<SelectPerson> queryset;
 

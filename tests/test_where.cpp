@@ -330,6 +330,7 @@ struct WhereMessage {
 // Test fixture for WHERE + JOIN operations
 class WhereJoinTest : public ::testing::Test {
   protected:
+    // NOLINTNEXTLINE(readability-function-cognitive-complexity)
     auto SetUp() -> void override {
         auto result = QuerySet<WhereMessage>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());

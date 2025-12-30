@@ -196,6 +196,7 @@ TEST_F(QuerySetRemoveTest, RemoveWithZeroId) {
     EXPECT_EQ(countSqlitePersons(), 3) << "Should still have 3 persons after removal attempt";
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(QuerySetRemoveTest, RemoveBatchSmall) {
     // Create QuerySet using simplified syntax
     auto queryset = storm::QuerySet<SqlitePerson>{};
@@ -238,6 +239,7 @@ TEST_F(QuerySetRemoveTest, RemoveBatchSmall) {
     EXPECT_TRUE(personExists(12)) << "SqlitePerson 12 should still exist";
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(QuerySetRemoveTest, RemoveBatchLarge) {
     // Create QuerySet using simplified syntax
     auto queryset = storm::QuerySet<SqlitePerson>{};
@@ -388,6 +390,7 @@ TEST_F(QuerySetRemoveTest, RemoveBatchPerformance) {
 }
 
 // Simple insert test
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(QuerySetRemoveTest, InsertSingleSqlitePerson) {
     // Create QuerySet using simplified syntax
     auto queryset = storm::QuerySet<SqlitePerson>{};
@@ -415,6 +418,7 @@ TEST_F(QuerySetRemoveTest, InsertSingleSqlitePerson) {
 }
 
 // Bulk insert tests to verify compile-time SQL prefix optimization
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(QuerySetRemoveTest, InsertSmallBatch) {
     // Create QuerySet using simplified syntax
     auto queryset = storm::QuerySet<SqlitePerson>{};
@@ -754,6 +758,7 @@ TEST_F(QuerySetUpdateTest, UpdateBatchSmall) {
     EXPECT_EQ(charlie->age, 36);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(QuerySetUpdateTest, UpdateBatchMedium) {
     // Create QuerySet using simplified syntax
     auto queryset = storm::QuerySet<SqlitePerson>{};
@@ -803,6 +808,7 @@ TEST_F(QuerySetUpdateTest, UpdateBatchMedium) {
     }
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(QuerySetUpdateTest, UpdateBatchLarge) {
     // Create QuerySet using simplified syntax
     auto queryset = storm::QuerySet<SqlitePerson>{};
@@ -925,6 +931,7 @@ TEST_F(QuerySetUpdateTest, UpdateBatchPartialExist) {
     EXPECT_FALSE(personExists(1000));
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(QuerySetUpdateTest, UpdateCachedStatementReuse) {
     // Create QuerySet using simplified syntax - this creates cached UpdateStatement
     auto queryset = storm::QuerySet<SqlitePerson>{};

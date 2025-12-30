@@ -42,6 +42,7 @@ class SelectLargeTest : public ::testing::Test {
 
 // Test: SELECT with result set larger than initial capacity (10K)
 // This tests the exponential growth path
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(SelectLargeTest, SelectMoreThan10KRows) {
     QuerySet<TestRecord> queryset;
 
@@ -137,6 +138,7 @@ TEST_F(SelectLargeTest, SelectSlightlyOver10KRows) {
 
 // Test: SELECT with very large result set (100K rows)
 // Tests multiple exponential growth cycles
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(SelectLargeTest, SelectVeryLargeDataset) {
     QuerySet<TestRecord> queryset;
 

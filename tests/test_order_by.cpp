@@ -371,6 +371,7 @@ TEST_F(OrderByTest, BooleanField) {
     EXPECT_TRUE(std::ranges::next(people.begin(), 0)->is_active);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(OrderByTest, ChainedWithMultipleClauses) {
     QuerySet<OrderByPerson> qs;
 

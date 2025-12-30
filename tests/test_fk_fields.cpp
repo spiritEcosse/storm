@@ -326,6 +326,7 @@ TEST_F(FKFieldTest, DeleteWithFKField) {
 }
 
 // Test: Multiple FK fields to same type
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(FKFieldTest, MultipleFKFieldsToSameType) {
     // Create a conversation struct with two FK fields to User
     struct Conversation {
@@ -573,6 +574,7 @@ TEST_F(FKFieldTest, LeftJoinMultipleFKFields) {
 
 // Test: RIGHT JOIN behavior
 // Note: RIGHT JOIN is less commonly used but should work symmetrically to LEFT JOIN
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(FKFieldTest, RightJoinBehavior) {
     QuerySet<User>      user_qs;
     QuerySet<FKMessage> message_qs;
@@ -628,6 +630,7 @@ TEST_F(FKFieldTest, RightJoinBehavior) {
 }
 
 // Test: RIGHT JOIN with multiple FK fields
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(FKFieldTest, RightJoinMultipleFKFields) {
     QuerySet<User>      user_qs;
     QuerySet<FKMessage> message_qs;
@@ -782,6 +785,7 @@ TEST_F(NullableFKTest, LeftJoinWithNullFKField) {
 }
 
 // Test: LEFT JOIN with mix of NULL and valid FKs
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     QuerySet<User>      user_qs;
     QuerySet<FKMessage> message_qs;
@@ -883,6 +887,7 @@ class ExtendedTypesJoinTest : public ::testing::Test {
 };
 
 // Test: JOIN with extended types (double, bool, optional)
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
     // Define structs with extended types
     struct Employee {
@@ -1010,6 +1015,7 @@ TEST_F(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
 }
 
 // Test: Multi-JOIN with extended types
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
     struct Employee {
         [[= storm::meta::FieldAttr::primary]] int id{};
