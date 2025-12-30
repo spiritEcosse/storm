@@ -311,6 +311,7 @@ export namespace storm::orm::where {
         Expr(ExpressionVariantPtr expr) noexcept : expr_(std::move(expr)) {}
 
         // Constructor from ExpressionVariant (wraps in shared_ptr)
+        // NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved) - std::move IS used in initializer list
         Expr(ExpressionVariant&& expr) : expr_(std::make_shared<ExpressionVariant>(std::move(expr))) {}
 
         // Implicit conversion to ExpressionVariantPtr for where() calls
