@@ -39,7 +39,6 @@ Checks: >
   performance-*,
   -performance-enum-size,
   readability-*,
-  -readability-braces-around-statements,
   -readability-function-cognitive-complexity,
   -readability-identifier-length,
   -readability-implicit-bool-conversion,

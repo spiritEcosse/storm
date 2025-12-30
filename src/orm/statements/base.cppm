@@ -383,8 +383,9 @@ export namespace storm::orm::statements {
             using utilities::batch::SMALL_THRESHOLD;
 
             // For very small batches, always use bulk SQL up to the SQLite limit
-            if (batch_size <= SMALL_THRESHOLD)
+            if (batch_size <= SMALL_THRESHOLD) {
                 return max_bulk_size;
+            }
 
             // Calculate safe thresholds based on max_bulk_size (which already accounts for field count)
             // max_bulk_size = 999 / field_count, so we scale our thresholds accordingly

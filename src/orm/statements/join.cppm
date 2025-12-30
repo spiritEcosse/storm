@@ -126,12 +126,13 @@ export namespace storm::orm::statements {
         static constexpr auto fk_field_names_ = build_fk_field_names();
 
         static constexpr auto get_join_keyword() -> std::string_view {
-            if constexpr (Type == JoinType::Inner)
+            if constexpr (Type == JoinType::Inner) {
                 return " INNER JOIN ";
-            else if constexpr (Type == JoinType::Left)
+            } else if constexpr (Type == JoinType::Left) {
                 return " LEFT JOIN ";
-            else
+            } else {
                 return " RIGHT JOIN ";
+            }
         }
 
         // Compile-time SQL generation with ConstexprString
@@ -211,8 +212,9 @@ export namespace storm::orm::statements {
             for (size_t i = 0; i < Base::field_count_; ++i) {
                 auto member = Base::all_members_[i];
                 if (!Base::is_fk_field(member)) {
-                    if (!first)
+                    if (!first) {
                         result.append(", ");
+                    }
                     result.append("t1.");
                     result.append(std::meta::identifier_of(member));
                     first = false;

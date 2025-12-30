@@ -56,8 +56,9 @@ class QuerySetRemoveTest : public ::testing::Test {
         auto&         conn = storm::QuerySet<SqlitePerson>::get_default_connection();
         sqlite3_stmt* stmt = nullptr;
         int           rc   = sqlite3_prepare_v2(conn->get(), "SELECT COUNT(*) FROM SqlitePerson", -1, &stmt, nullptr);
-        if (rc != SQLITE_OK)
+        if (rc != SQLITE_OK) {
             return -1;
+        }
 
         rc              = sqlite3_step(stmt);
         int const count = (rc == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : -1;
@@ -71,8 +72,9 @@ class QuerySetRemoveTest : public ::testing::Test {
         auto&         conn = storm::QuerySet<SqlitePerson>::get_default_connection();
         sqlite3_stmt* stmt = nullptr;
         int rc = sqlite3_prepare_v2(conn->get(), "SELECT COUNT(*) FROM SqlitePerson WHERE id = ?", -1, &stmt, nullptr);
-        if (rc != SQLITE_OK)
+        if (rc != SQLITE_OK) {
             return false;
+        }
 
         sqlite3_bind_int(stmt, 1, id);
         rc                = sqlite3_step(stmt);
@@ -440,12 +442,15 @@ TEST_F(QuerySetRemoveTest, InsertSmallBatch) {
     bool found_eve   = false;
     bool found_frank = false;
     for (const auto& person : select_result.value()) {
-        if (person.name == "Dave")
+        if (person.name == "Dave") {
             found_dave = true;
-        if (person.name == "Eve")
+        }
+        if (person.name == "Eve") {
             found_eve = true;
-        if (person.name == "Frank")
+        }
+        if (person.name == "Frank") {
             found_frank = true;
+        }
     }
     EXPECT_TRUE(found_dave) << "Dave should exist after batch insertion";
     EXPECT_TRUE(found_eve) << "Eve should exist after batch insertion";
@@ -559,8 +564,9 @@ class QuerySetUpdateTest : public ::testing::Test {
         auto&         conn = storm::QuerySet<SqlitePerson>::get_default_connection();
         sqlite3_stmt* stmt = nullptr;
         int           rc   = sqlite3_prepare_v2(conn->get(), "SELECT COUNT(*) FROM SqlitePerson", -1, &stmt, nullptr);
-        if (rc != SQLITE_OK)
+        if (rc != SQLITE_OK) {
             return -1;
+        }
 
         rc              = sqlite3_step(stmt);
         int const count = (rc == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : -1;
@@ -576,8 +582,9 @@ class QuerySetUpdateTest : public ::testing::Test {
         int           rc   = sqlite3_prepare_v2(
                 conn->get(), "SELECT id, name, age FROM SqlitePerson WHERE id = ?", -1, &stmt, nullptr
         );
-        if (rc != SQLITE_OK)
+        if (rc != SQLITE_OK) {
             return std::nullopt;
+        }
 
         sqlite3_bind_int(stmt, 1, id);
         rc = sqlite3_step(stmt);

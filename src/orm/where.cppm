@@ -169,8 +169,9 @@ export namespace storm::orm::where {
                 sql_ = field_name_;
                 sql_ += " IN (";
                 for (size_t i = 0; i < values_.size(); ++i) {
-                    if (i > 0)
+                    if (i > 0) {
                         sql_ += ", ";
+                    }
                     sql_ += "?";
                 }
                 sql_ += ")";

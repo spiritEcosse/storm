@@ -304,8 +304,9 @@ export namespace storm::orm::utilities {
 
     // Helper function for calculating placeholder string size
     consteval auto calculate_placeholders_size(size_t count) -> size_t {
-        if (count == 0)
-            return 1;                               // Null terminator
+        if (count == 0) {
+            return 1; // Null terminator
+        }
         return (count * 1) + ((count - 1) * 2) + 1; // count * "?" + (count-1) * ", " + null terminator
     }
 
@@ -327,8 +328,9 @@ export namespace storm::orm::utilities {
 
     // Helper function for calculating IN clause size
     consteval auto calculate_in_clause_size(size_t count) -> size_t {
-        if (count == 0)
-            return 3;                                   // "()" + null terminator
+        if (count == 0) {
+            return 3; // "()" + null terminator
+        }
         return 2 + (count * 1) + ((count - 1) * 1) + 1; // "()" + count * "?" + (count-1) * "," + null terminator
     }
 

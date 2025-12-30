@@ -185,12 +185,14 @@ export namespace storm::orm::statements {
 
             // Strategy 3: Chunked IN clause (800+ rows) - RAII transaction guard
             auto txn = TransactionGuard<ConnType>::begin(*conn_);
-            if (!txn)
+            if (!txn) {
                 return std::unexpected(txn.error());
+            }
 
             auto result = execute_chunked(objects);
-            if (!result)
+            if (!result) {
                 return result; // ~TransactionGuard will ROLLBACK
+            }
 
             return txn->commit();
         }
