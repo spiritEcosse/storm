@@ -108,10 +108,9 @@ export namespace storm::orm::utilities {
             if (value.has_value()) {
                 // Recursively bind the contained value
                 return bind_parameter_value<StmtType, ErrorType>(stmt, param_index, *value);
-            } else {
-                // Bind NULL for std::nullopt
-                return stmt.bind_null(param_index);
             }
+            // Bind NULL for std::nullopt
+            return stmt.bind_null(param_index);
         }
         // Boolean type (stored as INTEGER 0/1)
         else if constexpr (std::is_same_v<ValueType, bool>) {

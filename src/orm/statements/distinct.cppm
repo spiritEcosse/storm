@@ -180,13 +180,14 @@ export namespace storm::orm::statements {
             // Route to appropriate execution path based on WHERE/JOIN state
             if (join_stmt_.has_value() && where_expr_) {
                 return execute_where_join_impl();
-            } else if (join_stmt_.has_value()) {
-                return execute_join_impl();
-            } else if (where_expr_) {
-                return execute_where_impl();
-            } else {
-                return execute_simple_distinct();
             }
+            if (join_stmt_.has_value()) {
+                return execute_join_impl();
+            }
+            if (where_expr_) {
+                return execute_where_impl();
+            }
+            return execute_simple_distinct();
         }
 
       private:

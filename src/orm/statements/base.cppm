@@ -430,11 +430,10 @@ export namespace storm::orm::statements {
                 using InnerType = typename FieldType::value_type;
                 if (stmt.is_null(col_idx)) {
                     return std::nullopt;
-                } else {
-                    // Extract the inner value and wrap it in optional
-                    InnerType inner_value = extract_column_value<InnerType>(stmt, col_idx);
-                    return FieldType{std::move(inner_value)};
                 }
+                // Extract the inner value and wrap it in optional
+                InnerType inner_value = extract_column_value<InnerType>(stmt, col_idx);
+                return FieldType{std::move(inner_value)};
             }
             // Boolean type (stored as INTEGER 0/1)
             else if constexpr (std::is_same_v<FieldType, bool>) {
@@ -466,9 +465,8 @@ export namespace storm::orm::statements {
                 if (blob_ptr && blob_size > 0) {
                     const auto* data = static_cast<const uint8_t*>(blob_ptr);
                     return FieldType(data, data + blob_size);
-                } else {
-                    return FieldType{};
                 }
+                return FieldType{};
             }
             // String types
             else if constexpr (std::is_same_v<FieldType, std::string>) {
@@ -477,9 +475,8 @@ export namespace storm::orm::statements {
                     // OPTIMIZATION: Direct construction with known length (no strlen, no temporary)
                     int len = sqlite3_column_bytes(stmt.handle(), col_idx);
                     return FieldType(reinterpret_cast<const char*>(text), len);
-                } else {
-                    return FieldType{};
                 }
+                return FieldType{};
             } else {
                 static_assert(
                         std::is_same_v<FieldType, int> || std::is_same_v<FieldType, std::string>,

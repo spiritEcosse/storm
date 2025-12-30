@@ -40,7 +40,6 @@ Checks: >
   -performance-enum-size,
   readability-*,
   -readability-braces-around-statements,
-  -readability-else-after-return,
   -readability-function-cognitive-complexity,
   -readability-identifier-length,
   -readability-implicit-bool-conversion,
