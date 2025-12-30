@@ -12,10 +12,10 @@
 # - Exclude false positives in tests (bugprone-unchecked-optional-access doesn't understand ASSERT_TRUE)
 #
 # C++26 False Positive Exclusions:
-# - cppcoreguidelines-missing-std-forward: false positives when std::forward is used inside expressions
 # - cppcoreguidelines-pro-type-member-init: too many false positives in test files
 # Note: cppcoreguidelines-init-variables has targeted NOLINT in statement files (constexpr false positives)
 # Note: misc-const-correctness has targeted NOLINT in join.cppm (fold expression false positives)
+# Note: cppcoreguidelines-missing-std-forward has targeted NOLINT in where.cppm (std::forward in braced initializers)
 
 Checks: >
   -*,
@@ -28,7 +28,6 @@ Checks: >
   -cert-err58-cpp,
   concurrency-*,
   cppcoreguidelines-*,
-  -cppcoreguidelines-missing-std-forward,
   -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
   -cppcoreguidelines-pro-bounds-constant-array-index,
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,

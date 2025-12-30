@@ -360,6 +360,7 @@ export namespace storm::orm::where {
         }
 
         // Comparison operators - return runtime Expr for flexibility
+        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
         template <typename V> auto operator==(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
@@ -368,6 +369,7 @@ export namespace storm::orm::where {
             );
         }
 
+        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
         template <typename V> auto operator!=(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
@@ -376,6 +378,7 @@ export namespace storm::orm::where {
             );
         }
 
+        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
         template <typename V> auto operator>(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
@@ -384,6 +387,7 @@ export namespace storm::orm::where {
             );
         }
 
+        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
         template <typename V> auto operator>=(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
@@ -392,6 +396,7 @@ export namespace storm::orm::where {
             );
         }
 
+        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
         template <typename V> auto operator<(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
@@ -400,6 +405,7 @@ export namespace storm::orm::where {
             );
         }
 
+        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
         template <typename V> auto operator<=(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
@@ -413,6 +419,7 @@ export namespace storm::orm::where {
             return Expr(std::make_shared<ExpressionVariant>(LikeExpr{std::string(field_name_sv), pattern}));
         }
 
+        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
         template <typename V> auto between(V&& min_val, V&& max_val) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(BetweenExpr<std::decay_t<V>>{
