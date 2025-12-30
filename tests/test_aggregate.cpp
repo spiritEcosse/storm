@@ -42,7 +42,7 @@ class AggregateTest : public ::testing::Test {
         auto result = QuerySet<AggregatePerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
 
-        auto& conn = QuerySet<AggregatePerson>::get_default_connection();
+        const auto& conn = QuerySet<AggregatePerson>::get_default_connection();
 
         // Create AggregatePerson table
         auto create_result = conn->execute(
@@ -102,7 +102,7 @@ class AggregateTest : public ::testing::Test {
 
     // Helper to insert JOIN test data
     static void insert_join_test_data() {
-        auto& conn = QuerySet<AggregatePerson>::get_default_connection();
+        const auto& conn = QuerySet<AggregatePerson>::get_default_connection();
 
         // Insert users
         std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Alice', 30)");
@@ -1090,7 +1090,7 @@ class OptionalAggregateTest : public ::testing::Test {
         auto result = QuerySet<OptionalPerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database";
 
-        auto& conn = QuerySet<OptionalPerson>::get_default_connection();
+        const auto& conn = QuerySet<OptionalPerson>::get_default_connection();
 
         auto create_result = conn->execute(
                 "CREATE TABLE OptionalPerson ("

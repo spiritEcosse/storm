@@ -23,7 +23,7 @@ class LimitOffsetTest : public ::testing::Test {
         auto result = QuerySet<LimitOffsetPerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
 
-        auto& conn = QuerySet<LimitOffsetPerson>::get_default_connection();
+        const auto& conn = QuerySet<LimitOffsetPerson>::get_default_connection();
 
         // Create table
         auto create_result = conn->execute(

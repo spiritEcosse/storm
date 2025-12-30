@@ -22,7 +22,7 @@ class SelectLargeTest : public ::testing::Test {
         auto result = QuerySet<TestRecord>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
 
-        auto& conn = QuerySet<TestRecord>::get_default_connection();
+        const auto& conn = QuerySet<TestRecord>::get_default_connection();
 
         // Create table
         auto create_result = conn->execute(
@@ -152,7 +152,7 @@ TEST_F(SelectLargeTest, SelectVeryLargeDataset) {
         batch_records.reserve(BATCH_SIZE);
 
         for (int i = 1; i <= BATCH_SIZE; ++i) {
-            int const record_num = batch * BATCH_SIZE + i;
+            int const record_num = (batch * BATCH_SIZE) + i;
             batch_records.emplace_back(record_num, record_num, std::format("B{}", batch));
         }
 

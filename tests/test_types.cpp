@@ -55,7 +55,7 @@ class IntTypesInsertUpdateTest : public ::testing::Test {
     auto SetUp() -> void override {
         auto result = QuerySet<IntTypes>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
-        auto& conn = QuerySet<IntTypes>::get_default_connection();
+        const auto& conn = QuerySet<IntTypes>::get_default_connection();
         ASSERT_TRUE(conn->execute(
                                 "CREATE TABLE IntTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, big_num INTEGER, "
                                 "small_num INTEGER)"
@@ -151,7 +151,7 @@ class FloatTypesInsertUpdateTest : public ::testing::Test {
     auto SetUp() -> void override {
         auto result = QuerySet<FloatTypes>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
-        auto& conn = QuerySet<FloatTypes>::get_default_connection();
+        const auto& conn = QuerySet<FloatTypes>::get_default_connection();
         ASSERT_TRUE(
                 conn->execute(
                             "CREATE TABLE FloatTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, precise REAL, approx REAL)"
@@ -204,7 +204,7 @@ class MixedTypesInsertUpdateTest : public ::testing::Test {
     auto SetUp() -> void override {
         auto result = QuerySet<MixedTypes>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
-        auto& conn = QuerySet<MixedTypes>::get_default_connection();
+        const auto& conn = QuerySet<MixedTypes>::get_default_connection();
         ASSERT_TRUE(
                 conn->execute(
                             "CREATE TABLE MixedTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, active INTEGER, name TEXT)"
@@ -286,7 +286,7 @@ class OptTypesInsertUpdateTest : public ::testing::Test {
     auto SetUp() -> void override {
         auto result = QuerySet<OptTypes>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
-        auto& conn = QuerySet<OptTypes>::get_default_connection();
+        const auto& conn = QuerySet<OptTypes>::get_default_connection();
         ASSERT_TRUE(
                 conn->execute(
                             "CREATE TABLE OptTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, maybe_num INTEGER, name TEXT)"
@@ -402,7 +402,7 @@ class DataTypesInsertUpdateTest : public ::testing::Test {
     auto SetUp() -> void override {
         auto result = QuerySet<DataTypes>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
-        auto& conn = QuerySet<DataTypes>::get_default_connection();
+        const auto& conn = QuerySet<DataTypes>::get_default_connection();
         ASSERT_TRUE(
                 conn->execute("CREATE TABLE DataTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, binary BLOB, label TEXT)")
                         .has_value()
@@ -534,7 +534,7 @@ class InsertOptionsTest : public ::testing::Test {
     auto SetUp() -> void override {
         auto result = QuerySet<IntTypes>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
-        auto& conn = QuerySet<IntTypes>::get_default_connection();
+        const auto& conn = QuerySet<IntTypes>::get_default_connection();
         ASSERT_TRUE(conn->execute(
                                 "CREATE TABLE IntTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, big_num INTEGER, "
                                 "small_num INTEGER)"

@@ -23,7 +23,7 @@ class SelectTest : public ::testing::Test {
         auto result = QuerySet<SelectPerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
 
-        auto& conn = QuerySet<SelectPerson>::get_default_connection();
+        const auto& conn = QuerySet<SelectPerson>::get_default_connection();
 
         // Create table with AUTOINCREMENT for proper ID generation
         auto create_result = conn->execute(

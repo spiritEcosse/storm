@@ -29,7 +29,7 @@ class FKFieldTest : public ::testing::Test {
         auto result = QuerySet<User>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
 
-        auto& conn = QuerySet<User>::get_default_connection();
+        const auto& conn = QuerySet<User>::get_default_connection();
 
         // Create User table
         auto create_user_result = conn->execute(
@@ -92,8 +92,8 @@ TEST_F(FKFieldTest, InsertWithFKField) {
     EXPECT_GT(msg_id, 0) << "Expected valid message ID";
 
     // Verify FKs were stored correctly by querying database directly
-    auto& conn     = QuerySet<User>::get_default_connection();
-    auto  stmt_res = conn->prepare("SELECT sender_id, receiver_id FROM FKMessage WHERE id = ?");
+    const auto& conn     = QuerySet<User>::get_default_connection();
+    auto        stmt_res = conn->prepare("SELECT sender_id, receiver_id FROM FKMessage WHERE id = ?");
     ASSERT_TRUE(stmt_res.has_value());
 
     auto stmt = std::move(stmt_res.value());
@@ -340,14 +340,14 @@ TEST_F(FKFieldTest, MultipleFKFieldsToSameType) {
     QuerySet<Conversation> conv_qs;
 
     // Create conversation table
-    auto& conn               = QuerySet<User>::get_default_connection();
-    auto  create_conv_result = conn->execute(
+    const auto& conn               = QuerySet<User>::get_default_connection();
+    auto        create_conv_result = conn->execute(
             "CREATE TABLE Conversation ("
-             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-             "sender_id INTEGER NOT NULL, "
-             "receiver_id INTEGER NOT NULL, "
-             "message TEXT NOT NULL"
-             ")"
+                   "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                   "sender_id INTEGER NOT NULL, "
+                   "receiver_id INTEGER NOT NULL, "
+                   "message TEXT NOT NULL"
+                   ")"
     );
     ASSERT_TRUE(create_conv_result.has_value());
 
@@ -495,8 +495,8 @@ TEST_F(FKFieldTest, LeftJoinReturnsAllMessages) {
 
     // Insert a message with a non-existent receiver ID (999)
     // This simulates an orphaned FK reference
-    auto& conn        = QuerySet<User>::get_default_connection();
-    auto  stmt_result = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (?, ?, ?)");
+    const auto& conn        = QuerySet<User>::get_default_connection();
+    auto        stmt_result = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (?, ?, ?)");
     ASSERT_TRUE(stmt_result.has_value()) << "Prepare failed: " << stmt_result.error().message();
 
     auto stmt = std::move(stmt_result.value());
@@ -686,7 +686,7 @@ class NullableFKTest : public ::testing::Test {
         auto result = QuerySet<User>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
 
-        auto& conn = QuerySet<User>::get_default_connection();
+        const auto& conn = QuerySet<User>::get_default_connection();
 
         // Create User table
         auto create_user_result = conn->execute(
@@ -720,8 +720,8 @@ TEST_F(NullableFKTest, SelectWithNullFKField) {
     QuerySet<FKMessage> message_qs;
 
     // Insert message with NULL sender_id
-    auto& conn        = QuerySet<User>::get_default_connection();
-    auto  stmt_result = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
+    const auto& conn        = QuerySet<User>::get_default_connection();
+    auto        stmt_result = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
     ASSERT_TRUE(stmt_result.has_value());
 
     auto stmt = std::move(stmt_result.value());
@@ -758,8 +758,8 @@ TEST_F(NullableFKTest, LeftJoinWithNullFKField) {
     int64_t const alice_id = alice_result.value();
 
     // Insert message with NULL sender_id
-    auto& conn        = QuerySet<User>::get_default_connection();
-    auto  stmt_result = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
+    const auto& conn        = QuerySet<User>::get_default_connection();
+    auto        stmt_result = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
     ASSERT_TRUE(stmt_result.has_value());
 
     auto stmt = std::move(stmt_result.value());
@@ -800,7 +800,7 @@ TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     int64_t const alice_id = alice_result.value();
     int64_t const bob_id   = bob_result.value();
 
-    auto& conn = QuerySet<User>::get_default_connection();
+    const auto& conn = QuerySet<User>::get_default_connection();
 
     // FKMessage 1: Valid sender (Alice)
     auto stmt1 = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (?, ?, ?)");
@@ -853,7 +853,7 @@ class ExtendedTypesJoinTest : public ::testing::Test {
         auto result = QuerySet<User>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
 
-        auto& conn = QuerySet<User>::get_default_connection();
+        const auto& conn = QuerySet<User>::get_default_connection();
 
         // Create Employee table with extended types
         auto create_employee_result = conn->execute(
@@ -1036,14 +1036,14 @@ TEST_F(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
     QuerySet<Task>     task_qs;
 
     // Create Task table
-    auto& conn               = QuerySet<User>::get_default_connection();
-    auto  create_task_result = conn->execute(
+    const auto& conn               = QuerySet<User>::get_default_connection();
+    auto        create_task_result = conn->execute(
             "CREATE TABLE Task ("
-             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-             "assignee_id INTEGER NOT NULL, "
-             "reviewer_id INTEGER NOT NULL, "
-             "description TEXT NOT NULL"
-             ")"
+                   "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                   "assignee_id INTEGER NOT NULL, "
+                   "reviewer_id INTEGER NOT NULL, "
+                   "description TEXT NOT NULL"
+                   ")"
     );
     ASSERT_TRUE(create_task_result.has_value());
 

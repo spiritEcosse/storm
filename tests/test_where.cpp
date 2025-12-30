@@ -24,7 +24,7 @@ class WhereTest : public ::testing::Test {
         auto result = QuerySet<WherePerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
 
-        auto& conn = QuerySet<WherePerson>::get_default_connection();
+        const auto& conn = QuerySet<WherePerson>::get_default_connection();
 
         // Create table with AUTOINCREMENT (matching test_select.cpp)
         auto create_result = conn->execute(
@@ -335,7 +335,7 @@ class WhereJoinTest : public ::testing::Test {
         auto result = QuerySet<WhereMessage>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
 
-        auto& conn = QuerySet<WhereMessage>::get_default_connection();
+        const auto& conn = QuerySet<WhereMessage>::get_default_connection();
 
         // Create WhereUser table
         auto create_user = conn->execute(

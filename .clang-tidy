@@ -39,8 +39,6 @@ Checks: >
   performance-*,
   -performance-enum-size,
   readability-*,
-  -readability-math-missing-parentheses,
-  -readability-qualified-auto,
   -readability-redundant-access-specifiers,
   -readability-redundant-inline-specifier
 

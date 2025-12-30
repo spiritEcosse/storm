@@ -24,7 +24,7 @@ class OrderByTest : public ::testing::Test {
         auto result = QuerySet<OrderByPerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
 
-        auto& conn = QuerySet<OrderByPerson>::get_default_connection();
+        const auto& conn = QuerySet<OrderByPerson>::get_default_connection();
 
         // Create table
         auto create_result = conn->execute(

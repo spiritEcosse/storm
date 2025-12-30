@@ -40,7 +40,7 @@ class DistinctTest : public ::testing::Test {
         auto result = QuerySet<DistinctPerson>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
 
-        auto& conn = QuerySet<DistinctPerson>::get_default_connection();
+        const auto& conn = QuerySet<DistinctPerson>::get_default_connection();
 
         // Create DistinctPerson table
         auto create_person = conn->execute(
@@ -80,7 +80,7 @@ class DistinctTest : public ::testing::Test {
     }
 
     static void populate_join_test_data() {
-        auto& conn = QuerySet<DistinctPerson>::get_default_connection();
+        const auto& conn = QuerySet<DistinctPerson>::get_default_connection();
 
         // Insert users
         std::ignore = conn->execute("INSERT INTO User (name, age) VALUES ('Alice', 30)");
@@ -745,7 +745,7 @@ TEST_F(DistinctTest, DesiredSQLForDistinctWithJoin) {
 TEST_F(DistinctTest, RawSQLWorkaround) {
     populate_join_test_data();
 
-    auto& conn = QuerySet<Message>::get_default_connection();
+    const auto& conn = QuerySet<Message>::get_default_connection();
 
     // Workaround: Use raw SQL for DISTINCT + JOIN
     std::string const sql = "SELECT DISTINCT User.name "
