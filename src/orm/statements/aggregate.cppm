@@ -361,15 +361,14 @@ export namespace storm::orm::statements {
 
         [[nodiscard]] auto execute() -> std::expected<ResultType, Error> {
             // Route to appropriate execution path based on WHERE/JOIN state
-            if (join_stmt_.has_value() && where_expr_) {
-                return execute_where_join_impl();
-            } else if (join_stmt_.has_value()) {
-                return execute_join_impl();
-            } else if (where_expr_) {
-                return execute_where_impl();
-            } else {
-                return execute_simple();
-            }
+            return Base::dispatch_execute(
+                    join_stmt_.has_value(),
+                    static_cast<bool>(where_expr_),
+                    [this]() -> std::expected<ResultType, Error> { return execute_simple(); },
+                    [this]() -> std::expected<ResultType, Error> { return execute_where_impl(); },
+                    [this]() -> std::expected<ResultType, Error> { return execute_join_impl(); },
+                    [this]() -> std::expected<ResultType, Error> { return execute_where_join_impl(); }
+            );
         }
 
       private:
@@ -686,15 +685,14 @@ export namespace storm::orm::statements {
         }
 
         [[nodiscard]] auto execute() -> std::expected<ResultType, Error> {
-            if (join_stmt_.has_value() && where_expr_) {
-                return execute_where_join_impl();
-            } else if (join_stmt_.has_value()) {
-                return execute_join_impl();
-            } else if (where_expr_) {
-                return execute_where_impl();
-            } else {
-                return execute_simple();
-            }
+            return Base::dispatch_execute(
+                    join_stmt_.has_value(),
+                    static_cast<bool>(where_expr_),
+                    [this]() -> std::expected<ResultType, Error> { return execute_simple(); },
+                    [this]() -> std::expected<ResultType, Error> { return execute_where_impl(); },
+                    [this]() -> std::expected<ResultType, Error> { return execute_join_impl(); },
+                    [this]() -> std::expected<ResultType, Error> { return execute_where_join_impl(); }
+            );
         }
 
       private:

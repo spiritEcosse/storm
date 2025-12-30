@@ -657,6 +657,29 @@ export namespace storm::orm::statements {
             // Large batch - use individual statements with transaction
             return execute_with_transaction(conn, true, individual_executor);
         }
+
+        // Dispatch helper for WHERE/JOIN execution paths
+        // Eliminates repeated branching logic in aggregate statements
+        template <typename SimpleF, typename WhereF, typename JoinF, typename WhereJoinF>
+        [[nodiscard]] static auto dispatch_execute(
+                bool              has_join,
+                bool              has_where,
+                const SimpleF&    simple_fn,
+                const WhereF&     where_fn,
+                const JoinF&      join_fn,
+                const WhereJoinF& where_join_fn
+        ) -> decltype(simple_fn()) {
+            if (has_join && has_where) {
+                return where_join_fn();
+            }
+            if (has_join) {
+                return join_fn();
+            }
+            if (has_where) {
+                return where_fn();
+            }
+            return simple_fn();
+        }
     };
 
 } // namespace storm::orm::statements
