@@ -357,8 +357,8 @@ TEST_F(QuerySetRemoveTest, RemoveBatchPerformance) {
     // Measure individual removes
     auto start_individual = std::chrono::steady_clock::now();
     for (int i = 1; i <= 50; i++) {
-        SqlitePerson const p{.id = i, .name = "SqlitePerson" + std::to_string(i), .age = 20 + (i % 60)};
-        auto               result = queryset.remove(p);
+        SqlitePerson const person{.id = i, .name = "SqlitePerson" + std::to_string(i), .age = 20 + (i % 60)};
+        auto               result = queryset.remove(person);
         ASSERT_TRUE(result.has_value()) << "Individual remove should succeed";
     }
     auto end_individual = std::chrono::steady_clock::now();

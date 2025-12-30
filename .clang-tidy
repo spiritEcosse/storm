@@ -39,7 +39,6 @@ Checks: >
   performance-*,
   -performance-enum-size,
   readability-*,
-  -readability-identifier-length,
   -readability-implicit-bool-conversion,
   -readability-math-missing-parentheses,
   -readability-qualified-auto,
@@ -62,3 +61,14 @@ CheckOptions:
     value: true
   - key: cppcoreguidelines-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
     value: true
+  # Identifier length exceptions for domain-standard abbreviations
+  # rc=return code, db=database, it=iterator, op=operator, id=identifier
+  # pk=primary key, qs=QuerySet, l/r=left/right, c=char, m=match
+  - key: readability-identifier-length.IgnoredVariableNames
+    value: '^(rc|db|it|op|id|pk|qs|l|r|c|m|i|j|k|n|s[0-9]+)$'
+  - key: readability-identifier-length.IgnoredParameterNames
+    value: '^(rc|db|it|op|id|pk|qs|l|r|c|m|i|j|k|n)$'
+  - key: readability-identifier-length.IgnoredLoopCounterNames
+    value: '^[ijkn]$'
+  - key: readability-identifier-length.MinimumLoopCounterNameLength
+    value: '1'
