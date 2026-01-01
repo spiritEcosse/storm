@@ -165,7 +165,7 @@ export namespace storm::orm::where {
                 sql_ = "1 = 0"; // SQL that always evaluates to false
             } else {
                 // Reserve capacity to avoid reallocations
-                sql_.reserve(field_name_.size() + utilities::sql_len::IN_CLAUSE + values_.size() * 3);
+                sql_.reserve(field_name_.size() + utilities::sql_len::IN_CLAUSE + (values_.size() * 3));
                 sql_ = field_name_;
                 sql_ += " IN (";
                 for (size_t i = 0; i < values_.size(); ++i) {

@@ -161,43 +161,25 @@ export namespace storm {
         // - Statement pointer caching avoids prepare_cached() hash lookup
         // - SQL string caching avoids repeated to_sql() calls
         template <std::meta::info... FieldInfos> constexpr auto distinct() -> auto& {
+            // Helper: get-or-create TLS cached statement with updated state
+            auto get_cached = [this]<typename StmtType>(std::optional<StmtType>& cache) -> StmtType& {
+                if (!cache.has_value()) {
+                    cache.emplace(conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_);
+                } else {
+                    cache->update_state(conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_);
+                }
+                return *cache;
+            };
+
             if constexpr (sizeof...(FieldInfos) == 0) {
-                // Default to primary key when no fields specified
                 using StmtType = orm::statements::
                         DistinctStatement<T, ConnType, orm::statements::BaseStatement<T>::primary_key_>;
-
-                // Use TLS for per-thread, per-field-combination caching
-                // Preserves statement caches across calls for optimal performance
                 static thread_local std::optional<StmtType> cached_stmt;
-
-                // Create on first use, update state on subsequent calls
-                if (!cached_stmt.has_value()) {
-                    cached_stmt.emplace(conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_);
-                } else {
-                    cached_stmt->update_state(
-                            conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_
-                    );
-                }
-
-                return *cached_stmt;
+                return get_cached(cached_stmt);
             } else {
-                // User-specified fields
                 using StmtType = orm::statements::DistinctStatement<T, ConnType, FieldInfos...>;
-
-                // Use TLS for per-thread, per-field-combination caching
-                // Preserves statement caches across calls for optimal performance
                 static thread_local std::optional<StmtType> cached_stmt;
-
-                // Create on first use, update state on subsequent calls
-                if (!cached_stmt.has_value()) {
-                    cached_stmt.emplace(conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_);
-                } else {
-                    cached_stmt->update_state(
-                            conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_
-                    );
-                }
-
-                return *cached_stmt;
+                return get_cached(cached_stmt);
             }
         }
 
@@ -421,7 +403,7 @@ export namespace storm {
         // NOTE: These methods are NOT thread-safe. For multi-threaded use:
         // 1. Use external synchronization (mutex/lock) around these calls, OR
         // 2. Create QuerySet with explicit connection per thread
-        [[nodiscard]] static auto set_default_connection(std::string_view db_path) noexcept
+        [[nodiscard]] static auto set_default_connection(std::string_view db_path)
                 -> std::expected<void, db::sqlite::Error> {
             auto conn_result = db::sqlite::Connection::open(db_path);
             if (!conn_result) {

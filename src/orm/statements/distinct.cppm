@@ -178,195 +178,67 @@ export namespace storm::orm::statements {
         }
 
         // Execute SELECT DISTINCT query on the specified field(s)
-        [[nodiscard]] auto execute() -> std::expected<ResultType, Error> {
-            // Route to appropriate execution path based on WHERE/JOIN state
-            if (join_stmt_.has_value() && where_expr_) {
-                return execute_where_join_impl();
-            }
-            if (join_stmt_.has_value()) {
-                return execute_join_impl();
-            }
-            if (where_expr_) {
-                return execute_where_impl();
-            }
-            return execute_simple_distinct();
-        }
-
-      private:
-        // Helper: Append ORDER BY clause to SQL from wrapper
-        // NOTE: ORDER BY must come before LIMIT/OFFSET in SQLite
-        __attribute__((always_inline)) auto append_order_by(std::string& sql) const -> void {
-            if (order_by_wrapper_.has_value() && !order_by_wrapper_->empty()) {
-                sql += order_by_wrapper_->get_order_by_sql();
-            }
-        }
-
-        // Helper: Append LIMIT/OFFSET clauses to SQL
-        // NOTE: SQLite requires LIMIT when using OFFSET, so we use LIMIT -1 (meaning unlimited) when OFFSET is used
-        // alone
-        __attribute__((always_inline)) static auto
-        append_limit_offset(std::string& sql, const std::optional<int>& limit, const std::optional<int>& offset)
-                -> void {
-            if (limit.has_value()) {
-                sql += " LIMIT ";
-                sql += std::to_string(limit.value());
-            } else if (offset.has_value()) {
-                // SQLite requires LIMIT when using OFFSET
-                sql += " LIMIT -1";
-            }
-
-            if (offset.has_value()) {
-                sql += " OFFSET ";
-                sql += std::to_string(offset.value());
-            }
-        }
-
-        // Helper: Inject DISTINCT keyword into JOIN SQL (after SELECT)
-        [[nodiscard]] static auto inject_distinct_keyword(const std::string& sql) -> std::expected<std::string, Error> {
-            const size_t select_pos = sql.find("SELECT ");
-            if (select_pos == std::string::npos) [[unlikely]] {
-                // This should NEVER happen with correct compile-time JOIN SQL generation
-                // But if it does, fail loudly rather than silently producing incorrect SQL
-                return std::unexpected(
-                        Error{-1,
-                              "INTERNAL BUG: JOIN SQL missing SELECT clause. "
-                              "This indicates a compile-time SQL generation error. SQL: " +
-                                      sql}
-                );
-            }
-
-            std::string result;
-            result.reserve(sql.size() + utilities::sql_len::SMALL_BUFFER); // "DISTINCT " + buffer
-            result = sql.substr(0, select_pos + utilities::sql_len::SELECT);
-            result += "DISTINCT ";
-            result += sql.substr(select_pos + utilities::sql_len::SELECT);
-            return result;
-        }
-
-        // Helper: Bind WHERE expression parameters to statement
-        [[nodiscard]] __attribute__((always_inline)) __attribute__((hot)) static auto
-        bind_where_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& where_expr)
-                -> std::expected<void, Error> {
-            int  param_index = 1;
-            auto bind_result = orm::where::bind_params_direct(*where_expr, stmt_ptr, param_index);
-            if (!bind_result) [[unlikely]] {
-                stmt_ptr->reset();
-                return std::unexpected(bind_result.error());
-            }
-            return {};
-        }
-
-        // Simple DISTINCT execution (no WHERE, no JOIN)
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_simple_distinct()
-                -> std::expected<ResultType, Error> {
-            // Use compile-time generated SQL (always includes DISTINCT)
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute() -> std::expected<ResultType, Error> {
             static const std::string base_sql{distinct_sql_array.data.data(), distinct_sql_array.len};
 
+            // Build SQL: base or JOIN with DISTINCT injected
             std::string sql;
-            if (order_by_wrapper_.has_value() || limit_.has_value() || offset_.has_value()) {
-                sql = base_sql;
-                append_order_by(sql);
-                append_limit_offset(sql, limit_, offset_);
+            if (join_stmt_.has_value()) {
+                // Inject DISTINCT into JOIN's SELECT clause
+                const std::string& join_sql = join_stmt_->get_complete_sql();
+                const size_t       pos      = join_sql.find("SELECT ");
+                if (pos == std::string::npos) [[unlikely]] {
+                    return std::unexpected(Error{-1, "JOIN SQL missing SELECT clause"});
+                }
+                sql.reserve(join_sql.size() + utilities::sql_len::LARGE_BUFFER);
+                sql = join_sql.substr(0, pos + utilities::sql_len::SELECT);
+                sql += "DISTINCT ";
+                sql += join_sql.substr(pos + utilities::sql_len::SELECT);
             } else {
                 sql = base_sql;
             }
 
-            // Connection's prepare_cached() provides efficient internal caching
+            // Append WHERE clause if present
+            if (where_expr_) {
+                sql += " WHERE ";
+                sql += orm::where::to_sql(*where_expr_);
+            }
+
+            // Append ORDER BY, LIMIT, OFFSET
+            if (order_by_wrapper_.has_value() && !order_by_wrapper_->empty()) {
+                sql += order_by_wrapper_->get_order_by_sql();
+            }
+            if (limit_.has_value()) {
+                sql += " LIMIT ";
+                sql += std::to_string(limit_.value());
+            } else if (offset_.has_value()) {
+                sql += " LIMIT -1";
+            }
+            if (offset_.has_value()) {
+                sql += " OFFSET ";
+                sql += std::to_string(offset_.value());
+            }
+
+            // Prepare statement
             auto prepare_result = conn_->prepare_cached(sql);
             if (!prepare_result) [[unlikely]] {
                 return std::unexpected(prepare_result.error());
             }
 
-            return execute_query_loop(*prepare_result);
-        }
-
-        // DISTINCT with WHERE clause (no JOIN)
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_where_impl()
-                -> std::expected<ResultType, Error> {
-            // Build WHERE SQL (compile-time base + runtime WHERE clause)
-            static const std::string base_sql{distinct_sql_array.data.data(), distinct_sql_array.len};
-
-            // Build WHERE SQL - connection's prepare_cached() handles caching efficiently
-            std::string sql;
-            sql.reserve(base_sql.size() + utilities::sql_len::LARGE_BUFFER);
-            sql = base_sql;
-            sql += " WHERE ";
-            sql += orm::where::to_sql(*where_expr_);
-            append_order_by(sql);
-            append_limit_offset(sql, limit_, offset_);
-
-            auto prepare_result = conn_->prepare_cached(sql);
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
-            }
-
-            // Bind WHERE parameters (required for each execution)
-            auto bind_result = bind_where_params(*prepare_result, where_expr_);
-            if (!bind_result) [[unlikely]] {
-                return std::unexpected(bind_result.error());
+            // Bind WHERE parameters if present
+            if (where_expr_) {
+                int  param_index = 1;
+                auto bind_result = orm::where::bind_params_direct(*where_expr_, *prepare_result, param_index);
+                if (!bind_result) [[unlikely]] {
+                    (*prepare_result)->reset();
+                    return std::unexpected(bind_result.error());
+                }
             }
 
             return execute_query_loop(*prepare_result);
         }
 
-        // DISTINCT with JOIN (no WHERE)
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_join_impl()
-                -> std::expected<ResultType, Error> {
-            const std::string& base_sql = join_stmt_->get_complete_sql();
-
-            // Inject DISTINCT into SELECT clause
-            auto distinct_join_sql_result = inject_distinct_keyword(base_sql);
-            if (!distinct_join_sql_result) [[unlikely]] {
-                return std::unexpected(distinct_join_sql_result.error());
-            }
-
-            std::string sql = std::move(distinct_join_sql_result.value());
-            append_order_by(sql);
-            append_limit_offset(sql, limit_, offset_);
-
-            // Connection's prepare_cached() provides efficient internal caching
-            auto prepare_result = conn_->prepare_cached(sql);
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
-            }
-
-            return execute_query_loop(*prepare_result);
-        }
-
-        // DISTINCT with WHERE and JOIN
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_where_join_impl()
-                -> std::expected<ResultType, Error> {
-            // Build WHERE+JOIN SQL - connection's prepare_cached() handles caching efficiently
-            const std::string& base_sql = join_stmt_->get_complete_sql();
-
-            // Inject DISTINCT into SELECT clause
-            auto distinct_join_sql_result = inject_distinct_keyword(base_sql);
-            if (!distinct_join_sql_result) [[unlikely]] {
-                return std::unexpected(distinct_join_sql_result.error());
-            }
-
-            // Add WHERE clause
-            std::string sql = std::move(distinct_join_sql_result.value());
-            sql.reserve(sql.size() + utilities::sql_len::LARGE_BUFFER);
-            sql += " WHERE ";
-            sql += orm::where::to_sql(*where_expr_);
-            append_order_by(sql);
-            append_limit_offset(sql, limit_, offset_);
-
-            auto prepare_result = conn_->prepare_cached(sql);
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
-            }
-
-            // Bind WHERE parameters (required for each execution)
-            auto bind_result = bind_where_params(*prepare_result, where_expr_);
-            if (!bind_result) [[unlikely]] {
-                return std::unexpected(bind_result.error());
-            }
-
-            return execute_query_loop(*prepare_result);
-        }
-
+      private:
         // Unified query execution loop for all DISTINCT query types
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_query_loop(Statement* stmt)
                 -> std::expected<ResultType, Error> {
