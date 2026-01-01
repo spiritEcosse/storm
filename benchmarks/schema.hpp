@@ -76,6 +76,9 @@ namespace storm::benchmark {
         // Aggregate field (for SUM, AVG, MIN, MAX, COUNT(field), COUNT(DISTINCT))
         ConstexprString<32> aggregate_field;
 
+        // Distinct field (for SELECT DISTINCT operations)
+        ConstexprString<32> distinct_field;
+
         // Test parameters
         int iterations   = 1000;
         int dataset_size = 10000;

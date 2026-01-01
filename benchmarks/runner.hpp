@@ -20,6 +20,7 @@
 #include "operations/update.hpp"
 #include "operations/delete.hpp"
 #include "operations/aggregate.hpp"
+#include "operations/distinct.hpp" // DISTINCT benchmarks
 
 namespace storm::benchmark {
 
@@ -365,6 +366,76 @@ namespace storm::benchmark {
             runner.run_benchmark(test.test_name.c_str(), MaxBenchmark<Model, field_info>{dataset_size}, iterations);
         }
 
+        // ====================================================================
+        // DISTINCT operation handlers
+        // ====================================================================
+
+        template <typename Model, auto& test>
+        static void run_distinct_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.distinct_field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(), SimpleDistinctBenchmark<Model, field_info>{dataset_size}, iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_distinct_where_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view distinct_field_name = test.distinct_field.view();
+            constexpr auto             distinct_field_info = dispatch_field<Model>(distinct_field_name);
+            constexpr std::string_view where_field_name    = test.where.field.view();
+            constexpr auto             where_field_info    = dispatch_field<Model>(where_field_name);
+            constexpr auto             op_str              = test.where.op;
+            constexpr double           value               = test.where.value_double;
+            constexpr int              dataset_size        = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    DistinctWhereBenchmark<Model, distinct_field_info, where_field_info, op_str, double>{
+                            value, dataset_size
+                    },
+                    iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_distinct_join_operation(BenchmarkRunner& runner, int iterations) {
+            // DISTINCT JOIN on FKMessage.sender with User model
+            constexpr std::string_view distinct_field_name = test.distinct_field.view();
+            constexpr auto             distinct_field_info = dispatch_field<FKMessage>(distinct_field_name);
+            constexpr int              dataset_size        = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    DistinctJoinBenchmark<FKMessage, User, &FKMessage::sender, distinct_field_info>{dataset_size},
+                    iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_distinct_where_join_operation(BenchmarkRunner& runner, int iterations) {
+            // DISTINCT WHERE + JOIN on FKMessage.sender with User model
+            // WHERE clause filters on User.age
+            constexpr std::string_view distinct_field_name = test.distinct_field.view();
+            constexpr auto             distinct_field_info = dispatch_field<FKMessage>(distinct_field_name);
+            constexpr std::string_view where_field_name    = test.where.field.view();
+            constexpr auto             where_field_info    = dispatch_field<User>(where_field_name);
+            constexpr auto             op_str              = test.where.op;
+            constexpr int              value               = test.where.value_int;
+            constexpr int              dataset_size        = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    DistinctWhereJoinBenchmark<
+                            FKMessage,
+                            User,
+                            &FKMessage::sender,
+                            distinct_field_info,
+                            where_field_info,
+                            op_str,
+                            int>{value, dataset_size},
+                    iterations
+            );
+        }
+
       public:
         // Template recursion to execute tests at compile time
         template <typename Model, size_t TestIndex, size_t TotalTests> struct TestExecutor {
@@ -410,6 +481,14 @@ namespace storm::benchmark {
                         runner.run_aggregate_min_operation<Model, test>(runner, iterations);
                     } else if constexpr (operation == "aggregate_max") {
                         runner.run_aggregate_max_operation<Model, test>(runner, iterations);
+                    } else if constexpr (operation == "distinct") {
+                        runner.run_distinct_operation<Model, test>(runner, iterations);
+                    } else if constexpr (operation == "distinct_where") {
+                        runner.run_distinct_where_operation<Model, test>(runner, iterations);
+                    } else if constexpr (operation == "distinct_join") {
+                        runner.run_distinct_join_operation<Model, test>(runner, iterations);
+                    } else if constexpr (operation == "distinct_where_join") {
+                        runner.run_distinct_where_join_operation<Model, test>(runner, iterations);
                     }
                 }
 

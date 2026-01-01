@@ -583,5 +583,97 @@
     "aggregate_field": "salary",
     "iterations": 5000,
     "dataset_size": 10000
+  },
+  {
+    "test_name": "distinct_simple_1000",
+    "test_category": "DISTINCT",
+    "description": "SELECT DISTINCT age from 1000 rows (50 unique values)",
+    "model": "Person",
+    "operation": "distinct",
+    "distinct_field": "age",
+    "iterations": 5000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "distinct_simple_10000",
+    "test_category": "DISTINCT",
+    "description": "SELECT DISTINCT age from 10000 rows (50 unique values)",
+    "model": "Person",
+    "operation": "distinct",
+    "distinct_field": "age",
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "distinct_where_1000",
+    "test_category": "DISTINCT_WHERE",
+    "description": "SELECT DISTINCT age WHERE salary >= 50000.0 (1000 rows)",
+    "model": "Person",
+    "operation": "distinct_where",
+    "distinct_field": "age",
+    "where_field": "salary",
+    "where_op": ">=",
+    "where_value_double": 50000.0,
+    "iterations": 5000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "distinct_where_10000",
+    "test_category": "DISTINCT_WHERE",
+    "description": "SELECT DISTINCT age WHERE salary >= 50000.0 (10000 rows)",
+    "model": "Person",
+    "operation": "distinct_where",
+    "distinct_field": "age",
+    "where_field": "salary",
+    "where_op": ">=",
+    "where_value_double": 50000.0,
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "distinct_join_1000",
+    "test_category": "DISTINCT_JOIN",
+    "description": "SELECT DISTINCT text with INNER JOIN (1000 messages)",
+    "model": "FKMessage",
+    "operation": "distinct_join",
+    "distinct_field": "text",
+    "iterations": 1000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "distinct_join_10000",
+    "test_category": "DISTINCT_JOIN",
+    "description": "SELECT DISTINCT text with INNER JOIN (10000 messages)",
+    "model": "FKMessage",
+    "operation": "distinct_join",
+    "distinct_field": "text",
+    "iterations": 100,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "distinct_where_join_1000",
+    "test_category": "DISTINCT_WHERE_JOIN",
+    "description": "SELECT DISTINCT text WHERE age > 30 with JOIN (1000 messages)",
+    "model": "FKMessage",
+    "operation": "distinct_where_join",
+    "distinct_field": "text",
+    "where_field": "age",
+    "where_op": ">",
+    "where_value_int": 30,
+    "iterations": 1000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "distinct_where_join_10000",
+    "test_category": "DISTINCT_WHERE_JOIN",
+    "description": "SELECT DISTINCT text WHERE age > 30 with JOIN (10000 messages)",
+    "model": "FKMessage",
+    "operation": "distinct_where_join",
+    "distinct_field": "text",
+    "where_field": "age",
+    "where_op": ">",
+    "where_value_int": 30,
+    "iterations": 100,
+    "dataset_size": 10000
   }
 ]
