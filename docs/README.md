@@ -89,6 +89,7 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 - [ ] **Enable `modernize-use-trailing-return-type`** - Convert all functions to trailing return type syntax (`auto foo() -> int` instead of `int foo()`) for consistent modern style (~50+ functions)
 - [x] ~~**Enable `modernize-avoid-c-arrays`**~~ - ✅ **DONE** - Enabled (0 warnings, prevents future C-array usage)
 - [ ] **Enable `bugprone-easily-swappable-parameters`** - Add strong types to prevent parameter swapping bugs (e.g., `FieldCount`, `BatchSize` wrappers instead of raw `size_t`)
+- [ ] **Fix DISTINCT on `std::optional<std::string>`** - DISTINCT queries on optional string fields return garbage values (memory corruption). See `DistinctOptionalStringFieldKnownIssue` test in `tests/test_distinct.cpp`. Note: `std::optional<int>` works correctly.
 - [x] **Batch INSERT Performance Variance** - ✅ **SOLVED**
 
   **Problem**: Small batch operations (batch_10) showed high measurement variance (72-88% efficiency range across runs).
