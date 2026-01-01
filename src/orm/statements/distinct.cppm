@@ -154,24 +154,6 @@ export namespace storm::orm::statements {
             , offset_(offset)
             , order_by_wrapper_(order_by_wrapper) {}
 
-        // Update state for reuse (called by QuerySet)
-        void update_state(
-                std::shared_ptr<ConnType>                  conn,
-                const orm::where::ExpressionVariantPtr&    where_expr,
-                const std::optional<JoinStatementWrapper>& join_stmt,
-                const std::optional<int>&                  limit,
-                const std::optional<int>&                  offset,
-                const std::optional<OrderByWrapper>&       order_by_wrapper = std::nullopt
-        ) {
-            conn_             = conn;
-            where_expr_       = where_expr;
-            join_stmt_        = join_stmt;
-            limit_            = limit;
-            offset_           = offset;
-            order_by_wrapper_ = order_by_wrapper;
-            // No cache invalidation needed - connection's prepare_cached() handles caching
-        }
-
         // Alias for execute() - provides familiar QuerySet-like API
         [[nodiscard]] auto select() -> std::expected<ResultType, Error> {
             return execute();

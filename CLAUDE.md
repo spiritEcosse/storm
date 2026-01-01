@@ -701,47 +701,31 @@ See [Compiler Issues Reference](docs/reference/compiler-issues.md) for all worka
 - **Latency tells the truth**: WHERE is fastest at 0.588ms, JOIN is slowest at 1.143ms
 
 **Why DISTINCT + JOIN shows 226.5% efficiency despite being slower:**
-1. **Statement pointer caching** - Avoids connection cache hash lookup
-2. **SQL string caching** - Avoids repeated string concatenation
-3. **Zero parameter binding** - JOIN conditions are static (`ON sender_id = id`)
-4. Raw SQLite's JOIN implementation is inefficient (2.590ms vs Storm's 1.143ms)
+1. **Zero parameter binding** - JOIN conditions are static (`ON sender_id = id`)
+2. Raw SQLite's JOIN implementation is inefficient (2.590ms vs Storm's 1.143ms)
 
 **Why DISTINCT + WHERE is fastest:**
-- ✅ Statement pointer caching implemented
-- ✅ SQL string caching implemented
 - ✅ **Selective WHERE reduces result set** (78 rows vs 10,000 rows)
-- ❌ Parameter binding overhead present but minimal
+- ✅ Connection-level `prepare_cached()` handles SQL statement caching
 
 **Benchmark Methodology Note**: Always use **latency (ms/query)** for comparing query performance, not throughput. Throughput is only meaningful when comparing operations with similar result set sizes.
 
 **Caching Architecture:**
-```cpp
-// Per-thread, per-field-combination caching
-static thread_local std::unique_ptr<DistinctQuerySet> cached_dqs;
 
-// Inside DistinctStatement:
-mutable Statement* cached_where_stmt_;      // Avoids prepare_cached() hash lookup
-mutable std::string cached_where_sql_;      // Avoids to_sql() overhead
-mutable Statement* cached_where_join_stmt_; // Combined WHERE + JOIN optimization
+DISTINCT uses a simple return-by-value pattern - no thread-local caching at the statement level. All SQL caching is handled at the connection level via `prepare_cached()`:
+
+```cpp
+// QuerySet returns DistinctStatement by value
+template <std::meta::info... FieldInfos>
+auto distinct() {
+    return DistinctStatement<T, ConnType, FieldInfos...>{conn_, where_expr_, ...};
+}
+
+// Connection handles SQL caching
+auto prepare_result = conn_->prepare_cached(sql);  // Hash lookup, reuses existing
 ```
 
-**When caches are reused:**
-- Same thread + same field combination (`distinct<^^Person::name>()`) → **cache shared**
-- Different QuerySet instances → **cache shared** (keyed by template params, not instance)
-- Same WHERE expression object → **cache preserved** across calls
-- Different WHERE expressions → **cache cleared** (SQL changed)
-
-**When new caches are created:**
-- Different field combinations (`distinct<^^Person::name>()` vs `distinct<^^Person::age>()`) → **separate caches**
-- Different threads → **separate caches** (`thread_local`)
-
-**Parameter Binding Safety**: Multiple QuerySet instances can safely share the same cached statement because:
-1. Each QuerySet has its own `where_expr_` object (NOT shared)
-2. Parameter binding happens atomically with execution in the same method call
-3. SQLite's binding is "last write wins" - each bind overwrites previous parameters
-4. No window exists for another QuerySet to interfere between bind and execute
-
-See [Parameter Binding Safety](docs/reference/statement-caching.md#parameter-binding-safety-with-shared-cached-statements) for detailed explanation.
+This is simpler than SELECT's approach (which caches statement pointers locally) but has equivalent performance because the actual statement preparation is cached at the connection level.
 
 ### Thread Safety Issues (TODO: Fix)
 

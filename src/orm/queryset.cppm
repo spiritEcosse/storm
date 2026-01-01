@@ -157,29 +157,16 @@ export namespace storm {
         //   auto ids = queryset.distinct().select();  // plf::hive<int> (defaults to PK)
         //
         // OPTIMIZATION: Returns cached DistinctStatement for optimal performance
-        // - Thread-local caching eliminates DistinctQuerySet wrapper overhead
-        // - Statement pointer caching avoids prepare_cached() hash lookup
-        // - SQL string caching avoids repeated to_sql() calls
-        template <std::meta::info... FieldInfos> constexpr auto distinct() -> auto& {
-            // Helper: get-or-create TLS cached statement with updated state
-            auto get_cached = [this]<typename StmtType>(std::optional<StmtType>& cache) -> StmtType& {
-                if (!cache.has_value()) {
-                    cache.emplace(conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_);
-                } else {
-                    cache->update_state(conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_);
-                }
-                return *cache;
-            };
-
+        // Returns DistinctStatement by value - connection-level prepare_cached() handles SQL caching
+        // No static thread_local needed since actual statement caching is at connection level
+        template <std::meta::info... FieldInfos> constexpr auto distinct() {
             if constexpr (sizeof...(FieldInfos) == 0) {
                 using StmtType = orm::statements::
                         DistinctStatement<T, ConnType, orm::statements::BaseStatement<T>::primary_key_>;
-                static thread_local std::optional<StmtType> cached_stmt;
-                return get_cached(cached_stmt);
+                return StmtType{conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_};
             } else {
                 using StmtType = orm::statements::DistinctStatement<T, ConnType, FieldInfos...>;
-                static thread_local std::optional<StmtType> cached_stmt;
-                return get_cached(cached_stmt);
+                return StmtType{conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_};
             }
         }
 
