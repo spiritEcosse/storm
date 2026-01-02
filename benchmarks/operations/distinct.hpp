@@ -12,6 +12,8 @@
  * Features are configured via template parameters at compile time.
  * Uses `if constexpr` for zero-overhead feature dispatch.
  *
+ * Inherits shared WHERE/JOIN infrastructure from SelectQueryBenchmarkBase.
+ *
  * Usage:
  *   // Simple DISTINCT
  *   DistinctBenchmark<Person, ^^Person::age>{1000}
@@ -23,43 +25,35 @@
  *   DistinctBenchmark<FKMessage, ^^FKMessage::sender, JoinConfig<&FKMessage::sender, User>>{1000}
  */
 
-#include "base.hpp"
-#include "select.hpp" // Reuse JoinConfig, NoJoin, NoWhere, WhereConfig
+#include "select_query_base.hpp"
 #include <format>
-#include <meta>
 #include <plf_hive/plf_hive.h>
 #include <string>
-#include <vector>
 
 namespace storm::benchmark {
 
     // ========================================================================
-    // DistinctBenchmark - Compile-Time Feature Configuration
+    // DistinctBenchmark - Inherits from SelectQueryBenchmarkBase
     // ========================================================================
     template <
             typename BaseModel,
             std::meta::info DistinctFieldInfo,
             typename JoinCfg  = NoJoin,
             typename WhereCfg = NoWhere>
-    class DistinctBenchmark
-        : public DataBenchmarkBase<DistinctBenchmark<BaseModel, DistinctFieldInfo, JoinCfg, WhereCfg>, BaseModel, 1> {
-        using Base =
-                DataBenchmarkBase<DistinctBenchmark<BaseModel, DistinctFieldInfo, JoinCfg, WhereCfg>, BaseModel, 1>;
-
-        // WHERE value storage - zero size if NoWhere, otherwise stores the value
-        using WhereValueType = typename WhereValueHelper<WhereCfg>::type;
-
-        [[no_unique_address]] WhereValueType where_value_{};
-
-        // QuerySets - use BaseModel's QuerySet, and RelatedModel's if JOIN enabled
-        using RelatedModel = typename RelatedModelHelper<JoinCfg>::type;
-
-        // For JOIN operations, we need a separate QuerySet for related model insertion
-        [[no_unique_address]] typename RelatedQSHelper<JoinCfg, std::monostate>::type related_qs_{};
+    class DistinctBenchmark : public SelectQueryBenchmarkBase<
+                                      DistinctBenchmark<BaseModel, DistinctFieldInfo, JoinCfg, WhereCfg>,
+                                      BaseModel,
+                                      JoinCfg,
+                                      WhereCfg> {
+        using Base = SelectQueryBenchmarkBase<
+                DistinctBenchmark<BaseModel, DistinctFieldInfo, JoinCfg, WhereCfg>,
+                BaseModel,
+                JoinCfg,
+                WhereCfg>;
 
       public:
         // ====================================================================
-        // Constructors
+        // Constructors - delegate to base
         // ====================================================================
 
         // Simple DISTINCT (no WHERE) - dataset_size only
@@ -71,7 +65,7 @@ namespace storm::benchmark {
         template <typename V>
         explicit constexpr DistinctBenchmark(V value, int dataset_size = 1000)
             requires(WhereCfg::enabled)
-            : Base(dataset_size), where_value_(value) {}
+            : Base(value, dataset_size) {}
 
         // ====================================================================
         // Builder Methods (return NEW types for compile-time chaining)
@@ -83,7 +77,7 @@ namespace storm::benchmark {
 
             if constexpr (WhereCfg::enabled) {
                 return DistinctBenchmark<BaseModel, DistinctFieldInfo, NewJoinCfg, WhereCfg>{
-                        where_value_, Base::batch_size()
+                        Base::where_value(), Base::batch_size()
                 };
             } else {
                 return DistinctBenchmark<BaseModel, DistinctFieldInfo, NewJoinCfg, WhereCfg>{Base::batch_size()};
@@ -106,7 +100,7 @@ namespace storm::benchmark {
             if constexpr (WhereCfg::enabled) {
                 constexpr std::string_view field_name = std::meta::identifier_of(WhereCfg::field_info);
                 constexpr std::string_view op_str     = WhereCfg::op.view();
-                std::cout << " WHERE " << field_name << " " << op_str << " " << where_value_;
+                std::cout << " WHERE " << field_name << " " << op_str << " " << Base::where_value();
             }
 
             if constexpr (JoinCfg::enabled) {
@@ -117,125 +111,6 @@ namespace storm::benchmark {
             std::cout << "  Dataset: " << Base::batch_size() << " rows\n";
         }
 
-        // ====================================================================
-        // create_model - Generate varied data for DISTINCT testing
-        // ====================================================================
-        static BaseModel create_model(int index = 0) {
-            int i = index + 1;
-
-            if constexpr (JoinCfg::enabled) {
-                // For JOIN benchmarks, create with FK stubs
-                return BaseModel{};
-            } else {
-                // For basic DISTINCT, create Person-like model with varied ages
-                return BaseModel{
-                        .id        = 0,
-                        .name      = std::format("Person{}", i),
-                        .age       = 20 + (i % 50), // 50 unique ages
-                        .is_active = (i % 2 == 0),
-                        .salary    = 30000.0 + (i * 1000.0)
-                };
-            }
-        }
-
-        // ====================================================================
-        // prepare - Feature-aware data preparation
-        // ====================================================================
-        void prepare(int iterations) {
-            if constexpr (JoinCfg::enabled) {
-                prepare_join_data(iterations);
-            } else {
-                Base::prepare_with_insert(iterations);
-            }
-        }
-
-      private:
-        // Prepare data for JOIN benchmarks (creates related records + FK references)
-        void prepare_join_data([[maybe_unused]] int iterations) {
-            if constexpr (JoinCfg::enabled) {
-                sqlite3* db = get_db<BaseModel>();
-                if (db == nullptr)
-                    return;
-
-                int dataset_size = Base::batch_size();
-
-                // Clear tables
-                sqlite3_exec(db, "DELETE FROM FKMessage", nullptr, nullptr, nullptr);
-                sqlite3_exec(db, "DELETE FROM User", nullptr, nullptr, nullptr);
-
-                // Insert related records (users)
-                std::vector<RelatedModel> users;
-                users.reserve(dataset_size);
-                for (int i = 0; i < dataset_size; i++) {
-                    users.push_back(RelatedModel{.id = 0, .name = std::format("User{}", i + 1), .age = 20 + (i % 50)});
-                }
-
-                auto user_result = related_qs_.insert(users);
-                if (!user_result.has_value()) {
-                    std::cerr << "Failed to insert users for DISTINCT JOIN benchmark\n";
-                    return;
-                }
-
-                // SELECT back to get the auto-generated user IDs
-                auto user_select = related_qs_.select();
-                if (!user_select.has_value()) {
-                    std::cerr << "Failed to select users for DISTINCT JOIN benchmark\n";
-                    return;
-                }
-
-                // Extract user IDs into a vector for FK references
-                std::vector<int64_t> user_ids;
-                user_ids.reserve(user_select.value().size());
-                for (const auto& user : user_select.value()) {
-                    user_ids.push_back(user.id);
-                }
-
-                // Insert base records with FK references
-                std::vector<BaseModel> messages;
-                messages.reserve(dataset_size);
-                for (int i = 0; i < dataset_size; i++) {
-                    RelatedModel sender{static_cast<int>(user_ids[i % user_ids.size()]), "", 0};
-                    RelatedModel receiver{static_cast<int>(user_ids[(i + 1) % user_ids.size()]), "", 0};
-
-                    messages.push_back(
-                            BaseModel{
-                                    .id = 0, .sender = sender, .receiver = receiver, .text = std::format("Msg{}", i + 1)
-                            }
-                    );
-                }
-
-                auto msg_result = Base::qs().insert(messages);
-                if (!msg_result.has_value()) {
-                    std::cerr << "Failed to insert messages for DISTINCT JOIN benchmark\n";
-                }
-            }
-        }
-
-        // ====================================================================
-        // WHERE clause helpers
-        // ====================================================================
-        auto build_where_clause() const
-            requires(WhereCfg::enabled)
-        {
-            using storm::orm::where::field;
-            constexpr std::string_view op_str = WhereCfg::op.view();
-
-            if constexpr (op_str == ">") {
-                return field<WhereCfg::field_info>() > where_value_;
-            } else if constexpr (op_str == ">=") {
-                return field<WhereCfg::field_info>() >= where_value_;
-            } else if constexpr (op_str == "<") {
-                return field<WhereCfg::field_info>() < where_value_;
-            } else if constexpr (op_str == "<=") {
-                return field<WhereCfg::field_info>() <= where_value_;
-            } else if constexpr (op_str == "==") {
-                return field<WhereCfg::field_info>() == where_value_;
-            } else if constexpr (op_str == "!=") {
-                return field<WhereCfg::field_info>() != where_value_;
-            }
-        }
-
-      public:
         // ====================================================================
         // execute - Storm ORM DISTINCT with compile-time feature dispatch
         // ====================================================================
@@ -249,7 +124,7 @@ namespace storm::benchmark {
 
             // Apply WHERE if configured (compile-time check)
             if constexpr (WhereCfg::enabled) {
-                auto where_clause = build_where_clause();
+                auto where_clause = Base::build_where_clause();
                 Base::qs().where(where_clause);
             }
 
@@ -307,27 +182,6 @@ namespace storm::benchmark {
             return sql;
         }
 
-        // Bind WHERE value
-        void bind_where_value(sqlite3_stmt* stmt) const
-            requires(WhereCfg::enabled)
-        {
-            using V = typename WhereCfg::value_type;
-
-            if constexpr (std::is_same_v<V, int>) {
-                sqlite3_bind_int(stmt, 1, where_value_);
-            } else if constexpr (std::is_same_v<V, double>) {
-                sqlite3_bind_double(stmt, 1, where_value_);
-            } else if constexpr (std::is_same_v<V, bool>) {
-                sqlite3_bind_int(stmt, 1, where_value_ ? 1 : 0);
-            } else if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, const char*>) {
-                if constexpr (std::is_same_v<V, std::string>) {
-                    sqlite3_bind_text(stmt, 1, where_value_.c_str(), -1, SQLITE_TRANSIENT);
-                } else {
-                    sqlite3_bind_text(stmt, 1, where_value_, -1, SQLITE_TRANSIENT);
-                }
-            }
-        }
-
       public:
         int execute_raw(int iterations) {
             sqlite3* db = get_db<BaseModel>();
@@ -343,7 +197,7 @@ namespace storm::benchmark {
 
             // Bind WHERE value if configured
             if constexpr (WhereCfg::enabled) {
-                bind_where_value(stmt);
+                Base::bind_where_value(stmt);
             }
 
             // Determine field type at compile time
