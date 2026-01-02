@@ -263,21 +263,13 @@ export namespace storm {
         // Usage: queryset.sum<^^Person::age>().select()
         //        queryset.where(age > 30).sum<^^Person::age>().select()
         //        queryset.join<FK>().sum<^^Person::salary>().select()
+        // Returns AggregateStatement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto sum() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::AggregateOp<orm::statements::AggregateType::SUM, FieldInfos...>>;
-
-            static thread_local std::optional<StmtType> cached_stmt;
-
-            if (!cached_stmt.has_value()) {
-                cached_stmt.emplace(conn_, where_expr_, join_stmt_);
-            } else {
-                cached_stmt->update_state(conn_, where_expr_, join_stmt_);
-            }
-
-            return *cached_stmt;
+            return StmtType{conn_, where_expr_, join_stmt_};
         }
 
         // Shortcut: COUNT aggregate (defaults to COUNT(*) if no fields)
@@ -285,105 +277,65 @@ export namespace storm {
         // Usage: queryset.count().select()  // COUNT(*)
         //        queryset.where(age > 30).count().select()
         //        queryset.join<FK>().count().select()
+        // Returns AggregateStatement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto count() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::AggregateOp<orm::statements::AggregateType::COUNT, FieldInfos...>>;
-
-            static thread_local std::optional<StmtType> cached_stmt;
-
-            if (!cached_stmt.has_value()) {
-                cached_stmt.emplace(conn_, where_expr_, join_stmt_);
-            } else {
-                cached_stmt->update_state(conn_, where_expr_, join_stmt_);
-            }
-
-            return *cached_stmt;
+            return StmtType{conn_, where_expr_, join_stmt_};
         }
 
         // Shortcut: AVG aggregate (multi-field: AVG(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
         // Usage: queryset.avg<^^Person::salary>().select()
         //        queryset.where(department == "Engineering").avg<^^Person::salary>().select()
+        // Returns AggregateStatement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto avg() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::AggregateOp<orm::statements::AggregateType::AVG, FieldInfos...>>;
-
-            static thread_local std::optional<StmtType> cached_stmt;
-
-            if (!cached_stmt.has_value()) {
-                cached_stmt.emplace(conn_, where_expr_, join_stmt_);
-            } else {
-                cached_stmt->update_state(conn_, where_expr_, join_stmt_);
-            }
-
-            return *cached_stmt;
+            return StmtType{conn_, where_expr_, join_stmt_};
         }
 
         // Shortcut: MIN aggregate (multi-field: MIN(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
         // Usage: queryset.min<^^Person::age>().select()
         //        queryset.where(active == true).min<^^Person::age>().select()
+        // Returns AggregateStatement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto min() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::AggregateOp<orm::statements::AggregateType::MIN, FieldInfos...>>;
-
-            static thread_local std::optional<StmtType> cached_stmt;
-
-            if (!cached_stmt.has_value()) {
-                cached_stmt.emplace(conn_, where_expr_, join_stmt_);
-            } else {
-                cached_stmt->update_state(conn_, where_expr_, join_stmt_);
-            }
-
-            return *cached_stmt;
+            return StmtType{conn_, where_expr_, join_stmt_};
         }
 
         // Shortcut: MAX aggregate (multi-field: MAX(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
         // Usage: queryset.max<^^Person::age>().select()
         //        queryset.where(department == "Sales").max<^^Person::salary>().select()
+        // Returns AggregateStatement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto max() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::AggregateOp<orm::statements::AggregateType::MAX, FieldInfos...>>;
-
-            static thread_local std::optional<StmtType> cached_stmt;
-
-            if (!cached_stmt.has_value()) {
-                cached_stmt.emplace(conn_, where_expr_, join_stmt_);
-            } else {
-                cached_stmt->update_state(conn_, where_expr_, join_stmt_);
-            }
-
-            return *cached_stmt;
+            return StmtType{conn_, where_expr_, join_stmt_};
         }
 
         // Shortcut: COUNT(DISTINCT field) aggregate
         // Supports WHERE and JOIN clauses
         // Usage: queryset.count_distinct<^^Person::age>().select()
         //        queryset.where(active == true).count_distinct<^^Person::department>().select()
+        // Returns AggregateStatement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info FieldInfo> auto count_distinct() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::AggregateOp<orm::statements::AggregateType::COUNT_DISTINCT, FieldInfo>>;
-
-            static thread_local std::optional<StmtType> cached_stmt;
-
-            if (!cached_stmt.has_value()) {
-                cached_stmt.emplace(conn_, where_expr_, join_stmt_);
-            } else {
-                cached_stmt->update_state(conn_, where_expr_, join_stmt_);
-            }
-
-            return *cached_stmt;
+            return StmtType{conn_, where_expr_, join_stmt_};
         }
 
         // Static methods for connection management

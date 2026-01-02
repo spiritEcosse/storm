@@ -344,17 +344,6 @@ export namespace storm::orm::statements {
         )
             : conn_(std::move(conn)), where_expr_(std::move(where_expr)), join_stmt_(join_stmt) {}
 
-        // Update state for reuse (called by QuerySet)
-        void update_state(
-                std::shared_ptr<ConnType>                  conn,
-                const orm::where::ExpressionVariantPtr&    where_expr,
-                const std::optional<JoinStatementWrapper>& join_stmt
-        ) {
-            conn_       = std::move(conn);
-            where_expr_ = where_expr;
-            join_stmt_  = join_stmt;
-        }
-
         // Execute the query and return results
         [[nodiscard]] auto select() -> std::expected<ResultType, Error> {
             return execute();
@@ -674,16 +663,6 @@ export namespace storm::orm::statements {
         )
             : conn_(std::move(conn)), where_expr_(std::move(where_expr)), join_stmt_(join_stmt) {}
 
-        void update_state(
-                std::shared_ptr<ConnType>                  conn,
-                const orm::where::ExpressionVariantPtr&    where_expr,
-                const std::optional<JoinStatementWrapper>& join_stmt
-        ) {
-            conn_       = std::move(conn);
-            where_expr_ = where_expr;
-            join_stmt_  = join_stmt;
-        }
-
         [[nodiscard]] auto select() -> std::expected<ResultType, Error> {
             return execute();
         }
@@ -991,90 +970,50 @@ export namespace storm::orm::statements {
 
         // COUNT aggregate - returns GroupByAggregateStatement
         // Usage: group_by<field>().count().select()
+        // Returns GroupByAggregateStatement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto count() {
             using StmtType = GroupByAggregateStatement<
                     T,
                     ConnType,
                     GroupFields,
                     AggregateOp<AggregateType::COUNT, FieldInfos...>>;
-
-            static thread_local std::optional<StmtType> cached_stmt;
-
-            if (!cached_stmt.has_value()) {
-                cached_stmt.emplace(conn_, where_expr_, join_stmt_);
-            } else {
-                cached_stmt->update_state(conn_, where_expr_, join_stmt_);
-            }
-
-            return *cached_stmt;
+            return StmtType{conn_, where_expr_, join_stmt_};
         }
 
         // SUM aggregate - returns GroupByAggregateStatement
         // Usage: group_by<field>().sum<sum_field>().select()
+        // Returns GroupByAggregateStatement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto sum() {
             using StmtType =
                     GroupByAggregateStatement<T, ConnType, GroupFields, AggregateOp<AggregateType::SUM, FieldInfos...>>;
-
-            static thread_local std::optional<StmtType> cached_stmt;
-
-            if (!cached_stmt.has_value()) {
-                cached_stmt.emplace(conn_, where_expr_, join_stmt_);
-            } else {
-                cached_stmt->update_state(conn_, where_expr_, join_stmt_);
-            }
-
-            return *cached_stmt;
+            return StmtType{conn_, where_expr_, join_stmt_};
         }
 
         // AVG aggregate - returns GroupByAggregateStatement
         // Usage: group_by<field>().avg<avg_field>().select()
+        // Returns GroupByAggregateStatement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto avg() {
             using StmtType =
                     GroupByAggregateStatement<T, ConnType, GroupFields, AggregateOp<AggregateType::AVG, FieldInfos...>>;
-
-            static thread_local std::optional<StmtType> cached_stmt;
-
-            if (!cached_stmt.has_value()) {
-                cached_stmt.emplace(conn_, where_expr_, join_stmt_);
-            } else {
-                cached_stmt->update_state(conn_, where_expr_, join_stmt_);
-            }
-
-            return *cached_stmt;
+            return StmtType{conn_, where_expr_, join_stmt_};
         }
 
         // MIN aggregate - returns GroupByAggregateStatement
         // Usage: group_by<field>().min<min_field>().select()
+        // Returns GroupByAggregateStatement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto min() {
             using StmtType =
                     GroupByAggregateStatement<T, ConnType, GroupFields, AggregateOp<AggregateType::MIN, FieldInfos...>>;
-
-            static thread_local std::optional<StmtType> cached_stmt;
-
-            if (!cached_stmt.has_value()) {
-                cached_stmt.emplace(conn_, where_expr_, join_stmt_);
-            } else {
-                cached_stmt->update_state(conn_, where_expr_, join_stmt_);
-            }
-
-            return *cached_stmt;
+            return StmtType{conn_, where_expr_, join_stmt_};
         }
 
         // MAX aggregate - returns GroupByAggregateStatement
         // Usage: group_by<field>().max<max_field>().select()
+        // Returns GroupByAggregateStatement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto max() {
             using StmtType =
                     GroupByAggregateStatement<T, ConnType, GroupFields, AggregateOp<AggregateType::MAX, FieldInfos...>>;
-
-            static thread_local std::optional<StmtType> cached_stmt;
-
-            if (!cached_stmt.has_value()) {
-                cached_stmt.emplace(conn_, where_expr_, join_stmt_);
-            } else {
-                cached_stmt->update_state(conn_, where_expr_, join_stmt_);
-            }
-
-            return *cached_stmt;
+            return StmtType{conn_, where_expr_, join_stmt_};
         }
 
       private:
