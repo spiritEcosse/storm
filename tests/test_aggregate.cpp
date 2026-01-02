@@ -297,6 +297,20 @@ TEST_F(AggregateTest, EmptyTable_Avg) {
     EXPECT_DOUBLE_EQ(result.value(), 0.0);
 }
 
+TEST_F(AggregateTest, EmptyTable_Min) {
+    // MIN on empty table should return 0 (SQLite NULL → 0.0)
+    auto result = qs->min<^^AggregatePerson::age>().select();
+    ASSERT_TRUE(result.has_value()) << "MIN on empty table failed: " << result.error().message();
+    EXPECT_DOUBLE_EQ(result.value(), 0.0);
+}
+
+TEST_F(AggregateTest, EmptyTable_Max) {
+    // MAX on empty table should return 0 (SQLite NULL → 0.0)
+    auto result = qs->max<^^AggregatePerson::age>().select();
+    ASSERT_TRUE(result.has_value()) << "MAX on empty table failed: " << result.error().message();
+    EXPECT_DOUBLE_EQ(result.value(), 0.0);
+}
+
 TEST_F(AggregateTest, SingleRow_AllAggregates) {
     // Insert single row
     auto insert_result =
