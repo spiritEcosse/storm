@@ -65,9 +65,8 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 - Consult development docs for contributing guidelines
 
 
-## TODO: 
-- [ ] - let run benchmarks parallel, to quickly check many cases, so use count of cores 
-and run 10, 100, 500, 1k, 5k, 10k, 50k, 100k
+## TODO:
+- [x] ~~let run benchmarks parallel, to quickly check many cases, so use count of cores~~ - ✅ **DONE** - Added `benchmarks/bench_parallel.sh` script. Uses CPU cores to run benchmarks in parallel. All SELECT/DISTINCT tests now use 4 data sizes (100, 1000, 10000, 100000). Usage: `./benchmarks/bench_parallel.sh select` or `./benchmarks/bench_parallel.sh distinct`
 - [x] ~~consider prepare_statement simplify – adding the check inside the lambda~~ **REJECTED**: ~22% regression (102% → 80%) - check runs 10k times per iteration instead of once
 - [x] ~~consider adding reserve - Dynamic path~~ **REJECTED**: ~2% regression - function call overhead exceeds reallocation savings
 - [ ] - we have so many *.md files, lets simplify and struct them, so all rules.md must be inside CLAUDE.md if 
