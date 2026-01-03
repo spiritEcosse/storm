@@ -82,6 +82,8 @@ export namespace storm::orm::statements {
 
         // Unified SELECT execution - handles all combinations of JOIN and WHERE
         // Uses monadic and_then for cleaner error propagation
+        // NOTE: The if/else branch is OUTSIDE the loop intentionally - checking inside would
+        // add overhead per row (10k checks vs 1 check). Keep separate execute_query_loop calls.
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
         execute(std::optional<JoinStatementWrapper>     join_wrapper     = std::nullopt,
                 const orm::where::ExpressionVariantPtr& where_expr       = nullptr,
@@ -133,6 +135,8 @@ export namespace storm::orm::statements {
             }
 
             // Dynamic path: build SQL and cache by string comparison
+            // NOTE: Do NOT add sql.reserve() here - benchmarks show ~2% regression due to
+            // extra function call overhead outweighing reallocation savings for typical SQL sizes
             std::string sql = join_wrapper ? join_wrapper->get_complete_sql() : std::string(get_select_sql());
             if (where_expr) {
                 sql += " WHERE ";

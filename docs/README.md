@@ -66,8 +66,10 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 
 
 ## TODO: 
-- [ ] - consider prepare_statement simplify – adding the check inside the lambda, therefore we will have one call of execute_query_loop with the check inside
-- [ ] - consider adding reserve - Dynamic path: build SQL and cache by string comparison
+- [ ] - let run benchmarks parallel, to quickly check many cases, so use count of cores 
+and run 10, 100, 500, 1k, 5k, 10k, 50k, 100k
+- [x] ~~consider prepare_statement simplify – adding the check inside the lambda~~ **REJECTED**: ~22% regression (102% → 80%) - check runs 10k times per iteration instead of once
+- [x] ~~consider adding reserve - Dynamic path~~ **REJECTED**: ~2% regression - function call overhead exceeds reallocation savings
 - [ ] - we have so many *.md files, lets simplify and struct them, so all rules.md must be inside CLAUDE.md if 
 the file CLAUDE is too big – lets move rules.md to the docs. what actually is UPDATE_OPTIMIZATION_REPORT.md ?
 if it is important, move to according folder in docs. What is docs/development folder is ?
