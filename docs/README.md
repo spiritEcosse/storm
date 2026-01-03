@@ -66,23 +66,33 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 
 
 ## TODO:
-- [x] ~~let run benchmarks parallel, to quickly check many cases, so use count of cores~~ - ✅ **DONE** - Added `benchmarks/bench_parallel.sh` script. Uses CPU cores to run benchmarks in parallel. All SELECT/DISTINCT tests now use 4 data sizes (100, 1000, 10000, 100000). Usage: `./benchmarks/bench_parallel.sh select` or `./benchmarks/bench_parallel.sh distinct`
-- [x] ~~consider prepare_statement simplify – adding the check inside the lambda~~ **REJECTED**: ~22% regression (102% → 80%) - check runs 10k times per iteration instead of once
-- [x] ~~consider adding reserve - Dynamic path~~ **REJECTED**: ~2% regression - function call overhead exceeds reallocation savings
-- [ ] - we have so many *.md files, lets simplify and struct them, so all rules.md must be inside CLAUDE.md if 
-the file CLAUDE is too big – lets move rules.md to the docs. what actually is UPDATE_OPTIMIZATION_REPORT.md ?
-if it is important, move to according folder in docs. What is docs/development folder is ?
-Add a rule if needed to create a *.md file – use docs directory for all docs.
-- [x] ~~Add benchmarks for select in table of benchmarks/README.md~~ - **DONE** - Added SELECT performance tables (simple, JOIN, WHERE+JOIN) showing 95-103% efficiency
-- [ ] - Make select agnostic about which db is used (for now it's sqlite_orm and could be psql and others)
-- [x] ~~string comparison vs pointer comparison~~ - **INVESTIGATED**: Micro-benchmark proves O(1) vs O(n) (20-80x faster for pure comparison), but real ORM benchmarks show no measurable improvement (<0.1%) because SQLite execution dominates. String comparison is adequate.
-- [x] ~~enable bugprone-exception-escape~~ - ✅ **DONE** - Removed `noexcept` from functions that may allocate std::string
-- [x] ~~enable bugprone-suspicious-stringview-data-usage~~ - ✅ **DONE** - Use `sql.size()` with `sqlite3_prepare_v2` or convert to `std::string`
-- [x] ~~enable bugprone-branch-clone~~ - ✅ **DONE** - Combined identical int64/uint64 branches in type extraction
-- [x] ~~enable bugprone-inc-dec-in-conditions~~ - ✅ **DONE** - Separated increment into local variable assignment in fold expressions
-- [x] ~~enable bugprone-unused-return-value~~ - ✅ **DONE** - Added `std::ignore =` for intentionally ignored returns in tests
-- [x] ~~Consider adding clang-tidy in quick_commit.sh, but exclude third_party~~ - ✅ **DONE** - Added `scripts/run_clang_tidy.sh` with parallel execution, modernize checks, third_party exclusion. Runs by default in `quick_commit.sh` (use `--no-tidy` to skip)
-- [x] ~~Replace all std::vector with plf::hive~~ - ✅ **DONE** - All QuerySet `select()` methods now return `plf::hive<T>` for stable iterators and efficient insertion
+
+> **Note**: When changing a module, run the parallel benchmark script to verify performance:
+> ```bash
+> ./benchmarks/bench_parallel.sh select      # After changing SELECT module
+> ./benchmarks/bench_parallel.sh distinct    # After changing DISTINCT module
+> ./benchmarks/bench_parallel.sh insert      # After changing INSERT module
+> ./benchmarks/bench_parallel.sh aggregate   # After changing AGGREGATE module
+> ```
+
+### Completed:
+- [x] ~~let run benchmarks parallel~~ - ✅ **DONE** - Added `benchmarks/bench_parallel.sh`. Uses CPU cores for parallel execution. All SELECT/DISTINCT tests use 4 data sizes (100, 1000, 10000, 100000)
+- [x] ~~consider prepare_statement simplify~~ **REJECTED**: ~22% regression (102% → 80%)
+- [x] ~~consider adding reserve - Dynamic path~~ **REJECTED**: ~2% regression
+- [x] ~~Add benchmarks for select in table~~ - **DONE** - Added SELECT performance tables showing 95-103% efficiency
+- [x] ~~string comparison vs pointer comparison~~ - **INVESTIGATED**: No measurable improvement (<0.1%) - SQLite execution dominates
+- [x] ~~enable bugprone-exception-escape~~ - ✅ **DONE**
+- [x] ~~enable bugprone-suspicious-stringview-data-usage~~ - ✅ **DONE**
+- [x] ~~enable bugprone-branch-clone~~ - ✅ **DONE**
+- [x] ~~enable bugprone-inc-dec-in-conditions~~ - ✅ **DONE**
+- [x] ~~enable bugprone-unused-return-value~~ - ✅ **DONE**
+- [x] ~~Consider adding clang-tidy in quick_commit.sh~~ - ✅ **DONE** - Added `scripts/run_clang_tidy.sh`
+- [x] ~~Replace all std::vector with plf::hive~~ - ✅ **DONE**
+- [x] ~~**Enable `modernize-avoid-c-arrays`**~~ - ✅ **DONE**
+- [x] **Batch INSERT Performance Variance** - ✅ **SOLVED**
+
+### Pending:
+- [ ] **Fix DISTINCT on `std::optional<std::string>`** - DISTINCT queries on optional string fields return garbage values (memory corruption). See `DistinctOptionalStringFieldKnownIssue` test in `tests/test_distinct.cpp`. Note: `std::optional<int>` works correctly.
 - [ ] **Verify Performance Code Compliance** - Audit all statement implementations against CLAUDE.md performance rules:
   - [ ] Raw pointer caching in hot loops (SELECT, DISTINCT extraction loops)
   - [ ] Statement pointer caching for single-row operations (execute_one, remove_one)
@@ -95,29 +105,7 @@ Add a rule if needed to create a *.md file – use docs directory for all docs.
   - [ ] Same container types (plf::hive for both)
   - [ ] Runtime decision logic for both (no compile-time advantages for raw)
   - [ ] Correct metric (latency for different result sizes)
-- [ ] Lets think how to add true statistics in README files (like benchmarks)
-- [ ] **Enable `modernize-use-trailing-return-type`** - Convert all functions to trailing return type syntax (`auto foo() -> int` instead of `int foo()`) for consistent modern style (~50+ functions)
-- [x] ~~**Enable `modernize-avoid-c-arrays`**~~ - ✅ **DONE** - Enabled (0 warnings, prevents future C-array usage)
-- [ ] **Enable `bugprone-easily-swappable-parameters`** - Add strong types to prevent parameter swapping bugs (e.g., `FieldCount`, `BatchSize` wrappers instead of raw `size_t`)
-- [ ] **Fix DISTINCT on `std::optional<std::string>`** - DISTINCT queries on optional string fields return garbage values (memory corruption). See `DistinctOptionalStringFieldKnownIssue` test in `tests/test_distinct.cpp`. Note: `std::optional<int>` works correctly.
-- [x] **Batch INSERT Performance Variance** - ✅ **SOLVED**
-
-  **Problem**: Small batch operations (batch_10) showed high measurement variance (72-88% efficiency range across runs).
-
-  **Root Causes Identified**:
-  1. ❌ **Unfair benchmark comparison** - Raw SQLite wasn't using chunked bulk SQL strategy (fixed in commit f06d51b)
-  2. ❌ **Suboptimal thresholds** - Hardcoded BATCH_THRESHOLD didn't utilize SQLite's 999 variable limit (fixed in commit 2c787cc)
-
-  **Solutions Implemented**:
-  1. ✅ **Fair apples-to-apples comparison** - Both Storm ORM and raw SQLite now use identical chunked bulk SQL strategy
-  2. ✅ **Field-aware adaptive thresholds** - `calculate_adaptive_threshold()` now computes optimal batch sizes based on struct field count (999/field_count)
-
-  **Current Results** (1000 iterations, Release build):
-  ```
-  insert_batch_10:    115.0% efficiency (1.66 M ops/sec vs 1.45 M ops/sec)
-  insert_batch_100:   112.9% efficiency (2.82 M ops/sec vs 2.50 M ops/sec)
-  insert_batch_1000:  113.7% efficiency (2.84 M ops/sec vs 2.50 M ops/sec)
-  insert_batch_10000: 114.3% efficiency (2.85 M ops/sec vs 2.49 M ops/sec)
-  ```
-
-  **Conclusion**: Storm ORM now shows **consistent 113-115% efficiency** across ALL batch sizes, including previously problematic batch_10. The 72-88% low performance was a measurement artifact from unfair comparisons and suboptimal thresholds, not a real performance issue.
+- [ ] **Enable `modernize-use-trailing-return-type`** - Convert all functions to trailing return type syntax
+- [ ] **Enable `bugprone-easily-swappable-parameters`** - Add strong types to prevent parameter swapping bugs
+- [ ] Make select agnostic about which db is used (for now it's sqlite and could be psql and others)
+- [ ] Simplify *.md files structure - move rules.md content to CLAUDE.md or docs/
