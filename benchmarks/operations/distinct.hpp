@@ -91,51 +91,24 @@ namespace storm::benchmark {
         }
 
         // ====================================================================
-        // print_info - Feature-aware info output
+        // print_info - Uses shared footer from base class
         // ====================================================================
         void print_info() const {
             constexpr std::string_view distinct_field = std::meta::identifier_of(DistinctFieldInfo);
             std::cout << "Operation: SELECT DISTINCT " << distinct_field;
-
-            if constexpr (WhereCfg::enabled) {
-                constexpr std::string_view field_name = std::meta::identifier_of(WhereCfg::field_info);
-                constexpr std::string_view op_str     = WhereCfg::op.view();
-                std::cout << " WHERE " << field_name << " " << op_str << " " << Base::where_value();
-            }
-
-            if constexpr (JoinCfg::enabled) {
-                std::cout << " + JOIN";
-            }
-
-            std::cout << "\n";
-            std::cout << "  Dataset: " << Base::batch_size() << " rows\n";
+            Base::print_info_footer();
         }
 
         // ====================================================================
-        // execute - Storm ORM DISTINCT with compile-time feature dispatch
+        // execute - Storm ORM DISTINCT using base class helpers
         // ====================================================================
+        int execute_iteration() {
+            auto results = Base::qs().template distinct<DistinctFieldInfo>().select();
+            return results.value().size();
+        }
+
         int execute(int iterations) {
-            int total_rows = 0;
-
-            // Apply JOIN if configured (compile-time check)
-            if constexpr (JoinCfg::enabled) {
-                Base::qs().template join<JoinCfg::fk_ptr>();
-            }
-
-            // Apply WHERE if configured (compile-time check)
-            if constexpr (WhereCfg::enabled) {
-                auto where_clause = Base::build_where_clause();
-                Base::qs().where(where_clause);
-            }
-
-            // Execute DISTINCT query loop
-            for (int i = 0; i < iterations; i++) {
-                auto results = Base::qs().template distinct<DistinctFieldInfo>().select();
-                total_rows += results.value().size();
-            }
-
-            Base::qs().reset();
-            return total_rows;
+            return Base::execute_with_filters(iterations);
         }
 
         // ====================================================================

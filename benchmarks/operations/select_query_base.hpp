@@ -1,16 +1,17 @@
 #pragma once
 
 /**
- * CRTP Base Class for SELECT-like Benchmarks (SELECT, DISTINCT)
+ * CRTP Base Class for SELECT-like Benchmarks (SELECT, DISTINCT, AGGREGATE)
  *
  * Provides shared functionality:
  * - WHERE value storage and clause building
  * - JOIN configuration and data preparation
  * - Model creation with varied data
  * - Parameter binding utilities
+ * - print_info helpers (WHERE/JOIN suffix, dataset footer)
  *
  * Derived classes implement:
- * - print_info() - operation-specific info
+ * - print_info() - calls print_info_footer() after operation header
  * - execute() - Storm ORM execution
  * - execute_raw() - Raw SQLite execution
  * - build_*_sql() - operation-specific SQL generation
@@ -121,6 +122,54 @@ namespace storm::benchmark {
         // Accessor for where_value_ from derived classes
         const WhereValueType& where_value() const {
             return where_value_;
+        }
+
+        // ====================================================================
+        // print_info helpers - shared formatting for WHERE/JOIN/dataset
+        // ====================================================================
+        void print_where_suffix() const {
+            if constexpr (WhereCfg::enabled) {
+                constexpr std::string_view field_name = std::meta::identifier_of(WhereCfg::field_info);
+                constexpr std::string_view op_str     = WhereCfg::op.view();
+                std::cout << " WHERE " << field_name << " " << op_str << " " << where_value_;
+            }
+        }
+
+        void print_join_suffix() const {
+            if constexpr (JoinCfg::enabled) {
+                std::cout << " + JOIN";
+            }
+        }
+
+        void print_info_footer() const {
+            print_where_suffix();
+            print_join_suffix();
+            std::cout << "\n";
+            std::cout << "  Dataset: " << Base::batch_size() << " rows\n";
+        }
+
+        // ====================================================================
+        // execute helpers - shared JOIN/WHERE application and loop structure
+        // ====================================================================
+        void apply_query_filters() {
+            if constexpr (JoinCfg::enabled) {
+                Base::qs().template join<JoinCfg::fk_ptr>();
+            }
+            if constexpr (WhereCfg::enabled) {
+                auto where_clause = build_where_clause();
+                Base::qs().where(where_clause);
+            }
+        }
+
+        // CRTP execute helper - derived class provides execute_iteration()
+        int execute_with_filters(int iterations) {
+            apply_query_filters();
+            int total = 0;
+            for (int i = 0; i < iterations; i++) {
+                total += static_cast<Derived*>(this)->execute_iteration();
+            }
+            Base::qs().reset();
+            return total;
         }
 
       public:

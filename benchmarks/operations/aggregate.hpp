@@ -121,7 +121,7 @@ namespace storm::benchmark {
         }
 
         // ====================================================================
-        // print_info - Display benchmark info
+        // print_info - Uses shared footer from base class
         // ====================================================================
         void print_info() const {
             std::cout << "Operation: " << aggregate_op_name(Op);
@@ -131,78 +131,39 @@ namespace storm::benchmark {
                 std::cout << " (" << field_name << ")";
             }
 
-            if constexpr (WhereCfg::enabled) {
-                constexpr std::string_view where_field = std::meta::identifier_of(WhereCfg::field_info);
-                constexpr std::string_view op_str      = WhereCfg::op.view();
-                std::cout << " WHERE " << where_field << " " << op_str << " " << Base::where_value();
-            }
-
-            if constexpr (JoinCfg::enabled) {
-                std::cout << " + JOIN";
-            }
-
-            std::cout << "\n";
-            std::cout << "  Dataset: " << Base::batch_size() << " rows\n";
+            Base::print_info_footer();
         }
 
         // ====================================================================
-        // execute - Storm ORM aggregate query
+        // execute - Storm ORM aggregate using base class helpers
         // ====================================================================
+      private:
+        auto execute_aggregate() {
+            if constexpr (Op == AggregateOp::Count) {
+                return Base::qs().count().select();
+            } else if constexpr (Op == AggregateOp::CountField) {
+                return Base::qs().template count<FieldInfo>().select();
+            } else if constexpr (Op == AggregateOp::CountDistinct) {
+                return Base::qs().template count_distinct<FieldInfo>().select();
+            } else if constexpr (Op == AggregateOp::Sum) {
+                return Base::qs().template sum<FieldInfo>().select();
+            } else if constexpr (Op == AggregateOp::Avg) {
+                return Base::qs().template avg<FieldInfo>().select();
+            } else if constexpr (Op == AggregateOp::Min) {
+                return Base::qs().template min<FieldInfo>().select();
+            } else if constexpr (Op == AggregateOp::Max) {
+                return Base::qs().template max<FieldInfo>().select();
+            }
+        }
+
+      public:
+        int execute_iteration() {
+            auto result = execute_aggregate();
+            return (result.has_value() && result.value() >= 0) ? 1 : 0;
+        }
+
         int execute(int iterations) {
-            int total = 0;
-
-            // Apply JOIN if configured (compile-time check)
-            if constexpr (JoinCfg::enabled) {
-                Base::qs().template join<JoinCfg::fk_ptr>();
-            }
-
-            // Apply WHERE if configured (compile-time check)
-            if constexpr (WhereCfg::enabled) {
-                auto where_clause = Base::build_where_clause();
-                Base::qs().where(where_clause);
-            }
-
-            for (int i = 0; i < iterations; i++) {
-                if constexpr (Op == AggregateOp::Count) {
-                    auto result = Base::qs().count().select();
-                    if (result.has_value()) {
-                        total += (result.value() >= 0 ? 1 : 0);
-                    }
-                } else if constexpr (Op == AggregateOp::CountField) {
-                    auto result = Base::qs().template count<FieldInfo>().select();
-                    if (result.has_value()) {
-                        total += (result.value() >= 0 ? 1 : 0);
-                    }
-                } else if constexpr (Op == AggregateOp::CountDistinct) {
-                    auto result = Base::qs().template count_distinct<FieldInfo>().select();
-                    if (result.has_value()) {
-                        total += (result.value() >= 0 ? 1 : 0);
-                    }
-                } else if constexpr (Op == AggregateOp::Sum) {
-                    auto result = Base::qs().template sum<FieldInfo>().select();
-                    if (result.has_value()) {
-                        total += (result.value() >= 0 ? 1 : 0);
-                    }
-                } else if constexpr (Op == AggregateOp::Avg) {
-                    auto result = Base::qs().template avg<FieldInfo>().select();
-                    if (result.has_value()) {
-                        total += (result.value() >= 0 ? 1 : 0);
-                    }
-                } else if constexpr (Op == AggregateOp::Min) {
-                    auto result = Base::qs().template min<FieldInfo>().select();
-                    if (result.has_value()) {
-                        total += (result.value() >= 0 ? 1 : 0);
-                    }
-                } else if constexpr (Op == AggregateOp::Max) {
-                    auto result = Base::qs().template max<FieldInfo>().select();
-                    if (result.has_value()) {
-                        total += (result.value() >= 0 ? 1 : 0);
-                    }
-                }
-            }
-
-            Base::qs().reset();
-            return total;
+            return Base::execute_with_filters(iterations);
         }
 
         // ====================================================================
