@@ -186,20 +186,9 @@ export namespace storm::orm::statements {
                 sql += orm::where::to_sql(*where_expr_);
             }
 
-            // Append ORDER BY, LIMIT, OFFSET
-            if (order_by_wrapper_.has_value() && !order_by_wrapper_->empty()) {
-                sql += order_by_wrapper_->get_order_by_sql();
-            }
-            if (limit_.has_value()) {
-                sql += " LIMIT ";
-                sql += std::to_string(limit_.value());
-            } else if (offset_.has_value()) {
-                sql += " LIMIT -1";
-            }
-            if (offset_.has_value()) {
-                sql += " OFFSET ";
-                sql += std::to_string(offset_.value());
-            }
+            // Append ORDER BY, LIMIT, OFFSET using shared helpers
+            Base::append_order_by(sql, order_by_wrapper_);
+            Base::append_limit_offset(sql, limit_, offset_);
 
             // Prepare statement
             auto prepare_result = conn_->prepare_cached(sql);
@@ -209,10 +198,8 @@ export namespace storm::orm::statements {
 
             // Bind WHERE parameters if present
             if (where_expr_) {
-                int  param_index = 1;
-                auto bind_result = orm::where::bind_params_direct(*where_expr_, *prepare_result, param_index);
+                auto bind_result = Base::template bind_where_params<Statement, Error>(*prepare_result, where_expr_);
                 if (!bind_result) [[unlikely]] {
-                    (*prepare_result)->reset();
                     return std::unexpected(bind_result.error());
                 }
             }

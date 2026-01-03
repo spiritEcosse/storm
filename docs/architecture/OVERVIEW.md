@@ -52,7 +52,7 @@ storm (main) → db → orm → statements
 Storm prioritizes performance over code elegance:
 - DRY/KISS principles **unless** they cost >10% performance
 - Aggressive optimization (compile-time generation, caching, inlining)
-- Target: ≥70% of raw SQLite performance
+- Target: ≥95% of raw SQLite performance
 
 ### Type Safety
 

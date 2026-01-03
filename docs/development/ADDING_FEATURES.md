@@ -8,7 +8,7 @@ Guide for adding new database operations or features to Storm ORM.
 - [ ] Add comprehensive tests in `tests/test_<feature>.cpp`
 - [ ] Create performance benchmark in `benchmarks/bench_<feature>.cpp`
 - [ ] Run benchmark and measure efficiency vs raw SQLite
-- [ ] If efficiency <70%, optimize or document reasons
+- [ ] If efficiency <95%, optimize or document reasons
 - [ ] Update relevant documentation
 - [ ] Document any DRY/KISS tradeoffs made for performance
 - [ ] Commit with performance metrics in message

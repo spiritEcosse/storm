@@ -10,7 +10,7 @@ When deciding which implementation approach is "good", **performance testing is 
 
 - Every new feature (WHERE clauses, LIMIT, ORDER BY, etc.) **requires** performance testing
 - Compare Storm ORM against raw SQLite to measure efficiency percentage
-- **Target**: ≥70% of raw SQLite performance for acceptable implementations
+- **Target**: ≥95% of raw SQLite performance for acceptable implementations
 - Document results in docs with operation details and efficiency metrics
 
 ### 2. Use `common.py` for Test Infrastructure
@@ -103,7 +103,7 @@ When adding new features, update documentation with:
 - [ ] Add comprehensive tests in `tests/test_<feature>.cpp`
 - [ ] Create performance benchmark in `benchmarks/bench_<feature>.cpp`
 - [ ] Run benchmark and measure efficiency vs raw SQLite
-- [ ] If efficiency <70%, optimize or document reasons
+- [ ] If efficiency <95%, optimize or document reasons
 - [ ] Update `docs/benchmarks/results.md` with performance tables
 - [ ] Document any DRY/KISS tradeoffs made for performance
 - [ ] Commit with performance metrics in message
@@ -199,8 +199,8 @@ class SomeStatement {
 
 ## Performance Goals
 
-- **CRUD Operations**: ≥70% of raw SQLite efficiency
-- **JOIN Operations**: ≥70% of raw SQLite efficiency
-- **DISTINCT Operations**: ≥90% of raw SQLite efficiency
+- **CRUD Operations**: ≥95% of raw SQLite efficiency
+- **JOIN Operations**: ≥95% of raw SQLite efficiency
+- **DISTINCT Operations**: ≥95% of raw SQLite efficiency
 - **Batch Operations**: Match or exceed sqlite_orm by 2x+
 - **Statement Caching**: 20x+ speedup for repeated operations

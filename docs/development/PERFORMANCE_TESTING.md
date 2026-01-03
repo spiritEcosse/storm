@@ -1,6 +1,6 @@
 # Performance Testing
 
-Performance testing is **mandatory** for all new Storm ORM features. Target: ≥70% of raw SQLite efficiency.
+Performance testing is **mandatory** for all new Storm ORM features. Target: ≥95% of raw SQLite efficiency.
 
 ## Quick Start
 
@@ -93,7 +93,7 @@ Efficiency = (Storm_ORM_performance / Raw_SQLite_performance) * 100%
 **Example**:
 - Storm: 8.5M rows/sec
 - Raw: 10M rows/sec
-- Efficiency: 85% ✅ GOOD (target: ≥70%)
+- Efficiency: 85% ⚠️ NEEDS WORK (target: ≥95%)
 
 ### 5. Document Results
 

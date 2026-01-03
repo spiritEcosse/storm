@@ -444,18 +444,7 @@ export namespace storm::orm::statements {
             }
         }
 
-        // Helper: Bind WHERE expression parameters to statement
-        [[nodiscard]] __attribute__((always_inline)) __attribute__((hot)) static auto
-        bind_where_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& where_expr)
-                -> std::expected<void, Error> {
-            int  param_index = 1;
-            auto bind_result = orm::where::bind_params_direct(*where_expr, stmt_ptr, param_index);
-            if (!bind_result) [[unlikely]] {
-                stmt_ptr->reset();
-                return std::unexpected(bind_result.error());
-            }
-            return {};
-        }
+        // bind_where_params delegated to Base::bind_where_params<Statement, Error>()
 
         // Simple aggregate execution (no WHERE, no JOIN)
         [[nodiscard]] __attribute__((hot)) auto execute_simple() -> std::expected<ResultType, Error> {
@@ -490,7 +479,7 @@ export namespace storm::orm::statements {
             }
 
             // Bind WHERE parameters
-            auto bind_result = bind_where_params(*prepare_result, where_expr_);
+            auto bind_result = Base::template bind_where_params<Statement, Error>(*prepare_result, where_expr_);
             if (!bind_result) [[unlikely]] {
                 return std::unexpected(bind_result.error());
             }
@@ -532,7 +521,7 @@ export namespace storm::orm::statements {
             }
 
             // Bind WHERE parameters
-            auto bind_result = bind_where_params(*prepare_result, where_expr_);
+            auto bind_result = Base::template bind_where_params<Statement, Error>(*prepare_result, where_expr_);
             if (!bind_result) [[unlikely]] {
                 return std::unexpected(bind_result.error());
             }
@@ -771,18 +760,7 @@ export namespace storm::orm::statements {
             };
         }
 
-        // Helper: Bind WHERE expression parameters
-        [[nodiscard]] static auto
-        bind_where_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& where_expr)
-                -> std::expected<void, Error> {
-            int  param_index = 1;
-            auto bind_result = orm::where::bind_params_direct(*where_expr, stmt_ptr, param_index);
-            if (!bind_result) [[unlikely]] {
-                stmt_ptr->reset();
-                return std::unexpected(bind_result.error());
-            }
-            return {};
-        }
+        // bind_where_params delegated to Base::bind_where_params<Statement, Error>()
 
         // Execute simple GROUP BY (no WHERE, no JOIN)
         [[nodiscard]] auto execute_simple() -> std::expected<ResultType, Error> {
@@ -821,7 +799,7 @@ export namespace storm::orm::statements {
                 return std::unexpected(prepare_result.error());
             }
 
-            auto bind_result = bind_where_params(*prepare_result, where_expr_);
+            auto bind_result = Base::template bind_where_params<Statement, Error>(*prepare_result, where_expr_);
             if (!bind_result) [[unlikely]] {
                 return std::unexpected(bind_result.error());
             }
@@ -912,7 +890,7 @@ export namespace storm::orm::statements {
                 return std::unexpected(prepare_result.error());
             }
 
-            auto bind_result = bind_where_params(*prepare_result, where_expr_);
+            auto bind_result = Base::template bind_where_params<Statement, Error>(*prepare_result, where_expr_);
             if (!bind_result) [[unlikely]] {
                 return std::unexpected(bind_result.error());
             }

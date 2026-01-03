@@ -345,7 +345,7 @@ See [Design Decisions](docs/architecture/design-decisions.md) for detailed expla
 
 ## Performance Guidelines
 
-**Performance testing is mandatory** for all new features. Target: ≥70% of raw SQLite efficiency.
+**Performance testing is mandatory** for all new features. Target: ≥95% of raw SQLite efficiency.
 
 ### Workflow
 

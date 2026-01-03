@@ -675,7 +675,7 @@ Raw SQLite:                                (bold)
   Throughput: 0.31 M ops/sec               (yellow)
 
 Efficiency: 144.0% (FASTER than raw SQLite)
-            ^^^^^^  (bold green = ≥90%, green = 70-90%, yellow = 50-70%, red = <50%)
+            ^^^^^^  (bold green = ≥95%, green = 85-95%, yellow = 70-85%, red = <70%)
 ✅ Benchmark complete!                    (green)
 
 ✅ Filtered tests completed!
@@ -689,10 +689,10 @@ Efficiency: 144.0% (FASTER than raw SQLite)
 - **Yellow** (<1M ops/sec): Needs optimization
 
 **Efficiency:**
-- **Bold Green** (≥90%): Excellent - near parity with raw SQLite
-- **Green** (70-90%): Good - acceptable overhead
-- **Yellow** (50-70%): Moderate - needs investigation
-- **Red** (<50%): Poor - significant overhead
+- **Bold Green** (≥95%): Excellent - near parity with raw SQLite
+- **Green** (85-95%): Good - acceptable overhead
+- **Yellow** (70-85%): Moderate - needs investigation
+- **Red** (<70%): Poor - significant overhead
 
 ### Custom Iterations
 

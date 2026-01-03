@@ -183,8 +183,8 @@ export namespace storm::orm::statements {
                 sql += " WHERE ";
                 sql += orm::where::to_sql(*where_expr);
             }
-            append_order_by(sql, order_by_wrapper);
-            append_limit_offset(sql, limit, offset);
+            Base::append_order_by(sql, order_by_wrapper);
+            Base::append_limit_offset(sql, limit, offset);
 
             Statement* stmt_ptr = get_or_prepare_cached_statement(sql);
             if (stmt_ptr == nullptr) [[unlikely]] {
@@ -192,7 +192,7 @@ export namespace storm::orm::statements {
             }
 
             if (where_expr) {
-                auto bind_result = bind_where_params(stmt_ptr, where_expr);
+                auto bind_result = Base::template bind_where_params<Statement, Error>(stmt_ptr, where_expr);
                 if (!bind_result) [[unlikely]] {
                     return std::unexpected(bind_result.error());
                 }
@@ -347,46 +347,10 @@ export namespace storm::orm::statements {
             return results;
         }
 
-        // Helper: Append ORDER BY clause to SQL from wrapper
-        // NOTE: ORDER BY must come before LIMIT/OFFSET in SQLite
-        __attribute__((always_inline)) static void
-        append_order_by(std::string& sql, const std::optional<OrderByWrapper>& order_by_wrapper) {
-            if (order_by_wrapper.has_value() && !order_by_wrapper->empty()) {
-                sql += order_by_wrapper->get_order_by_sql();
-            }
-        }
-
-        // Helper: Append LIMIT/OFFSET clauses to SQL
-        // NOTE: SQLite requires LIMIT when using OFFSET, so we use LIMIT -1 (meaning unlimited) when OFFSET is used
-        // alone
-        __attribute__((always_inline)) static void
-        append_limit_offset(std::string& sql, const std::optional<int>& limit, const std::optional<int>& offset) {
-            if (limit.has_value()) {
-                sql += " LIMIT ";
-                sql += std::to_string(limit.value());
-            } else if (offset.has_value()) {
-                // SQLite requires LIMIT when using OFFSET
-                sql += " LIMIT -1";
-            }
-
-            if (offset.has_value()) {
-                sql += " OFFSET ";
-                sql += std::to_string(offset.value());
-            }
-        }
-
-        // Helper: Bind WHERE expression parameters to statement
-        [[nodiscard]] __attribute__((always_inline)) static auto
-        bind_where_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& where_expr)
-                -> std::expected<void, Error> {
-            int  param_index = 1;
-            auto bind_result = orm::where::bind_params_direct(*where_expr, stmt_ptr, param_index);
-            if (!bind_result) [[unlikely]] {
-                stmt_ptr->reset();
-                return std::unexpected(bind_result.error());
-            }
-            return {};
-        }
+        // SQL clause helpers delegated to BaseStatement:
+        // - Base::append_order_by()
+        // - Base::append_limit_offset()
+        // - Base::bind_where_params<Statement, Error>()
 
         std::shared_ptr<ConnType> conn_;
 

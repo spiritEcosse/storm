@@ -555,7 +555,7 @@ auto result = queryset.where(field<^^Person::name>() == user_input).select();
 | Medium (4 conditions) | 1.38M rows/sec | 1.40M rows/sec | **98.6%** |
 | Complex (8+ conditions) | 0.57M rows/sec | 0.58M rows/sec | **98.3%** |
 
-**Average Efficiency**: 89-98% for most operations (well above 70% target)
+**Average Efficiency**: 89-98% for most operations (meeting 95% target)
 
 **Note on IN operator**: Lower efficiency (32-50%) is expected due to result set selectivity (fetching only 3-10 rows from 10,000). Complex queries show excellent efficiency because SQLite performs most of the work.
 
