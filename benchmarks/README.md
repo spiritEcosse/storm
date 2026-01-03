@@ -22,16 +22,31 @@ The unified benchmark system is a **100% compile-time C++ solution** that loads 
 - ✅ **Efficiency Metrics** - Automatic calculation of Storm ORM efficiency percentage
 - ✅ **Batch INSERT Support** - Benchmark single and batch insert operations (10, 100, 500, 1000 rows)
 - ✅ **Batch UPDATE Support** - Benchmark single and batch update-by-PK operations with CRTP base class
-- [ ] **Lower priority Parallel** - Run multiple benchmarks in parallel
-- [ ] **High priority Add aggregate** - Add aggregate benchmarks, add raw version, add accoringly in benchmark_tests.json
-- [ ] **High priority Add join** - Add join benchmarks, add raw version, add accoringly in benchmark_tests.json
-- [ ] **High priority Add order by** - Add ORDER BY benchmarks, add raw version, add accoringly in benchmark_tests.json
-- [ ] **High priority Add limit** - Add LIMIT benchmarks, add raw version, add accoringly in benchmark_tests.json
-- [ ] **High priority Add offset** - Add OFFSET benchmarks, add raw version, add accoringly in benchmark_tests.json
-- [ ] **High priority Change dataset_size to init_dataset_size**
-- [x] **Add distinct bench** - Add distinct benches with support for WHERE, JOIN, WHERE+JOIN (completed 2025-01-01)
-- [ ] **Lets to change test_category** - Select, Insert, Update, Delete and operation to have test_category is multi or single and for select operation: aggregate, join, order by, limit, offset
-- [ ] **lets check commit 7d38854b5a5621322893b9af7e33586e8b9f4be6** - Add according benchmarks in benchmark_tests.json by that commit
+- ✅ **Parallel Execution** - Run benchmarks in parallel using all CPU cores via `bench_parallel.sh`
+
+## 🚀 Quick Start: Parallel Benchmarks
+
+**When changing a module, run the parallel benchmark script to verify performance:**
+
+```bash
+./benchmarks/bench_parallel.sh select      # After changing SELECT module
+./benchmarks/bench_parallel.sh distinct    # After changing DISTINCT module
+./benchmarks/bench_parallel.sh insert      # After changing INSERT module
+./benchmarks/bench_parallel.sh aggregate   # After changing AGGREGATE module
+./benchmarks/bench_parallel.sh             # Show all available patterns
+```
+
+The script automatically:
+- Detects CPU cores and runs tests in parallel
+- Uses separate database files for thread safety
+- Generates CSV results for analysis
+- Shows efficiency summary for all matching tests
+
+### TODO
+- [ ] Add ORDER BY, LIMIT, OFFSET benchmarks with raw SQLite versions
+- [ ] Change `dataset_size` to `init_dataset_size` for clarity
+- [ ] Restructure test_category: Select/Insert/Update/Delete with single/batch variants
+- [x] ~~Add distinct bench~~ - Completed with WHERE, JOIN, WHERE+JOIN support
 
 ## 📦 Components
 
