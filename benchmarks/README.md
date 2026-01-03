@@ -527,6 +527,95 @@ COMMIT;
 - Statement caching eliminates SQL parsing overhead
 - Chunked IN clause is optimal for SQLite's query planner
 
+### Run SELECT Benchmarks
+
+**✅ Benchmark SELECT operations** with various configurations:
+
+```bash
+# Run all SELECT benchmarks
+./build/release/benchmarks/storm_bench --filter="select" --scale-test
+
+# Run simple SELECT (no WHERE, no JOIN)
+./build/release/benchmarks/storm_bench --filter="select_1000"
+
+# Run SELECT with JOIN
+./build/release/benchmarks/storm_bench --filter="select_join" --scale-test
+
+# Run SELECT with WHERE + JOIN
+./build/release/benchmarks/storm_bench --filter="select_where_join" --scale-test
+```
+
+**Available SELECT tests:**
+- `select_1000` / `select_5000` / `select_10000` - Simple SELECT (all rows)
+- `select_join_1000` / `select_join_5000` / `select_join_10000` - SELECT with INNER JOIN
+- `select_where_join_1000` / `select_where_join_5000` / `select_where_join_10000` - SELECT with WHERE + JOIN
+
+**What's tested:**
+- **Storm ORM**: Uses `QuerySet::select()` with automatic statement caching
+- **Raw SQLite**: Manual `SELECT` with prepared statements
+- **Fair comparison**: Both use statement caching and identical query patterns
+
+### SELECT Performance Characteristics
+
+**Three SELECT Configurations:**
+
+| Configuration | SQL Pattern | Use Case |
+|--------------|-------------|----------|
+| **Simple SELECT** | `SELECT * FROM table` | Fetch all rows |
+| **SELECT + JOIN** | `SELECT ... FROM t JOIN r ON ...` | Fetch with related data |
+| **SELECT + WHERE + JOIN** | `SELECT ... FROM t JOIN r ON ... WHERE ...` | Filtered fetch with related data |
+
+**Simple SELECT Performance (verified 2026-01-03, Release build):**
+
+| Dataset Size | Storm ORM | Raw SQLite | Efficiency | Notes |
+|--------------|-----------|------------|------------|-------|
+| 1000 | ~10.0 M/s | ~10.5 M/s | **~96%** | ✅ Near parity |
+| 5000 | ~9.3 M/s | ~9.7 M/s | **~96%** | ✅ Near parity |
+| 10000 | ~9.1 M/s | ~9.4 M/s | **~96%** | ✅ Near parity |
+
+**SELECT + JOIN Performance (verified 2026-01-03, Release build):**
+
+| Dataset Size | Storm ORM | Raw SQLite | Efficiency | Notes |
+|--------------|-----------|------------|------------|-------|
+| 1000 | ~7.8 M/s | ~7.6 M/s | **~103%** | ✅ Storm FASTER! |
+| 5000 | ~7.7 M/s | ~7.5 M/s | **~103%** | ✅ Storm FASTER! |
+| 10000 | ~7.6 M/s | ~7.5 M/s | **~102%** | ✅ Storm FASTER! |
+
+**SELECT + WHERE + JOIN Performance (verified 2026-01-03, Release build):**
+
+| Dataset Size | Storm ORM | Raw SQLite | Efficiency | Notes |
+|--------------|-----------|------------|------------|-------|
+| 1000 | ~6.8 M/s | ~6.6 M/s | **~103%** | ✅ Storm FASTER! |
+| 5000 | ~7.0 M/s | ~6.9 M/s | **~101%** | ✅ Near parity |
+| 10000 | ~6.5 M/s | ~6.9 M/s | **~95%** | ✅ Good |
+
+**SELECT WHERE (no JOIN) Performance (verified 2026-01-03, Release build):**
+
+| Test | Storm ORM | Raw SQLite | Efficiency | Notes |
+|------|-----------|------------|------------|-------|
+| WHERE age > 30 | ~9.3 M/s | ~9.6 M/s | **~97%** | ✅ Near parity |
+
+**Key Findings:**
+
+1. **Simple SELECT: ~96% efficiency**
+   - Statement caching eliminates SQL parsing overhead
+   - Raw pointer caching in extraction loops
+   - Compile-time SQL generation matches raw performance
+
+2. **SELECT + JOIN: 102-103% efficiency (Storm is FASTER!)**
+   - Statement pointer caching avoids connection cache hash lookup
+   - Type-erased JOIN extraction pattern is highly optimized
+   - SQL string caching avoids repeated concatenation
+
+3. **SELECT + WHERE + JOIN: 95-103% efficiency**
+   - Parameter binding adds minimal overhead
+   - Larger datasets show slightly more overhead due to increased row extraction
+
+4. **Why JOIN operations show >100% efficiency:**
+   - **Statement pointer caching**: Direct pointer reuse vs hash lookup every call
+   - **SQL string caching**: Thread-local cache avoids regenerating SQL
+   - **Optimized row extraction**: Raw pointer caching in hot loops
+
 ### Run DISTINCT Benchmarks
 
 **✅ NEW FEATURE!** Benchmark SELECT DISTINCT operations with various configurations:

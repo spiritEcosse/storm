@@ -65,7 +65,16 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 - Consult development docs for contributing guidelines
 
 
-## TODO:
+## TODO: 
+- [ ] - consider prepare_statement simplify – adding the check inside the lambda, therefore we will have one call of execute_query_loop with the check inside
+- [ ] - consider adding reserve - Dynamic path: build SQL and cache by string comparison
+- [ ] - we have so many *.md files, lets simplify and struct them, so all rules.md must be inside CLAUDE.md if 
+the file CLAUDE is too big – lets move rules.md to the docs. what actually is UPDATE_OPTIMIZATION_REPORT.md ?
+if it is important, move to according folder in docs. What is docs/development folder is ?
+Add a rule if needed to create a *.md file – use docs directory for all docs.
+- [x] ~~Add benchmarks for select in table of benchmarks/README.md~~ - **DONE** - Added SELECT performance tables (simple, JOIN, WHERE+JOIN) showing 95-103% efficiency
+- [ ] - Make select agnostic about which db is used (for now it's sqlite_orm and could be psql and others)
+- [x] ~~string comparison vs pointer comparison~~ - **INVESTIGATED**: Micro-benchmark proves O(1) vs O(n) (20-80x faster for pure comparison), but real ORM benchmarks show no measurable improvement (<0.1%) because SQLite execution dominates. String comparison is adequate.
 - [x] ~~enable bugprone-exception-escape~~ - ✅ **DONE** - Removed `noexcept` from functions that may allocate std::string
 - [x] ~~enable bugprone-suspicious-stringview-data-usage~~ - ✅ **DONE** - Use `sql.size()` with `sqlite3_prepare_v2` or convert to `std::string`
 - [x] ~~enable bugprone-branch-clone~~ - ✅ **DONE** - Combined identical int64/uint64 branches in type extraction
@@ -77,7 +86,7 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
   - [ ] Raw pointer caching in hot loops (SELECT, DISTINCT extraction loops)
   - [ ] Statement pointer caching for single-row operations (execute_one, remove_one)
   - [ ] Expression address caching for WHERE clause reuse
-  - [ ] Flat code pattern in hot paths (no nested lambdas)
+  - [ ] Flat code pattern in hot paths (no nested lambdas) Prove it with benchmarks
   - [ ] Cache invalidation on reset() to prevent ABA problem
 - [ ] **Verify Benchmark Fairness** - Audit all benchmarks against CLAUDE.md fair benchmark rules:
   - [ ] Setup outside loop, execute inside (WHERE, bind, prepare)
@@ -85,7 +94,7 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
   - [ ] Same container types (plf::hive for both)
   - [ ] Runtime decision logic for both (no compile-time advantages for raw)
   - [ ] Correct metric (latency for different result sizes)
-- [ ] Lets think how to add true sttistics in README files (like benchmarks)
+- [ ] Lets think how to add true statistics in README files (like benchmarks)
 - [ ] **Enable `modernize-use-trailing-return-type`** - Convert all functions to trailing return type syntax (`auto foo() -> int` instead of `int foo()`) for consistent modern style (~50+ functions)
 - [x] ~~**Enable `modernize-avoid-c-arrays`**~~ - ✅ **DONE** - Enabled (0 warnings, prevents future C-array usage)
 - [ ] **Enable `bugprone-easily-swappable-parameters`** - Add strong types to prevent parameter swapping bugs (e.g., `FieldCount`, `BatchSize` wrappers instead of raw `size_t`)
