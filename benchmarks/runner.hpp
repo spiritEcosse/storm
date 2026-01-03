@@ -275,6 +275,13 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
+        static void run_select_operation(BenchmarkRunner& runner, int iterations) {
+            // Simple SELECT benchmark (no WHERE, no JOIN)
+            constexpr int dataset_size = test.dataset_size;
+            runner.run_benchmark(test.test_name.c_str(), SelectBenchmark<Model>{dataset_size}, iterations);
+        }
+
+        template <typename Model, auto& test>
         static void run_select_join_operation(BenchmarkRunner& runner, int iterations) {
             // SELECT JOIN benchmark using FKMessage and User models
             // FKFieldPtr is &FKMessage::sender for single JOIN
@@ -463,6 +470,8 @@ namespace storm::benchmark {
                         runner.run_update_pk_operation<Model, test>(runner, iterations);
                     } else if constexpr (operation == "delete_pk") {
                         runner.run_delete_pk_operation<Model, test>(runner, iterations);
+                    } else if constexpr (operation == "select") {
+                        runner.run_select_operation<Model, test>(runner, iterations);
                     } else if constexpr (operation == "select_join") {
                         runner.run_select_join_operation<Model, test>(runner, iterations);
                     } else if constexpr (operation == "select_where_join") {

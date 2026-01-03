@@ -378,6 +378,36 @@
     "batch_size": 100000
   },
   {
+    "test_name": "select_1000",
+    "test_category": "SELECT",
+    "description": "Simple SELECT all rows (1000 rows)",
+    "model": "Person",
+    "operation": "select",
+    "iterations": 1000,
+    "dataset_size": 1000,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_5000",
+    "test_category": "SELECT",
+    "description": "Simple SELECT all rows (5000 rows)",
+    "model": "Person",
+    "operation": "select",
+    "iterations": 200,
+    "dataset_size": 5000,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_10000",
+    "test_category": "SELECT",
+    "description": "Simple SELECT all rows (10000 rows)",
+    "model": "Person",
+    "operation": "select",
+    "iterations": 100,
+    "dataset_size": 10000,
+    "batch_size": 1
+  },
+  {
     "test_name": "select_join_1000",
     "test_category": "SELECT_JOIN",
     "description": "SELECT with INNER JOIN on FK field (1000 messages)",
