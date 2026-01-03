@@ -81,7 +81,7 @@ export namespace storm::orm::statements {
         }
 
         // Unified SELECT execution - handles all combinations of JOIN and WHERE
-        // All query logic inlined for maximum performance and code simplicity
+        // Uses monadic and_then for cleaner error propagation
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
         execute(std::optional<JoinStatementWrapper>     join_wrapper     = std::nullopt,
                 const orm::where::ExpressionVariantPtr& where_expr       = nullptr,
@@ -89,22 +89,19 @@ export namespace storm::orm::statements {
                 const std::optional<int>&               offset           = std::nullopt,
                 const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt)
                 -> std::expected<plf::hive<T>, Error> {
-            // Prepare statement based on query type
-            auto stmt_result = prepare_statement(join_wrapper, where_expr, limit, offset, order_by_wrapper);
-            if (!stmt_result) [[unlikely]] {
-                return std::unexpected(stmt_result.error());
-            }
-            Statement* stmt_ptr = *stmt_result;
-
-            // Execute query with appropriate extractor
-            if (join_wrapper) {
-                return execute_query_loop(stmt_ptr, [&join_wrapper](sqlite3_stmt* raw, Statement*, T& obj) -> void {
-                    join_wrapper->extract_row_raw(raw, &obj);
-                });
-            }
-            return execute_query_loop(stmt_ptr, [](sqlite3_stmt* raw, Statement*, T& obj) -> void {
-                extract_all_columns_raw(raw, obj);
-            });
+            return prepare_statement(join_wrapper, where_expr, limit, offset, order_by_wrapper)
+                    .and_then([this, &join_wrapper](Statement* stmt_ptr) -> std::expected<plf::hive<T>, Error> {
+                        if (join_wrapper) {
+                            return execute_query_loop(
+                                    stmt_ptr, [&join_wrapper](sqlite3_stmt* raw, Statement*, T& obj) -> void {
+                                        join_wrapper->extract_row_raw(raw, &obj);
+                                    }
+                            );
+                        }
+                        return execute_query_loop(stmt_ptr, [](sqlite3_stmt* raw, Statement*, T& obj) -> void {
+                            extract_all_columns_raw(raw, obj);
+                        });
+                    });
         }
 
       private:
