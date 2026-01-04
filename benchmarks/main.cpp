@@ -33,76 +33,99 @@ using namespace storm::benchmark;
 
 // Models are defined in models.hpp and included via runner.hpp
 
-auto main(int argc, char* argv[]) -> int {
-    try {
-        // Parse command-line arguments
+namespace {
+
+    struct Args {
         std::string filter;
+        std::string category;
+        std::string db_path    = ":memory:";
         int         iterations = 1000;
         bool        list_tests = false;
-        bool        scale_test = false; // Scale test mode (test performance degradation with increasing sizes)
-        bool        use_disk   = false; // Use disk-based database instead of in-memory
-        std::string db_path    = ":memory:";
+        bool        scale_test = false;
+        bool        use_disk   = false;
+        bool        show_help  = false;
+    };
 
+    void print_help(const char* prog) {
+        std::cout << "Storm ORM Benchmark System\n\n";
+        std::cout << "Usage: " << prog << " [options]\n\n";
+        std::cout << "Options:\n";
+        std::cout << "  --filter=<pattern>      Run only tests with EXACT name match\n";
+        std::cout << "  -c, --category=<name>   Run tests matching category prefix (SELECT matches SELECT*)\n";
+        std::cout << "  --scale-test            Test performance with increasing sizes (substring match)\n";
+        std::cout << "  --iterations=<n>        Number of iterations per test (default: 1000)\n";
+        std::cout << "  --disk                  Use disk-based database (default: in-memory)\n";
+        std::cout << "  --db=<path>             Use specific database file path\n";
+        std::cout << "  --list, -l              List all available tests\n";
+        std::cout << "  --help, -h              Show this help message\n\n";
+        std::cout << "Examples:\n";
+        std::cout << "  " << prog << " -c SELECT                        # Run SELECT* categories\n";
+        std::cout << "  " << prog << " --filter=insert_batch_100        # Run only insert_batch_100\n";
+        std::cout << "  " << prog << " --filter=insert_batch --scale-test  # Test all batch sizes\n";
+        std::cout << "  " << prog << " --iterations=5000\n";
+        std::cout << "  " << prog << " --list\n";
+    }
+
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    auto parse_args(int argc, char* argv[]) -> Args {
+        Args args;
         for (int i = 1; i < argc; i++) {
             const std::string arg = argv[i];
             if (arg.starts_with("--filter=")) {
-                filter = arg.substr(9); // Skip "--filter="
+                args.filter = arg.substr(9);
             } else if (arg.starts_with("--iterations=")) {
-                iterations = std::stoi(arg.substr(13));
+                args.iterations = std::stoi(arg.substr(13));
             } else if (arg == "--list" || arg == "-l") {
-                list_tests = true;
+                args.list_tests = true;
             } else if (arg == "--scale-test") {
-                scale_test = true;
+                args.scale_test = true;
+            } else if (arg.starts_with("--category=")) {
+                args.category = arg.substr(11);
+            } else if (arg.starts_with("-c=")) {
+                args.category = arg.substr(3);
+            } else if (arg == "-c" && i + 1 < argc) {
+                args.category = argv[++i];
             } else if (arg == "--disk") {
-                use_disk = true;
-                db_path  = "benchmark_test.db";
+                args.use_disk = true;
+                args.db_path  = "benchmark_test.db";
             } else if (arg.starts_with("--db=")) {
-                db_path  = arg.substr(5);
-                use_disk = (db_path != ":memory:");
+                args.db_path  = arg.substr(5);
+                args.use_disk = (args.db_path != ":memory:");
             } else if (arg == "--help" || arg == "-h") {
-                std::cout << "Storm ORM Benchmark System\n\n";
-                std::cout << "Usage: " << argv[0] << " [options]\n\n";
-                std::cout << "Options:\n";
-                std::cout << "  --filter=<pattern>      Run only tests with EXACT name match\n";
-                std::cout << "  --scale-test            Test performance with increasing sizes (substring match)\n";
-                std::cout << "  --iterations=<n>        Number of iterations per test (default: 1000)\n";
-                std::cout << "  --disk                  Use disk-based database (default: in-memory)\n";
-                std::cout << "  --db=<path>             Use specific database file path\n";
-                std::cout << "  --list, -l              List all available tests\n";
-                std::cout << "  --help, -h              Show this help message\n\n";
-                std::cout << "Examples:\n";
-                std::cout << "  " << argv[0]
-                          << " --filter=insert_batch_100                # Run only insert_batch_100\n";
-                std::cout << "  " << argv[0]
-                          << " --filter=insert_batch --scale-test       # Test degradation: 10,100,1000,10000...\n";
-                std::cout << "  " << argv[0]
-                          << " --filter=where_int --scale-test          # Run all where_int_* variants\n";
-                std::cout << "  " << argv[0] << " --iterations=5000\n";
-                std::cout << "  " << argv[0] << " --disk                                   # Use disk-based database\n";
-                std::cout << "  " << argv[0]
-                          << " --db=/tmp/bench.db                       # Use specific database file\n";
-                std::cout << "  " << argv[0] << " --list\n";
-                return 0;
+                args.show_help = true;
             }
         }
+        return args;
+    }
 
-        // Handle --list flag
-        if (list_tests) {
+} // namespace
+
+auto main(int argc, char* argv[]) -> int {
+    try {
+        auto args = parse_args(argc, argv);
+
+        if (args.show_help) {
+            print_help(argv[0]);
+            return 0;
+        }
+
+        // Handle --list flag (supports category filter)
+        if (args.list_tests) {
             BenchmarkRunner runner;
-            runner.list_tests();
+            runner.list_tests(args.category);
             return 0;
         }
 
         // Remove old db file if using disk (clean slate)
-        if (use_disk) {
-            std::remove(db_path.c_str());
-            std::cout << "📁 Using disk database: " << db_path << "\n";
+        if (args.use_disk) {
+            std::remove(args.db_path.c_str());
+            std::cout << "📁 Using disk database: " << args.db_path << "\n";
         } else {
             std::cout << "💾 Using in-memory database\n";
         }
 
         // Set up database connection
-        auto result = QuerySet<Person>::set_default_connection(db_path);
+        auto result = QuerySet<Person>::set_default_connection(args.db_path);
         if (!result.has_value()) {
             std::cerr << "Failed to open database: " << result.error().message() << "\n";
             return 1;
@@ -152,10 +175,10 @@ auto main(int argc, char* argv[]) -> int {
         // Run benchmark tests (with optional filter)
         // Note: Each benchmark handles its own data setup in prepare() method
         BenchmarkRunner runner;
-        if (filter.empty()) {
-            runner.run_all<Person>(iterations);
+        if (!args.category.empty() || !args.filter.empty()) {
+            runner.run_filtered<Person>(args.filter, args.category, args.iterations, args.scale_test);
         } else {
-            runner.run_filtered<Person>(filter, iterations, scale_test);
+            runner.run_all<Person>(args.iterations);
         }
 
         std::cout << "\n=== SUCCESS ===\n";
@@ -166,9 +189,9 @@ auto main(int argc, char* argv[]) -> int {
         std::cout << "  - Zero runtime string dispatch overhead\n";
 
         // Cleanup disk database file if used
-        if (use_disk) {
-            std::remove(db_path.c_str());
-            std::cout << "🧹 Cleaned up database file: " << db_path << "\n";
+        if (args.use_disk) {
+            std::remove(args.db_path.c_str());
+            std::cout << "🧹 Cleaned up database file: " << args.db_path << "\n";
         }
 
         return 0;

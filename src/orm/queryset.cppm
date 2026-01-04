@@ -36,10 +36,10 @@ import <meta>;
 export namespace storm {
 
     // Default connection management for QuerySet
-    // WARNING: Not thread-safe - use external synchronization in multi-threaded environments
+    // Thread-safe via thread_local - each thread gets its own connection
     namespace detail {
         inline auto get_default_connection_ptr() -> auto& {
-            static std::shared_ptr<db::sqlite::Connection> conn_;
+            static thread_local std::shared_ptr<db::sqlite::Connection> conn_;
             return conn_;
         }
     } // namespace detail

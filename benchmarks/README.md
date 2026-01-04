@@ -22,25 +22,19 @@ The unified benchmark system is a **100% compile-time C++ solution** that loads 
 - ✅ **Efficiency Metrics** - Automatic calculation of Storm ORM efficiency percentage
 - ✅ **Batch INSERT Support** - Benchmark single and batch insert operations (10, 100, 500, 1000 rows)
 - ✅ **Batch UPDATE Support** - Benchmark single and batch update-by-PK operations with CRTP base class
-- ✅ **Parallel Execution** - Run benchmarks in parallel using all CPU cores via `bench_parallel.sh`
+- ✅ **Category Filtering** - Run benchmarks by category with prefix matching (`-c SELECT` matches SELECT*)
 
-## 🚀 Quick Start: Parallel Benchmarks
+## 🚀 Quick Start
 
-**When changing a module, run the parallel benchmark script to verify performance:**
+**When changing a module, run category benchmarks to verify performance:**
 
 ```bash
-./benchmarks/bench_parallel.sh select      # After changing SELECT module
-./benchmarks/bench_parallel.sh distinct    # After changing DISTINCT module
-./benchmarks/bench_parallel.sh insert      # After changing INSERT module
-./benchmarks/bench_parallel.sh aggregate   # After changing AGGREGATE module
-./benchmarks/bench_parallel.sh             # Show all available patterns
+./build/release/benchmarks/storm_bench -c SELECT         # After changing SELECT module
+./build/release/benchmarks/storm_bench -c DISTINCT       # After changing DISTINCT module
+./build/release/benchmarks/storm_bench -c INSERT         # After changing INSERT module
+./build/release/benchmarks/storm_bench -c AGGREGATE      # After changing AGGREGATE module
+./build/release/benchmarks/storm_bench -c SELECT --list  # Preview which tests will run
 ```
-
-The script automatically:
-- Detects CPU cores and runs tests in parallel
-- Uses separate database files for thread safety
-- Generates CSV results for analysis
-- Shows efficiency summary for all matching tests
 
 ### TODO
 - [ ] Add ORDER BY, LIMIT, OFFSET benchmarks with raw SQLite versions
@@ -104,20 +98,20 @@ Usage: ./build/release/benchmarks/storm_bench [options]
 
 Options:
   --filter=<pattern>      Run only tests with EXACT name match
+  -c, --category=<name>   Run tests matching category prefix (SELECT matches SELECT*)
   --scale-test            Test performance with increasing sizes (substring match)
   --iterations=<n>        Number of iterations per test (default: 1000)
   --disk                  Use disk-based database (default: in-memory)
   --db=<path>             Use specific database file path
-  --list, -l              List all available tests
+  --list, -l              List all available tests (combine with -c to filter)
   --help, -h              Show this help message
 
 Examples:
-  ./build/release/benchmarks/storm_bench --filter=insert_batch_100                # Run only insert_batch_100
-  ./build/release/benchmarks/storm_bench --filter=insert_batch --scale-test       # Test degradation: 10,100,1000,10000...
-  ./build/release/benchmarks/storm_bench --filter=where_int --scale-test          # Run all where_int_* variants
+  ./build/release/benchmarks/storm_bench -c SELECT                        # Run SELECT* categories
+  ./build/release/benchmarks/storm_bench -c SELECT --list                 # Preview SELECT tests
+  ./build/release/benchmarks/storm_bench --filter=insert_batch_100        # Run only insert_batch_100
+  ./build/release/benchmarks/storm_bench --filter=insert_batch --scale-test  # Test all batch sizes
   ./build/release/benchmarks/storm_bench --iterations=5000
-  ./build/release/benchmarks/storm_bench --disk                                   # Use disk-based database
-  ./build/release/benchmarks/storm_bench --db=/tmp/bench.db                       # Use specific database file
   ./build/release/benchmarks/storm_bench --list
 ```
 

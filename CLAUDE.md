@@ -291,6 +291,8 @@ cmake --build --preset ninja-release
 # Run unified benchmark system
 ./build/release/benchmarks/storm_bench                           # All tests
 ./build/release/benchmarks/storm_bench --list                    # List available tests
+./build/release/benchmarks/storm_bench -c SELECT                 # Run SELECT* categories (prefix match)
+./build/release/benchmarks/storm_bench -c SELECT --list          # Preview which tests will run
 ./build/release/benchmarks/storm_bench --filter=insert_batch_100 # Run specific test (exact match)
 ./build/release/benchmarks/storm_bench --filter=insert_batch --scale-test  # Test performance degradation
 ./build/release/benchmarks/storm_bench --iterations=10000        # Custom iterations
@@ -727,27 +729,28 @@ auto prepare_result = conn_->prepare_cached(sql);  // Hash lookup, reuses existi
 
 This is simpler than SELECT's approach (which caches statement pointers locally) but has equivalent performance because the actual statement preparation is cached at the connection level.
 
-### Thread Safety Issues (TODO: Fix)
+### Thread Safety
 
-**⚠️ CRITICAL**: The following patterns are **NOT thread-safe** and will cause data races:
-
-#### 1. Default Connection Sharing (Documented, Not Fixed)
+**✅ Default Connection is Thread-Safe** (Fixed via `thread_local`)
 
 ```cpp
-// ❌ UNSAFE: Multiple threads using default connection
-// Thread 1
-QuerySet<Person> qs1;  // Uses static default connection
-qs1.where(age > 30).select();
+// ✅ SAFE: Each thread gets its own connection
+void worker_thread() {
+    // Initialize thread-local connection
+    QuerySet<Person>::set_default_connection(":memory:");
 
-// Thread 2
-QuerySet<Person> qs2;  // SAME static default connection - RACE CONDITION!
-qs2.where(age > 50).select();
+    // Each thread has isolated connection + QuerySet
+    QuerySet<Person> qs;
+    qs.where(age > 30).select();  // Thread-safe!
+}
+
+std::thread t1(worker_thread);
+std::thread t2(worker_thread);  // No race - separate connections
 ```
 
-**Problem**: `get_default_connection_ptr()` returns `static` (not `thread_local`) connection.
-**Race on**: SQLite connection internals, prepared statement maps, statement execution state.
+**⚠️ The following patterns are still NOT thread-safe:**
 
-#### 2. QuerySet Sharing Between Threads (Not Documented, Not Fixed)
+#### 1. QuerySet Sharing Between Threads
 
 ```cpp
 // ❌ UNSAFE: Sharing QuerySet between threads
@@ -800,14 +803,13 @@ std::thread t2(worker_thread);
 - `static thread_local` caching provides isolated storage per thread
 - No shared mutable state between threads
 
-#### TODO: Improvements Needed
+#### Remaining Improvements
 
-1. **Make default connection thread_local** (easy fix, breaking change)
+1. ~~**Make default connection thread_local**~~ ✅ DONE
 2. **Document QuerySet thread safety** in public API docs
 3. **Consider making QuerySet/Connection non-copyable** to prevent accidental sharing
-4. **Add compile-time or runtime checks** for cross-thread usage (hard)
 
-**Current Status**: Users must manually ensure per-thread instances. Violation = undefined behavior.
+**Current Status**: Default connection is now thread-safe via `thread_local`. Users must still avoid sharing QuerySet instances across threads.
 
 ## Testing
 

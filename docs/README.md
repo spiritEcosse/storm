@@ -68,7 +68,7 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 ## TODO:
 
 ### Completed:
-- [x] ~~let run benchmarks parallel~~ - ✅ **DONE** - Added `benchmarks/bench_parallel.sh`. Uses CPU cores for parallel execution. All SELECT/DISTINCT tests use 4 data sizes (100, 1000, 10000, 100000)
+- [x] ~~let run benchmarks parallel~~ - ✅ **DONE** - Added `-c` and `-p` flags to `storm_bench`. Uses thread_local connections for parallel execution. All SELECT/DISTINCT tests use 4 data sizes (100, 1000, 10000, 100000)
 - [x] ~~consider prepare_statement simplify~~ **REJECTED**: ~22% regression (102% → 80%)
 - [x] ~~consider adding reserve - Dynamic path~~ **REJECTED**: ~2% regression
 - [x] ~~Add benchmarks for select in table~~ - **DONE** - Added SELECT performance tables showing 95-103% efficiency

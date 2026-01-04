@@ -108,10 +108,23 @@ namespace storm::benchmark {
 
     class BenchmarkRunner {
       public:
-        // List all available tests
-        auto list_tests() -> void {
+        // List available tests (optionally filtered by category prefix)
+        auto list_tests(const std::string& category_filter = "") -> void {
             std::cout << "=== Available Benchmark Tests ===\n";
-            std::cout << "Total: " << BENCHMARK_TESTS.size() << " tests\n\n";
+
+            // Count matching tests
+            size_t count = 0;
+            for (const auto& test : BENCHMARK_TESTS) {
+                std::string cat(test.test_category.view());
+                if (category_filter.empty() || cat.starts_with(category_filter)) {
+                    count++;
+                }
+            }
+
+            if (!category_filter.empty()) {
+                std::cout << "Category filter: \"" << category_filter << "*\"\n";
+            }
+            std::cout << "Total: " << count << " tests\n\n";
 
             std::cout << "Test Name                      Category         Operation\n";
             std::cout << "────────────────────────────────────────────────────────────\n";
@@ -120,6 +133,11 @@ namespace storm::benchmark {
                 std::string test_name(test.test_name.view());
                 std::string category(test.test_category.view());
                 std::string operation(test.operation.view());
+
+                // Skip if doesn't match category filter
+                if (!category_filter.empty() && !category.starts_with(category_filter)) {
+                    continue;
+                }
 
                 // Format with padding
                 std::cout << test_name;
@@ -447,18 +465,29 @@ namespace storm::benchmark {
         // Template recursion to execute tests at compile time
         template <typename Model, size_t TestIndex, size_t TotalTests> struct TestExecutor {
             static void
-            execute(BenchmarkRunner& runner, int iterations, const std::string& filter = "", bool scale_test = false) {
-                constexpr auto&            test      = BENCHMARK_TESTS[TestIndex];
-                constexpr std::string_view test_name = test.test_name.view();
-                constexpr std::string_view operation = test.operation.view();
+            execute(BenchmarkRunner&   runner,
+                    int                iterations,
+                    const std::string& filter     = "",
+                    const std::string& category   = "",
+                    bool               scale_test = false) {
+                constexpr auto&            test          = BENCHMARK_TESTS[TestIndex];
+                constexpr std::string_view test_name     = test.test_name.view();
+                constexpr std::string_view test_category = test.test_category.view();
+                constexpr std::string_view operation     = test.operation.view();
+
+                // Check if test matches category (empty = all categories, prefix match supported)
+                std::string category_str(test_category.data(), test_category.size());
+                bool        category_match = category.empty() || category_str.starts_with(category);
 
                 // Check if test matches filter (runtime check, but minimal overhead)
                 // - Empty filter: run all tests
                 // - scale_test=true: substring match (e.g., "insert_batch" matches "insert_batch_100")
                 // - scale_test=false: exact match (e.g., "insert_batch_100" only matches "insert_batch_100")
                 std::string test_name_str(test_name.data(), test_name.size());
-                bool        should_run =
+                bool        filter_match =
                         filter.empty() || (scale_test ? test_name_str.contains(filter) : (test_name_str == filter));
+
+                bool should_run = category_match && filter_match;
 
                 if (should_run) {
                     // Dispatch to handler - still compile-time, just cleaner
@@ -503,7 +532,9 @@ namespace storm::benchmark {
 
                 // Recurse to next test
                 if constexpr (TestIndex + 1 < TotalTests) {
-                    TestExecutor<Model, TestIndex + 1, TotalTests>::execute(runner, iterations, filter, scale_test);
+                    TestExecutor<Model, TestIndex + 1, TotalTests>::execute(
+                            runner, iterations, filter, category, scale_test
+                    );
                 }
             }
         };
@@ -526,15 +557,22 @@ namespace storm::benchmark {
 
         // Entry point for filtered test execution
         template <typename Model>
-        auto run_filtered(const std::string& filter, int iterations = 1000, bool scale_test = false) -> void {
+        auto run_filtered(
+                const std::string& filter, const std::string& category, int iterations = 1000, bool scale_test = false
+        ) -> void {
             std::cout << "=== Running Filtered Benchmark Tests ===\n";
-            std::cout << "Filter: \"" << filter << "\" (";
-            std::cout << (scale_test ? "substring match - scale testing mode" : "exact match") << ")\n";
+            if (!category.empty()) {
+                std::cout << "Category: \"" << category << "\"\n";
+            }
+            if (!filter.empty()) {
+                std::cout << "Filter: \"" << filter << "\" (";
+                std::cout << (scale_test ? "substring match" : "exact match") << ")\n";
+            }
             std::cout << "Iterations per test: " << iterations << "\n";
             std::cout << "Using compile-time dispatch with runtime filtering\n\n";
 
-            // Start template recursion with filter
-            TestExecutor<Model, 0, BENCHMARK_TESTS.size()>::execute(*this, iterations, filter, scale_test);
+            // Start template recursion with filter and category
+            TestExecutor<Model, 0, BENCHMARK_TESTS.size()>::execute(*this, iterations, filter, category, scale_test);
 
             std::cout << "\n✅ Filtered tests completed!\n";
         }
