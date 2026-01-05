@@ -95,8 +95,8 @@ export namespace storm::orm::statements {
                     .and_then([this, &join_wrapper](Statement* stmt_ptr) -> std::expected<plf::hive<T>, Error> {
                         if (join_wrapper) {
                             return execute_query_loop(
-                                    stmt_ptr, [&join_wrapper](sqlite3_stmt* raw, Statement*, T& obj) -> void {
-                                        join_wrapper->extract_row_raw(raw, &obj);
+                                    stmt_ptr, [&join_wrapper](sqlite3_stmt*, Statement* stmt, T& obj) -> void {
+                                        join_wrapper->extract_row(stmt, &obj);
                                     }
                             );
                         }

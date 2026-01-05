@@ -534,24 +534,13 @@ export namespace storm::orm::statements {
         }
 
       public:
+        // Database-agnostic API: Takes Statement* but delegates to raw extraction for performance
+        // OPTIMIZATION: Cache raw pointer once and use the fast raw extraction path
         __attribute__((hot)) __attribute__((flatten)) static auto extract_joined_row(Statement* stmt, T& obj) noexcept
                 -> void {
-#ifndef NDEBUG
-            size_t expected_cols = non_fk_field_count_;
-            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) -> void {
-                ((expected_cols += FKBase_at<Is>::field_count_), ...);
-            }(std::make_index_sequence<fk_count_>{});
-
-            // Use raw SQLite API since Statement wrapper doesn't expose column_count()
-            assert(sqlite3_column_count(stmt->handle()) == static_cast<int>(expected_cols) && "Column count mismatch");
-#endif
-
-            // FIX: Initialize ALL FK fields to defaults first
-            // JOINed FK fields will be overwritten, non-JOINed will have proper defaults
-            init_all_fk_fields(obj, typename Base::field_indices_t{});
-
-            extract_t_fields(stmt, obj, typename Base::field_indices_t{});
-            extract_all_fks(stmt, obj, std::make_index_sequence<fk_count_>{});
+            // Get raw pointer once and delegate to the optimized raw extraction
+            sqlite3_stmt* raw_stmt = stmt->handle();
+            extract_joined_row_raw(raw_stmt, obj);
         }
     };
 
