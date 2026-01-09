@@ -1,6 +1,5 @@
 module;
 
-#include <sqlite3.h>
 #include <meta>
 #include <plf_hive/plf_hive.h>
 
@@ -94,14 +93,12 @@ export namespace storm::orm::statements {
             return prepare_statement(join_wrapper, where_expr, limit, offset, order_by_wrapper)
                     .and_then([this, &join_wrapper](Statement* stmt_ptr) -> std::expected<plf::hive<T>, Error> {
                         if (join_wrapper) {
-                            return execute_query_loop(
-                                    stmt_ptr, [&join_wrapper](sqlite3_stmt*, Statement* stmt, T& obj) -> void {
-                                        join_wrapper->extract_row(stmt, &obj);
-                                    }
-                            );
+                            return execute_query_loop(stmt_ptr, [&join_wrapper](Statement* stmt, T& obj) -> void {
+                                join_wrapper->extract_row(stmt, &obj);
+                            });
                         }
-                        return execute_query_loop(stmt_ptr, [](sqlite3_stmt* raw, Statement*, T& obj) -> void {
-                            extract_all_columns_raw(raw, obj);
+                        return execute_query_loop(stmt_ptr, [](Statement* stmt, T& obj) -> void {
+                            extract_all_columns(stmt, obj);
                         });
                     });
         }
@@ -167,27 +164,26 @@ export namespace storm::orm::statements {
         }
 
         // =====================================================================
-        // RAW POINTER EXTRACTION - Eliminates unique_ptr::get() overhead
-        // These functions take sqlite3_stmt* directly for maximum performance
+        // DATABASE-AGNOSTIC EXTRACTION - Uses Statement methods with templates
+        // Templates enable cross-module inlining for zero-cost abstraction
         // =====================================================================
 
-        // Extract single column value using raw sqlite3_stmt* pointer
+        // Extract single column value using Statement methods (database-agnostic)
         template <typename FieldType>
-        __attribute__((always_inline)) static auto extract_column_raw(sqlite3_stmt* raw_stmt, int col_idx)
-                -> FieldType {
+        __attribute__((always_inline)) static auto extract_column(Statement* stmt, int col_idx) -> FieldType {
             // Handle std::optional types first
             if constexpr (storm::orm::utilities::is_optional_v<FieldType>) {
                 using InnerType = typename FieldType::value_type;
-                if (sqlite3_column_type(raw_stmt, col_idx) == SQLITE_NULL) {
+                if (stmt->is_null(col_idx)) {
                     return std::nullopt;
                 }
-                return FieldType{extract_column_raw<InnerType>(raw_stmt, col_idx)};
+                return FieldType{extract_column<InnerType>(stmt, col_idx)};
             }
             // Handle BLOB types (vector<uint8_t>)
             else if constexpr (std::is_same_v<FieldType, std::vector<uint8_t>> ||
                                std::is_same_v<FieldType, std::vector<unsigned char>>) {
-                const void* blob = sqlite3_column_blob(raw_stmt, col_idx);
-                const int   size = sqlite3_column_bytes(raw_stmt, col_idx);
+                const void* blob = stmt->extract_blob_ptr(col_idx);
+                const int   size = stmt->extract_bytes(col_idx);
                 if (blob && size > 0) {
                     const auto* data = static_cast<const uint8_t*>(blob);
                     return FieldType(data, data + size);
@@ -196,35 +192,35 @@ export namespace storm::orm::statements {
             }
             // Boolean type (stored as INTEGER 0/1)
             else if constexpr (std::is_same_v<FieldType, bool>) {
-                return sqlite3_column_int(raw_stmt, col_idx) != 0;
+                return stmt->extract_bool(col_idx);
             }
             // Integer types
             else if constexpr (std::is_same_v<FieldType, int>) {
-                return sqlite3_column_int(raw_stmt, col_idx);
+                return stmt->extract_int(col_idx);
             } else if constexpr (std::is_same_v<FieldType, int64_t> || std::is_same_v<FieldType, long> ||
                                  std::is_same_v<FieldType, long long> || std::is_same_v<FieldType, uint64_t> ||
                                  std::is_same_v<FieldType, unsigned long> ||
                                  std::is_same_v<FieldType, unsigned long long>) {
-                // All 64-bit types (signed and unsigned) use sqlite3_column_int64
-                return static_cast<FieldType>(sqlite3_column_int64(raw_stmt, col_idx));
+                // All 64-bit types (signed and unsigned) use extract_int64
+                return static_cast<FieldType>(stmt->extract_int64(col_idx));
             } else if constexpr (std::is_same_v<FieldType, short>) {
-                return static_cast<short>(sqlite3_column_int(raw_stmt, col_idx));
+                return static_cast<short>(stmt->extract_int(col_idx));
             } else if constexpr (std::is_same_v<FieldType, unsigned short>) {
-                return static_cast<unsigned short>(sqlite3_column_int(raw_stmt, col_idx));
+                return static_cast<unsigned short>(stmt->extract_int(col_idx));
             } else if constexpr (std::is_same_v<FieldType, unsigned int>) {
-                return static_cast<unsigned int>(sqlite3_column_int(raw_stmt, col_idx));
+                return static_cast<unsigned int>(stmt->extract_int(col_idx));
             }
             // Floating point types
             else if constexpr (std::is_same_v<FieldType, double>) {
-                return sqlite3_column_double(raw_stmt, col_idx);
+                return stmt->extract_double(col_idx);
             } else if constexpr (std::is_same_v<FieldType, float>) {
-                return static_cast<float>(sqlite3_column_double(raw_stmt, col_idx));
+                return stmt->extract_float(col_idx);
             }
             // String type
             else if constexpr (std::is_same_v<FieldType, std::string>) {
-                const unsigned char* text = sqlite3_column_text(raw_stmt, col_idx);
+                const unsigned char* text = stmt->extract_text_ptr(col_idx);
                 if (text) {
-                    const auto len = static_cast<size_t>(sqlite3_column_bytes(raw_stmt, col_idx));
+                    const auto len = static_cast<size_t>(stmt->extract_bytes(col_idx));
                     return std::string(reinterpret_cast<const char*>(text), len);
                 }
                 return std::string{};
@@ -234,9 +230,9 @@ export namespace storm::orm::statements {
             }
         }
 
-        // Extract single column using raw pointer
+        // Extract single column using Statement (database-agnostic)
         template <size_t Index>
-        __attribute__((always_inline)) static void extract_column_raw_fast(sqlite3_stmt* raw_stmt, T& obj) noexcept {
+        __attribute__((always_inline)) static void extract_column_fast(Statement* stmt, T& obj) noexcept {
             if constexpr (Index < Base::field_count_) {
                 constexpr auto member = Base::all_members_[Index];
                 using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
@@ -246,23 +242,23 @@ export namespace storm::orm::statements {
                     obj.[:member:]                  = FieldType{};
                     constexpr auto fk_pk_member     = Base::template find_fk_primary_key<FieldType>();
                     using PKType                    = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
-                    obj.[:member:].[:fk_pk_member:] = extract_column_raw<PKType>(raw_stmt, Index);
+                    obj.[:member:].[:fk_pk_member:] = extract_column<PKType>(stmt, Index);
                 } else {
-                    obj.[:member:] = extract_column_raw<FieldType>(raw_stmt, Index);
+                    obj.[:member:] = extract_column<FieldType>(stmt, Index);
                 }
             }
         }
 
-        // Extract all columns using raw pointer with fold expression
+        // Extract all columns using Statement with fold expression
         template <size_t... Is>
         __attribute__((always_inline)) static void
-        extract_all_columns_raw_impl(sqlite3_stmt* raw_stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
-            ((extract_column_raw_fast<Is>(raw_stmt, obj)), ...);
+        extract_all_columns_impl(Statement* stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
+            ((extract_column_fast<Is>(stmt, obj)), ...);
         }
 
-        // Fast extraction entry point using raw pointer
-        __attribute__((always_inline)) static void extract_all_columns_raw(sqlite3_stmt* raw_stmt, T& obj) noexcept {
-            extract_all_columns_raw_impl(raw_stmt, obj, typename Base::field_indices_t{});
+        // Fast extraction entry point using Statement (database-agnostic)
+        __attribute__((always_inline)) static void extract_all_columns(Statement* stmt, T& obj) noexcept {
+            extract_all_columns_impl(stmt, obj, typename Base::field_indices_t{});
         }
 
         // =====================================================================
@@ -270,25 +266,23 @@ export namespace storm::orm::statements {
         // =====================================================================
 
         // Unified query loop template - handles both direct and JOIN extraction
-        // OPTIMIZATION: Caches sqlite3_stmt* once and uses direct SQLite calls in hot loop
-        // Extractor signature: void(sqlite3_stmt* raw, Statement* stmt, T& obj)
-        //   - Direct extraction uses raw pointer for max performance
-        //   - JOIN extraction uses Statement* for type-erased access
+        // DATABASE-AGNOSTIC: Uses Statement methods with templates for cross-module inlining
+        // Extractor signature: void(Statement* stmt, T& obj)
         template <typename Extractor>
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
         execute_query_loop(Statement* stmt, const Extractor& extractor) noexcept -> std::expected<plf::hive<T>, Error> {
-            plf::hive<T>  results;
-            sqlite3_stmt* raw_stmt    = stmt->handle(); // Cache raw pointer ONCE
-            int           step_result = 0;
+            plf::hive<T> results;
+            int          step_result = 0;
 
-            while ((step_result = sqlite3_step(raw_stmt)) == SQLITE_ROW) {
+            // DATABASE-AGNOSTIC: Template step_raw() enables cross-module inlining
+            while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
                 T obj;
-                extractor(raw_stmt, stmt, obj);
+                extractor(stmt, obj);
                 results.insert(std::move(obj));
             }
 
-            if (step_result != SQLITE_DONE) {
-                sqlite3_reset(raw_stmt);
+            if (step_result != Statement::NO_MORE_ROWS) {
+                stmt->reset_raw();
                 return std::unexpected(Error{step_result, stmt->get_error_message()});
             }
 

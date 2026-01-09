@@ -53,7 +53,8 @@ export namespace storm::db::sqlite {
       public:
         using Error = sqlite::Error;
 
-        explicit Statement(sqlite3_stmt* stmt) : stmt_(stmt, sqlite3_finalize) {}
+        // OPTIMIZATION: Cache raw pointer to eliminate unique_ptr::get() overhead in hot loops
+        explicit Statement(sqlite3_stmt* stmt) : stmt_(stmt, sqlite3_finalize), raw_(stmt) {}
 
         // Destructor - unique_ptr handles cleanup via sqlite3_finalize
         ~Statement() = default;
@@ -146,8 +147,9 @@ export namespace storm::db::sqlite {
         }
 
         // Access raw handle for advanced operations
+        // Returns cached raw pointer for zero overhead
         [[nodiscard]] auto handle() const noexcept -> sqlite3_stmt* {
-            return stmt_.get();
+            return raw_;
         }
 
         // === High-Performance Abstraction Layer ===
@@ -155,59 +157,80 @@ export namespace storm::db::sqlite {
         // zero-cost abstraction through aggressive inlining
 
         // Step with raw return value (no std::expected overhead in hot loop)
-        [[nodiscard]] __attribute__((always_inline)) auto step_raw() noexcept -> int {
-            return sqlite3_step(stmt_.get());
+        // OPTIMIZATION: Template forces body visibility across modules, enabling inlining
+        // Uses cached raw pointer to eliminate unique_ptr::get() overhead
+        template <typename = void> [[nodiscard]] __attribute__((always_inline)) auto step_raw() noexcept -> int {
+            return sqlite3_step(raw_);
         }
 
-        // Column extraction methods - fully inlined for zero overhead
+        // Column extraction methods - TEMPLATES for cross-module inlining
+        // Use cached raw pointer for zero overhead
+        template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto extract_int(int col_index) const noexcept -> int {
-            return sqlite3_column_int(stmt_.get(), col_index);
+            return sqlite3_column_int(raw_, col_index);
         }
 
+        template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto extract_int64(int col_index) const noexcept -> int64_t {
-            return sqlite3_column_int64(stmt_.get(), col_index);
+            return sqlite3_column_int64(raw_, col_index);
         }
 
+        template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto extract_double(int col_index) const noexcept -> double {
-            return sqlite3_column_double(stmt_.get(), col_index);
+            return sqlite3_column_double(raw_, col_index);
         }
 
+        template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto extract_text_ptr(int col_index) const noexcept -> const
                 unsigned char* {
-            return sqlite3_column_text(stmt_.get(), col_index);
+            return sqlite3_column_text(raw_, col_index);
         }
 
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto extract_bytes(int col_index) const noexcept -> int {
+            return sqlite3_column_bytes(raw_, col_index);
+        }
+
+        template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto extract_text_view(int col_index) const noexcept
                 -> std::string_view {
-            const unsigned char* text = sqlite3_column_text(stmt_.get(), col_index);
+            const unsigned char* text = sqlite3_column_text(raw_, col_index);
             if (text != nullptr) {
-                const auto len = static_cast<size_t>(sqlite3_column_bytes(stmt_.get(), col_index));
+                const auto len = static_cast<size_t>(sqlite3_column_bytes(raw_, col_index));
                 return {reinterpret_cast<const char*>(text), len};
             }
             return {};
         }
 
+        template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto extract_bool(int col_index) const noexcept -> bool {
-            return sqlite3_column_int(stmt_.get(), col_index) != 0;
+            return sqlite3_column_int(raw_, col_index) != 0;
         }
 
+        template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto extract_float(int col_index) const noexcept -> float {
-            return static_cast<float>(sqlite3_column_double(stmt_.get(), col_index));
+            return static_cast<float>(sqlite3_column_double(raw_, col_index));
         }
 
-        [[nodiscard]] __attribute__((always_inline)) auto extract_blob(int col_index) const noexcept
-                -> std::pair<const void*, int> {
-            const void* blob = sqlite3_column_blob(stmt_.get(), col_index);
-            const int   size = sqlite3_column_bytes(stmt_.get(), col_index);
-            return {blob, size};
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto extract_blob_ptr(int col_index) const noexcept -> const
+                void* {
+            return sqlite3_column_blob(raw_, col_index);
         }
 
+        template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto extract_column_type(int col_index) const noexcept -> int {
-            return sqlite3_column_type(stmt_.get(), col_index);
+            return sqlite3_column_type(raw_, col_index);
         }
 
+        template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto is_null(int col_index) const noexcept -> bool {
-            return sqlite3_column_type(stmt_.get(), col_index) == SQLITE_NULL;
+            return sqlite3_column_type(raw_, col_index) == SQLITE_NULL;
+        }
+
+        // Reset statement - template for cross-module inlining
+        template <typename = void> __attribute__((always_inline)) auto reset_raw() noexcept -> void {
+            sqlite3_reset(raw_);
         }
 
         // Error message extraction
@@ -220,7 +243,8 @@ export namespace storm::db::sqlite {
         static constexpr int NO_MORE_ROWS  = SQLITE_DONE;
 
       private:
-        StmtPtr stmt_;
+        StmtPtr       stmt_;
+        sqlite3_stmt* raw_; // Cached raw pointer for hot-path performance
     };
 
     // Transparent hash for string_view lookups without allocation
