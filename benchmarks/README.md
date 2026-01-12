@@ -100,20 +100,58 @@ Options:
   --filter=<pattern>      Run only tests with EXACT name match
   -c, --category=<name>   Run tests matching category prefix (SELECT matches SELECT*)
   --scale-test            Test performance with increasing sizes (substring match)
-  --iterations=<n>        Number of iterations per test (default: 1000)
+  --iterations=<n>        Override iterations for all tests (default: use JSON values)
+  --quick                 Quick validation mode (~3-5 min, 0.3x iterations)
+  --thorough              Thorough regression mode (~15-20 min, 1.5x iterations)
   --disk                  Use disk-based database (default: in-memory)
   --db=<path>             Use specific database file path
   --list, -l              List all available tests (combine with -c to filter)
   --help, -h              Show this help message
 
+Modes:
+  (default)               Use JSON-defined iterations (~10 min for all tests)
+  --quick                 0.3x iterations for fast development feedback
+  --thorough              1.5x iterations for pre-commit validation
+
 Examples:
+  ./build/release/benchmarks/storm_bench --quick                          # Fast validation (~3-5 min)
+  ./build/release/benchmarks/storm_bench --quick -c SELECT                # Quick SELECT tests only
+  ./build/release/benchmarks/storm_bench --thorough                       # Thorough regression test
   ./build/release/benchmarks/storm_bench -c SELECT                        # Run SELECT* categories
   ./build/release/benchmarks/storm_bench -c SELECT --list                 # Preview SELECT tests
   ./build/release/benchmarks/storm_bench --filter=insert_batch_100        # Run only insert_batch_100
   ./build/release/benchmarks/storm_bench --filter=insert_batch --scale-test  # Test all batch sizes
-  ./build/release/benchmarks/storm_bench --iterations=5000
+  ./build/release/benchmarks/storm_bench --iterations=5000                # Override all iterations
   ./build/release/benchmarks/storm_bench --list
 ```
+
+### Benchmark Modes
+
+The benchmark system supports three modes for different use cases:
+
+| Mode | Flag | Runtime | Iterations | Use Case |
+|------|------|---------|------------|----------|
+| **Default** | (none) | ~10 min | Per-test from JSON | Standard benchmarking |
+| **Quick** | `--quick` | ~3-5 min | 0.3x JSON values | Fast development validation |
+| **Thorough** | `--thorough` | ~15-20 min | 1.5x JSON values | Pre-commit regression testing |
+
+**Quick Mode** - Use during development for fast feedback:
+```bash
+./build/release/benchmarks/storm_bench --quick                 # All tests, ~3-5 min
+./build/release/benchmarks/storm_bench --quick -c SELECT       # Just SELECT tests, ~30 sec
+./build/release/benchmarks/storm_bench --quick --filter=insert_single  # Single test
+```
+
+**Thorough Mode** - Use before commits for comprehensive validation:
+```bash
+./build/release/benchmarks/storm_bench --thorough              # All tests, ~15-20 min
+./build/release/benchmarks/storm_bench --thorough -c INSERT    # Thorough INSERT tests
+```
+
+**Mode Interactions:**
+- `--iterations=N` always overrides mode multipliers
+- `--quick` and `--thorough` are mutually exclusive (error if both specified)
+- Without any mode flag, uses JSON-defined per-test iteration counts
 
 ### List Available Tests
 

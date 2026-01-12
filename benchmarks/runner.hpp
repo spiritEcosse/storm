@@ -24,6 +24,30 @@
 
 namespace storm::benchmark {
 
+    // Benchmark execution mode
+    enum class BenchmarkMode {
+        Default, // Use JSON-defined iterations
+        Quick,   // 0.3x iterations for fast validation (~3-5 min)
+        Thorough // 1.5x iterations for thorough regression testing (~15-20 min)
+    };
+
+    // Calculate actual iterations based on mode
+    inline auto calculate_iterations(int base_iterations, BenchmarkMode mode) -> int {
+        switch (mode) {
+        case BenchmarkMode::Quick:
+            // 0.3x multiplier, minimum 1 iteration
+            return std::max(1, static_cast<int>(base_iterations * 0.3));
+        case BenchmarkMode::Thorough:
+            // 1.5x multiplier, minimum 3 for very small counts
+            if (base_iterations <= 2)
+                return 3;
+            return static_cast<int>(base_iterations * 1.5);
+        case BenchmarkMode::Default:
+        default:
+            return base_iterations;
+        }
+    }
+
     // Number of runs per benchmark for statistical accuracy
     constexpr int NUM_RUNS = 5;
 
@@ -466,14 +490,24 @@ namespace storm::benchmark {
         template <typename Model, size_t TestIndex, size_t TotalTests> struct TestExecutor {
             static void
             execute(BenchmarkRunner&   runner,
-                    int                iterations,
+                    int                iterations_override, // 0 = use JSON value
                     const std::string& filter     = "",
                     const std::string& category   = "",
-                    bool               scale_test = false) {
+                    bool               scale_test = false,
+                    BenchmarkMode      mode       = BenchmarkMode::Default) {
                 constexpr auto&            test          = BENCHMARK_TESTS[TestIndex];
                 constexpr std::string_view test_name     = test.test_name.view();
                 constexpr std::string_view test_category = test.test_category.view();
                 constexpr std::string_view operation     = test.operation.view();
+
+                // Calculate actual iterations: explicit override > mode-adjusted JSON value
+                int actual_iterations;
+                if (iterations_override > 0) {
+                    actual_iterations = iterations_override; // Explicit --iterations wins
+                } else {
+                    // Use JSON-defined iterations with mode multiplier
+                    actual_iterations = calculate_iterations(test.iterations, mode);
+                }
 
                 // Check if test matches category (empty = all categories, prefix match supported)
                 std::string category_str(test_category.data(), test_category.size());
@@ -492,62 +526,73 @@ namespace storm::benchmark {
                 if (should_run) {
                     // Dispatch to handler - still compile-time, just cleaner
                     if constexpr (operation == "where") {
-                        runner.run_where_operation<Model, test>(runner, iterations);
+                        runner.run_where_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "insert") {
-                        runner.run_insert_operation<Model, test>(runner, iterations);
+                        runner.run_insert_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "update_pk") {
-                        runner.run_update_pk_operation<Model, test>(runner, iterations);
+                        runner.run_update_pk_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "delete_pk") {
-                        runner.run_delete_pk_operation<Model, test>(runner, iterations);
+                        runner.run_delete_pk_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "select") {
-                        runner.run_select_operation<Model, test>(runner, iterations);
+                        runner.run_select_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "select_join") {
-                        runner.run_select_join_operation<Model, test>(runner, iterations);
+                        runner.run_select_join_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "select_where_join") {
-                        runner.run_select_where_join_operation<Model, test>(runner, iterations);
+                        runner.run_select_where_join_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "aggregate_count") {
-                        runner.run_aggregate_count_operation<Model, test>(runner, iterations);
+                        runner.run_aggregate_count_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "aggregate_count_field") {
-                        runner.run_aggregate_count_field_operation<Model, test>(runner, iterations);
+                        runner.run_aggregate_count_field_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "aggregate_count_distinct") {
-                        runner.run_aggregate_count_distinct_operation<Model, test>(runner, iterations);
+                        runner.run_aggregate_count_distinct_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "aggregate_sum") {
-                        runner.run_aggregate_sum_operation<Model, test>(runner, iterations);
+                        runner.run_aggregate_sum_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "aggregate_avg") {
-                        runner.run_aggregate_avg_operation<Model, test>(runner, iterations);
+                        runner.run_aggregate_avg_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "aggregate_min") {
-                        runner.run_aggregate_min_operation<Model, test>(runner, iterations);
+                        runner.run_aggregate_min_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "aggregate_max") {
-                        runner.run_aggregate_max_operation<Model, test>(runner, iterations);
+                        runner.run_aggregate_max_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "distinct") {
-                        runner.run_distinct_operation<Model, test>(runner, iterations);
+                        runner.run_distinct_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "distinct_where") {
-                        runner.run_distinct_where_operation<Model, test>(runner, iterations);
+                        runner.run_distinct_where_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "distinct_join") {
-                        runner.run_distinct_join_operation<Model, test>(runner, iterations);
+                        runner.run_distinct_join_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "distinct_where_join") {
-                        runner.run_distinct_where_join_operation<Model, test>(runner, iterations);
+                        runner.run_distinct_where_join_operation<Model, test>(runner, actual_iterations);
                     }
                 }
 
                 // Recurse to next test
                 if constexpr (TestIndex + 1 < TotalTests) {
                     TestExecutor<Model, TestIndex + 1, TotalTests>::execute(
-                            runner, iterations, filter, category, scale_test
+                            runner, iterations_override, filter, category, scale_test, mode
                     );
                 }
             }
         };
 
         // Entry point for test execution (all tests)
-        template <typename Model> auto run_all(int iterations = 1000) -> void {
+        template <typename Model>
+        auto run_all(int iterations_override = 0, BenchmarkMode mode = BenchmarkMode::Default) -> void {
             std::cout << "=== Running All Benchmark Tests (Compile-Time Dispatch) ===\n";
             std::cout << "Total tests: " << BENCHMARK_TESTS.size() << "\n";
-            std::cout << "Iterations per test: " << iterations << "\n";
+
+            // Print mode/iterations info
+            if (iterations_override > 0) {
+                std::cout << "Iterations per test: " << iterations_override << " (override)\n";
+            } else if (mode == BenchmarkMode::Quick) {
+                std::cout << "Mode: Quick (0.3x JSON iterations)\n";
+            } else if (mode == BenchmarkMode::Thorough) {
+                std::cout << "Mode: Thorough (1.5x JSON iterations)\n";
+            } else {
+                std::cout << "Iterations: per-test from JSON\n";
+            }
             std::cout << "Using compile-time JSON parsing with nested C++ structs\n\n";
 
             // Start template recursion from index 0
-            TestExecutor<Model, 0, BENCHMARK_TESTS.size()>::execute(*this, iterations);
+            TestExecutor<Model, 0, BENCHMARK_TESTS.size()>::execute(*this, iterations_override, "", "", false, mode);
 
             std::cout << "\n✅ All tests completed with COMPILE-TIME dispatch!\n";
             std::cout << "✅ Zero runtime string parsing overhead!\n";
@@ -558,7 +603,11 @@ namespace storm::benchmark {
         // Entry point for filtered test execution
         template <typename Model>
         auto run_filtered(
-                const std::string& filter, const std::string& category, int iterations = 1000, bool scale_test = false
+                const std::string& filter,
+                const std::string& category,
+                int                iterations_override = 0,
+                bool               scale_test          = false,
+                BenchmarkMode      mode                = BenchmarkMode::Default
         ) -> void {
             std::cout << "=== Running Filtered Benchmark Tests ===\n";
             if (!category.empty()) {
@@ -568,11 +617,21 @@ namespace storm::benchmark {
                 std::cout << "Filter: \"" << filter << "\" (";
                 std::cout << (scale_test ? "substring match" : "exact match") << ")\n";
             }
-            std::cout << "Iterations per test: " << iterations << "\n";
+
+            // Print mode/iterations info
+            if (iterations_override > 0) {
+                std::cout << "Iterations override: " << iterations_override << "\n";
+            } else if (mode == BenchmarkMode::Quick) {
+                std::cout << "Mode: Quick (0.3x JSON iterations)\n";
+            } else if (mode == BenchmarkMode::Thorough) {
+                std::cout << "Mode: Thorough (1.5x JSON iterations)\n";
+            }
             std::cout << "Using compile-time dispatch with runtime filtering\n\n";
 
             // Start template recursion with filter and category
-            TestExecutor<Model, 0, BENCHMARK_TESTS.size()>::execute(*this, iterations, filter, category, scale_test);
+            TestExecutor<Model, 0, BENCHMARK_TESTS.size()>::execute(
+                    *this, iterations_override, filter, category, scale_test, mode
+            );
 
             std::cout << "\n✅ Filtered tests completed!\n";
         }

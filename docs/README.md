@@ -112,3 +112,4 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
   - [ ] `base.cppm` - Use Statement template methods for common utilities
   - [ ] `queryset.cppm` - Remove sqlite3.h dependency
 - [ ] Simplify *.md files structure - move rules.md content to CLAUDE.md or docs/
+- [ ] Replace all hpp files with cppm modules or cpp files, if it has more sense

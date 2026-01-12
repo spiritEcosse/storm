@@ -38,12 +38,14 @@ namespace {
     struct Args {
         std::string filter;
         std::string category;
-        std::string db_path    = ":memory:";
-        int         iterations = 1000;
-        bool        list_tests = false;
-        bool        scale_test = false;
-        bool        use_disk   = false;
-        bool        show_help  = false;
+        std::string db_path       = ":memory:";
+        int         iterations    = 0; // 0 = use JSON-defined per-test values
+        bool        list_tests    = false;
+        bool        scale_test    = false;
+        bool        use_disk      = false;
+        bool        show_help     = false;
+        bool        quick_mode    = false; // 0.3x iterations for fast validation
+        bool        thorough_mode = false; // 1.5x iterations for regression testing
     };
 
     void print_help(const char* prog) {
@@ -53,16 +55,25 @@ namespace {
         std::cout << "  --filter=<pattern>      Run only tests with EXACT name match\n";
         std::cout << "  -c, --category=<name>   Run tests matching category prefix (SELECT matches SELECT*)\n";
         std::cout << "  --scale-test            Test performance with increasing sizes (substring match)\n";
-        std::cout << "  --iterations=<n>        Number of iterations per test (default: 1000)\n";
+        std::cout << "  --iterations=<n>        Override iterations for all tests (default: use JSON values)\n";
+        std::cout << "  --quick                 Quick validation mode (~3-5 min, 0.3x iterations)\n";
+        std::cout << "  --thorough              Thorough regression mode (~15-20 min, 1.5x iterations)\n";
         std::cout << "  --disk                  Use disk-based database (default: in-memory)\n";
         std::cout << "  --db=<path>             Use specific database file path\n";
         std::cout << "  --list, -l              List all available tests\n";
         std::cout << "  --help, -h              Show this help message\n\n";
+        std::cout << "Modes:\n";
+        std::cout << "  (default)               Use JSON-defined iterations (~10 min for all tests)\n";
+        std::cout << "  --quick                 0.3x iterations for fast development feedback\n";
+        std::cout << "  --thorough              1.5x iterations for pre-commit validation\n\n";
         std::cout << "Examples:\n";
+        std::cout << "  " << prog << " --quick                          # Fast validation (~3-5 min)\n";
+        std::cout << "  " << prog << " --quick -c SELECT                # Quick SELECT tests only\n";
+        std::cout << "  " << prog << " --thorough                       # Thorough regression test\n";
         std::cout << "  " << prog << " -c SELECT                        # Run SELECT* categories\n";
         std::cout << "  " << prog << " --filter=insert_batch_100        # Run only insert_batch_100\n";
         std::cout << "  " << prog << " --filter=insert_batch --scale-test  # Test all batch sizes\n";
-        std::cout << "  " << prog << " --iterations=5000\n";
+        std::cout << "  " << prog << " --iterations=5000                # Override all iterations\n";
         std::cout << "  " << prog << " --list\n";
     }
 
@@ -79,6 +90,10 @@ namespace {
                 args.list_tests = true;
             } else if (arg == "--scale-test") {
                 args.scale_test = true;
+            } else if (arg == "--quick") {
+                args.quick_mode = true;
+            } else if (arg == "--thorough") {
+                args.thorough_mode = true;
             } else if (arg.starts_with("--category=")) {
                 args.category = arg.substr(11);
             } else if (arg.starts_with("-c=")) {
@@ -107,6 +122,20 @@ auto main(int argc, char* argv[]) -> int {
         if (args.show_help) {
             print_help(argv[0]);
             return 0;
+        }
+
+        // Validate mutually exclusive flags
+        if (args.quick_mode && args.thorough_mode) {
+            std::cerr << "Error: --quick and --thorough are mutually exclusive\n";
+            return 1;
+        }
+
+        // Determine benchmark mode
+        BenchmarkMode mode = BenchmarkMode::Default;
+        if (args.quick_mode) {
+            mode = BenchmarkMode::Quick;
+        } else if (args.thorough_mode) {
+            mode = BenchmarkMode::Thorough;
         }
 
         // Handle --list flag (supports category filter)
@@ -176,9 +205,9 @@ auto main(int argc, char* argv[]) -> int {
         // Note: Each benchmark handles its own data setup in prepare() method
         BenchmarkRunner runner;
         if (!args.category.empty() || !args.filter.empty()) {
-            runner.run_filtered<Person>(args.filter, args.category, args.iterations, args.scale_test);
+            runner.run_filtered<Person>(args.filter, args.category, args.iterations, args.scale_test, mode);
         } else {
-            runner.run_all<Person>(args.iterations);
+            runner.run_all<Person>(args.iterations, mode);
         }
 
         std::cout << "\n=== SUCCESS ===\n";

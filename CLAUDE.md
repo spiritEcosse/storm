@@ -288,17 +288,31 @@ This script:
 cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
 
-# Run unified benchmark system
+# Quick validation during development (~3-5 min)
+./build/release/benchmarks/storm_bench --quick                   # All tests, 0.3x iterations
+./build/release/benchmarks/storm_bench --quick -c SELECT         # Quick SELECT tests only
+
+# Thorough regression testing before commits (~15-20 min)
+./build/release/benchmarks/storm_bench --thorough                # All tests, 1.5x iterations
+
+# Standard benchmarks (uses JSON-defined iterations, ~10 min)
 ./build/release/benchmarks/storm_bench                           # All tests
 ./build/release/benchmarks/storm_bench --list                    # List available tests
 ./build/release/benchmarks/storm_bench -c SELECT                 # Run SELECT* categories (prefix match)
 ./build/release/benchmarks/storm_bench -c SELECT --list          # Preview which tests will run
 ./build/release/benchmarks/storm_bench --filter=insert_batch_100 # Run specific test (exact match)
 ./build/release/benchmarks/storm_bench --filter=insert_batch --scale-test  # Test performance degradation
-./build/release/benchmarks/storm_bench --iterations=10000        # Custom iterations
+./build/release/benchmarks/storm_bench --iterations=10000        # Override iterations for all tests
 
 # See benchmarks/README.md for detailed guide
 ```
+
+**Benchmark Modes:**
+| Mode | Flag | Runtime | Use Case |
+|------|------|---------|----------|
+| Default | (none) | ~10 min | Standard benchmarking |
+| Quick | `--quick` | ~3-5 min | Development validation |
+| Thorough | `--thorough` | ~15-20 min | Pre-commit regression testing |
 
 **Why Release-Only:**
 - Debug builds: 10-100x slower (meaningless results)
