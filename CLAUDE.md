@@ -536,6 +536,72 @@ void reset() {
 
 **ABA Problem**: New expression allocated at same address as freed expression → stale cache hit → wrong SQL used.
 
+## Database-Agnostic Module Pattern
+
+**MANDATORY: Use templates for cross-module inlining in hot paths.**
+
+C++26 modules prevent function inlining across module boundaries because function bodies aren't visible to importers. The **template trick** solves this:
+
+```cpp
+// ❌ SLOW: Non-template method - cannot be inlined across modules
+class Statement {
+    auto step_raw() noexcept -> int {
+        return sqlite3_step(raw_);  // Body not visible to importers
+    }
+};
+
+// ✅ FAST: Template method - body visible, enables inlining
+class Statement {
+    template <typename = void>
+    [[nodiscard]] __attribute__((always_inline)) auto step_raw() noexcept -> int {
+        return sqlite3_step(raw_);  // Body available for inlining!
+    }
+};
+```
+
+### Why This Works
+
+Templates must have visible definitions for instantiation, so the compiler includes template bodies in the module interface. This enables `always_inline` to work across modules.
+
+### Rules for Database-Agnostic Modules
+
+| DO | DON'T |
+|----|-------|
+| Make hot-path methods `template <typename = void>` | Include DB headers in ORM modules |
+| Use `__attribute__((always_inline))` with templates | Use database-specific types in ORM interfaces |
+| Cache raw pointers in Statement class | Rely on LTO for inlining |
+| Define constants (`ROW_AVAILABLE`) in Statement | Make cold-path methods templates |
+
+### Example: Database-Agnostic SELECT
+
+```cpp
+// src/orm/statements/select.cppm
+module;
+#include <meta>  // C++26 reflection
+// NOTE: No #include <sqlite3.h> - fully database-agnostic!
+
+export module storm_orm_statements_select;
+import storm_db_sqlite;  // Backend with template methods
+
+// Uses Statement methods - works with SQLite, PostgreSQL, etc.
+while (stmt->step_raw() == Statement::ROW_AVAILABLE) {
+    obj.id = stmt->extract_int64(0);
+    obj.name = stmt->extract_text_view(1);
+}
+```
+
+### Performance Results
+
+| Approach | Efficiency |
+|----------|------------|
+| Direct `sqlite3_*` calls | 96-97% |
+| Non-template Statement methods | 92-94% |
+| **Template Statement methods** | **95-96%** |
+
+The ~1% overhead is acceptable for full database abstraction.
+
+**Full documentation**: See [docs/architecture/MODULE_SYSTEM.md](docs/architecture/MODULE_SYSTEM.md) for complete implementation guide.
+
 ## Writing Fair Benchmarks
 
 **⚠️ CRITICAL: Unfair benchmarks lead to wrong optimization decisions.**

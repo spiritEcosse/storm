@@ -23,6 +23,7 @@ Welcome to Storm ORM - a modern C++26 ORM library for SQLite using cutting-edge 
 - **[Statement Caching](architecture/STATEMENT_CACHING.md)** - 3-level caching achieving near-raw SQLite performance
 - **[SQL Generation](architecture/SQL_GENERATION.md)** - Compile-time SQL generation with ConstexprString
 - **[Module System](architecture/MODULE_SYSTEM.md)** - C++26 module structure and dependencies
+- **[Database-Agnostic Modules](architecture/MODULE_SYSTEM.md)** - Template trick for cross-module inlining without LTO
 - **[Compile-Time vs Runtime](architecture/COMPILE_TIME_VS_RUNTIME.md)** - WHERE expression design tradeoffs and performance analysis
 
 ## Development
@@ -100,5 +101,14 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
   - [ ] Correct metric (latency for different result sizes)
 - [ ] **Enable `modernize-use-trailing-return-type`** - Convert all functions to trailing return type syntax
 - [ ] **Enable `bugprone-easily-swappable-parameters`** - Add strong types to prevent parameter swapping bugs
-- [ ] Make select agnostic about which db is used (for now it's sqlite and could be psql and others)
+- [x] ~~Make select agnostic about which db is used~~ - ✅ **DONE** - Template trick for cross-module inlining. See [architecture/MODULE_SYSTEM.md](architecture/MODULE_SYSTEM.md)
+- [ ] **Make remaining modules database-agnostic** - Remove `#include <sqlite3.h>` using template trick:
+  - [ ] `insert.cppm` - Use Statement template methods for binding/execution
+  - [ ] `update.cppm` - Use Statement template methods for binding/execution
+  - [ ] `remove.cppm` - Use Statement template methods for binding/execution
+  - [ ] `distinct.cppm` - Use Statement template methods for extraction
+  - [ ] `aggregate.cppm` - Use Statement template methods for extraction
+  - [ ] `join.cppm` - Use Statement template methods for extraction
+  - [ ] `base.cppm` - Use Statement template methods for common utilities
+  - [ ] `queryset.cppm` - Remove sqlite3.h dependency
 - [ ] Simplify *.md files structure - move rules.md content to CLAUDE.md or docs/
