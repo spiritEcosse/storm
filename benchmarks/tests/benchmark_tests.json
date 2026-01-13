@@ -830,5 +830,187 @@
     "where_value_int": 30,
     "iterations": 10,
     "dataset_size": 100000
+  },
+  {
+    "test_name": "select_limit_10",
+    "test_category": "SELECT_LIMIT",
+    "description": "SELECT with LIMIT 10 (from 10000 rows)",
+    "model": "Person",
+    "operation": "select_limit",
+    "limit_value": 10,
+    "iterations": 10000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "select_limit_50",
+    "test_category": "SELECT_LIMIT",
+    "description": "SELECT with LIMIT 50 (from 10000 rows)",
+    "model": "Person",
+    "operation": "select_limit",
+    "limit_value": 50,
+    "iterations": 5000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "select_limit_100",
+    "test_category": "SELECT_LIMIT",
+    "description": "SELECT with LIMIT 100 (from 10000 rows)",
+    "model": "Person",
+    "operation": "select_limit",
+    "limit_value": 100,
+    "iterations": 2000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "select_limit_500",
+    "test_category": "SELECT_LIMIT",
+    "description": "SELECT with LIMIT 500 (from 10000 rows)",
+    "model": "Person",
+    "operation": "select_limit",
+    "limit_value": 500,
+    "iterations": 500,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "select_limit_1000",
+    "test_category": "SELECT_LIMIT",
+    "description": "SELECT with LIMIT 1000 (from 10000 rows)",
+    "model": "Person",
+    "operation": "select_limit",
+    "limit_value": 1000,
+    "iterations": 200,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "select_offset_100",
+    "test_category": "SELECT_OFFSET",
+    "description": "SELECT with OFFSET 100 (from 1000 rows, returns 900)",
+    "model": "Person",
+    "operation": "select_offset",
+    "offset_value": 100,
+    "iterations": 1000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "select_offset_500",
+    "test_category": "SELECT_OFFSET",
+    "description": "SELECT with OFFSET 500 (from 1000 rows, returns 500)",
+    "model": "Person",
+    "operation": "select_offset",
+    "offset_value": 500,
+    "iterations": 1000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "select_limit_offset_page1",
+    "test_category": "SELECT_LIMIT_OFFSET",
+    "description": "Pagination: LIMIT 100 OFFSET 0 (page 1 of 10000 rows)",
+    "model": "Person",
+    "operation": "select_limit_offset",
+    "limit_value": 100,
+    "offset_value": 0,
+    "iterations": 2000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "select_limit_offset_page10",
+    "test_category": "SELECT_LIMIT_OFFSET",
+    "description": "Pagination: LIMIT 100 OFFSET 900 (page 10 of 10000 rows)",
+    "model": "Person",
+    "operation": "select_limit_offset",
+    "limit_value": 100,
+    "offset_value": 900,
+    "iterations": 2000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "select_limit_offset_page50",
+    "test_category": "SELECT_LIMIT_OFFSET",
+    "description": "Pagination: LIMIT 100 OFFSET 4900 (page 50 of 10000 rows)",
+    "model": "Person",
+    "operation": "select_limit_offset",
+    "limit_value": 100,
+    "offset_value": 4900,
+    "iterations": 2000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "select_limit_offset_deep",
+    "test_category": "SELECT_LIMIT_OFFSET",
+    "description": "Deep pagination: LIMIT 100 OFFSET 9000 (page 91 of 10000 rows)",
+    "model": "Person",
+    "operation": "select_limit_offset",
+    "limit_value": 100,
+    "offset_value": 9000,
+    "iterations": 2000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "select_where_limit_100",
+    "test_category": "SELECT_WHERE_LIMIT",
+    "description": "SELECT WHERE age > 30 LIMIT 100 (from 10000 rows)",
+    "model": "Person",
+    "operation": "select_where_limit",
+    "where_field": "age",
+    "where_op": ">",
+    "where_value_int": 30,
+    "limit_value": 100,
+    "iterations": 2000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "select_where_limit_500",
+    "test_category": "SELECT_WHERE_LIMIT",
+    "description": "SELECT WHERE age > 30 LIMIT 500 (from 10000 rows)",
+    "model": "Person",
+    "operation": "select_where_limit",
+    "where_field": "age",
+    "where_op": ">",
+    "where_value_int": 30,
+    "limit_value": 500,
+    "iterations": 500,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "select_join_limit_100",
+    "test_category": "SELECT_JOIN_LIMIT",
+    "description": "SELECT with JOIN and LIMIT 100 (from 10000 messages)",
+    "model": "FKMessage",
+    "operation": "select_join_limit",
+    "limit_value": 100,
+    "iterations": 2000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "select_join_limit_500",
+    "test_category": "SELECT_JOIN_LIMIT",
+    "description": "SELECT with JOIN and LIMIT 500 (from 10000 messages)",
+    "model": "FKMessage",
+    "operation": "select_join_limit",
+    "limit_value": 500,
+    "iterations": 500,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "select_join_limit_offset_page1",
+    "test_category": "SELECT_JOIN_LIMIT_OFFSET",
+    "description": "JOIN pagination: LIMIT 100 OFFSET 0 (page 1 of 10000)",
+    "model": "FKMessage",
+    "operation": "select_join_limit_offset",
+    "limit_value": 100,
+    "offset_value": 0,
+    "iterations": 2000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "select_join_limit_offset_page50",
+    "test_category": "SELECT_JOIN_LIMIT_OFFSET",
+    "description": "JOIN pagination: LIMIT 100 OFFSET 4900 (page 50 of 10000)",
+    "model": "FKMessage",
+    "operation": "select_join_limit_offset",
+    "limit_value": 100,
+    "offset_value": 4900,
+    "iterations": 2000,
+    "dataset_size": 10000
   }
 ]

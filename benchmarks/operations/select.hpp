@@ -39,11 +39,23 @@ namespace storm::benchmark {
     // ========================================================================
     // Unified SelectBenchmark - Inherits from SelectQueryBenchmarkBase
     // ========================================================================
-    template <typename BaseModel, typename JoinCfg = NoJoin, typename WhereCfg = NoWhere>
-    class SelectBenchmark
-        : public SelectQueryBenchmarkBase<SelectBenchmark<BaseModel, JoinCfg, WhereCfg>, BaseModel, JoinCfg, WhereCfg> {
-        using Base =
-                SelectQueryBenchmarkBase<SelectBenchmark<BaseModel, JoinCfg, WhereCfg>, BaseModel, JoinCfg, WhereCfg>;
+    template <
+            typename BaseModel,
+            typename JoinCfg        = NoJoin,
+            typename WhereCfg       = NoWhere,
+            typename LimitOffsetCfg = NoLimitOffset>
+    class SelectBenchmark : public SelectQueryBenchmarkBase<
+                                    SelectBenchmark<BaseModel, JoinCfg, WhereCfg, LimitOffsetCfg>,
+                                    BaseModel,
+                                    JoinCfg,
+                                    WhereCfg,
+                                    LimitOffsetCfg> {
+        using Base = SelectQueryBenchmarkBase<
+                SelectBenchmark<BaseModel, JoinCfg, WhereCfg, LimitOffsetCfg>,
+                BaseModel,
+                JoinCfg,
+                WhereCfg,
+                LimitOffsetCfg>;
 
       public:
         // ====================================================================
@@ -70,16 +82,30 @@ namespace storm::benchmark {
             using NewJoinCfg = JoinConfig<FK, Related>;
 
             if constexpr (WhereCfg::enabled) {
-                return SelectBenchmark<BaseModel, NewJoinCfg, WhereCfg>{Base::where_value(), Base::batch_size()};
+                return SelectBenchmark<BaseModel, NewJoinCfg, WhereCfg, LimitOffsetCfg>{
+                        Base::where_value(), Base::batch_size()
+                };
             } else {
-                return SelectBenchmark<BaseModel, NewJoinCfg, WhereCfg>{Base::batch_size()};
+                return SelectBenchmark<BaseModel, NewJoinCfg, WhereCfg, LimitOffsetCfg>{Base::batch_size()};
             }
         }
 
         // Add WHERE - returns new SelectBenchmark type with WHERE enabled
         template <std::meta::info FieldInfo, auto Op, typename V> auto with_where(V value) const {
             using NewWhereCfg = WhereConfig<FieldInfo, Op, V>;
-            return SelectBenchmark<BaseModel, JoinCfg, NewWhereCfg>{value, Base::batch_size()};
+            return SelectBenchmark<BaseModel, JoinCfg, NewWhereCfg, LimitOffsetCfg>{value, Base::batch_size()};
+        }
+
+        // Add LIMIT/OFFSET - returns new SelectBenchmark type with LIMIT/OFFSET enabled
+        template <int LimitValue, int OffsetValue = 0> auto with_limit_offset() const {
+            using NewLimitOffsetCfg = LimitOffsetConfig<LimitValue, OffsetValue>;
+            if constexpr (WhereCfg::enabled) {
+                return SelectBenchmark<BaseModel, JoinCfg, WhereCfg, NewLimitOffsetCfg>{
+                        Base::where_value(), Base::batch_size()
+                };
+            } else {
+                return SelectBenchmark<BaseModel, JoinCfg, WhereCfg, NewLimitOffsetCfg>{Base::batch_size()};
+            }
         }
 
         // ====================================================================
@@ -140,6 +166,9 @@ namespace storm::benchmark {
                     sql += " ?";
                 }
             }
+
+            // Append LIMIT/OFFSET if configured
+            Base::append_limit_offset_sql(sql);
 
             return sql;
         }
@@ -238,5 +267,48 @@ namespace storm::benchmark {
             BaseModel,
             JoinConfig<FKFieldPtr, RelatedModel>,
             WhereConfig<WhereFieldInfo, Op, ValueType>>;
+
+    // ========================================================================
+    // LIMIT/OFFSET Type Aliases
+    // ========================================================================
+
+    // SELECT LIMIT - simple LIMIT clause
+    template <typename Model, int LimitValue>
+    using SelectLimitBenchmark = SelectBenchmark<Model, NoJoin, NoWhere, LimitOffsetConfig<LimitValue, 0>>;
+
+    // SELECT OFFSET - OFFSET with LIMIT -1 (all rows)
+    template <typename Model, int OffsetValue>
+    using SelectOffsetBenchmark = SelectBenchmark<Model, NoJoin, NoWhere, LimitOffsetConfig<0, OffsetValue>>;
+
+    // SELECT LIMIT + OFFSET - pagination
+    template <typename Model, int LimitValue, int OffsetValue>
+    using SelectLimitOffsetBenchmark =
+            SelectBenchmark<Model, NoJoin, NoWhere, LimitOffsetConfig<LimitValue, OffsetValue>>;
+
+    // SELECT WHERE + LIMIT
+    template <typename Model, std::meta::info FieldInfo, auto Op, typename ValueType, int LimitValue>
+    using SelectWhereLimitBenchmark =
+            SelectBenchmark<Model, NoJoin, WhereConfig<FieldInfo, Op, ValueType>, LimitOffsetConfig<LimitValue, 0>>;
+
+    // SELECT WHERE + LIMIT + OFFSET
+    template <typename Model, std::meta::info FieldInfo, auto Op, typename ValueType, int LimitValue, int OffsetValue>
+    using SelectWhereLimitOffsetBenchmark = SelectBenchmark<
+            Model,
+            NoJoin,
+            WhereConfig<FieldInfo, Op, ValueType>,
+            LimitOffsetConfig<LimitValue, OffsetValue>>;
+
+    // SELECT JOIN + LIMIT
+    template <typename BaseModel, typename RelatedModel, auto FKFieldPtr, int LimitValue>
+    using SelectJoinLimitBenchmark =
+            SelectBenchmark<BaseModel, JoinConfig<FKFieldPtr, RelatedModel>, NoWhere, LimitOffsetConfig<LimitValue, 0>>;
+
+    // SELECT JOIN + LIMIT + OFFSET
+    template <typename BaseModel, typename RelatedModel, auto FKFieldPtr, int LimitValue, int OffsetValue>
+    using SelectJoinLimitOffsetBenchmark = SelectBenchmark<
+            BaseModel,
+            JoinConfig<FKFieldPtr, RelatedModel>,
+            NoWhere,
+            LimitOffsetConfig<LimitValue, OffsetValue>>;
 
 } // namespace storm::benchmark

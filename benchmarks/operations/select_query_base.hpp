@@ -57,6 +57,20 @@ namespace storm::benchmark {
         using value_type                            = ValueType;
     };
 
+    // No LIMIT/OFFSET configured
+    struct NoLimitOffset {
+        static constexpr bool enabled      = false;
+        static constexpr int  limit_value  = 0;
+        static constexpr int  offset_value = 0;
+    };
+
+    // LIMIT/OFFSET configuration - encodes limit and offset values at compile time
+    template <int LimitValue, int OffsetValue = 0> struct LimitOffsetConfig {
+        static constexpr bool enabled      = true;
+        static constexpr int  limit_value  = LimitValue;
+        static constexpr int  offset_value = OffsetValue;
+    };
+
     // ========================================================================
     // Field dispatcher - compile-time field lookup by name
     // ========================================================================
@@ -104,7 +118,12 @@ namespace storm::benchmark {
     // ========================================================================
     // CRTP Base Class for SELECT-like Benchmarks
     // ========================================================================
-    template <typename Derived, typename BaseModel, typename JoinCfg, typename WhereCfg>
+    template <
+            typename Derived,
+            typename BaseModel,
+            typename JoinCfg,
+            typename WhereCfg,
+            typename LimitOffsetCfg = NoLimitOffset>
     class SelectQueryBenchmarkBase : public DataBenchmarkBase<Derived, BaseModel, 1> {
         using Base = DataBenchmarkBase<Derived, BaseModel, 1>;
 
@@ -141,9 +160,21 @@ namespace storm::benchmark {
             }
         }
 
+        void print_limit_offset_suffix() const {
+            if constexpr (LimitOffsetCfg::enabled) {
+                if constexpr (LimitOffsetCfg::limit_value > 0) {
+                    std::cout << " LIMIT " << LimitOffsetCfg::limit_value;
+                }
+                if constexpr (LimitOffsetCfg::offset_value > 0) {
+                    std::cout << " OFFSET " << LimitOffsetCfg::offset_value;
+                }
+            }
+        }
+
         void print_info_footer() const {
             print_where_suffix();
             print_join_suffix();
+            print_limit_offset_suffix();
             std::cout << "\n";
             std::cout << "  Dataset: " << Base::batch_size() << " rows\n";
         }
@@ -158,6 +189,14 @@ namespace storm::benchmark {
             if constexpr (WhereCfg::enabled) {
                 auto where_clause = build_where_clause();
                 Base::qs().where(where_clause);
+            }
+            if constexpr (LimitOffsetCfg::enabled) {
+                if constexpr (LimitOffsetCfg::limit_value > 0) {
+                    Base::qs().limit(LimitOffsetCfg::limit_value);
+                }
+                if constexpr (LimitOffsetCfg::offset_value > 0) {
+                    Base::qs().offset(LimitOffsetCfg::offset_value);
+                }
             }
         }
 
@@ -326,6 +365,25 @@ namespace storm::benchmark {
                     sqlite3_bind_text(stmt, 1, where_value_.c_str(), -1, SQLITE_TRANSIENT);
                 } else {
                     sqlite3_bind_text(stmt, 1, where_value_, -1, SQLITE_TRANSIENT);
+                }
+            }
+        }
+
+        // ====================================================================
+        // LIMIT/OFFSET SQL helpers for raw SQLite benchmarks
+        // ====================================================================
+        static void append_limit_offset_sql(std::string& sql) {
+            if constexpr (LimitOffsetCfg::enabled) {
+                if constexpr (LimitOffsetCfg::limit_value > 0) {
+                    sql += " LIMIT ";
+                    sql += std::to_string(LimitOffsetCfg::limit_value);
+                } else if constexpr (LimitOffsetCfg::offset_value > 0) {
+                    // SQLite requires LIMIT when using OFFSET
+                    sql += " LIMIT -1";
+                }
+                if constexpr (LimitOffsetCfg::offset_value > 0) {
+                    sql += " OFFSET ";
+                    sql += std::to_string(LimitOffsetCfg::offset_value);
                 }
             }
         }

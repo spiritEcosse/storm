@@ -84,6 +84,10 @@ namespace storm::benchmark {
         int dataset_size = 10000;
         int batch_size   = 1; // For batch operations (1 = single operation)
 
+        // LIMIT/OFFSET clause parameters
+        int limit_value  = 0; // 0 = no LIMIT, > 0 = LIMIT n
+        int offset_value = 0; // 0 = no OFFSET, > 0 = OFFSET n
+
         consteval BenchmarkTest() = default;
     };
 

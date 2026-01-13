@@ -77,13 +77,13 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 | WHERE Clauses | ✅ 100% | ✅ 100% | ⚠️ 57% (4/7 operators) |
 | JOIN Operations | ✅ 100% | ✅ 100% | ⚠️ 25% (INNER only) |
 | DISTINCT | ✅ 100% | ✅ 100% | ⚠️ 50% (single field only) |
-| LIMIT/OFFSET | ✅ 100% | ✅ 100% | ❌ 0% |
+| LIMIT/OFFSET | ✅ 100% | ✅ 100% | ✅ 100% |
 | ORDER BY | ✅ 100% | ✅ 100% | ❌ 0% |
 | GROUP BY | ✅ 100% | ✅ 100% | ❌ 0% |
 | Aggregates | ✅ 100% | ✅ 100% | ✅ 100% |
 | HAVING | ❌ 0% | ❌ 0% | ❌ 0% |
 
-**Total: 290 unit tests, 81 benchmarks**
+**Total: 290 unit tests, 96 benchmarks**
 
 ---
 
@@ -91,12 +91,13 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 
 Features implemented and tested but not benchmarked for performance:
 
-- [ ] **LIMIT/OFFSET Benchmarks** - No performance testing
-  - [ ] `limit_100` - LIMIT on 100K rows
-  - [ ] `limit_1000` - LIMIT on 100K rows
-  - [ ] `limit_offset_pagination` - LIMIT + OFFSET pagination patterns
-  - [ ] `limit_with_where` - Combined LIMIT + WHERE
-  - [ ] `limit_with_order_by` - LIMIT on sorted results (Top-N query pattern)
+- [x] **LIMIT/OFFSET Benchmarks** - ✅ Implemented (17 tests, 89-105% efficiency)
+  - [x] `select_limit_10/50/100/500/1000` - LIMIT on 10K rows
+  - [x] `select_offset_100/500` - OFFSET only (with LIMIT -1)
+  - [x] `select_limit_offset_page1/10/50/deep` - LIMIT + OFFSET pagination patterns
+  - [x] `select_where_limit_100/500` - Combined LIMIT + WHERE
+  - [x] `select_join_limit_100/500` - LIMIT with JOIN operations
+  - [x] `select_join_limit_offset_page1/50` - JOIN + pagination
 
 - [ ] **ORDER BY Benchmarks** - No performance testing
   - [ ] `order_by_single_asc` - Single field ascending

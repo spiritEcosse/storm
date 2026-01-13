@@ -485,6 +485,80 @@ namespace storm::benchmark {
             );
         }
 
+        // ====================================================================
+        // LIMIT/OFFSET operation handlers
+        // ====================================================================
+
+        template <typename Model, auto& test>
+        static void run_select_limit_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr int dataset_size = test.dataset_size;
+            constexpr int limit_value  = test.limit_value;
+            runner.run_benchmark(
+                    test.test_name.c_str(), SelectLimitBenchmark<Model, limit_value>{dataset_size}, iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_select_offset_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr int dataset_size = test.dataset_size;
+            constexpr int offset_value = test.offset_value;
+            runner.run_benchmark(
+                    test.test_name.c_str(), SelectOffsetBenchmark<Model, offset_value>{dataset_size}, iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_select_limit_offset_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr int dataset_size = test.dataset_size;
+            constexpr int limit_value  = test.limit_value;
+            constexpr int offset_value = test.offset_value;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    SelectLimitOffsetBenchmark<Model, limit_value, offset_value>{dataset_size},
+                    iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_select_where_limit_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.where.field.view();
+            constexpr auto             op_str       = test.where.op;
+            constexpr int              value        = test.where.value_int;
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            constexpr int              limit_value  = test.limit_value;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    SelectWhereLimitBenchmark<Model, field_info, op_str, int, limit_value>{value, dataset_size},
+                    iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_select_join_limit_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr int dataset_size = test.dataset_size;
+            constexpr int limit_value  = test.limit_value;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    SelectJoinLimitBenchmark<FKMessage, User, &FKMessage::sender, limit_value>{dataset_size},
+                    iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_select_join_limit_offset_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr int dataset_size = test.dataset_size;
+            constexpr int limit_value  = test.limit_value;
+            constexpr int offset_value = test.offset_value;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    SelectJoinLimitOffsetBenchmark<FKMessage, User, &FKMessage::sender, limit_value, offset_value>{
+                            dataset_size
+                    },
+                    iterations
+            );
+        }
+
       public:
         // Template recursion to execute tests at compile time
         template <typename Model, size_t TestIndex, size_t TotalTests> struct TestExecutor {
@@ -561,6 +635,18 @@ namespace storm::benchmark {
                         runner.run_distinct_join_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "distinct_where_join") {
                         runner.run_distinct_where_join_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "select_limit") {
+                        runner.run_select_limit_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "select_offset") {
+                        runner.run_select_offset_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "select_limit_offset") {
+                        runner.run_select_limit_offset_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "select_where_limit") {
+                        runner.run_select_where_limit_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "select_join_limit") {
+                        runner.run_select_join_limit_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "select_join_limit_offset") {
+                        runner.run_select_join_limit_offset_operation<Model, test>(runner, actual_iterations);
                     }
                 }
 
