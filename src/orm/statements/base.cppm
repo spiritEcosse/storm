@@ -1,6 +1,5 @@
 module;
 
-#include <sqlite3.h>
 #include <meta>
 
 export module storm_orm_statements_base;
@@ -477,7 +476,7 @@ export namespace storm::orm::statements {
                 const unsigned char* text = stmt.extract_text_ptr(col_idx);
                 if (text) {
                     // OPTIMIZATION: Direct construction with known length (no strlen, no temporary)
-                    int len = sqlite3_column_bytes(stmt.handle(), col_idx);
+                    int len = stmt.extract_bytes(col_idx);
                     return FieldType(reinterpret_cast<const char*>(text), len);
                 }
                 return FieldType{};

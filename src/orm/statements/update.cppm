@@ -1,7 +1,5 @@
 module;
 
-#include <sqlite3.h>
-
 export module storm_orm_statements_update;
 
 import storm_orm_statements_base;

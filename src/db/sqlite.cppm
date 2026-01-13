@@ -68,67 +68,80 @@ export namespace storm::db::sqlite {
         auto operator=(const Statement&) -> Statement& = delete;
 
         // DatabaseStatement concept implementation
-        [[nodiscard]] auto bind_int(int index, int value) noexcept -> std::expected<void, Error> {
-            const int rc = sqlite3_bind_int(stmt_.get(), index, value);
-            if (rc != SQLITE_OK) {
+        // All methods use template pattern for cross-module inlining
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto bind_int(int index, int value) noexcept
+                -> std::expected<void, Error> {
+            const int rc = sqlite3_bind_int(raw_, index, value);
+            if (rc != SQLITE_OK) [[unlikely]] {
                 return std::unexpected(Error{rc, "Failed to bind integer parameter"});
             }
             return {};
         }
 
-        [[nodiscard]] auto bind_text(int index, std::string_view value) noexcept -> std::expected<void, Error> {
-            const int rc = sqlite3_bind_text(
-                    stmt_.get(), index, value.data(), static_cast<int>(value.size()), SQLITE_TRANSIENT
-            );
-            if (rc != SQLITE_OK) {
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto bind_text(int index, std::string_view value) noexcept
+                -> std::expected<void, Error> {
+            const int rc =
+                    sqlite3_bind_text(raw_, index, value.data(), static_cast<int>(value.size()), SQLITE_TRANSIENT);
+            if (rc != SQLITE_OK) [[unlikely]] {
                 return std::unexpected(Error{rc, "Failed to bind text parameter"});
             }
             return {};
         }
 
-        [[nodiscard]] auto bind_int64(int index, int64_t value) noexcept -> std::expected<void, Error> {
-            const int rc = sqlite3_bind_int64(stmt_.get(), index, value);
-            if (rc != SQLITE_OK) {
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto bind_int64(int index, int64_t value) noexcept
+                -> std::expected<void, Error> {
+            const int rc = sqlite3_bind_int64(raw_, index, value);
+            if (rc != SQLITE_OK) [[unlikely]] {
                 return std::unexpected(Error{rc, "Failed to bind int64 parameter"});
             }
             return {};
         }
 
-        [[nodiscard]] auto bind_double(int index, double value) noexcept -> std::expected<void, Error> {
-            const int rc = sqlite3_bind_double(stmt_.get(), index, value);
-            if (rc != SQLITE_OK) {
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto bind_double(int index, double value) noexcept
+                -> std::expected<void, Error> {
+            const int rc = sqlite3_bind_double(raw_, index, value);
+            if (rc != SQLITE_OK) [[unlikely]] {
                 return std::unexpected(Error{rc, "Failed to bind double parameter"});
             }
             return {};
         }
 
-        [[nodiscard]] auto bind_null(int index) noexcept -> std::expected<void, Error> {
-            const int rc = sqlite3_bind_null(stmt_.get(), index);
-            if (rc != SQLITE_OK) {
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto bind_null(int index) noexcept -> std::expected<void, Error> {
+            const int rc = sqlite3_bind_null(raw_, index);
+            if (rc != SQLITE_OK) [[unlikely]] {
                 return std::unexpected(Error{rc, "Failed to bind null parameter"});
             }
             return {};
         }
 
-        [[nodiscard]] auto bind_blob(int index, const void* data, size_t size) noexcept -> std::expected<void, Error> {
-            const int rc = sqlite3_bind_blob(stmt_.get(), index, data, static_cast<int>(size), SQLITE_TRANSIENT);
-            if (rc != SQLITE_OK) {
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto bind_blob(int index, const void* data, size_t size) noexcept
+                -> std::expected<void, Error> {
+            const int rc = sqlite3_bind_blob(raw_, index, data, static_cast<int>(size), SQLITE_TRANSIENT);
+            if (rc != SQLITE_OK) [[unlikely]] {
                 return std::unexpected(Error{rc, "Failed to bind blob parameter"});
             }
             return {};
         }
 
-        [[nodiscard]] auto execute() noexcept -> std::expected<void, Error> {
-            const int rc = sqlite3_step(stmt_.get());
-            if (rc != SQLITE_DONE) {
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto execute() noexcept -> std::expected<void, Error> {
+            const int rc = sqlite3_step(raw_);
+            if (rc != SQLITE_DONE) [[unlikely]] {
                 return std::unexpected(Error{rc, "Failed to execute statement"});
             }
             return {};
         }
 
-        [[nodiscard]] auto step() noexcept -> std::expected<bool, Error> {
-            const int rc = sqlite3_step(stmt_.get());
-            if (rc == SQLITE_ROW) {
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto step() noexcept -> std::expected<bool, Error> {
+            const int rc = sqlite3_step(raw_);
+            if (rc == SQLITE_ROW) [[likely]] {
                 return true; // Row available
             }
             if (rc == SQLITE_DONE) {
@@ -137,18 +150,19 @@ export namespace storm::db::sqlite {
             return std::unexpected(Error{rc, "Failed to step statement"});
         }
 
-        auto reset() noexcept -> void {
-            sqlite3_reset(stmt_.get());
-            sqlite3_clear_bindings(stmt_.get());
+        template <typename = void> __attribute__((always_inline)) auto reset() noexcept -> void {
+            sqlite3_reset(raw_);
+            sqlite3_clear_bindings(raw_);
         }
 
-        auto finalize() noexcept -> void {
+        template <typename = void> __attribute__((always_inline)) auto finalize() noexcept -> void {
             stmt_.reset(); // Calls sqlite3_finalize via deleter
         }
 
         // Access raw handle for advanced operations
         // Returns cached raw pointer for zero overhead
-        [[nodiscard]] auto handle() const noexcept -> sqlite3_stmt* {
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto handle() const noexcept -> sqlite3_stmt* {
             return raw_;
         }
 
@@ -234,8 +248,9 @@ export namespace storm::db::sqlite {
         }
 
         // Error message extraction
-        [[nodiscard]] auto get_error_message() const noexcept -> const char* {
-            return sqlite3_errmsg(sqlite3_db_handle(stmt_.get()));
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto get_error_message() const noexcept -> const char* {
+            return sqlite3_errmsg(sqlite3_db_handle(raw_));
         }
 
         // Constants for return codes (make them constexpr for compile-time checks)

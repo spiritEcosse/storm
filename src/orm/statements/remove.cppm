@@ -1,6 +1,5 @@
 module;
 
-#include <sqlite3.h>
 #include <meta>
 
 export module storm_orm_statements_remove;

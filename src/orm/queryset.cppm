@@ -1,6 +1,5 @@
 module;
 
-#include <sqlite3.h>
 #include <meta>
 #include <plf_hive/plf_hive.h>
 

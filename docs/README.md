@@ -84,6 +84,16 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 - [x] ~~Replace all std::vector with plf::hive~~ - ✅ **DONE**
 - [x] ~~**Enable `modernize-avoid-c-arrays`**~~ - ✅ **DONE**
 - [x] **Batch INSERT Performance Variance** - ✅ **SOLVED**
+- [x] ~~Make select agnostic about which db is used~~ - ✅ **DONE** - Template trick for cross-module inlining. See [architecture/MODULE_SYSTEM.md](architecture/MODULE_SYSTEM.md)
+- [x] ~~**Make remaining modules database-agnostic**~~ - ✅ **DONE** - Removed `#include <sqlite3.h>` using template trick:
+  - [x] `insert.cppm` - Use Statement template methods for binding/execution
+  - [x] `update.cppm` - Use Statement template methods for binding/execution
+  - [x] `remove.cppm` - Use Statement template methods for binding/execution
+  - [x] `distinct.cppm` - Use Statement template methods for extraction
+  - [x] `aggregate.cppm` - Use Statement template methods for extraction
+  - [x] `join.cppm` - Use Statement template methods for extraction (optimized NULL check for optional types only)
+  - [x] `base.cppm` - Use Statement template methods for common utilities
+  - [x] `queryset.cppm` - Remove sqlite3.h dependency
 
 ### Pending:
 - [ ] **Fix DISTINCT on `std::optional<std::string>`** - DISTINCT queries on optional string fields return garbage values (memory corruption). See `DistinctOptionalStringFieldKnownIssue` test in `tests/test_distinct.cpp`. Note: `std::optional<int>` works correctly.
@@ -101,15 +111,5 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
   - [ ] Correct metric (latency for different result sizes)
 - [ ] **Enable `modernize-use-trailing-return-type`** - Convert all functions to trailing return type syntax
 - [ ] **Enable `bugprone-easily-swappable-parameters`** - Add strong types to prevent parameter swapping bugs
-- [x] ~~Make select agnostic about which db is used~~ - ✅ **DONE** - Template trick for cross-module inlining. See [architecture/MODULE_SYSTEM.md](architecture/MODULE_SYSTEM.md)
-- [ ] **Make remaining modules database-agnostic** - Remove `#include <sqlite3.h>` using template trick:
-  - [ ] `insert.cppm` - Use Statement template methods for binding/execution
-  - [ ] `update.cppm` - Use Statement template methods for binding/execution
-  - [ ] `remove.cppm` - Use Statement template methods for binding/execution
-  - [ ] `distinct.cppm` - Use Statement template methods for extraction
-  - [ ] `aggregate.cppm` - Use Statement template methods for extraction
-  - [ ] `join.cppm` - Use Statement template methods for extraction
-  - [ ] `base.cppm` - Use Statement template methods for common utilities
-  - [ ] `queryset.cppm` - Remove sqlite3.h dependency
 - [ ] Simplify *.md files structure - move rules.md content to CLAUDE.md or docs/
 - [ ] Replace all hpp files with cppm modules or cpp files, if it has more sense

@@ -1,6 +1,5 @@
 module;
 
-#include <sqlite3.h>
 #include <meta>
 #include <cassert>
 
@@ -37,7 +36,6 @@ export namespace storm::orm::statements {
         auto (*get_select_fields_fn)() -> const std::string&;
         auto (*get_complete_sql_fn)() -> const std::string&;
         auto (*extract_row_fn)(ErasedStatementPtr, ErasedObjectPtr) -> void;
-        auto (*extract_row_raw_fn)(sqlite3_stmt*, ErasedObjectPtr) -> void;
 
         [[nodiscard]] auto to_sql() const -> const std::string& {
             return get_join_sql_fn();
@@ -47,18 +45,13 @@ export namespace storm::orm::statements {
             return get_select_fields_fn();
         }
 
-        // NEW: Get complete pre-computed SELECT...JOIN SQL
+        // Get complete pre-computed SELECT...JOIN SQL
         [[nodiscard]] auto get_complete_sql() const -> const std::string& {
             return get_complete_sql_fn();
         }
 
         auto extract_row(ErasedStatementPtr stmt, ErasedObjectPtr obj) const -> void {
             extract_row_fn(stmt, obj);
-        }
-
-        // Extract row using raw sqlite3_stmt* pointer (faster)
-        auto extract_row_raw(sqlite3_stmt* raw_stmt, ErasedObjectPtr obj) const -> void {
-            extract_row_raw_fn(raw_stmt, obj);
         }
     };
 
@@ -311,153 +304,46 @@ export namespace storm::orm::statements {
             return get_complete_sql_cached();
         }
 
-        // =====================================================================
-        // RAW POINTER EXTRACTION - Maximum performance with direct SQLite calls
-        // =====================================================================
-
-        // Extract field using raw sqlite3_stmt* pointer (no wrapper overhead)
-        template <typename FieldType>
-        __attribute__((always_inline)) static void
-        extract_typed_field_raw(sqlite3_stmt* raw_stmt, FieldType& field, int col_idx) noexcept {
-            // Handle std::optional types first
-            if constexpr (storm::orm::utilities::is_optional_v<FieldType>) {
-                using InnerType = typename FieldType::value_type;
-                if (sqlite3_column_type(raw_stmt, col_idx) == SQLITE_NULL) {
-                    field = std::nullopt;
-                    return;
-                }
-                InnerType val;
-                extract_typed_field_raw(raw_stmt, val, col_idx);
-                field = std::move(val);
-            }
-            // Integer types
-            else if constexpr (std::is_same_v<FieldType, int>) {
-                field = sqlite3_column_int(raw_stmt, col_idx);
-            } else if constexpr (std::is_same_v<FieldType, int64_t> || std::is_same_v<FieldType, long> ||
-                                 std::is_same_v<FieldType, long long>) {
-                field = static_cast<FieldType>(sqlite3_column_int64(raw_stmt, col_idx));
-            } else if constexpr (std::is_same_v<FieldType, double>) {
-                field = sqlite3_column_double(raw_stmt, col_idx);
-            } else if constexpr (std::is_same_v<FieldType, float>) {
-                field = static_cast<float>(sqlite3_column_double(raw_stmt, col_idx));
-            } else if constexpr (std::is_same_v<FieldType, bool>) {
-                field = sqlite3_column_int(raw_stmt, col_idx) != 0;
-            } else if constexpr (std::is_same_v<FieldType, std::string>) {
-                const unsigned char* text = sqlite3_column_text(raw_stmt, col_idx);
-                if (text) {
-                    int len = sqlite3_column_bytes(raw_stmt, col_idx);
-                    field.assign(reinterpret_cast<const char*>(text), len);
-                } else {
-                    field.clear();
-                }
-            }
-        }
-
-        // Extract base model fields using raw pointer
-        template <size_t MemberIdx>
-        __attribute__((always_inline)) static void
-        extract_column_at_raw(sqlite3_stmt* raw_stmt, T& obj, int& col_idx) noexcept {
-            if constexpr (MemberIdx < Base::field_count_) {
-                constexpr auto member = Base::all_members_[MemberIdx];
-                if constexpr (!Base::is_fk_field(member)) {
-                    using FieldType = std::remove_cvref_t<decltype(obj.[:member:])>;
-                    extract_typed_field_raw(raw_stmt, obj.[:member:], col_idx);
-                    col_idx++;
-                }
-            }
-        }
-
-        template <size_t... Is>
-        __attribute__((always_inline)) static void
-        extract_t_fields_raw(sqlite3_stmt* raw_stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
-            int col_idx = 0;
-            ((extract_column_at_raw<Is>(raw_stmt, obj, col_idx)), ...);
-        }
-
-        // Extract FK fields using raw pointer
-        template <typename FKBase, size_t FieldIdx>
-        __attribute__((always_inline)) static void
-        extract_fk_field_at_raw(sqlite3_stmt* raw_stmt, auto& fk_obj, int col_idx) noexcept {
-            if constexpr (FieldIdx < FKBase::field_count_) {
-                constexpr auto member = FKBase::all_members_[FieldIdx];
-                using FieldType       = std::remove_cvref_t<decltype(fk_obj.[:member:])>;
-                extract_typed_field_raw(raw_stmt, fk_obj.[:member:], col_idx);
-            }
-        }
-
-        template <size_t FKIdx, size_t... FieldIs>
-        __attribute__((always_inline)) static void extract_fk_fields_impl_raw(
-                sqlite3_stmt*   raw_stmt,
-                FK_type<FKIdx>& fk_obj,
-                size_t          col_offset,
-                std::index_sequence<FieldIs...> /*unused*/
-        ) noexcept {
-            using FKBase = FKBase_at<FKIdx>;
-            ((extract_fk_field_at_raw<FKBase, FieldIs>(raw_stmt, fk_obj, col_offset + FieldIs)), ...);
-        }
-
-        template <size_t Idx>
-        __attribute__((always_inline)) static void extract_fk_at_raw(sqlite3_stmt* raw_stmt, T& obj) noexcept {
-            constexpr auto FKPtr  = FKFieldPtrs...[Idx];
-            auto&          fk_obj = obj.*FKPtr;
-            extract_fk_fields_impl_raw<Idx>(
-                    raw_stmt, fk_obj, column_offsets_[Idx], std::make_index_sequence<FKBase_at<Idx>::field_count_>{}
-            );
-        }
-
-        template <size_t... Is>
-        __attribute__((always_inline)) static void
-        extract_all_fks_raw(sqlite3_stmt* raw_stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
-            (extract_fk_at_raw<Is>(raw_stmt, obj), ...);
-        }
-
-        // NEW: Raw pointer extraction for maximum performance
-        __attribute__((hot)) __attribute__((flatten)) static auto
-        extract_joined_row_raw(sqlite3_stmt* raw_stmt, T& obj) noexcept -> void {
-            // Initialize ALL FK fields to defaults first
-            init_all_fk_fields(obj, typename Base::field_indices_t{});
-            // Extract base fields and FK fields using raw pointers
-            extract_t_fields_raw(raw_stmt, obj, typename Base::field_indices_t{});
-            extract_all_fks_raw(raw_stmt, obj, std::make_index_sequence<fk_count_>{});
-        }
-
       private:
         // =====================================================================
-        // WRAPPER-BASED EXTRACTION (Legacy, kept for compatibility)
+        // DATABASE-AGNOSTIC EXTRACTION - Uses Statement template methods
         // =====================================================================
 
-        // Enhanced type extraction with NULL handling (optimized for inlining)
+        // OPTIMIZATION: Only check NULL for optional types (significant performance gain)
+        // Non-optional fields skip the NULL check entirely
         template <typename FieldType>
         __attribute__((always_inline)) static void
         extract_typed_field(Statement* stmt, FieldType& field, int col_idx) noexcept {
-            if (stmt->is_null(col_idx)) {
-                if constexpr (requires { field = std::nullopt; }) {
+            // Handle std::optional types - check NULL first
+            if constexpr (storm::orm::utilities::is_optional_v<FieldType>) {
+                if (stmt->is_null(col_idx)) {
                     field = std::nullopt;
+                    return;
                 }
-                return;
+                using InnerType = typename FieldType::value_type;
+                InnerType val;
+                extract_typed_field(stmt, val, col_idx);
+                field = std::move(val);
             }
-
-            if constexpr (std::is_same_v<FieldType, int>) {
+            // Non-optional types: NO NULL check (matches raw SQLite behavior)
+            else if constexpr (std::is_same_v<FieldType, int>) {
                 field = stmt->extract_int(col_idx);
-            } else if constexpr (std::is_same_v<FieldType, int64_t>) {
-                field = stmt->extract_int64(col_idx);
+            } else if constexpr (std::is_same_v<FieldType, int64_t> || std::is_same_v<FieldType, long> ||
+                                 std::is_same_v<FieldType, long long>) {
+                field = static_cast<FieldType>(stmt->extract_int64(col_idx));
             } else if constexpr (std::is_same_v<FieldType, double>) {
                 field = stmt->extract_double(col_idx);
+            } else if constexpr (std::is_same_v<FieldType, float>) {
+                field = stmt->extract_float(col_idx);
             } else if constexpr (std::is_same_v<FieldType, bool>) {
-                field = static_cast<bool>(stmt->extract_int(col_idx));
+                field = stmt->extract_bool(col_idx);
             } else if constexpr (std::is_same_v<FieldType, std::string>) {
                 const unsigned char* text = stmt->extract_text_ptr(col_idx);
                 if (text) {
-                    // OPTIMIZATION: Direct assign with known length (no temporary, no strlen)
-                    // Avoids temporary string construction and leverages SQLite's length info
-                    int len = sqlite3_column_bytes(stmt->handle(), col_idx);
+                    int len = stmt->extract_bytes(col_idx);
                     field.assign(reinterpret_cast<const char*>(text), len);
-                }
-            } else if constexpr (requires { field.emplace(std::string{}); }) {
-                const unsigned char* text = stmt->extract_text_ptr(col_idx);
-                if (text) {
-                    int len = sqlite3_column_bytes(stmt->handle(), col_idx);
-                    field.emplace(reinterpret_cast<const char*>(text), len);
+                } else {
+                    field.clear();
                 }
             }
         }
@@ -534,13 +420,15 @@ export namespace storm::orm::statements {
         }
 
       public:
-        // Database-agnostic API: Takes Statement* but delegates to raw extraction for performance
-        // OPTIMIZATION: Cache raw pointer once and use the fast raw extraction path
+        // Database-agnostic API: Uses Statement template methods for extraction
+        // Template methods enable cross-module inlining without LTO
         __attribute__((hot)) __attribute__((flatten)) static auto extract_joined_row(Statement* stmt, T& obj) noexcept
                 -> void {
-            // Get raw pointer once and delegate to the optimized raw extraction
-            sqlite3_stmt* raw_stmt = stmt->handle();
-            extract_joined_row_raw(raw_stmt, obj);
+            // Initialize ALL FK fields to defaults first
+            init_all_fk_fields(obj, typename Base::field_indices_t{});
+            // Extract base fields and FK fields using Statement methods
+            extract_t_fields(stmt, obj, typename Base::field_indices_t{});
+            extract_all_fks(stmt, obj, std::make_index_sequence<fk_count_>{});
         }
     };
 
@@ -554,9 +442,6 @@ export namespace storm::orm::statements {
                 +[]() -> const std::string& { return JS::get_complete_sql(); },
                 +[](ErasedStatementPtr stmt, ErasedObjectPtr obj) -> void {
                     JS::extract_joined_row(static_cast<typename ConnType::Statement*>(stmt), *static_cast<T*>(obj));
-                },
-                +[](sqlite3_stmt* raw_stmt, ErasedObjectPtr obj) -> void {
-                    JS::extract_joined_row_raw(raw_stmt, *static_cast<T*>(obj));
                 }
         };
     }
