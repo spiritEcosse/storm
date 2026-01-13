@@ -359,6 +359,20 @@ See [Architecture Documentation](docs/architecture/) for detailed design.
 
 See [Design Decisions](docs/architecture/design-decisions.md) for detailed explanations.
 
+### Why Benchmark Headers Remain as `.hpp`
+
+The `benchmarks/` directory uses traditional `.hpp` headers instead of C++26 modules. This is **intentional and required**:
+
+1. **Macros cannot be exported from modules** - `timing.hpp` and `timing_trace.hpp` define `STORM_TRACE`, `TRACE_INIT`, etc.
+2. **`#embed` requires headers** - `parser.hpp` uses `#embed "tests/benchmark_tests.json"` for compile-time JSON parsing
+3. **Dependency chain** - `runner.hpp` includes `parser.hpp`, making the entire benchmark system header-based
+
+**Architecture split:**
+- `src/` — C++26 modules (`.cppm`) for the ORM library
+- `benchmarks/` — Headers (`.hpp`) for testing infrastructure
+
+This separation is correct. Do not attempt to convert benchmark headers to modules.
+
 ## Performance Guidelines
 
 **Performance testing is mandatory** for all new features. Target: ≥95% of raw SQLite efficiency.

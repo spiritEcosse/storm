@@ -94,6 +94,7 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
   - [x] `join.cppm` - Use Statement template methods for extraction (optimized NULL check for optional types only)
   - [x] `base.cppm` - Use Statement template methods for common utilities
   - [x] `queryset.cppm` - Remove sqlite3.h dependency
+- [x] ~~Replace all hpp files with cppm modules or cpp files~~ — **Analyzed: Must remain as headers** (macros, `#embed`, dependency chain)
 
 ### Pending:
 - [ ] **Fix DISTINCT on `std::optional<std::string>`** - DISTINCT queries on optional string fields return garbage values (memory corruption). See `DistinctOptionalStringFieldKnownIssue` test in `tests/test_distinct.cpp`. Note: `std::optional<int>` works correctly.
@@ -112,4 +113,3 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 - [ ] **Enable `modernize-use-trailing-return-type`** - Convert all functions to trailing return type syntax
 - [ ] **Enable `bugprone-easily-swappable-parameters`** - Add strong types to prevent parameter swapping bugs
 - [ ] Simplify *.md files structure - move rules.md content to CLAUDE.md or docs/
-- [ ] Replace all hpp files with cppm modules or cpp files, if it has more sense
