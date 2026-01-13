@@ -69,6 +69,142 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 
 ## TODO:
 
+### Coverage Summary
+
+| Category | Implementation | Unit Tests | Benchmarks |
+|----------|---------------|------------|------------|
+| CRUD Operations | ✅ 100% | ✅ 100% | ✅ 100% |
+| WHERE Clauses | ✅ 100% | ✅ 100% | ⚠️ 57% (4/7 operators) |
+| JOIN Operations | ✅ 100% | ✅ 100% | ⚠️ 25% (INNER only) |
+| DISTINCT | ✅ 100% | ✅ 100% | ⚠️ 50% (single field only) |
+| LIMIT/OFFSET | ✅ 100% | ✅ 100% | ❌ 0% |
+| ORDER BY | ✅ 100% | ✅ 100% | ❌ 0% |
+| GROUP BY | ✅ 100% | ✅ 100% | ❌ 0% |
+| Aggregates | ✅ 100% | ✅ 100% | ✅ 100% |
+| HAVING | ❌ 0% | ❌ 0% | ❌ 0% |
+
+**Total: 290 unit tests, 81 benchmarks**
+
+---
+
+### Missing Benchmarks (Priority: High)
+
+Features implemented and tested but not benchmarked for performance:
+
+- [ ] **LIMIT/OFFSET Benchmarks** - No performance testing
+  - [ ] `limit_100` - LIMIT on 100K rows
+  - [ ] `limit_1000` - LIMIT on 100K rows
+  - [ ] `limit_offset_pagination` - LIMIT + OFFSET pagination patterns
+  - [ ] `limit_with_where` - Combined LIMIT + WHERE
+  - [ ] `limit_with_order_by` - LIMIT on sorted results (Top-N query pattern)
+
+- [ ] **ORDER BY Benchmarks** - No performance testing
+  - [ ] `order_by_single_asc` - Single field ascending
+  - [ ] `order_by_single_desc` - Single field descending
+  - [ ] `order_by_multi_field` - Multiple fields sorting
+  - [ ] `order_by_with_where` - Combined ORDER BY + WHERE
+  - [ ] `order_by_with_limit` - Top-N query pattern
+
+- [ ] **GROUP BY Benchmarks** - No performance testing
+  - [ ] `group_by_single` - Single field grouping
+  - [ ] `group_by_multi` - Multi-field grouping
+  - [ ] `group_by_with_count` - GROUP BY + COUNT aggregate
+  - [ ] `group_by_with_sum` - GROUP BY + SUM aggregate
+  - [ ] `group_by_with_where` - GROUP BY + WHERE filter
+
+- [ ] **JOIN Type Benchmarks** - Only INNER JOIN benchmarked
+  - [ ] `left_join_100` to `left_join_100000` - LEFT JOIN at various scales
+  - [ ] `right_join_100` to `right_join_100000` - RIGHT JOIN at various scales
+  - [ ] `multi_fk_join` - Multiple foreign key JOIN performance
+
+- [ ] **WHERE Operator Benchmarks** - Only basic operators benchmarked
+  - [ ] `where_like` - Pattern matching (LIKE '%pattern%')
+  - [ ] `where_between` - Range queries (BETWEEN x AND y)
+  - [ ] `where_in` - Set membership (IN (1, 2, 3))
+  - [ ] `where_complex_and_or` - Complex AND/OR combinations
+
+- [ ] **DISTINCT Multi-Field Benchmarks**
+  - [ ] `distinct_multi_field_2` - DISTINCT on 2 fields
+  - [ ] `distinct_multi_field_3` - DISTINCT on 3 fields
+  - [ ] `distinct_with_order_by` - DISTINCT + ORDER BY
+
+---
+
+### Missing Unit Tests (Priority: Medium)
+
+Features that could use additional test coverage:
+
+- [ ] **ORDER BY Edge Cases**
+  - [ ] Order by nullable fields (NULL ordering)
+  - [ ] Order by BLOB fields (if applicable)
+  - [ ] ORDER BY with empty result set
+
+- [ ] **GROUP BY Edge Cases**
+  - [ ] GROUP BY with all NULL values in group column
+  - [ ] GROUP BY + multiple aggregates + WHERE + ORDER BY (full chain)
+
+- [ ] **Combined Clause Tests**
+  - [ ] Full chain: WHERE + JOIN + GROUP BY + ORDER BY + LIMIT + OFFSET
+  - [ ] All aggregate types with GROUP BY in single query
+
+---
+
+### Feature Requests (Priority: Medium)
+
+- [ ] **Column Projection (SELECT specific columns)** - Allow users to specify which columns to retrieve
+  - Example: `qs.select<^^name, ^^age>()` returns `std::vector<std::tuple<std::string, int>>`
+  - Example: `qs.select<^^name>()` returns `std::vector<std::string>` (single column)
+  - Benefits: Reduced memory usage, faster queries when only subset of fields needed
+  - Related to `values<>()` but for general SELECT operations
+  - Should work with WHERE, JOIN, ORDER BY, LIMIT/OFFSET
+
+---
+
+### Not Implemented Features (Priority: Low)
+
+Features not yet implemented:
+
+- [ ] **HAVING Clause** - Filter on aggregated results
+  - Example: `qs.group_by<^^age>().count().having(count > 5).select()`
+  - Requires post-GROUP BY filtering support
+
+- [ ] **UNION / UNION ALL** - Combine results from multiple queries
+  - Would require query composition architecture
+
+- [ ] **Subqueries** - Nested queries
+  - IN (SELECT ...), EXISTS (SELECT ...)
+  - FROM (SELECT ...) AS subquery
+
+- [ ] **Window Functions** - Analytics
+  - ROW_NUMBER(), RANK(), DENSE_RANK(), LAG(), LEAD()
+  - Requires OVER clause support
+
+- [ ] **Common Table Expressions (CTE)** - WITH clause
+  - Recursive queries support
+
+---
+
+### Code Quality Tasks (Priority: Medium)
+
+- [ ] **Fix DISTINCT on `std::optional<std::string>`** - DISTINCT queries on optional string fields return garbage values (memory corruption). See `DistinctOptionalStringFieldKnownIssue` test in `tests/test_distinct.cpp`. Note: `std::optional<int>` works correctly.
+- [ ] **Verify Performance Code Compliance** - Audit all statement implementations against CLAUDE.md performance rules:
+  - [ ] Raw pointer caching in hot loops (SELECT, DISTINCT extraction loops)
+  - [ ] Statement pointer caching for single-row operations (execute_one, remove_one)
+  - [ ] Expression address caching for WHERE clause reuse
+  - [ ] Flat code pattern in hot paths (no nested lambdas) Prove it with benchmarks
+  - [ ] Cache invalidation on reset() to prevent ABA problem
+- [ ] **Verify Benchmark Fairness** - Audit all benchmarks against CLAUDE.md fair benchmark rules:
+  - [ ] Setup outside loop, execute inside (WHERE, bind, prepare)
+  - [ ] Same algorithm for Storm and raw SQLite
+  - [ ] Same container types (plf::hive for both)
+  - [ ] Runtime decision logic for both (no compile-time advantages for raw)
+  - [ ] Correct metric (latency for different result sizes)
+- [ ] **Enable `modernize-use-trailing-return-type`** - Convert all functions to trailing return type syntax
+- [ ] **Enable `bugprone-easily-swappable-parameters`** - Add strong types to prevent parameter swapping bugs
+- [ ] Simplify *.md files structure - move rules.md content to CLAUDE.md or docs/
+
+---
+
 ### Completed:
 - [x] ~~let run benchmarks parallel~~ - **REJECTED** - Parallel execution introduced high variance (90-108% vs sequential 95-96%). Added `-c` category filter instead. Made connections `thread_local` for future use.
 - [x] ~~consider prepare_statement simplify~~ **REJECTED**: ~22% regression (102% → 80%)
@@ -95,21 +231,3 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
   - [x] `base.cppm` - Use Statement template methods for common utilities
   - [x] `queryset.cppm` - Remove sqlite3.h dependency
 - [x] ~~Replace all hpp files with cppm modules or cpp files~~ — **Analyzed: Must remain as headers** (macros, `#embed`, dependency chain)
-
-### Pending:
-- [ ] **Fix DISTINCT on `std::optional<std::string>`** - DISTINCT queries on optional string fields return garbage values (memory corruption). See `DistinctOptionalStringFieldKnownIssue` test in `tests/test_distinct.cpp`. Note: `std::optional<int>` works correctly.
-- [ ] **Verify Performance Code Compliance** - Audit all statement implementations against CLAUDE.md performance rules:
-  - [ ] Raw pointer caching in hot loops (SELECT, DISTINCT extraction loops)
-  - [ ] Statement pointer caching for single-row operations (execute_one, remove_one)
-  - [ ] Expression address caching for WHERE clause reuse
-  - [ ] Flat code pattern in hot paths (no nested lambdas) Prove it with benchmarks
-  - [ ] Cache invalidation on reset() to prevent ABA problem
-- [ ] **Verify Benchmark Fairness** - Audit all benchmarks against CLAUDE.md fair benchmark rules:
-  - [ ] Setup outside loop, execute inside (WHERE, bind, prepare)
-  - [ ] Same algorithm for Storm and raw SQLite
-  - [ ] Same container types (plf::hive for both)
-  - [ ] Runtime decision logic for both (no compile-time advantages for raw)
-  - [ ] Correct metric (latency for different result sizes)
-- [ ] **Enable `modernize-use-trailing-return-type`** - Convert all functions to trailing return type syntax
-- [ ] **Enable `bugprone-easily-swappable-parameters`** - Add strong types to prevent parameter swapping bugs
-- [ ] Simplify *.md files structure - move rules.md content to CLAUDE.md or docs/
