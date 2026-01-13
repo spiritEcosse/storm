@@ -2,6 +2,8 @@
 
 #include <numbers>
 
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+
 import storm;
 import <string>;
 import <vector>;
@@ -567,7 +569,7 @@ TEST_F(InsertOptionsTest, InsertWithCustomBatchSize) {
     // Create 100 objects
     batch.reserve(100);
     for (int i = 0; i < 100; ++i) {
-        batch.emplace_back(0, static_cast<int64_t>(i * 10), static_cast<short>(i));
+        batch.emplace_back(0, static_cast<int64_t>(i) * 10, static_cast<short>(i));
     }
 
     // Use batch_size of 10
@@ -639,3 +641,5 @@ TEST_F(InsertOptionsTest, OptionsWithOnlyBatchSize) {
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 2);
 }
+
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

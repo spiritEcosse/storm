@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+
 import storm;
 import <string>;
 import <vector>;
@@ -385,3 +387,5 @@ TEST_F(LimitOffsetTest, MethodChainingOrder) {
         EXPECT_EQ(it1->id, it2->id);
     }
 }
+
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

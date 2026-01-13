@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+
 import storm;
 import <string>;
 import <vector>;
@@ -152,7 +154,7 @@ TEST_F(SelectTest, SelectAfterInsertAndDelete) {
     ASSERT_TRUE(select_result.has_value()) << "SELECT failed: " << select_result.error().message();
 
     // Find Bob's ID
-    int bob_id = 0;
+    int bob_id = 0; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& person : select_result.value()) {
         if (person.name == "Bob") {
             bob_id = person.id;
@@ -282,3 +284,5 @@ TEST_F(SelectTest, SelectPreservesRowOrder) {
         EXPECT_EQ(it->age, static_cast<int>(i + 1)) << "Row order not preserved at index " << i;
     }
 }
+
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

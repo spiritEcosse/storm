@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+
 import storm;
 import <string>;
 import <vector>;
@@ -642,3 +644,5 @@ TEST_F(WhereTest, ResetClearsAllConditions) {
     EXPECT_EQ(bob_only.value().size(), 1) << "New filter after reset works";
     EXPECT_EQ(bob_only.value().begin()->name, "Bob");
 }
+
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

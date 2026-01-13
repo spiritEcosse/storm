@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+
 import storm;
 import storm_db_sqlite;
 
@@ -824,7 +826,7 @@ TEST_F(AggregateTest, GroupByWithCount) {
     EXPECT_EQ(results.size(), 5); // 5 unique years_experience values
 
     // Count total to verify we got all rows
-    int64_t total_count = 0;
+    int64_t total_count = 0; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& row : results) {
         total_count += std::get<1>(row);
     }
@@ -841,7 +843,7 @@ TEST_F(AggregateTest, GroupByWithSum) {
     EXPECT_EQ(result.value().size(), 5); // 5 unique years_experience values
 
     // Sum all ages across all groups - should equal total sum (25+30+35+40+45=175)
-    int64_t total_sum = 0;
+    int64_t total_sum = 0; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& [years, age_sum] : result.value()) {
         total_sum += age_sum;
     }
@@ -860,7 +862,7 @@ TEST_F(AggregateTest, GroupByWithAvg) {
     // Since each person has unique years_experience, each group has one person
     // so the average for each group is just that person's salary
     // Find the group with years_experience=3 (Alice 50000)
-    double avg_3 = 0.0;
+    double avg_3 = 0.0; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& [years, salary_avg] : result.value()) {
         if (years == 3) {
             avg_3 = salary_avg;
@@ -880,7 +882,7 @@ TEST_F(AggregateTest, GroupByWithMin) {
     EXPECT_EQ(result.value().size(), 5);
 
     // Find the group with years_experience=3 (Alice 50000 - only person)
-    double min_3 = 0.0;
+    double min_3 = 0.0; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& [years, salary_min] : result.value()) {
         if (years == 3) {
             min_3 = salary_min;
@@ -900,7 +902,7 @@ TEST_F(AggregateTest, GroupByWithMax) {
     EXPECT_EQ(result.value().size(), 5);
 
     // Find the group with years_experience=3 (Alice 25 - only person)
-    double max_3 = 0.0;
+    double max_3 = 0.0; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& [years, age_max] : result.value()) {
         if (years == 3) {
             max_3 = age_max;
@@ -925,7 +927,7 @@ TEST_F(AggregateTest, GroupByWithWhere) {
     EXPECT_EQ(result.value().size(), 3);
 
     // Total count should be 3
-    int64_t total = 0;
+    int64_t total = 0; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& [years, count] : result.value()) {
         total += count;
     }
@@ -959,7 +961,7 @@ TEST_F(AggregateTest, GroupByWithJoinAndSum) {
     EXPECT_EQ(result.value().size(), 6);
 
     // Sum of all values should equal 10+20+30+40+50+60=210
-    int64_t total_sum = 0;
+    int64_t total_sum = 0; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& [content, value_sum] : result.value()) {
         total_sum += value_sum;
     }
@@ -1293,3 +1295,5 @@ TEST_F(AggregateTest, NegativeNumbersInWhere) {
 }
 
 // Note: main() is provided by main.cpp (shared across all test files)
+
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

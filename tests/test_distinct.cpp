@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include "plf_hive/plf_hive.h"
 
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+
 import storm;
 import <string>;
 import <vector>;
@@ -245,7 +247,7 @@ TEST_F(DistinctTest, DistinctWithLargeDataset) {
     // Insert 1000 people with 10 unique names (100 duplicates each)
     std::vector<DistinctPerson> people_to_insert;
     for (int i = 1; i <= 1000; ++i) {
-        int pattern = (i - 1) % 10;
+        const int pattern = (i - 1) % 10;
         people_to_insert.emplace_back(i, std::format("Name{}", pattern), 20 + pattern);
     }
 
@@ -1418,8 +1420,8 @@ TEST_F(DistinctTest, DistinctOptionalIntFieldWithNulls) {
     EXPECT_EQ(ages.size(), 3) << "Expected 3 distinct ages (25, 30, NULL)";
 
     // Count NULLs and non-NULLs
-    int null_count     = 0;
-    int non_null_count = 0;
+    int null_count     = 0; // NOLINT(misc-const-correctness) - modified in loop
+    int non_null_count = 0; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& age : ages) {
         if (age.has_value()) {
             non_null_count++;
@@ -1749,3 +1751,5 @@ TEST_F(DistinctTest, DifferentWhereExpressionsWithCaching) {
     ASSERT_TRUE(result3.has_value());
     EXPECT_EQ(result3.value().size(), 1); // Alice only
 }
+
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

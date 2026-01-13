@@ -1,6 +1,8 @@
 // test_order_by.cpp - Comprehensive tests for ORDER BY functionality
 #include <gtest/gtest.h>
 
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+
 import storm;
 import <string>;
 import <vector>;
@@ -260,8 +262,9 @@ TEST_F(OrderByTest, WithWhereClause) {
     QuerySet<OrderByPerson> qs;
 
     // Filter active users and order by age DESC
-    auto result =
-            qs.where(field<^^OrderByPerson::is_active>() == true).order_by<^^OrderByPerson::age, false>().select();
+    auto result = qs.where(field<^^OrderByPerson::is_active>() == true) // NOLINT(readability-simplify-boolean-expr)
+                          .order_by<^^OrderByPerson::age, false>()
+                          .select();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -397,3 +400,5 @@ TEST_F(OrderByTest, ChainedWithMultipleClauses) {
         }
     }
 }
+
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

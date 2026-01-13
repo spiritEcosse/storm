@@ -2,6 +2,8 @@
 #include <meta>
 #include <print>
 
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+
 import storm;
 
 using namespace std::meta;
@@ -39,3 +41,5 @@ TEST(AuthorReflection, BasicReflectionTest) {
     // Just verify the Author struct can be used with the meta system
     EXPECT_TRUE(true) << "Author struct compiled successfully with reflection attributes";
 }
+
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

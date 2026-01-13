@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+
 import storm;
 import <string>;
 import <vector>;
@@ -176,3 +178,5 @@ TEST_F(SelectLargeTest, SelectVeryLargeDataset) {
     auto last_it = std::ranges::next(retrieved.begin(), RECORD_COUNT - 1);
     EXPECT_EQ(last_it->value, RECORD_COUNT);
 }
+
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

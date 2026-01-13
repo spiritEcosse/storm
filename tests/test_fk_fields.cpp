@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+
 import storm;
 import <string>;
 import <vector>;
@@ -617,7 +619,7 @@ TEST_F(FKFieldTest, RightJoinBehavior) {
     EXPECT_GE(messages.size(), 1) << "RIGHT JOIN should return at least existing messages";
 
     // Find the message we inserted
-    bool found = false;
+    bool found = false; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& m : messages) {
         if (m.text == "FKMessage to Bob") {
             found = true;
@@ -663,7 +665,7 @@ TEST_F(FKFieldTest, RightJoinMultipleFKFields) {
     EXPECT_GE(messages.size(), 1) << "RIGHT JOIN should return at least the inserted message";
 
     // Find and verify our message
-    bool found = false;
+    bool found = false; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& m : messages) {
         if (m.text == "Hello with RIGHT JOIN") {
             found = true;
@@ -827,8 +829,8 @@ TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     ASSERT_EQ(messages.size(), 2) << "LEFT JOIN should return all messages";
 
     // Find and verify each message
-    bool found_alice = false;
-    bool found_null  = false;
+    bool found_alice = false; // NOLINT(misc-const-correctness) - modified in loop
+    bool found_null  = false; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& m : messages) {
         if (m.text == "From Alice") {
             found_alice = true;
@@ -965,8 +967,8 @@ TEST_F(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
     ASSERT_EQ(projects.size(), 2) << "Should retrieve both projects";
 
     // Find Alice's project and verify all extended types
-    bool found_alice_project = false;
-    bool found_bob_project   = false;
+    bool found_alice_project = false; // NOLINT(misc-const-correctness) - modified in loop
+    bool found_bob_project   = false; // NOLINT(misc-const-correctness) - modified in loop
 
     for (const auto& proj : projects) {
         if (proj.title == "Web Redesign") {
@@ -1086,6 +1088,7 @@ TEST_F(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
     ASSERT_TRUE(task_result.has_value());
 
     // Multi-JOIN to populate both assignee and reviewer
+    // NOLINTNEXTLINE(readability-isolate-declaration) - false positive with template
     auto join_result = task_qs.join<&Task::assignee, &Task::reviewer>().select();
     ASSERT_TRUE(join_result.has_value()) << "Multi-JOIN failed: " << join_result.error().message();
 
@@ -1109,3 +1112,5 @@ TEST_F(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
 
     EXPECT_EQ(tasks.begin()->description, "Implement feature X");
 }
+
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

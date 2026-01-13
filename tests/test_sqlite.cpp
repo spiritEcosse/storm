@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <sqlite3.h>
 
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+
 import storm;
 import <expected>;
 import <string>;
@@ -442,9 +444,9 @@ TEST_F(QuerySetRemoveTest, InsertSmallBatch) {
     // Verify persons exist by selecting and checking names
     auto select_result = queryset.select();
     ASSERT_TRUE(select_result.has_value());
-    bool found_dave  = false;
-    bool found_eve   = false;
-    bool found_frank = false;
+    bool found_dave  = false; // NOLINT(misc-const-correctness) - modified in loop
+    bool found_eve   = false; // NOLINT(misc-const-correctness) - modified in loop
+    bool found_frank = false; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& person : select_result.value()) {
         if (person.name == "Dave") {
             found_dave = true;
@@ -954,3 +956,5 @@ TEST_F(QuerySetUpdateTest, UpdateCachedStatementReuse) {
     EXPECT_EQ(final_alice->name, "Alice V9");
     EXPECT_EQ(final_alice->age, 39);
 }
+
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
