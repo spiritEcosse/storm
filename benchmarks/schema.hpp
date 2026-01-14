@@ -92,6 +92,8 @@ namespace storm::benchmark {
 
         // Distinct field (for SELECT DISTINCT operations)
         ConstexprString<32> distinct_field;
+        ConstexprString<32> distinct_field2; // Second field for multi-field DISTINCT
+        ConstexprString<32> distinct_field3; // Third field for multi-field DISTINCT
 
         // Test parameters
         int iterations   = 1000;

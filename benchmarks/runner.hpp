@@ -565,6 +565,72 @@ namespace storm::benchmark {
         }
 
         // ====================================================================
+        // DISTINCT Multi-Field operation handlers
+        // ====================================================================
+
+        template <typename Model, auto& test>
+        static void run_distinct_multi_2_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name1  = test.distinct_field.view();
+            constexpr std::string_view field_name2  = test.distinct_field2.view();
+            constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
+            constexpr auto             field_info2  = dispatch_field<Model>(field_name2);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    SimpleDistinct2FieldBenchmark<Model, field_info1, field_info2>{dataset_size},
+                    iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_distinct_multi_3_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name1  = test.distinct_field.view();
+            constexpr std::string_view field_name2  = test.distinct_field2.view();
+            constexpr std::string_view field_name3  = test.distinct_field3.view();
+            constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
+            constexpr auto             field_info2  = dispatch_field<Model>(field_name2);
+            constexpr auto             field_info3  = dispatch_field<Model>(field_name3);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    SimpleDistinct3FieldBenchmark<Model, field_info1, field_info2, field_info3>{dataset_size},
+                    iterations
+            );
+        }
+
+        // ====================================================================
+        // DISTINCT + ORDER BY operation handlers
+        // ====================================================================
+
+        template <typename Model, auto& test>
+        static void run_distinct_order_by_asc_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view distinct_field_name = test.distinct_field.view();
+            constexpr std::string_view order_field_name    = test.order_by_field.view();
+            constexpr auto             distinct_field_info = dispatch_field<Model>(distinct_field_name);
+            constexpr auto             order_field_info    = dispatch_field<Model>(order_field_name);
+            constexpr int              dataset_size        = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    SimpleDistinctOrderByAscBenchmark<Model, distinct_field_info, order_field_info>{dataset_size},
+                    iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_distinct_order_by_desc_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view distinct_field_name = test.distinct_field.view();
+            constexpr std::string_view order_field_name    = test.order_by_field.view();
+            constexpr auto             distinct_field_info = dispatch_field<Model>(distinct_field_name);
+            constexpr auto             order_field_info    = dispatch_field<Model>(order_field_name);
+            constexpr int              dataset_size        = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    SimpleDistinctOrderByDescBenchmark<Model, distinct_field_info, order_field_info>{dataset_size},
+                    iterations
+            );
+        }
+
+        // ====================================================================
         // LIMIT/OFFSET operation handlers
         // ====================================================================
 
@@ -934,6 +1000,14 @@ namespace storm::benchmark {
                         runner.run_distinct_join_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "distinct_where_join") {
                         runner.run_distinct_where_join_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "distinct_multi_2") {
+                        runner.run_distinct_multi_2_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "distinct_multi_3") {
+                        runner.run_distinct_multi_3_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "distinct_order_by_asc") {
+                        runner.run_distinct_order_by_asc_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "distinct_order_by_desc") {
+                        runner.run_distinct_order_by_desc_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "select_limit") {
                         runner.run_select_limit_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "select_offset") {

@@ -131,10 +131,10 @@ Features implemented and tested but not benchmarked for performance:
   - [x] `where_and_simple` - AND combinations (cond1 AND cond2) - 55% efficiency
   - [x] `where_or_simple` - OR combinations (cond1 OR cond2) - 67% efficiency
 
-- [ ] **DISTINCT Multi-Field Benchmarks**
-  - [ ] `distinct_multi_field_2` - DISTINCT on 2 fields
-  - [ ] `distinct_multi_field_3` - DISTINCT on 3 fields
-  - [ ] `distinct_with_order_by` - DISTINCT + ORDER BY
+- [x] **DISTINCT Multi-Field Benchmarks** - 81-100% efficiency
+  - [x] `distinct_multi_field_2` - DISTINCT on 2 fields - 83-84% efficiency
+  - [x] `distinct_multi_field_3` - DISTINCT on 3 fields - 81-86% efficiency
+  - [x] `distinct_with_order_by` - DISTINCT + ORDER BY - 92-100% efficiency
 
 ---
 

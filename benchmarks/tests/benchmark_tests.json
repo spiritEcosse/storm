@@ -1386,5 +1386,99 @@
     "where_value2_int": 60,
     "iterations": 1000,
     "dataset_size": 10000
+  },
+  {
+    "test_name": "distinct_multi_field_2_1000",
+    "test_category": "DISTINCT_MULTI",
+    "description": "SELECT DISTINCT name, age from 1000 rows (2 fields)",
+    "model": "Person",
+    "operation": "distinct_multi_2",
+    "distinct_field": "name",
+    "distinct_field2": "age",
+    "iterations": 5000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "distinct_multi_field_2_10000",
+    "test_category": "DISTINCT_MULTI",
+    "description": "SELECT DISTINCT name, age from 10000 rows (2 fields)",
+    "model": "Person",
+    "operation": "distinct_multi_2",
+    "distinct_field": "name",
+    "distinct_field2": "age",
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "distinct_multi_field_3_1000",
+    "test_category": "DISTINCT_MULTI",
+    "description": "SELECT DISTINCT name, age, is_active from 1000 rows (3 fields)",
+    "model": "Person",
+    "operation": "distinct_multi_3",
+    "distinct_field": "name",
+    "distinct_field2": "age",
+    "distinct_field3": "is_active",
+    "iterations": 5000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "distinct_multi_field_3_10000",
+    "test_category": "DISTINCT_MULTI",
+    "description": "SELECT DISTINCT name, age, is_active from 10000 rows (3 fields)",
+    "model": "Person",
+    "operation": "distinct_multi_3",
+    "distinct_field": "name",
+    "distinct_field2": "age",
+    "distinct_field3": "is_active",
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "distinct_order_by_asc_1000",
+    "test_category": "DISTINCT_ORDER",
+    "description": "SELECT DISTINCT age ORDER BY age ASC from 1000 rows",
+    "model": "Person",
+    "operation": "distinct_order_by_asc",
+    "distinct_field": "age",
+    "order_by_field": "age",
+    "order_by_direction": "ASC",
+    "iterations": 5000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "distinct_order_by_asc_10000",
+    "test_category": "DISTINCT_ORDER",
+    "description": "SELECT DISTINCT age ORDER BY age ASC from 10000 rows",
+    "model": "Person",
+    "operation": "distinct_order_by_asc",
+    "distinct_field": "age",
+    "order_by_field": "age",
+    "order_by_direction": "ASC",
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "distinct_order_by_desc_1000",
+    "test_category": "DISTINCT_ORDER",
+    "description": "SELECT DISTINCT age ORDER BY age DESC from 1000 rows",
+    "model": "Person",
+    "operation": "distinct_order_by_desc",
+    "distinct_field": "age",
+    "order_by_field": "age",
+    "order_by_direction": "DESC",
+    "iterations": 5000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "distinct_order_by_desc_10000",
+    "test_category": "DISTINCT_ORDER",
+    "description": "SELECT DISTINCT age ORDER BY age DESC from 10000 rows",
+    "model": "Person",
+    "operation": "distinct_order_by_desc",
+    "distinct_field": "age",
+    "order_by_field": "age",
+    "order_by_direction": "DESC",
+    "iterations": 1000,
+    "dataset_size": 10000
   }
 ]
