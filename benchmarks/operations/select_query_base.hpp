@@ -42,11 +42,24 @@ namespace storm::benchmark {
         static constexpr bool enabled = false;
     };
 
-    // JOIN configuration - encodes FK field and related model type
-    template <auto FKFieldPtr, typename RelatedModel> struct JoinConfig {
-        static constexpr bool enabled = true;
-        static constexpr auto fk_ptr  = FKFieldPtr;
-        using related_type            = RelatedModel;
+    // JOIN type enum (matches storm::orm::statements::JoinType)
+    enum class JoinType { Inner, Left, Right };
+
+    // JOIN configuration - encodes FK field, related model type, and join type
+    template <auto FKFieldPtr, typename RelatedModel, JoinType Type = JoinType::Inner> struct JoinConfig {
+        static constexpr bool     enabled   = true;
+        static constexpr auto     fk_ptr    = FKFieldPtr;
+        static constexpr JoinType join_type = Type;
+        using related_type                  = RelatedModel;
+    };
+
+    // Multi-FK JOIN configuration - for benchmarking multiple FK joins
+    template <typename RelatedModel, JoinType Type, auto... FKFieldPtrs> struct MultiJoinConfig {
+        static constexpr bool     enabled     = true;
+        static constexpr bool     is_multi_fk = true;
+        static constexpr JoinType join_type   = Type;
+        static constexpr size_t   fk_count    = sizeof...(FKFieldPtrs);
+        using related_type                    = RelatedModel;
     };
 
     // WHERE configuration - encodes field, operator, and value type
@@ -184,7 +197,13 @@ namespace storm::benchmark {
 
         void print_join_suffix() const {
             if constexpr (JoinCfg::enabled) {
-                std::cout << " + JOIN";
+                if constexpr (JoinCfg::join_type == JoinType::Left) {
+                    std::cout << " + LEFT JOIN";
+                } else if constexpr (JoinCfg::join_type == JoinType::Right) {
+                    std::cout << " + RIGHT JOIN";
+                } else {
+                    std::cout << " + INNER JOIN";
+                }
             }
         }
 
@@ -233,7 +252,14 @@ namespace storm::benchmark {
         // ====================================================================
         void apply_query_filters() {
             if constexpr (JoinCfg::enabled) {
-                Base::qs().template join<JoinCfg::fk_ptr>();
+                // Dispatch to correct JOIN method based on join_type
+                if constexpr (JoinCfg::join_type == JoinType::Left) {
+                    Base::qs().template left_join<JoinCfg::fk_ptr>();
+                } else if constexpr (JoinCfg::join_type == JoinType::Right) {
+                    Base::qs().template right_join<JoinCfg::fk_ptr>();
+                } else {
+                    Base::qs().template join<JoinCfg::fk_ptr>();
+                }
             }
             if constexpr (WhereCfg::enabled) {
                 auto where_clause = build_where_clause();

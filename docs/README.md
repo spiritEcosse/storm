@@ -116,10 +116,12 @@ Features implemented and tested but not benchmarked for performance:
   - [ ] `group_by_with_count` - GROUP BY + COUNT aggregate (requires aggregate + GROUP BY combination)
   - [ ] `group_by_with_sum` - GROUP BY + SUM aggregate (requires aggregate + GROUP BY combination)
 
-- [ ] **JOIN Type Benchmarks** - Only INNER JOIN benchmarked
-  - [ ] `left_join_100` to `left_join_100000` - LEFT JOIN at various scales
-  - [ ] `right_join_100` to `right_join_100000` - RIGHT JOIN at various scales
-  - [ ] `multi_fk_join` - Multiple foreign key JOIN performance
+- [x] **JOIN Type Benchmarks** - ~~Only INNER JOIN benchmarked~~ All JOIN types implemented
+  - [x] `select_left_join_100` to `select_left_join_100000` - LEFT JOIN at various scales (~99-100% efficiency)
+  - [x] `select_left_join_where_100` / `select_left_join_where_10000` - LEFT JOIN + WHERE
+  - [x] `select_right_join_100` to `select_right_join_100000` - RIGHT JOIN at various scales (~100-101% efficiency)
+  - [x] `select_right_join_where_100` / `select_right_join_where_10000` - RIGHT JOIN + WHERE
+  - [x] `select_multi_fk_join_100` to `select_multi_fk_join_100000` - Multiple foreign key JOIN (sender + receiver, ~88% efficiency)
 
 - [ ] **WHERE Operator Benchmarks** - Only basic operators benchmarked
   - [ ] `where_like` - Pattern matching (LIKE '%pattern%')

@@ -354,6 +354,84 @@ namespace storm::benchmark {
         }
 
         // ====================================================================
+        // LEFT JOIN operation handlers
+        // ====================================================================
+
+        template <typename Model, auto& test>
+        static void run_select_left_join_operation(BenchmarkRunner& runner, int iterations) {
+            // SELECT LEFT JOIN benchmark using FKMessage and User models
+            constexpr int dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    SelectLeftJoinBenchmark<FKMessage, User, &FKMessage::sender>{dataset_size},
+                    iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_select_left_join_where_operation(BenchmarkRunner& runner, int iterations) {
+            // SELECT LEFT JOIN + WHERE benchmark using FKMessage and User models
+            constexpr std::string_view field_name   = test.where.field.view();
+            constexpr auto             op_str       = test.where.op;
+            constexpr int              value        = test.where.value_int;
+            constexpr auto             field_info   = dispatch_field<User>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    SelectLeftJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
+                            value, dataset_size
+                    },
+                    iterations
+            );
+        }
+
+        // ====================================================================
+        // RIGHT JOIN operation handlers
+        // ====================================================================
+
+        template <typename Model, auto& test>
+        static void run_select_right_join_operation(BenchmarkRunner& runner, int iterations) {
+            // SELECT RIGHT JOIN benchmark using FKMessage and User models
+            constexpr int dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    SelectRightJoinBenchmark<FKMessage, User, &FKMessage::sender>{dataset_size},
+                    iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_select_right_join_where_operation(BenchmarkRunner& runner, int iterations) {
+            // SELECT RIGHT JOIN + WHERE benchmark using FKMessage and User models
+            constexpr std::string_view field_name   = test.where.field.view();
+            constexpr auto             op_str       = test.where.op;
+            constexpr int              value        = test.where.value_int;
+            constexpr auto             field_info   = dispatch_field<User>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    SelectRightJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
+                            value, dataset_size
+                    },
+                    iterations
+            );
+        }
+
+        // ====================================================================
+        // Multi-FK JOIN operation handler
+        // ====================================================================
+
+        template <typename Model, auto& test>
+        static void run_select_multi_fk_join_operation(BenchmarkRunner& runner, int iterations) {
+            // SELECT with multiple FK JOINs (sender AND receiver)
+            // Uses FKMessage with both sender and receiver FK fields
+            constexpr int dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(), SelectMultiFKJoinBenchmark<FKMessage, User>{dataset_size}, iterations
+            );
+        }
+
+        // ====================================================================
         // Aggregate operation handlers
         // ====================================================================
 
@@ -730,6 +808,16 @@ namespace storm::benchmark {
                         runner.run_select_join_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "select_where_join") {
                         runner.run_select_where_join_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "select_left_join") {
+                        runner.run_select_left_join_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "select_left_join_where") {
+                        runner.run_select_left_join_where_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "select_right_join") {
+                        runner.run_select_right_join_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "select_right_join_where") {
+                        runner.run_select_right_join_where_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "select_multi_fk_join") {
+                        runner.run_select_multi_fk_join_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "aggregate_count") {
                         runner.run_aggregate_count_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "aggregate_count_field") {

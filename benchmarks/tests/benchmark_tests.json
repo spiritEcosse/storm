@@ -510,6 +510,178 @@
     "batch_size": 1
   },
   {
+    "test_name": "select_left_join_100",
+    "test_category": "SELECT_LEFT_JOIN",
+    "description": "SELECT with LEFT JOIN on FK field (100 messages)",
+    "model": "FKMessage",
+    "operation": "select_left_join",
+    "iterations": 10000,
+    "dataset_size": 100,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_left_join_1000",
+    "test_category": "SELECT_LEFT_JOIN",
+    "description": "SELECT with LEFT JOIN on FK field (1000 messages)",
+    "model": "FKMessage",
+    "operation": "select_left_join",
+    "iterations": 1000,
+    "dataset_size": 1000,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_left_join_10000",
+    "test_category": "SELECT_LEFT_JOIN",
+    "description": "SELECT with LEFT JOIN on FK field (10000 messages)",
+    "model": "FKMessage",
+    "operation": "select_left_join",
+    "iterations": 100,
+    "dataset_size": 10000,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_left_join_100000",
+    "test_category": "SELECT_LEFT_JOIN",
+    "description": "SELECT with LEFT JOIN on FK field (100000 messages)",
+    "model": "FKMessage",
+    "operation": "select_left_join",
+    "iterations": 10,
+    "dataset_size": 100000,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_left_join_where_100",
+    "test_category": "SELECT_LEFT_JOIN_WHERE",
+    "description": "SELECT with LEFT JOIN + WHERE (User.age > 30, 100 messages)",
+    "model": "FKMessage",
+    "operation": "select_left_join_where",
+    "where_field": "age",
+    "where_op": ">",
+    "where_value_int": 30,
+    "iterations": 10000,
+    "dataset_size": 100,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_left_join_where_10000",
+    "test_category": "SELECT_LEFT_JOIN_WHERE",
+    "description": "SELECT with LEFT JOIN + WHERE (User.age > 30, 10000 messages)",
+    "model": "FKMessage",
+    "operation": "select_left_join_where",
+    "where_field": "age",
+    "where_op": ">",
+    "where_value_int": 30,
+    "iterations": 100,
+    "dataset_size": 10000,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_right_join_100",
+    "test_category": "SELECT_RIGHT_JOIN",
+    "description": "SELECT with RIGHT JOIN on FK field (100 messages)",
+    "model": "FKMessage",
+    "operation": "select_right_join",
+    "iterations": 10000,
+    "dataset_size": 100,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_right_join_1000",
+    "test_category": "SELECT_RIGHT_JOIN",
+    "description": "SELECT with RIGHT JOIN on FK field (1000 messages)",
+    "model": "FKMessage",
+    "operation": "select_right_join",
+    "iterations": 1000,
+    "dataset_size": 1000,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_right_join_10000",
+    "test_category": "SELECT_RIGHT_JOIN",
+    "description": "SELECT with RIGHT JOIN on FK field (10000 messages)",
+    "model": "FKMessage",
+    "operation": "select_right_join",
+    "iterations": 100,
+    "dataset_size": 10000,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_right_join_100000",
+    "test_category": "SELECT_RIGHT_JOIN",
+    "description": "SELECT with RIGHT JOIN on FK field (100000 messages)",
+    "model": "FKMessage",
+    "operation": "select_right_join",
+    "iterations": 10,
+    "dataset_size": 100000,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_right_join_where_100",
+    "test_category": "SELECT_RIGHT_JOIN_WHERE",
+    "description": "SELECT with RIGHT JOIN + WHERE (User.age > 30, 100 messages)",
+    "model": "FKMessage",
+    "operation": "select_right_join_where",
+    "where_field": "age",
+    "where_op": ">",
+    "where_value_int": 30,
+    "iterations": 10000,
+    "dataset_size": 100,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_right_join_where_10000",
+    "test_category": "SELECT_RIGHT_JOIN_WHERE",
+    "description": "SELECT with RIGHT JOIN + WHERE (User.age > 30, 10000 messages)",
+    "model": "FKMessage",
+    "operation": "select_right_join_where",
+    "where_field": "age",
+    "where_op": ">",
+    "where_value_int": 30,
+    "iterations": 100,
+    "dataset_size": 10000,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_multi_fk_join_100",
+    "test_category": "SELECT_MULTI_FK_JOIN",
+    "description": "SELECT with multiple FK JOINs (sender + receiver, 100 messages)",
+    "model": "FKMessage",
+    "operation": "select_multi_fk_join",
+    "iterations": 10000,
+    "dataset_size": 100,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_multi_fk_join_1000",
+    "test_category": "SELECT_MULTI_FK_JOIN",
+    "description": "SELECT with multiple FK JOINs (sender + receiver, 1000 messages)",
+    "model": "FKMessage",
+    "operation": "select_multi_fk_join",
+    "iterations": 1000,
+    "dataset_size": 1000,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_multi_fk_join_10000",
+    "test_category": "SELECT_MULTI_FK_JOIN",
+    "description": "SELECT with multiple FK JOINs (sender + receiver, 10000 messages)",
+    "model": "FKMessage",
+    "operation": "select_multi_fk_join",
+    "iterations": 100,
+    "dataset_size": 10000,
+    "batch_size": 1
+  },
+  {
+    "test_name": "select_multi_fk_join_100000",
+    "test_category": "SELECT_MULTI_FK_JOIN",
+    "description": "SELECT with multiple FK JOINs (sender + receiver, 100000 messages)",
+    "model": "FKMessage",
+    "operation": "select_multi_fk_join",
+    "iterations": 10,
+    "dataset_size": 100000,
+    "batch_size": 1
+  },
+  {
     "test_name": "aggregate_count_1000",
     "test_category": "AGGREGATE",
     "description": "COUNT(*) aggregate over 1000 rows",

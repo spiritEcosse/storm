@@ -173,6 +173,19 @@ namespace storm::benchmark {
         // execute_raw - Raw SQLite with compile-time feature dispatch
         // ====================================================================
       private:
+        // Helper to get JOIN keyword based on JoinType
+        static constexpr const char* get_join_keyword() {
+            if constexpr (!JoinCfg::enabled) {
+                return "";
+            } else if constexpr (JoinCfg::join_type == JoinType::Left) {
+                return "LEFT JOIN";
+            } else if constexpr (JoinCfg::join_type == JoinType::Right) {
+                return "RIGHT JOIN";
+            } else {
+                return "INNER JOIN";
+            }
+        }
+
         // Build SQL string based on enabled features
         static std::string build_select_sql() {
             std::string sql;
@@ -181,8 +194,9 @@ namespace storm::benchmark {
                 // JOIN query
                 sql = "SELECT fm.id, fm.sender_id, fm.receiver_id, fm.text, "
                       "u.id, u.name, u.age "
-                      "FROM FKMessage fm "
-                      "INNER JOIN User u ON fm.sender_id = u.id";
+                      "FROM FKMessage fm ";
+                sql += get_join_keyword();
+                sql += " User u ON fm.sender_id = u.id";
 
                 if constexpr (WhereCfg::enabled) {
                     constexpr std::string_view where_field = std::meta::identifier_of(WhereCfg::field_info);
@@ -410,5 +424,183 @@ namespace storm::benchmark {
             NoLimitOffset,
             NoOrderBy,
             GroupByConfig<GroupField>>;
+
+    // ========================================================================
+    // LEFT JOIN Type Aliases
+    // ========================================================================
+
+    // SELECT LEFT JOIN - basic LEFT JOIN
+    template <typename BaseModel, typename RelatedModel, auto FKFieldPtr>
+    using SelectLeftJoinBenchmark =
+            SelectBenchmark<BaseModel, JoinConfig<FKFieldPtr, RelatedModel, JoinType::Left>, NoWhere>;
+
+    // SELECT LEFT JOIN + WHERE
+    template <
+            typename BaseModel,
+            typename RelatedModel,
+            auto            FKFieldPtr,
+            std::meta::info WhereFieldInfo,
+            auto            Op,
+            typename ValueType>
+    using SelectLeftJoinWhereBenchmark = SelectBenchmark<
+            BaseModel,
+            JoinConfig<FKFieldPtr, RelatedModel, JoinType::Left>,
+            WhereConfig<WhereFieldInfo, Op, ValueType>>;
+
+    // ========================================================================
+    // RIGHT JOIN Type Aliases
+    // ========================================================================
+
+    // SELECT RIGHT JOIN - basic RIGHT JOIN
+    template <typename BaseModel, typename RelatedModel, auto FKFieldPtr>
+    using SelectRightJoinBenchmark =
+            SelectBenchmark<BaseModel, JoinConfig<FKFieldPtr, RelatedModel, JoinType::Right>, NoWhere>;
+
+    // SELECT RIGHT JOIN + WHERE
+    template <
+            typename BaseModel,
+            typename RelatedModel,
+            auto            FKFieldPtr,
+            std::meta::info WhereFieldInfo,
+            auto            Op,
+            typename ValueType>
+    using SelectRightJoinWhereBenchmark = SelectBenchmark<
+            BaseModel,
+            JoinConfig<FKFieldPtr, RelatedModel, JoinType::Right>,
+            WhereConfig<WhereFieldInfo, Op, ValueType>>;
+
+    // ========================================================================
+    // Multi-FK JOIN Benchmark - Joins on both sender and receiver FK fields
+    // ========================================================================
+
+    template <typename BaseModel, typename RelatedModel> class SelectMultiFKJoinBenchmark {
+        int                    dataset_size_;
+        QuerySet<BaseModel>    qs_{};
+        QuerySet<RelatedModel> related_qs_{};
+
+      public:
+        explicit SelectMultiFKJoinBenchmark(int dataset_size) : dataset_size_(dataset_size) {}
+
+        void print_info() const {
+            std::cout << "Operation: SELECT + Multi-FK INNER JOIN (sender + receiver)\n";
+            std::cout << "  Dataset: " << dataset_size_ << " rows\n";
+        }
+
+        void prepare([[maybe_unused]] int iterations) {
+            sqlite3* db = get_db<BaseModel>();
+            if (!db)
+                return;
+
+            // Clear tables
+            sqlite3_exec(db, "DELETE FROM FKMessage", nullptr, nullptr, nullptr);
+            sqlite3_exec(db, "DELETE FROM User", nullptr, nullptr, nullptr);
+
+            // Insert related records (users)
+            std::vector<RelatedModel> users;
+            users.reserve(dataset_size_);
+            for (int i = 0; i < dataset_size_; i++) {
+                users.push_back(RelatedModel{.id = 0, .name = std::format("User{}", i + 1), .age = 20 + (i % 50)});
+            }
+
+            auto user_result = related_qs_.insert(users);
+            if (!user_result.has_value()) {
+                std::cerr << "Failed to insert users for benchmark\n";
+                return;
+            }
+
+            // SELECT back to get the auto-generated user IDs
+            auto user_select = related_qs_.select();
+            if (!user_select.has_value()) {
+                std::cerr << "Failed to select users for benchmark\n";
+                return;
+            }
+
+            // Extract user IDs
+            std::vector<int64_t> user_ids;
+            user_ids.reserve(user_select.value().size());
+            for (const auto& user : user_select.value()) {
+                user_ids.push_back(user.id);
+            }
+
+            // Insert base records with FK references (sender AND receiver)
+            std::vector<BaseModel> messages;
+            messages.reserve(dataset_size_);
+            for (int i = 0; i < dataset_size_; i++) {
+                RelatedModel sender{static_cast<int>(user_ids[i % user_ids.size()]), "", 0};
+                RelatedModel receiver{static_cast<int>(user_ids[(i + 1) % user_ids.size()]), "", 0};
+
+                messages.push_back(
+                        BaseModel{
+                                .id = 0, .sender = sender, .receiver = receiver, .text = std::format("Message{}", i + 1)
+                        }
+                );
+            }
+
+            auto msg_result = qs_.insert(messages);
+            if (!msg_result.has_value()) {
+                std::cerr << "Failed to insert messages for benchmark\n";
+            }
+        }
+
+        int execute(int iterations) {
+            // JOIN on both sender AND receiver FK fields
+            qs_.template join<&BaseModel::sender, &BaseModel::receiver>();
+
+            int total = 0;
+            for (int i = 0; i < iterations; i++) {
+                auto results = qs_.select();
+                total += results.value().size();
+            }
+            qs_.reset();
+            return total;
+        }
+
+        int execute_raw(int iterations) {
+            sqlite3* db = get_db<BaseModel>();
+            if (!db)
+                return 0;
+
+            // Multi-FK JOIN: JOIN on both sender and receiver
+            const std::string sql = "SELECT fm.id, fm.sender_id, fm.receiver_id, fm.text, "
+                                    "s.id, s.name, s.age, "
+                                    "r.id, r.name, r.age "
+                                    "FROM FKMessage fm "
+                                    "INNER JOIN User s ON fm.sender_id = s.id "
+                                    "INNER JOIN User r ON fm.receiver_id = r.id";
+
+            sqlite3_stmt* stmt = nullptr;
+            if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+                return 0;
+            }
+
+            int total_rows = 0;
+            for (int i = 0; i < iterations; i++) {
+                sqlite3_reset(stmt);
+
+                plf::hive<BaseModel> results;
+                while (sqlite3_step(stmt) == SQLITE_ROW) {
+                    BaseModel obj;
+                    obj.id   = sqlite3_column_int64(stmt, 0);
+                    obj.text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+
+                    // Sender (columns 4, 5, 6)
+                    obj.sender.id   = sqlite3_column_int(stmt, 4);
+                    obj.sender.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+                    obj.sender.age  = sqlite3_column_int(stmt, 6);
+
+                    // Receiver (columns 7, 8, 9)
+                    obj.receiver.id   = sqlite3_column_int(stmt, 7);
+                    obj.receiver.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
+                    obj.receiver.age  = sqlite3_column_int(stmt, 9);
+
+                    results.insert(obj);
+                }
+                total_rows += results.size();
+            }
+
+            sqlite3_finalize(stmt);
+            return total_rows;
+        }
+    };
 
 } // namespace storm::benchmark
