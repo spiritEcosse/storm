@@ -86,6 +86,17 @@ namespace storm::benchmark {
         static constexpr OrderDirection  direction  = Dir;
     };
 
+    // No GROUP BY configured
+    struct NoGroupBy {
+        static constexpr bool enabled = false;
+    };
+
+    // GROUP BY configuration - encodes field at compile time
+    template <std::meta::info FieldInfo> struct GroupByConfig {
+        static constexpr bool            enabled    = true;
+        static constexpr std::meta::info field_info = FieldInfo;
+    };
+
     // ========================================================================
     // Field dispatcher - compile-time field lookup by name
     // ========================================================================
@@ -139,7 +150,8 @@ namespace storm::benchmark {
             typename JoinCfg,
             typename WhereCfg,
             typename LimitOffsetCfg = NoLimitOffset,
-            typename OrderByCfg     = NoOrderBy>
+            typename OrderByCfg     = NoOrderBy,
+            typename GroupByCfg     = NoGroupBy>
     class SelectQueryBenchmarkBase : public DataBenchmarkBase<Derived, BaseModel, 1> {
         using Base = DataBenchmarkBase<Derived, BaseModel, 1>;
 
@@ -199,9 +211,17 @@ namespace storm::benchmark {
             }
         }
 
+        void print_group_by_suffix() const {
+            if constexpr (GroupByCfg::enabled) {
+                constexpr std::string_view field_name = std::meta::identifier_of(GroupByCfg::field_info);
+                std::cout << " GROUP BY " << field_name;
+            }
+        }
+
         void print_info_footer() const {
             print_where_suffix();
             print_join_suffix();
+            print_group_by_suffix();
             print_order_by_suffix();
             print_limit_offset_suffix();
             std::cout << "\n";
@@ -226,6 +246,9 @@ namespace storm::benchmark {
                 } else {
                     Base::qs().template order_by<OrderByCfg::field_info, true>();
                 }
+            }
+            if constexpr (GroupByCfg::enabled) {
+                Base::qs().template group_by<GroupByCfg::field_info>();
             }
             if constexpr (LimitOffsetCfg::enabled) {
                 if constexpr (LimitOffsetCfg::limit_value > 0) {
@@ -438,6 +461,17 @@ namespace storm::benchmark {
                     sql += " OFFSET ";
                     sql += std::to_string(LimitOffsetCfg::offset_value);
                 }
+            }
+        }
+
+        // ====================================================================
+        // GROUP BY SQL helpers for raw SQLite benchmarks
+        // ====================================================================
+        static void append_group_by_sql(std::string& sql) {
+            if constexpr (GroupByCfg::enabled) {
+                constexpr std::string_view field_name = std::meta::identifier_of(GroupByCfg::field_info);
+                sql += " GROUP BY ";
+                sql += std::string(field_name);
             }
         }
     };

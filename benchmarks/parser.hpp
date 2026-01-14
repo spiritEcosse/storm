@@ -201,6 +201,8 @@ namespace storm::benchmark {
             test.order_by_field = parse_string<32>(json, pos);
         } else if (key == "order_by_direction") {
             test.order_by_direction = parse_string<8>(json, pos);
+        } else if (key == "group_by_field") {
+            test.group_by_field = parse_string<32>(json, pos);
         } else {
             // Unknown key - skip value
             skip_value(json, pos);

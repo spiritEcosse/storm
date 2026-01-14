@@ -1072,5 +1072,61 @@
     "limit_value": 100,
     "iterations": 2000,
     "dataset_size": 10000
+  },
+  {
+    "test_name": "group_by_single_age",
+    "test_category": "GROUP_BY",
+    "description": "SELECT GROUP BY age - single field grouping (10000 rows)",
+    "model": "Person",
+    "operation": "group_by",
+    "group_by_field": "age",
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "group_by_single_is_active",
+    "test_category": "GROUP_BY",
+    "description": "SELECT GROUP BY is_active - boolean grouping (10000 rows)",
+    "model": "Person",
+    "operation": "group_by",
+    "group_by_field": "is_active",
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "group_by_single_100k",
+    "test_category": "GROUP_BY",
+    "description": "SELECT GROUP BY age - large dataset (100000 rows)",
+    "model": "Person",
+    "operation": "group_by",
+    "group_by_field": "age",
+    "iterations": 100,
+    "dataset_size": 100000
+  },
+  {
+    "test_name": "group_by_with_where_gt",
+    "test_category": "GROUP_BY_WHERE",
+    "description": "SELECT GROUP BY age WHERE salary > 50000 (10000 rows)",
+    "model": "Person",
+    "operation": "group_by_where",
+    "group_by_field": "age",
+    "where_field": "salary",
+    "where_op": ">",
+    "where_value_int": 50000,
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "group_by_with_where_lt",
+    "test_category": "GROUP_BY_WHERE",
+    "description": "SELECT GROUP BY is_active WHERE age < 40 (10000 rows)",
+    "model": "Person",
+    "operation": "group_by_where",
+    "group_by_field": "is_active",
+    "where_field": "age",
+    "where_op": "<",
+    "where_value_int": 40,
+    "iterations": 1000,
+    "dataset_size": 10000
   }
 ]

@@ -1349,7 +1349,7 @@ for (int i = 0; i < iterations; i++) {
 - [x] **Aggregate functions** (MIN, MAX, AVG, SUM, COUNT, COUNT DISTINCT)
 - [x] **LIMIT/OFFSET benchmarks** (simple LIMIT, OFFSET, pagination, WHERE+LIMIT, JOIN+LIMIT)
 - [x] **ORDER BY benchmarks** (ASC, DESC, WHERE+ORDER BY, ORDER BY+LIMIT)
-- [ ] **GROUP BY benchmarks**
+- [x] **GROUP BY benchmarks** (single field, boolean grouping, WHERE+GROUP BY)
 
 ### Design Trade-offs
 

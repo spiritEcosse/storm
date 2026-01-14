@@ -92,6 +92,9 @@ namespace storm::benchmark {
         ConstexprString<32> order_by_field;     // Field name to order by (empty = no ORDER BY)
         ConstexprString<8>  order_by_direction; // "ASC" or "DESC" (empty = default ASC)
 
+        // GROUP BY clause parameters
+        ConstexprString<32> group_by_field; // Field name to group by (empty = no GROUP BY)
+
         consteval BenchmarkTest() = default;
     };
 

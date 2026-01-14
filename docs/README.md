@@ -78,12 +78,12 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 | JOIN Operations | ✅ 100% | ✅ 100% | ⚠️ 25% (INNER only) |
 | DISTINCT | ✅ 100% | ✅ 100% | ⚠️ 50% (single field only) |
 | LIMIT/OFFSET | ✅ 100% | ✅ 100% | ✅ 100% |
-| ORDER BY | ✅ 100% | ✅ 100% | ❌ 0% |
-| GROUP BY | ✅ 100% | ✅ 100% | ❌ 0% |
+| ORDER BY | ✅ 100% | ✅ 100% | ✅ 100% |
+| GROUP BY | ✅ 100% | ✅ 100% | ✅ 100% |
 | Aggregates | ✅ 100% | ✅ 100% | ✅ 100% |
 | HAVING | ❌ 0% | ❌ 0% | ❌ 0% |
 
-**Total: 290 unit tests, 96 benchmarks**
+**Total: 290 unit tests, 101 benchmarks**
 
 ---
 
@@ -106,12 +106,15 @@ Features implemented and tested but not benchmarked for performance:
   - [x] `order_by_with_where` - Combined ORDER BY + WHERE (98.4%)
   - [x] `order_by_with_limit_10/100` - Top-N query pattern (96-101%)
 
-- [ ] **GROUP BY Benchmarks** - No performance testing
-  - [ ] `group_by_single` - Single field grouping
-  - [ ] `group_by_multi` - Multi-field grouping
-  - [ ] `group_by_with_count` - GROUP BY + COUNT aggregate
-  - [ ] `group_by_with_sum` - GROUP BY + SUM aggregate
-  - [ ] `group_by_with_where` - GROUP BY + WHERE filter
+- [x] **GROUP BY Benchmarks** - ✅ Implemented (5 tests)
+  - [x] `group_by_single_age` - Single field grouping (age)
+  - [x] `group_by_single_is_active` - Boolean field grouping
+  - [x] `group_by_single_100k` - Large dataset grouping (100K rows)
+  - [x] `group_by_with_where_gt` - GROUP BY + WHERE (greater than)
+  - [x] `group_by_with_where_lt` - GROUP BY + WHERE (less than)
+  - [ ] `group_by_multi` - Multi-field grouping (requires additional infrastructure)
+  - [ ] `group_by_with_count` - GROUP BY + COUNT aggregate (requires aggregate + GROUP BY combination)
+  - [ ] `group_by_with_sum` - GROUP BY + SUM aggregate (requires aggregate + GROUP BY combination)
 
 - [ ] **JOIN Type Benchmarks** - Only INNER JOIN benchmarked
   - [ ] `left_join_100` to `left_join_100000` - LEFT JOIN at various scales
