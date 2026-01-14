@@ -170,7 +170,7 @@ namespace storm::benchmark {
         } else if (key == "where_field") {
             test.where.field = parse_string<32>(json, pos);
         } else if (key == "where_op") {
-            test.where.op = parse_string<8>(json, pos);
+            test.where.op = parse_string<16>(json, pos);
         } else if (key == "where_value_int") {
             test.where.value_int  = parse_int(json, pos);
             test.where.value_type = WhereClause::ValueType::Int;
@@ -183,6 +183,37 @@ namespace storm::benchmark {
         } else if (key == "where_value_string") {
             test.where.value_string = parse_string<64>(json, pos);
             test.where.value_type   = WhereClause::ValueType::String;
+        } else if (key == "where_value_int2") {
+            test.where.value_int2 = parse_int(json, pos);
+        } else if (key == "where_value_double2") {
+            test.where.value_double2 = parse_double(json, pos);
+        } else if (key == "where_in_values") {
+            // Parse JSON array of integers: [1, 2, 3, ...]
+            skip_whitespace(json, pos);
+            if (pos < json.size() && json[pos] == '[') {
+                pos++; // Skip '['
+                size_t count = 0;
+                while (pos < json.size() && count < WhereClause::MAX_IN_VALUES) {
+                    skip_whitespace(json, pos);
+                    if (json[pos] == ']') {
+                        pos++; // Skip ']'
+                        break;
+                    }
+                    test.where.in_values_int[count++] = parse_int(json, pos);
+                    skip_whitespace(json, pos);
+                    if (json[pos] == ',') {
+                        pos++; // Skip ','
+                    }
+                }
+                test.where.in_values_count = count;
+                test.where.value_type      = WhereClause::ValueType::Int;
+            }
+        } else if (key == "where_field2") {
+            test.where.field2 = parse_string<32>(json, pos);
+        } else if (key == "where_op2") {
+            test.where.op2 = parse_string<8>(json, pos);
+        } else if (key == "where_value2_int") {
+            test.where.value2_int = parse_int(json, pos);
         } else if (key == "iterations") {
             test.iterations = parse_int(json, pos);
         } else if (key == "dataset_size") {

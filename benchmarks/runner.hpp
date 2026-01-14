@@ -20,7 +20,8 @@
 #include "operations/update.hpp"
 #include "operations/delete.hpp"
 #include "operations/aggregate.hpp"
-#include "operations/distinct.hpp" // DISTINCT benchmarks
+#include "operations/distinct.hpp"        // DISTINCT benchmarks
+#include "operations/where_operators.hpp" // LIKE, BETWEEN, IN, AND/OR benchmarks
 
 namespace storm::benchmark {
 
@@ -754,6 +755,99 @@ namespace storm::benchmark {
             );
         }
 
+        // ====================================================================
+        // WHERE operator handlers (LIKE, BETWEEN, IN, AND/OR)
+        // ====================================================================
+
+        template <typename Model, auto& test>
+        static void run_where_like_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.where.field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            std::string                pattern(test.where.value_string.view());
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    WhereLikeBenchmark<Model, field_info>{std::move(pattern), dataset_size},
+                    iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_where_between_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.where.field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            constexpr int              min_value    = test.where.value_int;
+            constexpr int              max_value    = test.where.value_int2;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    WhereBetweenBenchmark<Model, field_info, int>{min_value, max_value, dataset_size},
+                    iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_where_in_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.where.field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+
+            // Build vector from compile-time array
+            std::vector<int> values;
+            values.reserve(test.where.in_values_count);
+            for (size_t i = 0; i < test.where.in_values_count; i++) {
+                values.push_back(test.where.in_values_int[i]);
+            }
+
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    WhereInBenchmark<Model, field_info, int>{std::move(values), dataset_size},
+                    iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_where_and_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name1  = test.where.field.view();
+            constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
+            constexpr auto             op1          = test.where.op;
+            constexpr int              value1       = test.where.value_int;
+            constexpr std::string_view field_name2  = test.where.field2.view();
+            constexpr auto             field_info2  = dispatch_field<Model>(field_name2);
+            constexpr auto             op2          = test.where.op2;
+            constexpr int              value2       = test.where.value2_int;
+            constexpr int              dataset_size = test.dataset_size;
+            constexpr bool             is_and       = true;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    WhereAndOrBenchmark<Model, field_info1, op1, int, field_info2, op2, int, is_and>{
+                            value1, value2, dataset_size
+                    },
+                    iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_where_or_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name1  = test.where.field.view();
+            constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
+            constexpr auto             op1          = test.where.op;
+            constexpr int              value1       = test.where.value_int;
+            constexpr std::string_view field_name2  = test.where.field2.view();
+            constexpr auto             field_info2  = dispatch_field<Model>(field_name2);
+            constexpr auto             op2          = test.where.op2;
+            constexpr int              value2       = test.where.value2_int;
+            constexpr int              dataset_size = test.dataset_size;
+            constexpr bool             is_and       = false;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    WhereAndOrBenchmark<Model, field_info1, op1, int, field_info2, op2, int, is_and>{
+                            value1, value2, dataset_size
+                    },
+                    iterations
+            );
+        }
+
       public:
         // Template recursion to execute tests at compile time
         template <typename Model, size_t TestIndex, size_t TotalTests> struct TestExecutor {
@@ -864,6 +958,16 @@ namespace storm::benchmark {
                         runner.run_group_by_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "group_by_where") {
                         runner.run_group_by_where_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "where_like") {
+                        runner.run_where_like_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "where_between") {
+                        runner.run_where_between_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "where_in") {
+                        runner.run_where_in_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "where_and") {
+                        runner.run_where_and_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "where_or") {
+                        runner.run_where_or_operation<Model, test>(runner, actual_iterations);
                     }
                 }
 

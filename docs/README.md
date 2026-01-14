@@ -74,7 +74,7 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 | Category | Implementation | Unit Tests | Benchmarks |
 |----------|---------------|------------|------------|
 | CRUD Operations | ✅ 100% | ✅ 100% | ✅ 100% |
-| WHERE Clauses | ✅ 100% | ✅ 100% | ⚠️ 57% (4/7 operators) |
+| WHERE Clauses | ✅ 100% | ✅ 100% | ✅ 100% (all operators) |
 | JOIN Operations | ✅ 100% | ✅ 100% | ⚠️ 25% (INNER only) |
 | DISTINCT | ✅ 100% | ✅ 100% | ⚠️ 50% (single field only) |
 | LIMIT/OFFSET | ✅ 100% | ✅ 100% | ✅ 100% |
@@ -83,7 +83,7 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 | Aggregates | ✅ 100% | ✅ 100% | ✅ 100% |
 | HAVING | ❌ 0% | ❌ 0% | ❌ 0% |
 
-**Total: 290 unit tests, 101 benchmarks**
+**Total: 290 unit tests, 127 benchmarks**
 
 ---
 
@@ -123,11 +123,13 @@ Features implemented and tested but not benchmarked for performance:
   - [x] `select_right_join_where_100` / `select_right_join_where_10000` - RIGHT JOIN + WHERE
   - [x] `select_multi_fk_join_100` to `select_multi_fk_join_100000` - Multiple foreign key JOIN (sender + receiver, ~88% efficiency)
 
-- [ ] **WHERE Operator Benchmarks** - Only basic operators benchmarked
-  - [ ] `where_like` - Pattern matching (LIKE '%pattern%')
-  - [ ] `where_between` - Range queries (BETWEEN x AND y)
-  - [ ] `where_in` - Set membership (IN (1, 2, 3))
-  - [ ] `where_complex_and_or` - Complex AND/OR combinations
+- [x] **WHERE Operator Benchmarks** - ✅ Implemented (7 tests, 55-91% efficiency)
+  - [x] `where_like_prefix` - Prefix pattern matching (LIKE 'pattern%') - 84% efficiency
+  - [x] `where_like_contains` - Contains pattern matching (LIKE '%pattern%') - 91% efficiency
+  - [x] `where_between_int` - Range queries (BETWEEN x AND y) - 60% efficiency
+  - [x] `where_in_small/medium` - Set membership (IN (1, 2, 3)) - 86-91% efficiency
+  - [x] `where_and_simple` - AND combinations (cond1 AND cond2) - 55% efficiency
+  - [x] `where_or_simple` - OR combinations (cond1 OR cond2) - 67% efficiency
 
 - [ ] **DISTINCT Multi-Field Benchmarks**
   - [ ] `distinct_multi_field_2` - DISTINCT on 2 fields

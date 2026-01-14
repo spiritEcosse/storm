@@ -48,13 +48,27 @@ namespace storm::benchmark {
     // Nested WHERE clause structure
     struct WhereClause {
         ConstexprString<32> field;
-        ConstexprString<8>  op;
+        ConstexprString<16> op; // Increased for operators like "BETWEEN", "LIKE", "IN", "AND_OR"
 
         // Union-like for different value types
         int                 value_int    = 0;
         double              value_double = 0.0;
         bool                value_bool   = false;
         ConstexprString<64> value_string;
+
+        // Second value for BETWEEN operator
+        int    value_int2    = 0;
+        double value_double2 = 0.0;
+
+        // Array values for IN operator (fixed size for compile-time)
+        static constexpr size_t        MAX_IN_VALUES = 10;
+        std::array<int, MAX_IN_VALUES> in_values_int{};
+        size_t                         in_values_count = 0;
+
+        // Second field for complex AND/OR expressions
+        ConstexprString<32> field2;
+        ConstexprString<8>  op2;
+        int                 value2_int = 0;
 
         enum class ValueType { None, Int, Double, Bool, String };
         ValueType value_type = ValueType::None;

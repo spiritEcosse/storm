@@ -70,6 +70,48 @@ namespace storm::benchmark {
         using value_type                            = ValueType;
     };
 
+    // LIKE operator configuration
+    template <std::meta::info FieldInfo> struct WhereLikeConfig {
+        static constexpr bool            enabled    = true;
+        static constexpr std::meta::info field_info = FieldInfo;
+        using value_type                            = std::string;
+    };
+
+    // BETWEEN operator configuration - two values of same type
+    template <std::meta::info FieldInfo, typename ValueType> struct WhereBetweenConfig {
+        static constexpr bool            enabled    = true;
+        static constexpr std::meta::info field_info = FieldInfo;
+        using value_type                            = ValueType;
+    };
+
+    // IN operator configuration - array of values
+    template <std::meta::info FieldInfo, typename ValueType, size_t Count> struct WhereInConfig {
+        static constexpr bool            enabled    = true;
+        static constexpr std::meta::info field_info = FieldInfo;
+        static constexpr size_t          count      = Count;
+        using value_type                            = ValueType;
+    };
+
+    // Complex AND/OR configuration - two conditions combined
+    template <
+            std::meta::info FieldInfo1,
+            auto            Op1,
+            typename ValueType1,
+            std::meta::info FieldInfo2,
+            auto            Op2,
+            typename ValueType2,
+            bool IsAnd = true>
+    struct WhereAndOrConfig {
+        static constexpr bool            enabled     = true;
+        static constexpr std::meta::info field_info1 = FieldInfo1;
+        static constexpr auto            op1         = Op1;
+        static constexpr std::meta::info field_info2 = FieldInfo2;
+        static constexpr auto            op2         = Op2;
+        static constexpr bool            is_and      = IsAnd;
+        using value_type1                            = ValueType1;
+        using value_type2                            = ValueType2;
+    };
+
     // No LIMIT/OFFSET configured
     struct NoLimitOffset {
         static constexpr bool enabled      = false;

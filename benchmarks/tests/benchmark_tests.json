@@ -1300,5 +1300,91 @@
     "where_value_int": 40,
     "iterations": 1000,
     "dataset_size": 10000
+  },
+  {
+    "test_name": "where_like_prefix",
+    "test_category": "WHERE_LIKE",
+    "description": "WHERE name LIKE 'Person1%' - prefix pattern matching",
+    "model": "Person",
+    "operation": "where_like",
+    "where_field": "name",
+    "where_value_string": "Person1%",
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "where_like_contains",
+    "test_category": "WHERE_LIKE",
+    "description": "WHERE name LIKE '%son%' - contains pattern matching",
+    "model": "Person",
+    "operation": "where_like",
+    "where_field": "name",
+    "where_value_string": "%son%",
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "where_between_int",
+    "test_category": "WHERE_BETWEEN",
+    "description": "WHERE age BETWEEN 25 AND 45 (10000 rows)",
+    "model": "Person",
+    "operation": "where_between",
+    "where_field": "age",
+    "where_value_int": 25,
+    "where_value_int2": 45,
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "where_in_small",
+    "test_category": "WHERE_IN",
+    "description": "WHERE age IN (25, 30, 35) - small set (10000 rows)",
+    "model": "Person",
+    "operation": "where_in",
+    "where_field": "age",
+    "where_in_values": [25, 30, 35],
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "where_in_medium",
+    "test_category": "WHERE_IN",
+    "description": "WHERE age IN (21, 25, 30, 35, 40, 45) - medium set",
+    "model": "Person",
+    "operation": "where_in",
+    "where_field": "age",
+    "where_in_values": [21, 25, 30, 35, 40, 45],
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "where_and_simple",
+    "test_category": "WHERE_AND",
+    "description": "WHERE age > 30 AND salary > 50000 - AND combination",
+    "model": "Person",
+    "operation": "where_and",
+    "where_field": "age",
+    "where_op": ">",
+    "where_value_int": 30,
+    "where_field2": "salary",
+    "where_op2": ">",
+    "where_value2_int": 50000,
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "where_or_simple",
+    "test_category": "WHERE_OR",
+    "description": "WHERE age < 25 OR age > 60 - OR combination",
+    "model": "Person",
+    "operation": "where_or",
+    "where_field": "age",
+    "where_op": "<",
+    "where_value_int": 25,
+    "where_field2": "age",
+    "where_op2": ">",
+    "where_value2_int": 60,
+    "iterations": 1000,
+    "dataset_size": 10000
   }
 ]
