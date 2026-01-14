@@ -43,19 +43,22 @@ namespace storm::benchmark {
             typename BaseModel,
             typename JoinCfg        = NoJoin,
             typename WhereCfg       = NoWhere,
-            typename LimitOffsetCfg = NoLimitOffset>
+            typename LimitOffsetCfg = NoLimitOffset,
+            typename OrderByCfg     = NoOrderBy>
     class SelectBenchmark : public SelectQueryBenchmarkBase<
-                                    SelectBenchmark<BaseModel, JoinCfg, WhereCfg, LimitOffsetCfg>,
+                                    SelectBenchmark<BaseModel, JoinCfg, WhereCfg, LimitOffsetCfg, OrderByCfg>,
                                     BaseModel,
                                     JoinCfg,
                                     WhereCfg,
-                                    LimitOffsetCfg> {
+                                    LimitOffsetCfg,
+                                    OrderByCfg> {
         using Base = SelectQueryBenchmarkBase<
-                SelectBenchmark<BaseModel, JoinCfg, WhereCfg, LimitOffsetCfg>,
+                SelectBenchmark<BaseModel, JoinCfg, WhereCfg, LimitOffsetCfg, OrderByCfg>,
                 BaseModel,
                 JoinCfg,
                 WhereCfg,
-                LimitOffsetCfg>;
+                LimitOffsetCfg,
+                OrderByCfg>;
 
       public:
         // ====================================================================
@@ -82,29 +85,43 @@ namespace storm::benchmark {
             using NewJoinCfg = JoinConfig<FK, Related>;
 
             if constexpr (WhereCfg::enabled) {
-                return SelectBenchmark<BaseModel, NewJoinCfg, WhereCfg, LimitOffsetCfg>{
+                return SelectBenchmark<BaseModel, NewJoinCfg, WhereCfg, LimitOffsetCfg, OrderByCfg>{
                         Base::where_value(), Base::batch_size()
                 };
             } else {
-                return SelectBenchmark<BaseModel, NewJoinCfg, WhereCfg, LimitOffsetCfg>{Base::batch_size()};
+                return SelectBenchmark<BaseModel, NewJoinCfg, WhereCfg, LimitOffsetCfg, OrderByCfg>{Base::batch_size()};
             }
         }
 
         // Add WHERE - returns new SelectBenchmark type with WHERE enabled
         template <std::meta::info FieldInfo, auto Op, typename V> auto with_where(V value) const {
             using NewWhereCfg = WhereConfig<FieldInfo, Op, V>;
-            return SelectBenchmark<BaseModel, JoinCfg, NewWhereCfg, LimitOffsetCfg>{value, Base::batch_size()};
+            return SelectBenchmark<BaseModel, JoinCfg, NewWhereCfg, LimitOffsetCfg, OrderByCfg>{
+                    value, Base::batch_size()
+            };
         }
 
         // Add LIMIT/OFFSET - returns new SelectBenchmark type with LIMIT/OFFSET enabled
         template <int LimitValue, int OffsetValue = 0> auto with_limit_offset() const {
             using NewLimitOffsetCfg = LimitOffsetConfig<LimitValue, OffsetValue>;
             if constexpr (WhereCfg::enabled) {
-                return SelectBenchmark<BaseModel, JoinCfg, WhereCfg, NewLimitOffsetCfg>{
+                return SelectBenchmark<BaseModel, JoinCfg, WhereCfg, NewLimitOffsetCfg, OrderByCfg>{
                         Base::where_value(), Base::batch_size()
                 };
             } else {
-                return SelectBenchmark<BaseModel, JoinCfg, WhereCfg, NewLimitOffsetCfg>{Base::batch_size()};
+                return SelectBenchmark<BaseModel, JoinCfg, WhereCfg, NewLimitOffsetCfg, OrderByCfg>{Base::batch_size()};
+            }
+        }
+
+        // Add ORDER BY - returns new SelectBenchmark type with ORDER BY enabled
+        template <std::meta::info FieldInfo, OrderDirection Dir = OrderDirection::ASC> auto with_order_by() const {
+            using NewOrderByCfg = OrderByConfig<FieldInfo, Dir>;
+            if constexpr (WhereCfg::enabled) {
+                return SelectBenchmark<BaseModel, JoinCfg, WhereCfg, LimitOffsetCfg, NewOrderByCfg>{
+                        Base::where_value(), Base::batch_size()
+                };
+            } else {
+                return SelectBenchmark<BaseModel, JoinCfg, WhereCfg, LimitOffsetCfg, NewOrderByCfg>{Base::batch_size()};
             }
         }
 
@@ -166,6 +183,9 @@ namespace storm::benchmark {
                     sql += " ?";
                 }
             }
+
+            // Append ORDER BY if configured (must come before LIMIT/OFFSET)
+            Base::append_order_by_sql(sql);
 
             // Append LIMIT/OFFSET if configured
             Base::append_limit_offset_sql(sql);
@@ -310,5 +330,39 @@ namespace storm::benchmark {
             JoinConfig<FKFieldPtr, RelatedModel>,
             NoWhere,
             LimitOffsetConfig<LimitValue, OffsetValue>>;
+
+    // ========================================================================
+    // ORDER BY Type Aliases
+    // ========================================================================
+
+    // SELECT ORDER BY ASC - single field ascending
+    template <typename Model, std::meta::info FieldInfo>
+    using SelectOrderByAscBenchmark =
+            SelectBenchmark<Model, NoJoin, NoWhere, NoLimitOffset, OrderByConfig<FieldInfo, OrderDirection::ASC>>;
+
+    // SELECT ORDER BY DESC - single field descending
+    template <typename Model, std::meta::info FieldInfo>
+    using SelectOrderByDescBenchmark =
+            SelectBenchmark<Model, NoJoin, NoWhere, NoLimitOffset, OrderByConfig<FieldInfo, OrderDirection::DESC>>;
+
+    // SELECT ORDER BY + WHERE
+    template <
+            typename Model,
+            std::meta::info OrderField,
+            OrderDirection  Dir,
+            std::meta::info WhereField,
+            auto            Op,
+            typename ValueType>
+    using SelectOrderByWhereBenchmark = SelectBenchmark<
+            Model,
+            NoJoin,
+            WhereConfig<WhereField, Op, ValueType>,
+            NoLimitOffset,
+            OrderByConfig<OrderField, Dir>>;
+
+    // SELECT ORDER BY + LIMIT (Top-N query pattern)
+    template <typename Model, std::meta::info FieldInfo, OrderDirection Dir, int LimitValue>
+    using SelectOrderByLimitBenchmark =
+            SelectBenchmark<Model, NoJoin, NoWhere, LimitOffsetConfig<LimitValue, 0>, OrderByConfig<FieldInfo, Dir>>;
 
 } // namespace storm::benchmark

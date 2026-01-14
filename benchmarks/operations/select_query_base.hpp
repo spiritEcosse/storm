@@ -71,6 +71,21 @@ namespace storm::benchmark {
         static constexpr int  offset_value = OffsetValue;
     };
 
+    // No ORDER BY configured
+    struct NoOrderBy {
+        static constexpr bool enabled = false;
+    };
+
+    // ORDER BY direction enum
+    enum class OrderDirection { ASC, DESC };
+
+    // ORDER BY configuration - encodes field and direction at compile time
+    template <std::meta::info FieldInfo, OrderDirection Dir = OrderDirection::ASC> struct OrderByConfig {
+        static constexpr bool            enabled    = true;
+        static constexpr std::meta::info field_info = FieldInfo;
+        static constexpr OrderDirection  direction  = Dir;
+    };
+
     // ========================================================================
     // Field dispatcher - compile-time field lookup by name
     // ========================================================================
@@ -123,7 +138,8 @@ namespace storm::benchmark {
             typename BaseModel,
             typename JoinCfg,
             typename WhereCfg,
-            typename LimitOffsetCfg = NoLimitOffset>
+            typename LimitOffsetCfg = NoLimitOffset,
+            typename OrderByCfg     = NoOrderBy>
     class SelectQueryBenchmarkBase : public DataBenchmarkBase<Derived, BaseModel, 1> {
         using Base = DataBenchmarkBase<Derived, BaseModel, 1>;
 
@@ -171,9 +187,22 @@ namespace storm::benchmark {
             }
         }
 
+        void print_order_by_suffix() const {
+            if constexpr (OrderByCfg::enabled) {
+                constexpr std::string_view field_name = std::meta::identifier_of(OrderByCfg::field_info);
+                std::cout << " ORDER BY " << field_name;
+                if constexpr (OrderByCfg::direction == OrderDirection::DESC) {
+                    std::cout << " DESC";
+                } else {
+                    std::cout << " ASC";
+                }
+            }
+        }
+
         void print_info_footer() const {
             print_where_suffix();
             print_join_suffix();
+            print_order_by_suffix();
             print_limit_offset_suffix();
             std::cout << "\n";
             std::cout << "  Dataset: " << Base::batch_size() << " rows\n";
@@ -189,6 +218,14 @@ namespace storm::benchmark {
             if constexpr (WhereCfg::enabled) {
                 auto where_clause = build_where_clause();
                 Base::qs().where(where_clause);
+            }
+            if constexpr (OrderByCfg::enabled) {
+                // Storm ORM order_by uses boolean: true = ASC (default), false = DESC
+                if constexpr (OrderByCfg::direction == OrderDirection::DESC) {
+                    Base::qs().template order_by<OrderByCfg::field_info, false>();
+                } else {
+                    Base::qs().template order_by<OrderByCfg::field_info, true>();
+                }
             }
             if constexpr (LimitOffsetCfg::enabled) {
                 if constexpr (LimitOffsetCfg::limit_value > 0) {
@@ -365,6 +402,22 @@ namespace storm::benchmark {
                     sqlite3_bind_text(stmt, 1, where_value_.c_str(), -1, SQLITE_TRANSIENT);
                 } else {
                     sqlite3_bind_text(stmt, 1, where_value_, -1, SQLITE_TRANSIENT);
+                }
+            }
+        }
+
+        // ====================================================================
+        // ORDER BY SQL helpers for raw SQLite benchmarks
+        // ====================================================================
+        static void append_order_by_sql(std::string& sql) {
+            if constexpr (OrderByCfg::enabled) {
+                constexpr std::string_view field_name = std::meta::identifier_of(OrderByCfg::field_info);
+                sql += " ORDER BY ";
+                sql += std::string(field_name);
+                if constexpr (OrderByCfg::direction == OrderDirection::DESC) {
+                    sql += " DESC";
+                } else {
+                    sql += " ASC";
                 }
             }
         }

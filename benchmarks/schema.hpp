@@ -88,6 +88,10 @@ namespace storm::benchmark {
         int limit_value  = 0; // 0 = no LIMIT, > 0 = LIMIT n
         int offset_value = 0; // 0 = no OFFSET, > 0 = OFFSET n
 
+        // ORDER BY clause parameters
+        ConstexprString<32> order_by_field;     // Field name to order by (empty = no ORDER BY)
+        ConstexprString<8>  order_by_direction; // "ASC" or "DESC" (empty = default ASC)
+
         consteval BenchmarkTest() = default;
     };
 

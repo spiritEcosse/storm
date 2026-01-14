@@ -559,6 +559,91 @@ namespace storm::benchmark {
             );
         }
 
+        // ====================================================================
+        // ORDER BY operation handlers
+        // ====================================================================
+
+        template <typename Model, auto& test>
+        static void run_select_order_by_asc_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.order_by_field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(), SelectOrderByAscBenchmark<Model, field_info>{dataset_size}, iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_select_order_by_desc_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.order_by_field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(), SelectOrderByDescBenchmark<Model, field_info>{dataset_size}, iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_select_order_by_where_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view order_field_name = test.order_by_field.view();
+            constexpr auto             order_field_info = dispatch_field<Model>(order_field_name);
+            constexpr std::string_view where_field_name = test.where.field.view();
+            constexpr auto             where_field_info = dispatch_field<Model>(where_field_name);
+            constexpr auto             op_str           = test.where.op;
+            constexpr int              value            = test.where.value_int;
+            constexpr int              dataset_size     = test.dataset_size;
+            constexpr std::string_view dir_str          = test.order_by_direction.view();
+            // Default to ASC if direction not specified
+            if constexpr (dir_str == "DESC") {
+                runner.run_benchmark(
+                        test.test_name.c_str(),
+                        SelectOrderByWhereBenchmark<
+                                Model,
+                                order_field_info,
+                                OrderDirection::DESC,
+                                where_field_info,
+                                op_str,
+                                int>{value, dataset_size},
+                        iterations
+                );
+            } else {
+                runner.run_benchmark(
+                        test.test_name.c_str(),
+                        SelectOrderByWhereBenchmark<
+                                Model,
+                                order_field_info,
+                                OrderDirection::ASC,
+                                where_field_info,
+                                op_str,
+                                int>{value, dataset_size},
+                        iterations
+                );
+            }
+        }
+
+        template <typename Model, auto& test>
+        static void run_select_order_by_limit_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.order_by_field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            constexpr int              limit_value  = test.limit_value;
+            constexpr std::string_view dir_str      = test.order_by_direction.view();
+            // Default to ASC if direction not specified
+            if constexpr (dir_str == "DESC") {
+                runner.run_benchmark(
+                        test.test_name.c_str(),
+                        SelectOrderByLimitBenchmark<Model, field_info, OrderDirection::DESC, limit_value>{dataset_size},
+                        iterations
+                );
+            } else {
+                runner.run_benchmark(
+                        test.test_name.c_str(),
+                        SelectOrderByLimitBenchmark<Model, field_info, OrderDirection::ASC, limit_value>{dataset_size},
+                        iterations
+                );
+            }
+        }
+
       public:
         // Template recursion to execute tests at compile time
         template <typename Model, size_t TestIndex, size_t TotalTests> struct TestExecutor {
@@ -647,6 +732,14 @@ namespace storm::benchmark {
                         runner.run_select_join_limit_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "select_join_limit_offset") {
                         runner.run_select_join_limit_offset_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "order_by_asc") {
+                        runner.run_select_order_by_asc_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "order_by_desc") {
+                        runner.run_select_order_by_desc_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "order_by_where") {
+                        runner.run_select_order_by_where_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "order_by_limit") {
+                        runner.run_select_order_by_limit_operation<Model, test>(runner, actual_iterations);
                     }
                 }
 

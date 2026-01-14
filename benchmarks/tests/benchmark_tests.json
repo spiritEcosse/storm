@@ -1012,5 +1012,65 @@
     "offset_value": 4900,
     "iterations": 2000,
     "dataset_size": 10000
+  },
+  {
+    "test_name": "order_by_single_asc",
+    "test_category": "ORDER_BY",
+    "description": "SELECT ORDER BY age ASC (10000 rows)",
+    "model": "Person",
+    "operation": "order_by_asc",
+    "order_by_field": "age",
+    "order_by_direction": "ASC",
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "order_by_single_desc",
+    "test_category": "ORDER_BY",
+    "description": "SELECT ORDER BY salary DESC (10000 rows)",
+    "model": "Person",
+    "operation": "order_by_desc",
+    "order_by_field": "salary",
+    "order_by_direction": "DESC",
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "order_by_with_where",
+    "test_category": "ORDER_BY_WHERE",
+    "description": "SELECT WHERE age > 30 ORDER BY salary DESC",
+    "model": "Person",
+    "operation": "order_by_where",
+    "order_by_field": "salary",
+    "order_by_direction": "DESC",
+    "where_field": "age",
+    "where_op": ">",
+    "where_value_int": 30,
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "order_by_with_limit_10",
+    "test_category": "ORDER_BY_LIMIT",
+    "description": "Top-N: SELECT ORDER BY salary DESC LIMIT 10",
+    "model": "Person",
+    "operation": "order_by_limit",
+    "order_by_field": "salary",
+    "order_by_direction": "DESC",
+    "limit_value": 10,
+    "iterations": 5000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "order_by_with_limit_100",
+    "test_category": "ORDER_BY_LIMIT",
+    "description": "Top-N: SELECT ORDER BY salary DESC LIMIT 100",
+    "model": "Person",
+    "operation": "order_by_limit",
+    "order_by_field": "salary",
+    "order_by_direction": "DESC",
+    "limit_value": 100,
+    "iterations": 2000,
+    "dataset_size": 10000
   }
 ]
