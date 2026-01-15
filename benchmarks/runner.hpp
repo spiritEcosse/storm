@@ -1001,6 +1001,7 @@ namespace storm::benchmark {
       public:
         // Template recursion to execute tests at compile time
         template <typename Model, size_t TestIndex, size_t TotalTests> struct TestExecutor {
+            // NOSONAR(cpp:S3776) - Cognitive complexity is inherent to compile-time dispatch; template metaprogramming
             static void
             execute(BenchmarkRunner&   runner,
                     int                iterations_override, // 0 = use JSON value

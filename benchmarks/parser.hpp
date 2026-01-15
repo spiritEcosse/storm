@@ -154,7 +154,37 @@ namespace storm::benchmark {
         return parse_string<64>(json, pos);
     }
 
+    // Helper: Parse JSON array of integers into WhereClause (reduces nesting in main parser)
+    constexpr void parse_int_array_into_where(WhereClause& where, std::string_view json, size_t& pos) {
+        skip_whitespace(json, pos);
+        if (pos >= json.size() || json[pos] != '[') {
+            return;
+        }
+
+        pos++; // Skip '['
+        size_t count = 0;
+
+        while (pos < json.size() && count < WhereClause::MAX_IN_VALUES) {
+            skip_whitespace(json, pos);
+            if (json[pos] == ']') {
+                pos++; // Skip ']'
+                break;
+            }
+
+            where.in_values_int[count++] = parse_int(json, pos);
+            skip_whitespace(json, pos);
+
+            if (json[pos] == ',') {
+                pos++; // Skip ','
+            }
+        }
+
+        where.in_values_count = count;
+        where.value_type      = WhereClause::ValueType::Int;
+    }
+
     // Helper: Parse and assign key-value pair to BenchmarkTest
+    // NOSONAR(cpp:S3776) - Cognitive complexity is inherent to JSON field dispatch; compile-time parser
     constexpr void
     parse_and_assign_field(BenchmarkTest& test, std::string_view key, std::string_view json, size_t& pos) {
         if (key == "test_name") {
@@ -188,26 +218,8 @@ namespace storm::benchmark {
         } else if (key == "where_value_double2") {
             test.where.value_double2 = parse_double(json, pos);
         } else if (key == "where_in_values") {
-            // Parse JSON array of integers: [1, 2, 3, ...]
-            skip_whitespace(json, pos);
-            if (pos < json.size() && json[pos] == '[') {
-                pos++; // Skip '['
-                size_t count = 0;
-                while (pos < json.size() && count < WhereClause::MAX_IN_VALUES) {
-                    skip_whitespace(json, pos);
-                    if (json[pos] == ']') {
-                        pos++; // Skip ']'
-                        break;
-                    }
-                    test.where.in_values_int[count++] = parse_int(json, pos);
-                    skip_whitespace(json, pos);
-                    if (json[pos] == ',') {
-                        pos++; // Skip ','
-                    }
-                }
-                test.where.in_values_count = count;
-                test.where.value_type      = WhereClause::ValueType::Int;
-            }
+            // Parse JSON array of integers using helper (reduces nesting depth)
+            parse_int_array_into_where(test.where, json, pos);
         } else if (key == "where_field2") {
             test.where.field2 = parse_string<32>(json, pos);
         } else if (key == "where_op2") {

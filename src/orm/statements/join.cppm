@@ -28,8 +28,9 @@ export namespace storm::orm::statements {
     // void* is intentional here: JoinStatementWrapper must work with any model type T
     // without knowing T at compile time. The actual T* conversion happens in the
     // function pointers stored in make_join_wrapper().
-    using ErasedObjectPtr    = void*;
-    using ErasedStatementPtr = void*;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,bugprone-easily-swappable-parameters)
+    using ErasedObjectPtr    = void*; // NOSONAR(cpp:S5008) - type erasure requires void*
+    using ErasedStatementPtr = void*; // NOSONAR(cpp:S5008) - type erasure requires void*
 
     struct JoinStatementWrapper {
         auto (*get_join_sql_fn)() -> const std::string&;

@@ -223,13 +223,16 @@ namespace storm::benchmark {
       protected:
         // WHERE value storage - zero size if NoWhere, otherwise stores the value
         using WhereValueType = typename WhereValueHelper<WhereCfg>::type;
-        [[no_unique_address]] WhereValueType where_value_{};
+        // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes)
+        [[no_unique_address]] WhereValueType where_value_{}; // NOSONAR(cpp:S3656) - CRTP pattern requires protected
 
         // QuerySets - use BaseModel's QuerySet, and RelatedModel's if JOIN enabled
         using RelatedModel = typename RelatedModelHelper<JoinCfg>::type;
 
         // For JOIN operations, we need a separate QuerySet for related model insertion
-        [[no_unique_address]] typename RelatedQSHelper<JoinCfg, std::monostate>::type related_qs_{};
+        // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes)
+        [[no_unique_address]]
+        typename RelatedQSHelper<JoinCfg, std::monostate>::type related_qs_{}; // NOSONAR(cpp:S3656)
 
         // Accessor for where_value_ from derived classes
         const WhereValueType& where_value() const {
