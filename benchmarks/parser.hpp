@@ -236,6 +236,10 @@ namespace storm::benchmark {
             test.order_by_field = parse_string<32>(json, pos);
         } else if (key == "order_by_direction") {
             test.order_by_direction = parse_string<8>(json, pos);
+        } else if (key == "order_by_field2") {
+            test.order_by_field2 = parse_string<32>(json, pos);
+        } else if (key == "order_by_direction2") {
+            test.order_by_direction2 = parse_string<8>(json, pos);
         } else if (key == "group_by_field") {
             test.group_by_field = parse_string<32>(json, pos);
         } else {

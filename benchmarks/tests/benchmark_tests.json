@@ -1480,5 +1480,70 @@
     "order_by_direction": "DESC",
     "iterations": 1000,
     "dataset_size": 10000
+  },
+  {
+    "test_name": "order_by_multi_2_asc_1000",
+    "test_category": "ORDER_BY_MULTI",
+    "description": "SELECT ORDER BY name ASC, age ASC (1000 rows, 2 fields)",
+    "model": "Person",
+    "operation": "order_by_multi_2_asc",
+    "order_by_field": "name",
+    "order_by_direction": "ASC",
+    "order_by_field2": "age",
+    "order_by_direction2": "ASC",
+    "iterations": 5000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "order_by_multi_2_asc_10000",
+    "test_category": "ORDER_BY_MULTI",
+    "description": "SELECT ORDER BY age ASC, salary ASC (10000 rows, 2 fields)",
+    "model": "Person",
+    "operation": "order_by_multi_2_asc",
+    "order_by_field": "age",
+    "order_by_direction": "ASC",
+    "order_by_field2": "salary",
+    "order_by_direction2": "ASC",
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "order_by_multi_2_desc_10000",
+    "test_category": "ORDER_BY_MULTI",
+    "description": "SELECT ORDER BY age DESC, salary DESC (10000 rows, 2 fields)",
+    "model": "Person",
+    "operation": "order_by_multi_2_desc",
+    "order_by_field": "age",
+    "order_by_direction": "DESC",
+    "order_by_field2": "salary",
+    "order_by_direction2": "DESC",
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "order_by_multi_2_mixed_10000",
+    "test_category": "ORDER_BY_MULTI",
+    "description": "SELECT ORDER BY age ASC, salary DESC (10000 rows, mixed directions)",
+    "model": "Person",
+    "operation": "order_by_multi_2_mixed",
+    "order_by_field": "age",
+    "order_by_direction": "ASC",
+    "order_by_field2": "salary",
+    "order_by_direction2": "DESC",
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "order_by_multi_2_mixed_100000",
+    "test_category": "ORDER_BY_MULTI",
+    "description": "SELECT ORDER BY is_active DESC, salary ASC (100000 rows, mixed)",
+    "model": "Person",
+    "operation": "order_by_multi_2_mixed",
+    "order_by_field": "is_active",
+    "order_by_direction": "DESC",
+    "order_by_field2": "salary",
+    "order_by_direction2": "ASC",
+    "iterations": 100,
+    "dataset_size": 100000
   }
 ]

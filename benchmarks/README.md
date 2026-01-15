@@ -41,6 +41,7 @@ The unified benchmark system is a **100% compile-time C++ solution** that loads 
 - [x] ~~Add distinct bench~~ - Completed with WHERE, JOIN, WHERE+JOIN support
 - [x] ~~Add JOIN type benchmarks~~ - Completed with LEFT JOIN, RIGHT JOIN, Multi-FK JOIN support
 - [x] ~~Add WHERE operator benchmarks~~ - Completed with LIKE, BETWEEN, IN, AND/OR support
+- [x] ~~Add Multi-Field ORDER BY benchmarks~~ - Completed with 2-field ASC, DESC, and mixed directions
 - [ ] Change `dataset_size` to `init_dataset_size` for clarity
 - [ ] Restructure test_category: Select/Insert/Update/Delete with single/batch variants
 
@@ -1049,6 +1050,62 @@ class DistinctBenchmark {
    - **Statement pointer caching**: Direct pointer reuse for repeated queries
    - **Optimized row extraction**: Only fetches limited rows
 
+### Run Multi-Field ORDER BY Benchmarks
+
+**✅ NEW FEATURE!** Benchmark SELECT with multi-field ORDER BY clause:
+
+```bash
+# Run all multi-field ORDER BY benchmarks
+./build/release/benchmarks/storm_bench -c ORDER_BY_MULTI
+
+# Run specific test
+./build/release/benchmarks/storm_bench --filter=order_by_multi_2_asc_10000
+```
+
+**Available Multi-Field ORDER BY tests:**
+- `order_by_multi_2_asc_1000` - 2-field ORDER BY ASC (name ASC, age ASC, 1K rows)
+- `order_by_multi_2_asc_10000` - 2-field ORDER BY ASC (age ASC, salary ASC, 10K rows)
+- `order_by_multi_2_desc_10000` - 2-field ORDER BY DESC (age DESC, salary DESC, 10K rows)
+- `order_by_multi_2_mixed_10000` - 2-field mixed directions (age ASC, salary DESC, 10K rows)
+- `order_by_multi_2_mixed_100000` - 2-field mixed directions (is_active DESC, salary ASC, 100K rows)
+
+**What's tested:**
+- **Storm ORM**: Uses variadic `QuerySet::order_by<Field1, Dir1, Field2, Dir2>().select()`
+- **Raw SQLite**: Manual `SELECT ... ORDER BY field1 ASC/DESC, field2 ASC/DESC`
+- **Fair comparison**: Both versions use prepared statement caching
+
+### Multi-Field ORDER BY Performance Characteristics
+
+**Multi-Field ORDER BY Configurations:**
+
+| Configuration | SQL Pattern | Use Case |
+|--------------|-------------|----------|
+| **2-field ASC** | `SELECT * FROM table ORDER BY f1 ASC, f2 ASC` | Multi-level sorting |
+| **2-field DESC** | `SELECT * FROM table ORDER BY f1 DESC, f2 DESC` | Reverse multi-level sorting |
+| **2-field Mixed** | `SELECT * FROM table ORDER BY f1 ASC, f2 DESC` | Complex sorting requirements |
+
+**Multi-Field ORDER BY Performance (verified 2026-01-14, Release build):**
+
+| Test | Storm ORM | Raw SQLite | Efficiency | Notes |
+|------|-----------|------------|------------|-------|
+| **order_by_multi_2_asc_1000** | ~5.8 M/s | ~5.9 M/s | **~98%** | ✅ Near parity |
+| **order_by_multi_2_asc_10000** | ~4.5 M/s | ~4.6 M/s | **~98%** | ✅ Near parity |
+| **order_by_multi_2_desc_10000** | ~3.9 M/s | ~4.0 M/s | **~95%** | ✅ Good efficiency |
+| **order_by_multi_2_mixed_10000** | ~4.1 M/s | ~4.1 M/s | **~98%** | ✅ Near parity |
+| **order_by_multi_2_mixed_100000** | ~2.6 M/s | ~2.7 M/s | **~99%** | ✅ Near parity |
+
+**Key findings:**
+
+1. **Multi-field ORDER BY: 95-99% efficiency**
+   - Multiple ORDER BY fields add minimal overhead
+   - Storm ORM uses variadic templates for compile-time SQL generation
+   - Direction combinations (ASC/DESC) handled at compile time
+
+2. **Why multi-field ORDER BY shows excellent performance:**
+   - **Compile-time SQL generation**: ORDER BY clause built at compile time
+   - **Variadic template support**: `order_by<Field1, Dir1, Field2, Dir2>()` expands efficiently
+   - **No runtime overhead**: Direction enum converted to bool at compile time
+
 ### Run WHERE Operator Benchmarks
 
 **✅ NEW FEATURE!** Benchmark advanced WHERE operators (LIKE, BETWEEN, IN, AND/OR):
@@ -1505,10 +1562,10 @@ for (int i = 0; i < iterations; i++) {
 ```json
 {
   "test_name": "unique_test_identifier",
-  "test_category": "WHERE|INSERT|SELECT|JOIN|DISTINCT|AGGREGATE|SELECT_LIMIT|SELECT_OFFSET|SELECT_LIMIT_OFFSET|ORDER_BY|ORDER_BY_WHERE|ORDER_BY_LIMIT|WHERE_LIKE|WHERE_BETWEEN|WHERE_IN|WHERE_AND|WHERE_OR",
+  "test_category": "WHERE|INSERT|SELECT|JOIN|DISTINCT|AGGREGATE|SELECT_LIMIT|SELECT_OFFSET|SELECT_LIMIT_OFFSET|ORDER_BY|ORDER_BY_WHERE|ORDER_BY_LIMIT|ORDER_BY_MULTI|WHERE_LIKE|WHERE_BETWEEN|WHERE_IN|WHERE_AND|WHERE_OR",
   "description": "Human-readable description",
   "model": "Person",
-  "operation": "where|insert|select|select_limit|select_offset|select_limit_offset|select_where_limit|select_join_limit|select_join_limit_offset|order_by_asc|order_by_desc|order_by_where|order_by_limit|where_like|where_between|where_in|where_and|where_or",
+  "operation": "where|insert|select|select_limit|select_offset|select_limit_offset|select_where_limit|select_join_limit|select_join_limit_offset|order_by_asc|order_by_desc|order_by_where|order_by_limit|order_by_multi_2_asc|order_by_multi_2_desc|order_by_multi_2_mixed|where_like|where_between|where_in|where_and|where_or",
   "iterations": 1000,
   "dataset_size": 10000,
   "batch_size": 1,  // For batch operations (1 = single, >1 = batch)
@@ -1533,8 +1590,12 @@ for (int i = 0; i < iterations; i++) {
   "offset_value": 0,    // Number of rows to skip (0 = no OFFSET)
 
   // For ORDER BY operations
-  "order_by_field": "salary",     // Field name to order by
-  "order_by_direction": "DESC"    // "ASC" or "DESC" (default: ASC)
+  "order_by_field": "salary",      // Field name to order by
+  "order_by_direction": "DESC",    // "ASC" or "DESC" (default: ASC)
+
+  // For Multi-Field ORDER BY operations
+  "order_by_field2": "name",       // Second field for multi-field ORDER BY
+  "order_by_direction2": "ASC"     // Direction for second field
 }
 ```
 

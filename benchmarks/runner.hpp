@@ -790,6 +790,52 @@ namespace storm::benchmark {
         }
 
         // ====================================================================
+        // Multi-Field ORDER BY operation handlers
+        // ====================================================================
+
+        template <typename Model, auto& test>
+        static void run_order_by_multi_2_asc_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name1  = test.order_by_field.view();
+            constexpr std::string_view field_name2  = test.order_by_field2.view();
+            constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
+            constexpr auto             field_info2  = dispatch_field<Model>(field_name2);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    SelectOrderBy2AscBenchmark<Model, field_info1, field_info2>{dataset_size},
+                    iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_order_by_multi_2_desc_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name1  = test.order_by_field.view();
+            constexpr std::string_view field_name2  = test.order_by_field2.view();
+            constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
+            constexpr auto             field_info2  = dispatch_field<Model>(field_name2);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    SelectOrderBy2DescBenchmark<Model, field_info1, field_info2>{dataset_size},
+                    iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_order_by_multi_2_mixed_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name1  = test.order_by_field.view();
+            constexpr std::string_view field_name2  = test.order_by_field2.view();
+            constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
+            constexpr auto             field_info2  = dispatch_field<Model>(field_name2);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    SelectOrderBy2MixedBenchmark<Model, field_info1, field_info2>{dataset_size},
+                    iterations
+            );
+        }
+
+        // ====================================================================
         // GROUP BY operation handlers
         // ====================================================================
 
@@ -1028,6 +1074,12 @@ namespace storm::benchmark {
                         runner.run_select_order_by_where_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "order_by_limit") {
                         runner.run_select_order_by_limit_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "order_by_multi_2_asc") {
+                        runner.run_order_by_multi_2_asc_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "order_by_multi_2_desc") {
+                        runner.run_order_by_multi_2_desc_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "order_by_multi_2_mixed") {
+                        runner.run_order_by_multi_2_mixed_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "group_by") {
                         runner.run_group_by_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "group_by_where") {

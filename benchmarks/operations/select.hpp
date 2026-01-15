@@ -407,6 +407,131 @@ namespace storm::benchmark {
             SelectBenchmark<Model, NoJoin, NoWhere, LimitOffsetConfig<LimitValue, 0>, OrderByConfig<FieldInfo, Dir>>;
 
     // ========================================================================
+    // Multi-Field ORDER BY Benchmark Class (2 fields)
+    // ========================================================================
+    template <
+            typename BaseModel,
+            std::meta::info OrderByFieldInfo1,
+            OrderDirection  Dir1,
+            std::meta::info OrderByFieldInfo2,
+            OrderDirection  Dir2,
+            typename JoinCfg  = NoJoin,
+            typename WhereCfg = NoWhere>
+    class OrderBy2FieldBenchmark : public SelectQueryBenchmarkBase<
+                                           OrderBy2FieldBenchmark<
+                                                   BaseModel,
+                                                   OrderByFieldInfo1,
+                                                   Dir1,
+                                                   OrderByFieldInfo2,
+                                                   Dir2,
+                                                   JoinCfg,
+                                                   WhereCfg>,
+                                           BaseModel,
+                                           JoinCfg,
+                                           WhereCfg> {
+        using Base = SelectQueryBenchmarkBase<
+                OrderBy2FieldBenchmark<BaseModel, OrderByFieldInfo1, Dir1, OrderByFieldInfo2, Dir2, JoinCfg, WhereCfg>,
+                BaseModel,
+                JoinCfg,
+                WhereCfg>;
+
+      public:
+        // Constructor - dataset_size only (no WHERE)
+        explicit constexpr OrderBy2FieldBenchmark(int dataset_size = 1000)
+            requires(!WhereCfg::enabled)
+            : Base(dataset_size) {}
+
+        void print_info() const {
+            constexpr std::string_view field1   = std::meta::identifier_of(OrderByFieldInfo1);
+            constexpr std::string_view field2   = std::meta::identifier_of(OrderByFieldInfo2);
+            constexpr const char*      dir1_str = (Dir1 == OrderDirection::ASC) ? "ASC" : "DESC";
+            constexpr const char*      dir2_str = (Dir2 == OrderDirection::ASC) ? "ASC" : "DESC";
+            std::cout << "Operation: SELECT ORDER BY " << field1 << " " << dir1_str << ", " << field2 << " "
+                      << dir2_str;
+            Base::print_info_footer();
+        }
+
+        int execute_iteration() {
+            // Use Storm ORM's multi-field order_by syntax
+            // Convert OrderDirection to bool: ASC=true, DESC=false
+            constexpr bool asc1 = (Dir1 == OrderDirection::ASC);
+            constexpr bool asc2 = (Dir2 == OrderDirection::ASC);
+
+            Base::qs().template order_by<OrderByFieldInfo1, asc1, OrderByFieldInfo2, asc2>();
+            auto results = Base::qs().select();
+            Base::qs().reset();
+            return results.value().size();
+        }
+
+        int execute(int iterations) {
+            int total = 0;
+            for (int i = 0; i < iterations; i++) {
+                total += execute_iteration();
+            }
+            return total;
+        }
+
+        int execute_raw(int iterations) {
+            sqlite3* db = get_db<BaseModel>();
+            if (db == nullptr)
+                return 0;
+
+            constexpr std::string_view field1 = std::meta::identifier_of(OrderByFieldInfo1);
+            constexpr std::string_view field2 = std::meta::identifier_of(OrderByFieldInfo2);
+
+            std::string sql = "SELECT id, name, age, is_active, salary FROM Person ORDER BY ";
+            sql += field1;
+            sql += (Dir1 == OrderDirection::DESC) ? " DESC, " : " ASC, ";
+            sql += field2;
+            sql += (Dir2 == OrderDirection::DESC) ? " DESC" : " ASC";
+
+            sqlite3_stmt* stmt = nullptr;
+            if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+                return 0;
+            }
+
+            int total_rows = 0;
+            for (int i = 0; i < iterations; i++) {
+                sqlite3_reset(stmt);
+                plf::hive<BaseModel> results;
+                while (sqlite3_step(stmt) == SQLITE_ROW) {
+                    results.insert(extract_row_basic(stmt));
+                }
+                total_rows += results.size();
+            }
+
+            sqlite3_finalize(stmt);
+            return total_rows;
+        }
+
+      private:
+        __attribute__((always_inline)) static BaseModel extract_row_basic(sqlite3_stmt* stmt) {
+            BaseModel obj;
+            obj.id        = sqlite3_column_int64(stmt, 0);
+            obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            obj.age       = sqlite3_column_int(stmt, 2);
+            obj.is_active = sqlite3_column_int(stmt, 3) != 0;
+            obj.salary    = sqlite3_column_double(stmt, 4);
+            return obj;
+        }
+    };
+
+    // Type alias for 2-field ORDER BY (both ASC)
+    template <typename Model, std::meta::info FieldInfo1, std::meta::info FieldInfo2>
+    using SelectOrderBy2AscBenchmark =
+            OrderBy2FieldBenchmark<Model, FieldInfo1, OrderDirection::ASC, FieldInfo2, OrderDirection::ASC>;
+
+    // Type alias for 2-field ORDER BY (both DESC)
+    template <typename Model, std::meta::info FieldInfo1, std::meta::info FieldInfo2>
+    using SelectOrderBy2DescBenchmark =
+            OrderBy2FieldBenchmark<Model, FieldInfo1, OrderDirection::DESC, FieldInfo2, OrderDirection::DESC>;
+
+    // Type alias for 2-field ORDER BY (mixed: ASC, DESC)
+    template <typename Model, std::meta::info FieldInfo1, std::meta::info FieldInfo2>
+    using SelectOrderBy2MixedBenchmark =
+            OrderBy2FieldBenchmark<Model, FieldInfo1, OrderDirection::ASC, FieldInfo2, OrderDirection::DESC>;
+
+    // ========================================================================
     // GROUP BY Type Aliases
     // ========================================================================
 

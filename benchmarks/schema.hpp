@@ -105,8 +105,10 @@ namespace storm::benchmark {
         int offset_value = 0; // 0 = no OFFSET, > 0 = OFFSET n
 
         // ORDER BY clause parameters
-        ConstexprString<32> order_by_field;     // Field name to order by (empty = no ORDER BY)
-        ConstexprString<8>  order_by_direction; // "ASC" or "DESC" (empty = default ASC)
+        ConstexprString<32> order_by_field;      // Field name to order by (empty = no ORDER BY)
+        ConstexprString<8>  order_by_direction;  // "ASC" or "DESC" (empty = default ASC)
+        ConstexprString<32> order_by_field2;     // Second field for multi-field ORDER BY
+        ConstexprString<8>  order_by_direction2; // "ASC" or "DESC" for second field
 
         // GROUP BY clause parameters
         ConstexprString<32> group_by_field; // Field name to group by (empty = no GROUP BY)

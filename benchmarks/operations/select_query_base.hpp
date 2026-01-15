@@ -141,6 +141,16 @@ namespace storm::benchmark {
         static constexpr OrderDirection  direction  = Dir;
     };
 
+    // Multi-field ORDER BY configuration (2 fields with individual directions)
+    template <std::meta::info FieldInfo1, OrderDirection Dir1, std::meta::info FieldInfo2, OrderDirection Dir2>
+    struct OrderBy2Config {
+        static constexpr bool            enabled     = true;
+        static constexpr std::meta::info field_info1 = FieldInfo1;
+        static constexpr OrderDirection  direction1  = Dir1;
+        static constexpr std::meta::info field_info2 = FieldInfo2;
+        static constexpr OrderDirection  direction2  = Dir2;
+    };
+
     // No GROUP BY configured
     struct NoGroupBy {
         static constexpr bool enabled = false;
