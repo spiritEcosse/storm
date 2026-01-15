@@ -103,7 +103,7 @@ export namespace storm {
             } else {
                 self.where_expr_ = expr;
             }
-            return self_cast(self);
+            return std::forward<decltype(self)>(self);
         }
 
         // LIMIT clause support - builder pattern with method chaining
@@ -111,7 +111,7 @@ export namespace storm {
         //        queryset.where(age > 25).limit(10).select()
         constexpr auto limit(this auto&& self, int n) -> auto&& {
             self.limit_value_ = n;
-            return self_cast(self);
+            return std::forward<decltype(self)>(self);
         }
 
         // OFFSET clause support - builder pattern with method chaining
@@ -119,7 +119,7 @@ export namespace storm {
         //        queryset.limit(10).offset(5).select()
         constexpr auto offset(this auto&& self, int n) -> auto&& {
             self.offset_value_ = n;
-            return self_cast(self);
+            return std::forward<decltype(self)>(self);
         }
 
         // ORDER BY clause support - builder pattern with method chaining
@@ -137,7 +137,7 @@ export namespace storm {
         template <auto... Args> constexpr auto order_by(this auto&& self) -> auto&& {
             // Create lightweight wrapper to compile-time generated static SQL
             self.order_by_wrapper_ = orm::statements::make_order_by_wrapper<Args...>();
-            return self_cast(self);
+            return std::forward<decltype(self)>(self);
         }
 
         // Select operations - returns all rows (optimized with statement caching)
@@ -179,7 +179,7 @@ export namespace storm {
             // Create type-erased wrapper with compile-time generated SQL (INNER JOIN)
             self.join_stmt_ =
                     orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Inner, FKFieldPtrs...>();
-            return self_cast(self);
+            return std::forward<decltype(self)>(self);
         }
 
         // LEFT JOIN support for single or multiple FK fields
@@ -192,7 +192,7 @@ export namespace storm {
             // Create type-erased wrapper with compile-time generated SQL (LEFT JOIN)
             self.join_stmt_ =
                     orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Left, FKFieldPtrs...>();
-            return self_cast(self);
+            return std::forward<decltype(self)>(self);
         }
 
         // RIGHT JOIN support for single or multiple FK fields
@@ -205,7 +205,7 @@ export namespace storm {
             // Create type-erased wrapper with compile-time generated SQL (RIGHT JOIN)
             self.join_stmt_ =
                     orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Right, FKFieldPtrs...>();
-            return self_cast(self);
+            return std::forward<decltype(self)>(self);
         }
 
         // Update operations (SFINAE: only accept T, not span/container)
@@ -375,11 +375,6 @@ export namespace storm {
         }
 
       private:
-        // Helper for perfect forwarding in method chaining (deducing this pattern)
-        template <typename Self> static constexpr auto self_cast(Self&& self) -> decltype(auto) {
-            return std::forward<Self>(self);
-        }
-
         // Lazy-initialize and return cached InsertStatement for optimal performance
         auto get_insert_statement() const -> orm::statements::InsertStatement<T, ConnType>& {
             if (!insert_stmt_) [[unlikely]] {

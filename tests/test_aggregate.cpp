@@ -1125,8 +1125,9 @@ class OptionalAggregateTest : public ::testing::Test {
         QuerySet<OptionalPerson>::clear_default_connection();
     }
 
+    // Protected member is standard GoogleTest fixture pattern for test case access
     // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-    std::unique_ptr<QuerySet<OptionalPerson>> qs;
+    std::unique_ptr<QuerySet<OptionalPerson>> qs; // NOSONAR(cpp:S3656) - test fixture pattern
 };
 
 TEST_F(OptionalAggregateTest, CountWithNullValues) {

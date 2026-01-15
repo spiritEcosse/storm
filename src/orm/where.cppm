@@ -27,6 +27,14 @@ export namespace storm::orm::where {
     // (LogicalExpr needs to hold other expressions, creating recursion)
     using ExpressionVariantPtr = std::shared_ptr<ExpressionVariant>;
 
+    // Type-erased statement pointer for parameter binding.
+    // This is intentionally type-erased (void*) to allow the WHERE expression system
+    // to bind parameters to any database statement type without knowing the concrete
+    // type at compile time. The actual Statement* conversion happens in bind_params_direct().
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast) - intentional type erasure
+    using ErasedStatementPtr = void*;
+    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
+
     // Mirror of meta::FieldAttr from storm module - must match exactly
     namespace meta {
         enum class FieldAttr { primary, indexed, unique, fk };
@@ -85,7 +93,8 @@ export namespace storm::orm::where {
             return sql_;
         }
 
-        [[nodiscard]] __attribute__((always_inline)) auto bind_params_direct(void* stmt_ptr, int& param_index) const
+        [[nodiscard]] __attribute__((always_inline)) auto
+        bind_params_direct(ErasedStatementPtr stmt_ptr, int& param_index) const
                 -> std::expected<void, storm::db::sqlite::Error> {
             // Cast stmt_ptr to Statement* (type-erased binding)
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
@@ -111,7 +120,8 @@ export namespace storm::orm::where {
             return sql_;
         }
 
-        [[nodiscard]] __attribute__((always_inline)) auto bind_params_direct(void* stmt_ptr, int& param_index) const
+        [[nodiscard]] __attribute__((always_inline)) auto
+        bind_params_direct(ErasedStatementPtr stmt_ptr, int& param_index) const
                 -> std::expected<void, storm::db::sqlite::Error> {
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
             return stmt->bind_text(param_index++, pattern_);
@@ -135,7 +145,7 @@ export namespace storm::orm::where {
             return sql_;
         }
 
-        [[nodiscard]] __attribute__((hot)) auto bind_params_direct(void* stmt_ptr, int& param_index) const
+        [[nodiscard]] __attribute__((hot)) auto bind_params_direct(ErasedStatementPtr stmt_ptr, int& param_index) const
                 -> std::expected<void, storm::db::sqlite::Error> {
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
             // Bind min value
@@ -182,7 +192,7 @@ export namespace storm::orm::where {
             return sql_; // Return pre-generated SQL
         }
 
-        [[nodiscard]] __attribute__((hot)) auto bind_params_direct(void* stmt_ptr, int& param_index) const
+        [[nodiscard]] __attribute__((hot)) auto bind_params_direct(ErasedStatementPtr stmt_ptr, int& param_index) const
                 -> std::expected<void, storm::db::sqlite::Error> {
             auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
             for (const auto& value : values_) {
@@ -248,7 +258,7 @@ export namespace storm::orm::where {
 
     // Forward declare visitor functions
     [[nodiscard]] auto to_sql(const ExpressionVariant& expr) -> std::string;
-    [[nodiscard]] auto bind_params_direct(const ExpressionVariant& expr, void* stmt_ptr, int& param_index)
+    [[nodiscard]] auto bind_params_direct(const ExpressionVariant& expr, ErasedStatementPtr stmt_ptr, int& param_index)
             -> std::expected<void, storm::db::sqlite::Error>;
 
     // Visitor for to_sql() - called via std::visit
@@ -276,8 +286,8 @@ export namespace storm::orm::where {
 
     // Visitor for bind_params_direct() - called via std::visit
     struct BindParamsVisitor {
-        void* stmt_ptr;
-        int*  param_index; // Pointer instead of reference (cppcoreguidelines-avoid-const-or-ref-data-members)
+        ErasedStatementPtr stmt_ptr;
+        int* param_index; // Pointer instead of reference (cppcoreguidelines-avoid-const-or-ref-data-members)
 
         [[nodiscard]] auto operator()(const LogicalExpr& expr) const -> std::expected<void, storm::db::sqlite::Error> {
             // Recursive case: bind left then right
@@ -299,7 +309,8 @@ export namespace storm::orm::where {
         return std::visit(ToSqlVisitor{}, expr);
     }
 
-    [[nodiscard]] inline auto bind_params_direct(const ExpressionVariant& expr, void* stmt_ptr, int& param_index)
+    [[nodiscard]] inline auto
+    bind_params_direct(const ExpressionVariant& expr, ErasedStatementPtr stmt_ptr, int& param_index)
             -> std::expected<void, storm::db::sqlite::Error> {
         return std::visit(BindParamsVisitor{.stmt_ptr = stmt_ptr, .param_index = &param_index}, expr);
     }
@@ -313,7 +324,7 @@ export namespace storm::orm::where {
 
         // Constructor from ExpressionVariant (wraps in shared_ptr)
         // NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved) - std::move IS used in initializer list
-        Expr(ExpressionVariant&& expr) : expr_(std::make_shared<ExpressionVariant>(std::move(expr))) {}
+        explicit Expr(ExpressionVariant&& expr) : expr_(std::make_shared<ExpressionVariant>(std::move(expr))) {}
 
         // Implicit conversion to ExpressionVariantPtr for where() calls
         operator ExpressionVariantPtr() const noexcept { // NOLINT(google-explicit-constructor)

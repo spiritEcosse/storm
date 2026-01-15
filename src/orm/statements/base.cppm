@@ -215,18 +215,23 @@ export namespace storm::orm::statements {
             bool bind_ok     = true;
 
             // Bind each field, skipping the PK
-            ((bind_ok = bind_ok && [&]() -> bool {
-                 if constexpr (Is < field_count_) {
-                     if (all_members_[Is] != primary_key_) {
-                         // Capture current index, then increment for next iteration
-                         int  current_idx = param_index++;
-                         bool result      = bind_field_at_index<ConnType, Is>(stmt, obj, current_idx);
-                         return result;
-                     }
-                 }
-                 return true;
-             }()),
-             ...);
+            // Note: Lambda is evaluated unconditionally via comma operator to avoid
+            // side effects in && operator (SonarCloud cpp:S912)
+            (
+                    [&]() -> void {
+                        if (!bind_ok) {
+                            return;
+                        }
+                        if constexpr (Is < field_count_) {
+                            if (all_members_[Is] != primary_key_) {
+                                // Capture current index, then increment for next iteration
+                                int current_idx = param_index++;
+                                bind_ok         = bind_field_at_index<ConnType, Is>(stmt, obj, current_idx);
+                            }
+                        }
+                    }(),
+                    ...
+            );
 
             if (!bind_ok) {
                 return std::unexpected(typename ConnType::Error{-1, "Field binding failed"});
@@ -322,18 +327,23 @@ export namespace storm::orm::statements {
                 bool bind_ok     = true;
 
                 // Bind fields skipping PK
-                ((bind_ok = bind_ok && [&]() -> bool {
-                     if constexpr (Is < field_count_) {
-                         if (all_members_[Is] != primary_key_) {
-                             // Capture current index, then increment for next iteration
-                             int  current_idx = field_param++;
-                             bool result      = bind_field_at_index<ConnType, Is>(stmt, obj, current_idx);
-                             return result;
-                         }
-                     }
-                     return true;
-                 }()),
-                 ...);
+                // Note: Lambda is evaluated unconditionally via comma operator to avoid
+                // side effects in && operator (SonarCloud cpp:S912)
+                (
+                        [&]() -> void {
+                            if (!bind_ok) {
+                                return;
+                            }
+                            if constexpr (Is < field_count_) {
+                                if (all_members_[Is] != primary_key_) {
+                                    // Capture current index, then increment for next iteration
+                                    int current_idx = field_param++;
+                                    bind_ok         = bind_field_at_index<ConnType, Is>(stmt, obj, current_idx);
+                                }
+                            }
+                        }(),
+                        ...
+                );
 
                 if (!bind_ok) {
                     return std::unexpected(typename ConnType::Error{-1, "Bulk bind failed"});
