@@ -111,7 +111,8 @@ namespace storm::benchmark {
         ConstexprString<8>  order_by_direction2; // "ASC" or "DESC" for second field
 
         // GROUP BY clause parameters
-        ConstexprString<32> group_by_field; // Field name to group by (empty = no GROUP BY)
+        ConstexprString<32> group_by_field;  // Field name to group by (empty = no GROUP BY)
+        ConstexprString<32> group_by_field2; // Second field for multi-field GROUP BY
 
         consteval BenchmarkTest() = default;
     };

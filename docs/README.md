@@ -106,13 +106,13 @@ Features implemented and tested but not benchmarked for performance:
   - [x] `order_by_with_where` - Combined ORDER BY + WHERE (98.4%)
   - [x] `order_by_with_limit_10/100` - Top-N query pattern (96-101%)
 
-- [x] **GROUP BY Benchmarks** - ✅ Implemented (5 tests)
+- [x] **GROUP BY Benchmarks** - ✅ Implemented (8 tests)
   - [x] `group_by_single_age` - Single field grouping (age)
   - [x] `group_by_single_is_active` - Boolean field grouping
   - [x] `group_by_single_100k` - Large dataset grouping (100K rows)
   - [x] `group_by_with_where_gt` - GROUP BY + WHERE (greater than)
   - [x] `group_by_with_where_lt` - GROUP BY + WHERE (less than)
-  - [ ] `group_by_multi` - Multi-field grouping (requires additional infrastructure)
+  - [x] `group_by_multi` - Multi-field grouping (variadic template, 3 tests for 2-field combinations)
   - [ ] `group_by_with_count` - GROUP BY + COUNT aggregate (requires aggregate + GROUP BY combination)
   - [ ] `group_by_with_sum` - GROUP BY + SUM aggregate (requires aggregate + GROUP BY combination)
 

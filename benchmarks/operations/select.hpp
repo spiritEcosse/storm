@@ -551,6 +551,94 @@ namespace storm::benchmark {
             GroupByConfig<GroupField>>;
 
     // ========================================================================
+    // Variadic Multi-Field GROUP BY Benchmark
+    // ========================================================================
+    template <typename BaseModel, std::meta::info... GroupByFieldInfos>
+        requires(sizeof...(GroupByFieldInfos) > 1)
+    class GroupByMultiFieldBenchmark : public SelectQueryBenchmarkBase<
+                                               GroupByMultiFieldBenchmark<BaseModel, GroupByFieldInfos...>,
+                                               BaseModel,
+                                               NoJoin,
+                                               NoWhere> {
+        using Base = SelectQueryBenchmarkBase<
+                GroupByMultiFieldBenchmark<BaseModel, GroupByFieldInfos...>,
+                BaseModel,
+                NoJoin,
+                NoWhere>;
+
+      public:
+        explicit constexpr GroupByMultiFieldBenchmark(int dataset_size = 1000) : Base(dataset_size) {}
+
+        void print_info() const {
+            std::cout << "Operation: SELECT GROUP BY ";
+            bool first = true;
+            ((std::cout << (first ? (first = false, "") : ", ") << std::meta::identifier_of(GroupByFieldInfos)), ...);
+            Base::print_info_footer();
+        }
+
+        int execute_iteration() {
+            Base::qs().template group_by<GroupByFieldInfos...>();
+            auto results = Base::qs().select();
+            Base::qs().reset();
+            return results.value().size();
+        }
+
+        int execute(int iterations) {
+            int total = 0;
+            for (int i = 0; i < iterations; i++) {
+                total += execute_iteration();
+            }
+            return total;
+        }
+
+        int execute_raw(int iterations) {
+            sqlite3* db = get_db<BaseModel>();
+            if (db == nullptr)
+                return 0;
+
+            // Build SQL with variadic fold expression
+            std::string sql   = "SELECT id, name, age, is_active, salary FROM Person GROUP BY ";
+            bool        first = true;
+            ((sql += (first ? (first = false, "") : ", "),
+              sql += std::string(std::meta::identifier_of(GroupByFieldInfos))),
+             ...);
+
+            sqlite3_stmt* stmt = nullptr;
+            if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+                return 0;
+            }
+
+            int total_rows = 0;
+            for (int i = 0; i < iterations; i++) {
+                sqlite3_reset(stmt);
+                plf::hive<BaseModel> results;
+                while (sqlite3_step(stmt) == SQLITE_ROW) {
+                    results.insert(extract_row_basic(stmt));
+                }
+                total_rows += results.size();
+            }
+
+            sqlite3_finalize(stmt);
+            return total_rows;
+        }
+
+      private:
+        __attribute__((always_inline)) static BaseModel extract_row_basic(sqlite3_stmt* stmt) {
+            BaseModel obj;
+            obj.id        = sqlite3_column_int64(stmt, 0);
+            obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            obj.age       = sqlite3_column_int(stmt, 2);
+            obj.is_active = sqlite3_column_int(stmt, 3) != 0;
+            obj.salary    = sqlite3_column_double(stmt, 4);
+            return obj;
+        }
+    };
+
+    // Type aliases for fixed-arity dispatch
+    template <typename Model, std::meta::info FieldInfo1, std::meta::info FieldInfo2>
+    using SelectGroupBy2Benchmark = GroupByMultiFieldBenchmark<Model, FieldInfo1, FieldInfo2>;
+
+    // ========================================================================
     // LEFT JOIN Type Aliases
     // ========================================================================
 

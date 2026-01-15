@@ -1302,6 +1302,39 @@
     "dataset_size": 10000
   },
   {
+    "test_name": "group_by_multi_2_age_is_active_1000",
+    "test_category": "GROUP_BY_MULTI",
+    "description": "SELECT GROUP BY age, is_active - 2 field grouping (1000 rows)",
+    "model": "Person",
+    "operation": "group_by_multi_2",
+    "group_by_field": "age",
+    "group_by_field2": "is_active",
+    "iterations": 1000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "group_by_multi_2_age_is_active_10000",
+    "test_category": "GROUP_BY_MULTI",
+    "description": "SELECT GROUP BY age, is_active - 2 field grouping (10000 rows)",
+    "model": "Person",
+    "operation": "group_by_multi_2",
+    "group_by_field": "age",
+    "group_by_field2": "is_active",
+    "iterations": 500,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "group_by_multi_2_is_active_age_10000",
+    "test_category": "GROUP_BY_MULTI",
+    "description": "SELECT GROUP BY is_active, age - reversed field order (10000 rows)",
+    "model": "Person",
+    "operation": "group_by_multi_2",
+    "group_by_field": "is_active",
+    "group_by_field2": "age",
+    "iterations": 500,
+    "dataset_size": 10000
+  },
+  {
     "test_name": "where_like_prefix",
     "test_category": "WHERE_LIKE",
     "description": "WHERE name LIKE 'Person1%' - prefix pattern matching",
