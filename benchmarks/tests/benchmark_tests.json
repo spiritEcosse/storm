@@ -1335,6 +1335,46 @@
     "dataset_size": 10000
   },
   {
+    "test_name": "group_by_with_count_age_1000",
+    "test_category": "GROUP_BY_COUNT",
+    "description": "SELECT age, COUNT(*) GROUP BY age (1000 rows)",
+    "model": "Person",
+    "operation": "group_by_with_count",
+    "group_by_field": "age",
+    "iterations": 5000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "group_by_with_count_age_10000",
+    "test_category": "GROUP_BY_COUNT",
+    "description": "SELECT age, COUNT(*) GROUP BY age (10000 rows)",
+    "model": "Person",
+    "operation": "group_by_with_count",
+    "group_by_field": "age",
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "group_by_with_count_is_active_10000",
+    "test_category": "GROUP_BY_COUNT",
+    "description": "SELECT is_active, COUNT(*) GROUP BY is_active (10000 rows, 2 groups)",
+    "model": "Person",
+    "operation": "group_by_with_count",
+    "group_by_field": "is_active",
+    "iterations": 5000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "group_by_with_count_age_100000",
+    "test_category": "GROUP_BY_COUNT",
+    "description": "SELECT age, COUNT(*) GROUP BY age (100000 rows, large dataset)",
+    "model": "Person",
+    "operation": "group_by_with_count",
+    "group_by_field": "age",
+    "iterations": 100,
+    "dataset_size": 100000
+  },
+  {
     "test_name": "where_like_prefix",
     "test_category": "WHERE_LIKE",
     "description": "WHERE name LIKE 'Person1%' - prefix pattern matching",

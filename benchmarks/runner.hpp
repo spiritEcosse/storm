@@ -881,6 +881,16 @@ namespace storm::benchmark {
             );
         }
 
+        template <typename Model, auto& test>
+        static void run_group_by_with_count_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.group_by_field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(), SelectGroupByCountBenchmark<Model, field_info>{dataset_size}, iterations
+            );
+        }
+
         // ====================================================================
         // WHERE operator handlers (LIKE, BETWEEN, IN, AND/OR)
         // ====================================================================
@@ -1100,6 +1110,8 @@ namespace storm::benchmark {
                         runner.run_group_by_where_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "group_by_multi_2") {
                         runner.run_group_by_multi_2_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "group_by_with_count") {
+                        runner.run_group_by_with_count_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "where_like") {
                         runner.run_where_like_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "where_between") {

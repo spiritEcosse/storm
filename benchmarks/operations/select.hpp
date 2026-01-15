@@ -639,6 +639,87 @@ namespace storm::benchmark {
     using SelectGroupBy2Benchmark = GroupByMultiFieldBenchmark<Model, FieldInfo1, FieldInfo2>;
 
     // ========================================================================
+    // GROUP BY + COUNT Benchmark - GROUP BY with COUNT(*) aggregate
+    // ========================================================================
+    template <typename BaseModel, std::meta::info GroupByFieldInfo>
+    class GroupByCountBenchmark : public SelectQueryBenchmarkBase<
+                                          GroupByCountBenchmark<BaseModel, GroupByFieldInfo>,
+                                          BaseModel,
+                                          NoJoin,
+                                          NoWhere> {
+        using Base = SelectQueryBenchmarkBase<
+                GroupByCountBenchmark<BaseModel, GroupByFieldInfo>,
+                BaseModel,
+                NoJoin,
+                NoWhere>;
+
+      public:
+        explicit constexpr GroupByCountBenchmark(int dataset_size = 1000) : Base(dataset_size) {}
+
+        void print_info() const {
+            constexpr std::string_view field_name = std::meta::identifier_of(GroupByFieldInfo);
+            std::cout << "Operation: SELECT " << field_name << ", COUNT(*) GROUP BY " << field_name;
+            std::cout << "\n  Dataset: " << Base::batch_size() << " rows\n";
+        }
+
+        int execute_iteration() {
+            // Storm ORM: group_by + count must be chained properly
+            // group_by() returns GroupByBuilder, then count() returns GroupByAggregateStatement
+            auto result = Base::qs().template group_by<GroupByFieldInfo>().count().select();
+            // Result is plf::hive<std::tuple<GroupKeyType, int64_t>> - (group_value, count) pairs
+            return result.has_value() ? static_cast<int>(result.value().size()) : 0;
+        }
+
+        int execute(int iterations) {
+            int total = 0;
+            for (int i = 0; i < iterations; i++) {
+                total += execute_iteration();
+            }
+            return total;
+        }
+
+        int execute_raw(int iterations) {
+            sqlite3* db = get_db<BaseModel>();
+            if (db == nullptr)
+                return 0;
+
+            constexpr std::string_view field_name = std::meta::identifier_of(GroupByFieldInfo);
+
+            // Build SQL: SELECT field, COUNT(*) FROM table GROUP BY field
+            std::string sql = "SELECT ";
+            sql += field_name;
+            sql += ", COUNT(*) FROM Person GROUP BY ";
+            sql += field_name;
+
+            sqlite3_stmt* stmt = nullptr;
+            if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+                return 0;
+            }
+
+            int total_groups = 0;
+            for (int i = 0; i < iterations; i++) {
+                sqlite3_reset(stmt);
+                int groups = 0;
+                while (sqlite3_step(stmt) == SQLITE_ROW) {
+                    // Extract group value and count (must read to simulate real work)
+                    [[maybe_unused]] auto group_value = sqlite3_column_int64(stmt, 0);
+                    [[maybe_unused]] auto count       = sqlite3_column_int64(stmt, 1);
+                    groups++;
+                }
+                // Return number of groups (same as Storm ORM returns)
+                total_groups += groups;
+            }
+
+            sqlite3_finalize(stmt);
+            return total_groups;
+        }
+    };
+
+    // Type alias for GROUP BY + COUNT benchmark
+    template <typename Model, std::meta::info FieldInfo>
+    using SelectGroupByCountBenchmark = GroupByCountBenchmark<Model, FieldInfo>;
+
+    // ========================================================================
     // LEFT JOIN Type Aliases
     // ========================================================================
 

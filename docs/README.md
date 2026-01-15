@@ -113,7 +113,7 @@ Features implemented and tested but not benchmarked for performance:
   - [x] `group_by_with_where_gt` - GROUP BY + WHERE (greater than)
   - [x] `group_by_with_where_lt` - GROUP BY + WHERE (less than)
   - [x] `group_by_multi` - Multi-field grouping (variadic template, 3 tests for 2-field combinations)
-  - [ ] `group_by_with_count` - GROUP BY + COUNT aggregate (requires aggregate + GROUP BY combination)
+  - [x] `group_by_with_count` - GROUP BY + COUNT aggregate (requires aggregate + GROUP BY combination)
   - [ ] `group_by_with_sum` - GROUP BY + SUM aggregate (requires aggregate + GROUP BY combination)
 
 - [x] **JOIN Type Benchmarks** - ~~Only INNER JOIN benchmarked~~ All JOIN types implemented
