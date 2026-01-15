@@ -1375,6 +1375,50 @@
     "dataset_size": 100000
   },
   {
+    "test_name": "group_by_with_sum_age_salary_1000",
+    "test_category": "GROUP_BY_SUM",
+    "description": "SELECT age, SUM(salary) GROUP BY age (1000 rows)",
+    "model": "Person",
+    "operation": "group_by_with_sum",
+    "group_by_field": "age",
+    "aggregate_field": "salary",
+    "iterations": 5000,
+    "dataset_size": 1000
+  },
+  {
+    "test_name": "group_by_with_sum_age_salary_10000",
+    "test_category": "GROUP_BY_SUM",
+    "description": "SELECT age, SUM(salary) GROUP BY age (10000 rows)",
+    "model": "Person",
+    "operation": "group_by_with_sum",
+    "group_by_field": "age",
+    "aggregate_field": "salary",
+    "iterations": 1000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "group_by_with_sum_is_active_salary_10000",
+    "test_category": "GROUP_BY_SUM",
+    "description": "SELECT is_active, SUM(salary) GROUP BY is_active (10000 rows, 2 groups)",
+    "model": "Person",
+    "operation": "group_by_with_sum",
+    "group_by_field": "is_active",
+    "aggregate_field": "salary",
+    "iterations": 5000,
+    "dataset_size": 10000
+  },
+  {
+    "test_name": "group_by_with_sum_age_salary_100000",
+    "test_category": "GROUP_BY_SUM",
+    "description": "SELECT age, SUM(salary) GROUP BY age (100000 rows, large dataset)",
+    "model": "Person",
+    "operation": "group_by_with_sum",
+    "group_by_field": "age",
+    "aggregate_field": "salary",
+    "iterations": 100,
+    "dataset_size": 100000
+  },
+  {
     "test_name": "where_like_prefix",
     "test_category": "WHERE_LIKE",
     "description": "WHERE name LIKE 'Person1%' - prefix pattern matching",
