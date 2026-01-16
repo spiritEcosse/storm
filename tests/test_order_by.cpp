@@ -7,6 +7,8 @@ import storm;
 import <string>;
 import <vector>;
 import <expected>;
+import <optional>;
+import <cstdint>;
 
 using namespace storm;
 using namespace storm::orm::where;
@@ -17,6 +19,20 @@ struct OrderByPerson {
     std::string                               name;
     int                                       age{};
     bool                                      is_active{};
+};
+
+// Test model for nullable field ordering
+struct OrderByNullable {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::optional<int>                        score;
+    std::string                               name;
+};
+
+// Test model for BLOB field ordering
+struct OrderByBlob {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::vector<uint8_t>                      data;
+    std::string                               label;
 };
 
 class OrderByTest : public ::testing::Test {
@@ -399,6 +415,373 @@ TEST_F(OrderByTest, ChainedWithMultipleClauses) {
             EXPECT_LE(prev_it->age, it->age);
         }
     }
+}
+
+// ============================================================================
+// Nullable Field ORDER BY Tests (NULL ordering)
+// ============================================================================
+
+class OrderByNullableTest : public ::testing::Test {
+  protected:
+    auto SetUp() -> void override {
+        auto result = QuerySet<OrderByNullable>::set_default_connection(":memory:");
+        ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
+
+        const auto& conn = QuerySet<OrderByNullable>::get_default_connection();
+
+        auto create_result = conn->execute(
+                "CREATE TABLE OrderByNullable ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "score INTEGER, "
+                "name TEXT NOT NULL"
+                ")"
+        );
+        ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
+
+        // Insert test data with mix of NULL and non-NULL values
+        std::vector<OrderByNullable> const test_data = {
+                {1, std::optional<int>(100), "Alice"},
+                {2, std::nullopt, "Bob"},
+                {3, std::optional<int>(50), "Charlie"},
+                {4, std::nullopt, "David"},
+                {5, std::optional<int>(75), "Eve"},
+                {6, std::nullopt, "Frank"},
+                {7, std::optional<int>(25), "Grace"},
+                {8, std::optional<int>(100), "Henry"},
+        };
+
+        QuerySet<OrderByNullable> qs;
+        auto                      insert_result = qs.insert(test_data);
+        ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
+    }
+
+    auto TearDown() -> void override {
+        QuerySet<OrderByNullable>::clear_default_connection();
+    }
+};
+
+TEST_F(OrderByNullableTest, NullableFieldAsc) {
+    QuerySet<OrderByNullable> qs;
+
+    // Order by nullable score ASC
+    // In SQLite, NULL values sort first in ASC order by default
+    auto result = qs.order_by<^^OrderByNullable::score>().select();
+    ASSERT_TRUE(result.has_value());
+
+    auto items = result.value();
+    ASSERT_EQ(items.size(), 8);
+
+    // SQLite default: NULL values come first in ASC order
+    // First 3 should be NULL (Bob, David, Frank - sorted by insert order within NULLs)
+    auto it = items.begin();
+    EXPECT_FALSE(it->score.has_value()); // NULL
+    ++it;
+    EXPECT_FALSE(it->score.has_value()); // NULL
+    ++it;
+    EXPECT_FALSE(it->score.has_value()); // NULL
+
+    // Then non-NULL values in ascending order: 25, 50, 75, 100, 100
+    ++it;
+    EXPECT_TRUE(it->score.has_value());
+    EXPECT_EQ(it->score.value(), 25); // Grace
+    ++it;
+    EXPECT_TRUE(it->score.has_value());
+    EXPECT_EQ(it->score.value(), 50); // Charlie
+    ++it;
+    EXPECT_TRUE(it->score.has_value());
+    EXPECT_EQ(it->score.value(), 75); // Eve
+    ++it;
+    EXPECT_TRUE(it->score.has_value());
+    EXPECT_EQ(it->score.value(), 100); // Alice or Henry
+    ++it;
+    EXPECT_TRUE(it->score.has_value());
+    EXPECT_EQ(it->score.value(), 100); // Alice or Henry
+}
+
+TEST_F(OrderByNullableTest, NullableFieldDesc) {
+    QuerySet<OrderByNullable> qs;
+
+    // Order by nullable score DESC
+    // In SQLite, NULL values sort last in DESC order by default
+    auto result = qs.order_by<^^OrderByNullable::score, false>().select();
+    ASSERT_TRUE(result.has_value());
+
+    auto items = result.value();
+    ASSERT_EQ(items.size(), 8);
+
+    // Non-NULL values first in descending order: 100, 100, 75, 50, 25
+    auto it = items.begin();
+    EXPECT_TRUE(it->score.has_value());
+    EXPECT_EQ(it->score.value(), 100);
+    ++it;
+    EXPECT_TRUE(it->score.has_value());
+    EXPECT_EQ(it->score.value(), 100);
+    ++it;
+    EXPECT_TRUE(it->score.has_value());
+    EXPECT_EQ(it->score.value(), 75);
+    ++it;
+    EXPECT_TRUE(it->score.has_value());
+    EXPECT_EQ(it->score.value(), 50);
+    ++it;
+    EXPECT_TRUE(it->score.has_value());
+    EXPECT_EQ(it->score.value(), 25);
+
+    // Then NULL values at the end
+    ++it;
+    EXPECT_FALSE(it->score.has_value());
+    ++it;
+    EXPECT_FALSE(it->score.has_value());
+    ++it;
+    EXPECT_FALSE(it->score.has_value());
+}
+
+TEST_F(OrderByNullableTest, NullableFieldWithSecondarySort) {
+    QuerySet<OrderByNullable> qs;
+
+    // Order by score ASC, then name ASC (to have deterministic ordering within same scores)
+    auto result = qs.order_by<^^OrderByNullable::score, true, ^^OrderByNullable::name, true>().select();
+    ASSERT_TRUE(result.has_value());
+
+    auto items = result.value();
+    ASSERT_EQ(items.size(), 8);
+
+    // NULLs first, sorted by name: Bob, David, Frank
+    auto it = items.begin();
+    EXPECT_FALSE(it->score.has_value());
+    EXPECT_EQ(it->name, "Bob");
+    ++it;
+    EXPECT_FALSE(it->score.has_value());
+    EXPECT_EQ(it->name, "David");
+    ++it;
+    EXPECT_FALSE(it->score.has_value());
+    EXPECT_EQ(it->name, "Frank");
+
+    // Non-NULL values sorted by score, then name
+    ++it;
+    EXPECT_EQ(it->score.value(), 25);
+    EXPECT_EQ(it->name, "Grace");
+    ++it;
+    EXPECT_EQ(it->score.value(), 50);
+    EXPECT_EQ(it->name, "Charlie");
+    ++it;
+    EXPECT_EQ(it->score.value(), 75);
+    EXPECT_EQ(it->name, "Eve");
+    ++it;
+    EXPECT_EQ(it->score.value(), 100);
+    EXPECT_EQ(it->name, "Alice"); // Alice before Henry alphabetically
+    ++it;
+    EXPECT_EQ(it->score.value(), 100);
+    EXPECT_EQ(it->name, "Henry");
+}
+
+TEST_F(OrderByNullableTest, AllNullValues) {
+    // Create a new table with only NULL values
+    const auto& conn = QuerySet<OrderByNullable>::get_default_connection();
+    (void)conn->execute("DELETE FROM OrderByNullable");
+
+    QuerySet<OrderByNullable>          qs;
+    std::vector<OrderByNullable> const all_nulls = {
+            {1, std::nullopt, "First"},
+            {2, std::nullopt, "Second"},
+            {3, std::nullopt, "Third"},
+    };
+    auto insert_result = qs.insert(all_nulls);
+    ASSERT_TRUE(insert_result.has_value());
+
+    // Order by nullable field when all values are NULL
+    auto result = qs.order_by<^^OrderByNullable::score>().select();
+    ASSERT_TRUE(result.has_value());
+
+    auto items = result.value();
+    ASSERT_EQ(items.size(), 3);
+
+    // All should be NULL
+    for (const auto& item : items) {
+        EXPECT_FALSE(item.score.has_value());
+    }
+}
+
+// ============================================================================
+// BLOB Field ORDER BY Tests
+// ============================================================================
+
+class OrderByBlobTest : public ::testing::Test {
+  protected:
+    auto SetUp() -> void override {
+        auto result = QuerySet<OrderByBlob>::set_default_connection(":memory:");
+        ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
+
+        const auto& conn = QuerySet<OrderByBlob>::get_default_connection();
+
+        auto create_result = conn->execute(
+                "CREATE TABLE OrderByBlob ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "data BLOB, "
+                "label TEXT NOT NULL"
+                ")"
+        );
+        ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
+
+        // Insert test data with various BLOB values
+        // SQLite compares BLOBs byte-by-byte in memcmp order
+        std::vector<OrderByBlob> const test_data = {
+                {1, {0x03, 0x00}, "C"},  // Starts with 0x03
+                {2, {0x01, 0x00}, "A"},  // Starts with 0x01
+                {3, {0x02, 0x00}, "B"},  // Starts with 0x02
+                {4, {0x01, 0x01}, "A2"}, // Same first byte, different second
+                {5, {}, "Empty"},        // Empty BLOB
+                {6, {0x01}, "A_short"},  // Shorter BLOB
+        };
+
+        QuerySet<OrderByBlob> qs;
+        auto                  insert_result = qs.insert(test_data);
+        ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
+    }
+
+    auto TearDown() -> void override {
+        QuerySet<OrderByBlob>::clear_default_connection();
+    }
+};
+
+TEST_F(OrderByBlobTest, BlobFieldAsc) {
+    QuerySet<OrderByBlob> qs;
+
+    // Order by BLOB field ASC
+    // SQLite sorts BLOBs by memcmp order (byte-by-byte comparison)
+    auto result = qs.order_by<^^OrderByBlob::data>().select();
+    ASSERT_TRUE(result.has_value());
+
+    auto items = result.value();
+    ASSERT_EQ(items.size(), 6);
+
+    // Expected order:
+    // 1. Empty BLOB (sorts first - zero-length)
+    // 2. {0x01} - shortest starting with 0x01
+    // 3. {0x01, 0x00} - 0x01 prefix, then 0x00
+    // 4. {0x01, 0x01} - 0x01 prefix, then 0x01
+    // 5. {0x02, 0x00} - starts with 0x02
+    // 6. {0x03, 0x00} - starts with 0x03
+
+    auto it = items.begin();
+    EXPECT_EQ(it->label, "Empty");
+    EXPECT_TRUE(it->data.empty());
+    ++it;
+    EXPECT_EQ(it->label, "A_short");
+    EXPECT_EQ(it->data, (std::vector<uint8_t>{0x01}));
+    ++it;
+    EXPECT_EQ(it->label, "A");
+    EXPECT_EQ(it->data, (std::vector<uint8_t>{0x01, 0x00}));
+    ++it;
+    EXPECT_EQ(it->label, "A2");
+    EXPECT_EQ(it->data, (std::vector<uint8_t>{0x01, 0x01}));
+    ++it;
+    EXPECT_EQ(it->label, "B");
+    EXPECT_EQ(it->data, (std::vector<uint8_t>{0x02, 0x00}));
+    ++it;
+    EXPECT_EQ(it->label, "C");
+    EXPECT_EQ(it->data, (std::vector<uint8_t>{0x03, 0x00}));
+}
+
+TEST_F(OrderByBlobTest, BlobFieldDesc) {
+    QuerySet<OrderByBlob> qs;
+
+    // Order by BLOB field DESC
+    auto result = qs.order_by<^^OrderByBlob::data, false>().select();
+    ASSERT_TRUE(result.has_value());
+
+    auto items = result.value();
+    ASSERT_EQ(items.size(), 6);
+
+    // Expected order (reverse of ASC):
+    // 1. {0x03, 0x00}
+    // 2. {0x02, 0x00}
+    // 3. {0x01, 0x01}
+    // 4. {0x01, 0x00}
+    // 5. {0x01}
+    // 6. Empty
+
+    auto it = items.begin();
+    EXPECT_EQ(it->label, "C");
+    ++it;
+    EXPECT_EQ(it->label, "B");
+    ++it;
+    EXPECT_EQ(it->label, "A2");
+    ++it;
+    EXPECT_EQ(it->label, "A");
+    ++it;
+    EXPECT_EQ(it->label, "A_short");
+    ++it;
+    EXPECT_EQ(it->label, "Empty");
+}
+
+TEST_F(OrderByBlobTest, BlobWithSecondarySort) {
+    QuerySet<OrderByBlob> qs;
+
+    // Order by BLOB ASC, then label ASC
+    auto result = qs.order_by<^^OrderByBlob::data, true, ^^OrderByBlob::label, true>().select();
+    ASSERT_TRUE(result.has_value());
+
+    auto items = result.value();
+    ASSERT_EQ(items.size(), 6);
+
+    // Verify ordering is consistent
+    EXPECT_EQ(items.begin()->label, "Empty"); // Empty BLOB first
+}
+
+TEST_F(OrderByBlobTest, EmptyBlobsOnly) {
+    // Test with only empty BLOBs
+    const auto& conn = QuerySet<OrderByBlob>::get_default_connection();
+    (void)conn->execute("DELETE FROM OrderByBlob");
+
+    QuerySet<OrderByBlob>          qs;
+    std::vector<OrderByBlob> const empty_blobs = {
+            {1, {}, "First"},
+            {2, {}, "Second"},
+            {3, {}, "Third"},
+    };
+    auto insert_result = qs.insert(empty_blobs);
+    ASSERT_TRUE(insert_result.has_value());
+
+    auto result = qs.order_by<^^OrderByBlob::data>().select();
+    ASSERT_TRUE(result.has_value());
+
+    auto items = result.value();
+    ASSERT_EQ(items.size(), 3);
+
+    // All empty BLOBs should be present
+    for (const auto& item : items) {
+        EXPECT_TRUE(item.data.empty());
+    }
+}
+
+// ============================================================================
+// ORDER BY with Empty Result Set (Additional scenarios)
+// ============================================================================
+
+TEST_F(OrderByTest, EmptyResultWithMultipleOrderBy) {
+    QuerySet<OrderByPerson> qs;
+
+    // Complex ORDER BY with no matching results
+    auto result = qs.where(field<^^OrderByPerson::age>() > 100)
+                          .order_by<^^OrderByPerson::age, false, ^^OrderByPerson::name, true>()
+                          .select();
+    ASSERT_TRUE(result.has_value());
+
+    const auto& people = result.value();
+    EXPECT_EQ(people.size(), 0);
+}
+
+TEST_F(OrderByTest, EmptyTableOrderBy) {
+    // Create empty table and try ORDER BY
+    const auto& conn = QuerySet<OrderByPerson>::get_default_connection();
+    (void)conn->execute("DELETE FROM OrderByPerson");
+
+    QuerySet<OrderByPerson> qs;
+    auto                    result = qs.order_by<^^OrderByPerson::age>().select();
+    ASSERT_TRUE(result.has_value());
+
+    const auto& people = result.value();
+    EXPECT_EQ(people.size(), 0);
 }
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
