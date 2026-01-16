@@ -15,6 +15,7 @@
 #include "schema.hpp"
 #include "parser.hpp"
 #include "models.hpp"
+#include "sizes.hpp"
 #include "operations/select.hpp" // Unified SELECT benchmark (WHERE, JOIN, WHERE+JOIN)
 #include "operations/insert.hpp"
 #include "operations/update.hpp"
@@ -301,57 +302,143 @@ namespace storm::benchmark {
 
         template <typename Model, auto& test>
         static void run_insert_operation(BenchmarkRunner& runner, int iterations) {
-            // Runtime batch_size - fair comparison with Storm ORM
-            runner.run_benchmark(test.test_name.c_str(), InsertBenchmark<Model>{test.batch_size}, iterations);
+            constexpr auto profile_str = test.size_profile.view();
+            constexpr auto profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::BatchStandard) {
+                for (int size : sizes::BATCH_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_batch(size);
+                    std::string name = std::string(test.test_name.view()) + sizes::get_name_suffix(size, true);
+                    runner.run_benchmark(name.c_str(), InsertBenchmark<Model>{size}, actual_iterations);
+                }
+            } else if constexpr (profile == sizes::SizeProfile::BatchInsertEdge) {
+                for (int size : sizes::BATCH_INSERT_EDGE) {
+                    int         actual_iterations = sizes::iterations_for_batch(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(name.c_str(), InsertBenchmark<Model>{size}, actual_iterations);
+                }
+            } else {
+                // No profile - use fixed batch_size from JSON
+                runner.run_benchmark(test.test_name.c_str(), InsertBenchmark<Model>{test.batch_size}, iterations);
+            }
         }
 
         template <typename Model, auto& test>
         static void run_delete_pk_operation(BenchmarkRunner& runner, int iterations) {
-            // Runtime batch_size - fair comparison with Storm ORM
-            runner.run_benchmark(test.test_name.c_str(), DeleteBenchmark<Model>{test.batch_size}, iterations);
+            constexpr auto profile_str = test.size_profile.view();
+            constexpr auto profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::BatchStandard) {
+                for (int size : sizes::BATCH_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_batch(size);
+                    std::string name = std::string(test.test_name.view()) + sizes::get_name_suffix(size, true);
+                    runner.run_benchmark(name.c_str(), DeleteBenchmark<Model>{size}, actual_iterations);
+                }
+            } else {
+                // No profile - use fixed batch_size from JSON
+                runner.run_benchmark(test.test_name.c_str(), DeleteBenchmark<Model>{test.batch_size}, iterations);
+            }
         }
 
         template <typename Model, auto& test>
         static void run_update_pk_operation(BenchmarkRunner& runner, int iterations) {
-            // Runtime batch_size - fair comparison with Storm ORM
-            runner.run_benchmark(test.test_name.c_str(), UpdateBenchmark<Model>{test.batch_size}, iterations);
+            constexpr auto profile_str = test.size_profile.view();
+            constexpr auto profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::BatchStandard) {
+                for (int size : sizes::BATCH_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_batch(size);
+                    std::string name = std::string(test.test_name.view()) + sizes::get_name_suffix(size, true);
+                    runner.run_benchmark(name.c_str(), UpdateBenchmark<Model>{size}, actual_iterations);
+                }
+            } else if constexpr (profile == sizes::SizeProfile::BatchUpdateEdge) {
+                for (int size : sizes::BATCH_UPDATE_EDGE) {
+                    int         actual_iterations = sizes::iterations_for_batch(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(name.c_str(), UpdateBenchmark<Model>{size}, actual_iterations);
+                }
+            } else {
+                // No profile - use fixed batch_size from JSON
+                runner.run_benchmark(test.test_name.c_str(), UpdateBenchmark<Model>{test.batch_size}, iterations);
+            }
         }
 
         template <typename Model, auto& test>
         static void run_select_operation(BenchmarkRunner& runner, int iterations) {
-            // Simple SELECT benchmark (no WHERE, no JOIN)
-            constexpr int dataset_size = test.dataset_size;
-            runner.run_benchmark(test.test_name.c_str(), SelectBenchmark<Model>{dataset_size}, iterations);
+            constexpr auto profile_str = test.size_profile.view();
+            constexpr auto profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
+                for (int size : sizes::DATASET_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_dataset(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(name.c_str(), SelectBenchmark<Model>{size}, actual_iterations);
+                }
+            } else {
+                // No profile - use fixed dataset_size from JSON
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(test.test_name.c_str(), SelectBenchmark<Model>{dataset_size}, iterations);
+            }
         }
 
         template <typename Model, auto& test>
         static void run_select_join_operation(BenchmarkRunner& runner, int iterations) {
-            // SELECT JOIN benchmark using FKMessage and User models
-            // FKFieldPtr is &FKMessage::sender for single JOIN
-            constexpr int dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectJoinBenchmark<FKMessage, User, &FKMessage::sender>{dataset_size},
-                    iterations
-            );
+            constexpr auto profile_str = test.size_profile.view();
+            constexpr auto profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
+                for (int size : sizes::DATASET_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_dataset(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(
+                            name.c_str(),
+                            SelectJoinBenchmark<FKMessage, User, &FKMessage::sender>{size},
+                            actual_iterations
+                    );
+                }
+            } else {
+                // No profile - use fixed dataset_size from JSON
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(
+                        test.test_name.c_str(),
+                        SelectJoinBenchmark<FKMessage, User, &FKMessage::sender>{dataset_size},
+                        iterations
+                );
+            }
         }
 
         template <typename Model, auto& test>
         static void run_select_where_join_operation(BenchmarkRunner& runner, int iterations) {
-            // SELECT WHERE + JOIN benchmark using FKMessage and User models
-            // WHERE clause filters on User.age (joined model field)
-            constexpr std::string_view field_name   = test.where.field.view();
-            constexpr auto             op_str       = test.where.op;
-            constexpr int              value        = test.where.value_int;
-            constexpr auto             field_info   = dispatch_field<User>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectWhereJoinBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
-                            value, dataset_size
-                    },
-                    iterations
-            );
+            constexpr std::string_view field_name = test.where.field.view();
+            constexpr auto             op_str     = test.where.op;
+            constexpr int              value      = test.where.value_int;
+            constexpr auto             field_info = dispatch_field<User>(field_name);
+
+            constexpr auto profile_str = test.size_profile.view();
+            constexpr auto profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
+                for (int size : sizes::DATASET_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_dataset(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(
+                            name.c_str(),
+                            SelectWhereJoinBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
+                                    value, size
+                            },
+                            actual_iterations
+                    );
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(
+                        test.test_name.c_str(),
+                        SelectWhereJoinBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
+                                value, dataset_size
+                        },
+                        iterations
+                );
+            }
         }
 
         // ====================================================================
@@ -360,30 +447,61 @@ namespace storm::benchmark {
 
         template <typename Model, auto& test>
         static void run_select_left_join_operation(BenchmarkRunner& runner, int iterations) {
-            // SELECT LEFT JOIN benchmark using FKMessage and User models
-            constexpr int dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectLeftJoinBenchmark<FKMessage, User, &FKMessage::sender>{dataset_size},
-                    iterations
-            );
+            constexpr auto profile_str = test.size_profile.view();
+            constexpr auto profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
+                for (int size : sizes::DATASET_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_dataset(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(
+                            name.c_str(),
+                            SelectLeftJoinBenchmark<FKMessage, User, &FKMessage::sender>{size},
+                            actual_iterations
+                    );
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(
+                        test.test_name.c_str(),
+                        SelectLeftJoinBenchmark<FKMessage, User, &FKMessage::sender>{dataset_size},
+                        iterations
+                );
+            }
         }
 
         template <typename Model, auto& test>
         static void run_select_left_join_where_operation(BenchmarkRunner& runner, int iterations) {
-            // SELECT LEFT JOIN + WHERE benchmark using FKMessage and User models
-            constexpr std::string_view field_name   = test.where.field.view();
-            constexpr auto             op_str       = test.where.op;
-            constexpr int              value        = test.where.value_int;
-            constexpr auto             field_info   = dispatch_field<User>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectLeftJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
-                            value, dataset_size
-                    },
-                    iterations
-            );
+            constexpr std::string_view field_name = test.where.field.view();
+            constexpr auto             op_str     = test.where.op;
+            constexpr int              value      = test.where.value_int;
+            constexpr auto             field_info = dispatch_field<User>(field_name);
+
+            constexpr auto profile_str = test.size_profile.view();
+            constexpr auto profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
+                for (int size : sizes::DATASET_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_dataset(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(
+                            name.c_str(),
+                            SelectLeftJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
+                                    value, size
+                            },
+                            actual_iterations
+                    );
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(
+                        test.test_name.c_str(),
+                        SelectLeftJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
+                                value, dataset_size
+                        },
+                        iterations
+                );
+            }
         }
 
         // ====================================================================
@@ -392,30 +510,61 @@ namespace storm::benchmark {
 
         template <typename Model, auto& test>
         static void run_select_right_join_operation(BenchmarkRunner& runner, int iterations) {
-            // SELECT RIGHT JOIN benchmark using FKMessage and User models
-            constexpr int dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectRightJoinBenchmark<FKMessage, User, &FKMessage::sender>{dataset_size},
-                    iterations
-            );
+            constexpr auto profile_str = test.size_profile.view();
+            constexpr auto profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
+                for (int size : sizes::DATASET_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_dataset(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(
+                            name.c_str(),
+                            SelectRightJoinBenchmark<FKMessage, User, &FKMessage::sender>{size},
+                            actual_iterations
+                    );
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(
+                        test.test_name.c_str(),
+                        SelectRightJoinBenchmark<FKMessage, User, &FKMessage::sender>{dataset_size},
+                        iterations
+                );
+            }
         }
 
         template <typename Model, auto& test>
         static void run_select_right_join_where_operation(BenchmarkRunner& runner, int iterations) {
-            // SELECT RIGHT JOIN + WHERE benchmark using FKMessage and User models
-            constexpr std::string_view field_name   = test.where.field.view();
-            constexpr auto             op_str       = test.where.op;
-            constexpr int              value        = test.where.value_int;
-            constexpr auto             field_info   = dispatch_field<User>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectRightJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
-                            value, dataset_size
-                    },
-                    iterations
-            );
+            constexpr std::string_view field_name = test.where.field.view();
+            constexpr auto             op_str     = test.where.op;
+            constexpr int              value      = test.where.value_int;
+            constexpr auto             field_info = dispatch_field<User>(field_name);
+
+            constexpr auto profile_str = test.size_profile.view();
+            constexpr auto profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
+                for (int size : sizes::DATASET_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_dataset(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(
+                            name.c_str(),
+                            SelectRightJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
+                                    value, size
+                            },
+                            actual_iterations
+                    );
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(
+                        test.test_name.c_str(),
+                        SelectRightJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
+                                value, dataset_size
+                        },
+                        iterations
+                );
+            }
         }
 
         // ====================================================================
@@ -424,12 +573,23 @@ namespace storm::benchmark {
 
         template <typename Model, auto& test>
         static void run_select_multi_fk_join_operation(BenchmarkRunner& runner, int iterations) {
-            // SELECT with multiple FK JOINs (sender AND receiver)
-            // Uses FKMessage with both sender and receiver FK fields
-            constexpr int dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(), SelectMultiFKJoinBenchmark<FKMessage, User>{dataset_size}, iterations
-            );
+            constexpr auto profile_str = test.size_profile.view();
+            constexpr auto profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
+                for (int size : sizes::DATASET_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_dataset(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(
+                            name.c_str(), SelectMultiFKJoinBenchmark<FKMessage, User>{size}, actual_iterations
+                    );
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(
+                        test.test_name.c_str(), SelectMultiFKJoinBenchmark<FKMessage, User>{dataset_size}, iterations
+                );
+            }
         }
 
         // ====================================================================
@@ -438,60 +598,145 @@ namespace storm::benchmark {
 
         template <typename Model, auto& test>
         static void run_aggregate_count_operation(BenchmarkRunner& runner, int iterations) {
-            constexpr int dataset_size = test.dataset_size;
-            runner.run_benchmark(test.test_name.c_str(), CountBenchmark<Model>{dataset_size}, iterations);
+            constexpr auto profile_str = test.size_profile.view();
+            constexpr auto profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
+                for (int size : sizes::DATASET_SMALL) {
+                    int         actual_iterations = sizes::iterations_for_aggregate(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(name.c_str(), CountBenchmark<Model>{size}, actual_iterations);
+                }
+            } else if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
+                for (int size : sizes::DATASET_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_aggregate(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(name.c_str(), CountBenchmark<Model>{size}, actual_iterations);
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(test.test_name.c_str(), CountBenchmark<Model>{dataset_size}, iterations);
+            }
         }
 
         template <typename Model, auto& test>
         static void run_aggregate_count_field_operation(BenchmarkRunner& runner, int iterations) {
-            constexpr std::string_view field_name   = test.aggregate_field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(), CountFieldBenchmark<Model, field_info>{dataset_size}, iterations
-            );
+            constexpr std::string_view field_name  = test.aggregate_field.view();
+            constexpr auto             field_info  = dispatch_field<Model>(field_name);
+            constexpr auto             profile_str = test.size_profile.view();
+            constexpr auto             profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
+                for (int size : sizes::DATASET_SMALL) {
+                    int         actual_iterations = sizes::iterations_for_aggregate(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(name.c_str(), CountFieldBenchmark<Model, field_info>{size}, actual_iterations);
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(
+                        test.test_name.c_str(), CountFieldBenchmark<Model, field_info>{dataset_size}, iterations
+                );
+            }
         }
 
         template <typename Model, auto& test>
         static void run_aggregate_count_distinct_operation(BenchmarkRunner& runner, int iterations) {
-            constexpr std::string_view field_name   = test.aggregate_field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(), CountDistinctBenchmark<Model, field_info>{dataset_size}, iterations
-            );
+            constexpr std::string_view field_name  = test.aggregate_field.view();
+            constexpr auto             field_info  = dispatch_field<Model>(field_name);
+            constexpr auto             profile_str = test.size_profile.view();
+            constexpr auto             profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
+                for (int size : sizes::DATASET_SMALL) {
+                    int         actual_iterations = sizes::iterations_for_aggregate(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(
+                            name.c_str(), CountDistinctBenchmark<Model, field_info>{size}, actual_iterations
+                    );
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(
+                        test.test_name.c_str(), CountDistinctBenchmark<Model, field_info>{dataset_size}, iterations
+                );
+            }
         }
 
         template <typename Model, auto& test>
         static void run_aggregate_sum_operation(BenchmarkRunner& runner, int iterations) {
-            constexpr std::string_view field_name   = test.aggregate_field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(test.test_name.c_str(), SumBenchmark<Model, field_info>{dataset_size}, iterations);
+            constexpr std::string_view field_name  = test.aggregate_field.view();
+            constexpr auto             field_info  = dispatch_field<Model>(field_name);
+            constexpr auto             profile_str = test.size_profile.view();
+            constexpr auto             profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
+                for (int size : sizes::DATASET_SMALL) {
+                    int         actual_iterations = sizes::iterations_for_aggregate(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(name.c_str(), SumBenchmark<Model, field_info>{size}, actual_iterations);
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(test.test_name.c_str(), SumBenchmark<Model, field_info>{dataset_size}, iterations);
+            }
         }
 
         template <typename Model, auto& test>
         static void run_aggregate_avg_operation(BenchmarkRunner& runner, int iterations) {
-            constexpr std::string_view field_name   = test.aggregate_field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(test.test_name.c_str(), AvgBenchmark<Model, field_info>{dataset_size}, iterations);
+            constexpr std::string_view field_name  = test.aggregate_field.view();
+            constexpr auto             field_info  = dispatch_field<Model>(field_name);
+            constexpr auto             profile_str = test.size_profile.view();
+            constexpr auto             profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
+                for (int size : sizes::DATASET_SMALL) {
+                    int         actual_iterations = sizes::iterations_for_aggregate(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(name.c_str(), AvgBenchmark<Model, field_info>{size}, actual_iterations);
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(test.test_name.c_str(), AvgBenchmark<Model, field_info>{dataset_size}, iterations);
+            }
         }
 
         template <typename Model, auto& test>
         static void run_aggregate_min_operation(BenchmarkRunner& runner, int iterations) {
-            constexpr std::string_view field_name   = test.aggregate_field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(test.test_name.c_str(), MinBenchmark<Model, field_info>{dataset_size}, iterations);
+            constexpr std::string_view field_name  = test.aggregate_field.view();
+            constexpr auto             field_info  = dispatch_field<Model>(field_name);
+            constexpr auto             profile_str = test.size_profile.view();
+            constexpr auto             profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
+                for (int size : sizes::DATASET_SMALL) {
+                    int         actual_iterations = sizes::iterations_for_aggregate(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(name.c_str(), MinBenchmark<Model, field_info>{size}, actual_iterations);
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(test.test_name.c_str(), MinBenchmark<Model, field_info>{dataset_size}, iterations);
+            }
         }
 
         template <typename Model, auto& test>
         static void run_aggregate_max_operation(BenchmarkRunner& runner, int iterations) {
-            constexpr std::string_view field_name   = test.aggregate_field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(test.test_name.c_str(), MaxBenchmark<Model, field_info>{dataset_size}, iterations);
+            constexpr std::string_view field_name  = test.aggregate_field.view();
+            constexpr auto             field_info  = dispatch_field<Model>(field_name);
+            constexpr auto             profile_str = test.size_profile.view();
+            constexpr auto             profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
+                for (int size : sizes::DATASET_SMALL) {
+                    int         actual_iterations = sizes::iterations_for_aggregate(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(name.c_str(), MaxBenchmark<Model, field_info>{size}, actual_iterations);
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(test.test_name.c_str(), MaxBenchmark<Model, field_info>{dataset_size}, iterations);
+            }
         }
 
         // ====================================================================
@@ -500,12 +745,25 @@ namespace storm::benchmark {
 
         template <typename Model, auto& test>
         static void run_distinct_operation(BenchmarkRunner& runner, int iterations) {
-            constexpr std::string_view field_name   = test.distinct_field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(), SimpleDistinctBenchmark<Model, field_info>{dataset_size}, iterations
-            );
+            constexpr std::string_view field_name  = test.distinct_field.view();
+            constexpr auto             field_info  = dispatch_field<Model>(field_name);
+            constexpr auto             profile_str = test.size_profile.view();
+            constexpr auto             profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
+                for (int size : sizes::DATASET_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_dataset(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(
+                            name.c_str(), SimpleDistinctBenchmark<Model, field_info>{size}, actual_iterations
+                    );
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(
+                        test.test_name.c_str(), SimpleDistinctBenchmark<Model, field_info>{dataset_size}, iterations
+                );
+            }
         }
 
         template <typename Model, auto& test>
@@ -516,52 +774,103 @@ namespace storm::benchmark {
             constexpr auto             where_field_info    = dispatch_field<Model>(where_field_name);
             constexpr auto             op_str              = test.where.op;
             constexpr double           value               = test.where.value_double;
-            constexpr int              dataset_size        = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    DistinctWhereBenchmark<Model, distinct_field_info, where_field_info, op_str, double>{
-                            value, dataset_size
-                    },
-                    iterations
-            );
+            constexpr auto             profile_str         = test.size_profile.view();
+            constexpr auto             profile             = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
+                for (int size : sizes::DATASET_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_dataset(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(
+                            name.c_str(),
+                            DistinctWhereBenchmark<Model, distinct_field_info, where_field_info, op_str, double>{
+                                    value, size
+                            },
+                            actual_iterations
+                    );
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(
+                        test.test_name.c_str(),
+                        DistinctWhereBenchmark<Model, distinct_field_info, where_field_info, op_str, double>{
+                                value, dataset_size
+                        },
+                        iterations
+                );
+            }
         }
 
         template <typename Model, auto& test>
         static void run_distinct_join_operation(BenchmarkRunner& runner, int iterations) {
-            // DISTINCT JOIN on FKMessage.sender with User model
             constexpr std::string_view distinct_field_name = test.distinct_field.view();
             constexpr auto             distinct_field_info = dispatch_field<FKMessage>(distinct_field_name);
-            constexpr int              dataset_size        = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    DistinctJoinBenchmark<FKMessage, User, &FKMessage::sender, distinct_field_info>{dataset_size},
-                    iterations
-            );
+            constexpr auto             profile_str         = test.size_profile.view();
+            constexpr auto             profile             = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
+                for (int size : sizes::DATASET_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_dataset(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(
+                            name.c_str(),
+                            DistinctJoinBenchmark<FKMessage, User, &FKMessage::sender, distinct_field_info>{size},
+                            actual_iterations
+                    );
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(
+                        test.test_name.c_str(),
+                        DistinctJoinBenchmark<FKMessage, User, &FKMessage::sender, distinct_field_info>{dataset_size},
+                        iterations
+                );
+            }
         }
 
         template <typename Model, auto& test>
         static void run_distinct_where_join_operation(BenchmarkRunner& runner, int iterations) {
-            // DISTINCT WHERE + JOIN on FKMessage.sender with User model
-            // WHERE clause filters on User.age
             constexpr std::string_view distinct_field_name = test.distinct_field.view();
             constexpr auto             distinct_field_info = dispatch_field<FKMessage>(distinct_field_name);
             constexpr std::string_view where_field_name    = test.where.field.view();
             constexpr auto             where_field_info    = dispatch_field<User>(where_field_name);
             constexpr auto             op_str              = test.where.op;
             constexpr int              value               = test.where.value_int;
-            constexpr int              dataset_size        = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    DistinctWhereJoinBenchmark<
-                            FKMessage,
-                            User,
-                            &FKMessage::sender,
-                            distinct_field_info,
-                            where_field_info,
-                            op_str,
-                            int>{value, dataset_size},
-                    iterations
-            );
+            constexpr auto             profile_str         = test.size_profile.view();
+            constexpr auto             profile             = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
+                for (int size : sizes::DATASET_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_dataset(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(
+                            name.c_str(),
+                            DistinctWhereJoinBenchmark<
+                                    FKMessage,
+                                    User,
+                                    &FKMessage::sender,
+                                    distinct_field_info,
+                                    where_field_info,
+                                    op_str,
+                                    int>{value, size},
+                            actual_iterations
+                    );
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(
+                        test.test_name.c_str(),
+                        DistinctWhereJoinBenchmark<
+                                FKMessage,
+                                User,
+                                &FKMessage::sender,
+                                distinct_field_info,
+                                where_field_info,
+                                op_str,
+                                int>{value, dataset_size},
+                        iterations
+                );
+            }
         }
 
         // ====================================================================

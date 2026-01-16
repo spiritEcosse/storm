@@ -256,6 +256,8 @@ namespace storm::benchmark {
             test.group_by_field = parse_string<32>(json, pos);
         } else if (key == "group_by_field2") {
             test.group_by_field2 = parse_string<32>(json, pos);
+        } else if (key == "size_profile") {
+            test.size_profile = parse_string<32>(json, pos);
         } else {
             // Unknown key - skip value
             skip_value(json, pos);

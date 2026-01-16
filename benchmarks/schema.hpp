@@ -114,6 +114,11 @@ namespace storm::benchmark {
         ConstexprString<32> group_by_field;  // Field name to group by (empty = no GROUP BY)
         ConstexprString<32> group_by_field2; // Second field for multi-field GROUP BY
 
+        // Size profile for automatic iteration over sizes
+        // Values: "none", "batch_standard", "batch_insert_edge", "batch_update_edge",
+        //         "dataset_standard", "dataset_small"
+        ConstexprString<32> size_profile; // Empty or "none" = non-scaled test (run once)
+
         consteval BenchmarkTest() = default;
     };
 

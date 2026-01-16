@@ -9,10 +9,11 @@
  * - Field names and operators resolved at compile time
  *
  * Usage:
- *   ./main
+ *   ./storm_bench
  *
  * To add benchmarks:
- *   Edit tests/benchmark_tests.json and rebuild
+ *   Edit tests/benchmark_tests.yaml and rebuild
+ *   (YAML is auto-converted to JSON during build)
  */
 
 #include <iostream>

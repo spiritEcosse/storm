@@ -13,7 +13,7 @@ The unified benchmark system is a **100% compile-time C++ solution** that loads 
 - ✅ **Template Metaprogramming** - Each test gets its own specialized function
 - ✅ **Type Safety** - Field names and operators resolved at compile time
 - ✅ **Automatic Unrolling** - Template recursion unrolls test execution loop
-- ✅ **JSON Configuration** - Easy to add new tests via `benchmark_tests.json`
+- ✅ **YAML Configuration** - Human-friendly test definitions in `benchmark_tests.yaml` (auto-converted to JSON at build time)
 - ✅ **Compile-Time Field Dispatch** - Uses reflection to map field names to struct members
 - ✅ **Accurate Timing** - Uses `std::chrono::steady_clock` (monotonic, nanosecond precision)
 - ✅ **Colorized Output** - Performance-based color coding for easy analysis
@@ -54,6 +54,7 @@ benchmarks/
 ├── runner.hpp                  # BenchmarkRunner with template recursion
 ├── parser.hpp                  # Compile-time JSON parser using #embed
 ├── schema.hpp                  # Benchmark test schema (C++ structs)
+├── sizes.hpp                   # Size profile definitions (batch/dataset sizes)
 ├── operations/
 │   ├── base.hpp               # CRTP base class for data-driven benchmarks
 │   ├── select.hpp             # WHERE clause benchmark implementation
@@ -63,8 +64,72 @@ benchmarks/
 │   ├── aggregate.hpp          # Aggregate functions benchmark implementation
 │   ├── distinct.hpp           # DISTINCT benchmark implementation
 │   └── where_operators.hpp    # LIKE, BETWEEN, IN, AND/OR operators
+├── scripts/
+│   └── yaml_to_json.py        # YAML to JSON converter (runs at build time)
 └── tests/
-    └── benchmark_tests.json   # Test definitions (loaded at compile time)
+    ├── benchmark_tests.yaml   # Test definitions (human-friendly source of truth)
+    └── benchmark_tests.json   # Auto-generated from YAML (loaded at compile time via #embed)
+```
+
+## 📐 Size Profiles
+
+The benchmark system uses **size profiles** to automatically iterate over multiple sizes from a single JSON test definition. This reduces JSON redundancy from ~150 entries to ~60 entries while generating all the same benchmark variations at runtime.
+
+### Available Profiles
+
+| Profile | Sizes | Use Case |
+|---------|-------|----------|
+| `batch_standard` | 1, 10, 100, 500, 1000, 5000, 10000, 50000, 100000 | INSERT/UPDATE/DELETE operations |
+| `batch_insert_edge` | 248, 249, 250 | SQLite chunk boundary (999/4 fields) |
+| `batch_update_edge` | 198, 199, 200 | SQLite chunk boundary (999/5 fields) |
+| `dataset_standard` | 100, 1000, 10000, 100000 | SELECT/JOIN/DISTINCT operations |
+| `dataset_small` | 1000, 10000 | Aggregate operations |
+
+### How It Works
+
+Instead of defining 9 separate entries for each INSERT batch size:
+
+```json
+// OLD: 9 separate entries
+{ "test_name": "insert_single", "batch_size": 1, "iterations": 10000 }
+{ "test_name": "insert_batch_10", "batch_size": 10, "iterations": 1000 }
+{ "test_name": "insert_batch_100", "batch_size": 100, "iterations": 100 }
+// ... 6 more entries
+```
+
+Define one entry with a size profile:
+
+```json
+// NEW: Single entry with size profile
+{
+  "test_name": "insert",
+  "operation": "insert",
+  "size_profile": "batch_standard"
+}
+```
+
+The runner automatically generates: `insert_single`, `insert_10`, `insert_100`, `insert_500`, `insert_1000`, `insert_5000`, `insert_10000`, `insert_50000`, `insert_100000` with appropriate iterations.
+
+### Naming Convention
+
+- **Batch operations**: Uses `_single` for size=1, `_N` for other sizes (e.g., `insert_single`, `insert_100`)
+- **Dataset operations**: Uses `_N` suffix (e.g., `select_100`, `select_1000`)
+
+### Size Profile Definitions
+
+Defined in `benchmarks/sizes.hpp`:
+
+```cpp
+namespace storm::benchmark::sizes {
+    inline constexpr std::array BATCH_STANDARD = {1, 10, 100, 500, 1000, 5000, 10000, 50000, 100000};
+    inline constexpr std::array BATCH_INSERT_EDGE = {248, 249, 250};
+    inline constexpr std::array BATCH_UPDATE_EDGE = {198, 199, 200};
+    inline constexpr std::array DATASET_STANDARD = {100, 1000, 10000, 100000};
+    inline constexpr std::array DATASET_SMALL = {1000, 10000};
+
+    constexpr int iterations_for_batch(int size);    // Returns iterations based on batch size
+    constexpr int iterations_for_dataset(int size);  // Returns iterations based on dataset size
+}
 ```
 
 ## 🚀 Usage
@@ -188,7 +253,7 @@ update_pk_batch_100            UPDATE_PK        update_pk
 ### Run All Benchmarks
 
 ```bash
-# Run all tests defined in benchmark_tests.json
+# Run all tests defined in benchmark_tests.yaml (auto-converted to JSON at build time)
 ./build/release/benchmarks/storm_bench
 ```
 
@@ -1526,24 +1591,39 @@ constexpr auto dispatch_field(std::string_view field_name) {
 
 ## 📊 Adding New Benchmarks
 
-### Step 1: Add Test Definition to JSON
+### Step 1: Add Test Definition to YAML
 
-Edit `benchmarks/tests/benchmark_tests.json`:
+Edit `benchmarks/tests/benchmark_tests.yaml` (the human-friendly source of truth):
 
-```json
-{
-  "test_name": "where_string_like",
-  "test_category": "WHERE",
-  "description": "WHERE with LIKE pattern (name LIKE 'Person%')",
-  "model": "Person",
-  "operation": "where",
-  "where_field": "name",
-  "where_op": "LIKE",
-  "where_value_string": "Person%",
-  "iterations": 1000,
-  "dataset_size": 10000
-}
+**Option A: Fixed-size test** (iterations and size specified directly)
+
+```yaml
+  - name: where_string_like
+    category: WHERE
+    description: "WHERE with LIKE pattern (name LIKE 'Person%')"
+    model: Person
+    operation: where
+    where_field: name
+    where_op: LIKE
+    where_value_string: "Person%"
+    iterations: 1000
+    dataset_size: 10000
 ```
+
+**Option B: Size profile test** (auto-iterates over multiple sizes)
+
+```yaml
+  - name: select_custom
+    category: SELECT_CUSTOM
+    description: "Custom SELECT operation with size iteration"
+    model: Person
+    operation: select_custom
+    size_profile: dataset_standard
+```
+
+This will generate tests: `select_custom_100`, `select_custom_1000`, `select_custom_10000`, `select_custom_100000`
+
+> **Note:** The YAML file is automatically converted to JSON during build via `scripts/yaml_to_json.py`. The C++ parser reads the generated JSON using `#embed`.
 
 ### Step 2: Implement Operation (if needed)
 
@@ -1849,21 +1929,24 @@ for (int i = 0; i < iterations; i++) {
 
 ### "No tests executed"
 
-**Cause:** JSON file is empty or malformed.
+**Cause:** YAML file is empty or malformed, or JSON generation failed.
 
-**Solution:** Check `benchmarks/tests/benchmark_tests.json` is valid JSON and contains at least one test definition.
+**Solution:**
+1. Check `benchmarks/tests/benchmark_tests.yaml` is valid YAML and contains at least one test definition
+2. Verify JSON was generated: `ls benchmarks/tests/benchmark_tests.json`
+3. Manually regenerate: `python3 benchmarks/scripts/yaml_to_json.py`
 
 ### Compilation error: "field not found"
 
-**Cause:** JSON references a field name that doesn't exist in the model struct.
+**Cause:** YAML references a field name that doesn't exist in the model struct.
 
 **Solution:** Ensure `where_field` matches an exact field name in the model (case-sensitive):
 
 ```cpp
 struct Person {
     int id;
-    std::string name;  // Use "name" in JSON, not "Name"
-    int age;           // Use "age" in JSON
+    std::string name;  // Use "name" in YAML, not "Name"
+    int age;           // Use "age" in YAML
 };
 ```
 

@@ -367,6 +367,11 @@ The `benchmarks/` directory uses traditional `.hpp` headers instead of C++26 mod
 2. **`#embed` requires headers** - `parser.hpp` uses `#embed "tests/benchmark_tests.json"` for compile-time JSON parsing
 3. **Dependency chain** - `runner.hpp` includes `parser.hpp`, making the entire benchmark system header-based
 
+**Benchmark test definitions workflow:**
+- `benchmarks/tests/benchmark_tests.yaml` — Human-friendly source of truth (edit this)
+- `benchmarks/tests/benchmark_tests.json` — Auto-generated at build time (do not edit)
+- `benchmarks/scripts/yaml_to_json.py` — Converter script (runs automatically via CMake)
+
 **Architecture split:**
 - `src/` — C++26 modules (`.cppm`) for the ORM library
 - `benchmarks/` — Headers (`.hpp`) for testing infrastructure

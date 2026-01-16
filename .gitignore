@@ -10,3 +10,6 @@ benchmarks/bench_sqlite
 benchmarks/bench_sqlite_orm
 benchmarks/bench_storm
 benchmarks/bench_storm_optimized
+
+# Auto-generated from benchmarks/tests/benchmark_tests.yaml during build
+benchmarks/tests/benchmark_tests.json
