@@ -184,7 +184,7 @@ namespace storm::benchmark {
                 if constexpr (std::is_same_v<FieldType, std::string>) {
                     plf::hive<std::string> results;
                     while (sqlite3_step(stmt) == SQLITE_ROW) {
-                        const char* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+                        auto text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
                         results.insert(text != nullptr ? text : "");
                     }
                     total_rows += results.size();
@@ -499,7 +499,7 @@ namespace storm::benchmark {
                 if constexpr (std::is_same_v<FieldType, std::string>) {
                     plf::hive<std::string> results;
                     while (sqlite3_step(stmt) == SQLITE_ROW) {
-                        const char* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+                        auto text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
                         results.insert(text != nullptr ? text : "");
                     }
                     total_rows += results.size();

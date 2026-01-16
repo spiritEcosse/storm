@@ -120,8 +120,8 @@ export namespace storm::db::sqlite {
         }
 
         template <typename = void>
-        // NOSONAR(cpp:S5008) - void* required for SQLite BLOB interface
-        [[nodiscard]] __attribute__((always_inline)) auto bind_blob(int index, const void* data, size_t size) noexcept
+        [[nodiscard]] __attribute__((always_inline)) auto
+        bind_blob(int index, const void* data, size_t size) noexcept // NOSONAR(cpp:S5008) - SQLite BLOB API
                 -> std::expected<void, Error> {
             const int rc = sqlite3_bind_blob(raw_, index, data, static_cast<int>(size), SQLITE_TRANSIENT);
             if (rc != SQLITE_OK) [[unlikely]] {
@@ -228,9 +228,8 @@ export namespace storm::db::sqlite {
         }
 
         template <typename = void>
-        // NOSONAR(cpp:S5008) - void* required for SQLite BLOB interface
         [[nodiscard]] __attribute__((always_inline)) auto extract_blob_ptr(int col_index) const noexcept -> const
-                void* {
+                void* { // NOSONAR(cpp:S5008) - SQLite BLOB API
             return sqlite3_column_blob(raw_, col_index);
         }
 

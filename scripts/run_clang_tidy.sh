@@ -168,7 +168,7 @@ run_tidy() {
                 echo "  ✓ $file (C++26 modules - skipped)"
                 echo "known" > "$statusfile"
             else
-                echo "  ⚠ $file (parse error - UNEXPECTED)"
+                echo "  ⚠ $file (parse error - UNEXPECTED)" >&2
                 echo "crashed" > "$statusfile"
             fi
             echo "" > "$outfile"

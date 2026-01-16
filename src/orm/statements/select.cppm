@@ -290,10 +290,7 @@ export namespace storm::orm::statements {
             return results;
         }
 
-        // SQL clause helpers delegated to BaseStatement:
-        // - Base::append_order_by()
-        // - Base::append_limit_offset()
-        // - Base::bind_where_params<Statement, Error>()
+        // SQL clause helpers are inherited from BaseStatement (append_order_by, append_limit_offset, bind_where_params)
 
         std::shared_ptr<ConnType> conn_;
 

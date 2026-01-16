@@ -32,7 +32,7 @@ export namespace storm::orm::where {
     // to bind parameters to any database statement type without knowing the concrete
     // type at compile time. The actual Statement* conversion happens in bind_params_direct().
     // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast) - intentional type erasure
-    using ErasedStatementPtr = void*;
+    using ErasedStatementPtr = void*; // NOSONAR(cpp:S5008) - type erasure requires void*
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
 
     // Mirror of meta::FieldAttr from storm module - must match exactly
