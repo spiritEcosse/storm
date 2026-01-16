@@ -1006,6 +1006,90 @@ TEST_F(AggregateTest, GroupByEmptyTable) {
     EXPECT_EQ(result.value().size(), 0);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_F(AggregateTest, GroupByFullChain_WhereJoinGroupByAggregate) {
+    // This test verifies the full query chain: WHERE + JOIN + GROUP BY + aggregate
+    // Setup: Create users and messages with multiple messages per user at varying values
+
+    const auto& conn = QuerySet<AggregatePerson>::get_default_connection();
+
+    // Insert users with different ages
+    std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Alice', 25)");   // id=1
+    std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Bob', 35)");     // id=2
+    std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Charlie', 45)"); // id=3
+    std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Dave', 30)");    // id=4
+
+    // Insert messages with varying values
+    // Alice (sender_id=1): 3 messages, values 10, 20, 30 (total=60, avg=20)
+    // Bob (sender_id=2): 2 messages, values 50, 70 (total=120, avg=60)
+    // Charlie (sender_id=3): 4 messages, values 5, 15, 25, 35 (total=80, avg=20)
+    // Dave (sender_id=4): 1 message, value 100 (total=100, avg=100)
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('A1', 10, 1)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('A2', 20, 1)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('A3', 30, 1)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('B1', 50, 2)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('B2', 70, 2)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('C1', 5, 3)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('C2', 15, 3)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('C3', 25, 3)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('C4', 35, 3)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('D1', 100, 4)");
+
+    // Test 1: WHERE + JOIN + GROUP BY + COUNT
+    // Filter messages with value >= 20, group by value (since we can't group by FK directly), count per value
+    // We'll group by value to test the full chain with filterable data
+    auto count_result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() >= 20)
+                                .join<&AggMessage::sender>()
+                                .group_by<^^AggMessage::value>()
+                                .count()
+                                .select();
+    ASSERT_TRUE(count_result.has_value()) << "Full chain COUNT failed: " << count_result.error().message();
+    // Values >= 20: 20, 25, 30, 35, 50, 70, 100 (7 unique values, each appears once)
+    EXPECT_EQ(count_result.value().size(), 7) << "Expected 7 groups (7 unique values >= 20)";
+
+    // Verify each value appears exactly once
+    for (const auto& [value, count_val] : count_result.value()) {
+        EXPECT_EQ(count_val, 1) << "Each value should appear exactly once, but value " << value << " has count "
+                                << count_val;
+    }
+
+    // Reset QuerySet state
+    msg_qs->reset();
+
+    // Test 2: WHERE + JOIN + GROUP BY + SUM
+    // Filter messages with value < 50, group by content (each unique)
+    auto sum_result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() < 50)
+                              .join<&AggMessage::sender>()
+                              .group_by<^^AggMessage::content>()
+                              .sum<^^AggMessage::value>()
+                              .select();
+    ASSERT_TRUE(sum_result.has_value()) << "Full chain SUM failed: " << sum_result.error().message();
+    // Messages with value < 50: A1(10), A2(20), A3(30), C1(5), C2(15), C3(25), C4(35)
+    // That's 7 messages, each with unique content
+    EXPECT_EQ(sum_result.value().size(), 7) << "Expected 7 groups (7 messages with value < 50)";
+
+    // Reset QuerySet state
+    msg_qs->reset();
+
+    // Test 3: WHERE + JOIN + GROUP BY + AVG
+    // Filter messages with value between 10 and 70, group by value (each value unique, avg = value)
+    auto avg_result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() >= 10 &&
+                                    storm::orm::where::field<^^AggMessage::value>() <= 70)
+                              .join<&AggMessage::sender>()
+                              .group_by<^^AggMessage::value>()
+                              .avg<^^AggMessage::value>()
+                              .select();
+    ASSERT_TRUE(avg_result.has_value()) << "Full chain AVG failed: " << avg_result.error().message();
+
+    // Values between 10-70: 10, 15, 20, 25, 30, 35, 50, 70 (8 unique values)
+    EXPECT_EQ(avg_result.value().size(), 8) << "Expected 8 groups (8 unique values between 10-70)";
+
+    // Verify averages - since each group has one row, avg = value
+    for (const auto& [value, avg_val] : avg_result.value()) {
+        EXPECT_NEAR(avg_val, static_cast<double>(value), 0.01) << "For single-row groups, avg should equal the value";
+    }
+}
+
 // =============================================================================
 // COUNT(DISTINCT) Tests
 // =============================================================================
@@ -1202,6 +1286,64 @@ TEST_F(OptionalAggregateTest, CountDistinctWithNullValues) {
     auto result = qs->count_distinct<^^OptionalPerson::age>().select();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 2);
+}
+
+TEST_F(OptionalAggregateTest, GroupByWithAllNullValuesInGroupColumn) {
+    // Insert rows where all ages are NULL
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = std::nullopt, .salary = 50000.0});
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0});
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = std::nullopt, .salary = 70000.0});
+
+    // GROUP BY on age (all NULL) - should produce one group with NULL key
+    // SQLite treats NULL as a distinct group key in GROUP BY
+    auto result = qs->group_by<^^OptionalPerson::age>().count().select();
+    ASSERT_TRUE(result.has_value()) << "GROUP BY with all NULL values failed";
+
+    // Should have exactly one group (the NULL group) with count 3
+    EXPECT_EQ(result.value().size(), 1);
+
+    // Verify the single group has count 3
+    auto& groups = result.value();
+    auto  it     = groups.begin();
+    ASSERT_NE(it, groups.end());
+    auto [age_key, count_val] = *it;
+    // age_key is std::optional<int> - should be nullopt for the NULL group
+    EXPECT_FALSE(age_key.has_value()) << "Expected NULL group key";
+    EXPECT_EQ(count_val, 3) << "Expected count of 3 in NULL group";
+}
+
+TEST_F(OptionalAggregateTest, GroupByWithMixedNullAndNonNullValues) {
+    // Insert mix of NULL and non-NULL ages
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0});
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 25, .salary = 70000.0});
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0});
+    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Eve", .age = 30, .salary = 90000.0});
+
+    // GROUP BY on age - should produce 3 groups: NULL (2 rows), 25 (2 rows), 30 (1 row)
+    auto result = qs->group_by<^^OptionalPerson::age>().count().select();
+    ASSERT_TRUE(result.has_value()) << "GROUP BY with mixed NULL values failed";
+
+    EXPECT_EQ(result.value().size(), 3) << "Expected 3 groups (NULL, 25, 30)";
+
+    // Verify counts for each group
+    int64_t null_count   = 0; // NOLINT(misc-const-correctness) - modified in loop
+    int64_t age_25_count = 0; // NOLINT(misc-const-correctness) - modified in loop
+    int64_t age_30_count = 0; // NOLINT(misc-const-correctness) - modified in loop
+
+    for (const auto& [age_key, count_val] : result.value()) {
+        if (!age_key.has_value()) {
+            null_count = count_val;
+        } else if (age_key.value() == 25) {
+            age_25_count = count_val;
+        } else if (age_key.value() == 30) {
+            age_30_count = count_val;
+        }
+    }
+
+    EXPECT_EQ(null_count, 2) << "Expected 2 rows in NULL group";
+    EXPECT_EQ(age_25_count, 2) << "Expected 2 rows in age=25 group";
+    EXPECT_EQ(age_30_count, 1) << "Expected 1 row in age=30 group";
 }
 
 // Negative number tests using the main AggregatePerson model

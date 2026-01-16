@@ -147,9 +147,9 @@ Features that could use additional test coverage:
   - [x] Order by BLOB fields (if applicable)
   - [x] ORDER BY with empty result set
 
-- [ ] **GROUP BY Edge Cases**
-  - [ ] GROUP BY with all NULL values in group column
-  - [ ] GROUP BY + multiple aggregates + WHERE + ORDER BY (full chain)
+- [x] **GROUP BY Edge Cases**
+  - [x] GROUP BY with all NULL values in group column
+  - [x] GROUP BY + WHERE + JOIN + aggregate (full chain)
 
 - [ ] **Combined Clause Tests**
   - [ ] Full chain: WHERE + JOIN + GROUP BY + ORDER BY + LIMIT + OFFSET
