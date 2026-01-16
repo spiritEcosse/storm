@@ -142,10 +142,10 @@ Features implemented and tested but not benchmarked for performance:
 
 Features that could use additional test coverage:
 
-- [ ] **ORDER BY Edge Cases**
-  - [ ] Order by nullable fields (NULL ordering)
-  - [ ] Order by BLOB fields (if applicable)
-  - [ ] ORDER BY with empty result set
+- [x] **ORDER BY Edge Cases**
+  - [x] Order by nullable fields (NULL ordering)
+  - [x] Order by BLOB fields (if applicable)
+  - [x] ORDER BY with empty result set
 
 - [ ] **GROUP BY Edge Cases**
   - [ ] GROUP BY with all NULL values in group column
