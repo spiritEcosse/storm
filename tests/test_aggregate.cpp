@@ -1437,6 +1437,208 @@ TEST_F(AggregateTest, NegativeNumbersInWhere) {
     EXPECT_EQ(sum_neg.value(), -15); // -10 + (-5) = -15
 }
 
+// =============================================================================
+// Combined Clause Tests
+// =============================================================================
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_F(AggregateTest, FullChain_WhereJoinOrderByLimitOffset) {
+    // This test verifies the complete SELECT query chain:
+    // WHERE + JOIN + ORDER BY + LIMIT + OFFSET
+    // Note: GROUP BY doesn't currently support ORDER BY/LIMIT/OFFSET in the builder pattern
+    // Setup: Create users and messages with multiple messages per user
+
+    const auto& conn = QuerySet<AggregatePerson>::get_default_connection();
+
+    // Insert users with different ages
+    std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Alice', 25)");   // id=1
+    std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Bob', 35)");     // id=2
+    std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Charlie', 45)"); // id=3
+    std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Dave', 30)");    // id=4
+    std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Eve', 28)");     // id=5
+
+    // Insert messages with varying values
+    // Alice (sender_id=1): 3 messages, values 10, 15, 20
+    // Bob (sender_id=2): 2 messages, values 25, 30
+    // Charlie (sender_id=3): 4 messages, values 35, 40, 45, 50
+    // Dave (sender_id=4): 2 messages, values 55, 60
+    // Eve (sender_id=5): 3 messages, values 65, 70, 75
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('A1', 10, 1)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('A2', 15, 1)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('A3', 20, 1)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('B1', 25, 2)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('B2', 30, 2)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('C1', 35, 3)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('C2', 40, 3)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('C3', 45, 3)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('C4', 50, 3)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('D1', 55, 4)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('D2', 60, 4)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('E1', 65, 5)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('E2', 70, 5)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('E3', 75, 5)");
+
+    // Test: WHERE + JOIN + ORDER BY + LIMIT + OFFSET (SELECT, not GROUP BY)
+    // Filter messages with value >= 20, order by value DESC, limit 5, offset 2
+    // Values >= 20: 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75 (12 values)
+    // Ordered DESC: 75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20
+    // After OFFSET 2: 65, 60, 55, 50, 45, 40, 35, 30, 25, 20 (skip first 2)
+    // After LIMIT 5: 65, 60, 55, 50, 45 (take first 5)
+    auto result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() >= 20)
+                          .join<&AggMessage::sender>()
+                          .order_by<^^AggMessage::value, false>()
+                          .limit(5)
+                          .offset(2)
+                          .select();
+
+    ASSERT_TRUE(result.has_value()) << "Full chain query failed: " << result.error().message();
+
+    auto& results = result.value();
+    EXPECT_EQ(results.size(), 5) << "Expected 5 messages after LIMIT 5 OFFSET 2";
+
+    // Verify the values are ordered correctly (DESC): 65, 60, 55, 50, 45
+    std::vector<int> expected_values = {65, 60, 55, 50, 45};
+    size_t           idx             = 0;
+    for (const auto& msg : results) {
+        ASSERT_LT(idx, expected_values.size());
+        EXPECT_EQ(msg.value, expected_values[idx]) << "Value at index " << idx << " should be " << expected_values[idx];
+        ++idx;
+    }
+
+    // Reset and test another variation: different ORDER BY direction and LIMIT/OFFSET
+    msg_qs->reset();
+
+    // Take first 3 messages with value >= 20, ordered ASC
+    auto result2 = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() >= 20)
+                           .join<&AggMessage::sender>()
+                           .order_by<^^AggMessage::value, true>() // ASC this time
+                           .limit(3)
+                           .offset(0)
+                           .select();
+
+    ASSERT_TRUE(result2.has_value()) << "Second full chain query failed: " << result2.error().message();
+
+    auto& results2 = result2.value();
+    EXPECT_EQ(results2.size(), 3) << "Expected 3 messages";
+
+    // Verify ASC ordering: 20, 25, 30
+    std::vector<int> expected_values2 = {20, 25, 30};
+    idx                               = 0;
+    for (const auto& msg : results2) {
+        ASSERT_LT(idx, expected_values2.size());
+        EXPECT_EQ(msg.value, expected_values2[idx])
+                << "Value at index " << idx << " should be " << expected_values2[idx];
+        ++idx;
+    }
+
+    // Test 3: Verify that JOIN actually works by checking we can access joined data
+    msg_qs->reset();
+    auto result3 =
+            msg_qs->where(storm::orm::where::field<^^AggMessage::value>() == 75).join<&AggMessage::sender>().select();
+
+    ASSERT_TRUE(result3.has_value()) << "JOIN verification query failed";
+    EXPECT_EQ(result3.value().size(), 1) << "Expected 1 message with value 75";
+    EXPECT_EQ(result3.value().begin()->sender.name, "Eve") << "Sender of value=75 should be Eve";
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_F(AggregateTest, GroupByWithAllAggregateTypes) {
+    // Test all aggregate types (SUM, COUNT, AVG, MIN, MAX) with GROUP BY
+    // Note: Current implementation supports one aggregate per query with GROUP BY
+    // This test verifies each aggregate type works correctly with GROUP BY
+
+    // Insert test data with multiple people having the same years_experience
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 30, .salary = 60000.0, .years_experience = 5});
+    std::ignore = qs->insert(
+            AggregatePerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0, .years_experience = 10}
+    );
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Dave", .age = 40, .salary = 80000.0, .years_experience = 10});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Eve", .age = 45, .salary = 90000.0, .years_experience = 10});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Frank", .age = 28, .salary = 55000.0, .years_experience = 5});
+
+    // Test data summary by years_experience:
+    //   years_experience=5: Alice(25), Bob(30), Frank(28) -> count=3, sum=83, avg=27.67, min=25, max=30
+    //   years_experience=10: Charlie(35), Dave(40), Eve(45) -> count=3, sum=120, avg=40, min=35, max=45
+
+    // Test 1: GROUP BY with COUNT
+    auto count_result = qs->group_by<^^AggregatePerson::years_experience>().count().select();
+    ASSERT_TRUE(count_result.has_value()) << "GROUP BY + COUNT failed: " << count_result.error().message();
+    EXPECT_EQ(count_result.value().size(), 2) << "Expected 2 groups";
+    for (const auto& [years_exp, count_val] : count_result.value()) {
+        if (years_exp == 5 || years_exp == 10) {
+            EXPECT_EQ(count_val, 3) << "Each group should have 3 people";
+        } else {
+            FAIL() << "Unexpected years_experience: " << years_exp;
+        }
+    }
+
+    // Test 2: GROUP BY with SUM
+    qs->reset();
+    auto sum_result = qs->group_by<^^AggregatePerson::years_experience>().sum<^^AggregatePerson::age>().select();
+    ASSERT_TRUE(sum_result.has_value()) << "GROUP BY + SUM failed: " << sum_result.error().message();
+    for (const auto& [years_exp, sum_age] : sum_result.value()) {
+        if (years_exp == 5) {
+            EXPECT_EQ(sum_age, 83) << "Sum of ages for group 5: 25+30+28=83";
+        } else if (years_exp == 10) {
+            EXPECT_EQ(sum_age, 120) << "Sum of ages for group 10: 35+40+45=120";
+        }
+    }
+
+    // Test 3: GROUP BY with AVG
+    qs->reset();
+    auto avg_result = qs->group_by<^^AggregatePerson::years_experience>().avg<^^AggregatePerson::age>().select();
+    ASSERT_TRUE(avg_result.has_value()) << "GROUP BY + AVG failed: " << avg_result.error().message();
+    for (const auto& [years_exp, avg_age] : avg_result.value()) {
+        if (years_exp == 5) {
+            EXPECT_NEAR(avg_age, 27.67, 0.01) << "Avg of ages for group 5: 83/3≈27.67";
+        } else if (years_exp == 10) {
+            EXPECT_NEAR(avg_age, 40.0, 0.01) << "Avg of ages for group 10: 120/3=40";
+        }
+    }
+
+    // Test 4: GROUP BY with MIN
+    qs->reset();
+    auto min_result = qs->group_by<^^AggregatePerson::years_experience>().min<^^AggregatePerson::age>().select();
+    ASSERT_TRUE(min_result.has_value()) << "GROUP BY + MIN failed: " << min_result.error().message();
+    for (const auto& [years_exp, min_age] : min_result.value()) {
+        if (years_exp == 5) {
+            EXPECT_NEAR(min_age, 25.0, 0.01) << "Min age for group 5 is 25";
+        } else if (years_exp == 10) {
+            EXPECT_NEAR(min_age, 35.0, 0.01) << "Min age for group 10 is 35";
+        }
+    }
+
+    // Test 5: GROUP BY with MAX
+    qs->reset();
+    auto max_result = qs->group_by<^^AggregatePerson::years_experience>().max<^^AggregatePerson::age>().select();
+    ASSERT_TRUE(max_result.has_value()) << "GROUP BY + MAX failed: " << max_result.error().message();
+    for (const auto& [years_exp, max_age] : max_result.value()) {
+        if (years_exp == 5) {
+            EXPECT_NEAR(max_age, 30.0, 0.01) << "Max age for group 5 is 30";
+        } else if (years_exp == 10) {
+            EXPECT_NEAR(max_age, 45.0, 0.01) << "Max age for group 10 is 45";
+        }
+    }
+
+    // Test 6: GROUP BY with WHERE + SUM (combined clauses)
+    qs->reset();
+    auto filtered_sum = qs->where(storm::orm::where::field<^^AggregatePerson::years_experience>() == 5)
+                                .group_by<^^AggregatePerson::years_experience>()
+                                .sum<^^AggregatePerson::age>()
+                                .select();
+    ASSERT_TRUE(filtered_sum.has_value()) << "WHERE + GROUP BY + SUM failed";
+    EXPECT_EQ(filtered_sum.value().size(), 1) << "Expected 1 group after WHERE filter";
+    const auto& [years_exp, sum_age] = *filtered_sum.value().begin();
+    EXPECT_EQ(years_exp, 5);
+    EXPECT_EQ(sum_age, 83);
+}
+
 // Note: main() is provided by main.cpp (shared across all test files)
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

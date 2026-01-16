@@ -151,13 +151,21 @@ Features that could use additional test coverage:
   - [x] GROUP BY with all NULL values in group column
   - [x] GROUP BY + WHERE + JOIN + aggregate (full chain)
 
-- [ ] **Combined Clause Tests**
-  - [ ] Full chain: WHERE + JOIN + GROUP BY + ORDER BY + LIMIT + OFFSET
-  - [ ] All aggregate types with GROUP BY in single query
+- [x] **Combined Clause Tests**
+  - [x] Full chain: WHERE + JOIN + ORDER BY + LIMIT + OFFSET (SELECT, not GROUP BY - see note below)
+  - [x] All aggregate types with GROUP BY (tested individually - see note below)
+  - **Note**: GROUP BY doesn't currently support ORDER BY/LIMIT/OFFSET or multiple aggregates in single query
 
 ---
 
 ### Feature Requests (Priority: Medium)
+
+- [ ] **GROUP BY Builder Enhancements** - Extend GroupByBuilder to support full query chain
+  - [ ] Add `order_by<>()` support to GroupByBuilder
+  - [ ] Add `limit()` and `offset()` support to GroupByBuilder
+  - [ ] Add `aggregate()` method to GroupByBuilder for chaining multiple aggregates
+  - Example: `qs.group_by<^^dept>().count().sum<^^salary>().order_by<^^dept>().limit(10).select()`
+  - Currently requires separate queries for each aggregate type with GROUP BY
 
 - [ ] **Column Projection (SELECT specific columns)** - Allow users to specify which columns to retrieve
   - Example: `qs.select<^^name, ^^age>()` returns `std::vector<std::tuple<std::string, int>>`
