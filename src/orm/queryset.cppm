@@ -248,7 +248,9 @@ export namespace storm {
         template <std::meta::info... GroupFieldInfos>
             requires(sizeof...(GroupFieldInfos) > 0)
         auto group_by() {
-            return orm::statements::GroupByBuilder<T, ConnType, GroupFieldInfos...>{conn_, where_expr_, join_stmt_};
+            return orm::statements::GroupByBuilder<T, ConnType, GroupFieldInfos...>{
+                    conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_
+            };
         }
 
         // Aggregate functions - fluent builder pattern for multiple aggregates

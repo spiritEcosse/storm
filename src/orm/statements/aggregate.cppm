@@ -8,6 +8,7 @@ export module storm_orm_statements_aggregate;
 import storm_db_concept;
 import storm_orm_statements_base;
 import storm_orm_statements_join;
+import storm_orm_statements_orderby;
 import storm_orm_utilities;
 import storm_orm_where;
 
@@ -646,10 +647,18 @@ export namespace storm::orm::statements {
 
         explicit GroupByAggregateStatement(
                 std::shared_ptr<ConnType>                  conn,
-                orm::where::ExpressionVariantPtr           where_expr = nullptr,
-                const std::optional<JoinStatementWrapper>& join_stmt  = std::nullopt
+                orm::where::ExpressionVariantPtr           where_expr       = nullptr,
+                const std::optional<JoinStatementWrapper>& join_stmt        = std::nullopt,
+                const std::optional<int>&                  limit            = std::nullopt,
+                const std::optional<int>&                  offset           = std::nullopt,
+                const std::optional<OrderByWrapper>&       order_by_wrapper = std::nullopt
         )
-            : conn_(std::move(conn)), where_expr_(std::move(where_expr)), join_stmt_(join_stmt) {}
+            : conn_(std::move(conn))
+            , where_expr_(std::move(where_expr))
+            , join_stmt_(join_stmt)
+            , limit_(limit)
+            , offset_(offset)
+            , order_by_wrapper_(order_by_wrapper) {}
 
         [[nodiscard]] auto select() -> std::expected<ResultType, Error> {
             return execute();
@@ -763,9 +772,19 @@ export namespace storm::orm::statements {
 
         // Execute simple GROUP BY (no WHERE, no JOIN)
         [[nodiscard]] auto execute_simple() -> std::expected<ResultType, Error> {
-            static const std::string sql{sql_array.data.data(), sql_array.len};
+            static const std::string base_sql{sql_array.data.data(), sql_array.len};
 
-            auto prepare_result = conn_->prepare_cached(sql);
+            // Check if we need dynamic SQL (ORDER BY, LIMIT, or OFFSET)
+            const bool has_modifiers = order_by_wrapper_.has_value() || limit_.has_value() || offset_.has_value();
+
+            std::string sql;
+            if (has_modifiers) {
+                sql = base_sql;
+                Base::append_order_by(sql, order_by_wrapper_);
+                Base::append_limit_offset(sql, limit_, offset_);
+            }
+
+            auto prepare_result = conn_->prepare_cached(has_modifiers ? sql : base_sql);
             if (!prepare_result) [[unlikely]] {
                 return std::unexpected(prepare_result.error());
             }
@@ -792,6 +811,10 @@ export namespace storm::orm::statements {
                 sql += " WHERE ";
                 sql += orm::where::to_sql(*where_expr_);
             }
+
+            // Append ORDER BY, LIMIT, OFFSET after GROUP BY
+            Base::append_order_by(sql, order_by_wrapper_);
+            Base::append_limit_offset(sql, limit_, offset_);
 
             auto prepare_result = conn_->prepare_cached(sql);
             if (!prepare_result) [[unlikely]] {
@@ -842,6 +865,10 @@ export namespace storm::orm::statements {
             sql += " GROUP BY ";
             sql += group_clause;
 
+            // Append ORDER BY, LIMIT, OFFSET after GROUP BY
+            Base::append_order_by(sql, order_by_wrapper_);
+            Base::append_limit_offset(sql, limit_, offset_);
+
             auto prepare_result = conn_->prepare_cached(sql);
             if (!prepare_result) [[unlikely]] {
                 return std::unexpected(prepare_result.error());
@@ -884,6 +911,10 @@ export namespace storm::orm::statements {
             sql += " GROUP BY ";
             sql += group_clause;
 
+            // Append ORDER BY, LIMIT, OFFSET after GROUP BY
+            Base::append_order_by(sql, order_by_wrapper_);
+            Base::append_limit_offset(sql, limit_, offset_);
+
             auto prepare_result = conn_->prepare_cached(sql);
             if (!prepare_result) [[unlikely]] {
                 return std::unexpected(prepare_result.error());
@@ -920,6 +951,9 @@ export namespace storm::orm::statements {
         std::shared_ptr<ConnType>           conn_;
         orm::where::ExpressionVariantPtr    where_expr_;
         std::optional<JoinStatementWrapper> join_stmt_;
+        std::optional<int>                  limit_;
+        std::optional<int>                  offset_;
+        std::optional<OrderByWrapper>       order_by_wrapper_;
     };
 
     // ============================================================================
@@ -940,10 +974,18 @@ export namespace storm::orm::statements {
       public:
         explicit GroupByBuilder(
                 std::shared_ptr<ConnType>                  conn,
-                orm::where::ExpressionVariantPtr           where_expr = nullptr,
-                const std::optional<JoinStatementWrapper>& join_stmt  = std::nullopt
+                orm::where::ExpressionVariantPtr           where_expr       = nullptr,
+                const std::optional<JoinStatementWrapper>& join_stmt        = std::nullopt,
+                const std::optional<int>&                  limit            = std::nullopt,
+                const std::optional<int>&                  offset           = std::nullopt,
+                const std::optional<OrderByWrapper>&       order_by_wrapper = std::nullopt
         )
-            : conn_(std::move(conn)), where_expr_(std::move(where_expr)), join_stmt_(join_stmt) {}
+            : conn_(std::move(conn))
+            , where_expr_(std::move(where_expr))
+            , join_stmt_(join_stmt)
+            , limit_(limit)
+            , offset_(offset)
+            , order_by_wrapper_(order_by_wrapper) {}
 
         // COUNT aggregate - returns GroupByAggregateStatement
         // Usage: group_by<field>().count().select()
@@ -954,7 +996,7 @@ export namespace storm::orm::statements {
                     ConnType,
                     GroupFields,
                     AggregateOp<AggregateType::COUNT, FieldInfos...>>;
-            return StmtType{conn_, where_expr_, join_stmt_};
+            return StmtType{conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_};
         }
 
         // SUM aggregate - returns GroupByAggregateStatement
@@ -963,7 +1005,7 @@ export namespace storm::orm::statements {
         template <std::meta::info... FieldInfos> auto sum() {
             using StmtType =
                     GroupByAggregateStatement<T, ConnType, GroupFields, AggregateOp<AggregateType::SUM, FieldInfos...>>;
-            return StmtType{conn_, where_expr_, join_stmt_};
+            return StmtType{conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_};
         }
 
         // AVG aggregate - returns GroupByAggregateStatement
@@ -972,7 +1014,7 @@ export namespace storm::orm::statements {
         template <std::meta::info... FieldInfos> auto avg() {
             using StmtType =
                     GroupByAggregateStatement<T, ConnType, GroupFields, AggregateOp<AggregateType::AVG, FieldInfos...>>;
-            return StmtType{conn_, where_expr_, join_stmt_};
+            return StmtType{conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_};
         }
 
         // MIN aggregate - returns GroupByAggregateStatement
@@ -981,7 +1023,7 @@ export namespace storm::orm::statements {
         template <std::meta::info... FieldInfos> auto min() {
             using StmtType =
                     GroupByAggregateStatement<T, ConnType, GroupFields, AggregateOp<AggregateType::MIN, FieldInfos...>>;
-            return StmtType{conn_, where_expr_, join_stmt_};
+            return StmtType{conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_};
         }
 
         // MAX aggregate - returns GroupByAggregateStatement
@@ -990,13 +1032,16 @@ export namespace storm::orm::statements {
         template <std::meta::info... FieldInfos> auto max() {
             using StmtType =
                     GroupByAggregateStatement<T, ConnType, GroupFields, AggregateOp<AggregateType::MAX, FieldInfos...>>;
-            return StmtType{conn_, where_expr_, join_stmt_};
+            return StmtType{conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_};
         }
 
       private:
         std::shared_ptr<ConnType>           conn_;
         orm::where::ExpressionVariantPtr    where_expr_;
         std::optional<JoinStatementWrapper> join_stmt_;
+        std::optional<int>                  limit_;
+        std::optional<int>                  offset_;
+        std::optional<OrderByWrapper>       order_by_wrapper_;
     };
 
 } // namespace storm::orm::statements

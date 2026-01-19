@@ -999,6 +999,41 @@ QuerySet operates in different **modes** via **transformers**:
 - Final mode determined by: Tuple if projection used, Aggregate if aggregates present
 - Prior state transfers to new objects
 
+### GROUP BY Queries
+
+GROUP BY requires an aggregate function - `group_by()` returns `GroupByBuilder` which only has aggregate methods:
+
+```cpp
+// Single field GROUP BY with COUNT
+qs.group_by<^^Person::department>().count().select();
+// Returns: plf::hive<std::tuple<DeptType, int64_t>>
+
+// Multi-field GROUP BY
+qs.group_by<^^Person::age, ^^Person::department>().count().select();
+// Returns: plf::hive<std::tuple<int, DeptType, int64_t>>
+
+// With SUM aggregate
+qs.group_by<^^Person::department>().sum<^^Person::salary>().select();
+
+// Full chain: WHERE + ORDER BY + LIMIT + GROUP BY
+qs.where(age > 25)
+  .order_by<^^Person::department>()
+  .limit(10)
+  .group_by<^^Person::department>()
+  .count()
+  .select();
+```
+
+**Available aggregates after `group_by()`:**
+- `count()` - COUNT(*)
+- `count<^^field>()` - COUNT(field)
+- `sum<^^field>()` - SUM(field)
+- `avg<^^field>()` - AVG(field)
+- `min<^^field>()` - MIN(field)
+- `max<^^field>()` - MAX(field)
+
+**Note:** Chaining multiple aggregates (e.g., `.count().sum()`) is not yet supported - use separate queries.
+
 ---
 
 **For detailed information, see [docs/](docs/) directory.**

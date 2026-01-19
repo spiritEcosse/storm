@@ -1639,6 +1639,178 @@ TEST_F(AggregateTest, GroupByWithAllAggregateTypes) {
     EXPECT_EQ(sum_age, 83);
 }
 
+// =============================================================================
+// GROUP BY with ORDER BY, LIMIT, OFFSET Tests
+// =============================================================================
+
+TEST_F(AggregateTest, GroupByWithOrderBy) {
+    insert_test_data();
+
+    // Group by years_experience and count, ordered by years_experience ascending
+    // Test data has years_experience: 3, 5, 7, 10, 15
+    auto result = qs->order_by<^^AggregatePerson::years_experience>()
+                          .group_by<^^AggregatePerson::years_experience>()
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "GROUP BY + ORDER BY failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 5);
+
+    // Verify order: 3, 5, 7, 10, 15
+    std::vector<int> expected_order = {3, 5, 7, 10, 15};
+    size_t           idx            = 0; // NOLINT(misc-const-correctness) - modified in loop
+    for (const auto& [years, count_val] : result.value()) {
+        EXPECT_EQ(years, expected_order[idx]) << "Unexpected order at index " << idx;
+        EXPECT_EQ(count_val, 1) << "Each group should have 1 person";
+        idx++;
+    }
+}
+
+TEST_F(AggregateTest, GroupByWithOrderByDesc) {
+    insert_test_data();
+
+    // Group by years_experience, ordered descending
+    auto result = qs->order_by<^^AggregatePerson::years_experience, false>()
+                          .group_by<^^AggregatePerson::years_experience>()
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "GROUP BY + ORDER BY DESC failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 5);
+
+    // Verify order: 15, 10, 7, 5, 3
+    std::vector<int> expected_order = {15, 10, 7, 5, 3};
+    size_t           idx            = 0; // NOLINT(misc-const-correctness) - modified in loop
+    for (const auto& [years, count_val] : result.value()) {
+        EXPECT_EQ(years, expected_order[idx]) << "Unexpected order at index " << idx;
+        idx++;
+    }
+}
+
+TEST_F(AggregateTest, GroupByWithLimit) {
+    insert_test_data();
+
+    // Group by years_experience with LIMIT 3
+    auto result = qs->limit(3).group_by<^^AggregatePerson::years_experience>().count().select();
+    ASSERT_TRUE(result.has_value()) << "GROUP BY + LIMIT failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 3) << "Should return only 3 groups";
+}
+
+TEST_F(AggregateTest, GroupByWithLimitOffset) {
+    insert_test_data();
+
+    // Group by years_experience, ordered, with LIMIT 2 OFFSET 2
+    // Ordered: 3, 5, 7, 10, 15 -> skip 2 (3, 5), take 2 (7, 10)
+    auto result = qs->order_by<^^AggregatePerson::years_experience>()
+                          .limit(2)
+                          .offset(2)
+                          .group_by<^^AggregatePerson::years_experience>()
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "GROUP BY + LIMIT + OFFSET failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 2);
+
+    // Verify we got years 7 and 10 (skipped 3, 5)
+    std::vector<int> expected = {7, 10};
+    size_t           idx      = 0; // NOLINT(misc-const-correctness) - modified in loop
+    for (const auto& [years, count_val] : result.value()) {
+        EXPECT_EQ(years, expected[idx]) << "Expected years_experience=" << expected[idx] << " at index " << idx;
+        idx++;
+    }
+}
+
+TEST_F(AggregateTest, GroupByWithWhereOrderByLimit) {
+    insert_test_data();
+
+    // WHERE + ORDER BY + LIMIT + GROUP BY
+    auto result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 25)
+                          .order_by<^^AggregatePerson::years_experience, false>()
+                          .limit(2)
+                          .group_by<^^AggregatePerson::years_experience>()
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "WHERE + ORDER BY + LIMIT + GROUP BY failed: " << result.error().message();
+    EXPECT_LE(result.value().size(), 2) << "Should return at most 2 groups";
+}
+
+TEST_F(AggregateTest, GroupByWithSumOrderByLimit) {
+    insert_test_data();
+
+    // GROUP BY + SUM with ORDER BY and LIMIT
+    auto result = qs->order_by<^^AggregatePerson::years_experience>()
+                          .limit(3)
+                          .group_by<^^AggregatePerson::years_experience>()
+                          .sum<^^AggregatePerson::salary>()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "GROUP BY + SUM + ORDER BY + LIMIT failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 3) << "Should return 3 groups";
+}
+
+TEST_F(AggregateTest, GroupByWithOffsetOnly) {
+    insert_test_data();
+
+    // OFFSET without explicit LIMIT (should use LIMIT -1 internally for SQLite)
+    auto result = qs->order_by<^^AggregatePerson::years_experience>()
+                          .offset(2)
+                          .group_by<^^AggregatePerson::years_experience>()
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "GROUP BY + OFFSET only failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 3) << "Should return 3 groups (5 - 2 offset)";
+}
+
+TEST_F(AggregateTest, GroupByMultipleFields) {
+    // Insert data with overlapping age and years_experience combinations
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 25, .salary = 60000.0, .years_experience = 5});
+    std::ignore = qs->insert(
+            AggregatePerson{.id = 0, .name = "Charlie", .age = 25, .salary = 70000.0, .years_experience = 10}
+    );
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Dave", .age = 30, .salary = 80000.0, .years_experience = 5});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Eve", .age = 30, .salary = 90000.0, .years_experience = 10});
+
+    // Group by TWO fields: age AND years_experience
+    // Expected groups: (25,5)=2, (25,10)=1, (30,5)=1, (30,10)=1 = 4 groups
+    auto result = qs->group_by<^^AggregatePerson::age, ^^AggregatePerson::years_experience>().count().select();
+    ASSERT_TRUE(result.has_value()) << "Multi-field GROUP BY failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 4) << "Expected 4 unique (age, years_experience) combinations";
+
+    // Verify the (25, 5) group has count=2
+    for (const auto& [age, years_exp, count_val] : result.value()) {
+        if (age == 25 && years_exp == 5) {
+            EXPECT_EQ(count_val, 2) << "Group (25, 5) should have 2 people";
+        } else {
+            EXPECT_EQ(count_val, 1) << "Other groups should have 1 person each";
+        }
+    }
+}
+
+TEST_F(AggregateTest, GroupByMultipleFieldsWithOrderByLimit) {
+    // Same data setup as above
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 25, .salary = 60000.0, .years_experience = 5});
+    std::ignore = qs->insert(
+            AggregatePerson{.id = 0, .name = "Charlie", .age = 25, .salary = 70000.0, .years_experience = 10}
+    );
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Dave", .age = 30, .salary = 80000.0, .years_experience = 5});
+    std::ignore =
+            qs->insert(AggregatePerson{.id = 0, .name = "Eve", .age = 30, .salary = 90000.0, .years_experience = 10});
+
+    // Multi-field GROUP BY with ORDER BY and LIMIT
+    auto result = qs->order_by<^^AggregatePerson::age>()
+                          .limit(2)
+                          .group_by<^^AggregatePerson::age, ^^AggregatePerson::years_experience>()
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "Multi-field GROUP BY + ORDER BY + LIMIT failed";
+    EXPECT_EQ(result.value().size(), 2) << "Should return only 2 groups due to LIMIT";
+}
+
 // Note: main() is provided by main.cpp (shared across all test files)
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

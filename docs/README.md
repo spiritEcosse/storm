@@ -152,20 +152,22 @@ Features that could use additional test coverage:
   - [x] GROUP BY + WHERE + JOIN + aggregate (full chain)
 
 - [x] **Combined Clause Tests**
-  - [x] Full chain: WHERE + JOIN + ORDER BY + LIMIT + OFFSET (SELECT, not GROUP BY - see note below)
-  - [x] All aggregate types with GROUP BY (tested individually - see note below)
-  - **Note**: GROUP BY doesn't currently support ORDER BY/LIMIT/OFFSET or multiple aggregates in single query
+  - [x] Full chain: WHERE + JOIN + ORDER BY + LIMIT + OFFSET (SELECT)
+  - [x] Full chain: WHERE + ORDER BY + LIMIT + OFFSET + GROUP BY + aggregate
+  - [x] All aggregate types with GROUP BY (tested individually)
+  - [x] Multi-field GROUP BY with ORDER BY + LIMIT
+  - **Note**: Multiple aggregates in single GROUP BY query not yet supported
 
 ---
 
 ### Feature Requests (Priority: Medium)
 
-- [ ] **GROUP BY Builder Enhancements** - Extend GroupByBuilder to support full query chain
-  - [ ] Add `order_by<>()` support to GroupByBuilder
-  - [ ] Add `limit()` and `offset()` support to GroupByBuilder
+- [x] **GROUP BY Builder Enhancements** - ✅ Partially implemented
+  - [x] Add `order_by<>()` support to GroupByBuilder
+  - [x] Add `limit()` and `offset()` support to GroupByBuilder
   - [ ] Add `aggregate()` method to GroupByBuilder for chaining multiple aggregates
-  - Example: `qs.group_by<^^dept>().count().sum<^^salary>().order_by<^^dept>().limit(10).select()`
-  - Currently requires separate queries for each aggregate type with GROUP BY
+  - Example (supported): `qs.order_by<^^dept>().limit(10).group_by<^^dept>().count().select()`
+  - Example (not yet): `qs.group_by<^^dept>().count().sum<^^salary>().select()` - requires separate queries
 
 - [ ] **Column Projection (SELECT specific columns)** - Allow users to specify which columns to retrieve
   - Example: `qs.select<^^name, ^^age>()` returns `std::vector<std::tuple<std::string, int>>`
