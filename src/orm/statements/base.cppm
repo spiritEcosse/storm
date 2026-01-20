@@ -613,61 +613,6 @@ export namespace storm::orm::statements {
             return bind_func(stmt).and_then([&stmt]() -> decltype(auto) { return stmt.execute(); });
         }
 
-        // Generic batch execution template for statement classes
-        // TODO: Remove it
-        template <typename StatementType, typename Objects>
-        [[nodiscard]] static auto execute_standard_batch(
-                StatementType& statement_instance, const Objects& objects, size_t variables_per_object
-        ) noexcept -> decltype(statement_instance.execute_chunked(objects)) {
-            using ConnType = typename StatementType::Connection;
-            return execute_batch_optimized<ConnType>(
-                    *statement_instance.conn_,
-                    objects,
-                    variables_per_object,
-                    [&statement_instance, &objects]() -> decltype(auto) {
-                        return statement_instance.execute_bulk(objects);
-                    },
-                    [&statement_instance, &objects]() -> decltype(auto) {
-                        return statement_instance.execute_chunked(objects);
-                    }
-            );
-        }
-
-        // Execute batch operations with optimal strategy selection
-        // TODO: Remove it
-        template <typename ConnType, typename ContainerType, typename BulkExecutor, typename IndividualExecutor>
-        [[nodiscard]] static auto execute_batch_optimized(
-                ConnType&                 conn,
-                const ContainerType&      items,
-                size_t                    items_per_variable, // How many variables each item uses
-                const BulkExecutor&       bulk_executor,
-                const IndividualExecutor& individual_executor
-        ) noexcept -> decltype(individual_executor()) {
-            if (items.empty()) {
-                return {};
-            }
-
-            // Single item - use individual executor without transaction
-            if (items.size() == 1) {
-                return individual_executor();
-            }
-
-            // Calculate max bulk size based on SQLite variable limit
-            const size_t max_bulk_size = MAX_SQLITE_VARIABLES / items_per_variable;
-
-            // Use adaptive threshold based on actual batch size
-            const size_t adaptive_threshold  = calculate_adaptive_threshold(items.size(), max_bulk_size);
-            const size_t effective_threshold = std::min(adaptive_threshold, max_bulk_size);
-
-            // Decide strategy: bulk SQL vs individual inserts with transaction
-            if (items.size() <= effective_threshold) {
-                return bulk_executor();
-            }
-
-            // Large batch - use individual statements with transaction
-            return execute_with_transaction(conn, true, individual_executor);
-        }
-
         // Dispatch helper for WHERE/JOIN execution paths
         // Eliminates repeated branching logic in aggregate statements
         template <typename SimpleF, typename WhereF, typename JoinF, typename WhereJoinF>

@@ -33,18 +33,8 @@ export namespace storm::orm::statements {
     using ErasedStatementPtr = void*; // NOSONAR(cpp:S5008) - type erasure requires void*
 
     struct JoinStatementWrapper {
-        auto (*get_join_sql_fn)() -> const std::string&;
-        auto (*get_select_fields_fn)() -> const std::string&;
         auto (*get_complete_sql_fn)() -> const std::string&;
         auto (*extract_row_fn)(ErasedStatementPtr, ErasedObjectPtr) -> void;
-
-        [[nodiscard]] auto to_sql() const -> const std::string& {
-            return get_join_sql_fn();
-        }
-
-        [[nodiscard]] auto build_qualified_select_fields() const -> const std::string& {
-            return get_select_fields_fn();
-        }
 
         // Get complete pre-computed SELECT...JOIN SQL
         [[nodiscard]] auto get_complete_sql() const -> const std::string& {
@@ -274,35 +264,11 @@ export namespace storm::orm::statements {
 
         static constexpr auto complete_sql_array = build_complete_sql_array();
 
-        // Lazy initialization to avoid duplicate storage
-        static auto get_join_sql_cached() -> const std::string& {
-            static const std::string str{join_sql_array.data.data(), join_sql_array.len};
-            return str;
-        }
-
-        static auto get_select_fields_cached() -> const std::string& {
-            static const std::string str{select_fields_array.data.data(), select_fields_array.len};
-            return str;
-        }
-
-        // NEW: Get complete SQL with lazy initialization
-        static auto get_complete_sql_cached() -> const std::string& {
+      public:
+        // Get complete pre-computed SELECT...JOIN SQL with lazy initialization
+        static auto get_complete_sql() -> const std::string& {
             static const std::string str{complete_sql_array.data.data(), complete_sql_array.len};
             return str;
-        }
-
-      public:
-        static auto get_join_sql() -> const std::string& {
-            return get_join_sql_cached();
-        }
-
-        static auto get_select_fields() -> const std::string& {
-            return get_select_fields_cached();
-        }
-
-        // NEW: Get complete pre-computed SELECT...JOIN SQL
-        static auto get_complete_sql() -> const std::string& {
-            return get_complete_sql_cached();
         }
 
       private:
@@ -438,8 +404,6 @@ export namespace storm::orm::statements {
         using JS = JoinStatement<T, ConnType, Type, FKFieldPtrs...>;
 
         return JoinStatementWrapper{
-                +[]() -> const std::string& { return JS::get_join_sql(); },
-                +[]() -> const std::string& { return JS::get_select_fields(); },
                 +[]() -> const std::string& { return JS::get_complete_sql(); },
                 +[](ErasedStatementPtr stmt, ErasedObjectPtr obj) -> void {
                     JS::extract_joined_row(static_cast<typename ConnType::Statement*>(stmt), *static_cast<T*>(obj));

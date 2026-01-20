@@ -531,6 +531,105 @@ TEST_F(QuerySetRemoveTest, InsertEmptyBatch) {
     EXPECT_EQ(countSqlitePersons(), 3) << "Should still have 3 persons after empty batch insertion";
 }
 
+// Test chunked remove (>799 rows to trigger execute_chunked path)
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_F(QuerySetRemoveTest, RemoveBatchChunked) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<SqlitePerson>{};
+
+    // Add many test records (1000+) to test chunked deletion
+    // MAX_CHUNK_SIZE is 799, so >799 triggers chunked path
+    const auto& conn        = storm::QuerySet<SqlitePerson>::get_default_connection();
+    const int   num_records = 1000;
+    for (int i = 4; i <= num_records; i++) {
+        auto insert_result = conn->execute(
+                "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" +
+                std::to_string(i) + "', " + std::to_string(20 + (i % 60)) + ")"
+        );
+        ASSERT_TRUE(insert_result.has_value()) << "Failed to insert record " << i;
+    }
+
+    // Verify initial state
+    EXPECT_EQ(countSqlitePersons(), 1000) << "Should have 1000 persons initially";
+
+    // Create batch of >799 persons to remove (triggers chunked path)
+    std::vector<SqlitePerson> chunked_batch;
+    for (int i = 1; i <= 850; i++) {
+        chunked_batch.emplace_back(i, "SqlitePerson" + std::to_string(i), 20 + (i % 60));
+    }
+
+    // Remove chunked batch - should use execute_chunked with transaction
+    auto result = queryset.remove(std::span<const SqlitePerson>(chunked_batch));
+
+    // Verify removal was successful
+    if (!result.has_value()) {
+        std::cout << "Error: " << result.error().message() << '\n';
+    }
+    ASSERT_TRUE(result.has_value()) << "Chunked batch remove operation should succeed: "
+                                    << (result.has_value() ? "" : result.error().message());
+
+    // Verify correct number of persons removed
+    EXPECT_EQ(countSqlitePersons(), 150) << "Should have 150 persons after chunked batch removal";
+
+    // Verify specific persons were removed
+    for (int i = 1; i <= 850; i++) {
+        EXPECT_FALSE(personExists(i)) << "SqlitePerson " << i << " should be removed";
+    }
+
+    // Verify remaining persons still exist
+    for (int i = 851; i <= 1000; i++) {
+        EXPECT_TRUE(personExists(i)) << "SqlitePerson " << i << " should still exist";
+    }
+}
+
+// Test chunked remove with remainder (tests both full chunks and remainder processing)
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_F(QuerySetRemoveTest, RemoveBatchChunkedWithRemainder) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<SqlitePerson>{};
+
+    // Add many test records to test chunked deletion with remainder
+    // MAX_CHUNK_SIZE is 799, so 1650 rows = 2 full chunks (1598) + 52 remainder
+    const auto& conn        = storm::QuerySet<SqlitePerson>::get_default_connection();
+    const int   num_records = 1800;
+    for (int i = 4; i <= num_records; i++) {
+        auto insert_result = conn->execute(
+                "INSERT INTO SqlitePerson (id, name, age) VALUES (" + std::to_string(i) + ", 'SqlitePerson" +
+                std::to_string(i) + "', " + std::to_string(20 + (i % 60)) + ")"
+        );
+        ASSERT_TRUE(insert_result.has_value()) << "Failed to insert record " << i;
+    }
+
+    // Verify initial state
+    EXPECT_EQ(countSqlitePersons(), 1800) << "Should have 1800 persons initially";
+
+    // Create batch of 1650 persons (2 full chunks + 52 remainder)
+    std::vector<SqlitePerson> chunked_batch;
+    for (int i = 1; i <= 1650; i++) {
+        chunked_batch.emplace_back(i, "SqlitePerson" + std::to_string(i), 20 + (i % 60));
+    }
+
+    // Remove chunked batch - should use execute_chunked with remainder
+    auto result = queryset.remove(std::span<const SqlitePerson>(chunked_batch));
+
+    // Verify removal was successful
+    ASSERT_TRUE(result.has_value()) << "Chunked batch remove with remainder should succeed: "
+                                    << (result.has_value() ? "" : result.error().message());
+
+    // Verify correct number of persons removed
+    EXPECT_EQ(countSqlitePersons(), 150) << "Should have 150 persons after chunked batch removal";
+
+    // Verify specific persons were removed
+    for (int i = 1; i <= 1650; i++) {
+        EXPECT_FALSE(personExists(i)) << "SqlitePerson " << i << " should be removed";
+    }
+
+    // Verify remaining persons still exist
+    for (int i = 1651; i <= 1800; i++) {
+        EXPECT_TRUE(personExists(i)) << "SqlitePerson " << i << " should still exist";
+    }
+}
+
 // Test QuerySet.update() functionality
 class QuerySetUpdateTest : public ::testing::Test {
   protected:
@@ -861,6 +960,39 @@ TEST_F(QuerySetUpdateTest, UpdateBatchLarge) {
         ASSERT_TRUE(person.has_value()) << "SqlitePerson " << i << " should exist";
         EXPECT_EQ(person->name, "SqlitePerson" + std::to_string(i)) << "SqlitePerson " << i << " should not be updated";
     }
+}
+
+// Test batch update with exactly 1 element (exercises execute_single_row path)
+TEST_F(QuerySetUpdateTest, UpdateBatchSingleElement) {
+    // Create QuerySet using simplified syntax
+    auto queryset = storm::QuerySet<SqlitePerson>{};
+
+    // Verify initial state
+    EXPECT_EQ(countSqlitePersons(), 3) << "Should have 3 persons initially";
+
+    // Create batch with exactly 1 element (triggers execute_single_row in batch path)
+    std::vector<SqlitePerson> single_batch = {{1, "Alice BatchSingle", 99}};
+
+    // Update using batch API with single element
+    auto result = queryset.update(std::span<const SqlitePerson>(single_batch));
+
+    // Verify update was successful
+    ASSERT_TRUE(result.has_value()) << "Single element batch update should succeed";
+
+    // Verify correct number of persons in database
+    EXPECT_EQ(countSqlitePersons(), 3) << "Should still have 3 persons";
+
+    // Verify Alice was updated
+    auto alice = getSqlitePerson(1);
+    ASSERT_TRUE(alice.has_value());
+    EXPECT_EQ(alice->name, "Alice BatchSingle");
+    EXPECT_EQ(alice->age, 99);
+
+    // Verify other persons unchanged
+    auto bob = getSqlitePerson(2);
+    ASSERT_TRUE(bob.has_value());
+    EXPECT_EQ(bob->name, "Bob");
+    EXPECT_EQ(bob->age, 25);
 }
 
 TEST_F(QuerySetUpdateTest, UpdateBatchEmpty) {

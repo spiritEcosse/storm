@@ -243,7 +243,7 @@ export namespace storm::db::sqlite {
             return sqlite3_column_type(raw_, col_index) == SQLITE_NULL;
         }
 
-        // Reset statement - template for cross-module inlining
+        // Reset statement without clearing bindings - template for cross-module inlining
         template <typename = void> __attribute__((always_inline)) auto reset_raw() noexcept -> void {
             sqlite3_reset(raw_);
         }

@@ -807,19 +807,19 @@ TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     // FKMessage 1: Valid sender (Alice)
     auto stmt1 = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (?, ?, ?)");
     ASSERT_TRUE(stmt1.has_value());
-    auto s1 = std::move(stmt1.value());
-    ASSERT_TRUE(s1.bind_int(1, alice_id).has_value());
-    ASSERT_TRUE(s1.bind_int(2, bob_id).has_value());
-    ASSERT_TRUE(s1.bind_text(3, "From Alice").has_value());
-    ASSERT_EQ(s1.step_raw(), decltype(s1)::NO_MORE_ROWS);
+    auto stm1 = std::move(stmt1.value());
+    ASSERT_TRUE(stm1.bind_int(1, alice_id).has_value());
+    ASSERT_TRUE(stm1.bind_int(2, bob_id).has_value());
+    ASSERT_TRUE(stm1.bind_text(3, "From Alice").has_value());
+    ASSERT_EQ(stm1.step_raw(), decltype(stm1)::NO_MORE_ROWS);
 
     // FKMessage 2: NULL sender
     auto stmt2 = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
     ASSERT_TRUE(stmt2.has_value());
-    auto s2 = std::move(stmt2.value());
-    ASSERT_TRUE(s2.bind_int(1, bob_id).has_value());
-    ASSERT_TRUE(s2.bind_text(2, "Anonymous").has_value());
-    ASSERT_EQ(s2.step_raw(), decltype(s2)::NO_MORE_ROWS);
+    auto stm2 = std::move(stmt2.value());
+    ASSERT_TRUE(stm2.bind_int(1, bob_id).has_value());
+    ASSERT_TRUE(stm2.bind_text(2, "Anonymous").has_value());
+    ASSERT_EQ(stm2.step_raw(), decltype(stm2)::NO_MORE_ROWS);
 
     // LEFT JOIN should return both messages
     auto join_result = message_qs.left_join<&FKMessage::sender>().select();
@@ -1111,6 +1111,174 @@ TEST_F(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
     EXPECT_FALSE(tasks.begin()->reviewer.nickname.has_value()) << "Bob's nickname should be nullopt";
 
     EXPECT_EQ(tasks.begin()->description, "Implement feature X");
+}
+
+// Test: JOIN with float and long long types (coverage for extract_typed_field)
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_F(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
+    // Define structs with float and long long types
+    struct Measurement {
+        [[= storm::meta::FieldAttr::primary]] int id{};
+        std::string                               sensor_name;
+        float                                     temperature{};
+        long long                                 timestamp{};
+    };
+
+    struct Reading {
+        [[= storm::meta::FieldAttr::primary]] int    id{};
+        [[= storm::meta::FieldAttr::fk]] Measurement measurement;
+        std::string                                  reading_type;
+        float                                        value{};
+    };
+
+    QuerySet<Measurement> measurement_qs;
+    QuerySet<Reading>     reading_qs;
+
+    // Create tables
+    const auto& conn = QuerySet<User>::get_default_connection();
+
+    auto create_measurement_result = conn->execute(
+            "CREATE TABLE Measurement ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "sensor_name TEXT NOT NULL, "
+            "temperature REAL NOT NULL, "
+            "timestamp INTEGER NOT NULL"
+            ")"
+    );
+    ASSERT_TRUE(create_measurement_result.has_value())
+            << "Failed to create Measurement table: " << create_measurement_result.error().message();
+
+    auto create_reading_result = conn->execute(
+            "CREATE TABLE Reading ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "measurement_id INTEGER NOT NULL, "
+            "reading_type TEXT NOT NULL, "
+            "value REAL NOT NULL"
+            ")"
+    );
+    ASSERT_TRUE(create_reading_result.has_value())
+            << "Failed to create Reading table: " << create_reading_result.error().message();
+
+    // Insert measurement with float and long long
+    Measurement const meas{
+            .id          = 0,
+            .sensor_name = "TempSensor1",
+            .temperature = 23.5F,
+            .timestamp   = 1700000000000LL // Large timestamp
+    };
+
+    auto meas_result = measurement_qs.insert(meas);
+    ASSERT_TRUE(meas_result.has_value()) << "Failed to insert measurement: " << meas_result.error().message();
+
+    int64_t const meas_id = meas_result.value();
+
+    // Insert reading referencing the measurement
+    Reading const reading{
+            .id = 0,
+            .measurement =
+                    Measurement{
+                            .id = static_cast<int>(meas_id), .sensor_name = "", .temperature = 0.0F, .timestamp = 0LL
+                    },
+            .reading_type = "Humidity",
+            .value        = 65.3F
+    };
+
+    auto reading_result = reading_qs.insert(reading);
+    ASSERT_TRUE(reading_result.has_value()) << "Failed to insert reading: " << reading_result.error().message();
+
+    // JOIN to get readings with fully populated measurement
+    auto join_result = reading_qs.join<&Reading::measurement>().select();
+    ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
+
+    const auto& readings = join_result.value();
+    ASSERT_EQ(readings.size(), 1) << "Should retrieve one reading";
+
+    // Verify float type extraction
+    EXPECT_FLOAT_EQ(readings.begin()->measurement.temperature, 23.5F) << "Float field (temperature) should be correct";
+    EXPECT_FLOAT_EQ(readings.begin()->value, 65.3F) << "Float field (value) should be correct";
+
+    // Verify long long type extraction
+    EXPECT_EQ(readings.begin()->measurement.timestamp, 1700000000000LL)
+            << "Long long field (timestamp) should be correct";
+
+    // Verify other fields
+    EXPECT_EQ(readings.begin()->measurement.id, m1_id);
+    EXPECT_EQ(readings.begin()->measurement.sensor_name, "TempSensor1");
+    EXPECT_EQ(readings.begin()->reading_type, "Humidity");
+}
+
+// Test: JOIN with long type (tests separate code path from int64_t)
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_F(ExtendedTypesJoinTest, JoinWithLongType) {
+    // Define structs with long type
+    struct Counter {
+        [[= storm::meta::FieldAttr::primary]] int id{};
+        std::string                               name;
+        long                                      count{};
+    };
+
+    struct Summary {
+        [[= storm::meta::FieldAttr::primary]] int id{};
+        [[= storm::meta::FieldAttr::fk]] Counter  counter;
+        std::string                               report_type;
+    };
+
+    QuerySet<Counter> counter_qs;
+    QuerySet<Summary> summary_qs;
+
+    // Create tables
+    const auto& conn = QuerySet<User>::get_default_connection();
+
+    auto create_counter_result = conn->execute(
+            "CREATE TABLE Counter ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "name TEXT NOT NULL, "
+            "count INTEGER NOT NULL"
+            ")"
+    );
+    ASSERT_TRUE(create_counter_result.has_value())
+            << "Failed to create Counter table: " << create_counter_result.error().message();
+
+    auto create_summary_result = conn->execute(
+            "CREATE TABLE Summary ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "counter_id INTEGER NOT NULL, "
+            "report_type TEXT NOT NULL"
+            ")"
+    );
+    ASSERT_TRUE(create_summary_result.has_value())
+            << "Failed to create Summary table: " << create_summary_result.error().message();
+
+    // Insert counter with long value
+    Counter const cnt{.id = 0, .name = "PageViews", .count = 9876543210L};
+
+    auto cnt_result = counter_qs.insert(cnt);
+    ASSERT_TRUE(cnt_result.has_value()) << "Failed to insert counter: " << cnt_result.error().message();
+
+    int64_t const cnt_id = cnt_result.value();
+
+    // Insert summary referencing the counter
+    Summary const sum{
+            .id = 0, .counter = Counter{.id = static_cast<int>(cnt_id), .name = "", .count = 0L}, .report_type = "Daily"
+    };
+
+    auto sum_result = summary_qs.insert(sum);
+    ASSERT_TRUE(sum_result.has_value()) << "Failed to insert summary: " << sum_result.error().message();
+
+    // JOIN to get summaries with fully populated counter
+    auto join_result = summary_qs.join<&Summary::counter>().select();
+    ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
+
+    const auto& summaries = join_result.value();
+    ASSERT_EQ(summaries.size(), 1) << "Should retrieve one summary";
+
+    // Verify long type extraction
+    EXPECT_EQ(summaries.begin()->counter.count, 9876543210L) << "Long field (count) should be correct";
+
+    // Verify other fields
+    EXPECT_EQ(summaries.begin()->counter.id, cnt_id);
+    EXPECT_EQ(summaries.begin()->counter.name, "PageViews");
+    EXPECT_EQ(summaries.begin()->report_type, "Daily");
 }
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

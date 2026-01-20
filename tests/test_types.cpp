@@ -642,4 +642,45 @@ TEST_F(InsertOptionsTest, OptionsWithOnlyBatchSize) {
     EXPECT_EQ(selected.value().size(), 2);
 }
 
+// ===== ERROR HANDLING TESTS =====
+
+// Test Error struct accessors for code coverage
+TEST(ErrorHandlingTest, ErrorAccessors) {
+    // Try to open a database in a non-existent directory (should fail)
+    auto result = QuerySet<IntTypes>::set_default_connection("/nonexistent/path/database.db");
+
+    // Verify operation failed
+    ASSERT_FALSE(result.has_value()) << "Should fail to open database in non-existent path";
+
+    // Test Error accessors (coverage for Error::code() and Error::message())
+    const auto& error = result.error();
+    EXPECT_NE(error.code(), 0) << "Error code should be non-zero for failed operation";
+    EXPECT_FALSE(error.message().empty()) << "Error message should not be empty";
+
+    // Verify message is meaningful
+    std::string_view msg = error.message();
+    EXPECT_GT(msg.size(), 5) << "Error message should be descriptive";
+}
+
+// Test select on non-existent table
+TEST(ErrorHandlingTest, SelectFromNonExistentTable) {
+    // Set up in-memory database (no table created)
+    auto conn_result = QuerySet<IntTypes>::set_default_connection(":memory:");
+    ASSERT_TRUE(conn_result.has_value());
+
+    // Try to select from non-existent table
+    QuerySet<IntTypes> qs;
+    auto               select_result = qs.select();
+
+    // Should fail because table doesn't exist
+    ASSERT_FALSE(select_result.has_value()) << "Should fail to select from non-existent table";
+
+    // Test error accessors
+    const auto& error = select_result.error();
+    EXPECT_NE(error.code(), 0);
+    EXPECT_FALSE(error.message().empty());
+
+    QuerySet<IntTypes>::clear_default_connection();
+}
+
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
