@@ -19,6 +19,8 @@ Welcome to Storm ORM - a modern C++26 ORM library for SQLite using cutting-edge 
 ## Architecture
 
 ### Core Systems
+- **[Overview](architecture/OVERVIEW.md)** - High-level architecture overview
+- **[Design Decisions](architecture/DESIGN_DECISIONS.md)** - Key architectural decisions and rationale
 - **[C++26 Reflection](architecture/REFLECTION.md)** - How Storm uses std::meta for ORM mapping
 - **[Statement Caching](architecture/STATEMENT_CACHING.md)** - 3-level caching achieving near-raw SQLite performance
 - **[SQL Generation](architecture/SQL_GENERATION.md)** - Compile-time SQL generation with ConstexprString
@@ -26,14 +28,27 @@ Welcome to Storm ORM - a modern C++26 ORM library for SQLite using cutting-edge 
 - **[Database-Agnostic Modules](architecture/MODULE_SYSTEM.md)** - Template trick for cross-module inlining without LTO
 - **[Compile-Time vs Runtime](architecture/COMPILE_TIME_VS_RUNTIME.md)** - WHERE expression design tradeoffs and performance analysis
 
+## Benchmarks
+
+### Performance Analysis
+- **[Results](benchmarks/RESULTS.md)** - Latest benchmark results
+- **[JOIN Analysis](benchmarks/JOIN_ANALYSIS.md)** - JOIN performance deep dive
+- **[DISTINCT Analysis](benchmarks/DISTINCT_ANALYSIS.md)** - DISTINCT performance analysis
+
+## Reference
+
+- **[Field Types](reference/FIELD_TYPES.md)** - Supported C++ to SQLite type mappings
+
 ## Development
 
 ### Guides
-- **[Performance Tips](performance-tips.md)** - Transaction wrapping, batch inserts, and optimization techniques
+- **[Performance Tips](development/PERFORMANCE_TIPS.md)** - Transaction wrapping, batch inserts, and optimization techniques
+- **[Performance Guidelines](development/PERFORMANCE_GUIDELINES.md)** - Performance rules and best practices
 - **[Compiler Attributes](development/COMPILER_ATTRIBUTES.md)** - Guide for using hot, flatten, and always_inline attributes
 - **[Compiler Issues](development/COMPILER_ISSUES.md)** - Known workarounds for clang-p2996
 - **[Performance Testing](development/PERFORMANCE_TESTING.md)** - Benchmarking guidelines and workflow
 - **[Adding Features](development/ADDING_FEATURES.md)** - How to add new database operations
+- **[C++26 Coding Standards](development/CPP26_CODING_STANDARDS.md)** - Modern C++ best practices and patterns
 
 ## Performance Summary
 
@@ -219,11 +234,11 @@ Features not yet implemented:
   - [ ] Correct metric (latency for different result sizes)
 - [ ] **Enable `modernize-use-trailing-return-type`** - Convert all functions to trailing return type syntax
 - [ ] **Enable `bugprone-easily-swappable-parameters`** - Add strong types to prevent parameter swapping bugs
-- [ ] Simplify *.md files structure - move rules.md content to CLAUDE.md or docs/
 
 ---
 
 ### Completed:
+- [x] ~~Simplify *.md files structure~~ - ✅ **DONE** - Moved `rules.md` to `docs/development/CPP26_CODING_STANDARDS.md`, renamed lowercase files to UPPERCASE, removed duplicates
 - [x] ~~let run benchmarks parallel~~ - **REJECTED** - Parallel execution introduced high variance (90-108% vs sequential 95-96%). Added `-c` category filter instead. Made connections `thread_local` for future use.
 - [x] ~~consider prepare_statement simplify~~ **REJECTED**: ~22% regression (102% → 80%)
 - [x] ~~consider adding reserve - Dynamic path~~ **REJECTED**: ~2% regression

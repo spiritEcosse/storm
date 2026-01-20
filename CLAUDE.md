@@ -121,23 +121,23 @@ Storm ORM achieves **96-108% efficiency** vs raw SQLite across all operations (R
    docs/README.md                         # Documentation index
 
    # Architecture documentation
-   docs/architecture/design-decisions.md  # Design rationale
-   docs/architecture/module-structure.md  # Module organization
+   docs/architecture/DESIGN_DECISIONS.md  # Design rationale
+   docs/architecture/MODULE_SYSTEM.md     # Module organization
 
    # Development guides
-   docs/development/getting-started.md    # Setup instructions
-   docs/development/common-tasks.md       # How-to guides
-   docs/development/performance-guidelines.md  # Performance rules
+   docs/development/GETTING_STARTED.md    # Setup instructions
+   docs/development/COMMON_TASKS.md       # How-to guides
+   docs/development/PERFORMANCE_GUIDELINES.md  # Performance rules
+   docs/development/COMPILER_ISSUES.md    # Known compiler bugs
+   docs/development/CPP26_CODING_STANDARDS.md  # C++26 coding standards
 
    # Reference documentation
-   docs/reference/field-types.md          # Supported types mapping
-   docs/reference/statement-caching.md    # Caching architecture
-   docs/reference/compiler-issues.md      # Known compiler bugs
+   docs/reference/FIELD_TYPES.md          # Supported types mapping
 
    # Benchmark results
-   docs/benchmarks/results.md             # Performance measurements
-   docs/benchmarks/join-analysis.md       # JOIN performance details
-   docs/benchmarks/distinct-analysis.md   # DISTINCT performance details
+   docs/benchmarks/RESULTS.md             # Performance measurements
+   docs/benchmarks/JOIN_ANALYSIS.md       # JOIN performance details
+   docs/benchmarks/DISTINCT_ANALYSIS.md   # DISTINCT performance details
    ```
 
    **Mandatory Workflow:**
@@ -168,25 +168,25 @@ Storm ORM achieves **96-108% efficiency** vs raw SQLite across all operations (R
    **Examples:**
 
    **Example 1: Adding new ORM operation**
-   - Update `docs/development/common-tasks.md` with how to use it
+   - Update `docs/development/COMMON_TASKS.md` with how to use it
    - Update `CLAUDE.md` performance summary if benchmarked
    - Update `README.md` feature list
-   - Update `docs/architecture/module-structure.md` if new module
+   - Update `docs/architecture/MODULE_SYSTEM.md` if new module
 
    **Example 2: Changing benchmark system**
    - Update `benchmarks/README.md` with new usage
    - Update `CLAUDE.md` benchmark workflow if commands change
 
    **Example 3: Refactoring module structure**
-   - Update `docs/architecture/module-structure.md` with new layout
+   - Update `docs/architecture/MODULE_SYSTEM.md` with new layout
    - Update `CLAUDE.md` "Module Structure" section
    - Update all file path references in documentation
-   - Update `docs/development/common-tasks.md` if import paths change
+   - Update `docs/development/COMMON_TASKS.md` if import paths change
 
    **Example 4: New compiler requirement**
    - Update `CLAUDE.md` prerequisites
-   - Update `docs/development/getting-started.md` setup instructions
-   - Update `docs/reference/compiler-issues.md` if new workarounds needed
+   - Update `docs/development/GETTING_STARTED.md` setup instructions
+   - Update `docs/development/COMPILER_ISSUES.md` if new workarounds needed
 
    **Verification Checklist Before Commit:**
    - [ ] All referenced file paths exist
@@ -245,6 +245,34 @@ Storm ORM achieves **96-108% efficiency** vs raw SQLite across all operations (R
    - Prevents accidental commits of unintended files
    - User maintains control over what gets committed
    - Script's interactive approval is bypassed in automation
+
+7. **MANDATORY: Ask Before Adding New Documentation Files**
+   - **ALWAYS ask user approval before creating new `.md` files**
+   - Explain why the new file is needed
+   - Suggest where it should be placed in the `docs/` structure
+   - Wait for explicit approval before creating
+
+   **Example:**
+   ```
+   I need to create a new documentation file for the HAVING clause feature.
+   Suggested location: docs/features/HAVING_CLAUSE.md
+   Should I proceed?
+   ```
+
+8. **MANDATORY: Uppercase Documentation Filenames**
+   - All documentation `.md` files in `docs/` must use **UPPERCASE** filenames
+   - Use underscores to separate words: `GETTING_STARTED.md`, not `getting-started.md`
+   - Exception: `README.md` (standard convention)
+
+   **Correct:**
+   - `docs/features/CRUD_OPERATIONS.md`
+   - `docs/development/PERFORMANCE_TIPS.md`
+   - `docs/architecture/MODULE_SYSTEM.md`
+
+   **Incorrect:**
+   - `docs/features/crud-operations.md`
+   - `docs/development/performance_tips.md`
+   - `docs/architecture/module-system.md`
 
 ## Quick Start
 
@@ -324,7 +352,7 @@ cmake --build --preset ninja-release
 - SQLite3 development libraries
 - CMake 3.30+, Ninja
 
-See [Getting Started Guide](docs/development/getting-started.md) for detailed setup.
+See [Getting Started Guide](docs/development/GETTING_STARTED.md) for detailed setup.
 
 ## Architecture Overview
 
@@ -357,7 +385,7 @@ See [Architecture Documentation](docs/architecture/) for detailed design.
 9. **Auto-Generated IDs** - Returns IDs from INSERT operations
 10. **DISTINCT Support** - Single and multi-field with type safety
 
-See [Design Decisions](docs/architecture/design-decisions.md) for detailed explanations.
+See [Design Decisions](docs/architecture/DESIGN_DECISIONS.md) for detailed explanations.
 
 ### Why Benchmark Headers Remain as `.hpp`
 
@@ -396,7 +424,7 @@ cmake --build --preset ninja-release
 # If Storm: 8.5M/sec, Raw: 10M/sec → 85% efficiency ✅ GOOD
 # If Storm: 5M/sec, Raw: 10M/sec → 50% efficiency ❌ NEEDS WORK
 
-# 5. Document results in docs/benchmarks/results.md
+# 5. Document results in docs/benchmarks/RESULTS.md
 # 6. Commit with performance metrics
 git commit -m "feat: add FEATURE (85% of raw SQLite)"
 ```
@@ -740,7 +768,7 @@ void raw_benchmark(int batch_size) { ... }  // Same decision logic
 - [ ] **Correct metric**: Latency for different result sizes, throughput for same sizes
 - [ ] **Multiple runs**: 5+ runs to establish variance, report median not just mean
 
-See [Performance Guidelines](docs/development/performance-guidelines.md) for complete rules.
+See [Performance Guidelines](docs/development/PERFORMANCE_GUIDELINES.md) for complete rules.
 
 ## Common Development Tasks
 
@@ -749,13 +777,13 @@ See [Performance Guidelines](docs/development/performance-guidelines.md) for com
 1. Create statement class in `src/orm/statements/` (inherits `BaseStatement<T>`)
 2. Implement single & batch operations
 3. Choose return type: INSERT → `std::expected<int64_t/vector<int64_t>, Error>`
-4. Consider statement caching pattern (see [Statement Caching](docs/reference/statement-caching.md))
+4. Consider statement caching pattern (see [Statement Caching](docs/architecture/STATEMENT_CACHING.md))
 5. Implement compile-time SQL generation
 6. Add QuerySet method
 7. Add tests in `tests/test_*.cpp`
 8. Create performance benchmark
 
-See [Common Tasks](docs/development/common-tasks.md) for detailed patterns.
+See [Common Tasks](docs/development/COMMON_TASKS.md) for detailed patterns.
 
 ## Supported Field Types
 
@@ -766,7 +794,7 @@ See [Common Tasks](docs/development/common-tasks.md) for detailed patterns.
 - **Optional**: `std::optional<T>` for any supported type (NULL support)
 - **BLOB**: `std::vector<uint8_t>`, `std::vector<unsigned char>`
 
-See [Field Types Reference](docs/reference/field-types.md) for complete mapping.
+See [Field Types Reference](docs/reference/FIELD_TYPES.md) for complete mapping.
 
 ## Known Compiler Issues
 
@@ -782,7 +810,7 @@ Other known issues:
 - `std::function` linker errors → Use abstract base classes
 - C headers must be `#include`d, not `import`ed
 
-See [Compiler Issues Reference](docs/reference/compiler-issues.md) for all workarounds.
+See [Compiler Issues Reference](docs/development/COMPILER_ISSUES.md) for all workarounds.
 
 ## Known Issues and Findings
 
