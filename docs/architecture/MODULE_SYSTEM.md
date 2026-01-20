@@ -109,7 +109,7 @@ public:
     }
 
     template <typename = void>
-    __attribute__((always_inline)) auto reset_raw() noexcept -> void {
+    __attribute__((always_inline)) auto reset() noexcept -> void {
         sqlite3_reset(raw_);
     }
 

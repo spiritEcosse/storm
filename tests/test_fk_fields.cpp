@@ -1202,7 +1202,7 @@ TEST_F(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
             << "Long long field (timestamp) should be correct";
 
     // Verify other fields
-    EXPECT_EQ(readings.begin()->measurement.id, m1_id);
+    EXPECT_EQ(readings.begin()->measurement.id, meas_id);
     EXPECT_EQ(readings.begin()->measurement.sensor_name, "TempSensor1");
     EXPECT_EQ(readings.begin()->reading_type, "Humidity");
 }

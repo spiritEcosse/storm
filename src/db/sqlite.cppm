@@ -153,7 +153,6 @@ export namespace storm::db::sqlite {
 
         template <typename = void> __attribute__((always_inline)) auto reset() noexcept -> void {
             sqlite3_reset(raw_);
-            sqlite3_clear_bindings(raw_);
         }
 
         template <typename = void> __attribute__((always_inline)) auto finalize() noexcept -> void {
@@ -241,11 +240,6 @@ export namespace storm::db::sqlite {
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto is_null(int col_index) const noexcept -> bool {
             return sqlite3_column_type(raw_, col_index) == SQLITE_NULL;
-        }
-
-        // Reset statement without clearing bindings - template for cross-module inlining
-        template <typename = void> __attribute__((always_inline)) auto reset_raw() noexcept -> void {
-            sqlite3_reset(raw_);
         }
 
         // Error message extraction

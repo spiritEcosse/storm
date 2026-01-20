@@ -282,7 +282,7 @@ export namespace storm::orm::statements {
             }
 
             if (step_result != Statement::NO_MORE_ROWS) {
-                stmt->reset_raw();
+                stmt->reset();
                 return std::unexpected(Error{step_result, stmt->get_error_message()});
             }
 
