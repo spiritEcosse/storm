@@ -305,18 +305,18 @@ namespace storm::benchmark {
     };
 
     // ========================================================================
-    // Type Aliases for Common Configurations (backward compatibility)
+    // Type Aliases for Common Configurations
     // ========================================================================
 
-    // SELECT WHERE - equivalent to old SelectBenchmark
+    // SELECT WHERE
     template <typename Model, std::meta::info FieldInfo, auto Op, typename ValueType>
     using SelectWhereBenchmark = SelectBenchmark<Model, NoJoin, WhereConfig<FieldInfo, Op, ValueType>>;
 
-    // SELECT JOIN - equivalent to old SelectJoinBenchmark
+    // SELECT JOIN
     template <typename BaseModel, typename RelatedModel, auto FKFieldPtr>
     using SelectJoinBenchmark = SelectBenchmark<BaseModel, JoinConfig<FKFieldPtr, RelatedModel>, NoWhere>;
 
-    // SELECT WHERE + JOIN - equivalent to old SelectWhereJoinBenchmark
+    // SELECT WHERE + JOIN
     template <
             typename BaseModel,
             typename RelatedModel,

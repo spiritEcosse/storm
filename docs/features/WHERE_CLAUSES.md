@@ -173,44 +173,47 @@ auto result = queryset.where(field<^^Person::age>() > 25 &&
                               field<^^Person::age>() < 50).select();
 ```
 
-### 2. Explicit Function Syntax (Recommended for Programmatic Composition)
+### 2. Composing Expressions Programmatically
 
-Better for dynamic query building:
+For dynamic query building, store expressions in variables and combine with `&&` / `||`:
 
 ```cpp
 using namespace storm::orm::where;
 
-// Basic function composition
+// Basic composition
 auto expr1 = field<^^Person::age>() > 25;
 auto expr2 = field<^^Person::age>() < 50;
-auto result = queryset.where(and_(expr1, expr2)).select();
+auto result = queryset.where(expr1 && expr2).select();
 
 // Nested composition
 auto young = field<^^Person::age>() < 30;
 auto old = field<^^Person::age>() > 35;
 auto not_charlie = field<^^Person::name>() != "Charlie";
-auto result = queryset.where(and_(or_(young, old), not_charlie)).select();
+auto result = queryset.where((young || old) && not_charlie).select();
 
-// Conditional expression building (powerful for dynamic queries)
-auto base_expr = field<^^Person::age>() > 18;
+// Conditional expression building (use progressive where() calls)
+auto qs = QuerySet<Person>().where(field<^^Person::age>() > 18);
 if (filter_by_name) {
-    base_expr = and_(base_expr, field<^^Person::name>() == "Alice");
+    qs = qs.where(field<^^Person::name>() == "Alice");  // ANDs with existing
 }
-if (filter_by_status) {
-    base_expr = or_(base_expr, field<^^Person::status>() == "active");
-}
-auto result = queryset.where(base_expr).select();
+auto result = qs.select();
 ```
 
-## When to Use Each Syntax
+## Syntax Guide
 
-| Scenario | Natural Operators | and_() / or_() Functions |
-|----------|-------------------|--------------------------|
-| Simple inline queries | ✅ Preferred - more readable | ❌ Unnecessary verbosity |
-| Complex nested conditions | ✅ Good with parentheses | ✅ Good - explicit structure |
-| Conditional/dynamic queries | ❌ Hard to modify expressions | ✅ **Strongly recommended** |
-| Backward compatibility | ✅ Supported | ✅ Supported (original API) |
-| Building queries programmatically | ⚠️ Awkward - requires reassignment | ✅ **Strongly recommended** |
+Use natural `&&` and `||` operators for combining expressions:
+
+```cpp
+// Simple conditions
+qs.where(age > 25 && is_active == true).select();
+
+// Complex nested conditions (use parentheses for clarity)
+qs.where((age > 25 || name.like("A%")) && is_active == true).select();
+
+// Building queries progressively
+auto base_query = qs.where(is_active == true);
+auto filtered = base_query.where(age > 25);  // Combines with AND
+```
 
 ## Supported Operators
 
@@ -314,17 +317,17 @@ struct Message {
 
 storm::orm::QuerySet<Message> message_qs(conn);
 
-// Natural operator syntax
+// Inline syntax
 auto result = message_qs.join<&Message::sender>()
-                        .where(field<^^User::level>() > 5 and
+                        .where(field<^^User::level>() > 5 &&
                                field<^^Message::content>().like("%urgent%"))
                         .select();
 
-// Function syntax
+// Or with named expressions
 auto level_check = field<^^User::level>() > 5;
 auto content_check = field<^^Message::content>().like("%urgent%");
 auto result = message_qs.join<&Message::sender>()
-                        .where(and_(level_check, content_check))
+                        .where(level_check && content_check)
                         .select();
 ```
 
@@ -657,11 +660,10 @@ void bind(Statement& stmt, int& idx) const override {
 
 ✅ **Pure C++26 reflection** - No macros, fully module-compatible
 ✅ **Type safety** - Compile-time type checking
-✅ **Two syntaxes** - Natural operators + explicit functions
+✅ **Natural operators** - Use `&&` and `||` directly
 ✅ **Zero SQL injection** - All values bound as parameters
 ✅ **Composable** - Build complex expressions dynamically
 ✅ **86-90% efficiency** - Near-raw SQLite performance
-✅ **Backward compatible** - and_(), or_() functions still work
 
 ## Performance Optimization Investigation
 
