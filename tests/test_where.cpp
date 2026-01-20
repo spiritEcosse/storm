@@ -135,7 +135,7 @@ TEST_F(WhereTest, WhereMultipleConditions) {
 
     auto expr1  = field<^^WherePerson::age>() > 25;
     auto expr2  = field<^^WherePerson::age>() < 40;
-    auto result = queryset.where(and_(expr1, expr2)).select();
+    auto result = queryset.where(expr1 && expr2).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -155,7 +155,7 @@ TEST_F(WhereTest, WhereThreeConditions) {
     auto expr1  = field<^^WherePerson::age>() >= 28;
     auto expr2  = field<^^WherePerson::age>() <= 35;
     auto expr3  = field<^^WherePerson::name>() != "Charlie";
-    auto result = queryset.where(and_(and_(expr1, expr2), expr3)).select();
+    auto result = queryset.where(expr1 && expr2 && expr3).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -230,7 +230,7 @@ TEST_F(WhereTest, WhereComplexExpression) {
     auto expr1  = field<^^WherePerson::age>() < 30;
     auto expr2  = field<^^WherePerson::age>() > 35;
     auto expr3  = field<^^WherePerson::name>() != "Charlie";
-    auto result = queryset.where(and_(or_(expr1, expr2), expr3)).select();
+    auto result = queryset.where((expr1 || expr2) && expr3).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -307,7 +307,7 @@ TEST_F(WhereTest, WhereMixedTypes) {
 
     auto expr1  = field<^^WherePerson::name>() == "Diana";
     auto expr2  = field<^^WherePerson::age>() == 28;
-    auto result = queryset.where(and_(expr1, expr2)).select();
+    auto result = queryset.where(expr1 && expr2).select();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -454,7 +454,7 @@ TEST_F(WhereJoinTest, WhereWithJoinMultipleConditions) {
 
     auto expr1  = field<^^WhereUser::level>() > 5;
     auto expr2  = field<^^WhereMessage::content>().like("%from%");
-    auto result = queryset.join<&WhereMessage::sender>().where(and_(expr1, expr2)).select();
+    auto result = queryset.join<&WhereMessage::sender>().where(expr1 && expr2).select();
     ASSERT_TRUE(result.has_value()) << "WHERE + JOIN failed: " << result.error().message();
 
     const auto& messages = result.value();

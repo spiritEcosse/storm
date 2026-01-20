@@ -441,28 +441,6 @@ export namespace storm::orm::where {
         }
     };
 
-    // Helper functions for composing expressions
-    // NOTE: With Expr wrapper class, you can now use natural && and || (or 'and' and 'or' keywords)
-    // These functions remain for backward compatibility and explicit composition
-
-    // Expr overloads (efficient - uses natural operators)
-    inline auto and_(const Expr& left, const Expr& right) -> Expr {
-        return left && right; // Calls Expr::operator&&
-    }
-
-    inline auto or_(const Expr& left, const Expr& right) -> Expr {
-        return left || right; // Calls Expr::operator||
-    }
-
-    // ExpressionVariantPtr overloads for explicit construction
-    inline auto and_(const ExpressionVariantPtr& left, const ExpressionVariantPtr& right) {
-        return std::make_shared<ExpressionVariant>(LogicalExpr{left, LogicalOp::And, right});
-    }
-
-    inline auto or_(const ExpressionVariantPtr& left, const ExpressionVariantPtr& right) {
-        return std::make_shared<ExpressionVariant>(LogicalExpr{left, LogicalOp::Or, right});
-    }
-
     // Pure C++26 Reflection-Based Field Helper (No Macro Needed!)
     // Usage: field<^^Person::id>().in(100, 200, 300)
     //
