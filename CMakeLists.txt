@@ -144,6 +144,52 @@ include(${CPM_DOWNLOAD_LOCATION})
 
 option(ENABLE_TESTS "Enable testing support" OFF)
 option(ENABLE_BENCH "Enable benchmarking with sqlite_orm" OFF)
+option(ENABLE_COVERAGE "Enable code coverage (requires LLVM tools)" OFF)
+
+# Code coverage configuration
+if(ENABLE_COVERAGE)
+    message(STATUS "Code coverage is enabled")
+
+    # Coverage requires debug info for meaningful reports
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        message(WARNING "Coverage enabled with Release build - consider using Debug for better source mapping")
+    endif()
+
+    # LLVM source-based coverage flags
+    set(COVERAGE_COMPILE_FLAGS "-fprofile-instr-generate -fcoverage-mapping")
+    set(COVERAGE_LINK_FLAGS "-fprofile-instr-generate")
+
+    # Apply coverage flags globally
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COVERAGE_COMPILE_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${COVERAGE_LINK_FLAGS}")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${COVERAGE_LINK_FLAGS}")
+
+    # Find LLVM coverage tools (prefer from custom Clang build)
+    if(DEFINED LIBCXX_ROOT)
+        set(LLVM_PROFDATA "${LIBCXX_ROOT}/build/bin/llvm-profdata")
+        set(LLVM_COV "${LIBCXX_ROOT}/build/bin/llvm-cov")
+    else()
+        find_program(LLVM_PROFDATA llvm-profdata REQUIRED)
+        find_program(LLVM_COV llvm-cov REQUIRED)
+    endif()
+
+    if(EXISTS "${LLVM_PROFDATA}" AND EXISTS "${LLVM_COV}")
+        message(STATUS "LLVM coverage tools found:")
+        message(STATUS "  llvm-profdata: ${LLVM_PROFDATA}")
+        message(STATUS "  llvm-cov: ${LLVM_COV}")
+    else()
+        message(FATAL_ERROR "LLVM coverage tools not found. Ensure llvm-profdata and llvm-cov are available.")
+    endif()
+
+    # Coverage output directory
+    set(COVERAGE_OUTPUT_DIR "${CMAKE_BINARY_DIR}/coverage")
+    file(MAKE_DIRECTORY ${COVERAGE_OUTPUT_DIR})
+
+    message(STATUS "Coverage output directory: ${COVERAGE_OUTPUT_DIR}")
+    message(STATUS "Coverage compile flags: ${COVERAGE_COMPILE_FLAGS}")
+else()
+    message(STATUS "Code coverage is disabled")
+endif()
 
 if (ENABLE_TESTS)
     message(STATUS "Testing is enabled.")
@@ -267,6 +313,117 @@ endif()
  message(STATUS "=== Storm Build Configuration ===")
  message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
  message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
- message(STATUS "Testing: ${STORM_ENABLE_TESTING}")
- message(STATUS "Sanitizer: ${STORM_ENABLE_SANITIZER}")
+ message(STATUS "Testing: ${ENABLE_TESTS}")
+ message(STATUS "Benchmarks: ${ENABLE_BENCH}")
+ message(STATUS "Coverage: ${ENABLE_COVERAGE}")
+ message(STATUS "Sanitizer: ${USE_SANITIZER}")
  message(STATUS "===================================")
+
+# Coverage report generation targets (only when coverage is enabled)
+if(ENABLE_COVERAGE AND ENABLE_TESTS)
+    # Custom target to generate coverage report
+    # Usage:
+    #   1. Build with coverage: cmake --preset ninja-debug -DENABLE_COVERAGE=ON -DENABLE_TESTS=ON -B build/debug-coverage
+    #   2. Build: cmake --build build/debug-coverage
+    #   3. Run coverage: cmake --build build/debug-coverage --target coverage
+    #   OR run steps separately:
+    #   3a. Run tests: cmake --build build/debug-coverage --target coverage-run
+    #   3b. Generate report: cmake --build build/debug-coverage --target coverage-report
+
+    # Run tests with coverage instrumentation
+    add_custom_target(coverage-run
+        COMMAND ${CMAKE_COMMAND} -E env LLVM_PROFILE_FILE=${CMAKE_BINARY_DIR}/default.profraw
+            $<TARGET_FILE:storm_tests>
+        DEPENDS storm_tests
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMENT "Running tests with coverage instrumentation"
+        VERBATIM
+    )
+
+    add_custom_target(coverage-merge
+        COMMAND ${LLVM_PROFDATA} merge
+            -sparse
+            -o ${COVERAGE_OUTPUT_DIR}/coverage.profdata
+            ${CMAKE_BINARY_DIR}/default.profraw
+        DEPENDS coverage-run
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMENT "Merging coverage data with llvm-profdata"
+        VERBATIM
+    )
+
+    # HTML coverage report
+    add_custom_target(coverage-report
+        COMMAND ${LLVM_COV} show
+            $<TARGET_FILE:storm_tests>
+            -instr-profile=${COVERAGE_OUTPUT_DIR}/coverage.profdata
+            -format=html
+            -output-dir=${COVERAGE_OUTPUT_DIR}/html
+            -show-line-counts-or-regions
+            -show-instantiations=false
+            -ignore-filename-regex="third_party|googletest|build"
+            ${CMAKE_SOURCE_DIR}/src
+        DEPENDS coverage-merge
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Generating HTML coverage report in ${COVERAGE_OUTPUT_DIR}/html"
+        VERBATIM
+    )
+
+    # Text summary report
+    add_custom_target(coverage-summary
+        COMMAND ${LLVM_COV} report
+            $<TARGET_FILE:storm_tests>
+            -instr-profile=${COVERAGE_OUTPUT_DIR}/coverage.profdata
+            -ignore-filename-regex="third_party|googletest|build"
+            ${CMAKE_SOURCE_DIR}/src
+        DEPENDS coverage-merge
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Coverage summary:"
+        VERBATIM
+    )
+
+    # Export coverage data in LCOV format (for CI integration)
+    add_custom_target(coverage-lcov
+        COMMAND ${LLVM_COV} export
+            $<TARGET_FILE:storm_tests>
+            -instr-profile=${COVERAGE_OUTPUT_DIR}/coverage.profdata
+            -format=lcov
+            -ignore-filename-regex="third_party|googletest|build"
+            ${CMAKE_SOURCE_DIR}/src
+            > ${COVERAGE_OUTPUT_DIR}/coverage.lcov
+        DEPENDS coverage-merge
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Exporting coverage data in LCOV format to ${COVERAGE_OUTPUT_DIR}/coverage.lcov"
+        VERBATIM
+    )
+
+    # Clean coverage data
+    add_custom_target(coverage-clean
+        COMMAND ${CMAKE_COMMAND} -E rm -rf
+            ${COVERAGE_OUTPUT_DIR}
+            ${CMAKE_BINARY_DIR}/default.profraw
+            ${CMAKE_BINARY_DIR}/*.profraw
+        COMMENT "Cleaning coverage data"
+        VERBATIM
+    )
+
+    # Combined target: run tests + generate HTML report
+    add_custom_target(coverage
+        DEPENDS coverage-report
+        COMMENT "Coverage complete! Open ${COVERAGE_OUTPUT_DIR}/html/index.html in browser"
+    )
+
+    # Combined target: run tests + show summary
+    add_custom_target(coverage-quick
+        DEPENDS coverage-summary
+        COMMENT "Quick coverage check complete"
+    )
+
+    message(STATUS "Coverage targets available:")
+    message(STATUS "  coverage       - Run tests and generate HTML report")
+    message(STATUS "  coverage-quick - Run tests and show summary")
+    message(STATUS "  coverage-run   - Run tests only")
+    message(STATUS "  coverage-report - Generate HTML report (after coverage-run)")
+    message(STATUS "  coverage-summary - Show text summary (after coverage-run)")
+    message(STATUS "  coverage-lcov  - Export LCOV format (for CI)")
+    message(STATUS "  coverage-clean - Clean all coverage data")
+endif()

@@ -234,7 +234,7 @@ Features not yet implemented:
   - [ ] Correct metric (latency for different result sizes)
 - [ ] **Enable `modernize-use-trailing-return-type`** - Convert all functions to trailing return type syntax
 - [ ] **Enable `bugprone-easily-swappable-parameters`** - Add strong types to prevent parameter swapping bugs
-
+- [x] Code coverage
 ---
 
 ### Completed:
