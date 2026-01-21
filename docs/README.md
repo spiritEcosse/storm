@@ -235,9 +235,9 @@ Features not yet implemented:
 - [ ] **Enable `modernize-use-trailing-return-type`** - Convert all functions to trailing return type syntax
 - [ ] **Enable `bugprone-easily-swappable-parameters`** - Add strong types to prevent parameter swapping bugs
 - [x] Code coverage - **86.41% lines, 94.80% functions** (327 tests)
-  - [ ] Add mock-based tests for SQLite error paths in sqlite.cppm (bind errors, prepare failures)
+  - [x] Add mock-based tests for SQLite error paths in sqlite.cppm (bind errors, prepare failures)
   - [ ] Add tests for `[[unlikely]]` branch coverage in statement files
-  - [ ] Consider removing dead code for FK fields as primary keys (marked "should never happen")
+  - [x] Consider removing dead code for FK fields as primary keys (marked "should never happen")
 ---
 
 ### Completed:

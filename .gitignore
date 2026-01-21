@@ -13,3 +13,5 @@ benchmarks/bench_storm_optimized
 
 # Auto-generated from benchmarks/tests/benchmark_tests.yaml during build
 benchmarks/tests/benchmark_tests.json
+*.profraw
+default.profraw

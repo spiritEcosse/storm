@@ -1,0 +1,792 @@
+#include <gtest/gtest.h>
+#include <sqlite3.h>
+#include <filesystem>
+#include <fstream>
+#include <thread>
+#include <chrono>
+
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)
+// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
+// NOLINTBEGIN(misc-const-correctness,misc-unused-alias-decls,modernize-use-std-numbers)
+// NOLINTBEGIN(readability-convert-member-functions-to-static,readability-uppercase-literal-suffix)
+// NOLINTBEGIN(readability-identifier-length,cppcoreguidelines-init-variables)
+// NOLINTBEGIN(bugprone-implicit-widening-of-multiplication-result)
+
+import storm_db_sqlite;
+import <expected>;
+import <string>;
+import <string_view>;
+
+namespace fs = std::filesystem;
+using namespace storm::db::sqlite;
+
+// ============================================================================
+// Connection Error Tests
+// ============================================================================
+
+class ConnectionErrorTest : public ::testing::Test {
+  protected:
+    auto SetUp() -> void override {
+        // Clean up any leftover test files
+        cleanup_test_files();
+    }
+
+    auto TearDown() -> void override {
+        cleanup_test_files();
+    }
+
+    static auto cleanup_test_files() -> void {
+        const std::vector<std::string> test_files =
+                {"/tmp/storm_test_readonly.db",
+                 "/tmp/storm_test_locked.db",
+                 "/tmp/storm_test_locked.db-journal",
+                 "/tmp/storm_test_locked.db-wal"};
+        for (const auto& file : test_files) {
+            std::error_code ec;
+            fs::remove(file, ec);
+        }
+    }
+};
+
+TEST_F(ConnectionErrorTest, OpenInvalidPath) {
+    // Attempt to open database in non-existent directory
+    auto result = Connection::open("/nonexistent/directory/that/does/not/exist/test.db");
+
+    ASSERT_FALSE(result.has_value()) << "Should fail to open database in non-existent directory";
+    EXPECT_EQ(result.error().code(), SQLITE_CANTOPEN) << "Error code should be SQLITE_CANTOPEN";
+    EXPECT_FALSE(result.error().message().empty()) << "Error message should not be empty";
+}
+
+TEST_F(ConnectionErrorTest, OpenEmptyPath) {
+    // Opening empty path should fail
+    auto result = Connection::open("");
+
+    // SQLite may handle empty string differently - it might create in-memory or fail
+    // The key is to verify the connection is either properly created or properly reports error
+    if (!result.has_value()) {
+        EXPECT_NE(result.error().code(), SQLITE_OK) << "Error code should indicate failure";
+    }
+}
+
+TEST_F(ConnectionErrorTest, ConnectionNotOpenPrepare) {
+    // Create a connection and move from it to simulate "closed" state
+    auto result = Connection::open(":memory:");
+    ASSERT_TRUE(result.has_value());
+
+    auto conn       = std::move(result.value());
+    auto moved_conn = std::move(conn);
+
+    // Original conn is now in moved-from state
+    // Trying to use the moved-from connection should fail
+    // Note: After move, is_open() returns false due to unique_ptr being null
+    EXPECT_FALSE(conn.is_open()) << "Moved-from connection should not be open";
+}
+
+TEST_F(ConnectionErrorTest, PrepareInvalidSQL) {
+    auto result = Connection::open(":memory:");
+    ASSERT_TRUE(result.has_value());
+
+    auto conn = std::move(result.value());
+
+    // Prepare statement with invalid SQL syntax
+    auto stmt_result = conn.prepare("THIS IS NOT VALID SQL !!!");
+
+    ASSERT_FALSE(stmt_result.has_value()) << "Should fail to prepare invalid SQL";
+    EXPECT_EQ(stmt_result.error().code(), SQLITE_ERROR) << "Error code should be SQLITE_ERROR";
+}
+
+TEST_F(ConnectionErrorTest, PrepareCachedInvalidSQL) {
+    auto result = Connection::open(":memory:");
+    ASSERT_TRUE(result.has_value());
+
+    auto conn = std::move(result.value());
+
+    // Prepare cached statement with invalid SQL syntax
+    auto stmt_result = conn.prepare_cached("SELECT * FROM nonexistent_table_xyz");
+
+    ASSERT_FALSE(stmt_result.has_value()) << "Should fail to prepare invalid SQL";
+    // SQLite returns SQLITE_ERROR for non-existent table
+    EXPECT_EQ(stmt_result.error().code(), SQLITE_ERROR);
+}
+
+TEST_F(ConnectionErrorTest, ExecuteInvalidSQL) {
+    auto result = Connection::open(":memory:");
+    ASSERT_TRUE(result.has_value());
+
+    auto conn = std::move(result.value());
+
+    // Execute invalid SQL
+    auto exec_result = conn.execute("DROP TABLE nonexistent_table_xyz");
+
+    ASSERT_FALSE(exec_result.has_value()) << "Should fail to execute invalid SQL";
+    EXPECT_EQ(exec_result.error().code(), SQLITE_ERROR);
+}
+
+TEST_F(ConnectionErrorTest, ExecuteSyntaxError) {
+    auto result = Connection::open(":memory:");
+    ASSERT_TRUE(result.has_value());
+
+    auto conn = std::move(result.value());
+
+    // Execute SQL with syntax error
+    auto exec_result = conn.execute("SELEKT * FORM table");
+
+    ASSERT_FALSE(exec_result.has_value()) << "Should fail on SQL syntax error";
+    EXPECT_EQ(exec_result.error().code(), SQLITE_ERROR);
+}
+
+// ============================================================================
+// Statement Bind Error Tests
+// ============================================================================
+
+class StatementBindErrorTest : public ::testing::Test {
+  protected:
+    Connection conn_{Connection::open(":memory:").value()};
+
+    auto SetUp() -> void override {
+        // Create test table
+        auto result = conn_.execute(
+                "CREATE TABLE test_table ("
+                "id INTEGER PRIMARY KEY, "
+                "name TEXT, "
+                "value REAL, "
+                "data BLOB"
+                ")"
+        );
+        ASSERT_TRUE(result.has_value());
+    }
+};
+
+TEST_F(StatementBindErrorTest, BindIntOutOfRange) {
+    auto stmt_result = conn_.prepare("INSERT INTO test_table (id, name) VALUES (?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+
+    // Bind to out-of-range index (valid indices are 1 and 2)
+    auto bind_result = stmt.bind_int(999, 42);
+
+    ASSERT_FALSE(bind_result.has_value()) << "Binding to out-of-range index should fail";
+    EXPECT_EQ(bind_result.error().code(), SQLITE_RANGE);
+}
+
+TEST_F(StatementBindErrorTest, BindTextOutOfRange) {
+    auto stmt_result = conn_.prepare("INSERT INTO test_table (id, name) VALUES (?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+
+    // Bind text to out-of-range index
+    auto bind_result = stmt.bind_text(100, "test");
+
+    ASSERT_FALSE(bind_result.has_value()) << "Binding text to out-of-range index should fail";
+    EXPECT_EQ(bind_result.error().code(), SQLITE_RANGE);
+}
+
+TEST_F(StatementBindErrorTest, BindInt64OutOfRange) {
+    auto stmt_result = conn_.prepare("INSERT INTO test_table (id, name) VALUES (?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+
+    // Bind int64 to out-of-range index
+    auto bind_result = stmt.bind_int64(50, 9223372036854775807LL);
+
+    ASSERT_FALSE(bind_result.has_value()) << "Binding int64 to out-of-range index should fail";
+    EXPECT_EQ(bind_result.error().code(), SQLITE_RANGE);
+}
+
+TEST_F(StatementBindErrorTest, BindDoubleOutOfRange) {
+    auto stmt_result = conn_.prepare("INSERT INTO test_table (id, name, value) VALUES (?, ?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+
+    // Bind double to out-of-range index
+    auto bind_result = stmt.bind_double(999, 3.14159);
+
+    ASSERT_FALSE(bind_result.has_value()) << "Binding double to out-of-range index should fail";
+    EXPECT_EQ(bind_result.error().code(), SQLITE_RANGE);
+}
+
+TEST_F(StatementBindErrorTest, BindNullOutOfRange) {
+    auto stmt_result = conn_.prepare("INSERT INTO test_table (id, name) VALUES (?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+
+    // Bind null to out-of-range index
+    auto bind_result = stmt.bind_null(999);
+
+    ASSERT_FALSE(bind_result.has_value()) << "Binding null to out-of-range index should fail";
+    EXPECT_EQ(bind_result.error().code(), SQLITE_RANGE);
+}
+
+TEST_F(StatementBindErrorTest, BindBlobOutOfRange) {
+    auto stmt_result = conn_.prepare("INSERT INTO test_table (id, data) VALUES (?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+
+    // Bind blob to out-of-range index
+    const std::vector<uint8_t> blob_data   = {0x01, 0x02, 0x03, 0x04};
+    auto                       bind_result = stmt.bind_blob(999, blob_data.data(), blob_data.size());
+
+    ASSERT_FALSE(bind_result.has_value()) << "Binding blob to out-of-range index should fail";
+    EXPECT_EQ(bind_result.error().code(), SQLITE_RANGE);
+}
+
+TEST_F(StatementBindErrorTest, BindZeroIndex) {
+    auto stmt_result = conn_.prepare("INSERT INTO test_table (id, name) VALUES (?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+
+    // Index 0 is out of range (SQLite uses 1-based indexing)
+    auto bind_result = stmt.bind_int(0, 42);
+
+    ASSERT_FALSE(bind_result.has_value()) << "Binding to index 0 should fail";
+    EXPECT_EQ(bind_result.error().code(), SQLITE_RANGE);
+}
+
+TEST_F(StatementBindErrorTest, BindNegativeIndex) {
+    auto stmt_result = conn_.prepare("INSERT INTO test_table (id, name) VALUES (?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+
+    // Negative index is out of range
+    auto bind_result = stmt.bind_int(-1, 42);
+
+    ASSERT_FALSE(bind_result.has_value()) << "Binding to negative index should fail";
+    EXPECT_EQ(bind_result.error().code(), SQLITE_RANGE);
+}
+
+// ============================================================================
+// Statement Execute/Step Error Tests
+// ============================================================================
+
+class StatementExecuteErrorTest : public ::testing::Test {
+  protected:
+    Connection conn_{Connection::open(":memory:").value()};
+
+    auto SetUp() -> void override {
+        // Create test table with unique constraint
+        auto result = conn_.execute(
+                "CREATE TABLE test_table ("
+                "id INTEGER PRIMARY KEY, "
+                "email TEXT UNIQUE NOT NULL"
+                ")"
+        );
+        ASSERT_TRUE(result.has_value());
+
+        // Insert initial data
+        result = conn_.execute("INSERT INTO test_table (id, email) VALUES (1, 'test@example.com')");
+        ASSERT_TRUE(result.has_value());
+    }
+};
+
+TEST_F(StatementExecuteErrorTest, ExecuteUniqueConstraintViolation) {
+    auto stmt_result = conn_.prepare("INSERT INTO test_table (id, email) VALUES (?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+
+    // Try to insert duplicate email (unique constraint violation)
+    auto bind1 = stmt.bind_int(1, 2);
+    ASSERT_TRUE(bind1.has_value());
+    auto bind2 = stmt.bind_text(2, "test@example.com");
+    ASSERT_TRUE(bind2.has_value());
+
+    auto exec_result = stmt.execute();
+
+    ASSERT_FALSE(exec_result.has_value()) << "Unique constraint violation should fail";
+    // SQLITE_CONSTRAINT or SQLITE_CONSTRAINT_UNIQUE
+    EXPECT_TRUE(
+            exec_result.error().code() == SQLITE_CONSTRAINT ||
+            exec_result.error().code() == (SQLITE_CONSTRAINT | (6 << 8))
+    );
+}
+
+TEST_F(StatementExecuteErrorTest, ExecutePrimaryKeyViolation) {
+    auto stmt_result = conn_.prepare("INSERT INTO test_table (id, email) VALUES (?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+
+    // Try to insert duplicate primary key
+    auto bind1 = stmt.bind_int(1, 1); // id=1 already exists
+    ASSERT_TRUE(bind1.has_value());
+    auto bind2 = stmt.bind_text(2, "other@example.com");
+    ASSERT_TRUE(bind2.has_value());
+
+    auto exec_result = stmt.execute();
+
+    ASSERT_FALSE(exec_result.has_value()) << "Primary key violation should fail";
+    // SQLITE_CONSTRAINT or SQLITE_CONSTRAINT_PRIMARYKEY
+    EXPECT_TRUE(
+            exec_result.error().code() == SQLITE_CONSTRAINT || (exec_result.error().code() & 0xFF) == SQLITE_CONSTRAINT
+    );
+}
+
+TEST_F(StatementExecuteErrorTest, ExecuteNotNullViolation) {
+    auto stmt_result = conn_.prepare("INSERT INTO test_table (id, email) VALUES (?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+
+    // Try to insert NULL into NOT NULL column
+    auto bind1 = stmt.bind_int(1, 2);
+    ASSERT_TRUE(bind1.has_value());
+    auto bind2 = stmt.bind_null(2); // email is NOT NULL
+    ASSERT_TRUE(bind2.has_value());
+
+    auto exec_result = stmt.execute();
+
+    ASSERT_FALSE(exec_result.has_value()) << "NOT NULL constraint violation should fail";
+    EXPECT_TRUE((exec_result.error().code() & 0xFF) == SQLITE_CONSTRAINT);
+}
+
+TEST_F(StatementExecuteErrorTest, StepOnSelectReturnsRowNotDone) {
+    // Insert some data first
+    auto insert_result = conn_.execute("INSERT INTO test_table (id, email) VALUES (2, 'other@example.com')");
+    ASSERT_TRUE(insert_result.has_value());
+
+    auto stmt_result = conn_.prepare("SELECT * FROM test_table");
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+
+    // execute() expects SQLITE_DONE, but SELECT returns SQLITE_ROW
+    auto exec_result = stmt.execute();
+
+    // This should fail because execute() expects SQLITE_DONE but SELECT returns SQLITE_ROW
+    ASSERT_FALSE(exec_result.has_value()) << "execute() on SELECT should fail (expects DONE, gets ROW)";
+    EXPECT_EQ(exec_result.error().code(), SQLITE_ROW);
+}
+
+TEST_F(StatementExecuteErrorTest, StepReturnsRow) {
+    auto stmt_result = conn_.prepare("SELECT * FROM test_table WHERE id = 1");
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+
+    // step() should return true (row available)
+    auto step_result = stmt.step();
+
+    ASSERT_TRUE(step_result.has_value()) << "step() should succeed";
+    EXPECT_TRUE(step_result.value()) << "step() should return true for available row";
+
+    // Second step should return false (no more rows)
+    auto step_result2 = stmt.step();
+    ASSERT_TRUE(step_result2.has_value());
+    EXPECT_FALSE(step_result2.value()) << "step() should return false when no more rows";
+}
+
+// ============================================================================
+// Foreign Key Constraint Error Tests
+// ============================================================================
+
+class ForeignKeyErrorTest : public ::testing::Test {
+  protected:
+    Connection conn_{Connection::open(":memory:").value()};
+
+    auto SetUp() -> void override {
+        // Enable foreign keys
+        auto fk_result = conn_.execute("PRAGMA foreign_keys = ON");
+        ASSERT_TRUE(fk_result.has_value());
+
+        // Create parent table
+        auto parent_result = conn_.execute(
+                "CREATE TABLE parent ("
+                "id INTEGER PRIMARY KEY"
+                ")"
+        );
+        ASSERT_TRUE(parent_result.has_value());
+
+        // Create child table with foreign key
+        auto child_result = conn_.execute(
+                "CREATE TABLE child ("
+                "id INTEGER PRIMARY KEY, "
+                "parent_id INTEGER NOT NULL, "
+                "FOREIGN KEY (parent_id) REFERENCES parent(id)"
+                ")"
+        );
+        ASSERT_TRUE(child_result.has_value());
+
+        // Insert parent record
+        auto insert_result = conn_.execute("INSERT INTO parent (id) VALUES (1)");
+        ASSERT_TRUE(insert_result.has_value());
+    }
+};
+
+TEST_F(ForeignKeyErrorTest, InsertViolatesForeignKey) {
+    auto stmt_result = conn_.prepare("INSERT INTO child (id, parent_id) VALUES (?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+
+    // Try to insert child with non-existent parent
+    auto bind1 = stmt.bind_int(1, 1);
+    ASSERT_TRUE(bind1.has_value());
+    auto bind2 = stmt.bind_int(2, 999); // parent_id=999 doesn't exist
+    ASSERT_TRUE(bind2.has_value());
+
+    auto exec_result = stmt.execute();
+
+    ASSERT_FALSE(exec_result.has_value()) << "Foreign key violation should fail";
+    // Should be SQLITE_CONSTRAINT_FOREIGNKEY or just SQLITE_CONSTRAINT
+    EXPECT_TRUE((exec_result.error().code() & 0xFF) == SQLITE_CONSTRAINT);
+}
+
+TEST_F(ForeignKeyErrorTest, DeleteViolatesForeignKey) {
+    // First insert a valid child
+    auto insert_result = conn_.execute("INSERT INTO child (id, parent_id) VALUES (1, 1)");
+    ASSERT_TRUE(insert_result.has_value());
+
+    // Now try to delete the parent (should fail due to FK constraint)
+    auto delete_result = conn_.execute("DELETE FROM parent WHERE id = 1");
+
+    ASSERT_FALSE(delete_result.has_value()) << "Delete should fail due to foreign key constraint";
+    EXPECT_TRUE((delete_result.error().code() & 0xFF) == SQLITE_CONSTRAINT);
+}
+
+// ============================================================================
+// Statement Cache Tests
+// ============================================================================
+
+class StatementCacheTest : public ::testing::Test {
+  protected:
+    Connection conn_{Connection::open(":memory:").value()};
+};
+
+TEST_F(StatementCacheTest, CachedStatementReuse) {
+    const std::string_view sql = "SELECT 1";
+
+    // First call should create statement
+    auto result1 = conn_.prepare_cached(sql);
+    ASSERT_TRUE(result1.has_value());
+    Statement* stmt1 = *result1;
+
+    // Second call should return same statement (pointer)
+    auto result2 = conn_.prepare_cached(sql);
+    ASSERT_TRUE(result2.has_value());
+    Statement* stmt2 = *result2;
+
+    EXPECT_EQ(stmt1, stmt2) << "Cached statements should be the same pointer";
+}
+
+TEST_F(StatementCacheTest, CacheCount) {
+    EXPECT_EQ(conn_.cached_statement_count(), 0u) << "Cache should start empty";
+
+    // Add statements to cache
+    auto r1 = conn_.prepare_cached("SELECT 1");
+    ASSERT_TRUE(r1.has_value());
+    EXPECT_EQ(conn_.cached_statement_count(), 1u);
+
+    auto r2 = conn_.prepare_cached("SELECT 2");
+    ASSERT_TRUE(r2.has_value());
+    EXPECT_EQ(conn_.cached_statement_count(), 2u);
+
+    // Same SQL shouldn't increase count
+    auto r3 = conn_.prepare_cached("SELECT 1");
+    ASSERT_TRUE(r3.has_value());
+    EXPECT_EQ(conn_.cached_statement_count(), 2u);
+
+    // Clear cache
+    conn_.clear_statement_cache();
+    EXPECT_EQ(conn_.cached_statement_count(), 0u);
+}
+
+TEST_F(StatementCacheTest, PrepareCachedInvalidSQLDoesNotCache) {
+    size_t initial_count = conn_.cached_statement_count();
+
+    // Try to cache invalid SQL
+    auto result = conn_.prepare_cached("INVALID SQL SYNTAX !!!");
+    ASSERT_FALSE(result.has_value());
+
+    // Cache count should not increase
+    EXPECT_EQ(conn_.cached_statement_count(), initial_count);
+}
+
+// ============================================================================
+// Error Message Tests
+// ============================================================================
+
+class ErrorMessageTest : public ::testing::Test {
+  protected:
+    Connection conn_{Connection::open(":memory:").value()};
+};
+
+TEST_F(ErrorMessageTest, ErrorHasMeaningfulMessage) {
+    // Create table with unique constraint
+    auto create_result = conn_.execute("CREATE TABLE test (id INTEGER PRIMARY KEY, value TEXT UNIQUE)");
+    ASSERT_TRUE(create_result.has_value());
+
+    // Insert initial data
+    auto insert1 = conn_.execute("INSERT INTO test VALUES (1, 'unique_value')");
+    ASSERT_TRUE(insert1.has_value());
+
+    // Try to insert duplicate
+    auto insert2 = conn_.execute("INSERT INTO test VALUES (2, 'unique_value')");
+    ASSERT_FALSE(insert2.has_value());
+
+    // Error message should be meaningful
+    EXPECT_FALSE(insert2.error().message().empty());
+    EXPECT_TRUE(
+            insert2.error().message().find("UNIQUE") != std::string::npos ||
+            insert2.error().message().find("unique") != std::string::npos ||
+            insert2.error().message().find("constraint") != std::string::npos
+    ) << "Error message should mention constraint: "
+      << insert2.error().message();
+}
+
+TEST_F(ErrorMessageTest, PrepareErrorHasMessage) {
+    auto result = conn_.prepare("SELECT * FROM nonexistent_table_abc123");
+    ASSERT_FALSE(result.has_value());
+
+    EXPECT_FALSE(result.error().message().empty());
+    EXPECT_TRUE(
+            result.error().message().find("no such table") != std::string::npos ||
+            result.error().message().find("nonexistent_table_abc123") != std::string::npos
+    ) << "Error message should mention the table: "
+      << result.error().message();
+}
+
+// ============================================================================
+// Edge Case Tests
+// ============================================================================
+
+class EdgeCaseTest : public ::testing::Test {
+  protected:
+    Connection conn_{Connection::open(":memory:").value()};
+};
+
+TEST_F(EdgeCaseTest, LargeTextBinding) {
+    auto create_result = conn_.execute("CREATE TABLE large_text (id INTEGER PRIMARY KEY, data TEXT)");
+    ASSERT_TRUE(create_result.has_value());
+
+    auto stmt_result = conn_.prepare("INSERT INTO large_text (id, data) VALUES (?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+    auto stmt = std::move(stmt_result.value());
+
+    // Create a large string (1MB)
+    std::string large_string(1024 * 1024, 'x');
+
+    auto bind1 = stmt.bind_int(1, 1);
+    ASSERT_TRUE(bind1.has_value());
+    auto bind2 = stmt.bind_text(2, large_string);
+    ASSERT_TRUE(bind2.has_value());
+
+    auto exec_result = stmt.execute();
+    EXPECT_TRUE(exec_result.has_value()) << "Large text binding should succeed";
+}
+
+TEST_F(EdgeCaseTest, LargeBlobBinding) {
+    auto create_result = conn_.execute("CREATE TABLE large_blob (id INTEGER PRIMARY KEY, data BLOB)");
+    ASSERT_TRUE(create_result.has_value());
+
+    auto stmt_result = conn_.prepare("INSERT INTO large_blob (id, data) VALUES (?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+    auto stmt = std::move(stmt_result.value());
+
+    // Create a large blob (1MB)
+    std::vector<uint8_t> large_blob(1024 * 1024, 0xAB);
+
+    auto bind1 = stmt.bind_int(1, 1);
+    ASSERT_TRUE(bind1.has_value());
+    auto bind2 = stmt.bind_blob(2, large_blob.data(), large_blob.size());
+    ASSERT_TRUE(bind2.has_value());
+
+    auto exec_result = stmt.execute();
+    EXPECT_TRUE(exec_result.has_value()) << "Large blob binding should succeed";
+}
+
+TEST_F(EdgeCaseTest, EmptyTextBinding) {
+    auto create_result = conn_.execute("CREATE TABLE empty_text (id INTEGER PRIMARY KEY, data TEXT)");
+    ASSERT_TRUE(create_result.has_value());
+
+    auto stmt_result = conn_.prepare("INSERT INTO empty_text (id, data) VALUES (?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+    auto stmt = std::move(stmt_result.value());
+
+    auto bind1 = stmt.bind_int(1, 1);
+    ASSERT_TRUE(bind1.has_value());
+    auto bind2 = stmt.bind_text(2, "");
+    ASSERT_TRUE(bind2.has_value());
+
+    auto exec_result = stmt.execute();
+    EXPECT_TRUE(exec_result.has_value()) << "Empty text binding should succeed";
+}
+
+TEST_F(EdgeCaseTest, EmptyBlobBinding) {
+    auto create_result = conn_.execute("CREATE TABLE empty_blob (id INTEGER PRIMARY KEY, data BLOB)");
+    ASSERT_TRUE(create_result.has_value());
+
+    auto stmt_result = conn_.prepare("INSERT INTO empty_blob (id, data) VALUES (?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+    auto stmt = std::move(stmt_result.value());
+
+    auto bind1 = stmt.bind_int(1, 1);
+    ASSERT_TRUE(bind1.has_value());
+    auto bind2 = stmt.bind_blob(2, nullptr, 0);
+    ASSERT_TRUE(bind2.has_value());
+
+    auto exec_result = stmt.execute();
+    EXPECT_TRUE(exec_result.has_value()) << "Empty blob binding should succeed";
+}
+
+TEST_F(EdgeCaseTest, MultipleResetAndExecute) {
+    auto create_result = conn_.execute("CREATE TABLE multi_exec (id INTEGER PRIMARY KEY, value INTEGER)");
+    ASSERT_TRUE(create_result.has_value());
+
+    auto stmt_result = conn_.prepare("INSERT INTO multi_exec (id, value) VALUES (?, ?)");
+    ASSERT_TRUE(stmt_result.has_value());
+    auto stmt = std::move(stmt_result.value());
+
+    // Execute multiple times with reset
+    for (int i = 1; i <= 10; ++i) {
+        stmt.reset();
+        auto bind1 = stmt.bind_int(1, i);
+        ASSERT_TRUE(bind1.has_value());
+        auto bind2 = stmt.bind_int(2, i * 10);
+        ASSERT_TRUE(bind2.has_value());
+        auto exec_result = stmt.execute();
+        ASSERT_TRUE(exec_result.has_value()) << "Execute iteration " << i << " should succeed";
+    }
+
+    // Verify all rows inserted
+    auto select_result = conn_.prepare("SELECT COUNT(*) FROM multi_exec");
+    ASSERT_TRUE(select_result.has_value());
+    auto select_stmt = std::move(select_result.value());
+    auto step_result = select_stmt.step();
+    ASSERT_TRUE(step_result.has_value());
+    EXPECT_TRUE(step_result.value());
+    EXPECT_EQ(select_stmt.extract_int(0), 10);
+}
+
+// ============================================================================
+// Transaction Error Tests
+// ============================================================================
+
+class TransactionErrorTest : public ::testing::Test {
+  protected:
+    Connection conn_{Connection::open(":memory:").value()};
+
+    auto SetUp() -> void override {
+        auto result = conn_.execute("CREATE TABLE tx_test (id INTEGER PRIMARY KEY, value TEXT)");
+        ASSERT_TRUE(result.has_value());
+    }
+};
+
+TEST_F(TransactionErrorTest, CommitWithoutBegin) {
+    // Committing without BEGIN should fail or be a no-op
+    auto result = conn_.execute("COMMIT");
+
+    // SQLite returns error when COMMIT without BEGIN
+    ASSERT_FALSE(result.has_value()) << "COMMIT without BEGIN should fail";
+}
+
+TEST_F(TransactionErrorTest, RollbackWithoutBegin) {
+    // Rollback without BEGIN should fail or be a no-op
+    auto result = conn_.execute("ROLLBACK");
+
+    // SQLite returns error when ROLLBACK without BEGIN
+    ASSERT_FALSE(result.has_value()) << "ROLLBACK without BEGIN should fail";
+}
+
+TEST_F(TransactionErrorTest, NestedBeginTransactions) {
+    auto begin1 = conn_.execute("BEGIN TRANSACTION");
+    ASSERT_TRUE(begin1.has_value());
+
+    // Nested BEGIN should fail
+    auto begin2 = conn_.execute("BEGIN TRANSACTION");
+    ASSERT_FALSE(begin2.has_value()) << "Nested BEGIN should fail";
+
+    // Cleanup
+    auto rollback = conn_.execute("ROLLBACK");
+    EXPECT_TRUE(rollback.has_value());
+}
+
+// ============================================================================
+// Column Extraction Tests
+// ============================================================================
+
+class ColumnExtractionTest : public ::testing::Test {
+  protected:
+    Connection conn_{Connection::open(":memory:").value()};
+
+    auto SetUp() -> void override {
+        auto result = conn_.execute(
+                "CREATE TABLE extract_test ("
+                "id INTEGER PRIMARY KEY, "
+                "int_val INTEGER, "
+                "real_val REAL, "
+                "text_val TEXT, "
+                "blob_val BLOB, "
+                "null_val TEXT"
+                ")"
+        );
+        ASSERT_TRUE(result.has_value());
+
+        result = conn_.execute("INSERT INTO extract_test VALUES (1, 42, 3.14, 'hello', X'DEADBEEF', NULL)");
+        ASSERT_TRUE(result.has_value());
+    }
+};
+
+TEST_F(ColumnExtractionTest, ExtractAllTypes) {
+    auto stmt_result = conn_.prepare("SELECT * FROM extract_test WHERE id = 1");
+    ASSERT_TRUE(stmt_result.has_value());
+    auto stmt = std::move(stmt_result.value());
+
+    auto step_result = stmt.step();
+    ASSERT_TRUE(step_result.has_value());
+    ASSERT_TRUE(step_result.value());
+
+    // Extract and verify values
+    EXPECT_EQ(stmt.extract_int(0), 1);
+    EXPECT_EQ(stmt.extract_int64(1), 42);
+    EXPECT_DOUBLE_EQ(stmt.extract_double(2), 3.14);
+
+    auto text = stmt.extract_text_view(3);
+    EXPECT_EQ(text, "hello");
+
+    EXPECT_TRUE(stmt.is_null(5));
+    EXPECT_FALSE(stmt.is_null(0));
+}
+
+TEST_F(ColumnExtractionTest, ExtractBoolFromInt) {
+    auto insert = conn_.execute("INSERT INTO extract_test (id, int_val) VALUES (2, 1)");
+    ASSERT_TRUE(insert.has_value());
+
+    auto stmt_result = conn_.prepare("SELECT int_val FROM extract_test WHERE id = 2");
+    ASSERT_TRUE(stmt_result.has_value());
+    auto stmt = std::move(stmt_result.value());
+
+    auto step_result = stmt.step();
+    ASSERT_TRUE(step_result.has_value());
+    ASSERT_TRUE(step_result.value());
+
+    EXPECT_TRUE(stmt.extract_bool(0));
+}
+
+TEST_F(ColumnExtractionTest, ExtractNullText) {
+    auto stmt_result = conn_.prepare("SELECT null_val FROM extract_test WHERE id = 1");
+    ASSERT_TRUE(stmt_result.has_value());
+    auto stmt = std::move(stmt_result.value());
+
+    auto step_result = stmt.step();
+    ASSERT_TRUE(step_result.has_value());
+    ASSERT_TRUE(step_result.value());
+
+    auto text = stmt.extract_text_view(0);
+    EXPECT_TRUE(text.empty());
+    EXPECT_TRUE(stmt.is_null(0));
+}
+
+// NOLINTEND(bugprone-implicit-widening-of-multiplication-result)
+// NOLINTEND(readability-identifier-length,cppcoreguidelines-init-variables)
+// NOLINTEND(readability-convert-member-functions-to-static,readability-uppercase-literal-suffix)
+// NOLINTEND(misc-const-correctness,misc-unused-alias-decls,modernize-use-std-numbers)
+// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)

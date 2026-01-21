@@ -241,18 +241,9 @@ export namespace storm::orm::statements {
                 return result;
             }
 
-            // Bind primary key last - use BaseStatement for all types
-            // Note: PK should never be a FK field, but handle it anyway for safety
-            if constexpr (Base::is_fk_field(Base::primary_key_)) {
-                auto fk_object              = obj.[:Base::primary_key_:];
-                using FKType                = std::remove_cvref_t<decltype(fk_object)>;
-                constexpr auto fk_pk_member = Base::template find_fk_primary_key<FKType>();
-                auto           pk_value     = fk_object.[:fk_pk_member:];
-                return Base::template bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
-            } else {
-                auto pk_value = obj.[:Base::primary_key_:];
-                return Base::template bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
-            }
+            // Bind primary key last (PK is never a FK field by design)
+            auto pk_value = obj.[:Base::primary_key_:];
+            return Base::template bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
         }
 
         // Ultra-optimized single UPDATE - pre-cached statement, fully inlined binding
