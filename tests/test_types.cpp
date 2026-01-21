@@ -642,6 +642,155 @@ TEST_F(InsertOptionsTest, OptionsWithOnlyBatchSize) {
     EXPECT_EQ(selected.value().size(), 2);
 }
 
+// ===== UNSIGNED INTEGER TYPES TESTS =====
+
+// Unsigned integer types model
+struct UnsignedTypes {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    unsigned int                              u_int{};
+    unsigned short                            u_short{};
+    unsigned long                             u_long{};
+};
+
+class UnsignedTypesInsertUpdateTest : public ::testing::Test {
+  protected:
+    auto SetUp() -> void override {
+        auto result = QuerySet<UnsignedTypes>::set_default_connection(":memory:");
+        ASSERT_TRUE(result.has_value());
+        const auto& conn = QuerySet<UnsignedTypes>::get_default_connection();
+        ASSERT_TRUE(conn->execute(
+                                "CREATE TABLE UnsignedTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                                "u_int INTEGER, u_short INTEGER, u_long INTEGER)"
+        )
+                            .has_value());
+    }
+    auto TearDown() -> void override {
+        QuerySet<UnsignedTypes>::clear_default_connection();
+    }
+};
+
+TEST_F(UnsignedTypesInsertUpdateTest, InsertUnsignedValues) {
+    QuerySet<UnsignedTypes> qs;
+    UnsignedTypes const     obj{.id = 0, .u_int = 4294967295U, .u_short = 65535, .u_long = 1000000UL};
+
+    auto result = qs.insert(obj);
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_EQ(selected.value().size(), 1);
+    EXPECT_EQ(selected.value().begin()->u_int, 4294967295U);
+    EXPECT_EQ(selected.value().begin()->u_short, 65535);
+    EXPECT_EQ(selected.value().begin()->u_long, 1000000UL);
+}
+
+TEST_F(UnsignedTypesInsertUpdateTest, InsertBatchUnsigned) {
+    QuerySet<UnsignedTypes>    qs;
+    std::vector<UnsignedTypes> batch = {{0, 100U, 10, 1000UL}, {0, 200U, 20, 2000UL}, {0, 300U, 30, 3000UL}};
+
+    auto result = qs.insert(batch);
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().size(), 3);
+}
+
+TEST_F(UnsignedTypesInsertUpdateTest, UpdateUnsignedValues) {
+    QuerySet<UnsignedTypes> qs;
+    UnsignedTypes const     obj{.id = 0, .u_int = 100U, .u_short = 10, .u_long = 1000UL};
+
+    auto insert_result = qs.insert(obj);
+    ASSERT_TRUE(insert_result.has_value());
+    int64_t const id = insert_result.value();
+
+    UnsignedTypes const updated{.id = static_cast<int>(id), .u_int = 999U, .u_short = 99, .u_long = 9999UL};
+    auto                update_result = qs.update(updated);
+    ASSERT_TRUE(update_result.has_value());
+
+    auto selected = qs.select();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().begin()->u_int, 999U);
+    EXPECT_EQ(selected.value().begin()->u_short, 99);
+    EXPECT_EQ(selected.value().begin()->u_long, 9999UL);
+}
+
+// ===== LONG LONG TYPES TESTS =====
+
+// Long long types model (for 64-bit signed/unsigned coverage)
+struct LongLongTypes {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    long long                                 ll_signed{};
+    unsigned long long                        ll_unsigned{};
+};
+
+class LongLongTypesInsertUpdateTest : public ::testing::Test {
+  protected:
+    auto SetUp() -> void override {
+        auto result = QuerySet<LongLongTypes>::set_default_connection(":memory:");
+        ASSERT_TRUE(result.has_value());
+        const auto& conn = QuerySet<LongLongTypes>::get_default_connection();
+        ASSERT_TRUE(conn->execute(
+                                "CREATE TABLE LongLongTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                                "ll_signed INTEGER, ll_unsigned INTEGER)"
+        )
+                            .has_value());
+    }
+    auto TearDown() -> void override {
+        QuerySet<LongLongTypes>::clear_default_connection();
+    }
+};
+
+TEST_F(LongLongTypesInsertUpdateTest, InsertLongLongValues) {
+    QuerySet<LongLongTypes> qs;
+    LongLongTypes const     obj{.id = 0, .ll_signed = 9223372036854775807LL, .ll_unsigned = 9223372036854775807ULL};
+
+    auto result = qs.insert(obj);
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_EQ(selected.value().size(), 1);
+    EXPECT_EQ(selected.value().begin()->ll_signed, 9223372036854775807LL);
+    // Note: SQLite stores as int64_t, so very large unsigned values wrap around
+    EXPECT_EQ(selected.value().begin()->ll_unsigned, 9223372036854775807ULL);
+}
+
+TEST_F(LongLongTypesInsertUpdateTest, InsertNegativeLongLong) {
+    QuerySet<LongLongTypes> qs;
+    LongLongTypes const     obj{.id = 0, .ll_signed = -9223372036854775807LL, .ll_unsigned = 0ULL};
+
+    auto result = qs.insert(obj);
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().begin()->ll_signed, -9223372036854775807LL);
+    EXPECT_EQ(selected.value().begin()->ll_unsigned, 0ULL);
+}
+
+TEST_F(LongLongTypesInsertUpdateTest, UpdateLongLongValues) {
+    QuerySet<LongLongTypes> qs;
+    LongLongTypes const     obj{.id = 0, .ll_signed = 100LL, .ll_unsigned = 200ULL};
+
+    auto insert_result = qs.insert(obj);
+    ASSERT_TRUE(insert_result.has_value());
+    int64_t const id = insert_result.value();
+
+    LongLongTypes const updated{.id = static_cast<int>(id), .ll_signed = -999LL, .ll_unsigned = 999ULL};
+    auto                update_result = qs.update(updated);
+    ASSERT_TRUE(update_result.has_value());
+
+    auto selected = qs.select();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().begin()->ll_signed, -999LL);
+    EXPECT_EQ(selected.value().begin()->ll_unsigned, 999ULL);
+}
+
+// Note: WHERE clause tests with unsigned types are not included because the
+// ExpressionVariant doesn't support unsigned types directly. INSERT/UPDATE work
+// with unsigned types through bind_parameter_value which casts them appropriately.
+
 // ===== ERROR HANDLING TESTS =====
 
 // Test Error struct accessors for code coverage
