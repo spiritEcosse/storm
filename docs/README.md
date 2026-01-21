@@ -98,7 +98,7 @@ Storm ORM achieves **1.5-6x performance advantage** over sqlite_orm:
 | Aggregates | ✅ 100% | ✅ 100% | ✅ 100% |
 | HAVING | ❌ 0% | ❌ 0% | ❌ 0% |
 
-**Total: 290 unit tests, 127 benchmarks**
+**Total: 327 unit tests, 127 benchmarks**
 
 ---
 
@@ -234,7 +234,10 @@ Features not yet implemented:
   - [ ] Correct metric (latency for different result sizes)
 - [ ] **Enable `modernize-use-trailing-return-type`** - Convert all functions to trailing return type syntax
 - [ ] **Enable `bugprone-easily-swappable-parameters`** - Add strong types to prevent parameter swapping bugs
-- [x] Code coverage
+- [x] Code coverage - **86.41% lines, 94.80% functions** (327 tests)
+  - [ ] Add mock-based tests for SQLite error paths in sqlite.cppm (bind errors, prepare failures)
+  - [ ] Add tests for `[[unlikely]]` branch coverage in statement files
+  - [ ] Consider removing dead code for FK fields as primary keys (marked "should never happen")
 ---
 
 ### Completed:
