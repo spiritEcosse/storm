@@ -73,3 +73,18 @@ target_compile_options(storm_mock_tests PRIVATE -stdlib=libc++)
 
 # Discover mock tests
 gtest_discover_tests(storm_mock_tests)
+
+# ============================================================================
+# Note: Storm ORM Mock Tests (storm_orm_mock_tests) were removed because
+# C++26 modules cannot be compiled twice in the same build with different
+# link targets. The module cache gets corrupted when the same .cppm files
+# are compiled for both 'storm' and 'storm_mock' targets.
+#
+# For ORM error path coverage, we use:
+# 1. Real SQLite error tests (test_sqlite_errors.cpp) - constraint violations,
+#    FK errors, invalid operations that trigger real SQLITE_CONSTRAINT, etc.
+# 2. Mock SQLite infrastructure tests (storm_mock_tests) - verify mock works
+#
+# Hard-to-trigger errors (SQLITE_NOMEM, SQLITE_CORRUPT) are not tested at ORM
+# level but are covered by mock infrastructure tests.
+# ============================================================================

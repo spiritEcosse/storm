@@ -313,6 +313,101 @@ TEST_F(AggregateTest, EmptyTable_Max) {
     EXPECT_DOUBLE_EQ(result.value(), 0.0);
 }
 
+TEST_F(AggregateTest, EmptyTable_MultipleAggregates) {
+    // Multiple aggregates on empty table should return tuple of default values
+    // This tests the tuple default return path in AggregateBuilder::execute_impl
+    auto result = qs->aggregate().sum<^^AggregatePerson::age>().count().avg<^^AggregatePerson::salary>().select();
+    ASSERT_TRUE(result.has_value()) << "Multiple aggregates on empty table failed: " << result.error().message();
+
+    // Verify tuple values: (SUM=0, COUNT=0, AVG=0.0)
+    auto [sum_val, count_val, avg_val] = result.value();
+    EXPECT_EQ(sum_val, 0) << "SUM on empty table should be 0";
+    EXPECT_EQ(count_val, 0) << "COUNT on empty table should be 0";
+    EXPECT_DOUBLE_EQ(avg_val, 0.0) << "AVG on empty table should be 0.0";
+}
+
+TEST_F(AggregateTest, EmptyTable_AggregateWithWhere) {
+    // Aggregate with WHERE on empty table
+    auto result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 25).count().select();
+    ASSERT_TRUE(result.has_value()) << "COUNT with WHERE on empty table failed: " << result.error().message();
+    EXPECT_EQ(result.value(), 0) << "COUNT with WHERE on empty table should be 0";
+}
+
+TEST_F(AggregateTest, MultipleAggregates_WithJoin) {
+    insert_join_test_data();
+
+    // Multiple aggregates with JOIN using builder pattern
+    // Note: aggregate() builder doesn't support WHERE - use individual methods for WHERE support
+    auto result = msg_qs->join<&AggMessage::sender>()
+                          .aggregate()
+                          .sum<^^AggMessage::value>()
+                          .count()
+                          .avg<^^AggMessage::value>()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "Multiple aggregates with JOIN failed: " << result.error().message();
+
+    auto [sum_val, count_all, avg_val] = result.value();
+    EXPECT_EQ(sum_val, 210);         // 10+20+30+40+50+60
+    EXPECT_EQ(count_all, 6);         // 6 messages
+    EXPECT_DOUBLE_EQ(avg_val, 35.0); // 210/6
+}
+
+TEST_F(AggregateTest, SingleAggregates_WithWhere) {
+    insert_test_data();
+
+    // Individual aggregates with WHERE filter (not using aggregate() builder)
+    // Filter: age > 30 → Charlie(35), Dave(40), Eve(45)
+    auto sum_result =
+            qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30).sum<^^AggregatePerson::age>().select();
+    ASSERT_TRUE(sum_result.has_value()) << "SUM with WHERE failed: " << sum_result.error().message();
+    EXPECT_EQ(sum_result.value(), 120); // 35 + 40 + 45
+
+    qs->reset();
+
+    auto count_result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30).count().select();
+    ASSERT_TRUE(count_result.has_value()) << "COUNT with WHERE failed: " << count_result.error().message();
+    EXPECT_EQ(count_result.value(), 3); // 3 people
+
+    qs->reset();
+
+    auto avg_result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30)
+                              .avg<^^AggregatePerson::salary>()
+                              .select();
+    ASSERT_TRUE(avg_result.has_value()) << "AVG with WHERE failed: " << avg_result.error().message();
+    EXPECT_DOUBLE_EQ(avg_result.value(), 80000.0); // (70k + 80k + 90k) / 3
+}
+
+TEST_F(AggregateTest, SingleAggregates_WithWhereAndJoin) {
+    insert_join_test_data();
+
+    // Individual aggregates with WHERE and JOIN
+    // Filter: value > 25 → 30, 40, 50, 60 (4 messages)
+    auto sum_result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() > 25)
+                              .join<&AggMessage::sender>()
+                              .sum<^^AggMessage::value>()
+                              .select();
+    ASSERT_TRUE(sum_result.has_value()) << "SUM with WHERE+JOIN failed: " << sum_result.error().message();
+    EXPECT_EQ(sum_result.value(), 180); // 30+40+50+60
+
+    msg_qs->reset();
+
+    auto count_result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() > 25)
+                                .join<&AggMessage::sender>()
+                                .count()
+                                .select();
+    ASSERT_TRUE(count_result.has_value()) << "COUNT with WHERE+JOIN failed: " << count_result.error().message();
+    EXPECT_EQ(count_result.value(), 4); // 4 messages
+
+    msg_qs->reset();
+
+    auto min_result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() > 25)
+                              .join<&AggMessage::sender>()
+                              .min<^^AggMessage::value>()
+                              .select();
+    ASSERT_TRUE(min_result.has_value()) << "MIN with WHERE+JOIN failed: " << min_result.error().message();
+    EXPECT_DOUBLE_EQ(min_result.value(), 30.0); // min is 30
+}
+
 TEST_F(AggregateTest, SingleRow_AllAggregates) {
     // Insert single row
     auto insert_result =
