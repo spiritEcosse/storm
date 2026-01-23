@@ -329,38 +329,65 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
     #   OR run steps separately:
     #   3a. Run tests: cmake --build build/debug-coverage --target coverage-run
     #   3b. Generate report: cmake --build build/debug-coverage --target coverage-report
+    #
+    # Coverage combines data from TWO test binaries:
+    #   - storm_tests: Main tests with real SQLite (covers normal paths)
+    #   - storm_orm_mock_tests: Mock tests with LD_PRELOAD (covers [[unlikely]] error paths)
+    #
+    # Both binaries link against the same libstorm, so coverage data merges correctly.
 
-    # Run tests with coverage instrumentation
-    add_custom_target(coverage-run
-        COMMAND ${CMAKE_COMMAND} -E env LLVM_PROFILE_FILE=${CMAKE_BINARY_DIR}/default.profraw
+    # Run main tests with coverage instrumentation
+    add_custom_target(coverage-run-main
+        COMMAND ${CMAKE_COMMAND} -E env LLVM_PROFILE_FILE=${CMAKE_BINARY_DIR}/main.profraw
             $<TARGET_FILE:storm_tests>
         DEPENDS storm_tests
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-        COMMENT "Running tests with coverage instrumentation"
+        COMMENT "Running main tests with coverage instrumentation"
         VERBATIM
     )
 
+    # Run mock tests with LD_PRELOAD to cover [[unlikely]] error paths
+    add_custom_target(coverage-run-mock
+        COMMAND ${CMAKE_COMMAND} -E env
+            LLVM_PROFILE_FILE=${CMAKE_BINARY_DIR}/mock.profraw
+            LD_PRELOAD=$<TARGET_FILE:mock_sqlite3>
+            $<TARGET_FILE:storm_orm_mock_tests>
+        DEPENDS storm_orm_mock_tests mock_sqlite3
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMENT "Running mock tests with coverage instrumentation (LD_PRELOAD)"
+        VERBATIM
+    )
+
+    # Combined target to run both test suites
+    add_custom_target(coverage-run
+        DEPENDS coverage-run-main coverage-run-mock
+        COMMENT "All coverage tests completed"
+    )
+
+    # Merge coverage data from both test runs
     add_custom_target(coverage-merge
         COMMAND ${LLVM_PROFDATA} merge
             -sparse
             -o ${COVERAGE_OUTPUT_DIR}/coverage.profdata
-            ${CMAKE_BINARY_DIR}/default.profraw
+            ${CMAKE_BINARY_DIR}/main.profraw
+            ${CMAKE_BINARY_DIR}/mock.profraw
         DEPENDS coverage-run
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-        COMMENT "Merging coverage data with llvm-profdata"
+        COMMENT "Merging coverage data from main and mock tests"
         VERBATIM
     )
 
-    # HTML coverage report
+    # HTML coverage report (uses both binaries as objects for complete coverage)
     add_custom_target(coverage-report
         COMMAND ${LLVM_COV} show
             $<TARGET_FILE:storm_tests>
+            -object=$<TARGET_FILE:storm_orm_mock_tests>
             -instr-profile=${COVERAGE_OUTPUT_DIR}/coverage.profdata
             -format=html
             -output-dir=${COVERAGE_OUTPUT_DIR}/html
             -show-line-counts-or-regions
             -show-instantiations=false
-            -ignore-filename-regex="third_party|googletest|build"
+            -ignore-filename-regex="third_party|googletest|build|mock_sqlite"
             ${CMAKE_SOURCE_DIR}/src
         DEPENDS coverage-merge
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -372,8 +399,9 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
     add_custom_target(coverage-summary
         COMMAND ${LLVM_COV} report
             $<TARGET_FILE:storm_tests>
+            -object=$<TARGET_FILE:storm_orm_mock_tests>
             -instr-profile=${COVERAGE_OUTPUT_DIR}/coverage.profdata
-            -ignore-filename-regex="third_party|googletest|build"
+            -ignore-filename-regex="third_party|googletest|build|mock_sqlite"
             ${CMAKE_SOURCE_DIR}/src
         DEPENDS coverage-merge
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -385,9 +413,10 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
     add_custom_target(coverage-lcov
         COMMAND ${LLVM_COV} export
             $<TARGET_FILE:storm_tests>
+            -object=$<TARGET_FILE:storm_orm_mock_tests>
             -instr-profile=${COVERAGE_OUTPUT_DIR}/coverage.profdata
             -format=lcov
-            -ignore-filename-regex="third_party|googletest|build"
+            -ignore-filename-regex="third_party|googletest|build|mock_sqlite"
             ${CMAKE_SOURCE_DIR}/src
             > ${COVERAGE_OUTPUT_DIR}/coverage.lcov
         DEPENDS coverage-merge
@@ -400,7 +429,8 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
     add_custom_target(coverage-clean
         COMMAND ${CMAKE_COMMAND} -E rm -rf
             ${COVERAGE_OUTPUT_DIR}
-            ${CMAKE_BINARY_DIR}/default.profraw
+            ${CMAKE_BINARY_DIR}/main.profraw
+            ${CMAKE_BINARY_DIR}/mock.profraw
             ${CMAKE_BINARY_DIR}/*.profraw
         COMMENT "Cleaning coverage data"
         VERBATIM
@@ -419,11 +449,13 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
     )
 
     message(STATUS "Coverage targets available:")
-    message(STATUS "  coverage       - Run tests and generate HTML report")
-    message(STATUS "  coverage-quick - Run tests and show summary")
-    message(STATUS "  coverage-run   - Run tests only")
-    message(STATUS "  coverage-report - Generate HTML report (after coverage-run)")
+    message(STATUS "  coverage         - Run ALL tests and generate HTML report")
+    message(STATUS "  coverage-quick   - Run ALL tests and show summary")
+    message(STATUS "  coverage-run     - Run ALL tests (main + mock)")
+    message(STATUS "  coverage-run-main  - Run main tests only")
+    message(STATUS "  coverage-run-mock  - Run mock tests only (LD_PRELOAD)")
+    message(STATUS "  coverage-report  - Generate HTML report (after coverage-run)")
     message(STATUS "  coverage-summary - Show text summary (after coverage-run)")
-    message(STATUS "  coverage-lcov  - Export LCOV format (for CI)")
-    message(STATUS "  coverage-clean - Clean all coverage data")
+    message(STATUS "  coverage-lcov    - Export LCOV format (for CI)")
+    message(STATUS "  coverage-clean   - Clean all coverage data")
 endif()
