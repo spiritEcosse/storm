@@ -34,13 +34,13 @@ apply_clang_flags(${PROJECT_NAME})
 # Note: Custom libc++ linking now handled by global add_link_options() in main CMakeLists.txt
 
 # ============================================================================
-# Mock SQLite Tests - Tests for the mock SQLite infrastructure
-# These tests verify that the mock SQLite library works correctly and can be
-# used to test hard-to-trigger error paths (SQLITE_NOMEM, SQLITE_CORRUPT, etc.)
+# Mock SQLite Library - SHARED library for LD_PRELOAD-based testing
+# This allows testing error paths in the main storm library by intercepting
+# SQLite calls at runtime via LD_PRELOAD.
 # ============================================================================
 
-# Create mock sqlite library
-add_library(mock_sqlite3 STATIC
+# Create mock sqlite as SHARED library for LD_PRELOAD usage
+add_library(mock_sqlite3 SHARED
     "${CMAKE_CURRENT_SOURCE_DIR}/mock_sqlite/mock_sqlite3.cpp"
 )
 
@@ -51,7 +51,17 @@ target_include_directories(mock_sqlite3 PUBLIC
 # Apply custom libc++ flags to mock library (required for linking compatibility)
 target_compile_options(mock_sqlite3 PRIVATE -stdlib=libc++)
 
-# Mock SQLite test executable
+# Set library properties for proper shared library behavior
+set_target_properties(mock_sqlite3 PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+)
+
+# ============================================================================
+# Mock SQLite Infrastructure Tests - Tests the mock library itself
+# These tests verify that the mock SQLite library works correctly.
+# ============================================================================
+
 add_executable(storm_mock_tests
     "${CMAKE_CURRENT_SOURCE_DIR}/mock_sqlite/test_sqlite_mock.cpp"
 )
@@ -71,20 +81,53 @@ target_include_directories(storm_mock_tests PRIVATE
 # Apply custom libc++ flags to mock tests (required for linking compatibility)
 target_compile_options(storm_mock_tests PRIVATE -stdlib=libc++)
 
-# Discover mock tests
+# Discover mock infrastructure tests
 gtest_discover_tests(storm_mock_tests)
 
 # ============================================================================
-# Note: Storm ORM Mock Tests (storm_orm_mock_tests) were removed because
-# C++26 modules cannot be compiled twice in the same build with different
-# link targets. The module cache gets corrupted when the same .cppm files
-# are compiled for both 'storm' and 'storm_mock' targets.
+# Storm ORM Mock Tests - Tests Storm ORM error paths using LD_PRELOAD
+# These tests link against the MAIN storm library (not a mock-linked copy)
+# and use LD_PRELOAD at runtime to intercept SQLite calls.
+# This allows coverage data to count toward the main library!
 #
-# For ORM error path coverage, we use:
-# 1. Real SQLite error tests (test_sqlite_errors.cpp) - constraint violations,
-#    FK errors, invalid operations that trigger real SQLITE_CONSTRAINT, etc.
-# 2. Mock SQLite infrastructure tests (storm_mock_tests) - verify mock works
-#
-# Hard-to-trigger errors (SQLITE_NOMEM, SQLITE_CORRUPT) are not tested at ORM
-# level but are covered by mock infrastructure tests.
+# Usage: LD_PRELOAD=./lib/libmock_sqlite3.so ./tests/storm_orm_mock_tests
 # ============================================================================
+
+add_executable(storm_orm_mock_tests
+    "${CMAKE_CURRENT_SOURCE_DIR}/mock_sqlite/test_orm_mock_errors.cpp"
+)
+
+# Link against MAIN storm library (not storm_mock) - coverage will count!
+# Also link mock_sqlite3 for the MockSqlite3Config API
+target_link_libraries(storm_orm_mock_tests PRIVATE
+    storm
+    mock_sqlite3
+    gtest
+    gtest_main
+    pthread
+)
+
+# Also link real SQLite (mock_sqlite3 will override via LD_PRELOAD at runtime)
+link_sqlite(storm_orm_mock_tests)
+
+target_include_directories(storm_orm_mock_tests PRIVATE
+    ${GTEST_INCLUDE_DIRS}
+    "${CMAKE_CURRENT_SOURCE_DIR}/mock_sqlite"
+    "${CMAKE_SOURCE_DIR}/src"
+)
+
+# Apply Clang flags for modules and reflection
+apply_clang_flags(storm_orm_mock_tests)
+
+# Don't auto-discover these tests - they need LD_PRELOAD to work correctly
+# They will be run manually or via a custom target
+# gtest_discover_tests(storm_orm_mock_tests)
+
+# Create a convenience target for running mock ORM tests with LD_PRELOAD
+add_custom_target(run_mock_orm_tests
+    COMMAND ${CMAKE_COMMAND} -E env "LD_PRELOAD=${CMAKE_BINARY_DIR}/lib/libmock_sqlite3.so"
+            $<TARGET_FILE:storm_orm_mock_tests>
+    DEPENDS storm_orm_mock_tests mock_sqlite3
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Running ORM mock tests with LD_PRELOAD"
+)
