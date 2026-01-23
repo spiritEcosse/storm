@@ -35,14 +35,8 @@ export namespace storm::orm::statements {
     // Shared reflection utilities for all statement types
     template <typename T> class BaseStatement {
       public:
-        // Public accessors for optimization
-        static constexpr auto get_primary_key() -> std::meta::info {
-            return primary_key_;
-        }
-        static constexpr auto get_pk_name() -> std::string_view {
-            return pk_name_;
-        }
-        static constexpr auto get_table_name() -> std::string_view {
+        // Compile-time accessor for table name (used in SQL generation)
+        static consteval auto get_table_name() -> std::string_view {
             return table_name_;
         }
 
