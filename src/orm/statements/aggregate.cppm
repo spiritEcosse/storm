@@ -30,6 +30,7 @@ export namespace storm::orm::statements {
     // Aggregate function types
     enum class AggregateType { SUM, COUNT, AVG, MIN, MAX, COUNT_DISTINCT };
 
+    // LCOV_EXCL_START - compile-time only (called from consteval functions)
     // Helper to get SQL function name from AggregateType
     // Note: COUNT_DISTINCT is handled specially in build_operation_sql
     constexpr auto get_agg_function_name(AggregateType type) -> std::string_view {
@@ -49,18 +50,21 @@ export namespace storm::orm::statements {
         }
         return "";
     }
+    // LCOV_EXCL_STOP
 
     // Aggregate operation descriptor
     template <AggregateType Type, std::meta::info... FieldInfos> struct AggregateOp {
         static constexpr AggregateType agg_type    = Type;
         static constexpr size_t        field_count = sizeof...(FieldInfos);
-        static constexpr auto          get_field_infos() -> std::array<std::meta::info, sizeof...(FieldInfos)> {
+        // LCOV_EXCL_START - compile-time only (initializes constexpr field_infos)
+        static constexpr auto get_field_infos() -> std::array<std::meta::info, sizeof...(FieldInfos)> {
             if constexpr (sizeof...(FieldInfos) > 0) {
                 return std::array{FieldInfos...};
             } else {
                 return std::array<std::meta::info, 0>{};
             }
         }
+        // LCOV_EXCL_STOP
         static constexpr auto field_infos = get_field_infos();
     };
 

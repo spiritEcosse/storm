@@ -425,6 +425,62 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
         VERBATIM
     )
 
+    # Find lcov tool for filtering LCOV_EXCL markers
+    find_program(LCOV_TOOL lcov)
+    find_program(GENHTML_TOOL genhtml)
+
+    if(LCOV_TOOL)
+        message(STATUS "lcov found: ${LCOV_TOOL}")
+
+        # Filter coverage with LCOV_EXCL markers applied
+        add_custom_target(coverage-filtered
+            COMMAND ${LCOV_TOOL}
+                --rc branch_coverage=1
+                --ignore-errors unused,deprecated
+                --remove ${COVERAGE_OUTPUT_DIR}/coverage.lcov
+                "*/third_party/*" "*/googletest/*" "*/build/*" "*/tests/*"
+                --output-file ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
+            COMMAND ${LCOV_TOOL}
+                --rc branch_coverage=1
+                --ignore-errors deprecated
+                --summary ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
+            DEPENDS coverage-lcov
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            COMMENT "Filtering coverage with LCOV_EXCL markers"
+            VERBATIM
+        )
+
+        if(GENHTML_TOOL)
+            message(STATUS "genhtml found: ${GENHTML_TOOL}")
+
+            # Generate HTML report with exclusions applied
+            add_custom_target(coverage-filtered-html
+                COMMAND ${GENHTML_TOOL}
+                    --rc branch_coverage=1
+                    --ignore-errors deprecated,range
+                    --legend
+                    --title "Storm ORM Coverage (filtered)"
+                    --output-directory ${COVERAGE_OUTPUT_DIR}/html-filtered
+                    ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
+                DEPENDS coverage-filtered
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                COMMENT "Generating filtered HTML coverage report in ${COVERAGE_OUTPUT_DIR}/html-filtered"
+                VERBATIM
+            )
+
+            message(STATUS "  coverage-filtered      - Apply LCOV_EXCL markers and show summary")
+            message(STATUS "  coverage-filtered-html - Generate HTML with LCOV_EXCL exclusions")
+        else()
+            message(STATUS "genhtml not found - coverage-filtered-html target disabled")
+            message(STATUS "  Install lcov package for HTML reports with exclusions")
+        endif()
+    else()
+        message(STATUS "lcov not found - coverage-filtered targets disabled")
+        message(STATUS "  Install lcov package to enable LCOV_EXCL marker support")
+        message(STATUS "  Manjaro/Arch: sudo pacman -S lcov")
+        message(STATUS "  Ubuntu/Debian: sudo apt install lcov")
+    endif()
+
     # Clean coverage data
     add_custom_target(coverage-clean
         COMMAND ${CMAKE_COMMAND} -E rm -rf

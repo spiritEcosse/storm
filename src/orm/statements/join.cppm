@@ -79,6 +79,7 @@ export namespace storm::orm::statements {
 
         static constexpr size_t non_fk_field_count_ = count_non_fk_fields();
 
+        // LCOV_EXCL_START - compile-time only (initializes constexpr column_offsets_)
         // Constexpr storage for column offsets
         static constexpr auto calculate_column_offsets() {
             std::array<size_t, fk_count_> offsets{};
@@ -91,6 +92,7 @@ export namespace storm::orm::statements {
 
             return offsets;
         }
+        // LCOV_EXCL_STOP
 
         static constexpr auto column_offsets_ = calculate_column_offsets();
 
@@ -109,6 +111,7 @@ export namespace storm::orm::statements {
 
         static constexpr auto fk_field_names_ = build_fk_field_names();
 
+        // LCOV_EXCL_START - compile-time only (called from consteval functions)
         static constexpr auto get_join_keyword() -> std::string_view {
             if constexpr (Type == JoinType::Inner) {
                 return " INNER JOIN ";
@@ -118,6 +121,7 @@ export namespace storm::orm::statements {
                 return " RIGHT JOIN ";
             }
         }
+        // LCOV_EXCL_STOP
 
         // Compile-time SQL generation with ConstexprString
         static consteval auto calculate_join_sql_size() -> size_t {
