@@ -96,3 +96,142 @@ if (success) {
     conn->execute("ROLLBACK");
 }
 ```
+
+## Flat Code vs Nested Lambdas
+
+**For hot paths, prefer flat code over nested lambdas.** Benchmarks show ~3-4% improvement.
+
+### The Problem
+
+Nested lambdas add overhead from captures, indirect calls, and inlining barriers:
+
+```cpp
+// ❌ SLOW: Nested lambdas (90% efficiency)
+execute_with_transaction(conn, true,
+    [this, objects]() {                          // Lambda 1: captures
+        return execute_with_statement(conn, sql,
+            [this, objects](auto& stmt) {        // Lambda 2: captures again
+                for (...) { ... }
+            });
+    });
+```
+
+### The Solution
+
+```cpp
+// ✅ FAST: Flat code (93-94% efficiency)
+if (!cached_stmt_) { cached_stmt_ = conn_->prepare_cached(sql); }
+conn_->execute("BEGIN TRANSACTION");
+for (const auto& obj : objects) {
+    cached_stmt_->reset();
+    bind(...);
+    cached_stmt_->execute();
+}
+conn_->execute("COMMIT");
+```
+
+### Why Lambdas Are Slower
+
+- Capture storage overhead (storing `this`, spans, etc.)
+- Indirect call through function pointer
+- Compiler inlining barriers at lambda boundaries
+- Extra stack frame creation per lambda
+
+### When to Use Each
+
+| Flat Code | Lambdas |
+|-----------|---------|
+| Hot paths (millions of calls) | Cold paths (setup, config) |
+| Inner loops, batch operations | Callbacks, event handlers |
+| Performance-critical ORM ops | Code reuse across callers |
+
+## Raw Pointer Caching in Hot Loops
+
+**For query loops extracting many rows, cache the raw `sqlite3_stmt*` pointer.** Benchmarks show ~5-6% improvement.
+
+### The Problem
+
+```cpp
+// ❌ SLOW: unique_ptr::get() called on every column (90.6% efficiency)
+while (stmt->step() == SQLITE_ROW) {
+    obj.id = sqlite3_column_int64(stmt->handle(), 0);    // handle() = unique_ptr::get()
+    obj.name = sqlite3_column_text(stmt->handle(), 1);   // handle() again
+    obj.age = sqlite3_column_int(stmt->handle(), 2);     // handle() again
+    // ... 6+ calls per row × millions of rows
+}
+```
+
+### The Solution
+
+```cpp
+// ✅ FAST: Cache raw pointer once (96% efficiency)
+sqlite3_stmt* raw_stmt = stmt->handle();  // Cache ONCE before loop
+while (sqlite3_step(raw_stmt) == SQLITE_ROW) {
+    obj.id = sqlite3_column_int64(raw_stmt, 0);    // Direct pointer
+    obj.name = sqlite3_column_text(raw_stmt, 1);   // No indirection
+    obj.age = sqlite3_column_int(raw_stmt, 2);     // Maximum speed
+}
+```
+
+### Why This Matters
+
+- `unique_ptr::get()` is not free - it's a function call with pointer dereference
+- Called 6+ times per row (once per column)
+- For 10,000 rows: 60,000+ unnecessary function calls
+- Compiler may not inline across translation units
+
+### Benchmark Evidence (SELECT WHERE with 10K rows)
+
+| Pattern | Efficiency |
+|---------|------------|
+| Without raw pointer cache | 90.6% |
+| With raw pointer cache | 96% |
+
+## Expression Address Caching
+
+**For repeated queries with same WHERE expression, track expression address to skip SQL string building.**
+
+### Implementation Pattern
+
+```cpp
+// Inside statement class
+mutable const void* cached_expr_addr_ = nullptr;
+mutable Statement* cached_stmt_ = nullptr;
+
+auto execute(const WhereExpr& expr) {
+    const void* expr_addr = static_cast<const void*>(expr.get());
+
+    // Cache hit: same expression object, skip SQL building
+    if (expr_addr == cached_expr_addr_ && cached_stmt_) {
+        cached_stmt_->reset();
+        bind_params(cached_stmt_, expr);
+        return execute_loop(cached_stmt_);
+    }
+
+    // Cache miss: build SQL, prepare statement
+    std::string sql = build_sql(expr);
+    cached_stmt_ = conn_->prepare_cached(sql);
+    cached_expr_addr_ = expr_addr;
+    bind_params(cached_stmt_, expr);
+    return execute_loop(cached_stmt_);
+}
+```
+
+### Critical: Prevent ABA Problem
+
+**Always invalidate cache on reset() to prevent stale pointer matches:**
+
+```cpp
+void invalidate_cache() {
+    cached_expr_addr_ = nullptr;
+    // Note: don't clear cached_stmt_ - it's still valid in connection cache
+}
+
+// In QuerySet::reset()
+void reset() {
+    where_expr_.reset();
+    select_stmt_->invalidate_cache();  // CRITICAL: prevent stale pointer match
+}
+```
+
+**ABA Problem**: New expression allocated at same address as freed expression → stale cache hit → wrong SQL used

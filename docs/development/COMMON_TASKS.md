@@ -154,3 +154,148 @@ static auto get_cached_sql(size_t key) -> std::string {
 - Batch INSERT: ~2.7M/sec, Batch DELETE: ~3.9M/sec
 - JOIN: 4-6M rows/sec (77% average efficiency vs raw SQLite)
 - Cache hit rate: >90% for common sizes (1, 10, 25, 50)
+
+## Thread Safety Patterns
+
+### ✅ Safe: Per-Thread Connections
+
+Default connection is thread-safe via `thread_local`:
+
+```cpp
+// ✅ SAFE: Each thread gets its own connection
+void worker_thread() {
+    // Initialize thread-local connection
+    QuerySet<Person>::set_default_connection(":memory:");
+
+    // Each thread has isolated connection + QuerySet
+    QuerySet<Person> qs;
+    qs.where(age > 30).select();  // Thread-safe!
+}
+
+std::thread t1(worker_thread);
+std::thread t2(worker_thread);  // No race - separate connections
+```
+
+### ❌ Unsafe: Sharing QuerySet Between Threads
+
+```cpp
+// ❌ UNSAFE: Sharing QuerySet between threads
+QuerySet<Person> qs;
+
+std::thread t1([&qs]() { qs.where(age > 30).select(); });
+std::thread t2([&qs]() { qs.where(age > 50).select(); });  // RACE CONDITION!
+```
+
+**Problem**: QuerySet has mutable state (`where_expr_`, `join_stmt_`).
+
+### ❌ Unsafe: Sharing Connection Between Threads
+
+```cpp
+// ❌ UNSAFE: Sharing connection between threads
+auto conn = Connection::create("db.sqlite").value();
+
+std::thread t1([&conn]() { QuerySet<Person>{conn}.select(); });
+std::thread t2([&conn]() { QuerySet<Person>{conn}.select(); });  // RACE CONDITION!
+```
+
+**Problem**: SQLite connections are not thread-safe.
+
+### ✅ Recommended Pattern
+
+```cpp
+// ✅ SAFE: Per-thread connections and QuerySets
+void worker_thread() {
+    auto conn = db::sqlite::Connection::create("database.db").value();
+    QuerySet<Person> qs{conn};
+
+    for (int i = 0; i < 1000; i++) {
+        qs.where(age > 30).distinct<^^Person::name>().select();
+    }
+}
+
+std::thread t1(worker_thread);
+std::thread t2(worker_thread);
+```
+
+**Why safe:**
+- Each thread has its own `Connection` instance
+- Each thread has its own `QuerySet` instance
+- `static thread_local` caching provides isolated storage per thread
+
+## QuerySet Modes and Transformers
+
+QuerySet operates in different **modes** via **transformers**:
+
+### Default Mode (Object Mode)
+
+```cpp
+QuerySet<Person> qs;
+auto results = qs.select();  // Returns plf::hive<Person>
+```
+
+### Tuple Mode (via distinct/values)
+
+```cpp
+// Single field - returns plf::hive<std::string>
+auto names = qs.distinct<^^Person::name>().select();
+
+// Multiple fields - returns plf::hive<std::tuple<std::string, int>>
+auto pairs = qs.distinct<^^Person::name, ^^Person::age>().select();
+
+// values() for specific columns
+auto values = qs.values<^^Person::name, ^^Person::age>().select();
+```
+
+### Aggregate Mode (via aggregates)
+
+```cpp
+// Standalone aggregates - return scalar values
+auto min_age = qs.min<^^Person::age>();
+auto max_age = qs.max<^^Person::age>();
+auto count = qs.count();
+
+// GROUP BY + aggregate - returns tuples
+auto by_dept = qs.group_by<^^Person::department>().count().select();
+// Returns: plf::hive<std::tuple<DeptType, int64_t>>
+
+// Multiple GROUP BY fields
+auto by_age_dept = qs.group_by<^^Person::age, ^^Person::department>()
+                     .sum<^^Person::salary>().select();
+```
+
+### Available Methods
+
+| Method | Description |
+|--------|-------------|
+| `where(Condition)` | Filter rows |
+| `join<OtherModel>()` | Add JOIN clause |
+| `order_by<Cols...>()` | Sort results |
+| `limit(int)` | Restrict result count |
+| `offset(int)` | Skip results |
+| `group_by<Cols...>()` | Group results |
+| `having(Condition)` | Filter groups |
+| `distinct<Cols...>()` | Unique values (enters Tuple Mode) |
+| `values<Cols...>()` | Select specific columns (enters Tuple Mode) |
+
+### Available Aggregates
+
+| Aggregate | Description |
+|-----------|-------------|
+| `count()` | COUNT(*) |
+| `count<^^field>()` | COUNT(field) |
+| `sum<^^field>()` | SUM(field) |
+| `avg<^^field>()` | AVG(field) |
+| `min<^^field>()` | MIN(field) |
+| `max<^^field>()` | MAX(field) |
+
+### Clause Ordering
+
+Chain methods in any order - SQL clauses are reordered automatically:
+
+```cpp
+// These produce identical SQL:
+qs.limit(10).where(age > 25).order_by<^^Person::name>().select();
+qs.where(age > 25).order_by<^^Person::name>().limit(10).select();
+
+// Generated: SELECT ... FROM Person WHERE age > 25 ORDER BY name LIMIT 10
+```
