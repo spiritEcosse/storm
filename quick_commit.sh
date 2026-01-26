@@ -1,10 +1,9 @@
 #!/bin/bash
 # Quick commit workflow: format -> tidy --fix -> test -> sonar -> bench -> commit -> push
-# Usage: ./quick_commit.sh [--no-push] [--no-tidy] [--no-sonar] [--no-bench] [commit message]
+# Usage: ./quick_commit.sh [--no-push] [--no-sonar] [--no-bench] [commit message]
 #
 # Options:
 #   --no-push   Skip pushing to remote after commit
-#   --no-tidy   Skip clang-tidy auto-fix (runs by default)
 #   --no-sonar  Skip local sonar check (runs by default)
 #   --no-bench  Skip quick benchmark sanity check (runs by default)
 
@@ -12,7 +11,6 @@ set -e  # Exit on any error
 
 # Parse flags
 NO_PUSH=false
-RUN_TIDY=true
 RUN_SONAR=true
 RUN_BENCH=true
 COMMIT_MSG_ARG=""
@@ -20,8 +18,6 @@ COMMIT_MSG_ARG=""
 for arg in "$@"; do
     if [[ "$arg" == "--no-push" ]]; then
         NO_PUSH=true
-    elif [[ "$arg" == "--no-tidy" ]]; then
-        RUN_TIDY=false
     elif [[ "$arg" == "--no-sonar" ]]; then
         RUN_SONAR=false
     elif [[ "$arg" == "--no-bench" ]]; then
@@ -35,15 +31,13 @@ COMMIT_MSG_ARG=$(echo "$COMMIT_MSG_ARG" | xargs)  # Trim whitespace
 echo "📝 Running clang-format..."
 find src tests benchmarks -type f \( -name "*.cpp" -o -name "*.cppm" -o -name "*.h" -o -name "*.hpp" \) -exec ../clang-p2996/build/bin/clang-format -i --style=file {} +
 
-# Clang-tidy with auto-fix (runs by default)
-if [[ "$RUN_TIDY" == true ]]; then
-    echo ""
-    echo "🔍 Running clang-tidy --fix (auto-fixing issues)..."
-    ./scripts/run_clang_tidy.sh --fix || {
-        echo "❌ clang-tidy failed. Fix issues or run with --no-tidy to skip"
-        exit 1
-    }
-fi
+# Clang-tidy with auto-fix (always runs - must pass before commit)
+echo ""
+echo "🔍 Running clang-tidy --fix (auto-fixing issues)..."
+./scripts/run_clang_tidy.sh --fix || {
+    echo "❌ clang-tidy failed. Fix issues before committing."
+    exit 1
+}
 
 echo ""
 echo "🧪 Running unit tests..."

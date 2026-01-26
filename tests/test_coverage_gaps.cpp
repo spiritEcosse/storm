@@ -14,6 +14,7 @@
 // NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)
 // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
 // NOLINTBEGIN(readability-convert-member-functions-to-static,misc-const-correctness)
+// NOLINTBEGIN(readability-identifier-length,readability-uppercase-literal-suffix,modernize-use-std-numbers)
 
 import storm;
 import storm_db_sqlite;
@@ -1446,6 +1447,7 @@ TEST_F(QueryResetTest, AggregatesWithOrderByLimit) {
     EXPECT_EQ(count.value(), 5);
 }
 
+// NOLINTEND(readability-identifier-length,readability-uppercase-literal-suffix,modernize-use-std-numbers)
 // NOLINTEND(readability-convert-member-functions-to-static,misc-const-correctness)
 // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)

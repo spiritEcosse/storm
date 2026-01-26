@@ -15,6 +15,7 @@
 // NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)
 // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
 // NOLINTBEGIN(readability-convert-member-functions-to-static,misc-const-correctness)
+// NOLINTBEGIN(readability-identifier-length)
 
 import storm;
 import storm_db_sqlite;
@@ -841,6 +842,7 @@ TEST_F(MultipleAggregatesTest, CountDistinctViaDistinct) {
     EXPECT_EQ(distinct_result.value().size(), 5);
 }
 
+// NOLINTEND(readability-identifier-length)
 // NOLINTEND(readability-convert-member-functions-to-static,misc-const-correctness)
 // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)

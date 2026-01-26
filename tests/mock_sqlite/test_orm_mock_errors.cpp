@@ -17,6 +17,10 @@
 
 #include <gtest/gtest.h>
 
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)
+// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
+// NOLINTBEGIN(readability-convert-member-functions-to-static,misc-const-correctness)
+
 #include "mock_sqlite3.h"
 
 import storm;
@@ -1823,3 +1827,7 @@ namespace {
     }
 
 } // namespace
+
+// NOLINTEND(readability-convert-member-functions-to-static,misc-const-correctness)
+// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)
