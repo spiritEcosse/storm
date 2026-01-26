@@ -441,17 +441,12 @@ export namespace storm::orm::statements {
             sql.reserve(base_sql_.size() + utilities::sql_len::XL_BUFFER);
 
             if constexpr (HasGroupBy) {
+                // base_sql_ always contains " GROUP BY " when HasGroupBy=true (built by build_base_sql)
                 size_t const group_by_pos = base_sql_.find(" GROUP BY ");
-                if (group_by_pos != std::string::npos) {
-                    sql = base_sql_.substr(0, group_by_pos);
-                    sql += " WHERE ";
-                    sql += orm::where::to_sql(*where_expr_);
-                    sql += base_sql_.substr(group_by_pos);
-                } else {
-                    sql = base_sql_;
-                    sql += " WHERE ";
-                    sql += orm::where::to_sql(*where_expr_);
-                }
+                sql                       = base_sql_.substr(0, group_by_pos);
+                sql += " WHERE ";
+                sql += orm::where::to_sql(*where_expr_);
+                sql += base_sql_.substr(group_by_pos);
                 Base::append_order_by(sql, order_by_wrapper_);
                 Base::append_limit_offset(sql, limit_, offset_);
             } else {
@@ -515,12 +510,11 @@ export namespace storm::orm::statements {
 
             // For GROUP BY, insert WHERE before GROUP BY
             if constexpr (HasGroupBy) {
-                size_t const group_pos = sql.find(" GROUP BY ");
-                if (group_pos != std::string::npos) {
-                    std::string where_clause = " WHERE ";
-                    where_clause += orm::where::to_sql(*where_expr_);
-                    sql.insert(group_pos, where_clause);
-                }
+                // build_join_sql() always adds " GROUP BY " when HasGroupBy=true
+                size_t const group_pos    = sql.find(" GROUP BY ");
+                std::string  where_clause = " WHERE ";
+                where_clause += orm::where::to_sql(*where_expr_);
+                sql.insert(group_pos, where_clause);
                 Base::append_order_by(sql, order_by_wrapper_);
                 Base::append_limit_offset(sql, limit_, offset_);
             } else {
@@ -628,8 +622,5 @@ export namespace storm::orm::statements {
         std::optional<int>                  offset_;
         std::optional<OrderByWrapper>       order_by_wrapper_;
     };
-
-    // Keep FieldInfoPack for GroupByBuilder compatibility
-    template <std::meta::info... Infos> using FieldInfoPack = GroupByFields<Infos...>;
 
 } // namespace storm::orm::statements
