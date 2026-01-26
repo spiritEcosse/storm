@@ -134,7 +134,10 @@ namespace storm::test {
 
         // Configure for specific call counts (e.g., "fail on 3rd bind_int call")
         static auto bind_int_fails_on_call(int call_number, int return_code) -> MockSqlite3Config&;
+        static auto bind_int64_fails_on_call(int call_number, int return_code) -> MockSqlite3Config&;
+        static auto bind_text_fails_on_call(int call_number, int return_code) -> MockSqlite3Config&;
         static auto step_fails_on_call(int call_number, int return_code) -> MockSqlite3Config&;
+        static auto prepare_fails_on_call(int call_number, int return_code) -> MockSqlite3Config&;
 
         // Get call counts for verification
         static auto get_bind_int_call_count() -> int;

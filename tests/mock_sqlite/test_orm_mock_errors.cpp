@@ -1108,6 +1108,24 @@ namespace {
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
     }
 
+    // Test FK field bind error during UPDATE (covers lines 213-214 in update.cppm)
+    // MockMessage has FK field 'sender' of type MockUser
+    // Update bind order: sender.id (FK's PK, int), text (text), MockMessage.id (PK, int)
+    // Failing bind_int on call 1 will fail the FK bind
+    TEST_F(JoinMockErrorTest, UpdateWithFkFieldFailsOnFkBindError) {
+        // Fail on first bind_int call which binds the FK field's PK
+        MockSqlite3Config::bind_int_fails_on_call(1, SQLITE_NOMEM);
+
+        QuerySet<MockMessage> qs;
+        MockUser const        sender{.id = 1, .name = "Sender", .age = 30};
+        MockMessage const     message{.id = 1, .sender = sender, .text = "Hello"};
+
+        auto result = qs.update(message);
+
+        ASSERT_FALSE(result.has_value()) << "Update should fail when FK field bind fails";
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
     // ============================================================================
     // Step Return Sequence for Complex Operations
     // Tests multi-step operations with mid-execution failures
@@ -1229,6 +1247,181 @@ namespace {
         // Should have called bind_int (for age) and bind_text (for name)
         EXPECT_GE(MockSqlite3Config::get_bind_int_call_count(), 0); // Implementation may vary
         EXPECT_GE(MockSqlite3Config::get_bind_text_call_count(), 0);
+    }
+
+    // ============================================================================
+    // Targeted Update Bind Error Tests
+    // These tests cover specific uncovered paths in update.cppm
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, UpdateFailsOnPkBindError) {
+        // This covers line 244-246 in update.cppm:
+        // "Bind primary key last" - when PK binding fails
+        // MockPerson binds: name(text), age(int), id(int64 for WHERE)
+        // Fail on 1st bind_int64 call (the PK in WHERE clause)
+        MockSqlite3Config::bind_int64_fails_on_call(1, SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        MockPerson const     person{.id = 1, .name = "Updated", .age = 35};
+
+        auto result = qs.update(person);
+
+        ASSERT_FALSE(result.has_value()) << "Update should fail when PK bind fails";
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    TEST_F(ORMMockErrorTest, UpdateFailsOnFirstFieldBindError) {
+        // This covers the inline_bind_all_fields error path (lines 166-167, 185-186)
+        // Fail on 1st bind_text call (the 'name' field)
+        MockSqlite3Config::bind_text_fails_on_call(1, SQLITE_IOERR);
+
+        QuerySet<MockPerson> qs;
+        MockPerson const     person{.id = 1, .name = "Updated", .age = 35};
+
+        auto result = qs.update(person);
+
+        ASSERT_FALSE(result.has_value()) << "Update should fail when field bind fails";
+        EXPECT_EQ(result.error().code(), SQLITE_IOERR);
+    }
+
+    TEST_F(ORMMockErrorTest, UpdateFailsOnSecondFieldBindError) {
+        // Fail on 1st bind_int call (the 'age' field, after 'name' succeeds)
+        MockSqlite3Config::bind_int_fails_on_call(1, SQLITE_CORRUPT);
+
+        QuerySet<MockPerson> qs;
+        MockPerson const     person{.id = 1, .name = "Updated", .age = 35};
+
+        auto result = qs.update(person);
+
+        ASSERT_FALSE(result.has_value()) << "Update should fail when second field bind fails";
+        EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
+    }
+
+    TEST_F(ORMMockErrorTest, BatchUpdateFailsOnSecondRowBindError) {
+        // This covers the batch update loop error path (lines 165-168 in update.cppm)
+        // Fail on 2nd bind_text call (during second row's 'name' field)
+        MockSqlite3Config::bind_text_fails_on_call(2, SQLITE_NOMEM);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {
+                {.id = 1, .name = "First", .age = 30},
+                {.id = 2, .name = "Second", .age = 25}, // This one should fail
+        };
+
+        auto result = qs.update(std::span{people});
+
+        ASSERT_FALSE(result.has_value()) << "Batch update should fail on second row bind error";
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    // ============================================================================
+    // Single-Object Span Update Tests
+    // These tests cover the execute_single_row path (lines 180-195 in update.cppm)
+    // which is only called when update(span) is called with span.size() == 1
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, SpanOfOneUpdateSucceeds) {
+        // This covers execute_single_row happy path (lines 182-195)
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> single = {{.id = 1, .name = "SingleSpan", .age = 30}};
+
+        auto result = qs.update(std::span{single});
+
+        // Should succeed (mock returns DONE by default)
+        EXPECT_TRUE(result.has_value()) << "Span-of-one update should succeed";
+    }
+
+    TEST_F(ORMMockErrorTest, SpanOfOneUpdateFailsOnBindError) {
+        // This covers execute_single_row bind error (lines 185-187)
+        MockSqlite3Config::bind_text_fails_on_call(1, SQLITE_NOMEM);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> single = {{.id = 1, .name = "SingleSpan", .age = 30}};
+
+        auto result = qs.update(std::span{single});
+
+        ASSERT_FALSE(result.has_value()) << "Span-of-one update should fail on bind error";
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    TEST_F(ORMMockErrorTest, SpanOfOneUpdateFailsOnExecError) {
+        // This covers execute_single_row exec error (lines 190-192)
+        MockSqlite3Config::step_returns(SQLITE_BUSY);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> single = {{.id = 1, .name = "SingleSpan", .age = 30}};
+
+        auto result = qs.update(std::span{single});
+
+        ASSERT_FALSE(result.has_value()) << "Span-of-one update should fail on exec error";
+        EXPECT_EQ(result.error().code(), SQLITE_BUSY);
+    }
+
+    TEST_F(ORMMockErrorTest, UpdateEmptySpanReturnsSuccess) {
+        // This covers the empty span early return (lines 137-139)
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> empty;
+
+        auto result = qs.update(std::span{empty});
+
+        EXPECT_TRUE(result.has_value()) << "Empty span update should succeed immediately";
+    }
+
+    TEST_F(ORMMockErrorTest, BatchUpdatePrepareFailure) {
+        // This covers prepare_cached failure in execute(span) (lines 143-146)
+        // Use batch of 2+ to go through batch path, not single-row path
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {
+                {.id = 1, .name = "First", .age = 30},
+                {.id = 2, .name = "Second", .age = 25},
+        };
+
+        auto result = qs.update(std::span{people});
+
+        ASSERT_FALSE(result.has_value()) << "Batch update should fail on prepare error";
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    TEST_F(ORMMockErrorTest, BatchUpdateTransactionBeginFailure) {
+        // This covers transaction begin failure (lines 157-159)
+        // TransactionGuard::begin() calls conn.execute("BEGIN TRANSACTION")
+        // which uses prepare_cached() then stmt->execute() (which calls step)
+        // For batch update with 2 rows:
+        //   step 1: BEGIN TRANSACTION
+        //   step 2: UPDATE row 1
+        //   step 3: UPDATE row 2
+        //   step 4: COMMIT
+        // Fail on step 1 to simulate transaction begin failure
+        MockSqlite3Config::step_fails_on_call(1, SQLITE_BUSY);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {
+                {.id = 1, .name = "First", .age = 30},
+                {.id = 2, .name = "Second", .age = 25},
+        };
+
+        auto result = qs.update(std::span{people});
+
+        // Transaction begin failure should propagate
+        ASSERT_FALSE(result.has_value()) << "Batch update should fail when transaction begin fails";
+        EXPECT_EQ(result.error().code(), SQLITE_BUSY);
+    }
+
+    TEST_F(ORMMockErrorTest, BatchUpdateSuccessWithCommit) {
+        // This covers successful batch update with commit (line 176)
+        // All operations succeed, commit should be called
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {
+                {.id = 1, .name = "First", .age = 30},
+                {.id = 2, .name = "Second", .age = 25},
+        };
+
+        auto result = qs.update(std::span{people});
+
+        // Mock returns DONE by default, so this should succeed
+        EXPECT_TRUE(result.has_value()) << "Batch update should succeed and commit";
     }
 
 } // namespace

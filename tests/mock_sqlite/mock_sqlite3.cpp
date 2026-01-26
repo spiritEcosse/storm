@@ -60,10 +60,16 @@ namespace {
         size_t           step_sequence_index = 0;
 
         // Fail-on-call-N support
-        int bind_int_fail_on_call = -1;
-        int bind_int_fail_code    = SQLITE_OK;
-        int step_fail_on_call     = -1;
-        int step_fail_code        = SQLITE_OK;
+        int bind_int_fail_on_call   = -1;
+        int bind_int_fail_code      = SQLITE_OK;
+        int bind_int64_fail_on_call = -1;
+        int bind_int64_fail_code    = SQLITE_OK;
+        int bind_text_fail_on_call  = -1;
+        int bind_text_fail_code     = SQLITE_OK;
+        int step_fail_on_call       = -1;
+        int step_fail_code          = SQLITE_OK;
+        int prepare_fail_on_call    = -1;
+        int prepare_fail_code       = SQLITE_OK;
 
         // Call counters
         int bind_int_calls    = 0;
@@ -95,10 +101,16 @@ namespace {
             step_sequence.clear();
             step_sequence_index = 0;
 
-            bind_int_fail_on_call = -1;
-            bind_int_fail_code    = SQLITE_OK;
-            step_fail_on_call     = -1;
-            step_fail_code        = SQLITE_OK;
+            bind_int_fail_on_call   = -1;
+            bind_int_fail_code      = SQLITE_OK;
+            bind_int64_fail_on_call = -1;
+            bind_int64_fail_code    = SQLITE_OK;
+            bind_text_fail_on_call  = -1;
+            bind_text_fail_code     = SQLITE_OK;
+            step_fail_on_call       = -1;
+            step_fail_code          = SQLITE_OK;
+            prepare_fail_on_call    = -1;
+            prepare_fail_code       = SQLITE_OK;
 
             bind_int_calls    = 0;
             bind_text_calls   = 0;
@@ -211,9 +223,27 @@ namespace storm::test {
         return instance_;
     }
 
+    auto MockSqlite3Config::bind_int64_fails_on_call(int call_number, int return_code) -> MockSqlite3Config& {
+        g_mock_config.bind_int64_fail_on_call = call_number;
+        g_mock_config.bind_int64_fail_code    = return_code;
+        return instance_;
+    }
+
+    auto MockSqlite3Config::bind_text_fails_on_call(int call_number, int return_code) -> MockSqlite3Config& {
+        g_mock_config.bind_text_fail_on_call = call_number;
+        g_mock_config.bind_text_fail_code    = return_code;
+        return instance_;
+    }
+
     auto MockSqlite3Config::step_fails_on_call(int call_number, int return_code) -> MockSqlite3Config& {
         g_mock_config.step_fail_on_call = call_number;
         g_mock_config.step_fail_code    = return_code;
+        return instance_;
+    }
+
+    auto MockSqlite3Config::prepare_fails_on_call(int call_number, int return_code) -> MockSqlite3Config& {
+        g_mock_config.prepare_fail_on_call = call_number;
+        g_mock_config.prepare_fail_code    = return_code;
         return instance_;
     }
 
@@ -280,6 +310,15 @@ auto sqlite3_prepare_v2(sqlite3* db, const char* zSql, int nByte, sqlite3_stmt**
     g_mock_config.prepare_calls++;
 
     auto* fake_db = reinterpret_cast<FakeSqlite3*>(db);
+
+    // Check for fail-on-call-N
+    if (g_mock_config.prepare_fail_on_call == g_mock_config.prepare_calls) {
+        if (fake_db) {
+            fake_db->error_message = g_mock_config.prepare_error_message;
+        }
+        *ppStmt = nullptr;
+        return g_mock_config.prepare_fail_code;
+    }
 
     if (g_mock_config.prepare_return != SQLITE_OK) {
         if (fake_db) {
@@ -376,6 +415,12 @@ auto sqlite3_bind_int64(sqlite3_stmt* pStmt, int idx, int64_t value) -> int {
     (void)idx;
     (void)value;
     g_mock_config.bind_int64_calls++;
+
+    // Check for fail-on-call-N
+    if (g_mock_config.bind_int64_fail_on_call == g_mock_config.bind_int64_calls) {
+        return g_mock_config.bind_int64_fail_code;
+    }
+
     return g_mock_config.bind_int64_return;
 }
 
@@ -394,6 +439,12 @@ auto sqlite3_bind_text(sqlite3_stmt* pStmt, int idx, const char* value, int nByt
     (void)nBytes;
     (void)destructor;
     g_mock_config.bind_text_calls++;
+
+    // Check for fail-on-call-N
+    if (g_mock_config.bind_text_fail_on_call == g_mock_config.bind_text_calls) {
+        return g_mock_config.bind_text_fail_code;
+    }
+
     return g_mock_config.bind_text_return;
 }
 
