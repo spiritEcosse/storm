@@ -428,18 +428,26 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
     # Find lcov tool for filtering LCOV_EXCL markers
     find_program(LCOV_TOOL lcov)
     find_program(GENHTML_TOOL genhtml)
+    find_program(PYTHON3 python3)
 
     if(LCOV_TOOL)
         message(STATUS "lcov found: ${LCOV_TOOL}")
 
         # Filter coverage with LCOV_EXCL markers applied
+        # Note: llvm-cov doesn't process LCOV_EXCL markers, so we use a custom script
         add_custom_target(coverage-filtered
+            # Step 1: Remove third-party/test files with lcov
             COMMAND ${LCOV_TOOL}
                 --rc branch_coverage=1
                 --ignore-errors unused,deprecated
                 --remove ${COVERAGE_OUTPUT_DIR}/coverage.lcov
                 "*/third_party/*" "*/googletest/*" "*/build/*" "*/tests/*"
-                --output-file ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
+                --output-file ${COVERAGE_OUTPUT_DIR}/coverage-temp.lcov
+            # Step 2: Apply LCOV_EXCL_START/STOP markers with our script
+            COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/scripts/filter_lcov_excl.py
+                ${COVERAGE_OUTPUT_DIR}/coverage-temp.lcov
+                ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
+            # Step 3: Show summary
             COMMAND ${LCOV_TOOL}
                 --rc branch_coverage=1
                 --ignore-errors deprecated
@@ -454,10 +462,11 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
             message(STATUS "genhtml found: ${GENHTML_TOOL}")
 
             # Generate HTML report with exclusions applied
+            # Note: 'category' errors occur because we remove DA: entries but FNL: references remain
             add_custom_target(coverage-filtered-html
                 COMMAND ${GENHTML_TOOL}
                     --rc branch_coverage=1
-                    --ignore-errors deprecated,range
+                    --ignore-errors deprecated,range,category
                     --legend
                     --title "Storm ORM Coverage (filtered)"
                     --output-directory ${COVERAGE_OUTPUT_DIR}/html-filtered

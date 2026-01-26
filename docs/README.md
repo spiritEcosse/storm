@@ -42,6 +42,7 @@ Welcome to Storm ORM - a modern C++26 ORM library for SQLite using cutting-edge 
 ## Development
 
 ### Guides
+- **[Code Coverage](development/CODE_COVERAGE.md)** - How to generate and analyze test coverage
 - **[Performance Tips](development/PERFORMANCE_TIPS.md)** - Transaction wrapping, batch inserts, and optimization techniques
 - **[Performance Guidelines](development/PERFORMANCE_GUIDELINES.md)** - Performance rules and best practices
 - **[Compiler Attributes](development/COMPILER_ATTRIBUTES.md)** - Guide for using hot, flatten, and always_inline attributes

@@ -75,10 +75,12 @@ export namespace storm::orm::statements {
         static constexpr size_t                                        size = sizeof...(Infos);
         static constexpr std::array<std::meta::info, sizeof...(Infos)> values{Infos...};
 
+        // LCOV_EXCL_START - compile-time only
         template <size_t I> static consteval auto at() -> std::meta::info {
             static_assert(I < size, "Index out of bounds");
             return values[I];
         }
+        // LCOV_EXCL_STOP
     };
 
     // ============================================================================
@@ -163,6 +165,7 @@ export namespace storm::orm::statements {
             using type                       = std::remove_cvref_t<decltype(std::declval<T>().[:field_info:])>;
         };
 
+        // LCOV_EXCL_START - compile-time only
         template <size_t... GIs, size_t... AIs>
         static consteval auto
         deduce_grouped_type(std::index_sequence<GIs...> /*unused*/, std::index_sequence<AIs...> /*unused*/) {
@@ -181,6 +184,7 @@ export namespace storm::orm::statements {
                 }(std::make_index_sequence<NumOps>{});
             }
         }
+        // LCOV_EXCL_STOP
 
         using GroupedTuple = decltype(deduce_grouped_type(
                 std::make_index_sequence<NumGroupFields>{}, std::make_index_sequence<NumOps>{}
@@ -562,6 +566,10 @@ export namespace storm::orm::statements {
 
     // ============================================================================
     // GroupByBuilder - Fluent builder for GROUP BY queries
+    // ============================================================================
+    // Provides a fluent interface for building GROUP BY aggregate queries.
+    // Created by QuerySet::group_by<>() and returns UnifiedAggregateStatement
+    // when an aggregate method (count, sum, avg, min, max) is called.
     // ============================================================================
     template <typename T, storm::db::DatabaseConnection ConnType, std::meta::info... GroupFieldInfos>
         requires(sizeof...(GroupFieldInfos) > 0)

@@ -271,6 +271,115 @@ TEST_F(MultipleAggregatesTest, SingleMaxEmptyTable) {
 }
 
 // =============================================================================
+// Single Aggregate as First in Chain (Coverage for aggregate().avg/min/max)
+// =============================================================================
+
+TEST_F(MultipleAggregatesTest, SingleAvgWithData) {
+    // Test avg() as the FIRST aggregate call (not chained after count/sum)
+    auto result = qs->aggregate().avg<^^AggPerson::salary>().select();
+
+    ASSERT_TRUE(result.has_value()) << "Single AVG should succeed";
+    EXPECT_NEAR(result.value(), 63000.0, 0.01); // (50000+60000+70000+55000+80000)/5
+}
+
+TEST_F(MultipleAggregatesTest, SingleMinWithData) {
+    // Test min() as the FIRST aggregate call
+    auto result = qs->aggregate().min<^^AggPerson::score>().select();
+
+    ASSERT_TRUE(result.has_value()) << "Single MIN should succeed";
+    EXPECT_EQ(result.value(), 75.0); // Charlie has lowest score
+}
+
+TEST_F(MultipleAggregatesTest, SingleMaxWithData) {
+    // Test max() as the FIRST aggregate call
+    auto result = qs->aggregate().max<^^AggPerson::score>().select();
+
+    ASSERT_TRUE(result.has_value()) << "Single MAX should succeed";
+    EXPECT_EQ(result.value(), 95.0); // Diana has highest score
+}
+
+// =============================================================================
+// Chaining FROM avg/min/max (Coverage for UnifiedAggregateStatement::avg/min/max)
+// =============================================================================
+
+TEST_F(MultipleAggregatesTest, AvgThenCount) {
+    // Chain count() AFTER avg() - tests UnifiedAggregateStatement<..., AVG>::count()
+    auto result = qs->aggregate().avg<^^AggPerson::salary>().count().select();
+
+    ASSERT_TRUE(result.has_value()) << "AVG then COUNT should succeed";
+
+    auto [avg, count] = result.value();
+    EXPECT_NEAR(avg, 63000.0, 0.01);
+    EXPECT_EQ(count, 5);
+}
+
+TEST_F(MultipleAggregatesTest, MinThenSum) {
+    // Chain sum() AFTER min() - tests UnifiedAggregateStatement<..., MIN>::sum()
+    auto result = qs->aggregate().min<^^AggPerson::score>().sum<^^AggPerson::age>().select();
+
+    ASSERT_TRUE(result.has_value()) << "MIN then SUM should succeed";
+
+    auto [min, sum] = result.value();
+    EXPECT_EQ(min, 75.0);
+    EXPECT_EQ(sum, 158); // 25+30+35+28+40
+}
+
+TEST_F(MultipleAggregatesTest, MaxThenAvg) {
+    // Chain avg() AFTER max() - tests UnifiedAggregateStatement<..., MAX>::avg()
+    auto result = qs->aggregate().max<^^AggPerson::score>().avg<^^AggPerson::salary>().select();
+
+    ASSERT_TRUE(result.has_value()) << "MAX then AVG should succeed";
+
+    auto [max, avg] = result.value();
+    EXPECT_EQ(max, 95.0);
+    EXPECT_NEAR(avg, 63000.0, 0.01);
+}
+
+TEST_F(MultipleAggregatesTest, AvgThenMin) {
+    // Chain min() AFTER avg() - tests UnifiedAggregateStatement<..., AVG>::min()
+    auto result = qs->aggregate().avg<^^AggPerson::salary>().min<^^AggPerson::age>().select();
+
+    ASSERT_TRUE(result.has_value()) << "AVG then MIN should succeed";
+
+    auto [avg, min] = result.value();
+    EXPECT_NEAR(avg, 63000.0, 0.01);
+    EXPECT_EQ(min, 25.0); // Alice is youngest
+}
+
+TEST_F(MultipleAggregatesTest, AvgThenMax) {
+    // Chain max() AFTER avg() - tests UnifiedAggregateStatement<..., AVG>::max()
+    auto result = qs->aggregate().avg<^^AggPerson::salary>().max<^^AggPerson::age>().select();
+
+    ASSERT_TRUE(result.has_value()) << "AVG then MAX should succeed";
+
+    auto [avg, max] = result.value();
+    EXPECT_NEAR(avg, 63000.0, 0.01);
+    EXPECT_EQ(max, 40.0); // Eve is oldest
+}
+
+TEST_F(MultipleAggregatesTest, MinThenMax) {
+    // Chain max() AFTER min() - tests range query pattern
+    auto result = qs->aggregate().min<^^AggPerson::age>().max<^^AggPerson::age>().select();
+
+    ASSERT_TRUE(result.has_value()) << "MIN then MAX should succeed";
+
+    auto [min, max] = result.value();
+    EXPECT_EQ(min, 25.0); // Alice
+    EXPECT_EQ(max, 40.0); // Eve
+}
+
+TEST_F(MultipleAggregatesTest, MaxThenMin) {
+    // Chain min() AFTER max() - reverse order
+    auto result = qs->aggregate().max<^^AggPerson::score>().min<^^AggPerson::score>().select();
+
+    ASSERT_TRUE(result.has_value()) << "MAX then MIN should succeed";
+
+    auto [max, min] = result.value();
+    EXPECT_EQ(max, 95.0); // Diana
+    EXPECT_EQ(min, 75.0); // Charlie
+}
+
+// =============================================================================
 // Aggregate with JOIN Tests
 // =============================================================================
 

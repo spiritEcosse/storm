@@ -52,6 +52,21 @@ cmake --preset ninja-release -DENABLE_BENCH=ON && cmake --build --preset ninja-r
 ./build/release/benchmarks/storm_bench -c SELECT   # Category filter
 ```
 
+### Code Coverage
+```bash
+# Configure (one-time)
+cmake -S . -B build/coverage -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENABLE_TESTS=ON -DENABLE_COVERAGE=ON
+
+# Console summary (quick)
+cmake --build build/coverage && cmake --build build/coverage --target coverage-filtered
+
+# HTML report (detailed)
+cmake --build build/coverage --target coverage-filtered-html
+# Open build/coverage/coverage/html-filtered/index.html
+```
+
+See [docs/development/CODE_COVERAGE.md](docs/development/CODE_COVERAGE.md) for details.
+
 ### Prerequisites
 - Custom Clang with C++26 reflection (`../clang-p2996/`)
 - SQLite3, CMake 3.30+, Ninja
