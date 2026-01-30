@@ -108,22 +108,16 @@ constexpr auto value = compute_value(); // LCOV_EXCL_LINE
 | `LCOV_EXCL_BR_STOP` | End branch exclusion |
 | `LCOV_EXCL_BR_LINE` | Exclude branch on single line |
 
-### Why Custom Filtering?
+### How Filtering Works
 
-Storm uses **llvm-cov** (not gcov) for coverage. llvm-cov doesn't process `LCOV_EXCL_*` markers natively - they're a gcov/lcov convention.
-
-We use a custom script (`scripts/filter_lcov_excl.py`) to:
-1. Parse source files for `LCOV_EXCL_*` markers
-2. Remove those lines from the coverage data
-3. Recalculate totals
+Storm uses **llvm-cov** (not gcov) for coverage. lcov v2 processes `LCOV_EXCL_*` markers natively via `--filter region,branch_region`, but doesn't recognize `.cppm` files by default. We pass `--rc c_file_extensions=...cppm` so lcov reads our module interface files for exclusion markers.
 
 ## Coverage Output Files
 
 ```
 build/coverage/coverage/
 ├── coverage.lcov              # Raw coverage (before filtering)
-├── coverage-temp.lcov         # After removing test/third-party files
-├── coverage-filtered.lcov     # Final (with LCOV_EXCL applied)
+├── coverage-filtered.lcov     # Final (paths + LCOV_EXCL filtered)
 ├── html/                      # Raw HTML report
 └── html-filtered/             # Filtered HTML report
     └── index.html             # Open this in browser

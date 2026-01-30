@@ -394,7 +394,7 @@ export namespace storm::orm::statements {
         }
 
         // ---- Inline Helpers ----
-        inline void insert_where_clause(std::string& sql) const {
+        void insert_where_clause(std::string& sql) const {
             if constexpr (HasGroupBy) {
                 size_t const group_pos    = sql.find(" GROUP BY ");
                 std::string  where_clause = " WHERE ";
@@ -406,12 +406,12 @@ export namespace storm::orm::statements {
             }
         }
 
-        inline void append_modifiers(std::string& sql) const {
+        void append_modifiers(std::string& sql) const {
             Base::append_order_by(sql, order_by_wrapper_);
             Base::append_limit_offset(sql, limit_, offset_);
         }
 
-        [[nodiscard]] inline auto prepare_and_extract(const std::string& sql) -> std::expected<ResultType, Error> {
+        [[nodiscard]] auto prepare_and_extract(const std::string& sql) -> std::expected<ResultType, Error> {
             auto prepare_result = conn_->prepare_cached(sql);
             if (!prepare_result) [[unlikely]] {
                 return std::unexpected(prepare_result.error());
@@ -419,7 +419,7 @@ export namespace storm::orm::statements {
             return extract_results(*prepare_result);
         }
 
-        [[nodiscard]] inline auto prepare_bind_extract(const std::string& sql) -> std::expected<ResultType, Error> {
+        [[nodiscard]] auto prepare_bind_extract(const std::string& sql) -> std::expected<ResultType, Error> {
             auto prepare_result = conn_->prepare_cached(sql);
             if (!prepare_result) [[unlikely]] {
                 return std::unexpected(prepare_result.error());
