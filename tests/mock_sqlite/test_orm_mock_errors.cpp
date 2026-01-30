@@ -1609,6 +1609,76 @@ namespace {
         }
     }
 
+    TEST_F(ORMMockErrorTest, ChunkedRemoveFailsOnMaxBulkPrepareError) {
+        // Covers lines 249-250: prepare error for max bulk statement in execute_chunked
+        // SetUp pre-caches 3 statements (BEGIN, COMMIT, ROLLBACK) via prepare_common_statements
+        // So BEGIN is already cached. execute_chunked's prepare_cached(max_bulk_delete_sql) = call 4
+        MockSqlite3Config::prepare_fails_on_call(4, SQLITE_NOMEM);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> large_batch;
+        for (int i = 0; i < 850; ++i) {
+            large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
+        }
+
+        auto result = qs.remove(std::span{large_batch});
+
+        ASSERT_FALSE(result.has_value()) << "Chunked remove should fail when max bulk prepare fails";
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    TEST_F(ORMMockErrorTest, ChunkedRemoveFailsOnRemainderPrepareError) {
+        // Covers lines 263-264: prepare error for remainder statement in execute_chunked
+        // Prepare calls: 1-3=pre-cached (BEGIN, COMMIT, ROLLBACK), 4=max bulk DELETE, 5=remainder
+        MockSqlite3Config::prepare_fails_on_call(5, SQLITE_IOERR);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> large_batch;
+        for (int i = 0; i < 850; ++i) {
+            large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
+        }
+
+        auto result = qs.remove(std::span{large_batch});
+
+        ASSERT_FALSE(result.has_value()) << "Chunked remove should fail when remainder prepare fails";
+        EXPECT_EQ(result.error().code(), SQLITE_IOERR);
+    }
+
+    TEST_F(ORMMockErrorTest, ChunkedRemoveFailsOnFullChunkExecError) {
+        // Covers lines 273-274: bind_pks_and_execute error for full chunk
+        // Step calls: 1=BEGIN, 2=full chunk (799 items)
+        // Fail on step 2 to hit the full chunk execution error path
+        MockSqlite3Config::step_fails_on_call(2, SQLITE_CORRUPT);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> large_batch;
+        for (int i = 0; i < 850; ++i) {
+            large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
+        }
+
+        auto result = qs.remove(std::span{large_batch});
+
+        ASSERT_FALSE(result.has_value()) << "Chunked remove should fail when full chunk exec fails";
+        EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
+    }
+
+    TEST_F(ORMMockErrorTest, ChunkedRemoveFailsOnRemainderExecError) {
+        // Covers lines 282-283: bind_pks_and_execute error for remainder chunk
+        // Step calls: 1=BEGIN, 2=full chunk (succeeds), 3=remainder chunk (fails)
+        MockSqlite3Config::step_fails_on_call(3, SQLITE_IOERR);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> large_batch;
+        for (int i = 0; i < 850; ++i) {
+            large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
+        }
+
+        auto result = qs.remove(std::span{large_batch});
+
+        ASSERT_FALSE(result.has_value()) << "Chunked remove should fail when remainder exec fails";
+        EXPECT_EQ(result.error().code(), SQLITE_IOERR);
+    }
+
     // ============================================================================
     // Update Chunked Operations (800+ rows)
     // ============================================================================
