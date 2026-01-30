@@ -253,9 +253,6 @@ export namespace storm::orm::statements {
         [[nodiscard]] auto execute() -> std::expected<ResultType, Error>
             requires(NumOps > 0)
         {
-            // TODO : i have concern about these lines, it coule be make sense to have one func to do all this stuff
-            // since dispatch_execute we have all that checks if (has_join && has_where)
-            // if (has_join) if (has_where) - but all ideas must be proved by bench
             return Base::dispatch_execute(
                     join_stmt_.has_value(),
                     static_cast<bool>(where_expr_),
@@ -396,66 +393,45 @@ export namespace storm::orm::statements {
             }
         }
 
-        // ---- Execution Paths ----
-        [[nodiscard]] __attribute__((hot)) auto execute_simple() -> std::expected<ResultType, Error> {
+        // ---- Inline Helpers ----
+        inline void insert_where_clause(std::string& sql) const {
             if constexpr (HasGroupBy) {
-                const bool  has_modifiers = order_by_wrapper_.has_value() || limit_.has_value() || offset_.has_value();
-                std::string sql;
-                if (has_modifiers) {
-                    sql = base_sql_;
-                    Base::append_order_by(sql, order_by_wrapper_);
-                    Base::append_limit_offset(sql, limit_, offset_);
-                }
-
-                auto prepare_result = conn_->prepare_cached(has_modifiers ? sql : base_sql_);
-                if (!prepare_result) [[unlikely]] {
-                    return std::unexpected(prepare_result.error());
-                }
-                return extract_results(*prepare_result);
+                size_t const group_pos    = sql.find(" GROUP BY ");
+                std::string  where_clause = " WHERE ";
+                where_clause += orm::where::to_sql(*where_expr_);
+                sql.insert(group_pos, where_clause);
             } else {
-                if (cached_stmt_ == nullptr) {
-                    auto prepare_result = conn_->prepare_cached(base_sql_);
-                    if (!prepare_result) [[unlikely]] {
-                        return std::unexpected(prepare_result.error());
-                    }
-                    cached_stmt_ = *prepare_result;
-                }
-                return extract_results(cached_stmt_);
+                sql += " WHERE ";
+                sql += orm::where::to_sql(*where_expr_);
             }
         }
 
-        [[nodiscard]] __attribute__((hot)) auto execute_where() -> std::expected<ResultType, Error> {
-            std::string sql;
-            sql.reserve(base_sql_.size() + utilities::sql_len::XL_BUFFER);
+        inline void append_modifiers(std::string& sql) const {
+            Base::append_order_by(sql, order_by_wrapper_);
+            Base::append_limit_offset(sql, limit_, offset_);
+        }
 
-            if constexpr (HasGroupBy) {
-                // base_sql_ always contains " GROUP BY " when HasGroupBy=true (built by build_base_sql)
-                size_t const group_by_pos = base_sql_.find(" GROUP BY ");
-                sql                       = base_sql_.substr(0, group_by_pos);
-                sql += " WHERE ";
-                sql += orm::where::to_sql(*where_expr_);
-                sql += base_sql_.substr(group_by_pos);
-                Base::append_order_by(sql, order_by_wrapper_);
-                Base::append_limit_offset(sql, limit_, offset_);
-            } else {
-                sql = base_sql_;
-                sql += " WHERE ";
-                sql += orm::where::to_sql(*where_expr_);
-            }
-
+        [[nodiscard]] inline auto prepare_and_extract(const std::string& sql) -> std::expected<ResultType, Error> {
             auto prepare_result = conn_->prepare_cached(sql);
             if (!prepare_result) [[unlikely]] {
                 return std::unexpected(prepare_result.error());
             }
+            return extract_results(*prepare_result);
+        }
 
+        [[nodiscard]] inline auto prepare_bind_extract(const std::string& sql) -> std::expected<ResultType, Error> {
+            auto prepare_result = conn_->prepare_cached(sql);
+            if (!prepare_result) [[unlikely]] {
+                return std::unexpected(prepare_result.error());
+            }
             auto bind_result = Base::template bind_where_params<Statement, Error>(*prepare_result, where_expr_);
             if (!bind_result) [[unlikely]] {
                 return std::unexpected(bind_result.error());
             }
-
             return extract_results(*prepare_result);
         }
 
+        // ---- SQL Builders ----
         [[nodiscard]] auto build_join_sql() const -> std::string {
             const std::string& join_sql = join_stmt_->get_complete_sql();
             // join_sql always contains " FROM " — built at compile time by
@@ -476,50 +452,52 @@ export namespace storm::orm::statements {
             return result;
         }
 
+        // ---- Execution Paths ----
+        [[nodiscard]] __attribute__((hot)) auto execute_simple() -> std::expected<ResultType, Error> {
+            if constexpr (HasGroupBy) {
+                const bool has_modifiers = order_by_wrapper_.has_value() || limit_.has_value() || offset_.has_value();
+                if (has_modifiers) {
+                    std::string sql = base_sql_;
+                    append_modifiers(sql);
+                    return prepare_and_extract(sql);
+                }
+                return prepare_and_extract(base_sql_);
+            } else {
+                if (cached_stmt_ == nullptr) {
+                    auto prepare_result = conn_->prepare_cached(base_sql_);
+                    if (!prepare_result) [[unlikely]] {
+                        return std::unexpected(prepare_result.error());
+                    }
+                    cached_stmt_ = *prepare_result;
+                }
+                return extract_results(cached_stmt_);
+            }
+        }
+
+        [[nodiscard]] __attribute__((hot)) auto execute_where() -> std::expected<ResultType, Error> {
+            std::string sql = base_sql_;
+            insert_where_clause(sql);
+            if constexpr (HasGroupBy) {
+                append_modifiers(sql);
+            }
+            return prepare_bind_extract(sql);
+        }
+
         [[nodiscard]] __attribute__((hot)) auto execute_join() -> std::expected<ResultType, Error> {
             std::string sql = build_join_sql();
-
             if constexpr (HasGroupBy) {
-                Base::append_order_by(sql, order_by_wrapper_);
-                Base::append_limit_offset(sql, limit_, offset_);
+                append_modifiers(sql);
             }
-
-            auto prepare_result = conn_->prepare_cached(sql);
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
-            }
-
-            return extract_results(*prepare_result);
+            return prepare_and_extract(sql);
         }
 
         [[nodiscard]] __attribute__((hot)) auto execute_where_join() -> std::expected<ResultType, Error> {
             std::string sql = build_join_sql();
-
-            // For GROUP BY, insert WHERE before GROUP BY
+            insert_where_clause(sql);
             if constexpr (HasGroupBy) {
-                // build_join_sql() always adds " GROUP BY " when HasGroupBy=true
-                size_t const group_pos    = sql.find(" GROUP BY ");
-                std::string  where_clause = " WHERE ";
-                where_clause += orm::where::to_sql(*where_expr_);
-                sql.insert(group_pos, where_clause);
-                Base::append_order_by(sql, order_by_wrapper_);
-                Base::append_limit_offset(sql, limit_, offset_);
-            } else {
-                sql += " WHERE ";
-                sql += orm::where::to_sql(*where_expr_);
+                append_modifiers(sql);
             }
-
-            auto prepare_result = conn_->prepare_cached(sql);
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
-            }
-
-            auto bind_result = Base::template bind_where_params<Statement, Error>(*prepare_result, where_expr_);
-            if (!bind_result) [[unlikely]] {
-                return std::unexpected(bind_result.error());
-            }
-
-            return extract_results(*prepare_result);
+            return prepare_bind_extract(sql);
         }
 
         std::shared_ptr<ConnType>           conn_;
