@@ -273,6 +273,9 @@ export namespace storm::orm::statements {
         [[nodiscard]] auto execute() -> std::expected<ResultType, Error>
             requires(NumOps > 0)
         {
+            // TODO : i have concern about these lines, it coule be make sense to have one func to do all this stuff
+            // since dispatch_execute we have all that checks if (has_join && has_where)
+            // if (has_join) if (has_where) - but all ideas must be proved by bench
             return Base::dispatch_execute(
                     join_stmt_.has_value(),
                     static_cast<bool>(where_expr_),
@@ -330,6 +333,7 @@ export namespace storm::orm::statements {
         static inline const std::string group_clause_{group_fields_arr_.data.data(), group_fields_arr_.len};
 
         // ---- Value Extraction ----
+        // TODO: consider to use extract_column_value from base, use bench to verify if it worth it.
         template <typename FieldType> static auto extract_column(Statement& stmt, int col_idx) -> FieldType {
             if constexpr (std::is_same_v<FieldType, int64_t>) {
                 return stmt.extract_int64(col_idx);
@@ -474,10 +478,9 @@ export namespace storm::orm::statements {
 
         [[nodiscard]] auto build_join_sql() const -> std::string {
             const std::string& join_sql = join_stmt_->get_complete_sql();
-            const size_t       from_pos = join_sql.find(" FROM ");
-            if (from_pos == std::string::npos) [[unlikely]] {
-                return base_sql_;
-            }
+            // join_sql always contains " FROM " — built at compile time by
+            // JoinStatement::build_complete_sql_array() which unconditionally appends it.
+            const size_t from_pos = join_sql.find(" FROM ");
 
             std::string result;
             result.reserve(select_clause_.size() + join_sql.size() + utilities::sql_len::MEDIUM_BUFFER);
@@ -549,7 +552,8 @@ export namespace storm::orm::statements {
     };
 
     // ============================================================================
-    // Type Aliases for Backward Compatibility
+    // Type Aliases for Backward Compatibility TODO: lets remove Backward Compatibility, use classes as is, the project
+    // not in production
     // ============================================================================
 
     // Simple aggregates (no GROUP BY)

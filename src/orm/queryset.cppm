@@ -254,7 +254,8 @@ export namespace storm {
                     conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_
             };
         }
-
+        //TODO: prove we have to use aggregate() for multiple aggregates, because i have hope we could
+        // to have multiple aggregates without aggregate().
         // Aggregate functions - fluent builder pattern for multiple aggregates
         // Usage: queryset.aggregate().sum<^^Person::age>().count().avg<^^Person::salary>().select()
         constexpr auto aggregate() {

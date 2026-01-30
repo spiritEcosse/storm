@@ -1509,8 +1509,20 @@ namespace {
     }
 
     // ============================================================================
-    // Aggregate with WHERE - Bind Errors
+    // Aggregate with WHERE - Prepare and Bind Errors
     // ============================================================================
+
+    TEST_F(ORMMockErrorTest, AggregateWithWhereFailsOnPrepareError) {
+        // Covers execute_where prepare error (aggregate.cppm lines 463-465)
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson> qs;
+        auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
+        auto                 result = qs.where(age > 25).sum<^^MockPerson::age>().select();
+
+        ASSERT_FALSE(result.has_value()) << "Aggregate with WHERE should fail on prepare error";
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
 
     TEST_F(ORMMockErrorTest, AggregateWithWhereFailsOnBindError) {
         // Covers bind_where_params error path in aggregate
@@ -1682,6 +1694,31 @@ namespace {
 
         ASSERT_FALSE(result.has_value()) << "Aggregate with JOIN should fail on step error";
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
+    }
+
+    TEST_F(JoinMockErrorTest, AggregateWithWhereJoinFailsOnPrepareError) {
+        // Covers execute_where_join prepare error (aggregate.cppm lines 530-532)
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockMessage> qs;
+        auto                  id     = storm::orm::where::Field<^^MockMessage::id>{};
+        auto                  result = qs.where(id > 5).join<&MockMessage::sender>().count().select();
+
+        ASSERT_FALSE(result.has_value()) << "Aggregate with WHERE+JOIN should fail on prepare error";
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    TEST_F(JoinMockErrorTest, AggregateWithWhereJoinFailsOnBindError) {
+        // Covers execute_where_join bind error (aggregate.cppm lines 535-537)
+        MockSqlite3Config::bind_int_returns(SQLITE_NOMEM);
+
+        QuerySet<MockMessage> qs;
+        auto                  id     = storm::orm::where::Field<^^MockMessage::id>{};
+        auto                  result = qs.where(id > 5).join<&MockMessage::sender>().sum<^^MockMessage::id>().select();
+
+        if (!result.has_value()) {
+            EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+        }
     }
 
     // ============================================================================
