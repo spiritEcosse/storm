@@ -167,14 +167,11 @@ export namespace storm::orm::statements {
             if (join_stmt_.has_value()) {
                 // Inject DISTINCT into JOIN's SELECT clause
                 const std::string& join_sql = join_stmt_->get_complete_sql();
-                const size_t       pos      = join_sql.find("SELECT ");
-                if (pos == std::string::npos) [[unlikely]] {
-                    return std::unexpected(Error{-1, "JOIN SQL missing SELECT clause"});
-                }
+                // JOIN SQL is compile-time generated and always starts with "SELECT "
                 sql.reserve(join_sql.size() + utilities::sql_len::LARGE_BUFFER);
-                sql = join_sql.substr(0, pos + utilities::sql_len::SELECT);
+                sql = join_sql.substr(0, utilities::sql_len::SELECT);
                 sql += "DISTINCT ";
-                sql += join_sql.substr(pos + utilities::sql_len::SELECT);
+                sql += join_sql.substr(utilities::sql_len::SELECT);
             } else {
                 sql = base_sql;
             }
