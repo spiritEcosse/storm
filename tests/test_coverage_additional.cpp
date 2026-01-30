@@ -114,7 +114,7 @@ class MultipleAggregatesTest : public ::testing::Test {
 
 TEST_F(MultipleAggregatesTest, TwoAggregatesCountAndSum) {
     // Tests tuple return type with 2 operations
-    auto result = qs->aggregate().count().sum<^^AggPerson::age>().select();
+    auto result = qs->count().sum<^^AggPerson::age>().select();
 
     ASSERT_TRUE(result.has_value()) << "Two aggregates should succeed";
 
@@ -125,7 +125,7 @@ TEST_F(MultipleAggregatesTest, TwoAggregatesCountAndSum) {
 
 TEST_F(MultipleAggregatesTest, TwoAggregatesSumAndAvg) {
     // Tests tuple with SUM (int64_t) and AVG (double)
-    auto result = qs->aggregate().sum<^^AggPerson::score>().avg<^^AggPerson::salary>().select();
+    auto result = qs->sum<^^AggPerson::score>().avg<^^AggPerson::salary>().select();
 
     ASSERT_TRUE(result.has_value()) << "SUM + AVG should succeed";
 
@@ -136,7 +136,7 @@ TEST_F(MultipleAggregatesTest, TwoAggregatesSumAndAvg) {
 
 TEST_F(MultipleAggregatesTest, ThreeAggregates) {
     // Tests tuple with 3 operations
-    auto result = qs->aggregate().count().sum<^^AggPerson::age>().avg<^^AggPerson::salary>().select();
+    auto result = qs->count().sum<^^AggPerson::age>().avg<^^AggPerson::salary>().select();
 
     ASSERT_TRUE(result.has_value()) << "Three aggregates should succeed";
 
@@ -148,12 +148,7 @@ TEST_F(MultipleAggregatesTest, ThreeAggregates) {
 
 TEST_F(MultipleAggregatesTest, FourAggregates) {
     // Tests tuple with 4 operations
-    auto result = qs->aggregate()
-                          .count()
-                          .sum<^^AggPerson::age>()
-                          .min<^^AggPerson::score>()
-                          .max<^^AggPerson::score>()
-                          .select();
+    auto result = qs->count().sum<^^AggPerson::age>().min<^^AggPerson::score>().max<^^AggPerson::score>().select();
 
     ASSERT_TRUE(result.has_value()) << "Four aggregates should succeed";
 
@@ -166,8 +161,7 @@ TEST_F(MultipleAggregatesTest, FourAggregates) {
 
 TEST_F(MultipleAggregatesTest, FiveAggregatesAllTypes) {
     // Tests all 5 aggregate types together
-    auto result = qs->aggregate()
-                          .count()
+    auto result = qs->count()
                           .sum<^^AggPerson::age>()
                           .avg<^^AggPerson::salary>()
                           .min<^^AggPerson::score>()
@@ -193,7 +187,7 @@ TEST_F(MultipleAggregatesTest, MultipleAggregatesEmptyTable) {
         (void)qs->remove(p);
     }
 
-    auto result = qs->aggregate().count().sum<^^AggPerson::age>().avg<^^AggPerson::salary>().select();
+    auto result = qs->count().sum<^^AggPerson::age>().avg<^^AggPerson::salary>().select();
 
     ASSERT_TRUE(result.has_value()) << "Aggregates on empty table should succeed";
 
@@ -271,12 +265,12 @@ TEST_F(MultipleAggregatesTest, SingleMaxEmptyTable) {
 }
 
 // =============================================================================
-// Single Aggregate as First in Chain (Coverage for aggregate().avg/min/max)
+// Single Aggregate as First in Chain (Coverage for avg/min/max entry points)
 // =============================================================================
 
 TEST_F(MultipleAggregatesTest, SingleAvgWithData) {
     // Test avg() as the FIRST aggregate call (not chained after count/sum)
-    auto result = qs->aggregate().avg<^^AggPerson::salary>().select();
+    auto result = qs->avg<^^AggPerson::salary>().select();
 
     ASSERT_TRUE(result.has_value()) << "Single AVG should succeed";
     EXPECT_NEAR(result.value(), 63000.0, 0.01); // (50000+60000+70000+55000+80000)/5
@@ -284,7 +278,7 @@ TEST_F(MultipleAggregatesTest, SingleAvgWithData) {
 
 TEST_F(MultipleAggregatesTest, SingleMinWithData) {
     // Test min() as the FIRST aggregate call
-    auto result = qs->aggregate().min<^^AggPerson::score>().select();
+    auto result = qs->min<^^AggPerson::score>().select();
 
     ASSERT_TRUE(result.has_value()) << "Single MIN should succeed";
     EXPECT_EQ(result.value(), 75.0); // Charlie has lowest score
@@ -292,19 +286,19 @@ TEST_F(MultipleAggregatesTest, SingleMinWithData) {
 
 TEST_F(MultipleAggregatesTest, SingleMaxWithData) {
     // Test max() as the FIRST aggregate call
-    auto result = qs->aggregate().max<^^AggPerson::score>().select();
+    auto result = qs->max<^^AggPerson::score>().select();
 
     ASSERT_TRUE(result.has_value()) << "Single MAX should succeed";
     EXPECT_EQ(result.value(), 95.0); // Diana has highest score
 }
 
 // =============================================================================
-// Chaining FROM avg/min/max (Coverage for UnifiedAggregateStatement::avg/min/max)
+// Chaining FROM avg/min/max (Coverage for AggregateStatement::avg/min/max)
 // =============================================================================
 
 TEST_F(MultipleAggregatesTest, AvgThenCount) {
-    // Chain count() AFTER avg() - tests UnifiedAggregateStatement<..., AVG>::count()
-    auto result = qs->aggregate().avg<^^AggPerson::salary>().count().select();
+    // Chain count() AFTER avg() - tests AggregateStatement<..., AVG>::count()
+    auto result = qs->avg<^^AggPerson::salary>().count().select();
 
     ASSERT_TRUE(result.has_value()) << "AVG then COUNT should succeed";
 
@@ -314,8 +308,8 @@ TEST_F(MultipleAggregatesTest, AvgThenCount) {
 }
 
 TEST_F(MultipleAggregatesTest, MinThenSum) {
-    // Chain sum() AFTER min() - tests UnifiedAggregateStatement<..., MIN>::sum()
-    auto result = qs->aggregate().min<^^AggPerson::score>().sum<^^AggPerson::age>().select();
+    // Chain sum() AFTER min() - tests AggregateStatement<..., MIN>::sum()
+    auto result = qs->min<^^AggPerson::score>().sum<^^AggPerson::age>().select();
 
     ASSERT_TRUE(result.has_value()) << "MIN then SUM should succeed";
 
@@ -325,8 +319,8 @@ TEST_F(MultipleAggregatesTest, MinThenSum) {
 }
 
 TEST_F(MultipleAggregatesTest, MaxThenAvg) {
-    // Chain avg() AFTER max() - tests UnifiedAggregateStatement<..., MAX>::avg()
-    auto result = qs->aggregate().max<^^AggPerson::score>().avg<^^AggPerson::salary>().select();
+    // Chain avg() AFTER max() - tests AggregateStatement<..., MAX>::avg()
+    auto result = qs->max<^^AggPerson::score>().avg<^^AggPerson::salary>().select();
 
     ASSERT_TRUE(result.has_value()) << "MAX then AVG should succeed";
 
@@ -336,8 +330,8 @@ TEST_F(MultipleAggregatesTest, MaxThenAvg) {
 }
 
 TEST_F(MultipleAggregatesTest, AvgThenMin) {
-    // Chain min() AFTER avg() - tests UnifiedAggregateStatement<..., AVG>::min()
-    auto result = qs->aggregate().avg<^^AggPerson::salary>().min<^^AggPerson::age>().select();
+    // Chain min() AFTER avg() - tests AggregateStatement<..., AVG>::min()
+    auto result = qs->avg<^^AggPerson::salary>().min<^^AggPerson::age>().select();
 
     ASSERT_TRUE(result.has_value()) << "AVG then MIN should succeed";
 
@@ -347,8 +341,8 @@ TEST_F(MultipleAggregatesTest, AvgThenMin) {
 }
 
 TEST_F(MultipleAggregatesTest, AvgThenMax) {
-    // Chain max() AFTER avg() - tests UnifiedAggregateStatement<..., AVG>::max()
-    auto result = qs->aggregate().avg<^^AggPerson::salary>().max<^^AggPerson::age>().select();
+    // Chain max() AFTER avg() - tests AggregateStatement<..., AVG>::max()
+    auto result = qs->avg<^^AggPerson::salary>().max<^^AggPerson::age>().select();
 
     ASSERT_TRUE(result.has_value()) << "AVG then MAX should succeed";
 
@@ -359,7 +353,7 @@ TEST_F(MultipleAggregatesTest, AvgThenMax) {
 
 TEST_F(MultipleAggregatesTest, MinThenMax) {
     // Chain max() AFTER min() - tests range query pattern
-    auto result = qs->aggregate().min<^^AggPerson::age>().max<^^AggPerson::age>().select();
+    auto result = qs->min<^^AggPerson::age>().max<^^AggPerson::age>().select();
 
     ASSERT_TRUE(result.has_value()) << "MIN then MAX should succeed";
 
@@ -370,7 +364,7 @@ TEST_F(MultipleAggregatesTest, MinThenMax) {
 
 TEST_F(MultipleAggregatesTest, MaxThenMin) {
     // Chain min() AFTER max() - reverse order
-    auto result = qs->aggregate().max<^^AggPerson::score>().min<^^AggPerson::score>().select();
+    auto result = qs->max<^^AggPerson::score>().min<^^AggPerson::score>().select();
 
     ASSERT_TRUE(result.has_value()) << "MAX then MIN should succeed";
 
@@ -422,7 +416,7 @@ TEST_F(MultipleAggregatesTest, MultipleAggregatesWithJoin) {
     QuerySet<JoinPost> post_qs;
 
     // Test multiple aggregates with JOIN
-    auto result = post_qs.join<&JoinPost::author>().aggregate().count().sum<^^JoinPost::views>().select();
+    auto result = post_qs.join<&JoinPost::author>().count().sum<^^JoinPost::views>().select();
 
     ASSERT_TRUE(result.has_value()) << "Multiple aggregates with JOIN should succeed";
 

@@ -664,7 +664,7 @@ namespace storm::benchmark {
 
         int execute_iteration() {
             // Storm ORM: group_by + count must be chained properly
-            // group_by() returns GroupByBuilder, then count() returns GroupByAggregateStatement
+            // group_by() returns GroupByBuilder, then count() returns AggregateStatement
             auto result = Base::qs().template group_by<GroupByFieldInfo>().count().select();
             // Result is plf::hive<std::tuple<GroupKeyType, int64_t>> - (group_value, count) pairs
             return result.has_value() ? static_cast<int>(result.value().size()) : 0;
@@ -747,7 +747,7 @@ namespace storm::benchmark {
 
         int execute_iteration() {
             // Storm ORM: group_by + sum must be chained properly
-            // group_by() returns GroupByBuilder, then sum<>() returns GroupByAggregateStatement
+            // group_by() returns GroupByBuilder, then sum<>() returns AggregateStatement
             auto result = Base::qs().template group_by<GroupByFieldInfo>().template sum<AggregateFieldInfo>().select();
             // Result is plf::hive<std::tuple<GroupKeyType, SumType>> - (group_value, sum) pairs
             return result.has_value() ? static_cast<int>(result.value().size()) : 0;

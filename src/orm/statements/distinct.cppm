@@ -30,7 +30,7 @@ export namespace storm::orm::statements {
 
     // DistinctStatement - executes SELECT DISTINCT on specified field(s) and returns tuple data
     // Supports 1+ fields with compile-time type safety
-    // Always generates DISTINCT queries (for aggregates, use separate AggregateStatement)
+    // Always generates DISTINCT queries (for aggregates, use AggregateStatement)
     //
     // API: Use ^^ operator to pass reflected field information directly
     // Example: qs.distinct<^^Person::name>().select()

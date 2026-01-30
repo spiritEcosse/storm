@@ -1433,7 +1433,7 @@ namespace {
     // ============================================================================
 
     TEST_F(ORMMockErrorTest, AggregateSumFailsOnPrepareError) {
-        // Covers line 235: prepare_cached failure in AggregateBuilder::execute_impl
+        // Covers prepare_cached failure in aggregate execute_simple
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
@@ -1554,7 +1554,7 @@ namespace {
     // ============================================================================
 
     TEST_F(ORMMockErrorTest, GroupByAggregateFailsOnPrepareError) {
-        // Covers prepare error in GroupByAggregateStatement
+        // Covers prepare error in AggregateStatement (GROUP BY path)
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;

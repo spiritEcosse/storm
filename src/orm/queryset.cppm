@@ -254,90 +254,88 @@ export namespace storm {
                     conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_
             };
         }
-        //TODO: prove we have to use aggregate() for multiple aggregates, because i have hope we could
-        // to have multiple aggregates without aggregate().
-        // Aggregate functions - fluent builder pattern for multiple aggregates
-        // Usage: queryset.aggregate().sum<^^Person::age>().count().avg<^^Person::salary>().select()
-        constexpr auto aggregate() {
-            return orm::statements::AggregateBuilder<T, ConnType>{conn_};
-        }
-
-        // Shortcut: SUM aggregate (multi-field: SUM(f1 + f2 + ...))
+        // SUM aggregate (multi-field: SUM(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
         // Usage: queryset.sum<^^Person::age>().select()
         //        queryset.where(age > 30).sum<^^Person::age>().select()
         //        queryset.join<FK>().sum<^^Person::salary>().select()
-        // Returns AggregateStatement by value - connection-level prepare_cached() handles SQL caching
+        // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto sum() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
+                    orm::statements::NoGroupBy,
                     orm::statements::AggregateOp<orm::statements::AggregateType::SUM, FieldInfos...>>;
             return StmtType{conn_, where_expr_, join_stmt_};
         }
 
-        // Shortcut: COUNT aggregate (defaults to COUNT(*) if no fields)
+        // COUNT aggregate (defaults to COUNT(*) if no fields)
         // Supports WHERE and JOIN clauses
         // Usage: queryset.count().select()  // COUNT(*)
         //        queryset.where(age > 30).count().select()
         //        queryset.join<FK>().count().select()
-        // Returns AggregateStatement by value - connection-level prepare_cached() handles SQL caching
+        // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto count() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
+                    orm::statements::NoGroupBy,
                     orm::statements::AggregateOp<orm::statements::AggregateType::COUNT, FieldInfos...>>;
             return StmtType{conn_, where_expr_, join_stmt_};
         }
 
-        // Shortcut: AVG aggregate (multi-field: AVG(f1 + f2 + ...))
+        // AVG aggregate (multi-field: AVG(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
         // Usage: queryset.avg<^^Person::salary>().select()
         //        queryset.where(department == "Engineering").avg<^^Person::salary>().select()
-        // Returns AggregateStatement by value - connection-level prepare_cached() handles SQL caching
+        // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto avg() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
+                    orm::statements::NoGroupBy,
                     orm::statements::AggregateOp<orm::statements::AggregateType::AVG, FieldInfos...>>;
             return StmtType{conn_, where_expr_, join_stmt_};
         }
 
-        // Shortcut: MIN aggregate (multi-field: MIN(f1 + f2 + ...))
+        // MIN aggregate (multi-field: MIN(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
         // Usage: queryset.min<^^Person::age>().select()
         //        queryset.where(active == true).min<^^Person::age>().select()
-        // Returns AggregateStatement by value - connection-level prepare_cached() handles SQL caching
+        // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto min() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
+                    orm::statements::NoGroupBy,
                     orm::statements::AggregateOp<orm::statements::AggregateType::MIN, FieldInfos...>>;
             return StmtType{conn_, where_expr_, join_stmt_};
         }
 
-        // Shortcut: MAX aggregate (multi-field: MAX(f1 + f2 + ...))
+        // MAX aggregate (multi-field: MAX(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
         // Usage: queryset.max<^^Person::age>().select()
         //        queryset.where(department == "Sales").max<^^Person::salary>().select()
-        // Returns AggregateStatement by value - connection-level prepare_cached() handles SQL caching
+        // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto max() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
+                    orm::statements::NoGroupBy,
                     orm::statements::AggregateOp<orm::statements::AggregateType::MAX, FieldInfos...>>;
             return StmtType{conn_, where_expr_, join_stmt_};
         }
 
-        // Shortcut: COUNT(DISTINCT field) aggregate
+        // COUNT(DISTINCT field) aggregate
         // Supports WHERE and JOIN clauses
         // Usage: queryset.count_distinct<^^Person::age>().select()
         //        queryset.where(active == true).count_distinct<^^Person::department>().select()
-        // Returns AggregateStatement by value - connection-level prepare_cached() handles SQL caching
+        // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info FieldInfo> auto count_distinct() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
+                    orm::statements::NoGroupBy,
                     orm::statements::AggregateOp<orm::statements::AggregateType::COUNT_DISTINCT, FieldInfo>>;
             return StmtType{conn_, where_expr_, join_stmt_};
         }

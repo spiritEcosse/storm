@@ -452,8 +452,8 @@ TEST_F(CoverageGapsTest, SimpleAggregateWithWhereAndJoin) {
 }
 
 TEST_F(CoverageGapsTest, MultipleAggregatesWithJoin) {
-    // Multiple aggregates with JOIN (without WHERE since aggregate() doesn't support WHERE)
-    auto result = msg_qs->join<&CovMessage::sender>().aggregate().count().sum<^^CovMessage::value>().select();
+    // Multiple aggregates with JOIN
+    auto result = msg_qs->join<&CovMessage::sender>().count().sum<^^CovMessage::value>().select();
 
     ASSERT_TRUE(result.has_value()) << "Multiple aggregates with JOIN should succeed";
     auto [count, sum] = result.value();

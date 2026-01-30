@@ -225,46 +225,45 @@ TEST_F(AggregateTest, MaxMultipleFields) {
 }
 
 // ============================================================================
-// Multiple Aggregate Functions in One Query
+// Multiple Aggregate Functions in One Query (direct chaining)
 // ============================================================================
 
-TEST_F(AggregateTest, MultipleAggregates_SumAndCount) {
+TEST_F(AggregateTest, DirectChain_SumAndCount) {
     insert_test_data();
 
     // SELECT SUM(age), COUNT(*) FROM AggregatePerson
-    auto result = qs->aggregate().sum<^^AggregatePerson::age>().count().select();
-    ASSERT_TRUE(result.has_value()) << "Multiple aggregates failed: " << result.error().message();
+    auto result = qs->sum<^^AggregatePerson::age>().count().select();
+    ASSERT_TRUE(result.has_value()) << "Direct chain sum+count failed: " << result.error().message();
 
     auto [sum_age, count_all] = result.value();
     EXPECT_EQ(sum_age, 175);
     EXPECT_EQ(count_all, 5);
 }
 
-TEST_F(AggregateTest, MultipleAggregates_SumCountAvg) {
+TEST_F(AggregateTest, DirectChain_SumCountAvg) {
     insert_test_data();
 
     // SELECT SUM(age), COUNT(*), AVG(salary) FROM AggregatePerson
-    auto result = qs->aggregate().sum<^^AggregatePerson::age>().count().avg<^^AggregatePerson::salary>().select();
-    ASSERT_TRUE(result.has_value()) << "Triple aggregate failed: " << result.error().message();
+    auto result = qs->sum<^^AggregatePerson::age>().count().avg<^^AggregatePerson::salary>().select();
+    ASSERT_TRUE(result.has_value()) << "Direct chain sum+count+avg failed: " << result.error().message();
 
     auto [sum_age, count_all, avg_salary] = result.value();
     EXPECT_EQ(sum_age, 175);
     EXPECT_EQ(count_all, 5);
-    EXPECT_DOUBLE_EQ(avg_salary, 70000.0); // (50k+60k+70k+80k+90k)/5
+    EXPECT_DOUBLE_EQ(avg_salary, 70000.0);
 }
 
-TEST_F(AggregateTest, MultipleAggregates_AllTypes) {
+TEST_F(AggregateTest, DirectChain_AllFiveTypes) {
     insert_test_data();
 
-    // SELECT SUM(age), COUNT(*), AVG(salary), MIN(years_experience), MAX(age) FROM AggregatePerson
-    auto result = qs->aggregate()
-                          .sum<^^AggregatePerson::age>()
+    // SELECT SUM(age), COUNT(*), AVG(salary), MIN(years_experience), MAX(age)
+    auto result = qs->sum<^^AggregatePerson::age>()
                           .count()
                           .avg<^^AggregatePerson::salary>()
                           .min<^^AggregatePerson::years_experience>()
                           .max<^^AggregatePerson::age>()
                           .select();
-    ASSERT_TRUE(result.has_value()) << "All aggregates failed: " << result.error().message();
+    ASSERT_TRUE(result.has_value()) << "Direct chain all five failed: " << result.error().message();
 
     auto [sum_age, count_all, avg_salary, min_exp, max_age] = result.value();
     EXPECT_EQ(sum_age, 175);
@@ -272,6 +271,45 @@ TEST_F(AggregateTest, MultipleAggregates_AllTypes) {
     EXPECT_DOUBLE_EQ(avg_salary, 70000.0);
     EXPECT_DOUBLE_EQ(min_exp, 3.0);
     EXPECT_DOUBLE_EQ(max_age, 45.0);
+}
+
+TEST_F(AggregateTest, DirectChain_WithWhere) {
+    insert_test_data();
+
+    // Filter: age > 30 → Charlie(35), Dave(40), Eve(45)
+    auto result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30)
+                          .sum<^^AggregatePerson::age>()
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "Direct chain with WHERE failed: " << result.error().message();
+
+    auto [sum_age, count_all] = result.value();
+    EXPECT_EQ(sum_age, 120); // 35 + 40 + 45
+    EXPECT_EQ(count_all, 3);
+}
+
+TEST_F(AggregateTest, DirectChain_WithJoin) {
+    insert_join_test_data();
+
+    auto result =
+            msg_qs->join<&AggMessage::sender>().sum<^^AggMessage::value>().count().avg<^^AggMessage::value>().select();
+    ASSERT_TRUE(result.has_value()) << "Direct chain with JOIN failed: " << result.error().message();
+
+    auto [sum_val, count_all, avg_val] = result.value();
+    EXPECT_EQ(sum_val, 210); // 10+20+30+40+50+60
+    EXPECT_EQ(count_all, 6);
+    EXPECT_DOUBLE_EQ(avg_val, 35.0); // 210/6
+}
+
+TEST_F(AggregateTest, DirectChain_TypeSafety) {
+    insert_test_data();
+
+    auto result = qs->sum<^^AggregatePerson::age>().count().select();
+    ASSERT_TRUE(result.has_value());
+    static_assert(
+            std::is_same_v<std::remove_reference_t<decltype(result.value())>, std::tuple<int64_t, int64_t>>,
+            "Multiple aggregates should return tuple"
+    );
 }
 
 // ============================================================================
@@ -315,8 +353,7 @@ TEST_F(AggregateTest, EmptyTable_Max) {
 
 TEST_F(AggregateTest, EmptyTable_MultipleAggregates) {
     // Multiple aggregates on empty table should return tuple of default values
-    // This tests the tuple default return path in AggregateBuilder::execute_impl
-    auto result = qs->aggregate().sum<^^AggregatePerson::age>().count().avg<^^AggregatePerson::salary>().select();
+    auto result = qs->sum<^^AggregatePerson::age>().count().avg<^^AggregatePerson::salary>().select();
     ASSERT_TRUE(result.has_value()) << "Multiple aggregates on empty table failed: " << result.error().message();
 
     // Verify tuple values: (SUM=0, COUNT=0, AVG=0.0)
@@ -333,29 +370,8 @@ TEST_F(AggregateTest, EmptyTable_AggregateWithWhere) {
     EXPECT_EQ(result.value(), 0) << "COUNT with WHERE on empty table should be 0";
 }
 
-TEST_F(AggregateTest, MultipleAggregates_WithJoin) {
-    insert_join_test_data();
-
-    // Multiple aggregates with JOIN using builder pattern
-    // Note: aggregate() builder doesn't support WHERE - use individual methods for WHERE support
-    auto result = msg_qs->join<&AggMessage::sender>()
-                          .aggregate()
-                          .sum<^^AggMessage::value>()
-                          .count()
-                          .avg<^^AggMessage::value>()
-                          .select();
-    ASSERT_TRUE(result.has_value()) << "Multiple aggregates with JOIN failed: " << result.error().message();
-
-    auto [sum_val, count_all, avg_val] = result.value();
-    EXPECT_EQ(sum_val, 210);         // 10+20+30+40+50+60
-    EXPECT_EQ(count_all, 6);         // 6 messages
-    EXPECT_DOUBLE_EQ(avg_val, 35.0); // 210/6
-}
-
 TEST_F(AggregateTest, SingleAggregates_WithWhere) {
     insert_test_data();
-
-    // Individual aggregates with WHERE filter (not using aggregate() builder)
     // Filter: age > 30 → Charlie(35), Dave(40), Eve(45)
     auto sum_result =
             qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30).sum<^^AggregatePerson::age>().select();
@@ -504,18 +520,6 @@ TEST_F(AggregateTest, TypeSafety_DoubleResult) {
     ASSERT_TRUE(result.has_value());
     static_assert(
             std::is_same_v<std::remove_reference_t<decltype(result.value())>, double>, "AVG should return double"
-    );
-}
-
-TEST_F(AggregateTest, TypeSafety_TupleResult) {
-    insert_test_data();
-
-    // Verify multiple aggregates return tuple
-    auto result = qs->aggregate().sum<^^AggregatePerson::age>().count().select();
-    ASSERT_TRUE(result.has_value());
-    static_assert(
-            std::is_same_v<std::remove_reference_t<decltype(result.value())>, std::tuple<int64_t, int64_t>>,
-            "Multiple aggregates should return tuple"
     );
 }
 

@@ -147,10 +147,10 @@ export namespace storm::orm::statements {
             conditional_t<Op::agg_type == AggregateType::SUM || Op::agg_type == AggregateType::COUNT, int64_t, double>;
 
     // ============================================================================
-    // UnifiedAggregateStatement - Single class for all aggregate queries
+    // AggregateStatement - Single class for all aggregate queries
     // ============================================================================
     template <typename T, storm::db::DatabaseConnection ConnType, typename GroupFields, typename... Ops>
-    class UnifiedAggregateStatement : private BaseStatement<T> {
+    class AggregateStatement : private BaseStatement<T> {
         using Base      = BaseStatement<T>;
         using Error     = typename ConnType::Error;
         using Statement = typename ConnType::Statement;
@@ -193,7 +193,7 @@ export namespace storm::orm::statements {
       public:
         using ResultType = std::conditional_t<HasGroupBy, plf::hive<GroupedTuple>, decltype(deduce_simple_type())>;
 
-        explicit UnifiedAggregateStatement(
+        explicit AggregateStatement(
                 std::shared_ptr<ConnType>                  conn,
                 orm::where::ExpressionVariantPtr           where_expr       = nullptr,
                 const std::optional<JoinStatementWrapper>& join_stmt        = std::nullopt,
@@ -210,18 +210,13 @@ export namespace storm::orm::statements {
 
         // Chaining methods (only for non-GROUP BY queries building aggregates)
         template <std::meta::info... FieldInfos> auto sum() {
-            return UnifiedAggregateStatement<
-                    T,
-                    ConnType,
-                    GroupFields,
-                    Ops...,
-                    AggregateOp<AggregateType::SUM, FieldInfos...>>{
+            return AggregateStatement<T, ConnType, GroupFields, Ops..., AggregateOp<AggregateType::SUM, FieldInfos...>>{
                     conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_
             };
         }
 
         template <std::meta::info... FieldInfos> auto count() {
-            return UnifiedAggregateStatement<
+            return AggregateStatement<
                     T,
                     ConnType,
                     GroupFields,
@@ -232,34 +227,19 @@ export namespace storm::orm::statements {
         }
 
         template <std::meta::info... FieldInfos> auto avg() {
-            return UnifiedAggregateStatement<
-                    T,
-                    ConnType,
-                    GroupFields,
-                    Ops...,
-                    AggregateOp<AggregateType::AVG, FieldInfos...>>{
+            return AggregateStatement<T, ConnType, GroupFields, Ops..., AggregateOp<AggregateType::AVG, FieldInfos...>>{
                     conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_
             };
         }
 
         template <std::meta::info... FieldInfos> auto min() {
-            return UnifiedAggregateStatement<
-                    T,
-                    ConnType,
-                    GroupFields,
-                    Ops...,
-                    AggregateOp<AggregateType::MIN, FieldInfos...>>{
+            return AggregateStatement<T, ConnType, GroupFields, Ops..., AggregateOp<AggregateType::MIN, FieldInfos...>>{
                     conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_
             };
         }
 
         template <std::meta::info... FieldInfos> auto max() {
-            return UnifiedAggregateStatement<
-                    T,
-                    ConnType,
-                    GroupFields,
-                    Ops...,
-                    AggregateOp<AggregateType::MAX, FieldInfos...>>{
+            return AggregateStatement<T, ConnType, GroupFields, Ops..., AggregateOp<AggregateType::MAX, FieldInfos...>>{
                     conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_
             };
         }
@@ -552,27 +532,10 @@ export namespace storm::orm::statements {
     };
 
     // ============================================================================
-    // Type Aliases for Backward Compatibility TODO: lets remove Backward Compatibility, use classes as is, the project
-    // not in production
-    // ============================================================================
-
-    // Simple aggregates (no GROUP BY)
-    template <typename T, storm::db::DatabaseConnection ConnType, typename... Ops>
-    using AggregateStatement = UnifiedAggregateStatement<T, ConnType, NoGroupBy, Ops...>;
-
-    template <typename T, storm::db::DatabaseConnection ConnType, typename... Ops>
-    using AggregateBuilder = AggregateStatement<T, ConnType, Ops...>;
-
-    // GROUP BY aggregates
-    template <typename T, storm::db::DatabaseConnection ConnType, typename GroupFields, typename... Ops>
-        requires(sizeof...(Ops) > 0)
-    using GroupByAggregateStatement = UnifiedAggregateStatement<T, ConnType, GroupFields, Ops...>;
-
-    // ============================================================================
     // GroupByBuilder - Fluent builder for GROUP BY queries
     // ============================================================================
     // Provides a fluent interface for building GROUP BY aggregate queries.
-    // Created by QuerySet::group_by<>() and returns UnifiedAggregateStatement
+    // Created by QuerySet::group_by<>() and returns AggregateStatement
     // when an aggregate method (count, sum, avg, min, max) is called.
     // ============================================================================
     template <typename T, storm::db::DatabaseConnection ConnType, std::meta::info... GroupFieldInfos>
@@ -597,31 +560,31 @@ export namespace storm::orm::statements {
             , order_by_wrapper_(order_by_wrapper) {}
 
         template <std::meta::info... FieldInfos> auto count() {
-            return UnifiedAggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::COUNT, FieldInfos...>>{
+            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::COUNT, FieldInfos...>>{
                     conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_
             };
         }
 
         template <std::meta::info... FieldInfos> auto sum() {
-            return UnifiedAggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::SUM, FieldInfos...>>{
+            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::SUM, FieldInfos...>>{
                     conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_
             };
         }
 
         template <std::meta::info... FieldInfos> auto avg() {
-            return UnifiedAggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::AVG, FieldInfos...>>{
+            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::AVG, FieldInfos...>>{
                     conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_
             };
         }
 
         template <std::meta::info... FieldInfos> auto min() {
-            return UnifiedAggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::MIN, FieldInfos...>>{
+            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::MIN, FieldInfos...>>{
                     conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_
             };
         }
 
         template <std::meta::info... FieldInfos> auto max() {
-            return UnifiedAggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::MAX, FieldInfos...>>{
+            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::MAX, FieldInfos...>>{
                     conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_
             };
         }

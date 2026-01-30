@@ -178,12 +178,11 @@ Features that could use additional test coverage:
 
 ### Feature Requests (Priority: Medium)
 
-- [x] **GROUP BY Builder Enhancements** - ✅ Partially implemented
+- [x] **GROUP BY Builder Enhancements** - ✅ Implemented
   - [x] Add `order_by<>()` support to GroupByBuilder
   - [x] Add `limit()` and `offset()` support to GroupByBuilder
-  - [ ] Add `aggregate()` method to GroupByBuilder for chaining multiple aggregates
-  - Example (supported): `qs.order_by<^^dept>().limit(10).group_by<^^dept>().count().select()`
-  - Example (not yet): `qs.group_by<^^dept>().count().sum<^^salary>().select()` - requires separate queries
+  - [x] Multiple aggregates chain directly: `qs.sum<^^age>().count().avg<^^salary>().select()`
+  - [x] GROUP BY with multiple aggregates: `qs.group_by<^^dept>().count().sum<^^salary>().select()`
 
 - [ ] **Column Projection (SELECT specific columns)** - Allow users to specify which columns to retrieve
   - Example: `qs.select<^^name, ^^age>()` returns `std::vector<std::tuple<std::string, int>>`
