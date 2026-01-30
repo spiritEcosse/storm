@@ -329,6 +329,9 @@ export namespace storm::orm::statements {
 
             if (step_result != Statement::ROW_AVAILABLE) {
                 stmt->reset();
+                // LCOV_EXCL_START - SQLite aggregate queries always return ≥1 row;
+                // these defensive paths are tested via mock (test_orm_mock_errors.cpp)
+                // but LLVM coverage can't track them (template + if constexpr issue)
                 if (step_result == Statement::NO_MORE_ROWS) {
                     if constexpr (NumOps == 1) {
                         return ResultType{};
@@ -337,6 +340,7 @@ export namespace storm::orm::statements {
                     }
                 }
                 return std::unexpected(Error{step_result, stmt->get_error_message()});
+                // LCOV_EXCL_STOP
             }
 
             ResultType result;
