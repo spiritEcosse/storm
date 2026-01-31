@@ -336,7 +336,9 @@ export namespace storm::orm::statements {
                 result = Base::template extract_column_value<ResultType>(stmt, 0);
             } else {
                 result = ResultType{
-                        Base::template extract_column_value<OpResult<std::tuple_element_t<Is, std::tuple<Ops...>>>>(stmt, Is)...
+                        Base::template extract_column_value<OpResult<std::tuple_element_t<Is, std::tuple<Ops...>>>>(
+                                stmt, Is
+                        )...
                 };
             }
 

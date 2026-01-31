@@ -194,48 +194,18 @@ export namespace storm::orm::statements {
             return {};
         }
 
-        // Helper template for inline binding at compile-time index
-        template <size_t Index>
-        [[nodiscard]] __attribute__((always_inline)) static constexpr auto
-        inline_bind_field_if_not_pk(Statement* stmt, const T& obj, int& param_index) noexcept
-                -> std::expected<void, Error> {
-            if constexpr (Index < Base::field_count_) {
-                constexpr auto member = Base::all_members_[Index];
-                if constexpr (member != Base::primary_key_) {
-                    // Check if this is a FK field - if so, extract and bind the PK value
-                    if constexpr (Base::is_fk_field(member)) {
-                        auto fk_object              = obj.[:member:];
-                        using FKType                = std::remove_cvref_t<decltype(fk_object)>;
-                        constexpr auto fk_pk_member = Base::template find_fk_primary_key<FKType>();
-                        auto           pk_value     = fk_object.[:fk_pk_member:];
-                        auto bind_result = Base::template bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
-                        if (!bind_result) {
-                            return std::unexpected(bind_result.error());
-                        }
-                    } else {
-                        auto value = obj.[:member:];
-                        // Inline type dispatch for all supported types - use BaseStatement for consistency
-                        auto bind_result = Base::template bind_value_by_type<ConnType>(*stmt, param_index, value);
-                        if (!bind_result) {
-                            return std::unexpected(bind_result.error());
-                        }
-                    }
-                    ++param_index;
-                }
-            }
-            return {};
-        }
-
-        // Helper to unroll inline binding for all fields
+        // Helper to unroll inline binding for all fields (skips PK, then binds PK last)
         template <size_t... Is>
         [[nodiscard]] __attribute__((always_inline)) static auto
         inline_bind_all_fields(Statement* stmt, const T& obj, std::index_sequence<Is...> /*unused*/) noexcept
                 -> std::expected<void, Error> {
             int param_index = 1;
 
-            // Unroll all field bindings at compile time
+            // Bind all non-PK fields at compile time using unified binder
             std::expected<void, Error> result{};
-            ((result = inline_bind_field_if_not_pk<Is>(stmt, obj, param_index), result.has_value()) && ...);
+            ((result = Base::template bind_field_at_index<ConnType, Is, true>(stmt, obj, param_index),
+              result.has_value()) &&
+             ...);
 
             if (!result) {
                 return result;

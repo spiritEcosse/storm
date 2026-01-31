@@ -190,14 +190,10 @@ export namespace storm::orm::statements {
         [[nodiscard]] static auto
         bind_all_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...> /*unused*/) noexcept
                 -> std::expected<void, typename ConnType::Error> {
-            // Use fold expression to bind all fields at compile-time indices
-            // Each field binds at parameter index (Is + 1) since SQLite parameters start at 1
-            auto bind_result = (bind_field_at_index<ConnType, Is>(stmt, obj, Is + 1) && ...);
-            if (!bind_result) {
-                // Find which field failed (this could be optimized further if needed)
-                return get_first_bind_error<ConnType, Statement, Is...>(stmt, obj);
-            }
-            return {};
+            int                                           param_index = 1;
+            std::expected<void, typename ConnType::Error> result{};
+            ((result = bind_field_at_index<ConnType, Is>(&stmt, obj, param_index), result.has_value()) && ...);
+            return result;
         }
 
         // Helper template for INSERT binding (skips primary key for auto-increment)
@@ -205,86 +201,46 @@ export namespace storm::orm::statements {
         [[nodiscard]] static auto
         bind_non_pk_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...> /*unused*/) noexcept
                 -> std::expected<void, typename ConnType::Error> {
-            int  param_index = 1;
-            bool bind_ok     = true;
-
-            // Bind each field, skipping the PK
-            // Note: Lambda is evaluated unconditionally via comma operator to avoid
-            // side effects in && operator (SonarCloud cpp:S912)
-            (
-                    [&]() -> void {
-                        if (!bind_ok) {
-                            return;
-                        }
-                        if constexpr (Is < field_count_) {
-                            if (all_members_[Is] != primary_key_) {
-                                // Capture current index, then increment for next iteration
-                                int current_idx = param_index++;
-                                bind_ok         = bind_field_at_index<ConnType, Is>(stmt, obj, current_idx);
-                            }
-                        }
-                    }(),
-                    ...
-            );
-
-            if (!bind_ok) {
-                return std::unexpected(typename ConnType::Error{-1, "Field binding failed"});
-            }
-            return {};
+            int                                           param_index = 1;
+            std::expected<void, typename ConnType::Error> result{};
+            ((result = bind_field_at_index<ConnType, Is, true>(&stmt, obj, param_index), result.has_value()) && ...);
+            return result;
         }
 
-        // Helper to bind a single field at compile-time index with error handling
-        template <typename ConnType, size_t Index>
-        [[nodiscard]] static auto
-        bind_field_at_index(typename ConnType::Statement& stmt, const T& obj, int param_index) noexcept -> bool {
-            if constexpr (Index < field_count_) {
-                constexpr auto member = all_members_[Index];
-
-                // Check if this is a FK field - if so, extract and bind the PK value
-                if constexpr (is_fk_field(member)) {
-                    auto fk_object              = obj.[:member:];
-                    using FKType                = std::remove_cvref_t<decltype(fk_object)>;
-                    constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
-                    auto           pk_value     = fk_object.[:fk_pk_member:];
-                    auto           result       = bind_value_by_type<ConnType>(stmt, param_index, pk_value);
-                    return result.has_value();
-                } else {
-                    auto field_value = obj.[:member:];
-                    auto result      = bind_value_by_type<ConnType>(stmt, param_index, field_value);
-                    return result.has_value();
-                }
-            }
-            return true;
-        }
-
-        // Helper to get the first binding error when fold expression fails
-        template <typename ConnType, typename Statement, size_t... Is>
-        [[nodiscard]] static auto get_first_bind_error(Statement& stmt, const T& obj) noexcept
+        // Unified field binder: binds a single field at compile-time index
+        // SkipPK=true skips primary key fields (for INSERT/UPDATE non-PK binding)
+        // Auto-increments param_index on successful bind
+        template <typename ConnType, size_t Index, bool SkipPK = false>
+        [[nodiscard]] __attribute__((always_inline)) static constexpr auto
+        bind_field_at_index(typename ConnType::Statement* stmt, const T& obj, int& param_index) noexcept
                 -> std::expected<void, typename ConnType::Error> {
-            // Try each field individually to find the first error
-            auto try_bind = [&stmt, &obj](auto index_constant) -> std::expected<void, typename ConnType::Error> {
-                constexpr size_t Index = decltype(index_constant)::value;
-                if constexpr (Index < field_count_) {
-                    constexpr auto member = all_members_[Index];
-                    // Handle FK fields
-                    if constexpr (is_fk_field(member)) {
-                        auto fk_object              = obj.[:member:];
-                        using FKType                = std::remove_cvref_t<decltype(fk_object)>;
-                        constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
-                        auto           pk_value     = fk_object.[:fk_pk_member:];
-                        return bind_value_by_type<ConnType>(stmt, Index + 1, pk_value);
-                    } else {
-                        auto field_value = obj.[:member:];
-                        return bind_value_by_type<ConnType>(stmt, Index + 1, field_value);
-                    }
-                }
-                return {};
-            };
+            constexpr auto member = all_members_[Index];
 
-            // Try each field to find the first error
-            std::expected<void, typename ConnType::Error> first_error{};
-            ((first_error = try_bind(std::integral_constant<size_t, Is>{}), first_error.has_value()) && ...);
-            return first_error;
+            // Compile-time PK skip for INSERT/UPDATE non-PK paths
+            if constexpr (SkipPK && member == primary_key_) {
+                return {};
+            }
+            // FK field - extract and bind the PK value from the foreign object
+            else if constexpr (is_fk_field(member)) {
+                auto fk_object              = obj.[:member:];
+                using FKType                = std::remove_cvref_t<decltype(fk_object)>;
+                constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
+                auto           pk_value     = fk_object.[:fk_pk_member:];
+                auto           result       = bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
+                if (!result) {
+                    return std::unexpected(result.error());
+                }
+                ++param_index;
+                return {};
+            } else {
+                auto field_value = obj.[:member:];
+                auto result      = bind_value_by_type<ConnType>(*stmt, param_index, field_value);
+                if (!result) {
+                    return std::unexpected(result.error());
+                }
+                ++param_index;
+                return {};
+            }
         }
 
         // Helper for bulk binding multiple objects with index sequence
@@ -294,15 +250,12 @@ export namespace storm::orm::statements {
         ) noexcept -> std::expected<void, typename ConnType::Error> {
             int param_index = 1;
 
-            // Bind each object's fields sequentially
             for (const auto& obj : objects) {
-                // Use fold expression to bind all fields for this object
-                auto bind_result = (bind_field_at_index<ConnType, Is>(stmt, obj, param_index + Is) && ...);
-                if (!bind_result) {
-                    // Find which field failed for this object
-                    return get_bulk_bind_error<ConnType, Statement, Is...>(stmt, obj, param_index);
+                std::expected<void, typename ConnType::Error> result{};
+                ((result = bind_field_at_index<ConnType, Is>(&stmt, obj, param_index), result.has_value()) && ...);
+                if (!result) {
+                    return result;
                 }
-                param_index += field_count_; // Move to next object's parameter range
             }
             return {};
         }
@@ -312,71 +265,17 @@ export namespace storm::orm::statements {
         [[nodiscard]] static auto bind_non_pk_objects_bulk_impl(
                 Statement& stmt, const ContainerType& objects, std::index_sequence<Is...> /*unused*/
         ) noexcept -> std::expected<void, typename ConnType::Error> {
-            int              param_index  = 1;
-            constexpr size_t non_pk_count = field_count_ - 1;
+            int param_index = 1;
 
-            // Bind each object's non-PK fields sequentially
             for (const auto& obj : objects) {
-                int  field_param = param_index;
-                bool bind_ok     = true;
-
-                // Bind fields skipping PK
-                // Note: Lambda is evaluated unconditionally via comma operator to avoid
-                // side effects in && operator (SonarCloud cpp:S912)
-                (
-                        [&]() -> void {
-                            if (!bind_ok) {
-                                return;
-                            }
-                            if constexpr (Is < field_count_) {
-                                if (all_members_[Is] != primary_key_) {
-                                    // Capture current index, then increment for next iteration
-                                    int current_idx = field_param++;
-                                    bind_ok         = bind_field_at_index<ConnType, Is>(stmt, obj, current_idx);
-                                }
-                            }
-                        }(),
-                        ...
-                );
-
-                if (!bind_ok) {
-                    return std::unexpected(typename ConnType::Error{-1, "Bulk bind failed"});
+                std::expected<void, typename ConnType::Error> result{};
+                ((result = bind_field_at_index<ConnType, Is, true>(&stmt, obj, param_index), result.has_value()) &&
+                 ...);
+                if (!result) {
+                    return result;
                 }
-                param_index += non_pk_count; // Move to next object's parameter range
             }
             return {};
-        }
-
-        // Helper to get binding error for bulk operations
-        template <typename ConnType, typename Statement, size_t... Is>
-        [[nodiscard]] static auto get_bulk_bind_error(Statement& stmt, const T& obj, int base_param_index) noexcept
-                -> std::expected<void, typename ConnType::Error> {
-            // Try each field individually to find the first error
-            auto try_bind = [&stmt,
-                             &obj,
-                             base_param_index](auto index_constant) -> std::expected<void, typename ConnType::Error> {
-                constexpr size_t Index = decltype(index_constant)::value;
-                if constexpr (Index < field_count_) {
-                    constexpr auto member = all_members_[Index];
-                    // Handle FK fields
-                    if constexpr (is_fk_field(member)) {
-                        auto fk_object              = obj.[:member:];
-                        using FKType                = std::remove_cvref_t<decltype(fk_object)>;
-                        constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
-                        auto           pk_value     = fk_object.[:fk_pk_member:];
-                        return bind_value_by_type<ConnType>(stmt, base_param_index + Index, pk_value);
-                    } else {
-                        auto field_value = obj.[:member:];
-                        return bind_value_by_type<ConnType>(stmt, base_param_index + Index, field_value);
-                    }
-                }
-                return {};
-            };
-
-            // Try each field to find the first error
-            std::expected<void, typename ConnType::Error> first_error{};
-            ((first_error = try_bind(std::integral_constant<size_t, Is>{}), first_error.has_value()) && ...);
-            return first_error;
         }
 
         // Common batch operation thresholds
