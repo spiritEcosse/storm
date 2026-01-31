@@ -1,5 +1,6 @@
 module;
 
+#include <cassert>
 #include <meta>
 #include <plf_hive/plf_hive.h>
 
@@ -361,11 +362,8 @@ export namespace storm {
         }
 
         [[nodiscard]] static auto get_default_connection() -> const std::shared_ptr<ConnType>& {
-            if (!detail::get_default_connection_ptr()) {
-                throw std::runtime_error(
-                        "Default database connection not set. Call QuerySet::set_default_connection() first."
-                );
-            }
+            assert(detail::get_default_connection_ptr() &&
+                   "Default database connection not set. Call QuerySet::set_default_connection() first.");
             return detail::get_default_connection_ptr();
         }
 
