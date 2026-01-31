@@ -1,32 +1,28 @@
 #!/bin/bash
-# Quick commit workflow: format -> tidy --fix -> test -> sonar -> bench -> commit -> push
-# Usage: ./quick_commit.sh [--no-push] [--no-sonar] [--no-bench] [commit message]
+# Pre-commit checks: format -> tidy --fix -> test -> sonar -> bench
+# Runs automatically via git pre-commit hook, or manually: ./commit.sh
 #
-# Options:
-#   --no-push   Skip pushing to remote after commit
-#   --no-sonar  Skip local sonar check (runs by default)
-#   --no-bench  Skip quick benchmark sanity check (runs by default)
+# Options (flags or env vars):
+#   --no-sonar / SKIP_SONAR=1   Skip local sonar check
+#   --no-bench / SKIP_BENCH=1   Skip quick benchmark sanity check
 
 set -e  # Exit on any error
 
 # Parse flags
-NO_PUSH=false
 RUN_SONAR=true
 RUN_BENCH=true
-COMMIT_MSG_ARG=""
 
 for arg in "$@"; do
-    if [[ "$arg" == "--no-push" ]]; then
-        NO_PUSH=true
-    elif [[ "$arg" == "--no-sonar" ]]; then
+    if [[ "$arg" == "--no-sonar" ]]; then
         RUN_SONAR=false
     elif [[ "$arg" == "--no-bench" ]]; then
         RUN_BENCH=false
-    else
-        COMMIT_MSG_ARG="$COMMIT_MSG_ARG $arg"
     fi
 done
-COMMIT_MSG_ARG=$(echo "$COMMIT_MSG_ARG" | xargs)  # Trim whitespace
+
+# Support env vars (useful for: SKIP_BENCH=1 git commit -m "msg")
+[[ "${SKIP_SONAR:-}" == "1" ]] && RUN_SONAR=false
+[[ "${SKIP_BENCH:-}" == "1" ]] && RUN_BENCH=false
 
 echo "📝 Running clang-format..."
 find src tests benchmarks -type f \( -name "*.cpp" -o -name "*.cppm" -o -name "*.h" -o -name "*.hpp" \) -exec ../clang-p2996/build/bin/clang-format -i --style=file {} +
@@ -39,6 +35,9 @@ echo "🔍 Running clang-tidy --fix (auto-fixing issues)..."
     exit 1
 }
 
+# Re-stage files modified by format/tidy so changes are included in the commit
+git add -u
+
 echo ""
 echo "🧪 Running unit tests..."
 ctest --test-dir build/debug --output-on-failure
@@ -48,7 +47,7 @@ if [[ "$RUN_SONAR" == true ]]; then
     echo ""
     echo "🔍 Running local sonar check..."
     ./scripts/sonar-check.sh src tests benchmarks || {
-        echo "❌ Sonar check failed. Fix issues or run with --no-sonar to skip"
+        echo "❌ Sonar check failed. Fix issues or skip with: SKIP_SONAR=1 git commit -m \"msg\""
         exit 1
     }
 fi
@@ -71,35 +70,3 @@ fi
 
 echo ""
 echo "✅ All checks passed!"
-echo ""
-
-# Check if there are changes to commit
-if [[ -z $(git status --porcelain) ]]; then
-    echo "ℹ️  No changes to commit"
-    exit 0
-fi
-
-# Require commit message
-if [[ -z "$COMMIT_MSG_ARG" ]]; then
-    echo "❌ Commit message required"
-    echo "Usage: ./quick_commit.sh \"commit message\""
-    exit 1
-fi
-
-echo "📦 Staging and committing..."
-git add -A
-git commit -m "$COMMIT_MSG_ARG
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
-
-echo ""
-if [[ "$NO_PUSH" == true ]]; then
-    echo "ℹ️  Skipped push (--no-push flag used)"
-    echo "   Run 'git push' manually when ready"
-else
-    echo "🚀 Pushing to remote..."
-    git push
-    echo "✅ Done!"
-fi

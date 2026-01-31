@@ -252,7 +252,7 @@ Features not yet implemented:
 - [x] ~~enable bugprone-branch-clone~~ - ✅ **DONE**
 - [x] ~~enable bugprone-inc-dec-in-conditions~~ - ✅ **DONE**
 - [x] ~~enable bugprone-unused-return-value~~ - ✅ **DONE**
-- [x] ~~Consider adding clang-tidy in quick_commit.sh~~ - ✅ **DONE** - Added `scripts/run_clang_tidy.sh`
+- [x] ~~Consider adding clang-tidy in commit.sh~~ - ✅ **DONE** - Added `scripts/run_clang_tidy.sh`
 - [x] ~~Replace all std::vector with plf::hive~~ - ✅ **DONE**
 - [x] ~~**Enable `modernize-avoid-c-arrays`**~~ - ✅ **DONE**
 - [x] **Batch INSERT Performance Variance** - ✅ **SOLVED**

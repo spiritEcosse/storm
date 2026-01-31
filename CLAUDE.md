@@ -20,7 +20,7 @@ Storm is a C++26 ORM library for SQLite using compile-time reflection to automat
 2. **NEVER push without approval** - Ask before `git push` (exception: user says "commit and push")
 3. **ALWAYS benchmark after code changes** - Use Release builds; revert if ANY slowdown
 4. **ALWAYS update docs after changes** - Code + docs commit together
-5. **ALWAYS use `./quick_commit.sh`** - Never manual `git add/commit`
+5. **Pre-commit hook enforces checks** - `commit.sh` runs automatically on `git commit` (format, tidy, test, sonar, bench)
 6. **ALWAYS show files before commit** - Run `git status --short`, get user approval, then commit
 7. **ASK before creating new `.md` files**
 8. **UPPERCASE doc filenames** - `GETTING_STARTED.md`, not `getting-started.md`
@@ -41,7 +41,11 @@ cmake --preset ninja-release && cmake --build --preset ninja-release
 ```bash
 git status --short           # Show files
 # Get user approval
-./quick_commit.sh "message"  # Formats, tests, commits, pushes
+git add -A && git commit -m "message"  # Pre-commit hook runs all checks automatically
+
+# Skip optional checks if needed:
+SKIP_BENCH=1 git commit -m "message"
+SKIP_SONAR=1 git commit -m "message"
 ```
 
 ### Benchmarking (Release only!)

@@ -28,38 +28,36 @@ Commit messages should be concise but descriptive. Include the scope when releva
 - `perf(insert): optimize bulk operations with VALUES clause`
 - `fix(reflection): handle nullable fields correctly`
 
-## Quick Commit Workflow (Recommended)
+## Commit Workflow
 
-For standard commits, use the `quick_commit.sh` script which automates the entire workflow:
+All checks run automatically via the pre-commit hook (`.githooks/pre-commit` → `commit.sh`). Just use standard git commands:
 
 ```bash
-# Commit with custom message and push
-./quick_commit.sh "feat(queryset): add batch update support"
+# Standard commit (hook runs format, tidy, tests, sonar, bench)
+git add -A && git commit -m "feat(queryset): add batch update support"
 
-# Commit without pushing (for review before push)
-./quick_commit.sh --no-push "fix(reflection): handle nullable fields"
+# Skip optional checks via env vars
+SKIP_BENCH=1 git commit -m "fix(reflection): handle nullable fields"
+SKIP_SONAR=1 git commit -m "docs: update README"
+SKIP_BENCH=1 SKIP_SONAR=1 git commit -m "test: add edge case"
 
-# Auto-generated commit message (based on changed files)
-./quick_commit.sh
+# Run checks manually without committing
+./commit.sh
+./commit.sh --no-sonar --no-bench
 ```
 
-The script automatically:
+The pre-commit hook automatically:
 1. Runs clang-format on all source files
-2. Executes the full test suite (fails if tests fail)
-3. Stages all changes
-4. Creates commit with proper format (includes Claude Code attribution)
-5. Pushes to remote (unless `--no-push` flag is used)
+2. Runs clang-tidy --fix (auto-fixes issues)
+3. Re-stages files modified by format/tidy
+4. Executes the full test suite (fails if tests fail)
+5. Runs local sonar check (skip with `SKIP_SONAR=1`)
+6. Runs quick benchmark sanity check (skip with `SKIP_BENCH=1`)
 
-**Use `quick_commit.sh` when:**
-- Making standard commits that don't require special handling
-- You want automated formatting and test verification
-- Commit message is straightforward
-
-**Use manual workflow when:**
-- You need selective file staging
-- Performance benchmarks are required before commit
-- Complex multi-commit operations
-- Hotfix or emergency procedures
+**Setup** (one-time, already configured):
+```bash
+git config core.hooksPath .githooks
+```
 
 ## Manual Pre-Commit Workflow
 

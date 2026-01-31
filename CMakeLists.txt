@@ -4,6 +4,13 @@ project(storm)
 set(CMAKE_CXX_STANDARD 26)
 message(STATUS "Using C++26 (standard build)")
 
+# Configure git hooks path (so pre-commit hook works on fresh clones)
+execute_process(
+    COMMAND git config core.hooksPath .githooks
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    ERROR_QUIET
+)
+
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
