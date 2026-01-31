@@ -220,7 +220,7 @@ export namespace storm::orm::statements {
                 using FieldType = std::tuple_element_t<0, FieldTypesTuple>;
 
                 while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
-                    results.insert(Base::template extract_column_value<FieldType>(*stmt, 0));
+                    results.insert(Base::template extract_column_value<FieldType>(stmt, 0));
                 }
             } else {
                 // Multi-field: insert tuples
@@ -248,7 +248,7 @@ export namespace storm::orm::statements {
         {
             results.insert(
                     std::make_tuple(
-                            Base::template extract_column_value<std::tuple_element_t<Is, FieldTypesTuple>>(*stmt, Is)...
+                            Base::template extract_column_value<std::tuple_element_t<Is, FieldTypesTuple>>(stmt, Is)...
                     )
             );
         }

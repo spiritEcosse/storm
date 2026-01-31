@@ -163,73 +163,6 @@ export namespace storm::orm::statements {
             return cached_stmt_;
         }
 
-        // =====================================================================
-        // DATABASE-AGNOSTIC EXTRACTION - Uses Statement methods with templates
-        // Templates enable cross-module inlining for zero-cost abstraction
-        // =====================================================================
-
-        // Extract single column value using Statement methods (database-agnostic)
-        template <typename FieldType>
-        __attribute__((always_inline)) static auto extract_column(Statement* stmt, int col_idx) -> FieldType {
-            // Handle std::optional types first
-            if constexpr (storm::orm::utilities::is_optional_v<FieldType>) {
-                using InnerType = typename FieldType::value_type;
-                if (stmt->is_null(col_idx)) {
-                    return std::nullopt;
-                }
-                return FieldType{extract_column<InnerType>(stmt, col_idx)};
-            }
-            // Handle BLOB types (vector<uint8_t>)
-            else if constexpr (std::is_same_v<FieldType, std::vector<uint8_t>> ||
-                               std::is_same_v<FieldType, std::vector<unsigned char>>) {
-                const void* blob = stmt->extract_blob_ptr(col_idx);
-                const int   size = stmt->extract_bytes(col_idx);
-                if (blob && size > 0) {
-                    const auto* data = static_cast<const uint8_t*>(blob);
-                    return FieldType(data, data + size);
-                }
-                return FieldType{};
-            }
-            // Boolean type (stored as INTEGER 0/1)
-            else if constexpr (std::is_same_v<FieldType, bool>) {
-                return stmt->extract_bool(col_idx);
-            }
-            // Integer types
-            else if constexpr (std::is_same_v<FieldType, int>) {
-                return stmt->extract_int(col_idx);
-            } else if constexpr (std::is_same_v<FieldType, int64_t> || std::is_same_v<FieldType, long> ||
-                                 std::is_same_v<FieldType, long long> || std::is_same_v<FieldType, uint64_t> ||
-                                 std::is_same_v<FieldType, unsigned long> ||
-                                 std::is_same_v<FieldType, unsigned long long>) {
-                // All 64-bit types (signed and unsigned) use extract_int64
-                return static_cast<FieldType>(stmt->extract_int64(col_idx));
-            } else if constexpr (std::is_same_v<FieldType, short>) {
-                return static_cast<short>(stmt->extract_int(col_idx));
-            } else if constexpr (std::is_same_v<FieldType, unsigned short>) {
-                return static_cast<unsigned short>(stmt->extract_int(col_idx));
-            } else if constexpr (std::is_same_v<FieldType, unsigned int>) {
-                return static_cast<unsigned int>(stmt->extract_int(col_idx));
-            }
-            // Floating point types
-            else if constexpr (std::is_same_v<FieldType, double>) {
-                return stmt->extract_double(col_idx);
-            } else if constexpr (std::is_same_v<FieldType, float>) {
-                return stmt->extract_float(col_idx);
-            }
-            // String type
-            else if constexpr (std::is_same_v<FieldType, std::string>) {
-                const unsigned char* text = stmt->extract_text_ptr(col_idx);
-                if (text) {
-                    const auto len = static_cast<size_t>(stmt->extract_bytes(col_idx));
-                    return std::string(reinterpret_cast<const char*>(text), len);
-                }
-                return std::string{};
-            } else {
-                // Fallback for other types
-                return FieldType{};
-            }
-        }
-
         // Extract single column using Statement (database-agnostic)
         template <size_t Index>
         __attribute__((always_inline)) static void extract_column_fast(Statement* stmt, T& obj) noexcept {
@@ -242,9 +175,9 @@ export namespace storm::orm::statements {
                     obj.[:member:]                  = FieldType{};
                     constexpr auto fk_pk_member     = Base::template find_fk_primary_key<FieldType>();
                     using PKType                    = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
-                    obj.[:member:].[:fk_pk_member:] = extract_column<PKType>(stmt, Index);
+                    obj.[:member:].[:fk_pk_member:] = Base::template extract_column_value<PKType>(stmt, Index);
                 } else {
-                    obj.[:member:] = extract_column<FieldType>(stmt, Index);
+                    obj.[:member:] = Base::template extract_column_value<FieldType>(stmt, Index);
                 }
             }
         }

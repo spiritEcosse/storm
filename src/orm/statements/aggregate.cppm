@@ -309,18 +309,6 @@ export namespace storm::orm::statements {
         static inline const std::string select_clause_{select_clause_arr_.data.data(), select_clause_arr_.len};
         static inline const std::string group_clause_{group_fields_arr_.data.data(), group_fields_arr_.len};
 
-        // ---- Value Extraction ----
-        // TODO: consider to use extract_column_value from base, use bench to verify if it worth it.
-        template <typename FieldType> static auto extract_column(Statement& stmt, int col_idx) -> FieldType {
-            if constexpr (std::is_same_v<FieldType, int64_t>) {
-                return stmt.extract_int64(col_idx);
-            } else if constexpr (std::is_same_v<FieldType, double>) {
-                return stmt.extract_double(col_idx);
-            } else {
-                return Base::template extract_column_value<FieldType>(stmt, col_idx);
-            }
-        }
-
         // Simple aggregate extraction (single row)
         template <size_t... Is>
         [[nodiscard]] auto extract_simple_result(Statement* stmt, std::index_sequence<Is...> /*unused*/)
@@ -345,10 +333,10 @@ export namespace storm::orm::statements {
 
             ResultType result;
             if constexpr (NumOps == 1) {
-                result = extract_column<ResultType>(*stmt, 0);
+                result = Base::template extract_column_value<ResultType>(stmt, 0);
             } else {
                 result = ResultType{
-                        extract_column<OpResult<std::tuple_element_t<Is, std::tuple<Ops...>>>>(*stmt, Is)...
+                        Base::template extract_column_value<OpResult<std::tuple_element_t<Is, std::tuple<Ops...>>>>(stmt, Is)...
                 };
             }
 
@@ -359,11 +347,11 @@ export namespace storm::orm::statements {
         // GROUP BY extraction (multiple rows)
         template <size_t... GIs, size_t... AIs>
         static auto extract_grouped_row(
-                Statement& stmt, std::index_sequence<GIs...> /*unused*/, std::index_sequence<AIs...> /*unused*/
+                Statement* stmt, std::index_sequence<GIs...> /*unused*/, std::index_sequence<AIs...> /*unused*/
         ) -> GroupedTuple {
             return GroupedTuple{
-                    extract_column<typename GroupFieldType<GIs>::type>(stmt, GIs)...,
-                    extract_column<OpResult<std::tuple_element_t<AIs, std::tuple<Ops...>>>>(
+                    Base::template extract_column_value<typename GroupFieldType<GIs>::type>(stmt, GIs)...,
+                    Base::template extract_column_value<OpResult<std::tuple_element_t<AIs, std::tuple<Ops...>>>>(
                             stmt, NumGroupFields + AIs
                     )...
             };
@@ -375,7 +363,7 @@ export namespace storm::orm::statements {
 
             while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
                 results.insert(extract_grouped_row(
-                        *stmt, std::make_index_sequence<NumGroupFields>{}, std::make_index_sequence<NumOps>{}
+                        stmt, std::make_index_sequence<NumGroupFields>{}, std::make_index_sequence<NumOps>{}
                 ));
             }
 

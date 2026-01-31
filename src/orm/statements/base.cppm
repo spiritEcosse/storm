@@ -431,56 +431,54 @@ export namespace storm::orm::statements {
         // Handles: int, int64_t, uint64_t, short, float, double, bool, string, optional<T>, vector<uint8_t>
         template <typename FieldType, typename Statement>
         [[nodiscard]] __attribute__((always_inline)) static auto
-        extract_column_value(Statement& stmt, int col_idx) noexcept -> FieldType {
+        extract_column_value(Statement* stmt, int col_idx) noexcept -> FieldType {
             // Handle std::optional types first
             if constexpr (utilities::is_optional_v<FieldType>) {
                 using InnerType = typename FieldType::value_type;
-                if (stmt.is_null(col_idx)) {
+                if (stmt->is_null(col_idx)) {
                     return std::nullopt;
                 }
-                // Extract the inner value and wrap it in optional
                 InnerType inner_value = extract_column_value<InnerType>(stmt, col_idx);
                 return FieldType{std::move(inner_value)};
             }
             // Boolean type (stored as INTEGER 0/1)
             else if constexpr (std::is_same_v<FieldType, bool>) {
-                return stmt.extract_bool(col_idx);
+                return stmt->extract_bool(col_idx);
             }
             // Integer types
             else if constexpr (std::is_same_v<FieldType, int>) {
-                return stmt.extract_int(col_idx);
+                return stmt->extract_int(col_idx);
             } else if constexpr (std::is_same_v<FieldType, int64_t> || std::is_same_v<FieldType, long> ||
                                  std::is_same_v<FieldType, long long> || std::is_same_v<FieldType, uint64_t> ||
                                  std::is_same_v<FieldType, unsigned long> ||
                                  std::is_same_v<FieldType, unsigned long long>) {
-                // All 64-bit types (signed and unsigned) use extract_int64
-                return static_cast<FieldType>(stmt.extract_int64(col_idx));
+                return static_cast<FieldType>(stmt->extract_int64(col_idx));
             } else if constexpr (std::is_same_v<FieldType, short> || std::is_same_v<FieldType, unsigned short> ||
                                  std::is_same_v<FieldType, unsigned int>) {
-                return static_cast<FieldType>(stmt.extract_int(col_idx));
+                return static_cast<FieldType>(stmt->extract_int(col_idx));
             }
             // Floating point types
             else if constexpr (std::is_same_v<FieldType, double>) {
-                return stmt.extract_double(col_idx);
+                return stmt->extract_double(col_idx);
             } else if constexpr (std::is_same_v<FieldType, float>) {
-                return stmt.extract_float(col_idx);
+                return stmt->extract_float(col_idx);
             }
             // BLOB types
             else if constexpr (std::is_same_v<FieldType, std::vector<uint8_t>> ||
                                std::is_same_v<FieldType, std::vector<unsigned char>>) {
-                auto [blob_ptr, blob_size] = stmt.extract_blob(col_idx);
-                if (blob_ptr && blob_size > 0) {
-                    const auto* data = static_cast<const uint8_t*>(blob_ptr);
-                    return FieldType(data, data + blob_size);
+                const void* blob = stmt->extract_blob_ptr(col_idx);
+                const int   size = stmt->extract_bytes(col_idx);
+                if (blob && size > 0) {
+                    const auto* data = static_cast<const uint8_t*>(blob);
+                    return FieldType(data, data + size);
                 }
                 return FieldType{};
             }
             // String types
             else if constexpr (std::is_same_v<FieldType, std::string>) {
-                const unsigned char* text = stmt.extract_text_ptr(col_idx);
+                const unsigned char* text = stmt->extract_text_ptr(col_idx);
                 if (text) {
-                    // OPTIMIZATION: Direct construction with known length (no strlen, no temporary)
-                    int len = stmt.extract_bytes(col_idx);
+                    int len = stmt->extract_bytes(col_idx);
                     return FieldType(reinterpret_cast<const char*>(text), len);
                 }
                 return FieldType{};

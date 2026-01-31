@@ -280,45 +280,6 @@ export namespace storm::orm::statements {
         // DATABASE-AGNOSTIC EXTRACTION - Uses Statement template methods
         // =====================================================================
 
-        // OPTIMIZATION: Only check NULL for optional types (significant performance gain)
-        // Non-optional fields skip the NULL check entirely
-        template <typename FieldType>
-        __attribute__((always_inline)) static void
-        extract_typed_field(Statement* stmt, FieldType& field, int col_idx) noexcept {
-            // Handle std::optional types - check NULL first
-            if constexpr (storm::orm::utilities::is_optional_v<FieldType>) {
-                if (stmt->is_null(col_idx)) {
-                    field = std::nullopt;
-                    return;
-                }
-                using InnerType = typename FieldType::value_type;
-                InnerType val;
-                extract_typed_field(stmt, val, col_idx);
-                field = std::move(val);
-            }
-            // Non-optional types: NO NULL check (matches raw SQLite behavior)
-            else if constexpr (std::is_same_v<FieldType, int>) {
-                field = stmt->extract_int(col_idx);
-            } else if constexpr (std::is_same_v<FieldType, int64_t> || std::is_same_v<FieldType, long> ||
-                                 std::is_same_v<FieldType, long long>) {
-                field = static_cast<FieldType>(stmt->extract_int64(col_idx));
-            } else if constexpr (std::is_same_v<FieldType, double>) {
-                field = stmt->extract_double(col_idx);
-            } else if constexpr (std::is_same_v<FieldType, float>) {
-                field = stmt->extract_float(col_idx);
-            } else if constexpr (std::is_same_v<FieldType, bool>) {
-                field = stmt->extract_bool(col_idx);
-            } else if constexpr (std::is_same_v<FieldType, std::string>) {
-                const unsigned char* text = stmt->extract_text_ptr(col_idx);
-                if (text) {
-                    int len = stmt->extract_bytes(col_idx);
-                    field.assign(reinterpret_cast<const char*>(text), len);
-                } else {
-                    field.clear();
-                }
-            }
-        }
-
         template <size_t... Is>
         __attribute__((always_inline)) static void
         extract_t_fields(Statement* stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
@@ -334,7 +295,8 @@ export namespace storm::orm::statements {
                 if constexpr (Base::is_fk_field(member)) {
                     return;
                 } else {
-                    extract_typed_field(stmt, obj.[:member:], col_idx);
+                    using FieldType = std::remove_cvref_t<decltype(obj.[:member:])>;
+                    obj.[:member:]  = Base::template extract_column_value<FieldType>(stmt, col_idx);
                     col_idx++;
                 }
             }
@@ -353,7 +315,8 @@ export namespace storm::orm::statements {
         extract_fk_field_at(Statement* stmt, auto& fk_obj, int col_idx) noexcept {
             if constexpr (FieldIdx < FKBase::field_count_) {
                 constexpr auto member = FKBase::all_members_[FieldIdx];
-                extract_typed_field(stmt, fk_obj.[:member:], col_idx);
+                using FieldType       = std::remove_cvref_t<decltype(fk_obj.[:member:])>;
+                fk_obj.[:member:]     = Base::template extract_column_value<FieldType>(stmt, col_idx);
             }
         }
 
