@@ -12,6 +12,18 @@ import <string>;
 import <meta>;
 import <utility>;
 
+namespace detail {
+    // Free consteval helper — avoids generic-lambda-in-consteval compiler bug
+    template <size_t N, auto Arg>
+    consteval void process_order_by_arg(std::array<std::pair<std::meta::info, bool>, N>& result, size_t& idx) {
+        if constexpr (std::same_as<decltype(Arg), bool>) {
+            result[idx - 1].second = Arg;
+        } else {
+            result[idx++] = {Arg, true}; // default ASC
+        }
+    }
+} // namespace detail
+
 export namespace storm::orm::statements {
 
     namespace buffer_size = storm::orm::utilities::buffer_size;
@@ -28,16 +40,7 @@ export namespace storm::orm::statements {
         static constexpr auto fields = [] consteval -> std::array<std::pair<std::meta::info, bool>, count> {
             std::array<std::pair<std::meta::info, bool>, count> result{};
             size_t                                              idx = 0;
-            (
-                    [&]<auto Arg>() -> void {
-                        if constexpr (std::same_as<decltype(Arg), bool>) {
-                            result[idx - 1].second = Arg;
-                        } else {
-                            result[idx++] = {Arg, true}; // default ASC
-                        }
-                    }.template operator()<Args>(),
-                    ...
-            );
+            (detail::process_order_by_arg<count, Args>(result, idx), ...);
             return result;
         }();
 
