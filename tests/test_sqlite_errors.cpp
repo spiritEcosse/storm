@@ -77,9 +77,38 @@ TEST_F(ConnectionErrorTest, ConnectionNotOpenPrepare) {
     auto moved_conn = std::move(conn);
 
     // Original conn is now in moved-from state
-    // Trying to use the moved-from connection should fail
-    // Note: After move, is_open() returns false due to unique_ptr being null
     EXPECT_FALSE(conn.is_open()) << "Moved-from connection should not be open";
+
+    // prepare() on closed connection should return error
+    auto prep_result = conn.prepare("SELECT 1");
+    ASSERT_FALSE(prep_result.has_value()) << "prepare() on closed connection should fail";
+    EXPECT_EQ(prep_result.error().code(), SQLITE_MISUSE);
+}
+
+TEST_F(ConnectionErrorTest, ConnectionNotOpenPrepareCached) {
+    auto result = Connection::open(":memory:");
+    ASSERT_TRUE(result.has_value());
+
+    auto conn       = std::move(result.value());
+    auto moved_conn = std::move(conn);
+
+    // prepare_cached() on closed connection should return error
+    auto prep_result = conn.prepare_cached("SELECT 1");
+    ASSERT_FALSE(prep_result.has_value()) << "prepare_cached() on closed connection should fail";
+    EXPECT_EQ(prep_result.error().code(), SQLITE_MISUSE);
+}
+
+TEST_F(ConnectionErrorTest, ConnectionNotOpenExecute) {
+    auto result = Connection::open(":memory:");
+    ASSERT_TRUE(result.has_value());
+
+    auto conn       = std::move(result.value());
+    auto moved_conn = std::move(conn);
+
+    // execute() on closed connection should return error
+    auto exec_result = conn.execute("SELECT 1");
+    ASSERT_FALSE(exec_result.has_value()) << "execute() on closed connection should fail";
+    EXPECT_EQ(exec_result.error().code(), SQLITE_MISUSE);
 }
 
 TEST_F(ConnectionErrorTest, PrepareInvalidSQL) {
@@ -363,6 +392,24 @@ TEST_F(StatementExecuteErrorTest, StepOnSelectReturnsRowNotDone) {
     // This should fail because execute() expects SQLITE_DONE but SELECT returns SQLITE_ROW
     ASSERT_FALSE(exec_result.has_value()) << "execute() on SELECT should fail (expects DONE, gets ROW)";
     EXPECT_EQ(exec_result.error().code(), SQLITE_ROW);
+}
+
+TEST_F(StatementExecuteErrorTest, StepReturnsError) {
+    // Trigger step() error path by altering schema while statement is active
+    auto stmt_result = conn_.prepare("SELECT * FROM test_table");
+    ASSERT_TRUE(stmt_result.has_value());
+
+    auto stmt = std::move(stmt_result.value());
+
+    // Drop the table while the statement is prepared - causes SQLITE_ERROR on step
+    auto drop_result = conn_.execute("DROP TABLE test_table");
+    ASSERT_TRUE(drop_result.has_value());
+
+    auto step_result = stmt.step();
+    ASSERT_FALSE(step_result.has_value()) << "step() should fail after schema change";
+    // SQLITE_ERROR or SQLITE_ABORT expected
+    EXPECT_NE(step_result.error().code(), SQLITE_ROW);
+    EXPECT_NE(step_result.error().code(), SQLITE_DONE);
 }
 
 TEST_F(StatementExecuteErrorTest, StepReturnsRow) {

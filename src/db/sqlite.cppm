@@ -233,11 +233,6 @@ export namespace storm::db::sqlite {
         }
 
         template <typename = void>
-        [[nodiscard]] __attribute__((always_inline)) auto extract_column_type(int col_index) const noexcept -> int {
-            return sqlite3_column_type(raw_, col_index);
-        }
-
-        template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto is_null(int col_index) const noexcept -> bool {
             return sqlite3_column_type(raw_, col_index) == SQLITE_NULL;
         }
@@ -366,11 +361,9 @@ export namespace storm::db::sqlite {
             }
 
             // Only allocate string for storage in cache (on miss)
-            auto [inserted_it, success] = statement_cache_.emplace(std::string(sql), Statement{stmt});
-            if (!success) {
-                return std::unexpected(Error{SQLITE_INTERNAL, "Failed to cache statement"});
-            }
-
+            // emplace always succeeds here: find() above confirmed key doesn't exist
+            auto [inserted_it, inserted] = statement_cache_.emplace(std::string(sql), Statement{stmt});
+            (void)inserted; // Always true: find() above confirmed key absence
             return &inserted_it->second;
         }
 
