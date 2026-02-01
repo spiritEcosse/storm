@@ -6,12 +6,104 @@ export module storm_orm_statements_orderby;
 
 import storm_orm_utilities;
 
+import <array>;
+import <concepts>;
 import <string>;
 import <meta>;
+import <utility>;
 
 export namespace storm::orm::statements {
 
-    using storm::orm::utilities::OrderByClause;
+    namespace buffer_size = storm::orm::utilities::buffer_size;
+    using storm::orm::utilities::ConstexprString;
+
+    // ============================================================================
+    // ORDER BY Clause - variadic pack processing (no recursive specializations)
+    // ============================================================================
+
+    template <auto... Args> struct OrderByClause {
+        // Count non-bool args (each is a field; bools are directions)
+        static constexpr size_t count = ((std::same_as<decltype(Args), bool> ? 0 : 1) + ... + 0);
+
+        static constexpr auto fields = [] consteval -> std::array<std::pair<std::meta::info, bool>, count> {
+            std::array<std::pair<std::meta::info, bool>, count> result{};
+            size_t                                              idx = 0;
+            (
+                    [&]<auto Arg>() -> void {
+                        if constexpr (std::same_as<decltype(Arg), bool>) {
+                            result[idx - 1].second = Arg;
+                        } else {
+                            result[idx++] = {Arg, true}; // default ASC
+                        }
+                    }.template operator()<Args>(),
+                    ...
+            );
+            return result;
+        }();
+
+        static constexpr auto empty() -> bool {
+            return count == 0;
+        }
+
+        // Generate ORDER BY SQL fragment at compile-time
+        template <size_t BufferSize = buffer_size::SQL_MEDIUM>
+        static consteval auto to_sql() -> ConstexprString<BufferSize> {
+            ConstexprString<BufferSize> result;
+
+            if constexpr (count == 0) {
+                return result;
+            }
+
+            result.append(" ORDER BY ");
+
+            for (size_t i = 0; i < count; ++i) {
+                if (i > 0) {
+                    result.append(", ");
+                }
+
+                constexpr auto field_info = fields[i].first;
+                constexpr auto field_name = std::meta::identifier_of(field_info);
+                result.append(field_name);
+
+                constexpr bool ascending = fields[i].second;
+                if (ascending) {
+                    result.append(" ASC");
+                } else {
+                    result.append(" DESC");
+                }
+            }
+
+            return result;
+        }
+
+        // Generate ORDER BY SQL fragment at runtime
+        static auto to_sql_runtime() -> std::string {
+            if constexpr (count == 0) {
+                return "";
+            }
+
+            std::string result = " ORDER BY ";
+
+            [&]<size_t... Is>(std::index_sequence<Is...>) -> void {
+                ((append_field<Is>(result, Is > 0)), ...);
+            }(std::make_index_sequence<count>{});
+
+            return result;
+        }
+
+      private:
+        template <size_t I> static auto append_field(std::string& result, bool add_comma) -> void {
+            if (add_comma) {
+                result += ", ";
+            }
+
+            constexpr auto field_info = fields[I].first;
+            result += std::string(std::meta::identifier_of(field_info));
+
+            constexpr bool ascending = fields[I].second;
+            result += ascending ? " ASC" : " DESC";
+        }
+    };
 
     // ============================================================================
     // ORDER BY Wrapper (following JoinStatementWrapper pattern)
