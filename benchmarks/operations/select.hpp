@@ -639,118 +639,93 @@ namespace storm::benchmark {
     using SelectGroupBy2Benchmark = GroupByMultiFieldBenchmark<Model, FieldInfo1, FieldInfo2>;
 
     // ========================================================================
-    // GROUP BY + COUNT Benchmark - GROUP BY with COUNT(*) aggregate
+    // GROUP BY + Aggregate Benchmark - Unified for COUNT, SUM, AVG, MIN, MAX
     // ========================================================================
-    template <typename BaseModel, std::meta::info GroupByFieldInfo>
-    class GroupByCountBenchmark : public SelectQueryBenchmarkBase<
-                                          GroupByCountBenchmark<BaseModel, GroupByFieldInfo>,
-                                          BaseModel,
-                                          NoJoin,
-                                          NoWhere> {
+    enum class GroupByAggOp { Count, Sum, Avg, Min, Max };
+
+    static consteval const char* agg_op_name(GroupByAggOp op) {
+        switch (op) {
+        case GroupByAggOp::Count:
+            return "COUNT(*)";
+        case GroupByAggOp::Sum:
+            return "SUM";
+        case GroupByAggOp::Avg:
+            return "AVG";
+        case GroupByAggOp::Min:
+            return "MIN";
+        case GroupByAggOp::Max:
+            return "MAX";
+        }
+    }
+
+    static consteval const char* agg_op_sql(GroupByAggOp op) {
+        switch (op) {
+        case GroupByAggOp::Count:
+            return "COUNT(*)";
+        case GroupByAggOp::Sum:
+            return "SUM(";
+        case GroupByAggOp::Avg:
+            return "AVG(";
+        case GroupByAggOp::Min:
+            return "MIN(";
+        case GroupByAggOp::Max:
+            return "MAX(";
+        }
+    }
+
+    template <
+            typename BaseModel,
+            GroupByAggOp    AggOp,
+            std::meta::info GroupByFieldInfo,
+            std::meta::info AggregateFieldInfo>
+    class GroupByAggregateBenchmark
+        : public SelectQueryBenchmarkBase<
+                  GroupByAggregateBenchmark<BaseModel, AggOp, GroupByFieldInfo, AggregateFieldInfo>,
+                  BaseModel,
+                  NoJoin,
+                  NoWhere> {
         using Base = SelectQueryBenchmarkBase<
-                GroupByCountBenchmark<BaseModel, GroupByFieldInfo>,
+                GroupByAggregateBenchmark<BaseModel, AggOp, GroupByFieldInfo, AggregateFieldInfo>,
                 BaseModel,
                 NoJoin,
                 NoWhere>;
 
       public:
-        explicit constexpr GroupByCountBenchmark(int dataset_size = 1000) : Base(dataset_size) {}
-
-        void print_info() const {
-            constexpr std::string_view field_name = std::meta::identifier_of(GroupByFieldInfo);
-            std::cout << "Operation: SELECT " << field_name << ", COUNT(*) GROUP BY " << field_name;
-            std::cout << "\n  Dataset: " << Base::batch_size() << " rows\n";
-        }
-
-        int execute_iteration() {
-            // Storm ORM: group_by + count must be chained properly
-            // group_by() returns GroupByBuilder, then count() returns AggregateStatement
-            auto result = Base::qs().template group_by<GroupByFieldInfo>().count().select();
-            // Result is plf::hive<std::tuple<GroupKeyType, int64_t>> - (group_value, count) pairs
-            return result.has_value() ? static_cast<int>(result.value().size()) : 0;
-        }
-
-        int execute(int iterations) {
-            int total = 0;
-            for (int i = 0; i < iterations; i++) {
-                total += execute_iteration();
-            }
-            return total;
-        }
-
-        int execute_raw(int iterations) {
-            sqlite3* db = get_db<BaseModel>();
-            if (db == nullptr)
-                return 0;
-
-            constexpr std::string_view field_name = std::meta::identifier_of(GroupByFieldInfo);
-
-            // Build SQL: SELECT field, COUNT(*) FROM table GROUP BY field
-            std::string sql = "SELECT ";
-            sql += field_name;
-            sql += ", COUNT(*) FROM Person GROUP BY ";
-            sql += field_name;
-
-            sqlite3_stmt* stmt = nullptr;
-            if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-                return 0;
-            }
-
-            int total_groups = 0;
-            for (int i = 0; i < iterations; i++) {
-                sqlite3_reset(stmt);
-                int groups = 0;
-                while (sqlite3_step(stmt) == SQLITE_ROW) {
-                    // Extract group value and count (must read to simulate real work)
-                    [[maybe_unused]] auto group_value = sqlite3_column_int64(stmt, 0);
-                    [[maybe_unused]] auto count       = sqlite3_column_int64(stmt, 1);
-                    groups++;
-                }
-                // Return number of groups (same as Storm ORM returns)
-                total_groups += groups;
-            }
-
-            sqlite3_finalize(stmt);
-            return total_groups;
-        }
-    };
-
-    // Type alias for GROUP BY + COUNT benchmark
-    template <typename Model, std::meta::info FieldInfo>
-    using SelectGroupByCountBenchmark = GroupByCountBenchmark<Model, FieldInfo>;
-
-    // ========================================================================
-    // GROUP BY + SUM Benchmark - GROUP BY with SUM aggregate
-    // ========================================================================
-    template <typename BaseModel, std::meta::info GroupByFieldInfo, std::meta::info AggregateFieldInfo>
-    class GroupBySumBenchmark : public SelectQueryBenchmarkBase<
-                                        GroupBySumBenchmark<BaseModel, GroupByFieldInfo, AggregateFieldInfo>,
-                                        BaseModel,
-                                        NoJoin,
-                                        NoWhere> {
-        using Base = SelectQueryBenchmarkBase<
-                GroupBySumBenchmark<BaseModel, GroupByFieldInfo, AggregateFieldInfo>,
-                BaseModel,
-                NoJoin,
-                NoWhere>;
-
-      public:
-        explicit constexpr GroupBySumBenchmark(int dataset_size = 1000) : Base(dataset_size) {}
+        explicit constexpr GroupByAggregateBenchmark(int dataset_size = 1000) : Base(dataset_size) {}
 
         void print_info() const {
             constexpr std::string_view group_field_name = std::meta::identifier_of(GroupByFieldInfo);
-            constexpr std::string_view agg_field_name   = std::meta::identifier_of(AggregateFieldInfo);
-            std::cout << "Operation: SELECT " << group_field_name << ", SUM(" << agg_field_name << ") GROUP BY "
-                      << group_field_name;
+            if constexpr (AggOp == GroupByAggOp::Count) {
+                std::cout << "Operation: SELECT " << group_field_name << ", COUNT(*) GROUP BY " << group_field_name;
+            } else {
+                constexpr std::string_view agg_field_name = std::meta::identifier_of(AggregateFieldInfo);
+                std::cout << "Operation: SELECT " << group_field_name << ", " << agg_op_name(AggOp) << "("
+                          << agg_field_name << ") GROUP BY " << group_field_name;
+            }
             std::cout << "\n  Dataset: " << Base::batch_size() << " rows\n";
         }
 
         int execute_iteration() {
-            // Storm ORM: group_by + sum must be chained properly
-            // group_by() returns GroupByBuilder, then sum<>() returns AggregateStatement
-            auto result = Base::qs().template group_by<GroupByFieldInfo>().template sum<AggregateFieldInfo>().select();
-            // Result is plf::hive<std::tuple<GroupKeyType, SumType>> - (group_value, sum) pairs
-            return result.has_value() ? static_cast<int>(result.value().size()) : 0;
+            if constexpr (AggOp == GroupByAggOp::Count) {
+                auto result = Base::qs().template group_by<GroupByFieldInfo>().count().select();
+                return result.has_value() ? static_cast<int>(result.value().size()) : 0;
+            } else if constexpr (AggOp == GroupByAggOp::Sum) {
+                auto result =
+                        Base::qs().template group_by<GroupByFieldInfo>().template sum<AggregateFieldInfo>().select();
+                return result.has_value() ? static_cast<int>(result.value().size()) : 0;
+            } else if constexpr (AggOp == GroupByAggOp::Avg) {
+                auto result =
+                        Base::qs().template group_by<GroupByFieldInfo>().template avg<AggregateFieldInfo>().select();
+                return result.has_value() ? static_cast<int>(result.value().size()) : 0;
+            } else if constexpr (AggOp == GroupByAggOp::Min) {
+                auto result =
+                        Base::qs().template group_by<GroupByFieldInfo>().template min<AggregateFieldInfo>().select();
+                return result.has_value() ? static_cast<int>(result.value().size()) : 0;
+            } else if constexpr (AggOp == GroupByAggOp::Max) {
+                auto result =
+                        Base::qs().template group_by<GroupByFieldInfo>().template max<AggregateFieldInfo>().select();
+                return result.has_value() ? static_cast<int>(result.value().size()) : 0;
+            }
         }
 
         int execute(int iterations) {
@@ -767,14 +742,20 @@ namespace storm::benchmark {
                 return 0;
 
             constexpr std::string_view group_field_name = std::meta::identifier_of(GroupByFieldInfo);
-            constexpr std::string_view agg_field_name   = std::meta::identifier_of(AggregateFieldInfo);
 
-            // Build SQL: SELECT group_field, SUM(agg_field) FROM table GROUP BY group_field
+            // Build SQL: SELECT group_field, AGG_FUNC(...) FROM table GROUP BY group_field
             std::string sql = "SELECT ";
             sql += group_field_name;
-            sql += ", SUM(";
-            sql += agg_field_name;
-            sql += ") FROM Person GROUP BY ";
+            sql += ", ";
+            if constexpr (AggOp == GroupByAggOp::Count) {
+                sql += "COUNT(*)";
+            } else {
+                constexpr std::string_view agg_field_name = std::meta::identifier_of(AggregateFieldInfo);
+                sql += agg_op_sql(AggOp);
+                sql += agg_field_name;
+                sql += ")";
+            }
+            sql += " FROM Person GROUP BY ";
             sql += group_field_name;
 
             sqlite3_stmt* stmt = nullptr;
@@ -785,15 +766,20 @@ namespace storm::benchmark {
             int total_groups = 0;
             for (int i = 0; i < iterations; i++) {
                 sqlite3_reset(stmt);
-                int groups = 0;
-                while (sqlite3_step(stmt) == SQLITE_ROW) {
-                    // Extract group value and sum (must read to simulate real work)
-                    [[maybe_unused]] auto group_value = sqlite3_column_int64(stmt, 0);
-                    [[maybe_unused]] auto sum_value   = sqlite3_column_double(stmt, 1);
-                    groups++;
+
+                if constexpr (AggOp == GroupByAggOp::Count) {
+                    plf::hive<std::tuple<int64_t, int64_t>> results;
+                    while (sqlite3_step(stmt) == SQLITE_ROW) {
+                        results.insert({sqlite3_column_int64(stmt, 0), sqlite3_column_int64(stmt, 1)});
+                    }
+                    total_groups += results.size();
+                } else {
+                    plf::hive<std::tuple<int64_t, double>> results;
+                    while (sqlite3_step(stmt) == SQLITE_ROW) {
+                        results.insert({sqlite3_column_int64(stmt, 0), sqlite3_column_double(stmt, 1)});
+                    }
+                    total_groups += results.size();
                 }
-                // Return number of groups (same as Storm ORM returns)
-                total_groups += groups;
             }
 
             sqlite3_finalize(stmt);
@@ -801,9 +787,21 @@ namespace storm::benchmark {
         }
     };
 
-    // Type alias for GROUP BY + SUM benchmark
-    template <typename Model, std::meta::info GroupByFieldInfo, std::meta::info AggregateFieldInfo>
-    using SelectGroupBySumBenchmark = GroupBySumBenchmark<Model, GroupByFieldInfo, AggregateFieldInfo>;
+    // Type aliases for GROUP BY + aggregate benchmarks
+    template <typename Model, std::meta::info GroupField>
+    using SelectGroupByCountBenchmark = GroupByAggregateBenchmark<Model, GroupByAggOp::Count, GroupField, GroupField>;
+
+    template <typename Model, std::meta::info GroupField, std::meta::info AggField>
+    using SelectGroupBySumBenchmark = GroupByAggregateBenchmark<Model, GroupByAggOp::Sum, GroupField, AggField>;
+
+    template <typename Model, std::meta::info GroupField, std::meta::info AggField>
+    using SelectGroupByAvgBenchmark = GroupByAggregateBenchmark<Model, GroupByAggOp::Avg, GroupField, AggField>;
+
+    template <typename Model, std::meta::info GroupField, std::meta::info AggField>
+    using SelectGroupByMinBenchmark = GroupByAggregateBenchmark<Model, GroupByAggOp::Min, GroupField, AggField>;
+
+    template <typename Model, std::meta::info GroupField, std::meta::info AggField>
+    using SelectGroupByMaxBenchmark = GroupByAggregateBenchmark<Model, GroupByAggOp::Max, GroupField, AggField>;
 
     // ========================================================================
     // LEFT JOIN Type Aliases

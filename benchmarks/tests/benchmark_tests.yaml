@@ -469,6 +469,36 @@ tests:
     iterations: 1000
     dataset_size: 10000
 
+  - name: group_by_with_avg
+    category: GROUP_BY_AVG
+    description: "SELECT age, AVG(salary) GROUP BY age"
+    model: Person
+    operation: group_by_with_avg
+    group_by_field: age
+    aggregate_field: salary
+    iterations: 1000
+    dataset_size: 10000
+
+  - name: group_by_with_min
+    category: GROUP_BY_MIN
+    description: "SELECT age, MIN(salary) GROUP BY age"
+    model: Person
+    operation: group_by_with_min
+    group_by_field: age
+    aggregate_field: salary
+    iterations: 1000
+    dataset_size: 10000
+
+  - name: group_by_with_max
+    category: GROUP_BY_MAX
+    description: "SELECT age, MAX(salary) GROUP BY age"
+    model: Person
+    operation: group_by_with_max
+    group_by_field: age
+    aggregate_field: salary
+    iterations: 1000
+    dataset_size: 10000
+
   # ============================================================================
   # Advanced WHERE Operations (fixed size)
   # ============================================================================
