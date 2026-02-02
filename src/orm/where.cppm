@@ -58,7 +58,7 @@ export namespace storm::orm::where {
         case CompOp::LessEqual:
             return " <= ";
         }
-        return " = ";
+        return " = "; // LCOV_EXCL_LINE - unreachable: all enum values handled above
     }
 
     // Logical operators
@@ -71,7 +71,7 @@ export namespace storm::orm::where {
         case LogicalOp::Or:
             return " OR ";
         }
-        return " AND ";
+        return " AND "; // LCOV_EXCL_LINE - unreachable: all enum values handled above
     }
 
     // VALUE-TYPE Comparison expression: field > value (NO VIRTUAL FUNCTIONS!)

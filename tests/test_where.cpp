@@ -645,4 +645,43 @@ TEST_F(WhereTest, ResetClearsAllConditions) {
     EXPECT_EQ(bob_only.value().begin()->name, "Bob");
 }
 
+// ============================================================================
+// WHERE Expression Coverage Tests
+// Tests for specific code paths in where.cppm
+// ============================================================================
+
+// Test: InExpression with empty values generates "1 = 0" (always false)
+TEST_F(WhereTest, WhereInEmptyValuesReturnsFalse) {
+    QuerySet<WherePerson> queryset;
+
+    // .in() with no arguments creates InExpression with empty vector → "1 = 0"
+    auto result = queryset.where(field<^^WherePerson::age>().in()).select();
+    ASSERT_TRUE(result.has_value()) << "Empty IN should succeed";
+    EXPECT_TRUE(result.value().empty()) << "Empty IN (1=0) should match nothing";
+}
+
+// Test: Expr::get() accessor
+TEST_F(WhereTest, ExprGetReturnsValidPointer) {
+    auto expr = field<^^WherePerson::age>() > 25;
+    auto ptr  = expr.get();
+    EXPECT_NE(ptr, nullptr) << "Expr::get() should return a valid pointer";
+}
+
+// Test: Explicit Expr(ExpressionVariant&&) constructor
+TEST_F(WhereTest, ExprDirectConstructionFromVariant) {
+    // Construct ExpressionVariant directly and wrap in Expr using the explicit rvalue constructor
+    ExpressionVariant variant(ComparisonExpr<int>{std::string("age"), CompOp::Greater, 25});
+    Expr              direct_expr(std::move(variant));
+
+    // Verify it works by converting to SQL via get()
+    auto sql = to_sql(*direct_expr.get());
+    EXPECT_EQ(sql, "age > ?");
+
+    // Also verify it works with QuerySet::where()
+    QuerySet<WherePerson> queryset;
+    auto                  result = queryset.where(direct_expr).select();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().size(), 4) << "Should find 4 people with age > 25";
+}
+
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

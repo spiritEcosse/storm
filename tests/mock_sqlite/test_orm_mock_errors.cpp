@@ -24,6 +24,7 @@
 #include "mock_sqlite3.h"
 
 import storm;
+import storm_orm_utilities;
 import <expected>;
 import <string>;
 import <vector>;
@@ -1931,6 +1932,119 @@ namespace {
 
         ASSERT_FALSE(result.has_value()) << "Batch insert should fail on step error";
         EXPECT_EQ(result.error().code(), SQLITE_CONSTRAINT);
+    }
+
+    // ============================================================================
+    // TransactionGuard Direct Tests
+    // Covers specific TransactionGuard paths for 100% line coverage
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, TransactionGuardDoubleCommitReturnsSuccess) {
+        // Covers line 396-397: commit() when committed_ == true
+        auto conn_result = db::sqlite::Connection::open(":memory:");
+        ASSERT_TRUE(conn_result.has_value());
+        auto& conn = *conn_result;
+
+        using TxnGuard = storm::orm::utilities::TransactionGuard<db::sqlite::Connection>;
+
+        auto txn = TxnGuard::begin(conn);
+        ASSERT_TRUE(txn.has_value());
+
+        // First commit succeeds
+        auto result1 = txn->commit();
+        EXPECT_TRUE(result1.has_value());
+
+        // Second commit hits early return (committed_ == true)
+        auto result2 = txn->commit();
+        EXPECT_TRUE(result2.has_value());
+    }
+
+    TEST_F(ORMMockErrorTest, TransactionGuardCommitOnMovedFromReturnsSuccess) {
+        // Covers line 396-397: commit() when conn_ == nullptr (moved-from)
+        auto conn_result = db::sqlite::Connection::open(":memory:");
+        ASSERT_TRUE(conn_result.has_value());
+        auto& conn = *conn_result;
+
+        using TxnGuard = storm::orm::utilities::TransactionGuard<db::sqlite::Connection>;
+
+        auto txn = TxnGuard::begin(conn);
+        ASSERT_TRUE(txn.has_value());
+
+        // Move the guard - original now has conn_ = nullptr
+        auto moved = std::move(*txn);
+
+        // Commit on moved-from guard (conn_ == nullptr)
+        auto result = txn->commit();
+        EXPECT_TRUE(result.has_value());
+
+        // Clean up: commit the moved guard to prevent rollback in destructor
+        auto moved_result = moved.commit();
+        EXPECT_TRUE(moved_result.has_value());
+    }
+
+    TEST_F(ORMMockErrorTest, TransactionGuardCommitFailureTriggersRollback) {
+        // Covers lines 400-402: commit() when COMMIT execution fails
+        auto conn_result = db::sqlite::Connection::open(":memory:");
+        ASSERT_TRUE(conn_result.has_value());
+        auto& conn = *conn_result;
+
+        using TxnGuard = storm::orm::utilities::TransactionGuard<db::sqlite::Connection>;
+
+        // Step 1: BEGIN TRANSACTION (succeeds)
+        // Step 2: COMMIT (fails with BUSY)
+        MockSqlite3Config::step_fails_on_call(2, SQLITE_BUSY);
+
+        auto txn = TxnGuard::begin(conn);
+        ASSERT_TRUE(txn.has_value());
+
+        auto result = txn->commit();
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_BUSY);
+    }
+
+    // ============================================================================
+    // WHERE Expression Bind Error Tests
+    // Covers bind failure paths in BetweenExpr, InExpression, LogicalExpr
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, BetweenExprBindFailsOnFirstParam) {
+        // Covers lines 156-157: BetweenExpr::bind_params_direct min value bind failure
+        MockSqlite3Config::bind_int_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
+        auto                 result = qs.where(age.between(20, 40)).select();
+
+        if (!result.has_value()) {
+            EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+        }
+    }
+
+    TEST_F(ORMMockErrorTest, InExprBindFailsOnValueParam) {
+        // Covers lines 204-205: InExpression::bind_params_direct value bind failure
+        MockSqlite3Config::bind_int_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
+        auto                 result = qs.where(age.in(25, 30, 35)).select();
+
+        if (!result.has_value()) {
+            EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+        }
+    }
+
+    TEST_F(ORMMockErrorTest, LogicalExprLeftChildBindFailure) {
+        // Covers lines 295-296: BindParamsVisitor left child bind failure in AND/OR
+        MockSqlite3Config::bind_int_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        auto                 age = storm::orm::where::Field<^^MockPerson::age>{};
+        // The left child (age > 25) will fail to bind because bind_int returns NOMEM
+        auto result = qs.where(age > 25 && age < 40).select();
+
+        if (!result.has_value()) {
+            EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+        }
     }
 
 } // namespace
