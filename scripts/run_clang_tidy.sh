@@ -154,23 +154,22 @@ run_tidy() {
     grep -q ": warning:" "$outfile" 2>/dev/null && has_warnings=true
 
     if [[ "$has_compile_error" == true ]]; then
-        # Has compiler errors from C++26 headers, but may still have useful warnings
-        if [[ "$has_warnings" == true ]]; then
-            # clang-tidy found issues despite header errors - keep them!
+        if is_cpp26_module_file "$file"; then
+            # Known C++26 module file with compile errors - skip entirely
+            # Warnings from partial parsing are unreliable (false positives)
+            echo "  ✓ $file (C++26 modules - skipped)"
+            echo "known" > "$statusfile"
+            echo "" > "$outfile"
+        elif [[ "$has_warnings" == true ]]; then
+            # Non-module file with compile errors but real warnings - keep them
             echo "  ❌ $file (with C++26 header errors)"
             echo "ok" > "$statusfile"
-            # Remove error lines from output, keep warnings
             sed -i '/: error:/d' "$outfile"
             sed -i '/Found compiler error/d' "$outfile"
         else
-            # No warnings, just errors - skip
-            if is_cpp26_module_file "$file"; then
-                echo "  ✓ $file (C++26 modules - skipped)"
-                echo "known" > "$statusfile"
-            else
-                echo "  ⚠ $file (parse error - UNEXPECTED)" >&2
-                echo "crashed" > "$statusfile"
-            fi
+            # Non-module file with only compile errors - unexpected
+            echo "  ⚠ $file (parse error - UNEXPECTED)" >&2
+            echo "crashed" > "$statusfile"
             echo "" > "$outfile"
         fi
     elif [[ "$has_crash" == true ]]; then

@@ -6,6 +6,7 @@ export module storm_orm_statements_remove;
 
 import storm_orm_statements_base;
 import storm_orm_utilities;
+import storm_orm_transaction;
 import storm_db_concept;
 import storm_db_sqlite;
 

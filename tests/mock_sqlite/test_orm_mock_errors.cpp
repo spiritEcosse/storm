@@ -25,6 +25,7 @@
 
 import storm;
 import storm_orm_utilities;
+import storm_orm_transaction;
 import <expected>;
 import <string>;
 import <vector>;
