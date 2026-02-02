@@ -1,19 +1,31 @@
 #!/bin/bash
-# Pre-commit checks: format -> tidy --fix -> test -> sonar -> bench
+# Pre-commit checks: format -> tidy --fix -> test -> coverage -> sonar -> bench
 # Runs automatically via git pre-commit hook, or manually: ./commit.sh
 #
 # Options (flags or env vars):
-#   --no-sonar / SKIP_SONAR=1   Skip local sonar check
-#   --no-bench / SKIP_BENCH=1   Skip quick benchmark sanity check
+#   --no-coverage / SKIP_COVERAGE=1   Skip 100% line coverage check
+#   --no-sonar / SKIP_SONAR=1         Skip local sonar check
+#   --no-bench / SKIP_BENCH=1         Skip quick benchmark sanity check
+#
+# Smart skips (automatic, based on staged files):
+#   No C++ files in commit        → skip format, tidy, tests, coverage, sonar, bench
+#   No src/ or tests/ changes     → skip tests, coverage
+#   No src/ changes               → skip bench
 
 set -e  # Exit on any error
 
 # Parse flags
+RUN_FORMAT=true
+RUN_TIDY=true
+RUN_TESTS=true
+RUN_COVERAGE=true
 RUN_SONAR=true
 RUN_BENCH=true
 
 for arg in "$@"; do
-    if [[ "$arg" == "--no-sonar" ]]; then
+    if [[ "$arg" == "--no-coverage" ]]; then
+        RUN_COVERAGE=false
+    elif [[ "$arg" == "--no-sonar" ]]; then
         RUN_SONAR=false
     elif [[ "$arg" == "--no-bench" ]]; then
         RUN_BENCH=false
@@ -21,26 +33,101 @@ for arg in "$@"; do
 done
 
 # Support env vars (useful for: SKIP_BENCH=1 git commit -m "msg")
+[[ "${SKIP_COVERAGE:-}" == "1" ]] && RUN_COVERAGE=false
 [[ "${SKIP_SONAR:-}" == "1" ]] && RUN_SONAR=false
 [[ "${SKIP_BENCH:-}" == "1" ]] && RUN_BENCH=false
 
-echo "📝 Running clang-format..."
-find src tests benchmarks -type f \( -name "*.cpp" -o -name "*.cppm" -o -name "*.h" -o -name "*.hpp" \) -exec ../clang-p2996/build/bin/clang-format -i --style=file {} +
+# Smart skip: detect staged file changes to skip irrelevant checks
+STAGED_FILES=$(git diff --cached --name-only 2>/dev/null || true)
+if [[ -n "$STAGED_FILES" ]]; then
+    HAS_SRC_CHANGES=false
+    HAS_TEST_CHANGES=false
+    HAS_CPP_CHANGES=false
 
-# Clang-tidy with auto-fix (always runs - must pass before commit)
-echo ""
-echo "🔍 Running clang-tidy --fix (auto-fixing issues)..."
-./scripts/run_clang_tidy.sh --fix || {
-    echo "❌ clang-tidy failed. Fix issues before committing."
-    exit 1
-}
+    while IFS= read -r file; do
+        [[ "$file" == src/* ]] && HAS_SRC_CHANGES=true
+        [[ "$file" == tests/* ]] && HAS_TEST_CHANGES=true
+        [[ "$file" =~ \.(cpp|cppm|h|hpp)$ ]] && HAS_CPP_CHANGES=true
+    done <<< "$STAGED_FILES"
+
+    if [[ "$HAS_CPP_CHANGES" == false ]]; then
+        echo "ℹ️  No C++ files in commit — skipping format, tidy, tests, coverage, sonar, bench"
+        RUN_FORMAT=false RUN_TIDY=false RUN_TESTS=false
+        RUN_COVERAGE=false RUN_SONAR=false RUN_BENCH=false
+    elif [[ "$HAS_SRC_CHANGES" == false && "$HAS_TEST_CHANGES" == false ]]; then
+        echo "ℹ️  No src/ or tests/ changes — skipping tests, coverage"
+        RUN_TESTS=false RUN_COVERAGE=false
+    elif [[ "$HAS_SRC_CHANGES" == false ]]; then
+        echo "ℹ️  No src/ changes — skipping bench"
+        RUN_BENCH=false
+    fi
+fi
+
+if [[ "$RUN_FORMAT" == true ]]; then
+    echo "📝 Running clang-format..."
+    find src tests benchmarks -type f \( -name "*.cpp" -o -name "*.cppm" -o -name "*.h" -o -name "*.hpp" \) -exec ../clang-p2996/build/bin/clang-format -i --style=file {} +
+fi
+
+if [[ "$RUN_TIDY" == true ]]; then
+    echo ""
+    echo "🔍 Running clang-tidy --fix (auto-fixing issues)..."
+    ./scripts/run_clang_tidy.sh --fix || {
+        echo "❌ clang-tidy failed. Fix issues before committing."
+        exit 1
+    }
+fi
 
 # Re-stage files modified by format/tidy so changes are included in the commit
-git add -u
+if [[ "$RUN_FORMAT" == true || "$RUN_TIDY" == true ]]; then
+    git add -u
+fi
 
-echo ""
-echo "🧪 Running unit tests..."
-ctest --test-dir build/debug --output-on-failure
+if [[ "$RUN_TESTS" == true ]]; then
+    echo ""
+    echo "🧪 Running unit tests..."
+    ctest --test-dir build/debug --output-on-failure
+fi
+
+# 100% line coverage check (runs by default)
+if [[ "$RUN_COVERAGE" == true ]]; then
+    COVERAGE_BUILD_DIR="build/coverage"
+
+    # Configure coverage build if not already done
+    if [[ ! -f "$COVERAGE_BUILD_DIR/build.ninja" ]]; then
+        echo ""
+        echo "📊 Configuring coverage build..."
+        cmake -S . -B "$COVERAGE_BUILD_DIR" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENABLE_TESTS=ON \
+            -DENABLE_COVERAGE=ON
+    fi
+
+    echo ""
+    echo "📊 Running coverage analysis (required: 100% line coverage)..."
+    COVERAGE_OUTPUT=$(cmake --build "$COVERAGE_BUILD_DIR" --target coverage-filtered 2>&1) || {
+        echo "$COVERAGE_OUTPUT"
+        echo "❌ Coverage build/analysis failed. Fix issues before committing."
+        exit 1
+    }
+    echo "$COVERAGE_OUTPUT"
+
+    # Extract line coverage percentage from lcov summary (e.g. "lines.......: 100.0% (N of N lines)")
+    LINE_COVERAGE=$(echo "$COVERAGE_OUTPUT" | grep "lines\.\.\.\.\.\.\." | tail -1 | grep -oP '[0-9.]+(?=%)')
+
+    if [[ -z "$LINE_COVERAGE" ]]; then
+        echo "❌ Could not parse line coverage from output. Aborting."
+        exit 1
+    fi
+
+    if [[ "$LINE_COVERAGE" != "100.0" ]]; then
+        echo "❌ Line coverage is ${LINE_COVERAGE}% (required: 100.0%). Fix coverage before committing."
+        echo "   Run: cmake --build build/coverage --target coverage-filtered-html"
+        echo "   Open: build/coverage/coverage/html-filtered/index.html"
+        exit 1
+    fi
+
+    echo "✅ Line coverage: 100.0%"
+fi
 
 # Local sonar check (runs by default)
 if [[ "$RUN_SONAR" == true ]]; then
