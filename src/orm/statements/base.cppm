@@ -406,13 +406,12 @@ export namespace storm::orm::statements {
         }
 
         template <typename ConnType> static auto rollback_transaction(ConnType& conn) noexcept -> void {
-            // TODO: Remove this func in favour of TransactionGuard
             (void)conn.execute("ROLLBACK");
         }
 
         // Utility to determine if transaction should be used
         template <typename ContainerType>
-        static constexpr auto should_use_transaction(const ContainerType& container) -> bool {
+        static constexpr auto should_use_transaction(const ContainerType& container) -> bool { // NOSONAR(cpp:S6024)
             return container.size() > 1;
         }
 
@@ -444,7 +443,6 @@ export namespace storm::orm::statements {
         }
 
         // Unified transaction wrapper for batch operations
-        // TODO: remove it
         template <typename ConnType, typename Operation>
         [[nodiscard]] static auto
         execute_with_transaction(ConnType& conn, bool use_transaction, const Operation& op) noexcept -> decltype(op()) {

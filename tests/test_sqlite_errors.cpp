@@ -36,11 +36,12 @@ class ConnectionErrorTest : public ::testing::Test {
     }
 
     static auto cleanup_test_files() -> void {
+        const auto                     tmp_dir = fs::temp_directory_path(); // NOSONAR(cpp:S5443) - test cleanup
         const std::vector<std::string> test_files =
-                {"/tmp/storm_test_readonly.db",
-                 "/tmp/storm_test_locked.db",
-                 "/tmp/storm_test_locked.db-journal",
-                 "/tmp/storm_test_locked.db-wal"};
+                {(tmp_dir / "storm_test_readonly.db").string(),
+                 (tmp_dir / "storm_test_locked.db").string(),
+                 (tmp_dir / "storm_test_locked.db-journal").string(),
+                 (tmp_dir / "storm_test_locked.db-wal").string()};
         for (const auto& file : test_files) {
             std::error_code ec;
             fs::remove(file, ec);

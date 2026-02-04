@@ -86,7 +86,7 @@ export namespace storm::orm::statements {
             size_t                        current_offset = non_fk_field_count_;
             size_t                        idx            = 0;
 
-            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) -> void {
+            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) {
                 ((offsets[idx++] = current_offset, current_offset += FKBase_at<Is>::field_count_), ...);
             }(std::make_index_sequence<fk_count_>{});
 
@@ -130,7 +130,7 @@ export namespace storm::orm::statements {
             // NOLINTNEXTLINE(misc-const-correctness) - total IS modified in fold expression below
             size_t total = 0;
 
-            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) -> void {
+            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) {
                 ((total += get_join_keyword().size() + FKBase_at<Is>::table_name_.size() + 2 + 1 + 4 + 1 + 1 + 1 +
                            FKBase_at<Is>::pk_name_.size() + ON_EQUALS + fk_field_names_[Is].size() + 3),
                  ...);
@@ -144,7 +144,7 @@ export namespace storm::orm::statements {
             constexpr size_t          sql_size = calculate_join_sql_size();
             ConstexprString<sql_size> result;
 
-            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) -> void {
+            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) {
                 ((result.append(get_join_keyword()),
                   result.append(FKBase_at<Is>::table_name_),
                   result.append(" t"),
@@ -174,11 +174,11 @@ export namespace storm::orm::statements {
             }
 
             // FK fields
-            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) -> void {
+            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) {
                 (
-                        [&]<size_t I>() -> void {
+                        [&]<size_t I>() {
                             total += 2; // ", "
-                            [&]<size_t... FieldIs>(std::index_sequence<FieldIs...> /*unused*/) -> void {
+                            [&]<size_t... FieldIs>(std::index_sequence<FieldIs...> /*unused*/) {
                                 ((total += (FieldIs > 0 ? 2 : 0) + 3 + 1 +
                                            std::meta::identifier_of(FKBase_at<I>::all_members_[FieldIs]).size()),
                                  ...);
@@ -210,11 +210,11 @@ export namespace storm::orm::statements {
             }
 
             // FK fields
-            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) -> void {
+            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) {
                 (
-                        [&]<size_t I>() -> void {
+                        [&]<size_t I>() {
                             result.append(", ");
-                            [&]<size_t... FieldIs>(std::index_sequence<FieldIs...> /*unused*/) -> void {
+                            [&]<size_t... FieldIs>(std::index_sequence<FieldIs...> /*unused*/) {
                                 // NOLINTNEXTLINE(misc-const-correctness) - first_in_table IS modified in fold expression
                                 bool first_in_table = true;
                                 (((first_in_table ? (void)0 : result.append(", ")),

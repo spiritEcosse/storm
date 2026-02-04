@@ -37,7 +37,8 @@ export namespace storm::orm::statements {
         // Count non-bool args (each is a field; bools are directions)
         static constexpr size_t count = ((std::same_as<decltype(Args), bool> ? 0 : 1) + ... + 0);
 
-        static constexpr auto fields = [] consteval -> std::array<std::pair<std::meta::info, bool>, count> {
+        static constexpr auto fields = [] consteval // NOSONAR(cpp:S1659)
+                -> std::array<std::pair<std::meta::info, bool>, count> {
             std::array<std::pair<std::meta::info, bool>, count> result{};
             size_t                                              idx = 0;
             (detail::process_order_by_arg<count, Args>(result, idx), ...);
@@ -87,7 +88,7 @@ export namespace storm::orm::statements {
 
             std::string result = " ORDER BY ";
 
-            [&]<size_t... Is>(std::index_sequence<Is...>) -> void {
+            [&]<size_t... Is>(std::index_sequence<Is...>) {
                 ((append_field<Is>(result, Is > 0)), ...);
             }(std::make_index_sequence<count>{});
 

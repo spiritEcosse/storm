@@ -656,6 +656,7 @@ namespace storm::benchmark {
         case GroupByAggOp::Max:
             return "MAX";
         }
+        return ""; // unreachable: all enum values handled above
     }
 
     static consteval const char* agg_op_sql(GroupByAggOp op) {
@@ -671,6 +672,7 @@ namespace storm::benchmark {
         case GroupByAggOp::Max:
             return "MAX(";
         }
+        return ""; // unreachable: all enum values handled above
     }
 
     template <

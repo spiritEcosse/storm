@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <memory>
 #include <unordered_map>
@@ -33,59 +34,66 @@
 // ============================================================================
 // SQLite3 Constants (from sqlite3.h)
 // ============================================================================
+//
+// These macros MUST remain as #define preprocessor macros (not constexpr/enum)
+// because they replicate the real SQLite3 C API (<sqlite3.h>) which defines
+// them as macros. Production code uses `#include <sqlite3.h>` while tests
+// include this mock header instead; the two must be token-compatible so that
+// SQLITE_OK, SQLITE_ROW, SQLITE_TRANSIENT, etc. behave identically in both
+// the real and mock builds.
 
-#define SQLITE_OK 0          /* Successful result */
-#define SQLITE_ERROR 1       /* Generic error */
-#define SQLITE_INTERNAL 2    /* Internal logic error in SQLite */
-#define SQLITE_PERM 3        /* Access permission denied */
-#define SQLITE_ABORT 4       /* Callback routine requested an abort */
-#define SQLITE_BUSY 5        /* The database file is locked */
-#define SQLITE_LOCKED 6      /* A table in the database is locked */
-#define SQLITE_NOMEM 7       /* A malloc() failed */
-#define SQLITE_READONLY 8    /* Attempt to write a readonly database */
-#define SQLITE_INTERRUPT 9   /* Operation terminated by sqlite3_interrupt()*/
-#define SQLITE_IOERR 10      /* Some kind of disk I/O error occurred */
-#define SQLITE_CORRUPT 11    /* The database disk image is malformed */
-#define SQLITE_NOTFOUND 12   /* Unknown opcode in sqlite3_file_control() */
-#define SQLITE_FULL 13       /* Insertion failed because database is full */
-#define SQLITE_CANTOPEN 14   /* Unable to open the database file */
-#define SQLITE_PROTOCOL 15   /* Database lock protocol error */
-#define SQLITE_EMPTY 16      /* Internal use only */
-#define SQLITE_SCHEMA 17     /* The database schema changed */
-#define SQLITE_TOOBIG 18     /* String or BLOB exceeds size limit */
-#define SQLITE_CONSTRAINT 19 /* Abort due to constraint violation */
-#define SQLITE_MISMATCH 20   /* Data type mismatch */
-#define SQLITE_MISUSE 21     /* Library used incorrectly */
-#define SQLITE_NOLFS 22      /* Uses OS features not supported on host */
-#define SQLITE_AUTH 23       /* Authorization denied */
-#define SQLITE_FORMAT 24     /* Not used */
-#define SQLITE_RANGE 25      /* 2nd parameter to sqlite3_bind out of range */
-#define SQLITE_NOTADB 26     /* File opened that is not a database file */
+#define SQLITE_OK 0 /* Successful result */                                 // NOSONAR(cpp:S5028)
+#define SQLITE_ERROR 1 /* Generic error */                                  // NOSONAR(cpp:S5028)
+#define SQLITE_INTERNAL 2 /* Internal logic error in SQLite */              // NOSONAR(cpp:S5028)
+#define SQLITE_PERM 3 /* Access permission denied */                        // NOSONAR(cpp:S5028)
+#define SQLITE_ABORT 4 /* Callback routine requested an abort */            // NOSONAR(cpp:S5028)
+#define SQLITE_BUSY 5 /* The database file is locked */                     // NOSONAR(cpp:S5028)
+#define SQLITE_LOCKED 6 /* A table in the database is locked */             // NOSONAR(cpp:S5028)
+#define SQLITE_NOMEM 7 /* A malloc() failed */                              // NOSONAR(cpp:S5028)
+#define SQLITE_READONLY 8 /* Attempt to write a readonly database */        // NOSONAR(cpp:S5028)
+#define SQLITE_INTERRUPT 9 /* Operation terminated by sqlite3_interrupt()*/ // NOSONAR(cpp:S5028)
+#define SQLITE_IOERR 10 /* Some kind of disk I/O error occurred */          // NOSONAR(cpp:S5028)
+#define SQLITE_CORRUPT 11 /* The database disk image is malformed */        // NOSONAR(cpp:S5028)
+#define SQLITE_NOTFOUND 12 /* Unknown opcode in sqlite3_file_control() */   // NOSONAR(cpp:S5028)
+#define SQLITE_FULL 13 /* Insertion failed because database is full */      // NOSONAR(cpp:S5028)
+#define SQLITE_CANTOPEN 14 /* Unable to open the database file */           // NOSONAR(cpp:S5028)
+#define SQLITE_PROTOCOL 15 /* Database lock protocol error */               // NOSONAR(cpp:S5028)
+#define SQLITE_EMPTY 16 /* Internal use only */                             // NOSONAR(cpp:S5028)
+#define SQLITE_SCHEMA 17 /* The database schema changed */                  // NOSONAR(cpp:S5028)
+#define SQLITE_TOOBIG 18 /* String or BLOB exceeds size limit */            // NOSONAR(cpp:S5028)
+#define SQLITE_CONSTRAINT 19 /* Abort due to constraint violation */        // NOSONAR(cpp:S5028)
+#define SQLITE_MISMATCH 20 /* Data type mismatch */                         // NOSONAR(cpp:S5028)
+#define SQLITE_MISUSE 21 /* Library used incorrectly */                     // NOSONAR(cpp:S5028)
+#define SQLITE_NOLFS 22 /* Uses OS features not supported on host */        // NOSONAR(cpp:S5028)
+#define SQLITE_AUTH 23 /* Authorization denied */                           // NOSONAR(cpp:S5028)
+#define SQLITE_FORMAT 24 /* Not used */                                     // NOSONAR(cpp:S5028)
+#define SQLITE_RANGE 25 /* 2nd parameter to sqlite3_bind out of range */    // NOSONAR(cpp:S5028)
+#define SQLITE_NOTADB 26 /* File opened that is not a database file */      // NOSONAR(cpp:S5028)
 
-#define SQLITE_ROW 100  /* sqlite3_step() has another row ready */
-#define SQLITE_DONE 101 /* sqlite3_step() has finished executing */
+#define SQLITE_ROW 100 /* sqlite3_step() has another row ready */   // NOSONAR(cpp:S5028)
+#define SQLITE_DONE 101 /* sqlite3_step() has finished executing */ // NOSONAR(cpp:S5028)
 
 // Column types
-#define SQLITE_INTEGER 1
-#define SQLITE_FLOAT 2
-#define SQLITE_TEXT 3
-#define SQLITE_BLOB 4
-#define SQLITE_NULL 5
+#define SQLITE_INTEGER 1 // NOSONAR(cpp:S5028)
+#define SQLITE_FLOAT 2   // NOSONAR(cpp:S5028)
+#define SQLITE_TEXT 3    // NOSONAR(cpp:S5028)
+#define SQLITE_BLOB 4    // NOSONAR(cpp:S5028)
+#define SQLITE_NULL 5    // NOSONAR(cpp:S5028)
 
 // Open flags
-#define SQLITE_OPEN_READONLY 0x00000001
-#define SQLITE_OPEN_READWRITE 0x00000002
-#define SQLITE_OPEN_CREATE 0x00000004
-#define SQLITE_OPEN_URI 0x00000040
-#define SQLITE_OPEN_MEMORY 0x00000080
-#define SQLITE_OPEN_NOMUTEX 0x00008000
-#define SQLITE_OPEN_FULLMUTEX 0x00010000
-#define SQLITE_OPEN_SHAREDCACHE 0x00020000
-#define SQLITE_OPEN_PRIVATECACHE 0x00040000
+#define SQLITE_OPEN_READONLY 0x00000001     // NOSONAR(cpp:S5028)
+#define SQLITE_OPEN_READWRITE 0x00000002    // NOSONAR(cpp:S5028)
+#define SQLITE_OPEN_CREATE 0x00000004       // NOSONAR(cpp:S5028)
+#define SQLITE_OPEN_URI 0x00000040          // NOSONAR(cpp:S5028)
+#define SQLITE_OPEN_MEMORY 0x00000080       // NOSONAR(cpp:S5028)
+#define SQLITE_OPEN_NOMUTEX 0x00008000      // NOSONAR(cpp:S5028)
+#define SQLITE_OPEN_FULLMUTEX 0x00010000    // NOSONAR(cpp:S5028)
+#define SQLITE_OPEN_SHAREDCACHE 0x00020000  // NOSONAR(cpp:S5028)
+#define SQLITE_OPEN_PRIVATECACHE 0x00040000 // NOSONAR(cpp:S5028)
 
 // Bind transient flag
-#define SQLITE_TRANSIENT ((void (*)(void*)) - 1)
-#define SQLITE_STATIC ((void (*)(void*))0)
+#define SQLITE_TRANSIENT ((void (*)(void*)) - 1) // NOSONAR(cpp:S5028)
+#define SQLITE_STATIC ((void (*)(void*))0)       // NOSONAR(cpp:S5028)
 
 // ============================================================================
 // SQLite3 Types (opaque handles)
@@ -122,15 +130,15 @@ namespace storm::test {
 
         // Configure prepare to fail
         static auto prepare_returns(int return_code) -> MockSqlite3Config&;
-        static auto prepare_error_message(const std::string& msg) -> MockSqlite3Config&;
+        static auto prepare_error_message(std::string_view msg) -> MockSqlite3Config&;
 
         // Configure open to fail
         static auto open_returns(int return_code) -> MockSqlite3Config&;
-        static auto open_error_message(const std::string& msg) -> MockSqlite3Config&;
+        static auto open_error_message(std::string_view msg) -> MockSqlite3Config&;
 
         // Configure exec to fail
         static auto exec_returns(int return_code) -> MockSqlite3Config&;
-        static auto exec_error_message(const std::string& msg) -> MockSqlite3Config&;
+        static auto exec_error_message(std::string_view msg) -> MockSqlite3Config&;
 
         // Configure for specific call counts (e.g., "fail on 3rd bind_int call")
         static auto bind_int_fails_on_call(int call_number, int return_code) -> MockSqlite3Config&;
@@ -156,8 +164,12 @@ namespace storm::test {
     class MockSqlite3Guard {
       public:
         MockSqlite3Guard() = default;
-        ~MockSqlite3Guard() {
-            MockSqlite3Config::reset();
+        ~MockSqlite3Guard() noexcept {
+            try {
+                MockSqlite3Config::reset();
+            } catch (...) {
+                // Suppress exceptions in destructor
+            }
         }
 
         MockSqlite3Guard(const MockSqlite3Guard&)                    = delete;

@@ -97,7 +97,7 @@ export namespace storm {
         //   queryset.where(field<^^Person::age>() > 25 and field<^^Person::is_active>() == true).select()
         //   queryset.where((field<^^Person::age>() > 25) or (field<^^Person::name>().like("A%"))).select()
         //
-        constexpr auto where(this auto&& self, orm::where::ExpressionVariantPtr expr) -> auto&& {
+        constexpr auto where(this auto&& self, orm::where::ExpressionVariantPtr expr) -> auto&& { // NOSONAR(cpp:S6189)
             if (self.where_expr_) {
                 // Combine with existing expression using AND
                 self.where_expr_ = std::make_shared<orm::where::ExpressionVariant>(
@@ -112,7 +112,7 @@ export namespace storm {
         // LIMIT clause support - builder pattern with method chaining
         // Usage: queryset.limit(10).select()
         //        queryset.where(age > 25).limit(10).select()
-        constexpr auto limit(this auto&& self, int n) -> auto&& {
+        constexpr auto limit(this auto&& self, int n) -> auto&& { // NOSONAR(cpp:S6189)
             self.limit_value_ = n;
             return std::forward<decltype(self)>(self);
         }
@@ -120,7 +120,7 @@ export namespace storm {
         // OFFSET clause support - builder pattern with method chaining
         // Usage: queryset.offset(5).select()
         //        queryset.limit(10).offset(5).select()
-        constexpr auto offset(this auto&& self, int n) -> auto&& {
+        constexpr auto offset(this auto&& self, int n) -> auto&& { // NOSONAR(cpp:S6189)
             self.offset_value_ = n;
             return std::forward<decltype(self)>(self);
         }
@@ -137,7 +137,7 @@ export namespace storm {
         //   queryset.where(age > 25).order_by<^^Person::name>().select()
         //   queryset.order_by<^^Person::age, false>().limit(10).select()
         //
-        template <auto... Args> constexpr auto order_by(this auto&& self) -> auto&& {
+        template <auto... Args> constexpr auto order_by(this auto&& self) -> auto&& { // NOSONAR(cpp:S6189)
             // Create lightweight wrapper to compile-time generated static SQL
             self.order_by_wrapper_ = orm::statements::make_order_by_wrapper<Args...>();
             return std::forward<decltype(self)>(self);
@@ -178,7 +178,7 @@ export namespace storm {
         //   Multi FK:  message_qs.join<&Message::sender, &Message::receiver>().select()
         template <auto... FKFieldPtrs>
             requires(sizeof...(FKFieldPtrs) >= 1)
-        constexpr auto join(this auto&& self) -> auto&& {
+        constexpr auto join(this auto&& self) -> auto&& { // NOSONAR(cpp:S6189)
             // Create type-erased wrapper with compile-time generated SQL (INNER JOIN)
             self.join_stmt_ =
                     orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Inner, FKFieldPtrs...>();
@@ -191,7 +191,7 @@ export namespace storm {
         //   Multi FK:  message_qs.left_join<&Message::sender, &Message::receiver>().select()
         template <auto... FKFieldPtrs>
             requires(sizeof...(FKFieldPtrs) >= 1)
-        constexpr auto left_join(this auto&& self) -> auto&& {
+        constexpr auto left_join(this auto&& self) -> auto&& { // NOSONAR(cpp:S6189)
             // Create type-erased wrapper with compile-time generated SQL (LEFT JOIN)
             self.join_stmt_ =
                     orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Left, FKFieldPtrs...>();
@@ -204,7 +204,7 @@ export namespace storm {
         //   Multi FK:  message_qs.right_join<&Message::sender, &Message::receiver>().select()
         template <auto... FKFieldPtrs>
             requires(sizeof...(FKFieldPtrs) >= 1)
-        constexpr auto right_join(this auto&& self) -> auto&& {
+        constexpr auto right_join(this auto&& self) -> auto&& { // NOSONAR(cpp:S6189)
             // Create type-erased wrapper with compile-time generated SQL (RIGHT JOIN)
             self.join_stmt_ =
                     orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Right, FKFieldPtrs...>();

@@ -116,7 +116,7 @@ export namespace storm::orm::statements {
 
     template <typename... Ops, size_t... Is> consteval auto build_ops_list(std::index_sequence<Is...> /*unused*/) {
         ConstexprString<utilities::buffer_size::SQL_MEDIUM> result;
-        (([&result]() -> void {
+        (([&result]() {
              if constexpr (Is > 0) {
                  result.append(", ");
              }
@@ -130,7 +130,7 @@ export namespace storm::orm::statements {
     template <typename GroupFields, size_t... Is>
     consteval auto build_group_fields_sql(std::index_sequence<Is...> /*unused*/) {
         ConstexprString<utilities::buffer_size::SQL_SMALL> result;
-        (([&result]() -> void {
+        (([&result]() {
              if constexpr (Is > 0) {
                  result.append(", ");
              }

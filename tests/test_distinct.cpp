@@ -137,7 +137,7 @@ TEST_F(DistinctTest, DistinctNameFieldWithDuplicates) {
     EXPECT_EQ(names.size(), 3) << "Expected 3 unique names";
 
     // Convert to set for easier verification
-    std::set<std::string> const unique_names(names.begin(), names.end());
+    std::set<std::string, std::less<>> const unique_names(names.begin(), names.end());
     EXPECT_EQ(unique_names.count("Alice"), 1);
     EXPECT_EQ(unique_names.count("Bob"), 1);
     EXPECT_EQ(unique_names.count("Charlie"), 1);
@@ -279,7 +279,7 @@ TEST_F(DistinctTest, DistinctWithEmptyStrings) {
     const auto& names = result.value();
     EXPECT_EQ(names.size(), 2) << "Expected 2 unique names (empty string and 'Alice')";
 
-    std::set<std::string> const name_set(names.begin(), names.end());
+    std::set<std::string, std::less<>> const name_set(names.begin(), names.end());
     EXPECT_TRUE(name_set.count(""));
     EXPECT_TRUE(name_set.count("Alice"));
 }
@@ -519,7 +519,7 @@ TEST_F(DistinctTest, DuplicateFieldSpecification) {
     }
 
     // Verify we got Alice and Bob
-    std::set<std::string> names;
+    std::set<std::string, std::less<>> names;
     for (const auto& [name1, name2] : pairs) {
         names.insert(name1);
     }
@@ -675,7 +675,7 @@ TEST_F(DistinctTest, DistinctOnBaseTableWithoutJoin) {
     const auto& contents = result.value();
     EXPECT_EQ(contents.size(), 5); // 5 unique message contents
 
-    std::set<std::string> const content_set(contents.begin(), contents.end());
+    std::set<std::string, std::less<>> const content_set(contents.begin(), contents.end());
     EXPECT_TRUE(content_set.count("Hello"));
     EXPECT_TRUE(content_set.count("World"));
     EXPECT_TRUE(content_set.count("Hi there"));
@@ -784,7 +784,9 @@ TEST_F(DistinctTest, RawSQLWorkaround) {
         int const step = stmt.step_raw();
         if (step == decltype(stmt)::ROW_AVAILABLE) {
             const auto* text_bytes = stmt.extract_text_ptr(0);
-            user_names.emplace_back(reinterpret_cast<const char*>(text_bytes));
+            user_names.emplace_back(
+                    reinterpret_cast<const char*>(text_bytes)
+            ); // NOSONAR(cpp:S3630) - SQLite API returns unsigned char*
         } else if (step == decltype(stmt)::NO_MORE_ROWS) {
             break;
         } else {
@@ -795,7 +797,7 @@ TEST_F(DistinctTest, RawSQLWorkaround) {
     // We have 3 users (Alice, Bob, Charlie) who all sent messages
     EXPECT_EQ(user_names.size(), 3);
 
-    std::set<std::string> const name_set(user_names.begin(), user_names.end());
+    std::set<std::string, std::less<>> const name_set(user_names.begin(), user_names.end());
     EXPECT_TRUE(name_set.count("Alice"));
     EXPECT_TRUE(name_set.count("Bob"));
     EXPECT_TRUE(name_set.count("Charlie"));
@@ -899,7 +901,7 @@ TEST_F(DistinctTest, DistinctWithWhereSingleField) {
     // Should return 3 unique names: Alice, Bob, David (Charlie filtered out by WHERE)
     EXPECT_EQ(names.size(), 3);
 
-    std::set<std::string> const unique_names(names.begin(), names.end());
+    std::set<std::string, std::less<>> const unique_names(names.begin(), names.end());
     EXPECT_EQ(unique_names.size(), 3);
     EXPECT_TRUE(unique_names.contains("Alice"));
     EXPECT_TRUE(unique_names.contains("Bob"));
@@ -985,7 +987,7 @@ TEST_F(DistinctTest, DistinctWithComplexWhere) {
 
     const auto& names = result.value();
 
-    std::set<std::string> const unique_names(names.begin(), names.end());
+    std::set<std::string, std::less<>> const unique_names(names.begin(), names.end());
     // Alice (25), Bob (30), Charlie (35) - Charlie (20) and David (40) filtered out
     EXPECT_GE(unique_names.size(), 3);
     EXPECT_TRUE(unique_names.contains("Alice"));
@@ -1008,7 +1010,7 @@ TEST_F(DistinctTest, DistinctWithJoinSingleField) {
     const auto& contents = result.value();
 
     // Should return distinct message contents
-    std::set<std::string> const unique_contents(contents.begin(), contents.end());
+    std::set<std::string, std::less<>> const unique_contents(contents.begin(), contents.end());
     EXPECT_EQ(unique_contents.size(), contents.size()); // All should be unique
 }
 
@@ -1104,8 +1106,8 @@ TEST_F(DistinctTest, MultipleWhereClausesWithDistinct) {
                           .select();
     ASSERT_TRUE(result.has_value());
 
-    const auto&                 names = result.value();
-    std::set<std::string> const unique_names(names.begin(), names.end());
+    const auto&                              names = result.value();
+    std::set<std::string, std::less<>> const unique_names(names.begin(), names.end());
 
     // Should only include Alice (25) and Bob (30)
     EXPECT_EQ(unique_names.size(), 2);
@@ -1146,7 +1148,7 @@ TEST_F(DistinctTest, DistinctKeywordInjectionInJoinQueries) {
     EXPECT_GT(contents.size(), 0) << "Should return some results";
 
     // Verify no duplicates in result
-    std::set<std::string> const unique_contents(contents.begin(), contents.end());
+    std::set<std::string, std::less<>> const unique_contents(contents.begin(), contents.end());
     EXPECT_EQ(unique_contents.size(), contents.size()) << "DISTINCT should eliminate duplicates";
 }
 
@@ -1559,7 +1561,7 @@ TEST_F(DistinctTest, DistinctOptionalWithWhereOnOptional) {
     // Only Alice (25) and Charlie (30) pass the WHERE, Bob and Dave have NULL age
     EXPECT_EQ(names.size(), 2);
 
-    std::set<std::string> const name_set(names.begin(), names.end());
+    std::set<std::string, std::less<>> const name_set(names.begin(), names.end());
     EXPECT_TRUE(name_set.contains("Alice"));
     EXPECT_TRUE(name_set.contains("Charlie"));
     EXPECT_FALSE(name_set.contains("Bob"));

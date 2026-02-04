@@ -63,6 +63,76 @@ def parse_yaml_value(value: str):
     return value
 
 
+class _YamlParserState:
+    """Mutable state for the simple YAML parser."""
+
+    def __init__(self):
+        self.result = {}
+        self.in_list = False
+        self.list_key = None
+        self.list_items = []
+        self.current_item = None
+        self.list_item_indent = 0
+
+    def finalize_list(self):
+        """Save the current list into result and reset list state."""
+        if self.current_item is not None:
+            self.list_items.append(self.current_item)
+        self.result[self.list_key] = self.list_items
+        self.in_list = False
+        self.list_key = None
+        self.list_items = []
+        self.current_item = None
+
+
+def _parse_list_item_start(state: _YamlParserState, stripped: str, indent: int):
+    """Handle a '- ' prefixed list item line."""
+    if not state.in_list:
+        return
+
+    # Save previous item if exists
+    if state.current_item is not None:
+        state.list_items.append(state.current_item)
+
+    rest = stripped[2:].strip()
+    state.list_item_indent = indent
+
+    if ':' in rest:
+        key, _, value = rest.partition(':')
+        state.current_item = {}
+        value = value.strip()
+        if value:
+            state.current_item[key.strip()] = parse_yaml_value(value)
+    else:
+        state.current_item = parse_yaml_value(rest)
+
+
+def _parse_nested_list_kv(state: _YamlParserState, stripped: str):
+    """Handle a nested key-value pair inside a list item."""
+    if not isinstance(state.current_item, dict):
+        return
+    key, _, value = stripped.partition(':')
+    value = value.strip()
+    if value:
+        state.current_item[key.strip()] = parse_yaml_value(value)
+
+
+def _parse_top_level_kv(state: _YamlParserState, stripped: str):
+    """Handle a top-level key-value pair (outside any list)."""
+    key, _, value = stripped.partition(':')
+    key = key.strip()
+    value = value.strip()
+
+    if value:
+        state.result[key] = parse_yaml_value(value)
+    else:
+        # Assume it starts a list
+        state.in_list = True
+        state.list_key = key
+        state.list_items = []
+        state.current_item = None
+
+
 def parse_simple_yaml(yaml_content: str) -> dict:
     """
     Parse a simple subset of YAML used by benchmark definitions.
@@ -75,95 +145,32 @@ def parse_simple_yaml(yaml_content: str) -> dict:
     - Inline arrays [1, 2, 3]
     - Strings, integers, floats, booleans
     """
-    lines = yaml_content.split('\n')
-    result = {}
+    state = _YamlParserState()
 
-    # State tracking
-    in_list = False
-    list_key = None
-    list_items = []
-    current_item = None
-    list_item_indent = 0
-
-    for line in lines:
-        # Skip empty lines and comments
+    for line in yaml_content.split('\n'):
         stripped = line.strip()
         if not stripped or stripped.startswith('#'):
             continue
 
-        # Calculate indentation
         indent = len(line) - len(line.lstrip())
 
         # Check if we're ending a list (dedent)
-        if in_list and indent == 0 and not stripped.startswith('-'):
-            # Save any pending item
-            if current_item is not None:
-                list_items.append(current_item)
-            result[list_key] = list_items
-            in_list = False
-            list_key = None
-            list_items = []
-            current_item = None
+        if state.in_list and indent == 0 and not stripped.startswith('-'):
+            state.finalize_list()
 
-        # Handle list items
+        # Dispatch to appropriate handler
         if stripped.startswith('- '):
-            if not in_list:
-                # Shouldn't happen, but handle gracefully
-                continue
-
-            # Save previous item if exists
-            if current_item is not None:
-                list_items.append(current_item)
-
-            # Parse the list item
-            rest = stripped[2:].strip()
-            list_item_indent = indent
-
-            if ':' in rest:
-                # It's a key-value pair starting the item
-                key, _, value = rest.partition(':')
-                key = key.strip()
-                value = value.strip()
-                current_item = {}
-                if value:
-                    current_item[key] = parse_yaml_value(value)
-            else:
-                # Simple list value
-                current_item = parse_yaml_value(rest)
-
-        elif in_list and indent > list_item_indent and ':' in stripped:
-            # Nested key-value in current list item
-            if isinstance(current_item, dict):
-                key, _, value = stripped.partition(':')
-                key = key.strip()
-                value = value.strip()
-                if value:
-                    current_item[key] = parse_yaml_value(value)
-
-        elif ':' in stripped and not in_list:
-            # Top-level key-value
-            key, _, value = stripped.partition(':')
-            key = key.strip()
-            value = value.strip()
-
-            if value:
-                # Simple key-value
-                result[key] = parse_yaml_value(value)
-            else:
-                # Could be starting a list - peek at next non-empty/comment line
-                # For now, assume it's a list and we'll find out
-                in_list = True
-                list_key = key
-                list_items = []
-                current_item = None
+            _parse_list_item_start(state, stripped, indent)
+        elif state.in_list and indent > state.list_item_indent and ':' in stripped:
+            _parse_nested_list_kv(state, stripped)
+        elif ':' in stripped and not state.in_list:
+            _parse_top_level_kv(state, stripped)
 
     # Don't forget the last item/list
-    if in_list:
-        if current_item is not None:
-            list_items.append(current_item)
-        result[list_key] = list_items
+    if state.in_list:
+        state.finalize_list()
 
-    return result
+    return state.result
 
 
 def convert_yaml_to_json(yaml_path: Path, json_path: Path) -> None:
