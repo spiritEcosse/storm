@@ -601,26 +601,26 @@ DELETE FROM Person WHERE id IN (?, ?, ..., ?);  -- 201 placeholders
 COMMIT;
 ```
 
-**Single DELETE Performance (verified 2025-12-16, Release build):**
+**Single DELETE Performance (verified 2026-02-06, Release build):**
 
 | Operation | Storm ORM | Raw SQLite | Efficiency | Notes |
 |-----------|-----------|------------|------------|-------|
-| **Single DELETE** | ~6.01 M/s | ~6.29 M/s | **~95.5%** | ✅ Excellent for full ORM! |
+| **Single DELETE** | ~3.86 M/s | ~3.86 M/s | **~100.0%** | ✅ Parity with raw! |
 
-**Batch DELETE Performance (verified 2025-12-16, fair comparison, Release build):**
+**Batch DELETE Performance (verified 2026-02-06, fair comparison, Release build):**
 
 | Batch Size | Storm ORM | Raw SQLite | Efficiency | Strategy | Notes |
 |------------|-----------|------------|------------|----------|-------|
-| 10 | ~2.07 M/s | ~2.12 M/s | **~97.7%** | IN clause | ✅ Near parity |
-| 100 | ~3.11 M/s | ~3.15 M/s | **~98.8%** | IN clause | ✅ Near parity |
-| 500 | ~3.18 M/s | ~3.28 M/s | **~97.2%** | IN clause | ✅ Near parity |
-| 1000 | ~3.23 M/s | ~3.27 M/s | **~98.7%** | Chunked (2 queries) | ✅ Near parity |
-| 5000 | ~2.99 M/s | ~2.97 M/s | **~100.7%** | Chunked (7 queries) | ✅ Storm FASTER! |
-| 10000 | ~3.10 M/s | ~3.09 M/s | **~100.2%** | Chunked (13 queries) | ✅ Storm FASTER! |
-| 50000 | ~2.75 M/s | ~2.76 M/s | **~99.6%** | Chunked (63 queries) | ✅ Near parity |
-| 100000 | ~2.68 M/s | ~2.72 M/s | **~98.5%** | Chunked (126 queries) | ✅ Near parity |
+| 10 | ~0.91 M/s | ~0.92 M/s | **~98.2%** | IN clause | ✅ Near parity |
+| 100 | ~1.32 M/s | ~1.29 M/s | **~102.2%** | IN clause | ✅ Storm FASTER! |
+| 500 | ~1.44 M/s | ~1.50 M/s | **~96.3%** | IN clause | ✅ Above 95% target |
+| 1000 | ~1.92 M/s | ~1.87 M/s | **~102.7%** | Chunked (2 queries) | ✅ Storm FASTER! |
+| 5000 | ~1.89 M/s | ~1.85 M/s | **~101.9%** | Chunked (7 queries) | ✅ Storm FASTER! |
+| 10000 | ~1.85 M/s | ~1.77 M/s | **~104.6%** | Chunked (13 queries) | ✅ Storm FASTER! |
+| 50000 | ~1.74 M/s | ~1.71 M/s | **~101.9%** | Chunked (63 queries) | ✅ Storm FASTER! |
+| 100000 | ~1.70 M/s | ~1.71 M/s | **~99.4%** | Chunked (126 queries) | ✅ Near parity |
 
-**Key Optimizations Applied (2025-12-13 Update):**
+**Key Optimizations Applied (2026-02-06 Update):**
 
 1. **RAII TransactionGuard** - Clean transaction management with automatic rollback on early return
    - Similar to Python's `with transaction():` context manager
@@ -631,16 +631,20 @@ COMMIT;
 
 3. **Statement Caching** - Uses `prepare_cached()` for all DELETE statements
    - Prepared statements reused across iterations
-   - SQL strings cached per chunk size via thread-local cache
+   - SQL strings cached per chunk size via thread-local `BulkSQLCache`
 
-4. **Fair Benchmark Comparison** - Both Storm and Raw SQLite use identical strategies
+4. **Thread-Local Bulk SQL Cache** - Eliminates repeated string allocation for bulk DELETE SQL
+   - Same pattern used by INSERT for bulk VALUES SQL generation
+   - Returns cached `const std::string&` instead of constructing new string each call
+
+5. **Fair Benchmark Comparison** - Both Storm and Raw SQLite use identical strategies
    - Same threshold calculations (799 rows = 80% of SQLite limit)
    - Same chunking logic for large batches
    - Pre-prepared BEGIN/COMMIT statements for raw SQLite
 
-**Why Results Show ~98-100% Efficiency:**
+**Why Results Show ~98-105% Efficiency:**
 - Both Storm and Raw SQLite use the **exact same strategy**
-- Overhead comes from ORM abstraction layer (type dispatch, error handling)
+- Thread-local SQL caching eliminates allocation overhead in bulk paths
 - Statement caching eliminates SQL parsing overhead
 - Chunked IN clause is optimal for SQLite's query planner
 

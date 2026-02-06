@@ -23,6 +23,7 @@ import <memory>;
 export namespace storm::orm::statements {
 
     // Import utilities for code convenience
+    using storm::orm::utilities::BulkSQLCache;
     using storm::orm::utilities::ConstexprString;
     using storm::orm::utilities::TransactionGuard;
 
@@ -141,10 +142,19 @@ export namespace storm::orm::statements {
             return single_delete_sql_string;
         }
 
-        // Generate bulk DELETE SQL string for IN clause (size-specific)
-        static auto get_bulk_delete_sql(size_t count) -> std::string {
+        // Generate bulk DELETE SQL string for IN clause (with thread-local caching)
+        // Returns const reference to avoid expensive string copy
+        static auto get_bulk_delete_sql(size_t count) -> const std::string& {
             if (count == 1) {
                 return get_single_delete_sql();
+            }
+
+            // Thread-local cache for common batch sizes (same pattern as INSERT)
+            static thread_local BulkSQLCache cache;
+
+            // Check cache first
+            if (const auto* cached = cache.find(count)) {
+                return *cached; // Return by reference - no copy
             }
 
             // Calculate exact size needed
@@ -162,7 +172,9 @@ export namespace storm::orm::statements {
             }
             sql += ")";
 
-            return sql;
+            // Cache the result and return reference to it
+            cache.insert(count, std::move(sql));
+            return *cache.find(count); // Guaranteed to exist after insert
         }
 
       public:
