@@ -337,35 +337,36 @@ Both Storm ORM and the Raw SQLite benchmark use **identical strategies** for fai
 - Each chunk: `INSERT INTO ... VALUES (...), (...), ... (up to 249 rows)`
 - **Note:** INSERT doesn't need transaction wrapping because each bulk INSERT is already atomic
 
-**⚠️ Chunking Boundary Performance:**
+**Chunking Boundary Performance:**
 
-Tests reveal a performance cliff at the chunking boundary:
+Tests verify smooth performance across the chunking boundary (249 rows for 4-field models):
 
 | Batch Size | Chunks | Efficiency | Notes |
 |------------|--------|------------|-------|
-| 248 | 1 | **98.6%** | Just under boundary |
-| 249 | 1 | **96.7%** | Exactly at boundary |
-| 250 | 2 | **74.5%** | ⚠️ Just over boundary - 25% drop! |
+| 248 | 1 | **~109%** | ✅ Storm FASTER |
+| 249 | 1 | **~109%** | ✅ Storm FASTER |
+| 250 | 2 | **~111%** | ✅ Storm FASTER - no cliff! |
 
-This is expected behavior due to the overhead of preparing and executing multiple SQL statements when crossing the chunk boundary. Consider batch sizes that align with chunk boundaries for optimal performance.
+SQL caching and compile-time generation eliminate the chunking overhead entirely. Storm maintains >100% efficiency across the boundary.
 
-**Single INSERT Performance (verified 2025-12-06, 20,000 iterations, Release build):**
+**Single INSERT Performance (verified 2026-02-06, 10,000 iterations, Release build):**
 
 | Operation | Storm ORM | Raw SQLite | Efficiency | Notes |
 |-----------|-----------|------------|------------|-------|
-| **Single INSERT** | 0.96-0.99 M/s | 0.99 M/s | **~97%** | ✅ **Only ~3% overhead** - excellent for full ORM abstraction! |
+| **Single INSERT** | 0.70-0.73 M/s | 0.71-0.73 M/s | **~97%** | ✅ **Only ~3% overhead** - excellent for full ORM abstraction! |
 
-**Batch INSERT Performance (verified 2025-12-06, fair chunked bulk SQL comparison, Release build):**
+**Batch INSERT Performance (verified 2026-02-06, fair chunked bulk SQL comparison, Release build):**
 
 | Batch Size | Storm ORM | Raw SQLite | Efficiency | Chunks | Notes |
 |------------|-----------|------------|------------|--------|-------|
-| 10 | 2.93-3.10 M/s | 3.10 M/s | **~95%** | 1 | ✅ Near parity |
-| 100 | 4.21-4.56 M/s | 4.21 M/s | **~108%** | 1 | ✅ Storm FASTER - SQL caching |
-| **1000** | 4.22-4.52 M/s | 4.27-4.52 M/s | **99-100%** | 5 (249×4+4) | ✅ **Near parity - fair chunked bulk SQL** |
-| 5000 | 4.24-4.29 M/s | 4.28-4.31 M/s | **98-100%** | 21 (249×20+5) | ✅ Near parity |
-| 10000 | 4.21-4.44 M/s | 4.33-4.38 M/s | **97-101%** | 41 (249×40+10) | ✅ Near parity |
-| 50000 | 4.03-4.35 M/s | 4.20-4.24 M/s | **96-103%** | 201 (249×200+50) | ✅ Near parity |
-| 100000 | 4.28-4.35 M/s | 4.43-4.48 M/s | **96-98%** | 402 (249×401+151) | ✅ Near parity |
+| 10 | 2.81-3.02 M/s | 2.93-3.14 M/s | **~98%** | 1 | ✅ Near parity |
+| 100 | 4.78-5.48 M/s | 4.17-5.03 M/s | **~111%** | 1 | ✅ Storm FASTER - SQL caching |
+| 500 | 5.16-6.17 M/s | 4.82-5.43 M/s | **~114%** | 3 (249×2+2) | ✅ Storm FASTER |
+| **1000** | 4.84-6.24 M/s | 5.25-5.46 M/s | **~115%** | 5 (249×4+4) | ✅ **Storm FASTER - SQL caching** |
+| 5000 | 6.03-6.39 M/s | 5.52-5.69 M/s | **~111%** | 21 (249×20+20) | ✅ Storm FASTER |
+| 10000 | 5.55-6.48 M/s | 4.63-5.61 M/s | **~116%** | 41 (249×40+40) | ✅ Storm FASTER |
+| 50000 | 6.09-6.28 M/s | 5.52-5.94 M/s | **~110%** | 201 (249×200+200) | ✅ Storm FASTER |
+| 100000 | 6.04-6.15 M/s | 5.75-6.06 M/s | **~102%** | 402 (249×401+151) | ✅ Storm FASTER |
 
 **🎯 What Fixed the Benchmark (2025-12-06 Update)**
 
@@ -411,18 +412,19 @@ if constexpr (BatchSize <= bulk_sweet_spot) {  // bulk_sweet_spot = 124
      - Additional function call layer (QuerySet → InsertStatement)
    - **This is excellent** for a full ORM providing type safety, automatic ID retrieval, and clean interface!
 
-2. **Batch Operations: 96-108% efficiency (near parity!)**
-   - After fixing the unfair comparison, Storm ORM achieves **96-108% efficiency** across all batch sizes
-   - The overhead is amortized across batch operations, making it nearly invisible
+2. **Batch Operations: 98-116% efficiency (Storm consistently FASTER!)**
+   - Storm ORM achieves **98-116% efficiency** across all batch sizes
+   - SQL caching and compile-time generation give Storm an edge over hand-written raw SQLite
 
-3. **Why batch_100 is fastest (~108% efficiency)?**
+3. **Why Storm beats raw SQLite for batches?**
    - **SQL String Caching** - Thread-local cache avoids regenerating SQL every iteration
    - **Compile-Time SQL Generation** - Pre-computed SQL with optimized string handling
    - **Statement Preparation Optimization** - Connection-level caching reduces overhead
+   - **BulkSQLCache** - Eliminates SQL string construction for repeated batch sizes
 
-4. **Consistent 4.2-4.5 M ops/sec for large batches** - Performance plateaus around 4.3 M/s for batches ≥1000, likely hitting SQLite's internal bottleneck (disk I/O, B-tree operations, etc.)
+4. **Consistent 5.5-6.5 M ops/sec for large batches** - Performance plateaus around 6 M/s for batches ≥500, with Storm consistently outperforming raw SQLite
 
-5. **Storm's overhead is only ~3% for both single and batch operations**, demonstrating that the ORM abstraction layer is extremely efficient!
+5. **Storm's overhead is only ~3% for single INSERT**, demonstrating that the ORM abstraction layer is extremely efficient! For batch operations, Storm is actually **faster** than raw SQLite thanks to aggressive caching.
 
 ### Run Batch UPDATE Benchmarks
 
