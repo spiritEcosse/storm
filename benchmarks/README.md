@@ -721,18 +721,17 @@ COMMIT;
 | 5000 | ~7.0 M/s | ~6.9 M/s | **~101%** | ✅ Near parity |
 | 10000 | ~6.5 M/s | ~6.9 M/s | **~95%** | ✅ Good |
 
-**SELECT WHERE (no JOIN) Performance (verified 2026-01-14, Release build):**
+**SELECT WHERE (no JOIN) Performance (verified 2026-02-06, Release build):**
 
 | Test | Storm ORM | Raw SQLite | Efficiency | Notes |
 |------|-----------|------------|------------|-------|
 | WHERE age > 30 | ~9.3 M/s | ~9.6 M/s | **~97%** | ✅ Near parity |
-| WHERE LIKE prefix | ~2.7 M/s | ~3.3 M/s | **~84%** | Pattern: `Person1%` |
-| WHERE LIKE contains | ~8.2 M/s | ~9.0 M/s | **~91%** | Pattern: `%Person%` |
-| WHERE BETWEEN | ~7.9 M/s | ~13.1 M/s | **~60%** | Range: 25-35 |
-| WHERE IN (5 values) | ~1.8 M/s | ~2.0 M/s | **~91%** | Small set |
-| WHERE IN (10 values) | ~2.9 M/s | ~3.4 M/s | **~86%** | Medium set |
-| WHERE AND | ~8.6 M/s | ~15.6 M/s | **~55%** | Two conditions |
-| WHERE OR | ~6.2 M/s | ~9.2 M/s | **~67%** | Two conditions |
+| WHERE LIKE prefix | ~2.8 M/s | ~2.9 M/s | **~98%** | ✅ Near parity |
+| WHERE LIKE contains | ~8.0 M/s | ~8.3 M/s | **~96%** | ✅ Near parity |
+| WHERE BETWEEN | ~7.8 M/s | ~7.9 M/s | **~99%** | ✅ Near parity |
+| WHERE IN (3 values) | ~1.7 M/s | ~1.7 M/s | **~100%** | ✅ Near parity |
+| WHERE AND | ~8.3 M/s | ~8.8 M/s | **~94%** | ✅ Good |
+| WHERE OR | ~6.1 M/s | ~6.3 M/s | **~97%** | ✅ Near parity |
 
 **SELECT + LEFT JOIN Performance (verified 2026-01-14, Release build):**
 
@@ -774,13 +773,12 @@ COMMIT;
    - Parameter binding adds minimal overhead
    - Larger datasets show slightly more overhead due to increased row extraction
 
-4. **WHERE Operators: 55-97% efficiency**
+4. **WHERE Operators: 94-100% efficiency**
    - **Basic operators (>, <, =)**: ~97% - Near parity with raw SQLite
-   - **LIKE patterns**: 84-91% - Pattern matching has moderate overhead
-   - **IN clauses**: 86-91% - Set membership queries are efficient
-   - **BETWEEN**: ~60% - Range queries show higher overhead due to dual parameter binding
-   - **AND/OR combinations**: 55-67% - Complex expressions have more overhead from expression tree traversal
-   - Optimization opportunity: Complex expressions could benefit from flattened SQL generation
+   - **LIKE patterns**: 96-98% - Near parity with raw SQLite
+   - **IN clauses**: ~100% - Parity with raw SQLite
+   - **BETWEEN**: ~99% - Near parity with raw SQLite
+   - **AND/OR combinations**: 94-97% - Good efficiency for complex expressions
 
 5. **SELECT + LEFT/RIGHT JOIN: 99-101% efficiency**
    - LEFT JOIN and RIGHT JOIN have near-identical performance to INNER JOIN
@@ -910,8 +908,8 @@ class DistinctBenchmark {
 ```
 
 **Available Multi-Field DISTINCT tests:**
-- `distinct_multi_field_2_1000` / `distinct_multi_field_2_10000` - DISTINCT on 2 fields (name, age)
-- `distinct_multi_field_3_1000` / `distinct_multi_field_3_10000` - DISTINCT on 3 fields (name, age, is_active)
+- `distinct_multi_field_2` - DISTINCT on 2 fields (name, age)
+- `distinct_multi_field_3` - DISTINCT on 3 fields (name, age, is_active)
 - `distinct_order_by_asc_1000` / `distinct_order_by_asc_10000` - DISTINCT + ORDER BY ASC
 - `distinct_order_by_desc_1000` / `distinct_order_by_desc_10000` - DISTINCT + ORDER BY DESC
 
@@ -922,14 +920,12 @@ class DistinctBenchmark {
 
 ### Multi-Field DISTINCT Performance Characteristics
 
-**Multi-Field DISTINCT Performance (verified 2026-01-14, Release build):**
+**Multi-Field DISTINCT Performance (verified 2026-02-06, Release build):**
 
 | Test | Storm ORM | Raw SQLite | Efficiency | Notes |
 |------|-----------|------------|------------|-------|
-| **distinct_multi_field_2_1000** | ~5.5 M/s | ~6.7 M/s | **~83%** | 2 fields (name, age) |
-| **distinct_multi_field_2_10000** | ~3.4 M/s | ~4.1 M/s | **~84%** | 2 fields, larger dataset |
-| **distinct_multi_field_3_1000** | ~5.2 M/s | ~6.5 M/s | **~81%** | 3 fields (name, age, is_active) |
-| **distinct_multi_field_3_10000** | ~3.4 M/s | ~4.0 M/s | **~86%** | 3 fields, larger dataset |
+| **distinct_multi_field_2** | ~3.4 M/s | ~3.5 M/s | **~98%** | ✅ 2 fields (name, age) |
+| **distinct_multi_field_3** | ~3.3 M/s | ~3.3 M/s | **~101%** | ✅ 3 fields (name, age, is_active) |
 
 **DISTINCT + ORDER BY Performance (verified 2026-01-14, Release build):**
 
@@ -942,20 +938,20 @@ class DistinctBenchmark {
 
 **Key Findings:**
 
-1. **Multi-Field DISTINCT: 81-86% efficiency**
-   - Overhead comes from tuple construction and multi-column extraction
+1. **Multi-Field DISTINCT: 98-101% efficiency**
+   - Near parity with raw SQLite after benchmark fairness fix
    - Performance is consistent across 2 and 3 fields
-   - Good baseline for multi-field projection operations
+   - Both Storm and raw SQLite extract typed columns into tuples
 
 2. **DISTINCT + ORDER BY: 92-100% efficiency**
    - ORDER BY clause is handled at compile-time
    - Near-parity performance with raw SQLite
    - Larger datasets show better efficiency due to amortized overhead
 
-3. **Why multi-field DISTINCT shows lower efficiency:**
-   - **Tuple construction**: Creating `std::tuple<T1, T2, ...>` has overhead
-   - **Multi-column extraction**: Each column requires separate extraction call
-   - **Type dispatching**: Runtime type handling for heterogeneous columns
+3. **Why multi-field DISTINCT now shows near-parity:**
+   - **Fair benchmark**: Both Storm and raw SQLite extract typed columns into `std::tuple<T1, T2, ...>`
+   - **Statement caching**: Prepared statements reused across iterations
+   - **Compile-time SQL generation**: Zero runtime SQL building overhead
 
 ### Run LIMIT/OFFSET Benchmarks
 
@@ -1374,7 +1370,6 @@ class DistinctBenchmark {
 - `where_like_contains` - Pattern matching with contains (name LIKE '%son%')
 - `where_between_int` - Range queries (age BETWEEN 25 AND 45)
 - `where_in_small` - Small IN set (age IN (25, 30, 35))
-- `where_in_medium` - Medium IN set (age IN (21, 25, 30, 35, 40, 45))
 - `where_and_simple` - AND combination (age > 30 AND salary > 50000)
 - `where_or_simple` - OR combination (age < 25 OR age > 60)
 
@@ -1395,42 +1390,55 @@ class DistinctBenchmark {
 | **IN** | `SELECT * FROM table WHERE field IN (?, ?, ...)` | Set membership |
 | **AND/OR** | `SELECT * FROM table WHERE cond1 AND/OR cond2` | Complex conditions |
 
-**WHERE Operator Performance (verified 2026-01-14, Release build):**
+**WHERE Operator Performance (verified 2026-02-06, Release build):**
 
 | Test | Storm ORM | Raw SQLite | Efficiency | Notes |
 |------|-----------|------------|------------|-------|
-| **where_like_prefix** | ~2.7 M/s | ~3.3 M/s | **~84%** | Good for pattern matching |
-| **where_like_contains** | ~8.2 M/s | ~9.0 M/s | **~91%** | Near parity |
-| **where_between_int** | ~7.9 M/s | ~13.1 M/s | **~60%** | Good baseline |
-| **where_in_small** | ~1.8 M/s | ~2.0 M/s | **~91%** | Near parity |
-| **where_in_medium** | ~2.9 M/s | ~3.4 M/s | **~86%** | Good |
-| **where_and_simple** | ~8.6 M/s | ~15.6 M/s | **~55%** | Baseline for complex conditions |
-| **where_or_simple** | ~6.2 M/s | ~9.2 M/s | **~67%** | Baseline for OR conditions |
+| **where_like_prefix** | ~2.8 M/s | ~2.9 M/s | **~98%** | ✅ Near parity |
+| **where_like_contains** | ~8.0 M/s | ~8.3 M/s | **~96%** | ✅ Near parity |
+| **where_between_int** | ~7.8 M/s | ~7.9 M/s | **~99%** | ✅ Near parity |
+| **where_in_small** | ~1.7 M/s | ~1.7 M/s | **~100%** | ✅ Parity |
+| **where_and_simple** | ~8.3 M/s | ~8.8 M/s | **~94%** | ✅ Good |
+| **where_or_simple** | ~6.1 M/s | ~6.3 M/s | **~97%** | ✅ Near parity |
+
+**🎯 What Fixed the Benchmark (2026-02-06 Update)**
+
+**Critical Issue Identified and Resolved:**
+
+**❌ UNFAIR COMPARISON** - Raw SQLite benchmark was NOT extracting column data like Storm ORM!
+
+**The Problem:**
+- Storm ORM performed full SELECT with object extraction into `plf::hive<Model>`
+- Raw SQLite was just counting rows with `total++` without extracting any data
+- This made Storm appear 55-91% efficient - completely misleading!
+
+**The Fix:**
+1. ✅ **Added proper column extraction** to raw SQLite - now extracts all 5 columns per row
+2. ✅ **Added `extract_row()` helper** to each benchmark class for type-safe extraction
+3. ✅ **Results stored in `plf::hive<Model>`** - same container as Storm ORM
+4. ✅ **Fair apples-to-apples comparison** - Both Storm and raw SQLite now do identical work
+
+**Result:**
+- **Before fix**: 55-91% efficiency (raw SQLite just counted rows) - UNFAIR
+- **After fix**: 94-100% efficiency (both extract full row data) - FAIR COMPARISON!
 
 **Key Findings:**
 
-1. **LIKE: 84-91% efficiency**
-   - Prefix patterns are fastest (indexed search possible)
-   - Contains patterns show near-parity performance
+1. **LIKE: 96-98% efficiency**
+   - Near parity with raw SQLite for both prefix and contains patterns
+   - Statement caching eliminates SQL parsing overhead
 
-2. **BETWEEN: ~60% efficiency**
-   - Simple range queries with two parameter bindings
-   - Good baseline for optimization
+2. **BETWEEN: ~99% efficiency**
+   - Near parity with raw SQLite
+   - Range queries are highly efficient with proper extraction
 
-3. **IN: 86-91% efficiency**
-   - Performance scales with IN set size
-   - Small sets show best efficiency
+3. **IN: ~100% efficiency**
+   - Parity with raw SQLite
+   - Set membership queries show excellent performance
 
-4. **AND/OR: 55-67% efficiency**
-   - Complex conditions have more overhead due to expression building
-   - Good baseline measurements for future optimization
-
-**Why some operators show lower efficiency:**
-- **Expression building**: Complex WHERE clauses require runtime expression construction
-- **Parameter binding**: Multiple parameters per query add binding overhead
-- **SQL generation**: More complex SQL strings take longer to generate
-
-These benchmarks provide baseline measurements for the WHERE operators. Future optimizations can target expression caching and SQL string caching for these operators.
+4. **AND/OR: 94-97% efficiency**
+   - Good efficiency for complex multi-condition expressions
+   - Expression tree traversal adds minimal overhead
 
 ### Run Benchmarks by Filter (Test Name)
 

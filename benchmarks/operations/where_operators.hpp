@@ -72,7 +72,8 @@ namespace storm::benchmark {
                 return 0;
 
             constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
-            std::string                sql        = std::format("SELECT * FROM Person WHERE {} LIKE ?", field_name);
+            std::string                sql =
+                    std::format("SELECT id, name, age, is_active, salary FROM Person WHERE {} LIKE ?", field_name);
 
             sqlite3_stmt* stmt = nullptr;
             sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
@@ -81,13 +82,26 @@ namespace storm::benchmark {
             int total = 0;
             for (int i = 0; i < iterations; i++) {
                 sqlite3_reset(stmt);
+                plf::hive<Model> results;
                 while (sqlite3_step(stmt) == SQLITE_ROW) {
-                    total++;
+                    results.insert(extract_row(stmt));
                 }
+                total += results.size();
             }
 
             sqlite3_finalize(stmt);
             return total;
+        }
+
+      private:
+        __attribute__((always_inline)) static Model extract_row(sqlite3_stmt* stmt) {
+            Model obj;
+            obj.id        = sqlite3_column_int64(stmt, 0);
+            obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            obj.age       = sqlite3_column_int(stmt, 2);
+            obj.is_active = sqlite3_column_int(stmt, 3) != 0;
+            obj.salary    = sqlite3_column_double(stmt, 4);
+            return obj;
         }
     };
 
@@ -149,7 +163,9 @@ namespace storm::benchmark {
                 return 0;
 
             constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
-            std::string                sql = std::format("SELECT * FROM Person WHERE {} BETWEEN ? AND ?", field_name);
+            std::string                sql        = std::format(
+                    "SELECT id, name, age, is_active, salary FROM Person WHERE {} BETWEEN ? AND ?", field_name
+            );
 
             sqlite3_stmt* stmt = nullptr;
             sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
@@ -166,13 +182,26 @@ namespace storm::benchmark {
             int total = 0;
             for (int i = 0; i < iterations; i++) {
                 sqlite3_reset(stmt);
+                plf::hive<Model> results;
                 while (sqlite3_step(stmt) == SQLITE_ROW) {
-                    total++;
+                    results.insert(extract_row(stmt));
                 }
+                total += results.size();
             }
 
             sqlite3_finalize(stmt);
             return total;
+        }
+
+      private:
+        __attribute__((always_inline)) static Model extract_row(sqlite3_stmt* stmt) {
+            Model obj;
+            obj.id        = sqlite3_column_int64(stmt, 0);
+            obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            obj.age       = sqlite3_column_int(stmt, 2);
+            obj.is_active = sqlite3_column_int(stmt, 3) != 0;
+            obj.salary    = sqlite3_column_double(stmt, 4);
+            return obj;
         }
     };
 
@@ -241,7 +270,8 @@ namespace storm::benchmark {
             constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
 
             // Build SQL with placeholders
-            std::string sql = std::format("SELECT * FROM Person WHERE {} IN (", field_name);
+            std::string sql =
+                    std::format("SELECT id, name, age, is_active, salary FROM Person WHERE {} IN (", field_name);
             for (size_t i = 0; i < values_.size(); i++) {
                 if (i > 0)
                     sql += ", ";
@@ -264,16 +294,27 @@ namespace storm::benchmark {
             int total = 0;
             for (int i = 0; i < iterations; i++) {
                 sqlite3_reset(stmt);
+                plf::hive<Model> results;
                 while (sqlite3_step(stmt) == SQLITE_ROW) {
-                    total++;
+                    results.insert(extract_row(stmt));
                 }
+                total += results.size();
             }
 
             sqlite3_finalize(stmt);
             return total;
         }
 
-      private:
+        __attribute__((always_inline)) static Model extract_row(sqlite3_stmt* stmt) {
+            Model obj;
+            obj.id        = sqlite3_column_int64(stmt, 0);
+            obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            obj.age       = sqlite3_column_int(stmt, 2);
+            obj.is_active = sqlite3_column_int(stmt, 3) != 0;
+            obj.salary    = sqlite3_column_double(stmt, 4);
+            return obj;
+        }
+
         // Helper to build IN clause from vector
         auto build_in_clause() const {
             // Use InExpression directly since we have a runtime vector
@@ -368,7 +409,7 @@ namespace storm::benchmark {
             constexpr const char*      logic_op    = IsAnd ? "AND" : "OR";
 
             std::string sql = std::format(
-                    "SELECT * FROM Person WHERE {} {} ? {} {} {} ?",
+                    "SELECT id, name, age, is_active, salary FROM Person WHERE {} {} ? {} {} {} ?",
                     field_name1,
                     op_sql1,
                     logic_op,
@@ -400,9 +441,11 @@ namespace storm::benchmark {
             int total = 0;
             for (int i = 0; i < iterations; i++) {
                 sqlite3_reset(stmt);
+                plf::hive<Model> results;
                 while (sqlite3_step(stmt) == SQLITE_ROW) {
-                    total++;
+                    results.insert(extract_row(stmt));
                 }
+                total += results.size();
             }
 
             sqlite3_finalize(stmt);
@@ -410,6 +453,16 @@ namespace storm::benchmark {
         }
 
       private:
+        __attribute__((always_inline)) static Model extract_row(sqlite3_stmt* stmt) {
+            Model obj;
+            obj.id        = sqlite3_column_int64(stmt, 0);
+            obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            obj.age       = sqlite3_column_int(stmt, 2);
+            obj.is_active = sqlite3_column_int(stmt, 3) != 0;
+            obj.salary    = sqlite3_column_double(stmt, 4);
+            return obj;
+        }
+
         static constexpr std::string_view get_sql_op(std::string_view op) {
             if (op == ">")
                 return ">";

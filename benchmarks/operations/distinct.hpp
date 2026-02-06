@@ -304,20 +304,42 @@ namespace storm::benchmark {
                 return 0;
             }
 
+            using FieldType1 = std::remove_cvref_t<decltype(std::declval<BaseModel>().[:DistinctFieldInfo1:])>;
+            using FieldType2 = std::remove_cvref_t<decltype(std::declval<BaseModel>().[:DistinctFieldInfo2:])>;
+
             int total_rows = 0;
             for (int i = 0; i < iterations; i++) {
                 sqlite3_reset(stmt);
 
-                // Count results (store as tuple of values)
-                int count = 0;
+                plf::hive<std::tuple<FieldType1, FieldType2>> results;
                 while (sqlite3_step(stmt) == SQLITE_ROW) {
-                    count++;
+                    auto val1 = extract_column<FieldType1>(stmt, 0);
+                    auto val2 = extract_column<FieldType2>(stmt, 1);
+                    results.insert({std::move(val1), std::move(val2)});
                 }
-                total_rows += count;
+                total_rows += results.size();
             }
 
             sqlite3_finalize(stmt);
             return total_rows;
+        }
+
+      private:
+        template <typename T> __attribute__((always_inline)) static T extract_column(sqlite3_stmt* stmt, int col) {
+            if constexpr (std::is_same_v<T, std::string>) {
+                auto text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, col));
+                return text != nullptr ? T(text) : T{};
+            } else if constexpr (std::is_same_v<T, int>) {
+                return sqlite3_column_int(stmt, col);
+            } else if constexpr (std::is_same_v<T, int64_t>) {
+                return sqlite3_column_int64(stmt, col);
+            } else if constexpr (std::is_same_v<T, double>) {
+                return sqlite3_column_double(stmt, col);
+            } else if constexpr (std::is_same_v<T, bool>) {
+                return sqlite3_column_int(stmt, col) != 0;
+            } else {
+                return static_cast<T>(sqlite3_column_int64(stmt, col));
+            }
         }
     };
 
@@ -398,20 +420,44 @@ namespace storm::benchmark {
                 return 0;
             }
 
+            using FieldType1 = std::remove_cvref_t<decltype(std::declval<BaseModel>().[:DistinctFieldInfo1:])>;
+            using FieldType2 = std::remove_cvref_t<decltype(std::declval<BaseModel>().[:DistinctFieldInfo2:])>;
+            using FieldType3 = std::remove_cvref_t<decltype(std::declval<BaseModel>().[:DistinctFieldInfo3:])>;
+
             int total_rows = 0;
             for (int i = 0; i < iterations; i++) {
                 sqlite3_reset(stmt);
 
-                // Count results
-                int count = 0;
+                plf::hive<std::tuple<FieldType1, FieldType2, FieldType3>> results;
                 while (sqlite3_step(stmt) == SQLITE_ROW) {
-                    count++;
+                    auto val1 = extract_column<FieldType1>(stmt, 0);
+                    auto val2 = extract_column<FieldType2>(stmt, 1);
+                    auto val3 = extract_column<FieldType3>(stmt, 2);
+                    results.insert({std::move(val1), std::move(val2), std::move(val3)});
                 }
-                total_rows += count;
+                total_rows += results.size();
             }
 
             sqlite3_finalize(stmt);
             return total_rows;
+        }
+
+      private:
+        template <typename T> __attribute__((always_inline)) static T extract_column(sqlite3_stmt* stmt, int col) {
+            if constexpr (std::is_same_v<T, std::string>) {
+                auto text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, col));
+                return text != nullptr ? T(text) : T{};
+            } else if constexpr (std::is_same_v<T, int>) {
+                return sqlite3_column_int(stmt, col);
+            } else if constexpr (std::is_same_v<T, int64_t>) {
+                return sqlite3_column_int64(stmt, col);
+            } else if constexpr (std::is_same_v<T, double>) {
+                return sqlite3_column_double(stmt, col);
+            } else if constexpr (std::is_same_v<T, bool>) {
+                return sqlite3_column_int(stmt, col) != 0;
+            } else {
+                return static_cast<T>(sqlite3_column_int64(stmt, col));
+            }
         }
     };
 
