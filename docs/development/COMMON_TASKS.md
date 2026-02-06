@@ -146,15 +146,6 @@ static auto get_cached_sql(size_t key) -> std::string {
 5. ✅ **Index sequences**: Use fold expressions
 6. ✅ **Measurement**: Always validate with realistic data
 
-## Expected Performance (10,000 rows, Release build)
-
-- Single INSERT: ~992K/sec (2.0x vs sqlite_orm)
-- Single DELETE: ~21.6M/sec (73% of raw SQLite, 36x vs sqlite_orm)
-- SELECT: ~13.07M rows/sec (1.51x vs sqlite_orm, 74% of raw SQLite)
-- Batch INSERT: ~2.7M/sec, Batch DELETE: ~3.9M/sec
-- JOIN: 4-6M rows/sec (77% average efficiency vs raw SQLite)
-- Cache hit rate: >90% for common sizes (1, 10, 25, 50)
-
 ## Thread Safety Patterns
 
 ### ✅ Safe: Per-Thread Connections

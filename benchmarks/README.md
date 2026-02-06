@@ -489,36 +489,36 @@ class UpdateBenchmark : public DataBenchmarkBase<..., 5> { ... };
 - Max rows per transaction: 999 / 5 = **199 rows**
 - Compare to INSERT: 999 / 4 = **249 rows**
 
-**⚠️ Chunking Boundary Performance:**
+**✅ Chunking Boundary Performance (verified 2026-02-06, thorough mode):**
 
 | Batch Size | Efficiency | Notes |
 |------------|------------|-------|
-| 198 | **~90.6%** | Just under boundary |
-| 199 | **~90.0%** | Exactly at max_bulk |
-| 200 | **~91.3%** | Just over boundary |
+| 198 | **~100%** | Just under boundary |
+| 199 | **~103%** | Exactly at max_bulk |
+| 200 | **~102%** | Just over boundary |
 
 **Note:** Unlike INSERT (which uses bulk SQL), UPDATE always executes individual statements within a transaction. The "chunking boundary" is less significant for UPDATE since there's no multi-row UPDATE syntax in SQLite.
 
-**Single UPDATE Performance (verified 2025-12-13, Release build):**
+**Single UPDATE Performance (verified 2026-02-06, Release build):**
 
 | Operation | Storm ORM | Raw SQLite | Efficiency | Notes |
 |-----------|-----------|------------|------------|-------|
-| **Single UPDATE** | ~2.26 M/s | ~2.42 M/s | **~93%** | ✅ Excellent for full ORM! |
+| **Single UPDATE** | ~1.80 M/s | ~1.83 M/s | **~98%** | ✅ Excellent for full ORM! |
 
-**Batch UPDATE Performance (verified 2025-12-13, Release build):**
+**Batch UPDATE Performance (verified 2026-02-06, Release build):**
 
 | Batch Size | Storm ORM | Raw SQLite | Efficiency | Notes |
 |------------|-----------|------------|------------|-------|
-| 10 | ~3.47 M/s | ~3.38 M/s | **~103%** | ✅ Storm FASTER! |
-| 100 | ~3.67 M/s | ~4.03 M/s | **~91%** | ✅ Good |
-| 500 | ~3.44 M/s | ~3.83 M/s | **~90%** | ✅ Good |
-| 1000 | ~3.37 M/s | ~3.72 M/s | **~91%** | ✅ Good |
-| 5000 | ~3.30 M/s | ~3.66 M/s | **~90%** | ✅ Good |
-| 10000 | ~3.33 M/s | ~3.67 M/s | **~91%** | ✅ Good |
-| 50000 | ~3.09 M/s | ~3.40 M/s | **~91%** | ✅ Good |
-| 100000 | ~3.05 M/s | ~3.30 M/s | **~92%** | ✅ Good |
+| 10 | ~2.76 M/s | ~2.38 M/s | **~116%** | ✅ Storm FASTER! |
+| 100 | ~2.98 M/s | ~2.84 M/s | **~105%** | ✅ Storm FASTER! |
+| 500 | ~2.56 M/s | ~2.59 M/s | **~99%** | ✅ Excellent |
+| 1000 | ~2.76 M/s | ~2.78 M/s | **~99%** | ✅ Excellent |
+| 5000 | ~3.58 M/s | ~3.54 M/s | **~101%** | ✅ Storm FASTER! |
+| 10000 | ~3.62 M/s | ~3.55 M/s | **~102%** | ✅ Storm FASTER! |
+| 50000 | ~3.35 M/s | ~3.30 M/s | **~101%** | ✅ Storm FASTER! |
+| 100000 | ~3.24 M/s | ~3.21 M/s | **~101%** | ✅ Storm FASTER! |
 
-**Key Optimizations Applied (2025-12-13 Update):**
+**Key Optimizations Applied:**
 
 1. **RAII TransactionGuard** - Clean transaction management with automatic rollback
 2. **Statement Pointer Caching** - Cached `sqlite3_stmt*` avoids hash lookup per row

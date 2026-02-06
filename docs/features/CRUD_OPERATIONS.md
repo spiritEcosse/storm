@@ -48,8 +48,6 @@ if (result) {
 }
 ```
 
-**Performance**: 992K operations/sec (2.0x faster than sqlite_orm)
-
 ### Batch INSERT
 
 ```cpp
@@ -68,8 +66,6 @@ if (result) {
     }
 }
 ```
-
-**Performance**: 2.7M rows/sec (6.4x faster than sqlite_orm)
 
 ### Batch INSERT Strategy
 
@@ -102,10 +98,6 @@ struct BulkSQLCache {
 thread_local BulkSQLCache bulk_sql_cache;
 ```
 
-**Performance improvement**: 94% faster (0.253µs → 0.016µs) for cached sizes
-
-**Cache hit rate**: >90% for common sizes (1, 10, 25, 50)
-
 ## UPDATE Operations
 
 ### Single UPDATE
@@ -124,8 +116,6 @@ if (!result) {
 ```sql
 UPDATE Person SET name=?, age=? WHERE id=?
 ```
-
-**Performance**: 2M operations/sec sustained, 12M peak (6x faster than sqlite_orm)
 
 ### Batch UPDATE
 
@@ -159,8 +149,6 @@ template <typename T> class UpdateStatement {
 };
 ```
 
-**Performance impact**: 100x improvement for repeated operations
-
 ## DELETE Operations
 
 ### Single DELETE
@@ -174,8 +162,6 @@ auto result = queryset.remove(person);
 ```sql
 DELETE FROM Person WHERE id=?
 ```
-
-**Performance**: 21.6M operations/sec (73% of raw SQLite, 36.6x faster than sqlite_orm)
 
 ### Batch DELETE
 
@@ -193,14 +179,6 @@ auto result = queryset.remove(std::span<const Person>(people));
 ```sql
 DELETE FROM Person WHERE id IN (?, ?, ?)
 ```
-
-**Performance**: 3.9M operations/sec
-
-### Statement Caching
-
-RemoveStatement also uses statement-level caching:
-
-**Performance impact**: 22.8x speedup (947K → 21.6M ops/sec)
 
 ## Error Handling
 

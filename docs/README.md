@@ -31,7 +31,7 @@ Welcome to Storm ORM - a modern C++26 ORM library for SQLite using cutting-edge 
 ## Benchmarks
 
 ### Performance Analysis
-- **[Results](benchmarks/RESULTS.md)** - Latest benchmark results
+- **[Results](../benchmarks/README.md)** - Latest benchmark results
 - **[JOIN Analysis](benchmarks/JOIN_ANALYSIS.md)** - JOIN performance deep dive
 - **[DISTINCT Analysis](benchmarks/DISTINCT_ANALYSIS.md)** - DISTINCT performance analysis
 
