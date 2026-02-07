@@ -29,6 +29,7 @@
  */
 
 #include "select_query_base.hpp"
+#include <expected>
 #include <format>
 #include <meta>
 #include <string_view>
@@ -138,32 +139,45 @@ namespace storm::benchmark {
         // execute - Storm ORM aggregate using base class helpers
         // ====================================================================
       private:
-        auto execute_aggregate() {
+        // Create the aggregate statement once (like raw prepares once)
+        auto create_aggregate_stmt() {
             if constexpr (Op == AggregateOp::Count) {
-                return Base::qs().count().select();
+                return Base::qs().count();
             } else if constexpr (Op == AggregateOp::CountField) {
-                return Base::qs().template count<FieldInfo>().select();
+                return Base::qs().template count<FieldInfo>();
             } else if constexpr (Op == AggregateOp::CountDistinct) {
-                return Base::qs().template count_distinct<FieldInfo>().select();
+                return Base::qs().template count_distinct<FieldInfo>();
             } else if constexpr (Op == AggregateOp::Sum) {
-                return Base::qs().template sum<FieldInfo>().select();
+                return Base::qs().template sum<FieldInfo>();
             } else if constexpr (Op == AggregateOp::Avg) {
-                return Base::qs().template avg<FieldInfo>().select();
+                return Base::qs().template avg<FieldInfo>();
             } else if constexpr (Op == AggregateOp::Min) {
-                return Base::qs().template min<FieldInfo>().select();
+                return Base::qs().template min<FieldInfo>();
             } else if constexpr (Op == AggregateOp::Max) {
-                return Base::qs().template max<FieldInfo>().select();
+                return Base::qs().template max<FieldInfo>();
             }
         }
 
       public:
+        // For compatibility with execute_with_filters
         int execute_iteration() {
-            auto result = execute_aggregate();
+            auto result = create_aggregate_stmt().select();
             return (result.has_value() && result.value() >= 0) ? 1 : 0;
         }
 
         int execute(int iterations) {
-            return Base::execute_with_filters(iterations);
+            // Create aggregate statement ONCE (like raw prepares statement once)
+            // then call execute() in the loop - matches fair benchmark pattern
+            Base::apply_query_filters();
+            auto agg_stmt = create_aggregate_stmt();
+
+            int total = 0;
+            for (int i = 0; i < iterations; i++) {
+                auto result = agg_stmt.execute();
+                total += (result.has_value() && result.value() >= 0) ? 1 : 0;
+            }
+            Base::qs().reset();
+            return total;
         }
 
         // ====================================================================
@@ -251,21 +265,33 @@ namespace storm::benchmark {
                 Base::bind_where_value(stmt);
             }
 
+            // Error type matching Storm's return type for fair comparison
+            // (same decision logic: wrap result in std::expected, check has_value, extract value)
+            using StormError = storm::db::sqlite::Error;
+
             int total = 0;
             for (int i = 0; i < iterations; i++) {
                 sqlite3_reset(stmt);
 
-                if (sqlite3_step(stmt) == SQLITE_ROW) {
-                    // For COUNT, SUM - use int64
-                    // For AVG, MIN, MAX - use double
-                    if constexpr (Op == AggregateOp::Count || Op == AggregateOp::CountField ||
-                                  Op == AggregateOp::CountDistinct || Op == AggregateOp::Sum) {
-                        int64_t result = sqlite3_column_int64(stmt, 0);
-                        total += (result > 0 ? 1 : 0);
+                if constexpr (Op == AggregateOp::Count || Op == AggregateOp::CountField ||
+                              Op == AggregateOp::CountDistinct || Op == AggregateOp::Sum) {
+                    std::expected<int64_t, StormError> result;
+                    int                                rc = sqlite3_step(stmt);
+                    if (rc == SQLITE_ROW) {
+                        result = sqlite3_column_int64(stmt, 0);
                     } else {
-                        double result = sqlite3_column_double(stmt, 0);
-                        total += (result > 0 ? 1 : 0);
+                        result = std::unexpected(StormError{rc, "step failed"});
                     }
+                    total += (result.has_value() && result.value() > 0) ? 1 : 0;
+                } else {
+                    std::expected<double, StormError> result;
+                    int                               rc = sqlite3_step(stmt);
+                    if (rc == SQLITE_ROW) {
+                        result = sqlite3_column_double(stmt, 0);
+                    } else {
+                        result = std::unexpected(StormError{rc, "step failed"});
+                    }
+                    total += (result.has_value() && result.value() > 0) ? 1 : 0;
                 }
             }
 

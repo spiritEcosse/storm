@@ -33,8 +33,8 @@ namespace storm::benchmark::sizes {
     // Standard dataset sizes for SELECT/JOIN/DISTINCT operations
     inline constexpr std::array DATASET_STANDARD = {100, 1000, 10000, 100000};
 
-    // Smaller dataset for aggregate tests
-    inline constexpr std::array DATASET_SMALL = {1000, 10000};
+    // Dataset sizes for aggregate tests (≥10000 for reliable COUNT(*) efficiency)
+    inline constexpr std::array DATASET_SMALL = {10000, 50000};
 
     // Calculate iterations inversely proportional to batch size
     // Larger batches get fewer iterations to maintain consistent total work
@@ -73,6 +73,8 @@ namespace storm::benchmark::sizes {
             return 10000;
         if (size <= 10000)
             return 5000;
+        if (size <= 50000)
+            return 500;
         return 100; // 100000+ rows
     }
 

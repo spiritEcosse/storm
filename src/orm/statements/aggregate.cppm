@@ -194,14 +194,14 @@ export namespace storm::orm::statements {
         using ResultType = std::conditional_t<HasGroupBy, plf::hive<GroupedTuple>, decltype(deduce_simple_type())>;
 
         explicit AggregateStatement(
-                std::shared_ptr<ConnType>                  conn,
+                ConnType*                                  conn,
                 orm::where::ExpressionVariantPtr           where_expr       = nullptr,
                 const std::optional<JoinStatementWrapper>& join_stmt        = std::nullopt,
                 const std::optional<int>&                  limit            = std::nullopt,
                 const std::optional<int>&                  offset           = std::nullopt,
                 const std::optional<OrderByWrapper>&       order_by_wrapper = std::nullopt
         )
-            : conn_(std::move(conn))
+            : conn_(conn)
             , where_expr_(std::move(where_expr))
             , join_stmt_(join_stmt)
             , limit_(limit)
@@ -244,23 +244,26 @@ export namespace storm::orm::statements {
             };
         }
 
-        [[nodiscard]] auto select() -> std::expected<ResultType, Error>
+        [[nodiscard]] __attribute__((always_inline)) auto select() -> std::expected<ResultType, Error>
             requires(NumOps > 0)
         {
             return execute();
         }
 
-        [[nodiscard]] auto execute() -> std::expected<ResultType, Error>
+        [[nodiscard]] __attribute__((flatten)) auto execute() -> std::expected<ResultType, Error>
             requires(NumOps > 0)
         {
-            return Base::dispatch_execute(
-                    join_stmt_.has_value(),
-                    static_cast<bool>(where_expr_),
-                    [this]() -> std::expected<ResultType, Error> { return execute_simple(); },
-                    [this]() -> std::expected<ResultType, Error> { return execute_where(); },
-                    [this]() -> std::expected<ResultType, Error> { return execute_join(); },
-                    [this]() -> std::expected<ResultType, Error> { return execute_where_join(); }
-            );
+            // Inline dispatch to avoid lambda capture + call overhead on hot path
+            if (join_stmt_.has_value() && where_expr_) {
+                return execute_where_join();
+            }
+            if (join_stmt_.has_value()) {
+                return execute_join();
+            }
+            if (where_expr_) {
+                return execute_where();
+            }
+            return execute_simple();
         }
 
       private:
@@ -446,6 +449,36 @@ export namespace storm::orm::statements {
             return result;
         }
 
+        // ---- Inline extraction for simple aggregate (no trailing reset) ----
+        // OPTIMIZATION: Step + extract single result row without trailing reset.
+        // The next call will reset at the top, eliminating double-reset overhead.
+        template <size_t... Is>
+        [[nodiscard]] __attribute__((always_inline)) static auto
+        extract_simple_no_reset(Statement* stmt, std::index_sequence<Is...> /*unused*/)
+                -> std::expected<ResultType, Error> {
+            int step_result = stmt->step_raw();
+
+            if (step_result != Statement::ROW_AVAILABLE) [[unlikely]] {
+                stmt->reset();
+                // LCOV_EXCL_START
+                if (step_result == Statement::NO_MORE_ROWS) {
+                    return ResultType{};
+                }
+                return std::unexpected(Error{step_result, stmt->get_error_message()});
+                // LCOV_EXCL_STOP
+            }
+
+            if constexpr (NumOps == 1) {
+                return Base::template extract_column_value<ResultType>(stmt, 0);
+            } else {
+                return ResultType{
+                        Base::template extract_column_value<OpResult<std::tuple_element_t<Is, std::tuple<Ops...>>>>(
+                                stmt, Is
+                        )...
+                };
+            }
+        }
+
         // ---- Execution Paths ----
         [[nodiscard]] __attribute__((hot)) auto execute_simple() -> std::expected<ResultType, Error> {
             if constexpr (HasGroupBy) {
@@ -457,14 +490,29 @@ export namespace storm::orm::statements {
                 }
                 return prepare_and_extract(base_sql_);
             } else {
-                if (cached_stmt_ == nullptr) {
+                // OPTIMIZATION: Thread-local statement pointer cache.
+                // Persists across AggregateStatement instances to avoid
+                // hash-map lookup in prepare_cached() on every call.
+                // Safe because connections are thread-local (project design invariant).
+                static thread_local Statement* tl_stmt = nullptr;
+                static thread_local void*      tl_conn = nullptr;
+
+                if (tl_conn == static_cast<void*>(conn_) && tl_stmt != nullptr) [[likely]] {
+                    // Fast path: reuse cached pointer, just reset
+                    tl_stmt->reset();
+                } else {
+                    // Slow path: first call or connection changed
                     auto prepare_result = conn_->prepare_cached(base_sql_);
                     if (!prepare_result) [[unlikely]] {
                         return std::unexpected(prepare_result.error());
                     }
-                    cached_stmt_ = *prepare_result;
+                    tl_stmt = *prepare_result;
+                    tl_conn = static_cast<void*>(conn_);
+                    // prepare_cached already called reset()
                 }
-                return extract_results(cached_stmt_);
+
+                // Extract without trailing reset (next call resets at the top)
+                return extract_simple_no_reset(tl_stmt, std::make_index_sequence<NumOps>{});
             }
         }
 
@@ -494,13 +542,12 @@ export namespace storm::orm::statements {
             return prepare_bind_extract(sql);
         }
 
-        std::shared_ptr<ConnType>           conn_;
+        ConnType*                           conn_;
         orm::where::ExpressionVariantPtr    where_expr_;
         std::optional<JoinStatementWrapper> join_stmt_;
         std::optional<int>                  limit_;
         std::optional<int>                  offset_;
         std::optional<OrderByWrapper>       order_by_wrapper_;
-        mutable Statement*                  cached_stmt_ = nullptr;
     };
 
     // ============================================================================
@@ -517,14 +564,14 @@ export namespace storm::orm::statements {
 
       public:
         explicit GroupByBuilder(
-                std::shared_ptr<ConnType>                  conn,
+                ConnType*                                  conn,
                 orm::where::ExpressionVariantPtr           where_expr       = nullptr,
                 const std::optional<JoinStatementWrapper>& join_stmt        = std::nullopt,
                 const std::optional<int>&                  limit            = std::nullopt,
                 const std::optional<int>&                  offset           = std::nullopt,
                 const std::optional<OrderByWrapper>&       order_by_wrapper = std::nullopt
         )
-            : conn_(std::move(conn))
+            : conn_(conn)
             , where_expr_(std::move(where_expr))
             , join_stmt_(join_stmt)
             , limit_(limit)
@@ -562,7 +609,7 @@ export namespace storm::orm::statements {
         }
 
       private:
-        std::shared_ptr<ConnType>           conn_;
+        ConnType*                           conn_;
         orm::where::ExpressionVariantPtr    where_expr_;
         std::optional<JoinStatementWrapper> join_stmt_;
         std::optional<int>                  limit_;

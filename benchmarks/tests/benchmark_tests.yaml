@@ -6,7 +6,7 @@
 #   batch_insert_edge:  248, 249, 250 (SQLite chunk boundary)
 #   batch_update_edge:  198, 199, 200 (UPDATE chunk boundary)
 #   dataset_standard:   100, 1000, 10000, 100000
-#   dataset_small:      1000, 10000
+#   dataset_small:      10000, 50000
 
 tests:
   # ============================================================================

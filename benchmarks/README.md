@@ -83,7 +83,7 @@ The benchmark system uses **size profiles** to automatically iterate over multip
 | `batch_insert_edge` | 248, 249, 250 | SQLite chunk boundary (999/4 fields) |
 | `batch_update_edge` | 198, 199, 200 | SQLite chunk boundary (999/5 fields) |
 | `dataset_standard` | 100, 1000, 10000, 100000 | SELECT/JOIN/DISTINCT operations |
-| `dataset_small` | 1000, 10000 | Aggregate operations |
+| `dataset_small` | 10000, 50000 | Aggregate operations |
 
 ### How It Works
 
