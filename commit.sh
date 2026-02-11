@@ -6,6 +6,7 @@
 #   --no-coverage / SKIP_COVERAGE=1   Skip 100% line coverage check
 #   --no-sonar / SKIP_SONAR=1         Skip local sonar check
 #   --no-bench / SKIP_BENCH=1         Skip quick benchmark sanity check
+#   SKIP_PG=1                          Skip PostgreSQL tests
 #
 # Smart skips (automatic, based on staged files):
 #   No C++ files in commit        → skip format, tidy, tests, coverage, sonar, bench
@@ -86,6 +87,12 @@ if [[ "$RUN_TESTS" == true ]]; then
     echo ""
     echo "🧪 Running unit tests..."
     ctest --test-dir build/debug --output-on-failure
+    if [[ "${SKIP_PG:-}" != "1" ]]; then
+        echo ""
+        echo "🐘 Running PostgreSQL tests..."
+        STORM_PG_CONNSTR="host=host.containers.internal port=5432 dbname=storm_db user=storm_db password=storm_db" \
+            ctest --test-dir build/debug -j"$(nproc)" --output-on-failure
+    fi
 fi
 
 # 100% line coverage check (runs by default)

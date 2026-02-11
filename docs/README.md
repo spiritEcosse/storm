@@ -220,6 +220,8 @@ Features not yet implemented:
 ### Code Quality Tasks (Priority: Medium)
 
 - [ ] **Fix DISTINCT on `std::optional<std::string>`** - DISTINCT queries on optional string fields return garbage values (memory corruption). See `DistinctOptionalStringFieldKnownIssue` test in `tests/test_distinct.cpp`. Note: `std::optional<int>` works correctly.
+- [ ] **Fix Aggregate+JOIN SQL generation for PostgreSQL** - Aggregate queries combined with JOIN (`post_qs.join<&JoinPost::author>().count().sum<...>().select()`) fail on PostgreSQL. SQLite works correctly. See skipped test `MultipleAggregatesTest.MultipleAggregatesWithJoin` on PG backend.
+- [ ] **Raw SQL `?` placeholders incompatible with PostgreSQL** - Tests using raw `conn->prepare()` with `?` bind placeholders only work on SQLite. PostgreSQL requires `$1, $2, ...` positional parameters. Affects `NullableFKTest` (kept SQLite-only). Consider adding a `prepare_portable()` helper that translates placeholders per backend.
 - [ ] **Verify Performance Code Compliance** - Audit all statement implementations against CLAUDE.md performance rules:
   - [ ] Raw pointer caching in hot loops (SELECT, DISTINCT extraction loops)
   - [ ] Statement pointer caching for single-row operations (execute_one, remove_one)

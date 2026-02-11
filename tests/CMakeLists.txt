@@ -18,12 +18,14 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 )
 
 link_sqlite(${PROJECT_NAME})
+link_postgresql(${PROJECT_NAME})
 
 target_include_directories(${PROJECT_NAME}
     PRIVATE
     ${GTEST_INCLUDE_DIRS}
     ${GMOCK_INCLUDE_DIRS}
     "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+    "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 # Use gtest_discover_tests instead of gtest_add_tests
@@ -109,6 +111,7 @@ target_link_libraries(storm_orm_mock_tests PRIVATE
 
 # Also link real SQLite (mock_sqlite3 will override via LD_PRELOAD at runtime)
 link_sqlite(storm_orm_mock_tests)
+link_postgresql(storm_orm_mock_tests)
 
 target_include_directories(storm_orm_mock_tests PRIVATE
     ${GTEST_INCLUDE_DIRS}

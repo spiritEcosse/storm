@@ -1,13 +1,14 @@
 #include <gtest/gtest.h>
+#include "test_db_helpers.h"
 
 // NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
 
 import storm;
-import storm_db_sqlite;
 
 import <expected>;
 import <string>;
 import <vector>;
+import <span>;
 import <optional>;
 import <meta>;
 
@@ -37,17 +38,22 @@ struct AggMessage {
 };
 
 // Test fixture for aggregate functions
-class AggregateTest : public ::testing::Test {
+template <typename ConnType> class AggregateTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        // Open in-memory database
-        auto result = QuerySet<AggregatePerson>::set_default_connection(":memory:");
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        auto result = QuerySet<AggregatePerson, ConnType>::set_default_connection(
+                storm::test::get_connection_string<ConnType>()
+        );
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
 
-        const auto& conn = QuerySet<AggregatePerson>::get_default_connection();
+        const auto& conn = QuerySet<AggregatePerson, ConnType>::get_default_connection();
 
-        // Create AggregatePerson table
-        auto create_result = conn->execute(
+        auto create_result = storm::test::ensure_table<ConnType>(
+                conn,
                 "CREATE TABLE AggregatePerson ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
@@ -57,8 +63,8 @@ class AggregateTest : public ::testing::Test {
         );
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
-        // Create AggUser table (for JOIN tests)
-        auto create_user = conn->execute(
+        auto create_user = storm::test::ensure_table<ConnType>(
+                conn,
                 "CREATE TABLE AggUser ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
@@ -66,8 +72,8 @@ class AggregateTest : public ::testing::Test {
         );
         ASSERT_TRUE(create_user.has_value()) << "Failed to create AggUser table";
 
-        // Create AggMessage table with FK (for JOIN tests)
-        auto create_msg = conn->execute(
+        auto create_msg = storm::test::ensure_table<ConnType>(
+                conn,
                 "CREATE TABLE AggMessage ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "content TEXT NOT NULL, "
@@ -77,14 +83,22 @@ class AggregateTest : public ::testing::Test {
         );
         ASSERT_TRUE(create_msg.has_value()) << "Failed to create AggMessage table";
 
-        qs     = std::make_unique<QuerySet<AggregatePerson>>();
-        msg_qs = std::make_unique<QuerySet<AggMessage>>();
+        storm::test::begin_test_txn<ConnType>(conn, {"AggUser", "AggregatePerson"});
+
+        qs     = std::make_unique<QuerySet<AggregatePerson, ConnType>>();
+        msg_qs = std::make_unique<QuerySet<AggMessage, ConnType>>();
     }
 
     auto TearDown() -> void override {
         qs     = nullptr;
         msg_qs = nullptr;
-        QuerySet<AggregatePerson>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<AggregatePerson, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<AggregatePerson, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<AggregatePerson, ConnType>::clear_default_connection();
     }
 
     // Helper to insert test data
@@ -103,8 +117,8 @@ class AggregateTest : public ::testing::Test {
     }
 
     // Helper to insert JOIN test data
-    static void insert_join_test_data() {
-        const auto& conn = QuerySet<AggregatePerson>::get_default_connection();
+    void insert_join_test_data() {
+        const auto& conn = QuerySet<AggregatePerson, ConnType>::get_default_connection();
 
         // Insert users
         std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Alice', 30)");
@@ -125,101 +139,103 @@ class AggregateTest : public ::testing::Test {
 
     // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
     // GoogleTest fixtures conventionally use protected members for TEST_F access
-    std::unique_ptr<QuerySet<AggregatePerson>> qs;
-    std::unique_ptr<QuerySet<AggMessage>>      msg_qs;
+    std::unique_ptr<QuerySet<AggregatePerson, ConnType>> qs;
+    std::unique_ptr<QuerySet<AggMessage, ConnType>>      msg_qs;
     // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
 };
+
+TYPED_TEST_SUITE(AggregateTest, DatabaseTypes);
 
 // ============================================================================
 // Single Aggregate Function Tests
 // ============================================================================
 
-TEST_F(AggregateTest, SumSingleField) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, SumSingleField) {
+    this->insert_test_data();
 
     // SUM(age) = 25 + 30 + 35 + 40 + 45 = 175
-    auto result = qs->sum<^^AggregatePerson::age>().select();
+    auto result = this->qs->template sum<^^AggregatePerson::age>().select();
     ASSERT_TRUE(result.has_value()) << "SUM failed: " << result.error().message();
     EXPECT_EQ(result.value(), 175);
 }
 
-TEST_F(AggregateTest, SumMultipleFields) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, SumMultipleFields) {
+    this->insert_test_data();
 
     // SUM(age + years_experience) = (25+3) + (30+5) + (35+7) + (40+10) + (45+15) = 28+35+42+50+60 = 215
-    auto result = qs->sum<^^AggregatePerson::age, ^^AggregatePerson::years_experience>().select();
+    auto result = this->qs->template sum<^^AggregatePerson::age, ^^AggregatePerson::years_experience>().select();
     ASSERT_TRUE(result.has_value()) << "SUM multi-field failed: " << result.error().message();
     EXPECT_EQ(result.value(), 215);
 }
 
-TEST_F(AggregateTest, CountAll) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, CountAll) {
+    this->insert_test_data();
 
     // COUNT(*) = 5
-    auto result = qs->count().select();
+    auto result = this->qs->count().select();
     ASSERT_TRUE(result.has_value()) << "COUNT failed: " << result.error().message();
     EXPECT_EQ(result.value(), 5);
 }
 
-TEST_F(AggregateTest, CountField) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, CountField) {
+    this->insert_test_data();
 
     // COUNT(id) = 5
-    auto result = qs->count<^^AggregatePerson::id>().select();
+    auto result = this->qs->template count<^^AggregatePerson::id>().select();
     ASSERT_TRUE(result.has_value()) << "COUNT field failed: " << result.error().message();
     EXPECT_EQ(result.value(), 5);
 }
 
-TEST_F(AggregateTest, AvgSingleField) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, AvgSingleField) {
+    this->insert_test_data();
 
     // AVG(age) = (25 + 30 + 35 + 40 + 45) / 5 = 175 / 5 = 35.0
-    auto result = qs->avg<^^AggregatePerson::age>().select();
+    auto result = this->qs->template avg<^^AggregatePerson::age>().select();
     ASSERT_TRUE(result.has_value()) << "AVG failed: " << result.error().message();
     EXPECT_DOUBLE_EQ(result.value(), 35.0);
 }
 
-TEST_F(AggregateTest, AvgMultipleFields) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, AvgMultipleFields) {
+    this->insert_test_data();
 
     // AVG(age + years_experience) = 215 / 5 = 43.0
-    auto result = qs->avg<^^AggregatePerson::age, ^^AggregatePerson::years_experience>().select();
+    auto result = this->qs->template avg<^^AggregatePerson::age, ^^AggregatePerson::years_experience>().select();
     ASSERT_TRUE(result.has_value()) << "AVG multi-field failed: " << result.error().message();
     EXPECT_DOUBLE_EQ(result.value(), 43.0);
 }
 
-TEST_F(AggregateTest, MinSingleField) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, MinSingleField) {
+    this->insert_test_data();
 
     // MIN(age) = 25
-    auto result = qs->min<^^AggregatePerson::age>().select();
+    auto result = this->qs->template min<^^AggregatePerson::age>().select();
     ASSERT_TRUE(result.has_value()) << "MIN failed: " << result.error().message();
     EXPECT_DOUBLE_EQ(result.value(), 25.0);
 }
 
-TEST_F(AggregateTest, MinMultipleFields) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, MinMultipleFields) {
+    this->insert_test_data();
 
     // MIN(age + years_experience) = MIN(28, 35, 42, 50, 60) = 28
-    auto result = qs->min<^^AggregatePerson::age, ^^AggregatePerson::years_experience>().select();
+    auto result = this->qs->template min<^^AggregatePerson::age, ^^AggregatePerson::years_experience>().select();
     ASSERT_TRUE(result.has_value()) << "MIN multi-field failed: " << result.error().message();
     EXPECT_DOUBLE_EQ(result.value(), 28.0);
 }
 
-TEST_F(AggregateTest, MaxSingleField) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, MaxSingleField) {
+    this->insert_test_data();
 
     // MAX(salary) = 90000.0
-    auto result = qs->max<^^AggregatePerson::salary>().select();
+    auto result = this->qs->template max<^^AggregatePerson::salary>().select();
     ASSERT_TRUE(result.has_value()) << "MAX failed: " << result.error().message();
     EXPECT_DOUBLE_EQ(result.value(), 90000.0);
 }
 
-TEST_F(AggregateTest, MaxMultipleFields) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, MaxMultipleFields) {
+    this->insert_test_data();
 
     // MAX(age + years_experience) = MAX(28, 35, 42, 50, 60) = 60
-    auto result = qs->max<^^AggregatePerson::age, ^^AggregatePerson::years_experience>().select();
+    auto result = this->qs->template max<^^AggregatePerson::age, ^^AggregatePerson::years_experience>().select();
     ASSERT_TRUE(result.has_value()) << "MAX multi-field failed: " << result.error().message();
     EXPECT_DOUBLE_EQ(result.value(), 60.0);
 }
@@ -228,11 +244,11 @@ TEST_F(AggregateTest, MaxMultipleFields) {
 // Multiple Aggregate Functions in One Query (direct chaining)
 // ============================================================================
 
-TEST_F(AggregateTest, DirectChain_SumAndCount) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, DirectChain_SumAndCount) {
+    this->insert_test_data();
 
     // SELECT SUM(age), COUNT(*) FROM AggregatePerson
-    auto result = qs->sum<^^AggregatePerson::age>().count().select();
+    auto result = this->qs->template sum<^^AggregatePerson::age>().count().select();
     ASSERT_TRUE(result.has_value()) << "Direct chain sum+count failed: " << result.error().message();
 
     auto [sum_age, count_all] = result.value();
@@ -240,11 +256,12 @@ TEST_F(AggregateTest, DirectChain_SumAndCount) {
     EXPECT_EQ(count_all, 5);
 }
 
-TEST_F(AggregateTest, DirectChain_SumCountAvg) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, DirectChain_SumCountAvg) {
+    this->insert_test_data();
 
     // SELECT SUM(age), COUNT(*), AVG(salary) FROM AggregatePerson
-    auto result = qs->sum<^^AggregatePerson::age>().count().avg<^^AggregatePerson::salary>().select();
+    auto result =
+            this->qs->template sum<^^AggregatePerson::age>().count().template avg<^^AggregatePerson::salary>().select();
     ASSERT_TRUE(result.has_value()) << "Direct chain sum+count+avg failed: " << result.error().message();
 
     auto [sum_age, count_all, avg_salary] = result.value();
@@ -253,15 +270,15 @@ TEST_F(AggregateTest, DirectChain_SumCountAvg) {
     EXPECT_DOUBLE_EQ(avg_salary, 70000.0);
 }
 
-TEST_F(AggregateTest, DirectChain_AllFiveTypes) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, DirectChain_AllFiveTypes) {
+    this->insert_test_data();
 
     // SELECT SUM(age), COUNT(*), AVG(salary), MIN(years_experience), MAX(age)
-    auto result = qs->sum<^^AggregatePerson::age>()
+    auto result = this->qs->template sum<^^AggregatePerson::age>()
                           .count()
-                          .avg<^^AggregatePerson::salary>()
-                          .min<^^AggregatePerson::years_experience>()
-                          .max<^^AggregatePerson::age>()
+                          .template avg<^^AggregatePerson::salary>()
+                          .template min<^^AggregatePerson::years_experience>()
+                          .template max<^^AggregatePerson::age>()
                           .select();
     ASSERT_TRUE(result.has_value()) << "Direct chain all five failed: " << result.error().message();
 
@@ -273,12 +290,12 @@ TEST_F(AggregateTest, DirectChain_AllFiveTypes) {
     EXPECT_DOUBLE_EQ(max_age, 45.0);
 }
 
-TEST_F(AggregateTest, DirectChain_WithWhere) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, DirectChain_WithWhere) {
+    this->insert_test_data();
 
     // Filter: age > 30 → Charlie(35), Dave(40), Eve(45)
-    auto result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30)
-                          .sum<^^AggregatePerson::age>()
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30)
+                          .template sum<^^AggregatePerson::age>()
                           .count()
                           .select();
     ASSERT_TRUE(result.has_value()) << "Direct chain with WHERE failed: " << result.error().message();
@@ -288,11 +305,14 @@ TEST_F(AggregateTest, DirectChain_WithWhere) {
     EXPECT_EQ(count_all, 3);
 }
 
-TEST_F(AggregateTest, DirectChain_WithJoin) {
-    insert_join_test_data();
+TYPED_TEST(AggregateTest, DirectChain_WithJoin) {
+    this->insert_join_test_data();
 
-    auto result =
-            msg_qs->join<&AggMessage::sender>().sum<^^AggMessage::value>().count().avg<^^AggMessage::value>().select();
+    auto result = this->msg_qs->template join<&AggMessage::sender>()
+                          .template sum<^^AggMessage::value>()
+                          .count()
+                          .template avg<^^AggMessage::value>()
+                          .select();
     ASSERT_TRUE(result.has_value()) << "Direct chain with JOIN failed: " << result.error().message();
 
     auto [sum_val, count_all, avg_val] = result.value();
@@ -301,10 +321,10 @@ TEST_F(AggregateTest, DirectChain_WithJoin) {
     EXPECT_DOUBLE_EQ(avg_val, 35.0); // 210/6
 }
 
-TEST_F(AggregateTest, DirectChain_TypeSafety) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, DirectChain_TypeSafety) {
+    this->insert_test_data();
 
-    auto result = qs->sum<^^AggregatePerson::age>().count().select();
+    auto result = this->qs->template sum<^^AggregatePerson::age>().count().select();
     ASSERT_TRUE(result.has_value());
     static_assert(
             std::is_same_v<std::remove_reference_t<decltype(result.value())>, std::tuple<int64_t, int64_t>>,
@@ -316,44 +336,45 @@ TEST_F(AggregateTest, DirectChain_TypeSafety) {
 // Edge Cases
 // ============================================================================
 
-TEST_F(AggregateTest, EmptyTable_Count) {
+TYPED_TEST(AggregateTest, EmptyTable_Count) {
     // COUNT(*) on empty table should return 0
-    auto result = qs->count().select();
+    auto result = this->qs->count().select();
     ASSERT_TRUE(result.has_value()) << "COUNT on empty table failed: " << result.error().message();
     EXPECT_EQ(result.value(), 0);
 }
 
-TEST_F(AggregateTest, EmptyTable_Sum) {
+TYPED_TEST(AggregateTest, EmptyTable_Sum) {
     // SUM on empty table should return 0 (SQLite NULL → 0)
-    auto result = qs->sum<^^AggregatePerson::age>().select();
+    auto result = this->qs->template sum<^^AggregatePerson::age>().select();
     ASSERT_TRUE(result.has_value()) << "SUM on empty table failed: " << result.error().message();
     EXPECT_EQ(result.value(), 0);
 }
 
-TEST_F(AggregateTest, EmptyTable_Avg) {
+TYPED_TEST(AggregateTest, EmptyTable_Avg) {
     // AVG on empty table should return 0 (SQLite NULL → 0.0)
-    auto result = qs->avg<^^AggregatePerson::salary>().select();
+    auto result = this->qs->template avg<^^AggregatePerson::salary>().select();
     ASSERT_TRUE(result.has_value()) << "AVG on empty table failed: " << result.error().message();
     EXPECT_DOUBLE_EQ(result.value(), 0.0);
 }
 
-TEST_F(AggregateTest, EmptyTable_Min) {
+TYPED_TEST(AggregateTest, EmptyTable_Min) {
     // MIN on empty table should return 0 (SQLite NULL → 0.0)
-    auto result = qs->min<^^AggregatePerson::age>().select();
+    auto result = this->qs->template min<^^AggregatePerson::age>().select();
     ASSERT_TRUE(result.has_value()) << "MIN on empty table failed: " << result.error().message();
     EXPECT_DOUBLE_EQ(result.value(), 0.0);
 }
 
-TEST_F(AggregateTest, EmptyTable_Max) {
+TYPED_TEST(AggregateTest, EmptyTable_Max) {
     // MAX on empty table should return 0 (SQLite NULL → 0.0)
-    auto result = qs->max<^^AggregatePerson::age>().select();
+    auto result = this->qs->template max<^^AggregatePerson::age>().select();
     ASSERT_TRUE(result.has_value()) << "MAX on empty table failed: " << result.error().message();
     EXPECT_DOUBLE_EQ(result.value(), 0.0);
 }
 
-TEST_F(AggregateTest, EmptyTable_MultipleAggregates) {
+TYPED_TEST(AggregateTest, EmptyTable_MultipleAggregates) {
     // Multiple aggregates on empty table should return tuple of default values
-    auto result = qs->sum<^^AggregatePerson::age>().count().avg<^^AggregatePerson::salary>().select();
+    auto result =
+            this->qs->template sum<^^AggregatePerson::age>().count().template avg<^^AggregatePerson::salary>().select();
     ASSERT_TRUE(result.has_value()) << "Multiple aggregates on empty table failed: " << result.error().message();
 
     // Verify tuple values: (SUM=0, COUNT=0, AVG=0.0)
@@ -363,91 +384,93 @@ TEST_F(AggregateTest, EmptyTable_MultipleAggregates) {
     EXPECT_DOUBLE_EQ(avg_val, 0.0) << "AVG on empty table should be 0.0";
 }
 
-TEST_F(AggregateTest, EmptyTable_AggregateWithWhere) {
+TYPED_TEST(AggregateTest, EmptyTable_AggregateWithWhere) {
     // Aggregate with WHERE on empty table
-    auto result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 25).count().select();
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 25).count().select();
     ASSERT_TRUE(result.has_value()) << "COUNT with WHERE on empty table failed: " << result.error().message();
     EXPECT_EQ(result.value(), 0) << "COUNT with WHERE on empty table should be 0";
 }
 
-TEST_F(AggregateTest, SingleAggregates_WithWhere) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, SingleAggregates_WithWhere) {
+    this->insert_test_data();
     // Filter: age > 30 → Charlie(35), Dave(40), Eve(45)
-    auto sum_result =
-            qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30).sum<^^AggregatePerson::age>().select();
+    auto sum_result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30)
+                              .template sum<^^AggregatePerson::age>()
+                              .select();
     ASSERT_TRUE(sum_result.has_value()) << "SUM with WHERE failed: " << sum_result.error().message();
     EXPECT_EQ(sum_result.value(), 120); // 35 + 40 + 45
 
-    qs->reset();
+    this->qs->reset();
 
-    auto count_result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30).count().select();
+    auto count_result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30).count().select();
     ASSERT_TRUE(count_result.has_value()) << "COUNT with WHERE failed: " << count_result.error().message();
     EXPECT_EQ(count_result.value(), 3); // 3 people
 
-    qs->reset();
+    this->qs->reset();
 
-    auto avg_result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30)
-                              .avg<^^AggregatePerson::salary>()
+    auto avg_result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30)
+                              .template avg<^^AggregatePerson::salary>()
                               .select();
     ASSERT_TRUE(avg_result.has_value()) << "AVG with WHERE failed: " << avg_result.error().message();
     EXPECT_DOUBLE_EQ(avg_result.value(), 80000.0); // (70k + 80k + 90k) / 3
 }
 
-TEST_F(AggregateTest, SingleAggregates_WithWhereAndJoin) {
-    insert_join_test_data();
+TYPED_TEST(AggregateTest, SingleAggregates_WithWhereAndJoin) {
+    this->insert_join_test_data();
 
     // Individual aggregates with WHERE and JOIN
     // Filter: value > 25 → 30, 40, 50, 60 (4 messages)
-    auto sum_result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() > 25)
-                              .join<&AggMessage::sender>()
-                              .sum<^^AggMessage::value>()
+    auto sum_result = this->msg_qs->where(storm::orm::where::field<^^AggMessage::value>() > 25)
+                              .template join<&AggMessage::sender>()
+                              .template sum<^^AggMessage::value>()
                               .select();
     ASSERT_TRUE(sum_result.has_value()) << "SUM with WHERE+JOIN failed: " << sum_result.error().message();
     EXPECT_EQ(sum_result.value(), 180); // 30+40+50+60
 
-    msg_qs->reset();
+    this->msg_qs->reset();
 
-    auto count_result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() > 25)
-                                .join<&AggMessage::sender>()
+    auto count_result = this->msg_qs->where(storm::orm::where::field<^^AggMessage::value>() > 25)
+                                .template join<&AggMessage::sender>()
                                 .count()
                                 .select();
     ASSERT_TRUE(count_result.has_value()) << "COUNT with WHERE+JOIN failed: " << count_result.error().message();
     EXPECT_EQ(count_result.value(), 4); // 4 messages
 
-    msg_qs->reset();
+    this->msg_qs->reset();
 
-    auto min_result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() > 25)
-                              .join<&AggMessage::sender>()
-                              .min<^^AggMessage::value>()
+    auto min_result = this->msg_qs->where(storm::orm::where::field<^^AggMessage::value>() > 25)
+                              .template join<&AggMessage::sender>()
+                              .template min<^^AggMessage::value>()
                               .select();
     ASSERT_TRUE(min_result.has_value()) << "MIN with WHERE+JOIN failed: " << min_result.error().message();
     EXPECT_DOUBLE_EQ(min_result.value(), 30.0); // min is 30
 }
 
-TEST_F(AggregateTest, SingleRow_AllAggregates) {
+TYPED_TEST(AggregateTest, SingleRow_AllAggregates) {
     // Insert single row
-    auto insert_result =
-            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 3});
+    auto insert_result = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 3}
+    );
     ASSERT_TRUE(insert_result.has_value());
 
     // Test all aggregate types
-    auto sum = qs->sum<^^AggregatePerson::age>().select();
+    auto sum = this->qs->template sum<^^AggregatePerson::age>().select();
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), 25);
 
-    auto count = qs->count().select();
+    auto count = this->qs->count().select();
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 1);
 
-    auto avg = qs->avg<^^AggregatePerson::age>().select();
+    auto avg = this->qs->template avg<^^AggregatePerson::age>().select();
     ASSERT_TRUE(avg.has_value());
     EXPECT_DOUBLE_EQ(avg.value(), 25.0);
 
-    auto min_val = qs->min<^^AggregatePerson::age>().select();
+    auto min_val = this->qs->template min<^^AggregatePerson::age>().select();
     ASSERT_TRUE(min_val.has_value());
     EXPECT_DOUBLE_EQ(min_val.value(), 25.0);
 
-    auto max_val = qs->max<^^AggregatePerson::age>().select();
+    auto max_val = this->qs->template max<^^AggregatePerson::age>().select();
     ASSERT_TRUE(max_val.has_value());
     EXPECT_DOUBLE_EQ(max_val.value(), 25.0);
 }
@@ -456,10 +479,10 @@ TEST_F(AggregateTest, SingleRow_AllAggregates) {
 // Large Dataset Tests
 // ============================================================================
 
-TEST_F(AggregateTest, LargeDataset_Sum) {
+TYPED_TEST(AggregateTest, LargeDataset_Sum) {
     // Insert 1000 people with ages 1-1000
     for (int i = 1; i <= 1000; ++i) {
-        auto result = qs->insert(
+        auto result = this->qs->insert(
                 AggregatePerson{
                         .id               = 0,
                         .name             = "AggregatePerson" + std::to_string(i),
@@ -472,15 +495,17 @@ TEST_F(AggregateTest, LargeDataset_Sum) {
     }
 
     // SUM(age) = 1+2+3+...+1000 = 1000*1001/2 = 500500
-    auto result = qs->sum<^^AggregatePerson::age>().select();
+    auto result = this->qs->template sum<^^AggregatePerson::age>().select();
     ASSERT_TRUE(result.has_value()) << "SUM large dataset failed: " << result.error().message();
     EXPECT_EQ(result.value(), 500500);
 }
 
-TEST_F(AggregateTest, LargeDataset_Count) {
-    // Insert 10000 people
+TYPED_TEST(AggregateTest, LargeDataset_Count) {
+    // Batch insert 10000 people
+    std::vector<AggregatePerson> people;
+    people.reserve(10000);
     for (int i = 1; i <= 10000; ++i) {
-        auto result = qs->insert(
+        people.push_back(
                 AggregatePerson{
                         .id               = 0,
                         .name             = "AggregatePerson" + std::to_string(i),
@@ -489,10 +514,11 @@ TEST_F(AggregateTest, LargeDataset_Count) {
                         .years_experience = 5
                 }
         );
-        ASSERT_TRUE(result.has_value());
     }
+    auto insert_result = this->qs->insert(std::span<const AggregatePerson>(people));
+    ASSERT_TRUE(insert_result.has_value()) << "Batch insert failed: " << insert_result.error().message();
 
-    auto result = qs->count().select();
+    auto result = this->qs->count().select();
     ASSERT_TRUE(result.has_value()) << "COUNT large dataset failed: " << result.error().message();
     EXPECT_EQ(result.value(), 10000);
 }
@@ -501,22 +527,22 @@ TEST_F(AggregateTest, LargeDataset_Count) {
 // Type Safety Tests
 // ============================================================================
 
-TEST_F(AggregateTest, TypeSafety_IntegerResult) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, TypeSafety_IntegerResult) {
+    this->insert_test_data();
 
     // Verify SUM returns int64_t
-    auto result = qs->sum<^^AggregatePerson::age>().select();
+    auto result = this->qs->template sum<^^AggregatePerson::age>().select();
     ASSERT_TRUE(result.has_value());
     static_assert(
             std::is_same_v<std::remove_reference_t<decltype(result.value())>, int64_t>, "SUM should return int64_t"
     );
 }
 
-TEST_F(AggregateTest, TypeSafety_DoubleResult) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, TypeSafety_DoubleResult) {
+    this->insert_test_data();
 
     // Verify AVG returns double
-    auto result = qs->avg<^^AggregatePerson::age>().select();
+    auto result = this->qs->template avg<^^AggregatePerson::age>().select();
     ASSERT_TRUE(result.has_value());
     static_assert(
             std::is_same_v<std::remove_reference_t<decltype(result.value())>, double>, "AVG should return double"
@@ -527,16 +553,16 @@ TEST_F(AggregateTest, TypeSafety_DoubleResult) {
 // Floating Point Precision Tests
 // ============================================================================
 
-TEST_F(AggregateTest, FloatingPoint_Salary) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, FloatingPoint_Salary) {
+    this->insert_test_data();
 
     // SUM(salary) = 50000 + 60000 + 70000 + 80000 + 90000 = 350000.0
-    auto sum = qs->sum<^^AggregatePerson::salary>().select();
+    auto sum = this->qs->template sum<^^AggregatePerson::salary>().select();
     ASSERT_TRUE(sum.has_value());
     EXPECT_DOUBLE_EQ(sum.value(), 350000.0);
 
     // AVG(salary) = 350000 / 5 = 70000.0
-    auto avg = qs->avg<^^AggregatePerson::salary>().select();
+    auto avg = this->qs->template avg<^^AggregatePerson::salary>().select();
     ASSERT_TRUE(avg.has_value());
     EXPECT_DOUBLE_EQ(avg.value(), 70000.0);
 }
@@ -545,32 +571,32 @@ TEST_F(AggregateTest, FloatingPoint_Salary) {
 // Statement Caching Tests
 // ============================================================================
 
-TEST_F(AggregateTest, StatementCaching_RepeatedQueries) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, StatementCaching_RepeatedQueries) {
+    this->insert_test_data();
 
     // Run same query 100 times - should use cached statement
     for (int i = 0; i < 100; ++i) {
-        auto result = qs->count().select();
+        auto result = this->qs->count().select();
         ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed";
         EXPECT_EQ(result.value(), 5);
     }
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_F(AggregateTest, StatementCaching_DifferentAggregates) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, StatementCaching_DifferentAggregates) {
+    this->insert_test_data();
 
     // Run different aggregates multiple times
     for (int i = 0; i < 10; ++i) {
-        auto sum = qs->sum<^^AggregatePerson::age>().select();
+        auto sum = this->qs->template sum<^^AggregatePerson::age>().select();
         ASSERT_TRUE(sum.has_value());
         EXPECT_EQ(sum.value(), 175);
 
-        auto count = qs->count().select();
+        auto count = this->qs->count().select();
         ASSERT_TRUE(count.has_value());
         EXPECT_EQ(count.value(), 5);
 
-        auto avg = qs->avg<^^AggregatePerson::salary>().select();
+        auto avg = this->qs->template avg<^^AggregatePerson::salary>().select();
         ASSERT_TRUE(avg.has_value());
         EXPECT_DOUBLE_EQ(avg.value(), 70000.0);
     }
@@ -581,10 +607,10 @@ TEST_F(AggregateTest, StatementCaching_DifferentAggregates) {
 // ============================================================================
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_F(AggregateTest, Integration_AfterInsert) {
+TYPED_TEST(AggregateTest, Integration_AfterInsert) {
     // Insert and immediately aggregate
     for (int i = 1; i <= 5; ++i) {
-        auto insert_result = qs->insert(
+        auto insert_result = this->qs->insert(
                 AggregatePerson{
                         .id               = 0,
                         .name             = "AggregatePerson" + std::to_string(i),
@@ -595,52 +621,52 @@ TEST_F(AggregateTest, Integration_AfterInsert) {
         );
         ASSERT_TRUE(insert_result.has_value());
 
-        auto count = qs->count().select();
+        auto count = this->qs->count().select();
         ASSERT_TRUE(count.has_value());
         EXPECT_EQ(count.value(), i);
     }
 
     // Final aggregate
-    auto sum = qs->sum<^^AggregatePerson::age>().select();
+    auto sum = this->qs->template sum<^^AggregatePerson::age>().select();
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), 10 + 20 + 30 + 40 + 50); // 150
 }
 
-TEST_F(AggregateTest, Integration_AfterUpdate) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, Integration_AfterUpdate) {
+    this->insert_test_data();
 
     // Update all ages to 30
-    auto people = qs->select();
+    auto people = this->qs->select();
     ASSERT_TRUE(people.has_value());
 
     for (auto& person : people.value()) {
         person.age         = 30;
-        auto update_result = qs->update(person);
+        auto update_result = this->qs->update(person);
         ASSERT_TRUE(update_result.has_value());
     }
 
     // SUM(age) should now be 30 * 5 = 150
-    auto sum = qs->sum<^^AggregatePerson::age>().select();
+    auto sum = this->qs->template sum<^^AggregatePerson::age>().select();
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), 150);
 }
 
-TEST_F(AggregateTest, Integration_AfterDelete) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, Integration_AfterDelete) {
+    this->insert_test_data();
 
     // Delete 2 people
-    auto people = qs->select();
+    auto people = this->qs->select();
     ASSERT_TRUE(people.has_value());
 
     auto it            = people.value().begin();
-    auto delete_result = qs->remove(*it);
+    auto delete_result = this->qs->remove(*it);
     ASSERT_TRUE(delete_result.has_value());
     ++it;
-    delete_result = qs->remove(*it);
+    delete_result = this->qs->remove(*it);
     ASSERT_TRUE(delete_result.has_value());
 
     // COUNT should now be 3
-    auto count = qs->count().select();
+    auto count = this->qs->count().select();
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 3);
 }
@@ -649,137 +675,141 @@ TEST_F(AggregateTest, Integration_AfterDelete) {
 // WHERE + Aggregate Tests
 // ============================================================================
 
-TEST_F(AggregateTest, WhereWithCount) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, WhereWithCount) {
+    this->insert_test_data();
 
     // COUNT with WHERE: age > 30
     // Data: Alice(25), Bob(30), Charlie(35), Dave(40), Eve(45)
     // Expected: Charlie, Dave, Eve = 3
-    auto result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30).count().select();
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30).count().select();
     ASSERT_TRUE(result.has_value()) << "WHERE + COUNT failed: " << result.error().message();
     EXPECT_EQ(result.value(), 3);
 }
 
-TEST_F(AggregateTest, WhereWithSum) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, WhereWithSum) {
+    this->insert_test_data();
 
     // SUM with WHERE: age >= 35
     // Data: Charlie(35), Dave(40), Eve(45)
     // Expected: 35 + 40 + 45 = 120
-    auto result =
-            qs->where(storm::orm::where::field<^^AggregatePerson::age>() >= 35).sum<^^AggregatePerson::age>().select();
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() >= 35)
+                          .template sum<^^AggregatePerson::age>()
+                          .select();
     ASSERT_TRUE(result.has_value()) << "WHERE + SUM failed: " << result.error().message();
     EXPECT_EQ(result.value(), 120);
 }
 
-TEST_F(AggregateTest, WhereWithAvg) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, WhereWithAvg) {
+    this->insert_test_data();
 
     // AVG with WHERE: age < 40
     // Data: Alice(25), Bob(30), Charlie(35)
     // Expected: (25 + 30 + 35) / 3 = 30.0
-    auto result =
-            qs->where(storm::orm::where::field<^^AggregatePerson::age>() < 40).avg<^^AggregatePerson::age>().select();
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() < 40)
+                          .template avg<^^AggregatePerson::age>()
+                          .select();
     ASSERT_TRUE(result.has_value()) << "WHERE + AVG failed: " << result.error().message();
     EXPECT_DOUBLE_EQ(result.value(), 30.0);
 }
 
-TEST_F(AggregateTest, WhereWithMin) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, WhereWithMin) {
+    this->insert_test_data();
 
     // MIN with WHERE: age > 25
     // Data: Bob(30), Charlie(35), Dave(40), Eve(45)
     // Expected: 30
-    auto result =
-            qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 25).min<^^AggregatePerson::age>().select();
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 25)
+                          .template min<^^AggregatePerson::age>()
+                          .select();
     ASSERT_TRUE(result.has_value()) << "WHERE + MIN failed: " << result.error().message();
     EXPECT_DOUBLE_EQ(result.value(), 30.0);
 }
 
-TEST_F(AggregateTest, WhereWithMax) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, WhereWithMax) {
+    this->insert_test_data();
 
     // MAX with WHERE: age <= 40
     // Data: Alice(25), Bob(30), Charlie(35), Dave(40)
     // Expected: 40
-    auto result =
-            qs->where(storm::orm::where::field<^^AggregatePerson::age>() <= 40).max<^^AggregatePerson::age>().select();
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() <= 40)
+                          .template max<^^AggregatePerson::age>()
+                          .select();
     ASSERT_TRUE(result.has_value()) << "WHERE + MAX failed: " << result.error().message();
     EXPECT_DOUBLE_EQ(result.value(), 40.0);
 }
 
-TEST_F(AggregateTest, WhereWithSumSalary) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, WhereWithSumSalary) {
+    this->insert_test_data();
 
     // SUM(salary) with WHERE: salary >= 70000
     // Data: Charlie(70000), Dave(80000), Eve(90000)
     // Expected: 70000 + 80000 + 90000 = 240000
-    auto result = qs->where(storm::orm::where::field<^^AggregatePerson::salary>() >= 70000.0)
-                          .sum<^^AggregatePerson::salary>()
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::salary>() >= 70000.0)
+                          .template sum<^^AggregatePerson::salary>()
                           .select();
     ASSERT_TRUE(result.has_value()) << "WHERE + SUM(salary) failed: " << result.error().message();
     EXPECT_EQ(result.value(), 240000);
 }
 
-TEST_F(AggregateTest, WhereNoResults) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, WhereNoResults) {
+    this->insert_test_data();
 
     // COUNT with WHERE: age > 100 (no results)
-    auto result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 100).count().select();
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 100).count().select();
     ASSERT_TRUE(result.has_value()) << "WHERE (no results) + COUNT failed: " << result.error().message();
     EXPECT_EQ(result.value(), 0);
 }
 
-TEST_F(AggregateTest, WhereAllResults) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, WhereAllResults) {
+    this->insert_test_data();
 
     // COUNT with WHERE: age > 0 (all results)
-    auto result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 0).count().select();
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 0).count().select();
     ASSERT_TRUE(result.has_value()) << "WHERE (all results) + COUNT failed: " << result.error().message();
     EXPECT_EQ(result.value(), 5);
 }
 
-TEST_F(AggregateTest, WhereWithMultiFieldSum) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, WhereWithMultiFieldSum) {
+    this->insert_test_data();
 
     // SUM(age + years_experience) with WHERE: age >= 35
     // Data: Charlie(35, 7), Dave(40, 10), Eve(45, 15)
     // Expected: (35+7) + (40+10) + (45+15) = 42 + 50 + 60 = 152
-    auto result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() >= 35)
-                          .sum<^^AggregatePerson::age, ^^AggregatePerson::years_experience>()
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() >= 35)
+                          .template sum<^^AggregatePerson::age, ^^AggregatePerson::years_experience>()
                           .select();
     ASSERT_TRUE(result.has_value()) << "WHERE + SUM(multi-field) failed: " << result.error().message();
     EXPECT_EQ(result.value(), 152);
 }
 
-TEST_F(AggregateTest, WhereRepeatedQueries) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, WhereRepeatedQueries) {
+    this->insert_test_data();
 
     // Run same WHERE + aggregate query multiple times (tests caching)
     for (int i = 0; i < 100; ++i) {
-        auto result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30).count().select();
+        auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30).count().select();
         ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed";
         EXPECT_EQ(result.value(), 3);
     }
 }
 
-TEST_F(AggregateTest, WhereDifferentConditions) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, WhereDifferentConditions) {
+    this->insert_test_data();
 
     // Run queries with different WHERE conditions
-    auto result1 = qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30).count().select();
+    auto result1 = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30).count().select();
     ASSERT_TRUE(result1.has_value());
     EXPECT_EQ(result1.value(), 3); // Charlie, Dave, Eve
 
-    (*qs).reset(); // Clear WHERE clause
+    (*this->qs).reset(); // Clear WHERE clause
 
-    auto result2 = qs->where(storm::orm::where::field<^^AggregatePerson::age>() < 30).count().select();
+    auto result2 = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() < 30).count().select();
     ASSERT_TRUE(result2.has_value());
     EXPECT_EQ(result2.value(), 1); // Only Alice
 
-    (*qs).reset();
+    (*this->qs).reset();
 
-    auto result3 = qs->where(storm::orm::where::field<^^AggregatePerson::age>() == 30).count().select();
+    auto result3 = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() == 30).count().select();
     ASSERT_TRUE(result3.has_value());
     EXPECT_EQ(result3.value(), 1); // Only Bob
 }
@@ -788,52 +818,52 @@ TEST_F(AggregateTest, WhereDifferentConditions) {
 // JOIN + Aggregate Tests
 // ============================================================================
 
-TEST_F(AggregateTest, JoinWithCount) {
-    insert_join_test_data();
+TYPED_TEST(AggregateTest, JoinWithCount) {
+    this->insert_join_test_data();
 
     // COUNT with JOIN: count all messages with their senders
     // Total messages: 6
-    auto result = msg_qs->join<&AggMessage::sender>().count().select();
+    auto result = this->msg_qs->template join<&AggMessage::sender>().count().select();
     ASSERT_TRUE(result.has_value()) << "JOIN + COUNT failed: " << result.error().message();
     EXPECT_EQ(result.value(), 6);
 }
 
-TEST_F(AggregateTest, JoinWithSum) {
-    insert_join_test_data();
+TYPED_TEST(AggregateTest, JoinWithSum) {
+    this->insert_join_test_data();
 
     // SUM(value) with JOIN
     // Total: 10 + 20 + 30 + 40 + 50 + 60 = 210
-    auto result = msg_qs->join<&AggMessage::sender>().sum<^^AggMessage::value>().select();
+    auto result = this->msg_qs->template join<&AggMessage::sender>().template sum<^^AggMessage::value>().select();
     ASSERT_TRUE(result.has_value()) << "JOIN + SUM failed: " << result.error().message();
     EXPECT_EQ(result.value(), 210);
 }
 
-TEST_F(AggregateTest, JoinWithAvg) {
-    insert_join_test_data();
+TYPED_TEST(AggregateTest, JoinWithAvg) {
+    this->insert_join_test_data();
 
     // AVG(value) with JOIN
     // Average: 210 / 6 = 35.0
-    auto result = msg_qs->join<&AggMessage::sender>().avg<^^AggMessage::value>().select();
+    auto result = this->msg_qs->template join<&AggMessage::sender>().template avg<^^AggMessage::value>().select();
     ASSERT_TRUE(result.has_value()) << "JOIN + AVG failed: " << result.error().message();
     EXPECT_DOUBLE_EQ(result.value(), 35.0);
 }
 
-TEST_F(AggregateTest, JoinWithMin) {
-    insert_join_test_data();
+TYPED_TEST(AggregateTest, JoinWithMin) {
+    this->insert_join_test_data();
 
     // MIN(value) with JOIN
     // Min: 10
-    auto result = msg_qs->join<&AggMessage::sender>().min<^^AggMessage::value>().select();
+    auto result = this->msg_qs->template join<&AggMessage::sender>().template min<^^AggMessage::value>().select();
     ASSERT_TRUE(result.has_value()) << "JOIN + MIN failed: " << result.error().message();
     EXPECT_DOUBLE_EQ(result.value(), 10.0);
 }
 
-TEST_F(AggregateTest, JoinWithMax) {
-    insert_join_test_data();
+TYPED_TEST(AggregateTest, JoinWithMax) {
+    this->insert_join_test_data();
 
     // MAX(value) with JOIN
     // Max: 60
-    auto result = msg_qs->join<&AggMessage::sender>().max<^^AggMessage::value>().select();
+    auto result = this->msg_qs->template join<&AggMessage::sender>().template max<^^AggMessage::value>().select();
     ASSERT_TRUE(result.has_value()) << "JOIN + MAX failed: " << result.error().message();
     EXPECT_DOUBLE_EQ(result.value(), 60.0);
 }
@@ -842,64 +872,64 @@ TEST_F(AggregateTest, JoinWithMax) {
 // WHERE + JOIN + Aggregate Tests
 // ============================================================================
 
-TEST_F(AggregateTest, WhereJoinWithCount) {
-    insert_join_test_data();
+TYPED_TEST(AggregateTest, WhereJoinWithCount) {
+    this->insert_join_test_data();
 
     // COUNT with WHERE + JOIN: messages with value > 30
     // Data: value 40, 50, 60 = 3 messages
-    auto result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() > 30)
-                          .join<&AggMessage::sender>()
+    auto result = this->msg_qs->where(storm::orm::where::field<^^AggMessage::value>() > 30)
+                          .template join<&AggMessage::sender>()
                           .count()
                           .select();
     ASSERT_TRUE(result.has_value()) << "WHERE + JOIN + COUNT failed: " << result.error().message();
     EXPECT_EQ(result.value(), 3);
 }
 
-TEST_F(AggregateTest, WhereJoinWithSum) {
-    insert_join_test_data();
+TYPED_TEST(AggregateTest, WhereJoinWithSum) {
+    this->insert_join_test_data();
 
     // SUM(value) with WHERE + JOIN: values >= 30
     // Data: 30 + 40 + 50 + 60 = 180
-    auto result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() >= 30)
-                          .join<&AggMessage::sender>()
-                          .sum<^^AggMessage::value>()
+    auto result = this->msg_qs->where(storm::orm::where::field<^^AggMessage::value>() >= 30)
+                          .template join<&AggMessage::sender>()
+                          .template sum<^^AggMessage::value>()
                           .select();
     ASSERT_TRUE(result.has_value()) << "WHERE + JOIN + SUM failed: " << result.error().message();
     EXPECT_EQ(result.value(), 180);
 }
 
-TEST_F(AggregateTest, WhereJoinWithAvg) {
-    insert_join_test_data();
+TYPED_TEST(AggregateTest, WhereJoinWithAvg) {
+    this->insert_join_test_data();
 
     // AVG(value) with WHERE + JOIN: values < 50
     // Data: 10, 20, 30, 40 = average 25.0
-    auto result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() < 50)
-                          .join<&AggMessage::sender>()
-                          .avg<^^AggMessage::value>()
+    auto result = this->msg_qs->where(storm::orm::where::field<^^AggMessage::value>() < 50)
+                          .template join<&AggMessage::sender>()
+                          .template avg<^^AggMessage::value>()
                           .select();
     ASSERT_TRUE(result.has_value()) << "WHERE + JOIN + AVG failed: " << result.error().message();
     EXPECT_DOUBLE_EQ(result.value(), 25.0);
 }
 
-TEST_F(AggregateTest, WhereJoinNoResults) {
-    insert_join_test_data();
+TYPED_TEST(AggregateTest, WhereJoinNoResults) {
+    this->insert_join_test_data();
 
     // COUNT with WHERE + JOIN: no results
-    auto result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() > 100)
-                          .join<&AggMessage::sender>()
+    auto result = this->msg_qs->where(storm::orm::where::field<^^AggMessage::value>() > 100)
+                          .template join<&AggMessage::sender>()
                           .count()
                           .select();
     ASSERT_TRUE(result.has_value()) << "WHERE + JOIN (no results) + COUNT failed: " << result.error().message();
     EXPECT_EQ(result.value(), 0);
 }
 
-TEST_F(AggregateTest, WhereJoinRepeatedQueries) {
-    insert_join_test_data();
+TYPED_TEST(AggregateTest, WhereJoinRepeatedQueries) {
+    this->insert_join_test_data();
 
     // Run same WHERE + JOIN + aggregate query multiple times (tests caching)
     for (int i = 0; i < 50; ++i) {
-        auto result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() > 20)
-                              .join<&AggMessage::sender>()
+        auto result = this->msg_qs->where(storm::orm::where::field<^^AggMessage::value>() > 20)
+                              .template join<&AggMessage::sender>()
                               .count()
                               .select();
         ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed";
@@ -913,12 +943,12 @@ TEST_F(AggregateTest, WhereJoinRepeatedQueries) {
 // These tests verify GROUP BY functionality with various aggregates.
 // Returns: plf::hive<std::tuple<GroupKeyTypes..., AggResultTypes...>>
 
-TEST_F(AggregateTest, GroupByWithCount) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, GroupByWithCount) {
+    this->insert_test_data();
 
     // Group by years_experience and count
     // Each person has unique years_experience (3, 5, 7, 10, 15)
-    auto result = qs->group_by<^^AggregatePerson::years_experience>().count().select();
+    auto result = this->qs->template group_by<^^AggregatePerson::years_experience>().count().select();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + COUNT failed: " << result.error().message();
 
     auto& results = result.value();
@@ -932,11 +962,13 @@ TEST_F(AggregateTest, GroupByWithCount) {
     EXPECT_EQ(total_count, 5); // Total 5 people
 }
 
-TEST_F(AggregateTest, GroupByWithSum) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, GroupByWithSum) {
+    this->insert_test_data();
 
     // Group by years_experience and sum age
-    auto result = qs->group_by<^^AggregatePerson::years_experience>().sum<^^AggregatePerson::age>().select();
+    auto result = this->qs->template group_by<^^AggregatePerson::years_experience>()
+                          .template sum<^^AggregatePerson::age>()
+                          .select();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + SUM failed: " << result.error().message();
 
     EXPECT_EQ(result.value().size(), 5); // 5 unique years_experience values
@@ -949,11 +981,13 @@ TEST_F(AggregateTest, GroupByWithSum) {
     EXPECT_EQ(total_sum, 175);
 }
 
-TEST_F(AggregateTest, GroupByWithAvg) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, GroupByWithAvg) {
+    this->insert_test_data();
 
     // Group by years_experience and average salary
-    auto result = qs->group_by<^^AggregatePerson::years_experience>().avg<^^AggregatePerson::salary>().select();
+    auto result = this->qs->template group_by<^^AggregatePerson::years_experience>()
+                          .template avg<^^AggregatePerson::salary>()
+                          .select();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + AVG failed: " << result.error().message();
 
     EXPECT_EQ(result.value().size(), 5);
@@ -971,11 +1005,13 @@ TEST_F(AggregateTest, GroupByWithAvg) {
     EXPECT_NEAR(avg_3, 50000.0, 0.01);
 }
 
-TEST_F(AggregateTest, GroupByWithMin) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, GroupByWithMin) {
+    this->insert_test_data();
 
     // Group by years_experience and min salary
-    auto result = qs->group_by<^^AggregatePerson::years_experience>().min<^^AggregatePerson::salary>().select();
+    auto result = this->qs->template group_by<^^AggregatePerson::years_experience>()
+                          .template min<^^AggregatePerson::salary>()
+                          .select();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + MIN failed: " << result.error().message();
 
     EXPECT_EQ(result.value().size(), 5);
@@ -991,11 +1027,13 @@ TEST_F(AggregateTest, GroupByWithMin) {
     EXPECT_NEAR(min_3, 50000.0, 0.01);
 }
 
-TEST_F(AggregateTest, GroupByWithMax) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, GroupByWithMax) {
+    this->insert_test_data();
 
     // Group by years_experience and max age
-    auto result = qs->group_by<^^AggregatePerson::years_experience>().max<^^AggregatePerson::age>().select();
+    auto result = this->qs->template group_by<^^AggregatePerson::years_experience>()
+                          .template max<^^AggregatePerson::age>()
+                          .select();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + MAX failed: " << result.error().message();
 
     EXPECT_EQ(result.value().size(), 5);
@@ -1011,12 +1049,12 @@ TEST_F(AggregateTest, GroupByWithMax) {
     EXPECT_NEAR(max_3, 25.0, 0.01);
 }
 
-TEST_F(AggregateTest, GroupByWithWhere) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, GroupByWithWhere) {
+    this->insert_test_data();
 
     // Filter by age > 30, then group by years_experience
-    auto result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30)
-                          .group_by<^^AggregatePerson::years_experience>()
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30)
+                          .template group_by<^^AggregatePerson::years_experience>()
                           .count()
                           .select();
     ASSERT_TRUE(result.has_value()) << "WHERE + GROUP BY failed: " << result.error().message();
@@ -1033,11 +1071,14 @@ TEST_F(AggregateTest, GroupByWithWhere) {
     EXPECT_EQ(total, 3);
 }
 
-TEST_F(AggregateTest, GroupByWithJoin) {
-    insert_join_test_data();
+TYPED_TEST(AggregateTest, GroupByWithJoin) {
+    this->insert_join_test_data();
 
     // Group messages by value (10, 20, 30, 40, 50, 60 - all unique)
-    auto result = msg_qs->join<&AggMessage::sender>().group_by<^^AggMessage::value>().count().select();
+    auto result = this->msg_qs->template join<&AggMessage::sender>()
+                          .template group_by<^^AggMessage::value>()
+                          .count()
+                          .select();
     ASSERT_TRUE(result.has_value()) << "JOIN + GROUP BY failed: " << result.error().message();
 
     EXPECT_EQ(result.value().size(), 6); // 6 unique values
@@ -1048,13 +1089,15 @@ TEST_F(AggregateTest, GroupByWithJoin) {
     }
 }
 
-TEST_F(AggregateTest, GroupByWithJoinAndSum) {
-    insert_join_test_data();
+TYPED_TEST(AggregateTest, GroupByWithJoinAndSum) {
+    this->insert_join_test_data();
 
     // Group messages by content, sum values
     // Each content is unique, so each group has one value
-    auto result =
-            msg_qs->join<&AggMessage::sender>().group_by<^^AggMessage::content>().sum<^^AggMessage::value>().select();
+    auto result = this->msg_qs->template join<&AggMessage::sender>()
+                          .template group_by<^^AggMessage::content>()
+                          .template sum<^^AggMessage::value>()
+                          .select();
     ASSERT_TRUE(result.has_value()) << "JOIN + GROUP BY + SUM failed: " << result.error().message();
 
     EXPECT_EQ(result.value().size(), 6);
@@ -1067,13 +1110,13 @@ TEST_F(AggregateTest, GroupByWithJoinAndSum) {
     EXPECT_EQ(total_sum, 210);
 }
 
-TEST_F(AggregateTest, GroupByWithWhereAndJoin) {
-    insert_join_test_data();
+TYPED_TEST(AggregateTest, GroupByWithWhereAndJoin) {
+    this->insert_join_test_data();
 
     // Filter messages with value > 20, join with sender, group by value
-    auto result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() > 20)
-                          .join<&AggMessage::sender>()
-                          .group_by<^^AggMessage::value>()
+    auto result = this->msg_qs->where(storm::orm::where::field<^^AggMessage::value>() > 20)
+                          .template join<&AggMessage::sender>()
+                          .template group_by<^^AggMessage::value>()
                           .count()
                           .select();
     ASSERT_TRUE(result.has_value()) << "WHERE + JOIN + GROUP BY failed: " << result.error().message();
@@ -1087,30 +1130,30 @@ TEST_F(AggregateTest, GroupByWithWhereAndJoin) {
     }
 }
 
-TEST_F(AggregateTest, GroupByRepeatedQueries) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, GroupByRepeatedQueries) {
+    this->insert_test_data();
 
     // Run same GROUP BY query multiple times (tests caching)
     for (int i = 0; i < 50; ++i) {
-        auto result = qs->group_by<^^AggregatePerson::years_experience>().count().select();
+        auto result = this->qs->template group_by<^^AggregatePerson::years_experience>().count().select();
         ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed";
         EXPECT_EQ(result.value().size(), 5);
     }
 }
 
-TEST_F(AggregateTest, GroupByEmptyTable) {
+TYPED_TEST(AggregateTest, GroupByEmptyTable) {
     // Don't insert any data
-    auto result = qs->group_by<^^AggregatePerson::years_experience>().count().select();
+    auto result = this->qs->template group_by<^^AggregatePerson::years_experience>().count().select();
     ASSERT_TRUE(result.has_value()) << "GROUP BY on empty table failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 0);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_F(AggregateTest, GroupByFullChain_WhereJoinGroupByAggregate) {
+TYPED_TEST(AggregateTest, GroupByFullChain_WhereJoinGroupByAggregate) {
     // This test verifies the full query chain: WHERE + JOIN + GROUP BY + aggregate
     // Setup: Create users and messages with multiple messages per user at varying values
 
-    const auto& conn = QuerySet<AggregatePerson>::get_default_connection();
+    const auto& conn = QuerySet<AggregatePerson, TypeParam>::get_default_connection();
 
     // Insert users with different ages
     std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Alice', 25)");   // id=1
@@ -1137,9 +1180,9 @@ TEST_F(AggregateTest, GroupByFullChain_WhereJoinGroupByAggregate) {
     // Test 1: WHERE + JOIN + GROUP BY + COUNT
     // Filter messages with value >= 20, group by value (since we can't group by FK directly), count per value
     // We'll group by value to test the full chain with filterable data
-    auto count_result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() >= 20)
-                                .join<&AggMessage::sender>()
-                                .group_by<^^AggMessage::value>()
+    auto count_result = this->msg_qs->where(storm::orm::where::field<^^AggMessage::value>() >= 20)
+                                .template join<&AggMessage::sender>()
+                                .template group_by<^^AggMessage::value>()
                                 .count()
                                 .select();
     ASSERT_TRUE(count_result.has_value()) << "Full chain COUNT failed: " << count_result.error().message();
@@ -1153,14 +1196,14 @@ TEST_F(AggregateTest, GroupByFullChain_WhereJoinGroupByAggregate) {
     }
 
     // Reset QuerySet state
-    msg_qs->reset();
+    this->msg_qs->reset();
 
     // Test 2: WHERE + JOIN + GROUP BY + SUM
     // Filter messages with value < 50, group by content (each unique)
-    auto sum_result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() < 50)
-                              .join<&AggMessage::sender>()
-                              .group_by<^^AggMessage::content>()
-                              .sum<^^AggMessage::value>()
+    auto sum_result = this->msg_qs->where(storm::orm::where::field<^^AggMessage::value>() < 50)
+                              .template join<&AggMessage::sender>()
+                              .template group_by<^^AggMessage::content>()
+                              .template sum<^^AggMessage::value>()
                               .select();
     ASSERT_TRUE(sum_result.has_value()) << "Full chain SUM failed: " << sum_result.error().message();
     // Messages with value < 50: A1(10), A2(20), A3(30), C1(5), C2(15), C3(25), C4(35)
@@ -1168,15 +1211,16 @@ TEST_F(AggregateTest, GroupByFullChain_WhereJoinGroupByAggregate) {
     EXPECT_EQ(sum_result.value().size(), 7) << "Expected 7 groups (7 messages with value < 50)";
 
     // Reset QuerySet state
-    msg_qs->reset();
+    this->msg_qs->reset();
 
     // Test 3: WHERE + JOIN + GROUP BY + AVG
     // Filter messages with value between 10 and 70, group by value (each value unique, avg = value)
-    auto avg_result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() >= 10 &&
-                                    storm::orm::where::field<^^AggMessage::value>() <= 70)
-                              .join<&AggMessage::sender>()
-                              .group_by<^^AggMessage::value>()
-                              .avg<^^AggMessage::value>()
+    auto avg_result = this->msg_qs
+                              ->where(storm::orm::where::field<^^AggMessage::value>() >= 10 &&
+                                      storm::orm::where::field<^^AggMessage::value>() <= 70)
+                              .template join<&AggMessage::sender>()
+                              .template group_by<^^AggMessage::value>()
+                              .template avg<^^AggMessage::value>()
                               .select();
     ASSERT_TRUE(avg_result.has_value()) << "Full chain AVG failed: " << avg_result.error().message();
 
@@ -1193,79 +1237,81 @@ TEST_F(AggregateTest, GroupByFullChain_WhereJoinGroupByAggregate) {
 // COUNT(DISTINCT) Tests
 // =============================================================================
 
-TEST_F(AggregateTest, CountDistinctBasic) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, CountDistinctBasic) {
+    this->insert_test_data();
 
     // Count distinct years_experience values (all unique: 3, 5, 7, 10, 15)
-    auto result = qs->count_distinct<^^AggregatePerson::years_experience>().select();
+    auto result = this->qs->template count_distinct<^^AggregatePerson::years_experience>().select();
     ASSERT_TRUE(result.has_value()) << "COUNT(DISTINCT) failed: " << result.error().message();
     EXPECT_EQ(result.value(), 5); // 5 unique values
 }
 
-TEST_F(AggregateTest, CountDistinctAge) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, CountDistinctAge) {
+    this->insert_test_data();
 
     // Count distinct ages (all unique: 25, 30, 35, 40, 45)
-    auto result = qs->count_distinct<^^AggregatePerson::age>().select();
+    auto result = this->qs->template count_distinct<^^AggregatePerson::age>().select();
     ASSERT_TRUE(result.has_value()) << "COUNT(DISTINCT age) failed: " << result.error().message();
     EXPECT_EQ(result.value(), 5);
 }
 
-TEST_F(AggregateTest, CountDistinctWithDuplicates) {
+TYPED_TEST(AggregateTest, CountDistinctWithDuplicates) {
     // Insert data with duplicate ages
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = 30, .salary = 50000.0, .years_experience = 3});
-    std::ignore = qs->insert(
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Alice", .age = 30, .salary = 50000.0, .years_experience = 3}
+    );
+    std::ignore = this->qs->insert(
             AggregatePerson{.id = 0, .name = "Bob", .age = 30, .salary = 60000.0, .years_experience = 5}
     ); // Same age as Alice
-    std::ignore = qs->insert(
+    std::ignore = this->qs->insert(
             AggregatePerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0, .years_experience = 7}
     );
-    std::ignore = qs->insert(
+    std::ignore = this->qs->insert(
             AggregatePerson{.id = 0, .name = "Dave", .age = 30, .salary = 80000.0, .years_experience = 10}
     ); // Same age as Alice and Bob
-    std::ignore = qs->insert(
+    std::ignore = this->qs->insert(
             AggregatePerson{.id = 0, .name = "Eve", .age = 35, .salary = 90000.0, .years_experience = 15}
     ); // Same age as Charlie
 
-    auto result = qs->count_distinct<^^AggregatePerson::age>().select();
+    auto result = this->qs->template count_distinct<^^AggregatePerson::age>().select();
     ASSERT_TRUE(result.has_value()) << "COUNT(DISTINCT) with duplicates failed";
     EXPECT_EQ(result.value(), 2); // Only 2 unique ages (30, 35)
 }
 
-TEST_F(AggregateTest, CountDistinctWithWhere) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, CountDistinctWithWhere) {
+    this->insert_test_data();
 
     // Count distinct ages where age > 30
-    auto result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30)
-                          .count_distinct<^^AggregatePerson::age>()
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 30)
+                          .template count_distinct<^^AggregatePerson::age>()
                           .select();
     ASSERT_TRUE(result.has_value()) << "COUNT(DISTINCT) with WHERE failed";
     EXPECT_EQ(result.value(), 3); // 35, 40, 45
 }
 
-TEST_F(AggregateTest, CountDistinctWithJoin) {
-    insert_join_test_data();
+TYPED_TEST(AggregateTest, CountDistinctWithJoin) {
+    this->insert_join_test_data();
 
     // Count distinct message values
-    auto result = msg_qs->join<&AggMessage::sender>().count_distinct<^^AggMessage::value>().select();
+    auto result =
+            this->msg_qs->template join<&AggMessage::sender>().template count_distinct<^^AggMessage::value>().select();
     ASSERT_TRUE(result.has_value()) << "COUNT(DISTINCT) with JOIN failed";
     EXPECT_EQ(result.value(), 6); // 10, 20, 30, 40, 50, 60 - all unique
 }
 
-TEST_F(AggregateTest, CountDistinctEmptyTable) {
+TYPED_TEST(AggregateTest, CountDistinctEmptyTable) {
     // Don't insert any data
-    auto result = qs->count_distinct<^^AggregatePerson::age>().select();
+    auto result = this->qs->template count_distinct<^^AggregatePerson::age>().select();
     ASSERT_TRUE(result.has_value()) << "COUNT(DISTINCT) on empty table failed";
     EXPECT_EQ(result.value(), 0);
 }
 
-TEST_F(AggregateTest, CountDistinctRepeatedQueries) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, CountDistinctRepeatedQueries) {
+    this->insert_test_data();
 
     // Run same COUNT(DISTINCT) query multiple times (tests caching)
     for (int i = 0; i < 50; ++i) {
-        auto result = qs->count_distinct<^^AggregatePerson::years_experience>().select();
+        auto result = this->qs->template count_distinct<^^AggregatePerson::years_experience>().select();
         ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed";
         EXPECT_EQ(result.value(), 5);
     }
@@ -1276,23 +1322,30 @@ TEST_F(AggregateTest, CountDistinctRepeatedQueries) {
 // =============================================================================
 
 // Test model with optional field for NULL testing
-struct OptionalPerson {
+struct AggOptionalPerson {
     [[= storm::meta::FieldAttr::primary]] int id;
     std::string                               name;
     std::optional<int>                        age; // Can be NULL
     double                                    salary;
 };
 
-class OptionalAggregateTest : public ::testing::Test {
+template <typename ConnType> class OptionalAggregateTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        auto result = QuerySet<OptionalPerson>::set_default_connection(":memory:");
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        auto result = QuerySet<AggOptionalPerson, ConnType>::set_default_connection(
+                storm::test::get_connection_string<ConnType>()
+        );
         ASSERT_TRUE(result.has_value()) << "Failed to open database";
 
-        const auto& conn = QuerySet<OptionalPerson>::get_default_connection();
+        const auto& conn = QuerySet<AggOptionalPerson, ConnType>::get_default_connection();
 
-        auto create_result = conn->execute(
-                "CREATE TABLE OptionalPerson ("
+        auto create_result = storm::test::ensure_table<ConnType>(
+                conn,
+                "CREATE TABLE AggOptionalPerson ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
                 "age INTEGER, " // Nullable
@@ -1300,102 +1353,123 @@ class OptionalAggregateTest : public ::testing::Test {
         );
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table";
 
-        qs = std::make_unique<QuerySet<OptionalPerson>>();
+        storm::test::begin_test_txn<ConnType>(conn, {"AggOptionalPerson"});
+
+        qs = std::make_unique<QuerySet<AggOptionalPerson, ConnType>>();
     }
 
     auto TearDown() -> void override {
         qs = nullptr;
-        QuerySet<OptionalPerson>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<AggOptionalPerson, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<AggOptionalPerson, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<AggOptionalPerson, ConnType>::clear_default_connection();
     }
 
     // Protected member is standard GoogleTest fixture pattern for test case access
     // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-    std::unique_ptr<QuerySet<OptionalPerson>> qs; // NOSONAR(cpp:S3656) - test fixture pattern
+    std::unique_ptr<QuerySet<AggOptionalPerson, ConnType>> qs; // NOSONAR(cpp:S3656) - test fixture pattern
 };
 
-TEST_F(OptionalAggregateTest, CountWithNullValues) {
+TYPED_TEST_SUITE(OptionalAggregateTest, DatabaseTypes);
+
+TYPED_TEST(OptionalAggregateTest, CountWithNullValues) {
     // Insert with NULL ages
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
-    std::ignore =
-            qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0});
-    std::ignore =
-            qs->insert(OptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0}); // NULL age
+    std::ignore = this->qs->insert(AggOptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
+    std::ignore = this->qs->insert(
+            AggOptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}
+    ); // NULL age
+    std::ignore = this->qs->insert(AggOptionalPerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0});
+    std::ignore = this->qs->insert(
+            AggOptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0}
+    ); // NULL age
 
     // COUNT(*) includes all rows
-    auto count_all = qs->count().select();
+    auto count_all = this->qs->count().select();
     ASSERT_TRUE(count_all.has_value());
     EXPECT_EQ(count_all.value(), 4);
 
     // COUNT(age) excludes NULL values
-    auto count_age = qs->count<^^OptionalPerson::age>().select();
+    auto count_age = this->qs->template count<^^AggOptionalPerson::age>().select();
     ASSERT_TRUE(count_age.has_value());
     EXPECT_EQ(count_age.value(), 2); // Only Alice (25) and Charlie (35)
 }
 
-TEST_F(OptionalAggregateTest, SumWithNullValues) {
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
-    std::ignore =
-            qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0});
+TYPED_TEST(OptionalAggregateTest, SumWithNullValues) {
+    std::ignore = this->qs->insert(AggOptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
+    std::ignore = this->qs->insert(
+            AggOptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}
+    ); // NULL age
+    std::ignore = this->qs->insert(AggOptionalPerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0});
 
-    auto sum = qs->sum<^^OptionalPerson::age>().select();
+    auto sum = this->qs->template sum<^^AggOptionalPerson::age>().select();
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), 60); // 25 + 35, NULL ignored
 }
 
-TEST_F(OptionalAggregateTest, AvgWithNullValues) {
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 20, .salary = 50000.0});
-    std::ignore =
-            qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 40, .salary = 70000.0});
+TYPED_TEST(OptionalAggregateTest, AvgWithNullValues) {
+    std::ignore = this->qs->insert(AggOptionalPerson{.id = 0, .name = "Alice", .age = 20, .salary = 50000.0});
+    std::ignore = this->qs->insert(
+            AggOptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}
+    ); // NULL age
+    std::ignore = this->qs->insert(AggOptionalPerson{.id = 0, .name = "Charlie", .age = 40, .salary = 70000.0});
 
-    auto avg = qs->avg<^^OptionalPerson::age>().select();
+    auto avg = this->qs->template avg<^^AggOptionalPerson::age>().select();
     ASSERT_TRUE(avg.has_value());
     EXPECT_NEAR(avg.value(), 30.0, 0.01); // (20 + 40) / 2 = 30, NULL ignored
 }
 
-TEST_F(OptionalAggregateTest, MinMaxWithNullValues) {
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
-    std::ignore =
-            qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 45, .salary = 70000.0});
-    std::ignore =
-            qs->insert(OptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0}); // NULL age
+TYPED_TEST(OptionalAggregateTest, MinMaxWithNullValues) {
+    std::ignore = this->qs->insert(AggOptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
+    std::ignore = this->qs->insert(
+            AggOptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}
+    ); // NULL age
+    std::ignore = this->qs->insert(AggOptionalPerson{.id = 0, .name = "Charlie", .age = 45, .salary = 70000.0});
+    std::ignore = this->qs->insert(
+            AggOptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0}
+    ); // NULL age
 
-    auto min_val = qs->min<^^OptionalPerson::age>().select();
+    auto min_val = this->qs->template min<^^AggOptionalPerson::age>().select();
     ASSERT_TRUE(min_val.has_value());
     EXPECT_NEAR(min_val.value(), 25.0, 0.01);
 
-    auto max_val = qs->max<^^OptionalPerson::age>().select();
+    auto max_val = this->qs->template max<^^AggOptionalPerson::age>().select();
     ASSERT_TRUE(max_val.has_value());
     EXPECT_NEAR(max_val.value(), 45.0, 0.01);
 }
 
-TEST_F(OptionalAggregateTest, CountDistinctWithNullValues) {
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 30, .salary = 50000.0});
-    std::ignore =
-            qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}); // NULL age
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 30, .salary = 70000.0}); // Same as Alice
-    std::ignore =
-            qs->insert(OptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0}); // NULL age
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Eve", .age = 40, .salary = 90000.0});
+TYPED_TEST(OptionalAggregateTest, CountDistinctWithNullValues) {
+    std::ignore = this->qs->insert(AggOptionalPerson{.id = 0, .name = "Alice", .age = 30, .salary = 50000.0});
+    std::ignore = this->qs->insert(
+            AggOptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0}
+    ); // NULL age
+    std::ignore = this->qs->insert(
+            AggOptionalPerson{.id = 0, .name = "Charlie", .age = 30, .salary = 70000.0}
+    ); // Same as Alice
+    std::ignore = this->qs->insert(
+            AggOptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0}
+    ); // NULL age
+    std::ignore = this->qs->insert(AggOptionalPerson{.id = 0, .name = "Eve", .age = 40, .salary = 90000.0});
 
     // COUNT(DISTINCT age) - NULL excluded, should count 2 (30, 40)
-    auto result = qs->count_distinct<^^OptionalPerson::age>().select();
+    auto result = this->qs->template count_distinct<^^AggOptionalPerson::age>().select();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 2);
 }
 
-TEST_F(OptionalAggregateTest, GroupByWithAllNullValuesInGroupColumn) {
+TYPED_TEST(OptionalAggregateTest, GroupByWithAllNullValuesInGroupColumn) {
     // Insert rows where all ages are NULL
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = std::nullopt, .salary = 50000.0});
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0});
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = std::nullopt, .salary = 70000.0});
+    std::ignore = this->qs->insert(AggOptionalPerson{.id = 0, .name = "Alice", .age = std::nullopt, .salary = 50000.0});
+    std::ignore = this->qs->insert(AggOptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0});
+    std::ignore =
+            this->qs->insert(AggOptionalPerson{.id = 0, .name = "Charlie", .age = std::nullopt, .salary = 70000.0});
 
     // GROUP BY on age (all NULL) - should produce one group with NULL key
     // SQLite treats NULL as a distinct group key in GROUP BY
-    auto result = qs->group_by<^^OptionalPerson::age>().count().select();
+    auto result = this->qs->template group_by<^^AggOptionalPerson::age>().count().select();
     ASSERT_TRUE(result.has_value()) << "GROUP BY with all NULL values failed";
 
     // Should have exactly one group (the NULL group) with count 3
@@ -1411,16 +1485,16 @@ TEST_F(OptionalAggregateTest, GroupByWithAllNullValuesInGroupColumn) {
     EXPECT_EQ(count_val, 3) << "Expected count of 3 in NULL group";
 }
 
-TEST_F(OptionalAggregateTest, GroupByWithMixedNullAndNonNullValues) {
+TYPED_TEST(OptionalAggregateTest, GroupByWithMixedNullAndNonNullValues) {
     // Insert mix of NULL and non-NULL ages
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0});
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Charlie", .age = 25, .salary = 70000.0});
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0});
-    std::ignore = qs->insert(OptionalPerson{.id = 0, .name = "Eve", .age = 30, .salary = 90000.0});
+    std::ignore = this->qs->insert(AggOptionalPerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0});
+    std::ignore = this->qs->insert(AggOptionalPerson{.id = 0, .name = "Bob", .age = std::nullopt, .salary = 60000.0});
+    std::ignore = this->qs->insert(AggOptionalPerson{.id = 0, .name = "Charlie", .age = 25, .salary = 70000.0});
+    std::ignore = this->qs->insert(AggOptionalPerson{.id = 0, .name = "Dave", .age = std::nullopt, .salary = 80000.0});
+    std::ignore = this->qs->insert(AggOptionalPerson{.id = 0, .name = "Eve", .age = 30, .salary = 90000.0});
 
     // GROUP BY on age - should produce 3 groups: NULL (2 rows), 25 (2 rows), 30 (1 row)
-    auto result = qs->group_by<^^OptionalPerson::age>().count().select();
+    auto result = this->qs->template group_by<^^AggOptionalPerson::age>().count().select();
     ASSERT_TRUE(result.has_value()) << "GROUP BY with mixed NULL values failed";
 
     EXPECT_EQ(result.value().size(), 3) << "Expected 3 groups (NULL, 25, 30)";
@@ -1446,92 +1520,109 @@ TEST_F(OptionalAggregateTest, GroupByWithMixedNullAndNonNullValues) {
 }
 
 // Negative number tests using the main AggregatePerson model
-TEST_F(AggregateTest, NegativeNumbersInSum) {
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3});
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 5, .salary = 60000.0, .years_experience = 5});
-    std::ignore = qs->insert(
+TYPED_TEST(AggregateTest, NegativeNumbersInSum) {
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Bob", .age = 5, .salary = 60000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
             AggregatePerson{.id = 0, .name = "Charlie", .age = -3, .salary = 70000.0, .years_experience = 7}
     );
 
-    auto sum = qs->sum<^^AggregatePerson::age>().select();
+    auto sum = this->qs->template sum<^^AggregatePerson::age>().select();
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), -8); // -10 + 5 + (-3) = -8
 }
 
-TEST_F(AggregateTest, NegativeNumbersInAvg) {
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -12, .salary = 50000.0, .years_experience = 3});
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 6, .salary = 60000.0, .years_experience = 5});
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7});
+TYPED_TEST(AggregateTest, NegativeNumbersInAvg) {
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Alice", .age = -12, .salary = 50000.0, .years_experience = 3}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Bob", .age = 6, .salary = 60000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7}
+    );
 
-    auto avg = qs->avg<^^AggregatePerson::age>().select();
+    auto avg = this->qs->template avg<^^AggregatePerson::age>().select();
     ASSERT_TRUE(avg.has_value());
     EXPECT_NEAR(avg.value(), -2.0, 0.01); // (-12 + 6 + 0) / 3 = -2
 }
 
-TEST_F(AggregateTest, NegativeNumbersInMinMax) {
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3});
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 5, .salary = 60000.0, .years_experience = 5});
-    std::ignore = qs->insert(
+TYPED_TEST(AggregateTest, NegativeNumbersInMinMax) {
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Bob", .age = 5, .salary = 60000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
             AggregatePerson{.id = 0, .name = "Charlie", .age = -20, .salary = 70000.0, .years_experience = 7}
     );
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Dave", .age = 15, .salary = 80000.0, .years_experience = 10});
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Dave", .age = 15, .salary = 80000.0, .years_experience = 10}
+    );
 
-    auto min_val = qs->min<^^AggregatePerson::age>().select();
+    auto min_val = this->qs->template min<^^AggregatePerson::age>().select();
     ASSERT_TRUE(min_val.has_value());
     EXPECT_NEAR(min_val.value(), -20.0, 0.01);
 
-    auto max_val = qs->max<^^AggregatePerson::age>().select();
+    auto max_val = this->qs->template max<^^AggregatePerson::age>().select();
     ASSERT_TRUE(max_val.has_value());
     EXPECT_NEAR(max_val.value(), 15.0, 0.01);
 }
 
-TEST_F(AggregateTest, NegativeNumbersInCount) {
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3});
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = -5, .salary = 60000.0, .years_experience = 5});
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7});
+TYPED_TEST(AggregateTest, NegativeNumbersInCount) {
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Bob", .age = -5, .salary = 60000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7}
+    );
 
     // Count should still count all rows regardless of negative values
-    auto count = qs->count().select();
+    auto count = this->qs->count().select();
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 3);
 
     // Count with field also counts negative values
-    auto count_age = qs->count<^^AggregatePerson::age>().select();
+    auto count_age = this->qs->template count<^^AggregatePerson::age>().select();
     ASSERT_TRUE(count_age.has_value());
     EXPECT_EQ(count_age.value(), 3);
 }
 
-TEST_F(AggregateTest, NegativeNumbersInWhere) {
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3});
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = -5, .salary = 60000.0, .years_experience = 5});
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7});
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Dave", .age = 5, .salary = 80000.0, .years_experience = 10});
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Eve", .age = 10, .salary = 90000.0, .years_experience = 15});
+TYPED_TEST(AggregateTest, NegativeNumbersInWhere) {
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Bob", .age = -5, .salary = 60000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Dave", .age = 5, .salary = 80000.0, .years_experience = 10}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Eve", .age = 10, .salary = 90000.0, .years_experience = 15}
+    );
 
     // Count where age < 0
-    auto result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() < 0).count().select();
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() < 0).count().select();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 2); // Alice (-10) and Bob (-5)
 
     // Sum of negative ages
-    auto sum_neg =
-            qs->where(storm::orm::where::field<^^AggregatePerson::age>() < 0).sum<^^AggregatePerson::age>().select();
+    auto sum_neg = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() < 0)
+                           .template sum<^^AggregatePerson::age>()
+                           .select();
     ASSERT_TRUE(sum_neg.has_value());
     EXPECT_EQ(sum_neg.value(), -15); // -10 + (-5) = -15
 }
@@ -1541,13 +1632,13 @@ TEST_F(AggregateTest, NegativeNumbersInWhere) {
 // =============================================================================
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_F(AggregateTest, FullChain_WhereJoinOrderByLimitOffset) {
+TYPED_TEST(AggregateTest, FullChain_WhereJoinOrderByLimitOffset) {
     // This test verifies the complete SELECT query chain:
     // WHERE + JOIN + ORDER BY + LIMIT + OFFSET
     // Note: GROUP BY doesn't currently support ORDER BY/LIMIT/OFFSET in the builder pattern
     // Setup: Create users and messages with multiple messages per user
 
-    const auto& conn = QuerySet<AggregatePerson>::get_default_connection();
+    const auto& conn = QuerySet<AggregatePerson, TypeParam>::get_default_connection();
 
     // Insert users with different ages
     std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Alice', 25)");   // id=1
@@ -1583,9 +1674,9 @@ TEST_F(AggregateTest, FullChain_WhereJoinOrderByLimitOffset) {
     // Ordered DESC: 75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20
     // After OFFSET 2: 65, 60, 55, 50, 45, 40, 35, 30, 25, 20 (skip first 2)
     // After LIMIT 5: 65, 60, 55, 50, 45 (take first 5)
-    auto result = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() >= 20)
-                          .join<&AggMessage::sender>()
-                          .order_by<^^AggMessage::value, false>()
+    auto result = this->msg_qs->where(storm::orm::where::field<^^AggMessage::value>() >= 20)
+                          .template join<&AggMessage::sender>()
+                          .template order_by<^^AggMessage::value, false>()
                           .limit(5)
                           .offset(2)
                           .select();
@@ -1605,12 +1696,12 @@ TEST_F(AggregateTest, FullChain_WhereJoinOrderByLimitOffset) {
     }
 
     // Reset and test another variation: different ORDER BY direction and LIMIT/OFFSET
-    msg_qs->reset();
+    this->msg_qs->reset();
 
     // Take first 3 messages with value >= 20, ordered ASC
-    auto result2 = msg_qs->where(storm::orm::where::field<^^AggMessage::value>() >= 20)
-                           .join<&AggMessage::sender>()
-                           .order_by<^^AggMessage::value, true>() // ASC this time
+    auto result2 = this->msg_qs->where(storm::orm::where::field<^^AggMessage::value>() >= 20)
+                           .template join<&AggMessage::sender>()
+                           .template order_by<^^AggMessage::value, true>() // ASC this time
                            .limit(3)
                            .offset(0)
                            .select();
@@ -1631,9 +1722,10 @@ TEST_F(AggregateTest, FullChain_WhereJoinOrderByLimitOffset) {
     }
 
     // Test 3: Verify that JOIN actually works by checking we can access joined data
-    msg_qs->reset();
-    auto result3 =
-            msg_qs->where(storm::orm::where::field<^^AggMessage::value>() == 75).join<&AggMessage::sender>().select();
+    this->msg_qs->reset();
+    auto result3 = this->msg_qs->where(storm::orm::where::field<^^AggMessage::value>() == 75)
+                           .template join<&AggMessage::sender>()
+                           .select();
 
     ASSERT_TRUE(result3.has_value()) << "JOIN verification query failed";
     EXPECT_EQ(result3.value().size(), 1) << "Expected 1 message with value 75";
@@ -1641,32 +1733,37 @@ TEST_F(AggregateTest, FullChain_WhereJoinOrderByLimitOffset) {
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_F(AggregateTest, GroupByWithAllAggregateTypes) {
+TYPED_TEST(AggregateTest, GroupByWithAllAggregateTypes) {
     // Test all aggregate types (SUM, COUNT, AVG, MIN, MAX) with GROUP BY
     // Note: Current implementation supports one aggregate per query with GROUP BY
     // This test verifies each aggregate type works correctly with GROUP BY
 
     // Insert test data with multiple people having the same years_experience
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5});
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 30, .salary = 60000.0, .years_experience = 5});
-    std::ignore = qs->insert(
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Bob", .age = 30, .salary = 60000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
             AggregatePerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0, .years_experience = 10}
     );
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Dave", .age = 40, .salary = 80000.0, .years_experience = 10});
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Eve", .age = 45, .salary = 90000.0, .years_experience = 10});
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Frank", .age = 28, .salary = 55000.0, .years_experience = 5});
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Dave", .age = 40, .salary = 80000.0, .years_experience = 10}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Eve", .age = 45, .salary = 90000.0, .years_experience = 10}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Frank", .age = 28, .salary = 55000.0, .years_experience = 5}
+    );
 
     // Test data summary by years_experience:
     //   years_experience=5: Alice(25), Bob(30), Frank(28) -> count=3, sum=83, avg=27.67, min=25, max=30
     //   years_experience=10: Charlie(35), Dave(40), Eve(45) -> count=3, sum=120, avg=40, min=35, max=45
 
     // Test 1: GROUP BY with COUNT
-    auto count_result = qs->group_by<^^AggregatePerson::years_experience>().count().select();
+    auto count_result = this->qs->template group_by<^^AggregatePerson::years_experience>().count().select();
     ASSERT_TRUE(count_result.has_value()) << "GROUP BY + COUNT failed: " << count_result.error().message();
     EXPECT_EQ(count_result.value().size(), 2) << "Expected 2 groups";
     for (const auto& [years_exp, count_val] : count_result.value()) {
@@ -1678,8 +1775,10 @@ TEST_F(AggregateTest, GroupByWithAllAggregateTypes) {
     }
 
     // Test 2: GROUP BY with SUM
-    qs->reset();
-    auto sum_result = qs->group_by<^^AggregatePerson::years_experience>().sum<^^AggregatePerson::age>().select();
+    this->qs->reset();
+    auto sum_result = this->qs->template group_by<^^AggregatePerson::years_experience>()
+                              .template sum<^^AggregatePerson::age>()
+                              .select();
     ASSERT_TRUE(sum_result.has_value()) << "GROUP BY + SUM failed: " << sum_result.error().message();
     for (const auto& [years_exp, sum_age] : sum_result.value()) {
         if (years_exp == 5) {
@@ -1690,8 +1789,10 @@ TEST_F(AggregateTest, GroupByWithAllAggregateTypes) {
     }
 
     // Test 3: GROUP BY with AVG
-    qs->reset();
-    auto avg_result = qs->group_by<^^AggregatePerson::years_experience>().avg<^^AggregatePerson::age>().select();
+    this->qs->reset();
+    auto avg_result = this->qs->template group_by<^^AggregatePerson::years_experience>()
+                              .template avg<^^AggregatePerson::age>()
+                              .select();
     ASSERT_TRUE(avg_result.has_value()) << "GROUP BY + AVG failed: " << avg_result.error().message();
     for (const auto& [years_exp, avg_age] : avg_result.value()) {
         if (years_exp == 5) {
@@ -1702,8 +1803,10 @@ TEST_F(AggregateTest, GroupByWithAllAggregateTypes) {
     }
 
     // Test 4: GROUP BY with MIN
-    qs->reset();
-    auto min_result = qs->group_by<^^AggregatePerson::years_experience>().min<^^AggregatePerson::age>().select();
+    this->qs->reset();
+    auto min_result = this->qs->template group_by<^^AggregatePerson::years_experience>()
+                              .template min<^^AggregatePerson::age>()
+                              .select();
     ASSERT_TRUE(min_result.has_value()) << "GROUP BY + MIN failed: " << min_result.error().message();
     for (const auto& [years_exp, min_age] : min_result.value()) {
         if (years_exp == 5) {
@@ -1714,8 +1817,10 @@ TEST_F(AggregateTest, GroupByWithAllAggregateTypes) {
     }
 
     // Test 5: GROUP BY with MAX
-    qs->reset();
-    auto max_result = qs->group_by<^^AggregatePerson::years_experience>().max<^^AggregatePerson::age>().select();
+    this->qs->reset();
+    auto max_result = this->qs->template group_by<^^AggregatePerson::years_experience>()
+                              .template max<^^AggregatePerson::age>()
+                              .select();
     ASSERT_TRUE(max_result.has_value()) << "GROUP BY + MAX failed: " << max_result.error().message();
     for (const auto& [years_exp, max_age] : max_result.value()) {
         if (years_exp == 5) {
@@ -1726,10 +1831,10 @@ TEST_F(AggregateTest, GroupByWithAllAggregateTypes) {
     }
 
     // Test 6: GROUP BY with WHERE + SUM (combined clauses)
-    qs->reset();
-    auto filtered_sum = qs->where(storm::orm::where::field<^^AggregatePerson::years_experience>() == 5)
-                                .group_by<^^AggregatePerson::years_experience>()
-                                .sum<^^AggregatePerson::age>()
+    this->qs->reset();
+    auto filtered_sum = this->qs->where(storm::orm::where::field<^^AggregatePerson::years_experience>() == 5)
+                                .template group_by<^^AggregatePerson::years_experience>()
+                                .template sum<^^AggregatePerson::age>()
                                 .select();
     ASSERT_TRUE(filtered_sum.has_value()) << "WHERE + GROUP BY + SUM failed";
     EXPECT_EQ(filtered_sum.value().size(), 1) << "Expected 1 group after WHERE filter";
@@ -1742,13 +1847,13 @@ TEST_F(AggregateTest, GroupByWithAllAggregateTypes) {
 // GROUP BY with ORDER BY, LIMIT, OFFSET Tests
 // =============================================================================
 
-TEST_F(AggregateTest, GroupByWithOrderBy) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, GroupByWithOrderBy) {
+    this->insert_test_data();
 
     // Group by years_experience and count, ordered by years_experience ascending
     // Test data has years_experience: 3, 5, 7, 10, 15
-    auto result = qs->order_by<^^AggregatePerson::years_experience>()
-                          .group_by<^^AggregatePerson::years_experience>()
+    auto result = this->qs->template order_by<^^AggregatePerson::years_experience>()
+                          .template group_by<^^AggregatePerson::years_experience>()
                           .count()
                           .select();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + ORDER BY failed: " << result.error().message();
@@ -1764,12 +1869,12 @@ TEST_F(AggregateTest, GroupByWithOrderBy) {
     }
 }
 
-TEST_F(AggregateTest, GroupByWithOrderByDesc) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, GroupByWithOrderByDesc) {
+    this->insert_test_data();
 
     // Group by years_experience, ordered descending
-    auto result = qs->order_by<^^AggregatePerson::years_experience, false>()
-                          .group_by<^^AggregatePerson::years_experience>()
+    auto result = this->qs->template order_by<^^AggregatePerson::years_experience, false>()
+                          .template group_by<^^AggregatePerson::years_experience>()
                           .count()
                           .select();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + ORDER BY DESC failed: " << result.error().message();
@@ -1784,24 +1889,24 @@ TEST_F(AggregateTest, GroupByWithOrderByDesc) {
     }
 }
 
-TEST_F(AggregateTest, GroupByWithLimit) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, GroupByWithLimit) {
+    this->insert_test_data();
 
     // Group by years_experience with LIMIT 3
-    auto result = qs->limit(3).group_by<^^AggregatePerson::years_experience>().count().select();
+    auto result = this->qs->limit(3).template group_by<^^AggregatePerson::years_experience>().count().select();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + LIMIT failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 3) << "Should return only 3 groups";
 }
 
-TEST_F(AggregateTest, GroupByWithLimitOffset) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, GroupByWithLimitOffset) {
+    this->insert_test_data();
 
     // Group by years_experience, ordered, with LIMIT 2 OFFSET 2
     // Ordered: 3, 5, 7, 10, 15 -> skip 2 (3, 5), take 2 (7, 10)
-    auto result = qs->order_by<^^AggregatePerson::years_experience>()
+    auto result = this->qs->template order_by<^^AggregatePerson::years_experience>()
                           .limit(2)
                           .offset(2)
-                          .group_by<^^AggregatePerson::years_experience>()
+                          .template group_by<^^AggregatePerson::years_experience>()
                           .count()
                           .select();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + LIMIT + OFFSET failed: " << result.error().message();
@@ -1816,63 +1921,68 @@ TEST_F(AggregateTest, GroupByWithLimitOffset) {
     }
 }
 
-TEST_F(AggregateTest, GroupByWithWhereOrderByLimit) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, GroupByWithWhereOrderByLimit) {
+    this->insert_test_data();
 
     // WHERE + ORDER BY + LIMIT + GROUP BY
-    auto result = qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 25)
-                          .order_by<^^AggregatePerson::years_experience, false>()
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::age>() > 25)
+                          .template order_by<^^AggregatePerson::years_experience, false>()
                           .limit(2)
-                          .group_by<^^AggregatePerson::years_experience>()
+                          .template group_by<^^AggregatePerson::years_experience>()
                           .count()
                           .select();
     ASSERT_TRUE(result.has_value()) << "WHERE + ORDER BY + LIMIT + GROUP BY failed: " << result.error().message();
     EXPECT_LE(result.value().size(), 2) << "Should return at most 2 groups";
 }
 
-TEST_F(AggregateTest, GroupByWithSumOrderByLimit) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, GroupByWithSumOrderByLimit) {
+    this->insert_test_data();
 
     // GROUP BY + SUM with ORDER BY and LIMIT
-    auto result = qs->order_by<^^AggregatePerson::years_experience>()
+    auto result = this->qs->template order_by<^^AggregatePerson::years_experience>()
                           .limit(3)
-                          .group_by<^^AggregatePerson::years_experience>()
-                          .sum<^^AggregatePerson::salary>()
+                          .template group_by<^^AggregatePerson::years_experience>()
+                          .template sum<^^AggregatePerson::salary>()
                           .select();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + SUM + ORDER BY + LIMIT failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 3) << "Should return 3 groups";
 }
 
-TEST_F(AggregateTest, GroupByWithOffsetOnly) {
-    insert_test_data();
+TYPED_TEST(AggregateTest, GroupByWithOffsetOnly) {
+    this->insert_test_data();
 
     // OFFSET without explicit LIMIT (should use LIMIT -1 internally for SQLite)
-    auto result = qs->order_by<^^AggregatePerson::years_experience>()
+    auto result = this->qs->template order_by<^^AggregatePerson::years_experience>()
                           .offset(2)
-                          .group_by<^^AggregatePerson::years_experience>()
+                          .template group_by<^^AggregatePerson::years_experience>()
                           .count()
                           .select();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + OFFSET only failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 3) << "Should return 3 groups (5 - 2 offset)";
 }
 
-TEST_F(AggregateTest, GroupByMultipleFields) {
+TYPED_TEST(AggregateTest, GroupByMultipleFields) {
     // Insert data with overlapping age and years_experience combinations
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5});
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 25, .salary = 60000.0, .years_experience = 5});
-    std::ignore = qs->insert(
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Bob", .age = 25, .salary = 60000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
             AggregatePerson{.id = 0, .name = "Charlie", .age = 25, .salary = 70000.0, .years_experience = 10}
     );
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Dave", .age = 30, .salary = 80000.0, .years_experience = 5});
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Eve", .age = 30, .salary = 90000.0, .years_experience = 10});
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Dave", .age = 30, .salary = 80000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Eve", .age = 30, .salary = 90000.0, .years_experience = 10}
+    );
 
     // Group by TWO fields: age AND years_experience
     // Expected groups: (25,5)=2, (25,10)=1, (30,5)=1, (30,10)=1 = 4 groups
-    auto result = qs->group_by<^^AggregatePerson::age, ^^AggregatePerson::years_experience>().count().select();
+    auto result =
+            this->qs->template group_by<^^AggregatePerson::age, ^^AggregatePerson::years_experience>().count().select();
     ASSERT_TRUE(result.has_value()) << "Multi-field GROUP BY failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 4) << "Expected 4 unique (age, years_experience) combinations";
 
@@ -1886,24 +1996,28 @@ TEST_F(AggregateTest, GroupByMultipleFields) {
     }
 }
 
-TEST_F(AggregateTest, GroupByMultipleFieldsWithOrderByLimit) {
+TYPED_TEST(AggregateTest, GroupByMultipleFieldsWithOrderByLimit) {
     // Same data setup as above
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5});
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Bob", .age = 25, .salary = 60000.0, .years_experience = 5});
-    std::ignore = qs->insert(
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Bob", .age = 25, .salary = 60000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
             AggregatePerson{.id = 0, .name = "Charlie", .age = 25, .salary = 70000.0, .years_experience = 10}
     );
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Dave", .age = 30, .salary = 80000.0, .years_experience = 5});
-    std::ignore =
-            qs->insert(AggregatePerson{.id = 0, .name = "Eve", .age = 30, .salary = 90000.0, .years_experience = 10});
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Dave", .age = 30, .salary = 80000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Eve", .age = 30, .salary = 90000.0, .years_experience = 10}
+    );
 
     // Multi-field GROUP BY with ORDER BY and LIMIT
-    auto result = qs->order_by<^^AggregatePerson::age>()
+    auto result = this->qs->template order_by<^^AggregatePerson::age>()
                           .limit(2)
-                          .group_by<^^AggregatePerson::age, ^^AggregatePerson::years_experience>()
+                          .template group_by<^^AggregatePerson::age, ^^AggregatePerson::years_experience>()
                           .count()
                           .select();
     ASSERT_TRUE(result.has_value()) << "Multi-field GROUP BY + ORDER BY + LIMIT failed";

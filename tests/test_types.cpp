@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include "test_db_helpers.h"
 
 #include <numbers>
 
@@ -46,32 +47,52 @@ struct OptTypes {
 // BLOB types model
 struct DataTypes {
     [[= storm::meta::FieldAttr::primary]] int id{};
-    std::vector<uint8_t>                      binary;
+    std::vector<uint8_t>                      binary_data;
     std::string                               label;
 };
 
 // ===== INTEGER TYPES TESTS =====
 
-class IntTypesInsertUpdateTest : public ::testing::Test {
+template <typename ConnType> class IntTypesInsertUpdateTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        auto result = QuerySet<IntTypes>::set_default_connection(":memory:");
-        ASSERT_TRUE(result.has_value());
-        const auto& conn = QuerySet<IntTypes>::get_default_connection();
-        ASSERT_TRUE(conn->execute(
-                                "CREATE TABLE IntTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, big_num INTEGER, "
-                                "small_num INTEGER)"
-        )
-                            .has_value());
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        const auto& conn_str = storm::test::get_connection_string<ConnType>();
+        auto        result   = QuerySet<IntTypes, ConnType>::set_default_connection(conn_str);
+        ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
+
+        const auto& conn = QuerySet<IntTypes, ConnType>::get_default_connection();
+
+        ASSERT_TRUE(
+                storm::test::ensure_table<ConnType>(
+                        conn,
+                        "CREATE TABLE IntTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, big_num INTEGER, "
+                        "small_num INTEGER)"
+                )
+                        .has_value()
+        );
+
+        storm::test::begin_test_txn<ConnType>(conn, {"IntTypes"});
     }
     auto TearDown() -> void override {
-        QuerySet<IntTypes>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<IntTypes, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<IntTypes, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<IntTypes, ConnType>::clear_default_connection();
     }
 };
 
-TEST_F(IntTypesInsertUpdateTest, InsertSingleIntTypes) {
-    QuerySet<IntTypes> qs;
-    IntTypes const     obj{.id = 0, .big_num = 9223372036854775807LL, .small_num = 32767};
+TYPED_TEST_SUITE(IntTypesInsertUpdateTest, DatabaseTypes);
+
+TYPED_TEST(IntTypesInsertUpdateTest, InsertSingleIntTypes) {
+    QuerySet<IntTypes, TypeParam> qs;
+    IntTypes const                obj{.id = 0, .big_num = 9223372036854775807LL, .small_num = 32767};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
@@ -83,9 +104,9 @@ TEST_F(IntTypesInsertUpdateTest, InsertSingleIntTypes) {
     EXPECT_EQ(selected.value().begin()->small_num, 32767);
 }
 
-TEST_F(IntTypesInsertUpdateTest, InsertBatchIntTypes) {
-    QuerySet<IntTypes>    qs;
-    std::vector<IntTypes> batch = {{0, 100LL, 10}, {0, 200LL, 20}, {0, 300LL, 30}};
+TYPED_TEST(IntTypesInsertUpdateTest, InsertBatchIntTypes) {
+    QuerySet<IntTypes, TypeParam> qs;
+    std::vector<IntTypes>         batch = {{0, 100LL, 10}, {0, 200LL, 20}, {0, 300LL, 30}};
 
     auto result = qs.insert(batch);
     ASSERT_TRUE(result.has_value());
@@ -97,9 +118,9 @@ TEST_F(IntTypesInsertUpdateTest, InsertBatchIntTypes) {
     EXPECT_EQ(selected.value().begin()->big_num, 100LL);
 }
 
-TEST_F(IntTypesInsertUpdateTest, UpdateSingleIntTypes) {
-    QuerySet<IntTypes> qs;
-    IntTypes const     obj{.id = 0, .big_num = 100LL, .small_num = 10};
+TYPED_TEST(IntTypesInsertUpdateTest, UpdateSingleIntTypes) {
+    QuerySet<IntTypes, TypeParam> qs;
+    IntTypes const                obj{.id = 0, .big_num = 100LL, .small_num = 10};
 
     auto insert_result = qs.insert(obj);
     ASSERT_TRUE(insert_result.has_value());
@@ -124,9 +145,9 @@ TEST_F(IntTypesInsertUpdateTest, UpdateSingleIntTypes) {
     EXPECT_EQ(it2->small_num, 99);
 }
 
-TEST_F(IntTypesInsertUpdateTest, UpdateBatchIntTypes) {
-    QuerySet<IntTypes>    qs;
-    std::vector<IntTypes> batch = {{1, 100LL, 10}, {2, 200LL, 20}, {3, 300LL, 30}};
+TYPED_TEST(IntTypesInsertUpdateTest, UpdateBatchIntTypes) {
+    QuerySet<IntTypes, TypeParam> qs;
+    std::vector<IntTypes>         batch = {{1, 100LL, 10}, {2, 200LL, 20}, {3, 300LL, 30}};
 
     auto insert_result = qs.insert(batch);
     ASSERT_TRUE(insert_result.has_value());
@@ -148,27 +169,45 @@ TEST_F(IntTypesInsertUpdateTest, UpdateBatchIntTypes) {
 
 // ===== FLOATING POINT TYPES TESTS =====
 
-class FloatTypesInsertUpdateTest : public ::testing::Test {
+template <typename ConnType> class FloatTypesInsertUpdateTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        auto result = QuerySet<FloatTypes>::set_default_connection(":memory:");
-        ASSERT_TRUE(result.has_value());
-        const auto& conn = QuerySet<FloatTypes>::get_default_connection();
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        const auto& conn_str = storm::test::get_connection_string<ConnType>();
+        auto        result   = QuerySet<FloatTypes, ConnType>::set_default_connection(conn_str);
+        ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
+
+        const auto& conn = QuerySet<FloatTypes, ConnType>::get_default_connection();
+
         ASSERT_TRUE(
-                conn->execute(
-                            "CREATE TABLE FloatTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, precise REAL, approx REAL)"
+                storm::test::ensure_table<ConnType>(
+                        conn,
+                        "CREATE TABLE FloatTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, precise REAL, approx REAL)"
                 )
                         .has_value()
         );
+
+        storm::test::begin_test_txn<ConnType>(conn, {"FloatTypes"});
     }
     auto TearDown() -> void override {
-        QuerySet<FloatTypes>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<FloatTypes, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<FloatTypes, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<FloatTypes, ConnType>::clear_default_connection();
     }
 };
 
-TEST_F(FloatTypesInsertUpdateTest, InsertSingleFloatTypes) {
-    QuerySet<FloatTypes> qs;
-    FloatTypes const     obj{.id = 0, .precise = std::numbers::pi, .approx = std::numbers::e_v<float>};
+TYPED_TEST_SUITE(FloatTypesInsertUpdateTest, DatabaseTypes);
+
+TYPED_TEST(FloatTypesInsertUpdateTest, InsertSingleFloatTypes) {
+    QuerySet<FloatTypes, TypeParam> qs;
+    FloatTypes const                obj{.id = 0, .precise = std::numbers::pi, .approx = std::numbers::e_v<float>};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
@@ -179,9 +218,9 @@ TEST_F(FloatTypesInsertUpdateTest, InsertSingleFloatTypes) {
     EXPECT_NEAR(selected.value().begin()->approx, std::numbers::e_v<float>, 1e-6);
 }
 
-TEST_F(FloatTypesInsertUpdateTest, UpdateSingleFloatTypes) {
-    QuerySet<FloatTypes> qs;
-    FloatTypes const     obj{.id = 0, .precise = 1.0, .approx = 1.0F};
+TYPED_TEST(FloatTypesInsertUpdateTest, UpdateSingleFloatTypes) {
+    QuerySet<FloatTypes, TypeParam> qs;
+    FloatTypes const                obj{.id = 0, .precise = 1.0, .approx = 1.0F};
 
     auto insert_result = qs.insert(obj);
     ASSERT_TRUE(insert_result.has_value());
@@ -201,27 +240,45 @@ TEST_F(FloatTypesInsertUpdateTest, UpdateSingleFloatTypes) {
 
 // ===== BOOLEAN AND STRING TYPES TESTS =====
 
-class MixedTypesInsertUpdateTest : public ::testing::Test {
+template <typename ConnType> class MixedTypesInsertUpdateTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        auto result = QuerySet<MixedTypes>::set_default_connection(":memory:");
-        ASSERT_TRUE(result.has_value());
-        const auto& conn = QuerySet<MixedTypes>::get_default_connection();
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        const auto& conn_str = storm::test::get_connection_string<ConnType>();
+        auto        result   = QuerySet<MixedTypes, ConnType>::set_default_connection(conn_str);
+        ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
+
+        const auto& conn = QuerySet<MixedTypes, ConnType>::get_default_connection();
+
         ASSERT_TRUE(
-                conn->execute(
-                            "CREATE TABLE MixedTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, active INTEGER, name TEXT)"
+                storm::test::ensure_table<ConnType>(
+                        conn,
+                        "CREATE TABLE MixedTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, active INTEGER, name TEXT)"
                 )
                         .has_value()
         );
+
+        storm::test::begin_test_txn<ConnType>(conn, {"MixedTypes"});
     }
     auto TearDown() -> void override {
-        QuerySet<MixedTypes>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<MixedTypes, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<MixedTypes, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<MixedTypes, ConnType>::clear_default_connection();
     }
 };
 
-TEST_F(MixedTypesInsertUpdateTest, InsertBooleanTrue) {
-    QuerySet<MixedTypes> qs;
-    MixedTypes const     obj{.id = 0, .active = true, .name = "active_user"};
+TYPED_TEST_SUITE(MixedTypesInsertUpdateTest, DatabaseTypes);
+
+TYPED_TEST(MixedTypesInsertUpdateTest, InsertBooleanTrue) {
+    QuerySet<MixedTypes, TypeParam> qs;
+    MixedTypes const                obj{.id = 0, .active = true, .name = "active_user"};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
@@ -232,9 +289,9 @@ TEST_F(MixedTypesInsertUpdateTest, InsertBooleanTrue) {
     EXPECT_EQ(selected.value().begin()->name, "active_user");
 }
 
-TEST_F(MixedTypesInsertUpdateTest, InsertBooleanFalse) {
-    QuerySet<MixedTypes> qs;
-    MixedTypes const     obj{.id = 0, .active = false, .name = "inactive_user"};
+TYPED_TEST(MixedTypesInsertUpdateTest, InsertBooleanFalse) {
+    QuerySet<MixedTypes, TypeParam> qs;
+    MixedTypes const                obj{.id = 0, .active = false, .name = "inactive_user"};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
@@ -245,9 +302,9 @@ TEST_F(MixedTypesInsertUpdateTest, InsertBooleanFalse) {
     EXPECT_EQ(selected.value().begin()->name, "inactive_user");
 }
 
-TEST_F(MixedTypesInsertUpdateTest, UpdateBooleanAndString) {
-    QuerySet<MixedTypes> qs;
-    MixedTypes const     obj{.id = 0, .active = false, .name = "old_name"};
+TYPED_TEST(MixedTypesInsertUpdateTest, UpdateBooleanAndString) {
+    QuerySet<MixedTypes, TypeParam> qs;
+    MixedTypes const                obj{.id = 0, .active = false, .name = "old_name"};
 
     auto insert_result = qs.insert(obj);
     ASSERT_TRUE(insert_result.has_value());
@@ -263,9 +320,9 @@ TEST_F(MixedTypesInsertUpdateTest, UpdateBooleanAndString) {
     EXPECT_EQ(selected.value().begin()->name, "new_name");
 }
 
-TEST_F(MixedTypesInsertUpdateTest, InsertBatchMixedTypes) {
-    QuerySet<MixedTypes>    qs;
-    std::vector<MixedTypes> batch = {{1, true, "user1"}, {2, false, "user2"}, {3, true, "user3"}};
+TYPED_TEST(MixedTypesInsertUpdateTest, InsertBatchMixedTypes) {
+    QuerySet<MixedTypes, TypeParam> qs;
+    std::vector<MixedTypes>         batch = {{1, true, "user1"}, {2, false, "user2"}, {3, true, "user3"}};
 
     auto result = qs.insert(batch);
     ASSERT_TRUE(result.has_value());
@@ -283,27 +340,45 @@ TEST_F(MixedTypesInsertUpdateTest, InsertBatchMixedTypes) {
 
 // ===== OPTIONAL TYPES TESTS =====
 
-class OptTypesInsertUpdateTest : public ::testing::Test {
+template <typename ConnType> class OptTypesInsertUpdateTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        auto result = QuerySet<OptTypes>::set_default_connection(":memory:");
-        ASSERT_TRUE(result.has_value());
-        const auto& conn = QuerySet<OptTypes>::get_default_connection();
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        const auto& conn_str = storm::test::get_connection_string<ConnType>();
+        auto        result   = QuerySet<OptTypes, ConnType>::set_default_connection(conn_str);
+        ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
+
+        const auto& conn = QuerySet<OptTypes, ConnType>::get_default_connection();
+
         ASSERT_TRUE(
-                conn->execute(
-                            "CREATE TABLE OptTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, maybe_num INTEGER, name TEXT)"
+                storm::test::ensure_table<ConnType>(
+                        conn,
+                        "CREATE TABLE OptTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, maybe_num INTEGER, name TEXT)"
                 )
                         .has_value()
         );
+
+        storm::test::begin_test_txn<ConnType>(conn, {"OptTypes"});
     }
     auto TearDown() -> void override {
-        QuerySet<OptTypes>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<OptTypes, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<OptTypes, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<OptTypes, ConnType>::clear_default_connection();
     }
 };
 
-TEST_F(OptTypesInsertUpdateTest, InsertWithValues) {
-    QuerySet<OptTypes> qs;
-    OptTypes const     obj{.id = 0, .maybe_num = std::optional<int>(42), .name = "with_value"};
+TYPED_TEST_SUITE(OptTypesInsertUpdateTest, DatabaseTypes);
+
+TYPED_TEST(OptTypesInsertUpdateTest, InsertWithValues) {
+    QuerySet<OptTypes, TypeParam> qs;
+    OptTypes const                obj{.id = 0, .maybe_num = std::optional<int>(42), .name = "with_value"};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
@@ -315,9 +390,9 @@ TEST_F(OptTypesInsertUpdateTest, InsertWithValues) {
     EXPECT_EQ(selected.value().begin()->name, "with_value");
 }
 
-TEST_F(OptTypesInsertUpdateTest, InsertWithNull) {
-    QuerySet<OptTypes> qs;
-    OptTypes const     obj{.id = 0, .maybe_num = std::nullopt, .name = "null_value"};
+TYPED_TEST(OptTypesInsertUpdateTest, InsertWithNull) {
+    QuerySet<OptTypes, TypeParam> qs;
+    OptTypes const                obj{.id = 0, .maybe_num = std::nullopt, .name = "null_value"};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
@@ -328,9 +403,9 @@ TEST_F(OptTypesInsertUpdateTest, InsertWithNull) {
     EXPECT_EQ(selected.value().begin()->name, "null_value");
 }
 
-TEST_F(OptTypesInsertUpdateTest, UpdateFromValueToNull) {
-    QuerySet<OptTypes> qs;
-    OptTypes const     obj{.id = 0, .maybe_num = std::optional<int>(100), .name = "original"};
+TYPED_TEST(OptTypesInsertUpdateTest, UpdateFromValueToNull) {
+    QuerySet<OptTypes, TypeParam> qs;
+    OptTypes const                obj{.id = 0, .maybe_num = std::optional<int>(100), .name = "original"};
 
     auto insert_result = qs.insert(obj);
     ASSERT_TRUE(insert_result.has_value());
@@ -347,9 +422,9 @@ TEST_F(OptTypesInsertUpdateTest, UpdateFromValueToNull) {
     EXPECT_EQ(selected.value().begin()->name, "updated_to_null");
 }
 
-TEST_F(OptTypesInsertUpdateTest, UpdateFromNullToValue) {
-    QuerySet<OptTypes> qs;
-    OptTypes const     obj{.id = 0, .maybe_num = std::nullopt, .name = "null_start"};
+TYPED_TEST(OptTypesInsertUpdateTest, UpdateFromNullToValue) {
+    QuerySet<OptTypes, TypeParam> qs;
+    OptTypes const                obj{.id = 0, .maybe_num = std::nullopt, .name = "null_start"};
 
     auto insert_result = qs.insert(obj);
     ASSERT_TRUE(insert_result.has_value());
@@ -369,9 +444,9 @@ TEST_F(OptTypesInsertUpdateTest, UpdateFromNullToValue) {
     EXPECT_EQ(selected.value().begin()->name, "updated_to_value");
 }
 
-TEST_F(OptTypesInsertUpdateTest, InsertBatchMixedNulls) {
-    QuerySet<OptTypes>    qs;
-    std::vector<OptTypes> batch =
+TYPED_TEST(OptTypesInsertUpdateTest, InsertBatchMixedNulls) {
+    QuerySet<OptTypes, TypeParam> qs;
+    std::vector<OptTypes>         batch =
             {{1, std::optional<int>(1), "has_value"},
              {2, std::nullopt, "is_null"},
              {3, std::optional<int>(3), "has_value2"},
@@ -399,90 +474,110 @@ TEST_F(OptTypesInsertUpdateTest, InsertBatchMixedNulls) {
 
 // ===== BLOB TYPES TESTS =====
 
-class DataTypesInsertUpdateTest : public ::testing::Test {
+template <typename ConnType> class DataTypesInsertUpdateTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        auto result = QuerySet<DataTypes>::set_default_connection(":memory:");
-        ASSERT_TRUE(result.has_value());
-        const auto& conn = QuerySet<DataTypes>::get_default_connection();
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        const auto& conn_str = storm::test::get_connection_string<ConnType>();
+        auto        result   = QuerySet<DataTypes, ConnType>::set_default_connection(conn_str);
+        ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
+
+        const auto& conn = QuerySet<DataTypes, ConnType>::get_default_connection();
+
         ASSERT_TRUE(
-                conn->execute("CREATE TABLE DataTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, binary BLOB, label TEXT)")
+                storm::test::ensure_table<ConnType>(
+                        conn,
+                        "CREATE TABLE DataTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, binary_data BLOB, label TEXT)"
+                )
                         .has_value()
         );
+
+        storm::test::begin_test_txn<ConnType>(conn, {"DataTypes"});
     }
     auto TearDown() -> void override {
-        QuerySet<DataTypes>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<DataTypes, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<DataTypes, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<DataTypes, ConnType>::clear_default_connection();
     }
 };
 
-TEST_F(DataTypesInsertUpdateTest, InsertSmallBlob) {
-    QuerySet<DataTypes> qs;
-    DataTypes const     obj{.id = 0, .binary = {0xDE, 0xAD, 0xBE, 0xEF}, .label = "test_blob"};
+TYPED_TEST_SUITE(DataTypesInsertUpdateTest, DatabaseTypes);
+
+TYPED_TEST(DataTypesInsertUpdateTest, InsertSmallBlob) {
+    QuerySet<DataTypes, TypeParam> qs;
+    DataTypes const                obj{.id = 0, .binary_data = {0xDE, 0xAD, 0xBE, 0xEF}, .label = "test_blob"};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_EQ(selected.value().begin()->binary, (std::vector<uint8_t>{0xDE, 0xAD, 0xBE, 0xEF}));
+    EXPECT_EQ(selected.value().begin()->binary_data, (std::vector<uint8_t>{0xDE, 0xAD, 0xBE, 0xEF}));
     EXPECT_EQ(selected.value().begin()->label, "test_blob");
 }
 
-TEST_F(DataTypesInsertUpdateTest, InsertLargeBlob) {
-    QuerySet<DataTypes> qs;
+TYPED_TEST(DataTypesInsertUpdateTest, InsertLargeBlob) {
+    QuerySet<DataTypes, TypeParam> qs;
 
     std::vector<uint8_t> large_data(1024);
     for (size_t i = 0; i < large_data.size(); ++i) {
         large_data[i] = static_cast<uint8_t>(i % 256);
     }
 
-    DataTypes const obj{.id = 0, .binary = large_data, .label = "large"};
+    DataTypes const obj{.id = 0, .binary_data = large_data, .label = "large"};
     auto            result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
     auto it = selected.value().begin();
-    ASSERT_EQ(it->binary.size(), 1024);
+    ASSERT_EQ(it->binary_data.size(), 1024);
 
     for (size_t i = 0; i < 1024; ++i) {
-        EXPECT_EQ(it->binary[i], static_cast<uint8_t>(i % 256));
+        EXPECT_EQ(it->binary_data[i], static_cast<uint8_t>(i % 256));
     }
 }
 
-TEST_F(DataTypesInsertUpdateTest, InsertEmptyBlob) {
-    QuerySet<DataTypes> qs;
-    DataTypes const     obj{.id = 0, .binary = {}, .label = "empty"};
+TYPED_TEST(DataTypesInsertUpdateTest, InsertEmptyBlob) {
+    QuerySet<DataTypes, TypeParam> qs;
+    DataTypes const                obj{.id = 0, .binary_data = {}, .label = "empty"};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_TRUE(selected.value().begin()->binary.empty());
+    EXPECT_TRUE(selected.value().begin()->binary_data.empty());
 }
 
-TEST_F(DataTypesInsertUpdateTest, UpdateBlob) {
-    QuerySet<DataTypes> qs;
-    DataTypes const     obj{.id = 0, .binary = {0x01, 0x02}, .label = "original"};
+TYPED_TEST(DataTypesInsertUpdateTest, UpdateBlob) {
+    QuerySet<DataTypes, TypeParam> qs;
+    DataTypes const                obj{.id = 0, .binary_data = {0x01, 0x02}, .label = "original"};
 
     auto insert_result = qs.insert(obj);
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
     // Update with different blob
-    DataTypes const updated{.id = static_cast<int>(id), .binary = {0xFF, 0xEE, 0xDD}, .label = "updated"};
+    DataTypes const updated{.id = static_cast<int>(id), .binary_data = {0xFF, 0xEE, 0xDD}, .label = "updated"};
     auto            update_result = qs.update(updated);
     ASSERT_TRUE(update_result.has_value());
 
     auto selected = qs.select();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_EQ(selected.value().begin()->binary, (std::vector<uint8_t>{0xFF, 0xEE, 0xDD}));
+    EXPECT_EQ(selected.value().begin()->binary_data, (std::vector<uint8_t>{0xFF, 0xEE, 0xDD}));
     EXPECT_EQ(selected.value().begin()->label, "updated");
 }
 
-TEST_F(DataTypesInsertUpdateTest, InsertBatchBlobs) {
-    QuerySet<DataTypes>    qs;
+TYPED_TEST(DataTypesInsertUpdateTest, InsertBatchBlobs) {
+    QuerySet<DataTypes, TypeParam> qs;
     std::vector<DataTypes> batch = {{1, {0x01}, "blob1"}, {2, {0x02, 0x03}, "blob2"}, {3, {0x04, 0x05, 0x06}, "blob3"}};
 
     auto result = qs.insert(batch);
@@ -492,17 +587,17 @@ TEST_F(DataTypesInsertUpdateTest, InsertBatchBlobs) {
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 3);
     auto it = selected.value().begin();
-    EXPECT_EQ(it->binary.size(), 1);
+    EXPECT_EQ(it->binary_data.size(), 1);
     ++it;
-    EXPECT_EQ(it->binary.size(), 2);
+    EXPECT_EQ(it->binary_data.size(), 2);
     ++it;
-    EXPECT_EQ(it->binary.size(), 3);
+    EXPECT_EQ(it->binary_data.size(), 3);
 }
 
 // ===== EXTREME VALUE TESTS =====
 
-TEST_F(IntTypesInsertUpdateTest, ExtremeIntegerValues) {
-    QuerySet<IntTypes> qs;
+TYPED_TEST(IntTypesInsertUpdateTest, ExtremeIntegerValues) {
+    QuerySet<IntTypes, TypeParam> qs;
 
     // Min values
     IntTypes const min_obj{.id = 0, .big_num = -9223372036854775807LL - 1, .small_num = -32768};
@@ -516,8 +611,8 @@ TEST_F(IntTypesInsertUpdateTest, ExtremeIntegerValues) {
     EXPECT_EQ(it->small_num, -32768);
 }
 
-TEST_F(FloatTypesInsertUpdateTest, SpecialFloatValues) {
-    QuerySet<FloatTypes> qs;
+TYPED_TEST(FloatTypesInsertUpdateTest, SpecialFloatValues) {
+    QuerySet<FloatTypes, TypeParam> qs;
 
     // Zero, negative, very small
     FloatTypes const obj{.id = 0, .precise = 0.0, .approx = -0.0F};
@@ -531,26 +626,46 @@ TEST_F(FloatTypesInsertUpdateTest, SpecialFloatValues) {
 
 // ===== INSERT OPTIONS TESTS =====
 
-class InsertOptionsTest : public ::testing::Test {
+template <typename ConnType> class InsertOptionsTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        auto result = QuerySet<IntTypes>::set_default_connection(":memory:");
-        ASSERT_TRUE(result.has_value());
-        const auto& conn = QuerySet<IntTypes>::get_default_connection();
-        ASSERT_TRUE(conn->execute(
-                                "CREATE TABLE IntTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, big_num INTEGER, "
-                                "small_num INTEGER)"
-        )
-                            .has_value());
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        const auto& conn_str = storm::test::get_connection_string<ConnType>();
+        auto        result   = QuerySet<IntTypes, ConnType>::set_default_connection(conn_str);
+        ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
+
+        const auto& conn = QuerySet<IntTypes, ConnType>::get_default_connection();
+
+        ASSERT_TRUE(
+                storm::test::ensure_table<ConnType>(
+                        conn,
+                        "CREATE TABLE IntTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, big_num INTEGER, "
+                        "small_num INTEGER)"
+                )
+                        .has_value()
+        );
+
+        storm::test::begin_test_txn<ConnType>(conn, {"IntTypes"});
     }
     auto TearDown() -> void override {
-        QuerySet<IntTypes>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<IntTypes, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<IntTypes, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<IntTypes, ConnType>::clear_default_connection();
     }
 };
 
-TEST_F(InsertOptionsTest, BatchInsertReturnsVoid) {
-    QuerySet<IntTypes>    qs;
-    std::vector<IntTypes> batch = {{0, 100LL, 10}, {0, 200LL, 20}, {0, 300LL, 30}};
+TYPED_TEST_SUITE(InsertOptionsTest, DatabaseTypes);
+
+TYPED_TEST(InsertOptionsTest, BatchInsertReturnsVoid) {
+    QuerySet<IntTypes, TypeParam> qs;
+    std::vector<IntTypes>         batch = {{0, 100LL, 10}, {0, 200LL, 20}, {0, 300LL, 30}};
 
     // Batch insert returns void (no IDs - SQLite's last_insert_rowid is unreliable for batch)
     auto result = qs.insert(batch);
@@ -562,9 +677,9 @@ TEST_F(InsertOptionsTest, BatchInsertReturnsVoid) {
     EXPECT_EQ(selected.value().size(), 3);
 }
 
-TEST_F(InsertOptionsTest, InsertWithCustomBatchSize) {
-    QuerySet<IntTypes>    qs;
-    std::vector<IntTypes> batch;
+TYPED_TEST(InsertOptionsTest, InsertWithCustomBatchSize) {
+    QuerySet<IntTypes, TypeParam> qs;
+    std::vector<IntTypes>         batch;
 
     // Create 100 objects
     batch.reserve(100);
@@ -581,9 +696,9 @@ TEST_F(InsertOptionsTest, InsertWithCustomBatchSize) {
     EXPECT_EQ(selected.value().size(), 100);
 }
 
-TEST_F(InsertOptionsTest, InsertBatchSizeCappedToMax) {
-    QuerySet<IntTypes>    qs;
-    std::vector<IntTypes> batch = {{0, 100LL, 10}, {0, 200LL, 20}};
+TYPED_TEST(InsertOptionsTest, InsertBatchSizeCappedToMax) {
+    QuerySet<IntTypes, TypeParam> qs;
+    std::vector<IntTypes>         batch = {{0, 100LL, 10}, {0, 200LL, 20}};
 
     // IntTypes has 2 non-PK fields, so max = 999/2 = 499
     // Request batch_size of 1000, should be capped to 499
@@ -595,9 +710,9 @@ TEST_F(InsertOptionsTest, InsertBatchSizeCappedToMax) {
     EXPECT_EQ(selected.value().size(), 2);
 }
 
-TEST_F(InsertOptionsTest, SingleInsertReturnsId) {
-    QuerySet<IntTypes> qs;
-    IntTypes const     obj{.id = 0, .big_num = 999LL, .small_num = 99};
+TYPED_TEST(InsertOptionsTest, SingleInsertReturnsId) {
+    QuerySet<IntTypes, TypeParam> qs;
+    IntTypes const                obj{.id = 0, .big_num = 999LL, .small_num = 99};
 
     // Single insert still returns the auto-generated ID
     auto result = qs.insert(obj);
@@ -610,9 +725,9 @@ TEST_F(InsertOptionsTest, SingleInsertReturnsId) {
     EXPECT_EQ(selected.value().begin()->big_num, 999LL);
 }
 
-TEST_F(InsertOptionsTest, LargeBatchWithCustomChunkSize) {
-    QuerySet<IntTypes>    qs;
-    std::vector<IntTypes> batch;
+TYPED_TEST(InsertOptionsTest, LargeBatchWithCustomChunkSize) {
+    QuerySet<IntTypes, TypeParam> qs;
+    std::vector<IntTypes>         batch;
 
     // Create 1000 objects
     batch.reserve(1000);
@@ -629,9 +744,9 @@ TEST_F(InsertOptionsTest, LargeBatchWithCustomChunkSize) {
     EXPECT_EQ(selected.value().size(), 1000);
 }
 
-TEST_F(InsertOptionsTest, OptionsWithOnlyBatchSize) {
-    QuerySet<IntTypes>    qs;
-    std::vector<IntTypes> batch = {{0, 100LL, 10}, {0, 200LL, 20}};
+TYPED_TEST(InsertOptionsTest, OptionsWithOnlyBatchSize) {
+    QuerySet<IntTypes, TypeParam> qs;
+    std::vector<IntTypes>         batch = {{0, 100LL, 10}, {0, 200LL, 20}};
 
     // Only specify batch_size
     auto result = qs.insert(batch, {{.batch_size = 1}});
@@ -652,26 +767,46 @@ struct UnsignedTypes {
     unsigned long                             u_long{};
 };
 
-class UnsignedTypesInsertUpdateTest : public ::testing::Test {
+template <typename ConnType> class UnsignedTypesInsertUpdateTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        auto result = QuerySet<UnsignedTypes>::set_default_connection(":memory:");
-        ASSERT_TRUE(result.has_value());
-        const auto& conn = QuerySet<UnsignedTypes>::get_default_connection();
-        ASSERT_TRUE(conn->execute(
-                                "CREATE TABLE UnsignedTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                                "u_int INTEGER, u_short INTEGER, u_long INTEGER)"
-        )
-                            .has_value());
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        const auto& conn_str = storm::test::get_connection_string<ConnType>();
+        auto        result   = QuerySet<UnsignedTypes, ConnType>::set_default_connection(conn_str);
+        ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
+
+        const auto& conn = QuerySet<UnsignedTypes, ConnType>::get_default_connection();
+
+        ASSERT_TRUE(
+                storm::test::ensure_table<ConnType>(
+                        conn,
+                        "CREATE TABLE UnsignedTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                        "u_int INTEGER, u_short INTEGER, u_long INTEGER)"
+                )
+                        .has_value()
+        );
+
+        storm::test::begin_test_txn<ConnType>(conn, {"UnsignedTypes"});
     }
     auto TearDown() -> void override {
-        QuerySet<UnsignedTypes>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<UnsignedTypes, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<UnsignedTypes, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<UnsignedTypes, ConnType>::clear_default_connection();
     }
 };
 
-TEST_F(UnsignedTypesInsertUpdateTest, InsertUnsignedValues) {
-    QuerySet<UnsignedTypes> qs;
-    UnsignedTypes const     obj{.id = 0, .u_int = 4294967295U, .u_short = 65535, .u_long = 1000000UL};
+TYPED_TEST_SUITE(UnsignedTypesInsertUpdateTest, DatabaseTypes);
+
+TYPED_TEST(UnsignedTypesInsertUpdateTest, InsertUnsignedValues) {
+    QuerySet<UnsignedTypes, TypeParam> qs;
+    UnsignedTypes const                obj{.id = 0, .u_int = 4294967295U, .u_short = 65535, .u_long = 1000000UL};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
@@ -684,9 +819,9 @@ TEST_F(UnsignedTypesInsertUpdateTest, InsertUnsignedValues) {
     EXPECT_EQ(selected.value().begin()->u_long, 1000000UL);
 }
 
-TEST_F(UnsignedTypesInsertUpdateTest, InsertBatchUnsigned) {
-    QuerySet<UnsignedTypes>    qs;
-    std::vector<UnsignedTypes> batch = {{0, 100U, 10, 1000UL}, {0, 200U, 20, 2000UL}, {0, 300U, 30, 3000UL}};
+TYPED_TEST(UnsignedTypesInsertUpdateTest, InsertBatchUnsigned) {
+    QuerySet<UnsignedTypes, TypeParam> qs;
+    std::vector<UnsignedTypes>         batch = {{0, 100U, 10, 1000UL}, {0, 200U, 20, 2000UL}, {0, 300U, 30, 3000UL}};
 
     auto result = qs.insert(batch);
     ASSERT_TRUE(result.has_value());
@@ -696,9 +831,9 @@ TEST_F(UnsignedTypesInsertUpdateTest, InsertBatchUnsigned) {
     EXPECT_EQ(selected.value().size(), 3);
 }
 
-TEST_F(UnsignedTypesInsertUpdateTest, UpdateUnsignedValues) {
-    QuerySet<UnsignedTypes> qs;
-    UnsignedTypes const     obj{.id = 0, .u_int = 100U, .u_short = 10, .u_long = 1000UL};
+TYPED_TEST(UnsignedTypesInsertUpdateTest, UpdateUnsignedValues) {
+    QuerySet<UnsignedTypes, TypeParam> qs;
+    UnsignedTypes const                obj{.id = 0, .u_int = 100U, .u_short = 10, .u_long = 1000UL};
 
     auto insert_result = qs.insert(obj);
     ASSERT_TRUE(insert_result.has_value());
@@ -724,26 +859,46 @@ struct LongLongTypes {
     unsigned long long                        ll_unsigned{};
 };
 
-class LongLongTypesInsertUpdateTest : public ::testing::Test {
+template <typename ConnType> class LongLongTypesInsertUpdateTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        auto result = QuerySet<LongLongTypes>::set_default_connection(":memory:");
-        ASSERT_TRUE(result.has_value());
-        const auto& conn = QuerySet<LongLongTypes>::get_default_connection();
-        ASSERT_TRUE(conn->execute(
-                                "CREATE TABLE LongLongTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                                "ll_signed INTEGER, ll_unsigned INTEGER)"
-        )
-                            .has_value());
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        const auto& conn_str = storm::test::get_connection_string<ConnType>();
+        auto        result   = QuerySet<LongLongTypes, ConnType>::set_default_connection(conn_str);
+        ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
+
+        const auto& conn = QuerySet<LongLongTypes, ConnType>::get_default_connection();
+
+        ASSERT_TRUE(
+                storm::test::ensure_table<ConnType>(
+                        conn,
+                        "CREATE TABLE LongLongTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                        "ll_signed INTEGER, ll_unsigned INTEGER)"
+                )
+                        .has_value()
+        );
+
+        storm::test::begin_test_txn<ConnType>(conn, {"LongLongTypes"});
     }
     auto TearDown() -> void override {
-        QuerySet<LongLongTypes>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<LongLongTypes, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<LongLongTypes, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<LongLongTypes, ConnType>::clear_default_connection();
     }
 };
 
-TEST_F(LongLongTypesInsertUpdateTest, InsertLongLongValues) {
-    QuerySet<LongLongTypes> qs;
-    LongLongTypes const     obj{.id = 0, .ll_signed = 9223372036854775807LL, .ll_unsigned = 9223372036854775807ULL};
+TYPED_TEST_SUITE(LongLongTypesInsertUpdateTest, DatabaseTypes);
+
+TYPED_TEST(LongLongTypesInsertUpdateTest, InsertLongLongValues) {
+    QuerySet<LongLongTypes, TypeParam> qs;
+    LongLongTypes const obj{.id = 0, .ll_signed = 9223372036854775807LL, .ll_unsigned = 9223372036854775807ULL};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
@@ -756,9 +911,9 @@ TEST_F(LongLongTypesInsertUpdateTest, InsertLongLongValues) {
     EXPECT_EQ(selected.value().begin()->ll_unsigned, 9223372036854775807ULL);
 }
 
-TEST_F(LongLongTypesInsertUpdateTest, InsertNegativeLongLong) {
-    QuerySet<LongLongTypes> qs;
-    LongLongTypes const     obj{.id = 0, .ll_signed = -9223372036854775807LL, .ll_unsigned = 0ULL};
+TYPED_TEST(LongLongTypesInsertUpdateTest, InsertNegativeLongLong) {
+    QuerySet<LongLongTypes, TypeParam> qs;
+    LongLongTypes const                obj{.id = 0, .ll_signed = -9223372036854775807LL, .ll_unsigned = 0ULL};
 
     auto result = qs.insert(obj);
     ASSERT_TRUE(result.has_value());
@@ -769,9 +924,9 @@ TEST_F(LongLongTypesInsertUpdateTest, InsertNegativeLongLong) {
     EXPECT_EQ(selected.value().begin()->ll_unsigned, 0ULL);
 }
 
-TEST_F(LongLongTypesInsertUpdateTest, UpdateLongLongValues) {
-    QuerySet<LongLongTypes> qs;
-    LongLongTypes const     obj{.id = 0, .ll_signed = 100LL, .ll_unsigned = 200ULL};
+TYPED_TEST(LongLongTypesInsertUpdateTest, UpdateLongLongValues) {
+    QuerySet<LongLongTypes, TypeParam> qs;
+    LongLongTypes const                obj{.id = 0, .ll_signed = 100LL, .ll_unsigned = 200ULL};
 
     auto insert_result = qs.insert(obj);
     ASSERT_TRUE(insert_result.has_value());
@@ -814,7 +969,7 @@ TEST(ErrorHandlingTest, ErrorAccessors) {
 // Test select on non-existent table
 TEST(ErrorHandlingTest, SelectFromNonExistentTable) {
     // Set up in-memory database (no table created)
-    auto conn_result = QuerySet<IntTypes>::set_default_connection(":memory:");
+    auto conn_result = QuerySet<IntTypes>::set_default_connection(storm::test::get_connection_string());
     ASSERT_TRUE(conn_result.has_value());
 
     // Try to select from non-existent table

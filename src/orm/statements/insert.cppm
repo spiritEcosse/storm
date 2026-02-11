@@ -7,7 +7,6 @@ export module storm_orm_statements_insert;
 import storm_orm_statements_base;
 import storm_orm_utilities;
 import storm_db_concept;
-import storm_db_sqlite;
 
 import <expected>;
 import <string>;
@@ -103,9 +102,31 @@ export namespace storm::orm::statements {
             return result;
         }
 
+        // Build INSERT ... RETURNING <pk> SQL at compile-time for backends that support it
+        static consteval auto build_insert_returning_sql_array() {
+            // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
+            constexpr size_t          sql_size = calculate_insert_sql_size() + utilities::sql_len::XL_BUFFER + 64;
+            ConstexprString<sql_size> result;
+
+            result.append("INSERT INTO ");
+            result.append(Base::table_name_);
+            result.append(" (");
+            result.append(Base::build_non_pk_field_names_list());
+            result.append(") VALUES (");
+            result.append(placeholders_);
+            result.append(") RETURNING ");
+            result.append(Base::pk_name_);
+
+            return result;
+        }
+
         // Pre-computed INSERT SQL generated at compile-time
         static constexpr auto           insert_sql_array  = build_insert_sql_array();
         static inline const std::string insert_sql_string = std::string(insert_sql_array);
+
+        // Pre-computed INSERT ... RETURNING SQL for PostgreSQL
+        static constexpr auto           insert_returning_sql_array  = build_insert_returning_sql_array();
+        static inline const std::string insert_returning_sql_string = std::string(insert_returning_sql_array);
 
       public:
         // Public access to INSERT SQL for QuerySet optimization
@@ -210,7 +231,7 @@ export namespace storm::orm::statements {
             InsertOptions const options = opts.value_or(InsertOptions{});
 
             // Calculate effective batch size
-            constexpr size_t max_allowed          = Base::MAX_SQLITE_VARIABLES / Base::field_count_;
+            constexpr size_t max_allowed          = Base::MAX_DB_VARIABLES / Base::field_count_;
             size_t           effective_batch_size = options.batch_size.value_or(max_allowed);
             effective_batch_size                  = std::min(effective_batch_size, max_allowed); // Cap at SQLite max
 
@@ -226,36 +247,69 @@ export namespace storm::orm::statements {
         // Ultra-optimized single INSERT - simple imperative style
         [[nodiscard]] __attribute__((hot)) auto execute_single_optimized(const T& obj, bool return_id = true) noexcept
                 -> std::expected<int64_t, Error> {
-            // Get or cache the prepared statement
-            // SAFETY: Connection reserves capacity (32) to prevent rehashing and dangling pointers
-            if (cached_insert_stmt_ == nullptr) [[unlikely]] {
-                auto stmt_result = conn_->prepare_cached(get_insert_sql());
-                if (!stmt_result) {
-                    return std::unexpected(stmt_result.error());
+            if constexpr (ConnType::supports_returning) {
+                // PostgreSQL path: use INSERT ... RETURNING <pk> to get the generated ID
+                if (cached_insert_returning_stmt_ == nullptr) [[unlikely]] {
+                    auto stmt_result = conn_->prepare_cached(insert_returning_sql_string);
+                    if (!stmt_result) {
+                        return std::unexpected(stmt_result.error());
+                    }
+                    cached_insert_returning_stmt_ = *stmt_result;
                 }
-                cached_insert_stmt_ = *stmt_result;
-            }
 
-            // Bind non-PK fields
-            auto bind_result = Base::template bind_non_pk_fields_impl<ConnType, Statement>(
-                    *cached_insert_stmt_, obj, typename Base::field_indices_t()
-            );
-            if (!bind_result) [[unlikely]] {
-                return std::unexpected(bind_result.error());
-            }
+                // Bind non-PK fields
+                auto bind_result = Base::template bind_non_pk_fields_impl<ConnType, Statement>(
+                        *cached_insert_returning_stmt_, obj, typename Base::field_indices_t()
+                );
+                if (!bind_result) [[unlikely]] {
+                    return std::unexpected(bind_result.error());
+                }
 
-            // Execute
-            auto exec_result = cached_insert_stmt_->execute();
-            if (!exec_result) [[unlikely]] {
+                // Execute — for RETURNING, we need step() to get the result row
+                auto step_result = cached_insert_returning_stmt_->step();
+                if (!step_result) [[unlikely]] {
+                    cached_insert_returning_stmt_->reset();
+                    return std::unexpected(step_result.error());
+                }
+
+                // Extract the returned ID from the first column
+                int64_t id = return_id ? cached_insert_returning_stmt_->extract_int64(0) : 0;
+                cached_insert_returning_stmt_->reset();
+
+                return id;
+            } else {
+                // SQLite path: use last_insert_rowid() after INSERT
+                // Get or cache the prepared statement
+                // SAFETY: Connection reserves capacity (32) to prevent rehashing and dangling pointers
+                if (cached_insert_stmt_ == nullptr) [[unlikely]] {
+                    auto stmt_result = conn_->prepare_cached(get_insert_sql());
+                    if (!stmt_result) {
+                        return std::unexpected(stmt_result.error());
+                    }
+                    cached_insert_stmt_ = *stmt_result;
+                }
+
+                // Bind non-PK fields
+                auto bind_result = Base::template bind_non_pk_fields_impl<ConnType, Statement>(
+                        *cached_insert_stmt_, obj, typename Base::field_indices_t()
+                );
+                if (!bind_result) [[unlikely]] {
+                    return std::unexpected(bind_result.error());
+                }
+
+                // Execute
+                auto exec_result = cached_insert_stmt_->execute();
+                if (!exec_result) [[unlikely]] {
+                    cached_insert_stmt_->reset();
+                    return std::unexpected(exec_result.error());
+                }
+
+                // Get ID if requested, otherwise return 0
+                int64_t id = return_id ? conn_->last_insert_rowid() : 0;
                 cached_insert_stmt_->reset();
-                return std::unexpected(exec_result.error());
+
+                return id;
             }
-
-            // Get ID if requested, otherwise return 0
-            int64_t id = return_id ? conn_->last_insert_rowid() : 0;
-            cached_insert_stmt_->reset();
-
-            return id;
         }
 
       protected: // Changed to protected so BaseStatement can access
@@ -309,7 +363,8 @@ export namespace storm::orm::statements {
 
       private:
         std::shared_ptr<ConnType> conn_;
-        mutable Statement*        cached_insert_stmt_ = nullptr;
+        mutable Statement*        cached_insert_stmt_           = nullptr;
+        mutable Statement*        cached_insert_returning_stmt_ = nullptr;
         // SAFETY: Safe to cache raw pointer because Connection reserves capacity (32)
         // to prevent rehashing. Typical ORM usage won't exceed 32 unique statements.
     };

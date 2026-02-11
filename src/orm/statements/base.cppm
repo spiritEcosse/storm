@@ -279,7 +279,7 @@ export namespace storm::orm::statements {
         }
 
         // Common batch operation thresholds
-        static constexpr size_t MAX_SQLITE_VARIABLES = 999;
+        static constexpr size_t MAX_DB_VARIABLES = 999;
 
         // Adaptive threshold calculation based on batch size and field count
         // Returns the optimal threshold for deciding between bulk SQL and individual inserts
@@ -531,23 +531,62 @@ export namespace storm::orm::statements {
 
         // Helper: Append ORDER BY clause to SQL from wrapper
         // NOTE: ORDER BY must come before LIMIT/OFFSET in SQLite
+        // For PostgreSQL, adds NULLS FIRST/LAST to match SQLite semantics
+        template <typename ConnTypeForDialect = void>
         __attribute__((always_inline)) static void
         append_order_by(std::string& sql, const std::optional<OrderByWrapper>& order_by_wrapper) {
             if (order_by_wrapper.has_value() && !order_by_wrapper->empty()) {
-                sql += order_by_wrapper->get_order_by_sql();
+                const auto& order_sql = order_by_wrapper->get_order_by_sql();
+                if constexpr (requires { ConnTypeForDialect::supports_returning; }) {
+                    // PostgreSQL: add NULLS FIRST for ASC, NULLS LAST for DESC
+                    // to match SQLite semantics (NULLs first in ASC, last in DESC)
+                    std::string adapted = order_sql;
+                    // Replace " ASC" with " ASC NULLS FIRST" and " DESC" with " DESC NULLS LAST"
+                    // Process from end to avoid offset issues
+                    size_t pos = 0;
+                    while ((pos = adapted.find(" ASC", pos)) != std::string::npos) {
+                        size_t after = pos + 4;
+                        // Only add if not already followed by " NULLS"
+                        if (adapted.substr(after, 6) != " NULLS") {
+                            adapted.insert(after, " NULLS FIRST");
+                        }
+                        pos = after + 12;
+                    }
+                    pos = 0;
+                    while ((pos = adapted.find(" DESC", pos)) != std::string::npos) {
+                        size_t after = pos + 5;
+                        if (adapted.substr(after, 6) != " NULLS") {
+                            adapted.insert(after, " NULLS LAST");
+                        }
+                        pos = after + 11;
+                    }
+                    sql += adapted;
+                } else {
+                    sql += order_sql;
+                }
             }
         }
 
         // Helper: Append LIMIT/OFFSET clauses to SQL
         // NOTE: SQLite requires LIMIT when using OFFSET, so we use LIMIT -1 (meaning unlimited)
+        // PostgreSQL uses LIMIT ALL for unlimited rows
+        template <typename ConnTypeForDialect = void>
         __attribute__((always_inline)) static void
         append_limit_offset(std::string& sql, const std::optional<int>& limit, const std::optional<int>& offset) {
             if (limit.has_value()) {
                 sql += " LIMIT ";
                 sql += std::to_string(limit.value());
             } else if (offset.has_value()) {
-                // SQLite requires LIMIT when using OFFSET
-                sql += " LIMIT -1";
+                // Need LIMIT when using OFFSET
+                if constexpr (requires { ConnTypeForDialect::supports_limit_all; }) {
+                    if constexpr (ConnTypeForDialect::supports_limit_all) {
+                        sql += " LIMIT ALL";
+                    } else {
+                        sql += " LIMIT -1";
+                    }
+                } else {
+                    sql += " LIMIT -1"; // Default: SQLite-compatible
+                }
             }
 
             if (offset.has_value()) {
@@ -563,7 +602,7 @@ export namespace storm::orm::statements {
         bind_where_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& where_expr)
                 -> std::expected<void, Error> {
             int  param_index = 1;
-            auto bind_result = orm::where::bind_params_direct(*where_expr, stmt_ptr, param_index);
+            auto bind_result = orm::where::bind_params_direct<Statement, Error>(*where_expr, stmt_ptr, param_index);
             if (!bind_result) [[unlikely]] {
                 stmt_ptr->reset();
                 return std::unexpected(bind_result.error());

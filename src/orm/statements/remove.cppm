@@ -8,7 +8,6 @@ import storm_orm_statements_base;
 import storm_orm_utilities;
 import storm_orm_transaction;
 import storm_db_concept;
-import storm_db_sqlite;
 
 import <expected>;
 import <string>;
@@ -105,7 +104,7 @@ export namespace storm::orm::statements {
 
         // Maximum chunk size for IN clause (80% of SQLite limit for safety)
         // Defined here so it can be used in compile-time SQL generation
-        static constexpr size_t MAX_CHUNK_SIZE = (Base::MAX_SQLITE_VARIABLES * 4) / 5; // 799
+        static constexpr size_t MAX_CHUNK_SIZE = (Base::MAX_DB_VARIABLES * 4) / 5; // 799
 
         // Compile-time max bulk DELETE SQL size calculation
         static consteval auto calculate_max_bulk_delete_sql_size() -> size_t {

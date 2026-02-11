@@ -38,8 +38,8 @@ export namespace storm {
     // Default connection management for QuerySet
     // Thread-safe via thread_local - each thread gets its own connection
     namespace detail {
-        inline auto get_default_connection_ptr() -> auto& {
-            static thread_local std::shared_ptr<db::sqlite::Connection> conn_;
+        template <typename ConnType> inline auto get_default_connection_ptr() -> auto& {
+            static thread_local std::shared_ptr<ConnType> conn_;
             return conn_;
         }
     } // namespace detail
@@ -50,9 +50,7 @@ export namespace storm {
 
       public:
         // Default constructor using default connection
-        QuerySet()
-            requires std::same_as<ConnType, storm::db::sqlite::Connection>
-            : conn_(get_default_connection()) {}
+        QuerySet() : conn_(get_default_connection()) {}
 
         auto remove(const T& obj) -> std::expected<void, Error> {
             // Use cached RemoveStatement instance for optimal performance
@@ -346,33 +344,35 @@ export namespace storm {
         // 1. Use external synchronization (mutex/lock) around these calls, OR
         // 2. Create QuerySet with explicit connection per thread
         [[nodiscard]] static auto set_default_connection(std::string_view db_path)
-                -> std::expected<void, db::sqlite::Error> {
-            auto conn_result = db::sqlite::Connection::open(db_path);
+                -> std::expected<void, typename ConnType::Error> {
+            auto conn_result = ConnType::open(db_path);
             if (!conn_result) {
                 return std::unexpected(conn_result.error());
             }
 
-            auto conn_ptr = std::make_shared<db::sqlite::Connection>(std::move(conn_result.value()));
+            auto conn_ptr = std::make_shared<ConnType>(std::move(conn_result.value()));
 
             // Pre-populate statement cache for better performance
-            conn_ptr->prepare_common_statements();
+            if constexpr (requires { conn_ptr->prepare_common_statements(); }) {
+                conn_ptr->prepare_common_statements();
+            }
 
-            detail::get_default_connection_ptr() = conn_ptr;
+            detail::get_default_connection_ptr<ConnType>() = conn_ptr;
             return {};
         }
 
         [[nodiscard]] static auto get_default_connection() -> const std::shared_ptr<ConnType>& {
-            assert(detail::get_default_connection_ptr() &&
+            assert(detail::get_default_connection_ptr<ConnType>() &&
                    "Default database connection not set. Call QuerySet::set_default_connection() first.");
-            return detail::get_default_connection_ptr();
+            return detail::get_default_connection_ptr<ConnType>();
         }
 
         [[nodiscard]] static auto has_default_connection() noexcept -> bool {
-            return static_cast<bool>(detail::get_default_connection_ptr());
+            return static_cast<bool>(detail::get_default_connection_ptr<ConnType>());
         }
 
         static auto clear_default_connection() noexcept -> void {
-            detail::get_default_connection_ptr().reset();
+            detail::get_default_connection_ptr<ConnType>().reset();
         }
 
       private:

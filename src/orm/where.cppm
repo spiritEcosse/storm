@@ -12,7 +12,6 @@ import <sstream>;
 import <tuple>;
 import <expected>;
 import <variant>;
-import storm_db_sqlite;     // For Statement type
 import storm_orm_utilities; // For ConstexprString
 
 export namespace storm::orm::where {
@@ -93,14 +92,11 @@ export namespace storm::orm::where {
             return sql_;
         }
 
+        template <typename StmtType, typename ErrorType>
         [[nodiscard]] __attribute__((always_inline)) auto
-        bind_params_direct(ErasedStatementPtr stmt_ptr, int& param_index) const
-                -> std::expected<void, storm::db::sqlite::Error> {
-            // Cast stmt_ptr to Statement* (type-erased binding)
-            auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
-            return utilities::bind_parameter_value<storm::db::sqlite::Statement, storm::db::sqlite::Error>(
-                    *stmt, param_index++, value_
-            );
+        bind_params_direct(ErasedStatementPtr stmt_ptr, int& param_index) const -> std::expected<void, ErrorType> {
+            auto* stmt = static_cast<StmtType*>(stmt_ptr);
+            return utilities::bind_parameter_value<StmtType, ErrorType>(*stmt, param_index++, value_);
         }
     };
 
@@ -120,10 +116,10 @@ export namespace storm::orm::where {
             return sql_;
         }
 
+        template <typename StmtType, typename ErrorType>
         [[nodiscard]] __attribute__((always_inline)) auto
-        bind_params_direct(ErasedStatementPtr stmt_ptr, int& param_index) const
-                -> std::expected<void, storm::db::sqlite::Error> {
-            auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
+        bind_params_direct(ErasedStatementPtr stmt_ptr, int& param_index) const -> std::expected<void, ErrorType> {
+            auto* stmt = static_cast<StmtType*>(stmt_ptr);
             return stmt->bind_text(param_index++, pattern_);
         }
     };
@@ -145,20 +141,17 @@ export namespace storm::orm::where {
             return sql_;
         }
 
+        template <typename StmtType, typename ErrorType>
         [[nodiscard]] __attribute__((hot)) auto bind_params_direct(ErasedStatementPtr stmt_ptr, int& param_index) const
-                -> std::expected<void, storm::db::sqlite::Error> {
-            auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
+                -> std::expected<void, ErrorType> {
+            auto* stmt = static_cast<StmtType*>(stmt_ptr);
             // Bind min value
-            if (auto result = utilities::bind_parameter_value<storm::db::sqlite::Statement, storm::db::sqlite::Error>(
-                        *stmt, param_index++, min_val_
-                );
+            if (auto result = utilities::bind_parameter_value<StmtType, ErrorType>(*stmt, param_index++, min_val_);
                 !result) {
                 return result;
             }
             // Bind max value
-            return utilities::bind_parameter_value<storm::db::sqlite::Statement, storm::db::sqlite::Error>(
-                    *stmt, param_index++, max_val_
-            );
+            return utilities::bind_parameter_value<StmtType, ErrorType>(*stmt, param_index++, max_val_);
         }
     };
 
@@ -192,14 +185,12 @@ export namespace storm::orm::where {
             return sql_; // Return pre-generated SQL
         }
 
+        template <typename StmtType, typename ErrorType>
         [[nodiscard]] __attribute__((hot)) auto bind_params_direct(ErasedStatementPtr stmt_ptr, int& param_index) const
-                -> std::expected<void, storm::db::sqlite::Error> {
-            auto* stmt = static_cast<storm::db::sqlite::Statement*>(stmt_ptr);
+                -> std::expected<void, ErrorType> {
+            auto* stmt = static_cast<StmtType*>(stmt_ptr);
             for (const auto& value : values_) {
-                if (auto result =
-                            utilities::bind_parameter_value<storm::db::sqlite::Statement, storm::db::sqlite::Error>(
-                                    *stmt, param_index++, value
-                            );
+                if (auto result = utilities::bind_parameter_value<StmtType, ErrorType>(*stmt, param_index++, value);
                     !result) {
                     return result;
                 }
@@ -258,8 +249,10 @@ export namespace storm::orm::where {
 
     // Forward declare visitor functions
     [[nodiscard]] auto to_sql(const ExpressionVariant& expr) -> std::string;
+
+    template <typename StmtType, typename ErrorType>
     [[nodiscard]] auto bind_params_direct(const ExpressionVariant& expr, ErasedStatementPtr stmt_ptr, int& param_index)
-            -> std::expected<void, storm::db::sqlite::Error>;
+            -> std::expected<void, ErrorType>;
 
     // Visitor for to_sql() - called via std::visit
     struct ToSqlVisitor {
@@ -285,22 +278,21 @@ export namespace storm::orm::where {
     };
 
     // Visitor for bind_params_direct() - called via std::visit
-    struct BindParamsVisitor {
+    template <typename StmtType, typename ErrorType> struct BindParamsVisitor {
         ErasedStatementPtr stmt_ptr;
         int* param_index; // Pointer instead of reference (cppcoreguidelines-avoid-const-or-ref-data-members)
 
-        [[nodiscard]] auto operator()(const LogicalExpr& expr) const -> std::expected<void, storm::db::sqlite::Error> {
+        [[nodiscard]] auto operator()(const LogicalExpr& expr) const -> std::expected<void, ErrorType> {
             // Recursive case: bind left then right
-            if (auto result = bind_params_direct(*expr.left, stmt_ptr, *param_index); !result) {
+            if (auto result = bind_params_direct<StmtType, ErrorType>(*expr.left, stmt_ptr, *param_index); !result) {
                 return result;
             }
-            return bind_params_direct(*expr.right, stmt_ptr, *param_index);
+            return bind_params_direct<StmtType, ErrorType>(*expr.right, stmt_ptr, *param_index);
         }
 
         // All other expression types have their own bind_params_direct() method
-        template <typename T>
-        [[nodiscard]] auto operator()(const T& expr) const -> std::expected<void, storm::db::sqlite::Error> {
-            return expr.bind_params_direct(stmt_ptr, *param_index);
+        template <typename T> [[nodiscard]] auto operator()(const T& expr) const -> std::expected<void, ErrorType> {
+            return expr.template bind_params_direct<StmtType, ErrorType>(stmt_ptr, *param_index);
         }
     };
 
@@ -309,10 +301,13 @@ export namespace storm::orm::where {
         return std::visit(ToSqlVisitor{}, expr);
     }
 
+    template <typename StmtType, typename ErrorType>
     [[nodiscard]] inline auto
     bind_params_direct(const ExpressionVariant& expr, ErasedStatementPtr stmt_ptr, int& param_index)
-            -> std::expected<void, storm::db::sqlite::Error> {
-        return std::visit(BindParamsVisitor{.stmt_ptr = stmt_ptr, .param_index = &param_index}, expr);
+            -> std::expected<void, ErrorType> {
+        return std::visit(
+                BindParamsVisitor<StmtType, ErrorType>{.stmt_ptr = stmt_ptr, .param_index = &param_index}, expr
+        );
     }
 
     // Expression wrapper to enable natural && and || operators without ambiguity

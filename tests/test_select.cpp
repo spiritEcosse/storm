@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include "test_db_helpers.h"
 
 // NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
 
@@ -17,18 +18,22 @@ struct SelectPerson {
     int                                       age{};
 };
 
-// Test fixture for SELECT operations
-class SelectTest : public ::testing::Test {
+// Test fixture for SELECT operations — templated on database backend
+template <typename ConnType> class SelectTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        // Set up in-memory SQLite database
-        auto result = QuerySet<SelectPerson>::set_default_connection(":memory:");
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        const auto& conn_str = storm::test::get_connection_string<ConnType>();
+        auto        result   = QuerySet<SelectPerson, ConnType>::set_default_connection(conn_str);
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
 
-        const auto& conn = QuerySet<SelectPerson>::get_default_connection();
+        const auto& conn = QuerySet<SelectPerson, ConnType>::get_default_connection();
 
-        // Create table with AUTOINCREMENT for proper ID generation
-        auto create_result = conn->execute(
+        auto create_result = storm::test::ensure_table<ConnType>(
+                conn,
                 "CREATE TABLE SelectPerson ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
@@ -36,16 +41,26 @@ class SelectTest : public ::testing::Test {
                 ")"
         );
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
+
+        storm::test::begin_test_txn<ConnType>(conn, {"SelectPerson"});
     }
 
     auto TearDown() -> void override {
-        QuerySet<SelectPerson>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<SelectPerson, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<SelectPerson, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<SelectPerson, ConnType>::clear_default_connection();
     }
 };
 
+TYPED_TEST_SUITE(SelectTest, DatabaseTypes);
+
 // Test: SELECT from empty table returns empty vector
-TEST_F(SelectTest, SelectFromEmptyTable) {
-    QuerySet<SelectPerson> queryset;
+TYPED_TEST(SelectTest, SelectFromEmptyTable) {
+    QuerySet<SelectPerson, TypeParam> queryset;
 
     auto result = queryset.select();
     ASSERT_TRUE(result.has_value()) << "SELECT failed: " << result.error().message();
@@ -55,8 +70,8 @@ TEST_F(SelectTest, SelectFromEmptyTable) {
 }
 
 // Test: SELECT single row
-TEST_F(SelectTest, SelectSingleRow) {
-    QuerySet<SelectPerson> queryset;
+TYPED_TEST(SelectTest, SelectSingleRow) {
+    QuerySet<SelectPerson, TypeParam> queryset;
 
     // Insert one person
     SelectPerson const alice{.id = 0, .name = "Alice", .age = 30};
@@ -79,8 +94,8 @@ TEST_F(SelectTest, SelectSingleRow) {
 }
 
 // Test: SELECT multiple rows
-TEST_F(SelectTest, SelectMultipleRows) {
-    QuerySet<SelectPerson> queryset;
+TYPED_TEST(SelectTest, SelectMultipleRows) {
+    QuerySet<SelectPerson, TypeParam> queryset;
 
     // Insert multiple people
     std::vector<SelectPerson> people_to_insert = {{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}};
@@ -114,8 +129,8 @@ TEST_F(SelectTest, SelectMultipleRows) {
 }
 
 // Test: SELECT with different field types (int and std::string)
-TEST_F(SelectTest, SelectDifferentFieldTypes) {
-    QuerySet<SelectPerson> queryset;
+TYPED_TEST(SelectTest, SelectDifferentFieldTypes) {
+    QuerySet<SelectPerson, TypeParam> queryset;
 
     // Insert person with specific values
     SelectPerson const dave{.id = 0, .name = "Dave", .age = 40};
@@ -140,8 +155,8 @@ TEST_F(SelectTest, SelectDifferentFieldTypes) {
 
 // Test: SELECT after INSERT and DELETE
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_F(SelectTest, SelectAfterInsertAndDelete) {
-    QuerySet<SelectPerson> queryset;
+TYPED_TEST(SelectTest, SelectAfterInsertAndDelete) {
+    QuerySet<SelectPerson, TypeParam> queryset;
 
     // Insert multiple people
     std::vector<SelectPerson> people_to_insert = {{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}};
@@ -184,8 +199,8 @@ TEST_F(SelectTest, SelectAfterInsertAndDelete) {
 
 // Test: SELECT with large dataset
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_F(SelectTest, SelectLargeDataset) {
-    QuerySet<SelectPerson> queryset;
+TYPED_TEST(SelectTest, SelectLargeDataset) {
+    QuerySet<SelectPerson, TypeParam> queryset;
 
     // Insert 100 people (use explicit IDs for batch insert)
     std::vector<SelectPerson> people_to_insert;
@@ -218,8 +233,8 @@ TEST_F(SelectTest, SelectLargeDataset) {
 }
 
 // Test: Multiple SELECT calls reuse cached statement
-TEST_F(SelectTest, MultipleSelectCallsUseCaching) {
-    QuerySet<SelectPerson> queryset;
+TYPED_TEST(SelectTest, MultipleSelectCallsUseCaching) {
+    QuerySet<SelectPerson, TypeParam> queryset;
 
     // Insert test data
     SelectPerson const alice{.id = 0, .name = "Alice", .age = 30};
@@ -243,8 +258,8 @@ TEST_F(SelectTest, MultipleSelectCallsUseCaching) {
 }
 
 // Test: SELECT with empty strings
-TEST_F(SelectTest, SelectWithEmptyString) {
-    QuerySet<SelectPerson> queryset;
+TYPED_TEST(SelectTest, SelectWithEmptyString) {
+    QuerySet<SelectPerson, TypeParam> queryset;
 
     // Insert person with empty name
     SelectPerson const anonymous{.id = 0, .name = "", .age = 25};
@@ -262,8 +277,8 @@ TEST_F(SelectTest, SelectWithEmptyString) {
 }
 
 // Test: SELECT preserves row order
-TEST_F(SelectTest, SelectPreservesRowOrder) {
-    QuerySet<SelectPerson> queryset;
+TYPED_TEST(SelectTest, SelectPreservesRowOrder) {
+    QuerySet<SelectPerson, TypeParam> queryset;
 
     // Insert in specific order (use explicit IDs for batch insert)
     std::vector<SelectPerson> people_to_insert =

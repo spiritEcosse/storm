@@ -183,8 +183,8 @@ export namespace storm::orm::statements {
             }
 
             // Append ORDER BY, LIMIT, OFFSET using shared helpers
-            Base::append_order_by(sql, order_by_wrapper_);
-            Base::append_limit_offset(sql, limit_, offset_);
+            Base::template append_order_by<ConnType>(sql, order_by_wrapper_);
+            Base::template append_limit_offset<ConnType>(sql, limit_, offset_);
 
             // Prepare statement
             auto prepare_result = conn_->prepare_cached(sql);

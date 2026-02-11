@@ -404,8 +404,8 @@ export namespace storm::orm::statements {
         }
 
         void append_modifiers(std::string& sql) const {
-            Base::append_order_by(sql, order_by_wrapper_);
-            Base::append_limit_offset(sql, limit_, offset_);
+            Base::template append_order_by<ConnType>(sql, order_by_wrapper_);
+            Base::template append_limit_offset<ConnType>(sql, limit_, offset_);
         }
 
         [[nodiscard]] auto prepare_and_extract(const std::string& sql) -> std::expected<ResultType, Error> {

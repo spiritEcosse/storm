@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include "test_db_helpers.h"
 
 // NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
 
@@ -17,18 +18,23 @@ struct LimitOffsetPerson {
     int                                       age{};
 };
 
-// Test fixture for LIMIT/OFFSET operations
-class LimitOffsetTest : public ::testing::Test {
+// Test fixture for LIMIT/OFFSET operations — templated on database backend
+template <typename ConnType> class LimitOffsetTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        // Set up in-memory SQLite database
-        auto result = QuerySet<LimitOffsetPerson>::set_default_connection(":memory:");
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        auto result = QuerySet<LimitOffsetPerson, ConnType>::set_default_connection(
+                storm::test::get_connection_string<ConnType>()
+        );
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
 
-        const auto& conn = QuerySet<LimitOffsetPerson>::get_default_connection();
+        const auto& conn = QuerySet<LimitOffsetPerson, ConnType>::get_default_connection();
 
-        // Create table
-        auto create_result = conn->execute(
+        auto create_result = storm::test::ensure_table<ConnType>(
+                conn,
                 "CREATE TABLE LimitOffsetPerson ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
@@ -37,9 +43,11 @@ class LimitOffsetTest : public ::testing::Test {
         );
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
+        storm::test::begin_test_txn<ConnType>(conn, {"LimitOffsetPerson"});
+
         // Insert 20 test records for comprehensive testing
-        QuerySet<LimitOffsetPerson>    queryset;
-        std::vector<LimitOffsetPerson> people;
+        QuerySet<LimitOffsetPerson, ConnType> queryset;
+        std::vector<LimitOffsetPerson>        people;
         for (int i = 1; i <= 20; i++) {
             people.emplace_back(i, "Person" + std::to_string(i), 20 + i);
         }
@@ -48,14 +56,22 @@ class LimitOffsetTest : public ::testing::Test {
     }
 
     auto TearDown() -> void override {
-        QuerySet<LimitOffsetPerson>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<LimitOffsetPerson, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<LimitOffsetPerson, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<LimitOffsetPerson, ConnType>::clear_default_connection();
     }
 };
 
+TYPED_TEST_SUITE(LimitOffsetTest, DatabaseTypes);
+
 // ===== Basic LIMIT Tests =====
 
-TEST_F(LimitOffsetTest, LimitOnly) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, LimitOnly) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     auto result = qs.limit(5).select();
     ASSERT_TRUE(result.has_value()) << "SELECT with LIMIT failed: " << result.error().message();
@@ -71,8 +87,8 @@ TEST_F(LimitOffsetTest, LimitOnly) {
     }
 }
 
-TEST_F(LimitOffsetTest, LimitZero) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, LimitZero) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     auto result = qs.limit(0).select();
     ASSERT_TRUE(result.has_value()) << "SELECT with LIMIT 0 failed: " << result.error().message();
@@ -81,8 +97,8 @@ TEST_F(LimitOffsetTest, LimitZero) {
     EXPECT_EQ(people.size(), 0) << "Expected 0 rows with LIMIT 0";
 }
 
-TEST_F(LimitOffsetTest, LimitGreaterThanResultSet) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, LimitGreaterThanResultSet) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     auto result = qs.limit(100).select();
     ASSERT_TRUE(result.has_value()) << "SELECT with large LIMIT failed: " << result.error().message();
@@ -93,8 +109,8 @@ TEST_F(LimitOffsetTest, LimitGreaterThanResultSet) {
 
 // ===== Basic OFFSET Tests =====
 
-TEST_F(LimitOffsetTest, OffsetOnly) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, OffsetOnly) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     auto result = qs.offset(10).select();
     ASSERT_TRUE(result.has_value()) << "SELECT with OFFSET failed: " << result.error().message();
@@ -109,8 +125,8 @@ TEST_F(LimitOffsetTest, OffsetOnly) {
     }
 }
 
-TEST_F(LimitOffsetTest, OffsetZero) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, OffsetZero) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     auto result = qs.offset(0).select();
     ASSERT_TRUE(result.has_value()) << "SELECT with OFFSET 0 failed: " << result.error().message();
@@ -119,8 +135,8 @@ TEST_F(LimitOffsetTest, OffsetZero) {
     EXPECT_EQ(people.size(), 20) << "Expected all rows with OFFSET 0";
 }
 
-TEST_F(LimitOffsetTest, OffsetGreaterThanResultSet) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, OffsetGreaterThanResultSet) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     auto result = qs.offset(100).select();
     ASSERT_TRUE(result.has_value()) << "SELECT with large OFFSET failed: " << result.error().message();
@@ -131,8 +147,8 @@ TEST_F(LimitOffsetTest, OffsetGreaterThanResultSet) {
 
 // ===== Combined LIMIT/OFFSET Tests =====
 
-TEST_F(LimitOffsetTest, LimitAndOffset) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, LimitAndOffset) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     auto result = qs.limit(5).offset(5).select();
     ASSERT_TRUE(result.has_value()) << "SELECT with LIMIT/OFFSET failed: " << result.error().message();
@@ -148,8 +164,8 @@ TEST_F(LimitOffsetTest, LimitAndOffset) {
     }
 }
 
-TEST_F(LimitOffsetTest, LimitOffsetPagination) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, LimitOffsetPagination) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     // Page 1: records 1-5
     auto page1 = qs.limit(5).offset(0).select();
@@ -187,8 +203,8 @@ TEST_F(LimitOffsetTest, LimitOffsetPagination) {
 
 // ===== LIMIT/OFFSET with WHERE =====
 
-TEST_F(LimitOffsetTest, LimitWithWhere) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, LimitWithWhere) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     auto result = qs.where(field<^^LimitOffsetPerson::age>() > 25).limit(3).select();
     ASSERT_TRUE(result.has_value()) << "SELECT WHERE with LIMIT failed: " << result.error().message();
@@ -202,8 +218,8 @@ TEST_F(LimitOffsetTest, LimitWithWhere) {
     }
 }
 
-TEST_F(LimitOffsetTest, LimitOffsetWithWhere) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, LimitOffsetWithWhere) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     auto result = qs.where(field<^^LimitOffsetPerson::age>() > 25).limit(3).offset(2).select();
     ASSERT_TRUE(result.has_value()) << "SELECT WHERE with LIMIT/OFFSET failed: " << result.error().message();
@@ -217,8 +233,8 @@ TEST_F(LimitOffsetTest, LimitOffsetWithWhere) {
     }
 }
 
-TEST_F(LimitOffsetTest, WhereWithOffsetNoLimit) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, WhereWithOffsetNoLimit) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     auto result = qs.where(field<^^LimitOffsetPerson::age>() < 30).offset(2).select();
     ASSERT_TRUE(result.has_value()) << "SELECT WHERE with OFFSET failed: " << result.error().message();
@@ -233,41 +249,43 @@ TEST_F(LimitOffsetTest, WhereWithOffsetNoLimit) {
 
 // ===== LIMIT/OFFSET with DISTINCT =====
 
-TEST_F(LimitOffsetTest, DistinctWithLimit) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, DistinctWithLimit) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
-    auto result = qs.limit(5).distinct<^^LimitOffsetPerson::name>().select();
+    auto result = qs.limit(5).template distinct<^^LimitOffsetPerson::name>().select();
     ASSERT_TRUE(result.has_value()) << "DISTINCT with LIMIT failed: " << result.error().message();
 
     const auto& names = result.value();
     ASSERT_EQ(names.size(), 5) << "Expected 5 distinct names";
 }
 
-TEST_F(LimitOffsetTest, DistinctWithLimitOffset) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, DistinctWithLimitOffset) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
-    auto result = qs.limit(5).offset(3).distinct<^^LimitOffsetPerson::name>().select();
+    auto result = qs.limit(5).offset(3).template distinct<^^LimitOffsetPerson::name>().select();
     ASSERT_TRUE(result.has_value()) << "DISTINCT with LIMIT/OFFSET failed: " << result.error().message();
 
     const auto& names = result.value();
     ASSERT_EQ(names.size(), 5) << "Expected 5 distinct names";
 }
 
-TEST_F(LimitOffsetTest, DistinctMultiFieldWithLimit) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, DistinctMultiFieldWithLimit) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
-    auto result = qs.limit(10).distinct<^^LimitOffsetPerson::name, ^^LimitOffsetPerson::age>().select();
+    auto result = qs.limit(10).template distinct<^^LimitOffsetPerson::name, ^^LimitOffsetPerson::age>().select();
     ASSERT_TRUE(result.has_value()) << "Multi-field DISTINCT with LIMIT failed: " << result.error().message();
 
     const auto& pairs = result.value();
     ASSERT_EQ(pairs.size(), 10) << "Expected 10 distinct name/age pairs";
 }
 
-TEST_F(LimitOffsetTest, DistinctWithWhereAndLimit) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, DistinctWithWhereAndLimit) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
-    auto result =
-            qs.where(field<^^LimitOffsetPerson::age>() > 30).limit(3).distinct<^^LimitOffsetPerson::name>().select();
+    auto result = qs.where(field<^^LimitOffsetPerson::age>() > 30)
+                          .limit(3)
+                          .template distinct<^^LimitOffsetPerson::name>()
+                          .select();
     ASSERT_TRUE(result.has_value()) << "DISTINCT WHERE with LIMIT failed: " << result.error().message();
 
     const auto& names = result.value();
@@ -276,8 +294,8 @@ TEST_F(LimitOffsetTest, DistinctWithWhereAndLimit) {
 
 // ===== Reset State Tests =====
 
-TEST_F(LimitOffsetTest, ResetClearsLimitOffset) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, ResetClearsLimitOffset) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     // First query with LIMIT/OFFSET
     auto result1 = qs.limit(5).offset(5).select();
@@ -291,8 +309,8 @@ TEST_F(LimitOffsetTest, ResetClearsLimitOffset) {
     EXPECT_EQ(result2.value().size(), 20) << "Expected all rows after reset";
 }
 
-TEST_F(LimitOffsetTest, ReuseLimitOffset) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, ReuseLimitOffset) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     // Set LIMIT/OFFSET once
     qs.limit(5).offset(10);
@@ -310,8 +328,8 @@ TEST_F(LimitOffsetTest, ReuseLimitOffset) {
     EXPECT_EQ(result2.value().begin()->id, 11);
 }
 
-TEST_F(LimitOffsetTest, OverwriteLimitOffset) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, OverwriteLimitOffset) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     // First LIMIT/OFFSET
     auto result1 = qs.limit(5).offset(0).select();
@@ -328,8 +346,8 @@ TEST_F(LimitOffsetTest, OverwriteLimitOffset) {
 
 // ===== Edge Cases =====
 
-TEST_F(LimitOffsetTest, LimitOffsetAtBoundary) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, LimitOffsetAtBoundary) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     // Exactly at the end
     auto result = qs.limit(5).offset(15).select();
@@ -339,8 +357,8 @@ TEST_F(LimitOffsetTest, LimitOffsetAtBoundary) {
     EXPECT_EQ(std::ranges::next(result.value().begin(), 4)->id, 20);
 }
 
-TEST_F(LimitOffsetTest, LimitOffsetPartialPage) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, LimitOffsetPartialPage) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     // Request more than available
     auto result = qs.limit(10).offset(15).select();
@@ -348,8 +366,8 @@ TEST_F(LimitOffsetTest, LimitOffsetPartialPage) {
     ASSERT_EQ(result.value().size(), 5) << "Expected only 5 rows (records 16-20)";
 }
 
-TEST_F(LimitOffsetTest, LimitOne) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, LimitOne) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     auto result = qs.limit(1).select();
     ASSERT_TRUE(result.has_value());
@@ -357,8 +375,8 @@ TEST_F(LimitOffsetTest, LimitOne) {
     EXPECT_EQ(result.value().begin()->id, 1);
 }
 
-TEST_F(LimitOffsetTest, OffsetOne) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, OffsetOne) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     auto result = qs.limit(1).offset(1).select();
     ASSERT_TRUE(result.has_value());
@@ -368,8 +386,8 @@ TEST_F(LimitOffsetTest, OffsetOne) {
 
 // ===== SQL Clause Ordering =====
 
-TEST_F(LimitOffsetTest, MethodChainingOrder) {
-    QuerySet<LimitOffsetPerson> qs;
+TYPED_TEST(LimitOffsetTest, MethodChainingOrder) {
+    QuerySet<LimitOffsetPerson, TypeParam> qs;
 
     // Methods can be chained in any order
     auto result1 = qs.limit(5).offset(3).select();

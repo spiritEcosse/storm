@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include "test_db_helpers.h"
 
 // NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
 
@@ -10,7 +11,7 @@ import <expected>;
 using namespace storm;
 
 // Test models for FK relationships
-struct User {
+struct FKUser {
     [[= storm::meta::FieldAttr::primary]] int id{};
     std::string                               name;
     int                                       age{};
@@ -18,34 +19,38 @@ struct User {
 
 struct FKMessage {
     [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::FieldAttr::fk]] User     sender;
-    [[= storm::meta::FieldAttr::fk]] User     receiver;
+    [[= storm::meta::FieldAttr::fk]] FKUser   sender;
+    [[= storm::meta::FieldAttr::fk]] FKUser   receiver;
     std::string                               text;
 };
 
-// Test fixture for FK field operations
-class FKFieldTest : public ::testing::Test {
+// Test fixture for FK field operations — templated on database backend
+template <typename ConnType> class FKFieldTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        // Set up in-memory SQLite database
-        auto result = QuerySet<User>::set_default_connection(":memory:");
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        const auto& conn_str = storm::test::get_connection_string<ConnType>();
+        auto        result   = QuerySet<FKUser, ConnType>::set_default_connection(conn_str);
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
 
-        const auto& conn = QuerySet<User>::get_default_connection();
+        const auto& conn = QuerySet<FKUser, ConnType>::get_default_connection();
 
-        // Create User table
-        auto create_user_result = conn->execute(
-                "CREATE TABLE User ("
+        auto create_user_result = storm::test::ensure_table<ConnType>(
+                conn,
+                "CREATE TABLE FKUser ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
                 "age INTEGER NOT NULL"
                 ")"
         );
         ASSERT_TRUE(create_user_result.has_value())
-                << "Failed to create User table: " << create_user_result.error().message();
+                << "Failed to create FKUser table: " << create_user_result.error().message();
 
-        // Create FKMessage table with sender_id and receiver_id foreign keys
-        auto create_message_result = conn->execute(
+        auto create_message_result = storm::test::ensure_table<ConnType>(
+                conn,
                 "CREATE TABLE FKMessage ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "sender_id INTEGER NOT NULL, "
@@ -55,23 +60,33 @@ class FKFieldTest : public ::testing::Test {
         );
         ASSERT_TRUE(create_message_result.has_value())
                 << "Failed to create Message table: " << create_message_result.error().message();
+
+        storm::test::begin_test_txn<ConnType>(conn, {"FKUser"});
     }
 
     auto TearDown() -> void override {
-        QuerySet<User>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<FKUser, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<FKUser, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<FKUser, ConnType>::clear_default_connection();
     }
 };
 
+TYPED_TEST_SUITE(FKFieldTest, DatabaseTypes);
+
 // Test: INSERT with FK field binds only the PK value
-TEST_F(FKFieldTest, InsertWithFKField) {
-    QuerySet<User>      user_qs;
-    QuerySet<FKMessage> message_qs;
+TYPED_TEST(FKFieldTest, InsertWithFKField) {
+    QuerySet<FKUser, TypeParam>    user_qs;
+    QuerySet<FKMessage, TypeParam> message_qs;
 
     // Insert users first
-    User const alice{.id = 0, .name = "Alice", .age = 30};
-    User const bob{.id = 0, .name = "Bob", .age = 25};
-    auto       alice_result = user_qs.insert(alice);
-    auto       bob_result   = user_qs.insert(bob);
+    FKUser const alice{.id = 0, .name = "Alice", .age = 30};
+    FKUser const bob{.id = 0, .name = "Bob", .age = 25};
+    auto         alice_result = user_qs.insert(alice);
+    auto         bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value()) << "Alice INSERT failed: " << alice_result.error().message();
     ASSERT_TRUE(bob_result.has_value()) << "Bob INSERT failed: " << bob_result.error().message();
 
@@ -82,8 +97,8 @@ TEST_F(FKFieldTest, InsertWithFKField) {
     // Only sender.id and receiver.id are used, name and age are ignored
     FKMessage const msg{
             .id       = 0,
-            .sender   = User{.id = static_cast<int>(alice_id), .name = "ignored", .age = 0},
-            .receiver = User{.id = static_cast<int>(bob_id), .name = "ignored", .age = 0},
+            .sender   = FKUser{.id = static_cast<int>(alice_id), .name = "ignored", .age = 0},
+            .receiver = FKUser{.id = static_cast<int>(bob_id), .name = "ignored", .age = 0},
             .text     = "Hello World"
     };
 
@@ -94,7 +109,7 @@ TEST_F(FKFieldTest, InsertWithFKField) {
     EXPECT_GT(msg_id, 0) << "Expected valid message ID";
 
     // Verify FKs were stored correctly by querying database directly
-    const auto& conn     = QuerySet<User>::get_default_connection();
+    const auto& conn     = QuerySet<FKUser, TypeParam>::get_default_connection();
     auto        stmt_res = conn->prepare("SELECT sender_id, receiver_id FROM FKMessage WHERE id = ?");
     ASSERT_TRUE(stmt_res.has_value());
 
@@ -111,15 +126,15 @@ TEST_F(FKFieldTest, InsertWithFKField) {
 }
 
 // Test: SELECT with FK field populates only the PK
-TEST_F(FKFieldTest, SelectWithFKFieldPartialPopulation) {
-    QuerySet<User>      user_qs;
-    QuerySet<FKMessage> message_qs;
+TYPED_TEST(FKFieldTest, SelectWithFKFieldPartialPopulation) {
+    QuerySet<FKUser, TypeParam>    user_qs;
+    QuerySet<FKMessage, TypeParam> message_qs;
 
     // Insert users
-    User const bob{.id = 0, .name = "Bob", .age = 25};
-    User const charlie{.id = 0, .name = "Charlie", .age = 35};
-    auto       bob_result     = user_qs.insert(bob);
-    auto       charlie_result = user_qs.insert(charlie);
+    FKUser const bob{.id = 0, .name = "Bob", .age = 25};
+    FKUser const charlie{.id = 0, .name = "Charlie", .age = 35};
+    auto         bob_result     = user_qs.insert(bob);
+    auto         charlie_result = user_qs.insert(charlie);
     ASSERT_TRUE(bob_result.has_value());
     ASSERT_TRUE(charlie_result.has_value());
     int64_t const bob_id     = bob_result.value();
@@ -128,8 +143,8 @@ TEST_F(FKFieldTest, SelectWithFKFieldPartialPopulation) {
     // Insert a message from Bob to Charlie
     FKMessage const msg{
             .id       = 0,
-            .sender   = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
-            .receiver = User{.id = static_cast<int>(charlie_id), .name = "", .age = 0},
+            .sender   = FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .receiver = FKUser{.id = static_cast<int>(charlie_id), .name = "", .age = 0},
             .text     = "Test message"
     };
     auto msg_result = message_qs.insert(msg);
@@ -157,13 +172,13 @@ TEST_F(FKFieldTest, SelectWithFKFieldPartialPopulation) {
 }
 
 // Test: Batch INSERT with FK fields
-TEST_F(FKFieldTest, BatchInsertWithFKFields) {
-    QuerySet<User>      user_qs;
-    QuerySet<FKMessage> message_qs;
+TYPED_TEST(FKFieldTest, BatchInsertWithFKFields) {
+    QuerySet<FKUser, TypeParam>    user_qs;
+    QuerySet<FKMessage, TypeParam> message_qs;
 
     // Insert users (IDs will be auto-generated)
-    std::vector<User> users       = {{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}, {0, "Dave", 40}};
-    auto              user_result = user_qs.insert(users);
+    std::vector<FKUser> users       = {{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}, {0, "Dave", 40}};
+    auto                user_result = user_qs.insert(users);
     ASSERT_TRUE(user_result.has_value());
 
     // SELECT to get auto-generated user IDs
@@ -177,12 +192,12 @@ TEST_F(FKFieldTest, BatchInsertWithFKFields) {
     // Insert messages with FK references
     std::vector<FKMessage> messages =
             {{0,
-              User{.id = first_user_id, .name = "", .age = 0},
-              User{.id = first_user_id, .name = "", .age = 0},
+              FKUser{.id = first_user_id, .name = "", .age = 0},
+              FKUser{.id = first_user_id, .name = "", .age = 0},
               "FKMessage from Alice to Bob"},
              {0,
-              User{.id = first_user_id, .name = "", .age = 0},
-              User{.id = first_user_id, .name = "", .age = 0},
+              FKUser{.id = first_user_id, .name = "", .age = 0},
+              FKUser{.id = first_user_id, .name = "", .age = 0},
               "FKMessage from Charlie to Dave"}};
 
     auto msg_result = message_qs.insert(messages);
@@ -205,15 +220,15 @@ TEST_F(FKFieldTest, BatchInsertWithFKFields) {
 }
 
 // Test: UPDATE with FK field
-TEST_F(FKFieldTest, UpdateWithFKField) {
-    QuerySet<User>      user_qs;
-    QuerySet<FKMessage> message_qs;
+TYPED_TEST(FKFieldTest, UpdateWithFKField) {
+    QuerySet<FKUser, TypeParam>    user_qs;
+    QuerySet<FKMessage, TypeParam> message_qs;
 
     // Insert users
-    User const alice{.id = 0, .name = "Alice", .age = 30};
-    User const bob{.id = 0, .name = "Bob", .age = 25};
-    User const charlie{.id = 0, .name = "Charlie", .age = 35};
-    User const dave{.id = 0, .name = "Dave", .age = 40};
+    FKUser const alice{.id = 0, .name = "Alice", .age = 30};
+    FKUser const bob{.id = 0, .name = "Bob", .age = 25};
+    FKUser const charlie{.id = 0, .name = "Charlie", .age = 35};
+    FKUser const dave{.id = 0, .name = "Dave", .age = 40};
 
     auto alice_result   = user_qs.insert(alice);
     auto bob_result     = user_qs.insert(bob);
@@ -233,8 +248,8 @@ TEST_F(FKFieldTest, UpdateWithFKField) {
     // Insert message from Alice to Bob
     FKMessage const msg{
             .id       = 0,
-            .sender   = User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
-            .receiver = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .sender   = FKUser{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+            .receiver = FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
             .text     = "Original message"
     };
     auto msg_result = message_qs.insert(msg);
@@ -245,8 +260,8 @@ TEST_F(FKFieldTest, UpdateWithFKField) {
     // Update message: change sender to Charlie, receiver to Dave, and text
     FKMessage const updated_msg{
             .id       = static_cast<int>(msg_id),
-            .sender   = User{.id = static_cast<int>(charlie_id), .name = "", .age = 0},
-            .receiver = User{.id = static_cast<int>(dave_id), .name = "", .age = 0},
+            .sender   = FKUser{.id = static_cast<int>(charlie_id), .name = "", .age = 0},
+            .receiver = FKUser{.id = static_cast<int>(dave_id), .name = "", .age = 0},
             .text     = "Updated message"
     };
 
@@ -267,15 +282,15 @@ TEST_F(FKFieldTest, UpdateWithFKField) {
 }
 
 // Test: DELETE with FK field
-TEST_F(FKFieldTest, DeleteWithFKField) {
-    QuerySet<User>      user_qs;
-    QuerySet<FKMessage> message_qs;
+TYPED_TEST(FKFieldTest, DeleteWithFKField) {
+    QuerySet<FKUser, TypeParam>    user_qs;
+    QuerySet<FKMessage, TypeParam> message_qs;
 
     // Insert users
-    User const alice{.id = 0, .name = "Alice", .age = 30};
-    User const bob{.id = 0, .name = "Bob", .age = 25};
-    auto       alice_result = user_qs.insert(alice);
-    auto       bob_result   = user_qs.insert(bob);
+    FKUser const alice{.id = 0, .name = "Alice", .age = 30};
+    FKUser const bob{.id = 0, .name = "Bob", .age = 25};
+    auto         alice_result = user_qs.insert(alice);
+    auto         bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
@@ -284,12 +299,12 @@ TEST_F(FKFieldTest, DeleteWithFKField) {
     // Insert messages from Alice to Bob
     std::vector<FKMessage> messages =
             {{0,
-              User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
-              User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+              FKUser{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+              FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
               "FKMessage 1"},
              {0,
-              User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
-              User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+              FKUser{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+              FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
               "FKMessage 2"}};
 
     auto msg_result = message_qs.insert(messages);
@@ -309,8 +324,8 @@ TEST_F(FKFieldTest, DeleteWithFKField) {
     // Delete first message
     FKMessage const to_delete{
             .id       = first_msg_id,
-            .sender   = User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
-            .receiver = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .sender   = FKUser{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+            .receiver = FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
             .text     = ""
     };
 
@@ -329,21 +344,22 @@ TEST_F(FKFieldTest, DeleteWithFKField) {
 
 // Test: Multiple FK fields to same type
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_F(FKFieldTest, MultipleFKFieldsToSameType) {
-    // Create a conversation struct with two FK fields to User
+TYPED_TEST(FKFieldTest, MultipleFKFieldsToSameType) {
+    // Create a conversation struct with two FK fields to FKUser
     struct Conversation {
         [[= storm::meta::FieldAttr::primary]] int id{};
-        [[= storm::meta::FieldAttr::fk]] User     sender;
-        [[= storm::meta::FieldAttr::fk]] User     receiver;
+        [[= storm::meta::FieldAttr::fk]] FKUser   sender;
+        [[= storm::meta::FieldAttr::fk]] FKUser   receiver;
         std::string                               message;
     };
 
-    QuerySet<User>         user_qs;
-    QuerySet<Conversation> conv_qs;
+    QuerySet<FKUser, TypeParam>       user_qs;
+    QuerySet<Conversation, TypeParam> conv_qs;
 
     // Create conversation table
-    const auto& conn               = QuerySet<User>::get_default_connection();
-    auto        create_conv_result = conn->execute(
+    const auto& conn               = QuerySet<FKUser, TypeParam>::get_default_connection();
+    auto        create_conv_result = storm::test::ensure_table<TypeParam>(
+            conn,
             "CREATE TABLE Conversation ("
                    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                    "sender_id INTEGER NOT NULL, "
@@ -354,8 +370,8 @@ TEST_F(FKFieldTest, MultipleFKFieldsToSameType) {
     ASSERT_TRUE(create_conv_result.has_value());
 
     // Insert users
-    User const alice{.id = 0, .name = "Alice", .age = 30};
-    User const bob{.id = 0, .name = "Bob", .age = 25};
+    FKUser const alice{.id = 0, .name = "Alice", .age = 30};
+    FKUser const bob{.id = 0, .name = "Bob", .age = 25};
 
     auto alice_result = user_qs.insert(alice);
     auto bob_result   = user_qs.insert(bob);
@@ -369,8 +385,8 @@ TEST_F(FKFieldTest, MultipleFKFieldsToSameType) {
     // Insert conversation from Alice to Bob
     Conversation const conv{
             .id       = 0,
-            .sender   = User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
-            .receiver = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .sender   = FKUser{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+            .receiver = FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
             .message  = "Hello Bob!"
     };
 
@@ -390,15 +406,15 @@ TEST_F(FKFieldTest, MultipleFKFieldsToSameType) {
 }
 
 // Test: Phase 2 - JOIN populates FK object fully
-TEST_F(FKFieldTest, JoinFullyPopulatesFKObject) {
-    QuerySet<User>      user_qs;
-    QuerySet<FKMessage> message_qs;
+TYPED_TEST(FKFieldTest, JoinFullyPopulatesFKObject) {
+    QuerySet<FKUser, TypeParam>    user_qs;
+    QuerySet<FKMessage, TypeParam> message_qs;
 
     // Insert users
-    User const alice{.id = 0, .name = "Alice", .age = 30};
-    User const bob{.id = 0, .name = "Bob", .age = 25};
-    auto       alice_result = user_qs.insert(alice);
-    auto       bob_result   = user_qs.insert(bob);
+    FKUser const alice{.id = 0, .name = "Alice", .age = 30};
+    FKUser const bob{.id = 0, .name = "Bob", .age = 25};
+    auto         alice_result = user_qs.insert(alice);
+    auto         bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
@@ -407,15 +423,15 @@ TEST_F(FKFieldTest, JoinFullyPopulatesFKObject) {
     // Insert message from Alice to Bob
     FKMessage const msg{
             .id       = 0,
-            .sender   = User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
-            .receiver = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .sender   = FKUser{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+            .receiver = FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
             .text     = "Hello from JOIN!"
     };
     auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
 
     // Phase 2: JOIN to get fully populated sender
-    auto join_result = message_qs.join<&FKMessage::sender>().select();
+    auto join_result = message_qs.template join<&FKMessage::sender>().select();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -438,15 +454,15 @@ TEST_F(FKFieldTest, JoinFullyPopulatesFKObject) {
 }
 
 // Test: Phase 3 - Multi-JOIN populates multiple FK objects fully
-TEST_F(FKFieldTest, JoinMultipleFKFields) {
-    QuerySet<User>      user_qs;
-    QuerySet<FKMessage> message_qs;
+TYPED_TEST(FKFieldTest, JoinMultipleFKFields) {
+    QuerySet<FKUser, TypeParam>    user_qs;
+    QuerySet<FKMessage, TypeParam> message_qs;
 
     // Insert users
-    User const alice{.id = 0, .name = "Alice", .age = 30};
-    User const bob{.id = 0, .name = "Bob", .age = 25};
-    auto       alice_result = user_qs.insert(alice);
-    auto       bob_result   = user_qs.insert(bob);
+    FKUser const alice{.id = 0, .name = "Alice", .age = 30};
+    FKUser const bob{.id = 0, .name = "Bob", .age = 25};
+    auto         alice_result = user_qs.insert(alice);
+    auto         bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
@@ -455,15 +471,15 @@ TEST_F(FKFieldTest, JoinMultipleFKFields) {
     // Insert message from Alice to Bob
     FKMessage const msg{
             .id       = 0,
-            .sender   = User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
-            .receiver = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .sender   = FKUser{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+            .receiver = FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
             .text     = "Hello from multi-JOIN!"
     };
     auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
 
     // Phase 3: Multi-JOIN to get BOTH sender and receiver fully populated
-    auto join_result = message_qs.join<&FKMessage::sender, &FKMessage::receiver>().select();
+    auto join_result = message_qs.template join<&FKMessage::sender, &FKMessage::receiver>().select();
     ASSERT_TRUE(join_result.has_value()) << "Multi-JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -485,19 +501,19 @@ TEST_F(FKFieldTest, JoinMultipleFKFields) {
 }
 
 // Test: LEFT JOIN returns all messages even when FK doesn't match
-TEST_F(FKFieldTest, LeftJoinReturnsAllMessages) {
-    QuerySet<User>      user_qs;
-    QuerySet<FKMessage> message_qs;
+TYPED_TEST(FKFieldTest, LeftJoinReturnsAllMessages) {
+    QuerySet<FKUser, TypeParam>    user_qs;
+    QuerySet<FKMessage, TypeParam> message_qs;
 
     // Insert only one user (Alice)
-    User const alice{.id = 0, .name = "Alice", .age = 30};
-    auto       alice_result = user_qs.insert(alice);
+    FKUser const alice{.id = 0, .name = "Alice", .age = 30};
+    auto         alice_result = user_qs.insert(alice);
     ASSERT_TRUE(alice_result.has_value());
     int64_t const alice_id = alice_result.value();
 
     // Insert a message with a non-existent receiver ID (999)
     // This simulates an orphaned FK reference
-    const auto& conn        = QuerySet<User>::get_default_connection();
+    const auto& conn        = QuerySet<FKUser, TypeParam>::get_default_connection();
     auto        stmt_result = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (?, ?, ?)");
     ASSERT_TRUE(stmt_result.has_value()) << "Prepare failed: " << stmt_result.error().message();
 
@@ -510,7 +526,7 @@ TEST_F(FKFieldTest, LeftJoinReturnsAllMessages) {
     ASSERT_EQ(step_result, decltype(stmt)::NO_MORE_ROWS) << "Direct INSERT failed";
 
     // LEFT JOIN on sender - should return message even though receiver doesn't exist
-    auto join_result = message_qs.left_join<&FKMessage::sender>().select();
+    auto join_result = message_qs.template left_join<&FKMessage::sender>().select();
     ASSERT_TRUE(join_result.has_value()) << "LEFT JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -522,7 +538,7 @@ TEST_F(FKFieldTest, LeftJoinReturnsAllMessages) {
     EXPECT_EQ(it->sender.name, "Alice") << "LEFT JOIN should populate existing FK";
     EXPECT_EQ(it->sender.age, 30);
 
-    // Verify receiver is not populated (doesn't exist in User table)
+    // Verify receiver is not populated (doesn't exist in FKUser table)
     EXPECT_EQ(it->receiver.id, 0) << "Non-JOINed FK should remain default";
 
     // Verify message text
@@ -530,15 +546,15 @@ TEST_F(FKFieldTest, LeftJoinReturnsAllMessages) {
 }
 
 // Test: LEFT JOIN with multiple FK fields
-TEST_F(FKFieldTest, LeftJoinMultipleFKFields) {
-    QuerySet<User>      user_qs;
-    QuerySet<FKMessage> message_qs;
+TYPED_TEST(FKFieldTest, LeftJoinMultipleFKFields) {
+    QuerySet<FKUser, TypeParam>    user_qs;
+    QuerySet<FKMessage, TypeParam> message_qs;
 
     // Insert users
-    User const alice{.id = 0, .name = "Alice", .age = 30};
-    User const bob{.id = 0, .name = "Bob", .age = 25};
-    auto       alice_result = user_qs.insert(alice);
-    auto       bob_result   = user_qs.insert(bob);
+    FKUser const alice{.id = 0, .name = "Alice", .age = 30};
+    FKUser const bob{.id = 0, .name = "Bob", .age = 25};
+    auto         alice_result = user_qs.insert(alice);
+    auto         bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
@@ -547,15 +563,15 @@ TEST_F(FKFieldTest, LeftJoinMultipleFKFields) {
     // Insert message from Alice to Bob
     FKMessage const msg{
             .id       = 0,
-            .sender   = User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
-            .receiver = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .sender   = FKUser{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+            .receiver = FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
             .text     = "Hello with LEFT JOIN"
     };
     auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
 
     // LEFT JOIN on both sender and receiver
-    auto join_result = message_qs.left_join<&FKMessage::sender, &FKMessage::receiver>().select();
+    auto join_result = message_qs.template left_join<&FKMessage::sender, &FKMessage::receiver>().select();
     ASSERT_TRUE(join_result.has_value()) << "Multi LEFT JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -577,17 +593,17 @@ TEST_F(FKFieldTest, LeftJoinMultipleFKFields) {
 // Test: RIGHT JOIN behavior
 // Note: RIGHT JOIN is less commonly used but should work symmetrically to LEFT JOIN
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_F(FKFieldTest, RightJoinBehavior) {
-    QuerySet<User>      user_qs;
-    QuerySet<FKMessage> message_qs;
+TYPED_TEST(FKFieldTest, RightJoinBehavior) {
+    QuerySet<FKUser, TypeParam>    user_qs;
+    QuerySet<FKMessage, TypeParam> message_qs;
 
     // Insert users first
-    User const alice{.id = 0, .name = "Alice", .age = 30};
-    User const bob{.id = 0, .name = "Bob", .age = 25};
-    User const charlie{.id = 0, .name = "Charlie", .age = 35}; // Charlie has no messages
-    auto       alice_result   = user_qs.insert(alice);
-    auto       bob_result     = user_qs.insert(bob);
-    auto       charlie_result = user_qs.insert(charlie);
+    FKUser const alice{.id = 0, .name = "Alice", .age = 30};
+    FKUser const bob{.id = 0, .name = "Bob", .age = 25};
+    FKUser const charlie{.id = 0, .name = "Charlie", .age = 35}; // Charlie has no messages
+    auto         alice_result   = user_qs.insert(alice);
+    auto         bob_result     = user_qs.insert(bob);
+    auto         charlie_result = user_qs.insert(charlie);
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     ASSERT_TRUE(charlie_result.has_value());
@@ -598,22 +614,22 @@ TEST_F(FKFieldTest, RightJoinBehavior) {
     // Insert messages from Alice to Bob (Charlie is not referenced)
     FKMessage const msg{
             .id       = 0,
-            .sender   = User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
-            .receiver = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .sender   = FKUser{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+            .receiver = FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
             .text     = "FKMessage to Bob"
     };
     auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
 
-    // RIGHT JOIN on sender - should return all users in User table as senders
+    // RIGHT JOIN on sender - should return all users in FKUser table as senders
     // This includes Charlie even though no message references him
-    auto join_result = message_qs.right_join<&FKMessage::sender>().select();
+    auto join_result = message_qs.template right_join<&FKMessage::sender>().select();
     ASSERT_TRUE(join_result.has_value()) << "RIGHT JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
 
     // RIGHT JOIN returns:
-    // - All rows from right table (User)
+    // - All rows from right table (FKUser)
     // - Matching rows from left table (FKMessage)
     // So we should get at least the message we inserted, possibly more depending on implementation
     EXPECT_GE(messages.size(), 1) << "RIGHT JOIN should return at least existing messages";
@@ -633,15 +649,15 @@ TEST_F(FKFieldTest, RightJoinBehavior) {
 
 // Test: RIGHT JOIN with multiple FK fields
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_F(FKFieldTest, RightJoinMultipleFKFields) {
-    QuerySet<User>      user_qs;
-    QuerySet<FKMessage> message_qs;
+TYPED_TEST(FKFieldTest, RightJoinMultipleFKFields) {
+    QuerySet<FKUser, TypeParam>    user_qs;
+    QuerySet<FKMessage, TypeParam> message_qs;
 
     // Insert users
-    User const alice{.id = 0, .name = "Alice", .age = 30};
-    User const bob{.id = 0, .name = "Bob", .age = 25};
-    auto       alice_result = user_qs.insert(alice);
-    auto       bob_result   = user_qs.insert(bob);
+    FKUser const alice{.id = 0, .name = "Alice", .age = 30};
+    FKUser const bob{.id = 0, .name = "Bob", .age = 25};
+    auto         alice_result = user_qs.insert(alice);
+    auto         bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
@@ -650,15 +666,15 @@ TEST_F(FKFieldTest, RightJoinMultipleFKFields) {
     // Insert message from Alice to Bob
     FKMessage const msg{
             .id       = 0,
-            .sender   = User{.id = static_cast<int>(alice_id), .name = "", .age = 0},
-            .receiver = User{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+            .sender   = FKUser{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+            .receiver = FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
             .text     = "Hello with RIGHT JOIN"
     };
     auto msg_result = message_qs.insert(msg);
     ASSERT_TRUE(msg_result.has_value());
 
     // RIGHT JOIN on both sender and receiver
-    auto join_result = message_qs.right_join<&FKMessage::sender, &FKMessage::receiver>().select();
+    auto join_result = message_qs.template right_join<&FKMessage::sender, &FKMessage::receiver>().select();
     ASSERT_TRUE(join_result.has_value()) << "Multi RIGHT JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -681,18 +697,17 @@ TEST_F(FKFieldTest, RightJoinMultipleFKFields) {
     EXPECT_TRUE(found) << "Should find the message we inserted";
 }
 
-// Test fixture for nullable FK fields
+// Test fixture for nullable FK fields — SQLite only (uses raw SQL with ? placeholders)
 class NullableFKTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        auto result = QuerySet<User>::set_default_connection(":memory:");
+        auto result = QuerySet<FKUser>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value());
 
-        const auto& conn = QuerySet<User>::get_default_connection();
+        const auto& conn = QuerySet<FKUser>::get_default_connection();
 
-        // Create User table
         auto create_user_result = conn->execute(
-                "CREATE TABLE User ("
+                "CREATE TABLE FKUser ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
                 "age INTEGER NOT NULL"
@@ -700,7 +715,6 @@ class NullableFKTest : public ::testing::Test {
         );
         ASSERT_TRUE(create_user_result.has_value());
 
-        // Create FKMessage table with NULLABLE sender_id (allows NULL)
         auto create_message_result = conn->execute(
                 "CREATE TABLE FKMessage ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -713,7 +727,7 @@ class NullableFKTest : public ::testing::Test {
     }
 
     auto TearDown() -> void override {
-        QuerySet<User>::clear_default_connection();
+        QuerySet<FKUser>::clear_default_connection();
     }
 };
 
@@ -722,7 +736,7 @@ TEST_F(NullableFKTest, SelectWithNullFKField) {
     QuerySet<FKMessage> message_qs;
 
     // Insert message with NULL sender_id
-    const auto& conn        = QuerySet<User>::get_default_connection();
+    const auto& conn        = QuerySet<FKUser>::get_default_connection();
     auto        stmt_result = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
     ASSERT_TRUE(stmt_result.has_value());
 
@@ -750,17 +764,17 @@ TEST_F(NullableFKTest, SelectWithNullFKField) {
 
 // Test: LEFT JOIN with NULL FK values
 TEST_F(NullableFKTest, LeftJoinWithNullFKField) {
-    QuerySet<User>      user_qs;
+    QuerySet<FKUser>    user_qs;
     QuerySet<FKMessage> message_qs;
 
     // Insert a user
-    User const alice{.id = 0, .name = "Alice", .age = 30};
-    auto       alice_result = user_qs.insert(alice);
+    FKUser const alice{.id = 0, .name = "Alice", .age = 30};
+    auto         alice_result = user_qs.insert(alice);
     ASSERT_TRUE(alice_result.has_value());
     int64_t const alice_id = alice_result.value();
 
     // Insert message with NULL sender_id
-    const auto& conn        = QuerySet<User>::get_default_connection();
+    const auto& conn        = QuerySet<FKUser>::get_default_connection();
     auto        stmt_result = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
     ASSERT_TRUE(stmt_result.has_value());
 
@@ -789,20 +803,20 @@ TEST_F(NullableFKTest, LeftJoinWithNullFKField) {
 // Test: LEFT JOIN with mix of NULL and valid FKs
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
-    QuerySet<User>      user_qs;
+    QuerySet<FKUser>    user_qs;
     QuerySet<FKMessage> message_qs;
 
     // Insert users
-    User const alice{.id = 0, .name = "Alice", .age = 30};
-    User const bob{.id = 0, .name = "Bob", .age = 25};
-    auto       alice_result = user_qs.insert(alice);
-    auto       bob_result   = user_qs.insert(bob);
+    FKUser const alice{.id = 0, .name = "Alice", .age = 30};
+    FKUser const bob{.id = 0, .name = "Bob", .age = 25};
+    auto         alice_result = user_qs.insert(alice);
+    auto         bob_result   = user_qs.insert(bob);
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
     int64_t const bob_id   = bob_result.value();
 
-    const auto& conn = QuerySet<User>::get_default_connection();
+    const auto& conn = QuerySet<FKUser>::get_default_connection();
 
     // FKMessage 1: Valid sender (Alice)
     auto stmt1 = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (?, ?, ?)");
@@ -848,17 +862,22 @@ TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     EXPECT_TRUE(found_null) << "Should find anonymous message";
 }
 
-// Test fixture for extended type support in JOINs
-class ExtendedTypesJoinTest : public ::testing::Test {
+// Test fixture for extended type support in JOINs — templated on database backend
+template <typename ConnType> class ExtendedTypesJoinTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        auto result = QuerySet<User>::set_default_connection(":memory:");
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        const auto& conn_str = storm::test::get_connection_string<ConnType>();
+        auto        result   = QuerySet<FKUser, ConnType>::set_default_connection(conn_str);
         ASSERT_TRUE(result.has_value());
 
-        const auto& conn = QuerySet<User>::get_default_connection();
+        const auto& conn = QuerySet<FKUser, ConnType>::get_default_connection();
 
-        // Create Employee table with extended types
-        auto create_employee_result = conn->execute(
+        auto create_employee_result = storm::test::ensure_table<ConnType>(
+                conn,
                 "CREATE TABLE Employee ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
@@ -870,8 +889,8 @@ class ExtendedTypesJoinTest : public ::testing::Test {
         ASSERT_TRUE(create_employee_result.has_value())
                 << "Failed to create Employee table: " << create_employee_result.error().message();
 
-        // Create Project table with FK to Employee
-        auto create_project_result = conn->execute(
+        auto create_project_result = storm::test::ensure_table<ConnType>(
+                conn,
                 "CREATE TABLE Project ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "manager_id INTEGER NOT NULL, "
@@ -881,16 +900,26 @@ class ExtendedTypesJoinTest : public ::testing::Test {
         );
         ASSERT_TRUE(create_project_result.has_value())
                 << "Failed to create Project table: " << create_project_result.error().message();
+
+        storm::test::begin_test_txn<ConnType>(conn, {"Employee", "Project"});
     }
 
     auto TearDown() -> void override {
-        QuerySet<User>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<FKUser, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<FKUser, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<FKUser, ConnType>::clear_default_connection();
     }
 };
 
+TYPED_TEST_SUITE(ExtendedTypesJoinTest, DatabaseTypes);
+
 // Test: JOIN with extended types (double, bool, optional)
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_F(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
+TYPED_TEST(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
     // Define structs with extended types
     struct Employee {
         [[= storm::meta::FieldAttr::primary]] int id{};
@@ -907,8 +936,8 @@ TEST_F(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
         double                                    budget{};
     };
 
-    QuerySet<Employee> employee_qs;
-    QuerySet<Project>  project_qs;
+    QuerySet<Employee, TypeParam> employee_qs;
+    QuerySet<Project, TypeParam>  project_qs;
 
     // Insert employees with extended types
     Employee const alice{.id = 0, .name = "Alice Smith", .salary = 95000.50, .is_active = true, .nickname = "Ally"};
@@ -960,7 +989,7 @@ TEST_F(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
     ASSERT_TRUE(proj2_result.has_value()) << "Failed to insert project 2: " << proj2_result.error().message();
 
     // JOIN to get projects with fully populated manager (Employee) objects
-    auto join_result = project_qs.join<&Project::manager>().select();
+    auto join_result = project_qs.template join<&Project::manager>().select();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
     const auto& projects = join_result.value();
@@ -1018,7 +1047,7 @@ TEST_F(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
 
 // Test: Multi-JOIN with extended types
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_F(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
+TYPED_TEST(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
     struct Employee {
         [[= storm::meta::FieldAttr::primary]] int id{};
         std::string                               name;
@@ -1034,12 +1063,13 @@ TEST_F(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
         std::string                               description;
     };
 
-    QuerySet<Employee> employee_qs;
-    QuerySet<Task>     task_qs;
+    QuerySet<Employee, TypeParam> employee_qs;
+    QuerySet<Task, TypeParam>     task_qs;
 
     // Create Task table
-    const auto& conn               = QuerySet<User>::get_default_connection();
-    auto        create_task_result = conn->execute(
+    const auto& conn               = QuerySet<FKUser, TypeParam>::get_default_connection();
+    auto        create_task_result = storm::test::ensure_table<TypeParam>(
+            conn,
             "CREATE TABLE Task ("
                    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                    "assignee_id INTEGER NOT NULL, "
@@ -1089,7 +1119,7 @@ TEST_F(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
 
     // Multi-JOIN to populate both assignee and reviewer
     // NOLINTNEXTLINE(readability-isolate-declaration) - false positive with template
-    auto join_result = task_qs.join<&Task::assignee, &Task::reviewer>().select();
+    auto join_result = task_qs.template join<&Task::assignee, &Task::reviewer>().select();
     ASSERT_TRUE(join_result.has_value()) << "Multi-JOIN failed: " << join_result.error().message();
 
     const auto& tasks = join_result.value();
@@ -1115,7 +1145,7 @@ TEST_F(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
 
 // Test: JOIN with float and long long types (coverage for extract_typed_field)
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_F(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
+TYPED_TEST(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
     // Define structs with float and long long types
     struct Measurement {
         [[= storm::meta::FieldAttr::primary]] int id{};
@@ -1131,13 +1161,14 @@ TEST_F(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
         float                                        value{};
     };
 
-    QuerySet<Measurement> measurement_qs;
-    QuerySet<Reading>     reading_qs;
+    QuerySet<Measurement, TypeParam> measurement_qs;
+    QuerySet<Reading, TypeParam>     reading_qs;
 
     // Create tables
-    const auto& conn = QuerySet<User>::get_default_connection();
+    const auto& conn = QuerySet<FKUser, TypeParam>::get_default_connection();
 
-    auto create_measurement_result = conn->execute(
+    auto create_measurement_result = storm::test::ensure_table<TypeParam>(
+            conn,
             "CREATE TABLE Measurement ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "sensor_name TEXT NOT NULL, "
@@ -1148,7 +1179,8 @@ TEST_F(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
     ASSERT_TRUE(create_measurement_result.has_value())
             << "Failed to create Measurement table: " << create_measurement_result.error().message();
 
-    auto create_reading_result = conn->execute(
+    auto create_reading_result = storm::test::ensure_table<TypeParam>(
+            conn,
             "CREATE TABLE Reading ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "measurement_id INTEGER NOT NULL, "
@@ -1187,7 +1219,7 @@ TEST_F(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
     ASSERT_TRUE(reading_result.has_value()) << "Failed to insert reading: " << reading_result.error().message();
 
     // JOIN to get readings with fully populated measurement
-    auto join_result = reading_qs.join<&Reading::measurement>().select();
+    auto join_result = reading_qs.template join<&Reading::measurement>().select();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
     const auto& readings = join_result.value();
@@ -1209,7 +1241,7 @@ TEST_F(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
 
 // Test: JOIN with long type (tests separate code path from int64_t)
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_F(ExtendedTypesJoinTest, JoinWithLongType) {
+TYPED_TEST(ExtendedTypesJoinTest, JoinWithLongType) {
     // Define structs with long type
     struct Counter {
         [[= storm::meta::FieldAttr::primary]] int id{};
@@ -1223,13 +1255,14 @@ TEST_F(ExtendedTypesJoinTest, JoinWithLongType) {
         std::string                               report_type;
     };
 
-    QuerySet<Counter> counter_qs;
-    QuerySet<Summary> summary_qs;
+    QuerySet<Counter, TypeParam> counter_qs;
+    QuerySet<Summary, TypeParam> summary_qs;
 
     // Create tables
-    const auto& conn = QuerySet<User>::get_default_connection();
+    const auto& conn = QuerySet<FKUser, TypeParam>::get_default_connection();
 
-    auto create_counter_result = conn->execute(
+    auto create_counter_result = storm::test::ensure_table<TypeParam>(
+            conn,
             "CREATE TABLE Counter ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "name TEXT NOT NULL, "
@@ -1239,7 +1272,8 @@ TEST_F(ExtendedTypesJoinTest, JoinWithLongType) {
     ASSERT_TRUE(create_counter_result.has_value())
             << "Failed to create Counter table: " << create_counter_result.error().message();
 
-    auto create_summary_result = conn->execute(
+    auto create_summary_result = storm::test::ensure_table<TypeParam>(
+            conn,
             "CREATE TABLE Summary ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "counter_id INTEGER NOT NULL, "
@@ -1266,7 +1300,7 @@ TEST_F(ExtendedTypesJoinTest, JoinWithLongType) {
     ASSERT_TRUE(sum_result.has_value()) << "Failed to insert summary: " << sum_result.error().message();
 
     // JOIN to get summaries with fully populated counter
-    auto join_result = summary_qs.join<&Summary::counter>().select();
+    auto join_result = summary_qs.template join<&Summary::counter>().select();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
     const auto& summaries = join_result.value();

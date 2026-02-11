@@ -11,7 +11,6 @@ import storm_orm_statements_orderby;
 import storm_orm_utilities;
 import storm_orm_where;
 import storm_db_concept;
-import storm_db_sqlite;
 
 import <expected>;
 import <string>;
@@ -139,8 +138,8 @@ export namespace storm::orm::statements {
                 sql += " WHERE ";
                 sql += orm::where::to_sql(*where_expr);
             }
-            Base::append_order_by(sql, order_by_wrapper);
-            Base::append_limit_offset(sql, limit, offset);
+            Base::template append_order_by<ConnType>(sql, order_by_wrapper);
+            Base::template append_limit_offset<ConnType>(sql, limit, offset);
 
             // Get or prepare cached statement
             if (cached_stmt_ == nullptr || cached_sql_ != sql) {

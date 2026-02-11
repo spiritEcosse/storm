@@ -38,6 +38,7 @@ function(add_storm_benchmark target_name source_file)
         pthread
     )
     link_sqlite(${target_name})
+    link_postgresql(${target_name})
     apply_clang_flags(${target_name})
     target_include_directories(${target_name} PRIVATE
         "${CMAKE_SOURCE_DIR}/src"

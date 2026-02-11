@@ -51,6 +51,21 @@ cmake --build --preset ninja-debug
 ctest --test-dir build/debug
 ```
 
+## PostgreSQL Test Isolation
+
+PG tests use **per-process schema isolation** (`test_<pid>`). Each CTest process gets its own PG schema via `SET search_path`, giving complete isolation with zero lock contention. Fully parallel, no TRUNCATE, no transactions, no deadlocks.
+
+- `ensure_table()` creates the schema on first call per process
+- `rollback_test_txn()` drops the schema in TearDown (`DROP SCHEMA ... CASCADE`)
+- `begin_test_txn()` is a no-op for PG (schema provides isolation)
+- `backend_available<ConnType>()` returns bool; call `GTEST_SKIP()` directly in `SetUp()` (not in a helper — `GTEST_SKIP()` contains `return` that only exits the calling function)
+
+Key constraints discovered:
+- **ORM batch operations** (chunked remove/update) issue their own `BEGIN`/`COMMIT` — incompatible with outer test transactions
+- **TRUNCATE** takes `ACCESS EXCLUSIVE` lock — deadlocks with concurrent `INSERT` + `ALTER TABLE`
+- **Per-process schemas** solve both problems: each process has its own namespace
+- **Rejected `STORM_REUSE_DB`** (TRUNCATE instead of DROP/CREATE schema) — CTest spawns a fresh process per test binary, so no cross-process schema reuse; TRUNCATE per-table was actually slower than one-time DROP+CREATE
+
 ## Test Structure
 
 ```cpp

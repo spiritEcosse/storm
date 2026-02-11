@@ -282,6 +282,10 @@ export namespace storm::db::sqlite {
         using Error     = sqlite::Error;
         using Statement = sqlite::Statement;
 
+        // Dialect traits
+        static constexpr bool supports_limit_all = false;
+        static constexpr bool supports_returning = false;
+
         // Factory method with error handling and thread-safe flags
         [[nodiscard]] static auto open(std::string_view db_path) -> std::expected<Connection, Error> {
             sqlite3*          raw_db = nullptr;

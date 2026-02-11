@@ -11,6 +11,7 @@
  */
 
 #include <gtest/gtest.h>
+#include "test_db_helpers.h"
 
 // NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)
 // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
@@ -18,7 +19,6 @@
 // NOLINTBEGIN(readability-identifier-length)
 
 import storm;
-import storm_db_sqlite;
 
 import <expected>;
 import <string>;
@@ -65,15 +65,21 @@ struct JoinPost {
 // Multiple Aggregates Test Fixture
 // =============================================================================
 
-class MultipleAggregatesTest : public ::testing::Test {
+template <typename ConnType> class MultipleAggregatesTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        auto result = QuerySet<AggPerson>::set_default_connection(":memory:");
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        auto result =
+                QuerySet<AggPerson, ConnType>::set_default_connection(storm::test::get_connection_string<ConnType>());
         ASSERT_TRUE(result.has_value()) << "Failed to open database";
 
-        const auto& conn = QuerySet<AggPerson>::get_default_connection();
+        const auto& conn = QuerySet<AggPerson, ConnType>::get_default_connection();
 
-        auto create = conn->execute(
+        auto create = storm::test::ensure_table<ConnType>(
+                conn,
                 "CREATE TABLE AggPerson ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
@@ -83,7 +89,9 @@ class MultipleAggregatesTest : public ::testing::Test {
         );
         ASSERT_TRUE(create.has_value());
 
-        qs = std::make_unique<QuerySet<AggPerson>>();
+        storm::test::begin_test_txn<ConnType>(conn, {"AggPerson"});
+
+        qs = std::make_unique<QuerySet<AggPerson, ConnType>>();
 
         // Insert test data with varied values
         std::vector<AggPerson> const people = {
@@ -102,19 +110,27 @@ class MultipleAggregatesTest : public ::testing::Test {
 
     auto TearDown() -> void override {
         qs = nullptr;
-        QuerySet<AggPerson>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<AggPerson, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<AggPerson, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<AggPerson, ConnType>::clear_default_connection();
     }
 
-    std::unique_ptr<QuerySet<AggPerson>> qs;
+    std::unique_ptr<QuerySet<AggPerson, ConnType>> qs;
 };
+
+TYPED_TEST_SUITE(MultipleAggregatesTest, DatabaseTypes);
 
 // =============================================================================
 // Multiple Aggregates Tests (returns tuples)
 // =============================================================================
 
-TEST_F(MultipleAggregatesTest, TwoAggregatesCountAndSum) {
+TYPED_TEST(MultipleAggregatesTest, TwoAggregatesCountAndSum) {
     // Tests tuple return type with 2 operations
-    auto result = qs->count().sum<^^AggPerson::age>().select();
+    auto result = this->qs->count().template sum<^^AggPerson::age>().select();
 
     ASSERT_TRUE(result.has_value()) << "Two aggregates should succeed";
 
@@ -123,9 +139,9 @@ TEST_F(MultipleAggregatesTest, TwoAggregatesCountAndSum) {
     EXPECT_EQ(sum, 25 + 30 + 35 + 28 + 40); // 158
 }
 
-TEST_F(MultipleAggregatesTest, TwoAggregatesSumAndAvg) {
+TYPED_TEST(MultipleAggregatesTest, TwoAggregatesSumAndAvg) {
     // Tests tuple with SUM (int64_t) and AVG (double)
-    auto result = qs->sum<^^AggPerson::score>().avg<^^AggPerson::salary>().select();
+    auto result = this->qs->template sum<^^AggPerson::score>().template avg<^^AggPerson::salary>().select();
 
     ASSERT_TRUE(result.has_value()) << "SUM + AVG should succeed";
 
@@ -134,9 +150,9 @@ TEST_F(MultipleAggregatesTest, TwoAggregatesSumAndAvg) {
     EXPECT_NEAR(avg, (50000.0 + 60000.0 + 70000.0 + 55000.0 + 80000.0) / 5.0, 0.01);
 }
 
-TEST_F(MultipleAggregatesTest, ThreeAggregates) {
+TYPED_TEST(MultipleAggregatesTest, ThreeAggregates) {
     // Tests tuple with 3 operations
-    auto result = qs->count().sum<^^AggPerson::age>().avg<^^AggPerson::salary>().select();
+    auto result = this->qs->count().template sum<^^AggPerson::age>().template avg<^^AggPerson::salary>().select();
 
     ASSERT_TRUE(result.has_value()) << "Three aggregates should succeed";
 
@@ -146,9 +162,13 @@ TEST_F(MultipleAggregatesTest, ThreeAggregates) {
     EXPECT_NEAR(avg, 63000.0, 0.01);
 }
 
-TEST_F(MultipleAggregatesTest, FourAggregates) {
+TYPED_TEST(MultipleAggregatesTest, FourAggregates) {
     // Tests tuple with 4 operations
-    auto result = qs->count().sum<^^AggPerson::age>().min<^^AggPerson::score>().max<^^AggPerson::score>().select();
+    auto result = this->qs->count()
+                          .template sum<^^AggPerson::age>()
+                          .template min<^^AggPerson::score>()
+                          .template max<^^AggPerson::score>()
+                          .select();
 
     ASSERT_TRUE(result.has_value()) << "Four aggregates should succeed";
 
@@ -159,13 +179,13 @@ TEST_F(MultipleAggregatesTest, FourAggregates) {
     EXPECT_EQ(max, 95.0); // MAX returns double
 }
 
-TEST_F(MultipleAggregatesTest, FiveAggregatesAllTypes) {
+TYPED_TEST(MultipleAggregatesTest, FiveAggregatesAllTypes) {
     // Tests all 5 aggregate types together
-    auto result = qs->count()
-                          .sum<^^AggPerson::age>()
-                          .avg<^^AggPerson::salary>()
-                          .min<^^AggPerson::score>()
-                          .max<^^AggPerson::score>()
+    auto result = this->qs->count()
+                          .template sum<^^AggPerson::age>()
+                          .template avg<^^AggPerson::salary>()
+                          .template min<^^AggPerson::score>()
+                          .template max<^^AggPerson::score>()
                           .select();
 
     ASSERT_TRUE(result.has_value()) << "Five aggregates should succeed";
@@ -178,16 +198,16 @@ TEST_F(MultipleAggregatesTest, FiveAggregatesAllTypes) {
     EXPECT_EQ(max, 95.0);
 }
 
-TEST_F(MultipleAggregatesTest, MultipleAggregatesEmptyTable) {
+TYPED_TEST(MultipleAggregatesTest, MultipleAggregatesEmptyTable) {
     // Test multiple aggregates on empty table (default/zero values)
     // First delete all rows
-    auto all = qs->select();
+    auto all = this->qs->select();
     ASSERT_TRUE(all.has_value());
     for (const auto& p : all.value()) {
-        (void)qs->remove(p);
+        (void)this->qs->remove(p);
     }
 
-    auto result = qs->count().sum<^^AggPerson::age>().avg<^^AggPerson::salary>().select();
+    auto result = this->qs->count().template sum<^^AggPerson::age>().template avg<^^AggPerson::salary>().select();
 
     ASSERT_TRUE(result.has_value()) << "Aggregates on empty table should succeed";
 
@@ -201,66 +221,66 @@ TEST_F(MultipleAggregatesTest, MultipleAggregatesEmptyTable) {
 // Single Aggregate Edge Cases
 // =============================================================================
 
-TEST_F(MultipleAggregatesTest, SingleCountEmptyTable) {
+TYPED_TEST(MultipleAggregatesTest, SingleCountEmptyTable) {
     // Delete all rows first
-    auto all = qs->select();
+    auto all = this->qs->select();
     ASSERT_TRUE(all.has_value());
     for (const auto& p : all.value()) {
-        (void)qs->remove(p);
+        (void)this->qs->remove(p);
     }
 
-    auto result = qs->count().select();
+    auto result = this->qs->count().select();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 0);
 }
 
-TEST_F(MultipleAggregatesTest, SingleSumEmptyTable) {
+TYPED_TEST(MultipleAggregatesTest, SingleSumEmptyTable) {
     // Delete all rows first
-    auto all = qs->select();
+    auto all = this->qs->select();
     ASSERT_TRUE(all.has_value());
     for (const auto& p : all.value()) {
-        (void)qs->remove(p);
+        (void)this->qs->remove(p);
     }
 
-    auto result = qs->sum<^^AggPerson::age>().select();
+    auto result = this->qs->template sum<^^AggPerson::age>().select();
     ASSERT_TRUE(result.has_value());
     // SUM of empty set is 0 or NULL
 }
 
-TEST_F(MultipleAggregatesTest, SingleAvgEmptyTable) {
+TYPED_TEST(MultipleAggregatesTest, SingleAvgEmptyTable) {
     // Delete all rows first
-    auto all = qs->select();
+    auto all = this->qs->select();
     ASSERT_TRUE(all.has_value());
     for (const auto& p : all.value()) {
-        (void)qs->remove(p);
+        (void)this->qs->remove(p);
     }
 
-    auto result = qs->avg<^^AggPerson::salary>().select();
+    auto result = this->qs->template avg<^^AggPerson::salary>().select();
     ASSERT_TRUE(result.has_value());
     // AVG of empty set
 }
 
-TEST_F(MultipleAggregatesTest, SingleMinEmptyTable) {
+TYPED_TEST(MultipleAggregatesTest, SingleMinEmptyTable) {
     // Delete all rows first
-    auto all = qs->select();
+    auto all = this->qs->select();
     ASSERT_TRUE(all.has_value());
     for (const auto& p : all.value()) {
-        (void)qs->remove(p);
+        (void)this->qs->remove(p);
     }
 
-    auto result = qs->min<^^AggPerson::score>().select();
+    auto result = this->qs->template min<^^AggPerson::score>().select();
     ASSERT_TRUE(result.has_value());
 }
 
-TEST_F(MultipleAggregatesTest, SingleMaxEmptyTable) {
+TYPED_TEST(MultipleAggregatesTest, SingleMaxEmptyTable) {
     // Delete all rows first
-    auto all = qs->select();
+    auto all = this->qs->select();
     ASSERT_TRUE(all.has_value());
     for (const auto& p : all.value()) {
-        (void)qs->remove(p);
+        (void)this->qs->remove(p);
     }
 
-    auto result = qs->max<^^AggPerson::score>().select();
+    auto result = this->qs->template max<^^AggPerson::score>().select();
     ASSERT_TRUE(result.has_value());
 }
 
@@ -268,25 +288,25 @@ TEST_F(MultipleAggregatesTest, SingleMaxEmptyTable) {
 // Single Aggregate as First in Chain (Coverage for avg/min/max entry points)
 // =============================================================================
 
-TEST_F(MultipleAggregatesTest, SingleAvgWithData) {
+TYPED_TEST(MultipleAggregatesTest, SingleAvgWithData) {
     // Test avg() as the FIRST aggregate call (not chained after count/sum)
-    auto result = qs->avg<^^AggPerson::salary>().select();
+    auto result = this->qs->template avg<^^AggPerson::salary>().select();
 
     ASSERT_TRUE(result.has_value()) << "Single AVG should succeed";
     EXPECT_NEAR(result.value(), 63000.0, 0.01); // (50000+60000+70000+55000+80000)/5
 }
 
-TEST_F(MultipleAggregatesTest, SingleMinWithData) {
+TYPED_TEST(MultipleAggregatesTest, SingleMinWithData) {
     // Test min() as the FIRST aggregate call
-    auto result = qs->min<^^AggPerson::score>().select();
+    auto result = this->qs->template min<^^AggPerson::score>().select();
 
     ASSERT_TRUE(result.has_value()) << "Single MIN should succeed";
     EXPECT_EQ(result.value(), 75.0); // Charlie has lowest score
 }
 
-TEST_F(MultipleAggregatesTest, SingleMaxWithData) {
+TYPED_TEST(MultipleAggregatesTest, SingleMaxWithData) {
     // Test max() as the FIRST aggregate call
-    auto result = qs->max<^^AggPerson::score>().select();
+    auto result = this->qs->template max<^^AggPerson::score>().select();
 
     ASSERT_TRUE(result.has_value()) << "Single MAX should succeed";
     EXPECT_EQ(result.value(), 95.0); // Diana has highest score
@@ -296,9 +316,9 @@ TEST_F(MultipleAggregatesTest, SingleMaxWithData) {
 // Chaining FROM avg/min/max (Coverage for AggregateStatement::avg/min/max)
 // =============================================================================
 
-TEST_F(MultipleAggregatesTest, AvgThenCount) {
+TYPED_TEST(MultipleAggregatesTest, AvgThenCount) {
     // Chain count() AFTER avg() - tests AggregateStatement<..., AVG>::count()
-    auto result = qs->avg<^^AggPerson::salary>().count().select();
+    auto result = this->qs->template avg<^^AggPerson::salary>().count().select();
 
     ASSERT_TRUE(result.has_value()) << "AVG then COUNT should succeed";
 
@@ -307,9 +327,9 @@ TEST_F(MultipleAggregatesTest, AvgThenCount) {
     EXPECT_EQ(count, 5);
 }
 
-TEST_F(MultipleAggregatesTest, MinThenSum) {
+TYPED_TEST(MultipleAggregatesTest, MinThenSum) {
     // Chain sum() AFTER min() - tests AggregateStatement<..., MIN>::sum()
-    auto result = qs->min<^^AggPerson::score>().sum<^^AggPerson::age>().select();
+    auto result = this->qs->template min<^^AggPerson::score>().template sum<^^AggPerson::age>().select();
 
     ASSERT_TRUE(result.has_value()) << "MIN then SUM should succeed";
 
@@ -318,9 +338,9 @@ TEST_F(MultipleAggregatesTest, MinThenSum) {
     EXPECT_EQ(sum, 158); // 25+30+35+28+40
 }
 
-TEST_F(MultipleAggregatesTest, MaxThenAvg) {
+TYPED_TEST(MultipleAggregatesTest, MaxThenAvg) {
     // Chain avg() AFTER max() - tests AggregateStatement<..., MAX>::avg()
-    auto result = qs->max<^^AggPerson::score>().avg<^^AggPerson::salary>().select();
+    auto result = this->qs->template max<^^AggPerson::score>().template avg<^^AggPerson::salary>().select();
 
     ASSERT_TRUE(result.has_value()) << "MAX then AVG should succeed";
 
@@ -329,9 +349,9 @@ TEST_F(MultipleAggregatesTest, MaxThenAvg) {
     EXPECT_NEAR(avg, 63000.0, 0.01);
 }
 
-TEST_F(MultipleAggregatesTest, AvgThenMin) {
+TYPED_TEST(MultipleAggregatesTest, AvgThenMin) {
     // Chain min() AFTER avg() - tests AggregateStatement<..., AVG>::min()
-    auto result = qs->avg<^^AggPerson::salary>().min<^^AggPerson::age>().select();
+    auto result = this->qs->template avg<^^AggPerson::salary>().template min<^^AggPerson::age>().select();
 
     ASSERT_TRUE(result.has_value()) << "AVG then MIN should succeed";
 
@@ -340,9 +360,9 @@ TEST_F(MultipleAggregatesTest, AvgThenMin) {
     EXPECT_EQ(min, 25.0); // Alice is youngest
 }
 
-TEST_F(MultipleAggregatesTest, AvgThenMax) {
+TYPED_TEST(MultipleAggregatesTest, AvgThenMax) {
     // Chain max() AFTER avg() - tests AggregateStatement<..., AVG>::max()
-    auto result = qs->avg<^^AggPerson::salary>().max<^^AggPerson::age>().select();
+    auto result = this->qs->template avg<^^AggPerson::salary>().template max<^^AggPerson::age>().select();
 
     ASSERT_TRUE(result.has_value()) << "AVG then MAX should succeed";
 
@@ -351,9 +371,9 @@ TEST_F(MultipleAggregatesTest, AvgThenMax) {
     EXPECT_EQ(max, 40.0); // Eve is oldest
 }
 
-TEST_F(MultipleAggregatesTest, MinThenMax) {
+TYPED_TEST(MultipleAggregatesTest, MinThenMax) {
     // Chain max() AFTER min() - tests range query pattern
-    auto result = qs->min<^^AggPerson::age>().max<^^AggPerson::age>().select();
+    auto result = this->qs->template min<^^AggPerson::age>().template max<^^AggPerson::age>().select();
 
     ASSERT_TRUE(result.has_value()) << "MIN then MAX should succeed";
 
@@ -362,9 +382,9 @@ TEST_F(MultipleAggregatesTest, MinThenMax) {
     EXPECT_EQ(max, 40.0); // Eve
 }
 
-TEST_F(MultipleAggregatesTest, MaxThenMin) {
+TYPED_TEST(MultipleAggregatesTest, MaxThenMin) {
     // Chain min() AFTER max() - reverse order
-    auto result = qs->max<^^AggPerson::score>().min<^^AggPerson::score>().select();
+    auto result = this->qs->template max<^^AggPerson::score>().template min<^^AggPerson::score>().select();
 
     ASSERT_TRUE(result.has_value()) << "MAX then MIN should succeed";
 
@@ -377,11 +397,16 @@ TEST_F(MultipleAggregatesTest, MaxThenMin) {
 // Aggregate with JOIN Tests
 // =============================================================================
 
-TEST_F(MultipleAggregatesTest, MultipleAggregatesWithJoin) {
+TYPED_TEST(MultipleAggregatesTest, MultipleAggregatesWithJoin) {
+    if constexpr (storm::test::is_postgresql<TypeParam>()) {
+        GTEST_SKIP() << "Aggregate+JOIN SQL generation not yet supported on PostgreSQL";
+        return;
+    }
     // First set up FK tables
-    const auto& conn = QuerySet<AggPerson>::get_default_connection();
+    const auto& conn = QuerySet<AggPerson, TypeParam>::get_default_connection();
 
-    (void)conn->execute(
+    (void)storm::test::ensure_table<TypeParam>(
+            conn,
             "CREATE TABLE JoinUser ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "name TEXT NOT NULL, "
@@ -391,7 +416,8 @@ TEST_F(MultipleAggregatesTest, MultipleAggregatesWithJoin) {
             "opt_bio TEXT)"
     );
 
-    (void)conn->execute(
+    (void)storm::test::ensure_table<TypeParam>(
+            conn,
             "CREATE TABLE JoinPost ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "title TEXT NOT NULL, "
@@ -413,10 +439,10 @@ TEST_F(MultipleAggregatesTest, MultipleAggregatesWithJoin) {
     (void)conn->execute("INSERT INTO JoinPost (title, author_id, views) VALUES ('Post2', 1, 200)");
     (void)conn->execute("INSERT INTO JoinPost (title, author_id, views) VALUES ('Post3', 2, 50)");
 
-    QuerySet<JoinPost> post_qs;
+    QuerySet<JoinPost, TypeParam> post_qs;
 
     // Test multiple aggregates with JOIN
-    auto result = post_qs.join<&JoinPost::author>().count().sum<^^JoinPost::views>().select();
+    auto result = post_qs.template join<&JoinPost::author>().count().template sum<^^JoinPost::views>().select();
 
     ASSERT_TRUE(result.has_value()) << "Multiple aggregates with JOIN should succeed";
 
@@ -429,15 +455,21 @@ TEST_F(MultipleAggregatesTest, MultipleAggregatesWithJoin) {
 // JOIN Type Extraction Tests (float, bool, optional)
 // =============================================================================
 
-class JoinTypeExtractionTest : public ::testing::Test {
+template <typename ConnType> class JoinTypeExtractionTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        auto result = QuerySet<JoinUser>::set_default_connection(":memory:");
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        auto result =
+                QuerySet<JoinUser, ConnType>::set_default_connection(storm::test::get_connection_string<ConnType>());
         ASSERT_TRUE(result.has_value()) << "Failed to open database";
 
-        const auto& conn = QuerySet<JoinUser>::get_default_connection();
+        const auto& conn = QuerySet<JoinUser, ConnType>::get_default_connection();
 
-        auto create_user = conn->execute(
+        auto create_user = storm::test::ensure_table<ConnType>(
+                conn,
                 "CREATE TABLE JoinUser ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
@@ -448,7 +480,8 @@ class JoinTypeExtractionTest : public ::testing::Test {
         );
         ASSERT_TRUE(create_user.has_value());
 
-        auto create_post = conn->execute(
+        auto create_post = storm::test::ensure_table<ConnType>(
+                conn,
                 "CREATE TABLE JoinPost ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "title TEXT NOT NULL, "
@@ -458,8 +491,10 @@ class JoinTypeExtractionTest : public ::testing::Test {
         );
         ASSERT_TRUE(create_post.has_value());
 
-        user_qs = std::make_unique<QuerySet<JoinUser>>();
-        post_qs = std::make_unique<QuerySet<JoinPost>>();
+        storm::test::begin_test_txn<ConnType>(conn, {"JoinUser"});
+
+        user_qs = std::make_unique<QuerySet<JoinUser, ConnType>>();
+        post_qs = std::make_unique<QuerySet<JoinPost, ConnType>>();
 
         // Insert test users with various type values
         (void)conn->execute(
@@ -483,16 +518,24 @@ class JoinTypeExtractionTest : public ::testing::Test {
     auto TearDown() -> void override {
         user_qs = nullptr;
         post_qs = nullptr;
-        QuerySet<JoinUser>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<JoinUser, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<JoinUser, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<JoinUser, ConnType>::clear_default_connection();
     }
 
-    std::unique_ptr<QuerySet<JoinUser>> user_qs;
-    std::unique_ptr<QuerySet<JoinPost>> post_qs;
+    std::unique_ptr<QuerySet<JoinUser, ConnType>> user_qs;
+    std::unique_ptr<QuerySet<JoinPost, ConnType>> post_qs;
 };
 
-TEST_F(JoinTypeExtractionTest, JoinExtractsFloatField) {
+TYPED_TEST_SUITE(JoinTypeExtractionTest, DatabaseTypes);
+
+TYPED_TEST(JoinTypeExtractionTest, JoinExtractsFloatField) {
     // Tests extract_typed_field for float
-    auto result = post_qs->join<&JoinPost::author>().select();
+    auto result = this->post_qs->template join<&JoinPost::author>().select();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with float field should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -509,9 +552,9 @@ TEST_F(JoinTypeExtractionTest, JoinExtractsFloatField) {
     }
 }
 
-TEST_F(JoinTypeExtractionTest, JoinExtractsBoolField) {
+TYPED_TEST(JoinTypeExtractionTest, JoinExtractsBoolField) {
     // Tests extract_typed_field for bool
-    auto result = post_qs->join<&JoinPost::author>().select();
+    auto result = this->post_qs->template join<&JoinPost::author>().select();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with bool field should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -527,9 +570,9 @@ TEST_F(JoinTypeExtractionTest, JoinExtractsBoolField) {
     }
 }
 
-TEST_F(JoinTypeExtractionTest, JoinExtractsOptionalIntWithValue) {
+TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalIntWithValue) {
     // Tests extract_typed_field for optional<int> with value
-    auto result = post_qs->join<&JoinPost::author>().select();
+    auto result = this->post_qs->template join<&JoinPost::author>().select();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with optional int should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -545,9 +588,9 @@ TEST_F(JoinTypeExtractionTest, JoinExtractsOptionalIntWithValue) {
     }
 }
 
-TEST_F(JoinTypeExtractionTest, JoinExtractsOptionalIntNull) {
+TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalIntNull) {
     // Tests extract_typed_field for optional<int> with NULL
-    auto result = post_qs->join<&JoinPost::author>().select();
+    auto result = this->post_qs->template join<&JoinPost::author>().select();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with NULL optional should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -559,9 +602,9 @@ TEST_F(JoinTypeExtractionTest, JoinExtractsOptionalIntNull) {
     }
 }
 
-TEST_F(JoinTypeExtractionTest, JoinExtractsOptionalStringWithValue) {
+TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalStringWithValue) {
     // Tests extract_typed_field for optional<string> with value
-    auto result = post_qs->join<&JoinPost::author>().select();
+    auto result = this->post_qs->template join<&JoinPost::author>().select();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with optional string should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -574,9 +617,9 @@ TEST_F(JoinTypeExtractionTest, JoinExtractsOptionalStringWithValue) {
     }
 }
 
-TEST_F(JoinTypeExtractionTest, JoinExtractsOptionalStringNull) {
+TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalStringNull) {
     // Tests extract_typed_field for optional<string> with NULL
-    auto result = post_qs->join<&JoinPost::author>().select();
+    auto result = this->post_qs->template join<&JoinPost::author>().select();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with NULL optional string should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -588,18 +631,20 @@ TEST_F(JoinTypeExtractionTest, JoinExtractsOptionalStringNull) {
     }
 }
 
-TEST_F(JoinTypeExtractionTest, JoinWithWhere) {
+TYPED_TEST(JoinTypeExtractionTest, JoinWithWhere) {
     // Test JOIN with WHERE to ensure proper handling
-    auto result = post_qs->where(storm::orm::where::field<^^JoinPost::views>() > 75).join<&JoinPost::author>().select();
+    auto result = this->post_qs->where(storm::orm::where::field<^^JoinPost::views>() > 75)
+                          .template join<&JoinPost::author>()
+                          .select();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with WHERE should succeed";
     // Should return posts with views > 75 (Alice's posts with 100/200 and Charlie's with 150)
     EXPECT_EQ(result.value().size(), 3);
 }
 
-TEST_F(JoinTypeExtractionTest, JoinWithOrderBy) {
+TYPED_TEST(JoinTypeExtractionTest, JoinWithOrderBy) {
     // Test JOIN with ORDER BY
-    auto result = post_qs->join<&JoinPost::author>().order_by<^^JoinPost::views>().select();
+    auto result = this->post_qs->template join<&JoinPost::author>().template order_by<^^JoinPost::views>().select();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with ORDER BY should succeed";
     EXPECT_EQ(result.value().size(), 4);
@@ -618,21 +663,28 @@ TEST_F(JoinTypeExtractionTest, JoinWithOrderBy) {
 // Update execute_single_optimized Coverage
 // =============================================================================
 
-class UpdateOptimizedTest : public ::testing::Test {
-  protected:
-    struct UpdatePerson {
-        [[= storm::meta::FieldAttr::primary]] int id{};
-        std::string                               name;
-        int                                       value{};
-    };
+struct UpdatePerson {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string                               name;
+    int                                       value{};
+};
 
+template <typename ConnType> class UpdateOptimizedTest : public ::testing::Test {
+  protected:
     auto SetUp() -> void override {
-        auto result = QuerySet<UpdatePerson>::set_default_connection(":memory:");
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        auto result = QuerySet<UpdatePerson, ConnType>::set_default_connection(
+                storm::test::get_connection_string<ConnType>()
+        );
         ASSERT_TRUE(result.has_value()) << "Failed to open database";
 
-        const auto& conn = QuerySet<UpdatePerson>::get_default_connection();
+        const auto& conn = QuerySet<UpdatePerson, ConnType>::get_default_connection();
 
-        auto create = conn->execute(
+        auto create = storm::test::ensure_table<ConnType>(
+                conn,
                 "CREATE TABLE UpdatePerson ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
@@ -640,38 +692,48 @@ class UpdateOptimizedTest : public ::testing::Test {
         );
         ASSERT_TRUE(create.has_value());
 
-        qs = std::make_unique<QuerySet<UpdatePerson>>();
+        storm::test::begin_test_txn<ConnType>(conn, {"UpdatePerson"});
+
+        qs = std::make_unique<QuerySet<UpdatePerson, ConnType>>();
     }
 
     auto TearDown() -> void override {
         qs = nullptr;
-        QuerySet<UpdatePerson>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<UpdatePerson, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<UpdatePerson, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<UpdatePerson, ConnType>::clear_default_connection();
     }
 
-    std::unique_ptr<QuerySet<UpdatePerson>> qs;
+    std::unique_ptr<QuerySet<UpdatePerson, ConnType>> qs;
 };
 
-TEST_F(UpdateOptimizedTest, RepeatedSingleUpdates) {
+TYPED_TEST_SUITE(UpdateOptimizedTest, DatabaseTypes);
+
+TYPED_TEST(UpdateOptimizedTest, RepeatedSingleUpdates) {
     // Test repeated single updates to exercise cached statement path
     UpdatePerson p{0, "Test", 100};
-    auto         insert_result = qs->insert(p);
+    auto         insert_result = this->qs->insert(p);
     ASSERT_TRUE(insert_result.has_value());
     int64_t id = insert_result.value();
 
     // Perform multiple single updates (exercises cached_update_stmt_ path)
     for (int i = 0; i < 10; ++i) {
         UpdatePerson updated{static_cast<int>(id), "Updated" + std::to_string(i), 100 + i};
-        auto         result = qs->update(updated);
+        auto         result = this->qs->update(updated);
         ASSERT_TRUE(result.has_value()) << "Update iteration " << i << " should succeed";
     }
 
     // Verify final state
-    auto selected = qs->select();
+    auto selected = this->qs->select();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().begin()->value, 109);
 }
 
-TEST_F(UpdateOptimizedTest, BatchUpdateFollowedByInsert) {
+TYPED_TEST(UpdateOptimizedTest, BatchUpdateFollowedByInsert) {
     // Test batch update followed by insert (different code paths)
     std::vector<UpdatePerson> batch = {
             {0, "P1", 1},
@@ -679,11 +741,11 @@ TEST_F(UpdateOptimizedTest, BatchUpdateFollowedByInsert) {
             {0, "P3", 3},
     };
 
-    auto insert_result = qs->insert(std::span<const UpdatePerson>(batch));
+    auto insert_result = this->qs->insert(std::span<const UpdatePerson>(batch));
     ASSERT_TRUE(insert_result.has_value());
 
     // Batch update
-    auto selected = qs->select();
+    auto selected = this->qs->select();
     ASSERT_TRUE(selected.has_value());
     ASSERT_FALSE(selected.value().empty());
 
@@ -692,11 +754,11 @@ TEST_F(UpdateOptimizedTest, BatchUpdateFollowedByInsert) {
         updates.push_back({p.id, p.name, p.value + 100});
     }
 
-    auto batch_update = qs->update(std::span<const UpdatePerson>(updates));
+    auto batch_update = this->qs->update(std::span<const UpdatePerson>(updates));
     ASSERT_TRUE(batch_update.has_value());
 
     // Verify batch update worked
-    auto after_batch = qs->select();
+    auto after_batch = this->qs->select();
     ASSERT_TRUE(after_batch.has_value());
     for (const auto& p : after_batch.value()) {
         EXPECT_GE(p.value, 101) << "Values should be updated";
@@ -704,11 +766,11 @@ TEST_F(UpdateOptimizedTest, BatchUpdateFollowedByInsert) {
 
     // Insert a new record after batch update
     UpdatePerson new_person{0, "NewPerson", 500};
-    auto         new_insert = qs->insert(new_person);
+    auto         new_insert = this->qs->insert(new_person);
     ASSERT_TRUE(new_insert.has_value());
 
     // Verify total count
-    auto final_result = qs->select();
+    auto final_result = this->qs->select();
     ASSERT_TRUE(final_result.has_value());
     EXPECT_EQ(final_result.value().size(), 4);
 }
@@ -717,33 +779,42 @@ TEST_F(UpdateOptimizedTest, BatchUpdateFollowedByInsert) {
 // Additional WHERE Clause Coverage
 // =============================================================================
 
-class WhereAdditionalTest : public ::testing::Test {
-  protected:
-    struct WherePerson {
-        [[= storm::meta::FieldAttr::primary]] int id{};
-        std::string                               name;
-        int                                       age{};
-        double                                    score{};
-    };
+struct CovAddWherePerson {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string                               name;
+    int                                       age{};
+    double                                    score{};
+};
 
+template <typename ConnType> class WhereAdditionalTest : public ::testing::Test {
+  protected:
     auto SetUp() -> void override {
-        auto result = QuerySet<WherePerson>::set_default_connection(":memory:");
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        auto result = QuerySet<CovAddWherePerson, ConnType>::set_default_connection(
+                storm::test::get_connection_string<ConnType>()
+        );
         ASSERT_TRUE(result.has_value());
 
-        const auto& conn = QuerySet<WherePerson>::get_default_connection();
+        const auto& conn = QuerySet<CovAddWherePerson, ConnType>::get_default_connection();
 
-        (void)conn->execute(
-                "CREATE TABLE WherePerson ("
+        (void)storm::test::ensure_table<ConnType>(
+                conn,
+                "CREATE TABLE CovAddWherePerson ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
                 "age INTEGER NOT NULL, "
                 "score REAL NOT NULL)"
         );
 
-        qs = std::make_unique<QuerySet<WherePerson>>();
+        storm::test::begin_test_txn<ConnType>(conn, {"CovAddWherePerson"});
+
+        qs = std::make_unique<QuerySet<CovAddWherePerson, ConnType>>();
 
         // Insert test data
-        std::vector<WherePerson> const people = {
+        std::vector<CovAddWherePerson> const people = {
                 {0, "Alice", 25, 85.5},
                 {0, "Bob", 30, 90.0},
                 {0, "Charlie", 35, 75.5},
@@ -758,86 +829,94 @@ class WhereAdditionalTest : public ::testing::Test {
 
     auto TearDown() -> void override {
         qs = nullptr;
-        QuerySet<WherePerson>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<CovAddWherePerson, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<CovAddWherePerson, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<CovAddWherePerson, ConnType>::clear_default_connection();
     }
 
-    std::unique_ptr<QuerySet<WherePerson>> qs;
+    std::unique_ptr<QuerySet<CovAddWherePerson, ConnType>> qs;
 };
 
-TEST_F(WhereAdditionalTest, DoubleFieldComparison) {
+TYPED_TEST_SUITE(WhereAdditionalTest, DatabaseTypes);
+
+TYPED_TEST(WhereAdditionalTest, DoubleFieldComparison) {
     // Test WHERE with double field (score)
-    auto result = qs->where(storm::orm::where::field<^^WherePerson::score>() > 85.0).select();
+    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::score>() > 85.0).select();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 3); // Alice (85.5), Bob (90), Diana (95)
 }
 
-TEST_F(WhereAdditionalTest, DoubleFieldEquality) {
+TYPED_TEST(WhereAdditionalTest, DoubleFieldEquality) {
     // Test WHERE with double equality
-    auto result = qs->where(storm::orm::where::field<^^WherePerson::score>() == 90.0).select();
+    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::score>() == 90.0).select();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 1);
     EXPECT_EQ(result.value().begin()->name, "Bob");
 }
 
-TEST_F(WhereAdditionalTest, LikePatternStartsWith) {
+TYPED_TEST(WhereAdditionalTest, LikePatternStartsWith) {
     // Test LIKE with starts-with pattern
-    auto result = qs->where(storm::orm::where::field<^^WherePerson::name>().like("A%")).select();
+    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::name>().like("A%")).select();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 1);
     EXPECT_EQ(result.value().begin()->name, "Alice");
 }
 
-TEST_F(WhereAdditionalTest, LikePatternEndsWith) {
+TYPED_TEST(WhereAdditionalTest, LikePatternEndsWith) {
     // Test LIKE with ends-with pattern
-    auto result = qs->where(storm::orm::where::field<^^WherePerson::name>().like("%e")).select();
+    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::name>().like("%e")).select();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 3); // Alice, Charlie, Eve
 }
 
-TEST_F(WhereAdditionalTest, LikePatternContains) {
+TYPED_TEST(WhereAdditionalTest, LikePatternContains) {
     // Test LIKE with contains pattern
-    auto result = qs->where(storm::orm::where::field<^^WherePerson::name>().like("%li%")).select();
+    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::name>().like("%li%")).select();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 2); // Alice, Charlie
 }
 
-TEST_F(WhereAdditionalTest, ComplexNestedOrAnd) {
+TYPED_TEST(WhereAdditionalTest, ComplexNestedOrAnd) {
     // Test deeply nested OR/AND
     // (age < 28 OR age > 38) AND (score > 80)
     auto age_cond =
-            (storm::orm::where::field<^^WherePerson::age>() < 28 or
-             storm::orm::where::field<^^WherePerson::age>() > 38);
-    auto score_cond = storm::orm::where::field<^^WherePerson::score>() > 80.0;
+            (storm::orm::where::field<^^CovAddWherePerson::age>() < 28 or
+             storm::orm::where::field<^^CovAddWherePerson::age>() > 38);
+    auto score_cond = storm::orm::where::field<^^CovAddWherePerson::score>() > 80.0;
     auto combined   = age_cond and score_cond;
 
-    auto result = qs->where(combined).select();
+    auto result = this->qs->where(combined).select();
 
     ASSERT_TRUE(result.has_value());
     // Alice (25, 85.5) and Diana (40, 95) should match
     EXPECT_EQ(result.value().size(), 2);
 }
 
-TEST_F(WhereAdditionalTest, WhereWithLessEqual) {
-    auto result = qs->where(storm::orm::where::field<^^WherePerson::age>() <= 28).select();
+TYPED_TEST(WhereAdditionalTest, WhereWithLessEqual) {
+    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::age>() <= 28).select();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 2); // Alice (25), Eve (28)
 }
 
-TEST_F(WhereAdditionalTest, WhereWithGreaterEqual) {
-    auto result = qs->where(storm::orm::where::field<^^WherePerson::age>() >= 35).select();
+TYPED_TEST(WhereAdditionalTest, WhereWithGreaterEqual) {
+    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::age>() >= 35).select();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 2); // Charlie (35), Diana (40)
 }
 
-TEST_F(WhereAdditionalTest, WhereWithNotEqual) {
-    auto result = qs->where(storm::orm::where::field<^^WherePerson::name>() != "Alice").select();
+TYPED_TEST(WhereAdditionalTest, WhereWithNotEqual) {
+    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::name>() != "Alice").select();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 4); // Everyone except Alice
@@ -847,20 +926,20 @@ TEST_F(WhereAdditionalTest, WhereWithNotEqual) {
 // DISTINCT Additional Tests
 // =============================================================================
 
-TEST_F(WhereAdditionalTest, DistinctWithWhereAndOrderBy) {
-    auto result = qs->where(storm::orm::where::field<^^WherePerson::age>() > 25)
-                          .order_by<^^WherePerson::name>()
-                          .distinct<^^WherePerson::name>()
+TYPED_TEST(WhereAdditionalTest, DistinctWithWhereAndOrderBy) {
+    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::age>() > 25)
+                          .template order_by<^^CovAddWherePerson::name>()
+                          .template distinct<^^CovAddWherePerson::name>()
                           .select();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 4); // Bob, Charlie, Diana, Eve
 }
 
-TEST_F(WhereAdditionalTest, DistinctMultiFieldWhereOrderBy) {
-    auto result = qs->where(storm::orm::where::field<^^WherePerson::score>() >= 80.0)
-                          .order_by<^^WherePerson::age>()
-                          .distinct<^^WherePerson::age, ^^WherePerson::name>()
+TYPED_TEST(WhereAdditionalTest, DistinctMultiFieldWhereOrderBy) {
+    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::score>() >= 80.0)
+                          .template order_by<^^CovAddWherePerson::age>()
+                          .template distinct<^^CovAddWherePerson::age, ^^CovAddWherePerson::name>()
                           .select();
 
     ASSERT_TRUE(result.has_value());
@@ -870,24 +949,24 @@ TEST_F(WhereAdditionalTest, DistinctMultiFieldWhereOrderBy) {
 // GROUP BY Additional Aggregate Types
 // =============================================================================
 
-TEST_F(MultipleAggregatesTest, GroupByWithAvg) {
+TYPED_TEST(MultipleAggregatesTest, GroupByWithAvg) {
     // Test GROUP BY with AVG aggregate (returns double)
     // Group by age ranges (we'll use age directly)
-    auto result = qs->group_by<^^AggPerson::age>().avg<^^AggPerson::salary>().select();
+    auto result = this->qs->template group_by<^^AggPerson::age>().template avg<^^AggPerson::salary>().select();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 5); // 5 distinct ages
 }
 
-TEST_F(MultipleAggregatesTest, GroupByWithMin) {
-    auto result = qs->group_by<^^AggPerson::age>().min<^^AggPerson::score>().select();
+TYPED_TEST(MultipleAggregatesTest, GroupByWithMin) {
+    auto result = this->qs->template group_by<^^AggPerson::age>().template min<^^AggPerson::score>().select();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 5);
 }
 
-TEST_F(MultipleAggregatesTest, GroupByWithMax) {
-    auto result = qs->group_by<^^AggPerson::age>().max<^^AggPerson::score>().select();
+TYPED_TEST(MultipleAggregatesTest, GroupByWithMax) {
+    auto result = this->qs->template group_by<^^AggPerson::age>().template max<^^AggPerson::score>().select();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 5);
@@ -897,36 +976,44 @@ TEST_F(MultipleAggregatesTest, GroupByWithMax) {
 // Aggregate with WHERE Tests
 // =============================================================================
 
-TEST_F(MultipleAggregatesTest, AggregateCountWithWhere) {
-    auto result = qs->where(storm::orm::where::field<^^AggPerson::age>() > 30).count().select();
+TYPED_TEST(MultipleAggregatesTest, AggregateCountWithWhere) {
+    auto result = this->qs->where(storm::orm::where::field<^^AggPerson::age>() > 30).count().select();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 2); // Charlie (35), Eve (40)
 }
 
-TEST_F(MultipleAggregatesTest, AggregateSumWithWhere) {
-    auto result = qs->where(storm::orm::where::field<^^AggPerson::age>() > 30).sum<^^AggPerson::age>().select();
+TYPED_TEST(MultipleAggregatesTest, AggregateSumWithWhere) {
+    auto result = this->qs->where(storm::orm::where::field<^^AggPerson::age>() > 30)
+                          .template sum<^^AggPerson::age>()
+                          .select();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 35 + 40); // 75
 }
 
-TEST_F(MultipleAggregatesTest, AggregateAvgWithWhere) {
-    auto result = qs->where(storm::orm::where::field<^^AggPerson::age>() > 30).avg<^^AggPerson::salary>().select();
+TYPED_TEST(MultipleAggregatesTest, AggregateAvgWithWhere) {
+    auto result = this->qs->where(storm::orm::where::field<^^AggPerson::age>() > 30)
+                          .template avg<^^AggPerson::salary>()
+                          .select();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_NEAR(result.value(), (70000.0 + 80000.0) / 2.0, 0.01);
 }
 
-TEST_F(MultipleAggregatesTest, AggregateMinWithWhere) {
-    auto result = qs->where(storm::orm::where::field<^^AggPerson::age>() > 30).min<^^AggPerson::score>().select();
+TYPED_TEST(MultipleAggregatesTest, AggregateMinWithWhere) {
+    auto result = this->qs->where(storm::orm::where::field<^^AggPerson::age>() > 30)
+                          .template min<^^AggPerson::score>()
+                          .select();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 75.0); // Charlie has 75
 }
 
-TEST_F(MultipleAggregatesTest, AggregateMaxWithWhere) {
-    auto result = qs->where(storm::orm::where::field<^^AggPerson::age>() > 30).max<^^AggPerson::score>().select();
+TYPED_TEST(MultipleAggregatesTest, AggregateMaxWithWhere) {
+    auto result = this->qs->where(storm::orm::where::field<^^AggPerson::age>() > 30)
+                          .template max<^^AggPerson::score>()
+                          .select();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 80.0); // Eve has 80
@@ -936,9 +1023,9 @@ TEST_F(MultipleAggregatesTest, AggregateMaxWithWhere) {
 // COUNT_DISTINCT Additional Tests (if supported)
 // =============================================================================
 
-TEST_F(MultipleAggregatesTest, CountDistinctViaDistinct) {
+TYPED_TEST(MultipleAggregatesTest, CountDistinctViaDistinct) {
     // Test DISTINCT + COUNT combination
-    auto distinct_result = qs->distinct<^^AggPerson::age>().select();
+    auto distinct_result = this->qs->template distinct<^^AggPerson::age>().select();
     ASSERT_TRUE(distinct_result.has_value());
 
     // All ages are unique in our test data

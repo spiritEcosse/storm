@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include "test_db_helpers.h"
 
 // NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
 
@@ -17,17 +18,22 @@ struct TestRecord {
     std::string                               name;
 };
 
-// Test fixture for large SELECT operations
-class SelectLargeTest : public ::testing::Test {
+// Test fixture for large SELECT operations — templated on database backend
+template <typename ConnType> class SelectLargeTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        auto result = QuerySet<TestRecord>::set_default_connection(":memory:");
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
+
+        const auto& conn_str = storm::test::get_connection_string<ConnType>();
+        auto        result   = QuerySet<TestRecord, ConnType>::set_default_connection(conn_str);
         ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
 
-        const auto& conn = QuerySet<TestRecord>::get_default_connection();
+        const auto& conn = QuerySet<TestRecord, ConnType>::get_default_connection();
 
-        // Create table
-        auto create_result = conn->execute(
+        auto create_result = storm::test::ensure_table<ConnType>(
+                conn,
                 "CREATE TABLE TestRecord ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "value INTEGER NOT NULL, "
@@ -35,18 +41,28 @@ class SelectLargeTest : public ::testing::Test {
                 ")"
         );
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
+
+        storm::test::begin_test_txn<ConnType>(conn, {"TestRecord"});
     }
 
     auto TearDown() -> void override {
-        QuerySet<TestRecord>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<TestRecord, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<TestRecord, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<TestRecord, ConnType>::clear_default_connection();
     }
 };
+
+TYPED_TEST_SUITE(SelectLargeTest, DatabaseTypes);
 
 // Test: SELECT with result set larger than initial capacity (10K)
 // This tests the exponential growth path
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_F(SelectLargeTest, SelectMoreThan10KRows) {
-    QuerySet<TestRecord> queryset;
+TYPED_TEST(SelectLargeTest, SelectMoreThan10KRows) {
+    QuerySet<TestRecord, TypeParam> queryset;
 
     // Insert 25,000 records (will trigger exponential growth: 10K → 20K → 40K)
     constexpr int           RECORD_COUNT = 25000;
@@ -86,8 +102,8 @@ TEST_F(SelectLargeTest, SelectMoreThan10KRows) {
 }
 
 // Test: SELECT with result set at exactly 10K (no exponential growth needed)
-TEST_F(SelectLargeTest, SelectExactly10KRows) {
-    QuerySet<TestRecord> queryset;
+TYPED_TEST(SelectLargeTest, SelectExactly10KRows) {
+    QuerySet<TestRecord, TypeParam> queryset;
 
     constexpr int           RECORD_COUNT = 10000;
     std::vector<TestRecord> records;
@@ -113,8 +129,8 @@ TEST_F(SelectLargeTest, SelectExactly10KRows) {
 }
 
 // Test: SELECT with result set slightly over 10K (minimal exponential growth)
-TEST_F(SelectLargeTest, SelectSlightlyOver10KRows) {
-    QuerySet<TestRecord> queryset;
+TYPED_TEST(SelectLargeTest, SelectSlightlyOver10KRows) {
+    QuerySet<TestRecord, TypeParam> queryset;
 
     constexpr int           RECORD_COUNT = 10001; // Just 1 over capacity
     std::vector<TestRecord> records;
@@ -141,8 +157,8 @@ TEST_F(SelectLargeTest, SelectSlightlyOver10KRows) {
 // Test: SELECT with very large result set (100K rows)
 // Tests multiple exponential growth cycles
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_F(SelectLargeTest, SelectVeryLargeDataset) {
-    QuerySet<TestRecord> queryset;
+TYPED_TEST(SelectLargeTest, SelectVeryLargeDataset) {
+    QuerySet<TestRecord, TypeParam> queryset;
 
     // 100K records: 10K → 20K → 40K → 80K → 160K (4 growth cycles)
     constexpr int RECORD_COUNT = 100000;

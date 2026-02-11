@@ -186,9 +186,18 @@ qs.join<Message>().where(...).select();
 ## Testing
 
 ```bash
+# SQLite only
 ctest --test-dir build/debug --output-on-failure
+
+# With PostgreSQL (parallel — ~10x speedup)
+STORM_PG_CONNSTR="host=host.containers.internal port=5432 dbname=storm_db user=storm_db password=storm_db" \
+  ctest --test-dir build/debug -j$(nproc) --output-on-failure
+
+# Filter specific tests
 ./build/debug/tests/storm_tests --gtest_filter="SelectTest.*"
 ```
+
+See [docs/development/TESTING.md](docs/development/TESTING.md) for PostgreSQL test isolation details.
 
 ## Documentation
 
