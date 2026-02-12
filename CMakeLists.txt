@@ -327,22 +327,24 @@ endif()
  message(STATUS "Sanitizer: ${USE_SANITIZER}")
  message(STATUS "===================================")
 
-# Coverage report generation targets (only when coverage is enabled)
+# Coverage targets (only when coverage is enabled)
+#
+# User-facing targets:
+#   coverage      - Run tests + show filtered text summary (with LCOV_EXCL)
+#   coverage-html - Run tests + generate filtered HTML report (with LCOV_EXCL)
+#   coverage-clean - Clean all coverage data
+#
+# Usage:
+#   1. Configure: cmake -S . -B build/coverage -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENABLE_TESTS=ON -DENABLE_COVERAGE=ON
+#   2. Build: cmake --build build/coverage
+#   3. Run: cmake --build build/coverage --target coverage
+#
+# Coverage combines data from TWO test binaries:
+#   - storm_tests: Main tests with real SQLite (covers normal paths)
+#   - storm_orm_mock_tests: Mock tests with LD_PRELOAD (covers [[unlikely]] error paths)
+#
+# Both binaries link against the same libstorm, so coverage data merges correctly.
 if(ENABLE_COVERAGE AND ENABLE_TESTS)
-    # Custom target to generate coverage report
-    # Usage:
-    #   1. Build with coverage: cmake --preset ninja-debug -DENABLE_COVERAGE=ON -DENABLE_TESTS=ON -B build/debug-coverage
-    #   2. Build: cmake --build build/debug-coverage
-    #   3. Run coverage: cmake --build build/debug-coverage --target coverage
-    #   OR run steps separately:
-    #   3a. Run tests: cmake --build build/debug-coverage --target coverage-run
-    #   3b. Generate report: cmake --build build/debug-coverage --target coverage-report
-    #
-    # Coverage combines data from TWO test binaries:
-    #   - storm_tests: Main tests with real SQLite (covers normal paths)
-    #   - storm_orm_mock_tests: Mock tests with LD_PRELOAD (covers [[unlikely]] error paths)
-    #
-    # Both binaries link against the same libstorm, so coverage data merges correctly.
 
     # Run main tests with coverage instrumentation (batched to work around
     # Clang C++26 coverage segfault when running all tests in one process)
@@ -383,38 +385,6 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
         VERBATIM
     )
 
-    # HTML coverage report (uses both binaries as objects for complete coverage)
-    add_custom_target(coverage-report
-        COMMAND ${LLVM_COV} show
-            $<TARGET_FILE:storm_tests>
-            -object=$<TARGET_FILE:storm_orm_mock_tests>
-            -instr-profile=${COVERAGE_OUTPUT_DIR}/coverage.profdata
-            -format=html
-            -output-dir=${COVERAGE_OUTPUT_DIR}/html
-            -show-line-counts-or-regions
-            -show-instantiations=false
-            -ignore-filename-regex="third_party|googletest|build|mock_sqlite"
-            ${CMAKE_SOURCE_DIR}/src
-        DEPENDS coverage-merge
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        COMMENT "Generating HTML coverage report in ${COVERAGE_OUTPUT_DIR}/html"
-        VERBATIM
-    )
-
-    # Text summary report
-    add_custom_target(coverage-summary
-        COMMAND ${LLVM_COV} report
-            $<TARGET_FILE:storm_tests>
-            -object=$<TARGET_FILE:storm_orm_mock_tests>
-            -instr-profile=${COVERAGE_OUTPUT_DIR}/coverage.profdata
-            -ignore-filename-regex="third_party|googletest|build|mock_sqlite"
-            ${CMAKE_SOURCE_DIR}/src
-        DEPENDS coverage-merge
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        COMMENT "Coverage summary:"
-        VERBATIM
-    )
-
     # Export coverage data in LCOV format (for CI integration)
     add_custom_target(coverage-lcov
         COMMAND ${LLVM_COV} export
@@ -441,13 +411,13 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
     if(LCOV_TOOL)
         message(STATUS "lcov found: ${LCOV_TOOL}")
 
-        # Filter coverage: remove third-party paths and apply LCOV_EXCL markers
-        # Note: --filter region,branch_region enables native LCOV_EXCL_START/STOP processing
+        # Run tests, filter coverage, and show summary (main user-facing target)
+        # Applies LCOV_EXCL markers and removes third-party paths
         # Note: llvm-cov format triggers some warnings that are safe to ignore:
         #   unsupported - function end line derivation (gcov-specific)
         #   inconsistent - function/line hit mismatches from template instantiations
         #   range - off-by-one on module interface files
-        add_custom_target(coverage-filtered
+        add_custom_target(coverage
             COMMAND ${LCOV_TOOL}
                 --rc branch_coverage=1
                 --rc c_file_extensions=${LCOV_C_EXTENSIONS}
@@ -469,7 +439,7 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
         if(GENHTML_TOOL)
             message(STATUS "genhtml found: ${GENHTML_TOOL}")
 
-            add_custom_target(coverage-filtered-html
+            add_custom_target(coverage-html
                 COMMAND ${GENHTML_TOOL}
                     --rc branch_coverage=1
                     --rc c_file_extensions=${LCOV_C_EXTENSIONS}
@@ -478,20 +448,20 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
                     --title "Storm ORM Coverage (filtered)"
                     --output-directory ${COVERAGE_OUTPUT_DIR}/html-filtered
                     ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
-                DEPENDS coverage-filtered
+                DEPENDS coverage
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
                 COMMENT "Generating filtered HTML coverage report in ${COVERAGE_OUTPUT_DIR}/html-filtered"
                 VERBATIM
             )
 
-            message(STATUS "  coverage-filtered      - Apply LCOV_EXCL markers and show summary")
-            message(STATUS "  coverage-filtered-html - Generate HTML with LCOV_EXCL exclusions")
+            message(STATUS "  coverage      - Run tests + show filtered text summary")
+            message(STATUS "  coverage-html - Run tests + generate filtered HTML report")
         else()
-            message(STATUS "genhtml not found - coverage-filtered-html target disabled")
+            message(STATUS "genhtml not found - coverage-html target disabled")
             message(STATUS "  Install lcov package for HTML reports with exclusions")
         endif()
     else()
-        message(STATUS "lcov not found - coverage-filtered targets disabled")
+        message(STATUS "lcov not found - coverage/coverage-html targets disabled")
         message(STATUS "  Install lcov package to enable LCOV_EXCL marker support")
         message(STATUS "  Manjaro/Arch: sudo pacman -S lcov")
         message(STATUS "  Ubuntu/Debian: sudo apt install lcov")
@@ -504,26 +474,8 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
         VERBATIM
     )
 
-    # Combined target: run tests + generate HTML report
-    add_custom_target(coverage
-        DEPENDS coverage-report
-        COMMENT "Coverage complete! Open ${COVERAGE_OUTPUT_DIR}/html/index.html in browser"
-    )
-
-    # Combined target: run tests + show summary
-    add_custom_target(coverage-quick
-        DEPENDS coverage-summary
-        COMMENT "Quick coverage check complete"
-    )
-
     message(STATUS "Coverage targets available:")
-    message(STATUS "  coverage         - Run ALL tests and generate HTML report")
-    message(STATUS "  coverage-quick   - Run ALL tests and show summary")
-    message(STATUS "  coverage-run     - Run ALL tests (main + mock)")
-    message(STATUS "  coverage-run-main  - Run main tests only")
-    message(STATUS "  coverage-run-mock  - Run mock tests only (LD_PRELOAD)")
-    message(STATUS "  coverage-report  - Generate HTML report (after coverage-run)")
-    message(STATUS "  coverage-summary - Show text summary (after coverage-run)")
-    message(STATUS "  coverage-lcov    - Export LCOV format (for CI)")
-    message(STATUS "  coverage-clean   - Clean all coverage data")
+    message(STATUS "  coverage       - Run tests + show filtered text summary")
+    message(STATUS "  coverage-html  - Run tests + generate filtered HTML report")
+    message(STATUS "  coverage-clean - Clean all coverage data")
 endif()

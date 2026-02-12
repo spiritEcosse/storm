@@ -99,7 +99,7 @@ if [[ "$RUN_COVERAGE" == true ]]; then
     echo ""
     echo "📊 Running coverage analysis (required: 100% line coverage)..."
     export STORM_PG_CONNSTR="$PG_CONNSTR"
-    COVERAGE_OUTPUT=$(cmake --build "$COVERAGE_BUILD_DIR" --target coverage-filtered 2>&1) || {
+    COVERAGE_OUTPUT=$(cmake --build "$COVERAGE_BUILD_DIR" --target coverage 2>&1) || {
         echo "$COVERAGE_OUTPUT"
         echo "❌ Coverage build/analysis failed. Fix issues before committing."
         exit 1
@@ -116,7 +116,7 @@ if [[ "$RUN_COVERAGE" == true ]]; then
 
     if [[ "$LINE_COVERAGE" != "100.0" ]]; then
         echo "❌ Line coverage is ${LINE_COVERAGE}% (required: 100.0%). Fix coverage before committing."
-        echo "   Run: cmake --build build/coverage --target coverage-filtered-html"
+        echo "   Run: cmake --build build/coverage --target coverage-html"
         echo "   Open: build/coverage/coverage/html-filtered/index.html"
         exit 1
     fi

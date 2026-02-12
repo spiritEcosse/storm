@@ -60,10 +60,10 @@ cmake --preset ninja-release -DENABLE_BENCH=ON && cmake --build --preset ninja-r
 cmake -S . -B build/coverage -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENABLE_TESTS=ON -DENABLE_COVERAGE=ON
 
 # Console summary (quick)
-cmake --build build/coverage && cmake --build build/coverage --target coverage-filtered
+cmake --build build/coverage && cmake --build build/coverage --target coverage
 
 # HTML report (detailed)
-cmake --build build/coverage --target coverage-filtered-html
+cmake --build build/coverage --target coverage-html
 # Open build/coverage/coverage/html-filtered/index.html
 ```
 
