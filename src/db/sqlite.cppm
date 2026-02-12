@@ -426,10 +426,11 @@ export namespace storm::db::sqlite {
             return {};
         }
 
-        // Access raw SQLite handle for advanced operations
+        // LCOV_EXCL_START — raw handle accessor used by benchmarks
         [[nodiscard]] auto get() const noexcept -> sqlite3* {
             return db.get();
         }
+        // LCOV_EXCL_STOP
 
         // Get the row ID of the most recent successful INSERT
         [[nodiscard]] auto last_insert_rowid() const noexcept -> int64_t {

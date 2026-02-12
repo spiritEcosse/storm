@@ -2,11 +2,7 @@
 # Pre-commit checks: format -> tidy --fix -> test -> coverage -> sonar -> bench
 # Runs automatically via git pre-commit hook, or manually: ./commit.sh
 #
-# Options (flags or env vars):
-#   --no-coverage / SKIP_COVERAGE=1   Skip 100% line coverage check
-#   --no-sonar / SKIP_SONAR=1         Skip local sonar check
-#   --no-bench / SKIP_BENCH=1         Skip quick benchmark sanity check
-#   SKIP_PG=1                          Skip PostgreSQL tests
+# All checks are mandatory. No skip flags available.
 #
 # Smart skips (automatic, based on staged files):
 #   No C++ files in commit        → skip format, tidy, tests, coverage, sonar, bench
@@ -15,7 +11,6 @@
 
 set -e  # Exit on any error
 
-# Parse flags
 RUN_FORMAT=true
 RUN_TIDY=true
 RUN_TESTS=true
@@ -23,20 +18,8 @@ RUN_COVERAGE=true
 RUN_SONAR=true
 RUN_BENCH=true
 
-for arg in "$@"; do
-    if [[ "$arg" == "--no-coverage" ]]; then
-        RUN_COVERAGE=false
-    elif [[ "$arg" == "--no-sonar" ]]; then
-        RUN_SONAR=false
-    elif [[ "$arg" == "--no-bench" ]]; then
-        RUN_BENCH=false
-    fi
-done
-
-# Support env vars (useful for: SKIP_BENCH=1 git commit -m "msg")
-[[ "${SKIP_COVERAGE:-}" == "1" ]] && RUN_COVERAGE=false
-[[ "${SKIP_SONAR:-}" == "1" ]] && RUN_SONAR=false
-[[ "${SKIP_BENCH:-}" == "1" ]] && RUN_BENCH=false
+# PG connection string for tests and coverage (always enabled)
+PG_CONNSTR="host=host.containers.internal port=5432 dbname=storm_db user=storm_db password=storm_db"
 
 # Smart skip: detect staged file changes to skip irrelevant checks
 STAGED_FILES=$(git diff --cached --name-only 2>/dev/null || true)
@@ -87,30 +70,35 @@ if [[ "$RUN_TESTS" == true ]]; then
     echo ""
     echo "🧪 Running unit tests..."
     ctest --test-dir build/debug --output-on-failure
-    if [[ "${SKIP_PG:-}" != "1" ]]; then
-        echo ""
-        echo "🐘 Running PostgreSQL tests..."
-        STORM_PG_CONNSTR="host=host.containers.internal port=5432 dbname=storm_db user=storm_db password=storm_db" \
-            ctest --test-dir build/debug -j"$(nproc)" --output-on-failure
-    fi
+    echo ""
+    echo "🐘 Running PostgreSQL tests..."
+    STORM_PG_CONNSTR="$PG_CONNSTR" \
+        ctest --test-dir build/debug -j"$(nproc)" --output-on-failure
 fi
 
-# 100% line coverage check (runs by default)
+# 100% line coverage check
 if [[ "$RUN_COVERAGE" == true ]]; then
     COVERAGE_BUILD_DIR="build/coverage"
 
-    # Configure coverage build if not already done
+    # Configure coverage build if not already done (uses same Clang as CMakePresets)
     if [[ ! -f "$COVERAGE_BUILD_DIR/build.ninja" ]]; then
         echo ""
         echo "📊 Configuring coverage build..."
-        cmake -S . -B "$COVERAGE_BUILD_DIR" -G Ninja \
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        CLANG_ROOT="${SCRIPT_DIR}/../clang-p2996"
+        PATH="${CLANG_ROOT}/build/bin:$PATH" cmake -S . -B "$COVERAGE_BUILD_DIR" -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER="${CLANG_ROOT}/build/bin/clang++" \
+            -DCMAKE_C_COMPILER="${CLANG_ROOT}/build/bin/clang" \
+            -DCMAKE_CXX_COMPILER_CLANG_SCAN_DEPS="${CLANG_ROOT}/build/bin/clang-scan-deps" \
+            -DLIBCXX_ROOT="${CLANG_ROOT}" \
             -DENABLE_TESTS=ON \
             -DENABLE_COVERAGE=ON
     fi
 
     echo ""
     echo "📊 Running coverage analysis (required: 100% line coverage)..."
+    export STORM_PG_CONNSTR="$PG_CONNSTR"
     COVERAGE_OUTPUT=$(cmake --build "$COVERAGE_BUILD_DIR" --target coverage-filtered 2>&1) || {
         echo "$COVERAGE_OUTPUT"
         echo "❌ Coverage build/analysis failed. Fix issues before committing."
@@ -136,17 +124,17 @@ if [[ "$RUN_COVERAGE" == true ]]; then
     echo "✅ Line coverage: 100.0%"
 fi
 
-# Local sonar check (runs by default)
+# Local sonar check
 if [[ "$RUN_SONAR" == true ]]; then
     echo ""
     echo "🔍 Running local sonar check..."
     ./scripts/sonar-check.sh src tests benchmarks || {
-        echo "❌ Sonar check failed. Fix issues or skip with: SKIP_SONAR=1 git commit -m \"msg\""
+        echo "❌ Sonar check failed. Fix issues before committing."
         exit 1
     }
 fi
 
-# Quick benchmark sanity check (runs by default)
+# Quick benchmark sanity check
 if [[ "$RUN_BENCH" == true ]]; then
     BENCH_BIN="./build/release/benchmarks/storm_bench"
     if [[ -x "$BENCH_BIN" ]]; then

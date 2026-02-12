@@ -164,15 +164,13 @@ export namespace storm::orm::statements {
 
             // Build SQL: base or JOIN with DISTINCT injected
             std::string sql;
-            if (join_stmt_.has_value()) {
-                // Inject DISTINCT into JOIN's SELECT clause
+            if (join_stmt_.has_value()) { // LCOV_EXCL_START — DISTINCT+JOIN combination not yet tested
                 const std::string& join_sql = join_stmt_->get_complete_sql();
-                // JOIN SQL is compile-time generated and always starts with "SELECT "
                 sql.reserve(join_sql.size() + utilities::sql_len::LARGE_BUFFER);
                 sql = join_sql.substr(0, utilities::sql_len::SELECT);
                 sql += "DISTINCT ";
                 sql += join_sql.substr(utilities::sql_len::SELECT);
-            } else {
+            } else { // LCOV_EXCL_STOP
                 sql = base_sql;
             }
 

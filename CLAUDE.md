@@ -42,11 +42,8 @@ cmake --preset ninja-release && cmake --build --preset ninja-release
 git status --short           # Show files
 # Get user approval
 git add -A && git commit -m "message"  # Pre-commit hook runs all checks automatically
-
-# Skip optional checks if needed:
-SKIP_COVERAGE=1 git commit -m "message"
-SKIP_BENCH=1 git commit -m "message"
-SKIP_SONAR=1 git commit -m "message"
+# All checks are mandatory (format, tidy, tests, PG tests, coverage, sonar, bench)
+# Smart skips apply automatically based on staged files (no C++ → skip all, etc.)
 ```
 
 ### Benchmarking (Release only!)

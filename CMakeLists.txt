@@ -344,13 +344,13 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
     #
     # Both binaries link against the same libstorm, so coverage data merges correctly.
 
-    # Run main tests with coverage instrumentation
+    # Run main tests with coverage instrumentation (batched to work around
+    # Clang C++26 coverage segfault when running all tests in one process)
     add_custom_target(coverage-run-main
-        COMMAND ${CMAKE_COMMAND} -E env LLVM_PROFILE_FILE=${CMAKE_BINARY_DIR}/main.profraw
-            $<TARGET_FILE:storm_tests>
+        COMMAND ${CMAKE_SOURCE_DIR}/scripts/coverage-run-batched.sh ${CMAKE_BINARY_DIR}
         DEPENDS storm_tests
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-        COMMENT "Running main tests with coverage instrumentation"
+        COMMENT "Running main tests with coverage instrumentation (batched)"
         VERBATIM
     )
 
@@ -372,16 +372,14 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
         COMMENT "All coverage tests completed"
     )
 
-    # Merge coverage data from both test runs
+    # Merge coverage data from batched main tests + mock tests
+    # Uses a shell glob to collect all batch_*.profraw files produced by the batched runner
     add_custom_target(coverage-merge
-        COMMAND ${LLVM_PROFDATA} merge
-            -sparse
-            -o ${COVERAGE_OUTPUT_DIR}/coverage.profdata
-            ${CMAKE_BINARY_DIR}/main.profraw
-            ${CMAKE_BINARY_DIR}/mock.profraw
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${COVERAGE_OUTPUT_DIR}
+        COMMAND bash -c "${LLVM_PROFDATA} merge -sparse ${CMAKE_BINARY_DIR}/batch_*.profraw ${CMAKE_BINARY_DIR}/mock.profraw -o ${COVERAGE_OUTPUT_DIR}/coverage.profdata"
         DEPENDS coverage-run
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-        COMMENT "Merging coverage data from main and mock tests"
+        COMMENT "Merging coverage data from batched main tests and mock tests"
         VERBATIM
     )
 
@@ -501,11 +499,7 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
 
     # Clean coverage data
     add_custom_target(coverage-clean
-        COMMAND ${CMAKE_COMMAND} -E rm -rf
-            ${COVERAGE_OUTPUT_DIR}
-            ${CMAKE_BINARY_DIR}/main.profraw
-            ${CMAKE_BINARY_DIR}/mock.profraw
-            ${CMAKE_BINARY_DIR}/*.profraw
+        COMMAND bash -c "rm -rf ${COVERAGE_OUTPUT_DIR} ${CMAKE_BINARY_DIR}/batch_*.profraw ${CMAKE_BINARY_DIR}/mock.profraw"
         COMMENT "Cleaning coverage data"
         VERBATIM
     )
