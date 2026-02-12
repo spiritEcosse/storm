@@ -36,15 +36,9 @@ The unified benchmark system is a **100% compile-time C++ solution** that loads 
 ./build/release/benchmarks/storm_bench -c SELECT --list  # Preview which tests will run
 ```
 
-### TODO
-- [x] ~~Add ORDER BY, LIMIT, OFFSET benchmarks~~ - Completed with LIMIT, OFFSET, pagination, ORDER BY support
-- [x] ~~Add distinct bench~~ - Completed with WHERE, JOIN, WHERE+JOIN support
-- [x] ~~Add JOIN type benchmarks~~ - Completed with LEFT JOIN, RIGHT JOIN, Multi-FK JOIN support
-- [x] ~~Add WHERE operator benchmarks~~ - Completed with LIKE, BETWEEN, IN, AND/OR support
-- [x] ~~Add Multi-Field ORDER BY benchmarks~~ - Completed with 2-field ASC, DESC, and mixed directions
-- [x] ~~Add Multi-Field GROUP BY benchmarks~~ - Completed with variadic template support (2-field)
-- [ ] Change `dataset_size` to `init_dataset_size` for clarity
-- [ ] Restructure test_category: Select/Insert/Update/Delete with single/batch variants
+### Open Issues
+
+See [GitHub Issues (benchmarks)](https://github.com/spiritEcosse/storm/issues?q=is%3Aissue+is%3Aopen+label%3Abenchmarks) for planned improvements.
 
 ## 📦 Components
 
@@ -1881,18 +1875,7 @@ for (int i = 0; i < iterations; i++) {
 
 ### Not Yet Implemented
 
-- [ ] **Benchmark comparison** against raw SQLite
-- [ ] **Performance history tracking** across commits
-- [ ] **Regression detection**
-- [ ] **JSON export** of results
-- [ ] **Category-specific filtering** (dedicated --category flag)
-- [x] **Multi-field WHERE clauses** (AND/OR combinations)
-- [ ] **JOIN operations** (standalone, without DISTINCT)
-- [x] **DISTINCT operations** (simple, WHERE, JOIN, WHERE+JOIN)
-- [x] **Aggregate functions** (MIN, MAX, AVG, SUM, COUNT, COUNT DISTINCT)
-- [x] **LIMIT/OFFSET benchmarks** (simple LIMIT, OFFSET, pagination, WHERE+LIMIT, JOIN+LIMIT)
-- [x] **ORDER BY benchmarks** (ASC, DESC, WHERE+ORDER BY, ORDER BY+LIMIT)
-- [x] **GROUP BY benchmarks** (single field, boolean grouping, WHERE+GROUP BY)
+See [GitHub Issues (benchmarks)](https://github.com/spiritEcosse/storm/issues?q=is%3Aissue+is%3Aopen+label%3Abenchmarks) for planned improvements.
 
 ### Design Trade-offs
 
@@ -1912,32 +1895,7 @@ for (int i = 0; i < iterations; i++) {
 
 ## 🎯 Future Enhancements
 
-### Planned Features
-
-1. **Enhanced Command-Line Interface:**
-   ```bash
-   storm_bench --category=WHERE        # Dedicated category filter
-   storm_bench --output=json           # JSON output for CI/CD
-   storm_bench --compare-baseline      # Compare against baseline
-   ```
-
-3. **Baseline Comparison:**
-   - Compare against raw SQLite performance
-   - Calculate efficiency percentage
-   - Detect regressions
-
-4. **Performance History:**
-   - Track results across git commits
-   - Visualize trends
-   - Auto-detect regressions in CI
-
-5. **Advanced Operations:**
-   - Complex WHERE clauses (AND/OR/nested)
-   - JOIN operations (INNER, LEFT, etc.)
-   - DISTINCT queries
-   - Aggregates (MIN, MAX, AVG, SUM, COUNT)
-   - ORDER BY with multiple fields
-   - GROUP BY with HAVING
+See [GitHub Issues (benchmarks)](https://github.com/spiritEcosse/storm/issues?q=is%3Aissue+is%3Aopen+label%3Abenchmarks) for planned features and improvements.
 
 ## 🔍 Troubleshooting
 
