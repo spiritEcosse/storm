@@ -37,6 +37,10 @@ ctest --test-dir build/debug --output-on-failure
 cmake --preset ninja-release && cmake --build --preset ninja-release
 ```
 
+### Branching Rules
+- **GitHub Issue work**: ALWAYS create a feature branch `feature/<issue-number>-<short-description>` from `develop` BEFORE starting any work. Never work directly on `develop` for issue-linked tasks.
+- **Ad-hoc fixes** (no GitHub Issue): Work directly on `develop`.
+
 ### Commit Workflow
 ```bash
 git status --short           # Show files
