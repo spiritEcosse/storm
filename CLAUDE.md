@@ -37,6 +37,11 @@ ctest --test-dir build/debug --output-on-failure
 cmake --preset ninja-release && cmake --build --preset ninja-release
 ```
 
+### GitHub Issue Workflow
+- **Before starting**: Read the issue body with `gh issue view <N>`. Check for a **"Definition of done"** section or checkbox subtasks (e.g., `- [ ] Each error path has a test`).
+- **Track subtasks**: Use those checkboxes as your acceptance criteria. After completing each one, update the issue to mark it done: `gh issue edit <N> --body "..."` with `- [x]` replacing `- [ ]`.
+- **Close when done**: After all subtasks are checked off, close the issue with `gh issue close <N>`.
+
 ### Branching Rules
 - **GitHub Issue work**: ALWAYS create a feature branch `feature/<issue-number>-<short-description>` from `develop` BEFORE starting any work. Never work directly on `develop` for issue-linked tasks.
 - **Ad-hoc fixes** (no GitHub Issue): Work directly on `develop`.
