@@ -251,11 +251,9 @@ export namespace storm::orm::statements {
                 // PostgreSQL path: use INSERT ... RETURNING <pk> to get the generated ID
                 if (cached_insert_returning_stmt_ == nullptr) [[unlikely]] {
                     auto stmt_result = conn_->prepare_cached(insert_returning_sql_string);
-                    // LCOV_EXCL_START — INSERT RETURNING prepare error
                     if (!stmt_result) {
                         return std::unexpected(stmt_result.error());
                     }
-                    // LCOV_EXCL_STOP
                     cached_insert_returning_stmt_ = *stmt_result;
                 }
 
@@ -263,20 +261,16 @@ export namespace storm::orm::statements {
                 auto bind_result = Base::template bind_non_pk_fields_impl<ConnType, Statement>(
                         *cached_insert_returning_stmt_, obj, typename Base::field_indices_t()
                 );
-                // LCOV_EXCL_START — INSERT RETURNING bind error
                 if (!bind_result) [[unlikely]] {
                     return std::unexpected(bind_result.error());
                 }
-                // LCOV_EXCL_STOP
 
                 // Execute — for RETURNING, we need step() to get the result row
                 auto step_result = cached_insert_returning_stmt_->step();
-                // LCOV_EXCL_START — INSERT RETURNING step error
                 if (!step_result) [[unlikely]] {
                     cached_insert_returning_stmt_->reset();
                     return std::unexpected(step_result.error());
                 }
-                // LCOV_EXCL_STOP
 
                 // Extract the returned ID from the first column
                 int64_t id = return_id ? cached_insert_returning_stmt_->extract_int64(0) : 0;
