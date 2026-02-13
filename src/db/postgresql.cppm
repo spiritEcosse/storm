@@ -21,14 +21,12 @@ export namespace storm::db::postgresql {
         int         code_;
         std::string message_;
 
-        // LCOV_EXCL_START — accessors tested indirectly via .error()
         [[nodiscard]] constexpr auto code() const noexcept -> int {
             return code_;
         }
         [[nodiscard]] constexpr auto message() const noexcept -> std::string_view {
             return message_;
         }
-        // LCOV_EXCL_STOP
     };
 
     // Forward declaration
@@ -74,7 +72,6 @@ export namespace storm::db::postgresql {
             other.blob_decoded_col_  = -1;
         }
 
-        // LCOV_EXCL_START — move assignment used internally by unordered_map; move ctor is the tested path
         auto operator=(Statement&& other) noexcept -> Statement& {
             if (this != &other) {
                 clear_result();
@@ -101,7 +98,6 @@ export namespace storm::db::postgresql {
             }
             return *this;
         }
-        // LCOV_EXCL_STOP
 
         // Delete copy operations
         Statement(const Statement&)                    = delete;
@@ -196,13 +192,11 @@ export namespace storm::db::postgresql {
             );
 
             const ExecStatusType status = PQresultStatus(result_);
-            // LCOV_EXCL_START — PQ execute error path
             if (status != PGRES_COMMAND_OK && status != PGRES_TUPLES_OK) [[unlikely]] {
                 const std::string msg = PQerrorMessage(conn_);
                 clear_result();
                 return std::unexpected(Error{static_cast<int>(status), msg});
             }
-            // LCOV_EXCL_STOP
 
             total_rows_  = PQntuples(result_);
             current_row_ = -1; // Before first row
@@ -215,29 +209,25 @@ export namespace storm::db::postgresql {
             if (result_ == nullptr) {
                 // Auto-execute if not yet executed
                 auto exec_result = execute();
-                // LCOV_EXCL_START — auto-execute error path
                 if (!exec_result.has_value()) {
                     return std::unexpected(exec_result.error());
                 }
-                // LCOV_EXCL_STOP
             }
 
             ++current_row_;
             if (current_row_ < total_rows_) [[likely]] {
                 return true; // Row available
             }
-            return false; // LCOV_EXCL_LINE — step() only used for INSERT RETURNING (always 1 row)
+            return false;
         }
 
         // Step with raw return value (no std::expected overhead)
         template <typename = void> [[nodiscard]] __attribute__((always_inline)) auto step_raw() noexcept -> int {
             if (result_ == nullptr) {
                 auto exec_result = execute();
-                // LCOV_EXCL_START — auto-execute error path
                 if (!exec_result.has_value()) {
                     return -1; // Error
                 }
-                // LCOV_EXCL_STOP
             }
 
             ++current_row_;
@@ -336,12 +326,10 @@ export namespace storm::db::postgresql {
             // PG text-mode returns BYTEA as hex string: "\xDEADBEEF"
             // Decode hex to raw binary bytes
             blob_decoded_col_ = col_index;
-            // LCOV_EXCL_START — NULL BLOBs use is_null() path
             if (PQgetisnull(result_, current_row_, col_index) != 0) {
                 blob_decoded_size_ = 0;
                 return nullptr;
             }
-            // LCOV_EXCL_STOP
             const char* hex_str = PQgetvalue(result_, current_row_, col_index);
             const int   hex_len = PQgetlength(result_, current_row_, col_index);
 
@@ -356,14 +344,12 @@ export namespace storm::db::postgresql {
                             static_cast<unsigned char>((hex_digit(hi) << 4) | hex_digit(lo));
                 }
                 blob_decoded_size_ = static_cast<size_t>(binary_len);
-                // LCOV_EXCL_START — PG always uses hex format for BYTEA
             } else {
                 blob_buffer_
                         .assign(reinterpret_cast<const unsigned char*>(hex_str),
                                 reinterpret_cast<const unsigned char*>(hex_str) + hex_len);
                 blob_decoded_size_ = static_cast<size_t>(hex_len);
             }
-            // LCOV_EXCL_STOP
             return blob_buffer_.data();
         }
 
@@ -372,12 +358,10 @@ export namespace storm::db::postgresql {
             return PQgetisnull(result_, current_row_, col_index) != 0;
         }
 
-        // LCOV_EXCL_START — error message extraction used by ORM error reporting
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto get_error_message() const noexcept -> const char* {
             return PQerrorMessage(conn_);
         }
-        // LCOV_EXCL_STOP
 
       private:
         static constexpr auto hex_digit(char ch) noexcept -> unsigned char {
@@ -385,12 +369,10 @@ export namespace storm::db::postgresql {
                 return static_cast<unsigned char>(ch - '0');
             if (ch >= 'a' && ch <= 'f')
                 return static_cast<unsigned char>(ch - 'a' + 10);
-            // LCOV_EXCL_START — PG uses lowercase hex
             if (ch >= 'A' && ch <= 'F')
                 return static_cast<unsigned char>(ch - 'A' + 10);
             return 0;
         }
-        // LCOV_EXCL_STOP
 
         auto clear_result() noexcept -> void {
             if (result_ != nullptr) {
@@ -517,7 +499,6 @@ export namespace storm::db::postgresql {
             const std::string conninfo_str(conninfo); // Ensure null-termination
             PGconn*           raw_conn = PQconnectdb(conninfo_str.c_str());
 
-            // LCOV_EXCL_START — PQ connection failure paths
             if (raw_conn == nullptr) {
                 return std::unexpected(Error{-1, "Failed to allocate PGconn"});
             }
@@ -527,7 +508,6 @@ export namespace storm::db::postgresql {
                 PQfinish(raw_conn);
                 return std::unexpected(Error{static_cast<int>(PQstatus(raw_conn)), msg});
             }
-            // LCOV_EXCL_STOP
 
             return Connection{PGconnPtr{raw_conn}};
         }
@@ -550,18 +530,15 @@ export namespace storm::db::postgresql {
 
         // Prepare a statement - translates ? placeholders to $1, $2, ...
         [[nodiscard]] auto prepare(std::string_view sql) -> std::expected<Statement, Error> {
-            // LCOV_EXCL_START — prepare error paths (closed connection, PQ failure)
             if (!is_open()) {
                 return std::unexpected(Error{-1, "Connection not open"});
             }
-            // LCOV_EXCL_STOP
 
             const std::string pg_sql    = translate_placeholders(sql);
             const std::string stmt_name = next_stmt_name();
 
             PGresult* res = PQprepare(conn_.get(), stmt_name.c_str(), pg_sql.c_str(), 0, nullptr);
 
-            // LCOV_EXCL_START — PQ prepare failure
             if (res == nullptr || PQresultStatus(res) != PGRES_COMMAND_OK) {
                 const std::string msg = PQerrorMessage(conn_.get());
                 if (res != nullptr) {
@@ -569,7 +546,6 @@ export namespace storm::db::postgresql {
                 }
                 return std::unexpected(Error{-1, msg});
             }
-            // LCOV_EXCL_STOP
 
             PQclear(res);
             return Statement{conn_.get(), stmt_name};
@@ -577,11 +553,9 @@ export namespace storm::db::postgresql {
 
         // Prepare with caching - reuses prepared statements for identical SQL
         [[nodiscard]] auto prepare_cached(std::string_view sql) -> std::expected<Statement*, Error> {
-            // LCOV_EXCL_START — closed connection guard
             if (!is_open()) {
                 return std::unexpected(Error{-1, "Connection not open"});
             }
-            // LCOV_EXCL_STOP
 
             // Heterogeneous lookup using string_view
             auto it = statement_cache_.find(sql);
@@ -596,7 +570,6 @@ export namespace storm::db::postgresql {
 
             PGresult* res = PQprepare(conn_.get(), stmt_name.c_str(), pg_sql.c_str(), 0, nullptr);
 
-            // LCOV_EXCL_START — PQ prepare_cached failure
             if (res == nullptr || PQresultStatus(res) != PGRES_COMMAND_OK) {
                 const std::string msg = PQerrorMessage(conn_.get());
                 if (res != nullptr) {
@@ -604,7 +577,6 @@ export namespace storm::db::postgresql {
                 }
                 return std::unexpected(Error{-1, msg});
             }
-            // LCOV_EXCL_STOP
 
             PQclear(res);
             auto [inserted_it, inserted] =
@@ -613,7 +585,6 @@ export namespace storm::db::postgresql {
             return &inserted_it->second;
         }
 
-        // LCOV_EXCL_START — utility methods used by ORM internals
         auto clear_statement_cache() noexcept -> void {
             statement_cache_.clear();
         }
@@ -621,39 +592,31 @@ export namespace storm::db::postgresql {
         [[nodiscard]] auto cached_statement_count() const noexcept -> size_t {
             return statement_cache_.size();
         }
-        // LCOV_EXCL_STOP
 
         // Execute SQL directly (simple queries without parameters)
         [[nodiscard]] auto execute(std::string_view sql) -> std::expected<void, Error> {
-            // LCOV_EXCL_START — closed connection guard
             if (!is_open()) {
                 return std::unexpected(Error{-1, "Connection not open"});
             }
-            // LCOV_EXCL_STOP
 
             const std::string sql_str(sql); // Ensure null-termination
             PGresult*         res = PQexec(conn_.get(), sql_str.c_str());
 
-            // LCOV_EXCL_START — PQ exec null result
             if (res == nullptr) {
                 return std::unexpected(Error{-1, PQerrorMessage(conn_.get())});
             }
-            // LCOV_EXCL_STOP
 
             const ExecStatusType status = PQresultStatus(res);
-            // LCOV_EXCL_START — PQ exec SQL error
             if (status != PGRES_COMMAND_OK && status != PGRES_TUPLES_OK) {
                 const std::string msg = PQerrorMessage(conn_.get());
                 PQclear(res);
                 return std::unexpected(Error{static_cast<int>(status), msg});
             }
-            // LCOV_EXCL_STOP
 
             PQclear(res);
             return {};
         }
 
-        // LCOV_EXCL_START — accessor methods used by ORM internals
         [[nodiscard]] auto get() const noexcept -> PGconn* {
             return conn_.get();
         }
@@ -665,7 +628,6 @@ export namespace storm::db::postgresql {
         auto set_last_insert_rowid(int64_t rowid) noexcept -> void {
             last_insert_rowid_ = rowid;
         }
-        // LCOV_EXCL_STOP
 
       private:
         explicit Connection(PGconnPtr conn_ptr) : conn_(std::move(conn_ptr)) {
@@ -685,12 +647,12 @@ export namespace storm::db::postgresql {
                 const char ch = sql[i];
 
                 // Track quoted strings to avoid translating ? inside them
-                if (ch == '\'' && !in_double_quote) {       // LCOV_EXCL_LINE
-                    in_single_quote = !in_single_quote;     // LCOV_EXCL_LINE
-                    result += ch;                           // LCOV_EXCL_LINE
-                } else if (ch == '"' && !in_single_quote) { // LCOV_EXCL_LINE
-                    in_double_quote = !in_double_quote;     // LCOV_EXCL_LINE
-                    result += ch;                           // LCOV_EXCL_LINE
+                if (ch == '\'' && !in_double_quote) {
+                    in_single_quote = !in_single_quote;
+                    result += ch;
+                } else if (ch == '"' && !in_single_quote) {
+                    in_double_quote = !in_double_quote;
+                    result += ch;
                 } else if (ch == '?' && !in_single_quote && !in_double_quote) {
                     ++param_index;
                     result += '$';

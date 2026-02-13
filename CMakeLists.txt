@@ -339,11 +339,12 @@ endif()
 #   2. Build: cmake --build build/coverage
 #   3. Run: cmake --build build/coverage --target coverage
 #
-# Coverage combines data from TWO test binaries:
-#   - storm_tests: Main tests with real SQLite (covers normal paths)
-#   - storm_orm_mock_tests: Mock tests with LD_PRELOAD (covers [[unlikely]] error paths)
+# Coverage combines data from THREE test binaries:
+#   - storm_tests: Main tests with real SQLite/PostgreSQL (covers normal paths)
+#   - storm_orm_mock_tests: SQLite mock tests with LD_PRELOAD (covers [[unlikely]] error paths)
+#   - storm_orm_pg_mock_tests: PG mock tests with LD_PRELOAD (covers PG [[unlikely]] error paths)
 #
-# Both binaries link against the same libstorm, so coverage data merges correctly.
+# All binaries link against the same libstorm, so coverage data merges correctly.
 if(ENABLE_COVERAGE AND ENABLE_TESTS)
 
     # Run main tests with coverage instrumentation (batched to work around
@@ -368,9 +369,21 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
         VERBATIM
     )
 
-    # Combined target to run both test suites
+    # Run PG mock tests with LD_PRELOAD to cover PostgreSQL [[unlikely]] error paths
+    add_custom_target(coverage-run-pg-mock
+        COMMAND ${CMAKE_COMMAND} -E env
+            LLVM_PROFILE_FILE=${CMAKE_BINARY_DIR}/pg_mock.profraw
+            LD_PRELOAD=$<TARGET_FILE:mock_libpq>
+            $<TARGET_FILE:storm_orm_pg_mock_tests>
+        DEPENDS storm_orm_pg_mock_tests mock_libpq
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMENT "Running PG mock tests with coverage instrumentation (LD_PRELOAD)"
+        VERBATIM
+    )
+
+    # Combined target to run all test suites
     add_custom_target(coverage-run
-        DEPENDS coverage-run-main coverage-run-mock
+        DEPENDS coverage-run-main coverage-run-mock coverage-run-pg-mock
         COMMENT "All coverage tests completed"
     )
 
@@ -378,10 +391,10 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
     # Uses a shell glob to collect all batch_*.profraw files produced by the batched runner
     add_custom_target(coverage-merge
         COMMAND ${CMAKE_COMMAND} -E make_directory ${COVERAGE_OUTPUT_DIR}
-        COMMAND bash -c "${LLVM_PROFDATA} merge -sparse ${CMAKE_BINARY_DIR}/batch_*.profraw ${CMAKE_BINARY_DIR}/mock.profraw -o ${COVERAGE_OUTPUT_DIR}/coverage.profdata"
+        COMMAND bash -c "${LLVM_PROFDATA} merge -sparse ${CMAKE_BINARY_DIR}/batch_*.profraw ${CMAKE_BINARY_DIR}/mock.profraw ${CMAKE_BINARY_DIR}/pg_mock.profraw -o ${COVERAGE_OUTPUT_DIR}/coverage.profdata"
         DEPENDS coverage-run
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-        COMMENT "Merging coverage data from batched main tests and mock tests"
+        COMMENT "Merging coverage data from batched main tests, mock tests, and PG mock tests"
         VERBATIM
     )
 
@@ -390,9 +403,10 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
         COMMAND ${LLVM_COV} export
             $<TARGET_FILE:storm_tests>
             -object=$<TARGET_FILE:storm_orm_mock_tests>
+            -object=$<TARGET_FILE:storm_orm_pg_mock_tests>
             -instr-profile=${COVERAGE_OUTPUT_DIR}/coverage.profdata
             -format=lcov
-            -ignore-filename-regex="third_party|googletest|build|mock_sqlite"
+            -ignore-filename-regex="third_party|googletest|build|mock_sqlite|mock_libpq"
             ${CMAKE_SOURCE_DIR}/src
             > ${COVERAGE_OUTPUT_DIR}/coverage.lcov
         DEPENDS coverage-merge
@@ -469,7 +483,7 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
 
     # Clean coverage data
     add_custom_target(coverage-clean
-        COMMAND bash -c "rm -rf ${COVERAGE_OUTPUT_DIR} ${CMAKE_BINARY_DIR}/batch_*.profraw ${CMAKE_BINARY_DIR}/mock.profraw"
+        COMMAND bash -c "rm -rf ${COVERAGE_OUTPUT_DIR} ${CMAKE_BINARY_DIR}/batch_*.profraw ${CMAKE_BINARY_DIR}/mock.profraw ${CMAKE_BINARY_DIR}/pg_mock.profraw"
         COMMENT "Cleaning coverage data"
         VERBATIM
     )
