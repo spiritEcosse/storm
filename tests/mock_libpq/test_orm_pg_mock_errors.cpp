@@ -1051,6 +1051,225 @@ namespace {
         EXPECT_TRUE(results.value().empty());
     }
 
+    // ============================================================================
+    // Concept-based mock connection with failing binds
+    // Tests INSERT RETURNING bind error path (insert.cppm line 264-267)
+    // ============================================================================
+
+    // Minimal mock connection where bind_text fails — triggers the bind error
+    // path in INSERT RETURNING that real PG binds can never hit.
+    struct BindFailError {
+        int         code_;
+        std::string message_;
+
+        [[nodiscard]] constexpr auto code() const noexcept -> int {
+            return code_;
+        }
+        [[nodiscard]] constexpr auto message() const noexcept -> std::string_view {
+            return message_;
+        }
+    };
+
+    class BindFailStatement {
+      public:
+        using Error = BindFailError;
+
+        static constexpr int ROW_AVAILABLE = 1;
+        static constexpr int NO_MORE_ROWS  = 0;
+
+        template <typename = void>
+        [[nodiscard]] auto bind_int(int /*index*/, int /*value*/) noexcept -> std::expected<void, Error> {
+            return check_fail();
+        }
+
+        template <typename = void>
+        [[nodiscard]] auto bind_text(int /*index*/, std::string_view /*value*/) noexcept -> std::expected<void, Error> {
+            return check_fail();
+        }
+
+        template <typename = void>
+        [[nodiscard]] auto bind_int64(int /*index*/, int64_t /*value*/) noexcept -> std::expected<void, Error> {
+            return check_fail();
+        }
+
+        template <typename = void>
+        [[nodiscard]] auto bind_double(int /*index*/, double /*value*/) noexcept -> std::expected<void, Error> {
+            return check_fail();
+        }
+
+        template <typename = void> [[nodiscard]] auto bind_null(int /*index*/) noexcept -> std::expected<void, Error> {
+            return check_fail();
+        }
+
+        template <typename = void>
+        [[nodiscard]] auto bind_blob(int /*index*/, const void* /*data*/, size_t /*size*/) noexcept
+                -> std::expected<void, Error> {
+            return check_fail();
+        }
+
+        template <typename = void> [[nodiscard]] auto execute() noexcept -> std::expected<void, Error> {
+            return {};
+        }
+
+        template <typename = void> [[nodiscard]] auto step() noexcept -> std::expected<bool, Error> {
+            return true;
+        }
+
+        template <typename = void> [[nodiscard]] auto step_raw() noexcept -> int {
+            return ROW_AVAILABLE;
+        }
+
+        template <typename = void> auto reset() noexcept -> void {}
+
+        template <typename = void> auto finalize() noexcept -> void {}
+
+        template <typename = void> [[nodiscard]] auto handle() const noexcept -> void* {
+            return nullptr;
+        }
+
+        template <typename = void> [[nodiscard]] auto extract_int(int /*col_index*/) const noexcept -> int {
+            return 0;
+        }
+
+        template <typename = void> [[nodiscard]] auto extract_int64(int /*col_index*/) const noexcept -> int64_t {
+            return 0;
+        }
+
+        template <typename = void> [[nodiscard]] auto extract_double(int /*col_index*/) const noexcept -> double {
+            return 0.0;
+        }
+
+        template <typename = void>
+        [[nodiscard]] auto extract_text_ptr(int /*col_index*/) const noexcept -> const unsigned char* {
+            return nullptr;
+        }
+
+        template <typename = void>
+        [[nodiscard]] auto extract_text_view(int /*col_index*/) const noexcept -> std::string_view {
+            return {};
+        }
+
+        template <typename = void> [[nodiscard]] auto extract_bytes(int /*col_index*/) noexcept -> int {
+            return 0;
+        }
+
+        template <typename = void> [[nodiscard]] auto extract_bool(int /*col_index*/) const noexcept -> bool {
+            return false;
+        }
+
+        template <typename = void> [[nodiscard]] auto extract_float(int /*col_index*/) const noexcept -> float {
+            return 0.0f;
+        }
+
+        template <typename = void> [[nodiscard]] auto extract_blob_ptr(int /*col_index*/) noexcept -> const void* {
+            return nullptr;
+        }
+
+        template <typename = void> [[nodiscard]] auto is_null(int /*col_index*/) const noexcept -> bool {
+            return true;
+        }
+
+        template <typename = void> [[nodiscard]] auto get_error_message() const noexcept -> const char* {
+            return "mock error";
+        }
+
+        auto set_fail(bool fail) noexcept -> void {
+            fail_ = fail;
+        }
+
+      private:
+        bool fail_ = false;
+
+        [[nodiscard]] auto check_fail() noexcept -> std::expected<void, Error> {
+            if (fail_) {
+                return std::unexpected(Error{-1, "mock bind failure"});
+            }
+            return {};
+        }
+    };
+
+    class BindFailConnection {
+      public:
+        using Error     = BindFailError;
+        using Statement = BindFailStatement;
+
+        static constexpr bool supports_limit_all = true;
+        static constexpr bool supports_returning = true;
+
+        [[nodiscard]] static auto open(std::string_view /*conninfo*/) -> std::expected<BindFailConnection, Error> {
+            return BindFailConnection{};
+        }
+
+        auto prepare_common_statements() -> void {}
+
+        [[nodiscard]] constexpr auto is_open() const noexcept -> bool {
+            return true;
+        }
+
+        [[nodiscard]] auto prepare(std::string_view /*sql*/) -> std::expected<Statement, Error> {
+            return Statement{};
+        }
+
+        [[nodiscard]] auto prepare_cached(std::string_view /*sql*/) -> std::expected<Statement*, Error> {
+            cached_stmt_.set_fail(fail_binds_);
+            return &cached_stmt_;
+        }
+
+        auto clear_statement_cache() noexcept -> void {}
+
+        [[nodiscard]] auto cached_statement_count() const noexcept -> size_t {
+            return 0;
+        }
+
+        [[nodiscard]] auto execute(std::string_view /*sql*/) -> std::expected<void, Error> {
+            return {};
+        }
+
+        [[nodiscard]] auto get() const noexcept -> void* {
+            return nullptr;
+        }
+
+        [[nodiscard]] auto last_insert_rowid() const noexcept -> int64_t {
+            return 0;
+        }
+
+        auto set_last_insert_rowid(int64_t /*rowid*/) noexcept -> void {}
+
+        auto set_fail_binds(bool fail) noexcept -> void {
+            fail_binds_ = fail;
+        }
+
+      private:
+        BindFailConnection() = default;
+        Statement cached_stmt_;
+        bool      fail_binds_ = false;
+    };
+
+    // Verify concepts are satisfied
+    static_assert(storm::db::DatabaseConnection<BindFailConnection>);
+    static_assert(storm::db::CachedDatabaseConnection<BindFailConnection>);
+    static_assert(storm::db::DatabaseStatement<BindFailStatement>);
+    static_assert(storm::db::DatabaseError<BindFailError>);
+
+    using BindFailQuerySet = storm::QuerySet<MockPgPerson, BindFailConnection>;
+
+    TEST(PgInsertReturningBindErrorTest, BindFailureReturnsError) {
+        // Set up connection with failing binds
+        (void)BindFailQuerySet::set_default_connection("mock");
+
+        // Get the connection and configure it to fail binds
+        auto conn = BindFailQuerySet::get_default_connection();
+        conn->set_fail_binds(true);
+
+        BindFailQuerySet   qs;
+        MockPgPerson const person{.id = 0, .name = "Alice", .age = 30};
+
+        auto result = qs.insert(person);
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), -1);
+        EXPECT_EQ(result.error().message(), "mock bind failure");
+    }
+
 } // namespace
 
 // NOLINTEND(readability-convert-member-functions-to-static,misc-const-correctness)
