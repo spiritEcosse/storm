@@ -183,6 +183,10 @@ qs.group_by<^^Person::department>().count().select();
 // DISTINCT
 qs.distinct<^^Person::name>().select();
 
+// Column projection (SELECT specific columns, duplicates preserved)
+qs.values<^^Person::name>().select();                      // plf::hive<std::string>
+qs.values<^^Person::name, ^^Person::age>().select();       // plf::hive<std::tuple<std::string, int>>
+
 // JOIN
 qs.join<Message>().where(...).select();
 ```
