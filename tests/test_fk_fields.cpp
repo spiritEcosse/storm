@@ -697,25 +697,33 @@ TYPED_TEST(FKFieldTest, RightJoinMultipleFKFields) {
     EXPECT_TRUE(found) << "Should find the message we inserted";
 }
 
-// Test fixture for nullable FK fields — SQLite only (uses raw SQL with ? placeholders)
-class NullableFKTest : public ::testing::Test {
+// Test fixture for nullable FK fields — templated on database backend
+template <typename ConnType> class NullableFKTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        auto result = QuerySet<FKUser>::set_default_connection(":memory:");
-        ASSERT_TRUE(result.has_value());
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "PostgreSQL unavailable";
+        }
 
-        const auto& conn = QuerySet<FKUser>::get_default_connection();
+        const auto& conn_str = storm::test::get_connection_string<ConnType>();
+        auto        result   = QuerySet<FKUser, ConnType>::set_default_connection(conn_str);
+        ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
 
-        auto create_user_result = conn->execute(
+        const auto& conn = QuerySet<FKUser, ConnType>::get_default_connection();
+
+        auto create_user_result = storm::test::ensure_table<ConnType>(
+                conn,
                 "CREATE TABLE FKUser ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "name TEXT NOT NULL, "
                 "age INTEGER NOT NULL"
                 ")"
         );
-        ASSERT_TRUE(create_user_result.has_value());
+        ASSERT_TRUE(create_user_result.has_value())
+                << "Failed to create FKUser table: " << create_user_result.error().message();
 
-        auto create_message_result = conn->execute(
+        auto create_message_result = storm::test::ensure_table<ConnType>(
+                conn,
                 "CREATE TABLE FKMessage ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "sender_id INTEGER, " // NULLABLE FK
@@ -723,20 +731,31 @@ class NullableFKTest : public ::testing::Test {
                 "text TEXT NOT NULL"
                 ")"
         );
-        ASSERT_TRUE(create_message_result.has_value());
+        ASSERT_TRUE(create_message_result.has_value())
+                << "Failed to create FKMessage table: " << create_message_result.error().message();
+
+        storm::test::begin_test_txn<ConnType>(conn, {"FKUser", "FKMessage"});
     }
 
     auto TearDown() -> void override {
-        QuerySet<FKUser>::clear_default_connection();
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            if (QuerySet<FKUser, ConnType>::has_default_connection()) {
+                const auto& conn = QuerySet<FKUser, ConnType>::get_default_connection();
+                storm::test::rollback_test_txn<ConnType>(conn);
+            }
+        }
+        QuerySet<FKUser, ConnType>::clear_default_connection();
     }
 };
 
+TYPED_TEST_SUITE(NullableFKTest, DatabaseTypes);
+
 // Test: SELECT with NULL FK values
-TEST_F(NullableFKTest, SelectWithNullFKField) {
-    QuerySet<FKMessage> message_qs;
+TYPED_TEST(NullableFKTest, SelectWithNullFKField) {
+    QuerySet<FKMessage, TypeParam> message_qs;
 
     // Insert message with NULL sender_id
-    const auto& conn        = QuerySet<FKUser>::get_default_connection();
+    const auto& conn        = QuerySet<FKUser, TypeParam>::get_default_connection();
     auto        stmt_result = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
     ASSERT_TRUE(stmt_result.has_value());
 
@@ -763,9 +782,9 @@ TEST_F(NullableFKTest, SelectWithNullFKField) {
 }
 
 // Test: LEFT JOIN with NULL FK values
-TEST_F(NullableFKTest, LeftJoinWithNullFKField) {
-    QuerySet<FKUser>    user_qs;
-    QuerySet<FKMessage> message_qs;
+TYPED_TEST(NullableFKTest, LeftJoinWithNullFKField) {
+    QuerySet<FKUser, TypeParam>    user_qs;
+    QuerySet<FKMessage, TypeParam> message_qs;
 
     // Insert a user
     FKUser const alice{.id = 0, .name = "Alice", .age = 30};
@@ -774,7 +793,7 @@ TEST_F(NullableFKTest, LeftJoinWithNullFKField) {
     int64_t const alice_id = alice_result.value();
 
     // Insert message with NULL sender_id
-    const auto& conn        = QuerySet<FKUser>::get_default_connection();
+    const auto& conn        = QuerySet<FKUser, TypeParam>::get_default_connection();
     auto        stmt_result = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
     ASSERT_TRUE(stmt_result.has_value());
 
@@ -786,7 +805,7 @@ TEST_F(NullableFKTest, LeftJoinWithNullFKField) {
     ASSERT_EQ(step_result, decltype(stmt)::NO_MORE_ROWS);
 
     // LEFT JOIN on sender - should return message even with NULL sender_id
-    auto join_result = message_qs.left_join<&FKMessage::sender>().select();
+    auto join_result = message_qs.template left_join<&FKMessage::sender>().select();
     ASSERT_TRUE(join_result.has_value()) << "LEFT JOIN with NULL FK failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -802,9 +821,9 @@ TEST_F(NullableFKTest, LeftJoinWithNullFKField) {
 
 // Test: LEFT JOIN with mix of NULL and valid FKs
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
-    QuerySet<FKUser>    user_qs;
-    QuerySet<FKMessage> message_qs;
+TYPED_TEST(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
+    QuerySet<FKUser, TypeParam>    user_qs;
+    QuerySet<FKMessage, TypeParam> message_qs;
 
     // Insert users
     FKUser const alice{.id = 0, .name = "Alice", .age = 30};
@@ -816,7 +835,7 @@ TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     int64_t const alice_id = alice_result.value();
     int64_t const bob_id   = bob_result.value();
 
-    const auto& conn = QuerySet<FKUser>::get_default_connection();
+    const auto& conn = QuerySet<FKUser, TypeParam>::get_default_connection();
 
     // FKMessage 1: Valid sender (Alice)
     auto stmt1 = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (?, ?, ?)");
@@ -836,7 +855,7 @@ TEST_F(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     ASSERT_EQ(stm2.step_raw(), decltype(stm2)::NO_MORE_ROWS);
 
     // LEFT JOIN should return both messages
-    auto join_result = message_qs.left_join<&FKMessage::sender>().select();
+    auto join_result = message_qs.template left_join<&FKMessage::sender>().select();
     ASSERT_TRUE(join_result.has_value());
 
     const auto& messages = join_result.value();
