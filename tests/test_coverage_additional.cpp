@@ -398,10 +398,6 @@ TYPED_TEST(MultipleAggregatesTest, MaxThenMin) {
 // =============================================================================
 
 TYPED_TEST(MultipleAggregatesTest, MultipleAggregatesWithJoin) {
-    if constexpr (storm::test::is_postgresql<TypeParam>()) {
-        GTEST_SKIP() << "Aggregate+JOIN SQL generation not yet supported on PostgreSQL";
-        return;
-    }
     // First set up FK tables
     const auto& conn = QuerySet<AggPerson, TypeParam>::get_default_connection();
 
