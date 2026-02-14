@@ -1469,30 +1469,51 @@ TYPED_TEST(DistinctTest, DistinctOptionalIntFieldWithNulls) {
     EXPECT_EQ(non_null_count, 2) << "Expected 2 non-NULL values (25, 30)";
 }
 
-// Test: DISTINCT on optional string field - KNOWN ISSUE
-// This test documents a known bug where std::optional<std::string> DISTINCT returns garbage values.
-// The issue is specific to optional strings - optional<int> works correctly.
-// TODO: Investigate and fix the optional<string> extraction in DISTINCT queries.
-TYPED_TEST(DistinctTest, DistinctOptionalStringFieldKnownIssue) {
-    /**
-     * KNOWN BUG: std::optional<std::string> DISTINCT returns garbage values.
-     *
-     * Symptoms:
-     * - DISTINCT on std::optional<int> works correctly (NULL handling, deduplication)
-     * - DISTINCT on std::optional<std::string> returns garbage (memory corruption?)
-     *
-     * Probable Causes:
-     * 1. Type mismatch in extract_column_value template instantiation
-     * 2. SQLite column type affinity issue (TEXT vs other)
-     * 3. Memory layout issue with optional<string> in plf::hive
-     *
-     * Workaround:
-     * - Use std::string (non-optional) and handle empty strings as NULLs
-     * - Use raw SQL for DISTINCT on nullable string columns
-     *
-     * The bug has been documented here for future investigation.
-     */
-    SUCCEED() << "Known issue documented - optional<string> DISTINCT needs investigation";
+// Test: DISTINCT on optional string field with NULLs
+TYPED_TEST(DistinctTest, DistinctOptionalStringFieldWithNulls) {
+    QuerySet<OptionalPerson, TypeParam> queryset;
+
+    std::vector<OptionalPerson> people = {
+            {0, "Alice", 25, "Ali"},
+            {0, "Bob", 30, std::nullopt},  // NULL nickname
+            {0, "Charlie", 35, "Ali"},     // Duplicate nickname ("Ali")
+            {0, "Dave", 40, std::nullopt}, // Another NULL nickname
+            {0, "Eve", 45, "Evie"},
+            {0, "Frank", 50, "Ali"}, // Another duplicate ("Ali")
+    };
+
+    auto insert_result = queryset.insert(people);
+    ASSERT_TRUE(insert_result.has_value()) << "Insert failed: " << insert_result.error().message();
+
+    // SELECT DISTINCT nickname (should include NULL as a distinct value)
+    auto result = queryset.template distinct<^^OptionalPerson::nickname>().select();
+    ASSERT_TRUE(result.has_value()) << "DISTINCT on optional string field failed: " << result.error().message();
+
+    const auto& nicknames = result.value();
+
+    // Expected: "Ali", "Evie", NULL (3 distinct values)
+    EXPECT_EQ(nicknames.size(), 3) << "Expected 3 distinct nicknames (Ali, Evie, NULL)";
+
+    // Count NULLs and non-NULLs, verify values
+    int                   null_count     = 0; // NOLINT(misc-const-correctness) - modified in loop
+    int                   non_null_count = 0; // NOLINT(misc-const-correctness) - modified in loop
+    std::set<std::string> seen_values;
+    for (const auto& nickname : nicknames) {
+        if (nickname.has_value()) {
+            non_null_count++;
+            seen_values.insert(nickname.value());
+            // Verify no garbage values - must be one of our inserted nicknames
+            EXPECT_TRUE(nickname.value() == "Ali" || nickname.value() == "Evie")
+                    << "Unexpected nickname value: '" << nickname.value() << "'";
+        } else {
+            null_count++;
+        }
+    }
+
+    EXPECT_EQ(null_count, 1) << "Expected exactly 1 NULL value";
+    EXPECT_EQ(non_null_count, 2) << "Expected 2 non-NULL values (Ali, Evie)";
+    EXPECT_TRUE(seen_values.contains("Ali")) << "Expected 'Ali' in distinct nicknames";
+    EXPECT_TRUE(seen_values.contains("Evie")) << "Expected 'Evie' in distinct nicknames";
 }
 
 // Test: DISTINCT on optional field - all NULLs
