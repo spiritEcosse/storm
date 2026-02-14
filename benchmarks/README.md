@@ -947,6 +947,10 @@ class DistinctBenchmark {
    - **Statement caching**: Prepared statements reused across iterations
    - **Compile-time SQL generation**: Zero runtime SQL building overhead
 
+### Why `values()` Has No Separate Benchmark
+
+`values()` (column projection without DISTINCT) shares the same `ProjectionStatement` class as `distinct()` — the only difference is a `ProjectionMode` enum resolved via `if constexpr` at compile time. The compiler generates identical machine code for both modes except for the SQL string literal (`"SELECT "` vs `"SELECT DISTINCT "`). The query execution loop, statement caching, column extraction, and all hot paths are shared. Benchmarking `values()` separately would measure SQLite's query engine difference between `SELECT` and `SELECT DISTINCT`, not any ORM overhead.
+
 ### Run LIMIT/OFFSET Benchmarks
 
 **✅ NEW FEATURE!** Benchmark SELECT with LIMIT and OFFSET clauses:

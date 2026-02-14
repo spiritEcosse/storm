@@ -223,14 +223,16 @@ export namespace storm::orm::statements {
             const void* where_addr = where_expr ? static_cast<const void*>(&(*where_expr)) : nullptr;
             if (cached_stmt_ != nullptr && where_addr == cached_where_addr_ && where_addr != nullptr) {
                 // Rebind only if backend clears params on reset (PostgreSQL does, SQLite doesn't)
-                if constexpr (!Statement::preserves_bindings) { // LCOV_EXCL_LINE
+                if constexpr (!Statement::preserves_bindings) { // LCOV_EXCL_START — if constexpr: only instantiated for
+                                                                // PostgreSQL; fast-path return below untested for
+                                                                // execute_one
                     auto bind_result = Base::template bind_where_params<Statement, Error>(cached_stmt_, where_expr);
-                    if (!bind_result) [[unlikely]] {                 // LCOV_EXCL_LINE
-                        return std::unexpected(bind_result.error()); // LCOV_EXCL_LINE
-                    } // LCOV_EXCL_LINE
+                    if (!bind_result) [[unlikely]] {
+                        return std::unexpected(bind_result.error());
+                    }
                 }
                 return cached_stmt_;
-            }
+            } // LCOV_EXCL_STOP
 
             // Dynamic path: build SQL and cache by string comparison
             // NOTE: Do NOT add sql.reserve() here - benchmarks show ~2% regression due to

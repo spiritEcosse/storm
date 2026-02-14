@@ -4,7 +4,7 @@ module;
 #include <utility>
 #include <plf_hive/plf_hive.h>
 
-export module storm_orm_statements_distinct;
+export module storm_orm_statements_projection;
 
 import storm_db_concept;
 import storm_orm_statements_base;
@@ -28,16 +28,19 @@ export namespace storm::orm::statements {
     // Import utilities for compile-time SQL generation
     using storm::orm::utilities::ConstexprString;
 
-    // DistinctStatement - executes SELECT DISTINCT on specified field(s) and returns tuple data
+    // ProjectionMode controls whether DISTINCT keyword is included in SQL
+    enum class ProjectionMode { Values, Distinct };
+
+    // ProjectionStatement - executes SELECT or SELECT DISTINCT on specified field(s) and returns tuple data
     // Supports 1+ fields with compile-time type safety
-    // Always generates DISTINCT queries (for aggregates, use AggregateStatement)
+    // Mode controls whether DISTINCT keyword is applied
     //
     // API: Use ^^ operator to pass reflected field information directly
     // Example: qs.distinct<^^Person::name>().select()
-    //          qs.distinct<^^Person::name, ^^Person::age>().select()
-    template <typename T, storm::db::DatabaseConnection ConnType, std::meta::info... FieldInfos>
+    //          qs.values<^^Person::name, ^^Person::age>().select()
+    template <typename T, storm::db::DatabaseConnection ConnType, ProjectionMode Mode, std::meta::info... FieldInfos>
         requires(sizeof...(FieldInfos) > 0)
-    class DistinctStatement : private BaseStatement<T> {
+    class ProjectionStatement : private BaseStatement<T> {
         using Base = BaseStatement<T>;
 
       public:
@@ -99,13 +102,21 @@ export namespace storm::orm::statements {
             return result;
         }
 
+        // Pre-computed field list for use in JOIN path
+        static constexpr auto field_list_constexpr_ = build_field_list_constexpr(std::make_index_sequence<NumFields>{});
+
         // Calculate SQL size at compile-time
         static consteval auto calculate_select_sql_size() -> size_t {
             using utilities::sql_len::FROM;
+            using utilities::sql_len::SELECT;
             using utilities::sql_len::SELECT_DISTINCT;
             constexpr auto field_list = build_field_list_constexpr(std::make_index_sequence<NumFields>{});
             size_t         size       = 0;
-            size += SELECT_DISTINCT; // "SELECT DISTINCT " (max length, DISTINCT is optional)
+            if constexpr (Mode == ProjectionMode::Distinct) {
+                size += SELECT_DISTINCT; // "SELECT DISTINCT "
+            } else {
+                size += SELECT; // "SELECT "
+            }
             size += field_list.len;
             size += FROM; // " FROM "
             size += Base::table_name_.size();
@@ -113,13 +124,17 @@ export namespace storm::orm::statements {
             return size;
         }
 
-        // Build SELECT DISTINCT at compile-time
-        static consteval auto build_distinct_sql_array() {
+        // Build SELECT or SELECT DISTINCT at compile-time
+        static consteval auto build_projection_sql_array() {
             // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
             constexpr size_t          sql_size = calculate_select_sql_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<sql_size> result;
 
-            result.append("SELECT DISTINCT ");
+            if constexpr (Mode == ProjectionMode::Distinct) {
+                result.append("SELECT DISTINCT ");
+            } else {
+                result.append("SELECT ");
+            }
             constexpr auto field_list = build_field_list_constexpr(std::make_index_sequence<NumFields>{});
             result.append(field_list);
             result.append(" FROM ");
@@ -128,8 +143,8 @@ export namespace storm::orm::statements {
             return result;
         }
 
-        // Pre-computed SQL generated at compile-time (always DISTINCT)
-        static constexpr auto distinct_sql_array = build_distinct_sql_array();
+        // Pre-computed SQL generated at compile-time
+        static constexpr auto projection_sql_array_ = build_projection_sql_array();
 
       public:
         // Result type: hive of single field OR hive of tuple
@@ -138,7 +153,7 @@ export namespace storm::orm::statements {
                 plf::hive<std::tuple_element_t<0, FieldTypesTuple>>,
                 plf::hive<FieldTypesTuple>>;
 
-        explicit DistinctStatement(
+        explicit ProjectionStatement(
                 std::shared_ptr<ConnType>                  conn,
                 orm::where::ExpressionVariantPtr           where_expr       = nullptr,
                 const std::optional<JoinStatementWrapper>& join_stmt        = std::nullopt,
@@ -158,19 +173,32 @@ export namespace storm::orm::statements {
             return execute();
         }
 
-        // Execute SELECT DISTINCT query on the specified field(s)
+        // Execute SELECT or SELECT DISTINCT query on the specified field(s)
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute() -> std::expected<ResultType, Error> {
-            static const std::string base_sql{distinct_sql_array.data.data(), distinct_sql_array.len};
+            static const std::string base_sql{projection_sql_array_.data.data(), projection_sql_array_.len};
 
-            // Build SQL: base or JOIN with DISTINCT injected
+            // Build SQL: base or JOIN with projection applied
             std::string sql;
-            if (join_stmt_.has_value()) { // LCOV_EXCL_START — DISTINCT+JOIN combination not yet tested
+            if (join_stmt_.has_value()) {
                 const std::string& join_sql = join_stmt_->get_complete_sql();
                 sql.reserve(join_sql.size() + utilities::sql_len::LARGE_BUFFER);
-                sql = join_sql.substr(0, utilities::sql_len::SELECT);
-                sql += "DISTINCT ";
-                sql += join_sql.substr(utilities::sql_len::SELECT);
-            } else { // LCOV_EXCL_STOP
+                if constexpr (Mode == ProjectionMode::Distinct) { // LCOV_EXCL_START — if constexpr: only one branch is
+                                                                  // instantiated per Mode
+                    // Inject "DISTINCT " after "SELECT "
+                    sql = join_sql.substr(0, utilities::sql_len::SELECT);
+                    sql += "DISTINCT ";
+                    sql += join_sql.substr(utilities::sql_len::SELECT);
+                } else {
+                    // Replace field list with our projected fields
+                    static const std::string field_list_str{
+                            field_list_constexpr_.data.data(), field_list_constexpr_.len
+                    };
+                    auto from_pos = join_sql.find(" FROM ");
+                    sql           = "SELECT ";
+                    sql += field_list_str;
+                    sql += join_sql.substr(from_pos);
+                } // LCOV_EXCL_STOP
+            } else {
                 sql = base_sql;
             }
 
@@ -202,7 +230,7 @@ export namespace storm::orm::statements {
         }
 
       private:
-        // Unified query execution loop for all DISTINCT query types
+        // Unified query execution loop for all projection query types
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_query_loop(Statement* stmt)
                 -> std::expected<ResultType, Error> {
             // plf::hive OPTIMIZATION: Stable pointers + fast insertion/iteration
@@ -258,5 +286,12 @@ export namespace storm::orm::statements {
         std::optional<int>                  offset_;
         std::optional<OrderByWrapper>       order_by_wrapper_;
     };
+
+    // Type aliases for backward compatibility and convenience
+    template <typename T, typename ConnType, std::meta::info... FieldInfos>
+    using DistinctStatement = ProjectionStatement<T, ConnType, ProjectionMode::Distinct, FieldInfos...>;
+
+    template <typename T, typename ConnType, std::meta::info... FieldInfos>
+    using ValuesStatement = ProjectionStatement<T, ConnType, ProjectionMode::Values, FieldInfos...>;
 
 } // namespace storm::orm::statements

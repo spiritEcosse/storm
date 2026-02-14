@@ -12,7 +12,7 @@ import storm_orm_statements_base;
 import storm_orm_statements_remove;
 import storm_orm_statements_insert;
 import storm_orm_statements_select;
-import storm_orm_statements_distinct;
+import storm_orm_statements_projection;
 import storm_orm_statements_update;
 import storm_orm_statements_join;
 import storm_orm_statements_orderby;
@@ -195,6 +195,21 @@ export namespace storm {
                 using StmtType = orm::statements::DistinctStatement<T, ConnType, FieldInfos...>;
                 return StmtType{conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_};
             }
+        }
+
+        // Column projection support using reflection (SELECT specific columns)
+        // Usage:
+        //   auto names = queryset.values<^^Person::name>().select();  // plf::hive<std::string>
+        //   auto pairs = queryset.values<^^Person::name, ^^Person::age>().select();
+        //   // Returns plf::hive<std::tuple<std::string, int>>
+        //
+        // Unlike distinct(), values() does NOT apply DISTINCT — all rows are returned
+        // including duplicates. Works with WHERE, JOIN, ORDER BY, LIMIT/OFFSET.
+        template <std::meta::info... FieldInfos>
+            requires(sizeof...(FieldInfos) > 0)
+        constexpr auto values() {
+            using StmtType = orm::statements::ValuesStatement<T, ConnType, FieldInfos...>;
+            return StmtType{conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_};
         }
 
         // INNER JOIN support for single or multiple FK fields
