@@ -655,3 +655,38 @@ tests:
     order_by_direction2: DESC
     iterations: 1000
     dataset_size: 10000
+
+  # ============================================================================
+  # FIRST Operations (retrieve first matching row with LIMIT 1)
+  # ============================================================================
+  - name: first
+    category: FIRST
+    description: "FIRST (retrieves first row with LIMIT 1)"
+    model: Person
+    operation: first
+    size_profile: dataset_standard
+
+  - name: first_where
+    category: FIRST_WHERE
+    description: "FIRST WHERE age > 30"
+    model: Person
+    operation: first_where
+    where_field: age
+    where_op: ">"
+    where_value_int: 30
+    iterations: 10000
+    dataset_size: 10000
+
+  # ============================================================================
+  # GET Operations (retrieve exactly one row, error on 0 or >1)
+  # ============================================================================
+  - name: get_where_eq
+    category: GET
+    description: "GET WHERE id == N (single row by PK)"
+    model: Person
+    operation: get_where
+    where_field: id
+    where_op: "=="
+    where_value_int: 1
+    iterations: 10000
+    dataset_size: 10000

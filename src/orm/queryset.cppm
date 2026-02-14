@@ -149,6 +149,33 @@ export namespace storm {
                     .execute(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_);
         }
 
+        // Returns first matching row or std::nullopt if no rows match
+        // Automatically applies LIMIT 1 to the query for optimal performance
+        // Usage: auto result = queryset.where(age > 30).first();
+        //        if (result.has_value() && result.value().has_value()) { ... }
+        [[nodiscard]] __attribute__((hot)) auto first() -> std::expected<std::optional<T>, Error> {
+            // Fast path: no modifiers — zero-parameter call avoids all checks + parameter passing
+            if (!where_expr_ && !join_stmt_ && !order_by_wrapper_ && !offset_value_) {
+                return get_select_statement().execute_one_fast();
+            }
+            return get_select_statement()
+                    .execute_one(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_);
+        }
+
+        // Returns exactly one matching row, or an error if 0 or >1 rows match
+        // Does NOT apply LIMIT — validates uniqueness of the result (like Django's get())
+        // Uses LIMIT 2 internally for efficient duplicate detection without plf::hive allocation
+        // Usage: auto result = queryset.where(id == 42).get();
+        //        if (result.has_value()) { auto& person = result.value(); }
+        [[nodiscard]] __attribute__((hot)) auto get() -> std::expected<T, Error> {
+            // Fast path: no modifiers — zero-parameter call avoids all checks + parameter passing
+            if (!where_expr_ && !join_stmt_ && !order_by_wrapper_ && !offset_value_) {
+                return get_select_statement().execute_get_fast();
+            }
+            return get_select_statement()
+                    .execute_get(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_);
+        }
+
         // Field-specific DISTINCT support using reflection
         // Usage:
         //   auto names = queryset.distinct<^^Person::name>().select();  // plf::hive<std::string>

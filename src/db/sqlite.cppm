@@ -244,8 +244,9 @@ export namespace storm::db::sqlite {
         }
 
         // Constants for return codes (make them constexpr for compile-time checks)
-        static constexpr int ROW_AVAILABLE = SQLITE_ROW;
-        static constexpr int NO_MORE_ROWS  = SQLITE_DONE;
+        static constexpr int  ROW_AVAILABLE      = SQLITE_ROW;
+        static constexpr int  NO_MORE_ROWS       = SQLITE_DONE;
+        static constexpr bool preserves_bindings = true; // sqlite3_reset() preserves bindings
 
       private:
         StmtPtr       stmt_;

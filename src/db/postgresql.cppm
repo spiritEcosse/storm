@@ -38,8 +38,9 @@ export namespace storm::db::postgresql {
         using Error = postgresql::Error;
 
         // Constants for step return codes
-        static constexpr int ROW_AVAILABLE = 1;
-        static constexpr int NO_MORE_ROWS  = 0;
+        static constexpr int  ROW_AVAILABLE      = 1;
+        static constexpr int  NO_MORE_ROWS       = 0;
+        static constexpr bool preserves_bindings = false; // reset() clears params
 
         // Construct from a connection and prepared statement name
         explicit Statement(PGconn* conn, std::string stmt_name) : conn_(conn), stmt_name_(std::move(stmt_name)) {}

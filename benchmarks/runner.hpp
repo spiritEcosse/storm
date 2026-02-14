@@ -23,6 +23,7 @@
 #include "operations/aggregate.hpp"
 #include "operations/distinct.hpp"        // DISTINCT benchmarks
 #include "operations/where_operators.hpp" // LIKE, BETWEEN, IN, AND/OR benchmarks
+#include "operations/first_get.hpp"       // first() and get() benchmarks
 
 namespace storm::benchmark {
 
@@ -1349,6 +1350,56 @@ namespace storm::benchmark {
             );
         }
 
+        // ====================================================================
+        // FIRST operations
+        // ====================================================================
+        template <typename Model, auto& test> static void run_first_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr auto profile_str = test.size_profile.view();
+            constexpr auto profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
+                for (int size : sizes::DATASET_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_dataset(size);
+                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    runner.run_benchmark(name.c_str(), FirstBenchmark<Model>{size}, actual_iterations);
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                runner.run_benchmark(test.test_name.c_str(), FirstBenchmark<Model>{dataset_size}, iterations);
+            }
+        }
+
+        template <typename Model, auto& test>
+        static void run_first_where_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.where.field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr auto             op           = test.where.op;
+            constexpr int              value        = test.where.value_int;
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    FirstWhereBenchmark<Model, field_info, op, int>{value, dataset_size},
+                    iterations
+            );
+        }
+
+        // ====================================================================
+        // GET operations
+        // ====================================================================
+        template <typename Model, auto& test>
+        static void run_get_where_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.where.field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr auto             op           = test.where.op;
+            constexpr int              value        = test.where.value_int;
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    GetWhereBenchmark<Model, field_info, op, int>{value, dataset_size},
+                    iterations
+            );
+        }
+
       public:
         // Template recursion to execute tests at compile time
         template <typename Model, size_t TestIndex, size_t TotalTests> struct TestExecutor {
@@ -1496,6 +1547,12 @@ namespace storm::benchmark {
                         runner.run_where_and_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "where_or") {
                         runner.run_where_or_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "first") {
+                        runner.run_first_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "first_where") {
+                        runner.run_first_where_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "get_where") {
+                        runner.run_get_where_operation<Model, test>(runner, actual_iterations);
                     }
                 }
 

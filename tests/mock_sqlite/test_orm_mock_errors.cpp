@@ -2048,6 +2048,112 @@ namespace {
         }
     }
 
+    // =====================================================================
+    // first() and get() error paths
+    // =====================================================================
+
+    TEST_F(ORMMockErrorTest, FirstFailsOnPrepareError) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.first();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    TEST_F(ORMMockErrorTest, FirstFailsOnStepError) {
+        MockSqlite3Config::step_returns(SQLITE_CORRUPT);
+
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.first();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
+    }
+
+    TEST_F(ORMMockErrorTest, GetFailsOnPrepareError) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.get();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    TEST_F(ORMMockErrorTest, GetFailsOnStepError) {
+        MockSqlite3Config::step_returns(SQLITE_CORRUPT);
+
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.get();
+
+        ASSERT_FALSE(result.has_value());
+        // get() maps NO_MORE_ROWS to error code -1, but SQLITE_CORRUPT is a real step error
+        EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
+    }
+
+    TEST_F(ORMMockErrorTest, FirstWithJoinFailsOnPrepareError) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockMessage> qs;
+        auto                  result = qs.join<&MockMessage::sender>().first();
+
+        ASSERT_FALSE(result.has_value());
+    }
+
+    TEST_F(ORMMockErrorTest, GetWithJoinFailsOnPrepareError) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockMessage> qs;
+        auto                  result = qs.join<&MockMessage::sender>().get();
+
+        ASSERT_FALSE(result.has_value());
+    }
+
+    TEST_F(ORMMockErrorTest, FirstWithJoinFailsOnStepError) {
+        MockSqlite3Config::step_returns(SQLITE_CORRUPT);
+
+        QuerySet<MockMessage> qs;
+        auto                  result = qs.join<&MockMessage::sender>().first();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
+    }
+
+    TEST_F(ORMMockErrorTest, FirstWithJoinReturnsRow) {
+        // Return one row then done — exercises JOIN lambda body in execute_one()
+        MockSqlite3Config::step_returns_sequence({SQLITE_ROW, SQLITE_DONE});
+
+        QuerySet<MockMessage> qs;
+        auto                  result = qs.join<&MockMessage::sender>().first();
+
+        // Mock returns zeroed data, but the path is exercised
+        ASSERT_TRUE(result.has_value());
+        EXPECT_TRUE(result.value().has_value());
+    }
+
+    TEST_F(ORMMockErrorTest, GetWithJoinFailsOnStepError) {
+        MockSqlite3Config::step_returns(SQLITE_CORRUPT);
+
+        QuerySet<MockMessage> qs;
+        auto                  result = qs.join<&MockMessage::sender>().get();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
+    }
+
+    TEST_F(ORMMockErrorTest, GetWithJoinReturnsRow) {
+        // Return one row then done — exercises JOIN lambda body in execute_get()
+        MockSqlite3Config::step_returns_sequence({SQLITE_ROW, SQLITE_DONE});
+
+        QuerySet<MockMessage> qs;
+        auto                  result = qs.join<&MockMessage::sender>().get();
+
+        // Mock returns zeroed data, but the path is exercised
+        ASSERT_TRUE(result.has_value());
+    }
+
 } // namespace
 
 // NOLINTEND(readability-convert-member-functions-to-static,misc-const-correctness)
