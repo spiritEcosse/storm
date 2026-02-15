@@ -981,17 +981,17 @@ TEST_F(ORMErrorTest, AggregateOnEmptyTable) {
     storm::QuerySet<ErrorTestPerson> qs;
 
     // COUNT on empty table should return 0
-    auto count_result = qs.count().select();
+    auto count_result = qs.count().get();
     ASSERT_TRUE(count_result.has_value()) << "COUNT on empty table should succeed";
     EXPECT_EQ(count_result.value(), 0);
 
     // SUM on empty table should return 0 (NULL coerced to 0)
-    auto sum_result = qs.sum<^^ErrorTestPerson::age>().select();
+    auto sum_result = qs.sum<^^ErrorTestPerson::age>().get();
     ASSERT_TRUE(sum_result.has_value()) << "SUM on empty table should succeed";
     EXPECT_EQ(sum_result.value(), 0);
 
     // AVG on empty table should return 0.0
-    auto avg_result = qs.avg<^^ErrorTestPerson::age>().select();
+    auto avg_result = qs.avg<^^ErrorTestPerson::age>().get();
     ASSERT_TRUE(avg_result.has_value()) << "AVG on empty table should succeed";
     EXPECT_DOUBLE_EQ(avg_result.value(), 0.0);
 }
@@ -1005,7 +1005,7 @@ TEST_F(ORMErrorTest, AggregateWithWhereNoMatch) {
     ASSERT_TRUE(insert_result.has_value());
 
     // COUNT with WHERE that matches nothing
-    auto count_result = qs.where(storm::orm::where::field<^^ErrorTestPerson::age>() > 100).count().select();
+    auto count_result = qs.where(storm::orm::where::field<^^ErrorTestPerson::age>() > 100).count().get();
     ASSERT_TRUE(count_result.has_value()) << "COUNT with no matches should succeed";
     EXPECT_EQ(count_result.value(), 0);
 }
@@ -1088,7 +1088,7 @@ TEST_F(ORMErrorTest, LargeBatchInsertThenRemove) {
     ASSERT_TRUE(insert_result.has_value()) << "Large batch insert should succeed";
 
     // Verify count
-    auto count_result = qs.count().select();
+    auto count_result = qs.count().get();
     ASSERT_TRUE(count_result.has_value());
     EXPECT_EQ(count_result.value(), 100);
 
@@ -1107,7 +1107,7 @@ TEST_F(ORMErrorTest, LargeBatchInsertThenRemove) {
     ASSERT_TRUE(remove_result.has_value()) << "Large batch remove should succeed";
 
     // Verify all removed
-    auto final_count = qs.count().select();
+    auto final_count = qs.count().get();
     ASSERT_TRUE(final_count.has_value());
     EXPECT_EQ(final_count.value(), 0);
 }

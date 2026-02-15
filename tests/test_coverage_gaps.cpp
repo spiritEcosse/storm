@@ -474,7 +474,7 @@ TYPED_TEST(CoverageGapsTest, SimpleAggregateWithWhereAndJoin) {
     auto result = this->msg_qs->where(storm::orm::where::field<^^CovMessage::value>() > 15)
                           .template join<&CovMessage::sender>()
                           .count()
-                          .select();
+                          .get();
 
     ASSERT_TRUE(result.has_value()) << "Simple aggregate with WHERE + JOIN should succeed";
     EXPECT_GT(result.value(), 0);
@@ -482,8 +482,7 @@ TYPED_TEST(CoverageGapsTest, SimpleAggregateWithWhereAndJoin) {
 
 TYPED_TEST(CoverageGapsTest, MultipleAggregatesWithJoin) {
     // Multiple aggregates with JOIN
-    auto result =
-            this->msg_qs->template join<&CovMessage::sender>().count().template sum<^^CovMessage::value>().select();
+    auto result = this->msg_qs->template join<&CovMessage::sender>().count().template sum<^^CovMessage::value>().get();
 
     ASSERT_TRUE(result.has_value()) << "Multiple aggregates with JOIN should succeed";
     auto [count, sum] = result.value();
@@ -609,7 +608,7 @@ TYPED_TEST(LargeBatchTest, RemoveBulkSmall) {
     ASSERT_TRUE(remove_result.has_value()) << "Bulk remove should succeed";
 
     // Verify all removed
-    auto count_result = this->qs->count().select();
+    auto count_result = this->qs->count().get();
     ASSERT_TRUE(count_result.has_value());
     EXPECT_EQ(count_result.value(), 0);
 }
@@ -631,7 +630,7 @@ TYPED_TEST(LargeBatchTest, RemoveBulkAtLimit) {
     auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove));
     ASSERT_TRUE(remove_result.has_value()) << "Bulk remove at limit should succeed";
 
-    auto count_result = this->qs->count().select();
+    auto count_result = this->qs->count().get();
     ASSERT_TRUE(count_result.has_value());
     EXPECT_EQ(count_result.value(), 0);
 }
@@ -654,7 +653,7 @@ TYPED_TEST(LargeBatchTest, RemoveChunkedMinimal) {
     auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove));
     ASSERT_TRUE(remove_result.has_value()) << "Chunked remove should succeed";
 
-    auto count_result = this->qs->count().select();
+    auto count_result = this->qs->count().get();
     ASSERT_TRUE(count_result.has_value());
     EXPECT_EQ(count_result.value(), 0);
 }
@@ -677,7 +676,7 @@ TYPED_TEST(LargeBatchTest, RemoveChunkedWithRemainder) {
     auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove));
     ASSERT_TRUE(remove_result.has_value()) << "Chunked remove with remainder should succeed";
 
-    auto count_result = this->qs->count().select();
+    auto count_result = this->qs->count().get();
     ASSERT_TRUE(count_result.has_value());
     EXPECT_EQ(count_result.value(), 0);
 }
@@ -699,7 +698,7 @@ TYPED_TEST(LargeBatchTest, RemoveChunkedMultipleChunks) {
     auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove));
     ASSERT_TRUE(remove_result.has_value()) << "Multiple chunk remove should succeed";
 
-    auto count_result = this->qs->count().select();
+    auto count_result = this->qs->count().get();
     ASSERT_TRUE(count_result.has_value());
     EXPECT_EQ(count_result.value(), 0);
 }
@@ -722,7 +721,7 @@ TYPED_TEST(LargeBatchTest, RemoveChunkedExactMultiple) {
     auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove));
     ASSERT_TRUE(remove_result.has_value()) << "Exact multiple chunk remove should succeed";
 
-    auto count_result = this->qs->count().select();
+    auto count_result = this->qs->count().get();
     ASSERT_TRUE(count_result.has_value());
     EXPECT_EQ(count_result.value(), 0);
 }
@@ -797,7 +796,7 @@ TYPED_TEST(LargeBatchTest, InsertLargeBatch) {
     auto insert_result = this->qs->insert(std::span<const BatchPerson>(people));
     ASSERT_TRUE(insert_result.has_value()) << "Large batch insert should succeed";
 
-    auto count_result = this->qs->count().select();
+    auto count_result = this->qs->count().get();
     ASSERT_TRUE(count_result.has_value());
     EXPECT_EQ(count_result.value(), 1000);
 }
@@ -1104,7 +1103,7 @@ TYPED_TEST(ComplexWhereTest, FullChainSelect) {
 }
 
 TYPED_TEST(ComplexWhereTest, FullChainCount) {
-    auto result = this->qs->where(storm::orm::where::field<^^CovGapWherePerson::age>() >= 30).count().select();
+    auto result = this->qs->where(storm::orm::where::field<^^CovGapWherePerson::age>() >= 30).count().get();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 3); // Bob (30), Charlie (35), Diana (40)
@@ -1545,34 +1544,34 @@ TYPED_TEST(QueryResetTest, ReuseSameQuerySetMultipleTimes) {
 
 TYPED_TEST(QueryResetTest, ResetBetweenDifferentOperations) {
     // COUNT
-    auto count1 = this->qs->count().select();
+    auto count1 = this->qs->count().get();
     ASSERT_TRUE(count1.has_value());
     EXPECT_EQ(count1.value(), 5);
 
     this->qs->reset();
 
     // SUM
-    auto sum1 = this->qs->template sum<^^ResetPerson::score>().select();
+    auto sum1 = this->qs->template sum<^^ResetPerson::score>().get();
     ASSERT_TRUE(sum1.has_value());
     EXPECT_EQ(sum1.value(), 750); // 100+200+150+180+120
 
     this->qs->reset();
 
     // AVG
-    auto avg1 = this->qs->template avg<^^ResetPerson::score>().select();
+    auto avg1 = this->qs->template avg<^^ResetPerson::score>().get();
     ASSERT_TRUE(avg1.has_value());
     EXPECT_NEAR(avg1.value(), 150.0, 0.1);
 
     this->qs->reset();
 
     // MIN/MAX
-    auto min1 = this->qs->template min<^^ResetPerson::score>().select();
+    auto min1 = this->qs->template min<^^ResetPerson::score>().get();
     ASSERT_TRUE(min1.has_value());
     EXPECT_EQ(min1.value(), 100);
 
     this->qs->reset();
 
-    auto max1 = this->qs->template max<^^ResetPerson::score>().select();
+    auto max1 = this->qs->template max<^^ResetPerson::score>().get();
     ASSERT_TRUE(max1.has_value());
     EXPECT_EQ(max1.value(), 200);
 }
@@ -1583,7 +1582,7 @@ TYPED_TEST(QueryResetTest, ResetBetweenDifferentOperations) {
 
 TYPED_TEST(QueryResetTest, AggregatesWithWhere) {
     // COUNT with WHERE
-    auto count = this->qs->where(storm::orm::where::field<^^ResetPerson::score>() >= 150).count().select();
+    auto count = this->qs->where(storm::orm::where::field<^^ResetPerson::score>() >= 150).count().get();
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 3); // Bob, Charlie, Diana
 
@@ -1592,14 +1591,14 @@ TYPED_TEST(QueryResetTest, AggregatesWithWhere) {
     // SUM with WHERE
     auto sum = this->qs->where(storm::orm::where::field<^^ResetPerson::score>() >= 150)
                        .template sum<^^ResetPerson::score>()
-                       .select();
+                       .get();
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), 530); // 200+150+180
 }
 
 TYPED_TEST(QueryResetTest, AggregatesWithOrderByLimit) {
     // This tests aggregates with modifiers (ORDER BY doesn't affect aggregates, but LIMIT can)
-    auto count = this->qs->template order_by<^^ResetPerson::name>().count().select();
+    auto count = this->qs->template order_by<^^ResetPerson::name>().count().get();
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 5);
 }

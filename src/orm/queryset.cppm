@@ -285,7 +285,7 @@ export namespace storm {
 
         // GROUP BY - returns GroupByBuilder for fluent aggregate chaining
         // Usage:
-        //   qs.group_by<^^Person::department>().count().select()
+        //   qs.group_by<^^Person::department>().count().select()    // grouped → .select()
         //   qs.group_by<^^Person::dept, ^^Person::role>().sum<^^Person::salary>().select()
         //   qs.where(age > 25).group_by<^^Person::years_exp>().count().select()
         template <std::meta::info... GroupFieldInfos>
@@ -297,9 +297,9 @@ export namespace storm {
         }
         // SUM aggregate (multi-field: SUM(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
-        // Usage: queryset.sum<^^Person::age>().select()
-        //        queryset.where(age > 30).sum<^^Person::age>().select()
-        //        queryset.join<FK>().sum<^^Person::salary>().select()
+        // Usage: queryset.sum<^^Person::age>().get()
+        //        queryset.where(age > 30).sum<^^Person::age>().get()
+        //        queryset.join<FK>().sum<^^Person::salary>().get()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto sum() {
             using StmtType = orm::statements::AggregateStatement<
@@ -312,9 +312,9 @@ export namespace storm {
 
         // COUNT aggregate (defaults to COUNT(*) if no fields)
         // Supports WHERE and JOIN clauses
-        // Usage: queryset.count().select()  // COUNT(*)
-        //        queryset.where(age > 30).count().select()
-        //        queryset.join<FK>().count().select()
+        // Usage: queryset.count().get()  // COUNT(*)
+        //        queryset.where(age > 30).count().get()
+        //        queryset.join<FK>().count().get()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto count() {
             using StmtType = orm::statements::AggregateStatement<
@@ -327,8 +327,8 @@ export namespace storm {
 
         // AVG aggregate (multi-field: AVG(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
-        // Usage: queryset.avg<^^Person::salary>().select()
-        //        queryset.where(department == "Engineering").avg<^^Person::salary>().select()
+        // Usage: queryset.avg<^^Person::salary>().get()
+        //        queryset.where(department == "Engineering").avg<^^Person::salary>().get()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto avg() {
             using StmtType = orm::statements::AggregateStatement<
@@ -341,8 +341,8 @@ export namespace storm {
 
         // MIN aggregate (multi-field: MIN(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
-        // Usage: queryset.min<^^Person::age>().select()
-        //        queryset.where(active == true).min<^^Person::age>().select()
+        // Usage: queryset.min<^^Person::age>().get()
+        //        queryset.where(active == true).min<^^Person::age>().get()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto min() {
             using StmtType = orm::statements::AggregateStatement<
@@ -355,8 +355,8 @@ export namespace storm {
 
         // MAX aggregate (multi-field: MAX(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
-        // Usage: queryset.max<^^Person::age>().select()
-        //        queryset.where(department == "Sales").max<^^Person::salary>().select()
+        // Usage: queryset.max<^^Person::age>().get()
+        //        queryset.where(department == "Sales").max<^^Person::salary>().get()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info... FieldInfos> auto max() {
             using StmtType = orm::statements::AggregateStatement<
@@ -369,8 +369,8 @@ export namespace storm {
 
         // COUNT(DISTINCT field) aggregate
         // Supports WHERE and JOIN clauses
-        // Usage: queryset.count_distinct<^^Person::age>().select()
-        //        queryset.where(active == true).count_distinct<^^Person::department>().select()
+        // Usage: queryset.count_distinct<^^Person::age>().get()
+        //        queryset.where(active == true).count_distinct<^^Person::department>().get()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <std::meta::info FieldInfo> auto count_distinct() {
             using StmtType = orm::statements::AggregateStatement<

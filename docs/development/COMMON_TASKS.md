@@ -240,10 +240,10 @@ auto values = qs.values<^^Person::name, ^^Person::age>().select();
 ### Aggregate Mode (via aggregates)
 
 ```cpp
-// Standalone aggregates - return scalar values
-auto min_age = qs.min<^^Person::age>();
-auto max_age = qs.max<^^Person::age>();
-auto count = qs.count();
+// Standalone aggregates - return scalar values via .get()
+auto min_age = qs.min<^^Person::age>().get();
+auto max_age = qs.max<^^Person::age>().get();
+auto count = qs.count().get();
 
 // GROUP BY + aggregate - returns tuples
 auto by_dept = qs.group_by<^^Person::department>().count().select();

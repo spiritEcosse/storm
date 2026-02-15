@@ -46,6 +46,7 @@ cmake --preset ninja-release && cmake --build --preset ninja-release
 ### Branching Rules
 - **GitHub Issue work**: ALWAYS create a feature branch `feature/<issue-number>-<short-description>` from `develop` BEFORE starting any work. Never work directly on `develop` for issue-linked tasks.
 - **Link branch to issue**: After creating the feature branch, link it to the issue: `gh issue develop <N> --branch feature/<issue-number>-<short-description>`
+- **Create pull request**: After pushing a feature branch, ALWAYS create a PR with `gh pr create --base develop` including `Closes #<N>` in the body to auto-link and auto-close the issue on merge.
 - **Close issue after merge**: After merging a feature branch into `develop`, ALWAYS close the issue with `gh issue close <N>`. Do NOT wait to be asked.
 - **Ad-hoc fixes** (no GitHub Issue): Work directly on `develop`.
 
@@ -179,7 +180,12 @@ auto results = QuerySet<Person>()
     .limit(10)
     .select();
 
-// GROUP BY with aggregates
+// Scalar aggregates (no GROUP BY) → .get()
+qs.count().get();                          // int64_t
+qs.sum<^^Person::age>().get();             // int64_t
+qs.avg<^^Person::salary>().get();          // double
+
+// GROUP BY with aggregates → .select()
 qs.group_by<^^Person::department>().count().select();
 
 // DISTINCT

@@ -77,7 +77,7 @@ template <typename ConnType> class QuerySetRemoveTest : public ::testing::Test {
     // Helper function to count records using the ORM
     static auto countSqlitePersons() -> int {
         storm::QuerySet<SqlitePerson, ConnType> qs;
-        auto                                    result = qs.count().select();
+        auto                                    result = qs.count().get();
         if (!result.has_value()) {
             return -1;
         }
@@ -696,7 +696,7 @@ template <typename ConnType> class QuerySetUpdateTest : public ::testing::Test {
     // Helper function to count records using the ORM
     static auto countSqlitePersons() -> int {
         storm::QuerySet<SqlitePerson, ConnType> qs;
-        auto                                    result = qs.count().select();
+        auto                                    result = qs.count().get();
         if (!result.has_value()) {
             return -1;
         }
