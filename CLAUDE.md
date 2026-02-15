@@ -179,7 +179,12 @@ auto results = QuerySet<Person>()
     .limit(10)
     .select();
 
-// GROUP BY with aggregates
+// Scalar aggregates (no GROUP BY) → .get()
+qs.count().get();                          // int64_t
+qs.sum<^^Person::age>().get();             // int64_t
+qs.avg<^^Person::salary>().get();          // double
+
+// GROUP BY with aggregates → .select()
 qs.group_by<^^Person::department>().count().select();
 
 // DISTINCT

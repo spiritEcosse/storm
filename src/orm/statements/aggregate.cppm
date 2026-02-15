@@ -244,8 +244,16 @@ export namespace storm::orm::statements {
             };
         }
 
+        // Scalar aggregate: no GROUP BY → returns single value via .get()
+        [[nodiscard]] __attribute__((always_inline)) auto get() -> std::expected<ResultType, Error>
+            requires(NumOps > 0 && !HasGroupBy)
+        {
+            return execute();
+        }
+
+        // Grouped aggregate: GROUP BY → returns collection via .select()
         [[nodiscard]] __attribute__((always_inline)) auto select() -> std::expected<ResultType, Error>
-            requires(NumOps > 0)
+            requires(NumOps > 0 && HasGroupBy)
         {
             return execute();
         }

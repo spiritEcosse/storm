@@ -130,7 +130,7 @@ TYPED_TEST_SUITE(MultipleAggregatesTest, DatabaseTypes);
 
 TYPED_TEST(MultipleAggregatesTest, TwoAggregatesCountAndSum) {
     // Tests tuple return type with 2 operations
-    auto result = this->qs->count().template sum<^^AggPerson::age>().select();
+    auto result = this->qs->count().template sum<^^AggPerson::age>().get();
 
     ASSERT_TRUE(result.has_value()) << "Two aggregates should succeed";
 
@@ -141,7 +141,7 @@ TYPED_TEST(MultipleAggregatesTest, TwoAggregatesCountAndSum) {
 
 TYPED_TEST(MultipleAggregatesTest, TwoAggregatesSumAndAvg) {
     // Tests tuple with SUM (int64_t) and AVG (double)
-    auto result = this->qs->template sum<^^AggPerson::score>().template avg<^^AggPerson::salary>().select();
+    auto result = this->qs->template sum<^^AggPerson::score>().template avg<^^AggPerson::salary>().get();
 
     ASSERT_TRUE(result.has_value()) << "SUM + AVG should succeed";
 
@@ -152,7 +152,7 @@ TYPED_TEST(MultipleAggregatesTest, TwoAggregatesSumAndAvg) {
 
 TYPED_TEST(MultipleAggregatesTest, ThreeAggregates) {
     // Tests tuple with 3 operations
-    auto result = this->qs->count().template sum<^^AggPerson::age>().template avg<^^AggPerson::salary>().select();
+    auto result = this->qs->count().template sum<^^AggPerson::age>().template avg<^^AggPerson::salary>().get();
 
     ASSERT_TRUE(result.has_value()) << "Three aggregates should succeed";
 
@@ -168,7 +168,7 @@ TYPED_TEST(MultipleAggregatesTest, FourAggregates) {
                           .template sum<^^AggPerson::age>()
                           .template min<^^AggPerson::score>()
                           .template max<^^AggPerson::score>()
-                          .select();
+                          .get();
 
     ASSERT_TRUE(result.has_value()) << "Four aggregates should succeed";
 
@@ -186,7 +186,7 @@ TYPED_TEST(MultipleAggregatesTest, FiveAggregatesAllTypes) {
                           .template avg<^^AggPerson::salary>()
                           .template min<^^AggPerson::score>()
                           .template max<^^AggPerson::score>()
-                          .select();
+                          .get();
 
     ASSERT_TRUE(result.has_value()) << "Five aggregates should succeed";
 
@@ -207,7 +207,7 @@ TYPED_TEST(MultipleAggregatesTest, MultipleAggregatesEmptyTable) {
         (void)this->qs->remove(p);
     }
 
-    auto result = this->qs->count().template sum<^^AggPerson::age>().template avg<^^AggPerson::salary>().select();
+    auto result = this->qs->count().template sum<^^AggPerson::age>().template avg<^^AggPerson::salary>().get();
 
     ASSERT_TRUE(result.has_value()) << "Aggregates on empty table should succeed";
 
@@ -229,7 +229,7 @@ TYPED_TEST(MultipleAggregatesTest, SingleCountEmptyTable) {
         (void)this->qs->remove(p);
     }
 
-    auto result = this->qs->count().select();
+    auto result = this->qs->count().get();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 0);
 }
@@ -242,7 +242,7 @@ TYPED_TEST(MultipleAggregatesTest, SingleSumEmptyTable) {
         (void)this->qs->remove(p);
     }
 
-    auto result = this->qs->template sum<^^AggPerson::age>().select();
+    auto result = this->qs->template sum<^^AggPerson::age>().get();
     ASSERT_TRUE(result.has_value());
     // SUM of empty set is 0 or NULL
 }
@@ -255,7 +255,7 @@ TYPED_TEST(MultipleAggregatesTest, SingleAvgEmptyTable) {
         (void)this->qs->remove(p);
     }
 
-    auto result = this->qs->template avg<^^AggPerson::salary>().select();
+    auto result = this->qs->template avg<^^AggPerson::salary>().get();
     ASSERT_TRUE(result.has_value());
     // AVG of empty set
 }
@@ -268,7 +268,7 @@ TYPED_TEST(MultipleAggregatesTest, SingleMinEmptyTable) {
         (void)this->qs->remove(p);
     }
 
-    auto result = this->qs->template min<^^AggPerson::score>().select();
+    auto result = this->qs->template min<^^AggPerson::score>().get();
     ASSERT_TRUE(result.has_value());
 }
 
@@ -280,7 +280,7 @@ TYPED_TEST(MultipleAggregatesTest, SingleMaxEmptyTable) {
         (void)this->qs->remove(p);
     }
 
-    auto result = this->qs->template max<^^AggPerson::score>().select();
+    auto result = this->qs->template max<^^AggPerson::score>().get();
     ASSERT_TRUE(result.has_value());
 }
 
@@ -290,7 +290,7 @@ TYPED_TEST(MultipleAggregatesTest, SingleMaxEmptyTable) {
 
 TYPED_TEST(MultipleAggregatesTest, SingleAvgWithData) {
     // Test avg() as the FIRST aggregate call (not chained after count/sum)
-    auto result = this->qs->template avg<^^AggPerson::salary>().select();
+    auto result = this->qs->template avg<^^AggPerson::salary>().get();
 
     ASSERT_TRUE(result.has_value()) << "Single AVG should succeed";
     EXPECT_NEAR(result.value(), 63000.0, 0.01); // (50000+60000+70000+55000+80000)/5
@@ -298,7 +298,7 @@ TYPED_TEST(MultipleAggregatesTest, SingleAvgWithData) {
 
 TYPED_TEST(MultipleAggregatesTest, SingleMinWithData) {
     // Test min() as the FIRST aggregate call
-    auto result = this->qs->template min<^^AggPerson::score>().select();
+    auto result = this->qs->template min<^^AggPerson::score>().get();
 
     ASSERT_TRUE(result.has_value()) << "Single MIN should succeed";
     EXPECT_EQ(result.value(), 75.0); // Charlie has lowest score
@@ -306,7 +306,7 @@ TYPED_TEST(MultipleAggregatesTest, SingleMinWithData) {
 
 TYPED_TEST(MultipleAggregatesTest, SingleMaxWithData) {
     // Test max() as the FIRST aggregate call
-    auto result = this->qs->template max<^^AggPerson::score>().select();
+    auto result = this->qs->template max<^^AggPerson::score>().get();
 
     ASSERT_TRUE(result.has_value()) << "Single MAX should succeed";
     EXPECT_EQ(result.value(), 95.0); // Diana has highest score
@@ -318,7 +318,7 @@ TYPED_TEST(MultipleAggregatesTest, SingleMaxWithData) {
 
 TYPED_TEST(MultipleAggregatesTest, AvgThenCount) {
     // Chain count() AFTER avg() - tests AggregateStatement<..., AVG>::count()
-    auto result = this->qs->template avg<^^AggPerson::salary>().count().select();
+    auto result = this->qs->template avg<^^AggPerson::salary>().count().get();
 
     ASSERT_TRUE(result.has_value()) << "AVG then COUNT should succeed";
 
@@ -329,7 +329,7 @@ TYPED_TEST(MultipleAggregatesTest, AvgThenCount) {
 
 TYPED_TEST(MultipleAggregatesTest, MinThenSum) {
     // Chain sum() AFTER min() - tests AggregateStatement<..., MIN>::sum()
-    auto result = this->qs->template min<^^AggPerson::score>().template sum<^^AggPerson::age>().select();
+    auto result = this->qs->template min<^^AggPerson::score>().template sum<^^AggPerson::age>().get();
 
     ASSERT_TRUE(result.has_value()) << "MIN then SUM should succeed";
 
@@ -340,7 +340,7 @@ TYPED_TEST(MultipleAggregatesTest, MinThenSum) {
 
 TYPED_TEST(MultipleAggregatesTest, MaxThenAvg) {
     // Chain avg() AFTER max() - tests AggregateStatement<..., MAX>::avg()
-    auto result = this->qs->template max<^^AggPerson::score>().template avg<^^AggPerson::salary>().select();
+    auto result = this->qs->template max<^^AggPerson::score>().template avg<^^AggPerson::salary>().get();
 
     ASSERT_TRUE(result.has_value()) << "MAX then AVG should succeed";
 
@@ -351,7 +351,7 @@ TYPED_TEST(MultipleAggregatesTest, MaxThenAvg) {
 
 TYPED_TEST(MultipleAggregatesTest, AvgThenMin) {
     // Chain min() AFTER avg() - tests AggregateStatement<..., AVG>::min()
-    auto result = this->qs->template avg<^^AggPerson::salary>().template min<^^AggPerson::age>().select();
+    auto result = this->qs->template avg<^^AggPerson::salary>().template min<^^AggPerson::age>().get();
 
     ASSERT_TRUE(result.has_value()) << "AVG then MIN should succeed";
 
@@ -362,7 +362,7 @@ TYPED_TEST(MultipleAggregatesTest, AvgThenMin) {
 
 TYPED_TEST(MultipleAggregatesTest, AvgThenMax) {
     // Chain max() AFTER avg() - tests AggregateStatement<..., AVG>::max()
-    auto result = this->qs->template avg<^^AggPerson::salary>().template max<^^AggPerson::age>().select();
+    auto result = this->qs->template avg<^^AggPerson::salary>().template max<^^AggPerson::age>().get();
 
     ASSERT_TRUE(result.has_value()) << "AVG then MAX should succeed";
 
@@ -373,7 +373,7 @@ TYPED_TEST(MultipleAggregatesTest, AvgThenMax) {
 
 TYPED_TEST(MultipleAggregatesTest, MinThenMax) {
     // Chain max() AFTER min() - tests range query pattern
-    auto result = this->qs->template min<^^AggPerson::age>().template max<^^AggPerson::age>().select();
+    auto result = this->qs->template min<^^AggPerson::age>().template max<^^AggPerson::age>().get();
 
     ASSERT_TRUE(result.has_value()) << "MIN then MAX should succeed";
 
@@ -384,7 +384,7 @@ TYPED_TEST(MultipleAggregatesTest, MinThenMax) {
 
 TYPED_TEST(MultipleAggregatesTest, MaxThenMin) {
     // Chain min() AFTER max() - reverse order
-    auto result = this->qs->template max<^^AggPerson::score>().template min<^^AggPerson::score>().select();
+    auto result = this->qs->template max<^^AggPerson::score>().template min<^^AggPerson::score>().get();
 
     ASSERT_TRUE(result.has_value()) << "MAX then MIN should succeed";
 
@@ -438,7 +438,7 @@ TYPED_TEST(MultipleAggregatesTest, MultipleAggregatesWithJoin) {
     QuerySet<JoinPost, TypeParam> post_qs;
 
     // Test multiple aggregates with JOIN
-    auto result = post_qs.template join<&JoinPost::author>().count().template sum<^^JoinPost::views>().select();
+    auto result = post_qs.template join<&JoinPost::author>().count().template sum<^^JoinPost::views>().get();
 
     ASSERT_TRUE(result.has_value()) << "Multiple aggregates with JOIN should succeed";
 
@@ -973,16 +973,15 @@ TYPED_TEST(MultipleAggregatesTest, GroupByWithMax) {
 // =============================================================================
 
 TYPED_TEST(MultipleAggregatesTest, AggregateCountWithWhere) {
-    auto result = this->qs->where(storm::orm::where::field<^^AggPerson::age>() > 30).count().select();
+    auto result = this->qs->where(storm::orm::where::field<^^AggPerson::age>() > 30).count().get();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 2); // Charlie (35), Eve (40)
 }
 
 TYPED_TEST(MultipleAggregatesTest, AggregateSumWithWhere) {
-    auto result = this->qs->where(storm::orm::where::field<^^AggPerson::age>() > 30)
-                          .template sum<^^AggPerson::age>()
-                          .select();
+    auto result =
+            this->qs->where(storm::orm::where::field<^^AggPerson::age>() > 30).template sum<^^AggPerson::age>().get();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 35 + 40); // 75
@@ -991,25 +990,23 @@ TYPED_TEST(MultipleAggregatesTest, AggregateSumWithWhere) {
 TYPED_TEST(MultipleAggregatesTest, AggregateAvgWithWhere) {
     auto result = this->qs->where(storm::orm::where::field<^^AggPerson::age>() > 30)
                           .template avg<^^AggPerson::salary>()
-                          .select();
+                          .get();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_NEAR(result.value(), (70000.0 + 80000.0) / 2.0, 0.01);
 }
 
 TYPED_TEST(MultipleAggregatesTest, AggregateMinWithWhere) {
-    auto result = this->qs->where(storm::orm::where::field<^^AggPerson::age>() > 30)
-                          .template min<^^AggPerson::score>()
-                          .select();
+    auto result =
+            this->qs->where(storm::orm::where::field<^^AggPerson::age>() > 30).template min<^^AggPerson::score>().get();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 75.0); // Charlie has 75
 }
 
 TYPED_TEST(MultipleAggregatesTest, AggregateMaxWithWhere) {
-    auto result = this->qs->where(storm::orm::where::field<^^AggPerson::age>() > 30)
-                          .template max<^^AggPerson::score>()
-                          .select();
+    auto result =
+            this->qs->where(storm::orm::where::field<^^AggPerson::age>() > 30).template max<^^AggPerson::score>().get();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 80.0); // Eve has 80
