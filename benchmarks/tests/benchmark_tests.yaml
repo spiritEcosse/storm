@@ -500,6 +500,32 @@ tests:
     dataset_size: 10000
 
   # ============================================================================
+  # GROUP BY + HAVING (fixed size)
+  # ============================================================================
+  - name: group_by_having_count
+    category: GROUP_BY_HAVING
+    description: "SELECT age, COUNT(*) GROUP BY age HAVING age > 30"
+    model: Person
+    operation: group_by_having_count
+    group_by_field: age
+    having_field: age
+    having_value_int: 30
+    iterations: 1000
+    dataset_size: 10000
+
+  - name: group_by_having_sum
+    category: GROUP_BY_HAVING
+    description: "SELECT age, SUM(salary) GROUP BY age HAVING age > 30"
+    model: Person
+    operation: group_by_having_sum
+    group_by_field: age
+    aggregate_field: salary
+    having_field: age
+    having_value_int: 30
+    iterations: 1000
+    dataset_size: 10000
+
+  # ============================================================================
   # Advanced WHERE Operations (fixed size)
   # ============================================================================
   - name: where_like_prefix

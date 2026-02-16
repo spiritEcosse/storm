@@ -235,6 +235,8 @@ def convert_yaml_to_json(yaml_path: Path, json_path: Path) -> None:
             'order_by_direction2': 'order_by_direction2',
             'group_by_field': 'group_by_field',
             'group_by_field2': 'group_by_field2',
+            'having_field': 'having_field',
+            'having_value_int': 'having_value_int',
         }
 
         for yaml_key, json_key in key_mapping.items():
