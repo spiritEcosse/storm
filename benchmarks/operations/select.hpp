@@ -789,6 +789,176 @@ namespace storm::benchmark {
         }
     };
 
+    // ========================================================================
+    // GROUP BY + HAVING + Aggregate Benchmark
+    // ========================================================================
+    template <
+            typename BaseModel,
+            GroupByAggOp    AggOp,
+            std::meta::info GroupByFieldInfo,
+            std::meta::info AggregateFieldInfo,
+            std::meta::info HavingFieldInfo,
+            int             HavingValue>
+    class GroupByHavingAggregateBenchmark : public SelectQueryBenchmarkBase<
+                                                    GroupByHavingAggregateBenchmark<
+                                                            BaseModel,
+                                                            AggOp,
+                                                            GroupByFieldInfo,
+                                                            AggregateFieldInfo,
+                                                            HavingFieldInfo,
+                                                            HavingValue>,
+                                                    BaseModel,
+                                                    NoJoin,
+                                                    NoWhere> {
+        using Base = SelectQueryBenchmarkBase<
+                GroupByHavingAggregateBenchmark<
+                        BaseModel,
+                        AggOp,
+                        GroupByFieldInfo,
+                        AggregateFieldInfo,
+                        HavingFieldInfo,
+                        HavingValue>,
+                BaseModel,
+                NoJoin,
+                NoWhere>;
+
+      public:
+        explicit constexpr GroupByHavingAggregateBenchmark(int dataset_size = 1000) : Base(dataset_size) {}
+
+        void print_info() const {
+            constexpr std::string_view group_field_name  = std::meta::identifier_of(GroupByFieldInfo);
+            constexpr std::string_view having_field_name = std::meta::identifier_of(HavingFieldInfo);
+            if constexpr (AggOp == GroupByAggOp::Count) {
+                std::cout << "Operation: SELECT " << group_field_name << ", COUNT(*) GROUP BY " << group_field_name
+                          << " HAVING " << having_field_name << " > " << HavingValue;
+            } else {
+                constexpr std::string_view agg_field_name = std::meta::identifier_of(AggregateFieldInfo);
+                std::cout << "Operation: SELECT " << group_field_name << ", " << agg_op_name(AggOp) << "("
+                          << agg_field_name << ") GROUP BY " << group_field_name << " HAVING " << having_field_name
+                          << " > " << HavingValue;
+            }
+            std::cout << "\n  Dataset: " << Base::batch_size() << " rows\n";
+        }
+
+        int execute_iteration() {
+            auto having_expr = storm::orm::where::field<HavingFieldInfo>() > HavingValue;
+            if constexpr (AggOp == GroupByAggOp::Count) {
+                auto result = Base::qs().template group_by<GroupByFieldInfo>().having(having_expr).count().select();
+                return result.has_value() ? static_cast<int>(result.value().size()) : 0;
+            } else if constexpr (AggOp == GroupByAggOp::Sum) {
+                auto result = Base::qs()
+                                      .template group_by<GroupByFieldInfo>()
+                                      .having(having_expr)
+                                      .template sum<AggregateFieldInfo>()
+                                      .select();
+                return result.has_value() ? static_cast<int>(result.value().size()) : 0;
+            } else if constexpr (AggOp == GroupByAggOp::Avg) {
+                auto result = Base::qs()
+                                      .template group_by<GroupByFieldInfo>()
+                                      .having(having_expr)
+                                      .template avg<AggregateFieldInfo>()
+                                      .select();
+                return result.has_value() ? static_cast<int>(result.value().size()) : 0;
+            } else if constexpr (AggOp == GroupByAggOp::Min) {
+                auto result = Base::qs()
+                                      .template group_by<GroupByFieldInfo>()
+                                      .having(having_expr)
+                                      .template min<AggregateFieldInfo>()
+                                      .select();
+                return result.has_value() ? static_cast<int>(result.value().size()) : 0;
+            } else if constexpr (AggOp == GroupByAggOp::Max) {
+                auto result = Base::qs()
+                                      .template group_by<GroupByFieldInfo>()
+                                      .having(having_expr)
+                                      .template max<AggregateFieldInfo>()
+                                      .select();
+                return result.has_value() ? static_cast<int>(result.value().size()) : 0;
+            }
+        }
+
+        int execute(int iterations) {
+            int total = 0;
+            for (int i = 0; i < iterations; i++) {
+                total += execute_iteration();
+            }
+            return total;
+        }
+
+        int execute_raw(int iterations) {
+            sqlite3* db = get_db<BaseModel>();
+            if (db == nullptr)
+                return 0;
+
+            constexpr std::string_view group_field_name  = std::meta::identifier_of(GroupByFieldInfo);
+            constexpr std::string_view having_field_name = std::meta::identifier_of(HavingFieldInfo);
+
+            std::string sql = "SELECT ";
+            sql += group_field_name;
+            sql += ", ";
+            if constexpr (AggOp == GroupByAggOp::Count) {
+                sql += "COUNT(*)";
+            } else {
+                constexpr std::string_view agg_field_name = std::meta::identifier_of(AggregateFieldInfo);
+                sql += agg_op_sql(AggOp);
+                sql += agg_field_name;
+                sql += ")";
+            }
+            sql += " FROM Person GROUP BY ";
+            sql += group_field_name;
+            sql += " HAVING ";
+            sql += having_field_name;
+            sql += " > ?";
+
+            sqlite3_stmt* stmt = nullptr;
+            if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+                return 0;
+            }
+
+            sqlite3_bind_int(stmt, 1, HavingValue);
+
+            int total_groups = 0;
+            for (int i = 0; i < iterations; i++) {
+                sqlite3_reset(stmt);
+
+                if constexpr (AggOp == GroupByAggOp::Count) {
+                    plf::hive<std::tuple<int64_t, int64_t>> results;
+                    while (sqlite3_step(stmt) == SQLITE_ROW) {
+                        results.insert({sqlite3_column_int64(stmt, 0), sqlite3_column_int64(stmt, 1)});
+                    }
+                    total_groups += results.size();
+                } else {
+                    plf::hive<std::tuple<int64_t, double>> results;
+                    while (sqlite3_step(stmt) == SQLITE_ROW) {
+                        results.insert({sqlite3_column_int64(stmt, 0), sqlite3_column_double(stmt, 1)});
+                    }
+                    total_groups += results.size();
+                }
+            }
+
+            sqlite3_finalize(stmt);
+            return total_groups;
+        }
+    };
+
+    // Type aliases for GROUP BY + HAVING + aggregate benchmarks
+    template <typename Model, std::meta::info GroupField, std::meta::info HavingField, int HavingValue>
+    using SelectGroupByHavingCountBenchmark = GroupByHavingAggregateBenchmark<
+            Model,
+            GroupByAggOp::Count,
+            GroupField,
+            GroupField,
+            HavingField,
+            HavingValue>;
+
+    template <
+            typename Model,
+            std::meta::info GroupField,
+            std::meta::info AggField,
+            std::meta::info HavingField,
+            int             HavingValue>
+    using SelectGroupByHavingSumBenchmark =
+            GroupByHavingAggregateBenchmark<Model, GroupByAggOp::Sum, GroupField, AggField, HavingField, HavingValue>;
+
     // Type aliases for GROUP BY + aggregate benchmarks
     template <typename Model, std::meta::info GroupField>
     using SelectGroupByCountBenchmark = GroupByAggregateBenchmark<Model, GroupByAggOp::Count, GroupField, GroupField>;

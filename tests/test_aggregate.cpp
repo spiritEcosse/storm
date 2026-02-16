@@ -2024,6 +2024,426 @@ TYPED_TEST(AggregateTest, GroupByMultipleFieldsWithOrderByLimit) {
     EXPECT_EQ(result.value().size(), 2) << "Should return only 2 groups due to LIMIT";
 }
 
+// =============================================================================
+// HAVING Clause Tests
+// =============================================================================
+
+TYPED_TEST(AggregateTest, HavingOnGroupByBuilder) {
+    // Insert data with duplicate years_experience values
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Bob", .age = 30, .salary = 60000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0, .years_experience = 10}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Dave", .age = 40, .salary = 80000.0, .years_experience = 10}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Eve", .age = 45, .salary = 90000.0, .years_experience = 10}
+    );
+
+    // HAVING on GroupByBuilder (before aggregate): years_experience > 5
+    // Groups: years_experience=5 (filtered out), years_experience=10 (kept)
+    auto result = this->qs->template group_by<^^AggregatePerson::years_experience>()
+                          .having(storm::orm::where::field<^^AggregatePerson::years_experience>() > 5)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING on GroupByBuilder failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 1) << "Expected 1 group (years_experience=10)";
+
+    auto [years_exp, count_val] = *result.value().begin();
+    EXPECT_EQ(years_exp, 10);
+    EXPECT_EQ(count_val, 3);
+}
+
+TYPED_TEST(AggregateTest, HavingOnAggregateStatement) {
+    // Insert data with duplicate years_experience values
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Bob", .age = 30, .salary = 60000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0, .years_experience = 10}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Dave", .age = 40, .salary = 80000.0, .years_experience = 10}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Eve", .age = 45, .salary = 90000.0, .years_experience = 10}
+    );
+
+    // HAVING on AggregateStatement (after aggregate): years_experience > 5
+    auto result = this->qs->template group_by<^^AggregatePerson::years_experience>()
+                          .count()
+                          .having(storm::orm::where::field<^^AggregatePerson::years_experience>() > 5)
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING on AggregateStatement failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 1) << "Expected 1 group (years_experience=10)";
+
+    auto [years_exp, count_val] = *result.value().begin();
+    EXPECT_EQ(years_exp, 10);
+    EXPECT_EQ(count_val, 3);
+}
+
+TYPED_TEST(AggregateTest, HavingWithFieldComparison) {
+    this->insert_test_data();
+
+    // GROUP BY age HAVING age > 30
+    // Ages: 25 (filtered), 30 (filtered), 35 (kept), 40 (kept), 45 (kept)
+    auto result = this->qs->template group_by<^^AggregatePerson::age>()
+                          .having(storm::orm::where::field<^^AggregatePerson::age>() > 30)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING with field comparison failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 3) << "Expected 3 groups (ages 35, 40, 45)";
+}
+
+TYPED_TEST(AggregateTest, HavingWithWhereClause) {
+    this->insert_test_data();
+
+    // WHERE salary > 50000 AND GROUP BY years_experience HAVING years_experience > 5
+    // After WHERE: Bob(5), Charlie(7), Dave(10), Eve(15)
+    // After GROUP BY + HAVING years_experience > 5: Charlie(7), Dave(10), Eve(15) = 3 groups
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::salary>() > 50000.0)
+                          .template group_by<^^AggregatePerson::years_experience>()
+                          .having(storm::orm::where::field<^^AggregatePerson::years_experience>() > 5)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING + WHERE failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 3) << "Expected 3 groups after WHERE + HAVING";
+}
+
+TYPED_TEST(AggregateTest, HavingWithGroupByOrderByLimit) {
+    this->insert_test_data();
+
+    // GROUP BY age HAVING age > 25, ORDER BY age ASC, LIMIT 2
+    // After HAVING: 30, 35, 40, 45
+    // After ORDER BY ASC + LIMIT 2: 30, 35
+    auto result = this->qs->template order_by<^^AggregatePerson::age>()
+                          .limit(2)
+                          .template group_by<^^AggregatePerson::age>()
+                          .having(storm::orm::where::field<^^AggregatePerson::age>() > 25)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING + ORDER BY + LIMIT failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 2) << "Expected 2 groups after LIMIT";
+
+    std::vector<int> expected_ages = {30, 35};
+    size_t           idx           = 0; // NOLINT(misc-const-correctness) - modified in loop
+    for (const auto& [age, count_val] : result.value()) {
+        EXPECT_EQ(age, expected_ages[idx]) << "Unexpected age at index " << idx;
+        idx++;
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingWithJoin) {
+    this->insert_join_test_data();
+
+    // JOIN + GROUP BY value HAVING value > 30
+    // Values: 10, 20, 30, 40, 50, 60 -> After HAVING > 30: 40, 50, 60
+    auto result = this->msg_qs->template join<&AggMessage::sender>()
+                          .template group_by<^^AggMessage::value>()
+                          .having(storm::orm::where::field<^^AggMessage::value>() > 30)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING + JOIN failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 3) << "Expected 3 groups (values 40, 50, 60)";
+}
+
+TYPED_TEST(AggregateTest, HavingEmptyResult) {
+    this->insert_test_data();
+
+    // GROUP BY age HAVING age > 100 -> no groups match
+    auto result = this->qs->template group_by<^^AggregatePerson::age>()
+                          .having(storm::orm::where::field<^^AggregatePerson::age>() > 100)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING empty result failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 0) << "Expected 0 groups";
+}
+
+TYPED_TEST(AggregateTest, HavingRepeatedQueries) {
+    this->insert_test_data();
+
+    // Run same HAVING query multiple times (tests caching)
+    for (int i = 0; i < 50; ++i) {
+        auto result = this->qs->template group_by<^^AggregatePerson::age>()
+                              .having(storm::orm::where::field<^^AggregatePerson::age>() > 30)
+                              .count()
+                              .select();
+        ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed";
+        EXPECT_EQ(result.value().size(), 3);
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingWithSum) {
+    // Insert data where groups have different sum totals
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Bob", .age = 30, .salary = 60000.0, .years_experience = 5}
+    );
+    std::ignore = this->qs->insert(
+            AggregatePerson{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0, .years_experience = 10}
+    );
+
+    // GROUP BY years_experience, SUM(age), HAVING years_experience == 5
+    auto result = this->qs->template group_by<^^AggregatePerson::years_experience>()
+                          .having(storm::orm::where::field<^^AggregatePerson::years_experience>() == 5)
+                          .template sum<^^AggregatePerson::age>()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING + SUM failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 1);
+
+    auto [years_exp, sum_age] = *result.value().begin();
+    EXPECT_EQ(years_exp, 5);
+    EXPECT_EQ(sum_age, 55); // 25 + 30
+}
+
+TYPED_TEST(AggregateTest, HavingWithWhereAndJoin) {
+    // Setup: messages with varying values per sender
+    const auto& conn = QuerySet<AggregatePerson, TypeParam>::get_default_connection();
+
+    std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Alice', 25)"); // id=1
+    std::ignore = conn->execute("INSERT INTO AggUser (name, age) VALUES ('Bob', 35)");   // id=2
+
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('A1', 10, 1)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('A2', 20, 1)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('A3', 30, 1)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('B1', 50, 2)");
+    std::ignore = conn->execute("INSERT INTO AggMessage (content, value, sender_id) VALUES ('B2', 70, 2)");
+
+    // WHERE value >= 20 AND JOIN + GROUP BY value HAVING value > 25
+    // After WHERE: A2(20), A3(30), B1(50), B2(70)
+    // After HAVING value > 25: A3(30), B1(50), B2(70) = 3 groups
+    auto result = this->msg_qs->where(storm::orm::where::field<^^AggMessage::value>() >= 20)
+                          .template join<&AggMessage::sender>()
+                          .template group_by<^^AggMessage::value>()
+                          .having(storm::orm::where::field<^^AggMessage::value>() > 25)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING + WHERE + JOIN failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 3) << "Expected 3 groups after WHERE + HAVING + JOIN";
+}
+
+// ----- HAVING with all ExpressionVariant types -----
+
+TYPED_TEST(AggregateTest, HavingWithNotEqual) {
+    // GROUP BY age HAVING age != 30 → should exclude age=30 groups
+    auto result = this->qs->template group_by<^^AggregatePerson::age>()
+                          .having(storm::orm::where::field<^^AggregatePerson::age>() != 30)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING != failed: " << result.error().message();
+    // All groups except age=30
+    for (const auto& [age, count] : result.value()) {
+        EXPECT_NE(age, 30) << "HAVING != should exclude age=30";
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingWithLessThan) {
+    // GROUP BY age HAVING age < 30 → only groups with age < 30
+    auto result = this->qs->template group_by<^^AggregatePerson::age>()
+                          .having(storm::orm::where::field<^^AggregatePerson::age>() < 30)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING < failed: " << result.error().message();
+    for (const auto& [age, count] : result.value()) {
+        EXPECT_LT(age, 30) << "HAVING < should only include age < 30";
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingWithLessEqual) {
+    // GROUP BY age HAVING age <= 30
+    auto result = this->qs->template group_by<^^AggregatePerson::age>()
+                          .having(storm::orm::where::field<^^AggregatePerson::age>() <= 30)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING <= failed: " << result.error().message();
+    for (const auto& [age, count] : result.value()) {
+        EXPECT_LE(age, 30) << "HAVING <= should only include age <= 30";
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingWithGreaterEqual) {
+    // GROUP BY age HAVING age >= 30
+    auto result = this->qs->template group_by<^^AggregatePerson::age>()
+                          .having(storm::orm::where::field<^^AggregatePerson::age>() >= 30)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING >= failed: " << result.error().message();
+    for (const auto& [age, count] : result.value()) {
+        EXPECT_GE(age, 30) << "HAVING >= should only include age >= 30";
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingWithIn) {
+    // GROUP BY age HAVING age IN (25, 30, 35)
+    auto result = this->qs->template group_by<^^AggregatePerson::age>()
+                          .having(storm::orm::where::field<^^AggregatePerson::age>().in(25, 30, 35))
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING IN failed: " << result.error().message();
+    for (const auto& [age, count] : result.value()) {
+        EXPECT_TRUE(age == 25 || age == 30 || age == 35)
+                << "HAVING IN should only include age 25, 30, or 35, got: " << age;
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingWithBetween) {
+    // GROUP BY age HAVING age BETWEEN 25 AND 35
+    auto result = this->qs->template group_by<^^AggregatePerson::age>()
+                          .having(storm::orm::where::field<^^AggregatePerson::age>().between(25, 35))
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING BETWEEN failed: " << result.error().message();
+    for (const auto& [age, count] : result.value()) {
+        EXPECT_GE(age, 25) << "HAVING BETWEEN lower bound failed";
+        EXPECT_LE(age, 35) << "HAVING BETWEEN upper bound failed";
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingWithLike) {
+    // GROUP BY name HAVING name LIKE 'A%'
+    auto result = this->qs->template group_by<^^AggregatePerson::name>()
+                          .having(storm::orm::where::field<^^AggregatePerson::name>().like("A%"))
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING LIKE failed: " << result.error().message();
+    for (const auto& [name, count] : result.value()) {
+        EXPECT_TRUE(name.find("A") == 0) << "HAVING LIKE 'A%' should only match names starting with A, got: " << name;
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingWithLogicalAnd) {
+    // GROUP BY age HAVING age > 20 AND age < 40
+    auto result = this->qs->template group_by<^^AggregatePerson::age>()
+                          .having(storm::orm::where::field<^^AggregatePerson::age>() > 20 &&
+                                  storm::orm::where::field<^^AggregatePerson::age>() < 40)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING AND failed: " << result.error().message();
+    for (const auto& [age, count] : result.value()) {
+        EXPECT_GT(age, 20) << "HAVING AND: age should be > 20";
+        EXPECT_LT(age, 40) << "HAVING AND: age should be < 40";
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingWithLogicalOr) {
+    // GROUP BY age HAVING age < 25 OR age > 35
+    auto result = this->qs->template group_by<^^AggregatePerson::age>()
+                          .having(storm::orm::where::field<^^AggregatePerson::age>() < 25 ||
+                                  storm::orm::where::field<^^AggregatePerson::age>() > 35)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING OR failed: " << result.error().message();
+    for (const auto& [age, count] : result.value()) {
+        EXPECT_TRUE(age < 25 || age > 35) << "HAVING OR: age should be < 25 or > 35, got: " << age;
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingWithComplexLogical) {
+    // GROUP BY age HAVING (age >= 25 AND age <= 35) OR age == 50
+    auto result = this->qs->template group_by<^^AggregatePerson::age>()
+                          .having((storm::orm::where::field<^^AggregatePerson::age>() >= 25 &&
+                                   storm::orm::where::field<^^AggregatePerson::age>() <= 35) ||
+                                  storm::orm::where::field<^^AggregatePerson::age>() == 50)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING complex logical failed: " << result.error().message();
+    for (const auto& [age, count] : result.value()) {
+        EXPECT_TRUE((age >= 25 && age <= 35) || age == 50) << "HAVING complex: age should be 25-35 or 50, got: " << age;
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingWithWhereAndIn) {
+    // WHERE salary > 50000 + GROUP BY age HAVING age IN (25, 30, 35)
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::salary>() > 50000.0)
+                          .template group_by<^^AggregatePerson::age>()
+                          .having(storm::orm::where::field<^^AggregatePerson::age>().in(25, 30, 35))
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "WHERE + HAVING IN failed: " << result.error().message();
+    for (const auto& [age, count] : result.value()) {
+        EXPECT_TRUE(age == 25 || age == 30 || age == 35) << "WHERE + HAVING IN: unexpected age " << age;
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingWithWhereAndBetween) {
+    // WHERE salary > 30000 + GROUP BY years_experience HAVING years_experience BETWEEN 3 AND 8
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::salary>() > 30000.0)
+                          .template group_by<^^AggregatePerson::years_experience>()
+                          .having(storm::orm::where::field<^^AggregatePerson::years_experience>().between(3, 8))
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "WHERE + HAVING BETWEEN failed: " << result.error().message();
+    for (const auto& [years, count] : result.value()) {
+        EXPECT_GE(years, 3) << "WHERE + HAVING BETWEEN lower bound failed";
+        EXPECT_LE(years, 8) << "WHERE + HAVING BETWEEN upper bound failed";
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingWithWhereAndLogicalAnd) {
+    // WHERE salary > 30000 + GROUP BY age HAVING age > 20 AND age < 40
+    auto result = this->qs->where(storm::orm::where::field<^^AggregatePerson::salary>() > 30000.0)
+                          .template group_by<^^AggregatePerson::age>()
+                          .having(storm::orm::where::field<^^AggregatePerson::age>() > 20 &&
+                                  storm::orm::where::field<^^AggregatePerson::age>() < 40)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "WHERE + HAVING AND failed: " << result.error().message();
+    for (const auto& [age, count] : result.value()) {
+        EXPECT_GT(age, 20) << "WHERE + HAVING AND: age should be > 20";
+        EXPECT_LT(age, 40) << "WHERE + HAVING AND: age should be < 40";
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingInOnAggregateStatement) {
+    // having() chained after aggregate: group_by().count().having(IN)
+    auto result = this->qs->template group_by<^^AggregatePerson::age>()
+                          .count()
+                          .having(storm::orm::where::field<^^AggregatePerson::age>().in(25, 30))
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING IN on AggregateStatement failed: " << result.error().message();
+    for (const auto& [age, count] : result.value()) {
+        EXPECT_TRUE(age == 25 || age == 30) << "HAVING IN on AggregateStatement: unexpected age " << age;
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingBetweenOnAggregateStatement) {
+    // having() chained after aggregate: group_by().sum().having(BETWEEN)
+    auto result = this->qs->template group_by<^^AggregatePerson::age>()
+                          .template sum<^^AggregatePerson::salary>()
+                          .having(storm::orm::where::field<^^AggregatePerson::age>().between(25, 35))
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING BETWEEN on AggregateStatement failed: " << result.error().message();
+    for (const auto& [age, sum_salary] : result.value()) {
+        EXPECT_GE(age, 25) << "HAVING BETWEEN on AggregateStatement: lower bound";
+        EXPECT_LE(age, 35) << "HAVING BETWEEN on AggregateStatement: upper bound";
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingLogicalOnAggregateStatement) {
+    // having() chained after aggregate: group_by().avg().having(AND)
+    auto result = this->qs->template group_by<^^AggregatePerson::age>()
+                          .template avg<^^AggregatePerson::salary>()
+                          .having(storm::orm::where::field<^^AggregatePerson::age>() >= 25 &&
+                                  storm::orm::where::field<^^AggregatePerson::age>() <= 40)
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING AND on AggregateStatement failed: " << result.error().message();
+    for (const auto& [age, avg_salary] : result.value()) {
+        EXPECT_GE(age, 25) << "HAVING AND on AggregateStatement: lower bound";
+        EXPECT_LE(age, 40) << "HAVING AND on AggregateStatement: upper bound";
+    }
+}
+
 // Note: main() is provided by main.cpp (shared across all test files)
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

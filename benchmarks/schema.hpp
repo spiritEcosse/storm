@@ -114,6 +114,10 @@ namespace storm::benchmark {
         ConstexprString<32> group_by_field;  // Field name to group by (empty = no GROUP BY)
         ConstexprString<32> group_by_field2; // Second field for multi-field GROUP BY
 
+        // HAVING clause parameters
+        ConstexprString<32> having_field;         // Field name for HAVING condition
+        int                 having_value_int = 0; // Integer value for HAVING comparison
+
         // Size profile for automatic iteration over sizes
         // Values: "none", "batch_standard", "batch_insert_edge", "batch_update_edge",
         //         "dataset_standard", "dataset_small"

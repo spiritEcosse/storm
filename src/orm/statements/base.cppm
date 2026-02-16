@@ -609,6 +609,22 @@ export namespace storm::orm::statements {
             }
             return {};
         }
+
+        // Helper: Bind HAVING expression parameters to statement
+        // param_index continues from WHERE's last index (or starts at 1 if no WHERE)
+        // LCOV_EXCL_START — tested via AggregateTest.Having*; C++26 module coverage gap
+        template <typename Statement, typename Error>
+        [[nodiscard]] __attribute__((always_inline)) static auto
+        bind_having_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& having_expr, int& param_index)
+                -> std::expected<void, Error> {
+            auto bind_result = orm::where::bind_params_direct<Statement, Error>(*having_expr, stmt_ptr, param_index);
+            if (!bind_result) [[unlikely]] {
+                stmt_ptr->reset();
+                return std::unexpected(bind_result.error());
+            }
+            return {};
+        }
+        // LCOV_EXCL_STOP
     };
 
 } // namespace storm::orm::statements
