@@ -20,10 +20,11 @@ Storm is a C++26 ORM library for SQLite using compile-time reflection to automat
 2. **NEVER push without approval** - Ask before `git push` (exception: user says "commit and push")
 3. **ALWAYS benchmark after code changes** - Use Release builds; revert if ANY slowdown
 4. **ALWAYS update docs after changes** - Code + docs commit together
-5. **Pre-commit hook enforces checks** - `commit.sh` runs automatically on `git commit` (format, tidy, test, coverage, sonar, bench)
+5. **Pre-commit hook enforces checks** - `commit.sh` runs automatically on `git commit` (format, tidy, test, coverage, sonar)
 6. **ALWAYS show files before commit** - Run `git status --short`, get user approval, then commit
 7. **ASK before creating new `.md` files**
 8. **UPPERCASE doc filenames** - `GETTING_STARTED.md`, not `getting-started.md`
+9. **ALWAYS write thorough unit tests** - Every feature needs comprehensive tests (see Testing Checklist)
 
 ## Quick Start
 
@@ -55,7 +56,7 @@ cmake --preset ninja-release && cmake --build --preset ninja-release
 git status --short           # Show files
 # Get user approval
 git add -A && git commit -m "message"  # Pre-commit hook runs all checks automatically
-# All checks are mandatory (format, tidy, tests, PG tests, coverage, sonar, bench)
+# All checks are mandatory (format, tidy, tests, PG tests, coverage, sonar)
 # Smart skips apply automatically based on staged files (no C++ → skip all, etc.)
 ```
 
@@ -221,6 +222,48 @@ STORM_PG_CONNSTR="host=host.containers.internal port=5432 dbname=storm_db user=s
 ```
 
 See [docs/development/TESTING.md](docs/development/TESTING.md) for PostgreSQL test isolation details.
+
+### Thorough Testing Checklist
+
+Every new feature or modification MUST include thorough tests covering these categories:
+
+#### Expression/Filter Features (WHERE, HAVING, future clauses)
+- **All 6 comparison operators**: `==`, `!=`, `>`, `>=`, `<`, `<=`
+- **Special expressions**: `IN` (multiple values), `BETWEEN` (range), `LIKE` (pattern)
+- **Logical combinations**: `AND`, `OR`, complex nested `(A && B) || C`
+- **Type coverage**: Test with int, string, double at minimum
+
+#### CRUD Operations (INSERT, UPDATE, DELETE)
+- Single item operation
+- Batch operation (multiple items)
+- Batch at SQLite limit boundary (999 params)
+- Operation on empty dataset
+- Operation with all supported field types (int, string, double, bool, optional, blob)
+
+#### Query Modifiers (ORDER BY, LIMIT, OFFSET, GROUP BY, DISTINCT)
+- Modifier in isolation
+- Modifier + WHERE
+- Modifier + JOIN
+- Modifier + WHERE + JOIN (all combined)
+- Multiple modifiers together (e.g., ORDER BY + LIMIT + OFFSET)
+
+#### Query Results
+- Non-empty result set (happy path)
+- Empty result set (filters exclude all)
+- Single-row result
+- Large result set (100+ rows)
+
+#### Chaining & Caching
+- Both chaining positions where applicable (e.g., `group_by().having().count()` AND `group_by().count().having()`)
+- Repeated identical queries (statement caching correctness)
+- Different queries on same QuerySet (cache invalidation)
+
+#### Error Handling
+- Invalid inputs where applicable
+- Error paths tested via mock (test_orm_mock_errors.cpp pattern)
+
+#### Cross-Backend
+- Tests use TYPED_TEST with DatabaseTypes to run on both SQLite and PostgreSQL
 
 ## Documentation
 

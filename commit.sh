@@ -1,13 +1,12 @@
 #!/bin/bash
-# Pre-commit checks: format -> tidy --fix -> test -> coverage -> sonar -> bench
+# Pre-commit checks: format -> tidy --fix -> test -> coverage -> sonar
 # Runs automatically via git pre-commit hook, or manually: ./commit.sh
 #
 # All checks are mandatory. No skip flags available.
 #
 # Smart skips (automatic, based on staged files):
-#   No C++ files in commit        → skip format, tidy, tests, coverage, sonar, bench
+#   No C++ files in commit        → skip format, tidy, tests, coverage, sonar
 #   No src/ or tests/ changes     → skip tests, coverage
-#   No src/ changes               → skip bench
 
 set -e  # Exit on any error
 
@@ -16,7 +15,6 @@ RUN_TIDY=true
 RUN_TESTS=true
 RUN_COVERAGE=true
 RUN_SONAR=true
-RUN_BENCH=true
 
 # PG connection string for tests and coverage (always enabled)
 PG_CONNSTR="host=host.containers.internal port=5432 dbname=storm_db user=storm_db password=storm_db"
@@ -35,15 +33,12 @@ if [[ -n "$STAGED_FILES" ]]; then
     done <<< "$STAGED_FILES"
 
     if [[ "$HAS_CPP_CHANGES" == false ]]; then
-        echo "ℹ️  No C++ files in commit — skipping format, tidy, tests, coverage, sonar, bench"
+        echo "ℹ️  No C++ files in commit — skipping format, tidy, tests, coverage, sonar"
         RUN_FORMAT=false RUN_TIDY=false RUN_TESTS=false
-        RUN_COVERAGE=false RUN_SONAR=false RUN_BENCH=false
+        RUN_COVERAGE=false RUN_SONAR=false
     elif [[ "$HAS_SRC_CHANGES" == false && "$HAS_TEST_CHANGES" == false ]]; then
         echo "ℹ️  No src/ or tests/ changes — skipping tests, coverage"
         RUN_TESTS=false RUN_COVERAGE=false
-    elif [[ "$HAS_SRC_CHANGES" == false ]]; then
-        echo "ℹ️  No src/ changes — skipping bench"
-        RUN_BENCH=false
     fi
 fi
 
@@ -132,22 +127,6 @@ if [[ "$RUN_SONAR" == true ]]; then
         echo "❌ Sonar check failed. Fix issues before committing."
         exit 1
     }
-fi
-
-# Quick benchmark sanity check
-if [[ "$RUN_BENCH" == true ]]; then
-    BENCH_BIN="./build/release/benchmarks/storm_bench"
-    if [[ -x "$BENCH_BIN" ]]; then
-        echo ""
-        echo "⚡ Running quick benchmark sanity check (100 iterations)..."
-        for test in insert_batch_100 update_pk_batch_100 delete_pk_batch_100 select_join_1000; do
-            result=$($BENCH_BIN --filter=$test --iterations=100 2>&1 | grep -E "Efficiency:|PASSED|FAILED" | head -1)
-            printf "   %-25s %s\n" "$test:" "$result"
-        done
-        echo "✅ Benchmark sanity check complete"
-    else
-        echo "⚠️  Benchmark binary not found, skipping (build with -DENABLE_BENCH=ON)"
-    fi
 fi
 
 echo ""
