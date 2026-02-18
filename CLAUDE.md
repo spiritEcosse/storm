@@ -53,7 +53,9 @@ cmake --preset ninja-prod && cmake --build --preset ninja-prod
 ```
 cmake/
 ├── libcxx.cmake          # LIBCXX_ROOT validation, global -nostdinc++ flags, apply_clang_flags()
+├── db.cmake              # find_package SQLite3 + PostgreSQL, link_sqlite/link_postgresql helpers
 ├── cpm.cmake             # CPM.cmake bootstrap (auto-downloaded on first configure)
+├── cmake-scripts.cmake   # Global CPM fetch of StableCoder/cmake-scripts (used by format + sanitizers)
 ├── coverage.cmake        # Coverage compile/link flags (must include before tests)
 ├── coverage-targets.cmake# Coverage cmake targets: coverage, coverage-html, coverage-clean
 ├── tests.cmake           # GoogleTest via CPM + add_subdirectory(tests)

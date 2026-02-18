@@ -1,8 +1,0 @@
-{
-    "DB_DRIVER": "postgresql",
-    "DB_HOST": "localhost",
-    "DB_PORT": "5432",
-    "DB_DATABASE": "storm_db",
-    "DB_USERNAME": "storm_db",
-    "DB_PASSWORD": "storm_db"
-}

@@ -1,36 +1,32 @@
-find_program(CLANG_FORMAT_EXE NAMES clang-format)
+set(CLANG_FORMAT_EXE
+    "${CMAKE_SOURCE_DIR}/../clang-p2996/build/bin/clang-format"
+    CACHE FILEPATH "Path to clang-format" FORCE)
 
-if(CLANG_FORMAT_EXE)
-    file(GLOB_RECURSE CLANG_FORMAT_SOURCES CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/*.ixx"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.hpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.h"
-    )
+include(${cmake-scripts_SOURCE_DIR}/formatting.cmake)
 
-    set(CLANG_FORMAT_STYLE "--style=file")
-    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.clang-format" AND
-       NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/_clang-format")
-        set(CLANG_FORMAT_STYLE "--style=LLVM")
-    endif()
+file(
+  GLOB_RECURSE
+  FORMAT_CPP_SOURCES
+  CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.h"
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.hpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/*.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/*.h"
+  "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/*.hpp")
 
-    add_custom_target(format
-        COMMAND "${CLANG_FORMAT_EXE}" -i ${CLANG_FORMAT_STYLE} ${CLANG_FORMAT_SOURCES}
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-        COMMENT "Running clang-format on source files"
-        VERBATIM
-    )
+file(
+  GLOB
+  FORMAT_CMAKE_FILES
+  CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt"
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/*.cmake"
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt"
+  "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/CMakeLists.txt")
 
-    add_custom_target(format-check
-        COMMAND "${CLANG_FORMAT_EXE}" ${CLANG_FORMAT_STYLE} --dry-run --Werror ${CLANG_FORMAT_SOURCES}
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-        COMMENT "Checking code style with clang-format (fails on diffs)"
-        VERBATIM
-    )
-else()
-    message(STATUS "clang-format not found; 'format' and 'format-check' targets are disabled")
-endif()
+clang_format(storm-clang-format ${FORMAT_CPP_SOURCES})
+cmake_format(storm-cmake-format ${FORMAT_CMAKE_FILES})
