@@ -2,15 +2,10 @@
   "version": 4,
   "configurePresets": [
     {
-      "name": "ninja-debug",
-      "displayName": "Ninja Debug",
-      "description": "Use Ninja generator with Debug build type",
+      "name": "base",
+      "hidden": true,
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/debug",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CMAKE_CXX_STANDARD": "26",
         "CMAKE_C_COMPILER": "${sourceDir}/../clang-p2996/build/bin/clang",
         "CMAKE_CXX_COMPILER": "${sourceDir}/../clang-p2996/build/bin/clang++",
         "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS": "${sourceDir}/../clang-p2996/build/bin/clang-scan-deps",
@@ -18,19 +13,37 @@
       }
     },
     {
+      "name": "ninja-debug",
+      "displayName": "Ninja Debug",
+      "description": "Debug build with tests and coverage",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_TESTS": "ON",
+        "ENABLE_COVERAGE": "ON"
+      }
+    },
+    {
       "name": "ninja-release",
-      "displayName": "Ninja Release",
-      "description": "Use Ninja generator with Release build type",
-      "generator": "Ninja",
+      "displayName": "Ninja Release (dev)",
+      "description": "Release build with tests and benchmarks — for development and CI",
+      "inherits": "base",
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CMAKE_CXX_STANDARD": "26",
-        "CMAKE_C_COMPILER": "${sourceDir}/../clang-p2996/build/bin/clang",
-        "CMAKE_CXX_COMPILER": "${sourceDir}/../clang-p2996/build/bin/clang++",
-        "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS": "${sourceDir}/../clang-p2996/build/bin/clang-scan-deps",
-        "LIBCXX_ROOT": "${sourceDir}/../clang-p2996"
+        "ENABLE_TESTS": "ON",
+        "ENABLE_BENCH": "ON"
+      }
+    },
+    {
+      "name": "ninja-prod",
+      "displayName": "Ninja Production",
+      "description": "Optimised Release build — no tests, no benchmarks, no coverage",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/prod",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
       }
     }
   ],
@@ -42,6 +55,26 @@
     {
       "name": "ninja-release",
       "configurePreset": "ninja-release"
+    },
+    {
+      "name": "ninja-prod",
+      "configurePreset": "ninja-prod"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "ninja-debug",
+      "configurePreset": "ninja-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ninja-release",
+      "configurePreset": "ninja-release",
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }

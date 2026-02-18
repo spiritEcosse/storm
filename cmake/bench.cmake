@@ -1,0 +1,6 @@
+if(ENABLE_BENCH)
+    message(STATUS "Benchmarking is enabled")
+    add_subdirectory(benchmarks)
+else()
+    message(STATUS "Benchmarking is disabled")
+endif()

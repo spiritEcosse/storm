@@ -50,10 +50,6 @@ target_include_directories(mock_sqlite3 PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/mock_sqlite"
 )
 
-# Apply custom libc++ flags to mock library (required for linking compatibility)
-target_compile_options(mock_sqlite3 PRIVATE -stdlib=libc++)
-
-# Set library properties for proper shared library behavior
 set_target_properties(mock_sqlite3 PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
@@ -79,9 +75,6 @@ target_include_directories(storm_mock_tests PRIVATE
     ${GTEST_INCLUDE_DIRS}
     "${CMAKE_CURRENT_SOURCE_DIR}/mock_sqlite"
 )
-
-# Apply custom libc++ flags to mock tests (required for linking compatibility)
-target_compile_options(storm_mock_tests PRIVATE -stdlib=libc++)
 
 # Discover mock infrastructure tests
 gtest_discover_tests(storm_mock_tests)
@@ -150,10 +143,6 @@ target_include_directories(mock_libpq PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/mock_libpq"
 )
 
-# Apply custom libc++ flags to mock library (required for linking compatibility)
-target_compile_options(mock_libpq PRIVATE -stdlib=libc++)
-
-# Set library properties for proper shared library behavior
 set_target_properties(mock_libpq PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
@@ -179,9 +168,6 @@ target_include_directories(storm_pq_mock_tests PRIVATE
     ${GTEST_INCLUDE_DIRS}
     "${CMAKE_CURRENT_SOURCE_DIR}/mock_libpq"
 )
-
-# Apply custom libc++ flags to mock tests (required for linking compatibility)
-target_compile_options(storm_pq_mock_tests PRIVATE -stdlib=libc++)
 
 # Discover mock infrastructure tests (no LD_PRELOAD needed)
 gtest_discover_tests(storm_pq_mock_tests)

@@ -6,7 +6,6 @@ Welcome to Storm ORM - a modern C++26 ORM library using compile-time reflection 
 
 ## Quick Links
 
-- **[Getting Started](development/GETTING_STARTED.md)** - Prerequisites, build setup, first steps
 - **[Main Project Guide (CLAUDE.md)](../CLAUDE.md)** - Quick start and common tasks
 - **[Benchmarks](../benchmarks/README.md)** - Performance results and benchmark system
 
@@ -41,7 +40,6 @@ Welcome to Storm ORM - a modern C++26 ORM library using compile-time reflection 
 
 ## Development
 
-- **[Getting Started](development/GETTING_STARTED.md)** - Prerequisites and build setup
 - **[Common Tasks](development/COMMON_TASKS.md)** - Adding operations, common development workflows
 - **[Testing](development/TESTING.md)** - Test framework, PostgreSQL test isolation, running tests
 - **[Code Coverage](development/CODE_COVERAGE.md)** - How to generate and analyze test coverage

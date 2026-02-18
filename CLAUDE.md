@@ -28,14 +28,38 @@ Storm is a C++26 ORM library for SQLite using compile-time reflection to automat
 
 ## Quick Start
 
+### CMake Presets
+
+| Preset | Build type | Tests | Coverage | Bench | Use for |
+|---|---|---|---|---|---|
+| `ninja-debug` | Debug | ✓ | ✓ | — | Development, coverage |
+| `ninja-release` | Release | ✓ | — | ✓ | CI, benchmarking |
+| `ninja-prod` | Release | — | — | — | Production artifact |
+
 ### Build & Test
 ```bash
-# Debug
-cmake --preset ninja-debug -DENABLE_TESTS=ON && cmake --build --preset ninja-debug
-ctest --test-dir build/debug --output-on-failure
+# Debug (tests + coverage on by default)
+cmake --preset ninja-debug && cmake --build --preset ninja-debug
+ctest --preset ninja-debug
 
-# Release
+# Release dev (tests + bench on by default)
 cmake --preset ninja-release && cmake --build --preset ninja-release
+
+# Production (library only, no extras)
+cmake --preset ninja-prod && cmake --build --preset ninja-prod
+```
+
+### CMake Module Structure
+```
+cmake/
+├── libcxx.cmake          # LIBCXX_ROOT validation, global -nostdinc++ flags, apply_clang_flags()
+├── cpm.cmake             # CPM.cmake bootstrap (auto-downloaded on first configure)
+├── coverage.cmake        # Coverage compile/link flags (must include before tests)
+├── coverage-targets.cmake# Coverage cmake targets: coverage, coverage-html, coverage-clean
+├── tests.cmake           # GoogleTest via CPM + add_subdirectory(tests)
+├── bench.cmake           # add_subdirectory(benchmarks)
+├── sanitizers.cmake      # USE_SANITIZER option + cmake-scripts integration
+└── format.cmake          # clang-format targets: format, format-check
 ```
 
 ### GitHub Issue Workflow
@@ -62,7 +86,7 @@ git add -A && git commit -m "message"  # Pre-commit hook runs all checks automat
 
 ### Benchmarking (Release only!)
 ```bash
-cmake --preset ninja-release -DENABLE_BENCH=ON && cmake --build --preset ninja-release
+cmake --preset ninja-release && cmake --build --preset ninja-release
 ./build/release/benchmarks/storm_bench --quick     # Development (~3-5 min)
 ./build/release/benchmarks/storm_bench --thorough  # Pre-commit (~15-20 min)
 ./build/release/benchmarks/storm_bench -c SELECT   # Category filter
@@ -70,15 +94,15 @@ cmake --preset ninja-release -DENABLE_BENCH=ON && cmake --build --preset ninja-r
 
 ### Code Coverage
 ```bash
-# Configure (one-time)
-cmake -S . -B build/coverage -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENABLE_TESTS=ON -DENABLE_COVERAGE=ON
+# ninja-debug has coverage enabled by default
+cmake --preset ninja-debug && cmake --build --preset ninja-debug
 
 # Console summary (quick)
-cmake --build build/coverage && cmake --build build/coverage --target coverage
+cmake --build --preset ninja-debug --target coverage
 
 # HTML report (detailed)
-cmake --build build/coverage --target coverage-html
-# Open build/coverage/coverage/html-filtered/index.html
+cmake --build --preset ninja-debug --target coverage-html
+# Open build/debug/coverage/html-filtered/index.html
 ```
 
 See [docs/development/CODE_COVERAGE.md](docs/development/CODE_COVERAGE.md) for details.
@@ -211,7 +235,7 @@ qs.join<Message>().where(...).select();
 
 ```bash
 # SQLite only
-ctest --test-dir build/debug --output-on-failure
+ctest --preset ninja-debug
 
 # With PostgreSQL (parallel — ~10x speedup)
 STORM_PG_CONNSTR="host=host.containers.internal port=5432 dbname=storm_db user=storm_db password=storm_db" \
