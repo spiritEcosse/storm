@@ -5,8 +5,9 @@
 # All checks are mandatory. No skip flags available.
 #
 # Smart skips (automatic, based on staged files):
-#   No C++ files in commit        → skip format, tidy, tests, coverage, sonar
-#   No src/ or tests/ changes     → skip tests, coverage
+#   No C++ or cmake files         → skip format, tidy, tests, coverage, sonar
+#   cmake-only changes            → skip clang-format, clang-tidy, sonar; run tests + coverage + cmake-format
+#   C++ but no src/tests/cmake    → skip tests, coverage
 
 set -e  # Exit on any error
 
@@ -35,12 +36,17 @@ if [[ -n "$STAGED_FILES" ]]; then
         [[ "$file" =~ (CMakeLists\.txt|\.cmake)$ ]] && HAS_CMAKE_CHANGES=true
     done <<< "$STAGED_FILES"
 
-    if [[ "$HAS_CPP_CHANGES" == false ]]; then
-        echo "ℹ️  No C++ files in commit — skipping format, tidy, tests, coverage, sonar"
-        RUN_FORMAT=false RUN_TIDY=false RUN_TESTS=false
-        RUN_COVERAGE=false RUN_SONAR=false
-    elif [[ "$HAS_SRC_CHANGES" == false && "$HAS_TEST_CHANGES" == false ]]; then
-        echo "ℹ️  No src/ or tests/ changes — skipping tests, coverage"
+    if [[ "$HAS_CPP_CHANGES" == false && "$HAS_CMAKE_CHANGES" == false ]]; then
+        echo "ℹ️  No C++ or cmake files in commit — skipping format, tidy, tests, coverage, sonar"
+        RUN_FORMAT=false RUN_CMAKE_FORMAT=false RUN_TIDY=false
+        RUN_TESTS=false RUN_COVERAGE=false RUN_SONAR=false
+    elif [[ "$HAS_CPP_CHANGES" == false ]]; then
+        # cmake-only changes: tests + coverage + cmake-format must still run
+        # (cmake changes can break test builds or alter coverage instrumentation)
+        echo "ℹ️  cmake-only changes — skipping clang-format, clang-tidy, sonar"
+        RUN_FORMAT=false RUN_TIDY=false RUN_SONAR=false
+    elif [[ "$HAS_SRC_CHANGES" == false && "$HAS_TEST_CHANGES" == false && "$HAS_CMAKE_CHANGES" == false ]]; then
+        echo "ℹ️  No src/, tests/, or cmake changes — skipping tests, coverage"
         RUN_TESTS=false RUN_COVERAGE=false
     fi
 
@@ -83,11 +89,11 @@ fi
 if [[ "$RUN_TESTS" == true ]]; then
     echo ""
     echo "🧪 Running unit tests..."
-    ctest --test-dir build/debug --output-on-failure
+    ctest --preset ninja-debug
     echo ""
     echo "🐘 Running PostgreSQL tests..."
     STORM_PG_CONNSTR="$PG_CONNSTR" \
-        ctest --test-dir build/debug -j"$(nproc)" --output-on-failure
+        ctest --preset ninja-debug -j"$(nproc)"
 fi
 
 # 100% line coverage check

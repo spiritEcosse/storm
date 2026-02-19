@@ -616,7 +616,7 @@ This tells SQLite to **copy** the string data, causing extra allocations.
 All UPDATE-related tests pass after optimization:
 
 ```bash
-$ ctest --test-dir build/debug -R UpdateTest
+$ ctest --preset ninja-debug -R UpdateTest
 
 100% tests passed, 0 tests failed out of 32
 Total Test time (real) = 0.09 sec
@@ -751,7 +751,7 @@ cmake --build --preset ninja-release
 
 # Verify tests pass
 cmake --build --preset ninja-debug
-ctest --test-dir build/debug -R UpdateTest
+ctest --preset ninja-debug -R UpdateTest
 ```
 
 ---

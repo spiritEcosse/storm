@@ -19,7 +19,7 @@ You will execute and analyze tests for the Storm ORM project, which uses cutting
 
 ### Full Test Suite
 ```bash
-ctest --test-dir build/debug --output-on-failure
+ctest --preset ninja-debug
 ```
 
 ### Specific Test Patterns
@@ -34,12 +34,12 @@ Replace "Pattern" with the actual test name or wildcard pattern (e.g., "QuerySet
 cmake --preset ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="address;leak"
 cmake --build --preset ninja-debug
 # Then run tests
-ctest --test-dir build/debug --output-on-failure
+ctest --preset ninja-debug
 
 # For thread sanitizer (separate build required)
 cmake --preset ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="thread"
 cmake --build --preset ninja-debug
-ctest --test-dir build/debug --output-on-failure
+ctest --preset ninja-debug
 ```
 
 ### Performance Benchmarks

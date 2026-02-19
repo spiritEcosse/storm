@@ -74,56 +74,56 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
   find_program(LCOV_TOOL lcov)
   find_program(GENHTML_TOOL genhtml)
 
-  if(LCOV_TOOL)
-    message(STATUS "lcov found: ${LCOV_TOOL}")
-
-    add_custom_target(
-      coverage
-      COMMAND
-        ${LCOV_TOOL} --rc branch_coverage=1 --rc
-        c_file_extensions=${LCOV_C_EXTENSIONS} --ignore-errors
-        unused,deprecated,unsupported,inconsistent,range --filter
-        region,branch_region --remove ${COVERAGE_OUTPUT_DIR}/coverage.lcov
-        "*/third_party/*" "*/googletest/*" "*/build/*" "*/tests/*" --output-file
-        ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
-      COMMAND
-        ${LCOV_TOOL} --rc branch_coverage=1 --ignore-errors
-        deprecated,inconsistent --summary
-        ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
-      DEPENDS coverage-lcov
-      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-      COMMENT "Filtering coverage with LCOV_EXCL markers"
-      VERBATIM)
-
-    if(GENHTML_TOOL)
-      message(STATUS "genhtml found: ${GENHTML_TOOL}")
-
-      add_custom_target(
-        coverage-html
-        COMMAND
-          ${GENHTML_TOOL} --rc branch_coverage=1 --rc
-          c_file_extensions=${LCOV_C_EXTENSIONS} --ignore-errors
-          deprecated,range,inconsistent --legend --title
-          "Storm ORM Coverage (filtered)" --output-directory
-          ${COVERAGE_OUTPUT_DIR}/html-filtered
-          ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
-        DEPENDS coverage
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        COMMENT
-          "Generating filtered HTML coverage report in ${COVERAGE_OUTPUT_DIR}/html-filtered"
-        VERBATIM)
-
-      message(STATUS "  coverage      - Run tests + show filtered text summary")
-      message(
-        STATUS "  coverage-html - Run tests + generate filtered HTML report")
-    else()
-      message(STATUS "genhtml not found - coverage-html target disabled")
-    endif()
-  else()
-    message(STATUS "lcov not found - coverage/coverage-html targets disabled")
-    message(STATUS "  Manjaro/Arch: sudo pacman -S lcov")
-    message(STATUS "  Ubuntu/Debian: sudo apt install lcov")
+  if(NOT LCOV_TOOL)
+    message(
+      FATAL_ERROR
+        "lcov not found but required for coverage builds.\n"
+        "  Manjaro/Arch: sudo pacman -S lcov\n"
+        "  Ubuntu/Debian: sudo apt install lcov")
   endif()
+  message(STATUS "lcov found: ${LCOV_TOOL}")
+
+  if(NOT GENHTML_TOOL)
+    message(
+      FATAL_ERROR
+        "genhtml not found but required for coverage builds.\n"
+        "  Manjaro/Arch: sudo pacman -S lcov\n"
+        "  Ubuntu/Debian: sudo apt install lcov")
+  endif()
+  message(STATUS "genhtml found: ${GENHTML_TOOL}")
+
+  add_custom_target(
+    coverage
+    COMMAND
+      ${LCOV_TOOL} --rc branch_coverage=1 --rc
+      c_file_extensions=${LCOV_C_EXTENSIONS} --ignore-errors
+      unused,deprecated,unsupported,inconsistent,range --filter
+      region,branch_region --remove ${COVERAGE_OUTPUT_DIR}/coverage.lcov
+      "*/third_party/*" "*/googletest/*" "*/build/*" "*/tests/*" --output-file
+      ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
+    COMMAND
+      ${LCOV_TOOL} --rc branch_coverage=1 --ignore-errors
+      deprecated,inconsistent --summary
+      ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
+    DEPENDS coverage-lcov
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Filtering coverage with LCOV_EXCL markers"
+    VERBATIM)
+
+  add_custom_target(
+    coverage-html
+    COMMAND
+      ${GENHTML_TOOL} --rc branch_coverage=1 --rc
+      c_file_extensions=${LCOV_C_EXTENSIONS} --ignore-errors
+      deprecated,range,inconsistent --legend --title
+      "Storm ORM Coverage (filtered)" --output-directory
+      ${COVERAGE_OUTPUT_DIR}/html-filtered
+      ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
+    DEPENDS coverage
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT
+      "Generating filtered HTML coverage report in ${COVERAGE_OUTPUT_DIR}/html-filtered"
+    VERBATIM)
 
   add_custom_target(
     coverage-clean

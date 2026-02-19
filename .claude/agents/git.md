@@ -74,7 +74,7 @@ cmake --build --preset ninja-debug --target format
 
 ### 2. Test Suite Execution
 ```bash
-ctest --test-dir build/debug --output-on-failure
+ctest --preset ninja-debug
 ```
 All tests must pass. If any fail, investigate and report the failures before proceeding.
 

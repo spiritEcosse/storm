@@ -37,7 +37,7 @@ See [benchmarks/README.md](../../benchmarks/README.md) for detailed benchmark do
 
 ```bash
 # Run all tests
-ctest --test-dir build/debug --output-on-failure
+ctest --preset ninja-debug
 
 # Run specific test suite
 ./build/debug/tests/storm_tests --gtest_filter="SelectTest.*"
@@ -48,7 +48,7 @@ ctest --test-dir build/debug --output-on-failure
 # Run with sanitizers
 cmake --preset ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="address;leak"
 cmake --build --preset ninja-debug
-ctest --test-dir build/debug
+ctest --preset ninja-debug
 ```
 
 ## PostgreSQL Test Isolation
@@ -121,7 +121,7 @@ TEST(YourTestSuite, YourTestCase) {
 
 ## Test Maintenance
 
-- Run tests before committing: `ctest --test-dir build/debug`
+- Run tests before committing: `ctest --preset ninja-debug`
 - Update tests when changing APIs
 - Add regression tests for fixed bugs
 - Keep tests fast (use in-memory database)

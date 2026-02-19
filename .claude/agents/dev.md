@@ -35,7 +35,7 @@ When implementing features, you will:
 **Build System Expertise:**
 You will use the project's CMake preset system:
 - Debug builds: `cmake --preset ninja-debug -DENABLE_TESTS=ON`
-- Run tests: `ctest --test-dir build/debug --output-on-failure`
+- Run tests: `ctest --preset ninja-debug`
 - Format code: `cmake --build --preset ninja-debug --target format`
 - Benchmarking: Use the performance_comparison.sh script or individual benchmark targets
 
