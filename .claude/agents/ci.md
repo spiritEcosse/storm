@@ -48,7 +48,7 @@ For GitHub Actions:
   run: |
     cmake --preset ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="address;leak"
     cmake --build --preset ninja-debug
-    ctest --test-dir build/debug --output-on-failure
+    ctest --preset ninja-debug
   env:
     ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
 ```

@@ -83,7 +83,7 @@ git status --short           # Show files
 # Get user approval
 git add -A && git commit -m "message"  # Pre-commit hook runs all checks automatically
 # All checks are mandatory (format, tidy, tests, PG tests, coverage, sonar)
-# Smart skips apply automatically based on staged files (no C++ → skip all, etc.)
+# Smart skips: no C++/cmake → skip all; cmake-only → tests+coverage+cmake-format; C++ only-bench → skip tests/coverage
 ```
 
 ### Benchmarking (Release only!)
@@ -241,7 +241,7 @@ ctest --preset ninja-debug
 
 # With PostgreSQL (parallel — ~10x speedup)
 STORM_PG_CONNSTR="host=host.containers.internal port=5432 dbname=storm_db user=storm_db password=storm_db" \
-  ctest --test-dir build/debug -j$(nproc) --output-on-failure
+  ctest --preset ninja-debug -j$(nproc)
 
 # Filter specific tests
 ./build/debug/tests/storm_tests --gtest_filter="SelectTest.*"
