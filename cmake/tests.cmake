@@ -12,7 +12,6 @@ if(ENABLE_TESTS)
     1.15.2
     OPTIONS
     "INSTALL_GTEST OFF")
-  set(GTEST_PARALLEL TRUE)
 
   enable_testing()
   add_subdirectory(tests)
