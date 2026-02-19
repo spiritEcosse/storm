@@ -85,6 +85,9 @@
     {
       "name": "ninja-debug-sqlite",
       "inherits": "ninja-debug",
+      "execution": {
+        "jobs": 0
+      },
       "environment": {
         "STORM_PG_CONNSTR": null
       }
