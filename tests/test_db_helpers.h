@@ -21,6 +21,7 @@
  */
 
 #include <gtest/gtest.h>
+#include <libpq-fe.h>
 #include <string>
 #include <cstdlib>
 #include <type_traits>
@@ -46,10 +47,17 @@ namespace storm::test {
         inline std::string current_test_schema; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
     } // namespace detail
 
-    // Check if the backend is available (PG requires STORM_PG_CONNSTR; SQLite is always available)
+    // Check if the backend is available (PG requires STORM_PG_CONNSTR set and server reachable;
+    // SQLite is always available)
     template <typename ConnType> bool backend_available() {
         if constexpr (std::is_same_v<ConnType, storm::db::postgresql::Connection>) {
-            return std::getenv("STORM_PG_CONNSTR") != nullptr;
+            const char* connstr = std::getenv("STORM_PG_CONNSTR");
+            if (!connstr)
+                return false;
+            PGconn* conn = PQconnectdb(connstr);
+            bool    ok   = PQstatus(conn) == CONNECTION_OK;
+            PQfinish(conn);
+            return ok;
         }
         return true;
     }

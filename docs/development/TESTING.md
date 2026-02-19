@@ -36,10 +36,13 @@ See [benchmarks/README.md](../../benchmarks/README.md) for detailed benchmark do
 ## Running Tests
 
 ```bash
-# Run all tests
+# SQLite + PostgreSQL (STORM_PG_CONNSTR injected by testPreset; PG skips gracefully if not running)
 ctest --preset ninja-debug
 
-# Run specific test suite
+# SQLite only
+ctest --preset ninja-debug-sqlite
+
+# Filter specific test suite
 ./build/debug/tests/storm_tests --gtest_filter="SelectTest.*"
 
 # Run with verbose output

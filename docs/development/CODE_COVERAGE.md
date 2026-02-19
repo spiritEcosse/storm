@@ -11,7 +11,7 @@ This guide explains how to generate and analyze code coverage for Storm ORM.
 cmake --preset ninja-debug
 
 # Build and run tests with coverage
-cmake --build --preset ninja-debug --target coverage
+cmake --build --preset ninja-debug-coverage --target coverage
 ```
 
 Output shows filtered coverage with `LCOV_EXCL_*` markers applied:
@@ -26,7 +26,7 @@ Summary coverage rate:
 ### HTML Report (Detailed)
 
 ```bash
-cmake --build --preset ninja-debug --target coverage-html
+cmake --build --preset ninja-debug-coverage --target coverage-html
 ```
 
 Open `build/debug/coverage/html-filtered/index.html` in browser.
@@ -44,14 +44,14 @@ Open `build/debug/coverage/html-filtered/index.html` in browser.
 ### Development (Quick Check)
 
 ```bash
-cmake --build --preset ninja-debug --target coverage
+cmake --build --preset ninja-debug-coverage --target coverage
 ```
 
 ### Before Commit (Detailed Review)
 
 ```bash
 # Generate HTML to review uncovered lines
-cmake --build --preset ninja-debug --target coverage-html
+cmake --build --preset ninja-debug-coverage --target coverage-html
 
 # Open in browser
 xdg-open build/debug/coverage/html-filtered/index.html  # Linux
@@ -147,7 +147,7 @@ cmake --build --preset ninja-debug --target coverage-run-mock
 ```bash
 cmake --build --preset ninja-debug --target coverage-clean
 cmake --build --preset ninja-debug
-cmake --build --preset ninja-debug --target coverage
+cmake --build --preset ninja-debug-coverage --target coverage
 ```
 
 ### Module Cache Issues
@@ -164,4 +164,4 @@ cmake --preset ninja-debug
 `LCOV_EXCL_*` markers are only processed by the `coverage` target (via lcov `--filter region,branch_region`).
 The `coverage-lcov` target is a raw `llvm-cov` export — it does not apply exclusion markers.
 
-Make sure you're running `cmake --build --preset ninja-debug --target coverage`, not `coverage-lcov`.
+Make sure you're running `cmake --build --preset ninja-debug-coverage --target coverage`, not `coverage-lcov`.

@@ -61,7 +61,7 @@ cmake/
 ├── tests.cmake           # GoogleTest via CPM + add_subdirectory(tests)
 ├── bench.cmake           # add_subdirectory(benchmarks)
 ├── sanitizers.cmake      # USE_SANITIZER option + cmake-scripts integration
-└── format.cmake          # clang-format targets: format, format-check
+└── format.cmake          # clang-format/cmake-format targets (see docs/development/FORMATTING.md)
 ```
 
 ### GitHub Issue Workflow
@@ -99,11 +99,11 @@ cmake --preset ninja-release && cmake --build --preset ninja-release
 # ninja-debug has coverage enabled by default
 cmake --preset ninja-debug && cmake --build --preset ninja-debug
 
-# Console summary (quick)
-cmake --build --preset ninja-debug --target coverage
+# Console summary (quick) — ninja-debug-coverage injects STORM_PG_CONNSTR
+cmake --build --preset ninja-debug-coverage --target coverage
 
 # HTML report (detailed)
-cmake --build --preset ninja-debug --target coverage-html
+cmake --build --preset ninja-debug-coverage --target coverage-html
 # Open build/debug/coverage/html-filtered/index.html
 ```
 
@@ -236,12 +236,11 @@ qs.join<Message>().where(...).select();
 ## Testing
 
 ```bash
-# SQLite only
+# SQLite + PostgreSQL (STORM_PG_CONNSTR injected by testPreset; PG skips gracefully if not running)
 ctest --preset ninja-debug
 
-# With PostgreSQL (parallel — ~10x speedup)
-STORM_PG_CONNSTR="host=host.containers.internal port=5432 dbname=storm_db user=storm_db password=storm_db" \
-  ctest --preset ninja-debug -j$(nproc)
+# SQLite only
+ctest --preset ninja-debug-sqlite
 
 # Filter specific tests
 ./build/debug/tests/storm_tests --gtest_filter="SelectTest.*"

@@ -18,9 +18,6 @@ RUN_TESTS=true
 RUN_COVERAGE=true
 RUN_SONAR=true
 
-# PG connection string for tests and coverage (always enabled)
-PG_CONNSTR="host=host.containers.internal port=5432 dbname=storm_db user=storm_db password=storm_db"
-
 # Smart skip: detect staged file changes to skip irrelevant checks
 STAGED_FILES=$(git diff --cached --name-only 2>/dev/null || true)
 if [[ -n "$STAGED_FILES" ]]; then
@@ -88,12 +85,8 @@ fi
 
 if [[ "$RUN_TESTS" == true ]]; then
     echo ""
-    echo "🧪 Running unit tests..."
+    echo "🧪 Running tests (SQLite + PostgreSQL)..."
     ctest --preset ninja-debug
-    echo ""
-    echo "🐘 Running PostgreSQL tests..."
-    STORM_PG_CONNSTR="$PG_CONNSTR" \
-        ctest --preset ninja-debug -j"$(nproc)"
 fi
 
 # 100% line coverage check
@@ -106,8 +99,7 @@ if [[ "$RUN_COVERAGE" == true ]]; then
 
     echo ""
     echo "📊 Running coverage analysis (required: 100% line coverage)..."
-    export STORM_PG_CONNSTR="$PG_CONNSTR"
-    COVERAGE_OUTPUT=$(cmake --build --preset ninja-debug --target coverage 2>&1) || {
+    COVERAGE_OUTPUT=$(cmake --build --preset ninja-debug-coverage --target coverage 2>&1) || {
         echo "$COVERAGE_OUTPUT"
         echo "❌ Coverage build/analysis failed. Fix issues before committing."
         exit 1

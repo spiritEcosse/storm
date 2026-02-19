@@ -53,6 +53,13 @@
       "configurePreset": "ninja-debug"
     },
     {
+      "name": "ninja-debug-coverage",
+      "inherits": "ninja-debug",
+      "environment": {
+        "STORM_PG_CONNSTR": "host=/var/run/postgresql dbname=storm_db user=storm_db"
+      }
+    },
+    {
       "name": "ninja-release",
       "configurePreset": "ninja-release"
     },
@@ -67,6 +74,19 @@
       "configurePreset": "ninja-debug",
       "output": {
         "outputOnFailure": true
+      },
+      "execution": {
+        "jobs": 50
+      },
+      "environment": {
+        "STORM_PG_CONNSTR": "host=/var/run/postgresql dbname=storm_db user=storm_db"
+      }
+    },
+    {
+      "name": "ninja-debug-sqlite",
+      "inherits": "ninja-debug",
+      "environment": {
+        "STORM_PG_CONNSTR": null
       }
     },
     {

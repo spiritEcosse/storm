@@ -50,6 +50,7 @@ Welcome to Storm ORM - a modern C++26 ORM library using compile-time reflection 
 - **[Performance Testing](development/PERFORMANCE_TESTING.md)** - Benchmarking guidelines and workflow
 - **[Compiler Attributes](development/COMPILER_ATTRIBUTES.md)** - Guide for using hot, flatten, and always_inline attributes
 - **[Compiler Issues](development/COMPILER_ISSUES.md)** - Known workarounds for clang-p2996
+- **[Formatting](development/FORMATTING.md)** - clang-format and cmake-format targets, pre-commit integration, and `.clang-format` settings
 
 ## Open Issues
 
