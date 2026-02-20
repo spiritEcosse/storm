@@ -9,7 +9,8 @@
         "CMAKE_C_COMPILER": "${sourceDir}/../clang-p2996/build/bin/clang",
         "CMAKE_CXX_COMPILER": "${sourceDir}/../clang-p2996/build/bin/clang++",
         "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS": "${sourceDir}/../clang-p2996/build/bin/clang-scan-deps",
-        "LIBCXX_ROOT": "${sourceDir}/../clang-p2996"
+        "LIBCXX_ROOT": "${sourceDir}/../clang-p2996",
+        "CPM_SOURCE_CACHE": "${sourceDir}/.cache/CPM"
       }
     },
     {
