@@ -68,7 +68,7 @@ TYPED_TEST_SUITE(SelectOneTest, DatabaseTypes);
 TYPED_TEST(SelectOneTest, FirstFromEmptyTable) {
     QuerySet<SelectOnePerson, TypeParam> queryset;
 
-    auto result = queryset.first();
+    auto result = queryset.first().execute();
     ASSERT_TRUE(result.has_value()) << "first() failed: " << result.error().message();
     EXPECT_FALSE(result.value().has_value()) << "Expected nullopt from empty table";
 }
@@ -78,10 +78,10 @@ TYPED_TEST(SelectOneTest, FirstSingleRow) {
     QuerySet<SelectOnePerson, TypeParam> queryset;
 
     SelectOnePerson const alice{.id = 0, .name = "Alice", .age = 30};
-    auto                  insert_result = queryset.insert(alice);
+    auto                  insert_result = queryset.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
-    auto result = queryset.first();
+    auto result = queryset.first().execute();
     ASSERT_TRUE(result.has_value()) << "first() failed: " << result.error().message();
     ASSERT_TRUE(result.value().has_value()) << "Expected a row, got nullopt";
 
@@ -95,11 +95,11 @@ TYPED_TEST(SelectOneTest, FirstMultipleRows) {
     QuerySet<SelectOnePerson, TypeParam> queryset;
 
     for (const auto& p : std::vector<SelectOnePerson>{{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}}) {
-        auto insert_result = queryset.insert(p);
+        auto insert_result = queryset.insert(p).execute();
         ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
     }
 
-    auto result = queryset.first();
+    auto result = queryset.first().execute();
     ASSERT_TRUE(result.has_value()) << "first() failed: " << result.error().message();
     ASSERT_TRUE(result.value().has_value()) << "Expected a row, got nullopt";
 
@@ -112,11 +112,11 @@ TYPED_TEST(SelectOneTest, FirstWithWhere) {
     QuerySet<SelectOnePerson, TypeParam> queryset;
 
     for (const auto& p : std::vector<SelectOnePerson>{{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}}) {
-        auto insert_result = queryset.insert(p);
+        auto insert_result = queryset.insert(p).execute();
         ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
     }
 
-    auto result = queryset.where(field<^^SelectOnePerson::name>() == "Bob").first();
+    auto result = queryset.where(field<^^SelectOnePerson::name>() == "Bob").first().execute();
     ASSERT_TRUE(result.has_value()) << "first() failed: " << result.error().message();
     ASSERT_TRUE(result.value().has_value()) << "Expected Bob, got nullopt";
 
@@ -130,10 +130,10 @@ TYPED_TEST(SelectOneTest, FirstWhereNoMatch) {
     QuerySet<SelectOnePerson, TypeParam> queryset;
 
     SelectOnePerson const alice{.id = 0, .name = "Alice", .age = 30};
-    auto                  insert_result = queryset.insert(alice);
+    auto                  insert_result = queryset.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
-    auto result = queryset.where(field<^^SelectOnePerson::name>() == "NonExistent").first();
+    auto result = queryset.where(field<^^SelectOnePerson::name>() == "NonExistent").first().execute();
     ASSERT_TRUE(result.has_value()) << "first() should not return error for no match";
     EXPECT_FALSE(result.value().has_value()) << "Expected nullopt for non-matching WHERE";
 }
@@ -143,12 +143,12 @@ TYPED_TEST(SelectOneTest, FirstWithOrderBy) {
     QuerySet<SelectOnePerson, TypeParam> queryset;
 
     for (const auto& p : std::vector<SelectOnePerson>{{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}}) {
-        auto insert_result = queryset.insert(p);
+        auto insert_result = queryset.insert(p).execute();
         ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
     }
 
     // ORDER BY age ASC - should get Bob (age 25)
-    auto result = queryset.template order_by<^^SelectOnePerson::age>().first();
+    auto result = queryset.template order_by<^^SelectOnePerson::age>().first().execute();
     ASSERT_TRUE(result.has_value()) << "first() failed: " << result.error().message();
     ASSERT_TRUE(result.value().has_value()) << "Expected a row, got nullopt";
     EXPECT_EQ(result.value().value().name, "Bob");
@@ -159,12 +159,12 @@ TYPED_TEST(SelectOneTest, FirstWithOrderByDesc) {
     QuerySet<SelectOnePerson, TypeParam> queryset;
 
     for (const auto& p : std::vector<SelectOnePerson>{{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}}) {
-        auto insert_result = queryset.insert(p);
+        auto insert_result = queryset.insert(p).execute();
         ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
     }
 
     // ORDER BY age DESC - should get Charlie (age 35)
-    auto result = queryset.template order_by<^^SelectOnePerson::age, false>().first();
+    auto result = queryset.template order_by<^^SelectOnePerson::age, false>().first().execute();
     ASSERT_TRUE(result.has_value()) << "first() failed: " << result.error().message();
     ASSERT_TRUE(result.value().has_value()) << "Expected a row, got nullopt";
     EXPECT_EQ(result.value().value().name, "Charlie");
@@ -175,11 +175,11 @@ TYPED_TEST(SelectOneTest, FirstMultipleCallsUseCaching) {
     QuerySet<SelectOnePerson, TypeParam> queryset;
 
     SelectOnePerson const alice{.id = 0, .name = "Alice", .age = 30};
-    auto                  insert_result = queryset.insert(alice);
+    auto                  insert_result = queryset.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     for (int i = 0; i < 3; ++i) {
-        auto result = queryset.first();
+        auto result = queryset.first().execute();
         ASSERT_TRUE(result.has_value()) << "first() call " << i << " failed";
         ASSERT_TRUE(result.value().has_value()) << "Expected a row on call " << i;
         EXPECT_EQ(result.value().value().name, "Alice");
@@ -194,7 +194,7 @@ TYPED_TEST(SelectOneTest, FirstMultipleCallsUseCaching) {
 TYPED_TEST(SelectOneTest, GetFromEmptyTable) {
     QuerySet<SelectOnePerson, TypeParam> queryset;
 
-    auto result = queryset.get();
+    auto result = queryset.get().execute();
     ASSERT_FALSE(result.has_value()) << "get() should return error for empty table";
     EXPECT_EQ(result.error().code(), -1);
     EXPECT_EQ(result.error().message(), "No row found matching query");
@@ -205,10 +205,10 @@ TYPED_TEST(SelectOneTest, GetSingleRow) {
     QuerySet<SelectOnePerson, TypeParam> queryset;
 
     SelectOnePerson const alice{.id = 0, .name = "Alice", .age = 30};
-    auto                  insert_result = queryset.insert(alice);
+    auto                  insert_result = queryset.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
-    auto result = queryset.get();
+    auto result = queryset.get().execute();
     ASSERT_TRUE(result.has_value()) << "get() failed: " << result.error().message();
 
     EXPECT_EQ(result.value().name, "Alice");
@@ -220,11 +220,11 @@ TYPED_TEST(SelectOneTest, GetMultipleRowsReturnsError) {
     QuerySet<SelectOnePerson, TypeParam> queryset;
 
     for (const auto& p : std::vector<SelectOnePerson>{{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}}) {
-        auto insert_result = queryset.insert(p);
+        auto insert_result = queryset.insert(p).execute();
         ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
     }
 
-    auto result = queryset.get();
+    auto result = queryset.get().execute();
     ASSERT_FALSE(result.has_value()) << "get() should return error for multiple rows";
     EXPECT_EQ(result.error().code(), -1);
     EXPECT_EQ(result.error().message(), "Multiple rows found matching query");
@@ -235,11 +235,11 @@ TYPED_TEST(SelectOneTest, GetWithWhere) {
     QuerySet<SelectOnePerson, TypeParam> queryset;
 
     for (const auto& p : std::vector<SelectOnePerson>{{0, "Alice", 30}, {0, "Bob", 25}}) {
-        auto insert_result = queryset.insert(p);
+        auto insert_result = queryset.insert(p).execute();
         ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
     }
 
-    auto result = queryset.where(field<^^SelectOnePerson::name>() == "Bob").get();
+    auto result = queryset.where(field<^^SelectOnePerson::name>() == "Bob").get().execute();
     ASSERT_TRUE(result.has_value()) << "get() failed: " << result.error().message();
     EXPECT_EQ(result.value().name, "Bob");
     EXPECT_EQ(result.value().age, 25);
@@ -250,10 +250,10 @@ TYPED_TEST(SelectOneTest, GetWhereNoMatch) {
     QuerySet<SelectOnePerson, TypeParam> queryset;
 
     SelectOnePerson const alice{.id = 0, .name = "Alice", .age = 30};
-    auto                  insert_result = queryset.insert(alice);
+    auto                  insert_result = queryset.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
-    auto result = queryset.where(field<^^SelectOnePerson::name>() == "NonExistent").get();
+    auto result = queryset.where(field<^^SelectOnePerson::name>() == "NonExistent").get().execute();
     ASSERT_FALSE(result.has_value()) << "get() should return error for non-matching WHERE";
     EXPECT_EQ(result.error().code(), -1);
     EXPECT_EQ(result.error().message(), "No row found matching query");
@@ -264,12 +264,12 @@ TYPED_TEST(SelectOneTest, GetWhereMultipleMatch) {
     QuerySet<SelectOnePerson, TypeParam> queryset;
 
     for (const auto& p : std::vector<SelectOnePerson>{{0, "Alice", 30}, {0, "Bob", 30}, {0, "Charlie", 25}}) {
-        auto insert_result = queryset.insert(p);
+        auto insert_result = queryset.insert(p).execute();
         ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
     }
 
     // Two people have age 30
-    auto result = queryset.where(field<^^SelectOnePerson::age>() == 30).get();
+    auto result = queryset.where(field<^^SelectOnePerson::age>() == 30).get().execute();
     ASSERT_FALSE(result.has_value()) << "get() should return error when WHERE matches multiple rows";
     EXPECT_EQ(result.error().code(), -1);
     EXPECT_EQ(result.error().message(), "Multiple rows found matching query");

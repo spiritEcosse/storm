@@ -49,14 +49,14 @@ namespace storm::benchmark {
             if (Base::batch_size() == 1) {
                 // Single-row: delete one row per iteration (standard behavior)
                 for (int i = 0; i < iterations; i++) {
-                    Base::qs().remove(Base::data()[i]);
+                    Base::qs().remove(Base::data()[i]).execute();
                     total++;
                 }
             } else {
                 // Batch: must re-insert before each DELETE iteration
                 for (int i = 0; i < iterations; i++) {
                     reinsert_data();
-                    Base::qs().remove(Base::data());
+                    Base::qs().remove(Base::data()).execute();
                     total += Base::data().size();
                 }
             }
@@ -188,13 +188,13 @@ namespace storm::benchmark {
 
         // Helper: Re-insert data using Storm ORM (not timed - just setup)
         void reinsert_data() {
-            auto insert_result = Base::qs().insert(Base::data());
+            auto insert_result = Base::qs().insert(Base::data()).execute();
             if (!insert_result.has_value()) {
                 return;
             }
 
             // SELECT back to get the auto-generated IDs
-            auto select_result = Base::qs().select();
+            auto select_result = Base::qs().select().execute();
             if (!select_result.has_value()) {
                 return;
             }

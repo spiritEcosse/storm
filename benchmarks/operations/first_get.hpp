@@ -51,7 +51,7 @@ namespace storm::benchmark {
         }
 
         int execute_iteration() {
-            auto result = Base::qs().first();
+            auto result = Base::qs().first().execute();
             return (result.has_value() && result.value().has_value()) ? 1 : 0;
         }
 
@@ -145,7 +145,7 @@ namespace storm::benchmark {
         }
 
         int execute_iteration() {
-            auto result = Base::qs().get();
+            auto result = Base::qs().get().execute();
             return result.has_value() ? 1 : 0;
         }
 

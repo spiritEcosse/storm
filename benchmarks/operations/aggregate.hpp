@@ -161,7 +161,7 @@ namespace storm::benchmark {
       public:
         // For compatibility with execute_with_filters
         int execute_iteration() {
-            auto result = create_aggregate_stmt().select();
+            auto result = create_aggregate_stmt().select().execute();
             return (result.has_value() && result.value() >= 0) ? 1 : 0;
         }
 

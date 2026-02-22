@@ -54,6 +54,7 @@ export namespace storm::db::postgresql {
         Statement(Statement&& other) noexcept
             : conn_(other.conn_)
             , stmt_name_(std::move(other.stmt_name_))
+            , original_sql_(std::move(other.original_sql_))
             , result_(other.result_)
             , current_row_(other.current_row_)
             , total_rows_(other.total_rows_)
@@ -78,6 +79,7 @@ export namespace storm::db::postgresql {
                 clear_result();
                 conn_              = other.conn_;
                 stmt_name_         = std::move(other.stmt_name_);
+                original_sql_      = std::move(other.original_sql_);
                 result_            = other.result_;
                 current_row_       = other.current_row_;
                 total_rows_        = other.total_rows_;
@@ -263,6 +265,55 @@ export namespace storm::db::postgresql {
             return result_;
         }
 
+        // Returns SQL string with all bound parameters inlined (for debugging / SQL inspection)
+        // Substitutes ? placeholders with quoted param_values_ strings
+        template <typename = void> [[nodiscard]] auto expanded_sql() const -> std::string {
+            std::string result;
+            result.reserve(original_sql_.size() + param_count_ * 8);
+            int  param_idx       = 0;
+            bool in_single_quote = false;
+            bool in_double_quote = false;
+            for (size_t i = 0; i < original_sql_.size(); ++i) {
+                const char ch = original_sql_[i];
+                if (ch == '\'' && !in_double_quote) {
+                    in_single_quote = !in_single_quote;
+                    result += ch;
+                } else if (ch == '"' && !in_single_quote) {
+                    in_double_quote = !in_double_quote;
+                    result += ch;
+                } else if (ch == '?' && !in_single_quote && !in_double_quote) {
+                    if (param_idx < param_count_) {
+                        const auto idx = static_cast<size_t>(param_idx);
+                        if (param_ptrs_[idx] == nullptr) {
+                            result += "NULL";
+                        } else {
+                            // Quote the value as a SQL string literal
+                            result += '\'';
+                            for (const char c : param_values_[idx]) {
+                                if (c == '\'') {
+                                    result += "''"; // Escape single quotes
+                                } else {
+                                    result += c;
+                                }
+                            }
+                            result += '\'';
+                        }
+                        ++param_idx;
+                    } else {
+                        result += ch; // No param for this ?, leave as-is
+                    }
+                } else {
+                    result += ch;
+                }
+            }
+            return result;
+        }
+
+        // Store original SQL (with ? placeholders) for expanded_sql()
+        auto set_original_sql(std::string sql) -> void {
+            original_sql_ = std::move(sql);
+        }
+
         // Column extraction methods
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto extract_int(int col_index) const noexcept -> int {
@@ -426,6 +477,7 @@ export namespace storm::db::postgresql {
 
         PGconn*     conn_ = nullptr; // Borrowed reference
         std::string stmt_name_;
+        std::string original_sql_; // Original SQL with ? placeholders (for expanded_sql())
         PGresult*   result_      = nullptr;
         int         current_row_ = -1;
         int         total_rows_  = 0;
@@ -580,8 +632,9 @@ export namespace storm::db::postgresql {
             }
 
             PQclear(res);
-            auto [inserted_it, inserted] =
-                    statement_cache_.emplace(std::string(sql), Statement{conn_.get(), stmt_name});
+            Statement new_stmt{conn_.get(), stmt_name};
+            new_stmt.set_original_sql(std::string(sql)); // Store original SQL for expanded_sql()
+            auto [inserted_it, inserted] = statement_cache_.emplace(std::string(sql), std::move(new_stmt));
             (void)inserted; // Always true: find() above confirmed key absence
             return &inserted_it->second;
         }

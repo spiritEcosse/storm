@@ -94,10 +94,10 @@ TYPED_TEST(IntTypesInsertUpdateTest, InsertSingleIntTypes) {
     QuerySet<IntTypes, TypeParam> qs;
     IntTypes const                obj{.id = 0, .big_num = 9223372036854775807LL, .small_num = 32767};
 
-    auto result = qs.insert(obj);
+    auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     ASSERT_EQ(selected.value().size(), 1);
     EXPECT_EQ(selected.value().begin()->big_num, 9223372036854775807LL);
@@ -108,11 +108,11 @@ TYPED_TEST(IntTypesInsertUpdateTest, InsertBatchIntTypes) {
     QuerySet<IntTypes, TypeParam> qs;
     std::vector<IntTypes>         batch = {{0, 100LL, 10}, {0, 200LL, 20}, {0, 300LL, 30}};
 
-    auto result = qs.insert(batch);
+    auto result = qs.insert(batch).execute();
     ASSERT_TRUE(result.has_value());
 
     // Batch insert returns void, verify via SELECT
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 3);
     EXPECT_EQ(selected.value().begin()->big_num, 100LL);
@@ -122,12 +122,12 @@ TYPED_TEST(IntTypesInsertUpdateTest, UpdateSingleIntTypes) {
     QuerySet<IntTypes, TypeParam> qs;
     IntTypes const                obj{.id = 0, .big_num = 100LL, .small_num = 10};
 
-    auto insert_result = qs.insert(obj);
+    auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
     // Verify INSERT worked
-    auto check1 = qs.select();
+    auto check1 = qs.select().execute();
     ASSERT_TRUE(check1.has_value());
     auto it1 = check1.value().begin();
     EXPECT_EQ(it1->big_num, 100LL);
@@ -135,10 +135,10 @@ TYPED_TEST(IntTypesInsertUpdateTest, UpdateSingleIntTypes) {
 
     // Update with the returned ID
     IntTypes const updated{.id = static_cast<int>(id), .big_num = 999LL, .small_num = 99};
-    auto           update_result = qs.update(updated);
+    auto           update_result = qs.update(updated).execute();
     ASSERT_TRUE(update_result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     auto it2 = selected.value().begin();
     EXPECT_EQ(it2->big_num, 999LL);
@@ -149,15 +149,15 @@ TYPED_TEST(IntTypesInsertUpdateTest, UpdateBatchIntTypes) {
     QuerySet<IntTypes, TypeParam> qs;
     std::vector<IntTypes>         batch = {{1, 100LL, 10}, {2, 200LL, 20}, {3, 300LL, 30}};
 
-    auto insert_result = qs.insert(batch);
+    auto insert_result = qs.insert(batch).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // Update all
     std::vector<IntTypes> updates       = {{1, 111LL, 11}, {2, 222LL, 22}, {3, 333LL, 33}};
-    auto                  update_result = qs.update(std::span<const IntTypes>(updates));
+    auto                  update_result = qs.update(std::span<const IntTypes>(updates)).execute();
     ASSERT_TRUE(update_result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     auto it = selected.value().begin();
     EXPECT_EQ(it->big_num, 111LL);
@@ -209,10 +209,10 @@ TYPED_TEST(FloatTypesInsertUpdateTest, InsertSingleFloatTypes) {
     QuerySet<FloatTypes, TypeParam> qs;
     FloatTypes const                obj{.id = 0, .precise = std::numbers::pi, .approx = std::numbers::e_v<float>};
 
-    auto result = qs.insert(obj);
+    auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_NEAR(selected.value().begin()->precise, std::numbers::pi, 1e-10);
     EXPECT_NEAR(selected.value().begin()->approx, std::numbers::e_v<float>, 1e-6);
@@ -222,17 +222,17 @@ TYPED_TEST(FloatTypesInsertUpdateTest, UpdateSingleFloatTypes) {
     QuerySet<FloatTypes, TypeParam> qs;
     FloatTypes const                obj{.id = 0, .precise = 1.0, .approx = 1.0F};
 
-    auto insert_result = qs.insert(obj);
+    auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
     FloatTypes const updated{
             .id = static_cast<int>(id), .precise = std::numbers::e, .approx = std::numbers::pi_v<float>
     };
-    auto update_result = qs.update(updated);
+    auto update_result = qs.update(updated).execute();
     ASSERT_TRUE(update_result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_NEAR(selected.value().begin()->precise, std::numbers::e, 1e-10);
     EXPECT_NEAR(selected.value().begin()->approx, std::numbers::pi_v<float>, 1e-6);
@@ -280,10 +280,10 @@ TYPED_TEST(MixedTypesInsertUpdateTest, InsertBooleanTrue) {
     QuerySet<MixedTypes, TypeParam> qs;
     MixedTypes const                obj{.id = 0, .active = true, .name = "active_user"};
 
-    auto result = qs.insert(obj);
+    auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_TRUE(selected.value().begin()->active);
     EXPECT_EQ(selected.value().begin()->name, "active_user");
@@ -293,10 +293,10 @@ TYPED_TEST(MixedTypesInsertUpdateTest, InsertBooleanFalse) {
     QuerySet<MixedTypes, TypeParam> qs;
     MixedTypes const                obj{.id = 0, .active = false, .name = "inactive_user"};
 
-    auto result = qs.insert(obj);
+    auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_FALSE(selected.value().begin()->active);
     EXPECT_EQ(selected.value().begin()->name, "inactive_user");
@@ -306,15 +306,15 @@ TYPED_TEST(MixedTypesInsertUpdateTest, UpdateBooleanAndString) {
     QuerySet<MixedTypes, TypeParam> qs;
     MixedTypes const                obj{.id = 0, .active = false, .name = "old_name"};
 
-    auto insert_result = qs.insert(obj);
+    auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
     MixedTypes const updated{.id = static_cast<int>(id), .active = true, .name = "new_name"};
-    auto             update_result = qs.update(updated);
+    auto             update_result = qs.update(updated).execute();
     ASSERT_TRUE(update_result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_TRUE(selected.value().begin()->active);
     EXPECT_EQ(selected.value().begin()->name, "new_name");
@@ -324,10 +324,10 @@ TYPED_TEST(MixedTypesInsertUpdateTest, InsertBatchMixedTypes) {
     QuerySet<MixedTypes, TypeParam> qs;
     std::vector<MixedTypes>         batch = {{1, true, "user1"}, {2, false, "user2"}, {3, true, "user3"}};
 
-    auto result = qs.insert(batch);
+    auto result = qs.insert(batch).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 3);
     auto it = selected.value().begin();
@@ -380,10 +380,10 @@ TYPED_TEST(OptTypesInsertUpdateTest, InsertWithValues) {
     QuerySet<OptTypes, TypeParam> qs;
     OptTypes const                obj{.id = 0, .maybe_num = std::optional<int>(42), .name = "with_value"};
 
-    auto result = qs.insert(obj);
+    auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     ASSERT_TRUE(selected.value().begin()->maybe_num.has_value());
     EXPECT_EQ(selected.value().begin()->maybe_num.value(), 42);
@@ -394,10 +394,10 @@ TYPED_TEST(OptTypesInsertUpdateTest, InsertWithNull) {
     QuerySet<OptTypes, TypeParam> qs;
     OptTypes const                obj{.id = 0, .maybe_num = std::nullopt, .name = "null_value"};
 
-    auto result = qs.insert(obj);
+    auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_FALSE(selected.value().begin()->maybe_num.has_value());
     EXPECT_EQ(selected.value().begin()->name, "null_value");
@@ -407,16 +407,16 @@ TYPED_TEST(OptTypesInsertUpdateTest, UpdateFromValueToNull) {
     QuerySet<OptTypes, TypeParam> qs;
     OptTypes const                obj{.id = 0, .maybe_num = std::optional<int>(100), .name = "original"};
 
-    auto insert_result = qs.insert(obj);
+    auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
     // Update to NULL
     OptTypes const updated{.id = static_cast<int>(id), .maybe_num = std::nullopt, .name = "updated_to_null"};
-    auto           update_result = qs.update(updated);
+    auto           update_result = qs.update(updated).execute();
     ASSERT_TRUE(update_result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_FALSE(selected.value().begin()->maybe_num.has_value());
     EXPECT_EQ(selected.value().begin()->name, "updated_to_null");
@@ -426,7 +426,7 @@ TYPED_TEST(OptTypesInsertUpdateTest, UpdateFromNullToValue) {
     QuerySet<OptTypes, TypeParam> qs;
     OptTypes const                obj{.id = 0, .maybe_num = std::nullopt, .name = "null_start"};
 
-    auto insert_result = qs.insert(obj);
+    auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
@@ -434,10 +434,10 @@ TYPED_TEST(OptTypesInsertUpdateTest, UpdateFromNullToValue) {
     OptTypes const updated{
             .id = static_cast<int>(id), .maybe_num = std::optional<int>(999), .name = "updated_to_value"
     };
-    auto update_result = qs.update(updated);
+    auto update_result = qs.update(updated).execute();
     ASSERT_TRUE(update_result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     ASSERT_TRUE(selected.value().begin()->maybe_num.has_value());
     EXPECT_EQ(selected.value().begin()->maybe_num.value(), 999);
@@ -452,10 +452,10 @@ TYPED_TEST(OptTypesInsertUpdateTest, InsertBatchMixedNulls) {
              {3, std::optional<int>(3), "has_value2"},
              {4, std::nullopt, "is_null2"}};
 
-    auto result = qs.insert(batch);
+    auto result = qs.insert(batch).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 4);
 
@@ -514,10 +514,10 @@ TYPED_TEST(DataTypesInsertUpdateTest, InsertSmallBlob) {
     QuerySet<DataTypes, TypeParam> qs;
     DataTypes const                obj{.id = 0, .binary_data = {0xDE, 0xAD, 0xBE, 0xEF}, .label = "test_blob"};
 
-    auto result = qs.insert(obj);
+    auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().begin()->binary_data, (std::vector<uint8_t>{0xDE, 0xAD, 0xBE, 0xEF}));
     EXPECT_EQ(selected.value().begin()->label, "test_blob");
@@ -532,10 +532,10 @@ TYPED_TEST(DataTypesInsertUpdateTest, InsertLargeBlob) {
     }
 
     DataTypes const obj{.id = 0, .binary_data = large_data, .label = "large"};
-    auto            result = qs.insert(obj);
+    auto            result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     auto it = selected.value().begin();
     ASSERT_EQ(it->binary_data.size(), 1024);
@@ -549,10 +549,10 @@ TYPED_TEST(DataTypesInsertUpdateTest, InsertEmptyBlob) {
     QuerySet<DataTypes, TypeParam> qs;
     DataTypes const                obj{.id = 0, .binary_data = {}, .label = "empty"};
 
-    auto result = qs.insert(obj);
+    auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_TRUE(selected.value().begin()->binary_data.empty());
 }
@@ -561,16 +561,16 @@ TYPED_TEST(DataTypesInsertUpdateTest, UpdateBlob) {
     QuerySet<DataTypes, TypeParam> qs;
     DataTypes const                obj{.id = 0, .binary_data = {0x01, 0x02}, .label = "original"};
 
-    auto insert_result = qs.insert(obj);
+    auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
     // Update with different blob
     DataTypes const updated{.id = static_cast<int>(id), .binary_data = {0xFF, 0xEE, 0xDD}, .label = "updated"};
-    auto            update_result = qs.update(updated);
+    auto            update_result = qs.update(updated).execute();
     ASSERT_TRUE(update_result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().begin()->binary_data, (std::vector<uint8_t>{0xFF, 0xEE, 0xDD}));
     EXPECT_EQ(selected.value().begin()->label, "updated");
@@ -580,10 +580,10 @@ TYPED_TEST(DataTypesInsertUpdateTest, InsertBatchBlobs) {
     QuerySet<DataTypes, TypeParam> qs;
     std::vector<DataTypes> batch = {{1, {0x01}, "blob1"}, {2, {0x02, 0x03}, "blob2"}, {3, {0x04, 0x05, 0x06}, "blob3"}};
 
-    auto result = qs.insert(batch);
+    auto result = qs.insert(batch).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 3);
     auto it = selected.value().begin();
@@ -601,10 +601,10 @@ TYPED_TEST(IntTypesInsertUpdateTest, ExtremeIntegerValues) {
 
     // Min values
     IntTypes const min_obj{.id = 0, .big_num = -9223372036854775807LL - 1, .small_num = -32768};
-    auto           result = qs.insert(min_obj);
+    auto           result = qs.insert(min_obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     auto it = selected.value().begin();
     EXPECT_EQ(it->big_num, -9223372036854775807LL - 1);
@@ -616,10 +616,10 @@ TYPED_TEST(FloatTypesInsertUpdateTest, SpecialFloatValues) {
 
     // Zero, negative, very small
     FloatTypes const obj{.id = 0, .precise = 0.0, .approx = -0.0F};
-    auto             result = qs.insert(obj);
+    auto             result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_DOUBLE_EQ(selected.value().begin()->precise, 0.0);
 }
@@ -668,11 +668,11 @@ TYPED_TEST(InsertOptionsTest, BatchInsertReturnsVoid) {
     std::vector<IntTypes>         batch = {{0, 100LL, 10}, {0, 200LL, 20}, {0, 300LL, 30}};
 
     // Batch insert returns void (no IDs - SQLite's last_insert_rowid is unreliable for batch)
-    auto result = qs.insert(batch);
+    auto result = qs.insert(batch).execute();
     ASSERT_TRUE(result.has_value());
 
     // Verify data was inserted by selecting
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 3);
 }
@@ -688,10 +688,10 @@ TYPED_TEST(InsertOptionsTest, InsertWithCustomBatchSize) {
     }
 
     // Use batch_size of 10
-    auto result = qs.insert(batch, {{.batch_size = 10}});
+    auto result = qs.insert(batch, {{.batch_size = 10}}).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 100);
 }
@@ -702,10 +702,10 @@ TYPED_TEST(InsertOptionsTest, InsertBatchSizeCappedToMax) {
 
     // IntTypes has 2 non-PK fields, so max = 999/2 = 499
     // Request batch_size of 1000, should be capped to 499
-    auto result = qs.insert(batch, {{.batch_size = 1000}});
+    auto result = qs.insert(batch, {{.batch_size = 1000}}).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 2);
 }
@@ -715,11 +715,11 @@ TYPED_TEST(InsertOptionsTest, SingleInsertReturnsId) {
     IntTypes const                obj{.id = 0, .big_num = 999LL, .small_num = 99};
 
     // Single insert still returns the auto-generated ID
-    auto result = qs.insert(obj);
+    auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 1);
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 1);
     EXPECT_EQ(selected.value().begin()->big_num, 999LL);
@@ -736,10 +736,10 @@ TYPED_TEST(InsertOptionsTest, LargeBatchWithCustomChunkSize) {
     }
 
     // Use small batch_size to force multiple chunks
-    auto result = qs.insert(batch, {{.batch_size = 50}});
+    auto result = qs.insert(batch, {{.batch_size = 50}}).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 1000);
 }
@@ -749,10 +749,10 @@ TYPED_TEST(InsertOptionsTest, OptionsWithOnlyBatchSize) {
     std::vector<IntTypes>         batch = {{0, 100LL, 10}, {0, 200LL, 20}};
 
     // Only specify batch_size
-    auto result = qs.insert(batch, {{.batch_size = 1}});
+    auto result = qs.insert(batch, {{.batch_size = 1}}).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 2);
 }
@@ -808,10 +808,10 @@ TYPED_TEST(UnsignedTypesInsertUpdateTest, InsertUnsignedValues) {
     QuerySet<UnsignedTypes, TypeParam> qs;
     UnsignedTypes const                obj{.id = 0, .u_int = 4294967295U, .u_short = 65535, .u_long = 1000000UL};
 
-    auto result = qs.insert(obj);
+    auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     ASSERT_EQ(selected.value().size(), 1);
     EXPECT_EQ(selected.value().begin()->u_int, 4294967295U);
@@ -823,10 +823,10 @@ TYPED_TEST(UnsignedTypesInsertUpdateTest, InsertBatchUnsigned) {
     QuerySet<UnsignedTypes, TypeParam> qs;
     std::vector<UnsignedTypes>         batch = {{0, 100U, 10, 1000UL}, {0, 200U, 20, 2000UL}, {0, 300U, 30, 3000UL}};
 
-    auto result = qs.insert(batch);
+    auto result = qs.insert(batch).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 3);
 }
@@ -835,15 +835,15 @@ TYPED_TEST(UnsignedTypesInsertUpdateTest, UpdateUnsignedValues) {
     QuerySet<UnsignedTypes, TypeParam> qs;
     UnsignedTypes const                obj{.id = 0, .u_int = 100U, .u_short = 10, .u_long = 1000UL};
 
-    auto insert_result = qs.insert(obj);
+    auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
     UnsignedTypes const updated{.id = static_cast<int>(id), .u_int = 999U, .u_short = 99, .u_long = 9999UL};
-    auto                update_result = qs.update(updated);
+    auto                update_result = qs.update(updated).execute();
     ASSERT_TRUE(update_result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().begin()->u_int, 999U);
     EXPECT_EQ(selected.value().begin()->u_short, 99);
@@ -900,10 +900,10 @@ TYPED_TEST(LongLongTypesInsertUpdateTest, InsertLongLongValues) {
     QuerySet<LongLongTypes, TypeParam> qs;
     LongLongTypes const obj{.id = 0, .ll_signed = 9223372036854775807LL, .ll_unsigned = 9223372036854775807ULL};
 
-    auto result = qs.insert(obj);
+    auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     ASSERT_EQ(selected.value().size(), 1);
     EXPECT_EQ(selected.value().begin()->ll_signed, 9223372036854775807LL);
@@ -915,10 +915,10 @@ TYPED_TEST(LongLongTypesInsertUpdateTest, InsertNegativeLongLong) {
     QuerySet<LongLongTypes, TypeParam> qs;
     LongLongTypes const                obj{.id = 0, .ll_signed = -9223372036854775807LL, .ll_unsigned = 0ULL};
 
-    auto result = qs.insert(obj);
+    auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().begin()->ll_signed, -9223372036854775807LL);
     EXPECT_EQ(selected.value().begin()->ll_unsigned, 0ULL);
@@ -928,15 +928,15 @@ TYPED_TEST(LongLongTypesInsertUpdateTest, UpdateLongLongValues) {
     QuerySet<LongLongTypes, TypeParam> qs;
     LongLongTypes const                obj{.id = 0, .ll_signed = 100LL, .ll_unsigned = 200ULL};
 
-    auto insert_result = qs.insert(obj);
+    auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
     LongLongTypes const updated{.id = static_cast<int>(id), .ll_signed = -999LL, .ll_unsigned = 999ULL};
-    auto                update_result = qs.update(updated);
+    auto                update_result = qs.update(updated).execute();
     ASSERT_TRUE(update_result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().begin()->ll_signed, -999LL);
     EXPECT_EQ(selected.value().begin()->ll_unsigned, 999ULL);
@@ -974,7 +974,7 @@ TEST(ErrorHandlingTest, SelectFromNonExistentTable) {
 
     // Try to select from non-existent table
     QuerySet<IntTypes> qs;
-    auto               select_result = qs.select();
+    auto               select_result = qs.select().execute();
 
     // Should fail because table doesn't exist
     ASSERT_FALSE(select_result.has_value()) << "Should fail to select from non-existent table";

@@ -892,12 +892,12 @@ TEST_F(ORMErrorTest, InsertUniqueConstraintViolation) {
 
     // Insert first person
     UniqueTestPerson const person1{.id = 0, .email = "test@example.com", .value = 100};
-    auto                   result1 = qs.insert(person1);
+    auto                   result1 = qs.insert(person1).execute();
     ASSERT_TRUE(result1.has_value()) << "First insert should succeed";
 
     // Try to insert duplicate email (unique constraint violation)
     UniqueTestPerson const person2{.id = 0, .email = "test@example.com", .value = 200};
-    auto                   result2 = qs.insert(person2);
+    auto                   result2 = qs.insert(person2).execute();
 
     ASSERT_FALSE(result2.has_value()) << "Duplicate email insert should fail";
     // Should be SQLITE_CONSTRAINT
@@ -910,7 +910,7 @@ TEST_F(ORMErrorTest, BatchInsertUniqueConstraintViolation) {
 
     // Insert first person
     UniqueTestPerson const person1{.id = 0, .email = "first@example.com", .value = 100};
-    auto                   result1 = qs.insert(person1);
+    auto                   result1 = qs.insert(person1).execute();
     ASSERT_TRUE(result1.has_value()) << "First insert should succeed";
 
     // Try batch insert with one duplicate
@@ -918,7 +918,7 @@ TEST_F(ORMErrorTest, BatchInsertUniqueConstraintViolation) {
             {{0, "second@example.com", 200},
              {0, "first@example.com", 300}, // Duplicate!
              {0, "third@example.com", 400}};
-    auto result2 = qs.insert(std::span<const UniqueTestPerson>(batch));
+    auto result2 = qs.insert(std::span<const UniqueTestPerson>(batch)).execute();
 
     // Batch insert should fail due to constraint violation
     ASSERT_FALSE(result2.has_value()) << "Batch insert with duplicate should fail";
@@ -931,13 +931,13 @@ TEST_F(ORMErrorTest, UpdateUniqueConstraintViolation) {
     // Insert two unique persons
     UniqueTestPerson const person1{.id = 0, .email = "first@example.com", .value = 100};
     UniqueTestPerson const person2{.id = 0, .email = "second@example.com", .value = 200};
-    auto                   r1 = qs.insert(person1);
-    auto                   r2 = qs.insert(person2);
+    auto                   r1 = qs.insert(person1).execute();
+    auto                   r2 = qs.insert(person2).execute();
     ASSERT_TRUE(r1.has_value() && r2.has_value());
 
     // Try to update person2's email to person1's email
     UniqueTestPerson const updated{.id = static_cast<int>(r2.value()), .email = "first@example.com", .value = 300};
-    auto                   update_result = qs.update(updated);
+    auto                   update_result = qs.update(updated).execute();
 
     ASSERT_FALSE(update_result.has_value()) << "Update violating unique constraint should fail";
     EXPECT_TRUE((update_result.error().code() & 0xFF) == SQLITE_CONSTRAINT);
@@ -947,7 +947,7 @@ TEST_F(ORMErrorTest, SelectEmptyResult) {
     storm::QuerySet<ErrorTestPerson> qs;
 
     // Select from empty table - should succeed with empty result
-    auto result = qs.select();
+    auto result = qs.select().execute();
     ASSERT_TRUE(result.has_value()) << "Select from empty table should succeed";
     EXPECT_TRUE(result.value().empty()) << "Result should be empty";
 }
@@ -957,11 +957,11 @@ TEST_F(ORMErrorTest, SelectWithWhereNoMatch) {
 
     // Insert some data
     ErrorTestPerson const person{.id = 0, .name = "Alice", .age = 30};
-    auto                  insert_result = qs.insert(person);
+    auto                  insert_result = qs.insert(person).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // Select with WHERE that matches nothing
-    auto result = qs.where(storm::orm::where::field<^^ErrorTestPerson::age>() > 100).select();
+    auto result = qs.where(storm::orm::where::field<^^ErrorTestPerson::age>() > 100).select().execute();
     ASSERT_TRUE(result.has_value()) << "Select with no matches should succeed";
     EXPECT_TRUE(result.value().empty()) << "Result should be empty";
 }
@@ -971,7 +971,7 @@ TEST_F(ORMErrorTest, RemoveNonExistent) {
 
     // Try to remove non-existent person
     ErrorTestPerson const nonexistent{.id = 999, .name = "Ghost", .age = 0};
-    auto                  result = qs.remove(nonexistent);
+    auto                  result = qs.remove(nonexistent).execute();
 
     // Remove of non-existent should succeed (SQLite DELETE with no matches is not an error)
     ASSERT_TRUE(result.has_value()) << "Remove of non-existent should succeed";
@@ -1001,7 +1001,7 @@ TEST_F(ORMErrorTest, AggregateWithWhereNoMatch) {
 
     // Insert data
     ErrorTestPerson const person{.id = 0, .name = "Alice", .age = 30};
-    auto                  insert_result = qs.insert(person);
+    auto                  insert_result = qs.insert(person).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // COUNT with WHERE that matches nothing
@@ -1036,12 +1036,12 @@ TEST_F(ORMErrorTest, BatchUpdateWithConstraintViolation) {
             {{0, "first@example.com", 100}, {0, "second@example.com", 200}, {0, "third@example.com", 300}};
 
     for (const auto& p : initial) {
-        auto r = qs.insert(p);
+        auto r = qs.insert(p).execute();
         ASSERT_TRUE(r.has_value()) << "Initial insert should succeed";
     }
 
     // Get the inserted persons
-    auto select_result = qs.select();
+    auto select_result = qs.select().execute();
     ASSERT_TRUE(select_result.has_value());
     ASSERT_EQ(select_result.value().size(), 3);
 
@@ -1057,7 +1057,7 @@ TEST_F(ORMErrorTest, BatchUpdateWithConstraintViolation) {
         }
     }
 
-    auto update_result = qs.update(std::span<const UniqueTestPerson>(updates));
+    auto update_result = qs.update(std::span<const UniqueTestPerson>(updates)).execute();
     ASSERT_FALSE(update_result.has_value()) << "Batch update with constraint violation should fail";
     EXPECT_TRUE((update_result.error().code() & 0xFF) == SQLITE_CONSTRAINT);
 }
@@ -1068,7 +1068,7 @@ TEST_F(ORMErrorTest, BatchRemoveFromEmptyTable) {
     // Try to batch remove from empty table
     std::vector<ErrorTestPerson> to_remove = {{1, "Ghost1", 25}, {2, "Ghost2", 30}, {3, "Ghost3", 35}};
 
-    auto result = qs.remove(std::span<const ErrorTestPerson>(to_remove));
+    auto result = qs.remove(std::span<const ErrorTestPerson>(to_remove)).execute();
     // Should succeed - SQLite DELETE with no matches is not an error
     ASSERT_TRUE(result.has_value()) << "Batch remove of non-existent should succeed";
 }
@@ -1084,7 +1084,7 @@ TEST_F(ORMErrorTest, LargeBatchInsertThenRemove) {
     }
 
     // Batch insert returns void (not IDs) because consecutive ID assumption is unreliable
-    auto insert_result = qs.insert(std::span<const ErrorTestPerson>(batch));
+    auto insert_result = qs.insert(std::span<const ErrorTestPerson>(batch)).execute();
     ASSERT_TRUE(insert_result.has_value()) << "Large batch insert should succeed";
 
     // Verify count
@@ -1093,7 +1093,7 @@ TEST_F(ORMErrorTest, LargeBatchInsertThenRemove) {
     EXPECT_EQ(count_result.value(), 100);
 
     // Now batch remove all
-    auto select_result = qs.select();
+    auto select_result = qs.select().execute();
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().size(), 100);
 
@@ -1103,7 +1103,7 @@ TEST_F(ORMErrorTest, LargeBatchInsertThenRemove) {
         to_remove.push_back(p);
     }
 
-    auto remove_result = qs.remove(std::span<const ErrorTestPerson>(to_remove));
+    auto remove_result = qs.remove(std::span<const ErrorTestPerson>(to_remove)).execute();
     ASSERT_TRUE(remove_result.has_value()) << "Large batch remove should succeed";
 
     // Verify all removed
@@ -1120,12 +1120,12 @@ TEST_F(ORMErrorTest, InsertThenSelectWithOrderBy) {
             {{0, "Charlie", 35}, {0, "Alice", 25}, {0, "Bob", 30}, {0, "Diana", 28}, {0, "Eve", 40}};
 
     for (const auto& p : batch) {
-        auto r = qs.insert(p);
+        auto r = qs.insert(p).execute();
         ASSERT_TRUE(r.has_value());
     }
 
     // Select with ORDER BY age ascending
-    auto result = qs.order_by<^^ErrorTestPerson::age>().select();
+    auto result = qs.order_by<^^ErrorTestPerson::age>().select().execute();
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value().size(), 5);
 
@@ -1147,12 +1147,12 @@ TEST_F(ORMErrorTest, SelectWithLimitOffset) {
     // Insert 10 persons
     for (int i = 1; i <= 10; ++i) {
         ErrorTestPerson const p{.id = 0, .name = "Person" + std::to_string(i), .age = 20 + i};
-        auto                  r = qs.insert(p);
+        auto                  r = qs.insert(p).execute();
         ASSERT_TRUE(r.has_value());
     }
 
     // Select with limit 3, offset 2
-    auto result = qs.order_by<^^ErrorTestPerson::age>().limit(3).offset(2).select();
+    auto result = qs.order_by<^^ErrorTestPerson::age>().limit(3).offset(2).select().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 3);
 

@@ -57,7 +57,7 @@ namespace storm::benchmark {
 
             int total = 0;
             for (int i = 0; i < iterations; i++) {
-                auto result = Base::qs().select();
+                auto result = Base::qs().select().execute();
                 if (result.has_value()) {
                     total += result.value().size();
                 }
@@ -148,7 +148,7 @@ namespace storm::benchmark {
 
             int total = 0;
             for (int i = 0; i < iterations; i++) {
-                auto result = Base::qs().select();
+                auto result = Base::qs().select().execute();
                 if (result.has_value()) {
                     total += result.value().size();
                 }
@@ -253,7 +253,7 @@ namespace storm::benchmark {
 
             int total = 0;
             for (int i = 0; i < iterations; i++) {
-                auto result = Base::qs().select();
+                auto result = Base::qs().select().execute();
                 if (result.has_value()) {
                     total += result.value().size();
                 }
@@ -388,7 +388,7 @@ namespace storm::benchmark {
 
             int total = 0;
             for (int i = 0; i < iterations; i++) {
-                auto result = Base::qs().select();
+                auto result = Base::qs().select().execute();
                 if (result.has_value()) {
                     total += result.value().size();
                 }

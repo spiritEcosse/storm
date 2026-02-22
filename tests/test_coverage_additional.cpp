@@ -103,7 +103,7 @@ template <typename ConnType> class MultipleAggregatesTest : public ::testing::Te
         };
 
         for (const auto& person : people) {
-            auto r = qs->insert(person);
+            auto r = qs->insert(person).execute();
             ASSERT_TRUE(r.has_value());
         }
     }
@@ -201,10 +201,10 @@ TYPED_TEST(MultipleAggregatesTest, FiveAggregatesAllTypes) {
 TYPED_TEST(MultipleAggregatesTest, MultipleAggregatesEmptyTable) {
     // Test multiple aggregates on empty table (default/zero values)
     // First delete all rows
-    auto all = this->qs->select();
+    auto all = this->qs->select().execute();
     ASSERT_TRUE(all.has_value());
     for (const auto& p : all.value()) {
-        (void)this->qs->remove(p);
+        (void)this->qs->remove(p).execute();
     }
 
     auto result = this->qs->count().template sum<^^AggPerson::age>().template avg<^^AggPerson::salary>().get();
@@ -223,10 +223,10 @@ TYPED_TEST(MultipleAggregatesTest, MultipleAggregatesEmptyTable) {
 
 TYPED_TEST(MultipleAggregatesTest, SingleCountEmptyTable) {
     // Delete all rows first
-    auto all = this->qs->select();
+    auto all = this->qs->select().execute();
     ASSERT_TRUE(all.has_value());
     for (const auto& p : all.value()) {
-        (void)this->qs->remove(p);
+        (void)this->qs->remove(p).execute();
     }
 
     auto result = this->qs->count().get();
@@ -236,10 +236,10 @@ TYPED_TEST(MultipleAggregatesTest, SingleCountEmptyTable) {
 
 TYPED_TEST(MultipleAggregatesTest, SingleSumEmptyTable) {
     // Delete all rows first
-    auto all = this->qs->select();
+    auto all = this->qs->select().execute();
     ASSERT_TRUE(all.has_value());
     for (const auto& p : all.value()) {
-        (void)this->qs->remove(p);
+        (void)this->qs->remove(p).execute();
     }
 
     auto result = this->qs->template sum<^^AggPerson::age>().get();
@@ -249,10 +249,10 @@ TYPED_TEST(MultipleAggregatesTest, SingleSumEmptyTable) {
 
 TYPED_TEST(MultipleAggregatesTest, SingleAvgEmptyTable) {
     // Delete all rows first
-    auto all = this->qs->select();
+    auto all = this->qs->select().execute();
     ASSERT_TRUE(all.has_value());
     for (const auto& p : all.value()) {
-        (void)this->qs->remove(p);
+        (void)this->qs->remove(p).execute();
     }
 
     auto result = this->qs->template avg<^^AggPerson::salary>().get();
@@ -262,10 +262,10 @@ TYPED_TEST(MultipleAggregatesTest, SingleAvgEmptyTable) {
 
 TYPED_TEST(MultipleAggregatesTest, SingleMinEmptyTable) {
     // Delete all rows first
-    auto all = this->qs->select();
+    auto all = this->qs->select().execute();
     ASSERT_TRUE(all.has_value());
     for (const auto& p : all.value()) {
-        (void)this->qs->remove(p);
+        (void)this->qs->remove(p).execute();
     }
 
     auto result = this->qs->template min<^^AggPerson::score>().get();
@@ -274,10 +274,10 @@ TYPED_TEST(MultipleAggregatesTest, SingleMinEmptyTable) {
 
 TYPED_TEST(MultipleAggregatesTest, SingleMaxEmptyTable) {
     // Delete all rows first
-    auto all = this->qs->select();
+    auto all = this->qs->select().execute();
     ASSERT_TRUE(all.has_value());
     for (const auto& p : all.value()) {
-        (void)this->qs->remove(p);
+        (void)this->qs->remove(p).execute();
     }
 
     auto result = this->qs->template max<^^AggPerson::score>().get();
@@ -531,7 +531,7 @@ TYPED_TEST_SUITE(JoinTypeExtractionTest, DatabaseTypes);
 
 TYPED_TEST(JoinTypeExtractionTest, JoinExtractsFloatField) {
     // Tests extract_typed_field for float
-    auto result = this->post_qs->template join<&JoinPost::author>().select();
+    auto result = this->post_qs->template join<&JoinPost::author>().select().execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with float field should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -550,7 +550,7 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsFloatField) {
 
 TYPED_TEST(JoinTypeExtractionTest, JoinExtractsBoolField) {
     // Tests extract_typed_field for bool
-    auto result = this->post_qs->template join<&JoinPost::author>().select();
+    auto result = this->post_qs->template join<&JoinPost::author>().select().execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with bool field should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -568,7 +568,7 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsBoolField) {
 
 TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalIntWithValue) {
     // Tests extract_typed_field for optional<int> with value
-    auto result = this->post_qs->template join<&JoinPost::author>().select();
+    auto result = this->post_qs->template join<&JoinPost::author>().select().execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with optional int should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -586,7 +586,7 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalIntWithValue) {
 
 TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalIntNull) {
     // Tests extract_typed_field for optional<int> with NULL
-    auto result = this->post_qs->template join<&JoinPost::author>().select();
+    auto result = this->post_qs->template join<&JoinPost::author>().select().execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with NULL optional should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -600,7 +600,7 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalIntNull) {
 
 TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalStringWithValue) {
     // Tests extract_typed_field for optional<string> with value
-    auto result = this->post_qs->template join<&JoinPost::author>().select();
+    auto result = this->post_qs->template join<&JoinPost::author>().select().execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with optional string should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -615,7 +615,7 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalStringWithValue) {
 
 TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalStringNull) {
     // Tests extract_typed_field for optional<string> with NULL
-    auto result = this->post_qs->template join<&JoinPost::author>().select();
+    auto result = this->post_qs->template join<&JoinPost::author>().select().execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with NULL optional string should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -631,7 +631,8 @@ TYPED_TEST(JoinTypeExtractionTest, JoinWithWhere) {
     // Test JOIN with WHERE to ensure proper handling
     auto result = this->post_qs->where(storm::orm::where::field<^^JoinPost::views>() > 75)
                           .template join<&JoinPost::author>()
-                          .select();
+                          .select()
+                          .execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with WHERE should succeed";
     // Should return posts with views > 75 (Alice's posts with 100/200 and Charlie's with 150)
@@ -640,7 +641,8 @@ TYPED_TEST(JoinTypeExtractionTest, JoinWithWhere) {
 
 TYPED_TEST(JoinTypeExtractionTest, JoinWithOrderBy) {
     // Test JOIN with ORDER BY
-    auto result = this->post_qs->template join<&JoinPost::author>().template order_by<^^JoinPost::views>().select();
+    auto result =
+            this->post_qs->template join<&JoinPost::author>().template order_by<^^JoinPost::views>().select().execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with ORDER BY should succeed";
     EXPECT_EQ(result.value().size(), 4);
@@ -712,19 +714,19 @@ TYPED_TEST_SUITE(UpdateOptimizedTest, DatabaseTypes);
 TYPED_TEST(UpdateOptimizedTest, RepeatedSingleUpdates) {
     // Test repeated single updates to exercise cached statement path
     UpdatePerson p{0, "Test", 100};
-    auto         insert_result = this->qs->insert(p);
+    auto         insert_result = this->qs->insert(p).execute();
     ASSERT_TRUE(insert_result.has_value());
     int64_t id = insert_result.value();
 
     // Perform multiple single updates (exercises cached_update_stmt_ path)
     for (int i = 0; i < 10; ++i) {
         UpdatePerson updated{static_cast<int>(id), "Updated" + std::to_string(i), 100 + i};
-        auto         result = this->qs->update(updated);
+        auto         result = this->qs->update(updated).execute();
         ASSERT_TRUE(result.has_value()) << "Update iteration " << i << " should succeed";
     }
 
     // Verify final state
-    auto selected = this->qs->select();
+    auto selected = this->qs->select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().begin()->value, 109);
 }
@@ -737,11 +739,11 @@ TYPED_TEST(UpdateOptimizedTest, BatchUpdateFollowedByInsert) {
             {0, "P3", 3},
     };
 
-    auto insert_result = this->qs->insert(std::span<const UpdatePerson>(batch));
+    auto insert_result = this->qs->insert(std::span<const UpdatePerson>(batch)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // Batch update
-    auto selected = this->qs->select();
+    auto selected = this->qs->select().execute();
     ASSERT_TRUE(selected.has_value());
     ASSERT_FALSE(selected.value().empty());
 
@@ -750,11 +752,11 @@ TYPED_TEST(UpdateOptimizedTest, BatchUpdateFollowedByInsert) {
         updates.push_back({p.id, p.name, p.value + 100});
     }
 
-    auto batch_update = this->qs->update(std::span<const UpdatePerson>(updates));
+    auto batch_update = this->qs->update(std::span<const UpdatePerson>(updates)).execute();
     ASSERT_TRUE(batch_update.has_value());
 
     // Verify batch update worked
-    auto after_batch = this->qs->select();
+    auto after_batch = this->qs->select().execute();
     ASSERT_TRUE(after_batch.has_value());
     for (const auto& p : after_batch.value()) {
         EXPECT_GE(p.value, 101) << "Values should be updated";
@@ -762,11 +764,11 @@ TYPED_TEST(UpdateOptimizedTest, BatchUpdateFollowedByInsert) {
 
     // Insert a new record after batch update
     UpdatePerson new_person{0, "NewPerson", 500};
-    auto         new_insert = this->qs->insert(new_person);
+    auto         new_insert = this->qs->insert(new_person).execute();
     ASSERT_TRUE(new_insert.has_value());
 
     // Verify total count
-    auto final_result = this->qs->select();
+    auto final_result = this->qs->select().execute();
     ASSERT_TRUE(final_result.has_value());
     EXPECT_EQ(final_result.value().size(), 4);
 }
@@ -819,7 +821,7 @@ template <typename ConnType> class WhereAdditionalTest : public ::testing::Test 
         };
 
         for (const auto& person : people) {
-            (void)qs->insert(person);
+            (void)qs->insert(person).execute();
         }
     }
 
@@ -841,7 +843,7 @@ TYPED_TEST_SUITE(WhereAdditionalTest, DatabaseTypes);
 
 TYPED_TEST(WhereAdditionalTest, DoubleFieldComparison) {
     // Test WHERE with double field (score)
-    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::score>() > 85.0).select();
+    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::score>() > 85.0).select().execute();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 3); // Alice (85.5), Bob (90), Diana (95)
@@ -849,7 +851,7 @@ TYPED_TEST(WhereAdditionalTest, DoubleFieldComparison) {
 
 TYPED_TEST(WhereAdditionalTest, DoubleFieldEquality) {
     // Test WHERE with double equality
-    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::score>() == 90.0).select();
+    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::score>() == 90.0).select().execute();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 1);
@@ -858,7 +860,7 @@ TYPED_TEST(WhereAdditionalTest, DoubleFieldEquality) {
 
 TYPED_TEST(WhereAdditionalTest, LikePatternStartsWith) {
     // Test LIKE with starts-with pattern
-    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::name>().like("A%")).select();
+    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::name>().like("A%")).select().execute();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 1);
@@ -867,7 +869,7 @@ TYPED_TEST(WhereAdditionalTest, LikePatternStartsWith) {
 
 TYPED_TEST(WhereAdditionalTest, LikePatternEndsWith) {
     // Test LIKE with ends-with pattern
-    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::name>().like("%e")).select();
+    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::name>().like("%e")).select().execute();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 3); // Alice, Charlie, Eve
@@ -875,7 +877,8 @@ TYPED_TEST(WhereAdditionalTest, LikePatternEndsWith) {
 
 TYPED_TEST(WhereAdditionalTest, LikePatternContains) {
     // Test LIKE with contains pattern
-    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::name>().like("%li%")).select();
+    auto result =
+            this->qs->where(storm::orm::where::field<^^CovAddWherePerson::name>().like("%li%")).select().execute();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 2); // Alice, Charlie
@@ -890,7 +893,7 @@ TYPED_TEST(WhereAdditionalTest, ComplexNestedOrAnd) {
     auto score_cond = storm::orm::where::field<^^CovAddWherePerson::score>() > 80.0;
     auto combined   = age_cond and score_cond;
 
-    auto result = this->qs->where(combined).select();
+    auto result = this->qs->where(combined).select().execute();
 
     ASSERT_TRUE(result.has_value());
     // Alice (25, 85.5) and Diana (40, 95) should match
@@ -898,21 +901,21 @@ TYPED_TEST(WhereAdditionalTest, ComplexNestedOrAnd) {
 }
 
 TYPED_TEST(WhereAdditionalTest, WhereWithLessEqual) {
-    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::age>() <= 28).select();
+    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::age>() <= 28).select().execute();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 2); // Alice (25), Eve (28)
 }
 
 TYPED_TEST(WhereAdditionalTest, WhereWithGreaterEqual) {
-    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::age>() >= 35).select();
+    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::age>() >= 35).select().execute();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 2); // Charlie (35), Diana (40)
 }
 
 TYPED_TEST(WhereAdditionalTest, WhereWithNotEqual) {
-    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::name>() != "Alice").select();
+    auto result = this->qs->where(storm::orm::where::field<^^CovAddWherePerson::name>() != "Alice").select().execute();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 4); // Everyone except Alice

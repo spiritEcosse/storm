@@ -77,6 +77,160 @@ export namespace storm::orm::statements {
       public:
         explicit SelectStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
+        // Returns the SQL that would be executed by select()
+        [[nodiscard]] auto
+        to_sql(std::optional<JoinStatementWrapper>     join_wrapper     = std::nullopt,
+               const orm::where::ExpressionVariantPtr& where_expr       = nullptr,
+               const std::optional<int>&               limit            = std::nullopt,
+               const std::optional<int>&               offset           = std::nullopt,
+               const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt)
+                -> std::expected<std::string, Error> {
+            std::string sql = join_wrapper ? join_wrapper->get_complete_sql() : std::string(get_select_sql());
+            if (where_expr) {
+                sql += " WHERE ";
+                sql += orm::where::to_sql(*where_expr);
+            }
+            Base::template append_order_by<ConnType>(sql, order_by_wrapper);
+            Base::template append_limit_offset<ConnType>(sql, limit, offset);
+
+            auto stmt_result = conn_->prepare_cached(sql);
+            if (!stmt_result) {
+                return std::unexpected(stmt_result.error());
+            }
+            auto* stmt_ptr = *stmt_result;
+            stmt_ptr->reset();
+            if (where_expr) {
+                auto bind_result = Base::template bind_where_params<Statement, Error>(stmt_ptr, where_expr);
+                if (!bind_result) {
+                    return std::unexpected(bind_result.error());
+                }
+            }
+            return stmt_ptr->expanded_sql();
+        }
+
+        // Returns the SQL that would be executed by first() (with LIMIT 1)
+        [[nodiscard]] auto to_sql_first(
+                std::optional<JoinStatementWrapper>     join_wrapper     = std::nullopt,
+                const orm::where::ExpressionVariantPtr& where_expr       = nullptr,
+                const std::optional<int>&               offset           = std::nullopt,
+                const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt
+        ) -> std::expected<std::string, Error> {
+            std::optional<int> const limit_one = 1;
+            return to_sql(std::move(join_wrapper), where_expr, limit_one, offset, order_by_wrapper);
+        }
+
+        // Returns the SQL that would be executed by get() (with LIMIT 2)
+        [[nodiscard]] auto to_sql_get(
+                std::optional<JoinStatementWrapper>     join_wrapper     = std::nullopt,
+                const orm::where::ExpressionVariantPtr& where_expr       = nullptr,
+                const std::optional<int>&               offset           = std::nullopt,
+                const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt
+        ) -> std::expected<std::string, Error> {
+            std::optional<int> const limit_two = 2;
+            return to_sql(std::move(join_wrapper), where_expr, limit_two, offset, order_by_wrapper);
+        }
+
+        // Proxy types returned by factory methods (used by QuerySet one-liner delegations)
+        struct QueryBase {
+            SelectStatement&                    stmt;
+            std::optional<JoinStatementWrapper> join_wrapper;
+            orm::where::ExpressionVariantPtr    where_expr;
+            std::optional<int>                  limit_value;
+            std::optional<int>                  offset_value;
+            std::optional<OrderByWrapper>       order_by_wrapper;
+        };
+
+        struct Query : QueryBase {
+            [[nodiscard]] auto execute() -> std::expected<plf::hive<T>, Error> {
+                return this->stmt.execute(
+                        this->join_wrapper,
+                        this->where_expr,
+                        this->limit_value,
+                        this->offset_value,
+                        this->order_by_wrapper
+                );
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+                return this->stmt
+                        .to_sql(this->join_wrapper,
+                                this->where_expr,
+                                this->limit_value,
+                                this->offset_value,
+                                this->order_by_wrapper);
+            }
+        };
+
+        struct FirstQuery : QueryBase {
+            bool               fast_path;
+            [[nodiscard]] auto execute() -> std::expected<std::optional<T>, Error> {
+                if (fast_path) {
+                    return this->stmt.execute_one_fast();
+                }
+                return this->stmt.execute_one(
+                        this->join_wrapper,
+                        this->where_expr,
+                        this->limit_value,
+                        this->offset_value,
+                        this->order_by_wrapper
+                );
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+                return this->stmt
+                        .to_sql_first(this->join_wrapper, this->where_expr, this->offset_value, this->order_by_wrapper);
+            }
+        };
+
+        struct GetQuery : QueryBase {
+            bool               fast_path;
+            [[nodiscard]] auto execute() -> std::expected<T, Error> {
+                if (fast_path) {
+                    return this->stmt.execute_get_fast();
+                }
+                return this->stmt.execute_get(
+                        this->join_wrapper,
+                        this->where_expr,
+                        this->limit_value,
+                        this->offset_value,
+                        this->order_by_wrapper
+                );
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+                return this->stmt
+                        .to_sql_get(this->join_wrapper, this->where_expr, this->offset_value, this->order_by_wrapper);
+            }
+        };
+
+        auto
+        query(std::optional<JoinStatementWrapper>     jw,
+              const orm::where::ExpressionVariantPtr& we,
+              const std::optional<int>&               lv,
+              const std::optional<int>&               ov,
+              const std::optional<OrderByWrapper>&    ob) -> Query {
+            return {*this, jw, we, lv, ov, ob};
+        }
+
+        auto query_first(
+                std::optional<JoinStatementWrapper>     jw,
+                const orm::where::ExpressionVariantPtr& we,
+                const std::optional<int>&               lv,
+                const std::optional<int>&               ov,
+                const std::optional<OrderByWrapper>&    ob,
+                bool                                    fast
+        ) -> FirstQuery {
+            return {*this, jw, we, lv, ov, ob, fast};
+        }
+
+        auto query_get(
+                std::optional<JoinStatementWrapper>     jw,
+                const orm::where::ExpressionVariantPtr& we,
+                const std::optional<int>&               lv,
+                const std::optional<int>&               ov,
+                const std::optional<OrderByWrapper>&    ob,
+                bool                                    fast
+        ) -> GetQuery {
+            return {*this, jw, we, lv, ov, ob, fast};
+        }
+
         // Invalidate dynamic query cache
         // Call this when QuerySet::reset() is invoked to ensure fresh query on next execute
         auto invalidate_cache() noexcept -> void {
@@ -108,7 +262,7 @@ export namespace storm::orm::statements {
                 });
             }
             return execute_query_loop(stmt_ptr, [](Statement* stmt, T& obj) -> void {
-                extract_all_columns(stmt, obj);
+                Base::extract_all_columns(stmt, obj);
             });
         }
 
@@ -124,7 +278,7 @@ export namespace storm::orm::statements {
                 cached_first_stmt_ = *prepare_result;
             }
             return execute_single_row(cached_first_stmt_, [](Statement* stmt, T& obj) -> void {
-                extract_all_columns(stmt, obj);
+                Base::extract_all_columns(stmt, obj);
             });
         }
 
@@ -148,7 +302,7 @@ export namespace storm::orm::statements {
                 });
             }
             return execute_single_row(stmt_ptr, [](Statement* stmt, T& obj) -> void {
-                extract_all_columns(stmt, obj);
+                Base::extract_all_columns(stmt, obj);
             });
         }
 
@@ -163,7 +317,7 @@ export namespace storm::orm::statements {
                 cached_get_stmt_ = *prepare_result;
             }
             return execute_exact_one(cached_get_stmt_, [](Statement* stmt, T& obj) -> void {
-                extract_all_columns(stmt, obj);
+                Base::extract_all_columns(stmt, obj);
             });
         }
 
@@ -186,7 +340,9 @@ export namespace storm::orm::statements {
                     join_wrapper->extract_row(stmt, &obj);
                 });
             }
-            return execute_exact_one(stmt_ptr, [](Statement* stmt, T& obj) -> void { extract_all_columns(stmt, obj); });
+            return execute_exact_one(stmt_ptr, [](Statement* stmt, T& obj) -> void {
+                Base::extract_all_columns(stmt, obj);
+            });
         }
 
       private:
@@ -267,37 +423,6 @@ export namespace storm::orm::statements {
             cached_where_addr_ = where_addr;
 
             return cached_stmt_;
-        }
-
-        // Extract single column using Statement (database-agnostic)
-        template <size_t Index>
-        __attribute__((always_inline)) static void extract_column_fast(Statement* stmt, T& obj) noexcept {
-            if constexpr (Index < Base::field_count_) {
-                constexpr auto member = Base::all_members_[Index];
-                using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
-
-                // Handle FK fields - populate only the primary key
-                if constexpr (Base::is_fk_field(member)) {
-                    obj.[:member:]                  = FieldType{};
-                    constexpr auto fk_pk_member     = Base::template find_fk_primary_key<FieldType>();
-                    using PKType                    = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
-                    obj.[:member:].[:fk_pk_member:] = Base::template extract_column_value<PKType>(stmt, Index);
-                } else {
-                    obj.[:member:] = Base::template extract_column_value<FieldType>(stmt, Index);
-                }
-            }
-        }
-
-        // Extract all columns using Statement with fold expression
-        template <size_t... Is>
-        __attribute__((always_inline)) static void
-        extract_all_columns_impl(Statement* stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
-            ((extract_column_fast<Is>(stmt, obj)), ...);
-        }
-
-        // Fast extraction entry point using Statement (database-agnostic)
-        __attribute__((always_inline)) static void extract_all_columns(Statement* stmt, T& obj) noexcept {
-            extract_all_columns_impl(stmt, obj, typename Base::field_indices_t{});
         }
 
         // =====================================================================

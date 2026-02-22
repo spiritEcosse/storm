@@ -62,7 +62,7 @@ TYPED_TEST_SUITE(SelectTest, DatabaseTypes);
 TYPED_TEST(SelectTest, SelectFromEmptyTable) {
     QuerySet<SelectPerson, TypeParam> queryset;
 
-    auto result = queryset.select();
+    auto result = queryset.select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -75,13 +75,13 @@ TYPED_TEST(SelectTest, SelectSingleRow) {
 
     // Insert one person
     SelectPerson const alice{.id = 0, .name = "Alice", .age = 30};
-    auto               insert_result = queryset.insert(alice);
+    auto               insert_result = queryset.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     int64_t const inserted_id = insert_result.value();
 
     // Select all rows
-    auto result = queryset.select();
+    auto result = queryset.select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -100,12 +100,12 @@ TYPED_TEST(SelectTest, SelectMultipleRows) {
     // Insert multiple people
     std::vector<SelectPerson> people_to_insert = {{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}};
 
-    auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert));
+    auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert)).execute();
     ASSERT_TRUE(insert_result.has_value())
             << "INSERT failed: code=" << insert_result.error().code() << " message=" << insert_result.error().message();
 
     // Select all rows
-    auto result = queryset.select();
+    auto result = queryset.select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -134,11 +134,11 @@ TYPED_TEST(SelectTest, SelectDifferentFieldTypes) {
 
     // Insert person with specific values
     SelectPerson const dave{.id = 0, .name = "Dave", .age = 40};
-    auto               insert_result = queryset.insert(dave);
+    auto               insert_result = queryset.insert(dave).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     // Select and verify field types are correctly handled
-    auto result = queryset.select();
+    auto result = queryset.select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -161,11 +161,11 @@ TYPED_TEST(SelectTest, SelectAfterInsertAndDelete) {
     // Insert multiple people
     std::vector<SelectPerson> people_to_insert = {{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}};
 
-    auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert));
+    auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert)).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     // Select to get the auto-generated IDs
-    auto select_result = queryset.select();
+    auto select_result = queryset.select().execute();
     ASSERT_TRUE(select_result.has_value()) << "SELECT failed: " << select_result.error().message();
 
     // Find Bob's ID
@@ -180,11 +180,11 @@ TYPED_TEST(SelectTest, SelectAfterInsertAndDelete) {
 
     // Delete Bob
     SelectPerson const bob_to_delete{.id = bob_id, .name = "Bob", .age = 25};
-    auto               delete_result = queryset.remove(bob_to_delete);
+    auto               delete_result = queryset.remove(bob_to_delete).execute();
     ASSERT_TRUE(delete_result.has_value()) << "DELETE failed: " << delete_result.error().message();
 
     // Select all rows again
-    auto result = queryset.select();
+    auto result = queryset.select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -208,11 +208,11 @@ TYPED_TEST(SelectTest, SelectLargeDataset) {
         people_to_insert.emplace_back(i, std::format("SelectPerson{}", i), 20 + i);
     }
 
-    auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert));
+    auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert)).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     // Select all rows
-    auto result = queryset.select();
+    auto result = queryset.select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -238,21 +238,21 @@ TYPED_TEST(SelectTest, MultipleSelectCallsUseCaching) {
 
     // Insert test data
     SelectPerson const alice{.id = 0, .name = "Alice", .age = 30};
-    auto               insert_result = queryset.insert(alice);
+    auto               insert_result = queryset.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // First SELECT
-    auto result1 = queryset.select();
+    auto result1 = queryset.select().execute();
     ASSERT_TRUE(result1.has_value());
     EXPECT_EQ(result1.value().size(), 1);
 
     // Second SELECT (should use cached statement)
-    auto result2 = queryset.select();
+    auto result2 = queryset.select().execute();
     ASSERT_TRUE(result2.has_value());
     EXPECT_EQ(result2.value().size(), 1);
 
     // Third SELECT
-    auto result3 = queryset.select();
+    auto result3 = queryset.select().execute();
     ASSERT_TRUE(result3.has_value());
     EXPECT_EQ(result3.value().size(), 1);
 }
@@ -263,11 +263,11 @@ TYPED_TEST(SelectTest, SelectWithEmptyString) {
 
     // Insert person with empty name
     SelectPerson const anonymous{.id = 0, .name = "", .age = 25};
-    auto               insert_result = queryset.insert(anonymous);
+    auto               insert_result = queryset.insert(anonymous).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // Select and verify
-    auto result = queryset.select();
+    auto result = queryset.select().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& people = result.value();
@@ -284,11 +284,11 @@ TYPED_TEST(SelectTest, SelectPreservesRowOrder) {
     std::vector<SelectPerson> people_to_insert =
             {{1, "First", 1}, {2, "Second", 2}, {3, "Third", 3}, {4, "Fourth", 4}, {5, "Fifth", 5}};
 
-    auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert));
+    auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // Select and verify order is preserved
-    auto result = queryset.select();
+    auto result = queryset.select().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& people = result.value();

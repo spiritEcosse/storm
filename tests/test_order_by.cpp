@@ -79,7 +79,7 @@ template <typename ConnType> class OrderByTest : public ::testing::Test {
 
         QuerySet<OrderByPerson, ConnType> qs;
         for (const auto& person : test_data) {
-            auto insert_result = qs.insert(person);
+            auto insert_result = qs.insert(person).execute();
             ASSERT_TRUE(insert_result.has_value()) << "Failed to insert person: " << person.name;
         }
     }
@@ -105,7 +105,7 @@ TYPED_TEST(OrderByTest, SingleFieldDefaultAsc) {
     QuerySet<OrderByPerson, TypeParam> qs;
 
     // Order by age (default ASC)
-    auto result = qs.template order_by<^^OrderByPerson::age>().select();
+    auto result = qs.template order_by<^^OrderByPerson::age>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -128,7 +128,7 @@ TYPED_TEST(OrderByTest, SingleFieldExplicitAsc) {
     QuerySet<OrderByPerson, TypeParam> qs;
 
     // Order by age (explicit ASC)
-    auto result = qs.template order_by<^^OrderByPerson::age, true>().select();
+    auto result = qs.template order_by<^^OrderByPerson::age, true>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -146,7 +146,7 @@ TYPED_TEST(OrderByTest, SingleFieldDesc) {
     QuerySet<OrderByPerson, TypeParam> qs;
 
     // Order by age DESC
-    auto result = qs.template order_by<^^OrderByPerson::age, false>().select();
+    auto result = qs.template order_by<^^OrderByPerson::age, false>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -169,7 +169,7 @@ TYPED_TEST(OrderByTest, StringFieldAsc) {
     QuerySet<OrderByPerson, TypeParam> qs;
 
     // Order by name ASC
-    auto result = qs.template order_by<^^OrderByPerson::name>().select();
+    auto result = qs.template order_by<^^OrderByPerson::name>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -192,7 +192,7 @@ TYPED_TEST(OrderByTest, StringFieldDesc) {
     QuerySet<OrderByPerson, TypeParam> qs;
 
     // Order by name DESC
-    auto result = qs.template order_by<^^OrderByPerson::name, false>().select();
+    auto result = qs.template order_by<^^OrderByPerson::name, false>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -219,7 +219,7 @@ TYPED_TEST(OrderByTest, MultipleFieldsAllAsc) {
     QuerySet<OrderByPerson, TypeParam> qs;
 
     // Order by age ASC, then name ASC
-    auto result = qs.template order_by<^^OrderByPerson::age, ^^OrderByPerson::name>().select();
+    auto result = qs.template order_by<^^OrderByPerson::age, ^^OrderByPerson::name>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -244,7 +244,7 @@ TYPED_TEST(OrderByTest, MultipleFieldsMixedDirections) {
     QuerySet<OrderByPerson, TypeParam> qs;
 
     // Order by age ASC, then name DESC
-    auto result = qs.template order_by<^^OrderByPerson::age, true, ^^OrderByPerson::name, false>().select();
+    auto result = qs.template order_by<^^OrderByPerson::age, true, ^^OrderByPerson::name, false>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -269,7 +269,7 @@ TYPED_TEST(OrderByTest, MultipleFieldsAllDesc) {
     QuerySet<OrderByPerson, TypeParam> qs;
 
     // Order by age DESC, then name DESC
-    auto result = qs.template order_by<^^OrderByPerson::age, false, ^^OrderByPerson::name, false>().select();
+    auto result = qs.template order_by<^^OrderByPerson::age, false, ^^OrderByPerson::name, false>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -296,7 +296,8 @@ TYPED_TEST(OrderByTest, WithWhereClause) {
     // Filter active users and order by age DESC
     auto result = qs.where(field<^^OrderByPerson::is_active>() == true) // NOLINT(readability-simplify-boolean-expr)
                           .template order_by<^^OrderByPerson::age, false>()
-                          .select();
+                          .select()
+                          .execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -316,7 +317,8 @@ TYPED_TEST(OrderByTest, WhereWithMultipleOrderBy) {
     // Filter age >= 30 and order by age ASC, name DESC
     auto result = qs.where(field<^^OrderByPerson::age>() >= 30)
                           .template order_by<^^OrderByPerson::age, true, ^^OrderByPerson::name, false>()
-                          .select();
+                          .select()
+                          .execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -336,7 +338,7 @@ TYPED_TEST(OrderByTest, WithLimit) {
     QuerySet<OrderByPerson, TypeParam> qs;
 
     // Get youngest 3 people
-    auto result = qs.template order_by<^^OrderByPerson::age>().limit(3).select();
+    auto result = qs.template order_by<^^OrderByPerson::age>().limit(3).select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -352,7 +354,7 @@ TYPED_TEST(OrderByTest, WithLimitAndOffset) {
     QuerySet<OrderByPerson, TypeParam> qs;
 
     // Get people ranked 4-6 by name
-    auto result = qs.template order_by<^^OrderByPerson::name>().limit(3).offset(3).select();
+    auto result = qs.template order_by<^^OrderByPerson::name>().limit(3).offset(3).select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -367,7 +369,7 @@ TYPED_TEST(OrderByTest, OrderByBeforeLimitOffset) {
     QuerySet<OrderByPerson, TypeParam> qs;
 
     // Test that order_by works correctly with limit and offset
-    auto result = qs.template order_by<^^OrderByPerson::age, false>().limit(5).offset(2).select();
+    auto result = qs.template order_by<^^OrderByPerson::age, false>().limit(5).offset(2).select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -385,7 +387,8 @@ TYPED_TEST(OrderByTest, EmptyResult) {
     QuerySet<OrderByPerson, TypeParam> qs;
 
     // Filter that returns no results
-    auto result = qs.where(field<^^OrderByPerson::age>() > 100).template order_by<^^OrderByPerson::name>().select();
+    auto result =
+            qs.where(field<^^OrderByPerson::age>() > 100).template order_by<^^OrderByPerson::name>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& people = result.value();
@@ -396,7 +399,7 @@ TYPED_TEST(OrderByTest, BooleanField) {
     QuerySet<OrderByPerson, TypeParam> qs;
 
     // Order by boolean field
-    auto result = qs.template order_by<^^OrderByPerson::is_active, false>().select();
+    auto result = qs.template order_by<^^OrderByPerson::is_active, false>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -415,7 +418,8 @@ TYPED_TEST(OrderByTest, ChainedWithMultipleClauses) {
                           .template order_by<^^OrderByPerson::age, ^^OrderByPerson::name>()
                           .limit(5)
                           .offset(1)
-                          .select();
+                          .select()
+                          .execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -476,7 +480,7 @@ template <typename ConnType> class OrderByNullableTest : public ::testing::Test 
         };
 
         QuerySet<OrderByNullable, ConnType> qs;
-        auto                                insert_result = qs.insert(test_data);
+        auto                                insert_result = qs.insert(test_data).execute();
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
     }
 
@@ -498,7 +502,7 @@ TYPED_TEST(OrderByNullableTest, NullableFieldAsc) {
 
     // Order by nullable score ASC
     // In SQLite, NULL values sort first in ASC order by default
-    auto result = qs.template order_by<^^OrderByNullable::score>().select();
+    auto result = qs.template order_by<^^OrderByNullable::score>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -536,7 +540,7 @@ TYPED_TEST(OrderByNullableTest, NullableFieldDesc) {
 
     // Order by nullable score DESC
     // In SQLite, NULL values sort last in DESC order by default
-    auto result = qs.template order_by<^^OrderByNullable::score, false>().select();
+    auto result = qs.template order_by<^^OrderByNullable::score, false>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -572,7 +576,8 @@ TYPED_TEST(OrderByNullableTest, NullableFieldWithSecondarySort) {
     QuerySet<OrderByNullable, TypeParam> qs;
 
     // Order by score ASC, then name ASC (to have deterministic ordering within same scores)
-    auto result = qs.template order_by<^^OrderByNullable::score, true, ^^OrderByNullable::name, true>().select();
+    auto result =
+            qs.template order_by<^^OrderByNullable::score, true, ^^OrderByNullable::name, true>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -618,11 +623,11 @@ TYPED_TEST(OrderByNullableTest, AllNullValues) {
             {2, std::nullopt, "Second"},
             {3, std::nullopt, "Third"},
     };
-    auto insert_result = qs.insert(all_nulls);
+    auto insert_result = qs.insert(all_nulls).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // Order by nullable field when all values are NULL
-    auto result = qs.template order_by<^^OrderByNullable::score>().select();
+    auto result = qs.template order_by<^^OrderByNullable::score>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -675,7 +680,7 @@ template <typename ConnType> class OrderByBlobTest : public ::testing::Test {
         };
 
         QuerySet<OrderByBlob, ConnType> qs;
-        auto                            insert_result = qs.insert(test_data);
+        auto                            insert_result = qs.insert(test_data).execute();
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
     }
 
@@ -697,7 +702,7 @@ TYPED_TEST(OrderByBlobTest, BlobFieldAsc) {
 
     // Order by BLOB field ASC
     // SQLite sorts BLOBs by memcmp order (byte-by-byte comparison)
-    auto result = qs.template order_by<^^OrderByBlob::data>().select();
+    auto result = qs.template order_by<^^OrderByBlob::data>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -735,7 +740,7 @@ TYPED_TEST(OrderByBlobTest, BlobFieldDesc) {
     QuerySet<OrderByBlob, TypeParam> qs;
 
     // Order by BLOB field DESC
-    auto result = qs.template order_by<^^OrderByBlob::data, false>().select();
+    auto result = qs.template order_by<^^OrderByBlob::data, false>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -767,7 +772,7 @@ TYPED_TEST(OrderByBlobTest, BlobWithSecondarySort) {
     QuerySet<OrderByBlob, TypeParam> qs;
 
     // Order by BLOB ASC, then label ASC
-    auto result = qs.template order_by<^^OrderByBlob::data, true, ^^OrderByBlob::label, true>().select();
+    auto result = qs.template order_by<^^OrderByBlob::data, true, ^^OrderByBlob::label, true>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -788,10 +793,10 @@ TYPED_TEST(OrderByBlobTest, EmptyBlobsOnly) {
             {2, {}, "Second"},
             {3, {}, "Third"},
     };
-    auto insert_result = qs.insert(empty_blobs);
+    auto insert_result = qs.insert(empty_blobs).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto result = qs.template order_by<^^OrderByBlob::data>().select();
+    auto result = qs.template order_by<^^OrderByBlob::data>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -813,7 +818,8 @@ TYPED_TEST(OrderByTest, EmptyResultWithMultipleOrderBy) {
     // Complex ORDER BY with no matching results
     auto result = qs.where(field<^^OrderByPerson::age>() > 100)
                           .template order_by<^^OrderByPerson::age, false, ^^OrderByPerson::name, true>()
-                          .select();
+                          .select()
+                          .execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& people = result.value();
@@ -826,7 +832,7 @@ TYPED_TEST(OrderByTest, EmptyTableOrderBy) {
     (void)conn->execute("DELETE FROM OrderByPerson");
 
     QuerySet<OrderByPerson, TypeParam> qs;
-    auto                               result = qs.template order_by<^^OrderByPerson::age>().select();
+    auto                               result = qs.template order_by<^^OrderByPerson::age>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& people = result.value();
