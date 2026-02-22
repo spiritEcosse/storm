@@ -73,11 +73,11 @@ TYPED_TEST(SelectLargeTest, SelectMoreThan10KRows) {
         records.emplace_back(i, i * 10, std::format("Record_{}", i));
     }
 
-    auto insert_result = queryset.insert(std::span<const TestRecord>(records));
+    auto insert_result = queryset.insert(std::span<const TestRecord>(records)).execute();
     ASSERT_TRUE(insert_result.has_value()) << "Batch INSERT failed: " << insert_result.error().message();
 
     // SELECT all rows - this will exercise exponential growth
-    auto select_result = queryset.select();
+    auto select_result = queryset.select().execute();
     ASSERT_TRUE(select_result.has_value()) << "SELECT failed: " << select_result.error().message();
 
     const auto& retrieved = select_result.value();
@@ -113,11 +113,11 @@ TYPED_TEST(SelectLargeTest, SelectExactly10KRows) {
         records.emplace_back(i, i, std::format("R{}", i));
     }
 
-    auto insert_result = queryset.insert(std::span<const TestRecord>(records));
+    auto insert_result = queryset.insert(std::span<const TestRecord>(records)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT all rows - should fit in initial capacity exactly
-    auto select_result = queryset.select();
+    auto select_result = queryset.select().execute();
     ASSERT_TRUE(select_result.has_value());
 
     const auto& retrieved = select_result.value();
@@ -140,11 +140,11 @@ TYPED_TEST(SelectLargeTest, SelectSlightlyOver10KRows) {
         records.emplace_back(i, i, "Test");
     }
 
-    auto insert_result = queryset.insert(std::span<const TestRecord>(records));
+    auto insert_result = queryset.insert(std::span<const TestRecord>(records)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT all rows - will grow to 20K
-    auto select_result = queryset.select();
+    auto select_result = queryset.select().execute();
     ASSERT_TRUE(select_result.has_value());
 
     const auto& retrieved = select_result.value();
@@ -174,12 +174,12 @@ TYPED_TEST(SelectLargeTest, SelectVeryLargeDataset) {
             batch_records.emplace_back(record_num, record_num, std::format("B{}", batch));
         }
 
-        auto insert_result = queryset.insert(std::span<const TestRecord>(batch_records));
+        auto insert_result = queryset.insert(std::span<const TestRecord>(batch_records)).execute();
         ASSERT_TRUE(insert_result.has_value()) << "Batch " << batch << " INSERT failed";
     }
 
     // SELECT all 100K rows
-    auto select_result = queryset.select();
+    auto select_result = queryset.select().execute();
     ASSERT_TRUE(select_result.has_value()) << "SELECT 100K rows failed: " << select_result.error().message();
 
     const auto& retrieved = select_result.value();

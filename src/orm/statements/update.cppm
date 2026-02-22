@@ -133,6 +133,58 @@ export namespace storm::orm::statements {
       public:
         explicit UpdateStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
+        struct SingleQuery {
+            UpdateStatement&   stmt;
+            const T&           obj;
+            [[nodiscard]] auto execute() -> std::expected<void, Error> {
+                return stmt.execute_single_optimized(obj);
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+                return stmt.to_sql(obj);
+            }
+        };
+
+        struct BulkQuery {
+            UpdateStatement&   stmt;
+            std::span<const T> objects;
+            [[nodiscard]] auto execute() -> std::expected<void, Error> {
+                return stmt.execute(objects);
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+                return stmt.to_sql(objects);
+            }
+        };
+
+        auto query(const T& obj) -> SingleQuery {
+            return {*this, obj};
+        }
+        auto query(std::span<const T> objects) -> BulkQuery {
+            return {*this, objects};
+        }
+
+        // Returns SQL string with bound parameters inlined for a single UPDATE (for debugging)
+        [[nodiscard]] auto to_sql(const T& obj) -> std::expected<std::string, Error> {
+            auto stmt_result = conn_->prepare_cached(get_update_sql());
+            if (!stmt_result) {
+                return std::unexpected(stmt_result.error());
+            }
+            auto* stmt        = *stmt_result;
+            auto  bind_result = inline_bind_all_fields(stmt, obj, typename Base::field_indices_t{});
+            if (!bind_result) {
+                return std::unexpected(bind_result.error());
+            }
+            return stmt->expanded_sql();
+        }
+
+        // Returns SQL strings for bulk UPDATE (one SQL per object, for debugging)
+        [[nodiscard]] auto to_sql(std::span<const T> objects) -> std::expected<std::string, Error> {
+            if (objects.empty()) {
+                return std::string{};
+            }
+            // For bulk, just show the first UPDATE SQL as representative
+            return to_sql(objects[0]);
+        }
+
         // Optimized batch execute - flattened, no nested lambdas
         [[nodiscard]] __attribute__((hot)) auto execute(std::span<const T> objects) noexcept
                 -> std::expected<void, Error> {

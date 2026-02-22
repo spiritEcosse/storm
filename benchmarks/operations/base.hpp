@@ -164,14 +164,14 @@ namespace storm::benchmark {
             prepare(iterations);
 
             // 3. INSERT data
-            auto insert_result = qs().insert(data());
+            auto insert_result = qs().insert(data()).execute();
             if (!insert_result.has_value()) {
                 std::cerr << "Failed to insert test data for benchmark\n";
                 return;
             }
 
             // 4. SELECT back to get the auto-generated IDs
-            auto select_result = qs().select();
+            auto select_result = qs().select().execute();
             if (!select_result.has_value()) {
                 std::cerr << "Failed to select test data for benchmark\n";
                 return;
@@ -207,12 +207,12 @@ namespace storm::benchmark {
             int total = 0;
             if (batch_size_ == 1) {
                 for (int i = 0; i < iterations; i++) {
-                    OperationDispatcher<Op>::call(qs(), data()[i]);
+                    OperationDispatcher<Op>::call(qs(), data()[i]).execute();
                     total++;
                 }
             } else {
                 for (int i = 0; i < iterations; i++) {
-                    OperationDispatcher<Op>::call(qs(), data());
+                    OperationDispatcher<Op>::call(qs(), data()).execute();
                     total += data().size();
                 }
             }

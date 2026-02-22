@@ -726,6 +726,74 @@ namespace {
     }
 
     // ============================================================================
+    // expanded_sql() edge case tests (postgresql.cppm lines 279-288, 303-304)
+    // ============================================================================
+
+    TEST_F(PgStatementErrorTest, ExpandedSqlWithSingleQuote) {
+        // SQL with single-quoted literal exercises the ' branch (lines 279-280)
+        auto conn_result = PgConnection::open("host=localhost");
+        ASSERT_TRUE(conn_result.has_value());
+
+        auto stmt_result = conn_result->prepare_cached("SELECT 'literal' FROM t WHERE id = ?");
+        ASSERT_TRUE(stmt_result.has_value());
+
+        auto* stmt = *stmt_result;
+        (void)stmt->bind_int(1, 42);
+
+        std::string sql = stmt->expanded_sql();
+        EXPECT_FALSE(sql.empty());
+        EXPECT_NE(sql.find("'literal'"), std::string::npos);
+    }
+
+    TEST_F(PgStatementErrorTest, ExpandedSqlWithDoubleQuote) {
+        // SQL with double-quoted identifier exercises the " branch (lines 282-283)
+        auto conn_result = PgConnection::open("host=localhost");
+        ASSERT_TRUE(conn_result.has_value());
+
+        auto stmt_result = conn_result->prepare_cached("SELECT \"col\" FROM t WHERE id = ?");
+        ASSERT_TRUE(stmt_result.has_value());
+
+        auto* stmt = *stmt_result;
+        (void)stmt->bind_int(1, 42);
+
+        std::string sql = stmt->expanded_sql();
+        EXPECT_FALSE(sql.empty());
+        EXPECT_NE(sql.find("\"col\""), std::string::npos);
+    }
+
+    TEST_F(PgStatementErrorTest, ExpandedSqlWithNullParam) {
+        // NULL-bound parameter exercises the null branch (line 288)
+        auto conn_result = PgConnection::open("host=localhost");
+        ASSERT_TRUE(conn_result.has_value());
+
+        auto stmt_result = conn_result->prepare_cached("SELECT ? FROM t");
+        ASSERT_TRUE(stmt_result.has_value());
+
+        auto* stmt = *stmt_result;
+        (void)stmt->bind_null(1);
+
+        std::string sql = stmt->expanded_sql();
+        EXPECT_NE(sql.find("NULL"), std::string::npos);
+    }
+
+    TEST_F(PgStatementErrorTest, ExpandedSqlWithExtraPlaceholder) {
+        // More ? in SQL than bound params exercises the unmatched-? branch (lines 303-304)
+        auto conn_result = PgConnection::open("host=localhost");
+        ASSERT_TRUE(conn_result.has_value());
+
+        // SQL has 2 ? but we only bind 1
+        auto stmt_result = conn_result->prepare_cached("SELECT ? FROM t WHERE id = ?");
+        ASSERT_TRUE(stmt_result.has_value());
+
+        auto* stmt = *stmt_result;
+        (void)stmt->bind_int(1, 42); // Only bind first parameter
+
+        std::string sql = stmt->expanded_sql();
+        // Second ? should remain as-is
+        EXPECT_NE(sql.find('?'), std::string::npos);
+    }
+
+    // ============================================================================
     // Column extraction method tests
     // ============================================================================
 
@@ -1013,7 +1081,7 @@ namespace {
         PgQuerySet         qs;
         MockPgPerson const person{.id = 0, .name = "Alice", .age = 30};
 
-        auto result = qs.insert(person);
+        auto result = qs.insert(person).execute();
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(result.value(), 42);
     }
@@ -1025,7 +1093,7 @@ namespace {
         PgQuerySet         qs;
         MockPgPerson const person{.id = 0, .name = "Bob", .age = 25};
 
-        auto result = qs.insert(person);
+        auto result = qs.insert(person).execute();
         ASSERT_FALSE(result.has_value());
     }
 
@@ -1036,7 +1104,18 @@ namespace {
         PgQuerySet         qs;
         MockPgPerson const person{.id = 0, .name = "Charlie", .age = 35};
 
-        auto result = qs.insert(person);
+        auto result = qs.insert(person).execute();
+        ASSERT_FALSE(result.has_value());
+    }
+
+    // Covers insert.cppm lines 256-257: to_sql() prepare failure in PG branch
+    TEST_F(PgOrmInsertReturningTest, InsertToSqlPrepareError) {
+        MockPqConfig::prepare_returns_null();
+
+        PgQuerySet         qs;
+        MockPgPerson const person{.id = 0, .name = "Alice", .age = 30};
+
+        auto result = qs.insert(person).to_sql();
         ASSERT_FALSE(result.has_value());
     }
 
@@ -1046,7 +1125,7 @@ namespace {
         MockPqConfig::exec_prepared_ntuples(0);
 
         PgQuerySet qs;
-        auto       results = qs.offset(5).select();
+        auto       results = qs.offset(5).select().execute();
         ASSERT_TRUE(results.has_value());
         EXPECT_TRUE(results.value().empty());
     }
@@ -1173,6 +1252,10 @@ namespace {
             return "mock error";
         }
 
+        template <typename = void> [[nodiscard]] auto expanded_sql() const noexcept -> std::string {
+            return {};
+        }
+
         auto set_fail(bool fail) noexcept -> void {
             fail_ = fail;
         }
@@ -1264,10 +1347,25 @@ namespace {
         BindFailQuerySet   qs;
         MockPgPerson const person{.id = 0, .name = "Alice", .age = 30};
 
-        auto result = qs.insert(person);
+        auto result = qs.insert(person).execute();
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), -1);
         EXPECT_EQ(result.error().message(), "mock bind failure");
+    }
+
+    // Covers insert.cppm lines 263-264: to_sql() bind failure in PG branch
+    TEST(PgInsertReturningBindErrorTest, InsertToSqlBindFailureReturnsError) {
+        (void)BindFailQuerySet::set_default_connection("mock");
+
+        auto conn = BindFailQuerySet::get_default_connection();
+        conn->set_fail_binds(true);
+
+        BindFailQuerySet   qs;
+        MockPgPerson const person{.id = 0, .name = "Alice", .age = 30};
+
+        auto result = qs.insert(person).to_sql();
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), -1);
     }
 
 } // namespace

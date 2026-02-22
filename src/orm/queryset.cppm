@@ -52,30 +52,30 @@ export namespace storm {
         // Default constructor using default connection
         QuerySet() : conn_(get_default_connection()) {}
 
-        auto remove(const T& obj) -> std::expected<void, Error> {
-            // Use cached RemoveStatement instance for optimal performance
-            return get_remove_statement().execute_one(obj);
+        // Remove single object - returns proxy with .execute() and .to_sql()
+        auto remove(const T& obj) {
+            return get_remove_statement().query(obj);
         }
 
-        // Bulk remove operations
-        auto remove(std::span<const T> objects) -> std::expected<void, Error> {
-            return get_remove_statement().execute(objects);
+        // Bulk remove - returns proxy with .execute() and .to_sql()
+        auto remove(std::span<const T> objects) {
+            return get_remove_statement().query(objects);
         }
 
-        // Insert single object - returns the auto-generated ID
+        // Insert single object - returns proxy with .execute() and .to_sql()
+        // .execute() returns the auto-generated ID
         // (SFINAE: only accept T, not span/container)
         template <typename U = T>
             requires std::same_as<std::remove_cvref_t<U>, T>
-        auto insert(const U& obj) -> std::expected<int64_t, Error> {
-            return get_insert_statement().execute_single_optimized(obj, true);
+        auto insert(const U& obj) {
+            return get_insert_statement().query(obj);
         }
 
-        // Bulk insert (span overload)
+        // Bulk insert - returns proxy with .execute() and .to_sql()
         // NOTE: Returns void because SQLite's last_insert_rowid() only gives the last ID,
         // and assuming consecutive IDs is unreliable (triggers, gaps, etc.)
-        auto insert(std::span<const T> objects, std::optional<orm::statements::InsertOptions> opts = std::nullopt)
-                -> std::expected<void, Error> {
-            return execute_insert(objects, opts);
+        auto insert(std::span<const T> objects, std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
+            return get_insert_statement().query(objects, opts);
         }
 
         // WHERE clause support - builder pattern with method chaining using type-safe expressions
@@ -141,39 +141,32 @@ export namespace storm {
             return std::forward<decltype(self)>(self);
         }
 
-        // Select operations - returns all rows (optimized with statement caching)
+        // Select - returns proxy with .execute() and .to_sql()
         // NOTE: WHERE and JOIN state is preserved after select() for query reusability.
         // Call reset() to clear state when needed.
-        [[nodiscard]] __attribute__((hot)) auto select() -> std::expected<plf::hive<T>, Error> {
+        [[nodiscard]] __attribute__((hot)) auto select() {
             return get_select_statement()
-                    .execute(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_);
+                    .query(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_);
         }
 
-        // Returns first matching row or std::nullopt if no rows match
+        // First - returns proxy with .execute() and .to_sql()
         // Automatically applies LIMIT 1 to the query for optimal performance
-        // Usage: auto result = queryset.where(age > 30).first();
-        //        if (result.has_value() && result.value().has_value()) { ... }
-        [[nodiscard]] __attribute__((hot)) auto first() -> std::expected<std::optional<T>, Error> {
-            // Fast path: no modifiers — zero-parameter call avoids all checks + parameter passing
-            if (!where_expr_ && !join_stmt_ && !order_by_wrapper_ && !offset_value_) {
-                return get_select_statement().execute_one_fast();
-            }
+        // Usage: auto result = queryset.where(age > 30).first().execute();
+        [[nodiscard]] __attribute__((hot)) auto first() {
+            const bool fast = !where_expr_ && !join_stmt_ && !order_by_wrapper_ && !offset_value_;
             return get_select_statement()
-                    .execute_one(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_);
+                    .query_first(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_, fast);
         }
 
+        // Get - returns proxy with .execute() and .to_sql()
         // Returns exactly one matching row, or an error if 0 or >1 rows match
         // Does NOT apply LIMIT — validates uniqueness of the result (like Django's get())
         // Uses LIMIT 2 internally for efficient duplicate detection without plf::hive allocation
-        // Usage: auto result = queryset.where(id == 42).get();
-        //        if (result.has_value()) { auto& person = result.value(); }
-        [[nodiscard]] __attribute__((hot)) auto get() -> std::expected<T, Error> {
-            // Fast path: no modifiers — zero-parameter call avoids all checks + parameter passing
-            if (!where_expr_ && !join_stmt_ && !order_by_wrapper_ && !offset_value_) {
-                return get_select_statement().execute_get_fast();
-            }
+        // Usage: auto result = queryset.where(id == 42).get().execute();
+        [[nodiscard]] __attribute__((hot)) auto get() {
+            const bool fast = !where_expr_ && !join_stmt_ && !order_by_wrapper_ && !offset_value_;
             return get_select_statement()
-                    .execute_get(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_);
+                    .query_get(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_, fast);
         }
 
         // Field-specific DISTINCT support using reflection
@@ -251,17 +244,17 @@ export namespace storm {
             return std::forward<decltype(self)>(self);
         }
 
-        // Update operations (SFINAE: only accept T, not span/container)
+        // Update single object - returns proxy with .execute() and .to_sql()
+        // (SFINAE: only accept T, not span/container)
         template <typename U = T>
             requires std::same_as<std::remove_cvref_t<U>, T>
-        auto update(const U& obj) -> std::expected<void, Error> {
-            // Use cached UpdateStatement instance for optimal performance
-            return get_update_statement().execute_single_optimized(obj);
+        auto update(const U& obj) {
+            return get_update_statement().query(obj);
         }
 
-        // Bulk update operations
-        auto update(std::span<const T> objects) -> std::expected<void, Error> {
-            return get_update_statement().execute(objects);
+        // Bulk update - returns proxy with .execute() and .to_sql()
+        auto update(std::span<const T> objects) {
+            return get_update_statement().query(objects);
         }
 
         // Reset WHERE, JOIN, LIMIT, and OFFSET state
@@ -424,12 +417,6 @@ export namespace storm {
                 insert_stmt_ = std::make_unique<orm::statements::InsertStatement<T, ConnType>>(conn_);
             }
             return *insert_stmt_;
-        }
-
-        [[nodiscard]] auto execute_insert(
-                std::span<const T> objects, std::optional<orm::statements::InsertOptions> opts = std::nullopt
-        ) const noexcept -> std::expected<void, Error> {
-            return get_insert_statement().execute(objects, opts);
         }
 
         // Lazy-initialize and return cached RemoveStatement for optimal performance

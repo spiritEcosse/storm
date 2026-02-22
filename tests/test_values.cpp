@@ -145,7 +145,7 @@ TYPED_TEST(ValuesTest, SingleFieldNameWithDuplicates) {
     std::vector<ValuesPerson> people =
             {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Alice", 35}, {4, "Charlie", 40}, {5, "Bob", 28}};
 
-    auto insert_result = queryset.insert(std::span<const ValuesPerson>(people));
+    auto insert_result = queryset.insert(std::span<const ValuesPerson>(people)).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     // SELECT name (no DISTINCT — should return ALL rows including duplicates)
@@ -163,7 +163,7 @@ TYPED_TEST(ValuesTest, SingleFieldAgeWithDuplicates) {
 
     std::vector<ValuesPerson> people = {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Charlie", 30}, {4, "Dave", 25}};
 
-    auto insert_result = queryset.insert(std::span<const ValuesPerson>(people));
+    auto insert_result = queryset.insert(std::span<const ValuesPerson>(people)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT age — should return 4 rows (duplicates preserved)
@@ -204,7 +204,7 @@ TYPED_TEST(ValuesTest, SingleFieldWithSingleRow) {
     QuerySet<ValuesPerson, TypeParam> queryset;
 
     ValuesPerson const alice{.id = 0, .name = "Alice", .age = 30};
-    auto               insert_result = queryset.insert(alice);
+    auto               insert_result = queryset.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     auto result = queryset.template values<^^ValuesPerson::name>().select();
@@ -230,7 +230,7 @@ TYPED_TEST(ValuesTest, TwoFieldsNameAndAge) {
             {4, "Charlie", 30},
     };
 
-    auto insert_result = queryset.insert(std::span<const ValuesPerson>(people));
+    auto insert_result = queryset.insert(std::span<const ValuesPerson>(people)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     auto result = queryset.template values<^^ValuesPerson::name, ^^ValuesPerson::age>().select();
@@ -245,7 +245,7 @@ TYPED_TEST(ValuesTest, TwoFieldsNameAndAge) {
 TYPED_TEST(ValuesTest, VerifyReturnTypes) {
     QuerySet<ValuesPerson, TypeParam> queryset;
 
-    std::ignore = queryset.insert(ValuesPerson{.id = 0, .name = "Alice", .age = 30});
+    std::ignore = queryset.insert(ValuesPerson{.id = 0, .name = "Alice", .age = 30}).execute();
 
     // Verify return type for values on name field is hive of strings
     auto names_result = queryset.template values<^^ValuesPerson::name>().select();
@@ -278,7 +278,7 @@ TYPED_TEST(ValuesTest, DuplicatesPreserved) {
         people.emplace_back(i, "SameName", 42);
     }
 
-    auto insert_result = queryset.insert(std::span<const ValuesPerson>(people));
+    auto insert_result = queryset.insert(std::span<const ValuesPerson>(people)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // values() should return ALL 10 rows
@@ -308,7 +308,7 @@ TYPED_TEST(ValuesTest, WithWhereSingleField) {
             {0, "David", 35},
     };
 
-    auto insert_result = queryset.insert(people);
+    auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT name WHERE age > 22
@@ -331,7 +331,7 @@ TYPED_TEST(ValuesTest, WithMultipleWhereClauses) {
             {0, "David", 35},
     };
 
-    auto insert_result = queryset.insert(people);
+    auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // Chain multiple WHERE clauses (AND)
@@ -357,7 +357,7 @@ TYPED_TEST(ValuesTest, WithComplexWhere) {
             {0, "David", 40},
     };
 
-    auto insert_result = queryset.insert(people);
+    auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT name WHERE age BETWEEN 25 AND 35
@@ -375,7 +375,7 @@ TYPED_TEST(ValuesTest, WithWhereNoResults) {
     QuerySet<ValuesPerson, TypeParam> queryset;
 
     std::vector<ValuesPerson> people        = {{0, "Alice", 25}, {0, "Bob", 30}};
-    auto                      insert_result = queryset.insert(people);
+    auto                      insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     auto result = queryset.where(field<^^ValuesPerson::age>() > 100).template values<^^ValuesPerson::name>().select();
@@ -439,7 +439,7 @@ TYPED_TEST(ValuesTest, WithOrderByAsc) {
             {0, "Bob", 35},
     };
 
-    auto insert_result = queryset.insert(people);
+    auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     auto result = queryset.template order_by<^^ValuesPerson::name>().template values<^^ValuesPerson::name>().select();
@@ -464,7 +464,7 @@ TYPED_TEST(ValuesTest, WithOrderByDesc) {
             {0, "Bob", 35},
     };
 
-    auto insert_result = queryset.insert(people);
+    auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     auto result =
@@ -496,7 +496,7 @@ TYPED_TEST(ValuesTest, WithLimit) {
             {0, "Eve", 40},
     };
 
-    auto insert_result = queryset.insert(people);
+    auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     auto result = queryset.template order_by<^^ValuesPerson::name>()
@@ -526,7 +526,7 @@ TYPED_TEST(ValuesTest, WithLimitAndOffset) {
             {0, "Eve", 40},
     };
 
-    auto insert_result = queryset.insert(people);
+    auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // Skip Alice, Bob and return Charlie, Dave
@@ -557,7 +557,7 @@ TYPED_TEST(ValuesTest, WithWhereOrderByLimit) {
             {0, "Eve", 20}, // Filtered out by WHERE
     };
 
-    auto insert_result = queryset.insert(people);
+    auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     auto result = queryset.where(field<^^ValuesPerson::age>() > 25)
@@ -592,7 +592,7 @@ TYPED_TEST(ValuesTest, OptionalIntFieldWithNulls) {
             {0, "Eve", 25, "Evie"}, // Duplicate age
     };
 
-    auto insert_result = queryset.insert(people);
+    auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value()) << "Insert failed: " << insert_result.error().message();
 
     auto result = queryset.template values<^^ValuesOptionalPerson::age>().select();
@@ -623,7 +623,7 @@ TYPED_TEST(ValuesTest, OptionalStringFieldWithNulls) {
             {0, "Dave", 40, std::nullopt}, // Duplicate NULL
     };
 
-    auto insert_result = queryset.insert(people);
+    auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     auto result = queryset.template values<^^ValuesOptionalPerson::nickname>().select();
@@ -659,7 +659,7 @@ TYPED_TEST(ValuesTest, StatementReuseStability) {
             {0, "Bob", 30},
             {0, "Charlie", 35},
     };
-    std::ignore = queryset.insert(people);
+    std::ignore = queryset.insert(people).execute();
 
     for (int i = 0; i < 5; ++i) {
         auto result = queryset.template values<^^ValuesPerson::name>().select();
@@ -678,7 +678,7 @@ TYPED_TEST(ValuesTest, DifferentWhereExpressionsWithCaching) {
             {0, "Charlie", 35},
             {0, "Dave", 40},
     };
-    std::ignore = queryset.insert(people);
+    std::ignore = queryset.insert(people).execute();
 
     // Query 1: age > 25
     auto result1 = queryset.where(field<^^ValuesPerson::age>() > 25).template values<^^ValuesPerson::name>().select();

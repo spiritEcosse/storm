@@ -88,7 +88,7 @@ template <typename ConnType> class QuerySetRemoveTest : public ::testing::Test {
     static auto personExists(int person_id) -> bool {
         using namespace storm::orm::where;
         storm::QuerySet<SqlitePerson, ConnType> qs;
-        auto                                    result = qs.where(field<^^SqlitePerson::id>() == person_id).select();
+        auto result = qs.where(field<^^SqlitePerson::id>() == person_id).select().execute();
         return result.has_value() && !result.value().empty();
     }
 };
@@ -119,7 +119,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveExistingSqlitePerson) {
     EXPECT_EQ(this->countSqlitePersons(), 3) << "Should have 3 persons before removal";
 
     // Remove Alice using QuerySet.remove()
-    auto result = queryset.remove(alice);
+    auto result = queryset.remove(alice).execute();
 
     // Verify removal was successful
     ASSERT_TRUE(result.has_value()) << "Remove operation should succeed for existing person";
@@ -146,7 +146,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveNonExistentSqlitePerson) {
     EXPECT_EQ(this->countSqlitePersons(), 3) << "Should have 3 persons before removal attempt";
 
     // Attempt to remove non-existent person using QuerySet.remove()
-    auto result = queryset.remove(nonexistent);
+    auto result = queryset.remove(nonexistent).execute();
 
     // Verify operation completes (SQLite DELETE with no matching rows is not an error)
     ASSERT_TRUE(result.has_value()) << "Remove operation should not error for non-existent person";
@@ -170,13 +170,13 @@ TYPED_TEST(QuerySetRemoveTest, RemoveMultipleSqlitePersonsSequentially) {
     EXPECT_EQ(this->countSqlitePersons(), 3) << "Should have 3 persons initially";
 
     // Remove Alice using QuerySet.remove()
-    auto result1 = queryset.remove(alice);
+    auto result1 = queryset.remove(alice).execute();
     ASSERT_TRUE(result1.has_value()) << "First remove should succeed";
     // No need to check result1.value() for void std::expected - success is indicated by has_value()
     EXPECT_EQ(this->countSqlitePersons(), 2) << "Should have 2 persons after first removal";
 
     // Remove Bob using QuerySet.remove()
-    auto result2 = queryset.remove(bob);
+    auto result2 = queryset.remove(bob).execute();
     ASSERT_TRUE(result2.has_value()) << "Second remove should succeed";
     // No need to check result2.value() for void std::expected - success is indicated by has_value()
     EXPECT_EQ(this->countSqlitePersons(), 1) << "Should have 1 person after second removal";
@@ -198,7 +198,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveWithZeroId) {
     EXPECT_EQ(this->countSqlitePersons(), 3) << "Should have 3 persons initially";
 
     // Attempt to remove person with id 0 using QuerySet.remove()
-    auto result = queryset.remove(zero_person);
+    auto result = queryset.remove(zero_person).execute();
 
     // Verify operation completes without error
     ASSERT_TRUE(result.has_value()) << "Remove operation should complete for id 0";
@@ -232,7 +232,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchSmall) {
     }
 
     // Remove batch using new batch API
-    auto result = queryset.remove(std::span<const SqlitePerson>(batch_to_remove));
+    auto result = queryset.remove(std::span<const SqlitePerson>(batch_to_remove)).execute();
 
     // Verify removal was successful
     ASSERT_TRUE(result.has_value()) << "Batch remove operation should succeed";
@@ -275,7 +275,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchLarge) {
     }
 
     // Remove large batch - should use individual statements with transaction
-    auto result = queryset.remove(std::span<const SqlitePerson>(large_batch));
+    auto result = queryset.remove(std::span<const SqlitePerson>(large_batch)).execute();
 
     // Verify removal was successful
     if (!result.has_value()) {
@@ -309,7 +309,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchEmpty) {
     std::vector<SqlitePerson> empty_batch;
 
     // Attempt to remove empty batch
-    auto result = queryset.remove(std::span<const SqlitePerson>(empty_batch));
+    auto result = queryset.remove(std::span<const SqlitePerson>(empty_batch)).execute();
 
     // Verify operation completes without error
     ASSERT_TRUE(result.has_value()) << "Empty batch remove should not error";
@@ -338,7 +338,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchPartialExist) {
     };
 
     // Remove mixed batch
-    auto result = queryset.remove(std::span<const SqlitePerson>(mixed_batch));
+    auto result = queryset.remove(std::span<const SqlitePerson>(mixed_batch)).execute();
 
     // Verify operation completes successfully (non-existing deletes are not errors)
     ASSERT_TRUE(result.has_value()) << "Mixed batch remove should succeed";
@@ -369,7 +369,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchPerformance) {
     auto start_individual = std::chrono::steady_clock::now();
     for (int i = 1; i <= 50; i++) {
         SqlitePerson const person{.id = i, .name = "SqlitePerson" + std::to_string(i), .age = 20 + (i % 60)};
-        auto               result = queryset.remove(person);
+        auto               result = queryset.remove(person).execute();
         ASSERT_TRUE(result.has_value()) << "Individual remove should succeed";
     }
     auto end_individual = std::chrono::steady_clock::now();
@@ -384,7 +384,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchPerformance) {
 
     // Measure batch remove
     auto start_batch = std::chrono::steady_clock::now();
-    auto result      = queryset.remove(std::span<const SqlitePerson>(batch));
+    auto result      = queryset.remove(std::span<const SqlitePerson>(batch)).execute();
     ASSERT_TRUE(result.has_value()) << "Batch remove should succeed";
     auto end_batch      = std::chrono::steady_clock::now();
     auto duration_batch = std::chrono::duration_cast<std::chrono::microseconds>(end_batch - start_batch).count();
@@ -413,7 +413,7 @@ TYPED_TEST(QuerySetRemoveTest, InsertSingleSqlitePerson) {
     EXPECT_EQ(this->countSqlitePersons(), 3) << "Should have 3 persons initially";
 
     // Insert Dave using QuerySet.insert()
-    auto result = queryset.insert(dave);
+    auto result = queryset.insert(dave).execute();
 
     // Verify insertion was successful and ID was returned
     ASSERT_TRUE(result.has_value()) << "Insert operation should succeed: "
@@ -441,7 +441,7 @@ TYPED_TEST(QuerySetRemoveTest, InsertSmallBatch) {
     EXPECT_EQ(this->countSqlitePersons(), 3) << "Should have 3 persons initially";
 
     // Insert batch using QuerySet.insert() with span
-    auto result = queryset.insert(std::span<const SqlitePerson>(small_batch));
+    auto result = queryset.insert(std::span<const SqlitePerson>(small_batch)).execute();
 
     // Verify batch insertion was successful (returns void)
     ASSERT_TRUE(result.has_value()) << "Batch insert operation should succeed: "
@@ -451,7 +451,7 @@ TYPED_TEST(QuerySetRemoveTest, InsertSmallBatch) {
     EXPECT_EQ(this->countSqlitePersons(), 6) << "Should have 6 persons after batch insertion";
 
     // Verify persons exist by selecting and checking names
-    auto select_result = queryset.select();
+    auto select_result = queryset.select().execute();
     ASSERT_TRUE(select_result.has_value());
     bool found_dave  = false; // NOLINT(misc-const-correctness) - modified in loop
     bool found_eve   = false; // NOLINT(misc-const-correctness) - modified in loop
@@ -486,7 +486,7 @@ TYPED_TEST(QuerySetRemoveTest, InsertMediumBatch) {
     EXPECT_EQ(this->countSqlitePersons(), 3) << "Should have 3 persons initially";
 
     // Insert batch using QuerySet.insert() with span
-    auto result = queryset.insert(std::span<const SqlitePerson>(medium_batch));
+    auto result = queryset.insert(std::span<const SqlitePerson>(medium_batch)).execute();
 
     // Verify batch insertion was successful (returns void)
     ASSERT_TRUE(result.has_value()) << "Medium batch insert operation should succeed: "
@@ -510,7 +510,7 @@ TYPED_TEST(QuerySetRemoveTest, InsertLargeBatch) {
     EXPECT_EQ(this->countSqlitePersons(), 3) << "Should have 3 persons initially";
 
     // Insert batch using QuerySet.insert() with span
-    auto result = queryset.insert(std::span<const SqlitePerson>(large_batch));
+    auto result = queryset.insert(std::span<const SqlitePerson>(large_batch)).execute();
 
     // Verify batch insertion was successful (returns void)
     ASSERT_TRUE(result.has_value()) << "Large batch insert operation should succeed: "
@@ -531,7 +531,7 @@ TYPED_TEST(QuerySetRemoveTest, InsertEmptyBatch) {
     EXPECT_EQ(this->countSqlitePersons(), 3) << "Should have 3 persons initially";
 
     // Insert empty batch using QuerySet.insert() with span
-    auto result = queryset.insert(std::span<const SqlitePerson>(empty_batch));
+    auto result = queryset.insert(std::span<const SqlitePerson>(empty_batch)).execute();
 
     // Verify operation succeeds for empty batch (returns void)
     ASSERT_TRUE(result.has_value()) << "Empty batch insert operation should succeed";
@@ -568,7 +568,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunked) {
     }
 
     // Remove chunked batch - should use execute_chunked with transaction
-    auto result = queryset.remove(std::span<const SqlitePerson>(chunked_batch));
+    auto result = queryset.remove(std::span<const SqlitePerson>(chunked_batch)).execute();
 
     // Verify removal was successful
     if (!result.has_value()) {
@@ -619,7 +619,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunkedWithRemainder) {
     }
 
     // Remove chunked batch - should use execute_chunked with remainder
-    auto result = queryset.remove(std::span<const SqlitePerson>(chunked_batch));
+    auto result = queryset.remove(std::span<const SqlitePerson>(chunked_batch)).execute();
 
     // Verify removal was successful
     ASSERT_TRUE(result.has_value()) << "Chunked batch remove with remainder should succeed: "
@@ -707,7 +707,7 @@ template <typename ConnType> class QuerySetUpdateTest : public ::testing::Test {
     static auto getSqlitePerson(int person_id) -> std::optional<SqlitePerson> {
         using namespace storm::orm::where;
         storm::QuerySet<SqlitePerson, ConnType> qs;
-        auto                                    result = qs.where(field<^^SqlitePerson::id>() == person_id).select();
+        auto result = qs.where(field<^^SqlitePerson::id>() == person_id).select().execute();
         if (!result.has_value() || result.value().empty()) {
             return std::nullopt;
         }
@@ -758,7 +758,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateExistingSqlitePerson) {
 
     // Update Alice's information
     SqlitePerson const updated_alice{.id = 1, .name = "Alice Smith", .age = 31};
-    auto               result = queryset.update(updated_alice);
+    auto               result = queryset.update(updated_alice).execute();
 
     // Verify update was successful
     ASSERT_TRUE(result.has_value()) << "Update operation should succeed";
@@ -789,7 +789,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateNonExistingSqlitePerson) {
 
     // Attempt to update non-existing person
     SqlitePerson const non_existing{.id = 999, .name = "Ghost SqlitePerson", .age = 99};
-    auto               result = queryset.update(non_existing);
+    auto               result = queryset.update(non_existing).execute();
 
     // Verify operation completes without error (UPDATE of non-existing row is not an error in SQL)
     ASSERT_TRUE(result.has_value()) << "Update of non-existing person should not error";
@@ -805,7 +805,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateMultipleTimes) {
 
     // Update Alice multiple times
     SqlitePerson const alice_v1{.id = 1, .name = "Alice A", .age = 31};
-    auto               result1 = queryset.update(alice_v1);
+    auto               result1 = queryset.update(alice_v1).execute();
     ASSERT_TRUE(result1.has_value()) << "First update should succeed";
 
     auto check1 = this->getSqlitePerson(1);
@@ -814,7 +814,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateMultipleTimes) {
     EXPECT_EQ(check1->age, 31);
 
     SqlitePerson const alice_v2{.id = 1, .name = "Alice B", .age = 32};
-    auto               result2 = queryset.update(alice_v2);
+    auto               result2 = queryset.update(alice_v2).execute();
     ASSERT_TRUE(result2.has_value()) << "Second update should succeed";
 
     auto check2 = this->getSqlitePerson(1);
@@ -823,7 +823,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateMultipleTimes) {
     EXPECT_EQ(check2->age, 32);
 
     SqlitePerson const alice_v3{.id = 1, .name = "Alice C", .age = 33};
-    auto               result3 = queryset.update(alice_v3);
+    auto               result3 = queryset.update(alice_v3).execute();
     ASSERT_TRUE(result3.has_value()) << "Third update should succeed";
 
     auto check3 = this->getSqlitePerson(1);
@@ -844,7 +844,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateBatchSmall) {
             {{1, "Alice Updated", 31}, {2, "Bob Updated", 26}, {3, "Charlie Updated", 36}};
 
     // Update batch using batch API
-    auto result = queryset.update(std::span<const SqlitePerson>(batch_to_update));
+    auto result = queryset.update(std::span<const SqlitePerson>(batch_to_update)).execute();
 
     // Verify update was successful
     ASSERT_TRUE(result.has_value()) << "Batch update operation should succeed";
@@ -894,7 +894,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateBatchMedium) {
     }
 
     // Update batch
-    auto result = queryset.update(std::span<const SqlitePerson>(batch_to_update));
+    auto result = queryset.update(std::span<const SqlitePerson>(batch_to_update)).execute();
 
     // Verify update was successful
     ASSERT_TRUE(result.has_value()) << "Batch update operation should succeed";
@@ -944,7 +944,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateBatchLarge) {
     }
 
     // Update large batch - should use individual statements with transaction
-    auto result = queryset.update(std::span<const SqlitePerson>(large_batch));
+    auto result = queryset.update(std::span<const SqlitePerson>(large_batch)).execute();
 
     // Verify update was successful
     if (!result.has_value()) {
@@ -984,7 +984,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateBatchSingleElement) {
     std::vector<SqlitePerson> single_batch = {{1, "Alice BatchSingle", 99}};
 
     // Update using batch API with single element
-    auto result = queryset.update(std::span<const SqlitePerson>(single_batch));
+    auto result = queryset.update(std::span<const SqlitePerson>(single_batch)).execute();
 
     // Verify update was successful
     ASSERT_TRUE(result.has_value()) << "Single element batch update should succeed";
@@ -1016,7 +1016,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateBatchEmpty) {
     std::vector<SqlitePerson> empty_batch;
 
     // Attempt to update empty batch
-    auto result = queryset.update(std::span<const SqlitePerson>(empty_batch));
+    auto result = queryset.update(std::span<const SqlitePerson>(empty_batch)).execute();
 
     // Verify operation completes without error
     ASSERT_TRUE(result.has_value()) << "Empty batch update should not error";
@@ -1047,7 +1047,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateBatchPartialExist) {
     };
 
     // Update mixed batch
-    auto result = queryset.update(std::span<const SqlitePerson>(mixed_batch));
+    auto result = queryset.update(std::span<const SqlitePerson>(mixed_batch)).execute();
 
     // Verify operation completes successfully (non-existing updates are not errors)
     ASSERT_TRUE(result.has_value()) << "Mixed batch update should succeed";
@@ -1083,7 +1083,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateCachedStatementReuse) {
     // Perform multiple updates to verify statement caching works correctly
     for (int i = 0; i < 10; ++i) {
         SqlitePerson const updated_alice{.id = 1, .name = "Alice V" + std::to_string(i), .age = 30 + i};
-        auto               result = queryset.update(updated_alice);
+        auto               result = queryset.update(updated_alice).execute();
         ASSERT_TRUE(result.has_value()) << "Update iteration " << i << " should succeed";
 
         auto alice = this->getSqlitePerson(1);

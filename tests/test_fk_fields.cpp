@@ -85,8 +85,8 @@ TYPED_TEST(FKFieldTest, InsertWithFKField) {
     // Insert users first
     FKUser const alice{.id = 0, .name = "Alice", .age = 30};
     FKUser const bob{.id = 0, .name = "Bob", .age = 25};
-    auto         alice_result = user_qs.insert(alice);
-    auto         bob_result   = user_qs.insert(bob);
+    auto         alice_result = user_qs.insert(alice).execute();
+    auto         bob_result   = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value()) << "Alice INSERT failed: " << alice_result.error().message();
     ASSERT_TRUE(bob_result.has_value()) << "Bob INSERT failed: " << bob_result.error().message();
 
@@ -102,7 +102,7 @@ TYPED_TEST(FKFieldTest, InsertWithFKField) {
             .text     = "Hello World"
     };
 
-    auto msg_result = message_qs.insert(msg);
+    auto msg_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(msg_result.has_value()) << "FKMessage INSERT failed: " << msg_result.error().message();
 
     int64_t const msg_id = msg_result.value();
@@ -133,8 +133,8 @@ TYPED_TEST(FKFieldTest, SelectWithFKFieldPartialPopulation) {
     // Insert users
     FKUser const bob{.id = 0, .name = "Bob", .age = 25};
     FKUser const charlie{.id = 0, .name = "Charlie", .age = 35};
-    auto         bob_result     = user_qs.insert(bob);
-    auto         charlie_result = user_qs.insert(charlie);
+    auto         bob_result     = user_qs.insert(bob).execute();
+    auto         charlie_result = user_qs.insert(charlie).execute();
     ASSERT_TRUE(bob_result.has_value());
     ASSERT_TRUE(charlie_result.has_value());
     int64_t const bob_id     = bob_result.value();
@@ -147,11 +147,11 @@ TYPED_TEST(FKFieldTest, SelectWithFKFieldPartialPopulation) {
             .receiver = FKUser{.id = static_cast<int>(charlie_id), .name = "", .age = 0},
             .text     = "Test message"
     };
-    auto msg_result = message_qs.insert(msg);
+    auto msg_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(msg_result.has_value());
 
     // SELECT messages
-    auto select_result = message_qs.select();
+    auto select_result = message_qs.select().execute();
     ASSERT_TRUE(select_result.has_value()) << "SELECT failed: " << select_result.error().message();
 
     const auto& messages = select_result.value();
@@ -178,11 +178,11 @@ TYPED_TEST(FKFieldTest, BatchInsertWithFKFields) {
 
     // Insert users (IDs will be auto-generated)
     std::vector<FKUser> users       = {{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}, {0, "Dave", 40}};
-    auto                user_result = user_qs.insert(users);
+    auto                user_result = user_qs.insert(users).execute();
     ASSERT_TRUE(user_result.has_value());
 
     // SELECT to get auto-generated user IDs
-    auto user_select = user_qs.select();
+    auto user_select = user_qs.select().execute();
     ASSERT_TRUE(user_select.has_value());
     ASSERT_EQ(user_select.value().size(), 4);
 
@@ -200,11 +200,11 @@ TYPED_TEST(FKFieldTest, BatchInsertWithFKFields) {
               FKUser{.id = first_user_id, .name = "", .age = 0},
               "FKMessage from Charlie to Dave"}};
 
-    auto msg_result = message_qs.insert(messages);
+    auto msg_result = message_qs.insert(messages).execute();
     ASSERT_TRUE(msg_result.has_value()) << "Batch INSERT failed: " << msg_result.error().message();
 
     // Verify messages were stored
-    auto select_result = message_qs.select();
+    auto select_result = message_qs.select().execute();
     ASSERT_TRUE(select_result.has_value());
 
     const auto& retrieved_messages = select_result.value();
@@ -230,10 +230,10 @@ TYPED_TEST(FKFieldTest, UpdateWithFKField) {
     FKUser const charlie{.id = 0, .name = "Charlie", .age = 35};
     FKUser const dave{.id = 0, .name = "Dave", .age = 40};
 
-    auto alice_result   = user_qs.insert(alice);
-    auto bob_result     = user_qs.insert(bob);
-    auto charlie_result = user_qs.insert(charlie);
-    auto dave_result    = user_qs.insert(dave);
+    auto alice_result   = user_qs.insert(alice).execute();
+    auto bob_result     = user_qs.insert(bob).execute();
+    auto charlie_result = user_qs.insert(charlie).execute();
+    auto dave_result    = user_qs.insert(dave).execute();
 
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
@@ -252,7 +252,7 @@ TYPED_TEST(FKFieldTest, UpdateWithFKField) {
             .receiver = FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
             .text     = "Original message"
     };
-    auto msg_result = message_qs.insert(msg);
+    auto msg_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(msg_result.has_value());
 
     int64_t const msg_id = msg_result.value();
@@ -265,11 +265,11 @@ TYPED_TEST(FKFieldTest, UpdateWithFKField) {
             .text     = "Updated message"
     };
 
-    auto update_result = message_qs.update(updated_msg);
+    auto update_result = message_qs.update(updated_msg).execute();
     ASSERT_TRUE(update_result.has_value()) << "UPDATE failed: " << update_result.error().message();
 
     // Verify update
-    auto select_result = message_qs.select();
+    auto select_result = message_qs.select().execute();
     ASSERT_TRUE(select_result.has_value());
 
     const auto& messages = select_result.value();
@@ -289,8 +289,8 @@ TYPED_TEST(FKFieldTest, DeleteWithFKField) {
     // Insert users
     FKUser const alice{.id = 0, .name = "Alice", .age = 30};
     FKUser const bob{.id = 0, .name = "Bob", .age = 25};
-    auto         alice_result = user_qs.insert(alice);
-    auto         bob_result   = user_qs.insert(bob);
+    auto         alice_result = user_qs.insert(alice).execute();
+    auto         bob_result   = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
@@ -307,11 +307,11 @@ TYPED_TEST(FKFieldTest, DeleteWithFKField) {
               FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
               "FKMessage 2"}};
 
-    auto msg_result = message_qs.insert(messages);
+    auto msg_result = message_qs.insert(messages).execute();
     ASSERT_TRUE(msg_result.has_value());
 
     // SELECT to get auto-generated message IDs
-    auto msg_select = message_qs.select();
+    auto msg_select = message_qs.select().execute();
     ASSERT_TRUE(msg_select.has_value());
     ASSERT_EQ(msg_select.value().size(), 2);
 
@@ -329,11 +329,11 @@ TYPED_TEST(FKFieldTest, DeleteWithFKField) {
             .text     = ""
     };
 
-    auto delete_result = message_qs.remove(to_delete);
+    auto delete_result = message_qs.remove(to_delete).execute();
     ASSERT_TRUE(delete_result.has_value()) << "DELETE failed: " << delete_result.error().message();
 
     // Verify only one message remains
-    auto select_result = message_qs.select();
+    auto select_result = message_qs.select().execute();
     ASSERT_TRUE(select_result.has_value());
 
     const auto& remaining_messages = select_result.value();
@@ -373,8 +373,8 @@ TYPED_TEST(FKFieldTest, MultipleFKFieldsToSameType) {
     FKUser const alice{.id = 0, .name = "Alice", .age = 30};
     FKUser const bob{.id = 0, .name = "Bob", .age = 25};
 
-    auto alice_result = user_qs.insert(alice);
-    auto bob_result   = user_qs.insert(bob);
+    auto alice_result = user_qs.insert(alice).execute();
+    auto bob_result   = user_qs.insert(bob).execute();
 
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
@@ -390,11 +390,11 @@ TYPED_TEST(FKFieldTest, MultipleFKFieldsToSameType) {
             .message  = "Hello Bob!"
     };
 
-    auto conv_result = conv_qs.insert(conv);
+    auto conv_result = conv_qs.insert(conv).execute();
     ASSERT_TRUE(conv_result.has_value()) << "Conversation INSERT failed: " << conv_result.error().message();
 
     // SELECT and verify both FK fields are populated
-    auto select_result = conv_qs.select();
+    auto select_result = conv_qs.select().execute();
     ASSERT_TRUE(select_result.has_value());
 
     const auto& conversations = select_result.value();
@@ -413,8 +413,8 @@ TYPED_TEST(FKFieldTest, JoinFullyPopulatesFKObject) {
     // Insert users
     FKUser const alice{.id = 0, .name = "Alice", .age = 30};
     FKUser const bob{.id = 0, .name = "Bob", .age = 25};
-    auto         alice_result = user_qs.insert(alice);
-    auto         bob_result   = user_qs.insert(bob);
+    auto         alice_result = user_qs.insert(alice).execute();
+    auto         bob_result   = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
@@ -427,11 +427,11 @@ TYPED_TEST(FKFieldTest, JoinFullyPopulatesFKObject) {
             .receiver = FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
             .text     = "Hello from JOIN!"
     };
-    auto msg_result = message_qs.insert(msg);
+    auto msg_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(msg_result.has_value());
 
     // Phase 2: JOIN to get fully populated sender
-    auto join_result = message_qs.template join<&FKMessage::sender>().select();
+    auto join_result = message_qs.template join<&FKMessage::sender>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -461,8 +461,8 @@ TYPED_TEST(FKFieldTest, JoinMultipleFKFields) {
     // Insert users
     FKUser const alice{.id = 0, .name = "Alice", .age = 30};
     FKUser const bob{.id = 0, .name = "Bob", .age = 25};
-    auto         alice_result = user_qs.insert(alice);
-    auto         bob_result   = user_qs.insert(bob);
+    auto         alice_result = user_qs.insert(alice).execute();
+    auto         bob_result   = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
@@ -475,11 +475,11 @@ TYPED_TEST(FKFieldTest, JoinMultipleFKFields) {
             .receiver = FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
             .text     = "Hello from multi-JOIN!"
     };
-    auto msg_result = message_qs.insert(msg);
+    auto msg_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(msg_result.has_value());
 
     // Phase 3: Multi-JOIN to get BOTH sender and receiver fully populated
-    auto join_result = message_qs.template join<&FKMessage::sender, &FKMessage::receiver>().select();
+    auto join_result = message_qs.template join<&FKMessage::sender, &FKMessage::receiver>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "Multi-JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -507,7 +507,7 @@ TYPED_TEST(FKFieldTest, LeftJoinReturnsAllMessages) {
 
     // Insert only one user (Alice)
     FKUser const alice{.id = 0, .name = "Alice", .age = 30};
-    auto         alice_result = user_qs.insert(alice);
+    auto         alice_result = user_qs.insert(alice).execute();
     ASSERT_TRUE(alice_result.has_value());
     int64_t const alice_id = alice_result.value();
 
@@ -526,7 +526,7 @@ TYPED_TEST(FKFieldTest, LeftJoinReturnsAllMessages) {
     ASSERT_EQ(step_result, decltype(stmt)::NO_MORE_ROWS) << "Direct INSERT failed";
 
     // LEFT JOIN on sender - should return message even though receiver doesn't exist
-    auto join_result = message_qs.template left_join<&FKMessage::sender>().select();
+    auto join_result = message_qs.template left_join<&FKMessage::sender>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "LEFT JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -553,8 +553,8 @@ TYPED_TEST(FKFieldTest, LeftJoinMultipleFKFields) {
     // Insert users
     FKUser const alice{.id = 0, .name = "Alice", .age = 30};
     FKUser const bob{.id = 0, .name = "Bob", .age = 25};
-    auto         alice_result = user_qs.insert(alice);
-    auto         bob_result   = user_qs.insert(bob);
+    auto         alice_result = user_qs.insert(alice).execute();
+    auto         bob_result   = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
@@ -567,11 +567,11 @@ TYPED_TEST(FKFieldTest, LeftJoinMultipleFKFields) {
             .receiver = FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
             .text     = "Hello with LEFT JOIN"
     };
-    auto msg_result = message_qs.insert(msg);
+    auto msg_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(msg_result.has_value());
 
     // LEFT JOIN on both sender and receiver
-    auto join_result = message_qs.template left_join<&FKMessage::sender, &FKMessage::receiver>().select();
+    auto join_result = message_qs.template left_join<&FKMessage::sender, &FKMessage::receiver>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "Multi LEFT JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -601,9 +601,9 @@ TYPED_TEST(FKFieldTest, RightJoinBehavior) {
     FKUser const alice{.id = 0, .name = "Alice", .age = 30};
     FKUser const bob{.id = 0, .name = "Bob", .age = 25};
     FKUser const charlie{.id = 0, .name = "Charlie", .age = 35}; // Charlie has no messages
-    auto         alice_result   = user_qs.insert(alice);
-    auto         bob_result     = user_qs.insert(bob);
-    auto         charlie_result = user_qs.insert(charlie);
+    auto         alice_result   = user_qs.insert(alice).execute();
+    auto         bob_result     = user_qs.insert(bob).execute();
+    auto         charlie_result = user_qs.insert(charlie).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     ASSERT_TRUE(charlie_result.has_value());
@@ -618,12 +618,12 @@ TYPED_TEST(FKFieldTest, RightJoinBehavior) {
             .receiver = FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
             .text     = "FKMessage to Bob"
     };
-    auto msg_result = message_qs.insert(msg);
+    auto msg_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(msg_result.has_value());
 
     // RIGHT JOIN on sender - should return all users in FKUser table as senders
     // This includes Charlie even though no message references him
-    auto join_result = message_qs.template right_join<&FKMessage::sender>().select();
+    auto join_result = message_qs.template right_join<&FKMessage::sender>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "RIGHT JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -656,8 +656,8 @@ TYPED_TEST(FKFieldTest, RightJoinMultipleFKFields) {
     // Insert users
     FKUser const alice{.id = 0, .name = "Alice", .age = 30};
     FKUser const bob{.id = 0, .name = "Bob", .age = 25};
-    auto         alice_result = user_qs.insert(alice);
-    auto         bob_result   = user_qs.insert(bob);
+    auto         alice_result = user_qs.insert(alice).execute();
+    auto         bob_result   = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
@@ -670,11 +670,11 @@ TYPED_TEST(FKFieldTest, RightJoinMultipleFKFields) {
             .receiver = FKUser{.id = static_cast<int>(bob_id), .name = "", .age = 0},
             .text     = "Hello with RIGHT JOIN"
     };
-    auto msg_result = message_qs.insert(msg);
+    auto msg_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(msg_result.has_value());
 
     // RIGHT JOIN on both sender and receiver
-    auto join_result = message_qs.template right_join<&FKMessage::sender, &FKMessage::receiver>().select();
+    auto join_result = message_qs.template right_join<&FKMessage::sender, &FKMessage::receiver>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "Multi RIGHT JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -767,7 +767,7 @@ TYPED_TEST(NullableFKTest, SelectWithNullFKField) {
     ASSERT_EQ(step_result, decltype(stmt)::NO_MORE_ROWS);
 
     // SELECT should handle NULL FK gracefully
-    auto select_result = message_qs.select();
+    auto select_result = message_qs.select().execute();
     ASSERT_TRUE(select_result.has_value()) << "SELECT with NULL FK failed: " << select_result.error().message();
 
     const auto& messages = select_result.value();
@@ -788,7 +788,7 @@ TYPED_TEST(NullableFKTest, LeftJoinWithNullFKField) {
 
     // Insert a user
     FKUser const alice{.id = 0, .name = "Alice", .age = 30};
-    auto         alice_result = user_qs.insert(alice);
+    auto         alice_result = user_qs.insert(alice).execute();
     ASSERT_TRUE(alice_result.has_value());
     int64_t const alice_id = alice_result.value();
 
@@ -805,7 +805,7 @@ TYPED_TEST(NullableFKTest, LeftJoinWithNullFKField) {
     ASSERT_EQ(step_result, decltype(stmt)::NO_MORE_ROWS);
 
     // LEFT JOIN on sender - should return message even with NULL sender_id
-    auto join_result = message_qs.template left_join<&FKMessage::sender>().select();
+    auto join_result = message_qs.template left_join<&FKMessage::sender>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "LEFT JOIN with NULL FK failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -828,8 +828,8 @@ TYPED_TEST(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     // Insert users
     FKUser const alice{.id = 0, .name = "Alice", .age = 30};
     FKUser const bob{.id = 0, .name = "Bob", .age = 25};
-    auto         alice_result = user_qs.insert(alice);
-    auto         bob_result   = user_qs.insert(bob);
+    auto         alice_result = user_qs.insert(alice).execute();
+    auto         bob_result   = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     int64_t const alice_id = alice_result.value();
@@ -855,7 +855,7 @@ TYPED_TEST(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     ASSERT_EQ(stm2.step_raw(), decltype(stm2)::NO_MORE_ROWS);
 
     // LEFT JOIN should return both messages
-    auto join_result = message_qs.template left_join<&FKMessage::sender>().select();
+    auto join_result = message_qs.template left_join<&FKMessage::sender>().select().execute();
     ASSERT_TRUE(join_result.has_value());
 
     const auto& messages = join_result.value();
@@ -964,8 +964,8 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
             .id = 0, .name = "Bob Johnson", .salary = 87500.75, .is_active = false, .nickname = std::nullopt
     };
 
-    auto alice_result = employee_qs.insert(alice);
-    auto bob_result   = employee_qs.insert(bob);
+    auto alice_result = employee_qs.insert(alice).execute();
+    auto bob_result   = employee_qs.insert(bob).execute();
 
     ASSERT_TRUE(alice_result.has_value()) << "Failed to insert Alice: " << alice_result.error().message();
     ASSERT_TRUE(bob_result.has_value()) << "Failed to insert Bob: " << bob_result.error().message();
@@ -1001,14 +1001,14 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
             .budget = 75000.0
     };
 
-    auto proj1_result = project_qs.insert(proj1);
-    auto proj2_result = project_qs.insert(proj2);
+    auto proj1_result = project_qs.insert(proj1).execute();
+    auto proj2_result = project_qs.insert(proj2).execute();
 
     ASSERT_TRUE(proj1_result.has_value()) << "Failed to insert project 1: " << proj1_result.error().message();
     ASSERT_TRUE(proj2_result.has_value()) << "Failed to insert project 2: " << proj2_result.error().message();
 
     // JOIN to get projects with fully populated manager (Employee) objects
-    auto join_result = project_qs.template join<&Project::manager>().select();
+    auto join_result = project_qs.template join<&Project::manager>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
     const auto& projects = join_result.value();
@@ -1102,8 +1102,8 @@ TYPED_TEST(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
     Employee const alice{.id = 0, .name = "Alice", .salary = 95000.0, .is_active = true, .nickname = "Ally"};
     Employee const bob{.id = 0, .name = "Bob", .salary = 87500.0, .is_active = false, .nickname = std::nullopt};
 
-    auto alice_result = employee_qs.insert(alice);
-    auto bob_result   = employee_qs.insert(bob);
+    auto alice_result = employee_qs.insert(alice).execute();
+    auto bob_result   = employee_qs.insert(bob).execute();
 
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
@@ -1133,12 +1133,12 @@ TYPED_TEST(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
             .description = "Implement feature X"
     };
 
-    auto task_result = task_qs.insert(task);
+    auto task_result = task_qs.insert(task).execute();
     ASSERT_TRUE(task_result.has_value());
 
     // Multi-JOIN to populate both assignee and reviewer
     // NOLINTNEXTLINE(readability-isolate-declaration) - false positive with template
-    auto join_result = task_qs.template join<&Task::assignee, &Task::reviewer>().select();
+    auto join_result = task_qs.template join<&Task::assignee, &Task::reviewer>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "Multi-JOIN failed: " << join_result.error().message();
 
     const auto& tasks = join_result.value();
@@ -1218,7 +1218,7 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
             .timestamp   = 1700000000000LL // Large timestamp
     };
 
-    auto meas_result = measurement_qs.insert(meas);
+    auto meas_result = measurement_qs.insert(meas).execute();
     ASSERT_TRUE(meas_result.has_value()) << "Failed to insert measurement: " << meas_result.error().message();
 
     int64_t const meas_id = meas_result.value();
@@ -1234,11 +1234,11 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
             .value        = 65.3F
     };
 
-    auto reading_result = reading_qs.insert(reading);
+    auto reading_result = reading_qs.insert(reading).execute();
     ASSERT_TRUE(reading_result.has_value()) << "Failed to insert reading: " << reading_result.error().message();
 
     // JOIN to get readings with fully populated measurement
-    auto join_result = reading_qs.template join<&Reading::measurement>().select();
+    auto join_result = reading_qs.template join<&Reading::measurement>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
     const auto& readings = join_result.value();
@@ -1305,7 +1305,7 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithLongType) {
     // Insert counter with long value
     Counter const cnt{.id = 0, .name = "PageViews", .count = 9876543210L};
 
-    auto cnt_result = counter_qs.insert(cnt);
+    auto cnt_result = counter_qs.insert(cnt).execute();
     ASSERT_TRUE(cnt_result.has_value()) << "Failed to insert counter: " << cnt_result.error().message();
 
     int64_t const cnt_id = cnt_result.value();
@@ -1315,11 +1315,11 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithLongType) {
             .id = 0, .counter = Counter{.id = static_cast<int>(cnt_id), .name = "", .count = 0L}, .report_type = "Daily"
     };
 
-    auto sum_result = summary_qs.insert(sum);
+    auto sum_result = summary_qs.insert(sum).execute();
     ASSERT_TRUE(sum_result.has_value()) << "Failed to insert summary: " << sum_result.error().message();
 
     // JOIN to get summaries with fully populated counter
-    auto join_result = summary_qs.template join<&Summary::counter>().select();
+    auto join_result = summary_qs.template join<&Summary::counter>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
     const auto& summaries = join_result.value();

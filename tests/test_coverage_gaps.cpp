@@ -134,7 +134,7 @@ template <typename ConnType> class CoverageGapsTest : public ::testing::Test {
         };
 
         for (const auto& person : people) {
-            auto r = qs->insert(person);
+            auto r = qs->insert(person).execute();
             ASSERT_TRUE(r.has_value());
         }
 
@@ -579,7 +579,7 @@ template <typename ConnType> class LargeBatchTest : public ::testing::Test {
         for (size_t i = 0; i < count; ++i) {
             people.push_back({0, "Person" + std::to_string(i), static_cast<int>(i)});
         }
-        auto result = qs->insert(std::span<const BatchPerson>(people));
+        auto result = qs->insert(std::span<const BatchPerson>(people)).execute();
         ASSERT_TRUE(result.has_value()) << "Failed to insert batch";
     }
 
@@ -592,7 +592,7 @@ TYPED_TEST(LargeBatchTest, RemoveBulkSmall) {
     // Test bulk delete path (2-799 objects, uses IN clause)
     this->insert_batch(50);
 
-    auto select_result = this->qs->select();
+    auto select_result = this->qs->select().execute();
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().size(), 50);
 
@@ -604,7 +604,7 @@ TYPED_TEST(LargeBatchTest, RemoveBulkSmall) {
         to_remove.push_back(p);
     }
 
-    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove));
+    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove)).execute();
     ASSERT_TRUE(remove_result.has_value()) << "Bulk remove should succeed";
 
     // Verify all removed
@@ -617,7 +617,7 @@ TYPED_TEST(LargeBatchTest, RemoveBulkAtLimit) {
     // Test bulk delete at MAX_CHUNK_SIZE boundary (799 objects)
     this->insert_batch(799);
 
-    auto select_result = this->qs->select();
+    auto select_result = this->qs->select().execute();
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().size(), 799);
 
@@ -627,7 +627,7 @@ TYPED_TEST(LargeBatchTest, RemoveBulkAtLimit) {
         to_remove.push_back(p);
     }
 
-    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove));
+    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove)).execute();
     ASSERT_TRUE(remove_result.has_value()) << "Bulk remove at limit should succeed";
 
     auto count_result = this->qs->count().get();
@@ -640,7 +640,7 @@ TYPED_TEST(LargeBatchTest, RemoveChunkedMinimal) {
     // This triggers: 1 full chunk of 799 + remainder of 1
     this->insert_batch(800);
 
-    auto select_result = this->qs->select();
+    auto select_result = this->qs->select().execute();
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().size(), 800);
 
@@ -650,7 +650,7 @@ TYPED_TEST(LargeBatchTest, RemoveChunkedMinimal) {
         to_remove.push_back(p);
     }
 
-    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove));
+    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove)).execute();
     ASSERT_TRUE(remove_result.has_value()) << "Chunked remove should succeed";
 
     auto count_result = this->qs->count().get();
@@ -663,7 +663,7 @@ TYPED_TEST(LargeBatchTest, RemoveChunkedWithRemainder) {
     // 850 = 799 + 51 (tests remainder path)
     this->insert_batch(850);
 
-    auto select_result = this->qs->select();
+    auto select_result = this->qs->select().execute();
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().size(), 850);
 
@@ -673,7 +673,7 @@ TYPED_TEST(LargeBatchTest, RemoveChunkedWithRemainder) {
         to_remove.push_back(p);
     }
 
-    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove));
+    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove)).execute();
     ASSERT_TRUE(remove_result.has_value()) << "Chunked remove with remainder should succeed";
 
     auto count_result = this->qs->count().get();
@@ -685,7 +685,7 @@ TYPED_TEST(LargeBatchTest, RemoveChunkedMultipleChunks) {
     // Test multiple full chunks (1600 = 2*799 + 2)
     this->insert_batch(1600);
 
-    auto select_result = this->qs->select();
+    auto select_result = this->qs->select().execute();
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().size(), 1600);
 
@@ -695,7 +695,7 @@ TYPED_TEST(LargeBatchTest, RemoveChunkedMultipleChunks) {
         to_remove.push_back(p);
     }
 
-    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove));
+    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove)).execute();
     ASSERT_TRUE(remove_result.has_value()) << "Multiple chunk remove should succeed";
 
     auto count_result = this->qs->count().get();
@@ -708,7 +708,7 @@ TYPED_TEST(LargeBatchTest, RemoveChunkedExactMultiple) {
     // No remainder - tests the "no remainder" branch
     this->insert_batch(1598);
 
-    auto select_result = this->qs->select();
+    auto select_result = this->qs->select().execute();
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().size(), 1598);
 
@@ -718,7 +718,7 @@ TYPED_TEST(LargeBatchTest, RemoveChunkedExactMultiple) {
         to_remove.push_back(p);
     }
 
-    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove));
+    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove)).execute();
     ASSERT_TRUE(remove_result.has_value()) << "Exact multiple chunk remove should succeed";
 
     auto count_result = this->qs->count().get();
@@ -731,7 +731,7 @@ TYPED_TEST(LargeBatchTest, RemoveEmpty) {
 
     std::vector<BatchPerson> empty;
 
-    auto remove_result = this->qs->remove(std::span<const BatchPerson>(empty));
+    auto remove_result = this->qs->remove(std::span<const BatchPerson>(empty)).execute();
     ASSERT_TRUE(remove_result.has_value()) << "Empty remove should succeed";
 }
 
@@ -739,7 +739,7 @@ TYPED_TEST(LargeBatchTest, UpdateBulkSmall) {
     // Test bulk update path
     this->insert_batch(50);
 
-    auto select_result = this->qs->select();
+    auto select_result = this->qs->select().execute();
     ASSERT_TRUE(select_result.has_value());
 
     std::vector<BatchPerson> to_update;
@@ -748,11 +748,11 @@ TYPED_TEST(LargeBatchTest, UpdateBulkSmall) {
         to_update.push_back({p.id, p.name, p.value + 1000});
     }
 
-    auto update_result = this->qs->update(std::span<const BatchPerson>(to_update));
+    auto update_result = this->qs->update(std::span<const BatchPerson>(to_update)).execute();
     ASSERT_TRUE(update_result.has_value()) << "Bulk update should succeed";
 
     // Verify updates
-    auto verify_result = this->qs->select();
+    auto verify_result = this->qs->select().execute();
     ASSERT_TRUE(verify_result.has_value());
     for (const auto& p : verify_result.value()) {
         EXPECT_GE(p.value, 1000) << "Values should be updated";
@@ -763,7 +763,7 @@ TYPED_TEST(LargeBatchTest, UpdateChunkedWithRemainder) {
     // Test chunked update with remainder
     this->insert_batch(850);
 
-    auto select_result = this->qs->select();
+    auto select_result = this->qs->select().execute();
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().size(), 850);
 
@@ -773,11 +773,11 @@ TYPED_TEST(LargeBatchTest, UpdateChunkedWithRemainder) {
         to_update.push_back({p.id, p.name, p.value + 2000});
     }
 
-    auto update_result = this->qs->update(std::span<const BatchPerson>(to_update));
+    auto update_result = this->qs->update(std::span<const BatchPerson>(to_update)).execute();
     ASSERT_TRUE(update_result.has_value()) << "Chunked update should succeed";
 
     // Verify updates
-    auto verify_result = this->qs->select();
+    auto verify_result = this->qs->select().execute();
     ASSERT_TRUE(verify_result.has_value());
     for (const auto& p : verify_result.value()) {
         EXPECT_GE(p.value, 2000);
@@ -793,7 +793,7 @@ TYPED_TEST(LargeBatchTest, InsertLargeBatch) {
         people.push_back({0, "LargeBatch" + std::to_string(i), i});
     }
 
-    auto insert_result = this->qs->insert(std::span<const BatchPerson>(people));
+    auto insert_result = this->qs->insert(std::span<const BatchPerson>(people)).execute();
     ASSERT_TRUE(insert_result.has_value()) << "Large batch insert should succeed";
 
     auto count_result = this->qs->count().get();
@@ -867,10 +867,10 @@ TYPED_TEST(OptionalTypesTest, OptionalDoubleWithValue) {
     QuerySet<OptionalDouble, TypeParam> qs;
     OptionalDouble const                obj{.id = 0, .value = 3.14159, .label = "pi"};
 
-    auto result = qs.insert(obj);
+    auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     ASSERT_TRUE(selected.value().begin()->value.has_value());
     EXPECT_NEAR(selected.value().begin()->value.value(), 3.14159, 0.0001);
@@ -880,10 +880,10 @@ TYPED_TEST(OptionalTypesTest, OptionalDoubleNull) {
     QuerySet<OptionalDouble, TypeParam> qs;
     OptionalDouble const                obj{.id = 0, .value = std::nullopt, .label = "null_double"};
 
-    auto result = qs.insert(obj);
+    auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_FALSE(selected.value().begin()->value.has_value());
 }
@@ -897,10 +897,10 @@ TYPED_TEST(OptionalTypesTest, OptionalDoubleBatch) {
             {0, std::nullopt, "fourth"},
     };
 
-    auto result = qs.insert(std::span<const OptionalDouble>(batch));
+    auto result = qs.insert(std::span<const OptionalDouble>(batch)).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 4);
 
@@ -918,10 +918,10 @@ TYPED_TEST(OptionalTypesTest, OptionalInt64WithValue) {
     QuerySet<OptionalInt64, TypeParam> qs;
     OptionalInt64 const                obj{.id = 0, .big_value = 9223372036854775807LL, .label = "max_int64"};
 
-    auto result = qs.insert(obj);
+    auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     ASSERT_TRUE(selected.value().begin()->big_value.has_value());
     EXPECT_EQ(selected.value().begin()->big_value.value(), 9223372036854775807LL);
@@ -931,10 +931,10 @@ TYPED_TEST(OptionalTypesTest, OptionalInt64Null) {
     QuerySet<OptionalInt64, TypeParam> qs;
     OptionalInt64 const                obj{.id = 0, .big_value = std::nullopt, .label = "null_int64"};
 
-    auto result = qs.insert(obj);
+    auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_FALSE(selected.value().begin()->big_value.has_value());
 }
@@ -943,15 +943,15 @@ TYPED_TEST(OptionalTypesTest, UpdateOptionalDoubleToNull) {
     QuerySet<OptionalDouble, TypeParam> qs;
     OptionalDouble const                obj{.id = 0, .value = 100.5, .label = "to_null"};
 
-    auto insert_result = qs.insert(obj);
+    auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
     OptionalDouble const updated{.id = static_cast<int>(id), .value = std::nullopt, .label = "now_null"};
-    auto                 update_result = qs.update(updated);
+    auto                 update_result = qs.update(updated).execute();
     ASSERT_TRUE(update_result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_FALSE(selected.value().begin()->value.has_value());
 }
@@ -960,15 +960,15 @@ TYPED_TEST(OptionalTypesTest, UpdateOptionalInt64FromNull) {
     QuerySet<OptionalInt64, TypeParam> qs;
     OptionalInt64 const                obj{.id = 0, .big_value = std::nullopt, .label = "from_null"};
 
-    auto insert_result = qs.insert(obj);
+    auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
     OptionalInt64 const updated{.id = static_cast<int>(id), .big_value = 42LL, .label = "now_has_value"};
-    auto                update_result = qs.update(updated);
+    auto                update_result = qs.update(updated).execute();
     ASSERT_TRUE(update_result.has_value());
 
-    auto selected = qs.select();
+    auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     ASSERT_TRUE(selected.value().begin()->big_value.has_value());
     EXPECT_EQ(selected.value().begin()->big_value.value(), 42LL);
@@ -1022,7 +1022,7 @@ template <typename ConnType> class ComplexWhereTest : public ::testing::Test {
         };
 
         for (const auto& person : people) {
-            (void)qs->insert(person);
+            (void)qs->insert(person).execute();
         }
     }
 
@@ -1046,7 +1046,8 @@ TYPED_TEST(ComplexWhereTest, OrCondition) {
     // Test OR operator
     auto result = this->qs->where(storm::orm::where::field<^^CovGapWherePerson::age>() < 26 or
                                   storm::orm::where::field<^^CovGapWherePerson::age>() > 35)
-                          .select();
+                          .select()
+                          .execute();
 
     ASSERT_TRUE(result.has_value()) << "OR condition should work";
     EXPECT_EQ(result.value().size(), 2); // Alice (25) and Diana (40)
@@ -1059,7 +1060,7 @@ TYPED_TEST(ComplexWhereTest, OrWithAnd) {
     auto mkt      = storm::orm::where::field<^^CovGapWherePerson::department>() == "Marketing";
     auto combined = young or (old and mkt);
 
-    auto result = this->qs->where(combined).select();
+    auto result = this->qs->where(combined).select().execute();
     ASSERT_TRUE(result.has_value()) << "Complex OR/AND should work";
     EXPECT_GE(result.value().size(), 1);
 }
@@ -1070,7 +1071,7 @@ TYPED_TEST(ComplexWhereTest, MultipleOrConditions) {
                 storm::orm::where::field<^^CovGapWherePerson::age>() == 30 or
                 storm::orm::where::field<^^CovGapWherePerson::age>() == 35;
 
-    auto result = this->qs->where(cond).select();
+    auto result = this->qs->where(cond).select().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 3); // Alice (25), Bob (30), Charlie (35)
 }
@@ -1082,7 +1083,7 @@ TYPED_TEST(ComplexWhereTest, NestedAndOr) {
     auto sales_old = storm::orm::where::field<^^CovGapWherePerson::department>() == "Sales" and
                      storm::orm::where::field<^^CovGapWherePerson::age>() > 29;
 
-    auto result = this->qs->where(eng_young or sales_old).select();
+    auto result = this->qs->where(eng_young or sales_old).select().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_GE(result.value().size(), 1);
 }
@@ -1096,7 +1097,8 @@ TYPED_TEST(ComplexWhereTest, FullChainSelect) {
                           .template order_by<^^CovGapWherePerson::age>()
                           .limit(2)
                           .offset(1)
-                          .select();
+                          .select()
+                          .execute();
 
     ASSERT_TRUE(result.has_value()) << "Full chain SELECT should work";
     EXPECT_LE(result.value().size(), 2);
@@ -1175,11 +1177,11 @@ TYPED_TEST(TransactionTest, MultiRowUpdateInTransaction) {
     // Insert multiple rows
     std::vector<TxnPerson> const people = {{0, "P1", 1}, {0, "P2", 2}, {0, "P3", 3}};
 
-    auto insert_result = this->qs->insert(std::span<const TxnPerson>(people));
+    auto insert_result = this->qs->insert(std::span<const TxnPerson>(people)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // Fetch and update all
-    auto select_result = this->qs->select();
+    auto select_result = this->qs->select().execute();
     ASSERT_TRUE(select_result.has_value());
 
     std::vector<TxnPerson> updates;
@@ -1187,11 +1189,11 @@ TYPED_TEST(TransactionTest, MultiRowUpdateInTransaction) {
         updates.push_back({p.id, p.name, p.value + 100});
     }
 
-    auto update_result = this->qs->update(std::span<const TxnPerson>(updates));
+    auto update_result = this->qs->update(std::span<const TxnPerson>(updates)).execute();
     ASSERT_TRUE(update_result.has_value());
 
     // Verify all updated
-    auto verify_result = this->qs->select();
+    auto verify_result = this->qs->select().execute();
     ASSERT_TRUE(verify_result.has_value());
     for (const auto& p : verify_result.value()) {
         EXPECT_GT(p.value, 100);
@@ -1202,42 +1204,42 @@ TYPED_TEST(TransactionTest, EmptyBatchOperations) {
     std::vector<TxnPerson> empty;
 
     // Empty insert
-    auto insert_result = this->qs->insert(std::span<const TxnPerson>(empty));
+    auto insert_result = this->qs->insert(std::span<const TxnPerson>(empty)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // Empty update
-    auto update_result = this->qs->update(std::span<const TxnPerson>(empty));
+    auto update_result = this->qs->update(std::span<const TxnPerson>(empty)).execute();
     ASSERT_TRUE(update_result.has_value());
 
     // Empty remove
-    auto remove_result = this->qs->remove(std::span<const TxnPerson>(empty));
+    auto remove_result = this->qs->remove(std::span<const TxnPerson>(empty)).execute();
     ASSERT_TRUE(remove_result.has_value());
 }
 
 TYPED_TEST(TransactionTest, SingleRowOperations) {
     // Single row insert
     TxnPerson const p1{0, "Single", 42};
-    auto            insert_result = this->qs->insert(p1);
+    auto            insert_result = this->qs->insert(p1).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     int64_t const id = insert_result.value();
 
     // Single row update
     TxnPerson const updated{static_cast<int>(id), "Updated", 99};
-    auto            update_result = this->qs->update(updated);
+    auto            update_result = this->qs->update(updated).execute();
     ASSERT_TRUE(update_result.has_value());
 
     // Verify
-    auto select_result = this->qs->select();
+    auto select_result = this->qs->select().execute();
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().begin()->value, 99);
 
     // Single row remove
-    auto remove_result = this->qs->remove(updated);
+    auto remove_result = this->qs->remove(updated).execute();
     ASSERT_TRUE(remove_result.has_value());
 
     // Verify empty
-    auto empty_result = this->qs->select();
+    auto empty_result = this->qs->select().execute();
     ASSERT_TRUE(empty_result.has_value());
     EXPECT_TRUE(empty_result.value().empty());
 }
@@ -1305,10 +1307,10 @@ TYPED_TEST(CovUnsignedTypesTest, InsertMaxValues) {
             .ushort_val = std::numeric_limits<unsigned short>::max()
     };
 
-    auto result = this->qs->insert(obj);
+    auto result = this->qs->insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = this->qs->select();
+    auto selected = this->qs->select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().begin()->ushort_val, std::numeric_limits<unsigned short>::max());
 }
@@ -1316,10 +1318,10 @@ TYPED_TEST(CovUnsignedTypesTest, InsertMaxValues) {
 TYPED_TEST(CovUnsignedTypesTest, InsertZeroValues) {
     CovUnsignedTypes const obj{.id = 0, .uint_val = 0, .ulong_val = 0, .ushort_val = 0};
 
-    auto result = this->qs->insert(obj);
+    auto result = this->qs->insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = this->qs->select();
+    auto selected = this->qs->select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().begin()->uint_val, 0u);
 }
@@ -1327,10 +1329,10 @@ TYPED_TEST(CovUnsignedTypesTest, InsertZeroValues) {
 TYPED_TEST(CovUnsignedTypesTest, BatchCovUnsignedTypes) {
     std::vector<CovUnsignedTypes> batch = {{0, 100, 1000, 10}, {0, 200, 2000, 20}, {0, 300, 3000, 30}};
 
-    auto result = this->qs->insert(std::span<const CovUnsignedTypes>(batch));
+    auto result = this->qs->insert(std::span<const CovUnsignedTypes>(batch)).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = this->qs->select();
+    auto selected = this->qs->select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 3);
 }
@@ -1338,15 +1340,15 @@ TYPED_TEST(CovUnsignedTypesTest, BatchCovUnsignedTypes) {
 TYPED_TEST(CovUnsignedTypesTest, UpdateCovUnsignedTypes) {
     CovUnsignedTypes const obj{.id = 0, .uint_val = 100, .ulong_val = 1000, .ushort_val = 10};
 
-    auto insert_result = this->qs->insert(obj);
+    auto insert_result = this->qs->insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
     CovUnsignedTypes const updated{.id = static_cast<int>(id), .uint_val = 999, .ulong_val = 9999, .ushort_val = 99};
-    auto                   update_result = this->qs->update(updated);
+    auto                   update_result = this->qs->update(updated).execute();
     ASSERT_TRUE(update_result.has_value());
 
-    auto selected = this->qs->select();
+    auto selected = this->qs->select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().begin()->uint_val, 999u);
 }
@@ -1406,10 +1408,10 @@ TYPED_TEST_SUITE(FloatTypeTest, DatabaseTypes);
 TYPED_TEST(FloatTypeTest, InsertFloatValue) {
     FloatType const obj{.id = 0, .value = 3.14159f, .label = "pi"};
 
-    auto result = this->qs->insert(obj);
+    auto result = this->qs->insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = this->qs->select();
+    auto selected = this->qs->select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_NEAR(selected.value().begin()->value, 3.14159f, 0.0001f);
 }
@@ -1417,10 +1419,10 @@ TYPED_TEST(FloatTypeTest, InsertFloatValue) {
 TYPED_TEST(FloatTypeTest, InsertNegativeFloat) {
     FloatType const obj{.id = 0, .value = -123.456f, .label = "negative"};
 
-    auto result = this->qs->insert(obj);
+    auto result = this->qs->insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = this->qs->select();
+    auto selected = this->qs->select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_NEAR(selected.value().begin()->value, -123.456f, 0.001f);
 }
@@ -1432,10 +1434,10 @@ TYPED_TEST(FloatTypeTest, BatchFloatValues) {
             {0, 3.3f, "third"},
     };
 
-    auto result = this->qs->insert(std::span<const FloatType>(batch));
+    auto result = this->qs->insert(std::span<const FloatType>(batch)).execute();
     ASSERT_TRUE(result.has_value());
 
-    auto selected = this->qs->select();
+    auto selected = this->qs->select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 3);
 }
@@ -1485,7 +1487,7 @@ template <typename ConnType> class QueryResetTest : public ::testing::Test {
         };
 
         for (const auto& person : people) {
-            (void)qs->insert(person);
+            (void)qs->insert(person).execute();
         }
     }
 
@@ -1512,32 +1514,32 @@ TYPED_TEST(QueryResetTest, ResetClearsAllState) {
             .limit(2)
             .offset(1);
 
-    auto result1 = this->qs->select();
+    auto result1 = this->qs->select().execute();
     ASSERT_TRUE(result1.has_value());
     EXPECT_LE(result1.value().size(), 2);
 
     // Reset should clear all state
     this->qs->reset();
 
-    auto result2 = this->qs->select();
+    auto result2 = this->qs->select().execute();
     ASSERT_TRUE(result2.has_value());
     EXPECT_EQ(result2.value().size(), 5); // All 5 records
 }
 
 TYPED_TEST(QueryResetTest, ReuseSameQuerySetMultipleTimes) {
     // First query
-    auto result1 = this->qs->where(storm::orm::where::field<^^ResetPerson::score>() > 150).select();
+    auto result1 = this->qs->where(storm::orm::where::field<^^ResetPerson::score>() > 150).select().execute();
     ASSERT_TRUE(result1.has_value());
     EXPECT_EQ(result1.value().size(), 2); // Bob (200), Diana (180)
 
     // Second query with same WHERE (should work due to caching)
-    auto result2 = this->qs->select();
+    auto result2 = this->qs->select().execute();
     ASSERT_TRUE(result2.has_value());
     EXPECT_EQ(result2.value().size(), 2);
 
     // Reset and new query
     this->qs->reset();
-    auto result3 = this->qs->where(storm::orm::where::field<^^ResetPerson::score>() < 130).select();
+    auto result3 = this->qs->where(storm::orm::where::field<^^ResetPerson::score>() < 130).select().execute();
     ASSERT_TRUE(result3.has_value());
     EXPECT_EQ(result3.value().size(), 2); // Alice (100), Eve (120)
 }

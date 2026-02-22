@@ -243,6 +243,20 @@ export namespace storm::db::sqlite {
             return sqlite3_errmsg(sqlite3_db_handle(raw_));
         }
 
+        // Returns SQL string with all bound parameters inlined (for debugging / SQL inspection)
+        // Uses sqlite3_expanded_sql() which substitutes ? placeholders with actual bound values
+        template <typename = void> [[nodiscard]] auto expanded_sql() const -> std::string {
+            char* expanded = sqlite3_expanded_sql(raw_);
+            // LCOV_EXCL_START — sqlite3_expanded_sql returns null only on OOM, untestable via mock
+            if (expanded == nullptr) {
+                return {};
+            }
+            // LCOV_EXCL_STOP
+            std::string result(expanded);
+            sqlite3_free(expanded);
+            return result;
+        }
+
         // Constants for return codes (make them constexpr for compile-time checks)
         static constexpr int  ROW_AVAILABLE      = SQLITE_ROW;
         static constexpr int  NO_MORE_ROWS       = SQLITE_DONE;

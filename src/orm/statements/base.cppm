@@ -392,6 +392,43 @@ export namespace storm::orm::statements {
             }
         }
 
+        // =====================================================================
+        // COLUMN EXTRACTION HELPERS - Moved here from SelectStatement so that
+        // constexpr access to all_members_[Index] happens in base.cppm context
+        // (avoids P2996 experimental compiler limitation in select.cppm module)
+        // =====================================================================
+
+        // Extract single column into obj at compile-time index
+        // Statement is deduced from stmt pointer; all_members_[Index] is valid here
+        template <size_t Index, typename Statement>
+        __attribute__((always_inline)) static void extract_column_fast(Statement* stmt, T& obj) noexcept {
+            if constexpr (Index < field_count_) {
+                constexpr auto member = all_members_[Index];
+                using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
+                if constexpr (is_fk_field(member)) {
+                    obj.[:member:]                  = FieldType{};
+                    constexpr auto fk_pk_member     = find_fk_primary_key<FieldType>();
+                    using PKType                    = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
+                    obj.[:member:].[:fk_pk_member:] = extract_column_value<PKType>(stmt, Index);
+                } else {
+                    obj.[:member:] = extract_column_value<FieldType>(stmt, Index);
+                }
+            }
+        }
+
+        // Expand index sequence and extract each column
+        template <typename Statement, size_t... Is>
+        __attribute__((always_inline)) static void
+        extract_all_columns_impl(Statement* stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
+            ((extract_column_fast<Is>(stmt, obj)), ...);
+        }
+
+        // Entry point: extract all columns into obj using field_indices_t
+        template <typename Statement>
+        __attribute__((always_inline)) static void extract_all_columns(Statement* stmt, T& obj) noexcept {
+            extract_all_columns_impl(stmt, obj, field_indices_t{});
+        }
+
         // Transaction management utilities
         template <typename ConnType>
         [[nodiscard]] static auto begin_transaction(ConnType& conn) noexcept

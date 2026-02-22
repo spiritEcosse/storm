@@ -422,14 +422,14 @@ namespace storm::benchmark {
                     users.push_back(RelatedModel{.id = 0, .name = std::format("User{}", i + 1), .age = 20 + (i % 50)});
                 }
 
-                auto user_result = related_qs_.insert(users);
+                auto user_result = related_qs_.insert(users).execute();
                 if (!user_result.has_value()) {
                     std::cerr << "Failed to insert users for benchmark\n";
                     return;
                 }
 
                 // SELECT back to get the auto-generated user IDs
-                auto user_select = related_qs_.select();
+                auto user_select = related_qs_.select().execute();
                 if (!user_select.has_value()) {
                     std::cerr << "Failed to select users for benchmark\n";
                     return;
@@ -459,7 +459,7 @@ namespace storm::benchmark {
                     );
                 }
 
-                auto msg_result = Base::qs().insert(messages);
+                auto msg_result = Base::qs().insert(messages).execute();
                 if (!msg_result.has_value()) {
                     std::cerr << "Failed to insert messages for benchmark\n";
                 }

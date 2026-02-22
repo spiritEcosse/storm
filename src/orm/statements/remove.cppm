@@ -179,6 +179,71 @@ export namespace storm::orm::statements {
       public:
         explicit RemoveStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
+        struct SingleQuery {
+            RemoveStatement&   stmt;
+            const T&           obj;
+            [[nodiscard]] auto execute() -> std::expected<void, Error> {
+                return stmt.execute_one(obj);
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+                return stmt.to_sql(obj);
+            }
+        };
+
+        struct BulkQuery {
+            RemoveStatement&   stmt;
+            std::span<const T> objects;
+            [[nodiscard]] auto execute() -> std::expected<void, Error> {
+                return stmt.execute(objects);
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+                return stmt.to_sql(objects);
+            }
+        };
+
+        auto query(const T& obj) -> SingleQuery {
+            return {*this, obj};
+        }
+        auto query(std::span<const T> objects) -> BulkQuery {
+            return {*this, objects};
+        }
+
+        // Returns SQL string with bound parameters inlined for a single DELETE (for debugging)
+        [[nodiscard]] auto to_sql(const T& obj) -> std::expected<std::string, Error> {
+            auto stmt_result = conn_->prepare_cached(get_single_delete_sql());
+            if (!stmt_result) {
+                return std::unexpected(stmt_result.error());
+            }
+            auto* stmt = *stmt_result;
+            stmt->reset();
+            if (auto bind_result = bind_pk_at(*stmt, obj, 1); !bind_result) {
+                return std::unexpected(bind_result.error());
+            }
+            return stmt->expanded_sql();
+        }
+
+        // Returns SQL string with bound parameters inlined for a bulk DELETE (for debugging)
+        [[nodiscard]] auto to_sql(std::span<const T> objects) -> std::expected<std::string, Error> {
+            if (objects.empty()) {
+                return std::string{};
+            }
+            const auto& bulk_sql = get_bulk_delete_sql(objects.size());
+            auto        stmt_res = conn_->prepare_cached(bulk_sql);
+            if (!stmt_res) {
+                return std::unexpected(stmt_res.error());
+            }
+            auto* stmt = *stmt_res;
+            stmt->reset();
+            int param_index = 1;
+            for (const auto& obj : objects) {
+                if (auto result = bind_pk_at(*stmt, obj, param_index); !result) {
+                    return std::unexpected(result.error());
+                }
+                ++param_index;
+            }
+            return stmt->expanded_sql();
+        }
+
         [[nodiscard]] auto execute(std::span<const T> objects) -> std::expected<void, Error> {
             if (objects.empty()) {
                 return {};

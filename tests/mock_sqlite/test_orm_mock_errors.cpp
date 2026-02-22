@@ -81,7 +81,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
 
-        auto result = qs.insert(person);
+        auto result = qs.insert(person).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -95,7 +95,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
 
-        auto result = qs.insert(person);
+        auto result = qs.insert(person).execute();
 
         // The ORM may handle bind errors internally - verify behavior
         if (!result.has_value()) {
@@ -115,7 +115,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
 
-        auto result = qs.insert(person);
+        auto result = qs.insert(person).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
@@ -127,7 +127,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
 
-        auto result = qs.insert(person);
+        auto result = qs.insert(person).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -141,7 +141,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.select();
+        auto                 result = qs.select().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -153,7 +153,7 @@ namespace {
         MockSqlite3Config::step_fails_on_call(3, SQLITE_CORRUPT);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.select();
+        auto                 result = qs.select().execute();
 
         // The exact behavior depends on when the failure occurs
         // It should either fail or return an error
@@ -172,7 +172,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "Updated", .age = 35};
 
-        auto result = qs.update(person);
+        auto result = qs.update(person).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -184,7 +184,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "Updated", .age = 35};
 
-        auto result = qs.update(person);
+        auto result = qs.update(person).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -196,7 +196,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "Updated", .age = 35};
 
-        auto result = qs.update(person);
+        auto result = qs.update(person).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_BUSY);
@@ -212,7 +212,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "ToDelete", .age = 25};
 
-        auto result = qs.remove(person);
+        auto result = qs.remove(person).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -224,7 +224,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "ToDelete", .age = 25};
 
-        auto result = qs.remove(person);
+        auto result = qs.remove(person).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_LOCKED);
@@ -280,7 +280,7 @@ namespace {
                 {.id = 0, .name = "Bob", .age = 25},
         };
 
-        auto result = qs.insert(std::span{people});
+        auto result = qs.insert(std::span{people}).execute();
 
         // The ORM may not use exec() for transactions, or may handle the error differently
         if (!result.has_value()) {
@@ -371,7 +371,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
 
-        auto result = qs.insert(person);
+        auto result = qs.insert(person).execute();
 
         // Verify bind error is propagated (error code may vary in ORM layer)
         // Key behavior: operation should fail when bind fails
@@ -397,7 +397,7 @@ namespace {
         QuerySet<MockPersonWithDouble> qs;
         MockPersonWithDouble const     person{.id = 0, .name = "Alice", .salary = 50000.0};
 
-        auto result = qs.insert(person);
+        auto result = qs.insert(person).execute();
 
         // Verify bind error is propagated (error code may vary in ORM layer)
         if (!result.has_value()) {
@@ -420,7 +420,7 @@ namespace {
         QuerySet<MockPersonWithBlob> qs;
         MockPersonWithBlob const     person{.id = 0, .name = "Alice", .data = {0x01, 0x02, 0x03}};
 
-        auto result = qs.insert(person);
+        auto result = qs.insert(person).execute();
 
         // Verify bind error is propagated (error code may vary in ORM layer)
         if (!result.has_value()) {
@@ -436,7 +436,7 @@ namespace {
         QuerySet<MockPersonOptional> qs;
         MockPersonOptional const     person{.id = 0, .name = std::nullopt, .age = std::nullopt};
 
-        auto result = qs.insert(person);
+        auto result = qs.insert(person).execute();
 
         // Verify bind error is propagated (error code may vary in ORM layer)
         if (!result.has_value()) {
@@ -456,7 +456,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
 
-        auto result = qs.insert(person);
+        auto result = qs.insert(person).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_FULL);
@@ -469,7 +469,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
 
-        auto result = qs.insert(person);
+        auto result = qs.insert(person).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_READONLY);
@@ -482,7 +482,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
 
-        auto result = qs.insert(person);
+        auto result = qs.insert(person).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_TOOBIG);
@@ -493,7 +493,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_SCHEMA);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.select();
+        auto                 result = qs.select().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_SCHEMA);
@@ -504,7 +504,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_INTERRUPT);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.select();
+        auto                 result = qs.select().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_INTERRUPT);
@@ -517,7 +517,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "Updated", .age = 35};
 
-        auto result = qs.update(person);
+        auto result = qs.update(person).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ABORT);
@@ -583,7 +583,7 @@ namespace {
                 {.id = 0, .name = "Charlie", .age = 35},
         };
 
-        auto result = qs.insert(std::span{people});
+        auto result = qs.insert(std::span{people}).execute();
 
         // The batch should fail when the second insert fails
         if (!result.has_value()) {
@@ -601,7 +601,7 @@ namespace {
                 {.id = 0, .name = "Bob", .age = 25},
         };
 
-        auto result = qs.insert(std::span{people});
+        auto result = qs.insert(std::span{people}).execute();
 
         // If ORM propagates bind errors, it should fail
         if (!result.has_value()) {
@@ -618,7 +618,7 @@ namespace {
                 {.id = 2, .name = "Bob Updated", .age = 26},
         };
 
-        auto result = qs.update(std::span{people});
+        auto result = qs.update(std::span{people}).execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_BUSY);
@@ -634,7 +634,7 @@ namespace {
                 {.id = 2, .name = "Bob", .age = 25},
         };
 
-        auto result = qs.remove(std::span{people});
+        auto result = qs.remove(std::span{people}).execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_LOCKED);
@@ -651,7 +651,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
-        auto                 result = qs.where(age > 25).select();
+        auto                 result = qs.where(age > 25).select().execute();
 
         // WHERE condition binding should fail
         if (!result.has_value()) {
@@ -664,7 +664,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 name   = storm::orm::where::Field<^^MockPerson::name>{};
-        auto                 result = qs.where(name == "Alice").select();
+        auto                 result = qs.where(name == "Alice").select().execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -752,7 +752,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.order_by<^^MockPerson::age>().select();
+        auto                 result = qs.order_by<^^MockPerson::age>().select().execute();
 
         // Verify prepare error is propagated (error code may differ at ORM layer)
         ASSERT_FALSE(result.has_value());
@@ -763,7 +763,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.limit(10).select();
+        auto                 result = qs.limit(10).select().execute();
 
         // Verify prepare error is propagated
         ASSERT_FALSE(result.has_value());
@@ -774,7 +774,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.offset(5).select();
+        auto                 result = qs.offset(5).select().execute();
 
         // Verify prepare error is propagated
         ASSERT_FALSE(result.has_value());
@@ -785,8 +785,8 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_IOERR);
 
         QuerySet<MockPerson> qs;
-        auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
-        auto                 result = qs.where(age > 25).order_by<^^MockPerson::name>().limit(10).offset(5).select();
+        auto                 age = storm::orm::where::Field<^^MockPerson::age>{};
+        auto result = qs.where(age > 25).order_by<^^MockPerson::name>().limit(10).offset(5).select().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
@@ -821,7 +821,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_INTERNAL);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.select();
+        auto                 result = qs.select().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_INTERNAL);
@@ -832,7 +832,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_NOTADB);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.select();
+        auto                 result = qs.select().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_NOTADB);
@@ -848,7 +848,7 @@ namespace {
         MockSqlite3Config::step_returns_sequence({SQLITE_ROW, SQLITE_ROW, SQLITE_CORRUPT});
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.select();
+        auto                 result = qs.select().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -874,7 +874,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "Updated", .age = 35};
 
-        auto result = qs.update(person);
+        auto result = qs.update(person).execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -887,7 +887,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "Updated", .age = 35};
 
-        auto result = qs.update(person);
+        auto result = qs.update(person).execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -904,7 +904,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "ToDelete", .age = 25};
 
-        auto result = qs.remove(person);
+        auto result = qs.remove(person).execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -983,7 +983,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
 
-        auto result = qs.insert(person);
+        auto result = qs.insert(person).execute();
 
         // INSERT uses execute() which expects DONE, so ROW is an error
         ASSERT_FALSE(result.has_value());
@@ -1010,7 +1010,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
-        (void)qs.insert(person);
+        (void)qs.insert(person).execute();
 
         // At least one more prepare call for INSERT
         EXPECT_GT(MockSqlite3Config::get_prepare_call_count(), after_setup_count);
@@ -1025,8 +1025,8 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockPerson> qs;
-        auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
-        auto                 result = qs.where(age > 25).order_by<^^MockPerson::name>().limit(10).offset(5).select();
+        auto                 age = storm::orm::where::Field<^^MockPerson::age>{};
+        auto result = qs.where(age > 25).order_by<^^MockPerson::name>().limit(10).offset(5).select().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -1075,7 +1075,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().select();
+        auto                  result = qs.join<&MockMessage::sender>().select().execute();
 
         // Verify prepare error is propagated (error code may differ at ORM layer)
         ASSERT_FALSE(result.has_value());
@@ -1086,7 +1086,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().select();
+        auto                  result = qs.join<&MockMessage::sender>().select().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -1097,7 +1097,7 @@ namespace {
 
         QuerySet<MockMessage> qs;
         auto                  id     = storm::orm::where::Field<^^MockMessage::id>{};
-        auto                  result = qs.where(id > 5).join<&MockMessage::sender>().select();
+        auto                  result = qs.where(id > 5).join<&MockMessage::sender>().select().execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -1108,7 +1108,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_IOERR);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().order_by<^^MockMessage::id>().select();
+        auto                  result = qs.join<&MockMessage::sender>().order_by<^^MockMessage::id>().select().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
@@ -1126,7 +1126,7 @@ namespace {
         MockUser const        sender{.id = 1, .name = "Sender", .age = 30};
         MockMessage const     message{.id = 1, .sender = sender, .text = "Hello"};
 
-        auto result = qs.update(message);
+        auto result = qs.update(message).execute();
 
         ASSERT_FALSE(result.has_value()) << "Update should fail when FK field bind fails";
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -1167,7 +1167,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_PROTOCOL);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.select();
+        auto                 result = qs.select().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_PROTOCOL);
@@ -1179,7 +1179,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
 
-        auto result = qs.insert(person);
+        auto result = qs.insert(person).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_PERM);
@@ -1191,7 +1191,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "Updated", .age = 35};
 
-        auto result = qs.update(person);
+        auto result = qs.update(person).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_AUTH);
@@ -1221,13 +1221,13 @@ namespace {
 
         // First call succeeds (caches the statement)
         MockSqlite3Config::step_returns(SQLITE_DONE);
-        auto first_result = qs.select();
+        auto first_result = qs.select().execute();
         // Note: DONE means no rows, which is valid for empty table
         EXPECT_TRUE(first_result.has_value());
 
         // Second call uses cached statement but step fails
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
-        auto second_result = qs.select();
+        auto second_result = qs.select().execute();
 
         ASSERT_FALSE(second_result.has_value());
         EXPECT_EQ(second_result.error().code(), SQLITE_CORRUPT);
@@ -1248,7 +1248,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 0, .name = "Test", .age = 25};
-        (void)qs.insert(person);
+        (void)qs.insert(person).execute();
 
         // Should have called bind_int (for age) and bind_text (for name)
         EXPECT_GE(MockSqlite3Config::get_bind_int_call_count(), 0); // Implementation may vary
@@ -1270,7 +1270,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "Updated", .age = 35};
 
-        auto result = qs.update(person);
+        auto result = qs.update(person).execute();
 
         ASSERT_FALSE(result.has_value()) << "Update should fail when PK bind fails";
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -1284,7 +1284,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "Updated", .age = 35};
 
-        auto result = qs.update(person);
+        auto result = qs.update(person).execute();
 
         ASSERT_FALSE(result.has_value()) << "Update should fail when field bind fails";
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
@@ -1297,7 +1297,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "Updated", .age = 35};
 
-        auto result = qs.update(person);
+        auto result = qs.update(person).execute();
 
         ASSERT_FALSE(result.has_value()) << "Update should fail when second field bind fails";
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -1314,7 +1314,7 @@ namespace {
                 {.id = 2, .name = "Second", .age = 25}, // This one should fail
         };
 
-        auto result = qs.update(std::span{people});
+        auto result = qs.update(std::span{people}).execute();
 
         ASSERT_FALSE(result.has_value()) << "Batch update should fail on second row bind error";
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -1331,7 +1331,7 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> single = {{.id = 1, .name = "SingleSpan", .age = 30}};
 
-        auto result = qs.update(std::span{single});
+        auto result = qs.update(std::span{single}).execute();
 
         // Should succeed (mock returns DONE by default)
         EXPECT_TRUE(result.has_value()) << "Span-of-one update should succeed";
@@ -1344,7 +1344,7 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> single = {{.id = 1, .name = "SingleSpan", .age = 30}};
 
-        auto result = qs.update(std::span{single});
+        auto result = qs.update(std::span{single}).execute();
 
         ASSERT_FALSE(result.has_value()) << "Span-of-one update should fail on bind error";
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -1357,7 +1357,7 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> single = {{.id = 1, .name = "SingleSpan", .age = 30}};
 
-        auto result = qs.update(std::span{single});
+        auto result = qs.update(std::span{single}).execute();
 
         ASSERT_FALSE(result.has_value()) << "Span-of-one update should fail on exec error";
         EXPECT_EQ(result.error().code(), SQLITE_BUSY);
@@ -1368,7 +1368,7 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> empty;
 
-        auto result = qs.update(std::span{empty});
+        auto result = qs.update(std::span{empty}).execute();
 
         EXPECT_TRUE(result.has_value()) << "Empty span update should succeed immediately";
     }
@@ -1384,7 +1384,7 @@ namespace {
                 {.id = 2, .name = "Second", .age = 25},
         };
 
-        auto result = qs.update(std::span{people});
+        auto result = qs.update(std::span{people}).execute();
 
         ASSERT_FALSE(result.has_value()) << "Batch update should fail on prepare error";
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -1408,7 +1408,7 @@ namespace {
                 {.id = 2, .name = "Second", .age = 25},
         };
 
-        auto result = qs.update(std::span{people});
+        auto result = qs.update(std::span{people}).execute();
 
         // Transaction begin failure should propagate
         ASSERT_FALSE(result.has_value()) << "Batch update should fail when transaction begin fails";
@@ -1424,7 +1424,7 @@ namespace {
                 {.id = 2, .name = "Second", .age = 25},
         };
 
-        auto result = qs.update(std::span{people});
+        auto result = qs.update(std::span{people}).execute();
 
         // Mock returns DONE by default, so this should succeed
         EXPECT_TRUE(result.has_value()) << "Batch update should succeed and commit";
@@ -1603,7 +1603,7 @@ namespace {
             large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
         }
 
-        auto result = qs.remove(std::span{large_batch});
+        auto result = qs.remove(std::span{large_batch}).execute();
 
         // Should fail on transaction begin
         if (!result.has_value()) {
@@ -1623,7 +1623,7 @@ namespace {
             large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
         }
 
-        auto result = qs.remove(std::span{large_batch});
+        auto result = qs.remove(std::span{large_batch}).execute();
 
         ASSERT_FALSE(result.has_value()) << "Chunked remove should fail when max bulk prepare fails";
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -1640,7 +1640,7 @@ namespace {
             large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
         }
 
-        auto result = qs.remove(std::span{large_batch});
+        auto result = qs.remove(std::span{large_batch}).execute();
 
         ASSERT_FALSE(result.has_value()) << "Chunked remove should fail when remainder prepare fails";
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
@@ -1658,7 +1658,7 @@ namespace {
             large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
         }
 
-        auto result = qs.remove(std::span{large_batch});
+        auto result = qs.remove(std::span{large_batch}).execute();
 
         ASSERT_FALSE(result.has_value()) << "Chunked remove should fail when full chunk exec fails";
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -1675,7 +1675,7 @@ namespace {
             large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
         }
 
-        auto result = qs.remove(std::span{large_batch});
+        auto result = qs.remove(std::span{large_batch}).execute();
 
         ASSERT_FALSE(result.has_value()) << "Chunked remove should fail when remainder exec fails";
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
@@ -1695,7 +1695,7 @@ namespace {
             large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
         }
 
-        auto result = qs.update(std::span{large_batch});
+        auto result = qs.update(std::span{large_batch}).execute();
 
         // Should fail on transaction begin
         if (!result.has_value()) {
@@ -1715,7 +1715,7 @@ namespace {
             large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
         }
 
-        auto result = qs.update(std::span{large_batch});
+        auto result = qs.update(std::span{large_batch}).execute();
 
         // Should fail during second chunk processing
         if (!result.has_value()) {
@@ -1736,7 +1736,7 @@ namespace {
             large_batch.push_back({.id = 0, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
         }
 
-        auto result = qs.insert(std::span{large_batch});
+        auto result = qs.insert(std::span{large_batch}).execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_BUSY);
@@ -1802,7 +1802,7 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> single = {{.id = 1, .name = "ToDelete", .age = 30}};
 
-        auto result = qs.remove(std::span{single});
+        auto result = qs.remove(std::span{single}).execute();
 
         // Mock returns DONE by default
         EXPECT_TRUE(result.has_value()) << "Span-of-one remove should succeed";
@@ -1815,7 +1815,7 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> single = {{.id = 1, .name = "ToDelete", .age = 30}};
 
-        auto result = qs.remove(std::span{single});
+        auto result = qs.remove(std::span{single}).execute();
 
         ASSERT_FALSE(result.has_value()) << "Span-of-one remove should fail on step error";
         EXPECT_EQ(result.error().code(), SQLITE_LOCKED);
@@ -1831,7 +1831,7 @@ namespace {
                 {.id = 2, .name = "Second", .age = 25},
         };
 
-        auto result = qs.remove(std::span{people});
+        auto result = qs.remove(std::span{people}).execute();
 
         ASSERT_FALSE(result.has_value()) << "Bulk remove should fail on prepare error";
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -1847,7 +1847,7 @@ namespace {
                 {.id = 2, .name = "Second", .age = 25},
         };
 
-        auto result = qs.remove(std::span{people});
+        auto result = qs.remove(std::span{people}).execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -1864,7 +1864,7 @@ namespace {
                 {.id = 2, .name = "Second", .age = 25},
         };
 
-        auto result = qs.remove(std::span{people});
+        auto result = qs.remove(std::span{people}).execute();
 
         ASSERT_FALSE(result.has_value()) << "Bulk remove should fail on exec error";
         EXPECT_EQ(result.error().code(), SQLITE_BUSY);
@@ -1875,7 +1875,7 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> empty;
 
-        auto result = qs.remove(std::span{empty});
+        auto result = qs.remove(std::span{empty}).execute();
 
         EXPECT_TRUE(result.has_value()) << "Empty span remove should succeed immediately";
     }
@@ -1893,7 +1893,7 @@ namespace {
                 {.id = 0, .name = "Second", .age = 25},
         };
 
-        auto result = qs.insert(std::span{people});
+        auto result = qs.insert(std::span{people}).execute();
 
         ASSERT_FALSE(result.has_value()) << "Batch insert should fail on prepare error";
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -1910,7 +1910,7 @@ namespace {
                 {.id = 0, .name = "Second", .age = 25},
         };
 
-        auto result = qs.insert(std::span{people});
+        auto result = qs.insert(std::span{people}).execute();
 
         // Either fails with expected error, or succeeds (bind_text might not be called for batch)
         if (!result.has_value()) {
@@ -1929,7 +1929,7 @@ namespace {
                 {.id = 0, .name = "Second", .age = 25},
         };
 
-        auto result = qs.insert(std::span{people});
+        auto result = qs.insert(std::span{people}).execute();
 
         ASSERT_FALSE(result.has_value()) << "Batch insert should fail on step error";
         EXPECT_EQ(result.error().code(), SQLITE_CONSTRAINT);
@@ -2014,7 +2014,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
-        auto                 result = qs.where(age.between(20, 40)).select();
+        auto                 result = qs.where(age.between(20, 40)).select().execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -2027,7 +2027,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
-        auto                 result = qs.where(age.in(25, 30, 35)).select();
+        auto                 result = qs.where(age.in(25, 30, 35)).select().execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -2041,7 +2041,7 @@ namespace {
         QuerySet<MockPerson> qs;
         auto                 age = storm::orm::where::Field<^^MockPerson::age>{};
         // The left child (age > 25) will fail to bind because bind_int returns NOMEM
-        auto result = qs.where(age > 25 && age < 40).select();
+        auto result = qs.where(age > 25 && age < 40).select().execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -2056,7 +2056,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.first();
+        auto                 result = qs.first().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -2066,7 +2066,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.first();
+        auto                 result = qs.first().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -2076,7 +2076,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.get();
+        auto                 result = qs.get().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -2086,7 +2086,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.get();
+        auto                 result = qs.get().execute();
 
         ASSERT_FALSE(result.has_value());
         // get() maps NO_MORE_ROWS to error code -1, but SQLITE_CORRUPT is a real step error
@@ -2097,7 +2097,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().first();
+        auto                  result = qs.join<&MockMessage::sender>().first().execute();
 
         ASSERT_FALSE(result.has_value());
     }
@@ -2106,7 +2106,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().get();
+        auto                  result = qs.join<&MockMessage::sender>().get().execute();
 
         ASSERT_FALSE(result.has_value());
     }
@@ -2115,7 +2115,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().first();
+        auto                  result = qs.join<&MockMessage::sender>().first().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -2126,7 +2126,7 @@ namespace {
         MockSqlite3Config::step_returns_sequence({SQLITE_ROW, SQLITE_DONE});
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().first();
+        auto                  result = qs.join<&MockMessage::sender>().first().execute();
 
         // Mock returns zeroed data, but the path is exercised
         ASSERT_TRUE(result.has_value());
@@ -2137,7 +2137,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().get();
+        auto                  result = qs.join<&MockMessage::sender>().get().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -2148,10 +2148,153 @@ namespace {
         MockSqlite3Config::step_returns_sequence({SQLITE_ROW, SQLITE_DONE});
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().get();
+        auto                  result = qs.join<&MockMessage::sender>().get().execute();
 
         // Mock returns zeroed data, but the path is exercised
         ASSERT_TRUE(result.has_value());
+    }
+
+    // ============================================================================
+    // to_sql() error path tests — SELECT
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, ToSqlSelectFailsOnPrepare) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.select().to_sql();
+
+        ASSERT_FALSE(result.has_value());
+    }
+
+    TEST_F(ORMMockErrorTest, ToSqlSelectWithWhereFailsOnBind) {
+        MockSqlite3Config::bind_int_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
+        auto                 result = qs.where(age > 25).select().to_sql();
+
+        ASSERT_FALSE(result.has_value());
+    }
+
+    // ============================================================================
+    // to_sql() error path tests — INSERT (single)
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, ToSqlInsertFailsOnPrepare) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson> qs;
+        MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
+        auto                 result = qs.insert(person).to_sql();
+
+        ASSERT_FALSE(result.has_value());
+    }
+
+    TEST_F(ORMMockErrorTest, ToSqlInsertFailsOnBind) {
+        MockSqlite3Config::bind_text_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
+        auto                 result = qs.insert(person).to_sql();
+
+        ASSERT_FALSE(result.has_value());
+    }
+
+    // ============================================================================
+    // to_sql() error path tests — INSERT (bulk)
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, ToSqlBulkInsertFailsOnPrepare) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {MockPerson{.id = 0, .name = "Alice", .age = 30}};
+        auto                    result = qs.insert(std::span<const MockPerson>(people)).to_sql();
+
+        ASSERT_FALSE(result.has_value());
+    }
+
+    TEST_F(ORMMockErrorTest, ToSqlBulkInsertFailsOnBind) {
+        MockSqlite3Config::bind_text_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {MockPerson{.id = 0, .name = "Alice", .age = 30}};
+        auto                    result = qs.insert(std::span<const MockPerson>(people)).to_sql();
+
+        ASSERT_FALSE(result.has_value());
+    }
+
+    // ============================================================================
+    // to_sql() error path tests — REMOVE (single)
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, ToSqlRemoveFailsOnPrepare) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson> qs;
+        MockPerson const     person{.id = 1, .name = "Alice", .age = 30};
+        auto                 result = qs.remove(person).to_sql();
+
+        ASSERT_FALSE(result.has_value());
+    }
+
+    TEST_F(ORMMockErrorTest, ToSqlRemoveFailsOnBind) {
+        MockSqlite3Config::bind_int64_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        MockPerson const     person{.id = 1, .name = "Alice", .age = 30};
+        auto                 result = qs.remove(person).to_sql();
+
+        ASSERT_FALSE(result.has_value());
+    }
+
+    // ============================================================================
+    // to_sql() error path tests — REMOVE (bulk)
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, ToSqlBulkRemoveFailsOnPrepare) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {MockPerson{.id = 1, .name = "Alice", .age = 30}};
+        auto                    result = qs.remove(std::span<const MockPerson>(people)).to_sql();
+
+        ASSERT_FALSE(result.has_value());
+    }
+
+    TEST_F(ORMMockErrorTest, ToSqlBulkRemoveFailsOnBind) {
+        MockSqlite3Config::bind_int64_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {MockPerson{.id = 1, .name = "Alice", .age = 30}};
+        auto                    result = qs.remove(std::span<const MockPerson>(people)).to_sql();
+
+        ASSERT_FALSE(result.has_value());
+    }
+
+    // ============================================================================
+    // to_sql() error path tests — UPDATE (single)
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, ToSqlUpdateFailsOnPrepare) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson> qs;
+        MockPerson const     person{.id = 1, .name = "Alice", .age = 30};
+        auto                 result = qs.update(person).to_sql();
+
+        ASSERT_FALSE(result.has_value());
+    }
+
+    TEST_F(ORMMockErrorTest, ToSqlUpdateFailsOnBind) {
+        MockSqlite3Config::bind_text_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        MockPerson const     person{.id = 1, .name = "Alice", .age = 30};
+        auto                 result = qs.update(person).to_sql();
+
+        ASSERT_FALSE(result.has_value());
     }
 
 } // namespace
