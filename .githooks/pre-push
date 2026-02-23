@@ -1,0 +1,198 @@
+#!/bin/bash
+# Pre-push hook: gates git push on SonarCloud quality gate.
+# Runs automatically on every `git push` that contains C++ changes.
+#
+# Flow:
+#   1. Detect if push contains C++/cmake changes — skip if not
+#   2. Build with build-wrapper (captures full compilation DB)
+#   3. Upload to SonarCloud via sonar-scanner
+#   4. Extract CE task ID from scanner output, poll until analysis completes
+#   5. Check quality gate — block push if FAILED, allow if OK
+#
+# Requires: SONAR_TOKEN env var. Skipped gracefully if unset.
+# Add to your shell profile: export SONAR_TOKEN=your_token
+
+set -e
+
+# ── Tool installer helpers ────────────────────────────────────────────────────
+
+_ensure_build_wrapper() {
+    if ! command -v build-wrapper-linux-x86-64 &>/dev/null; then
+        echo "📦 Installing build-wrapper..."
+        curl --create-dirs -sSLo /tmp/bw.zip \
+            "https://sonarcloud.io/static/cpp/build-wrapper-linux-x86.zip"
+        unzip -o /tmp/bw.zip -d "$HOME/.sonar/"
+        rm /tmp/bw.zip
+        export PATH="$HOME/.sonar/build-wrapper-linux-x86:$PATH"
+    fi
+}
+
+_ensure_sonar_scanner() {
+    local version="8.0.1.6346"
+    local bin="$HOME/.sonar/sonar-scanner-${version}-linux-x64/bin"
+    if ! command -v sonar-scanner &>/dev/null && [[ ! -f "$bin/sonar-scanner" ]]; then
+        echo "📦 Installing sonar-scanner ${version}..."
+        curl --create-dirs -sSLo /tmp/sonar-scanner.zip \
+            "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${version}-linux-x64.zip"
+        unzip -o /tmp/sonar-scanner.zip -d "$HOME/.sonar/"
+        rm /tmp/sonar-scanner.zip
+    fi
+    export PATH="$bin:$PATH"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Detect if any C++/cmake files are included in what's being pushed
+PUSH_HAS_CPP=false
+while read -r local_ref local_sha remote_ref remote_sha; do
+    if [[ "$remote_sha" == "0000000000000000000000000000000000000000" ]]; then
+        # New branch — diff against empty tree
+        DIFF_BASE="4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+    else
+        DIFF_BASE="$remote_sha"
+    fi
+
+    if git diff --name-only "$DIFF_BASE" "$local_sha" 2>/dev/null | \
+       grep -qE '\.(cpp|cppm|h|hpp)$|CMakeLists\.txt|\.cmake$'; then
+        PUSH_HAS_CPP=true
+    fi
+done
+
+if [[ "$PUSH_HAS_CPP" == false ]]; then
+    echo "ℹ️  No C++ files in push — skipping SonarCloud gate"
+    exit 0
+fi
+
+if [[ -z "$SONAR_TOKEN" ]]; then
+    echo "⚠️  SONAR_TOKEN not set — skipping SonarCloud gate"
+    echo "   Add to your shell profile: export SONAR_TOKEN=your_token"
+    exit 0
+fi
+
+CURRENT_BRANCH=$(git branch --show-current)
+echo ""
+echo "☁️  SonarCloud gate check for '${CURRENT_BRANCH}'..."
+
+_ensure_build_wrapper
+_ensure_sonar_scanner
+
+# Configure if not already done
+if [[ ! -f "build/debug/build.ninja" ]]; then
+    cmake --preset ninja-debug
+fi
+
+# Build with build-wrapper — wraps coverage rebuild so all compilation units
+# are captured without an extra build step
+echo ""
+echo "🔨 Building with build-wrapper + coverage..."
+STORM_PG_CONNSTR="host=/var/run/postgresql dbname=storm_db user=storm_db" \
+    build-wrapper-linux-x86-64 --out-dir bw-output \
+    cmake --build --preset ninja-debug-coverage --target coverage
+
+# Coverage report (may not exist if coverage target had no tests)
+COV_ARGS=""
+if [[ -f "build/debug/coverage/coverage-filtered.lcov" ]]; then
+    COV_ARGS="-Dsonar.cfamily.llvm-cov.reportPath=build/debug/coverage/coverage-filtered.lcov"
+fi
+
+# PR args — if the current branch has an open PR, analyse as PR (new code only)
+PR_ARGS=""
+if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
+    PR_NUMBER=$(gh pr view --json number -q '.number' 2>/dev/null || echo "")
+    if [[ -n "$PR_NUMBER" ]]; then
+        HEAD_REF=$(gh pr view --json headRefName -q '.headRefName' 2>/dev/null || echo "$CURRENT_BRANCH")
+        BASE_REF=$(gh pr view --json baseRefName -q '.baseRefName' 2>/dev/null || echo "develop")
+        REPO=$(gh repo view --json nameWithOwner -q '.nameWithOwner' 2>/dev/null || echo "")
+        PR_ARGS=" \
+            -Dsonar.pullrequest.key=${PR_NUMBER} \
+            -Dsonar.pullrequest.branch=${HEAD_REF} \
+            -Dsonar.pullrequest.base=${BASE_REF} \
+            -Dsonar.pullrequest.github.repository=${REPO}"
+    fi
+fi
+
+# Upload to SonarCloud — capture output to extract the CE task ID
+echo ""
+echo "📤 Uploading to SonarCloud..."
+SONAR_OUTPUT=$(sonar-scanner \
+    -Dsonar.host.url=https://sonarcloud.io \
+    -Dsonar.token="${SONAR_TOKEN}" \
+    -Dsonar.cfamily.compile-commands=bw-output/compile_commands.json \
+    $COV_ARGS \
+    $PR_ARGS 2>&1)
+echo "$SONAR_OUTPUT"
+
+# Extract CE task ID printed by sonar-scanner (e.g. "task?id=AY...XYZ")
+TASK_ID=$(echo "$SONAR_OUTPUT" | grep -o 'task?id=[^[:space:]"]*' | head -1 | cut -d= -f2)
+
+if [[ -z "$TASK_ID" ]]; then
+    echo "⚠️  Could not extract task ID from sonar-scanner output"
+    echo "   Check SonarCloud dashboard manually before merging"
+    exit 0
+fi
+
+# Poll CE task until SUCCESS / FAILED / CANCELLED
+echo ""
+echo "⏳ Waiting for SonarCloud analysis to complete (task: ${TASK_ID})..."
+MAX_WAIT=300
+INTERVAL=10
+ELAPSED=0
+TASK_STATUS="PENDING"
+
+while [[ $ELAPSED -lt $MAX_WAIT ]]; do
+    TASK_RESPONSE=$(curl -s "https://sonarcloud.io/api/ce/task?id=${TASK_ID}" \
+        -H "Authorization: Bearer ${SONAR_TOKEN}")
+    TASK_STATUS=$(echo "$TASK_RESPONSE" | jq -r '.task.status // "UNKNOWN"')
+
+    if [[ "$TASK_STATUS" == "SUCCESS" ]]; then
+        echo "  ✅ Analysis complete (${ELAPSED}s)"
+        break
+    elif [[ "$TASK_STATUS" == "FAILED" || "$TASK_STATUS" == "CANCELLED" ]]; then
+        echo "  ❌ SonarCloud analysis ${TASK_STATUS} — push blocked"
+        exit 1
+    fi
+
+    echo "  Waiting... (${ELAPSED}s elapsed, status: ${TASK_STATUS})"
+    sleep $INTERVAL
+    ELAPSED=$((ELAPSED + INTERVAL))
+done
+
+if [[ "$TASK_STATUS" != "SUCCESS" ]]; then
+    echo "⚠️  Analysis timed out after ${MAX_WAIT}s — push will proceed"
+    exit 0
+fi
+
+# Check quality gate result
+echo ""
+echo "📊 Checking quality gate..."
+PROJECT_KEY="spiritEcosse_storm"
+SONAR_API="https://sonarcloud.io/api"
+
+if [[ -n "$PR_NUMBER" ]]; then
+    QG_PARAM="pullRequest=${PR_NUMBER}"
+else
+    QG_PARAM="branch=${CURRENT_BRANCH}"
+fi
+
+QG_RESPONSE=$(curl -s "${SONAR_API}/qualitygates/project_status?projectKey=${PROJECT_KEY}&${QG_PARAM}" \
+    -H "Authorization: Bearer ${SONAR_TOKEN}")
+QG_STATUS=$(echo "$QG_RESPONSE" | jq -r '.projectStatus.status // "UNKNOWN"')
+
+if [[ "$QG_STATUS" == "OK" ]]; then
+    echo "✅ Quality gate PASSED — push allowed"
+    echo ""
+    exit 0
+elif [[ "$QG_STATUS" == "ERROR" ]]; then
+    echo "❌ Quality gate FAILED — push blocked"
+    echo ""
+    echo "Failed conditions:"
+    echo "$QG_RESPONSE" | jq -r '.projectStatus.conditions[] | select(.status == "ERROR") |
+        "  ❌ \(.metricKey): \(.actualValue) (threshold: \(.errorThreshold))"'
+    echo ""
+    echo "Fix the issues above, then re-commit and push."
+    echo "Details: https://sonarcloud.io/dashboard?id=${PROJECT_KEY}&${QG_PARAM}"
+    exit 1
+else
+    echo "⚠️  Quality gate status: ${QG_STATUS} — push will proceed"
+    exit 0
+fi

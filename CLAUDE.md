@@ -95,13 +95,19 @@ The `/sonarcloud-status` skill (and `./scripts/sonarcloud-check.sh`) is **branch
 **Checking overall project health (on `develop`):**
 Run `/sonarcloud-status` while on `develop` to see the full project picture — all existing issues, overall metrics, and quality gate status for the branch.
 
-### Commit Workflow
+### Commit & Push Workflow
 ```bash
 git status --short           # Show files
 # Get user approval
-git add -A && git commit -m "message"  # Pre-commit hook runs all checks automatically
-# All checks are mandatory (format, tidy, tests, PG tests, coverage, sonar)
+git add -A && git commit -m "message"
+# Pre-commit hook (commit.sh): format → tidy → tests → coverage
 # Smart skips: no C++/cmake → skip all; cmake-only → tests+coverage+cmake-format; C++ only-bench → skip tests/coverage
+
+git push
+# Pre-push hook (.githooks/pre-push): build-wrapper → sonar-scanner upload
+# → waits for SonarCloud analysis via CE task polling
+# → checks quality gate → blocks push if FAILED, allows if OK
+# Requires SONAR_TOKEN env var (skipped gracefully if unset)
 ```
 
 ### Benchmarking (Release only!)
