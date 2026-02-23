@@ -77,6 +77,13 @@ cmake/
 - **Close issue after merge**: After merging a feature branch into `develop`, ALWAYS close the issue with `gh issue close <N>`. Do NOT wait to be asked.
 - **Ad-hoc fixes** (no GitHub Issue): Work directly on `develop`.
 
+### SonarCloud Gate (MANDATORY before merge)
+After creating a PR, ALWAYS wait for SonarCloud analysis before merging:
+1. Use the `sonarcloud-status` skill to check the quality gate: `/sonarcloud-status`
+2. **If gate passes** (no issues): merge the PR into `develop`.
+3. **If gate fails** (any issues — code duplication, bugs, code smells, security hotspots, even minor ones): fix ALL reported issues on the feature branch, push the fixes, then re-check SonarCloud until the gate passes.
+4. **Only merge after a clean SonarCloud gate** — no exceptions, even for minor issues.
+
 ### Commit Workflow
 ```bash
 git status --short           # Show files
