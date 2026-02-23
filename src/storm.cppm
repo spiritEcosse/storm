@@ -4,7 +4,7 @@ module;
 
 export module storm;
 
-// Import and re-export all Storm modules
+// Import and re-export all Storm ORM modules
 export import storm_db_concept;
 export import storm_db_sqlite;
 export import storm_db_postgresql;
