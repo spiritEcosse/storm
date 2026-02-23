@@ -78,11 +78,22 @@ cmake/
 - **Ad-hoc fixes** (no GitHub Issue): Work directly on `develop`.
 
 ### SonarCloud Gate (MANDATORY before merge)
-After creating a PR, ALWAYS wait for SonarCloud analysis before merging:
-1. Use the `sonarcloud-status` skill to check the quality gate: `/sonarcloud-status`
-2. **If gate passes** (no issues): merge the PR into `develop`.
+
+The `/sonarcloud-status` skill (and `./scripts/sonarcloud-check.sh`) is **branch-aware**:
+
+| Context | Mode | What it checks |
+|---|---|---|
+| `develop` / `master` / `main` | **Branch mode** | Full project — ALL existing issues on the branch |
+| Feature branch or explicit PR number | **PR mode** | New code only — waits for Sonar to finish, then checks changed lines |
+
+**Before merging a PR (run from the feature branch):**
+1. Run `/sonarcloud-status` — it auto-detects the PR and **waits** for SonarCloud analysis to finish.
+2. **If gate passes** (no issues on new code): merge the PR into `develop`.
 3. **If gate fails** (any issues — code duplication, bugs, code smells, security hotspots, even minor ones): fix ALL reported issues on the feature branch, push the fixes, then re-check SonarCloud until the gate passes.
 4. **Only merge after a clean SonarCloud gate** — no exceptions, even for minor issues.
+
+**Checking overall project health (on `develop`):**
+Run `/sonarcloud-status` while on `develop` to see the full project picture — all existing issues, overall metrics, and quality gate status for the branch.
 
 ### Commit Workflow
 ```bash
