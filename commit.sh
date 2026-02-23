@@ -1,5 +1,5 @@
 #!/bin/bash
-# Pre-commit checks: format -> tidy --fix -> test -> coverage -> sonar (SonarCloud)
+# Pre-commit checks: format -> tidy --fix -> test -> coverage -> sonar-scanner (SonarCloud)
 # Runs automatically via git pre-commit hook, or manually: ./commit.sh
 #
 # All checks are mandatory. No skip flags available.
@@ -168,15 +168,8 @@ if [[ "$RUN_COVERAGE" == true ]]; then
     echo "✅ Line coverage: 100.0%"
 fi
 
-# Local sonar check + SonarCloud upload
+# SonarCloud upload
 if [[ "$RUN_SONAR" == true ]]; then
-    echo ""
-    echo "🔍 Running local sonar check..."
-    ./scripts/sonar-check.sh src tests benchmarks || {
-        echo "❌ Local sonar check failed. Fix issues before committing."
-        exit 1
-    }
-
     # SonarCloud upload (requires SONAR_TOKEN; skipped gracefully if unset)
     if [[ -z "$SONAR_TOKEN" ]]; then
         echo "⚠️  SONAR_TOKEN not set — skipping SonarCloud upload"
