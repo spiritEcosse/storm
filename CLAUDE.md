@@ -100,7 +100,7 @@ Run `/sonarcloud-status` while on `develop` to see the full project picture — 
 git status --short           # Show files
 # Get user approval
 git add -A && git commit -m "message"
-# Pre-commit hook (commit.sh): format → tidy → tests → coverage
+# Pre-commit hook (commit.sh): clang-format (C++) + cmake-format → clang-tidy → tests → coverage
 # Smart skips: no C++/cmake → skip all; cmake-only → tests+coverage+cmake-format; C++ only-bench → skip tests/coverage
 
 git push
