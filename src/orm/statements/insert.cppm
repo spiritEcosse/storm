@@ -6,6 +6,7 @@ export module storm_orm_statements_insert;
 
 import storm_orm_statements_base;
 import storm_orm_utilities;
+import storm_orm_transaction;
 import storm_db_concept;
 
 import <expected>;
@@ -24,6 +25,7 @@ export namespace storm::orm::statements {
     // Import utilities for code convenience
     using storm::orm::utilities::BulkSQLCache;
     using storm::orm::utilities::ConstexprString;
+    using storm::orm::utilities::TransactionGuard;
 
     // Configuration options for batch INSERT operations
     struct InsertOptions {
@@ -416,8 +418,14 @@ export namespace storm::orm::statements {
         }
 
         // Execute CHUNKED bulk inserts with custom batch size
+        // NOTE: Transaction wrapper required - multiple INSERT statements need atomicity
         [[nodiscard]] auto execute_chunked_bulk_custom(std::span<const T> objects, size_t custom_bulk_size)
                 -> std::expected<void, Error> {
+            auto txn = TransactionGuard<ConnType>::begin(*conn_);
+            if (!txn) {
+                return std::unexpected(txn.error());
+            }
+
             // Process in chunks of custom_bulk_size
             for (size_t offset = 0; offset < objects.size(); offset += custom_bulk_size) {
                 size_t chunk_size = std::min(custom_bulk_size, objects.size() - offset);
@@ -435,11 +443,11 @@ export namespace storm::orm::statements {
                 );
 
                 if (!chunk_result) {
-                    return std::unexpected(chunk_result.error());
+                    return std::unexpected(chunk_result.error()); // ~TransactionGuard auto-rollbacks
                 }
             }
 
-            return {};
+            return txn->commit();
         }
 
       private:
