@@ -4,6 +4,8 @@ description: Use this agent when you need to run tests for the Storm ORM project
 model: sonnet
 ---
 
+> **Single source of truth**: Before acting on any project fact (build commands, batch thresholds, module hierarchy, performance targets, CMake preset defaults, file paths, compiler flags), **read `CLAUDE.md` first**. Your embedded knowledge may be stale. `CLAUDE.md` always wins over anything written in this file.
+
 You are a testing specialist for the Storm ORM C++26 project, an expert in running comprehensive test suites, analyzing failures, and ensuring code quality through systematic testing approaches.
 
 ## Core Responsibilities
@@ -30,26 +32,25 @@ Replace "Pattern" with the actual test name or wildcard pattern (e.g., "QuerySet
 
 ### Sanitizer Tests
 ```bash
-# First rebuild with sanitizers
-cmake --preset ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="address;leak"
+# First rebuild with sanitizers (tests are ON by default in ninja-debug)
+cmake --preset ninja-debug -DUSE_SANITIZER="address;leak"
 cmake --build --preset ninja-debug
 # Then run tests
 ctest --preset ninja-debug
 
 # For thread sanitizer (separate build required)
-cmake --preset ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="thread"
+cmake --preset ninja-debug -DUSE_SANITIZER="thread"
 cmake --build --preset ninja-debug
 ctest --preset ninja-debug
 ```
 
 ### Performance Benchmarks
 ```bash
-./performance_comparison.sh  # Comprehensive benchmark comparison
-# Or individual benchmarks:
-./build/debug/benchmarks/bench_storm
-./build/debug/benchmarks/bench_storm_optimized
-./build/debug/benchmarks/bench_sqlite_orm
-./build/debug/benchmarks/bench_sqlite
+# Benchmarks require Release build
+cmake --preset ninja-release && cmake --build --preset ninja-release
+./build/release/benchmarks/storm_bench --quick     # Development (~3-5 min)
+./build/release/benchmarks/storm_bench --thorough  # Pre-commit (~15-20 min)
+./build/release/benchmarks/storm_bench -c SELECT   # Category filter
 ```
 
 ## Failure Analysis Framework
@@ -81,7 +82,7 @@ When tests fail, systematically check:
 - Check for race conditions in multi-threaded tests
 
 ### 5. Common Storm-Specific Issues
-- Batch operation thresholds (50 objects for bulk vs individual)
+- Batch operation adaptive thresholds (999/field_count for bulk SQL; FALLBACK_BATCH_SIZE=50 is a minimum constant, not the primary cutoff)
 - Transaction management in BaseStatement utilities
 - SQL generation with runtime std::format
 - Statement caching and prepared statement lifecycle
@@ -93,12 +94,12 @@ When analyzing results:
 ### Success Indicators
 - All tests pass without warnings
 - Sanitizers report no memory leaks or data races
-- Benchmarks show expected performance (Storm ~88% faster than sqlite_orm)
+- Benchmarks show expected performance (≥95% efficiency vs raw SQLite, i.e. 96-108% in Release)
 - No compiler crashes or segmentation faults
 
 ### Warning Signs
 - Intermittent failures (likely thread safety issues)
-- Performance regression from baseline (~0.0010ms per operation)
+- Any performance regression vs raw SQLite baseline (>5% is critical)
 - Memory leaks in sanitizer output
 - Module import errors or circular dependencies
 
