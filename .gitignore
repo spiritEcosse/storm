@@ -17,3 +17,6 @@ benchmarks/bench_storm_optimized
 benchmarks/tests/benchmark_tests.json
 *.profraw
 default.profraw
+
+# SonarCloud scanner working directory
+.scannerwork/
