@@ -104,10 +104,8 @@ git add -A && git commit -m "message"
 # Smart skips: no C++/cmake → skip all; cmake-only → tests+coverage+cmake-format; C++ only-bench → skip tests/coverage
 
 git push
-# Pre-push hook (.githooks/pre-push): build-wrapper → sonar-scanner upload
-# → waits for SonarCloud analysis via CE task polling
-# → checks quality gate → blocks push if FAILED, allows if OK
-# Requires SONAR_TOKEN env var (skipped gracefully if unset)
+# Pre-push hook (.githooks/pre-push): SonarCloud gate disabled (C++26 not yet supported)
+# See: https://github.com/spiritEcosse/storm/issues/113
 ```
 
 ### Benchmarking (Release only!)
