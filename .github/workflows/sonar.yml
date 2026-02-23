@@ -1,0 +1,65 @@
+name: SonarCloud Analysis
+
+on:
+  push:
+    branches: [develop, master, main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [develop, master, main]
+
+jobs:
+  sonar:
+    name: Build, Test & SonarCloud
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Full history required for SonarCloud blame data and new-code detection
+          fetch-depth: 0
+
+      - name: Install sonar-scanner (if missing)
+        run: |
+          if ! command -v sonar-scanner &>/dev/null; then
+            SCANNER_VERSION="6.2.1.4610"
+            wget -q "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${SCANNER_VERSION}-linux-x64.zip" \
+              -O /tmp/sonar-scanner.zip
+            unzip -q /tmp/sonar-scanner.zip -d "$HOME/.sonar"
+            echo "$HOME/.sonar/sonar-scanner-${SCANNER_VERSION}-linux-x64/bin" >> "$GITHUB_PATH"
+            rm /tmp/sonar-scanner.zip
+          fi
+
+      - name: Configure CMake (debug + coverage)
+        run: cmake --preset ninja-debug
+
+      - name: Build
+        run: cmake --build --preset ninja-debug
+
+      - name: Run tests and generate coverage report
+        env:
+          # PostgreSQL skips gracefully if not available on the runner
+          STORM_PG_CONNSTR: "host=/var/run/postgresql dbname=storm_db user=storm_db"
+        run: cmake --build --preset ninja-debug-coverage --target coverage
+
+      - name: SonarCloud Scan
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Build PR-specific args when triggered by a pull request
+          PR_ARGS=""
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            PR_ARGS=" \
+              -Dsonar.pullrequest.key=${{ github.event.pull_request.number }} \
+              -Dsonar.pullrequest.branch=${{ github.head_ref }} \
+              -Dsonar.pullrequest.base=${{ github.base_ref }} \
+              -Dsonar.pullrequest.github.repository=${{ github.repository }}"
+          fi
+
+          sonar-scanner \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.token="${SONAR_TOKEN}" \
+            -Dsonar.cfamily.compile-commands=build/debug/compile_commands.json \
+            -Dsonar.cfamily.llvm-cov.reportPath=build/debug/coverage/coverage-filtered.lcov \
+            $PR_ARGS
