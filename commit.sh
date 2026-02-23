@@ -71,7 +71,7 @@ fi
 
 if [[ "$RUN_TIDY" == true ]]; then
     echo ""
-    echo "🔍 Running clang-tidy --fix (auto-fixing issues)..."
+    echo "🔍 Running clang-tidy --fix on staged files..."
     ./scripts/run_clang_tidy.sh --fix || {
         echo "❌ clang-tidy failed. Fix issues before committing."
         exit 1

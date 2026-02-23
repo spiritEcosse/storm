@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run clang-tidy using .clang-tidy configuration file
+# Run clang-tidy on staged files (git diff --cached)
 # Usage: ./run_clang_tidy.sh [--fix] [-j N]
 #
 # Prerequisites:
@@ -7,8 +7,8 @@
 #   - .clang-tidy file in project root (contains all check configurations)
 #
 # Options:
-#   --fix  Apply suggested fixes automatically (use with caution)
-#   -j N   Number of parallel jobs (default: all cores)
+#   --fix   Apply suggested fixes automatically (use with caution)
+#   -j N    Number of parallel jobs (default: all cores)
 
 set -e
 
@@ -69,7 +69,7 @@ echo "🔍 Running clang-tidy using .clang-tidy configuration..."
 echo "   Config file: $CLANG_TIDY_CONFIG"
 echo "   Build directory: $BUILD_DIR"
 echo "   Parallel jobs: $JOBS"
-echo "   Directories: src/ tests/ benchmarks/"
+echo "   Scope: staged files (git diff --cached)"
 if [[ -n "$FIX_FLAG" ]]; then
     echo "   Mode: AUTO-FIX enabled"
 else
@@ -77,17 +77,15 @@ else
 fi
 echo ""
 
-# Find source files, excluding third_party
-# File types: .cpp, .cppm only (headers excluded - they need module context clang-tidy can't provide)
-SEARCH_DIRS="src tests benchmarks"
-
-FILES=$(find $SEARCH_DIRS -type f \( -name "*.cpp" -o -name "*.cppm" \) \
-    ! -path "*/third_party/*" \
-    2>/dev/null | sort)
+# Collect staged C++ source files
+FILES=$(git diff --cached --name-only 2>/dev/null \
+    | grep -E '\.(cpp|cppm)$' \
+    | grep -v 'third_party' \
+    | sort)
 
 if [[ -z "$FILES" ]]; then
-    echo "❌ No source files found"
-    exit 1
+    echo "✅ No staged C++ files — clang-tidy skipped"
+    exit 0
 fi
 
 FILE_COUNT=$(echo "$FILES" | wc -l)
