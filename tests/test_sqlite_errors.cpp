@@ -13,6 +13,7 @@
 // NOLINTBEGIN(bugprone-implicit-widening-of-multiplication-result)
 
 import storm_db_sqlite;
+import storm_orm_statements_insert;
 import <expected>;
 import <string>;
 import <string_view>;
@@ -1163,6 +1164,33 @@ TEST_F(ORMErrorTest, SelectWithLimitOffset) {
     EXPECT_EQ(it->age, 24);
     ++it;
     EXPECT_EQ(it->age, 25);
+}
+
+TEST_F(ORMErrorTest, ChunkedInsertRollsBackOnConstraintViolation) {
+    storm::QuerySet<UniqueTestPerson> qs;
+
+    // Seed one existing row so the second chunk will hit a unique constraint
+    UniqueTestPerson const seed{.id = 0, .email = "duplicate@example.com", .value = 0};
+    auto                   seed_result = qs.insert(seed).execute();
+    ASSERT_TRUE(seed_result.has_value());
+
+    // Build a batch where the second row (second chunk with batch_size=1) is a duplicate
+    std::vector<UniqueTestPerson> batch = {
+            {0, "unique@example.com", 100},
+            {0, "duplicate@example.com", 200}, // conflicts with seeded row
+    };
+
+    auto result =
+            qs.insert(std::span<const UniqueTestPerson>(batch), storm::orm::statements::InsertOptions{.batch_size = 1})
+                    .execute();
+
+    ASSERT_FALSE(result.has_value()) << "Chunked insert with constraint violation should fail";
+    EXPECT_TRUE((result.error().code() & 0xFF) == SQLITE_CONSTRAINT);
+
+    // Verify rollback: only the seed row exists, the first chunk was rolled back too
+    auto count = qs.count().get();
+    ASSERT_TRUE(count.has_value());
+    EXPECT_EQ(count.value(), 1) << "Transaction rollback should leave only the seeded row";
 }
 
 // NOLINTEND(bugprone-implicit-widening-of-multiplication-result)

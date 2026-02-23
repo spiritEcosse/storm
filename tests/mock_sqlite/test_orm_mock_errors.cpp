@@ -2297,6 +2297,71 @@ namespace {
         ASSERT_FALSE(result.has_value());
     }
 
+    // ============================================================================
+    // Chunked INSERT Transaction Tests
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, ChunkedInsertTransactionBeginFails) {
+        // BEGIN TRANSACTION is executed via sqlite3_step (cached prepared statement path),
+        // so step_fails_on_call(1, ...) intercepts it — exec_returns has no effect here
+        MockSqlite3Config::step_fails_on_call(1, SQLITE_BUSY);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {
+                {.id = 0, .name = "Alice", .age = 30},
+                {.id = 0, .name = "Bob", .age = 25},
+        };
+
+        // batch_size=1 forces chunking (2 chunks for 2 rows)
+        auto result =
+                qs.insert(std::span<const MockPerson>(people), storm::orm::statements::InsertOptions{.batch_size = 1})
+                        .execute();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_BUSY);
+    }
+
+    TEST_F(ORMMockErrorTest, ChunkedInsertPartialFailureRollsBack) {
+        // step call 1 = BEGIN TRANSACTION (succeeds), step call 2 = first INSERT (fails)
+        // RAII TransactionGuard destructor issues ROLLBACK automatically on scope exit
+        MockSqlite3Config::step_fails_on_call(2, SQLITE_IOERR);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {
+                {.id = 0, .name = "Alice", .age = 30},
+                {.id = 0, .name = "Bob", .age = 25},
+        };
+
+        // batch_size=1 forces chunking — first chunk succeeds, second fails
+        auto result =
+                qs.insert(std::span<const MockPerson>(people), storm::orm::statements::InsertOptions{.batch_size = 1})
+                        .execute();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_IOERR);
+        // RAII TransactionGuard destructor issues ROLLBACK automatically
+    }
+
+    TEST_F(ORMMockErrorTest, ChunkedInsertSuccessCommits) {
+        // All operations succeed — verify that exec() was called for BEGIN and COMMIT
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {
+                {.id = 0, .name = "Alice", .age = 30},
+                {.id = 0, .name = "Bob", .age = 25},
+                {.id = 0, .name = "Carol", .age = 35},
+        };
+
+        // batch_size=1 forces 3 chunks
+        auto result =
+                qs.insert(std::span<const MockPerson>(people), storm::orm::statements::InsertOptions{.batch_size = 1})
+                        .execute();
+
+        ASSERT_TRUE(result.has_value());
+        // BEGIN TRANSACTION + COMMIT go through sqlite3_step (cached prepared statement path).
+        // With batch_size=1 and 3 rows: step(BEGIN) + step(INSERT)*3 + step(COMMIT) = 5 minimum
+        EXPECT_GE(MockSqlite3Config::get_step_call_count(), 5);
+    }
+
 } // namespace
 
 // NOLINTEND(readability-convert-member-functions-to-static,misc-const-correctness)
