@@ -32,18 +32,32 @@ cd build/debug && ./tests/storm_tests --gtest_filter="Pattern*"
 Replace "Pattern" with the actual test name or wildcard pattern (e.g., "QuerySet*", "InsertStatement.*", "*Batch*")
 
 ### Sanitizer Tests
-```bash
-# First rebuild with sanitizers (tests are ON by default in ninja-debug)
-cmake --preset ninja-debug -DUSE_SANITIZER="address;leak"
-cmake --build --preset ninja-debug
-# Then run tests
-ctest --preset ninja-debug
 
-# For thread sanitizer (separate build required)
-cmake --preset ninja-debug -DUSE_SANITIZER="thread"
-cmake --build --preset ninja-debug
-ctest --preset ninja-debug
+Dedicated presets — each uses its own binary dir to avoid cache conflicts:
+
+```bash
+# ASAN + LSAN + UBSAN (memory errors, leaks, undefined behavior)
+cmake --preset ninja-asan-ubsan && cmake --build --preset ninja-asan-ubsan
+ctest --preset ninja-asan-ubsan
+
+# SQLite only variant
+ctest --preset ninja-asan-ubsan-sqlite
+
+# TSAN (data races, lock-order inversions, thread_local races)
+cmake --preset ninja-tsan && cmake --build --preset ninja-tsan
+ctest --preset ninja-tsan
+
+# TSAN SQLite only
+ctest --preset ninja-tsan-sqlite
 ```
+
+> **Note**: ASAN and TSAN are mutually exclusive — separate builds required.
+> Serial execution (`jobs: 1`) is used for readable sanitizer output (~35s per run).
+
+| Preset | Binary dir | Sanitizers |
+|--------|-----------|------------|
+| `ninja-asan-ubsan` | `build/asan-ubsan` | ASAN + LSAN + UBSAN |
+| `ninja-tsan` | `build/tsan` | TSAN |
 
 ## Failure Analysis Framework
 
@@ -102,12 +116,31 @@ Provide test results in this structure:
 3. **Root Cause Analysis**: Likely cause based on error patterns
 4. **Recommended Actions**: Specific steps to fix issues
 
+## Thorough Testing Protocol
+
+For any non-trivial change, run all three test tiers:
+
+```bash
+# 1. Debug suite (SQLite + PostgreSQL)
+ctest --preset ninja-debug
+
+# 2. ASAN + UBSAN (memory safety + undefined behavior)
+cmake --preset ninja-asan-ubsan && cmake --build --preset ninja-asan-ubsan
+ctest --preset ninja-asan-ubsan
+
+# 3. TSAN (data races)
+cmake --preset ninja-tsan && cmake --build --preset ninja-tsan
+ctest --preset ninja-tsan
+```
+
+Use SQLite-only variants (`ninja-asan-ubsan-sqlite`, `ninja-tsan-sqlite`) when PostgreSQL is unavailable.
+
 ## Quality Assurance Checklist
 
 Before declaring tests successful:
-- [ ] All unit tests pass
-- [ ] No memory leaks (address sanitizer clean)
-- [ ] No data races (thread sanitizer clean)
+- [ ] All unit tests pass (`ninja-debug`)
+- [ ] No memory leaks or ASAN/UBSAN violations (`ninja-asan-ubsan`)
+- [ ] No data races (`ninja-tsan`)
 - [ ] Module dependencies correctly resolved
 - [ ] Database operations properly transactional
 

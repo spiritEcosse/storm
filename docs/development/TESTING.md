@@ -48,11 +48,16 @@ ctest --preset ninja-debug-sqlite
 # Run with verbose output
 ./build/debug/tests/storm_tests --gtest_verbose
 
-# Run with sanitizers
-cmake --preset ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="address;leak"
-cmake --build --preset ninja-debug
-ctest --preset ninja-debug
+# Run with ASAN + UBSAN (memory errors, leaks, undefined behavior)
+cmake --preset ninja-asan-ubsan && cmake --build --preset ninja-asan-ubsan
+ctest --preset ninja-asan-ubsan
+
+# Run with TSAN (data races)
+cmake --preset ninja-tsan && cmake --build --preset ninja-tsan
+ctest --preset ninja-tsan
 ```
+
+See [SANITIZERS.md](SANITIZERS.md) for full details on sanitizer presets.
 
 ## PostgreSQL Test Isolation
 

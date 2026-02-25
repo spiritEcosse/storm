@@ -18,13 +18,18 @@ Storm is a C++26 ORM library for SQLite using compile-time reflection to automat
 
 1. **NEVER delete `.git`** - Do not run `rm -rf .git`
 2. **NEVER push without approval** - Ask before `git push` (exception: user says "commit and push")
-3. **ALWAYS benchmark after code changes** - Use Release builds; revert if ANY slowdown
-4. **ALWAYS update docs after changes** - Code + docs commit together
-5. **Pre-commit hook enforces checks** - `commit.sh` runs automatically on `git commit` (format, tidy, test, coverage, sonar)
-6. **ALWAYS show files before commit** - Run `git status --short`, get user approval, then commit
-7. **ASK before creating new `.md` files**
-8. **UPPERCASE doc filenames** - `GETTING_STARTED.md`, not `getting-started.md`
-9. **ALWAYS write thorough unit tests** - Every feature needs comprehensive tests (see Testing Checklist)
+3. **NEVER skip the pre-commit hook** - Do not use `--no-verify`; `commit.sh` enforces format, tidy, test, coverage, sonar automatically
+4. **NEVER work directly on `develop` for issue-linked tasks** - Always create `feature/<N>-<description>` branch first (see [Branching Rules](#branching-rules))
+5. **ALWAYS show files before commit** - Run `git status --short`, get user approval, then commit
+6. **ALWAYS benchmark after code changes** - Use Release builds; revert if ANY slowdown
+7. **ALWAYS run sanitizer builds after code changes** - `ninja-asan-ubsan` (memory + UB) and `ninja-tsan` (data races); revert if new violations appear
+8. **ALWAYS update docs AND agent files after changes** - Code + docs + `.claude/agents/*.md` commit together. If you change a feature, preset, command, or pattern described in any agent file, update that agent file too.
+9. **ALWAYS write thorough unit tests BEFORE implementing** - Every feature or fix needs comprehensive tests first (see [Testing Checklist](#thorough-testing-checklist)). Workflow: (1) write tests → (2) run — new tests MUST fail (proves they test real behavior) → (3) implement → (4) run again — ALL tests must pass
+10. **SonarCloud gate MUST pass before merging** - Zero issues on new code; no exceptions, even for minor issues (see [SonarCloud Gate](#sonarcloud-gate-mandatory-before-merge))
+
+**Doc conventions:**
+- ASK before creating new `.md` files
+- UPPERCASE doc filenames — `GETTING_STARTED.md`, not `getting-started.md`
 
 ## Quick Start
 
@@ -73,7 +78,7 @@ cmake/
 - **Close when done**: After all subtasks are checked off, close the issue with `gh issue close <N>`.
 
 ### Branching Rules
-- **GitHub Issue work**: ALWAYS create a feature branch `feature/<issue-number>-<short-description>` from `develop` BEFORE starting any work. Never work directly on `develop` for issue-linked tasks.
+- **GitHub Issue work**: Create a feature branch `feature/<issue-number>-<short-description>` from `develop` before starting work (rule 10).
 - **Link branch to issue**: After creating the feature branch, link it to the issue: `gh issue develop <N> --branch feature/<issue-number>-<short-description>`
 - **Create pull request**: After pushing a feature branch, ALWAYS create a PR with `gh pr create --base develop` including `Closes #<N>` in the body to auto-link and auto-close the issue on merge.
 - **After creating a PR**: Wait 30 seconds, then run `/sonarcloud-status`. If there are **zero issues** on new code, immediately merge the PR into `develop` (`gh pr merge --merge`). If there are ANY issues (even minor), fix them all, push, and re-check until zero issues remain before merging.
@@ -93,7 +98,7 @@ The `/sonarcloud-status` skill (and `./scripts/sonarcloud-check.sh`) is **branch
 1. Run `/sonarcloud-status` — it auto-detects the PR and **waits** for SonarCloud analysis to finish.
 2. **If gate passes** (no issues on new code): merge the PR into `develop`.
 3. **If gate fails** (any issues — code duplication, bugs, code smells, security hotspots, even minor ones): fix ALL reported issues on the feature branch, push the fixes, then re-check SonarCloud until the gate passes.
-4. **Only merge after a clean SonarCloud gate** — no exceptions, even for minor issues.
+4. **Only merge after a clean SonarCloud gate** — no exceptions (rule 11).
 
 **Checking overall project health (on `develop`):**
 Run `/sonarcloud-status` while on `develop` to see the full project picture — all existing issues, overall metrics, and quality gate status for the branch.
