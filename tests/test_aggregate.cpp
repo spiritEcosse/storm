@@ -14,7 +14,7 @@ import <meta>;
 
 using namespace storm;
 
-#include "test_models.h"
+#include "test_models.h" // NOSONAR cpp:S954
 
 // Test fixture for aggregate functions
 template <typename ConnType> class AggregateTest : public StormTestFixture<Person, ConnType> {
@@ -86,10 +86,56 @@ template <typename ConnType> class AggregateTest : public StormTestFixture<Perso
         std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Bar', 60, 3)");
     }
 
+    // Helper: insert 6 people in two groups (years_experience = 5 and 10, 3 each).
+    // Group 5: Alice(25), Bob(30), Frank(28) — sum=83, avg≈27.67, min=25, max=30
+    // Group 10: Charlie(35), Dave(40), Eve(45) — sum=120, avg=40, min=35, max=45
+    void insert_two_group_test_data() {
+        std::vector<Person> const people = {
+                {.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5},
+                {.id = 0, .name = "Bob", .age = 30, .salary = 60000.0, .years_experience = 5},
+                {.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0, .years_experience = 10},
+                {.id = 0, .name = "Dave", .age = 40, .salary = 80000.0, .years_experience = 10},
+                {.id = 0, .name = "Eve", .age = 45, .salary = 90000.0, .years_experience = 10},
+                {.id = 0, .name = "Frank", .age = 28, .salary = 55000.0, .years_experience = 5},
+        };
+        for (const auto& person : people) {
+            std::ignore = qs->insert(person).execute();
+        }
+    }
+
+    // Helper: insert 5 people with overlapping age and years_experience.
+    // (age=25, ye=5) x2, (age=25, ye=10) x1, (age=30, ye=5) x1, (age=30, ye=10) x1
+    void insert_multi_group_test_data() {
+        std::vector<Person> const people = {
+                {.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5},
+                {.id = 0, .name = "Bob", .age = 25, .salary = 60000.0, .years_experience = 5},
+                {.id = 0, .name = "Charlie", .age = 25, .salary = 70000.0, .years_experience = 10},
+                {.id = 0, .name = "Dave", .age = 30, .salary = 80000.0, .years_experience = 5},
+                {.id = 0, .name = "Eve", .age = 30, .salary = 90000.0, .years_experience = 10},
+        };
+        for (const auto& person : people) {
+            std::ignore = qs->insert(person).execute();
+        }
+    }
+
+    // Helper: insert 3 people with years_experience 5/5/10 for HAVING sum tests.
+    // Group 5: Alice(25) + Bob(30) = sum 55
+    // Group 10: Charlie(35) = sum 35
+    void insert_having_sum_test_data() {
+        std::vector<Person> const people = {
+                {.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5},
+                {.id = 0, .name = "Bob", .age = 30, .salary = 60000.0, .years_experience = 5},
+                {.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0, .years_experience = 10},
+        };
+        for (const auto& person : people) {
+            std::ignore = qs->insert(person).execute();
+        }
+    }
+
     // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
     // GoogleTest fixtures conventionally use protected members for TEST_F access
-    std::unique_ptr<QuerySet<Person, ConnType>>  qs;
-    std::unique_ptr<QuerySet<Message, ConnType>> msg_qs;
+    std::unique_ptr<QuerySet<Person, ConnType>>  qs;     // NOSONAR cpp:S3656
+    std::unique_ptr<QuerySet<Message, ConnType>> msg_qs; // NOSONAR cpp:S3656
     // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
 };
 
@@ -1270,7 +1316,7 @@ template <typename ConnType> class OptionalAggregateTest : public StormTestFixtu
     }
 
     // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-    std::unique_ptr<QuerySet<Person, ConnType>> qs; // NOSONAR(cpp:S3656) - test fixture pattern
+    std::unique_ptr<QuerySet<Person, ConnType>> qs; // NOSONAR cpp:S3656
 };
 
 TYPED_TEST_SUITE(OptionalAggregateTest, DatabaseTypes);
@@ -1633,23 +1679,7 @@ TYPED_TEST(AggregateTest, GroupByWithAllAggregateTypes) {
     // Note: Current implementation supports one aggregate per query with GROUP BY
     // This test verifies each aggregate type works correctly with GROUP BY
 
-    // Insert test data with multiple people having the same years_experience
-    std::ignore =
-            this->qs->insert(Person{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5})
-                    .execute();
-    std::ignore = this->qs->insert(Person{.id = 0, .name = "Bob", .age = 30, .salary = 60000.0, .years_experience = 5})
-                          .execute();
-    std::ignore =
-            this->qs->insert(Person{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0, .years_experience = 10})
-                    .execute();
-    std::ignore =
-            this->qs->insert(Person{.id = 0, .name = "Dave", .age = 40, .salary = 80000.0, .years_experience = 10})
-                    .execute();
-    std::ignore = this->qs->insert(Person{.id = 0, .name = "Eve", .age = 45, .salary = 90000.0, .years_experience = 10})
-                          .execute();
-    std::ignore =
-            this->qs->insert(Person{.id = 0, .name = "Frank", .age = 28, .salary = 55000.0, .years_experience = 5})
-                    .execute();
+    this->insert_two_group_test_data();
 
     // Test data summary by years_experience:
     //   years_experience=5: Alice(25), Bob(30), Frank(28) -> count=3, sum=83, avg=27.67, min=25, max=30
@@ -1847,19 +1877,7 @@ TYPED_TEST(AggregateTest, GroupByWithOffsetOnly) {
 }
 
 TYPED_TEST(AggregateTest, GroupByMultipleFields) {
-    // Insert data with overlapping age and years_experience combinations
-    std::ignore =
-            this->qs->insert(Person{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5})
-                    .execute();
-    std::ignore = this->qs->insert(Person{.id = 0, .name = "Bob", .age = 25, .salary = 60000.0, .years_experience = 5})
-                          .execute();
-    std::ignore =
-            this->qs->insert(Person{.id = 0, .name = "Charlie", .age = 25, .salary = 70000.0, .years_experience = 10})
-                    .execute();
-    std::ignore = this->qs->insert(Person{.id = 0, .name = "Dave", .age = 30, .salary = 80000.0, .years_experience = 5})
-                          .execute();
-    std::ignore = this->qs->insert(Person{.id = 0, .name = "Eve", .age = 30, .salary = 90000.0, .years_experience = 10})
-                          .execute();
+    this->insert_multi_group_test_data();
 
     // Group by TWO fields: age AND years_experience
     // Expected groups: (25,5)=2, (25,10)=1, (30,5)=1, (30,10)=1 = 4 groups
@@ -2057,15 +2075,7 @@ TYPED_TEST(AggregateTest, HavingRepeatedQueries) {
 }
 
 TYPED_TEST(AggregateTest, HavingWithSum) {
-    // Insert data where groups have different sum totals
-    std::ignore =
-            this->qs->insert(Person{.id = 0, .name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5})
-                    .execute();
-    std::ignore = this->qs->insert(Person{.id = 0, .name = "Bob", .age = 30, .salary = 60000.0, .years_experience = 5})
-                          .execute();
-    std::ignore =
-            this->qs->insert(Person{.id = 0, .name = "Charlie", .age = 35, .salary = 70000.0, .years_experience = 10})
-                    .execute();
+    this->insert_having_sum_test_data();
 
     // GROUP BY years_experience, SUM(age), HAVING years_experience == 5
     auto result = this->qs->template group_by<^^Person::years_experience>()

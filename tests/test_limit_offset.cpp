@@ -11,7 +11,7 @@ import <expected>;
 using namespace storm;
 using namespace storm::orm::where;
 
-#include "test_models.h"
+#include "test_models.h" // NOSONAR cpp:S954
 
 // Test fixture for LIMIT/OFFSET operations — templated on database backend
 template <typename ConnType> class LimitOffsetTest : public StormTestFixture<Person, ConnType> {

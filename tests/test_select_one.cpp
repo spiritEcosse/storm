@@ -12,7 +12,7 @@ import <optional>;
 using namespace storm;
 using namespace storm::orm::where;
 
-#include "test_models.h"
+#include "test_models.h" // NOSONAR cpp:S954
 
 // Test fixture for first/get operations — templated on database backend
 template <typename ConnType> class SelectOneTest : public StormTestFixture<Person, ConnType> {

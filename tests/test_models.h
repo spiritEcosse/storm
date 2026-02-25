@@ -63,6 +63,25 @@ inline constexpr const char *message_create_sql = "CREATE TABLE Message ("
 
 // NOLINTEND(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
 
+namespace storm::test {
+// Populates join test data: 3 Persons + 5 Messages with sender FKs.
+// Used by DistinctTest, ValuesTest, and AggregateTest fixtures.
+template <typename ConnType> inline void populate_join_test_data() {
+    const auto &conn = storm::QuerySet<Person, ConnType>::get_default_connection();
+    std::ignore = conn->execute(
+        "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Alice', 30, 0, 0, 0)");
+    std::ignore = conn->execute(
+        "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Bob', 25, 0, 0, 0)");
+    std::ignore = conn->execute(
+        "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Charlie', 35, 0, 0, 0)");
+    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Hello', 0, 1)");
+    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('World', 0, 1)");
+    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Hi there', 0, 2)");
+    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Goodbye', 0, 2)");
+    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Test', 0, 3)");
+}
+} // namespace storm::test
+
 /**
  * @brief Base fixture for typed ORM tests — provides universal TearDown + setup_connection().
  *

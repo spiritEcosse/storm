@@ -17,7 +17,7 @@ import <optional>;
 using namespace storm;
 using namespace storm::orm::where;
 
-#include "test_models.h"
+#include "test_models.h" // NOSONAR cpp:S954
 
 // Test fixture for VALUES operations — templated on database backend
 template <typename ConnType> class ValuesTest : public StormTestFixture<Person, ConnType> {
@@ -36,28 +36,6 @@ template <typename ConnType> class ValuesTest : public StormTestFixture<Person, 
         ASSERT_TRUE(create_msg.has_value()) << "Failed to create Message table: " << create_msg.error().message();
 
         storm::test::begin_test_txn<ConnType>(conn, {"Person"});
-    }
-
-    static void populate_join_test_data() {
-        const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
-
-        // Insert users
-        std::ignore = conn->execute(
-                "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Alice', 30, 0, 0, 0)"
-        );
-        std::ignore = conn->execute(
-                "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Bob', 25, 0, 0, 0)"
-        );
-        std::ignore = conn->execute(
-                "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Charlie', 35, 0, 0, 0)"
-        );
-
-        // Insert messages (multiple messages per user)
-        std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Hello', 0, 1)"); // Alice
-        std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('World', 0, 1)"); // Alice
-        std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Hi there', 0, 2)"); // Bob
-        std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Goodbye', 0, 2)");  // Bob
-        std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Test', 0, 3)"); // Charlie
     }
 };
 
@@ -316,7 +294,7 @@ TYPED_TEST(ValuesTest, WithWhereNoResults) {
 
 // Test: values() with JOIN — single field
 TYPED_TEST(ValuesTest, WithJoinSingleField) {
-    this->populate_join_test_data();
+    storm::test::populate_join_test_data<TypeParam>();
 
     QuerySet<Message, TypeParam> msg_qs;
 
@@ -331,7 +309,7 @@ TYPED_TEST(ValuesTest, WithJoinSingleField) {
 
 // Test: values() with JOIN and WHERE
 TYPED_TEST(ValuesTest, WithJoinAndWhere) {
-    this->populate_join_test_data();
+    storm::test::populate_join_test_data<TypeParam>();
 
     QuerySet<Message, TypeParam> msg_qs;
 

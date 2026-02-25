@@ -13,10 +13,10 @@ import <chrono>;
 import <iostream>;
 import <iomanip>;
 
-#include "test_models.h"
+#include "test_models.h" // NOSONAR cpp:S954
 
-// Test QuerySet.remove() functionality
-template <typename ConnType> class QuerySetRemoveTest : public StormTestFixture<Person, ConnType> {
+// Common base fixture for Remove/Update tests — shared SetUp + helpers.
+template <typename ConnType> class PersonCrudTestBase : public StormTestFixture<Person, ConnType> {
   protected:
     auto SetUp() -> void override {
         if (!this->setup_connection()) {
@@ -24,7 +24,6 @@ template <typename ConnType> class QuerySetRemoveTest : public StormTestFixture<
             return;
         }
 
-        // Create test table using the default connection
         const auto& default_conn = storm::QuerySet<Person, ConnType>::get_default_connection();
 
         auto create_result = storm::test::ensure_table<ConnType>(default_conn, person_create_sql);
@@ -32,7 +31,6 @@ template <typename ConnType> class QuerySetRemoveTest : public StormTestFixture<
 
         storm::test::begin_test_txn<ConnType>(default_conn, {"Person"});
 
-        // Insert test data
         auto insert_result = default_conn->execute(
                 "INSERT INTO Person (id, name, age, salary, is_active, years_experience) VALUES "
                 "(1, 'Alice', 30, 0, 0, 0), "
@@ -41,13 +39,11 @@ template <typename ConnType> class QuerySetRemoveTest : public StormTestFixture<
         );
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data: " << insert_result.error().message();
 
-        // For PG: reset identity sequence past the explicitly-inserted IDs
         if constexpr (storm::test::is_postgresql<ConnType>()) {
             (void)default_conn->execute("ALTER TABLE Person ALTER COLUMN id RESTART WITH 4");
         }
     }
 
-    // Helper function to count records using the ORM
     static auto countPersons() -> int {
         storm::QuerySet<Person, ConnType> qs;
         auto                              result = qs.count().get();
@@ -57,7 +53,6 @@ template <typename ConnType> class QuerySetRemoveTest : public StormTestFixture<
         return static_cast<int>(result.value());
     }
 
-    // Helper function to check if person exists using the ORM
     static auto personExists(int person_id) -> bool {
         using namespace storm::orm::where;
         storm::QuerySet<Person, ConnType> qs;
@@ -65,6 +60,9 @@ template <typename ConnType> class QuerySetRemoveTest : public StormTestFixture<
         return result.has_value() && !result.value().empty();
     }
 };
+
+// Test QuerySet.remove() functionality
+template <typename ConnType> class QuerySetRemoveTest : public PersonCrudTestBase<ConnType> {};
 
 TYPED_TEST_SUITE(QuerySetRemoveTest, DatabaseTypes);
 
@@ -593,47 +591,8 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunkedWithRemainder) {
 }
 
 // Test QuerySet.update() functionality
-template <typename ConnType> class QuerySetUpdateTest : public StormTestFixture<Person, ConnType> {
+template <typename ConnType> class QuerySetUpdateTest : public PersonCrudTestBase<ConnType> {
   protected:
-    auto SetUp() -> void override {
-        if (!this->setup_connection()) {
-            GTEST_SKIP() << "PostgreSQL unavailable";
-            return;
-        }
-
-        // Create test table using the default connection
-        const auto& default_conn = storm::QuerySet<Person, ConnType>::get_default_connection();
-
-        auto create_result = storm::test::ensure_table<ConnType>(default_conn, person_create_sql);
-        ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
-
-        storm::test::begin_test_txn<ConnType>(default_conn, {"Person"});
-
-        // Insert test data
-        auto insert_result = default_conn->execute(
-                "INSERT INTO Person (id, name, age, salary, is_active, years_experience) VALUES "
-                "(1, 'Alice', 30, 0, 0, 0), "
-                "(2, 'Bob', 25, 0, 0, 0), "
-                "(3, 'Charlie', 35, 0, 0, 0)"
-        );
-        ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data: " << insert_result.error().message();
-
-        // For PG: reset identity sequence past the explicitly-inserted IDs
-        if constexpr (storm::test::is_postgresql<ConnType>()) {
-            (void)default_conn->execute("ALTER TABLE Person ALTER COLUMN id RESTART WITH 4");
-        }
-    }
-
-    // Helper function to count records using the ORM
-    static auto countPersons() -> int {
-        storm::QuerySet<Person, ConnType> qs;
-        auto                              result = qs.count().get();
-        if (!result.has_value()) {
-            return -1;
-        }
-        return static_cast<int>(result.value());
-    }
-
     // Helper function to get person by ID using the ORM
     static auto getPerson(int person_id) -> std::optional<Person> {
         using namespace storm::orm::where;
@@ -643,11 +602,6 @@ template <typename ConnType> class QuerySetUpdateTest : public StormTestFixture<
             return std::nullopt;
         }
         return *result.value().begin();
-    }
-
-    // Helper function to check if person exists
-    static auto personExists(int person_id) -> bool {
-        return getPerson(person_id).has_value();
     }
 };
 

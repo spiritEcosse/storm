@@ -9,7 +9,7 @@ import <vector>;
 import <expected>;
 import <optional>;
 
-#include "test_models.h"
+#include "test_models.h" // NOSONAR cpp:S954
 
 using namespace storm;
 using namespace storm::orm::where;

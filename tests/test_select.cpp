@@ -11,7 +11,7 @@ import <format>;
 
 using namespace storm;
 
-#include "test_models.h"
+#include "test_models.h" // NOSONAR cpp:S954
 
 // Test fixture for SELECT operations — templated on database backend
 template <typename ConnType> class SelectTest : public StormTestFixture<Person, ConnType> {

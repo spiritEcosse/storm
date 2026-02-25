@@ -11,13 +11,25 @@ import <expected>;
 import <optional>;
 import <cstdint>;
 
-#include "test_models.h"
+#include "test_models.h" // NOSONAR cpp:S954
 
 using namespace storm;
 using namespace storm::orm::where;
 
 template <typename ConnType> class OrderByTest : public StormTestFixture<Person, ConnType> {
   protected:
+    // Helper: verify age and name at each position in result set.
+    // entries is a vector of {expected_age, expected_name} pairs.
+    static void verify_order(const auto& people, const std::vector<std::pair<int, std::string>>& entries) {
+        auto it = people.begin();
+        for (size_t i = 0; i < entries.size(); ++i) {
+            EXPECT_EQ(std::ranges::next(people.begin(), static_cast<std::ptrdiff_t>(i))->age, entries[i].first)
+                    << "Wrong age at index " << i;
+            EXPECT_EQ(std::ranges::next(people.begin(), static_cast<std::ptrdiff_t>(i))->name, entries[i].second)
+                    << "Wrong name at index " << i;
+        }
+    }
+
     auto SetUp() -> void override {
         if (!this->setup_connection()) {
             GTEST_SKIP() << "Backend unavailable";
@@ -184,18 +196,8 @@ TYPED_TEST(OrderByTest, MultipleFieldsAllAsc) {
     ASSERT_EQ(people.size(), 10);
 
     // Verify ordering: age ASC, then name ASC within same age
-    EXPECT_EQ(std::ranges::next(people.begin(), 0)->age, 25);
-    EXPECT_EQ(std::ranges::next(people.begin(), 0)->name, "Bob"); // Age 25: Bob, David, Grace
-    EXPECT_EQ(std::ranges::next(people.begin(), 1)->age, 25);
-    EXPECT_EQ(std::ranges::next(people.begin(), 1)->name, "David");
-    EXPECT_EQ(std::ranges::next(people.begin(), 2)->age, 25);
-    EXPECT_EQ(std::ranges::next(people.begin(), 2)->name, "Grace");
-    EXPECT_EQ(std::ranges::next(people.begin(), 3)->age, 30);
-    EXPECT_EQ(std::ranges::next(people.begin(), 3)->name, "Alice"); // Age 30: Alice, Eve, Ivy
-    EXPECT_EQ(std::ranges::next(people.begin(), 4)->age, 30);
-    EXPECT_EQ(std::ranges::next(people.begin(), 4)->name, "Eve");
-    EXPECT_EQ(std::ranges::next(people.begin(), 5)->age, 30);
-    EXPECT_EQ(std::ranges::next(people.begin(), 5)->name, "Ivy");
+    // Age 25: Bob, David, Grace | Age 30: Alice, Eve, Ivy
+    this->verify_order(people, {{25, "Bob"}, {25, "David"}, {25, "Grace"}, {30, "Alice"}, {30, "Eve"}, {30, "Ivy"}});
 }
 
 TYPED_TEST(OrderByTest, MultipleFieldsMixedDirections) {
@@ -209,18 +211,8 @@ TYPED_TEST(OrderByTest, MultipleFieldsMixedDirections) {
     ASSERT_EQ(people.size(), 10);
 
     // Verify ordering: age ASC, then name DESC within same age
-    EXPECT_EQ(std::ranges::next(people.begin(), 0)->age, 25);
-    EXPECT_EQ(std::ranges::next(people.begin(), 0)->name, "Grace"); // Age 25: Grace, David, Bob (DESC)
-    EXPECT_EQ(std::ranges::next(people.begin(), 1)->age, 25);
-    EXPECT_EQ(std::ranges::next(people.begin(), 1)->name, "David");
-    EXPECT_EQ(std::ranges::next(people.begin(), 2)->age, 25);
-    EXPECT_EQ(std::ranges::next(people.begin(), 2)->name, "Bob");
-    EXPECT_EQ(std::ranges::next(people.begin(), 3)->age, 30);
-    EXPECT_EQ(std::ranges::next(people.begin(), 3)->name, "Ivy"); // Age 30: Ivy, Eve, Alice (DESC)
-    EXPECT_EQ(std::ranges::next(people.begin(), 4)->age, 30);
-    EXPECT_EQ(std::ranges::next(people.begin(), 4)->name, "Eve");
-    EXPECT_EQ(std::ranges::next(people.begin(), 5)->age, 30);
-    EXPECT_EQ(std::ranges::next(people.begin(), 5)->name, "Alice");
+    // Age 25: Grace, David, Bob (DESC) | Age 30: Ivy, Eve, Alice (DESC)
+    this->verify_order(people, {{25, "Grace"}, {25, "David"}, {25, "Bob"}, {30, "Ivy"}, {30, "Eve"}, {30, "Alice"}});
 }
 
 TYPED_TEST(OrderByTest, MultipleFieldsAllDesc) {
@@ -234,14 +226,8 @@ TYPED_TEST(OrderByTest, MultipleFieldsAllDesc) {
     ASSERT_EQ(people.size(), 10);
 
     // Verify ordering: age DESC, then name DESC
-    EXPECT_EQ(std::ranges::next(people.begin(), 0)->age, 40);
-    EXPECT_EQ(std::ranges::next(people.begin(), 0)->name, "Jack"); // Age 40: Jack, Frank (DESC)
-    EXPECT_EQ(std::ranges::next(people.begin(), 1)->age, 40);
-    EXPECT_EQ(std::ranges::next(people.begin(), 1)->name, "Frank");
-    EXPECT_EQ(std::ranges::next(people.begin(), 2)->age, 35);
-    EXPECT_EQ(std::ranges::next(people.begin(), 2)->name, "Henry"); // Age 35: Henry, Charlie (DESC)
-    EXPECT_EQ(std::ranges::next(people.begin(), 3)->age, 35);
-    EXPECT_EQ(std::ranges::next(people.begin(), 3)->name, "Charlie");
+    // Age 40: Jack, Frank (DESC) | Age 35: Henry, Charlie (DESC)
+    this->verify_order(people, {{40, "Jack"}, {40, "Frank"}, {35, "Henry"}, {35, "Charlie"}});
 }
 
 // ============================================================================
@@ -415,14 +401,14 @@ template <typename ConnType> class OrderByNullableTest : public StormTestFixture
 
         // Insert test data with mix of NULL and non-NULL values
         std::vector<Person> const test_data = {
-                {.id = 1, .score = std::optional<int>(100), .name = "Alice"},
-                {.id = 2, .score = std::nullopt, .name = "Bob"},
-                {.id = 3, .score = std::optional<int>(50), .name = "Charlie"},
-                {.id = 4, .score = std::nullopt, .name = "David"},
-                {.id = 5, .score = std::optional<int>(75), .name = "Eve"},
-                {.id = 6, .score = std::nullopt, .name = "Frank"},
-                {.id = 7, .score = std::optional<int>(25), .name = "Grace"},
-                {.id = 8, .score = std::optional<int>(100), .name = "Henry"},
+                {.id = 1, .name = "Alice", .score = std::optional<int>(100)},
+                {.id = 2, .name = "Bob", .score = std::nullopt},
+                {.id = 3, .name = "Charlie", .score = std::optional<int>(50)},
+                {.id = 4, .name = "David", .score = std::nullopt},
+                {.id = 5, .name = "Eve", .score = std::optional<int>(75)},
+                {.id = 6, .name = "Frank", .score = std::nullopt},
+                {.id = 7, .name = "Grace", .score = std::optional<int>(25)},
+                {.id = 8, .name = "Henry", .score = std::optional<int>(100)},
         };
 
         QuerySet<Person, ConnType> qs;
@@ -554,9 +540,9 @@ TYPED_TEST(OrderByNullableTest, AllNullValues) {
 
     QuerySet<Person, TypeParam> qs;
     std::vector<Person> const   all_nulls = {
-            {.id = 1, .score = std::nullopt, .name = "First"},
-            {.id = 2, .score = std::nullopt, .name = "Second"},
-            {.id = 3, .score = std::nullopt, .name = "Third"},
+            {.id = 1, .name = "First", .score = std::nullopt},
+            {.id = 2, .name = "Second", .score = std::nullopt},
+            {.id = 3, .name = "Third", .score = std::nullopt},
     };
     auto insert_result = qs.insert(all_nulls).execute();
     ASSERT_TRUE(insert_result.has_value());

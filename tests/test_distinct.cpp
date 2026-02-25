@@ -17,7 +17,7 @@ import <optional>;
 using namespace storm;
 using namespace storm::orm::where;
 
-#include "test_models.h"
+#include "test_models.h" // NOSONAR cpp:S954
 
 // Test fixture for DISTINCT operations — templated on database backend
 template <typename ConnType> class DistinctTest : public StormTestFixture<Person, ConnType> {
@@ -36,28 +36,6 @@ template <typename ConnType> class DistinctTest : public StormTestFixture<Person
         ASSERT_TRUE(create_msg.has_value()) << "Failed to create Message table: " << create_msg.error().message();
 
         storm::test::begin_test_txn<ConnType>(conn, {"Person"});
-    }
-
-    static void populate_join_test_data() {
-        const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
-
-        // Insert users
-        std::ignore = conn->execute(
-                "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Alice', 30, 0, 0, 0)"
-        );
-        std::ignore = conn->execute(
-                "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Bob', 25, 0, 0, 0)"
-        );
-        std::ignore = conn->execute(
-                "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Charlie', 35, 0, 0, 0)"
-        );
-
-        // Insert messages (multiple messages per user to test DISTINCT)
-        std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Hello', 0, 1)"); // Alice
-        std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('World', 0, 1)"); // Alice
-        std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Hi there', 0, 2)"); // Bob
-        std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Goodbye', 0, 2)");  // Bob
-        std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Test', 0, 3)"); // Charlie
     }
 };
 
@@ -607,7 +585,7 @@ TYPED_TEST(DistinctTest, DocumentedBehaviorAndLimitations) {
 }
 // Test: Current behavior - DISTINCT on base table only (no JOIN)
 TYPED_TEST(DistinctTest, DistinctOnBaseTableWithoutJoin) {
-    this->populate_join_test_data();
+    storm::test::populate_join_test_data<TypeParam>();
 
     QuerySet<Message, TypeParam> msg_qs;
 
@@ -708,7 +686,7 @@ TYPED_TEST(DistinctTest, DesiredSQLForDistinctWithJoin) {
 
 // Test: Workaround - Raw SQL for DISTINCT with JOIN
 TYPED_TEST(DistinctTest, RawSQLWorkaround) {
-    this->populate_join_test_data();
+    storm::test::populate_join_test_data<TypeParam>();
 
     const auto& conn = QuerySet<Message, TypeParam>::get_default_connection();
 
@@ -938,7 +916,7 @@ TYPED_TEST(DistinctTest, DistinctWithComplexWhere) {
 
 // Test DISTINCT with JOIN - single field
 TYPED_TEST(DistinctTest, DistinctWithJoinSingleField) {
-    this->populate_join_test_data(); // Create Persons and Messages
+    storm::test::populate_join_test_data<TypeParam>(); // Create Persons and Messages
 
     QuerySet<Message, TypeParam> msg_qs;
 
@@ -957,7 +935,7 @@ TYPED_TEST(DistinctTest, DistinctWithJoinSingleField) {
 
 // Test DISTINCT with JOIN and WHERE
 TYPED_TEST(DistinctTest, DistinctWithJoinAndWhere) {
-    this->populate_join_test_data();
+    storm::test::populate_join_test_data<TypeParam>();
 
     QuerySet<Message, TypeParam> msg_qs;
 
@@ -977,7 +955,7 @@ TYPED_TEST(DistinctTest, DistinctWithJoinAndWhere) {
 
 // Test chaining order: WHERE -> JOIN -> DISTINCT
 TYPED_TEST(DistinctTest, ChainingOrderWhereJoinDistinct) {
-    this->populate_join_test_data();
+    storm::test::populate_join_test_data<TypeParam>();
 
     QuerySet<Message, TypeParam> msg_qs;
 
@@ -992,7 +970,7 @@ TYPED_TEST(DistinctTest, ChainingOrderWhereJoinDistinct) {
 
 // Test chaining order: JOIN -> WHERE -> DISTINCT
 TYPED_TEST(DistinctTest, ChainingOrderJoinWhereDistinct) {
-    this->populate_join_test_data();
+    storm::test::populate_join_test_data<TypeParam>();
 
     QuerySet<Message, TypeParam> msg_qs;
 
@@ -1075,7 +1053,7 @@ TYPED_TEST(DistinctTest, DistinctKeywordInjectionInJoinQueries) {
      * without internal code modification, since JOIN SQL is compile-time generated.
      * The defensive check exists to catch future compiler bugs or refactoring issues.
      */
-    this->populate_join_test_data();
+    storm::test::populate_join_test_data<TypeParam>();
 
     QuerySet<Message, TypeParam> msg_qs;
 
