@@ -11,48 +11,23 @@ import <format>;
 
 using namespace storm;
 
-// Test model with various field types
-struct SelectPerson {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string                               name;
-    int                                       age{};
-};
+#include "test_models.h"
 
 // Test fixture for SELECT operations — templated on database backend
-template <typename ConnType> class SelectTest : public ::testing::Test {
+template <typename ConnType> class SelectTest : public StormTestFixture<Person, ConnType> {
   protected:
     auto SetUp() -> void override {
-        if (!storm::test::backend_available<ConnType>()) {
+        if (!this->setup_connection()) {
             GTEST_SKIP() << "PostgreSQL unavailable";
+            return;
         }
 
-        const auto& conn_str = storm::test::get_connection_string<ConnType>();
-        auto        result   = QuerySet<SelectPerson, ConnType>::set_default_connection(conn_str);
-        ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
+        const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
 
-        const auto& conn = QuerySet<SelectPerson, ConnType>::get_default_connection();
-
-        auto create_result = storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE SelectPerson ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "name TEXT NOT NULL, "
-                "age INTEGER NOT NULL"
-                ")"
-        );
+        auto create_result = storm::test::ensure_table<ConnType>(conn, person_create_sql);
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
-        storm::test::begin_test_txn<ConnType>(conn, {"SelectPerson"});
-    }
-
-    auto TearDown() -> void override {
-        if constexpr (storm::test::is_postgresql<ConnType>()) {
-            if (QuerySet<SelectPerson, ConnType>::has_default_connection()) {
-                const auto& conn = QuerySet<SelectPerson, ConnType>::get_default_connection();
-                storm::test::rollback_test_txn<ConnType>(conn);
-            }
-        }
-        QuerySet<SelectPerson, ConnType>::clear_default_connection();
+        storm::test::begin_test_txn<ConnType>(conn, {"Person"});
     }
 };
 
@@ -60,7 +35,7 @@ TYPED_TEST_SUITE(SelectTest, DatabaseTypes);
 
 // Test: SELECT from empty table returns empty vector
 TYPED_TEST(SelectTest, SelectFromEmptyTable) {
-    QuerySet<SelectPerson, TypeParam> queryset;
+    QuerySet<Person, TypeParam> queryset;
 
     auto result = queryset.select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT failed: " << result.error().message();
@@ -71,11 +46,11 @@ TYPED_TEST(SelectTest, SelectFromEmptyTable) {
 
 // Test: SELECT single row
 TYPED_TEST(SelectTest, SelectSingleRow) {
-    QuerySet<SelectPerson, TypeParam> queryset;
+    QuerySet<Person, TypeParam> queryset;
 
     // Insert one person
-    SelectPerson const alice{.id = 0, .name = "Alice", .age = 30};
-    auto               insert_result = queryset.insert(alice).execute();
+    Person const alice{.id = 0, .name = "Alice", .age = 30};
+    auto         insert_result = queryset.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     int64_t const inserted_id = insert_result.value();
@@ -95,12 +70,12 @@ TYPED_TEST(SelectTest, SelectSingleRow) {
 
 // Test: SELECT multiple rows
 TYPED_TEST(SelectTest, SelectMultipleRows) {
-    QuerySet<SelectPerson, TypeParam> queryset;
+    QuerySet<Person, TypeParam> queryset;
 
     // Insert multiple people
-    std::vector<SelectPerson> people_to_insert = {{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}};
+    std::vector<Person> people_to_insert = {{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}};
 
-    auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert)).execute();
+    auto insert_result = queryset.insert(std::span<const Person>(people_to_insert)).execute();
     ASSERT_TRUE(insert_result.has_value())
             << "INSERT failed: code=" << insert_result.error().code() << " message=" << insert_result.error().message();
 
@@ -130,11 +105,11 @@ TYPED_TEST(SelectTest, SelectMultipleRows) {
 
 // Test: SELECT with different field types (int and std::string)
 TYPED_TEST(SelectTest, SelectDifferentFieldTypes) {
-    QuerySet<SelectPerson, TypeParam> queryset;
+    QuerySet<Person, TypeParam> queryset;
 
     // Insert person with specific values
-    SelectPerson const dave{.id = 0, .name = "Dave", .age = 40};
-    auto               insert_result = queryset.insert(dave).execute();
+    Person const dave{.id = 0, .name = "Dave", .age = 40};
+    auto         insert_result = queryset.insert(dave).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     // Select and verify field types are correctly handled
@@ -156,12 +131,12 @@ TYPED_TEST(SelectTest, SelectDifferentFieldTypes) {
 // Test: SELECT after INSERT and DELETE
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(SelectTest, SelectAfterInsertAndDelete) {
-    QuerySet<SelectPerson, TypeParam> queryset;
+    QuerySet<Person, TypeParam> queryset;
 
     // Insert multiple people
-    std::vector<SelectPerson> people_to_insert = {{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}};
+    std::vector<Person> people_to_insert = {{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}};
 
-    auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert)).execute();
+    auto insert_result = queryset.insert(std::span<const Person>(people_to_insert)).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     // Select to get the auto-generated IDs
@@ -179,8 +154,8 @@ TYPED_TEST(SelectTest, SelectAfterInsertAndDelete) {
     ASSERT_GT(bob_id, 0) << "Bob not found";
 
     // Delete Bob
-    SelectPerson const bob_to_delete{.id = bob_id, .name = "Bob", .age = 25};
-    auto               delete_result = queryset.remove(bob_to_delete).execute();
+    Person const bob_to_delete{.id = bob_id, .name = "Bob", .age = 25};
+    auto         delete_result = queryset.remove(bob_to_delete).execute();
     ASSERT_TRUE(delete_result.has_value()) << "DELETE failed: " << delete_result.error().message();
 
     // Select all rows again
@@ -200,15 +175,15 @@ TYPED_TEST(SelectTest, SelectAfterInsertAndDelete) {
 // Test: SELECT with large dataset
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(SelectTest, SelectLargeDataset) {
-    QuerySet<SelectPerson, TypeParam> queryset;
+    QuerySet<Person, TypeParam> queryset;
 
     // Insert 100 people (use explicit IDs for batch insert)
-    std::vector<SelectPerson> people_to_insert;
+    std::vector<Person> people_to_insert;
     for (int i = 1; i <= 100; ++i) {
         people_to_insert.emplace_back(i, std::format("SelectPerson{}", i), 20 + i);
     }
 
-    auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert)).execute();
+    auto insert_result = queryset.insert(std::span<const Person>(people_to_insert)).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     // Select all rows
@@ -234,11 +209,11 @@ TYPED_TEST(SelectTest, SelectLargeDataset) {
 
 // Test: Multiple SELECT calls reuse cached statement
 TYPED_TEST(SelectTest, MultipleSelectCallsUseCaching) {
-    QuerySet<SelectPerson, TypeParam> queryset;
+    QuerySet<Person, TypeParam> queryset;
 
     // Insert test data
-    SelectPerson const alice{.id = 0, .name = "Alice", .age = 30};
-    auto               insert_result = queryset.insert(alice).execute();
+    Person const alice{.id = 0, .name = "Alice", .age = 30};
+    auto         insert_result = queryset.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // First SELECT
@@ -259,11 +234,11 @@ TYPED_TEST(SelectTest, MultipleSelectCallsUseCaching) {
 
 // Test: SELECT with empty strings
 TYPED_TEST(SelectTest, SelectWithEmptyString) {
-    QuerySet<SelectPerson, TypeParam> queryset;
+    QuerySet<Person, TypeParam> queryset;
 
     // Insert person with empty name
-    SelectPerson const anonymous{.id = 0, .name = "", .age = 25};
-    auto               insert_result = queryset.insert(anonymous).execute();
+    Person const anonymous{.id = 0, .name = "", .age = 25};
+    auto         insert_result = queryset.insert(anonymous).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // Select and verify
@@ -278,13 +253,13 @@ TYPED_TEST(SelectTest, SelectWithEmptyString) {
 
 // Test: SELECT preserves row order
 TYPED_TEST(SelectTest, SelectPreservesRowOrder) {
-    QuerySet<SelectPerson, TypeParam> queryset;
+    QuerySet<Person, TypeParam> queryset;
 
     // Insert in specific order (use explicit IDs for batch insert)
-    std::vector<SelectPerson> people_to_insert =
+    std::vector<Person> people_to_insert =
             {{1, "First", 1}, {2, "Second", 2}, {3, "Third", 3}, {4, "Fourth", 4}, {5, "Fifth", 5}};
 
-    auto insert_result = queryset.insert(std::span<const SelectPerson>(people_to_insert)).execute();
+    auto insert_result = queryset.insert(std::span<const Person>(people_to_insert)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // Select and verify order is preserved

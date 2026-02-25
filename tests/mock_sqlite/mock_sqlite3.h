@@ -25,11 +25,11 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <string_view>
-#include <vector>
-#include <memory>
 #include <unordered_map>
+#include <vector>
 
 // ============================================================================
 // SQLite3 Constants (from sqlite3.h)
@@ -92,8 +92,8 @@
 #define SQLITE_OPEN_PRIVATECACHE 0x00040000 // NOSONAR(cpp:S5028)
 
 // Bind transient flag
-#define SQLITE_TRANSIENT ((void (*)(void*)) - 1) // NOSONAR(cpp:S5028)
-#define SQLITE_STATIC ((void (*)(void*))0)       // NOSONAR(cpp:S5028)
+#define SQLITE_TRANSIENT ((void (*)(void *)) - 1) // NOSONAR(cpp:S5028)
+#define SQLITE_STATIC ((void (*)(void *))0)       // NOSONAR(cpp:S5028)
 
 // ============================================================================
 // SQLite3 Types (opaque handles)
@@ -108,75 +108,75 @@ struct sqlite3_stmt;
 
 namespace storm::test {
 
-    /**
-     * @brief Configuration builder for mock SQLite behavior
-     */
-    class MockSqlite3Config {
-      public:
-        // Reset all mock configurations to default (success) behavior
-        static auto reset() -> void;
+/**
+ * @brief Configuration builder for mock SQLite behavior
+ */
+class MockSqlite3Config {
+  public:
+    // Reset all mock configurations to default (success) behavior
+    static auto reset() -> void;
 
-        // Configure bind functions to return specific error codes
-        static auto bind_int_returns(int return_code) -> MockSqlite3Config&;
-        static auto bind_text_returns(int return_code) -> MockSqlite3Config&;
-        static auto bind_int64_returns(int return_code) -> MockSqlite3Config&;
-        static auto bind_double_returns(int return_code) -> MockSqlite3Config&;
-        static auto bind_null_returns(int return_code) -> MockSqlite3Config&;
-        static auto bind_blob_returns(int return_code) -> MockSqlite3Config&;
+    // Configure bind functions to return specific error codes
+    static auto bind_int_returns(int return_code) -> MockSqlite3Config &;
+    static auto bind_text_returns(int return_code) -> MockSqlite3Config &;
+    static auto bind_int64_returns(int return_code) -> MockSqlite3Config &;
+    static auto bind_double_returns(int return_code) -> MockSqlite3Config &;
+    static auto bind_null_returns(int return_code) -> MockSqlite3Config &;
+    static auto bind_blob_returns(int return_code) -> MockSqlite3Config &;
 
-        // Configure step() to return specific codes
-        static auto step_returns(int return_code) -> MockSqlite3Config&;
-        static auto step_returns_sequence(std::vector<int> codes) -> MockSqlite3Config&;
+    // Configure step() to return specific codes
+    static auto step_returns(int return_code) -> MockSqlite3Config &;
+    static auto step_returns_sequence(std::vector<int> codes) -> MockSqlite3Config &;
 
-        // Configure prepare to fail
-        static auto prepare_returns(int return_code) -> MockSqlite3Config&;
-        static auto prepare_error_message(std::string_view msg) -> MockSqlite3Config&;
+    // Configure prepare to fail
+    static auto prepare_returns(int return_code) -> MockSqlite3Config &;
+    static auto prepare_error_message(std::string_view msg) -> MockSqlite3Config &;
 
-        // Configure open to fail
-        static auto open_returns(int return_code) -> MockSqlite3Config&;
-        static auto open_error_message(std::string_view msg) -> MockSqlite3Config&;
+    // Configure open to fail
+    static auto open_returns(int return_code) -> MockSqlite3Config &;
+    static auto open_error_message(std::string_view msg) -> MockSqlite3Config &;
 
-        // Configure exec to fail
-        static auto exec_returns(int return_code) -> MockSqlite3Config&;
-        static auto exec_error_message(std::string_view msg) -> MockSqlite3Config&;
+    // Configure exec to fail
+    static auto exec_returns(int return_code) -> MockSqlite3Config &;
+    static auto exec_error_message(std::string_view msg) -> MockSqlite3Config &;
 
-        // Configure for specific call counts (e.g., "fail on 3rd bind_int call")
-        static auto bind_int_fails_on_call(int call_number, int return_code) -> MockSqlite3Config&;
-        static auto bind_int64_fails_on_call(int call_number, int return_code) -> MockSqlite3Config&;
-        static auto bind_text_fails_on_call(int call_number, int return_code) -> MockSqlite3Config&;
-        static auto step_fails_on_call(int call_number, int return_code) -> MockSqlite3Config&;
-        static auto prepare_fails_on_call(int call_number, int return_code) -> MockSqlite3Config&;
+    // Configure for specific call counts (e.g., "fail on 3rd bind_int call")
+    static auto bind_int_fails_on_call(int call_number, int return_code) -> MockSqlite3Config &;
+    static auto bind_int64_fails_on_call(int call_number, int return_code) -> MockSqlite3Config &;
+    static auto bind_text_fails_on_call(int call_number, int return_code) -> MockSqlite3Config &;
+    static auto step_fails_on_call(int call_number, int return_code) -> MockSqlite3Config &;
+    static auto prepare_fails_on_call(int call_number, int return_code) -> MockSqlite3Config &;
 
-        // Get call counts for verification
-        static auto get_bind_int_call_count() -> int;
-        static auto get_bind_text_call_count() -> int;
-        static auto get_step_call_count() -> int;
-        static auto get_prepare_call_count() -> int;
-        static auto get_exec_call_count() -> int;
+    // Get call counts for verification
+    static auto get_bind_int_call_count() -> int;
+    static auto get_bind_text_call_count() -> int;
+    static auto get_step_call_count() -> int;
+    static auto get_prepare_call_count() -> int;
+    static auto get_exec_call_count() -> int;
 
-      private:
-        static MockSqlite3Config instance_;
-    };
+  private:
+    static MockSqlite3Config instance_;
+};
 
-    /**
-     * @brief RAII guard that resets mock configuration on destruction
-     */
-    class MockSqlite3Guard {
-      public:
-        MockSqlite3Guard() = default;
-        ~MockSqlite3Guard() noexcept {
-            try {
-                MockSqlite3Config::reset();
-            } catch (...) {
-                // Suppress exceptions in destructor
-            }
+/**
+ * @brief RAII guard that resets mock configuration on destruction
+ */
+class MockSqlite3Guard {
+  public:
+    MockSqlite3Guard() = default;
+    ~MockSqlite3Guard() noexcept {
+        try {
+            MockSqlite3Config::reset();
+        } catch (...) {
+            // Suppress exceptions in destructor
         }
+    }
 
-        MockSqlite3Guard(const MockSqlite3Guard&)                    = delete;
-        auto operator=(const MockSqlite3Guard&) -> MockSqlite3Guard& = delete;
-        MockSqlite3Guard(MockSqlite3Guard&&)                         = delete;
-        auto operator=(MockSqlite3Guard&&) -> MockSqlite3Guard&      = delete;
-    };
+    MockSqlite3Guard(const MockSqlite3Guard &) = delete;
+    auto operator=(const MockSqlite3Guard &) -> MockSqlite3Guard & = delete;
+    MockSqlite3Guard(MockSqlite3Guard &&) = delete;
+    auto operator=(MockSqlite3Guard &&) -> MockSqlite3Guard & = delete;
+};
 
 } // namespace storm::test
 
@@ -189,45 +189,45 @@ extern "C" {
 #endif
 
 // Database connection management
-auto sqlite3_open_v2(const char* filename, sqlite3** ppDb, int flags, const char* zVfs) -> int;
+auto sqlite3_open_v2(const char *filename, sqlite3 **ppDb, int flags, const char *zVfs) -> int;
 
-auto sqlite3_close_v2(sqlite3* db) -> int;
+auto sqlite3_close_v2(sqlite3 *db) -> int;
 
 // Statement preparation
-auto sqlite3_prepare_v2(sqlite3* db, const char* zSql, int nByte, sqlite3_stmt** ppStmt, const char** pzTail) -> int;
+auto sqlite3_prepare_v2(sqlite3 *db, const char *zSql, int nByte, sqlite3_stmt **ppStmt, const char **pzTail) -> int;
 
-auto sqlite3_finalize(sqlite3_stmt* pStmt) -> int;
-auto sqlite3_reset(sqlite3_stmt* pStmt) -> int;
+auto sqlite3_finalize(sqlite3_stmt *pStmt) -> int;
+auto sqlite3_reset(sqlite3_stmt *pStmt) -> int;
 
 // Statement execution
-auto sqlite3_step(sqlite3_stmt* pStmt) -> int;
-auto sqlite3_exec(sqlite3* db, const char* sql, int (*callback)(void*, int, char**, char**), void* arg, char** errmsg)
-        -> int;
+auto sqlite3_step(sqlite3_stmt *pStmt) -> int;
+auto sqlite3_exec(sqlite3 *db, const char *sql, int (*callback)(void *, int, char **, char **), void *arg,
+                  char **errmsg) -> int;
 
 // Binding values
-auto sqlite3_bind_int(sqlite3_stmt* pStmt, int idx, int value) -> int;
-auto sqlite3_bind_int64(sqlite3_stmt* pStmt, int idx, int64_t value) -> int;
-auto sqlite3_bind_double(sqlite3_stmt* pStmt, int idx, double value) -> int;
-auto sqlite3_bind_text(sqlite3_stmt* pStmt, int idx, const char* value, int nBytes, void (*destructor)(void*)) -> int;
-auto sqlite3_bind_null(sqlite3_stmt* pStmt, int idx) -> int;
-auto sqlite3_bind_blob(sqlite3_stmt* pStmt, int idx, const void* value, int nBytes, void (*destructor)(void*)) -> int;
+auto sqlite3_bind_int(sqlite3_stmt *pStmt, int idx, int value) -> int;
+auto sqlite3_bind_int64(sqlite3_stmt *pStmt, int idx, int64_t value) -> int;
+auto sqlite3_bind_double(sqlite3_stmt *pStmt, int idx, double value) -> int;
+auto sqlite3_bind_text(sqlite3_stmt *pStmt, int idx, const char *value, int nBytes, void (*destructor)(void *)) -> int;
+auto sqlite3_bind_null(sqlite3_stmt *pStmt, int idx) -> int;
+auto sqlite3_bind_blob(sqlite3_stmt *pStmt, int idx, const void *value, int nBytes, void (*destructor)(void *)) -> int;
 
 // Extracting column values
-auto sqlite3_column_int(sqlite3_stmt* pStmt, int iCol) -> int;
-auto sqlite3_column_int64(sqlite3_stmt* pStmt, int iCol) -> int64_t;
-auto sqlite3_column_double(sqlite3_stmt* pStmt, int iCol) -> double;
-auto sqlite3_column_text(sqlite3_stmt* pStmt, int iCol) -> const unsigned char*;
-auto sqlite3_column_blob(sqlite3_stmt* pStmt, int iCol) -> const void*;
-auto sqlite3_column_bytes(sqlite3_stmt* pStmt, int iCol) -> int;
-auto sqlite3_column_type(sqlite3_stmt* pStmt, int iCol) -> int;
+auto sqlite3_column_int(sqlite3_stmt *pStmt, int iCol) -> int;
+auto sqlite3_column_int64(sqlite3_stmt *pStmt, int iCol) -> int64_t;
+auto sqlite3_column_double(sqlite3_stmt *pStmt, int iCol) -> double;
+auto sqlite3_column_text(sqlite3_stmt *pStmt, int iCol) -> const unsigned char *;
+auto sqlite3_column_blob(sqlite3_stmt *pStmt, int iCol) -> const void *;
+auto sqlite3_column_bytes(sqlite3_stmt *pStmt, int iCol) -> int;
+auto sqlite3_column_type(sqlite3_stmt *pStmt, int iCol) -> int;
 
 // Error handling
-auto sqlite3_errmsg(sqlite3* db) -> const char*;
-auto sqlite3_db_handle(sqlite3_stmt* pStmt) -> sqlite3*;
-auto sqlite3_free(void* ptr) -> void;
+auto sqlite3_errmsg(sqlite3 *db) -> const char *;
+auto sqlite3_db_handle(sqlite3_stmt *pStmt) -> sqlite3 *;
+auto sqlite3_free(void *ptr) -> void;
 
 // Last insert rowid
-auto sqlite3_last_insert_rowid(sqlite3* db) -> int64_t;
+auto sqlite3_last_insert_rowid(sqlite3 *db) -> int64_t;
 
 #ifdef __cplusplus
 }
