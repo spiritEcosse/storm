@@ -6,6 +6,7 @@
 import storm;
 
 import <expected>;
+import <format>;
 import <string>;
 import <vector>;
 import <span>;
@@ -474,11 +475,7 @@ TYPED_TEST(AggregateTest, LargeDataset_Sum) {
     people.reserve(1000);
     for (int i = 1; i <= 1000; ++i) {
         people.push_back(
-                Person{.id               = 0,
-                       .name             = "Person" + std::to_string(i),
-                       .age              = i,
-                       .salary           = 50000.0,
-                       .years_experience = 5}
+                Person{.id = 0, .name = std::format("Person{}", i), .age = i, .salary = 50000.0, .years_experience = 5}
         );
     }
     auto batch_result = this->qs->insert(std::span<const Person>(people)).execute();
@@ -496,11 +493,7 @@ TYPED_TEST(AggregateTest, LargeDataset_Count) {
     people.reserve(10000);
     for (int i = 1; i <= 10000; ++i) {
         people.push_back(
-                Person{.id               = 0,
-                       .name             = "Person" + std::to_string(i),
-                       .age              = 25,
-                       .salary           = 50000.0,
-                       .years_experience = 5}
+                Person{.id = 0, .name = std::format("Person{}", i), .age = 25, .salary = 50000.0, .years_experience = 5}
         );
     }
     auto insert_result = this->qs->insert(std::span<const Person>(people)).execute();
@@ -600,7 +593,7 @@ TYPED_TEST(AggregateTest, Integration_AfterInsert) {
     for (int i = 1; i <= 5; ++i) {
         auto insert_result = this->qs->insert(
                                              Person{.id               = 0,
-                                                    .name             = "Person" + std::to_string(i),
+                                                    .name             = std::format("Person{}", i),
                                                     .age              = i * 10,
                                                     .salary           = 50000.0,
                                                     .years_experience = 5}

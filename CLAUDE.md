@@ -76,6 +76,7 @@ cmake/
 - **GitHub Issue work**: ALWAYS create a feature branch `feature/<issue-number>-<short-description>` from `develop` BEFORE starting any work. Never work directly on `develop` for issue-linked tasks.
 - **Link branch to issue**: After creating the feature branch, link it to the issue: `gh issue develop <N> --branch feature/<issue-number>-<short-description>`
 - **Create pull request**: After pushing a feature branch, ALWAYS create a PR with `gh pr create --base develop` including `Closes #<N>` in the body to auto-link and auto-close the issue on merge.
+- **After creating a PR**: Wait 30 seconds, then run `/sonarcloud-status`. If there are **zero issues** on new code, immediately merge the PR into `develop` (`gh pr merge --merge`). If there are ANY issues (even minor), fix them all, push, and re-check until zero issues remain before merging.
 - **Close issue after merge**: After merging a feature branch into `develop`, ALWAYS close the issue with `gh issue close <N>`. Do NOT wait to be asked.
 - **Ad-hoc fixes** (no GitHub Issue): Work directly on `develop`.
 

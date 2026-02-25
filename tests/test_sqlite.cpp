@@ -10,6 +10,7 @@ import <string>;
 import <optional>;
 import <span>;
 import <chrono>;
+import <format>;
 import <iostream>;
 import <iomanip>;
 
@@ -317,7 +318,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchPerformance) {
     std::vector<Person> setup_batch;
     setup_batch.reserve(num_records - 3);
     for (int i = 4; i <= num_records; i++) {
-        setup_batch.push_back(Person{.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 60)});
+        setup_batch.push_back(Person{.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 60)});
     }
     auto insert_result = queryset.insert(std::span<const Person>(setup_batch)).execute();
     ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
@@ -503,7 +504,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunked) {
     std::vector<Person> setup_batch;
     setup_batch.reserve(num_records - 3);
     for (int i = 4; i <= num_records; i++) {
-        setup_batch.push_back(Person{.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 60)});
+        setup_batch.push_back(Person{.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 60)});
     }
     auto insert_result = queryset.insert(std::span<const Person>(setup_batch)).execute();
     ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
@@ -549,7 +550,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunkedWithRemainder) {
     std::vector<Person> setup_batch;
     setup_batch.reserve(num_records - 3);
     for (int i = 4; i <= num_records; i++) {
-        setup_batch.push_back(Person{.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 60)});
+        setup_batch.push_back(Person{.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 60)});
     }
     auto insert_result = queryset.insert(std::span<const Person>(setup_batch)).execute();
     ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
