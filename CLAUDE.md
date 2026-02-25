@@ -30,11 +30,13 @@ Storm is a C++26 ORM library for SQLite using compile-time reflection to automat
 
 ### CMake Presets
 
-| Preset | Build type | Tests | Coverage | Bench | Use for |
-|---|---|---|---|---|---|
-| `ninja-debug` | Debug | ✓ | ✓ | — | Development, coverage |
-| `ninja-release` | Release | ✓ | — | ✓ | CI, benchmarking |
-| `ninja-prod` | Release | — | — | — | Production artifact |
+| Preset | Build type | Tests | Coverage | Bench | Sanitizer | Use for |
+|---|---|---|---|---|---|---|
+| `ninja-debug` | Debug | ✓ | ✓ | — | — | Development, coverage |
+| `ninja-release` | Release | ✓ | — | ✓ | — | CI, benchmarking |
+| `ninja-prod` | Release | — | — | — | — | Production artifact |
+| `ninja-asan-ubsan` | Debug | ✓ | — | — | ASAN+UBSAN | Memory safety + undefined behavior |
+| `ninja-tsan` | Debug | ✓ | — | — | TSAN | Data race detection |
 
 ### Build & Test
 ```bash

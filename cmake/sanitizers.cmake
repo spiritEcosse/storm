@@ -20,5 +20,6 @@ if(USE_SANITIZER)
     message(STATUS "Sanitizer options configured for ${USE_SANITIZER}")
   endif()
 
-  add_compile_options(-g)
+  # Better stack traces for all sanitizers
+  add_compile_options(-g -fno-omit-frame-pointer)
 endif()

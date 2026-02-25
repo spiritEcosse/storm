@@ -46,6 +46,30 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "ninja-asan-ubsan",
+      "displayName": "Ninja ASAN+UBSAN",
+      "description": "Debug build with AddressSanitizer + UndefinedBehaviorSanitizer — memory safety and undefined behavior",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/asan-ubsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_TESTS": "ON",
+        "USE_SANITIZER": "address,undefined"
+      }
+    },
+    {
+      "name": "ninja-tsan",
+      "displayName": "Ninja TSAN",
+      "description": "Debug build with ThreadSanitizer — detects data races in thread_local patterns",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/tsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_TESTS": "ON",
+        "USE_SANITIZER": "thread"
+      }
     }
   ],
   "buildPresets": [
@@ -67,6 +91,14 @@
     {
       "name": "ninja-prod",
       "configurePreset": "ninja-prod"
+    },
+    {
+      "name": "ninja-asan-ubsan",
+      "configurePreset": "ninja-asan-ubsan"
+    },
+    {
+      "name": "ninja-tsan",
+      "configurePreset": "ninja-tsan"
     }
   ],
   "testPresets": [
@@ -98,6 +130,49 @@
       "configurePreset": "ninja-release",
       "output": {
         "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ninja-asan-ubsan",
+      "configurePreset": "ninja-asan-ubsan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "jobs": 1
+      },
+      "environment": {
+        "STORM_PG_CONNSTR": "host=/var/run/postgresql dbname=storm_db user=storm_db",
+        "ASAN_OPTIONS": "detect_leaks=1:abort_on_error=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:abort_on_error=1"
+      }
+    },
+    {
+      "name": "ninja-asan-ubsan-sqlite",
+      "inherits": "ninja-asan-ubsan",
+      "environment": {
+        "STORM_PG_CONNSTR": null
+      }
+    },
+    {
+      "name": "ninja-tsan",
+      "configurePreset": "ninja-tsan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "jobs": 1
+      },
+      "environment": {
+        "STORM_PG_CONNSTR": "host=/var/run/postgresql dbname=storm_db user=storm_db",
+        "TSAN_OPTIONS": "abort_on_error=1"
+      }
+    },
+    {
+      "name": "ninja-tsan-sqlite",
+      "inherits": "ninja-tsan",
+      "environment": {
+        "STORM_PG_CONNSTR": null
       }
     }
   ]
