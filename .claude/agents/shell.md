@@ -71,3 +71,33 @@ Your core competencies include:
 4. Suggest debugging techniques for future issues
 
 Always provide working, tested solutions with clear explanations. When multiple approaches exist, explain the trade-offs and recommend the best option for the specific use case.
+
+## Storm-Specific Scripts
+
+These scripts have project-specific conventions — understand them before modifying:
+
+**`commit.sh`** — Pre-commit checks orchestrator (runs via `.githooks/pre-commit`):
+- Pipeline: clang-format → cmake-format → clang-tidy → tests → coverage
+- Smart skips based on staged file types (no C++/cmake → skip all; cmake-only → skip format/tidy; bench-only → skip tests/coverage)
+- No manual skip flags — skipping is automatic based on what's staged
+
+**`.githooks/pre-commit`** — Thin wrapper: just `exec ./commit.sh`
+
+**`.githooks/pre-push`** — SonarCloud gate (currently disabled, all logic commented out):
+- Disabled because C++26 not yet supported by CFamily analyzer (issue #113)
+- When re-enabled: detects C++ changes → builds with build-wrapper → runs sonar-scanner → polls CE task → checks quality gate
+- Currently just prints a notice and exits 0
+
+**`scripts/run_clang_tidy.sh`** — Runs clang-tidy on staged files only:
+- Options: `--fix` (auto-apply fixes), `-j N` (parallel jobs, default: all cores)
+- Requires release build (`cmake --preset ninja-release`) for `compile_commands.json`
+- C++26 module files (`.cppm`, `tests/*.cpp`, `benchmarks/*.cpp`) are skipped — clang-tidy crashes on them
+- Exits non-zero on warnings or errors (warnings block commits)
+
+**`scripts/sonarcloud-check.sh`** — Branch-aware SonarCloud quality gate:
+- Branch mode (develop/master/main): checks full project — all existing issues
+- PR mode (feature branches): new code only — waits for analysis to finish, then checks changed lines
+- Requires `SONAR_TOKEN` env var
+- Used by the `/sonarcloud-status` skill
+
+**`scripts/coverage-run-batched.sh`** — Batched coverage report generation
