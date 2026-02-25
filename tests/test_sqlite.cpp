@@ -312,16 +312,15 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchPartialExist) {
 TYPED_TEST(QuerySetRemoveTest, RemoveBatchPerformance) {
     auto queryset = storm::QuerySet<Person, TypeParam>{};
 
-    // Add test data for performance comparison
-    const auto& conn        = storm::QuerySet<Person, TypeParam>::get_default_connection();
-    const int   num_records = 1000;
+    // Add test data for performance comparison (batch insert to avoid per-row round-trips)
+    const int           num_records = 1000;
+    std::vector<Person> setup_batch;
+    setup_batch.reserve(num_records - 3);
     for (int i = 4; i <= num_records; i++) {
-        auto insert_result = conn->execute(
-                "INSERT INTO Person (id, name, age, salary, is_active, years_experience) VALUES (" + std::to_string(i) +
-                ", 'Person" + std::to_string(i) + "', " + std::to_string(20 + (i % 60)) + ", 0, 0, 0)"
-        );
-        ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
+        setup_batch.push_back(Person{.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 60)});
     }
+    auto insert_result = queryset.insert(std::span<const Person>(setup_batch)).execute();
+    ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
 
     // Measure individual removes
     auto start_individual = std::chrono::steady_clock::now();
@@ -498,17 +497,16 @@ TYPED_TEST(QuerySetRemoveTest, InsertEmptyBatch) {
 TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunked) {
     auto queryset = storm::QuerySet<Person, TypeParam>{};
 
-    // Add many test records (1000+) to test chunked deletion
+    // Add many test records (1000+) to test chunked deletion (batch insert to avoid per-row round-trips)
     // MAX_CHUNK_SIZE is 799, so >799 triggers chunked path
-    const auto& conn        = storm::QuerySet<Person, TypeParam>::get_default_connection();
-    const int   num_records = 1000;
+    const int           num_records = 1000;
+    std::vector<Person> setup_batch;
+    setup_batch.reserve(num_records - 3);
     for (int i = 4; i <= num_records; i++) {
-        auto insert_result = conn->execute(
-                "INSERT INTO Person (id, name, age, salary, is_active, years_experience) VALUES (" + std::to_string(i) +
-                ", 'Person" + std::to_string(i) + "', " + std::to_string(20 + (i % 60)) + ", 0, 0, 0)"
-        );
-        ASSERT_TRUE(insert_result.has_value()) << "Failed to insert record " << i;
+        setup_batch.push_back(Person{.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 60)});
     }
+    auto insert_result = queryset.insert(std::span<const Person>(setup_batch)).execute();
+    ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
 
     // Verify initial state
     EXPECT_EQ(this->countPersons(), 1000) << "Should have 1000 persons initially";
@@ -532,15 +530,12 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunked) {
     // Verify correct number of persons removed
     EXPECT_EQ(this->countPersons(), 150) << "Should have 150 persons after chunked batch removal";
 
-    // Verify specific persons were removed
-    for (int i = 1; i <= 850; i++) {
-        EXPECT_FALSE(this->personExists(i)) << "Person " << i << " should be removed";
-    }
-
-    // Verify remaining persons still exist
-    for (int i = 851; i <= 1000; i++) {
-        EXPECT_TRUE(this->personExists(i)) << "Person " << i << " should still exist";
-    }
+    // Spot-check boundary values (avoid 1000 per-row queries which are slow on PostgreSQL)
+    EXPECT_FALSE(this->personExists(1)) << "First removed person should be gone";
+    EXPECT_FALSE(this->personExists(425)) << "Mid-range removed person should be gone";
+    EXPECT_FALSE(this->personExists(850)) << "Last removed person should be gone";
+    EXPECT_TRUE(this->personExists(851)) << "First remaining person should still exist";
+    EXPECT_TRUE(this->personExists(1000)) << "Last remaining person should still exist";
 }
 
 // Test chunked remove with remainder (tests both full chunks and remainder processing)
@@ -548,17 +543,16 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunked) {
 TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunkedWithRemainder) {
     auto queryset = storm::QuerySet<Person, TypeParam>{};
 
-    // Add many test records to test chunked deletion with remainder
+    // Add many test records to test chunked deletion with remainder (batch insert to avoid per-row round-trips)
     // MAX_CHUNK_SIZE is 799, so 1650 rows = 2 full chunks (1598) + 52 remainder
-    const auto& conn        = storm::QuerySet<Person, TypeParam>::get_default_connection();
-    const int   num_records = 1800;
+    const int           num_records = 1800;
+    std::vector<Person> setup_batch;
+    setup_batch.reserve(num_records - 3);
     for (int i = 4; i <= num_records; i++) {
-        auto insert_result = conn->execute(
-                "INSERT INTO Person (id, name, age, salary, is_active, years_experience) VALUES (" + std::to_string(i) +
-                ", 'Person" + std::to_string(i) + "', " + std::to_string(20 + (i % 60)) + ", 0, 0, 0)"
-        );
-        ASSERT_TRUE(insert_result.has_value()) << "Failed to insert record " << i;
+        setup_batch.push_back(Person{.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 60)});
     }
+    auto insert_result = queryset.insert(std::span<const Person>(setup_batch)).execute();
+    ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
 
     // Verify initial state
     EXPECT_EQ(this->countPersons(), 1800) << "Should have 1800 persons initially";
@@ -579,15 +573,12 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunkedWithRemainder) {
     // Verify correct number of persons removed
     EXPECT_EQ(this->countPersons(), 150) << "Should have 150 persons after chunked batch removal";
 
-    // Verify specific persons were removed
-    for (int i = 1; i <= 1650; i++) {
-        EXPECT_FALSE(this->personExists(i)) << "Person " << i << " should be removed";
-    }
-
-    // Verify remaining persons still exist
-    for (int i = 1651; i <= 1800; i++) {
-        EXPECT_TRUE(this->personExists(i)) << "Person " << i << " should still exist";
-    }
+    // Spot-check boundary values (avoid 1800 per-row queries which are slow on PostgreSQL)
+    EXPECT_FALSE(this->personExists(1)) << "First removed person should be gone";
+    EXPECT_FALSE(this->personExists(825)) << "Mid-range removed person should be gone";
+    EXPECT_FALSE(this->personExists(1650)) << "Last removed person should be gone";
+    EXPECT_TRUE(this->personExists(1651)) << "First remaining person should still exist";
+    EXPECT_TRUE(this->personExists(1800)) << "Last remaining person should still exist";
 }
 
 // Test QuerySet.update() functionality
