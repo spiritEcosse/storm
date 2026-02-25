@@ -6,6 +6,7 @@
 import storm;
 
 import <expected>;
+import <format>;
 import <string>;
 import <vector>;
 import <span>;
@@ -469,18 +470,16 @@ TYPED_TEST(AggregateTest, SingleRow_AllAggregates) {
 // ============================================================================
 
 TYPED_TEST(AggregateTest, LargeDataset_Sum) {
-    // Insert 1000 people with ages 1-1000
+    // Batch insert 1000 people with ages 1-1000
+    std::vector<Person> people;
+    people.reserve(1000);
     for (int i = 1; i <= 1000; ++i) {
-        auto result = this->qs->insert(
-                                      Person{.id               = 0,
-                                             .name             = "Person" + std::to_string(i),
-                                             .age              = i,
-                                             .salary           = 50000.0,
-                                             .years_experience = 5}
-        )
-                              .execute();
-        ASSERT_TRUE(result.has_value());
+        people.push_back(
+                Person{.id = 0, .name = std::format("Person{}", i), .age = i, .salary = 50000.0, .years_experience = 5}
+        );
     }
+    auto batch_result = this->qs->insert(std::span<const Person>(people)).execute();
+    ASSERT_TRUE(batch_result.has_value()) << "Batch insert failed: " << batch_result.error().message();
 
     // SUM(age) = 1+2+3+...+1000 = 1000*1001/2 = 500500
     auto result = this->qs->template sum<^^Person::age>().get();
@@ -494,11 +493,7 @@ TYPED_TEST(AggregateTest, LargeDataset_Count) {
     people.reserve(10000);
     for (int i = 1; i <= 10000; ++i) {
         people.push_back(
-                Person{.id               = 0,
-                       .name             = "Person" + std::to_string(i),
-                       .age              = 25,
-                       .salary           = 50000.0,
-                       .years_experience = 5}
+                Person{.id = 0, .name = std::format("Person{}", i), .age = 25, .salary = 50000.0, .years_experience = 5}
         );
     }
     auto insert_result = this->qs->insert(std::span<const Person>(people)).execute();
@@ -598,7 +593,7 @@ TYPED_TEST(AggregateTest, Integration_AfterInsert) {
     for (int i = 1; i <= 5; ++i) {
         auto insert_result = this->qs->insert(
                                              Person{.id               = 0,
-                                                    .name             = "Person" + std::to_string(i),
+                                                    .name             = std::format("Person{}", i),
                                                     .age              = i * 10,
                                                     .salary           = 50000.0,
                                                     .years_experience = 5}
