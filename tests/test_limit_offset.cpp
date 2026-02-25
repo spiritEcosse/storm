@@ -11,58 +11,32 @@ import <expected>;
 using namespace storm;
 using namespace storm::orm::where;
 
-// Test model for LIMIT/OFFSET operations
-struct LimitOffsetPerson {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string                               name;
-    int                                       age{};
-};
+#include "test_models.h" // NOSONAR cpp:S954
 
 // Test fixture for LIMIT/OFFSET operations — templated on database backend
-template <typename ConnType> class LimitOffsetTest : public ::testing::Test {
+template <typename ConnType> class LimitOffsetTest : public StormTestFixture<Person, ConnType> {
   protected:
     auto SetUp() -> void override {
-        if (!storm::test::backend_available<ConnType>()) {
+        if (!this->setup_connection()) {
             GTEST_SKIP() << "PostgreSQL unavailable";
+            return;
         }
 
-        auto result = QuerySet<LimitOffsetPerson, ConnType>::set_default_connection(
-                storm::test::get_connection_string<ConnType>()
-        );
-        ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
+        const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
 
-        const auto& conn = QuerySet<LimitOffsetPerson, ConnType>::get_default_connection();
-
-        auto create_result = storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE LimitOffsetPerson ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "name TEXT NOT NULL, "
-                "age INTEGER NOT NULL"
-                ")"
-        );
+        auto create_result = storm::test::ensure_table<ConnType>(conn, person_create_sql);
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
-        storm::test::begin_test_txn<ConnType>(conn, {"LimitOffsetPerson"});
+        storm::test::begin_test_txn<ConnType>(conn, {"Person"});
 
         // Insert 20 test records for comprehensive testing
-        QuerySet<LimitOffsetPerson, ConnType> queryset;
-        std::vector<LimitOffsetPerson>        people;
+        QuerySet<Person, ConnType> queryset;
+        std::vector<Person>        people;
         for (int i = 1; i <= 20; i++) {
             people.emplace_back(i, "Person" + std::to_string(i), 20 + i);
         }
-        auto insert_result = queryset.insert(std::span<const LimitOffsetPerson>(people)).execute();
+        auto insert_result = queryset.insert(std::span<const Person>(people)).execute();
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data: " << insert_result.error().message();
-    }
-
-    auto TearDown() -> void override {
-        if constexpr (storm::test::is_postgresql<ConnType>()) {
-            if (QuerySet<LimitOffsetPerson, ConnType>::has_default_connection()) {
-                const auto& conn = QuerySet<LimitOffsetPerson, ConnType>::get_default_connection();
-                storm::test::rollback_test_txn<ConnType>(conn);
-            }
-        }
-        QuerySet<LimitOffsetPerson, ConnType>::clear_default_connection();
     }
 };
 
@@ -71,7 +45,7 @@ TYPED_TEST_SUITE(LimitOffsetTest, DatabaseTypes);
 // ===== Basic LIMIT Tests =====
 
 TYPED_TEST(LimitOffsetTest, LimitOnly) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
     auto result = qs.limit(5).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT with LIMIT failed: " << result.error().message();
@@ -88,7 +62,7 @@ TYPED_TEST(LimitOffsetTest, LimitOnly) {
 }
 
 TYPED_TEST(LimitOffsetTest, LimitZero) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
     auto result = qs.limit(0).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT with LIMIT 0 failed: " << result.error().message();
@@ -98,7 +72,7 @@ TYPED_TEST(LimitOffsetTest, LimitZero) {
 }
 
 TYPED_TEST(LimitOffsetTest, LimitGreaterThanResultSet) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
     auto result = qs.limit(100).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT with large LIMIT failed: " << result.error().message();
@@ -110,7 +84,7 @@ TYPED_TEST(LimitOffsetTest, LimitGreaterThanResultSet) {
 // ===== Basic OFFSET Tests =====
 
 TYPED_TEST(LimitOffsetTest, OffsetOnly) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
     auto result = qs.offset(10).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT with OFFSET failed: " << result.error().message();
@@ -126,7 +100,7 @@ TYPED_TEST(LimitOffsetTest, OffsetOnly) {
 }
 
 TYPED_TEST(LimitOffsetTest, OffsetZero) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
     auto result = qs.offset(0).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT with OFFSET 0 failed: " << result.error().message();
@@ -136,7 +110,7 @@ TYPED_TEST(LimitOffsetTest, OffsetZero) {
 }
 
 TYPED_TEST(LimitOffsetTest, OffsetGreaterThanResultSet) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
     auto result = qs.offset(100).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT with large OFFSET failed: " << result.error().message();
@@ -148,7 +122,7 @@ TYPED_TEST(LimitOffsetTest, OffsetGreaterThanResultSet) {
 // ===== Combined LIMIT/OFFSET Tests =====
 
 TYPED_TEST(LimitOffsetTest, LimitAndOffset) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
     auto result = qs.limit(5).offset(5).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT with LIMIT/OFFSET failed: " << result.error().message();
@@ -165,7 +139,7 @@ TYPED_TEST(LimitOffsetTest, LimitAndOffset) {
 }
 
 TYPED_TEST(LimitOffsetTest, LimitOffsetPagination) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
     // Page 1: records 1-5
     auto page1 = qs.limit(5).offset(0).select().execute();
@@ -204,9 +178,9 @@ TYPED_TEST(LimitOffsetTest, LimitOffsetPagination) {
 // ===== LIMIT/OFFSET with WHERE =====
 
 TYPED_TEST(LimitOffsetTest, LimitWithWhere) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.where(field<^^LimitOffsetPerson::age>() > 25).limit(3).select().execute();
+    auto result = qs.where(field<^^Person::age>() > 25).limit(3).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT WHERE with LIMIT failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -219,9 +193,9 @@ TYPED_TEST(LimitOffsetTest, LimitWithWhere) {
 }
 
 TYPED_TEST(LimitOffsetTest, LimitOffsetWithWhere) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.where(field<^^LimitOffsetPerson::age>() > 25).limit(3).offset(2).select().execute();
+    auto result = qs.where(field<^^Person::age>() > 25).limit(3).offset(2).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT WHERE with LIMIT/OFFSET failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -234,9 +208,9 @@ TYPED_TEST(LimitOffsetTest, LimitOffsetWithWhere) {
 }
 
 TYPED_TEST(LimitOffsetTest, WhereWithOffsetNoLimit) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.where(field<^^LimitOffsetPerson::age>() < 30).offset(2).select().execute();
+    auto result = qs.where(field<^^Person::age>() < 30).offset(2).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT WHERE with OFFSET failed: " << result.error().message();
 
     // Should get all matching records except first 2
@@ -250,9 +224,9 @@ TYPED_TEST(LimitOffsetTest, WhereWithOffsetNoLimit) {
 // ===== LIMIT/OFFSET with DISTINCT =====
 
 TYPED_TEST(LimitOffsetTest, DistinctWithLimit) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.limit(5).template distinct<^^LimitOffsetPerson::name>().select();
+    auto result = qs.limit(5).template distinct<^^Person::name>().select();
     ASSERT_TRUE(result.has_value()) << "DISTINCT with LIMIT failed: " << result.error().message();
 
     const auto& names = result.value();
@@ -260,9 +234,9 @@ TYPED_TEST(LimitOffsetTest, DistinctWithLimit) {
 }
 
 TYPED_TEST(LimitOffsetTest, DistinctWithLimitOffset) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.limit(5).offset(3).template distinct<^^LimitOffsetPerson::name>().select();
+    auto result = qs.limit(5).offset(3).template distinct<^^Person::name>().select();
     ASSERT_TRUE(result.has_value()) << "DISTINCT with LIMIT/OFFSET failed: " << result.error().message();
 
     const auto& names = result.value();
@@ -270,9 +244,9 @@ TYPED_TEST(LimitOffsetTest, DistinctWithLimitOffset) {
 }
 
 TYPED_TEST(LimitOffsetTest, DistinctMultiFieldWithLimit) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.limit(10).template distinct<^^LimitOffsetPerson::name, ^^LimitOffsetPerson::age>().select();
+    auto result = qs.limit(10).template distinct<^^Person::name, ^^Person::age>().select();
     ASSERT_TRUE(result.has_value()) << "Multi-field DISTINCT with LIMIT failed: " << result.error().message();
 
     const auto& pairs = result.value();
@@ -280,12 +254,9 @@ TYPED_TEST(LimitOffsetTest, DistinctMultiFieldWithLimit) {
 }
 
 TYPED_TEST(LimitOffsetTest, DistinctWithWhereAndLimit) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.where(field<^^LimitOffsetPerson::age>() > 30)
-                          .limit(3)
-                          .template distinct<^^LimitOffsetPerson::name>()
-                          .select();
+    auto result = qs.where(field<^^Person::age>() > 30).limit(3).template distinct<^^Person::name>().select();
     ASSERT_TRUE(result.has_value()) << "DISTINCT WHERE with LIMIT failed: " << result.error().message();
 
     const auto& names = result.value();
@@ -295,7 +266,7 @@ TYPED_TEST(LimitOffsetTest, DistinctWithWhereAndLimit) {
 // ===== Reset State Tests =====
 
 TYPED_TEST(LimitOffsetTest, ResetClearsLimitOffset) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
     // First query with LIMIT/OFFSET
     auto result1 = qs.limit(5).offset(5).select().execute();
@@ -310,7 +281,7 @@ TYPED_TEST(LimitOffsetTest, ResetClearsLimitOffset) {
 }
 
 TYPED_TEST(LimitOffsetTest, ReuseLimitOffset) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
     // Set LIMIT/OFFSET once
     qs.limit(5).offset(10);
@@ -329,7 +300,7 @@ TYPED_TEST(LimitOffsetTest, ReuseLimitOffset) {
 }
 
 TYPED_TEST(LimitOffsetTest, OverwriteLimitOffset) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
     // First LIMIT/OFFSET
     auto result1 = qs.limit(5).offset(0).select().execute();
@@ -347,7 +318,7 @@ TYPED_TEST(LimitOffsetTest, OverwriteLimitOffset) {
 // ===== Edge Cases =====
 
 TYPED_TEST(LimitOffsetTest, LimitOffsetAtBoundary) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
     // Exactly at the end
     auto result = qs.limit(5).offset(15).select().execute();
@@ -358,7 +329,7 @@ TYPED_TEST(LimitOffsetTest, LimitOffsetAtBoundary) {
 }
 
 TYPED_TEST(LimitOffsetTest, LimitOffsetPartialPage) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
     // Request more than available
     auto result = qs.limit(10).offset(15).select().execute();
@@ -367,7 +338,7 @@ TYPED_TEST(LimitOffsetTest, LimitOffsetPartialPage) {
 }
 
 TYPED_TEST(LimitOffsetTest, LimitOne) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
     auto result = qs.limit(1).select().execute();
     ASSERT_TRUE(result.has_value());
@@ -376,7 +347,7 @@ TYPED_TEST(LimitOffsetTest, LimitOne) {
 }
 
 TYPED_TEST(LimitOffsetTest, OffsetOne) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
     auto result = qs.limit(1).offset(1).select().execute();
     ASSERT_TRUE(result.has_value());
@@ -387,7 +358,7 @@ TYPED_TEST(LimitOffsetTest, OffsetOne) {
 // ===== SQL Clause Ordering =====
 
 TYPED_TEST(LimitOffsetTest, MethodChainingOrder) {
-    QuerySet<LimitOffsetPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
     // Methods can be chained in any order
     auto result1 = qs.limit(5).offset(3).select().execute();

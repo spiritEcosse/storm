@@ -57,3 +57,11 @@ SortUsingDeclarations: true
 
 # Try to keep include-clean order stable across platforms
 IncludeIsMainRegex: '([.]cppm|[.]cpp|[.]cc|[.]cxx)$'
+
+---
+# Objective-C section required so clang-format does not reject .h files
+# when the Cpp section contains C++26 reflection syntax (e.g. [[= ...]]).
+Language: ObjC
+BasedOnStyle: LLVM
+ColumnLimit: 120
+IndentWidth: 4
