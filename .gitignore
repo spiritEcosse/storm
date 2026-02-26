@@ -20,3 +20,13 @@ default.profraw
 
 # SonarCloud scanner working directory
 .scannerwork/
+
+# libFuzzer corpus / crash artifacts (created by fuzz harness runs)
+# These are raw binary files with unprintable names; managed per-session by the user
+crash-*
+timeout-*
+leak-*
+oom-*
+slow-unit-*
+corpus/
+crashes/

@@ -70,6 +70,17 @@
         "ENABLE_TESTS": "ON",
         "USE_SANITIZER": "thread"
       }
+    },
+    {
+      "name": "ninja-fuzz",
+      "displayName": "Ninja Fuzzing",
+      "description": "Release build with libFuzzer + ASAN harnesses — fuzz the runtime SQL binding layer",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/fuzz",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ENABLE_FUZZING": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -99,6 +110,10 @@
     {
       "name": "ninja-tsan",
       "configurePreset": "ninja-tsan"
+    },
+    {
+      "name": "ninja-fuzz",
+      "configurePreset": "ninja-fuzz"
     }
   ],
   "testPresets": [

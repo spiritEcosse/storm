@@ -119,6 +119,11 @@ is_cpp26_module_file() {
         return 0
     fi
 
+    # All fuzz harnesses import Storm modules
+    if [[ "$file" == fuzz/*.cpp ]]; then
+        return 0
+    fi
+
     return 1
 }
 export -f is_cpp26_module_file
