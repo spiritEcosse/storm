@@ -83,6 +83,7 @@ cmake/
 - **Create pull request**: After pushing a feature branch, ALWAYS create a PR with `gh pr create --base develop` including `Closes #<N>` in the body to auto-link and auto-close the issue on merge.
 - **After creating a PR**: Wait 30 seconds, then run `/sonarcloud-status`. If there are **zero issues** on new code, immediately merge the PR into `develop` (`gh pr merge --merge`). If there are ANY issues (even minor), fix them all, push, and re-check until zero issues remain before merging.
 - **Close issue after merge**: After merging a feature branch into `develop`, ALWAYS close the issue with `gh issue close <N>`. Do NOT wait to be asked.
+- **Switch to develop after merge**: After merging and closing the issue, ALWAYS run `git checkout develop && git pull` to return to the main branch.
 - **Ad-hoc fixes** (no GitHub Issue): Work directly on `develop`.
 
 ### SonarCloud Gate (MANDATORY before merge)
