@@ -13,6 +13,8 @@ import <expected>;
 import <memory>;
 import <optional>;
 import <vector>;
+import <array>;
+import <utility>;
 
 export namespace storm::orm::schema {
 

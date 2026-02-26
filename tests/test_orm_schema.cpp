@@ -33,7 +33,7 @@ TEST(SchemaUnitTest, PersonSqlMatchesHandWritten) {
                                  "    avatar BLOB\n"
                                  ")";
 
-    const std::string& generated = QuerySet<Person>::create_table_sql();
+    const std::string& generated = storm::create_table_sql<Person>();
     EXPECT_EQ(generated, expected) << "Generated SQL:\n" << generated << "\n\nExpected SQL:\n" << expected;
 }
 
@@ -46,54 +46,53 @@ TEST(SchemaUnitTest, MessageSqlMatchesHandWritten) {
                                  "    sender_id INTEGER NOT NULL\n"
                                  ")";
 
-    const std::string& generated = QuerySet<Message>::create_table_sql();
+    const std::string& generated = storm::create_table_sql<Message>();
     EXPECT_EQ(generated, expected) << "Generated SQL:\n" << generated << "\n\nExpected SQL:\n" << expected;
 }
 
 // Test: Person id field generates PRIMARY KEY AUTOINCREMENT
 TEST(SchemaUnitTest, PersonIdFieldIsPrimaryKeyAutoincrement) {
-    const std::string& sql = QuerySet<Person>::create_table_sql();
+    const std::string& sql = storm::create_table_sql<Person>();
     EXPECT_NE(sql.find("id INTEGER PRIMARY KEY AUTOINCREMENT"), std::string::npos)
             << "Expected 'id INTEGER PRIMARY KEY AUTOINCREMENT' in: " << sql;
 }
 
 // Test: Person name field generates TEXT NOT NULL
 TEST(SchemaUnitTest, PersonNameFieldIsTextNotNull) {
-    const std::string& sql = QuerySet<Person>::create_table_sql();
+    const std::string& sql = storm::create_table_sql<Person>();
     EXPECT_NE(sql.find("name TEXT NOT NULL"), std::string::npos) << "Expected 'name TEXT NOT NULL' in: " << sql;
 }
 
 // Test: Person age field generates INTEGER NOT NULL
 TEST(SchemaUnitTest, PersonAgeFieldIsIntegerNotNull) {
-    const std::string& sql = QuerySet<Person>::create_table_sql();
+    const std::string& sql = storm::create_table_sql<Person>();
     EXPECT_NE(sql.find("age INTEGER NOT NULL"), std::string::npos) << "Expected 'age INTEGER NOT NULL' in: " << sql;
 }
 
 // Test: Person salary field generates REAL NOT NULL
 TEST(SchemaUnitTest, PersonSalaryFieldIsRealNotNull) {
-    const std::string& sql = QuerySet<Person>::create_table_sql();
+    const std::string& sql = storm::create_table_sql<Person>();
     EXPECT_NE(sql.find("salary REAL NOT NULL"), std::string::npos) << "Expected 'salary REAL NOT NULL' in: " << sql;
 }
 
-// Test: Person is_active field generates INTEGER NOT NULL (bool → INTEGER)
+// Test: Person is_active field generates INTEGER NOT NULL (bool maps to INTEGER)
 TEST(SchemaUnitTest, PersonIsActiveFieldIsIntegerNotNull) {
-    const std::string& sql = QuerySet<Person>::create_table_sql();
+    const std::string& sql = storm::create_table_sql<Person>();
     EXPECT_NE(sql.find("is_active INTEGER NOT NULL"), std::string::npos)
             << "Expected 'is_active INTEGER NOT NULL' in: " << sql;
 }
 
 // Test: Person years_experience field generates INTEGER NOT NULL
 TEST(SchemaUnitTest, PersonYearsExperienceFieldIsIntegerNotNull) {
-    const std::string& sql = QuerySet<Person>::create_table_sql();
+    const std::string& sql = storm::create_table_sql<Person>();
     EXPECT_NE(sql.find("years_experience INTEGER NOT NULL"), std::string::npos)
             << "Expected 'years_experience INTEGER NOT NULL' in: " << sql;
 }
 
 // Test: Person score field generates INTEGER (nullable — optional<int>)
 TEST(SchemaUnitTest, PersonScoreFieldIsNullableInteger) {
-    const std::string& sql = QuerySet<Person>::create_table_sql();
+    const std::string& sql = storm::create_table_sql<Person>();
     EXPECT_NE(sql.find("score INTEGER,"), std::string::npos) << "Expected 'score INTEGER,' (nullable) in: " << sql;
-    // Must NOT have NOT NULL
     const size_t score_pos = sql.find("score INTEGER");
     ASSERT_NE(score_pos, std::string::npos);
     const std::string after_score = sql.substr(score_pos, 20);
@@ -103,7 +102,7 @@ TEST(SchemaUnitTest, PersonScoreFieldIsNullableInteger) {
 
 // Test: Person nickname field generates TEXT (nullable — optional<string>)
 TEST(SchemaUnitTest, PersonNicknameFieldIsNullableText) {
-    const std::string& sql = QuerySet<Person>::create_table_sql();
+    const std::string& sql = storm::create_table_sql<Person>();
     EXPECT_NE(sql.find("nickname TEXT,"), std::string::npos) << "Expected 'nickname TEXT,' (nullable) in: " << sql;
     const size_t nick_pos = sql.find("nickname TEXT");
     ASSERT_NE(nick_pos, std::string::npos);
@@ -114,9 +113,8 @@ TEST(SchemaUnitTest, PersonNicknameFieldIsNullableText) {
 
 // Test: Person avatar field generates BLOB (nullable — vector<uint8_t>)
 TEST(SchemaUnitTest, PersonAvatarFieldIsBlob) {
-    const std::string& sql = QuerySet<Person>::create_table_sql();
+    const std::string& sql = storm::create_table_sql<Person>();
     EXPECT_NE(sql.find("avatar BLOB"), std::string::npos) << "Expected 'avatar BLOB' in: " << sql;
-    // avatar BLOB should NOT have NOT NULL
     const size_t avatar_pos = sql.find("avatar BLOB");
     ASSERT_NE(avatar_pos, std::string::npos);
     const std::string after_avatar = sql.substr(avatar_pos, 20);
@@ -126,35 +124,38 @@ TEST(SchemaUnitTest, PersonAvatarFieldIsBlob) {
 
 // Test: Message FK field generates sender_id (not sender)
 TEST(SchemaUnitTest, MessageFkFieldGeneratesSenderId) {
-    const std::string& sql = QuerySet<Message>::create_table_sql();
+    const std::string& sql = storm::create_table_sql<Message>();
     EXPECT_NE(sql.find("sender_id INTEGER NOT NULL"), std::string::npos)
             << "Expected 'sender_id INTEGER NOT NULL' in: " << sql;
-    // Must NOT have raw "sender " (only sender_id)
     EXPECT_EQ(sql.find(" sender "), std::string::npos) << "Should not contain bare 'sender' column, got: " << sql;
 }
 
 // Test: create_table_sql() returns consistent value across multiple calls (caching)
 TEST(SchemaUnitTest, CreateTableSqlIsCached) {
-    const std::string& sql1 = QuerySet<Person>::create_table_sql();
-    const std::string& sql2 = QuerySet<Person>::create_table_sql();
-    // Same reference (cached static)
+    const std::string& sql1 = storm::create_table_sql<Person>();
+    const std::string& sql2 = storm::create_table_sql<Person>();
     EXPECT_EQ(&sql1, &sql2) << "create_table_sql() should return the same cached reference";
 }
 
-// Test: SQL starts with CREATE TABLE <name>
+// Test: SQL starts with CREATE TABLE <name> (
 TEST(SchemaUnitTest, PersonSqlStartsWithCreateTable) {
-    const std::string& sql = QuerySet<Person>::create_table_sql();
+    const std::string& sql = storm::create_table_sql<Person>();
     EXPECT_EQ(sql.substr(0, 21), "CREATE TABLE Person (") << "SQL should start with 'CREATE TABLE Person ('";
 }
 
 // Test: SQL ends with closing paren
 TEST(SchemaUnitTest, PersonSqlEndsWithClosingParen) {
-    const std::string& sql = QuerySet<Person>::create_table_sql();
+    const std::string& sql = storm::create_table_sql<Person>();
     EXPECT_EQ(sql.back(), ')') << "SQL should end with ')'";
 }
 
 // ============================================================================
 // Integration Tests (TYPED_TEST — both SQLite + PostgreSQL)
+//
+// SetUp uses ensure_table to create the Person table and handle PostgreSQL
+// schema isolation (same pattern as every other test fixture). Tests then
+// call storm::create_table_if_not_exists<T>() which verifies the IF NOT EXISTS
+// path and dialect transforms on both backends.
 // ============================================================================
 
 template <typename ConnType> class SchemaTest : public StormTestFixture<Person, ConnType> {
@@ -164,81 +165,50 @@ template <typename ConnType> class SchemaTest : public StormTestFixture<Person, 
             GTEST_SKIP() << "Backend unavailable";
             return;
         }
+        const auto& conn          = QuerySet<Person, ConnType>::get_default_connection();
+        auto        create_result = storm::test::ensure_table<ConnType>(conn, person_create_sql);
+        ASSERT_TRUE(create_result.has_value()) << "Failed to create Person table: " << create_result.error().message();
+        storm::test::begin_test_txn<ConnType>(conn, {"Person"});
     }
 };
 
 TYPED_TEST_SUITE(SchemaTest, DatabaseTypes);
 
 // Test: create_table_if_not_exists() for Person succeeds
+// Person already exists via ensure_table in SetUp — exercises IF NOT EXISTS semantics
 TYPED_TEST(SchemaTest, CreatePersonTableSucceeds) {
-    if constexpr (storm::test::is_postgresql<TypeParam>()) {
-        // Set up PostgreSQL schema isolation manually
-        const auto& conn   = QuerySet<Person, TypeParam>::get_default_connection();
-        std::string schema = "test_schema_" + std::to_string(getpid());
-        (void)conn->execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
-        (void)conn->execute("CREATE SCHEMA " + schema);
-        (void)conn->execute("SET search_path TO " + schema);
-    }
-
-    auto result = QuerySet<Person, TypeParam>::create_table_if_not_exists();
+    auto result = storm::create_table_if_not_exists<Person, TypeParam>();
     ASSERT_TRUE(result.has_value()) << "create_table_if_not_exists() failed: " << result.error().message();
 }
 
-// Test: create_table_if_not_exists() for Message succeeds
+// Test: create_table_if_not_exists() for Message succeeds (fresh table — not created in SetUp)
 TYPED_TEST(SchemaTest, CreateMessageTableSucceeds) {
-    if constexpr (storm::test::is_postgresql<TypeParam>()) {
-        const auto& conn   = QuerySet<Person, TypeParam>::get_default_connection();
-        std::string schema = "test_schema_msg_" + std::to_string(getpid());
-        (void)conn->execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
-        (void)conn->execute("CREATE SCHEMA " + schema);
-        (void)conn->execute("SET search_path TO " + schema);
-    }
-
-    // Message QuerySet uses same connection (per-ConnType shared connection)
-    auto result = QuerySet<Message, TypeParam>::create_table_if_not_exists();
+    auto result = storm::create_table_if_not_exists<Message, TypeParam>();
     ASSERT_TRUE(result.has_value()) << "create_table_if_not_exists() for Message failed: " << result.error().message();
 }
 
 // Test: create_table_if_not_exists() is idempotent (IF NOT EXISTS — can call twice)
 TYPED_TEST(SchemaTest, CreateTableIsIdempotent) {
-    if constexpr (storm::test::is_postgresql<TypeParam>()) {
-        const auto& conn   = QuerySet<Person, TypeParam>::get_default_connection();
-        std::string schema = "test_schema_idem_" + std::to_string(getpid());
-        (void)conn->execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
-        (void)conn->execute("CREATE SCHEMA " + schema);
-        (void)conn->execute("SET search_path TO " + schema);
-    }
-
-    auto result1 = QuerySet<Person, TypeParam>::create_table_if_not_exists();
+    auto result1 = storm::create_table_if_not_exists<Person, TypeParam>();
     ASSERT_TRUE(result1.has_value()) << "First call failed: " << result1.error().message();
 
-    auto result2 = QuerySet<Person, TypeParam>::create_table_if_not_exists();
+    auto result2 = storm::create_table_if_not_exists<Person, TypeParam>();
     ASSERT_TRUE(result2.has_value()) << "Second call failed (not idempotent): " << result2.error().message();
 }
 
 // Test: After create_table_if_not_exists(), can insert + select a Person row
 TYPED_TEST(SchemaTest, PersonTableIsUsableAfterCreate) {
-    if constexpr (storm::test::is_postgresql<TypeParam>()) {
-        const auto& conn   = QuerySet<Person, TypeParam>::get_default_connection();
-        std::string schema = "test_schema_person_" + std::to_string(getpid());
-        (void)conn->execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
-        (void)conn->execute("CREATE SCHEMA " + schema);
-        (void)conn->execute("SET search_path TO " + schema);
-    }
-
-    auto create_result = QuerySet<Person, TypeParam>::create_table_if_not_exists();
+    auto create_result = storm::create_table_if_not_exists<Person, TypeParam>();
     ASSERT_TRUE(create_result.has_value()) << "Create table failed: " << create_result.error().message();
 
     QuerySet<Person, TypeParam> qs;
 
-    // Insert a person
     Person const alice{
             .id = 0, .name = "Alice", .age = 30, .salary = 50000.0, .is_active = true, .years_experience = 5
     };
     auto insert_result = qs.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
-    // Select it back
     auto select_result = qs.select().execute();
     ASSERT_TRUE(select_result.has_value()) << "SELECT failed: " << select_result.error().message();
     ASSERT_EQ(select_result.value().size(), 1u) << "Expected 1 row";
@@ -248,43 +218,27 @@ TYPED_TEST(SchemaTest, PersonTableIsUsableAfterCreate) {
 
 // Test: After create_table_if_not_exists(), can insert + select a Message row
 TYPED_TEST(SchemaTest, MessageTableIsUsableAfterCreate) {
-    if constexpr (storm::test::is_postgresql<TypeParam>()) {
-        const auto& conn   = QuerySet<Person, TypeParam>::get_default_connection();
-        std::string schema = "test_schema_msg2_" + std::to_string(getpid());
-        (void)conn->execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
-        (void)conn->execute("CREATE SCHEMA " + schema);
-        (void)conn->execute("SET search_path TO " + schema);
-    }
-
-    // Create both tables (Message has FK to Person)
-    auto create_person = QuerySet<Person, TypeParam>::create_table_if_not_exists();
-    ASSERT_TRUE(create_person.has_value()) << "Create Person table failed: " << create_person.error().message();
-
-    auto create_msg = QuerySet<Message, TypeParam>::create_table_if_not_exists();
+    auto create_msg = storm::create_table_if_not_exists<Message, TypeParam>();
     ASSERT_TRUE(create_msg.has_value()) << "Create Message table failed: " << create_msg.error().message();
 
     QuerySet<Person, TypeParam>  person_qs;
     QuerySet<Message, TypeParam> msg_qs;
 
-    // Insert a person first (FK constraint)
     Person const alice{
             .id = 0, .name = "Alice", .age = 30, .salary = 50000.0, .is_active = true, .years_experience = 5
     };
     auto person_insert = person_qs.insert(alice).execute();
     ASSERT_TRUE(person_insert.has_value()) << "Person INSERT failed: " << person_insert.error().message();
 
-    // Get the person back to use as FK
     auto person_select = person_qs.select().execute();
     ASSERT_TRUE(person_select.has_value()) << "Person SELECT failed";
     ASSERT_FALSE(person_select.value().empty());
     Person inserted_alice = *person_select.value().begin();
 
-    // Insert a message
     Message const msg{.id = 0, .content = "Hello", .value = 42, .sender = inserted_alice};
     auto          msg_insert = msg_qs.insert(msg).execute();
     ASSERT_TRUE(msg_insert.has_value()) << "Message INSERT failed: " << msg_insert.error().message();
 
-    // Select it back
     auto msg_select = msg_qs.select().execute();
     ASSERT_TRUE(msg_select.has_value()) << "Message SELECT failed: " << msg_select.error().message();
     ASSERT_EQ(msg_select.value().size(), 1u) << "Expected 1 message";

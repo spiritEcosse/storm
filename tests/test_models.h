@@ -43,8 +43,10 @@ struct Message {
 // SQL CREATE TABLE statements — generated at runtime from C++26 reflection.
 // adapt_schema<ConnType>() in test_db_helpers.h converts them for PostgreSQL.
 
-inline const std::string &person_create_sql = storm::QuerySet<Person>::create_table_sql();
-inline const std::string &message_create_sql = storm::QuerySet<Message>::create_table_sql();
+// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
+inline const std::string &person_create_sql = storm::create_table_sql<Person>();
+inline const std::string &message_create_sql = storm::create_table_sql<Message>();
+// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 namespace storm::test {
 // Populates join test data: 3 Persons + 5 Messages with sender FKs.

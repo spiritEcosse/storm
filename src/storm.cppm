@@ -17,6 +17,8 @@ export import storm_orm_where;
 export import storm_orm_queryset;
 export import storm_orm_schema;
 import <meta>;
+import <string>;
+import <expected>;
 
 export namespace storm {
     // Storm ORM functionality with reflection support
@@ -47,4 +49,17 @@ export namespace storm {
             throw "Model must have exactly one field marked with [[=storm::meta::FieldAttr::primary]]";
         }
     } // namespace meta
+
+    // Returns the compile-time generated CREATE TABLE SQL for model T (SQLite dialect, lazy-cached).
+    template <typename T> auto create_table_sql() -> const std::string& {
+        return orm::schema::SchemaStatement<T>::create_table_sql();
+    }
+
+    // Executes CREATE TABLE IF NOT EXISTS for model T on the default connection.
+    // For PostgreSQL, dialect transforms are applied automatically.
+    template <typename T, db::DatabaseConnection ConnType = db::sqlite::Connection>
+    [[nodiscard]] auto create_table_if_not_exists() -> std::expected<void, typename ConnType::Error> {
+        auto conn = QuerySet<T, ConnType>::get_default_connection();
+        return orm::schema::SchemaStatement<T>::create_table_if_not_exists(conn);
+    }
 } // namespace storm

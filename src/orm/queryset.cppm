@@ -19,7 +19,6 @@ import storm_orm_statements_orderby;
 import storm_orm_where;
 import storm_orm_statements_aggregate;
 import storm_orm_utilities;
-import storm_orm_schema;
 
 import <expected>;
 import <string>;
@@ -409,19 +408,6 @@ export namespace storm {
 
         static auto clear_default_connection() noexcept -> void {
             detail::get_default_connection_ptr<ConnType>().reset();
-        }
-
-        // Returns the compile-time generated CREATE TABLE SQL for model T (SQLite dialect).
-        // Lazily initialized and cached on first call.
-        static auto create_table_sql() -> const std::string& {
-            return storm::orm::schema::SchemaStatement<T>::create_table_sql();
-        }
-
-        // Executes CREATE TABLE IF NOT EXISTS for model T on the default connection.
-        // For PostgreSQL, dialect transforms (INTEGER→BIGINT etc.) are applied automatically.
-        [[nodiscard]] static auto create_table_if_not_exists() -> std::expected<void, Error> {
-            auto conn = get_default_connection();
-            return storm::orm::schema::SchemaStatement<T>::create_table_if_not_exists(conn);
         }
 
       private:
