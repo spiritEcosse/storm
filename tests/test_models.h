@@ -40,28 +40,13 @@ struct Message {
     [[= storm::meta::FieldAttr::fk]] Person sender;
 };
 
-// SQL CREATE TABLE statements (SQLite syntax; adapt_schema<ConnType>() converts for PG).
+// SQL CREATE TABLE statements — generated at runtime from C++26 reflection.
+// adapt_schema<ConnType>() in test_db_helpers.h converts them for PostgreSQL.
 
-// NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
-
-inline constexpr const char *person_create_sql = "CREATE TABLE Person ("
-                                                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                                                 "name TEXT NOT NULL, "
-                                                 "age INTEGER NOT NULL, "
-                                                 "salary REAL NOT NULL, "
-                                                 "is_active INTEGER NOT NULL, "
-                                                 "years_experience INTEGER NOT NULL, "
-                                                 "score INTEGER, "
-                                                 "nickname TEXT, "
-                                                 "avatar BLOB)";
-
-inline constexpr const char *message_create_sql = "CREATE TABLE Message ("
-                                                  "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                                                  "content TEXT NOT NULL, "
-                                                  "value INTEGER NOT NULL, "
-                                                  "sender_id INTEGER NOT NULL)";
-
-// NOLINTEND(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
+inline const std::string &person_create_sql = storm::create_table_sql<Person>();
+inline const std::string &message_create_sql = storm::create_table_sql<Message>();
+// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 namespace storm::test {
 // Populates join test data: 3 Persons + 5 Messages with sender FKs.
