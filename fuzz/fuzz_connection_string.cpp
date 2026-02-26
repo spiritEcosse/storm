@@ -33,8 +33,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
             storm::QuerySet<FuzzModel>::clear_default_connection();
         }
         // Error return is the expected outcome for malformed strings
-    } catch (...) {
-        // Exceptions are acceptable — only crashes/ASAN hits are bugs
+    } catch (...) { // NOSONAR cpp:S2486 — exceptions are acceptable; only ASAN/crash = bug
     }
     return 0;
 }

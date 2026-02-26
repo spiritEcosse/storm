@@ -22,14 +22,7 @@ import <meta>;
 #include "fuzz_models.h" // AFTER import storm;
 
 extern "C" int LLVMFuzzerInitialize(int* /*argc*/, char*** /*argv*/) {
-    auto result = storm::QuerySet<FuzzModel>::set_default_connection(":memory:");
-    if (!result.has_value()) {
-        return 0;
-    }
-    const auto& conn = storm::QuerySet<FuzzModel>::get_default_connection();
-    (void)conn->execute(fuzz_model_create_sql);
-    (void)storm::QuerySet<FuzzModel>().insert(FuzzModel{.name = "seed", .value = 42}).execute();
-    return 0;
+    return fuzz_init_db();
 }
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
@@ -77,8 +70,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
                 .where(storm::orm::where::field<^^FuzzModel::value>().between(lower, upper))
                 .select()
                 .execute();
-    } catch (...) {
-        // SQL errors are expected — only crashes/ASAN hits are bugs
+    } catch (...) { // NOSONAR cpp:S2486 — SQL errors expected; only ASAN/crash = bug
     }
     return 0;
 }
