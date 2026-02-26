@@ -78,8 +78,7 @@ cmake/
 - **Close when done**: After all subtasks are checked off, close the issue with `gh issue close <N>`.
 
 ### Branching Rules
-- **GitHub Issue work**: Create a feature branch `feature/<issue-number>-<short-description>` from `develop` before starting work (rule 10).
-- **Link branch to issue**: After creating the feature branch, link it to the issue: `gh issue develop <N> --branch feature/<issue-number>-<short-description>`
+- **GitHub Issue work**: Create and link a feature branch using `gh issue develop <N> --name feature/<N>-<short-description> --base develop --checkout` — this creates the branch, links it to the issue in GitHub, and checks it out in one step.
 - **Create pull request**: After pushing a feature branch, ALWAYS create a PR with `gh pr create --base develop` including `Closes #<N>` in the body to auto-link and auto-close the issue on merge.
 - **After creating a PR**: Wait 30 seconds, then run `/sonarcloud-status`. If there are **zero issues** on new code, immediately merge the PR into `develop` (`gh pr merge --merge`). If there are ANY issues (even minor), fix them all, push, and re-check until zero issues remain before merging.
 - **Close issue after merge**: After merging a feature branch into `develop`, ALWAYS close the issue with `gh issue close <N>`. Do NOT wait to be asked.
