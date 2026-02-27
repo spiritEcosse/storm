@@ -420,6 +420,22 @@ export namespace storm::orm::statements {
         // (avoids P2996 experimental compiler limitation in select.cppm module)
         // =====================================================================
 
+        // Extract optional FK column: set nullopt when NULL, otherwise extract inner PK
+        template <size_t Index, typename Statement, typename FieldType>
+        __attribute__((always_inline)) static void extract_optional_fk_column(Statement* stmt, T& obj) noexcept {
+            constexpr auto member       = all_members_[Index];
+            using InnerFKType           = utilities::optional_inner_type_t<FieldType>;
+            constexpr auto fk_pk_member = find_fk_primary_key<FieldType>();
+            using PKType                = std::remove_cvref_t<decltype(std::declval<InnerFKType>().[:fk_pk_member:])>;
+            if (stmt->is_null(Index)) {
+                obj.[:member:] = std::nullopt;
+            } else {
+                InnerFKType fk_inner{};
+                fk_inner.[:fk_pk_member:] = extract_column_value<PKType>(stmt, Index);
+                obj.[:member:]            = std::move(fk_inner);
+            }
+        }
+
         // Extract single column into obj at compile-time index
         // Statement is deduced from stmt pointer; all_members_[Index] is valid here
         template <size_t Index, typename Statement>
@@ -429,17 +445,7 @@ export namespace storm::orm::statements {
                 using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
                 if constexpr (is_fk_field(member)) {
                     if constexpr (utilities::is_optional_v<FieldType>) {
-                        // Optional FK: set nullopt when DB column is NULL (no match)
-                        using InnerFKType           = utilities::optional_inner_type_t<FieldType>;
-                        constexpr auto fk_pk_member = find_fk_primary_key<FieldType>();
-                        using PKType = std::remove_cvref_t<decltype(std::declval<InnerFKType>().[:fk_pk_member:])>;
-                        if (stmt->is_null(Index)) {
-                            obj.[:member:] = std::nullopt;
-                        } else {
-                            InnerFKType fk_inner{};
-                            fk_inner.[:fk_pk_member:] = extract_column_value<PKType>(stmt, Index);
-                            obj.[:member:]            = std::move(fk_inner);
-                        }
+                        extract_optional_fk_column<Index, Statement, FieldType>(stmt, obj);
                     } else {
                         obj.[:member:]              = FieldType{};
                         constexpr auto fk_pk_member = find_fk_primary_key<FieldType>();

@@ -1408,29 +1408,29 @@ namespace {
     // ============================================================================
 
     class PgSchemaDetailTest : public ::testing::Test {
-      protected:
         MockPqGuard guard_;
 
+      protected:
         auto SetUp() -> void override {
             MockPqConfig::reset();
         }
     };
 
-    // Covers schema.cppm lines 58-64: detail::replace_all body
+    // Exercises the replace_all helper (all occurrences replaced)
     TEST_F(PgSchemaDetailTest, ReplaceAllReplacesAllOccurrences) {
         std::string sql = "INTEGER PRIMARY KEY AUTOINCREMENT, val INTEGER NOT NULL";
         storm::orm::schema::detail::replace_all(sql, "INTEGER", "BIGINT");
         EXPECT_EQ(sql, "BIGINT PRIMARY KEY AUTOINCREMENT, val BIGINT NOT NULL");
     }
 
-    // Covers schema.cppm lines 58-64: replace_all with no match (loop body skipped)
+    // Exercises replace_all when the search string is absent (no-op path)
     TEST_F(PgSchemaDetailTest, ReplaceAllNoMatch) {
         std::string sql = "TEXT NOT NULL";
         storm::orm::schema::detail::replace_all(sql, "INTEGER", "BIGINT");
         EXPECT_EQ(sql, "TEXT NOT NULL");
     }
 
-    // Covers schema.cppm lines 67-73: detail::apply_pg_transforms
+    // Exercises apply_pg_transforms — all SQLite→PG type conversions
     TEST_F(PgSchemaDetailTest, ApplyPgTransformsConvertsAllTypes) {
         const std::string sqlite_sql = "CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, "
                                        "data BLOB NOT NULL, score REAL NOT NULL)";
@@ -1443,8 +1443,7 @@ namespace {
         EXPECT_EQ(pg_sql.find("BLOB"), std::string::npos);
     }
 
-    // Covers schema.cppm lines 96-98: if constexpr (ConnType::supports_returning) branch
-    // in SchemaStatement::create_table_if_not_exists — executed only for PG connections
+    // Exercises the PostgreSQL dialect path of create_table_if_not_exists
     TEST_F(PgSchemaDetailTest, CreateTableIfNotExistsPgDialect) {
         (void)PgQuerySet::set_default_connection("host=localhost");
 

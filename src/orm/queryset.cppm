@@ -44,7 +44,8 @@ export namespace storm {
         }
     } // namespace detail
 
-    template <class T, storm::db::DatabaseConnection ConnType = storm::db::sqlite::Connection> class QuerySet {
+    template <class T, storm::db::DatabaseConnection ConnType = storm::db::sqlite::Connection>
+    class QuerySet { // NOSONAR(cpp:S1448) — ORM facade class; method count grows with supported operations
         using Error     = typename ConnType::Error;
         using Statement = typename ConnType::Statement;
 

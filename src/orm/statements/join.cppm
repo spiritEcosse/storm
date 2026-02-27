@@ -331,7 +331,7 @@ export namespace storm::orm::statements {
 
             if constexpr (utilities::is_optional_v<RawFKFieldType>) {
                 // Optional FK: NULL first joined column means no match → set nullopt
-                const int first_col = static_cast<int>(column_offsets_[Idx]);
+                const auto first_col = static_cast<int>(column_offsets_[Idx]);
                 if (stmt->is_null(first_col)) {
                     obj.*FKPtr = std::nullopt;
                 } else {

@@ -174,7 +174,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchSmall) {
 
     // Add more test data for batch testing
     for (int i = 4; i <= 12; i++) {
-        auto insert_result = queryset.insert(Person{.name = "Person" + std::to_string(i), .age = 20 + i}).execute();
+        auto insert_result = queryset.insert(Person{.name = std::format("Person{}", i), .age = 20 + i}).execute();
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
     }
 
@@ -184,7 +184,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchSmall) {
     // Create batch of persons to remove (batch size ~10)
     std::vector<Person> batch_to_remove;
     for (int i = 1; i <= 10; i++) {
-        batch_to_remove.emplace_back(i, "Person" + std::to_string(i), 20 + i);
+        batch_to_remove.emplace_back(i, std::format("Person{}", i), 20 + i);
     }
 
     // Remove batch using new batch API
@@ -213,7 +213,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchLarge) {
     // Add many test records for large batch testing
     for (int i = 4; i <= 103; i++) {
         auto insert_result =
-                queryset.insert(Person{.name = "Person" + std::to_string(i), .age = 20 + (i % 60)}).execute();
+                queryset.insert(Person{.name = std::format("Person{}", i), .age = 20 + (i % 60)}).execute();
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
     }
 
@@ -737,7 +737,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateBatchMedium) {
 
     // Add more test data for batch testing
     for (int i = 4; i <= 25; i++) {
-        auto insert_result = queryset.insert(Person{.name = "Person" + std::to_string(i), .age = 20 + i}).execute();
+        auto insert_result = queryset.insert(Person{.name = std::format("Person{}", i), .age = 20 + i}).execute();
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
     }
 
@@ -747,7 +747,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateBatchMedium) {
     // Create batch of persons to update (batch size ~20)
     std::vector<Person> batch_to_update;
     for (int i = 1; i <= 20; i++) {
-        batch_to_update.emplace_back(i, "Updated" + std::to_string(i), 100 + i);
+        batch_to_update.emplace_back(i, std::format("Updated{}", i), 100 + i);
     }
 
     // Update batch
@@ -763,7 +763,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateBatchMedium) {
     for (int i = 1; i <= 20; i++) {
         auto person = this->getPerson(i);
         ASSERT_TRUE(person.has_value()) << "Person " << i << " should exist";
-        EXPECT_EQ(person->name, "Updated" + std::to_string(i)) << "Person " << i << " name should be updated";
+        EXPECT_EQ(person->name, std::format("Updated{}", i)) << "Person " << i << " name should be updated";
         EXPECT_EQ(person->age, 100 + i) << "Person " << i << " age should be updated";
     }
 
@@ -771,7 +771,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateBatchMedium) {
     for (int i = 21; i <= 25; i++) {
         auto person = this->getPerson(i);
         ASSERT_TRUE(person.has_value()) << "Person " << i << " should exist";
-        EXPECT_EQ(person->name, "Person" + std::to_string(i)) << "Person " << i << " should not be updated";
+        EXPECT_EQ(person->name, std::format("Person{}", i)) << "Person " << i << " should not be updated";
         EXPECT_EQ(person->age, 20 + i) << "Person " << i << " age should not be updated";
     }
 }
@@ -783,7 +783,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateBatchLarge) {
     // Add many test records for large batch testing
     for (int i = 4; i <= 103; i++) {
         auto insert_result =
-                queryset.insert(Person{.name = "Person" + std::to_string(i), .age = 20 + (i % 60)}).execute();
+                queryset.insert(Person{.name = std::format("Person{}", i), .age = 20 + (i % 60)}).execute();
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
     }
 
