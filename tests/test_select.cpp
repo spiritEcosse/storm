@@ -24,7 +24,7 @@ template <typename ConnType> class SelectTest : public StormTestFixture<Person, 
 
         const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
 
-        auto create_result = storm::test::ensure_table<ConnType>(conn, person_create_sql);
+        auto create_result = storm::test::ensure_table<Person, ConnType>(conn);
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
         storm::test::begin_test_txn<ConnType>(conn, {"Person"});

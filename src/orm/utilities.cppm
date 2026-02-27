@@ -96,6 +96,15 @@ export namespace storm::orm::utilities {
     template <typename TValue> struct is_optional<std::optional<TValue>> : std::true_type {};
     template <typename TValue> constexpr bool is_optional_v = is_optional<TValue>::value;
 
+    // Unwrap std::optional<T> → T; pass-through for non-optional types
+    template <typename T> struct optional_inner_type {
+        using type = T;
+    };
+    template <typename TValue> struct optional_inner_type<std::optional<TValue>> {
+        using type = TValue;
+    };
+    template <typename T> using optional_inner_type_t = typename optional_inner_type<T>::type;
+
     // Generic parameter binding - unified implementation for WHERE and CRUD statements
     // No dependency on entity type T - pure type dispatch based on value type
     template <typename StmtType, typename ErrorType>

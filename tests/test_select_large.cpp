@@ -32,14 +32,8 @@ template <typename ConnType> class SelectLargeTest : public ::testing::Test {
 
         const auto& conn = QuerySet<TestRecord, ConnType>::get_default_connection();
 
-        auto create_result = storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE TestRecord ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "value INTEGER NOT NULL, "
-                "name TEXT NOT NULL"
-                ")"
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        auto create_result = storm::orm::schema::SchemaStatement<TestRecord>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
         storm::test::begin_test_txn<ConnType>(conn, {"TestRecord"});

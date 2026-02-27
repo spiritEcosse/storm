@@ -44,7 +44,8 @@ export namespace storm {
         }
     } // namespace detail
 
-    template <class T, storm::db::DatabaseConnection ConnType = storm::db::sqlite::Connection> class QuerySet {
+    template <class T, storm::db::DatabaseConnection ConnType = storm::db::sqlite::Connection>
+    class QuerySet { // NOSONAR(cpp:S1448) — ORM facade class; method count grows with supported operations
         using Error     = typename ConnType::Error;
         using Statement = typename ConnType::Statement;
 
@@ -60,6 +61,11 @@ export namespace storm {
         // Bulk remove - returns proxy with .execute() and .to_sql()
         auto remove(std::span<const T> objects) {
             return get_remove_statement().query(objects);
+        }
+
+        // Remove all rows — executes DELETE FROM <table> with no WHERE clause
+        [[nodiscard]] auto remove_all() {
+            return get_remove_statement().query_all();
         }
 
         // Insert single object - returns proxy with .execute() and .to_sql()

@@ -69,35 +69,14 @@ template <typename ConnType> class CoverageGapsTest : public ::testing::Test {
 
         const auto& conn = QuerySet<CovPerson, ConnType>::get_default_connection();
 
-        auto create_person = storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE CovPerson ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "name TEXT NOT NULL, "
-                "age INTEGER NOT NULL, "
-                "department TEXT NOT NULL, "
-                "salary REAL NOT NULL)"
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        auto create_person = storm::orm::schema::SchemaStatement<CovPerson>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create_person.has_value());
 
-        auto create_user = storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE CovUser ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "name TEXT NOT NULL, "
-                "score INTEGER NOT NULL)"
-        );
+        auto create_user = storm::orm::schema::SchemaStatement<CovUser>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create_user.has_value());
 
-        auto create_msg = storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE CovMessage ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "content TEXT NOT NULL, "
-                "value INTEGER NOT NULL, "
-                "sender_id INTEGER NOT NULL, "
-                "FOREIGN KEY (sender_id) REFERENCES CovUser(id))"
-        );
+        auto create_msg = storm::orm::schema::SchemaStatement<CovMessage>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create_msg.has_value());
 
         storm::test::begin_test_txn<ConnType>(conn, {"CovUser", "CovPerson"});
@@ -139,18 +118,18 @@ template <typename ConnType> class CoverageGapsTest : public ::testing::Test {
         }
 
         // Insert users for JOIN tests
-        const auto& conn = QuerySet<CovPerson, ConnType>::get_default_connection();
-
-        (void)conn->execute("INSERT INTO CovUser (name, score) VALUES ('User1', 100)");
-        (void)conn->execute("INSERT INTO CovUser (name, score) VALUES ('User2', 200)");
-        (void)conn->execute("INSERT INTO CovUser (name, score) VALUES ('User3', 150)");
+        QuerySet<CovUser, ConnType> user_qs;
+        std::ignore = user_qs.insert(CovUser{.name = "User1", .score = 100}).execute();
+        std::ignore = user_qs.insert(CovUser{.name = "User2", .score = 200}).execute();
+        std::ignore = user_qs.insert(CovUser{.name = "User3", .score = 150}).execute();
 
         // Insert messages
-        (void)conn->execute("INSERT INTO CovMessage (content, value, sender_id) VALUES ('Msg1', 10, 1)");
-        (void)conn->execute("INSERT INTO CovMessage (content, value, sender_id) VALUES ('Msg2', 20, 1)");
-        (void)conn->execute("INSERT INTO CovMessage (content, value, sender_id) VALUES ('Msg3', 30, 2)");
-        (void)conn->execute("INSERT INTO CovMessage (content, value, sender_id) VALUES ('Msg4', 40, 2)");
-        (void)conn->execute("INSERT INTO CovMessage (content, value, sender_id) VALUES ('Msg5', 50, 3)");
+        QuerySet<CovMessage, ConnType> cov_msg_qs;
+        std::ignore = cov_msg_qs.insert(CovMessage{.content = "Msg1", .value = 10, .sender = {.id = 1}}).execute();
+        std::ignore = cov_msg_qs.insert(CovMessage{.content = "Msg2", .value = 20, .sender = {.id = 1}}).execute();
+        std::ignore = cov_msg_qs.insert(CovMessage{.content = "Msg3", .value = 30, .sender = {.id = 2}}).execute();
+        std::ignore = cov_msg_qs.insert(CovMessage{.content = "Msg4", .value = 40, .sender = {.id = 2}}).execute();
+        std::ignore = cov_msg_qs.insert(CovMessage{.content = "Msg5", .value = 50, .sender = {.id = 3}}).execute();
     }
 
     std::unique_ptr<QuerySet<CovPerson, ConnType>>  qs;
@@ -548,13 +527,8 @@ template <typename ConnType> class LargeBatchTest : public ::testing::Test {
 
         const auto& conn = QuerySet<BatchPerson, ConnType>::get_default_connection();
 
-        auto create = storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE BatchPerson ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "name TEXT NOT NULL, "
-                "value INTEGER NOT NULL)"
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        auto create = storm::orm::schema::SchemaStatement<BatchPerson>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create.has_value());
 
         storm::test::begin_test_txn<ConnType>(conn, {"BatchPerson"});
@@ -831,21 +805,9 @@ template <typename ConnType> class OptionalTypesTest : public ::testing::Test {
 
         const auto& conn = QuerySet<OptionalDouble, ConnType>::get_default_connection();
 
-        (void)storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE OptionalDouble ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "value REAL, "
-                "label TEXT NOT NULL)"
-        );
-
-        (void)storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE OptionalInt64 ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "big_value INTEGER, "
-                "label TEXT NOT NULL)"
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        (void)storm::orm::schema::SchemaStatement<OptionalDouble>::create_table_if_not_exists(conn);
+        (void)storm::orm::schema::SchemaStatement<OptionalInt64>::create_table_if_not_exists(conn);
 
         storm::test::begin_test_txn<ConnType>(conn, {"OptionalDouble", "OptionalInt64"});
     }
@@ -999,14 +961,8 @@ template <typename ConnType> class ComplexWhereTest : public ::testing::Test {
 
         const auto& conn = QuerySet<CovGapWherePerson, ConnType>::get_default_connection();
 
-        (void)storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE CovGapWherePerson ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "name TEXT NOT NULL, "
-                "age INTEGER NOT NULL, "
-                "department TEXT NOT NULL)"
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        (void)storm::orm::schema::SchemaStatement<CovGapWherePerson>::create_table_if_not_exists(conn);
 
         storm::test::begin_test_txn<ConnType>(conn, {"CovGapWherePerson"});
 
@@ -1144,13 +1100,8 @@ template <typename ConnType> class TransactionTest : public ::testing::Test {
 
         const auto& conn = QuerySet<TxnPerson, ConnType>::get_default_connection();
 
-        (void)storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE TxnPerson ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "name TEXT NOT NULL, "
-                "value INTEGER NOT NULL)"
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        (void)storm::orm::schema::SchemaStatement<TxnPerson>::create_table_if_not_exists(conn);
 
         storm::test::begin_test_txn<ConnType>(conn, {"TxnPerson"});
 
@@ -1269,14 +1220,8 @@ template <typename ConnType> class CovUnsignedTypesTest : public ::testing::Test
 
         const auto& conn = QuerySet<CovUnsignedTypes, ConnType>::get_default_connection();
 
-        (void)storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE CovUnsignedTypes ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "uint_val INTEGER NOT NULL, "
-                "ulong_val INTEGER NOT NULL, "
-                "ushort_val INTEGER NOT NULL)"
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        (void)storm::orm::schema::SchemaStatement<CovUnsignedTypes>::create_table_if_not_exists(conn);
 
         storm::test::begin_test_txn<ConnType>(conn, {"CovUnsignedTypes"});
 
@@ -1376,13 +1321,8 @@ template <typename ConnType> class FloatTypeTest : public ::testing::Test {
 
         const auto& conn = QuerySet<FloatType, ConnType>::get_default_connection();
 
-        (void)storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE FloatType ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "value REAL NOT NULL, "
-                "label TEXT NOT NULL)"
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        (void)storm::orm::schema::SchemaStatement<FloatType>::create_table_if_not_exists(conn);
 
         storm::test::begin_test_txn<ConnType>(conn, {"FloatType"});
 
@@ -1465,13 +1405,8 @@ template <typename ConnType> class QueryResetTest : public ::testing::Test {
 
         const auto& conn = QuerySet<ResetPerson, ConnType>::get_default_connection();
 
-        (void)storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE ResetPerson ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "name TEXT NOT NULL, "
-                "score INTEGER NOT NULL)"
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        (void)storm::orm::schema::SchemaStatement<ResetPerson>::create_table_if_not_exists(conn);
 
         storm::test::begin_test_txn<ConnType>(conn, {"ResetPerson"});
 

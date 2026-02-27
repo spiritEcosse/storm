@@ -66,6 +66,19 @@ export namespace storm::orm::statements {
         // Pre-computed single DELETE SQL generated at compile-time
         static inline const std::string single_delete_sql_string = std::string(build_single_delete_sql_array());
 
+        // Compile-time all-rows DELETE SQL (no WHERE clause)
+        static consteval auto build_delete_all_sql_array() {
+            using utilities::sql_len::DELETE_FROM;
+            constexpr size_t sql_size = DELETE_FROM + Base::table_name_.size() + utilities::sql_len::LARGE_BUFFER;
+            ConstexprString<sql_size> result;
+            result.append("DELETE FROM ");
+            result.append(Base::table_name_);
+            return result;
+        }
+
+        // Pre-computed all-rows DELETE SQL
+        static inline const std::string delete_all_sql_string = std::string(build_delete_all_sql_array());
+
       private:
         // Compile-time bulk DELETE prefix calculation
         static consteval auto calculate_bulk_delete_prefix_size() -> size_t {
@@ -201,11 +214,24 @@ export namespace storm::orm::statements {
             }
         };
 
+        struct DeleteAllQuery {
+            RemoveStatement&   stmt;
+            [[nodiscard]] auto execute() -> std::expected<void, Error> {
+                return stmt.execute_all();
+            }
+            [[nodiscard]] auto to_sql() -> std::string {
+                return delete_all_sql_string;
+            }
+        };
+
         auto query(const T& obj) -> SingleQuery {
             return {*this, obj};
         }
         auto query(std::span<const T> objects) -> BulkQuery {
             return {*this, objects};
+        }
+        auto query_all() -> DeleteAllQuery {
+            return {*this};
         }
 
         // Returns SQL string with bound parameters inlined for a single DELETE (for debugging)
@@ -271,6 +297,11 @@ export namespace storm::orm::statements {
             }
 
             return txn->commit();
+        }
+
+        // Delete all rows — executes DELETE FROM <table> with no WHERE clause
+        [[nodiscard]] auto execute_all() -> std::expected<void, Error> {
+            return conn_->execute(delete_all_sql_string);
         }
 
         // Single DELETE - pre-cached statement, inlined execution

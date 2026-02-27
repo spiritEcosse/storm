@@ -848,11 +848,11 @@ struct ErrorTestPerson {
     int                                       age{};
 };
 
-// Test model with unique constraint
+// Test model with unique constraint — email enforced via FieldAttr::unique
 struct UniqueTestPerson {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string                               email; // Will have UNIQUE constraint
-    int                                       value{};
+    [[= storm::meta::FieldAttr::primary]] int        id{};
+    [[= storm::meta::FieldAttr::unique]] std::string email;
+    int                                              value{};
 };
 
 class ORMErrorTest : public ::testing::Test {
@@ -863,23 +863,11 @@ class ORMErrorTest : public ::testing::Test {
 
         const auto& conn = storm::QuerySet<ErrorTestPerson>::get_default_connection();
 
-        auto create_result = conn->execute(
-                "CREATE TABLE ErrorTestPerson ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "name TEXT NOT NULL, "
-                "age INTEGER NOT NULL"
-                ")"
-        );
+        auto create_result = storm::orm::schema::SchemaStatement<ErrorTestPerson>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table";
 
-        // Create table with UNIQUE constraint
-        auto create_unique = conn->execute(
-                "CREATE TABLE UniqueTestPerson ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "email TEXT UNIQUE NOT NULL, "
-                "value INTEGER NOT NULL"
-                ")"
-        );
+        // Create table with UNIQUE constraint via FieldAttr::unique on email field
+        auto create_unique = storm::orm::schema::SchemaStatement<UniqueTestPerson>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create_unique.has_value()) << "Failed to create UniqueTestPerson table";
     }
 

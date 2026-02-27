@@ -27,10 +27,10 @@ template <typename ConnType> class AggregateTest : public StormTestFixture<Perso
         }
         const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
 
-        auto create_result = storm::test::ensure_table<ConnType>(conn, person_create_sql);
+        auto create_result = storm::test::ensure_table<Person, ConnType>(conn);
         ASSERT_TRUE(create_result.has_value()) << "Failed to create Person table: " << create_result.error().message();
 
-        auto create_msg = storm::test::ensure_table<ConnType>(conn, message_create_sql);
+        auto create_msg = storm::test::ensure_table<Message, ConnType>(conn);
         ASSERT_TRUE(create_msg.has_value()) << "Failed to create Message table: " << create_msg.error().message();
 
         storm::test::begin_test_txn<ConnType>(conn, {"Person"});
@@ -62,29 +62,20 @@ template <typename ConnType> class AggregateTest : public StormTestFixture<Perso
 
     // Helper to insert JOIN test data
     void insert_join_test_data() {
-        const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
-
         // Insert users
-        std::ignore = conn->execute(
-                "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Alice', 30, 0, 0, 0)"
-        );
-        std::ignore = conn->execute(
-                "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Bob', 25, 0, 0, 0)"
-        );
-        std::ignore = conn->execute(
-                "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Charlie', 35, 0, 0, 0)"
-        );
-
-        // Insert messages with different values
         // Alice: 2 messages, values 10 and 20
         // Bob: 3 messages, values 30, 40, 50
         // Charlie: 1 message, value 60
-        std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Hello', 10, 1)");
-        std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('World', 20, 1)");
-        std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Hi', 30, 2)");
-        std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('There', 40, 2)");
-        std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Foo', 50, 2)");
-        std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Bar', 60, 3)");
+        std::ignore = qs->insert(Person{.name = "Alice", .age = 30}).execute();
+        std::ignore = qs->insert(Person{.name = "Bob", .age = 25}).execute();
+        std::ignore = qs->insert(Person{.name = "Charlie", .age = 35}).execute();
+
+        std::ignore = msg_qs->insert(Message{.content = "Hello", .value = 10, .sender = {.id = 1}}).execute();
+        std::ignore = msg_qs->insert(Message{.content = "World", .value = 20, .sender = {.id = 1}}).execute();
+        std::ignore = msg_qs->insert(Message{.content = "Hi", .value = 30, .sender = {.id = 2}}).execute();
+        std::ignore = msg_qs->insert(Message{.content = "There", .value = 40, .sender = {.id = 2}}).execute();
+        std::ignore = msg_qs->insert(Message{.content = "Foo", .value = 50, .sender = {.id = 2}}).execute();
+        std::ignore = msg_qs->insert(Message{.content = "Bar", .value = 60, .sender = {.id = 3}}).execute();
     }
 
     // Helper: insert 6 people in two groups (years_experience = 5 and 10, 3 each).
@@ -1115,37 +1106,26 @@ TYPED_TEST(AggregateTest, GroupByFullChain_WhereJoinGroupByAggregate) {
     // This test verifies the full query chain: WHERE + JOIN + GROUP BY + aggregate
     // Setup: Create users and messages with multiple messages per user at varying values
 
-    const auto& conn = QuerySet<Person, TypeParam>::get_default_connection();
-
     // Insert users with different ages
-    std::ignore = conn->execute(
-            "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Alice', 25, 0, 0, 0)"
-    ); // id=1
-    std::ignore = conn->execute(
-            "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Bob', 35, 0, 0, 0)"
-    ); // id=2
-    std::ignore = conn->execute(
-            "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Charlie', 45, 0, 0, 0)"
-    ); // id=3
-    std::ignore = conn->execute(
-            "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Dave', 30, 0, 0, 0)"
-    ); // id=4
-
-    // Insert messages with varying values
     // Alice (sender_id=1): 3 messages, values 10, 20, 30 (total=60, avg=20)
     // Bob (sender_id=2): 2 messages, values 50, 70 (total=120, avg=60)
     // Charlie (sender_id=3): 4 messages, values 5, 15, 25, 35 (total=80, avg=20)
     // Dave (sender_id=4): 1 message, value 100 (total=100, avg=100)
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('A1', 10, 1)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('A2', 20, 1)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('A3', 30, 1)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('B1', 50, 2)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('B2', 70, 2)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('C1', 5, 3)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('C2', 15, 3)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('C3', 25, 3)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('C4', 35, 3)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('D1', 100, 4)");
+    std::ignore = this->qs->insert(Person{.name = "Alice", .age = 25}).execute();   // id=1
+    std::ignore = this->qs->insert(Person{.name = "Bob", .age = 35}).execute();     // id=2
+    std::ignore = this->qs->insert(Person{.name = "Charlie", .age = 45}).execute(); // id=3
+    std::ignore = this->qs->insert(Person{.name = "Dave", .age = 30}).execute();    // id=4
+
+    std::ignore = this->msg_qs->insert(Message{.content = "A1", .value = 10, .sender = {.id = 1}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "A2", .value = 20, .sender = {.id = 1}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "A3", .value = 30, .sender = {.id = 1}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "B1", .value = 50, .sender = {.id = 2}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "B2", .value = 70, .sender = {.id = 2}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "C1", .value = 5, .sender = {.id = 3}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "C2", .value = 15, .sender = {.id = 3}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "C3", .value = 25, .sender = {.id = 3}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "C4", .value = 35, .sender = {.id = 3}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "D1", .value = 100, .sender = {.id = 4}}).execute();
 
     // Test 1: WHERE + JOIN + GROUP BY + COUNT
     // Filter messages with value >= 20, group by value (since we can't group by FK directly), count per value
@@ -1297,7 +1277,7 @@ template <typename ConnType> class OptionalAggregateTest : public StormTestFixtu
         }
         const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
 
-        auto create_result = storm::test::ensure_table<ConnType>(conn, person_create_sql);
+        auto create_result = storm::test::ensure_table<Person, ConnType>(conn);
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table";
 
         storm::test::begin_test_txn<ConnType>(conn, {"Person"});
@@ -1561,45 +1541,32 @@ TYPED_TEST(AggregateTest, FullChain_WhereJoinOrderByLimitOffset) {
     // Note: GROUP BY doesn't currently support ORDER BY/LIMIT/OFFSET in the builder pattern
     // Setup: Create users and messages with multiple messages per user
 
-    const auto& conn = QuerySet<Person, TypeParam>::get_default_connection();
-
     // Insert users with different ages
-    std::ignore = conn->execute(
-            "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Alice', 25, 0, 0, 0)"
-    ); // id=1
-    std::ignore = conn->execute(
-            "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Bob', 35, 0, 0, 0)"
-    ); // id=2
-    std::ignore = conn->execute(
-            "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Charlie', 45, 0, 0, 0)"
-    ); // id=3
-    std::ignore = conn->execute(
-            "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Dave', 30, 0, 0, 0)"
-    ); // id=4
-    std::ignore = conn->execute(
-            "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Eve', 28, 0, 0, 0)"
-    ); // id=5
-
-    // Insert messages with varying values
     // Alice (sender_id=1): 3 messages, values 10, 15, 20
     // Bob (sender_id=2): 2 messages, values 25, 30
     // Charlie (sender_id=3): 4 messages, values 35, 40, 45, 50
     // Dave (sender_id=4): 2 messages, values 55, 60
     // Eve (sender_id=5): 3 messages, values 65, 70, 75
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('A1', 10, 1)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('A2', 15, 1)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('A3', 20, 1)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('B1', 25, 2)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('B2', 30, 2)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('C1', 35, 3)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('C2', 40, 3)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('C3', 45, 3)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('C4', 50, 3)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('D1', 55, 4)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('D2', 60, 4)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('E1', 65, 5)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('E2', 70, 5)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('E3', 75, 5)");
+    std::ignore = this->qs->insert(Person{.name = "Alice", .age = 25}).execute();   // id=1
+    std::ignore = this->qs->insert(Person{.name = "Bob", .age = 35}).execute();     // id=2
+    std::ignore = this->qs->insert(Person{.name = "Charlie", .age = 45}).execute(); // id=3
+    std::ignore = this->qs->insert(Person{.name = "Dave", .age = 30}).execute();    // id=4
+    std::ignore = this->qs->insert(Person{.name = "Eve", .age = 28}).execute();     // id=5
+
+    std::ignore = this->msg_qs->insert(Message{.content = "A1", .value = 10, .sender = {.id = 1}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "A2", .value = 15, .sender = {.id = 1}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "A3", .value = 20, .sender = {.id = 1}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "B1", .value = 25, .sender = {.id = 2}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "B2", .value = 30, .sender = {.id = 2}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "C1", .value = 35, .sender = {.id = 3}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "C2", .value = 40, .sender = {.id = 3}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "C3", .value = 45, .sender = {.id = 3}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "C4", .value = 50, .sender = {.id = 3}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "D1", .value = 55, .sender = {.id = 4}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "D2", .value = 60, .sender = {.id = 4}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "E1", .value = 65, .sender = {.id = 5}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "E2", .value = 70, .sender = {.id = 5}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "E3", .value = 75, .sender = {.id = 5}}).execute();
 
     // Test: WHERE + JOIN + ORDER BY + LIMIT + OFFSET (SELECT, not GROUP BY)
     // Filter messages with value >= 20, order by value DESC, limit 5, offset 2
@@ -2087,20 +2054,14 @@ TYPED_TEST(AggregateTest, HavingWithSum) {
 
 TYPED_TEST(AggregateTest, HavingWithWhereAndJoin) {
     // Setup: messages with varying values per sender
-    const auto& conn = QuerySet<Person, TypeParam>::get_default_connection();
+    std::ignore = this->qs->insert(Person{.name = "Alice", .age = 25}).execute(); // id=1
+    std::ignore = this->qs->insert(Person{.name = "Bob", .age = 35}).execute();   // id=2
 
-    std::ignore = conn->execute(
-            "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Alice', 25, 0, 0, 0)"
-    ); // id=1
-    std::ignore = conn->execute(
-            "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Bob', 35, 0, 0, 0)"
-    ); // id=2
-
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('A1', 10, 1)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('A2', 20, 1)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('A3', 30, 1)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('B1', 50, 2)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('B2', 70, 2)");
+    std::ignore = this->msg_qs->insert(Message{.content = "A1", .value = 10, .sender = {.id = 1}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "A2", .value = 20, .sender = {.id = 1}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "A3", .value = 30, .sender = {.id = 1}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "B1", .value = 50, .sender = {.id = 2}}).execute();
+    std::ignore = this->msg_qs->insert(Message{.content = "B2", .value = 70, .sender = {.id = 2}}).execute();
 
     // WHERE value >= 20 AND JOIN + GROUP BY value HAVING value > 25
     // After WHERE: A2(20), A3(30), B1(50), B2(70)
