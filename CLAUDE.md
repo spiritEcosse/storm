@@ -129,7 +129,7 @@ cmake --preset ninja-release && cmake --build --preset ninja-release
 # ninja-debug has coverage enabled by default
 cmake --preset ninja-debug && cmake --build --preset ninja-debug
 
-# Console summary (quick) — ninja-debug-coverage injects STORM_PG_CONNSTR
+# Console summary (quick) — ninja-debug-coverage unsets STORM_PG_CONNSTR (SQLite + mock PG only)
 cmake --build --preset ninja-debug-coverage --target coverage
 
 # HTML report (detailed)
