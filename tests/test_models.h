@@ -41,7 +41,6 @@ struct Message {
 };
 
 // SQL CREATE TABLE statements — generated at runtime from C++26 reflection.
-// adapt_schema<ConnType>() in test_db_helpers.h converts them for PostgreSQL.
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
 inline const std::string &person_create_sql = storm::create_table_sql<Person>();
@@ -49,22 +48,31 @@ inline const std::string &message_create_sql = storm::create_table_sql<Message>(
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 namespace storm::test {
+
+// Type-safe CREATE TABLE IF NOT EXISTS using SchemaStatement.
+// For PostgreSQL, initialises the per-process test schema on the first call.
+// Call this AFTER set_default_connection() so the default connection is available.
+template <typename T, typename ConnType> inline auto ensure_table(auto &conn) {
+    pg_schema_init<ConnType>(conn);
+    return storm::orm::schema::SchemaStatement<T>::create_table_if_not_exists(conn);
+}
+
 // Populates join test data: 3 Persons + 5 Messages with sender FKs.
 // Used by DistinctTest, ValuesTest, and AggregateTest fixtures.
 template <typename ConnType> inline void populate_join_test_data() {
-    const auto &conn = storm::QuerySet<Person, ConnType>::get_default_connection();
-    std::ignore = conn->execute(
-        "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Alice', 30, 0, 0, 0)");
-    std::ignore = conn->execute(
-        "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Bob', 25, 0, 0, 0)");
-    std::ignore = conn->execute(
-        "INSERT INTO Person (name, age, salary, is_active, years_experience) VALUES ('Charlie', 35, 0, 0, 0)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Hello', 0, 1)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('World', 0, 1)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Hi there', 0, 2)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Goodbye', 0, 2)");
-    std::ignore = conn->execute("INSERT INTO Message (content, value, sender_id) VALUES ('Test', 0, 3)");
+    storm::QuerySet<Person, ConnType> person_qs;
+    std::ignore = person_qs.insert(Person{.name = "Alice", .age = 30}).execute();
+    std::ignore = person_qs.insert(Person{.name = "Bob", .age = 25}).execute();
+    std::ignore = person_qs.insert(Person{.name = "Charlie", .age = 35}).execute();
+
+    storm::QuerySet<Message, ConnType> msg_qs;
+    std::ignore = msg_qs.insert(Message{.content = "Hello", .sender = {.id = 1}}).execute();
+    std::ignore = msg_qs.insert(Message{.content = "World", .sender = {.id = 1}}).execute();
+    std::ignore = msg_qs.insert(Message{.content = "Hi there", .sender = {.id = 2}}).execute();
+    std::ignore = msg_qs.insert(Message{.content = "Goodbye", .sender = {.id = 2}}).execute();
+    std::ignore = msg_qs.insert(Message{.content = "Test", .sender = {.id = 3}}).execute();
 }
+
 } // namespace storm::test
 
 /**

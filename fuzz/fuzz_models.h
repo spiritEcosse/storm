@@ -12,13 +12,6 @@ struct FuzzModel {
     int value{};
 };
 
-// NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
-inline constexpr const char *fuzz_model_create_sql = "CREATE TABLE IF NOT EXISTS FuzzModel ("
-                                                     "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                                                     "name TEXT NOT NULL, "
-                                                     "value INTEGER NOT NULL)";
-// NOLINTEND(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
-
 // NOLINTBEGIN(modernize-use-trailing-return-type,bugprone-unused-return-value,cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
 
 /// Common DB initialisation — call from LLVMFuzzerInitialize().
@@ -30,7 +23,7 @@ inline int fuzz_init_db(bool with_seed = true) {
         return 0;
     }
     const auto &conn = storm::QuerySet<FuzzModel>::get_default_connection();
-    (void)conn->execute(fuzz_model_create_sql);
+    (void)storm::orm::schema::SchemaStatement<FuzzModel>::create_table_if_not_exists(conn);
     if (with_seed) {
         (void)storm::QuerySet<FuzzModel>().insert(FuzzModel{.name = "seed", .value = 42}).execute();
     }

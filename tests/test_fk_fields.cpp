@@ -24,6 +24,14 @@ struct FKMessage {
     std::string                               text;
 };
 
+// NullableFKMessage: same as FKMessage but sender is optional (nullable FK in DB)
+struct NullableFKMessage {
+    [[= storm::meta::FieldAttr::primary]] int              id{};
+    [[= storm::meta::FieldAttr::fk]] std::optional<FKUser> sender;
+    [[= storm::meta::FieldAttr::fk]] FKUser                receiver;
+    std::string                                            text;
+};
+
 // Test fixture for FK field operations — templated on database backend
 template <typename ConnType> class FKFieldTest : public ::testing::Test {
   protected:
@@ -38,28 +46,14 @@ template <typename ConnType> class FKFieldTest : public ::testing::Test {
 
         const auto& conn = QuerySet<FKUser, ConnType>::get_default_connection();
 
-        auto create_user_result = storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE FKUser ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "name TEXT NOT NULL, "
-                "age INTEGER NOT NULL"
-                ")"
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        auto create_user_result = storm::orm::schema::SchemaStatement<FKUser>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create_user_result.has_value())
                 << "Failed to create FKUser table: " << create_user_result.error().message();
 
-        auto create_message_result = storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE FKMessage ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "sender_id INTEGER NOT NULL, "
-                "receiver_id INTEGER NOT NULL, "
-                "text TEXT NOT NULL"
-                ")"
-        );
+        auto create_message_result = storm::orm::schema::SchemaStatement<FKMessage>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create_message_result.has_value())
-                << "Failed to create Message table: " << create_message_result.error().message();
+                << "Failed to create FKMessage table: " << create_message_result.error().message();
 
         storm::test::begin_test_txn<ConnType>(conn, {"FKUser"});
     }
@@ -357,16 +351,8 @@ TYPED_TEST(FKFieldTest, MultipleFKFieldsToSameType) {
     QuerySet<Conversation, TypeParam> conv_qs;
 
     // Create conversation table
-    const auto& conn               = QuerySet<FKUser, TypeParam>::get_default_connection();
-    auto        create_conv_result = storm::test::ensure_table<TypeParam>(
-            conn,
-            "CREATE TABLE Conversation ("
-                   "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                   "sender_id INTEGER NOT NULL, "
-                   "receiver_id INTEGER NOT NULL, "
-                   "message TEXT NOT NULL"
-                   ")"
-    );
+    const auto& conn        = QuerySet<FKUser, TypeParam>::get_default_connection();
+    auto create_conv_result = storm::orm::schema::SchemaStatement<Conversation>::create_table_if_not_exists(conn);
     ASSERT_TRUE(create_conv_result.has_value());
 
     // Insert users
@@ -711,30 +697,18 @@ template <typename ConnType> class NullableFKTest : public ::testing::Test {
 
         const auto& conn = QuerySet<FKUser, ConnType>::get_default_connection();
 
-        auto create_user_result = storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE FKUser ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "name TEXT NOT NULL, "
-                "age INTEGER NOT NULL"
-                ")"
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        auto create_user_result = storm::orm::schema::SchemaStatement<FKUser>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create_user_result.has_value())
                 << "Failed to create FKUser table: " << create_user_result.error().message();
 
-        auto create_message_result = storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE FKMessage ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "sender_id INTEGER, " // NULLABLE FK
-                "receiver_id INTEGER NOT NULL, "
-                "text TEXT NOT NULL"
-                ")"
-        );
+        // NullableFKMessage has std::optional<FKUser> sender → SchemaStatement generates nullable sender_id
+        auto create_message_result =
+                storm::orm::schema::SchemaStatement<NullableFKMessage>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create_message_result.has_value())
-                << "Failed to create FKMessage table: " << create_message_result.error().message();
+                << "Failed to create NullableFKMessage table: " << create_message_result.error().message();
 
-        storm::test::begin_test_txn<ConnType>(conn, {"FKUser", "FKMessage"});
+        storm::test::begin_test_txn<ConnType>(conn, {"FKUser", "NullableFKMessage"});
     }
 
     auto TearDown() -> void override {
@@ -752,78 +726,95 @@ TYPED_TEST_SUITE(NullableFKTest, DatabaseTypes);
 
 // Test: SELECT with NULL FK values
 TYPED_TEST(NullableFKTest, SelectWithNullFKField) {
-    QuerySet<FKMessage, TypeParam> message_qs;
+    QuerySet<NullableFKMessage, TypeParam> message_qs;
 
-    // Insert message with NULL sender_id
-    const auto& conn        = QuerySet<FKUser, TypeParam>::get_default_connection();
-    auto        stmt_result = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
-    ASSERT_TRUE(stmt_result.has_value());
+    // Insert a receiver user so the NOT NULL receiver_id is satisfied
+    QuerySet<FKUser, TypeParam> user_qs;
+    FKUser const                bob{.id = 0, .name = "Bob", .age = 25};
+    auto                        bob_result = user_qs.insert(bob).execute();
+    ASSERT_TRUE(bob_result.has_value());
+    FKUser const receiver{.id = static_cast<int>(bob_result.value())};
 
-    auto stmt = std::move(stmt_result.value());
-    ASSERT_TRUE(stmt.bind_int(1, 1).has_value());
-    ASSERT_TRUE(stmt.bind_text(2, "FKMessage with NULL sender").has_value());
+    // Insert message with NULL sender (std::nullopt) via ORM
+    NullableFKMessage const msg{.id = 0, .sender = std::nullopt, .receiver = receiver, .text = "no sender"};
+    auto                    insert_result = message_qs.insert(msg).execute();
+    ASSERT_TRUE(insert_result.has_value()) << "INSERT with nullopt FK failed: " << insert_result.error().message();
 
-    int const step_result = stmt.step_raw();
-    ASSERT_EQ(step_result, decltype(stmt)::NO_MORE_ROWS);
-
-    // SELECT should handle NULL FK gracefully
+    // SELECT should return message with sender == nullopt
     auto select_result = message_qs.select().execute();
     ASSERT_TRUE(select_result.has_value()) << "SELECT with NULL FK failed: " << select_result.error().message();
 
     const auto& messages = select_result.value();
     ASSERT_EQ(messages.size(), 1);
 
-    // Verify FK field with NULL value is default-initialized
     auto it = messages.begin();
-    EXPECT_EQ(it->sender.id, 0) << "NULL FK should result in default-initialized PK (0)";
-    EXPECT_EQ(it->sender.name, "");
-    EXPECT_EQ(it->sender.age, 0);
-    EXPECT_EQ(it->text, "FKMessage with NULL sender");
+    EXPECT_FALSE(it->sender.has_value()) << "NULL FK should be std::nullopt";
+    EXPECT_EQ(it->text, "no sender");
+}
+
+// Test: SELECT with non-null optional FK — covers extract_column_fast non-null branch (base.cppm lines 439-441)
+TYPED_TEST(NullableFKTest, SelectWithNonNullFKField) {
+    QuerySet<FKUser, TypeParam>            user_qs;
+    QuerySet<NullableFKMessage, TypeParam> message_qs;
+
+    // Insert a user to serve as sender and receiver
+    FKUser const bob{.id = 0, .name = "Bob", .age = 25};
+    auto         bob_result = user_qs.insert(bob).execute();
+    ASSERT_TRUE(bob_result.has_value());
+    FKUser const bob_fk{.id = static_cast<int>(bob_result.value())};
+
+    // Insert message with non-null sender (optional FK with value)
+    NullableFKMessage const msg{.id = 0, .sender = bob_fk, .receiver = bob_fk, .text = "with sender"};
+    auto                    insert_result = message_qs.insert(msg).execute();
+    ASSERT_TRUE(insert_result.has_value())
+            << "INSERT with non-null optional FK failed: " << insert_result.error().message();
+
+    // Plain SELECT (no join) triggers extract_column_fast for optional FK — non-null path
+    auto select_result = message_qs.select().execute();
+    ASSERT_TRUE(select_result.has_value()) << "SELECT failed: " << select_result.error().message();
+
+    const auto& messages = select_result.value();
+    ASSERT_EQ(messages.size(), 1);
+
+    auto it = messages.begin();
+    ASSERT_TRUE(it->sender.has_value()) << "Non-null optional FK should have value";
+    EXPECT_EQ(it->sender->id, bob_fk.id);
+    EXPECT_EQ(it->text, "with sender");
 }
 
 // Test: LEFT JOIN with NULL FK values
 TYPED_TEST(NullableFKTest, LeftJoinWithNullFKField) {
-    QuerySet<FKUser, TypeParam>    user_qs;
-    QuerySet<FKMessage, TypeParam> message_qs;
+    QuerySet<FKUser, TypeParam>            user_qs;
+    QuerySet<NullableFKMessage, TypeParam> message_qs;
 
-    // Insert a user
+    // Insert a receiver user
     FKUser const alice{.id = 0, .name = "Alice", .age = 30};
     auto         alice_result = user_qs.insert(alice).execute();
     ASSERT_TRUE(alice_result.has_value());
-    int64_t const alice_id = alice_result.value();
+    FKUser const receiver{.id = static_cast<int>(alice_result.value())};
 
-    // Insert message with NULL sender_id
-    const auto& conn        = QuerySet<FKUser, TypeParam>::get_default_connection();
-    auto        stmt_result = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
-    ASSERT_TRUE(stmt_result.has_value());
-
-    auto stmt = std::move(stmt_result.value());
-    ASSERT_TRUE(stmt.bind_int(1, alice_id).has_value());
-    ASSERT_TRUE(stmt.bind_text(2, "NULL sender message").has_value());
-
-    int const step_result = stmt.step_raw();
-    ASSERT_EQ(step_result, decltype(stmt)::NO_MORE_ROWS);
+    // Insert message with NULL sender via ORM
+    NullableFKMessage const msg{.id = 0, .sender = std::nullopt, .receiver = receiver, .text = "NULL sender message"};
+    auto                    insert_result = message_qs.insert(msg).execute();
+    ASSERT_TRUE(insert_result.has_value());
 
     // LEFT JOIN on sender - should return message even with NULL sender_id
-    auto join_result = message_qs.template left_join<&FKMessage::sender>().select().execute();
+    auto join_result = message_qs.template left_join<&NullableFKMessage::sender>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "LEFT JOIN with NULL FK failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
     ASSERT_EQ(messages.size(), 1) << "LEFT JOIN should return message with NULL FK";
 
-    // Verify sender FK is default-initialized (NULL in DB = no JOIN match)
     auto it = messages.begin();
-    EXPECT_EQ(it->sender.id, 0) << "NULL FK should not JOIN, remain default";
-    EXPECT_EQ(it->sender.name, "") << "NULL FK should not populate name";
-    EXPECT_EQ(it->sender.age, 0) << "NULL FK should not populate age";
+    EXPECT_FALSE(it->sender.has_value()) << "NULL FK should be std::nullopt after left join";
     EXPECT_EQ(it->text, "NULL sender message");
 }
 
 // Test: LEFT JOIN with mix of NULL and valid FKs
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
-    QuerySet<FKUser, TypeParam>    user_qs;
-    QuerySet<FKMessage, TypeParam> message_qs;
+    QuerySet<FKUser, TypeParam>            user_qs;
+    QuerySet<NullableFKMessage, TypeParam> message_qs;
 
     // Insert users
     FKUser const alice{.id = 0, .name = "Alice", .age = 30};
@@ -832,54 +823,57 @@ TYPED_TEST(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     auto         bob_result   = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
-    int64_t const alice_id = alice_result.value();
-    int64_t const bob_id   = bob_result.value();
+    FKUser const alice_fk{.id = static_cast<int>(alice_result.value())};
+    FKUser const bob_fk{.id = static_cast<int>(bob_result.value())};
 
-    const auto& conn = QuerySet<FKUser, TypeParam>::get_default_connection();
+    // Message 1: valid sender (Alice) → receiver (Bob)
+    NullableFKMessage const msg1{.id = 0, .sender = alice_fk, .receiver = bob_fk, .text = "From Alice"};
+    ASSERT_TRUE(message_qs.insert(msg1).execute().has_value());
 
-    // FKMessage 1: Valid sender (Alice)
-    auto stmt1 = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (?, ?, ?)");
-    ASSERT_TRUE(stmt1.has_value());
-    auto stm1 = std::move(stmt1.value());
-    ASSERT_TRUE(stm1.bind_int(1, alice_id).has_value());
-    ASSERT_TRUE(stm1.bind_int(2, bob_id).has_value());
-    ASSERT_TRUE(stm1.bind_text(3, "From Alice").has_value());
-    ASSERT_EQ(stm1.step_raw(), decltype(stm1)::NO_MORE_ROWS);
-
-    // FKMessage 2: NULL sender
-    auto stmt2 = conn->prepare("INSERT INTO FKMessage (sender_id, receiver_id, text) VALUES (NULL, ?, ?)");
-    ASSERT_TRUE(stmt2.has_value());
-    auto stm2 = std::move(stmt2.value());
-    ASSERT_TRUE(stm2.bind_int(1, bob_id).has_value());
-    ASSERT_TRUE(stm2.bind_text(2, "Anonymous").has_value());
-    ASSERT_EQ(stm2.step_raw(), decltype(stm2)::NO_MORE_ROWS);
+    // Message 2: NULL sender → receiver (Bob)
+    NullableFKMessage const msg2{.id = 0, .sender = std::nullopt, .receiver = bob_fk, .text = "Anonymous"};
+    ASSERT_TRUE(message_qs.insert(msg2).execute().has_value());
 
     // LEFT JOIN should return both messages
-    auto join_result = message_qs.template left_join<&FKMessage::sender>().select().execute();
+    auto join_result = message_qs.template left_join<&NullableFKMessage::sender>().select().execute();
     ASSERT_TRUE(join_result.has_value());
 
     const auto& messages = join_result.value();
     ASSERT_EQ(messages.size(), 2) << "LEFT JOIN should return all messages";
 
-    // Find and verify each message
-    bool found_alice = false; // NOLINT(misc-const-correctness) - modified in loop
-    bool found_null  = false; // NOLINT(misc-const-correctness) - modified in loop
+    bool found_alice = false; // NOLINT(misc-const-correctness)
+    bool found_null  = false; // NOLINT(misc-const-correctness)
     for (const auto& m : messages) {
         if (m.text == "From Alice") {
             found_alice = true;
-            EXPECT_EQ(m.sender.id, alice_id);
-            EXPECT_EQ(m.sender.name, "Alice");
-            EXPECT_EQ(m.sender.age, 30);
+            ASSERT_TRUE(m.sender.has_value()) << "Alice's message should have a sender";
+            EXPECT_EQ(m.sender->id, alice_fk.id);
+            EXPECT_EQ(m.sender->name, "Alice");
+            EXPECT_EQ(m.sender->age, 30);
         } else if (m.text == "Anonymous") {
             found_null = true;
-            EXPECT_EQ(m.sender.id, 0) << "NULL sender should remain default";
-            EXPECT_EQ(m.sender.name, "");
-            EXPECT_EQ(m.sender.age, 0);
+            EXPECT_FALSE(m.sender.has_value()) << "Anonymous message sender should be nullopt";
         }
     }
     EXPECT_TRUE(found_alice) << "Should find Alice's message";
     EXPECT_TRUE(found_null) << "Should find anonymous message";
 }
+
+// File-scope structs for ExtendedTypesJoinTest — used by SetUp and JoinWithExtendedTypes/MultiJoin tests
+struct Employee {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string                               name;
+    double                                    salary{};
+    bool                                      is_active{};
+    std::optional<std::string>                nickname;
+};
+
+struct Project {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::meta::FieldAttr::fk]] Employee manager;
+    std::string                               title;
+    double                                    budget{};
+};
 
 // Test fixture for extended type support in JOINs — templated on database backend
 template <typename ConnType> class ExtendedTypesJoinTest : public ::testing::Test {
@@ -895,28 +889,12 @@ template <typename ConnType> class ExtendedTypesJoinTest : public ::testing::Tes
 
         const auto& conn = QuerySet<FKUser, ConnType>::get_default_connection();
 
-        auto create_employee_result = storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE Employee ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "name TEXT NOT NULL, "
-                "salary REAL NOT NULL, "
-                "is_active INTEGER NOT NULL, "
-                "nickname TEXT" // NULL allowed for optional
-                ")"
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        auto create_employee_result = storm::orm::schema::SchemaStatement<Employee>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create_employee_result.has_value())
                 << "Failed to create Employee table: " << create_employee_result.error().message();
 
-        auto create_project_result = storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE Project ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "manager_id INTEGER NOT NULL, "
-                "title TEXT NOT NULL, "
-                "budget REAL NOT NULL"
-                ")"
-        );
+        auto create_project_result = storm::orm::schema::SchemaStatement<Project>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create_project_result.has_value())
                 << "Failed to create Project table: " << create_project_result.error().message();
 
@@ -1087,15 +1065,7 @@ TYPED_TEST(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
 
     // Create Task table
     const auto& conn               = QuerySet<FKUser, TypeParam>::get_default_connection();
-    auto        create_task_result = storm::test::ensure_table<TypeParam>(
-            conn,
-            "CREATE TABLE Task ("
-                   "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                   "assignee_id INTEGER NOT NULL, "
-                   "reviewer_id INTEGER NOT NULL, "
-                   "description TEXT NOT NULL"
-                   ")"
-    );
+    auto        create_task_result = storm::orm::schema::SchemaStatement<Task>::create_table_if_not_exists(conn);
     ASSERT_TRUE(create_task_result.has_value());
 
     // Insert employees
@@ -1186,27 +1156,11 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
     // Create tables
     const auto& conn = QuerySet<FKUser, TypeParam>::get_default_connection();
 
-    auto create_measurement_result = storm::test::ensure_table<TypeParam>(
-            conn,
-            "CREATE TABLE Measurement ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-            "sensor_name TEXT NOT NULL, "
-            "temperature REAL NOT NULL, "
-            "timestamp INTEGER NOT NULL"
-            ")"
-    );
+    auto create_measurement_result = storm::orm::schema::SchemaStatement<Measurement>::create_table_if_not_exists(conn);
     ASSERT_TRUE(create_measurement_result.has_value())
             << "Failed to create Measurement table: " << create_measurement_result.error().message();
 
-    auto create_reading_result = storm::test::ensure_table<TypeParam>(
-            conn,
-            "CREATE TABLE Reading ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-            "measurement_id INTEGER NOT NULL, "
-            "reading_type TEXT NOT NULL, "
-            "value REAL NOT NULL"
-            ")"
-    );
+    auto create_reading_result = storm::orm::schema::SchemaStatement<Reading>::create_table_if_not_exists(conn);
     ASSERT_TRUE(create_reading_result.has_value())
             << "Failed to create Reading table: " << create_reading_result.error().message();
 
@@ -1280,25 +1234,11 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithLongType) {
     // Create tables
     const auto& conn = QuerySet<FKUser, TypeParam>::get_default_connection();
 
-    auto create_counter_result = storm::test::ensure_table<TypeParam>(
-            conn,
-            "CREATE TABLE Counter ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-            "name TEXT NOT NULL, "
-            "count INTEGER NOT NULL"
-            ")"
-    );
+    auto create_counter_result = storm::orm::schema::SchemaStatement<Counter>::create_table_if_not_exists(conn);
     ASSERT_TRUE(create_counter_result.has_value())
             << "Failed to create Counter table: " << create_counter_result.error().message();
 
-    auto create_summary_result = storm::test::ensure_table<TypeParam>(
-            conn,
-            "CREATE TABLE Summary ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-            "counter_id INTEGER NOT NULL, "
-            "report_type TEXT NOT NULL"
-            ")"
-    );
+    auto create_summary_result = storm::orm::schema::SchemaStatement<Summary>::create_table_if_not_exists(conn);
     ASSERT_TRUE(create_summary_result.has_value())
             << "Failed to create Summary table: " << create_summary_result.error().message();
 

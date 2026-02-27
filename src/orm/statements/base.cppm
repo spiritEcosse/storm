@@ -59,16 +59,23 @@ export namespace storm::orm::statements {
             return field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk;
         }
 
+        // Unique field detection
+        static consteval auto is_unique_field(std::meta::info member) -> bool {
+            auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
+            return field_attr.has_value() && field_attr.value() == meta::FieldAttr::unique;
+        }
+
         // Get database column name for FK field: User sender → "sender_id"
         static consteval auto get_fk_column_name(std::meta::info member) -> std::string {
             const std::string field_name(std::meta::identifier_of(member));
             return field_name + "_id";
         }
 
-        // Find primary key of a FK type
+        // Find primary key of a FK type (unwraps std::optional<T> → T first)
         template <typename FKType> static consteval auto find_fk_primary_key() -> std::meta::info {
+            using InnerType = utilities::optional_inner_type_t<FKType>;
             for (const std::meta::info member :
-                 std::meta::nonstatic_data_members_of(^^FKType, std::meta::access_context::unchecked())) {
+                 std::meta::nonstatic_data_members_of(^^InnerType, std::meta::access_context::unchecked())) {
                 auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
                 if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::primary) {
                     return member;
@@ -222,13 +229,28 @@ export namespace storm::orm::statements {
             }
             // FK field - extract and bind the PK value from the foreign object
             else if constexpr (is_fk_field(member)) {
-                auto fk_object              = obj.[:member:];
-                using FKType                = std::remove_cvref_t<decltype(fk_object)>;
-                constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
-                auto           pk_value     = fk_object.[:fk_pk_member:];
-                auto           result       = bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
-                if (!result) {
-                    return std::unexpected(result.error());
+                using FKType = std::remove_cvref_t<decltype(obj.[:member:])>;
+                if constexpr (utilities::is_optional_v<FKType>) {
+                    // Optional FK: bind NULL when empty, otherwise bind the inner PK value
+                    std::expected<void, typename ConnType::Error> result{};
+                    if (obj.[:member:].has_value()) {
+                        constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
+                        auto           pk_value     = obj.[:member:].value().[:fk_pk_member:];
+                        result                      = bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
+                    } else {
+                        result = stmt->bind_null(param_index);
+                    }
+                    if (!result) {
+                        return std::unexpected(result.error()); // LCOV_EXCL_LINE
+                    } // LCOV_EXCL_LINE
+                } else {
+                    auto           fk_object    = obj.[:member:];
+                    constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
+                    auto           pk_value     = fk_object.[:fk_pk_member:];
+                    auto           result       = bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
+                    if (!result) {
+                        return std::unexpected(result.error());
+                    }
                 }
                 ++param_index;
                 return {};
@@ -406,10 +428,24 @@ export namespace storm::orm::statements {
                 constexpr auto member = all_members_[Index];
                 using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
                 if constexpr (is_fk_field(member)) {
-                    obj.[:member:]                  = FieldType{};
-                    constexpr auto fk_pk_member     = find_fk_primary_key<FieldType>();
-                    using PKType                    = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
-                    obj.[:member:].[:fk_pk_member:] = extract_column_value<PKType>(stmt, Index);
+                    if constexpr (utilities::is_optional_v<FieldType>) {
+                        // Optional FK: set nullopt when DB column is NULL (no match)
+                        using InnerFKType           = utilities::optional_inner_type_t<FieldType>;
+                        constexpr auto fk_pk_member = find_fk_primary_key<FieldType>();
+                        using PKType = std::remove_cvref_t<decltype(std::declval<InnerFKType>().[:fk_pk_member:])>;
+                        if (stmt->is_null(Index)) {
+                            obj.[:member:] = std::nullopt;
+                        } else {
+                            InnerFKType fk_inner{};
+                            fk_inner.[:fk_pk_member:] = extract_column_value<PKType>(stmt, Index);
+                            obj.[:member:]            = std::move(fk_inner);
+                        }
+                    } else {
+                        obj.[:member:]              = FieldType{};
+                        constexpr auto fk_pk_member = find_fk_primary_key<FieldType>();
+                        using PKType                = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
+                        obj.[:member:].[:fk_pk_member:] = extract_column_value<PKType>(stmt, Index);
+                    }
                 } else {
                     obj.[:member:] = extract_column_value<FieldType>(stmt, Index);
                 }

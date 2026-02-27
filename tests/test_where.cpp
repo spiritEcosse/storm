@@ -25,7 +25,7 @@ template <typename ConnType> class WhereTest : public StormTestFixture<Person, C
 
         const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
 
-        auto create_result = storm::test::ensure_table<ConnType>(conn, person_create_sql);
+        auto create_result = storm::test::ensure_table<Person, ConnType>(conn);
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
         storm::test::begin_test_txn<ConnType>(conn, {"Person"});
@@ -322,10 +322,10 @@ template <typename ConnType> class WhereJoinTest : public StormTestFixture<Messa
 
         const auto& conn = QuerySet<Message, ConnType>::get_default_connection();
 
-        auto create_person = storm::test::ensure_table<ConnType>(conn, person_create_sql);
+        auto create_person = storm::test::ensure_table<Person, ConnType>(conn);
         ASSERT_TRUE(create_person.has_value()) << "Failed to create Person table: " << create_person.error().message();
 
-        auto create_message = storm::test::ensure_table<ConnType>(conn, message_create_sql);
+        auto create_message = storm::test::ensure_table<Message, ConnType>(conn);
         ASSERT_TRUE(create_message.has_value())
                 << "Failed to create Message table: " << create_message.error().message();
 

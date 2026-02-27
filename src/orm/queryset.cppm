@@ -62,6 +62,11 @@ export namespace storm {
             return get_remove_statement().query(objects);
         }
 
+        // Remove all rows — executes DELETE FROM <table> with no WHERE clause
+        [[nodiscard]] auto remove_all() {
+            return get_remove_statement().query_all();
+        }
+
         // Insert single object - returns proxy with .execute() and .to_sql()
         // .execute() returns the auto-generated ID
         // (SFINAE: only accept T, not span/container)

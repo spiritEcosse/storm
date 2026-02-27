@@ -29,10 +29,10 @@ template <typename ConnType> class DistinctTest : public StormTestFixture<Person
         }
         const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
 
-        auto create_person = storm::test::ensure_table<ConnType>(conn, person_create_sql);
+        auto create_person = storm::test::ensure_table<Person, ConnType>(conn);
         ASSERT_TRUE(create_person.has_value()) << "Failed to create Person table: " << create_person.error().message();
 
-        auto create_msg = storm::test::ensure_table<ConnType>(conn, message_create_sql);
+        auto create_msg = storm::test::ensure_table<Message, ConnType>(conn);
         ASSERT_TRUE(create_msg.has_value()) << "Failed to create Message table: " << create_msg.error().message();
 
         storm::test::begin_test_txn<ConnType>(conn, {"Person"});

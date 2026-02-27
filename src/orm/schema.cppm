@@ -5,6 +5,7 @@ module;
 export module storm_orm_schema;
 
 import storm_orm_statements_base;
+import storm_orm_utilities;
 import storm_db_concept;
 
 import <string>;
@@ -18,11 +19,14 @@ import <utility>;
 
 export namespace storm::orm::schema {
 
+    // Import utilities for compile-time string building
+    using storm::orm::utilities::ConstexprString;
+
     namespace detail {
 
         // Map a C++ field type to its SQLite column definition string
         // Returns the column type portion (after the column name)
-        template <typename FieldType> constexpr auto sql_col_def() -> std::string_view {
+        template <typename FieldType> consteval auto sql_col_def() -> std::string_view {
             if constexpr (std::is_same_v<FieldType, std::optional<int>> ||
                           std::is_same_v<FieldType, std::optional<int64_t>> ||
                           std::is_same_v<FieldType, std::optional<bool>>) {
@@ -38,7 +42,10 @@ export namespace storm::orm::schema {
                 return "BLOB";
             } else if constexpr (std::is_same_v<FieldType, int> || std::is_same_v<FieldType, int64_t> ||
                                  std::is_same_v<FieldType, bool> || std::is_same_v<FieldType, short> ||
-                                 std::is_same_v<FieldType, unsigned int> || std::is_same_v<FieldType, unsigned short>) {
+                                 std::is_same_v<FieldType, unsigned int> || std::is_same_v<FieldType, unsigned short> ||
+                                 std::is_same_v<FieldType, long> || std::is_same_v<FieldType, unsigned long> ||
+                                 std::is_same_v<FieldType, long long> ||
+                                 std::is_same_v<FieldType, unsigned long long>) {
                 return "INTEGER NOT NULL";
             } else if constexpr (std::is_same_v<FieldType, double> || std::is_same_v<FieldType, float>) {
                 return "REAL NOT NULL";
@@ -74,12 +81,111 @@ export namespace storm::orm::schema {
     template <typename T> class SchemaStatement : private storm::orm::statements::BaseStatement<T> {
         using Base = storm::orm::statements::BaseStatement<T>;
 
-      public:
-        // Build and return the CREATE TABLE SQL (SQLite dialect).
-        // Lazily initialized on first call, cached as static local.
-        static auto create_table_sql() -> const std::string& {
-            static const std::string sql = build_create_table_sql();
+        // Column definition buffer size — generous for field name + type + constraints
+        static constexpr size_t COL_DEF_BUFFER = 128;
+
+        // Build column definition for field at compile-time index
+        template <size_t Index> static consteval auto build_column_def() {
+            ConstexprString<COL_DEF_BUFFER> col;
+            constexpr auto                  member = Base::all_members_[Index];
+
+            // Primary key field
+            if constexpr (Base::all_members_[Index] == Base::primary_key_) {
+                col.append("id INTEGER PRIMARY KEY AUTOINCREMENT");
+            }
+            // FK field — generate "<name>_id INTEGER NOT NULL" (or nullable if optional FK)
+            else if constexpr (Base::is_fk_field(member)) {
+                using FieldType = std::remove_cvref_t<typename[:std::meta::type_of(member):]>;
+                col.append(std::meta::identifier_of(member));
+                if constexpr (storm::orm::utilities::is_optional_v<FieldType>) {
+                    col.append("_id INTEGER"); // nullable optional FK
+                } else {
+                    col.append("_id INTEGER NOT NULL");
+                }
+            }
+            // Unique field — same as regular but with UNIQUE constraint
+            else if constexpr (Base::is_unique_field(member)) {
+                using FieldType = std::remove_cvref_t<typename[:std::meta::type_of(member):]>;
+                col.append(std::meta::identifier_of(member));
+                col.append(" ");
+                col.append(detail::sql_col_def<FieldType>());
+                col.append(" UNIQUE");
+            }
+            // Regular field
+            else {
+                using FieldType = std::remove_cvref_t<typename[:std::meta::type_of(member):]>;
+                col.append(std::meta::identifier_of(member));
+                col.append(" ");
+                col.append(detail::sql_col_def<FieldType>());
+            }
+            return col;
+        }
+
+        // Compile-time SQL size calculation for CREATE TABLE
+        static consteval auto calculate_column_defs_size() -> size_t {
+            size_t size = 0;
+            for (size_t i = 0; i < Base::field_count_; ++i) {
+                if (i > 0) {
+                    size += 2; // ",\n"
+                }
+                size += 4; // "    " indent
+
+                if (Base::all_members_[i] == Base::primary_key_) {
+                    size += 36; // "id INTEGER PRIMARY KEY AUTOINCREMENT"
+                } else {
+                    auto field_attr = std::meta::annotation_of_type<statements::meta::FieldAttr>(Base::all_members_[i]);
+                    size += std::meta::identifier_of(Base::all_members_[i]).size();
+                    if (field_attr.has_value() && field_attr.value() == statements::meta::FieldAttr::fk) {
+                        size += 3 + 20; // "_id" + " INTEGER NOT NULL" (max)
+                    } else {
+                        size += 1 + 16 + 7; // " " + type def (max ~16) + " UNIQUE"
+                    }
+                }
+            }
+            return size;
+        }
+
+        static consteval auto calculate_create_table_sql_size() -> size_t {
+            return 13 + Base::table_name_.size() + 3 + calculate_column_defs_size() + 2;
+        }
+
+        // Build the full CREATE TABLE SQL at compile-time using index sequence fold
+        template <size_t... Is> static consteval auto build_sql_impl(std::index_sequence<Is...> /*unused*/) {
+            // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
+            constexpr size_t          sql_size = calculate_create_table_sql_size() + utilities::sql_len::XL_BUFFER;
+            ConstexprString<sql_size> sql;
+
+            sql.append("CREATE TABLE ");
+            sql.append(Base::table_name_);
+            sql.append(" (\n");
+
+            bool first = true;
+            (([&] {
+                 if (!first) {
+                     sql.append(",\n");
+                 }
+                 sql.append("    ");
+                 sql.append(build_column_def<Is>());
+                 first = false;
+             }()),
+             ...);
+
+            sql.append("\n)");
             return sql;
+        }
+
+        static consteval auto build_create_table_sql() {
+            return build_sql_impl(std::make_index_sequence<Base::field_count_>{});
+        }
+
+        // Pre-computed CREATE TABLE SQL generated at compile-time
+        static constexpr auto           create_table_sql_array_  = build_create_table_sql();
+        static inline const std::string create_table_sql_string_ = std::string(create_table_sql_array_);
+
+      public:
+        // Return the pre-computed CREATE TABLE SQL (SQLite dialect).
+        static auto create_table_sql() -> const std::string& {
+            return create_table_sql_string_;
         }
 
         // Execute CREATE TABLE IF NOT EXISTS on the given connection.
@@ -103,56 +209,6 @@ export namespace storm::orm::schema {
             }
 
             return conn->execute(sql);
-        }
-
-      private:
-        // Build column definition for field at compile-time index
-        template <size_t Index> static auto build_column_def() -> std::string {
-            constexpr auto member = Base::all_members_[Index];
-
-            // Primary key field
-            if constexpr (Base::all_members_[Index] == Base::primary_key_) {
-                return "id INTEGER PRIMARY KEY AUTOINCREMENT";
-            }
-            // FK field — generate "<name>_id INTEGER NOT NULL"
-            else if constexpr (Base::is_fk_field(member)) {
-                std::string col_name(std::meta::identifier_of(member));
-                col_name += "_id INTEGER NOT NULL";
-                return col_name;
-            }
-            // Regular field
-            else {
-                using FieldType = std::remove_cvref_t<typename[:std::meta::type_of(member):]>;
-                std::string col = std::string(std::meta::identifier_of(member));
-                col += " ";
-                col += detail::sql_col_def<FieldType>();
-                return col;
-            }
-        }
-
-        // Build the full CREATE TABLE SQL string using index sequence fold
-        static auto build_create_table_sql() -> std::string {
-            return build_sql_impl(std::make_index_sequence<Base::field_count_>{});
-        }
-
-        template <size_t... Is> static auto build_sql_impl(std::index_sequence<Is...> /*unused*/) -> std::string {
-            std::string sql = "CREATE TABLE ";
-            sql += std::string(Base::table_name_);
-            sql += " (\n";
-
-            bool first = true;
-            (([&] {
-                 if (!first) {
-                     sql += ",\n";
-                 }
-                 sql += "    ";
-                 sql += build_column_def<Is>();
-                 first = false;
-             }()),
-             ...);
-
-            sql += "\n)";
-            return sql;
         }
     };
 

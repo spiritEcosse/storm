@@ -78,15 +78,8 @@ template <typename ConnType> class MultipleAggregatesTest : public ::testing::Te
 
         const auto& conn = QuerySet<AggPerson, ConnType>::get_default_connection();
 
-        auto create = storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE AggPerson ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "name TEXT NOT NULL, "
-                "age INTEGER NOT NULL, "
-                "salary REAL NOT NULL, "
-                "score INTEGER NOT NULL)"
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        auto create = storm::orm::schema::SchemaStatement<AggPerson>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create.has_value());
 
         storm::test::begin_test_txn<ConnType>(conn, {"AggPerson"});
@@ -398,44 +391,25 @@ TYPED_TEST(MultipleAggregatesTest, MaxThenMin) {
 // =============================================================================
 
 TYPED_TEST(MultipleAggregatesTest, MultipleAggregatesWithJoin) {
-    // First set up FK tables
+    // Set up FK tables using SchemaStatement (pg_schema_init already run in SetUp)
     const auto& conn = QuerySet<AggPerson, TypeParam>::get_default_connection();
-
-    (void)storm::test::ensure_table<TypeParam>(
-            conn,
-            "CREATE TABLE JoinUser ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-            "name TEXT NOT NULL, "
-            "rating REAL NOT NULL, "
-            "active INTEGER NOT NULL, "
-            "opt_score INTEGER, "
-            "opt_bio TEXT)"
-    );
-
-    (void)storm::test::ensure_table<TypeParam>(
-            conn,
-            "CREATE TABLE JoinPost ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-            "title TEXT NOT NULL, "
-            "author_id INTEGER NOT NULL, "
-            "views INTEGER NOT NULL, "
-            "FOREIGN KEY (author_id) REFERENCES JoinUser(id))"
-    );
+    (void)storm::orm::schema::SchemaStatement<JoinUser>::create_table_if_not_exists(conn);
+    (void)storm::orm::schema::SchemaStatement<JoinPost>::create_table_if_not_exists(conn);
 
     // Insert users
-    (void)conn->execute(
-            "INSERT INTO JoinUser (name, rating, active, opt_score, opt_bio) VALUES ('User1', 4.5, 1, 100, 'Bio1')"
-    );
-    (void)conn->execute(
-            "INSERT INTO JoinUser (name, rating, active, opt_score, opt_bio) VALUES ('User2', 3.8, 0, NULL, NULL)"
-    );
+    QuerySet<JoinUser, TypeParam> user_qs;
+    std::ignore =
+            user_qs.insert(JoinUser{
+                                   .name = "User1", .rating = 4.5f, .active = true, .opt_score = 100, .opt_bio = "Bio1"
+                           })
+                    .execute();
+    std::ignore = user_qs.insert(JoinUser{.name = "User2", .rating = 3.8f, .active = false}).execute();
 
     // Insert posts
-    (void)conn->execute("INSERT INTO JoinPost (title, author_id, views) VALUES ('Post1', 1, 100)");
-    (void)conn->execute("INSERT INTO JoinPost (title, author_id, views) VALUES ('Post2', 1, 200)");
-    (void)conn->execute("INSERT INTO JoinPost (title, author_id, views) VALUES ('Post3', 2, 50)");
-
     QuerySet<JoinPost, TypeParam> post_qs;
+    std::ignore = post_qs.insert(JoinPost{.title = "Post1", .author = {.id = 1}, .views = 100}).execute();
+    std::ignore = post_qs.insert(JoinPost{.title = "Post2", .author = {.id = 1}, .views = 200}).execute();
+    std::ignore = post_qs.insert(JoinPost{.title = "Post3", .author = {.id = 2}, .views = 50}).execute();
 
     // Test multiple aggregates with JOIN
     auto result = post_qs.template join<&JoinPost::author>().count().template sum<^^JoinPost::views>().get();
@@ -464,27 +438,11 @@ template <typename ConnType> class JoinTypeExtractionTest : public ::testing::Te
 
         const auto& conn = QuerySet<JoinUser, ConnType>::get_default_connection();
 
-        auto create_user = storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE JoinUser ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "name TEXT NOT NULL, "
-                "rating REAL NOT NULL, "
-                "active INTEGER NOT NULL, "
-                "opt_score INTEGER, "
-                "opt_bio TEXT)"
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        auto create_user = storm::orm::schema::SchemaStatement<JoinUser>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create_user.has_value());
 
-        auto create_post = storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE JoinPost ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "title TEXT NOT NULL, "
-                "author_id INTEGER NOT NULL, "
-                "views INTEGER NOT NULL, "
-                "FOREIGN KEY (author_id) REFERENCES JoinUser(id))"
-        );
+        auto create_post = storm::orm::schema::SchemaStatement<JoinPost>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create_post.has_value());
 
         storm::test::begin_test_txn<ConnType>(conn, {"JoinUser"});
@@ -493,22 +451,26 @@ template <typename ConnType> class JoinTypeExtractionTest : public ::testing::Te
         post_qs = std::make_unique<QuerySet<JoinPost, ConnType>>();
 
         // Insert test users with various type values
-        (void)conn->execute(
-                "INSERT INTO JoinUser (name, rating, active, opt_score, opt_bio) VALUES ('Alice', 4.5, 1, 100, 'Alice "
-                "bio')"
-        );
-        (void)conn->execute(
-                "INSERT INTO JoinUser (name, rating, active, opt_score, opt_bio) VALUES ('Bob', 3.2, 0, NULL, NULL)"
-        );
-        (void)conn->execute(
-                "INSERT INTO JoinUser (name, rating, active, opt_score, opt_bio) VALUES ('Charlie', 4.9, 1, 95, NULL)"
-        );
+        std::ignore = user_qs->insert(
+                                     JoinUser{
+                                             .name      = "Alice",
+                                             .rating    = 4.5f,
+                                             .active    = true,
+                                             .opt_score = 100,
+                                             .opt_bio   = "Alice bio"
+                                     }
+        )
+                              .execute();
+        std::ignore = user_qs->insert(JoinUser{.name = "Bob", .rating = 3.2f, .active = false}).execute();
+        std::ignore =
+                user_qs->insert(JoinUser{.name = "Charlie", .rating = 4.9f, .active = true, .opt_score = 95}).execute();
 
         // Insert posts
-        (void)conn->execute("INSERT INTO JoinPost (title, author_id, views) VALUES ('Post by Alice', 1, 100)");
-        (void)conn->execute("INSERT INTO JoinPost (title, author_id, views) VALUES ('Another Alice post', 1, 200)");
-        (void)conn->execute("INSERT INTO JoinPost (title, author_id, views) VALUES ('Post by Bob', 2, 50)");
-        (void)conn->execute("INSERT INTO JoinPost (title, author_id, views) VALUES ('Charlie post', 3, 150)");
+        std::ignore = post_qs->insert(JoinPost{.title = "Post by Alice", .author = {.id = 1}, .views = 100}).execute();
+        std::ignore =
+                post_qs->insert(JoinPost{.title = "Another Alice post", .author = {.id = 1}, .views = 200}).execute();
+        std::ignore = post_qs->insert(JoinPost{.title = "Post by Bob", .author = {.id = 2}, .views = 50}).execute();
+        std::ignore = post_qs->insert(JoinPost{.title = "Charlie post", .author = {.id = 3}, .views = 150}).execute();
     }
 
     auto TearDown() -> void override {
@@ -681,13 +643,8 @@ template <typename ConnType> class UpdateOptimizedTest : public ::testing::Test 
 
         const auto& conn = QuerySet<UpdatePerson, ConnType>::get_default_connection();
 
-        auto create = storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE UpdatePerson ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "name TEXT NOT NULL, "
-                "value INTEGER NOT NULL)"
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        auto create = storm::orm::schema::SchemaStatement<UpdatePerson>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create.has_value());
 
         storm::test::begin_test_txn<ConnType>(conn, {"UpdatePerson"});
@@ -798,14 +755,8 @@ template <typename ConnType> class WhereAdditionalTest : public ::testing::Test 
 
         const auto& conn = QuerySet<CovAddWherePerson, ConnType>::get_default_connection();
 
-        (void)storm::test::ensure_table<ConnType>(
-                conn,
-                "CREATE TABLE CovAddWherePerson ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "name TEXT NOT NULL, "
-                "age INTEGER NOT NULL, "
-                "score REAL NOT NULL)"
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        (void)storm::orm::schema::SchemaStatement<CovAddWherePerson>::create_table_if_not_exists(conn);
 
         storm::test::begin_test_txn<ConnType>(conn, {"CovAddWherePerson"});
 

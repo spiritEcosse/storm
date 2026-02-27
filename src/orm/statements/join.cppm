@@ -57,7 +57,10 @@ export namespace storm::orm::statements {
         static constexpr size_t fk_count_ = sizeof...(FKFieldPtrs);
 
         // C++26: Direct pack indexing
-        template <size_t Idx> using FK_type = std::remove_cvref_t<decltype(std::declval<T>().*FKFieldPtrs...[Idx])>;
+        // FK_type unwraps std::optional<FKModel> → FKModel so FKBase_at works correctly
+        template <size_t Idx>
+        using FK_type =
+                utilities::optional_inner_type_t<std::remove_cvref_t<decltype(std::declval<T>().*FKFieldPtrs...[Idx])>>;
 
         template <size_t Idx> using FKBase_at = BaseStatement<FK_type<Idx>>;
 
@@ -322,11 +325,28 @@ export namespace storm::orm::statements {
 
         template <size_t Idx>
         __attribute__((always_inline)) static void extract_fk_at(Statement* stmt, T& obj) noexcept {
-            constexpr auto FKPtr  = FKFieldPtrs...[Idx]; // C++26 pack indexing
-            auto&          fk_obj = obj.*FKPtr;
-            extract_fk_fields_impl<Idx>(
-                    stmt, fk_obj, column_offsets_[Idx], std::make_index_sequence<FKBase_at<Idx>::field_count_>{}
-            );
+            constexpr auto FKPtr         = FKFieldPtrs...[Idx]; // C++26 pack indexing
+            using RawFKFieldType         = std::remove_cvref_t<decltype(obj.*FKPtr)>;
+            constexpr size_t field_count = FKBase_at<Idx>::field_count_;
+
+            if constexpr (utilities::is_optional_v<RawFKFieldType>) {
+                // Optional FK: NULL first joined column means no match → set nullopt
+                const int first_col = static_cast<int>(column_offsets_[Idx]);
+                if (stmt->is_null(first_col)) {
+                    obj.*FKPtr = std::nullopt;
+                } else {
+                    FK_type<Idx> fk_inner{};
+                    extract_fk_fields_impl<Idx>(
+                            stmt, fk_inner, column_offsets_[Idx], std::make_index_sequence<field_count>{}
+                    );
+                    obj.*FKPtr = std::move(fk_inner);
+                }
+            } else {
+                auto& fk_obj = obj.*FKPtr;
+                extract_fk_fields_impl<Idx>(
+                        stmt, fk_obj, column_offsets_[Idx], std::make_index_sequence<field_count>{}
+                );
+            }
         }
 
         template <size_t... Is>

@@ -66,14 +66,9 @@ template <typename ConnType> class IntTypesInsertUpdateTest : public ::testing::
 
         const auto& conn = QuerySet<IntTypes, ConnType>::get_default_connection();
 
-        ASSERT_TRUE(
-                storm::test::ensure_table<ConnType>(
-                        conn,
-                        "CREATE TABLE IntTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, big_num INTEGER, "
-                        "small_num INTEGER)"
-                )
-                        .has_value()
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        auto create_int_result = storm::orm::schema::SchemaStatement<IntTypes>::create_table_if_not_exists(conn);
+        ASSERT_TRUE(create_int_result.has_value()) << "Failed to create IntTypes table";
 
         storm::test::begin_test_txn<ConnType>(conn, {"IntTypes"});
     }
@@ -182,13 +177,9 @@ template <typename ConnType> class FloatTypesInsertUpdateTest : public ::testing
 
         const auto& conn = QuerySet<FloatTypes, ConnType>::get_default_connection();
 
-        ASSERT_TRUE(
-                storm::test::ensure_table<ConnType>(
-                        conn,
-                        "CREATE TABLE FloatTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, precise REAL, approx REAL)"
-                )
-                        .has_value()
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        auto create_result = storm::orm::schema::SchemaStatement<FloatTypes>::create_table_if_not_exists(conn);
+        ASSERT_TRUE(create_result.has_value()) << "Failed to create FloatTypes table";
 
         storm::test::begin_test_txn<ConnType>(conn, {"FloatTypes"});
     }
@@ -253,13 +244,9 @@ template <typename ConnType> class MixedTypesInsertUpdateTest : public ::testing
 
         const auto& conn = QuerySet<MixedTypes, ConnType>::get_default_connection();
 
-        ASSERT_TRUE(
-                storm::test::ensure_table<ConnType>(
-                        conn,
-                        "CREATE TABLE MixedTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, active INTEGER, name TEXT)"
-                )
-                        .has_value()
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        auto create_result = storm::orm::schema::SchemaStatement<MixedTypes>::create_table_if_not_exists(conn);
+        ASSERT_TRUE(create_result.has_value()) << "Failed to create MixedTypes table";
 
         storm::test::begin_test_txn<ConnType>(conn, {"MixedTypes"});
     }
@@ -353,13 +340,9 @@ template <typename ConnType> class OptTypesInsertUpdateTest : public ::testing::
 
         const auto& conn = QuerySet<OptTypes, ConnType>::get_default_connection();
 
-        ASSERT_TRUE(
-                storm::test::ensure_table<ConnType>(
-                        conn,
-                        "CREATE TABLE OptTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, maybe_num INTEGER, name TEXT)"
-                )
-                        .has_value()
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        auto create_result = storm::orm::schema::SchemaStatement<OptTypes>::create_table_if_not_exists(conn);
+        ASSERT_TRUE(create_result.has_value()) << "Failed to create OptTypes table";
 
         storm::test::begin_test_txn<ConnType>(conn, {"OptTypes"});
     }
@@ -487,13 +470,9 @@ template <typename ConnType> class DataTypesInsertUpdateTest : public ::testing:
 
         const auto& conn = QuerySet<DataTypes, ConnType>::get_default_connection();
 
-        ASSERT_TRUE(
-                storm::test::ensure_table<ConnType>(
-                        conn,
-                        "CREATE TABLE DataTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, binary_data BLOB, label TEXT)"
-                )
-                        .has_value()
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        auto create_result = storm::orm::schema::SchemaStatement<DataTypes>::create_table_if_not_exists(conn);
+        ASSERT_TRUE(create_result.has_value()) << "Failed to create DataTypes table";
 
         storm::test::begin_test_txn<ConnType>(conn, {"DataTypes"});
     }
@@ -639,14 +618,9 @@ template <typename ConnType> class InsertOptionsTest : public ::testing::Test {
 
         const auto& conn = QuerySet<IntTypes, ConnType>::get_default_connection();
 
-        ASSERT_TRUE(
-                storm::test::ensure_table<ConnType>(
-                        conn,
-                        "CREATE TABLE IntTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, big_num INTEGER, "
-                        "small_num INTEGER)"
-                )
-                        .has_value()
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        auto create_int_result = storm::orm::schema::SchemaStatement<IntTypes>::create_table_if_not_exists(conn);
+        ASSERT_TRUE(create_int_result.has_value()) << "Failed to create IntTypes table";
 
         storm::test::begin_test_txn<ConnType>(conn, {"IntTypes"});
     }
@@ -780,14 +754,9 @@ template <typename ConnType> class UnsignedTypesInsertUpdateTest : public ::test
 
         const auto& conn = QuerySet<UnsignedTypes, ConnType>::get_default_connection();
 
-        ASSERT_TRUE(
-                storm::test::ensure_table<ConnType>(
-                        conn,
-                        "CREATE TABLE UnsignedTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                        "u_int INTEGER, u_short INTEGER, u_long INTEGER)"
-                )
-                        .has_value()
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        auto create_result = storm::orm::schema::SchemaStatement<UnsignedTypes>::create_table_if_not_exists(conn);
+        ASSERT_TRUE(create_result.has_value()) << "Failed to create UnsignedTypes table";
 
         storm::test::begin_test_txn<ConnType>(conn, {"UnsignedTypes"});
     }
@@ -872,14 +841,9 @@ template <typename ConnType> class LongLongTypesInsertUpdateTest : public ::test
 
         const auto& conn = QuerySet<LongLongTypes, ConnType>::get_default_connection();
 
-        ASSERT_TRUE(
-                storm::test::ensure_table<ConnType>(
-                        conn,
-                        "CREATE TABLE LongLongTypes (id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                        "ll_signed INTEGER, ll_unsigned INTEGER)"
-                )
-                        .has_value()
-        );
+        storm::test::pg_schema_init<ConnType>(conn);
+        auto create_result = storm::orm::schema::SchemaStatement<LongLongTypes>::create_table_if_not_exists(conn);
+        ASSERT_TRUE(create_result.has_value()) << "Failed to create LongLongTypes table";
 
         storm::test::begin_test_txn<ConnType>(conn, {"LongLongTypes"});
     }

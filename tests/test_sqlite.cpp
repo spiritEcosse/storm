@@ -27,22 +27,19 @@ template <typename ConnType> class PersonCrudTestBase : public StormTestFixture<
 
         const auto& default_conn = storm::QuerySet<Person, ConnType>::get_default_connection();
 
-        auto create_result = storm::test::ensure_table<ConnType>(default_conn, person_create_sql);
+        auto create_result = storm::test::ensure_table<Person, ConnType>(default_conn);
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
         storm::test::begin_test_txn<ConnType>(default_conn, {"Person"});
 
-        auto insert_result = default_conn->execute(
-                "INSERT INTO Person (id, name, age, salary, is_active, years_experience) VALUES "
-                "(1, 'Alice', 30, 0, 0, 0), "
-                "(2, 'Bob', 25, 0, 0, 0), "
-                "(3, 'Charlie', 35, 0, 0, 0)"
-        );
+        storm::QuerySet<Person, ConnType> setup_qs;
+        std::vector<Person> const         initial = {
+                {.name = "Alice", .age = 30},
+                {.name = "Bob", .age = 25},
+                {.name = "Charlie", .age = 35},
+        };
+        auto insert_result = setup_qs.insert(std::span<const Person>(initial)).execute();
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data: " << insert_result.error().message();
-
-        if constexpr (storm::test::is_postgresql<ConnType>()) {
-            (void)default_conn->execute("ALTER TABLE Person ALTER COLUMN id RESTART WITH 4");
-        }
     }
 
     static auto countPersons() -> int {
@@ -176,12 +173,8 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchSmall) {
     auto queryset = storm::QuerySet<Person, TypeParam>{};
 
     // Add more test data for batch testing
-    const auto& conn = storm::QuerySet<Person, TypeParam>::get_default_connection();
     for (int i = 4; i <= 12; i++) {
-        auto insert_result = conn->execute(
-                "INSERT INTO Person (id, name, age, salary, is_active, years_experience) VALUES (" + std::to_string(i) +
-                ", 'Person" + std::to_string(i) + "', " + std::to_string(20 + i) + ", 0, 0, 0)"
-        );
+        auto insert_result = queryset.insert(Person{.name = "Person" + std::to_string(i), .age = 20 + i}).execute();
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
     }
 
@@ -218,12 +211,9 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchLarge) {
     auto queryset = storm::QuerySet<Person, TypeParam>{};
 
     // Add many test records for large batch testing
-    const auto& conn = storm::QuerySet<Person, TypeParam>::get_default_connection();
     for (int i = 4; i <= 103; i++) {
-        auto insert_result = conn->execute(
-                "INSERT INTO Person (id, name, age, salary, is_active, years_experience) VALUES (" + std::to_string(i) +
-                ", 'Person" + std::to_string(i) + "', " + std::to_string(20 + (i % 60)) + ", 0, 0, 0)"
-        );
+        auto insert_result =
+                queryset.insert(Person{.name = "Person" + std::to_string(i), .age = 20 + (i % 60)}).execute();
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
     }
 
@@ -746,12 +736,8 @@ TYPED_TEST(QuerySetUpdateTest, UpdateBatchMedium) {
     auto queryset = storm::QuerySet<Person, TypeParam>{};
 
     // Add more test data for batch testing
-    const auto& conn = storm::QuerySet<Person, TypeParam>::get_default_connection();
     for (int i = 4; i <= 25; i++) {
-        auto insert_result = conn->execute(
-                "INSERT INTO Person (id, name, age, salary, is_active, years_experience) VALUES (" + std::to_string(i) +
-                ", 'Person" + std::to_string(i) + "', " + std::to_string(20 + i) + ", 0, 0, 0)"
-        );
+        auto insert_result = queryset.insert(Person{.name = "Person" + std::to_string(i), .age = 20 + i}).execute();
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
     }
 
@@ -795,12 +781,9 @@ TYPED_TEST(QuerySetUpdateTest, UpdateBatchLarge) {
     auto queryset = storm::QuerySet<Person, TypeParam>{};
 
     // Add many test records for large batch testing
-    const auto& conn = storm::QuerySet<Person, TypeParam>::get_default_connection();
     for (int i = 4; i <= 103; i++) {
-        auto insert_result = conn->execute(
-                "INSERT INTO Person (id, name, age, salary, is_active, years_experience) VALUES (" + std::to_string(i) +
-                ", 'Person" + std::to_string(i) + "', " + std::to_string(20 + (i % 60)) + ", 0, 0, 0)"
-        );
+        auto insert_result =
+                queryset.insert(Person{.name = "Person" + std::to_string(i), .age = 20 + (i % 60)}).execute();
         ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
     }
 

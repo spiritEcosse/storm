@@ -38,7 +38,7 @@ template <typename ConnType> class OrderByTest : public StormTestFixture<Person,
 
         const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
 
-        auto create_result = storm::test::ensure_table<ConnType>(conn, person_create_sql);
+        auto create_result = storm::test::ensure_table<Person, ConnType>(conn);
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
         storm::test::begin_test_txn<ConnType>(conn, {"Person"});
@@ -394,7 +394,7 @@ template <typename ConnType> class OrderByNullableTest : public StormTestFixture
 
         const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
 
-        auto create_result = storm::test::ensure_table<ConnType>(conn, person_create_sql);
+        auto create_result = storm::test::ensure_table<Person, ConnType>(conn);
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
         storm::test::begin_test_txn<ConnType>(conn, {"Person"});
@@ -536,7 +536,7 @@ TYPED_TEST(OrderByNullableTest, NullableFieldWithSecondarySort) {
 TYPED_TEST(OrderByNullableTest, AllNullValues) {
     // Create a new table with only NULL values
     const auto& conn = QuerySet<Person, TypeParam>::get_default_connection();
-    (void)conn->execute("DELETE FROM Person");
+    (void)QuerySet<Person, TypeParam>().remove_all().execute();
 
     QuerySet<Person, TypeParam> qs;
     std::vector<Person> const   all_nulls = {
@@ -574,7 +574,7 @@ template <typename ConnType> class OrderByBlobTest : public StormTestFixture<Per
 
         const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
 
-        auto create_result = storm::test::ensure_table<ConnType>(conn, person_create_sql);
+        auto create_result = storm::test::ensure_table<Person, ConnType>(conn);
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
 
         storm::test::begin_test_txn<ConnType>(conn, {"Person"});
@@ -686,7 +686,7 @@ TYPED_TEST(OrderByBlobTest, BlobWithSecondarySort) {
 TYPED_TEST(OrderByBlobTest, EmptyBlobsOnly) {
     // Test with only empty BLOBs
     const auto& conn = QuerySet<Person, TypeParam>::get_default_connection();
-    (void)conn->execute("DELETE FROM Person");
+    (void)QuerySet<Person, TypeParam>().remove_all().execute();
 
     QuerySet<Person, TypeParam> qs;
     std::vector<Person> const   empty_blobs = {
@@ -730,7 +730,7 @@ TYPED_TEST(OrderByTest, EmptyResultWithMultipleOrderBy) {
 TYPED_TEST(OrderByTest, EmptyTableOrderBy) {
     // Create empty table and try ORDER BY
     const auto& conn = QuerySet<Person, TypeParam>::get_default_connection();
-    (void)conn->execute("DELETE FROM Person");
+    (void)QuerySet<Person, TypeParam>().remove_all().execute();
 
     QuerySet<Person, TypeParam> qs;
     auto                        result = qs.template order_by<^^Person::age>().select().execute();

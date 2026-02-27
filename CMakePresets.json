@@ -90,10 +90,7 @@
     },
     {
       "name": "ninja-debug-coverage",
-      "inherits": "ninja-debug",
-      "environment": {
-        "STORM_PG_CONNSTR": "host=/var/run/postgresql dbname=storm_db user=storm_db"
-      }
+      "inherits": "ninja-debug"
     },
     {
       "name": "ninja-release",
