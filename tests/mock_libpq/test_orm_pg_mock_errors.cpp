@@ -1408,7 +1408,7 @@ namespace {
     // ============================================================================
 
     class PgSchemaDetailTest : public ::testing::Test {
-        MockPqGuard guard_;
+        [[no_unique_address]] MockPqGuard guard_;
 
       protected:
         auto SetUp() -> void override {
