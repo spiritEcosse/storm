@@ -16,18 +16,10 @@ using namespace storm::orm::where;
 // Test fixture for LIMIT/OFFSET operations — templated on database backend
 template <typename ConnType> class LimitOffsetTest : public StormTestFixture<Person, ConnType> {
   protected:
-    auto SetUp() -> void override {
-        if (!this->setup_connection()) {
-            GTEST_SKIP() << "PostgreSQL unavailable";
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        StormTestFixture<Person, ConnType>::on_setup(conn);
+        if (this->HasFatalFailure())
             return;
-        }
-
-        const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
-
-        auto create_result = storm::test::ensure_table<Person, ConnType>(conn);
-        ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
-
-        storm::test::begin_test_txn<ConnType>(conn, {"Person"});
 
         // Insert 20 test records for comprehensive testing
         QuerySet<Person, ConnType> queryset;

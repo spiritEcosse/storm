@@ -25,64 +25,23 @@ import <vector>;
 import <optional>;
 import <tuple>;
 
+#include "test_models.h"
+
 using namespace storm;
-
-// =============================================================================
-// Test Models
-// =============================================================================
-
-struct CovPerson {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string                               name;
-    int                                       age{};
-    std::string                               department;
-    double                                    salary{};
-};
-
-struct CovUser {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string                               name;
-    int                                       score{};
-};
-
-struct CovMessage {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string                               content;
-    int                                       value{};
-    [[= storm::meta::FieldAttr::fk]] CovUser  sender;
-};
 
 // =============================================================================
 // Test Fixture
 // =============================================================================
 
-template <typename ConnType> class CoverageGapsTest : public ::testing::Test {
+template <typename ConnType> class CoverageGapsTest : public StormTestFixture<CovPerson, ConnType> {
   protected:
-    auto SetUp() -> void override {
-        if (!storm::test::backend_available<ConnType>()) {
-            GTEST_SKIP() << "PostgreSQL unavailable";
-        }
-
-        auto result =
-                QuerySet<CovPerson, ConnType>::set_default_connection(storm::test::get_connection_string<ConnType>());
-        ASSERT_TRUE(result.has_value()) << "Failed to open database";
-
-        const auto& conn = QuerySet<CovPerson, ConnType>::get_default_connection();
-
-        storm::test::pg_schema_init<ConnType>(conn);
-        auto create_person = storm::orm::schema::SchemaStatement<CovPerson>::create_table_if_not_exists(conn);
-        ASSERT_TRUE(create_person.has_value());
-
-        auto create_user = storm::orm::schema::SchemaStatement<CovUser>::create_table_if_not_exists(conn);
-        ASSERT_TRUE(create_user.has_value());
-
-        auto create_msg = storm::orm::schema::SchemaStatement<CovMessage>::create_table_if_not_exists(conn);
-        ASSERT_TRUE(create_msg.has_value());
-
-        storm::test::begin_test_txn<ConnType>(conn, {"CovUser", "CovPerson"});
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        ASSERT_TRUE((storm::test::ensure_table<CovPerson, ConnType>(conn).has_value()));
+        ASSERT_TRUE((storm::test::ensure_table<Person, ConnType>(conn).has_value()));
+        ASSERT_TRUE((storm::test::ensure_table<Message, ConnType>(conn).has_value()));
 
         qs     = std::make_unique<QuerySet<CovPerson, ConnType>>();
-        msg_qs = std::make_unique<QuerySet<CovMessage, ConnType>>();
+        msg_qs = std::make_unique<QuerySet<Message, ConnType>>();
 
         insert_test_data();
     }
@@ -90,13 +49,7 @@ template <typename ConnType> class CoverageGapsTest : public ::testing::Test {
     auto TearDown() -> void override {
         qs     = nullptr;
         msg_qs = nullptr;
-        if constexpr (storm::test::is_postgresql<ConnType>()) {
-            if (QuerySet<CovPerson, ConnType>::has_default_connection()) {
-                const auto& conn = QuerySet<CovPerson, ConnType>::get_default_connection();
-                storm::test::rollback_test_txn<ConnType>(conn);
-            }
-        }
-        QuerySet<CovPerson, ConnType>::clear_default_connection();
+        StormTestFixture<CovPerson, ConnType>::TearDown();
     }
 
     auto insert_test_data() -> void {
@@ -117,23 +70,23 @@ template <typename ConnType> class CoverageGapsTest : public ::testing::Test {
             ASSERT_TRUE(r.has_value());
         }
 
-        // Insert users for JOIN tests
-        QuerySet<CovUser, ConnType> user_qs;
-        std::ignore = user_qs.insert(CovUser{.name = "User1", .score = 100}).execute();
-        std::ignore = user_qs.insert(CovUser{.name = "User2", .score = 200}).execute();
-        std::ignore = user_qs.insert(CovUser{.name = "User3", .score = 150}).execute();
+        // Insert users for JOIN tests (CovUser::score maps to Person::score as optional<int>)
+        QuerySet<Person, ConnType> user_qs;
+        std::ignore = user_qs.insert(Person{.name = "User1", .score = std::optional<int>(100)}).execute();
+        std::ignore = user_qs.insert(Person{.name = "User2", .score = std::optional<int>(200)}).execute();
+        std::ignore = user_qs.insert(Person{.name = "User3", .score = std::optional<int>(150)}).execute();
 
         // Insert messages
-        QuerySet<CovMessage, ConnType> cov_msg_qs;
-        std::ignore = cov_msg_qs.insert(CovMessage{.content = "Msg1", .value = 10, .sender = {.id = 1}}).execute();
-        std::ignore = cov_msg_qs.insert(CovMessage{.content = "Msg2", .value = 20, .sender = {.id = 1}}).execute();
-        std::ignore = cov_msg_qs.insert(CovMessage{.content = "Msg3", .value = 30, .sender = {.id = 2}}).execute();
-        std::ignore = cov_msg_qs.insert(CovMessage{.content = "Msg4", .value = 40, .sender = {.id = 2}}).execute();
-        std::ignore = cov_msg_qs.insert(CovMessage{.content = "Msg5", .value = 50, .sender = {.id = 3}}).execute();
+        QuerySet<Message, ConnType> cov_msg_qs;
+        std::ignore = cov_msg_qs.insert(Message{.content = "Msg1", .value = 10, .sender = {.id = 1}}).execute();
+        std::ignore = cov_msg_qs.insert(Message{.content = "Msg2", .value = 20, .sender = {.id = 1}}).execute();
+        std::ignore = cov_msg_qs.insert(Message{.content = "Msg3", .value = 30, .sender = {.id = 2}}).execute();
+        std::ignore = cov_msg_qs.insert(Message{.content = "Msg4", .value = 40, .sender = {.id = 2}}).execute();
+        std::ignore = cov_msg_qs.insert(Message{.content = "Msg5", .value = 50, .sender = {.id = 3}}).execute();
     }
 
-    std::unique_ptr<QuerySet<CovPerson, ConnType>>  qs;
-    std::unique_ptr<QuerySet<CovMessage, ConnType>> msg_qs;
+    std::unique_ptr<QuerySet<CovPerson, ConnType>> qs;
+    std::unique_ptr<QuerySet<Message, ConnType>>   msg_qs;
 };
 
 TYPED_TEST_SUITE(CoverageGapsTest, DatabaseTypes);
@@ -306,9 +259,9 @@ TYPED_TEST(CoverageGapsTest, GroupByWhereWithOrderByAndLimit) {
 
 TYPED_TEST(CoverageGapsTest, GroupByJoinWithOrderBy) {
     // JOIN + GROUP BY + ORDER BY (group by value, an int field)
-    auto result = this->msg_qs->template join<&CovMessage::sender>()
-                          .template order_by<^^CovMessage::value>()
-                          .template group_by<^^CovMessage::value>()
+    auto result = this->msg_qs->template join<&Message::sender>()
+                          .template order_by<^^Message::value>()
+                          .template group_by<^^Message::value>()
                           .count()
                           .select();
 
@@ -318,10 +271,10 @@ TYPED_TEST(CoverageGapsTest, GroupByJoinWithOrderBy) {
 
 TYPED_TEST(CoverageGapsTest, GroupByJoinWithOrderByAndLimit) {
     // JOIN + GROUP BY + ORDER BY + LIMIT
-    auto result = this->msg_qs->template join<&CovMessage::sender>()
-                          .template order_by<^^CovMessage::value>()
+    auto result = this->msg_qs->template join<&Message::sender>()
+                          .template order_by<^^Message::value>()
                           .limit(3)
-                          .template group_by<^^CovMessage::value>()
+                          .template group_by<^^Message::value>()
                           .count()
                           .select();
 
@@ -331,12 +284,12 @@ TYPED_TEST(CoverageGapsTest, GroupByJoinWithOrderByAndLimit) {
 
 TYPED_TEST(CoverageGapsTest, GroupByJoinSumWithModifiers) {
     // JOIN + GROUP BY + SUM + ORDER BY + LIMIT + OFFSET
-    auto result = this->msg_qs->template join<&CovMessage::sender>()
-                          .template order_by<^^CovMessage::content>()
+    auto result = this->msg_qs->template join<&Message::sender>()
+                          .template order_by<^^Message::content>()
                           .limit(3)
                           .offset(0)
-                          .template group_by<^^CovMessage::content>()
-                          .template sum<^^CovMessage::value>()
+                          .template group_by<^^Message::content>()
+                          .template sum<^^Message::value>()
                           .select();
 
     ASSERT_TRUE(result.has_value()) << "JOIN + GROUP BY + SUM with modifiers should succeed";
@@ -348,10 +301,10 @@ TYPED_TEST(CoverageGapsTest, GroupByJoinSumWithModifiers) {
 
 TYPED_TEST(CoverageGapsTest, GroupByWhereJoinWithOrderBy) {
     // WHERE + JOIN + GROUP BY + ORDER BY (full chain with modifiers)
-    auto result = this->msg_qs->where(storm::orm::where::field<^^CovMessage::value>() > 10)
-                          .template join<&CovMessage::sender>()
-                          .template order_by<^^CovMessage::value>()
-                          .template group_by<^^CovMessage::value>()
+    auto result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() > 10)
+                          .template join<&Message::sender>()
+                          .template order_by<^^Message::value>()
+                          .template group_by<^^Message::value>()
                           .count()
                           .select();
 
@@ -360,13 +313,13 @@ TYPED_TEST(CoverageGapsTest, GroupByWhereJoinWithOrderBy) {
 
 TYPED_TEST(CoverageGapsTest, GroupByWhereJoinWithAllModifiers) {
     // WHERE + JOIN + GROUP BY + ORDER BY + LIMIT + OFFSET
-    auto result = this->msg_qs->where(storm::orm::where::field<^^CovMessage::value>() >= 20)
-                          .template join<&CovMessage::sender>()
-                          .template order_by<^^CovMessage::content>()
+    auto result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() >= 20)
+                          .template join<&Message::sender>()
+                          .template order_by<^^Message::content>()
                           .limit(3)
                           .offset(0)
-                          .template group_by<^^CovMessage::content>()
-                          .template sum<^^CovMessage::value>()
+                          .template group_by<^^Message::content>()
+                          .template sum<^^Message::value>()
                           .select();
 
     ASSERT_TRUE(result.has_value()) << "Full chain with all modifiers should succeed";
@@ -450,8 +403,8 @@ TYPED_TEST(CoverageGapsTest, GroupByWithDifferentAggregatesSequentially) {
 
 TYPED_TEST(CoverageGapsTest, SimpleAggregateWithWhereAndJoin) {
     // Simple aggregate (no GROUP BY) with WHERE + JOIN
-    auto result = this->msg_qs->where(storm::orm::where::field<^^CovMessage::value>() > 15)
-                          .template join<&CovMessage::sender>()
+    auto result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() > 15)
+                          .template join<&Message::sender>()
                           .count()
                           .get();
 
@@ -461,7 +414,7 @@ TYPED_TEST(CoverageGapsTest, SimpleAggregateWithWhereAndJoin) {
 
 TYPED_TEST(CoverageGapsTest, MultipleAggregatesWithJoin) {
     // Multiple aggregates with JOIN
-    auto result = this->msg_qs->template join<&CovMessage::sender>().count().template sum<^^CovMessage::value>().get();
+    auto result = this->msg_qs->template join<&Message::sender>().count().template sum<^^Message::value>().get();
 
     ASSERT_TRUE(result.has_value()) << "Multiple aggregates with JOIN should succeed";
     auto [count, sum] = result.value();
@@ -508,56 +461,31 @@ TYPED_TEST(CoverageGapsTest, DistinctMultiFieldWithModifiers) {
 // Large Batch Operations - testing chunked execution paths
 // =============================================================================
 
-struct BatchPerson {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string                               name;
-    int                                       value{};
-};
-
-template <typename ConnType> class LargeBatchTest : public ::testing::Test {
+template <typename ConnType> class LargeBatchTest : public StormTestFixture<SimpleRecord, ConnType> {
   protected:
-    auto SetUp() -> void override {
-        if (!storm::test::backend_available<ConnType>()) {
-            GTEST_SKIP() << "PostgreSQL unavailable";
-        }
-
-        auto result =
-                QuerySet<BatchPerson, ConnType>::set_default_connection(storm::test::get_connection_string<ConnType>());
-        ASSERT_TRUE(result.has_value()) << "Failed to open database";
-
-        const auto& conn = QuerySet<BatchPerson, ConnType>::get_default_connection();
-
-        storm::test::pg_schema_init<ConnType>(conn);
-        auto create = storm::orm::schema::SchemaStatement<BatchPerson>::create_table_if_not_exists(conn);
-        ASSERT_TRUE(create.has_value());
-
-        storm::test::begin_test_txn<ConnType>(conn, {"BatchPerson"});
-
-        qs = std::make_unique<QuerySet<BatchPerson, ConnType>>();
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        StormTestFixture<SimpleRecord, ConnType>::on_setup(conn);
+        if (this->HasFatalFailure())
+            return;
+        qs = std::make_unique<QuerySet<SimpleRecord, ConnType>>();
     }
 
     auto TearDown() -> void override {
         qs = nullptr;
-        if constexpr (storm::test::is_postgresql<ConnType>()) {
-            if (QuerySet<BatchPerson, ConnType>::has_default_connection()) {
-                const auto& conn = QuerySet<BatchPerson, ConnType>::get_default_connection();
-                storm::test::rollback_test_txn<ConnType>(conn);
-            }
-        }
-        QuerySet<BatchPerson, ConnType>::clear_default_connection();
+        StormTestFixture<SimpleRecord, ConnType>::TearDown();
     }
 
     auto insert_batch(size_t count) -> void {
-        std::vector<BatchPerson> people;
+        std::vector<SimpleRecord> people;
         people.reserve(count);
         for (size_t i = 0; i < count; ++i) {
             people.push_back({0, "Person" + std::to_string(i), static_cast<int>(i)});
         }
-        auto result = qs->insert(std::span<const BatchPerson>(people)).execute();
+        auto result = qs->insert(std::span<const SimpleRecord>(people)).execute();
         ASSERT_TRUE(result.has_value()) << "Failed to insert batch";
     }
 
-    std::unique_ptr<QuerySet<BatchPerson, ConnType>> qs;
+    std::unique_ptr<QuerySet<SimpleRecord, ConnType>> qs;
 };
 
 TYPED_TEST_SUITE(LargeBatchTest, DatabaseTypes);
@@ -572,13 +500,13 @@ TYPED_TEST(LargeBatchTest, RemoveBulkSmall) {
 
     // Get all persons and remove them in bulk
 
-    std::vector<BatchPerson> to_remove;
+    std::vector<SimpleRecord> to_remove;
     to_remove.reserve(50);
     for (const auto& p : select_result.value()) {
         to_remove.push_back(p);
     }
 
-    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove)).execute();
+    auto remove_result = this->qs->remove(std::span<const SimpleRecord>(to_remove)).execute();
     ASSERT_TRUE(remove_result.has_value()) << "Bulk remove should succeed";
 
     // Verify all removed
@@ -595,13 +523,13 @@ TYPED_TEST(LargeBatchTest, RemoveBulkAtLimit) {
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().size(), 799);
 
-    std::vector<BatchPerson> to_remove;
+    std::vector<SimpleRecord> to_remove;
     to_remove.reserve(799);
     for (const auto& p : select_result.value()) {
         to_remove.push_back(p);
     }
 
-    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove)).execute();
+    auto remove_result = this->qs->remove(std::span<const SimpleRecord>(to_remove)).execute();
     ASSERT_TRUE(remove_result.has_value()) << "Bulk remove at limit should succeed";
 
     auto count_result = this->qs->count().get();
@@ -618,13 +546,13 @@ TYPED_TEST(LargeBatchTest, RemoveChunkedMinimal) {
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().size(), 800);
 
-    std::vector<BatchPerson> to_remove;
+    std::vector<SimpleRecord> to_remove;
     to_remove.reserve(800);
     for (const auto& p : select_result.value()) {
         to_remove.push_back(p);
     }
 
-    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove)).execute();
+    auto remove_result = this->qs->remove(std::span<const SimpleRecord>(to_remove)).execute();
     ASSERT_TRUE(remove_result.has_value()) << "Chunked remove should succeed";
 
     auto count_result = this->qs->count().get();
@@ -641,13 +569,13 @@ TYPED_TEST(LargeBatchTest, RemoveChunkedWithRemainder) {
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().size(), 850);
 
-    std::vector<BatchPerson> to_remove;
+    std::vector<SimpleRecord> to_remove;
     to_remove.reserve(850);
     for (const auto& p : select_result.value()) {
         to_remove.push_back(p);
     }
 
-    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove)).execute();
+    auto remove_result = this->qs->remove(std::span<const SimpleRecord>(to_remove)).execute();
     ASSERT_TRUE(remove_result.has_value()) << "Chunked remove with remainder should succeed";
 
     auto count_result = this->qs->count().get();
@@ -663,13 +591,13 @@ TYPED_TEST(LargeBatchTest, RemoveChunkedMultipleChunks) {
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().size(), 1600);
 
-    std::vector<BatchPerson> to_remove;
+    std::vector<SimpleRecord> to_remove;
     to_remove.reserve(1600);
     for (const auto& p : select_result.value()) {
         to_remove.push_back(p);
     }
 
-    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove)).execute();
+    auto remove_result = this->qs->remove(std::span<const SimpleRecord>(to_remove)).execute();
     ASSERT_TRUE(remove_result.has_value()) << "Multiple chunk remove should succeed";
 
     auto count_result = this->qs->count().get();
@@ -686,13 +614,13 @@ TYPED_TEST(LargeBatchTest, RemoveChunkedExactMultiple) {
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().size(), 1598);
 
-    std::vector<BatchPerson> to_remove;
+    std::vector<SimpleRecord> to_remove;
     to_remove.reserve(1598);
     for (const auto& p : select_result.value()) {
         to_remove.push_back(p);
     }
 
-    auto remove_result = this->qs->remove(std::span<const BatchPerson>(to_remove)).execute();
+    auto remove_result = this->qs->remove(std::span<const SimpleRecord>(to_remove)).execute();
     ASSERT_TRUE(remove_result.has_value()) << "Exact multiple chunk remove should succeed";
 
     auto count_result = this->qs->count().get();
@@ -703,9 +631,9 @@ TYPED_TEST(LargeBatchTest, RemoveChunkedExactMultiple) {
 TYPED_TEST(LargeBatchTest, RemoveEmpty) {
     // Test empty batch (early return path)
 
-    std::vector<BatchPerson> empty;
+    std::vector<SimpleRecord> empty;
 
-    auto remove_result = this->qs->remove(std::span<const BatchPerson>(empty)).execute();
+    auto remove_result = this->qs->remove(std::span<const SimpleRecord>(empty)).execute();
     ASSERT_TRUE(remove_result.has_value()) << "Empty remove should succeed";
 }
 
@@ -716,13 +644,13 @@ TYPED_TEST(LargeBatchTest, UpdateBulkSmall) {
     auto select_result = this->qs->select().execute();
     ASSERT_TRUE(select_result.has_value());
 
-    std::vector<BatchPerson> to_update;
+    std::vector<SimpleRecord> to_update;
     to_update.reserve(50);
     for (const auto& p : select_result.value()) {
         to_update.push_back({p.id, p.name, p.value + 1000});
     }
 
-    auto update_result = this->qs->update(std::span<const BatchPerson>(to_update)).execute();
+    auto update_result = this->qs->update(std::span<const SimpleRecord>(to_update)).execute();
     ASSERT_TRUE(update_result.has_value()) << "Bulk update should succeed";
 
     // Verify updates
@@ -741,13 +669,13 @@ TYPED_TEST(LargeBatchTest, UpdateChunkedWithRemainder) {
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().size(), 850);
 
-    std::vector<BatchPerson> to_update;
+    std::vector<SimpleRecord> to_update;
     to_update.reserve(850);
     for (const auto& p : select_result.value()) {
         to_update.push_back({p.id, p.name, p.value + 2000});
     }
 
-    auto update_result = this->qs->update(std::span<const BatchPerson>(to_update)).execute();
+    auto update_result = this->qs->update(std::span<const SimpleRecord>(to_update)).execute();
     ASSERT_TRUE(update_result.has_value()) << "Chunked update should succeed";
 
     // Verify updates
@@ -761,13 +689,13 @@ TYPED_TEST(LargeBatchTest, UpdateChunkedWithRemainder) {
 TYPED_TEST(LargeBatchTest, InsertLargeBatch) {
     // Test large batch insert
 
-    std::vector<BatchPerson> people;
+    std::vector<SimpleRecord> people;
     people.reserve(1000);
     for (int i = 0; i < 1000; ++i) {
         people.push_back({0, "LargeBatch" + std::to_string(i), i});
     }
 
-    auto insert_result = this->qs->insert(std::span<const BatchPerson>(people)).execute();
+    auto insert_result = this->qs->insert(std::span<const SimpleRecord>(people)).execute();
     ASSERT_TRUE(insert_result.has_value()) << "Large batch insert should succeed";
 
     auto count_result = this->qs->count().get();
@@ -779,87 +707,45 @@ TYPED_TEST(LargeBatchTest, InsertLargeBatch) {
 // Additional Optional Type Coverage
 // =============================================================================
 
-struct OptionalDouble {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::optional<double>                     value;
-    std::string                               label;
-};
-
-struct OptionalInt64 {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::optional<int64_t>                    big_value;
-    std::string                               label;
-};
-
-template <typename ConnType> class OptionalTypesTest : public ::testing::Test {
-  protected:
-    auto SetUp() -> void override {
-        if (!storm::test::backend_available<ConnType>()) {
-            GTEST_SKIP() << "PostgreSQL unavailable";
-        }
-
-        auto result = QuerySet<OptionalDouble, ConnType>::set_default_connection(
-                storm::test::get_connection_string<ConnType>()
-        );
-        ASSERT_TRUE(result.has_value());
-
-        const auto& conn = QuerySet<OptionalDouble, ConnType>::get_default_connection();
-
-        storm::test::pg_schema_init<ConnType>(conn);
-        (void)storm::orm::schema::SchemaStatement<OptionalDouble>::create_table_if_not_exists(conn);
-        (void)storm::orm::schema::SchemaStatement<OptionalInt64>::create_table_if_not_exists(conn);
-
-        storm::test::begin_test_txn<ConnType>(conn, {"OptionalDouble", "OptionalInt64"});
-    }
-
-    auto TearDown() -> void override {
-        if constexpr (storm::test::is_postgresql<ConnType>()) {
-            if (QuerySet<OptionalDouble, ConnType>::has_default_connection()) {
-                const auto& conn = QuerySet<OptionalDouble, ConnType>::get_default_connection();
-                storm::test::rollback_test_txn<ConnType>(conn);
-            }
-        }
-        QuerySet<OptionalDouble, ConnType>::clear_default_connection();
-    }
-};
+template <typename ConnType> class OptionalTypesTest : public StormTestFixture<ExtendedTypes, ConnType> {};
 
 TYPED_TEST_SUITE(OptionalTypesTest, DatabaseTypes);
 
 TYPED_TEST(OptionalTypesTest, OptionalDoubleWithValue) {
-    QuerySet<OptionalDouble, TypeParam> qs;
-    OptionalDouble const                obj{.id = 0, .value = 3.14159, .label = "pi"};
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes const                obj{.id = 0, .opt_double = 3.14159, .label = "pi"};
 
     auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
     auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
-    ASSERT_TRUE(selected.value().begin()->value.has_value());
-    EXPECT_NEAR(selected.value().begin()->value.value(), 3.14159, 0.0001);
+    ASSERT_TRUE(selected.value().begin()->opt_double.has_value());
+    EXPECT_NEAR(selected.value().begin()->opt_double.value(), 3.14159, 0.0001);
 }
 
 TYPED_TEST(OptionalTypesTest, OptionalDoubleNull) {
-    QuerySet<OptionalDouble, TypeParam> qs;
-    OptionalDouble const                obj{.id = 0, .value = std::nullopt, .label = "null_double"};
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes const                obj{.id = 0, .opt_double = std::nullopt, .label = "null_double"};
 
     auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
     auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_FALSE(selected.value().begin()->value.has_value());
+    EXPECT_FALSE(selected.value().begin()->opt_double.has_value());
 }
 
 TYPED_TEST(OptionalTypesTest, OptionalDoubleBatch) {
-    QuerySet<OptionalDouble, TypeParam> qs;
-    std::vector<OptionalDouble>         batch = {
-            {0, 1.1, "first"},
-            {0, std::nullopt, "second"},
-            {0, 2.2, "third"},
-            {0, std::nullopt, "fourth"},
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    std::vector<ExtendedTypes>         batch = {
+            {.id = 0, .opt_double = 1.1, .label = "first"},
+            {.id = 0, .opt_double = std::nullopt, .label = "second"},
+            {.id = 0, .opt_double = 2.2, .label = "third"},
+            {.id = 0, .opt_double = std::nullopt, .label = "fourth"},
     };
 
-    auto result = qs.insert(std::span<const OptionalDouble>(batch)).execute();
+    auto result = qs.insert(std::span<const ExtendedTypes>(batch)).execute();
     ASSERT_TRUE(result.has_value());
 
     auto selected = qs.select().execute();
@@ -867,114 +753,95 @@ TYPED_TEST(OptionalTypesTest, OptionalDoubleBatch) {
     EXPECT_EQ(selected.value().size(), 4);
 
     auto it = selected.value().begin();
-    EXPECT_TRUE(it->value.has_value());
+    EXPECT_TRUE(it->opt_double.has_value());
     ++it;
-    EXPECT_FALSE(it->value.has_value());
+    EXPECT_FALSE(it->opt_double.has_value());
     ++it;
-    EXPECT_TRUE(it->value.has_value());
+    EXPECT_TRUE(it->opt_double.has_value());
     ++it;
-    EXPECT_FALSE(it->value.has_value());
+    EXPECT_FALSE(it->opt_double.has_value());
 }
 
 TYPED_TEST(OptionalTypesTest, OptionalInt64WithValue) {
-    QuerySet<OptionalInt64, TypeParam> qs;
-    OptionalInt64 const                obj{.id = 0, .big_value = 9223372036854775807LL, .label = "max_int64"};
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes const                obj{.id = 0, .opt_int64 = 9223372036854775807LL, .label = "max_int64"};
 
     auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
     auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
-    ASSERT_TRUE(selected.value().begin()->big_value.has_value());
-    EXPECT_EQ(selected.value().begin()->big_value.value(), 9223372036854775807LL);
+    ASSERT_TRUE(selected.value().begin()->opt_int64.has_value());
+    EXPECT_EQ(selected.value().begin()->opt_int64.value(), 9223372036854775807LL);
 }
 
 TYPED_TEST(OptionalTypesTest, OptionalInt64Null) {
-    QuerySet<OptionalInt64, TypeParam> qs;
-    OptionalInt64 const                obj{.id = 0, .big_value = std::nullopt, .label = "null_int64"};
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes const                obj{.id = 0, .opt_int64 = std::nullopt, .label = "null_int64"};
 
     auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
     auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_FALSE(selected.value().begin()->big_value.has_value());
+    EXPECT_FALSE(selected.value().begin()->opt_int64.has_value());
 }
 
 TYPED_TEST(OptionalTypesTest, UpdateOptionalDoubleToNull) {
-    QuerySet<OptionalDouble, TypeParam> qs;
-    OptionalDouble const                obj{.id = 0, .value = 100.5, .label = "to_null"};
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes const                obj{.id = 0, .opt_double = 100.5, .label = "to_null"};
 
     auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
-    OptionalDouble const updated{.id = static_cast<int>(id), .value = std::nullopt, .label = "now_null"};
-    auto                 update_result = qs.update(updated).execute();
-    ASSERT_TRUE(update_result.has_value());
-
-    auto selected = qs.select().execute();
-    ASSERT_TRUE(selected.has_value());
-    EXPECT_FALSE(selected.value().begin()->value.has_value());
-}
-
-TYPED_TEST(OptionalTypesTest, UpdateOptionalInt64FromNull) {
-    QuerySet<OptionalInt64, TypeParam> qs;
-    OptionalInt64 const                obj{.id = 0, .big_value = std::nullopt, .label = "from_null"};
-
-    auto insert_result = qs.insert(obj).execute();
-    ASSERT_TRUE(insert_result.has_value());
-    int64_t const id = insert_result.value();
-
-    OptionalInt64 const updated{.id = static_cast<int>(id), .big_value = 42LL, .label = "now_has_value"};
+    ExtendedTypes const updated{.id = static_cast<int>(id), .opt_double = std::nullopt, .label = "now_null"};
     auto                update_result = qs.update(updated).execute();
     ASSERT_TRUE(update_result.has_value());
 
     auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
-    ASSERT_TRUE(selected.value().begin()->big_value.has_value());
-    EXPECT_EQ(selected.value().begin()->big_value.value(), 42LL);
+    EXPECT_FALSE(selected.value().begin()->opt_double.has_value());
+}
+
+TYPED_TEST(OptionalTypesTest, UpdateOptionalInt64FromNull) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes const                obj{.id = 0, .opt_int64 = std::nullopt, .label = "from_null"};
+
+    auto insert_result = qs.insert(obj).execute();
+    ASSERT_TRUE(insert_result.has_value());
+    int64_t const id = insert_result.value();
+
+    ExtendedTypes const updated{.id = static_cast<int>(id), .opt_int64 = 42LL, .label = "now_has_value"};
+    auto                update_result = qs.update(updated).execute();
+    ASSERT_TRUE(update_result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_TRUE(selected.value().begin()->opt_int64.has_value());
+    EXPECT_EQ(selected.value().begin()->opt_int64.value(), 42LL);
 }
 
 // =============================================================================
 // Complex WHERE Conditions (OR operator coverage)
 // =============================================================================
 
-struct CovGapWherePerson {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string                               name;
-    int                                       age{};
-    std::string                               department;
-};
-
-template <typename ConnType> class ComplexWhereTest : public ::testing::Test {
+template <typename ConnType> class ComplexWhereTest : public StormTestFixture<CovPerson, ConnType> {
   protected:
-    auto SetUp() -> void override {
-        if (!storm::test::backend_available<ConnType>()) {
-            GTEST_SKIP() << "PostgreSQL unavailable";
-        }
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        StormTestFixture<CovPerson, ConnType>::on_setup(conn);
+        if (this->HasFatalFailure())
+            return;
 
-        auto result = QuerySet<CovGapWherePerson, ConnType>::set_default_connection(
-                storm::test::get_connection_string<ConnType>()
-        );
-        ASSERT_TRUE(result.has_value());
-
-        const auto& conn = QuerySet<CovGapWherePerson, ConnType>::get_default_connection();
-
-        storm::test::pg_schema_init<ConnType>(conn);
-        (void)storm::orm::schema::SchemaStatement<CovGapWherePerson>::create_table_if_not_exists(conn);
-
-        storm::test::begin_test_txn<ConnType>(conn, {"CovGapWherePerson"});
-
-        qs = std::make_unique<QuerySet<CovGapWherePerson, ConnType>>();
+        qs = std::make_unique<QuerySet<CovPerson, ConnType>>();
 
         // Insert test data
-        std::vector<CovGapWherePerson> const people = {
-                {0, "Alice", 25, "Engineering"},
-                {0, "Bob", 30, "Sales"},
-                {0, "Charlie", 35, "Engineering"},
-                {0, "Diana", 40, "Marketing"},
-                {0, "Eve", 28, "Sales"},
+        std::vector<CovPerson> const people = {
+                {.id = 0, .name = "Alice", .age = 25, .department = "Engineering"},
+                {.id = 0, .name = "Bob", .age = 30, .department = "Sales"},
+                {.id = 0, .name = "Charlie", .age = 35, .department = "Engineering"},
+                {.id = 0, .name = "Diana", .age = 40, .department = "Marketing"},
+                {.id = 0, .name = "Eve", .age = 28, .department = "Sales"},
         };
 
         for (const auto& person : people) {
@@ -984,24 +851,18 @@ template <typename ConnType> class ComplexWhereTest : public ::testing::Test {
 
     auto TearDown() -> void override {
         qs = nullptr;
-        if constexpr (storm::test::is_postgresql<ConnType>()) {
-            if (QuerySet<CovGapWherePerson, ConnType>::has_default_connection()) {
-                const auto& conn = QuerySet<CovGapWherePerson, ConnType>::get_default_connection();
-                storm::test::rollback_test_txn<ConnType>(conn);
-            }
-        }
-        QuerySet<CovGapWherePerson, ConnType>::clear_default_connection();
+        StormTestFixture<CovPerson, ConnType>::TearDown();
     }
 
-    std::unique_ptr<QuerySet<CovGapWherePerson, ConnType>> qs;
+    std::unique_ptr<QuerySet<CovPerson, ConnType>> qs;
 };
 
 TYPED_TEST_SUITE(ComplexWhereTest, DatabaseTypes);
 
 TYPED_TEST(ComplexWhereTest, OrCondition) {
     // Test OR operator
-    auto result = this->qs->where(storm::orm::where::field<^^CovGapWherePerson::age>() < 26 or
-                                  storm::orm::where::field<^^CovGapWherePerson::age>() > 35)
+    auto result = this->qs->where(storm::orm::where::field<^^CovPerson::age>() < 26 or
+                                  storm::orm::where::field<^^CovPerson::age>() > 35)
                           .select()
                           .execute();
 
@@ -1011,9 +872,9 @@ TYPED_TEST(ComplexWhereTest, OrCondition) {
 
 TYPED_TEST(ComplexWhereTest, OrWithAnd) {
     // Combined OR and AND: (age < 26) OR (age > 35 AND department = "Marketing")
-    auto young    = storm::orm::where::field<^^CovGapWherePerson::age>() < 26;
-    auto old      = storm::orm::where::field<^^CovGapWherePerson::age>() > 35;
-    auto mkt      = storm::orm::where::field<^^CovGapWherePerson::department>() == "Marketing";
+    auto young    = storm::orm::where::field<^^CovPerson::age>() < 26;
+    auto old      = storm::orm::where::field<^^CovPerson::age>() > 35;
+    auto mkt      = storm::orm::where::field<^^CovPerson::department>() == "Marketing";
     auto combined = young or (old and mkt);
 
     auto result = this->qs->where(combined).select().execute();
@@ -1023,9 +884,9 @@ TYPED_TEST(ComplexWhereTest, OrWithAnd) {
 
 TYPED_TEST(ComplexWhereTest, MultipleOrConditions) {
     // Test multiple ORs: age == 25 OR age == 30 OR age == 35
-    auto cond = storm::orm::where::field<^^CovGapWherePerson::age>() == 25 or
-                storm::orm::where::field<^^CovGapWherePerson::age>() == 30 or
-                storm::orm::where::field<^^CovGapWherePerson::age>() == 35;
+    auto cond = storm::orm::where::field<^^CovPerson::age>() == 25 or
+                storm::orm::where::field<^^CovPerson::age>() == 30 or
+                storm::orm::where::field<^^CovPerson::age>() == 35;
 
     auto result = this->qs->where(cond).select().execute();
     ASSERT_TRUE(result.has_value());
@@ -1034,10 +895,10 @@ TYPED_TEST(ComplexWhereTest, MultipleOrConditions) {
 
 TYPED_TEST(ComplexWhereTest, NestedAndOr) {
     // Nested: (dept = "Engineering" AND age < 30) OR (dept = "Sales" AND age > 29)
-    auto eng_young = storm::orm::where::field<^^CovGapWherePerson::department>() == "Engineering" and
-                     storm::orm::where::field<^^CovGapWherePerson::age>() < 30;
-    auto sales_old = storm::orm::where::field<^^CovGapWherePerson::department>() == "Sales" and
-                     storm::orm::where::field<^^CovGapWherePerson::age>() > 29;
+    auto eng_young = storm::orm::where::field<^^CovPerson::department>() == "Engineering" and
+                     storm::orm::where::field<^^CovPerson::age>() < 30;
+    auto sales_old = storm::orm::where::field<^^CovPerson::department>() == "Sales" and
+                     storm::orm::where::field<^^CovPerson::age>() > 29;
 
     auto result = this->qs->where(eng_young or sales_old).select().execute();
     ASSERT_TRUE(result.has_value());
@@ -1049,8 +910,8 @@ TYPED_TEST(ComplexWhereTest, NestedAndOr) {
 // =============================================================================
 
 TYPED_TEST(ComplexWhereTest, FullChainSelect) {
-    auto result = this->qs->where(storm::orm::where::field<^^CovGapWherePerson::age>() > 25)
-                          .template order_by<^^CovGapWherePerson::age>()
+    auto result = this->qs->where(storm::orm::where::field<^^CovPerson::age>() > 25)
+                          .template order_by<^^CovPerson::age>()
                           .limit(2)
                           .offset(1)
                           .select()
@@ -1061,16 +922,16 @@ TYPED_TEST(ComplexWhereTest, FullChainSelect) {
 }
 
 TYPED_TEST(ComplexWhereTest, FullChainCount) {
-    auto result = this->qs->where(storm::orm::where::field<^^CovGapWherePerson::age>() >= 30).count().get();
+    auto result = this->qs->where(storm::orm::where::field<^^CovPerson::age>() >= 30).count().get();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 3); // Bob (30), Charlie (35), Diana (40)
 }
 
 TYPED_TEST(ComplexWhereTest, FullChainDistinct) {
-    auto result = this->qs->where(storm::orm::where::field<^^CovGapWherePerson::age>() < 35)
-                          .template order_by<^^CovGapWherePerson::department>()
-                          .template distinct<^^CovGapWherePerson::department>()
+    auto result = this->qs->where(storm::orm::where::field<^^CovPerson::age>() < 35)
+                          .template order_by<^^CovPerson::department>()
+                          .template distinct<^^CovPerson::department>()
                           .select();
 
     ASSERT_TRUE(result.has_value());
@@ -1081,66 +942,42 @@ TYPED_TEST(ComplexWhereTest, FullChainDistinct) {
 // Transaction Edge Cases
 // =============================================================================
 
-struct TxnPerson {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string                               name;
-    int                                       value{};
-};
-
-template <typename ConnType> class TransactionTest : public ::testing::Test {
+template <typename ConnType> class TransactionTest : public StormTestFixture<SimpleRecord, ConnType> {
   protected:
-    auto SetUp() -> void override {
-        if (!storm::test::backend_available<ConnType>()) {
-            GTEST_SKIP() << "PostgreSQL unavailable";
-        }
-
-        auto result =
-                QuerySet<TxnPerson, ConnType>::set_default_connection(storm::test::get_connection_string<ConnType>());
-        ASSERT_TRUE(result.has_value());
-
-        const auto& conn = QuerySet<TxnPerson, ConnType>::get_default_connection();
-
-        storm::test::pg_schema_init<ConnType>(conn);
-        (void)storm::orm::schema::SchemaStatement<TxnPerson>::create_table_if_not_exists(conn);
-
-        storm::test::begin_test_txn<ConnType>(conn, {"TxnPerson"});
-
-        qs = std::make_unique<QuerySet<TxnPerson, ConnType>>();
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        StormTestFixture<SimpleRecord, ConnType>::on_setup(conn);
+        if (this->HasFatalFailure())
+            return;
+        qs = std::make_unique<QuerySet<SimpleRecord, ConnType>>();
     }
 
     auto TearDown() -> void override {
         qs = nullptr;
-        if constexpr (storm::test::is_postgresql<ConnType>()) {
-            if (QuerySet<TxnPerson, ConnType>::has_default_connection()) {
-                const auto& conn = QuerySet<TxnPerson, ConnType>::get_default_connection();
-                storm::test::rollback_test_txn<ConnType>(conn);
-            }
-        }
-        QuerySet<TxnPerson, ConnType>::clear_default_connection();
+        StormTestFixture<SimpleRecord, ConnType>::TearDown();
     }
 
-    std::unique_ptr<QuerySet<TxnPerson, ConnType>> qs;
+    std::unique_ptr<QuerySet<SimpleRecord, ConnType>> qs;
 };
 
 TYPED_TEST_SUITE(TransactionTest, DatabaseTypes);
 
 TYPED_TEST(TransactionTest, MultiRowUpdateInTransaction) {
     // Insert multiple rows
-    std::vector<TxnPerson> const people = {{0, "P1", 1}, {0, "P2", 2}, {0, "P3", 3}};
+    std::vector<SimpleRecord> const people = {{0, "P1", 1}, {0, "P2", 2}, {0, "P3", 3}};
 
-    auto insert_result = this->qs->insert(std::span<const TxnPerson>(people)).execute();
+    auto insert_result = this->qs->insert(std::span<const SimpleRecord>(people)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // Fetch and update all
     auto select_result = this->qs->select().execute();
     ASSERT_TRUE(select_result.has_value());
 
-    std::vector<TxnPerson> updates;
+    std::vector<SimpleRecord> updates;
     for (const auto& p : select_result.value()) {
         updates.push_back({p.id, p.name, p.value + 100});
     }
 
-    auto update_result = this->qs->update(std::span<const TxnPerson>(updates)).execute();
+    auto update_result = this->qs->update(std::span<const SimpleRecord>(updates)).execute();
     ASSERT_TRUE(update_result.has_value());
 
     // Verify all updated
@@ -1152,32 +989,32 @@ TYPED_TEST(TransactionTest, MultiRowUpdateInTransaction) {
 }
 
 TYPED_TEST(TransactionTest, EmptyBatchOperations) {
-    std::vector<TxnPerson> empty;
+    std::vector<SimpleRecord> empty;
 
     // Empty insert
-    auto insert_result = this->qs->insert(std::span<const TxnPerson>(empty)).execute();
+    auto insert_result = this->qs->insert(std::span<const SimpleRecord>(empty)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // Empty update
-    auto update_result = this->qs->update(std::span<const TxnPerson>(empty)).execute();
+    auto update_result = this->qs->update(std::span<const SimpleRecord>(empty)).execute();
     ASSERT_TRUE(update_result.has_value());
 
     // Empty remove
-    auto remove_result = this->qs->remove(std::span<const TxnPerson>(empty)).execute();
+    auto remove_result = this->qs->remove(std::span<const SimpleRecord>(empty)).execute();
     ASSERT_TRUE(remove_result.has_value());
 }
 
 TYPED_TEST(TransactionTest, SingleRowOperations) {
     // Single row insert
-    TxnPerson const p1{0, "Single", 42};
-    auto            insert_result = this->qs->insert(p1).execute();
+    SimpleRecord const p1{0, "Single", 42};
+    auto               insert_result = this->qs->insert(p1).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     int64_t const id = insert_result.value();
 
     // Single row update
-    TxnPerson const updated{static_cast<int>(id), "Updated", 99};
-    auto            update_result = this->qs->update(updated).execute();
+    SimpleRecord const updated{static_cast<int>(id), "Updated", 99};
+    auto               update_result = this->qs->update(updated).execute();
     ASSERT_TRUE(update_result.has_value());
 
     // Verify
@@ -1199,57 +1036,29 @@ TYPED_TEST(TransactionTest, SingleRowOperations) {
 // Unsigned Integer Type Coverage
 // =============================================================================
 
-struct CovUnsignedTypes {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    unsigned int                              uint_val{};
-    unsigned long                             ulong_val{};
-    unsigned short                            ushort_val{};
-};
-
-template <typename ConnType> class CovUnsignedTypesTest : public ::testing::Test {
+template <typename ConnType> class UnsignedTypesTest : public StormTestFixture<ExtendedTypes, ConnType> {
   protected:
-    auto SetUp() -> void override {
-        if (!storm::test::backend_available<ConnType>()) {
-            GTEST_SKIP() << "PostgreSQL unavailable";
-        }
-
-        auto result = QuerySet<CovUnsignedTypes, ConnType>::set_default_connection(
-                storm::test::get_connection_string<ConnType>()
-        );
-        ASSERT_TRUE(result.has_value());
-
-        const auto& conn = QuerySet<CovUnsignedTypes, ConnType>::get_default_connection();
-
-        storm::test::pg_schema_init<ConnType>(conn);
-        (void)storm::orm::schema::SchemaStatement<CovUnsignedTypes>::create_table_if_not_exists(conn);
-
-        storm::test::begin_test_txn<ConnType>(conn, {"CovUnsignedTypes"});
-
-        qs = std::make_unique<QuerySet<CovUnsignedTypes, ConnType>>();
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        StormTestFixture<ExtendedTypes, ConnType>::on_setup(conn);
+        if (this->HasFatalFailure())
+            return;
+        qs = std::make_unique<QuerySet<ExtendedTypes, ConnType>>();
     }
 
     auto TearDown() -> void override {
         qs = nullptr;
-        if constexpr (storm::test::is_postgresql<ConnType>()) {
-            if (QuerySet<CovUnsignedTypes, ConnType>::has_default_connection()) {
-                const auto& conn = QuerySet<CovUnsignedTypes, ConnType>::get_default_connection();
-                storm::test::rollback_test_txn<ConnType>(conn);
-            }
-        }
-        QuerySet<CovUnsignedTypes, ConnType>::clear_default_connection();
+        StormTestFixture<ExtendedTypes, ConnType>::TearDown();
     }
 
-    std::unique_ptr<QuerySet<CovUnsignedTypes, ConnType>> qs;
+    std::unique_ptr<QuerySet<ExtendedTypes, ConnType>> qs;
 };
 
-TYPED_TEST_SUITE(CovUnsignedTypesTest, DatabaseTypes);
+TYPED_TEST_SUITE(UnsignedTypesTest, DatabaseTypes);
 
-TYPED_TEST(CovUnsignedTypesTest, InsertMaxValues) {
-    CovUnsignedTypes const obj{
-            .id         = 0,
-            .uint_val   = std::numeric_limits<unsigned int>::max(),
-            .ulong_val  = std::numeric_limits<unsigned long>::max() / 2, // Avoid overflow in SQLite
-            .ushort_val = std::numeric_limits<unsigned short>::max()
+TYPED_TEST(UnsignedTypesTest, InsertMaxValues) {
+    ExtendedTypes const obj{
+            .id    = 0,
+            .u_int = std::numeric_limits<unsigned int>::max(),
     };
 
     auto result = this->qs->insert(obj).execute();
@@ -1257,24 +1066,28 @@ TYPED_TEST(CovUnsignedTypesTest, InsertMaxValues) {
 
     auto selected = this->qs->select().execute();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_EQ(selected.value().begin()->ushort_val, std::numeric_limits<unsigned short>::max());
+    EXPECT_EQ(selected.value().begin()->u_int, std::numeric_limits<unsigned int>::max());
 }
 
-TYPED_TEST(CovUnsignedTypesTest, InsertZeroValues) {
-    CovUnsignedTypes const obj{.id = 0, .uint_val = 0, .ulong_val = 0, .ushort_val = 0};
+TYPED_TEST(UnsignedTypesTest, InsertZeroValues) {
+    ExtendedTypes const obj{.id = 0, .u_int = 0};
 
     auto result = this->qs->insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
     auto selected = this->qs->select().execute();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_EQ(selected.value().begin()->uint_val, 0u);
+    EXPECT_EQ(selected.value().begin()->u_int, 0u);
 }
 
-TYPED_TEST(CovUnsignedTypesTest, BatchCovUnsignedTypes) {
-    std::vector<CovUnsignedTypes> batch = {{0, 100, 1000, 10}, {0, 200, 2000, 20}, {0, 300, 3000, 30}};
+TYPED_TEST(UnsignedTypesTest, BatchUnsignedTypes) {
+    std::vector<ExtendedTypes> batch = {
+            {.id = 0, .u_int = 100},
+            {.id = 0, .u_int = 200},
+            {.id = 0, .u_int = 300},
+    };
 
-    auto result = this->qs->insert(std::span<const CovUnsignedTypes>(batch)).execute();
+    auto result = this->qs->insert(std::span<const ExtendedTypes>(batch)).execute();
     ASSERT_TRUE(result.has_value());
 
     auto selected = this->qs->select().execute();
@@ -1282,99 +1095,75 @@ TYPED_TEST(CovUnsignedTypesTest, BatchCovUnsignedTypes) {
     EXPECT_EQ(selected.value().size(), 3);
 }
 
-TYPED_TEST(CovUnsignedTypesTest, UpdateCovUnsignedTypes) {
-    CovUnsignedTypes const obj{.id = 0, .uint_val = 100, .ulong_val = 1000, .ushort_val = 10};
+TYPED_TEST(UnsignedTypesTest, UpdateUnsignedTypes) {
+    ExtendedTypes const obj{.id = 0, .u_int = 100};
 
     auto insert_result = this->qs->insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
     int64_t const id = insert_result.value();
 
-    CovUnsignedTypes const updated{.id = static_cast<int>(id), .uint_val = 999, .ulong_val = 9999, .ushort_val = 99};
-    auto                   update_result = this->qs->update(updated).execute();
+    ExtendedTypes const updated{.id = static_cast<int>(id), .u_int = 999};
+    auto                update_result = this->qs->update(updated).execute();
     ASSERT_TRUE(update_result.has_value());
 
     auto selected = this->qs->select().execute();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_EQ(selected.value().begin()->uint_val, 999u);
+    EXPECT_EQ(selected.value().begin()->u_int, 999u);
 }
 
 // =============================================================================
 // Float Type Coverage
 // =============================================================================
 
-struct FloatType {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    float                                     value{};
-    std::string                               label;
-};
-
-template <typename ConnType> class FloatTypeTest : public ::testing::Test {
+template <typename ConnType> class FloatTypeTest : public StormTestFixture<ExtendedTypes, ConnType> {
   protected:
-    auto SetUp() -> void override {
-        if (!storm::test::backend_available<ConnType>()) {
-            GTEST_SKIP() << "PostgreSQL unavailable";
-        }
-
-        auto result =
-                QuerySet<FloatType, ConnType>::set_default_connection(storm::test::get_connection_string<ConnType>());
-        ASSERT_TRUE(result.has_value());
-
-        const auto& conn = QuerySet<FloatType, ConnType>::get_default_connection();
-
-        storm::test::pg_schema_init<ConnType>(conn);
-        (void)storm::orm::schema::SchemaStatement<FloatType>::create_table_if_not_exists(conn);
-
-        storm::test::begin_test_txn<ConnType>(conn, {"FloatType"});
-
-        qs = std::make_unique<QuerySet<FloatType, ConnType>>();
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        StormTestFixture<ExtendedTypes, ConnType>::on_setup(conn);
+        if (this->HasFatalFailure())
+            return;
+        qs = std::make_unique<QuerySet<ExtendedTypes, ConnType>>();
     }
 
     auto TearDown() -> void override {
         qs = nullptr;
-        if constexpr (storm::test::is_postgresql<ConnType>()) {
-            if (QuerySet<FloatType, ConnType>::has_default_connection()) {
-                const auto& conn = QuerySet<FloatType, ConnType>::get_default_connection();
-                storm::test::rollback_test_txn<ConnType>(conn);
-            }
-        }
-        QuerySet<FloatType, ConnType>::clear_default_connection();
+        StormTestFixture<ExtendedTypes, ConnType>::TearDown();
     }
 
-    std::unique_ptr<QuerySet<FloatType, ConnType>> qs;
+    std::unique_ptr<QuerySet<ExtendedTypes, ConnType>> qs;
 };
 
 TYPED_TEST_SUITE(FloatTypeTest, DatabaseTypes);
 
 TYPED_TEST(FloatTypeTest, InsertFloatValue) {
-    FloatType const obj{.id = 0, .value = 3.14159f, .label = "pi"};
+    ExtendedTypes const obj{.id = 0, .approx = 3.14159f, .label = "pi"};
 
     auto result = this->qs->insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
     auto selected = this->qs->select().execute();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_NEAR(selected.value().begin()->value, 3.14159f, 0.0001f);
+    EXPECT_NEAR(selected.value().begin()->approx, 3.14159f, 0.0001f);
 }
 
 TYPED_TEST(FloatTypeTest, InsertNegativeFloat) {
-    FloatType const obj{.id = 0, .value = -123.456f, .label = "negative"};
+    ExtendedTypes const obj{.id = 0, .approx = -123.456f, .label = "negative"};
 
     auto result = this->qs->insert(obj).execute();
     ASSERT_TRUE(result.has_value());
 
     auto selected = this->qs->select().execute();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_NEAR(selected.value().begin()->value, -123.456f, 0.001f);
+    EXPECT_NEAR(selected.value().begin()->approx, -123.456f, 0.001f);
 }
 
 TYPED_TEST(FloatTypeTest, BatchFloatValues) {
-    std::vector<FloatType> batch = {
-            {0, 1.1f, "first"},
-            {0, 2.2f, "second"},
-            {0, 3.3f, "third"},
+    std::vector<ExtendedTypes> batch = {
+            {.id = 0, .approx = 1.1f, .label = "first"},
+            {.id = 0, .approx = 2.2f, .label = "second"},
+            {.id = 0, .approx = 3.3f, .label = "third"},
     };
 
-    auto result = this->qs->insert(std::span<const FloatType>(batch)).execute();
+    auto result = this->qs->insert(std::span<const ExtendedTypes>(batch)).execute();
     ASSERT_TRUE(result.has_value());
 
     auto selected = this->qs->select().execute();
@@ -1386,34 +1175,17 @@ TYPED_TEST(FloatTypeTest, BatchFloatValues) {
 // Query Reset and Reuse Coverage
 // =============================================================================
 
-struct ResetPerson {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string                               name;
-    int                                       score{};
-};
-
-template <typename ConnType> class QueryResetTest : public ::testing::Test {
+template <typename ConnType> class QueryResetTest : public StormTestFixture<SimpleRecord, ConnType> {
   protected:
-    auto SetUp() -> void override {
-        if (!storm::test::backend_available<ConnType>()) {
-            GTEST_SKIP() << "PostgreSQL unavailable";
-        }
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        StormTestFixture<SimpleRecord, ConnType>::on_setup(conn);
+        if (this->HasFatalFailure())
+            return;
 
-        auto result =
-                QuerySet<ResetPerson, ConnType>::set_default_connection(storm::test::get_connection_string<ConnType>());
-        ASSERT_TRUE(result.has_value());
-
-        const auto& conn = QuerySet<ResetPerson, ConnType>::get_default_connection();
-
-        storm::test::pg_schema_init<ConnType>(conn);
-        (void)storm::orm::schema::SchemaStatement<ResetPerson>::create_table_if_not_exists(conn);
-
-        storm::test::begin_test_txn<ConnType>(conn, {"ResetPerson"});
-
-        qs = std::make_unique<QuerySet<ResetPerson, ConnType>>();
+        qs = std::make_unique<QuerySet<SimpleRecord, ConnType>>();
 
         // Insert test data
-        std::vector<ResetPerson> const people = {
+        std::vector<SimpleRecord> const people = {
                 {0, "Alice", 100},
                 {0, "Bob", 200},
                 {0, "Charlie", 150},
@@ -1428,24 +1200,18 @@ template <typename ConnType> class QueryResetTest : public ::testing::Test {
 
     auto TearDown() -> void override {
         qs = nullptr;
-        if constexpr (storm::test::is_postgresql<ConnType>()) {
-            if (QuerySet<ResetPerson, ConnType>::has_default_connection()) {
-                const auto& conn = QuerySet<ResetPerson, ConnType>::get_default_connection();
-                storm::test::rollback_test_txn<ConnType>(conn);
-            }
-        }
-        QuerySet<ResetPerson, ConnType>::clear_default_connection();
+        StormTestFixture<SimpleRecord, ConnType>::TearDown();
     }
 
-    std::unique_ptr<QuerySet<ResetPerson, ConnType>> qs;
+    std::unique_ptr<QuerySet<SimpleRecord, ConnType>> qs;
 };
 
 TYPED_TEST_SUITE(QueryResetTest, DatabaseTypes);
 
 TYPED_TEST(QueryResetTest, ResetClearsAllState) {
     // Apply various modifiers
-    this->qs->where(storm::orm::where::field<^^ResetPerson::score>() > 100)
-            .template order_by<^^ResetPerson::name>()
+    this->qs->where(storm::orm::where::field<^^SimpleRecord::value>() > 100)
+            .template order_by<^^SimpleRecord::name>()
             .limit(2)
             .offset(1);
 
@@ -1463,7 +1229,7 @@ TYPED_TEST(QueryResetTest, ResetClearsAllState) {
 
 TYPED_TEST(QueryResetTest, ReuseSameQuerySetMultipleTimes) {
     // First query
-    auto result1 = this->qs->where(storm::orm::where::field<^^ResetPerson::score>() > 150).select().execute();
+    auto result1 = this->qs->where(storm::orm::where::field<^^SimpleRecord::value>() > 150).select().execute();
     ASSERT_TRUE(result1.has_value());
     EXPECT_EQ(result1.value().size(), 2); // Bob (200), Diana (180)
 
@@ -1474,7 +1240,7 @@ TYPED_TEST(QueryResetTest, ReuseSameQuerySetMultipleTimes) {
 
     // Reset and new query
     this->qs->reset();
-    auto result3 = this->qs->where(storm::orm::where::field<^^ResetPerson::score>() < 130).select().execute();
+    auto result3 = this->qs->where(storm::orm::where::field<^^SimpleRecord::value>() < 130).select().execute();
     ASSERT_TRUE(result3.has_value());
     EXPECT_EQ(result3.value().size(), 2); // Alice (100), Eve (120)
 }
@@ -1488,27 +1254,27 @@ TYPED_TEST(QueryResetTest, ResetBetweenDifferentOperations) {
     this->qs->reset();
 
     // SUM
-    auto sum1 = this->qs->template sum<^^ResetPerson::score>().get();
+    auto sum1 = this->qs->template sum<^^SimpleRecord::value>().get();
     ASSERT_TRUE(sum1.has_value());
     EXPECT_EQ(sum1.value(), 750); // 100+200+150+180+120
 
     this->qs->reset();
 
     // AVG
-    auto avg1 = this->qs->template avg<^^ResetPerson::score>().get();
+    auto avg1 = this->qs->template avg<^^SimpleRecord::value>().get();
     ASSERT_TRUE(avg1.has_value());
     EXPECT_NEAR(avg1.value(), 150.0, 0.1);
 
     this->qs->reset();
 
     // MIN/MAX
-    auto min1 = this->qs->template min<^^ResetPerson::score>().get();
+    auto min1 = this->qs->template min<^^SimpleRecord::value>().get();
     ASSERT_TRUE(min1.has_value());
     EXPECT_EQ(min1.value(), 100);
 
     this->qs->reset();
 
-    auto max1 = this->qs->template max<^^ResetPerson::score>().get();
+    auto max1 = this->qs->template max<^^SimpleRecord::value>().get();
     ASSERT_TRUE(max1.has_value());
     EXPECT_EQ(max1.value(), 200);
 }
@@ -1519,15 +1285,15 @@ TYPED_TEST(QueryResetTest, ResetBetweenDifferentOperations) {
 
 TYPED_TEST(QueryResetTest, AggregatesWithWhere) {
     // COUNT with WHERE
-    auto count = this->qs->where(storm::orm::where::field<^^ResetPerson::score>() >= 150).count().get();
+    auto count = this->qs->where(storm::orm::where::field<^^SimpleRecord::value>() >= 150).count().get();
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 3); // Bob, Charlie, Diana
 
     this->qs->reset();
 
     // SUM with WHERE
-    auto sum = this->qs->where(storm::orm::where::field<^^ResetPerson::score>() >= 150)
-                       .template sum<^^ResetPerson::score>()
+    auto sum = this->qs->where(storm::orm::where::field<^^SimpleRecord::value>() >= 150)
+                       .template sum<^^SimpleRecord::value>()
                        .get();
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), 530); // 200+150+180
@@ -1535,7 +1301,7 @@ TYPED_TEST(QueryResetTest, AggregatesWithWhere) {
 
 TYPED_TEST(QueryResetTest, AggregatesWithOrderByLimit) {
     // This tests aggregates with modifiers (ORDER BY doesn't affect aggregates, but LIMIT can)
-    auto count = this->qs->template order_by<^^ResetPerson::name>().count().get();
+    auto count = this->qs->template order_by<^^SimpleRecord::name>().count().get();
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 5);
 }

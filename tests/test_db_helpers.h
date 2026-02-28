@@ -9,7 +9,9 @@
  *
  * PostgreSQL test isolation uses per-process schemas (test_<pid>), giving each
  * CTest process its own namespace. This enables fully parallel execution with
- * zero lock contention — no TRUNCATE, no transaction wrapping, no deadlocks.
+ * zero lock contention. Per-test isolation uses DROP SCHEMA + CREATE SCHEMA in
+ * TearDown to reset state. The schema is created once per process and reused
+ * (never cleared between tests).
  *
  * PostgreSQL tests auto-skip when STORM_PG_CONNSTR env var is not set.
  *
@@ -83,17 +85,10 @@ template <typename ConnType> auto pg_schema_init(auto &conn) -> void {
             detail::current_test_schema = "test_" + std::to_string(getpid());
             (void)conn->execute("DROP SCHEMA IF EXISTS " + detail::current_test_schema + " CASCADE");
             (void)conn->execute("CREATE SCHEMA " + detail::current_test_schema);
-            (void)conn->execute("SET search_path TO " + detail::current_test_schema);
         }
+        // Always set search_path — each test gets a fresh connection
+        (void)conn->execute("SET search_path TO " + detail::current_test_schema);
     }
-}
-
-// Begin test isolation. For PG: no-op (schema provides isolation).
-// For SQLite: no-op (:memory: is inherently isolated).
-// Kept for API compatibility — all test SetUp functions call this after ensure_table.
-template <typename ConnType> void begin_test_txn(auto &conn, std::initializer_list<const char *> tables) {
-    (void)conn;
-    (void)tables;
 }
 
 // End test isolation. For PG: drops the per-process schema (instant cleanup).
@@ -102,7 +97,9 @@ template <typename ConnType> void rollback_test_txn(auto &conn) {
     if constexpr (std::is_same_v<ConnType, storm::db::postgresql::Connection>) {
         if (!detail::current_test_schema.empty()) {
             (void)conn->execute("DROP SCHEMA IF EXISTS " + detail::current_test_schema + " CASCADE");
-            detail::current_test_schema.clear();
+            (void)conn->execute("CREATE SCHEMA " + detail::current_test_schema);
+            // DON'T clear current_test_schema — schema is recreated and ready for next test.
+            // pg_schema_init will skip CREATE (schema exists) and just SET search_path.
         }
     }
     (void)conn;

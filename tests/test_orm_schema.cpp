@@ -158,19 +158,7 @@ TEST(SchemaUnitTest, PersonSqlEndsWithClosingParen) {
 // the IF NOT EXISTS path and dialect transforms on both backends.
 // ============================================================================
 
-template <typename ConnType> class SchemaTest : public StormTestFixture<Person, ConnType> {
-  protected:
-    auto SetUp() -> void override {
-        if (!this->setup_connection()) {
-            GTEST_SKIP() << "Backend unavailable";
-            return;
-        }
-        const auto& conn          = QuerySet<Person, ConnType>::get_default_connection();
-        auto        create_result = storm::test::ensure_table<Person, ConnType>(conn);
-        ASSERT_TRUE(create_result.has_value()) << "Failed to create Person table: " << create_result.error().message();
-        storm::test::begin_test_txn<ConnType>(conn, {"Person"});
-    }
-};
+template <typename ConnType> class SchemaTest : public StormTestFixture<Person, ConnType> {};
 
 TYPED_TEST_SUITE(SchemaTest, DatabaseTypes);
 

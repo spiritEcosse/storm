@@ -9,46 +9,12 @@ import <vector>;
 import <expected>;
 import <format>;
 
+#include "test_models.h"
+
 using namespace storm;
 
-// Test model for large dataset testing
-struct TestRecord {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    int                                       value{};
-    std::string                               name;
-};
-
 // Test fixture for large SELECT operations — templated on database backend
-template <typename ConnType> class SelectLargeTest : public ::testing::Test {
-  protected:
-    auto SetUp() -> void override {
-        if (!storm::test::backend_available<ConnType>()) {
-            GTEST_SKIP() << "PostgreSQL unavailable";
-        }
-
-        const auto& conn_str = storm::test::get_connection_string<ConnType>();
-        auto        result   = QuerySet<TestRecord, ConnType>::set_default_connection(conn_str);
-        ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
-
-        const auto& conn = QuerySet<TestRecord, ConnType>::get_default_connection();
-
-        storm::test::pg_schema_init<ConnType>(conn);
-        auto create_result = storm::orm::schema::SchemaStatement<TestRecord>::create_table_if_not_exists(conn);
-        ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
-
-        storm::test::begin_test_txn<ConnType>(conn, {"TestRecord"});
-    }
-
-    auto TearDown() -> void override {
-        if constexpr (storm::test::is_postgresql<ConnType>()) {
-            if (QuerySet<TestRecord, ConnType>::has_default_connection()) {
-                const auto& conn = QuerySet<TestRecord, ConnType>::get_default_connection();
-                storm::test::rollback_test_txn<ConnType>(conn);
-            }
-        }
-        QuerySet<TestRecord, ConnType>::clear_default_connection();
-    }
-};
+template <typename ConnType> class SelectLargeTest : public StormTestFixture<SimpleRecord, ConnType> {};
 
 TYPED_TEST_SUITE(SelectLargeTest, DatabaseTypes);
 
@@ -56,18 +22,18 @@ TYPED_TEST_SUITE(SelectLargeTest, DatabaseTypes);
 // This tests the exponential growth path
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(SelectLargeTest, SelectMoreThan10KRows) {
-    QuerySet<TestRecord, TypeParam> queryset;
+    QuerySet<SimpleRecord, TypeParam> queryset;
 
     // Insert 25,000 records (will trigger exponential growth: 10K → 20K → 40K)
-    constexpr int           RECORD_COUNT = 25000;
-    std::vector<TestRecord> records;
+    constexpr int             RECORD_COUNT = 25000;
+    std::vector<SimpleRecord> records;
     records.reserve(RECORD_COUNT);
 
     for (int i = 1; i <= RECORD_COUNT; ++i) {
-        records.emplace_back(i, i * 10, std::format("Record_{}", i));
+        records.emplace_back(SimpleRecord{.id = i, .name = std::format("Record_{}", i), .value = i * 10});
     }
 
-    auto insert_result = queryset.insert(std::span<const TestRecord>(records)).execute();
+    auto insert_result = queryset.insert(std::span<const SimpleRecord>(records)).execute();
     ASSERT_TRUE(insert_result.has_value()) << "Batch INSERT failed: " << insert_result.error().message();
 
     // SELECT all rows - this will exercise exponential growth
@@ -97,17 +63,17 @@ TYPED_TEST(SelectLargeTest, SelectMoreThan10KRows) {
 
 // Test: SELECT with result set at exactly 10K (no exponential growth needed)
 TYPED_TEST(SelectLargeTest, SelectExactly10KRows) {
-    QuerySet<TestRecord, TypeParam> queryset;
+    QuerySet<SimpleRecord, TypeParam> queryset;
 
-    constexpr int           RECORD_COUNT = 10000;
-    std::vector<TestRecord> records;
+    constexpr int             RECORD_COUNT = 10000;
+    std::vector<SimpleRecord> records;
     records.reserve(RECORD_COUNT);
 
     for (int i = 1; i <= RECORD_COUNT; ++i) {
-        records.emplace_back(i, i, std::format("R{}", i));
+        records.emplace_back(SimpleRecord{.id = i, .name = std::format("R{}", i), .value = i});
     }
 
-    auto insert_result = queryset.insert(std::span<const TestRecord>(records)).execute();
+    auto insert_result = queryset.insert(std::span<const SimpleRecord>(records)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT all rows - should fit in initial capacity exactly
@@ -124,17 +90,17 @@ TYPED_TEST(SelectLargeTest, SelectExactly10KRows) {
 
 // Test: SELECT with result set slightly over 10K (minimal exponential growth)
 TYPED_TEST(SelectLargeTest, SelectSlightlyOver10KRows) {
-    QuerySet<TestRecord, TypeParam> queryset;
+    QuerySet<SimpleRecord, TypeParam> queryset;
 
-    constexpr int           RECORD_COUNT = 10001; // Just 1 over capacity
-    std::vector<TestRecord> records;
+    constexpr int             RECORD_COUNT = 10001; // Just 1 over capacity
+    std::vector<SimpleRecord> records;
     records.reserve(RECORD_COUNT);
 
     for (int i = 1; i <= RECORD_COUNT; ++i) {
-        records.emplace_back(i, i, "Test");
+        records.emplace_back(SimpleRecord{.id = i, .name = "Test", .value = i});
     }
 
-    auto insert_result = queryset.insert(std::span<const TestRecord>(records)).execute();
+    auto insert_result = queryset.insert(std::span<const SimpleRecord>(records)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT all rows - will grow to 20K
@@ -152,7 +118,7 @@ TYPED_TEST(SelectLargeTest, SelectSlightlyOver10KRows) {
 // Tests multiple exponential growth cycles
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(SelectLargeTest, SelectVeryLargeDataset) {
-    QuerySet<TestRecord, TypeParam> queryset;
+    QuerySet<SimpleRecord, TypeParam> queryset;
 
     // 100K records: 10K → 20K → 40K → 80K → 160K (4 growth cycles)
     constexpr int RECORD_COUNT = 100000;
@@ -160,15 +126,17 @@ TYPED_TEST(SelectLargeTest, SelectVeryLargeDataset) {
     // Insert in batches to avoid hitting SQLite limits
     constexpr int BATCH_SIZE = 10000;
     for (int batch = 0; batch < RECORD_COUNT / BATCH_SIZE; ++batch) {
-        std::vector<TestRecord> batch_records;
+        std::vector<SimpleRecord> batch_records;
         batch_records.reserve(BATCH_SIZE);
 
         for (int i = 1; i <= BATCH_SIZE; ++i) {
             int const record_num = (batch * BATCH_SIZE) + i;
-            batch_records.emplace_back(record_num, record_num, std::format("B{}", batch));
+            batch_records.emplace_back(
+                    SimpleRecord{.id = record_num, .name = std::format("B{}", batch), .value = record_num}
+            );
         }
 
-        auto insert_result = queryset.insert(std::span<const TestRecord>(batch_records)).execute();
+        auto insert_result = queryset.insert(std::span<const SimpleRecord>(batch_records)).execute();
         ASSERT_TRUE(insert_result.has_value()) << "Batch " << batch << " INSERT failed";
     }
 

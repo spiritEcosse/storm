@@ -16,21 +16,13 @@ import <iomanip>;
 
 #include "test_models.h" // NOSONAR cpp:S954
 
-// Common base fixture for Remove/Update tests — shared SetUp + helpers.
+// Common base fixture for Remove/Update tests — shared on_setup + helpers.
 template <typename ConnType> class PersonCrudTestBase : public StormTestFixture<Person, ConnType> {
   protected:
-    auto SetUp() -> void override {
-        if (!this->setup_connection()) {
-            GTEST_SKIP() << "PostgreSQL unavailable";
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        StormTestFixture<Person, ConnType>::on_setup(conn);
+        if (this->HasFatalFailure())
             return;
-        }
-
-        const auto& default_conn = storm::QuerySet<Person, ConnType>::get_default_connection();
-
-        auto create_result = storm::test::ensure_table<Person, ConnType>(default_conn);
-        ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
-
-        storm::test::begin_test_txn<ConnType>(default_conn, {"Person"});
 
         storm::QuerySet<Person, ConnType> setup_qs;
         std::vector<Person> const         initial = {

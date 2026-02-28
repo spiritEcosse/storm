@@ -30,18 +30,10 @@ template <typename ConnType> class OrderByTest : public StormTestFixture<Person,
         }
     }
 
-    auto SetUp() -> void override {
-        if (!this->setup_connection()) {
-            GTEST_SKIP() << "Backend unavailable";
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        StormTestFixture<Person, ConnType>::on_setup(conn);
+        if (this->HasFatalFailure())
             return;
-        }
-
-        const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
-
-        auto create_result = storm::test::ensure_table<Person, ConnType>(conn);
-        ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
-
-        storm::test::begin_test_txn<ConnType>(conn, {"Person"});
 
         // Insert test data with varying values
         std::vector<Person> const test_data = {
@@ -386,18 +378,10 @@ TYPED_TEST(OrderByTest, ChainedWithMultipleClauses) {
 
 template <typename ConnType> class OrderByNullableTest : public StormTestFixture<Person, ConnType> {
   protected:
-    auto SetUp() -> void override {
-        if (!this->setup_connection()) {
-            GTEST_SKIP() << "Backend unavailable";
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        StormTestFixture<Person, ConnType>::on_setup(conn);
+        if (this->HasFatalFailure())
             return;
-        }
-
-        const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
-
-        auto create_result = storm::test::ensure_table<Person, ConnType>(conn);
-        ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
-
-        storm::test::begin_test_txn<ConnType>(conn, {"Person"});
 
         // Insert test data with mix of NULL and non-NULL values
         std::vector<Person> const test_data = {
@@ -566,18 +550,10 @@ TYPED_TEST(OrderByNullableTest, AllNullValues) {
 
 template <typename ConnType> class OrderByBlobTest : public StormTestFixture<Person, ConnType> {
   protected:
-    auto SetUp() -> void override {
-        if (!this->setup_connection()) {
-            GTEST_SKIP() << "Backend unavailable";
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        StormTestFixture<Person, ConnType>::on_setup(conn);
+        if (this->HasFatalFailure())
             return;
-        }
-
-        const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
-
-        auto create_result = storm::test::ensure_table<Person, ConnType>(conn);
-        ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
-
-        storm::test::begin_test_txn<ConnType>(conn, {"Person"});
 
         // Insert test data with various BLOB values
         // SQLite compares BLOBs byte-by-byte in memcmp order

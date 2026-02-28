@@ -9,7 +9,9 @@ import storm;
 using namespace std::meta;
 using namespace storm::meta;
 
-// Test struct with proper attribute syntax
+// Author struct is defined locally here instead of in test_models.h because
+// including the full header causes the experimental Clang C++26 compiler to
+// crash when combined with constexpr reflection (^^Author, find_primary_key).
 struct Author {
     [[= FieldAttr::primary]] int id;
     std::string                  name;

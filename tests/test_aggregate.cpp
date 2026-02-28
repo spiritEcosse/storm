@@ -20,20 +20,10 @@ using namespace storm;
 // Test fixture for aggregate functions
 template <typename ConnType> class AggregateTest : public StormTestFixture<Person, ConnType> {
   protected:
-    auto SetUp() -> void override {
-        if (!this->setup_connection()) {
-            GTEST_SKIP() << "Backend unavailable";
-            return;
-        }
-        const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
-
-        auto create_result = storm::test::ensure_table<Person, ConnType>(conn);
-        ASSERT_TRUE(create_result.has_value()) << "Failed to create Person table: " << create_result.error().message();
-
-        auto create_msg = storm::test::ensure_table<Message, ConnType>(conn);
-        ASSERT_TRUE(create_msg.has_value()) << "Failed to create Message table: " << create_msg.error().message();
-
-        storm::test::begin_test_txn<ConnType>(conn, {"Person"});
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        ASSERT_TRUE((storm::test::ensure_table<Person, ConnType>(conn).has_value())) << "Failed to create Person table";
+        ASSERT_TRUE((storm::test::ensure_table<Message, ConnType>(conn).has_value()))
+                << "Failed to create Message table";
 
         qs     = std::make_unique<QuerySet<Person, ConnType>>();
         msg_qs = std::make_unique<QuerySet<Message, ConnType>>();
@@ -1270,18 +1260,10 @@ TYPED_TEST(AggregateTest, CountDistinctRepeatedQueries) {
 
 template <typename ConnType> class OptionalAggregateTest : public StormTestFixture<Person, ConnType> {
   protected:
-    auto SetUp() -> void override {
-        if (!this->setup_connection()) {
-            GTEST_SKIP() << "Backend unavailable";
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        StormTestFixture<Person, ConnType>::on_setup(conn);
+        if (this->HasFatalFailure())
             return;
-        }
-        const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
-
-        auto create_result = storm::test::ensure_table<Person, ConnType>(conn);
-        ASSERT_TRUE(create_result.has_value()) << "Failed to create table";
-
-        storm::test::begin_test_txn<ConnType>(conn, {"Person"});
-
         qs = std::make_unique<QuerySet<Person, ConnType>>();
     }
 

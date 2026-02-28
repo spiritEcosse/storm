@@ -4,6 +4,7 @@
 #include <fstream>
 #include <thread>
 #include <chrono>
+#include "test_db_helpers.h"
 
 // NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)
 // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
@@ -841,29 +842,17 @@ TEST_F(ColumnExtractionTest, ExtractNullText) {
 
 import storm;
 
-// Test model for ORM error tests
-struct ErrorTestPerson {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string                               name;
-    int                                       age{};
-};
-
-// Test model with unique constraint — email enforced via FieldAttr::unique
-struct UniqueTestPerson {
-    [[= storm::meta::FieldAttr::primary]] int        id{};
-    [[= storm::meta::FieldAttr::unique]] std::string email;
-    int                                              value{};
-};
+#include "test_models.h"
 
 class ORMErrorTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {
-        auto result = storm::QuerySet<ErrorTestPerson>::set_default_connection(":memory:");
+        auto result = storm::QuerySet<Person>::set_default_connection(":memory:");
         ASSERT_TRUE(result.has_value()) << "Failed to open database";
 
-        const auto& conn = storm::QuerySet<ErrorTestPerson>::get_default_connection();
+        const auto& conn = storm::QuerySet<Person>::get_default_connection();
 
-        auto create_result = storm::orm::schema::SchemaStatement<ErrorTestPerson>::create_table_if_not_exists(conn);
+        auto create_result = storm::orm::schema::SchemaStatement<Person>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table";
 
         // Create table with UNIQUE constraint via FieldAttr::unique on email field
@@ -872,7 +861,7 @@ class ORMErrorTest : public ::testing::Test {
     }
 
     auto TearDown() -> void override {
-        storm::QuerySet<ErrorTestPerson>::clear_default_connection();
+        storm::QuerySet<Person>::clear_default_connection();
     }
 };
 
@@ -933,7 +922,7 @@ TEST_F(ORMErrorTest, UpdateUniqueConstraintViolation) {
 }
 
 TEST_F(ORMErrorTest, SelectEmptyResult) {
-    storm::QuerySet<ErrorTestPerson> qs;
+    storm::QuerySet<Person> qs;
 
     // Select from empty table - should succeed with empty result
     auto result = qs.select().execute();
@@ -942,32 +931,32 @@ TEST_F(ORMErrorTest, SelectEmptyResult) {
 }
 
 TEST_F(ORMErrorTest, SelectWithWhereNoMatch) {
-    storm::QuerySet<ErrorTestPerson> qs;
+    storm::QuerySet<Person> qs;
 
     // Insert some data
-    ErrorTestPerson const person{.id = 0, .name = "Alice", .age = 30};
-    auto                  insert_result = qs.insert(person).execute();
+    Person const person{.id = 0, .name = "Alice", .age = 30};
+    auto         insert_result = qs.insert(person).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // Select with WHERE that matches nothing
-    auto result = qs.where(storm::orm::where::field<^^ErrorTestPerson::age>() > 100).select().execute();
+    auto result = qs.where(storm::orm::where::field<^^Person::age>() > 100).select().execute();
     ASSERT_TRUE(result.has_value()) << "Select with no matches should succeed";
     EXPECT_TRUE(result.value().empty()) << "Result should be empty";
 }
 
 TEST_F(ORMErrorTest, RemoveNonExistent) {
-    storm::QuerySet<ErrorTestPerson> qs;
+    storm::QuerySet<Person> qs;
 
     // Try to remove non-existent person
-    ErrorTestPerson const nonexistent{.id = 999, .name = "Ghost", .age = 0};
-    auto                  result = qs.remove(nonexistent).execute();
+    Person const nonexistent{.id = 999, .name = "Ghost", .age = 0};
+    auto         result = qs.remove(nonexistent).execute();
 
     // Remove of non-existent should succeed (SQLite DELETE with no matches is not an error)
     ASSERT_TRUE(result.has_value()) << "Remove of non-existent should succeed";
 }
 
 TEST_F(ORMErrorTest, AggregateOnEmptyTable) {
-    storm::QuerySet<ErrorTestPerson> qs;
+    storm::QuerySet<Person> qs;
 
     // COUNT on empty table should return 0
     auto count_result = qs.count().get();
@@ -975,44 +964,44 @@ TEST_F(ORMErrorTest, AggregateOnEmptyTable) {
     EXPECT_EQ(count_result.value(), 0);
 
     // SUM on empty table should return 0 (NULL coerced to 0)
-    auto sum_result = qs.sum<^^ErrorTestPerson::age>().get();
+    auto sum_result = qs.sum<^^Person::age>().get();
     ASSERT_TRUE(sum_result.has_value()) << "SUM on empty table should succeed";
     EXPECT_EQ(sum_result.value(), 0);
 
     // AVG on empty table should return 0.0
-    auto avg_result = qs.avg<^^ErrorTestPerson::age>().get();
+    auto avg_result = qs.avg<^^Person::age>().get();
     ASSERT_TRUE(avg_result.has_value()) << "AVG on empty table should succeed";
     EXPECT_DOUBLE_EQ(avg_result.value(), 0.0);
 }
 
 TEST_F(ORMErrorTest, AggregateWithWhereNoMatch) {
-    storm::QuerySet<ErrorTestPerson> qs;
+    storm::QuerySet<Person> qs;
 
     // Insert data
-    ErrorTestPerson const person{.id = 0, .name = "Alice", .age = 30};
-    auto                  insert_result = qs.insert(person).execute();
+    Person const person{.id = 0, .name = "Alice", .age = 30};
+    auto         insert_result = qs.insert(person).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // COUNT with WHERE that matches nothing
-    auto count_result = qs.where(storm::orm::where::field<^^ErrorTestPerson::age>() > 100).count().get();
+    auto count_result = qs.where(storm::orm::where::field<^^Person::age>() > 100).count().get();
     ASSERT_TRUE(count_result.has_value()) << "COUNT with no matches should succeed";
     EXPECT_EQ(count_result.value(), 0);
 }
 
 TEST_F(ORMErrorTest, DistinctOnEmptyTable) {
-    storm::QuerySet<ErrorTestPerson> qs;
+    storm::QuerySet<Person> qs;
 
     // DISTINCT on empty table
-    auto result = qs.distinct<^^ErrorTestPerson::name>().select();
+    auto result = qs.distinct<^^Person::name>().select();
     ASSERT_TRUE(result.has_value()) << "DISTINCT on empty table should succeed";
     EXPECT_TRUE(result.value().empty());
 }
 
 TEST_F(ORMErrorTest, GroupByOnEmptyTable) {
-    storm::QuerySet<ErrorTestPerson> qs;
+    storm::QuerySet<Person> qs;
 
     // GROUP BY on empty table
-    auto result = qs.group_by<^^ErrorTestPerson::age>().count().select();
+    auto result = qs.group_by<^^Person::age>().count().select();
     ASSERT_TRUE(result.has_value()) << "GROUP BY on empty table should succeed";
     EXPECT_TRUE(result.value().empty());
 }
@@ -1052,28 +1041,28 @@ TEST_F(ORMErrorTest, BatchUpdateWithConstraintViolation) {
 }
 
 TEST_F(ORMErrorTest, BatchRemoveFromEmptyTable) {
-    storm::QuerySet<ErrorTestPerson> qs;
+    storm::QuerySet<Person> qs;
 
     // Try to batch remove from empty table
-    std::vector<ErrorTestPerson> to_remove = {{1, "Ghost1", 25}, {2, "Ghost2", 30}, {3, "Ghost3", 35}};
+    std::vector<Person> to_remove = {{1, "Ghost1", 25}, {2, "Ghost2", 30}, {3, "Ghost3", 35}};
 
-    auto result = qs.remove(std::span<const ErrorTestPerson>(to_remove)).execute();
+    auto result = qs.remove(std::span<const Person>(to_remove)).execute();
     // Should succeed - SQLite DELETE with no matches is not an error
     ASSERT_TRUE(result.has_value()) << "Batch remove of non-existent should succeed";
 }
 
 TEST_F(ORMErrorTest, LargeBatchInsertThenRemove) {
-    storm::QuerySet<ErrorTestPerson> qs;
+    storm::QuerySet<Person> qs;
 
     // Insert a larger batch to test chunking logic
-    std::vector<ErrorTestPerson> batch;
+    std::vector<Person> batch;
     batch.reserve(100);
     for (int i = 0; i < 100; ++i) {
         batch.push_back({0, "Person" + std::to_string(i), 20 + (i % 50)});
     }
 
     // Batch insert returns void (not IDs) because consecutive ID assumption is unreliable
-    auto insert_result = qs.insert(std::span<const ErrorTestPerson>(batch)).execute();
+    auto insert_result = qs.insert(std::span<const Person>(batch)).execute();
     ASSERT_TRUE(insert_result.has_value()) << "Large batch insert should succeed";
 
     // Verify count
@@ -1086,13 +1075,13 @@ TEST_F(ORMErrorTest, LargeBatchInsertThenRemove) {
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().size(), 100);
 
-    std::vector<ErrorTestPerson> to_remove;
+    std::vector<Person> to_remove;
     to_remove.reserve(100);
     for (const auto& p : select_result.value()) {
         to_remove.push_back(p);
     }
 
-    auto remove_result = qs.remove(std::span<const ErrorTestPerson>(to_remove)).execute();
+    auto remove_result = qs.remove(std::span<const Person>(to_remove)).execute();
     ASSERT_TRUE(remove_result.has_value()) << "Large batch remove should succeed";
 
     // Verify all removed
@@ -1102,10 +1091,10 @@ TEST_F(ORMErrorTest, LargeBatchInsertThenRemove) {
 }
 
 TEST_F(ORMErrorTest, InsertThenSelectWithOrderBy) {
-    storm::QuerySet<ErrorTestPerson> qs;
+    storm::QuerySet<Person> qs;
 
     // Insert in random order
-    std::vector<ErrorTestPerson> batch =
+    std::vector<Person> batch =
             {{0, "Charlie", 35}, {0, "Alice", 25}, {0, "Bob", 30}, {0, "Diana", 28}, {0, "Eve", 40}};
 
     for (const auto& p : batch) {
@@ -1114,7 +1103,7 @@ TEST_F(ORMErrorTest, InsertThenSelectWithOrderBy) {
     }
 
     // Select with ORDER BY age ascending
-    auto result = qs.order_by<^^ErrorTestPerson::age>().select().execute();
+    auto result = qs.order_by<^^Person::age>().select().execute();
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value().size(), 5);
 
@@ -1131,17 +1120,17 @@ TEST_F(ORMErrorTest, InsertThenSelectWithOrderBy) {
 }
 
 TEST_F(ORMErrorTest, SelectWithLimitOffset) {
-    storm::QuerySet<ErrorTestPerson> qs;
+    storm::QuerySet<Person> qs;
 
     // Insert 10 persons
     for (int i = 1; i <= 10; ++i) {
-        ErrorTestPerson const p{.id = 0, .name = "Person" + std::to_string(i), .age = 20 + i};
-        auto                  r = qs.insert(p).execute();
+        Person const p{.id = 0, .name = "Person" + std::to_string(i), .age = 20 + i};
+        auto         r = qs.insert(p).execute();
         ASSERT_TRUE(r.has_value());
     }
 
     // Select with limit 3, offset 2
-    auto result = qs.order_by<^^ErrorTestPerson::age>().limit(3).offset(2).select().execute();
+    auto result = qs.order_by<^^Person::age>().limit(3).offset(2).select().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 3);
 

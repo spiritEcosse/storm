@@ -17,18 +17,10 @@ using namespace storm::orm::where;
 // Test fixture for WHERE operations — templated on database backend
 template <typename ConnType> class WhereTest : public StormTestFixture<Person, ConnType> {
   protected:
-    auto SetUp() -> void override {
-        if (!this->setup_connection()) {
-            GTEST_SKIP() << "Backend unavailable";
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        StormTestFixture<Person, ConnType>::on_setup(conn);
+        if (this->HasFatalFailure())
             return;
-        }
-
-        const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
-
-        auto create_result = storm::test::ensure_table<Person, ConnType>(conn);
-        ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
-
-        storm::test::begin_test_txn<ConnType>(conn, {"Person"});
 
         // Insert test data (use ID 0 to let AUTOINCREMENT generate IDs)
         std::vector<Person> const people = {
@@ -314,22 +306,10 @@ TYPED_TEST(WhereTest, WhereMixedTypes) {
 template <typename ConnType> class WhereJoinTest : public StormTestFixture<Message, ConnType> {
   protected:
     // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-    auto SetUp() -> void override {
-        if (!this->setup_connection()) {
-            GTEST_SKIP() << "Backend unavailable";
-            return;
-        }
-
-        const auto& conn = QuerySet<Message, ConnType>::get_default_connection();
-
-        auto create_person = storm::test::ensure_table<Person, ConnType>(conn);
-        ASSERT_TRUE(create_person.has_value()) << "Failed to create Person table: " << create_person.error().message();
-
-        auto create_message = storm::test::ensure_table<Message, ConnType>(conn);
-        ASSERT_TRUE(create_message.has_value())
-                << "Failed to create Message table: " << create_message.error().message();
-
-        storm::test::begin_test_txn<ConnType>(conn, {"Message", "Person"});
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        ASSERT_TRUE((storm::test::ensure_table<Person, ConnType>(conn).has_value())) << "Failed to create Person table";
+        ASSERT_TRUE((storm::test::ensure_table<Message, ConnType>(conn).has_value()))
+                << "Failed to create Message table";
 
         // Insert users (use ID 0 to let AUTOINCREMENT generate IDs)
         QuerySet<Person, ConnType> user_qs;

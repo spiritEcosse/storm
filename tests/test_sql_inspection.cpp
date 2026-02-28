@@ -11,53 +11,16 @@ import <expected>;
 import <span>;
 import <optional>;
 
+#include "test_models.h"
+
 using namespace storm;
 using namespace storm::orm::where;
-
-// ============================================================================
-// Test model for SQL inspection
-// ============================================================================
-
-struct SqlPerson {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string                               name;
-    int                                       age{};
-};
 
 // ============================================================================
 // Test fixture
 // ============================================================================
 
-template <typename ConnType> class SqlInspectionTest : public ::testing::Test {
-  protected:
-    auto SetUp() -> void override {
-        if (!storm::test::backend_available<ConnType>()) {
-            GTEST_SKIP() << "PostgreSQL unavailable";
-        }
-
-        const auto& conn_str = storm::test::get_connection_string<ConnType>();
-        auto        result   = QuerySet<SqlPerson, ConnType>::set_default_connection(conn_str);
-        ASSERT_TRUE(result.has_value()) << "Failed to open database: " << result.error().message();
-
-        const auto& conn = QuerySet<SqlPerson, ConnType>::get_default_connection();
-
-        storm::test::pg_schema_init<ConnType>(conn);
-        auto create_result = storm::orm::schema::SchemaStatement<SqlPerson>::create_table_if_not_exists(conn);
-        ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
-
-        storm::test::begin_test_txn<ConnType>(conn, {"SqlPerson"});
-    }
-
-    auto TearDown() -> void override {
-        if constexpr (storm::test::is_postgresql<ConnType>()) {
-            if (QuerySet<SqlPerson, ConnType>::has_default_connection()) {
-                const auto& conn = QuerySet<SqlPerson, ConnType>::get_default_connection();
-                storm::test::rollback_test_txn<ConnType>(conn);
-            }
-        }
-        QuerySet<SqlPerson, ConnType>::clear_default_connection();
-    }
-};
+template <typename ConnType> class SqlInspectionTest : public StormTestFixture<Person, ConnType> {};
 
 TYPED_TEST_SUITE(SqlInspectionTest, DatabaseTypes);
 
@@ -74,14 +37,14 @@ static auto contains(const std::string& str, std::string_view substr) -> bool {
 // ============================================================================
 
 TYPED_TEST(SqlInspectionTest, SelectBareToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    auto                           result = qs.select().to_sql();
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
     EXPECT_FALSE(sql.empty()) << "SQL should not be empty";
     EXPECT_TRUE(contains(sql, "SELECT")) << "Should contain SELECT";
-    EXPECT_TRUE(contains(sql, "SqlPerson")) << "Should contain table name";
+    EXPECT_TRUE(contains(sql, "Person")) << "Should contain table name";
     EXPECT_TRUE(contains(sql, "name")) << "Should contain field 'name'";
     EXPECT_TRUE(contains(sql, "age")) << "Should contain field 'age'";
     // No WHERE clause
@@ -89,8 +52,8 @@ TYPED_TEST(SqlInspectionTest, SelectBareToSql) {
 }
 
 TYPED_TEST(SqlInspectionTest, SelectWithWhereToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    auto                           result = qs.where(field<^^SqlPerson::age>() > 30).select().to_sql();
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.where(field<^^Person::age>() > 30).select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -102,8 +65,8 @@ TYPED_TEST(SqlInspectionTest, SelectWithWhereToSql) {
 }
 
 TYPED_TEST(SqlInspectionTest, SelectWithStringWhereToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    auto                           result = qs.where(field<^^SqlPerson::name>() == "Alice").select().to_sql();
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.where(field<^^Person::name>() == "Alice").select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -112,8 +75,8 @@ TYPED_TEST(SqlInspectionTest, SelectWithStringWhereToSql) {
 }
 
 TYPED_TEST(SqlInspectionTest, SelectWithLimitToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    auto                           result = qs.limit(10).select().to_sql();
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.limit(10).select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -122,8 +85,8 @@ TYPED_TEST(SqlInspectionTest, SelectWithLimitToSql) {
 }
 
 TYPED_TEST(SqlInspectionTest, SelectWithOffsetToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    auto                           result = qs.limit(5).offset(10).select().to_sql();
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.limit(5).offset(10).select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -133,8 +96,8 @@ TYPED_TEST(SqlInspectionTest, SelectWithOffsetToSql) {
 }
 
 TYPED_TEST(SqlInspectionTest, SelectWithOrderByToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    auto                           result = qs.template order_by<^^SqlPerson::age>().select().to_sql();
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.template order_by<^^Person::age>().select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -143,8 +106,8 @@ TYPED_TEST(SqlInspectionTest, SelectWithOrderByToSql) {
 }
 
 TYPED_TEST(SqlInspectionTest, SelectWithWhereAndLimitToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    auto                           result = qs.where(field<^^SqlPerson::age>() > 25).limit(5).select().to_sql();
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.where(field<^^Person::age>() > 25).limit(5).select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -155,15 +118,15 @@ TYPED_TEST(SqlInspectionTest, SelectWithWhereAndLimitToSql) {
 }
 
 TYPED_TEST(SqlInspectionTest, SelectOperatorsToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
 
     // Test all comparison operators generate proper SQL
-    auto r_eq = qs.where(field<^^SqlPerson::age>() == 30).select().to_sql();
-    auto r_ne = qs.where(field<^^SqlPerson::age>() != 30).select().to_sql();
-    auto r_gt = qs.where(field<^^SqlPerson::age>() > 30).select().to_sql();
-    auto r_ge = qs.where(field<^^SqlPerson::age>() >= 30).select().to_sql();
-    auto r_lt = qs.where(field<^^SqlPerson::age>() < 30).select().to_sql();
-    auto r_le = qs.where(field<^^SqlPerson::age>() <= 30).select().to_sql();
+    auto r_eq = qs.where(field<^^Person::age>() == 30).select().to_sql();
+    auto r_ne = qs.where(field<^^Person::age>() != 30).select().to_sql();
+    auto r_gt = qs.where(field<^^Person::age>() > 30).select().to_sql();
+    auto r_ge = qs.where(field<^^Person::age>() >= 30).select().to_sql();
+    auto r_lt = qs.where(field<^^Person::age>() < 30).select().to_sql();
+    auto r_le = qs.where(field<^^Person::age>() <= 30).select().to_sql();
 
     ASSERT_TRUE(r_eq.has_value());
     ASSERT_TRUE(r_ne.has_value());
@@ -181,8 +144,8 @@ TYPED_TEST(SqlInspectionTest, SelectOperatorsToSql) {
 }
 
 TYPED_TEST(SqlInspectionTest, SelectWithInToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    auto                           result = qs.where(field<^^SqlPerson::age>().in(20, 25, 30)).select().to_sql();
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.where(field<^^Person::age>().in(20, 25, 30)).select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -193,8 +156,8 @@ TYPED_TEST(SqlInspectionTest, SelectWithInToSql) {
 }
 
 TYPED_TEST(SqlInspectionTest, SelectWithBetweenToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    auto                           result = qs.where(field<^^SqlPerson::age>().between(20, 40)).select().to_sql();
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.where(field<^^Person::age>().between(20, 40)).select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -204,8 +167,8 @@ TYPED_TEST(SqlInspectionTest, SelectWithBetweenToSql) {
 }
 
 TYPED_TEST(SqlInspectionTest, SelectWithLikeToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    auto                           result = qs.where(field<^^SqlPerson::name>().like("A%")).select().to_sql();
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.where(field<^^Person::name>().like("A%")).select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -214,8 +177,8 @@ TYPED_TEST(SqlInspectionTest, SelectWithLikeToSql) {
 }
 
 TYPED_TEST(SqlInspectionTest, SelectWithAndOrToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    auto result = qs.where((field<^^SqlPerson::age>() > 25) && (field<^^SqlPerson::age>() < 50)).select().to_sql();
+    QuerySet<Person, TypeParam> qs;
+    auto result = qs.where((field<^^Person::age>() > 25) && (field<^^Person::age>() < 50)).select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -229,8 +192,8 @@ TYPED_TEST(SqlInspectionTest, SelectWithAndOrToSql) {
 // ============================================================================
 
 TYPED_TEST(SqlInspectionTest, FirstBareToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    auto                           result = qs.first().to_sql();
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.first().to_sql();
     ASSERT_TRUE(result.has_value()) << "first().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -239,8 +202,8 @@ TYPED_TEST(SqlInspectionTest, FirstBareToSql) {
 }
 
 TYPED_TEST(SqlInspectionTest, FirstWithWhereToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    auto                           result = qs.where(field<^^SqlPerson::age>() > 25).first().to_sql();
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.where(field<^^Person::age>() > 25).first().to_sql();
     ASSERT_TRUE(result.has_value()) << "first().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -250,8 +213,8 @@ TYPED_TEST(SqlInspectionTest, FirstWithWhereToSql) {
 }
 
 TYPED_TEST(SqlInspectionTest, FirstWithOrderByToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    auto                           result = qs.template order_by<^^SqlPerson::age>().first().to_sql();
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.template order_by<^^Person::age>().first().to_sql();
     ASSERT_TRUE(result.has_value()) << "first().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -264,8 +227,8 @@ TYPED_TEST(SqlInspectionTest, FirstWithOrderByToSql) {
 // ============================================================================
 
 TYPED_TEST(SqlInspectionTest, GetBareToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    auto                           result = qs.get().to_sql();
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.get().to_sql();
     ASSERT_TRUE(result.has_value()) << "get().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -274,8 +237,8 @@ TYPED_TEST(SqlInspectionTest, GetBareToSql) {
 }
 
 TYPED_TEST(SqlInspectionTest, GetWithWhereToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    auto                           result = qs.where(field<^^SqlPerson::id>() == 42).get().to_sql();
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.where(field<^^Person::id>() == 42).get().to_sql();
     ASSERT_TRUE(result.has_value()) << "get().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -289,23 +252,23 @@ TYPED_TEST(SqlInspectionTest, GetWithWhereToSql) {
 // ============================================================================
 
 TYPED_TEST(SqlInspectionTest, InsertSingleToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    SqlPerson                      alice{.id = 0, .name = "Alice", .age = 30};
+    QuerySet<Person, TypeParam> qs;
+    Person                      alice{.id = 0, .name = "Alice", .age = 30};
 
     auto result = qs.insert(alice).to_sql();
     ASSERT_TRUE(result.has_value()) << "insert().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
     EXPECT_TRUE(contains(sql, "INSERT INTO")) << "Should contain INSERT INTO";
-    EXPECT_TRUE(contains(sql, "SqlPerson")) << "Should contain table name";
+    EXPECT_TRUE(contains(sql, "Person")) << "Should contain table name";
     EXPECT_TRUE(contains(sql, "VALUES")) << "Should contain VALUES";
     EXPECT_TRUE(contains(sql, "Alice")) << "Should contain name value";
     EXPECT_TRUE(contains(sql, "30")) << "Should contain age value";
 }
 
 TYPED_TEST(SqlInspectionTest, InsertSingleToSqlDoesNotExecute) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    SqlPerson                      alice{.id = 0, .name = "Alice", .age = 30};
+    QuerySet<Person, TypeParam> qs;
+    Person                      alice{.id = 0, .name = "Alice", .age = 30};
 
     // Calling to_sql() should NOT insert into the database
     auto sql_result = qs.insert(alice).to_sql();
@@ -318,13 +281,13 @@ TYPED_TEST(SqlInspectionTest, InsertSingleToSqlDoesNotExecute) {
 }
 
 TYPED_TEST(SqlInspectionTest, InsertBulkToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    std::vector<SqlPerson>         people = {
-            SqlPerson{.id = 0, .name = "Alice", .age = 30},
-            SqlPerson{.id = 0, .name = "Bob", .age = 25},
+    QuerySet<Person, TypeParam> qs;
+    std::vector<Person>         people = {
+            Person{.id = 0, .name = "Alice", .age = 30},
+            Person{.id = 0, .name = "Bob", .age = 25},
     };
 
-    auto result = qs.insert(std::span<const SqlPerson>(people)).to_sql();
+    auto result = qs.insert(std::span<const Person>(people)).to_sql();
     ASSERT_TRUE(result.has_value()) << "bulk insert().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -335,8 +298,8 @@ TYPED_TEST(SqlInspectionTest, InsertBulkToSql) {
 }
 
 TYPED_TEST(SqlInspectionTest, InsertWithSpecialCharsToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    SqlPerson                      tricky{.id = 0, .name = "O'Brien", .age = 35};
+    QuerySet<Person, TypeParam> qs;
+    Person                      tricky{.id = 0, .name = "O'Brien", .age = 35};
 
     auto result = qs.insert(tricky).to_sql();
     ASSERT_TRUE(result.has_value()) << "insert().to_sql() failed: " << result.error().message();
@@ -352,10 +315,10 @@ TYPED_TEST(SqlInspectionTest, InsertWithSpecialCharsToSql) {
 // ============================================================================
 
 TYPED_TEST(SqlInspectionTest, UpdateSingleToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
+    QuerySet<Person, TypeParam> qs;
     // First insert to get a valid ID
-    SqlPerson alice{.id = 0, .name = "Alice", .age = 30};
-    auto      insert_result = qs.insert(alice).execute();
+    Person alice{.id = 0, .name = "Alice", .age = 30};
+    auto   insert_result = qs.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value());
     alice.id = static_cast<int>(insert_result.value());
 
@@ -365,23 +328,23 @@ TYPED_TEST(SqlInspectionTest, UpdateSingleToSql) {
 
     const std::string& sql = result.value();
     EXPECT_TRUE(contains(sql, "UPDATE")) << "Should contain UPDATE";
-    EXPECT_TRUE(contains(sql, "SqlPerson")) << "Should contain table name";
+    EXPECT_TRUE(contains(sql, "Person")) << "Should contain table name";
     EXPECT_TRUE(contains(sql, "SET")) << "Should contain SET";
     EXPECT_TRUE(contains(sql, "WHERE")) << "Should contain WHERE";
     EXPECT_TRUE(contains(sql, "31")) << "Should contain updated age value";
 }
 
 TYPED_TEST(SqlInspectionTest, UpdateToSqlDoesNotExecute) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    SqlPerson                      alice{.id = 0, .name = "Alice", .age = 30};
-    auto                           insert_result = qs.insert(alice).execute();
+    QuerySet<Person, TypeParam> qs;
+    Person                      alice{.id = 0, .name = "Alice", .age = 30};
+    auto                        insert_result = qs.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value());
     alice.id = static_cast<int>(insert_result.value());
 
     // Get SQL without executing
-    SqlPerson modified = alice;
-    modified.age       = 99;
-    auto sql_result    = qs.update(modified).to_sql();
+    Person modified = alice;
+    modified.age    = 99;
+    auto sql_result = qs.update(modified).to_sql();
     ASSERT_TRUE(sql_result.has_value());
 
     // Check original value unchanged
@@ -396,9 +359,9 @@ TYPED_TEST(SqlInspectionTest, UpdateToSqlDoesNotExecute) {
 // ============================================================================
 
 TYPED_TEST(SqlInspectionTest, RemoveSingleToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    SqlPerson                      alice{.id = 0, .name = "Alice", .age = 30};
-    auto                           insert_result = qs.insert(alice).execute();
+    QuerySet<Person, TypeParam> qs;
+    Person                      alice{.id = 0, .name = "Alice", .age = 30};
+    auto                        insert_result = qs.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value());
     alice.id = static_cast<int>(insert_result.value());
 
@@ -407,14 +370,14 @@ TYPED_TEST(SqlInspectionTest, RemoveSingleToSql) {
 
     const std::string& sql = result.value();
     EXPECT_TRUE(contains(sql, "DELETE FROM")) << "Should contain DELETE FROM";
-    EXPECT_TRUE(contains(sql, "SqlPerson")) << "Should contain table name";
+    EXPECT_TRUE(contains(sql, "Person")) << "Should contain table name";
     EXPECT_TRUE(contains(sql, "WHERE")) << "Should contain WHERE (id condition)";
 }
 
 TYPED_TEST(SqlInspectionTest, RemoveToSqlDoesNotExecute) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    SqlPerson                      alice{.id = 0, .name = "Alice", .age = 30};
-    auto                           insert_result = qs.insert(alice).execute();
+    QuerySet<Person, TypeParam> qs;
+    Person                      alice{.id = 0, .name = "Alice", .age = 30};
+    auto                        insert_result = qs.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value());
     alice.id = static_cast<int>(insert_result.value());
 
@@ -429,10 +392,10 @@ TYPED_TEST(SqlInspectionTest, RemoveToSqlDoesNotExecute) {
 }
 
 TYPED_TEST(SqlInspectionTest, RemoveBulkToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    std::vector<SqlPerson>         people = {
-            SqlPerson{.id = 0, .name = "Alice", .age = 30},
-            SqlPerson{.id = 0, .name = "Bob", .age = 25},
+    QuerySet<Person, TypeParam> qs;
+    std::vector<Person>         people = {
+            Person{.id = 0, .name = "Alice", .age = 30},
+            Person{.id = 0, .name = "Bob", .age = 25},
     };
 
     // Insert and get IDs
@@ -442,7 +405,7 @@ TYPED_TEST(SqlInspectionTest, RemoveBulkToSql) {
         p.id = static_cast<int>(r.value());
     }
 
-    auto result = qs.remove(std::span<const SqlPerson>(people)).to_sql();
+    auto result = qs.remove(std::span<const Person>(people)).to_sql();
     ASSERT_TRUE(result.has_value()) << "bulk remove().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -455,8 +418,8 @@ TYPED_TEST(SqlInspectionTest, RemoveBulkToSql) {
 // ============================================================================
 
 TYPED_TEST(SqlInspectionTest, ToSqlAndExecuteAreIndependent) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    SqlPerson                      alice{.id = 0, .name = "Alice", .age = 30};
+    QuerySet<Person, TypeParam> qs;
+    Person                      alice{.id = 0, .name = "Alice", .age = 30};
 
     // Call to_sql() first
     auto sql_result = qs.insert(alice).to_sql();
@@ -474,8 +437,8 @@ TYPED_TEST(SqlInspectionTest, ToSqlAndExecuteAreIndependent) {
 }
 
 TYPED_TEST(SqlInspectionTest, SelectToSqlAndExecuteAreIndependent) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    SqlPerson                      alice{.id = 0, .name = "Alice", .age = 30};
+    QuerySet<Person, TypeParam> qs;
+    Person                      alice{.id = 0, .name = "Alice", .age = 30};
     ASSERT_TRUE(qs.insert(alice).execute().has_value());
 
     // Call to_sql()
@@ -494,19 +457,19 @@ TYPED_TEST(SqlInspectionTest, SelectToSqlAndExecuteAreIndependent) {
 // ============================================================================
 
 TYPED_TEST(SqlInspectionTest, InsertEmptySpanToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    std::vector<SqlPerson>         empty;
+    QuerySet<Person, TypeParam> qs;
+    std::vector<Person>         empty;
 
-    auto result = qs.insert(std::span<const SqlPerson>(empty)).to_sql();
+    auto result = qs.insert(std::span<const Person>(empty)).to_sql();
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(result.value().empty()) << "Empty span should return empty SQL";
 }
 
 TYPED_TEST(SqlInspectionTest, RemoveEmptySpanToSql) {
-    QuerySet<SqlPerson, TypeParam> qs;
-    std::vector<SqlPerson>         empty;
+    QuerySet<Person, TypeParam> qs;
+    std::vector<Person>         empty;
 
-    auto result = qs.remove(std::span<const SqlPerson>(empty)).to_sql();
+    auto result = qs.remove(std::span<const Person>(empty)).to_sql();
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(result.value().empty()) << "Empty span should return empty SQL";
 }

@@ -15,22 +15,7 @@ using namespace storm::orm::where;
 #include "test_models.h" // NOSONAR cpp:S954
 
 // Test fixture for first/get operations — templated on database backend
-template <typename ConnType> class SelectOneTest : public StormTestFixture<Person, ConnType> {
-  protected:
-    auto SetUp() -> void override {
-        if (!this->setup_connection()) {
-            GTEST_SKIP() << "PostgreSQL unavailable";
-            return;
-        }
-
-        const auto& conn = QuerySet<Person, ConnType>::get_default_connection();
-
-        auto create_result = storm::test::ensure_table<Person, ConnType>(conn);
-        ASSERT_TRUE(create_result.has_value()) << "Failed to create table: " << create_result.error().message();
-
-        storm::test::begin_test_txn<ConnType>(conn, {"Person"});
-    }
-};
+template <typename ConnType> class SelectOneTest : public StormTestFixture<Person, ConnType> {};
 
 TYPED_TEST_SUITE(SelectOneTest, DatabaseTypes);
 
