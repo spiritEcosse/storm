@@ -7,8 +7,46 @@ import storm;
 import <string>;
 import <vector>;
 import <expected>;
+import <optional>;
 
 #include "test_models.h"
+#include "test_seed_helpers.h"
+
+// ── Local structs (used only in this file) ──────────────────────────────────
+struct NullableFKMessage {
+    [[= storm::meta::FieldAttr::primary]] int              id{};
+    [[= storm::meta::FieldAttr::fk]] std::optional<Person> sender;
+    [[= storm::meta::FieldAttr::fk]] Person                receiver;
+    std::string                                            text;
+};
+struct Project {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::meta::FieldAttr::fk]] Person   manager;
+    std::string                               title;
+    double                                    budget{};
+};
+struct Measurement {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string                               sensor_name;
+    float                                     temperature{};
+    long long                                 timestamp{};
+};
+struct Counter {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string                               name;
+    long                                      count{};
+};
+struct Reading {
+    [[= storm::meta::FieldAttr::primary]] int    id{};
+    [[= storm::meta::FieldAttr::fk]] Measurement measurement;
+    std::string                                  reading_type;
+    float                                        value{};
+};
+struct Summary {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::meta::FieldAttr::fk]] Counter  counter;
+    std::string                               report_type;
+};
 
 using namespace storm;
 
@@ -1074,5 +1112,163 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithLongType) {
     EXPECT_EQ(summaries.begin()->counter.name, "PageViews");
     EXPECT_EQ(summaries.begin()->report_type, "Daily");
 }
+
+// =============================================================================
+// JOIN Type Extraction Tests (from test_coverage_additional.cpp)
+// =============================================================================
+
+// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
+// NOLINTBEGIN(misc-const-correctness,readability-identifier-length)
+
+template <typename ConnType> class JoinTypeExtractionTest : public StormTestFixture<Person, ConnType> {
+  protected:
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        ASSERT_TRUE((storm::test::ensure_table<Person, ConnType>(conn).has_value()));
+        ASSERT_TRUE((storm::test::ensure_table<Message, ConnType>(conn).has_value()));
+
+        person_qs = std::make_unique<QuerySet<Person, ConnType>>();
+        msg_qs    = std::make_unique<QuerySet<Message, ConnType>>();
+
+        std::vector<Person> const people = {
+                Person{.name      = "Alice",
+                       .salary    = 4.5,
+                       .is_active = true,
+                       .score     = std::optional<int>(100),
+                       .nickname  = std::optional<std::string>("Alice bio")},
+                Person{.name = "Bob", .salary = 3.2},
+                Person{.name = "Charlie", .salary = 4.9, .is_active = true, .score = std::optional<int>(95)},
+        };
+        ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(people)));
+
+        std::vector<Message> const messages = {
+                {.content = "Post by Alice", .value = 100, .sender = {.id = 1}},
+                {.content = "Another Alice post", .value = 200, .sender = {.id = 1}},
+                {.content = "Post by Bob", .value = 50, .sender = {.id = 2}},
+                {.content = "Charlie post", .value = 150, .sender = {.id = 3}},
+        };
+        ASSERT_TRUE((storm::test::batch_insert<Message, ConnType>(messages)));
+    }
+
+    auto TearDown() -> void override {
+        person_qs = nullptr;
+        msg_qs    = nullptr;
+        StormTestFixture<Person, ConnType>::TearDown();
+    }
+
+    std::unique_ptr<QuerySet<Person, ConnType>>  person_qs;
+    std::unique_ptr<QuerySet<Message, ConnType>> msg_qs;
+};
+
+TYPED_TEST_SUITE(JoinTypeExtractionTest, DatabaseTypes);
+
+TYPED_TEST(JoinTypeExtractionTest, JoinExtractsFloatField) {
+    auto result = this->msg_qs->template join<&Message::sender>().select().execute();
+
+    ASSERT_TRUE(result.has_value()) << "JOIN with float field should succeed";
+    ASSERT_FALSE(result.value().empty());
+
+    for (const auto& msg : result.value()) {
+        if (msg.sender.name == "Alice") {
+            EXPECT_NEAR(msg.sender.salary, 4.5, 0.01);
+        } else if (msg.sender.name == "Bob") {
+            EXPECT_NEAR(msg.sender.salary, 3.2, 0.01);
+        } else if (msg.sender.name == "Charlie") {
+            EXPECT_NEAR(msg.sender.salary, 4.9, 0.01);
+        }
+    }
+}
+
+TYPED_TEST(JoinTypeExtractionTest, JoinExtractsBoolField) {
+    auto result = this->msg_qs->template join<&Message::sender>().select().execute();
+
+    ASSERT_TRUE(result.has_value()) << "JOIN with bool field should succeed";
+    ASSERT_FALSE(result.value().empty());
+
+    for (const auto& msg : result.value()) {
+        if (msg.sender.name == "Alice") {
+            EXPECT_TRUE(msg.sender.is_active);
+        } else if (msg.sender.name == "Bob") {
+            EXPECT_FALSE(msg.sender.is_active);
+        } else if (msg.sender.name == "Charlie") {
+            EXPECT_TRUE(msg.sender.is_active);
+        }
+    }
+}
+
+TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalIntWithValue) {
+    auto result = this->msg_qs->template join<&Message::sender>().select().execute();
+
+    ASSERT_TRUE(result.has_value()) << "JOIN with optional int should succeed";
+    ASSERT_FALSE(result.value().empty());
+
+    for (const auto& msg : result.value()) {
+        if (msg.sender.name == "Alice") {
+            ASSERT_TRUE(msg.sender.score.has_value());
+            EXPECT_EQ(msg.sender.score.value(), 100);
+        } else if (msg.sender.name == "Charlie") {
+            ASSERT_TRUE(msg.sender.score.has_value());
+            EXPECT_EQ(msg.sender.score.value(), 95);
+        }
+    }
+}
+
+TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalIntNull) {
+    auto result = this->msg_qs->template join<&Message::sender>().select().execute();
+
+    ASSERT_TRUE(result.has_value()) << "JOIN with NULL optional should succeed";
+    ASSERT_FALSE(result.value().empty());
+
+    for (const auto& msg : result.value()) {
+        if (msg.sender.name == "Bob") {
+            EXPECT_FALSE(msg.sender.score.has_value());
+        }
+    }
+}
+
+TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalStringWithValue) {
+    auto result = this->msg_qs->template join<&Message::sender>().select().execute();
+
+    ASSERT_TRUE(result.has_value()) << "JOIN with optional string should succeed";
+    ASSERT_FALSE(result.value().empty());
+
+    for (const auto& msg : result.value()) {
+        if (msg.sender.name == "Alice") {
+            ASSERT_TRUE(msg.sender.nickname.has_value());
+            EXPECT_EQ(msg.sender.nickname.value(), "Alice bio");
+        }
+    }
+}
+
+TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalStringNull) {
+    auto result = this->msg_qs->template join<&Message::sender>().select().execute();
+
+    ASSERT_TRUE(result.has_value()) << "JOIN with NULL optional string should succeed";
+    ASSERT_FALSE(result.value().empty());
+
+    for (const auto& msg : result.value()) {
+        if (msg.sender.name == "Bob" || msg.sender.name == "Charlie") {
+            EXPECT_FALSE(msg.sender.nickname.has_value());
+        }
+    }
+}
+
+TYPED_TEST(JoinTypeExtractionTest, JoinWithOrderBy) {
+    auto result =
+            this->msg_qs->template join<&Message::sender>().template order_by<^^Message::value>().select().execute();
+
+    ASSERT_TRUE(result.has_value()) << "JOIN with ORDER BY should succeed";
+    EXPECT_EQ(result.value().size(), 4);
+
+    auto it         = result.value().begin();
+    int  prev_value = 0;
+    while (it != result.value().end()) {
+        EXPECT_GE(it->value, prev_value);
+        prev_value = it->value;
+        ++it;
+    }
+}
+
+// NOLINTEND(misc-const-correctness,readability-identifier-length)
+// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

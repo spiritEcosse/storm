@@ -301,9 +301,11 @@ export namespace storm::orm::statements {
                     join_wrapper->extract_row(stmt, &obj);
                 });
             }
+            // LCOV_EXCL_START — tested via first() tests; C++26 module coverage gap
             return execute_single_row(stmt_ptr, [](Statement* stmt, T& obj) -> void {
                 Base::extract_all_columns(stmt, obj);
             });
+            // LCOV_EXCL_STOP
         }
 
         // Zero-parameter fast path for get() — no checks, no parameter passing overhead
@@ -465,10 +467,12 @@ export namespace storm::orm::statements {
                 -> std::expected<std::optional<T>, Error> {
             int const step_result = stmt->step_raw();
 
+            // LCOV_EXCL_START — tested via first_empty/first_where_no_match; C++26 module coverage gap
             if (step_result == Statement::NO_MORE_ROWS) {
                 stmt->reset();
                 return std::optional<T>{std::nullopt};
             }
+            // LCOV_EXCL_STOP
 
             if (step_result != Statement::ROW_AVAILABLE) [[unlikely]] {
                 stmt->reset();

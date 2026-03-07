@@ -12,7 +12,8 @@ import <optional>;
 import <cstdint>;
 
 #include "test_models.h" // NOSONAR cpp:S954
-
+#include "test_seed_helpers.h"
+#include "test_query_dispatch.h"
 using namespace storm;
 using namespace storm::orm::where;
 
@@ -35,143 +36,20 @@ template <typename ConnType> class OrderByTest : public StormTestFixture<Person,
         if (this->HasFatalFailure())
             return;
 
-        // Insert test data with varying values
-        std::vector<Person> const test_data = {
-                {.id = 1, .name = "Alice", .age = 30, .is_active = true},
-                {.id = 2, .name = "Bob", .age = 25, .is_active = true},
-                {.id = 3, .name = "Charlie", .age = 35, .is_active = false},
-                {.id = 4, .name = "David", .age = 25, .is_active = true},
-                {.id = 5, .name = "Eve", .age = 30, .is_active = false},
-                {.id = 6, .name = "Frank", .age = 40, .is_active = true},
-                {.id = 7, .name = "Grace", .age = 25, .is_active = false},
-                {.id = 8, .name = "Henry", .age = 35, .is_active = true},
-                {.id = 9, .name = "Ivy", .age = 30, .is_active = true},
-                {.id = 10, .name = "Jack", .age = 40, .is_active = false},
-        };
-
-        QuerySet<Person, ConnType> qs;
-        for (const auto& person : test_data) {
-            auto insert_result = qs.insert(person).execute();
-            ASSERT_TRUE(insert_result.has_value()) << "Failed to insert person: " << person.name;
-        }
+        ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(
+                std::vector<Person>(storm::test::PEOPLE_25.begin(), storm::test::PEOPLE_25.end())
+        )));
     }
 };
 
 TYPED_TEST_SUITE(OrderByTest, DatabaseTypes);
 
 // ============================================================================
-// Basic ORDER BY Tests
+// Basic ORDER BY Tests (single-field asc/desc migrated to order_by_cases.yaml)
 // ============================================================================
 
-TYPED_TEST(OrderByTest, SingleFieldDefaultAsc) {
-    QuerySet<Person, TypeParam> qs;
-
-    // Order by age (default ASC)
-    auto result = qs.template order_by<^^Person::age>().select().execute();
-    ASSERT_TRUE(result.has_value());
-
-    auto people = result.value();
-    ASSERT_EQ(people.size(), 10);
-
-    // Verify ascending order by age
-    EXPECT_EQ(std::ranges::next(people.begin(), 0)->age, 25); // Bob, David, or Grace
-    EXPECT_EQ(std::ranges::next(people.begin(), 1)->age, 25);
-    EXPECT_EQ(std::ranges::next(people.begin(), 2)->age, 25);
-    EXPECT_EQ(std::ranges::next(people.begin(), 3)->age, 30); // Alice, Eve, or Ivy
-    EXPECT_EQ(std::ranges::next(people.begin(), 4)->age, 30);
-    EXPECT_EQ(std::ranges::next(people.begin(), 5)->age, 30);
-    EXPECT_EQ(std::ranges::next(people.begin(), 6)->age, 35); // Charlie or Henry
-    EXPECT_EQ(std::ranges::next(people.begin(), 7)->age, 35);
-    EXPECT_EQ(std::ranges::next(people.begin(), 8)->age, 40); // Frank or Jack
-    EXPECT_EQ(std::ranges::next(people.begin(), 9)->age, 40);
-}
-
-TYPED_TEST(OrderByTest, SingleFieldExplicitAsc) {
-    QuerySet<Person, TypeParam> qs;
-
-    // Order by age (explicit ASC)
-    auto result = qs.template order_by<^^Person::age, true>().select().execute();
-    ASSERT_TRUE(result.has_value());
-
-    auto people = result.value();
-    ASSERT_EQ(people.size(), 10);
-
-    // Verify ascending order
-    auto prev_it = people.begin();
-    auto it      = std::ranges::next(prev_it);
-    for (; it != people.end(); ++prev_it, ++it) {
-        EXPECT_LE(prev_it->age, it->age);
-    }
-}
-
-TYPED_TEST(OrderByTest, SingleFieldDesc) {
-    QuerySet<Person, TypeParam> qs;
-
-    // Order by age DESC
-    auto result = qs.template order_by<^^Person::age, false>().select().execute();
-    ASSERT_TRUE(result.has_value());
-
-    auto people = result.value();
-    ASSERT_EQ(people.size(), 10);
-
-    // Verify descending order
-    EXPECT_EQ(std::ranges::next(people.begin(), 0)->age, 40); // Frank or Jack
-    EXPECT_EQ(std::ranges::next(people.begin(), 1)->age, 40);
-    EXPECT_EQ(std::ranges::next(people.begin(), 2)->age, 35); // Charlie or Henry
-    EXPECT_EQ(std::ranges::next(people.begin(), 3)->age, 35);
-    EXPECT_EQ(std::ranges::next(people.begin(), 4)->age, 30); // Alice, Eve, or Ivy
-    EXPECT_EQ(std::ranges::next(people.begin(), 5)->age, 30);
-    EXPECT_EQ(std::ranges::next(people.begin(), 6)->age, 30);
-    EXPECT_EQ(std::ranges::next(people.begin(), 7)->age, 25); // Bob, David, or Grace
-    EXPECT_EQ(std::ranges::next(people.begin(), 8)->age, 25);
-    EXPECT_EQ(std::ranges::next(people.begin(), 9)->age, 25);
-}
-
-TYPED_TEST(OrderByTest, StringFieldAsc) {
-    QuerySet<Person, TypeParam> qs;
-
-    // Order by name ASC
-    auto result = qs.template order_by<^^Person::name>().select().execute();
-    ASSERT_TRUE(result.has_value());
-
-    auto people = result.value();
-    ASSERT_EQ(people.size(), 10);
-
-    // Verify alphabetical order
-    EXPECT_EQ(std::ranges::next(people.begin(), 0)->name, "Alice");
-    EXPECT_EQ(std::ranges::next(people.begin(), 1)->name, "Bob");
-    EXPECT_EQ(std::ranges::next(people.begin(), 2)->name, "Charlie");
-    EXPECT_EQ(std::ranges::next(people.begin(), 3)->name, "David");
-    EXPECT_EQ(std::ranges::next(people.begin(), 4)->name, "Eve");
-    EXPECT_EQ(std::ranges::next(people.begin(), 5)->name, "Frank");
-    EXPECT_EQ(std::ranges::next(people.begin(), 6)->name, "Grace");
-    EXPECT_EQ(std::ranges::next(people.begin(), 7)->name, "Henry");
-    EXPECT_EQ(std::ranges::next(people.begin(), 8)->name, "Ivy");
-    EXPECT_EQ(std::ranges::next(people.begin(), 9)->name, "Jack");
-}
-
-TYPED_TEST(OrderByTest, StringFieldDesc) {
-    QuerySet<Person, TypeParam> qs;
-
-    // Order by name DESC
-    auto result = qs.template order_by<^^Person::name, false>().select().execute();
-    ASSERT_TRUE(result.has_value());
-
-    auto people = result.value();
-    ASSERT_EQ(people.size(), 10);
-
-    // Verify reverse alphabetical order
-    EXPECT_EQ(std::ranges::next(people.begin(), 0)->name, "Jack");
-    EXPECT_EQ(std::ranges::next(people.begin(), 1)->name, "Ivy");
-    EXPECT_EQ(std::ranges::next(people.begin(), 2)->name, "Henry");
-    EXPECT_EQ(std::ranges::next(people.begin(), 3)->name, "Grace");
-    EXPECT_EQ(std::ranges::next(people.begin(), 4)->name, "Frank");
-    EXPECT_EQ(std::ranges::next(people.begin(), 5)->name, "Eve");
-    EXPECT_EQ(std::ranges::next(people.begin(), 6)->name, "David");
-    EXPECT_EQ(std::ranges::next(people.begin(), 7)->name, "Charlie");
-    EXPECT_EQ(std::ranges::next(people.begin(), 8)->name, "Bob");
-    EXPECT_EQ(std::ranges::next(people.begin(), 9)->name, "Alice");
-}
+// SingleFieldDefaultAsc, SingleFieldExplicitAsc, SingleFieldDesc,
+// StringFieldAsc, StringFieldDesc: migrated to order_by_cases.yaml → OrderByYamlTest.
 
 // ============================================================================
 // Multiple Fields ORDER BY Tests
@@ -185,11 +63,11 @@ TYPED_TEST(OrderByTest, MultipleFieldsAllAsc) {
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
-    ASSERT_EQ(people.size(), 10);
+    ASSERT_EQ(people.size(), 25);
 
     // Verify ordering: age ASC, then name ASC within same age
-    // Age 25: Bob, David, Grace | Age 30: Alice, Eve, Ivy
-    this->verify_order(people, {{25, "Bob"}, {25, "David"}, {25, "Grace"}, {30, "Alice"}, {30, "Eve"}, {30, "Ivy"}});
+    // Age 22: Paul, Yara | Age 25: Alice, Grace, Karen | Age 27: Tina
+    this->verify_order(people, {{22, "Paul"}, {22, "Yara"}, {25, "Alice"}, {25, "Grace"}, {25, "Karen"}, {27, "Tina"}});
 }
 
 TYPED_TEST(OrderByTest, MultipleFieldsMixedDirections) {
@@ -200,11 +78,11 @@ TYPED_TEST(OrderByTest, MultipleFieldsMixedDirections) {
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
-    ASSERT_EQ(people.size(), 10);
+    ASSERT_EQ(people.size(), 25);
 
     // Verify ordering: age ASC, then name DESC within same age
-    // Age 25: Grace, David, Bob (DESC) | Age 30: Ivy, Eve, Alice (DESC)
-    this->verify_order(people, {{25, "Grace"}, {25, "David"}, {25, "Bob"}, {30, "Ivy"}, {30, "Eve"}, {30, "Alice"}});
+    // Age 22: Yara, Paul (DESC) | Age 25: Karen, Grace, Alice (DESC) | Age 27: Tina
+    this->verify_order(people, {{22, "Yara"}, {22, "Paul"}, {25, "Karen"}, {25, "Grace"}, {25, "Alice"}, {27, "Tina"}});
 }
 
 TYPED_TEST(OrderByTest, MultipleFieldsAllDesc) {
@@ -215,37 +93,18 @@ TYPED_TEST(OrderByTest, MultipleFieldsAllDesc) {
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
-    ASSERT_EQ(people.size(), 10);
+    ASSERT_EQ(people.size(), 25);
 
     // Verify ordering: age DESC, then name DESC
-    // Age 40: Jack, Frank (DESC) | Age 35: Henry, Charlie (DESC)
-    this->verify_order(people, {{40, "Jack"}, {40, "Frank"}, {35, "Henry"}, {35, "Charlie"}});
+    // Age 48: Olivia | Age 45: Victor, Frank | Age 42: Leo | Age 40: Sam, Eve
+    this->verify_order(people, {{48, "Olivia"}, {45, "Victor"}, {45, "Frank"}, {42, "Leo"}, {40, "Sam"}, {40, "Eve"}});
 }
 
 // ============================================================================
 // Combined with WHERE Tests
 // ============================================================================
 
-TYPED_TEST(OrderByTest, WithWhereClause) {
-    QuerySet<Person, TypeParam> qs;
-
-    // Filter active users and order by age DESC
-    auto result = qs.where(field<^^Person::is_active>() == true) // NOLINT(readability-simplify-boolean-expr)
-                          .template order_by<^^Person::age, false>()
-                          .select()
-                          .execute();
-    ASSERT_TRUE(result.has_value());
-
-    auto people = result.value();
-    ASSERT_EQ(people.size(), 6); // Alice, Bob, David, Frank, Henry, Ivy
-
-    // Verify all are active and ordered by age DESC
-    for (const auto& person : people) {
-        EXPECT_TRUE(person.is_active);
-    }
-    EXPECT_GE(std::ranges::next(people.begin(), 0)->age, std::ranges::next(people.begin(), 1)->age);
-    EXPECT_GE(std::ranges::next(people.begin(), 1)->age, std::ranges::next(people.begin(), 2)->age);
-}
+// WithWhereClause: migrated to order_by_cases.yaml → OrderByYamlTest.
 
 TYPED_TEST(OrderByTest, WhereWithMultipleOrderBy) {
     QuerySet<Person, TypeParam> qs;
@@ -258,7 +117,7 @@ TYPED_TEST(OrderByTest, WhereWithMultipleOrderBy) {
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
-    ASSERT_EQ(people.size(), 7); // Alice, Charlie, Eve, Frank, Henry, Ivy, Jack
+    ASSERT_EQ(people.size(), 16);
 
     // Verify age filter
     for (const auto& person : people) {
@@ -280,9 +139,9 @@ TYPED_TEST(OrderByTest, WithLimit) {
     auto people = result.value();
     ASSERT_EQ(people.size(), 3);
 
-    // All should be age 25
-    EXPECT_EQ(std::ranges::next(people.begin(), 0)->age, 25);
-    EXPECT_EQ(std::ranges::next(people.begin(), 1)->age, 25);
+    // First two should be age 22, third should be age 25
+    EXPECT_EQ(std::ranges::next(people.begin(), 0)->age, 22);
+    EXPECT_EQ(std::ranges::next(people.begin(), 1)->age, 22);
     EXPECT_EQ(std::ranges::next(people.begin(), 2)->age, 25);
 }
 
@@ -296,7 +155,7 @@ TYPED_TEST(OrderByTest, WithLimitAndOffset) {
     auto people = result.value();
     ASSERT_EQ(people.size(), 3);
 
-    EXPECT_EQ(std::ranges::next(people.begin(), 0)->name, "David");
+    EXPECT_EQ(std::ranges::next(people.begin(), 0)->name, "Diana");
     EXPECT_EQ(std::ranges::next(people.begin(), 1)->name, "Eve");
     EXPECT_EQ(std::ranges::next(people.begin(), 2)->name, "Frank");
 }
@@ -311,24 +170,15 @@ TYPED_TEST(OrderByTest, OrderByBeforeLimitOffset) {
     auto people = result.value();
     ASSERT_EQ(people.size(), 5);
 
-    // Should get ages in descending order, skipping first 2 (both 40)
-    EXPECT_EQ(std::ranges::next(people.begin(), 0)->age, 35); // Charlie or Henry
+    // Should get ages in descending order, skipping first 2 (48, 45)
+    EXPECT_EQ(std::ranges::next(people.begin(), 0)->age, 45);
 }
 
 // ============================================================================
 // Edge Cases
 // ============================================================================
 
-TYPED_TEST(OrderByTest, EmptyResult) {
-    QuerySet<Person, TypeParam> qs;
-
-    // Filter that returns no results
-    auto result = qs.where(field<^^Person::age>() > 100).template order_by<^^Person::name>().select().execute();
-    ASSERT_TRUE(result.has_value());
-
-    const auto& people = result.value();
-    EXPECT_EQ(people.size(), 0);
-}
+// EmptyResult: migrated to unified_cases.yaml (order_by_empty_result_where_no_match)
 
 TYPED_TEST(OrderByTest, BooleanField) {
     QuerySet<Person, TypeParam> qs;
@@ -338,7 +188,7 @@ TYPED_TEST(OrderByTest, BooleanField) {
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
-    ASSERT_EQ(people.size(), 10);
+    ASSERT_EQ(people.size(), 25);
 
     // true comes before false in DESC order (1 > 0)
     EXPECT_TRUE(std::ranges::next(people.begin(), 0)->is_active);
@@ -348,7 +198,7 @@ TYPED_TEST(OrderByTest, BooleanField) {
 TYPED_TEST(OrderByTest, ChainedWithMultipleClauses) {
     QuerySet<Person, TypeParam> qs;
 
-    // Complex query: WHERE + ORDER BY + LIMIT + OFFSET
+    // Complex query: WHERE + ORDER BY + LIMIT + OFFSET (23 match age >= 25)
     auto result = qs.where(field<^^Person::age>() >= 25)
                           .template order_by<^^Person::age, ^^Person::name>()
                           .limit(5)
@@ -703,17 +553,6 @@ TYPED_TEST(OrderByTest, EmptyResultWithMultipleOrderBy) {
     EXPECT_EQ(people.size(), 0);
 }
 
-TYPED_TEST(OrderByTest, EmptyTableOrderBy) {
-    // Create empty table and try ORDER BY
-    const auto& conn = QuerySet<Person, TypeParam>::get_default_connection();
-    (void)QuerySet<Person, TypeParam>().remove_all().execute();
-
-    QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.template order_by<^^Person::age>().select().execute();
-    ASSERT_TRUE(result.has_value());
-
-    const auto& people = result.value();
-    EXPECT_EQ(people.size(), 0);
-}
+// EmptyTableOrderBy: migrated to unified_cases.yaml (order_by_empty_table)
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

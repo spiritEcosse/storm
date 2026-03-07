@@ -28,6 +28,7 @@ TEST(SchemaUnitTest, PersonSqlMatchesHandWritten) {
                                  "    salary REAL NOT NULL,\n"
                                  "    is_active INTEGER NOT NULL,\n"
                                  "    years_experience INTEGER NOT NULL,\n"
+                                 "    department TEXT NOT NULL,\n"
                                  "    score INTEGER,\n"
                                  "    nickname TEXT,\n"
                                  "    avatar BLOB\n"

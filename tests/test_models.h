@@ -13,8 +13,11 @@
  *   #include "test_models.h"  // AFTER import
  */
 
+#include <array>
 #include <cstdint>
+#include <gtest/gtest.h>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -27,6 +30,7 @@ struct Person {
     double salary{};
     bool is_active{};
     int years_experience{};
+    std::string department;
     std::optional<int> score;
     std::optional<std::string> nickname;
     std::vector<uint8_t> avatar;
@@ -68,84 +72,15 @@ struct ExtendedTypes {
     std::string label;
 };
 
-// Author model — covers reflection/meta tests with many field types.
-struct Author {
-    [[= storm::meta::FieldAttr::primary]] int id;
-    std::string name;
-    int age;
-    std::string email;
-    bool is_active;
-    double rating;
-    float score;
-    std::string middleName;
-    std::string biography;
-};
-
-// Coverage-gap models — CovPerson with department field for GROUP BY tests.
-struct CovPerson {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string name;
-    int age{};
-    std::string department;
-    double salary{};
-};
-
-// Unique constraint model — covers SQLite error tests.
-struct UniqueTestPerson {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::FieldAttr::unique]] std::string email;
-    int value{};
-};
-
-struct Measurement {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string sensor_name;
-    float temperature{};
-    long long timestamp{};
-};
-
-struct Counter {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string name;
-    long count{};
-};
-
 // =============================================================================
 // Section 2: FK-dependent structs (must come after section 1)
 // =============================================================================
-
-struct NullableFKMessage {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::FieldAttr::fk]] std::optional<Person> sender;
-    [[= storm::meta::FieldAttr::fk]] Person receiver;
-    std::string text;
-};
-
-struct Project {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::FieldAttr::fk]] Person manager;
-    std::string title;
-    double budget{};
-};
 
 struct Task {
     [[= storm::meta::FieldAttr::primary]] int id{};
     [[= storm::meta::FieldAttr::fk]] Person assignee;
     [[= storm::meta::FieldAttr::fk]] Person reviewer;
     std::string description;
-};
-
-struct Reading {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::FieldAttr::fk]] Measurement measurement;
-    std::string reading_type;
-    float value{};
-};
-
-struct Summary {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::FieldAttr::fk]] Counter counter;
-    std::string report_type;
 };
 
 // =============================================================================
@@ -169,17 +104,104 @@ template <typename T, typename ConnType> inline auto ensure_table(auto &conn) {
 // Used by DistinctTest, ValuesTest, and AggregateTest fixtures.
 template <typename ConnType> inline void populate_join_test_data() {
     storm::QuerySet<Person, ConnType> person_qs;
-    std::ignore = person_qs.insert(Person{.name = "Alice", .age = 30}).execute();
-    std::ignore = person_qs.insert(Person{.name = "Bob", .age = 25}).execute();
-    std::ignore = person_qs.insert(Person{.name = "Charlie", .age = 35}).execute();
+    std::vector<Person> const people = {
+        {.name = "Alice", .age = 30},
+        {.name = "Bob", .age = 25},
+        {.name = "Charlie", .age = 35},
+    };
+    auto person_result = person_qs.insert(std::span<const Person>(people)).execute();
+    if (!person_result.has_value()) {
+        ADD_FAILURE() << "populate_join_test_data: person insert failed: " << person_result.error().message();
+        return;
+    }
 
     storm::QuerySet<Message, ConnType> msg_qs;
-    std::ignore = msg_qs.insert(Message{.content = "Hello", .sender = {.id = 1}}).execute();
-    std::ignore = msg_qs.insert(Message{.content = "World", .sender = {.id = 1}}).execute();
-    std::ignore = msg_qs.insert(Message{.content = "Hi there", .sender = {.id = 2}}).execute();
-    std::ignore = msg_qs.insert(Message{.content = "Goodbye", .sender = {.id = 2}}).execute();
-    std::ignore = msg_qs.insert(Message{.content = "Test", .sender = {.id = 3}}).execute();
+    std::vector<Message> const messages = {
+        {.content = "Hello", .sender = {.id = 1}},    {.content = "World", .sender = {.id = 1}},
+        {.content = "Hi there", .sender = {.id = 2}}, {.content = "Goodbye", .sender = {.id = 2}},
+        {.content = "Test", .sender = {.id = 3}},
+    };
+    auto msg_result = msg_qs.insert(std::span<const Message>(messages)).execute();
+    if (!msg_result.has_value()) {
+        ADD_FAILURE() << "populate_join_test_data: message insert failed: " << msg_result.error().message();
+    }
 }
+
+// ============================================================================
+// Model record generators -- used by InsertRunner/UpdateRunner/RemoveRunner
+// ============================================================================
+
+template <typename Model> Model make_record(int i) = delete;
+template <> inline Person make_record<Person>(int i) {
+    return {.name = "P" + std::to_string(i + 1),
+            .age = 20 + (i % 50),
+            .salary = 1000.0 * (i + 1),
+            .is_active = (i % 2 == 0),
+            .years_experience = i % 30};
+}
+template <> inline SimpleRecord make_record<SimpleRecord>(int i) { return {0, "R" + std::to_string(i), i}; }
+template <> inline Message make_record<Message>(int i) { return {.content = "M" + std::to_string(i), .value = i}; }
+
+template <typename Model> Model make_updated_record(const Model &) = delete;
+template <> inline Person make_updated_record<Person>(const Person &p) {
+    Person u = p;
+    u.name = "Updated" + std::to_string(p.id);
+    return u;
+}
+template <> inline SimpleRecord make_updated_record<SimpleRecord>(const SimpleRecord &r) {
+    return {r.id, "Updated" + std::to_string(r.id), r.value * 2};
+}
+
+template <typename Model> bool is_original_record(const Model &) = delete;
+template <> inline bool is_original_record<Person>(const Person &p) { return p.name.starts_with("P"); }
+template <> inline bool is_original_record<SimpleRecord>(const SimpleRecord &r) { return r.name.starts_with("R"); }
+
+// ---------------------------------------------------------------------------
+// Unified seed dataset — ONE shared 25-row Person + 8-row Message dataset.
+// Used by both C++ fixtures and YAML tests.
+// ---------------------------------------------------------------------------
+
+// clang-format off
+inline constexpr std::array<Person, 25> PEOPLE_25 = {
+    Person{.name = "Alice",   .age = 25, .salary = 55000.0, .is_active = true,  .years_experience = 5,  .department = "Engineering", .score = std::optional<int>(85),      .nickname = std::optional<std::string>("Ali")},
+    Person{.name = "Bob",     .age = 30, .salary = 62000.0, .is_active = true,  .years_experience = 10, .department = "Sales",       .score = std::optional<int>(90),      .nickname = std::optional<std::string>("Bobby")},
+    Person{.name = "Charlie", .age = 35, .salary = 78000.0, .is_active = false, .years_experience = 15, .department = "Marketing",   .score = std::nullopt,                .nickname = std::nullopt},
+    Person{.name = "Diana",   .age = 28, .salary = 48000.0, .is_active = true,  .years_experience = 5,  .department = "HR",          .score = std::optional<int>(75),      .nickname = std::optional<std::string>("Di")},
+    Person{.name = "Eve",     .age = 40, .salary = 92000.0, .is_active = false, .years_experience = 10, .department = "Engineering", .score = std::nullopt,                .nickname = std::nullopt},
+    Person{.name = "Frank",   .age = 45, .salary = 88000.0, .is_active = true,  .years_experience = 15, .department = "Sales",       .score = std::optional<int>(60),      .nickname = std::nullopt},
+    Person{.name = "Grace",   .age = 25, .salary = 52000.0, .is_active = true,  .years_experience = 5,  .department = "Marketing",   .score = std::optional<int>(95),      .nickname = std::optional<std::string>("Gracie")},
+    Person{.name = "Henry",   .age = 33, .salary = 70000.0, .is_active = false, .years_experience = 10, .department = "Support",     .score = std::nullopt,                .nickname = std::nullopt},
+    Person{.name = "Ivy",     .age = 30, .salary = 65000.0, .is_active = true,  .years_experience = 5,  .department = "Engineering", .score = std::optional<int>(80),      .nickname = std::optional<std::string>("Iv")},
+    Person{.name = "Jack",    .age = 38, .salary = 85000.0, .is_active = false, .years_experience = 15, .department = "HR",          .score = std::nullopt,                .nickname = std::nullopt},
+    Person{.name = "Karen",   .age = 25, .salary = 50000.0, .is_active = true,  .years_experience = 5,  .department = "Sales",       .score = std::optional<int>(85),      .nickname = std::optional<std::string>("Kiki")},
+    Person{.name = "Leo",     .age = 42, .salary = 95000.0, .is_active = true,  .years_experience = 10, .department = "Engineering", .score = std::optional<int>(70),      .nickname = std::nullopt},
+    Person{.name = "Mia",     .age = 28, .salary = 46000.0, .is_active = true,  .years_experience = 5,  .department = "Marketing",   .score = std::nullopt,                .nickname = std::nullopt},
+    Person{.name = "Nick",    .age = 35, .salary = 72000.0, .is_active = false, .years_experience = 15, .department = "Support",     .score = std::optional<int>(55),      .nickname = std::optional<std::string>("Nicky")},
+    Person{.name = "Olivia",  .age = 48, .salary = 98000.0, .is_active = true,  .years_experience = 10, .department = "Sales",       .score = std::nullopt,                .nickname = std::nullopt},
+    Person{.name = "Paul",    .age = 22, .salary = 32000.0, .is_active = false, .years_experience = 5,  .department = "HR",          .score = std::optional<int>(40),      .nickname = std::nullopt},
+    Person{.name = "Quinn",   .age = 30, .salary = 67000.0, .is_active = true,  .years_experience = 10, .department = "Engineering", .score = std::nullopt,                .nickname = std::nullopt},
+    Person{.name = "Rachel",  .age = 36, .salary = 76000.0, .is_active = false, .years_experience = 5,  .department = "Support",     .score = std::optional<int>(65),      .nickname = std::optional<std::string>("Rach")},
+    Person{.name = "Sam",     .age = 40, .salary = 90000.0, .is_active = true,  .years_experience = 15, .department = "Marketing",   .score = std::nullopt,                .nickname = std::nullopt},
+    Person{.name = "Tina",    .age = 27, .salary = 44000.0, .is_active = true,  .years_experience = 5,  .department = "Sales",       .score = std::optional<int>(88),      .nickname = std::optional<std::string>("T")},
+    Person{.name = "Uma",     .age = 33, .salary = 69000.0, .is_active = false, .years_experience = 10, .department = "HR",          .score = std::optional<int>(50),      .nickname = std::nullopt},
+    Person{.name = "Victor",  .age = 45, .salary = 93000.0, .is_active = true,  .years_experience = 15, .department = "Engineering", .score = std::nullopt,                .nickname = std::nullopt},
+    Person{.name = "Wendy",   .age = 29, .salary = 58000.0, .is_active = true,  .years_experience = 10, .department = "Support",     .score = std::optional<int>(78),      .nickname = std::optional<std::string>("Wen")},
+    Person{.name = "Xander",  .age = 38, .salary = 82000.0, .is_active = false, .years_experience = 15, .department = "Marketing",   .score = std::nullopt,                .nickname = std::nullopt},
+    Person{.name = "Yara",    .age = 22, .salary = 35000.0, .is_active = true,  .years_experience = 5,  .department = "Support",     .score = std::optional<int>(92),      .nickname = std::optional<std::string>("Yari")},
+};
+// clang-format on
+
+// 8 Messages — sender IDs are placeholders (1-4); for PostgreSQL, re-query after insert.
+inline constexpr std::array<Message, 8> MESSAGES_8 = {
+    Message{.content = "Hello", .value = 10, .sender = {.id = 1}},
+    Message{.content = "World", .value = 20, .sender = {.id = 1}},
+    Message{.content = "Hi there", .value = 30, .sender = {.id = 1}},
+    Message{.content = "Goodbye", .value = 40, .sender = {.id = 2}},
+    Message{.content = "Testing", .value = 50, .sender = {.id = 2}},
+    Message{.content = "Greetings", .value = 60, .sender = {.id = 3}},
+    Message{.content = "Reply", .value = 70, .sender = {.id = 3}},
+    Message{.content = "Quick note", .value = 80, .sender = {.id = 4}},
+};
 
 } // namespace storm::test
 

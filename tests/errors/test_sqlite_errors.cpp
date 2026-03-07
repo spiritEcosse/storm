@@ -844,6 +844,13 @@ import storm;
 
 #include "test_models.h"
 
+// Local struct — UNIQUE constraint tests only
+struct UniqueTestPerson {
+    [[= storm::meta::FieldAttr::primary]] int        id{};
+    [[= storm::meta::FieldAttr::unique]] std::string email;
+    int                                              value{};
+};
+
 class ORMErrorTest : public ::testing::Test {
   protected:
     auto SetUp() -> void override {

@@ -11,6 +11,7 @@ import <vector>;
 import <expected>;
 import <optional>;
 import <cstdint>;
+import <span>;
 
 #include "test_models.h"
 
@@ -705,5 +706,272 @@ TEST(ErrorHandlingTest, SelectFromNonExistentTable) {
 
     QuerySet<ExtendedTypes>::clear_default_connection();
 }
+
+// =============================================================================
+// Additional Optional Type Coverage (from test_coverage_gaps.cpp)
+// =============================================================================
+
+// NOLINTBEGIN(readability-identifier-length,readability-uppercase-literal-suffix,modernize-use-std-numbers)
+
+template <typename ConnType> class OptionalTypesTest : public StormTestFixture<ExtendedTypes, ConnType> {};
+
+TYPED_TEST_SUITE(OptionalTypesTest, DatabaseTypes);
+
+TYPED_TEST(OptionalTypesTest, OptionalDoubleWithValue) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes const                obj{.id = 0, .opt_double = 3.14159, .label = "pi"};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_TRUE(selected.value().begin()->opt_double.has_value());
+    EXPECT_NEAR(selected.value().begin()->opt_double.value(), 3.14159, 0.0001);
+}
+
+TYPED_TEST(OptionalTypesTest, OptionalDoubleNull) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes const                obj{.id = 0, .opt_double = std::nullopt, .label = "null_double"};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_FALSE(selected.value().begin()->opt_double.has_value());
+}
+
+TYPED_TEST(OptionalTypesTest, OptionalDoubleBatch) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    std::vector<ExtendedTypes>         batch = {
+            {.id = 0, .opt_double = 1.1, .label = "first"},
+            {.id = 0, .opt_double = std::nullopt, .label = "second"},
+            {.id = 0, .opt_double = 2.2, .label = "third"},
+            {.id = 0, .opt_double = std::nullopt, .label = "fourth"},
+    };
+
+    auto result = qs.insert(std::span<const ExtendedTypes>(batch)).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().size(), 4);
+
+    auto it = selected.value().begin();
+    EXPECT_TRUE(it->opt_double.has_value());
+    ++it;
+    EXPECT_FALSE(it->opt_double.has_value());
+    ++it;
+    EXPECT_TRUE(it->opt_double.has_value());
+    ++it;
+    EXPECT_FALSE(it->opt_double.has_value());
+}
+
+TYPED_TEST(OptionalTypesTest, OptionalInt64WithValue) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes const                obj{.id = 0, .opt_int64 = 9223372036854775807LL, .label = "max_int64"};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_TRUE(selected.value().begin()->opt_int64.has_value());
+    EXPECT_EQ(selected.value().begin()->opt_int64.value(), 9223372036854775807LL);
+}
+
+TYPED_TEST(OptionalTypesTest, OptionalInt64Null) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes const                obj{.id = 0, .opt_int64 = std::nullopt, .label = "null_int64"};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_FALSE(selected.value().begin()->opt_int64.has_value());
+}
+
+TYPED_TEST(OptionalTypesTest, UpdateOptionalDoubleToNull) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes const                obj{.id = 0, .opt_double = 100.5, .label = "to_null"};
+
+    auto insert_result = qs.insert(obj).execute();
+    ASSERT_TRUE(insert_result.has_value());
+    int64_t const id = insert_result.value();
+
+    ExtendedTypes const updated{.id = static_cast<int>(id), .opt_double = std::nullopt, .label = "now_null"};
+    auto                update_result = qs.update(updated).execute();
+    ASSERT_TRUE(update_result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_FALSE(selected.value().begin()->opt_double.has_value());
+}
+
+TYPED_TEST(OptionalTypesTest, UpdateOptionalInt64FromNull) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes const                obj{.id = 0, .opt_int64 = std::nullopt, .label = "from_null"};
+
+    auto insert_result = qs.insert(obj).execute();
+    ASSERT_TRUE(insert_result.has_value());
+    int64_t const id = insert_result.value();
+
+    ExtendedTypes const updated{.id = static_cast<int>(id), .opt_int64 = 42LL, .label = "now_has_value"};
+    auto                update_result = qs.update(updated).execute();
+    ASSERT_TRUE(update_result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_TRUE(selected.value().begin()->opt_int64.has_value());
+    EXPECT_EQ(selected.value().begin()->opt_int64.value(), 42LL);
+}
+
+// =============================================================================
+// Unsigned Integer Type Coverage (from test_coverage_gaps.cpp)
+// =============================================================================
+
+// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
+// NOLINTBEGIN(misc-const-correctness)
+
+template <typename ConnType> class UnsignedTypesTest : public StormTestFixture<ExtendedTypes, ConnType> {
+  protected:
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        StormTestFixture<ExtendedTypes, ConnType>::on_setup(conn);
+        if (this->HasFatalFailure())
+            return;
+        qs = std::make_unique<QuerySet<ExtendedTypes, ConnType>>();
+    }
+
+    auto TearDown() -> void override {
+        qs = nullptr;
+        StormTestFixture<ExtendedTypes, ConnType>::TearDown();
+    }
+
+    std::unique_ptr<QuerySet<ExtendedTypes, ConnType>> qs;
+};
+
+TYPED_TEST_SUITE(UnsignedTypesTest, DatabaseTypes);
+
+TYPED_TEST(UnsignedTypesTest, InsertMaxValues) {
+    ExtendedTypes const obj{
+            .id    = 0,
+            .u_int = std::numeric_limits<unsigned int>::max(),
+    };
+
+    auto result = this->qs->insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = this->qs->select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().begin()->u_int, std::numeric_limits<unsigned int>::max());
+}
+
+TYPED_TEST(UnsignedTypesTest, InsertZeroValues) {
+    ExtendedTypes const obj{.id = 0, .u_int = 0};
+
+    auto result = this->qs->insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = this->qs->select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().begin()->u_int, 0u);
+}
+
+TYPED_TEST(UnsignedTypesTest, BatchUnsignedTypes) {
+    std::vector<ExtendedTypes> batch = {
+            {.id = 0, .u_int = 100},
+            {.id = 0, .u_int = 200},
+            {.id = 0, .u_int = 300},
+    };
+
+    auto result = this->qs->insert(std::span<const ExtendedTypes>(batch)).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = this->qs->select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().size(), 3);
+}
+
+TYPED_TEST(UnsignedTypesTest, UpdateUnsignedTypes) {
+    ExtendedTypes const obj{.id = 0, .u_int = 100};
+
+    auto insert_result = this->qs->insert(obj).execute();
+    ASSERT_TRUE(insert_result.has_value());
+    int64_t const id = insert_result.value();
+
+    ExtendedTypes const updated{.id = static_cast<int>(id), .u_int = 999};
+    auto                update_result = this->qs->update(updated).execute();
+    ASSERT_TRUE(update_result.has_value());
+
+    auto selected = this->qs->select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().begin()->u_int, 999u);
+}
+
+// =============================================================================
+// Float Type Coverage (from test_coverage_gaps.cpp)
+// =============================================================================
+
+template <typename ConnType> class FloatTypeTest : public StormTestFixture<ExtendedTypes, ConnType> {
+  protected:
+    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        StormTestFixture<ExtendedTypes, ConnType>::on_setup(conn);
+        if (this->HasFatalFailure())
+            return;
+        qs = std::make_unique<QuerySet<ExtendedTypes, ConnType>>();
+    }
+
+    auto TearDown() -> void override {
+        qs = nullptr;
+        StormTestFixture<ExtendedTypes, ConnType>::TearDown();
+    }
+
+    std::unique_ptr<QuerySet<ExtendedTypes, ConnType>> qs;
+};
+
+TYPED_TEST_SUITE(FloatTypeTest, DatabaseTypes);
+
+TYPED_TEST(FloatTypeTest, InsertFloatValue) {
+    ExtendedTypes const obj{.id = 0, .approx = 3.14159f, .label = "pi"};
+
+    auto result = this->qs->insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = this->qs->select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_NEAR(selected.value().begin()->approx, 3.14159f, 0.0001f);
+}
+
+TYPED_TEST(FloatTypeTest, InsertNegativeFloat) {
+    ExtendedTypes const obj{.id = 0, .approx = -123.456f, .label = "negative"};
+
+    auto result = this->qs->insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = this->qs->select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_NEAR(selected.value().begin()->approx, -123.456f, 0.001f);
+}
+
+TYPED_TEST(FloatTypeTest, BatchFloatValues) {
+    std::vector<ExtendedTypes> batch = {
+            {.id = 0, .approx = 1.1f, .label = "first"},
+            {.id = 0, .approx = 2.2f, .label = "second"},
+            {.id = 0, .approx = 3.3f, .label = "third"},
+    };
+
+    auto result = this->qs->insert(std::span<const ExtendedTypes>(batch)).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = this->qs->select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().size(), 3);
+}
+
+// NOLINTEND(misc-const-correctness)
+// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
+// NOLINTEND(readability-identifier-length,readability-uppercase-literal-suffix,modernize-use-std-numbers)
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

@@ -123,17 +123,7 @@ TYPED_TEST(DistinctTest, DistinctNameFieldAllUnique) {
     EXPECT_EQ(names.size(), 3) << "Expected all 3 unique names";
 }
 
-// Test: DISTINCT on empty table
-TYPED_TEST(DistinctTest, DistinctFromEmptyTable) {
-    QuerySet<Person, TypeParam> queryset;
-
-    // SELECT DISTINCT name from empty table
-    auto result = queryset.template distinct<^^Person::name>().select();
-    ASSERT_TRUE(result.has_value());
-
-    const auto& names = result.value();
-    EXPECT_TRUE(names.empty()) << "Expected empty result from empty table";
-}
+// DistinctFromEmptyTable: migrated to unified_cases.yaml (distinct_empty_name)
 
 // Test: DISTINCT with single row
 TYPED_TEST(DistinctTest, DistinctWithSingleRow) {
@@ -309,17 +299,7 @@ TYPED_TEST(DistinctTest, DistinctTwoFieldsAllDuplicates) {
     EXPECT_EQ(std::get<1>((*pairs.begin())), 42);
 }
 
-// Test: DISTINCT two fields from empty table
-TYPED_TEST(DistinctTest, DistinctTwoFieldsFromEmptyTable) {
-    QuerySet<Person, TypeParam> queryset;
-
-    // SELECT DISTINCT name, age from empty table
-    auto result = queryset.template distinct<^^Person::name, ^^Person::age>().select();
-    ASSERT_TRUE(result.has_value());
-
-    const auto& pairs = result.value();
-    EXPECT_TRUE(pairs.empty()) << "Expected empty result from empty table";
-}
+// DistinctTwoFieldsFromEmptyTable: migrated to unified_cases.yaml (distinct_two_fields_empty)
 
 // Test: DISTINCT two fields with large dataset
 TYPED_TEST(DistinctTest, DistinctTwoFieldsLargeDataset) {
@@ -923,25 +903,7 @@ TYPED_TEST(DistinctTest, DistinctWithJoinSingleField) {
     EXPECT_EQ(unique_contents.size(), contents.size()); // All should be unique
 }
 
-// Test DISTINCT with JOIN and WHERE
-TYPED_TEST(DistinctTest, DistinctWithJoinAndWhere) {
-    storm::test::populate_join_test_data<TypeParam>();
-
-    QuerySet<Message, TypeParam> msg_qs;
-
-    // SELECT DISTINCT content WHERE <some condition> with JOIN
-    // Using content field to avoid "ambiguous column name: id" error
-    auto result = msg_qs.template join<&Message::sender>()
-                          .where(field<^^Message::content>().like("%o%")) // Match "Hello", "World", "Goodbye"
-                          .template distinct<^^Message::content>()
-                          .select();
-    ASSERT_TRUE(result.has_value()) << "DISTINCT with JOIN and WHERE failed: " << result.error().message();
-
-    const auto& contents = result.value();
-    EXPECT_GT(contents.size(), 0); // Should have results
-    // Should include messages with 'o': Hello, World, Goodbye
-    EXPECT_GE(contents.size(), 3);
-}
+// DistinctWithJoinAndWhere: migrated to unified_cases.yaml (distinct_join_where_like_o)
 
 // Test chaining order: WHERE -> JOIN -> DISTINCT
 TYPED_TEST(DistinctTest, ChainingOrderWhereJoinDistinct) {
@@ -1593,43 +1555,8 @@ TYPED_TEST(DistinctTest, ErrorHandlingDocumentation) {
     SUCCEED() << "See test comments for error handling documentation";
 }
 
-// Test: Verify error handling in chained operations
-TYPED_TEST(DistinctTest, ErrorHandlingInChainedOperations) {
-    QuerySet<Person, TypeParam> queryset;
-
-    // Insert valid data
-    std::vector<Person> people        = {{0, "Alice", 25}, {0, "Bob", 30}};
-    auto                insert_result = queryset.insert(people).execute();
-    ASSERT_TRUE(insert_result.has_value());
-
-    // Test that chained operations properly propagate results
-    // WHERE -> ORDER BY -> LIMIT -> DISTINCT
-    auto result = queryset.where(field<^^Person::age>() > 20)
-                          .template order_by<^^Person::name>()
-                          .limit(10)
-                          .template distinct<^^Person::name>()
-                          .select();
-
-    // Should succeed with valid data
-    ASSERT_TRUE(result.has_value()) << "Chained operation failed: " << result.error().message();
-    EXPECT_EQ(result.value().size(), 2); // Alice and Bob
-}
-
-// Test: Verify result is empty (not error) for no matching rows
-TYPED_TEST(DistinctTest, NoMatchingRowsReturnsEmptyNotError) {
-    QuerySet<Person, TypeParam> queryset;
-
-    // Insert data
-    std::vector<Person> people = {{0, "Alice", 25}, {0, "Bob", 30}};
-    std::ignore                = queryset.insert(people).execute();
-
-    // Query with WHERE that matches nothing
-    auto result = queryset.where(field<^^Person::age>() > 100).template distinct<^^Person::name>().select();
-
-    // Should succeed but with empty result (not an error)
-    ASSERT_TRUE(result.has_value()) << "Query should succeed even with no matches";
-    EXPECT_TRUE(result.value().empty()) << "Result should be empty, not an error";
-}
+// ErrorHandlingInChainedOperations: migrated to unified_cases.yaml (distinct_where_order_limit_all)
+// NoMatchingRowsReturnsEmptyNotError: migrated to unified_cases.yaml (distinct_where_no_match)
 
 // Test: Verify statement reuse doesn't cause issues
 TYPED_TEST(DistinctTest, StatementReuseStability) {
