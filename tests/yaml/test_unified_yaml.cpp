@@ -42,7 +42,7 @@ template <typename ConnType> class UnifiedYamlTest : public StormTestFixture<Per
 template <size_t I, typename ConnType>
 class storm::test::YamlTestInstance<I, UnifiedYamlTest<ConnType>, ConnType> : public UnifiedYamlTest<ConnType> {
     // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-    void TestBody() override {
+    void TestBody() override { // NOSONAR(S3776) -- constexpr dispatch requires branching
         constexpr auto& tc = UNIFIED_TESTS[I];
 
         // --- Per-test isolation: clean all tables ---
@@ -101,7 +101,7 @@ class storm::test::YamlTestInstance<I, UnifiedYamlTest<ConnType>, ConnType> : pu
             std::vector<Person> seed;
             seed.reserve(static_cast<size_t>(tc.dataset_size));
             for (int i = 1; i <= tc.dataset_size; ++i)
-                seed.emplace_back(Person{.id = 0, .name = "P" + std::to_string(i), .age = 20 + i});
+                seed.emplace_back(Person{.id = 0, .name = std::format("P{}", i), .age = 20 + i});
             ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(seed)));
         }
         // dataset == "custom" or "empty": seeding handled by runners or no data needed

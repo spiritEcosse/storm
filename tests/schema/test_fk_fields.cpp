@@ -415,7 +415,6 @@ TYPED_TEST(FKFieldTest, JoinFullyPopulatesFKObject) {
     EXPECT_EQ(it->assignee.age, 30) << "JOIN should populate assignee FK object's age!";
 
     // Verify reviewer FK object is NOT populated (current JOIN limitation)
-    // TODO: Future enhancement - populate non-JOINed FK fields with their IDs
     EXPECT_EQ(it->reviewer.id, 0) << "Non-JOINed FK fields are not populated (current limitation)";
     EXPECT_EQ(it->reviewer.name, "") << "Without JOIN, reviewer name should be empty";
     EXPECT_EQ(it->reviewer.age, 0) << "Without JOIN, reviewer age should be 0";
@@ -912,7 +911,6 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
             // Test double type
             EXPECT_DOUBLE_EQ(proj.manager.salary, 87500.75) << "Double field should be populated correctly for Bob";
 
-            // Test bool type (false)
             EXPECT_FALSE(proj.manager.is_active) << "Bool field should be false for Bob";
 
             // Test optional<string> without value (NULL in DB)
@@ -1117,11 +1115,8 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithLongType) {
 // JOIN Type Extraction Tests (from test_coverage_additional.cpp)
 // =============================================================================
 
-// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-// NOLINTBEGIN(misc-const-correctness,readability-identifier-length)
-
 template <typename ConnType> class JoinTypeExtractionTest : public StormTestFixture<Person, ConnType> {
-  protected:
+  public:
     auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
         ASSERT_TRUE((storm::test::ensure_table<Person, ConnType>(conn).has_value()));
         ASSERT_TRUE((storm::test::ensure_table<Message, ConnType>(conn).has_value()));
@@ -1267,8 +1262,5 @@ TYPED_TEST(JoinTypeExtractionTest, JoinWithOrderBy) {
         ++it;
     }
 }
-
-// NOLINTEND(misc-const-correctness,readability-identifier-length)
-// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

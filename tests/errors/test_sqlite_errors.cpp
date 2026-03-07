@@ -4,14 +4,15 @@
 #include <fstream>
 #include <thread>
 #include <chrono>
+#include <numbers>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)
-// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-// NOLINTBEGIN(misc-const-correctness,misc-unused-alias-decls,modernize-use-std-numbers)
-// NOLINTBEGIN(readability-convert-member-functions-to-static,readability-uppercase-literal-suffix)
-// NOLINTBEGIN(readability-identifier-length,cppcoreguidelines-init-variables)
-// NOLINTBEGIN(bugprone-implicit-widening-of-multiplication-result)
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR
+// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR
+// NOLINTBEGIN(misc-const-correctness,misc-unused-alias-decls,modernize-use-std-numbers) // NOSONAR
+// NOLINTBEGIN(readability-convert-member-functions-to-static,readability-uppercase-literal-suffix) // NOSONAR
+// NOLINTBEGIN(readability-identifier-length,cppcoreguidelines-init-variables) // NOSONAR
+// NOLINTBEGIN(bugprone-implicit-widening-of-multiplication-result) // NOSONAR
 
 import storm_db_sqlite;
 import storm_orm_statements_insert;
@@ -172,7 +173,7 @@ TEST_F(ConnectionErrorTest, ExecuteSyntaxError) {
 // ============================================================================
 
 class StatementBindErrorTest : public ::testing::Test {
-  protected:
+  public:
     Connection conn_{Connection::open(":memory:").value()};
 
     auto SetUp() -> void override {
@@ -235,7 +236,7 @@ TEST_F(StatementBindErrorTest, BindDoubleOutOfRange) {
     auto stmt = std::move(stmt_result.value());
 
     // Bind double to out-of-range index
-    auto bind_result = stmt.bind_double(999, 3.14159);
+    auto bind_result = stmt.bind_double(999, std::numbers::pi);
 
     ASSERT_FALSE(bind_result.has_value()) << "Binding double to out-of-range index should fail";
     EXPECT_EQ(bind_result.error().code(), SQLITE_RANGE);
@@ -299,7 +300,7 @@ TEST_F(StatementBindErrorTest, BindNegativeIndex) {
 // ============================================================================
 
 class StatementExecuteErrorTest : public ::testing::Test {
-  protected:
+  public:
     Connection conn_{Connection::open(":memory:").value()};
 
     auto SetUp() -> void override {
@@ -421,7 +422,6 @@ TEST_F(StatementExecuteErrorTest, StepReturnsRow) {
 
     auto stmt = std::move(stmt_result.value());
 
-    // step() should return true (row available)
     auto step_result = stmt.step();
 
     ASSERT_TRUE(step_result.has_value()) << "step() should succeed";
@@ -438,7 +438,7 @@ TEST_F(StatementExecuteErrorTest, StepReturnsRow) {
 // ============================================================================
 
 class ForeignKeyErrorTest : public ::testing::Test {
-  protected:
+  public:
     Connection conn_{Connection::open(":memory:").value()};
 
     auto SetUp() -> void override {
@@ -506,7 +506,7 @@ TEST_F(ForeignKeyErrorTest, DeleteViolatesForeignKey) {
 // ============================================================================
 
 class StatementCacheTest : public ::testing::Test {
-  protected:
+  public:
     Connection conn_{Connection::open(":memory:").value()};
 };
 
@@ -564,7 +564,7 @@ TEST_F(StatementCacheTest, PrepareCachedInvalidSQLDoesNotCache) {
 // ============================================================================
 
 class ErrorMessageTest : public ::testing::Test {
-  protected:
+  public:
     Connection conn_{Connection::open(":memory:").value()};
 };
 
@@ -608,7 +608,7 @@ TEST_F(ErrorMessageTest, PrepareErrorHasMessage) {
 // ============================================================================
 
 class EdgeCaseTest : public ::testing::Test {
-  protected:
+  public:
     Connection conn_{Connection::open(":memory:").value()};
 };
 
@@ -720,7 +720,7 @@ TEST_F(EdgeCaseTest, MultipleResetAndExecute) {
 // ============================================================================
 
 class TransactionErrorTest : public ::testing::Test {
-  protected:
+  public:
     Connection conn_{Connection::open(":memory:").value()};
 
     auto SetUp() -> void override {
@@ -763,7 +763,7 @@ TEST_F(TransactionErrorTest, NestedBeginTransactions) {
 // ============================================================================
 
 class ColumnExtractionTest : public ::testing::Test {
-  protected:
+  public:
     Connection conn_{Connection::open(":memory:").value()};
 
     auto SetUp() -> void override {
@@ -841,8 +841,9 @@ TEST_F(ColumnExtractionTest, ExtractNullText) {
 // SQLite errors through the ORM layer (QuerySet, statements, etc.)
 
 import storm;
+import <format>;
 
-#include "test_models.h"
+#include "test_models.h" // NOSONAR
 
 // Local struct — UNIQUE constraint tests only
 struct UniqueTestPerson {
@@ -1065,7 +1066,7 @@ TEST_F(ORMErrorTest, LargeBatchInsertThenRemove) {
     std::vector<Person> batch;
     batch.reserve(100);
     for (int i = 0; i < 100; ++i) {
-        batch.push_back({0, "Person" + std::to_string(i), 20 + (i % 50)});
+        batch.emplace_back(0, std::format("Person{}", i), 20 + (i % 50));
     }
 
     // Batch insert returns void (not IDs) because consecutive ID assumption is unreliable
@@ -1131,7 +1132,7 @@ TEST_F(ORMErrorTest, SelectWithLimitOffset) {
 
     // Insert 10 persons
     for (int i = 1; i <= 10; ++i) {
-        Person const p{.id = 0, .name = "Person" + std::to_string(i), .age = 20 + i};
+        Person const p{.id = 0, .name = std::format("Person{}", i), .age = 20 + i};
         auto         r = qs.insert(p).execute();
         ASSERT_TRUE(r.has_value());
     }
@@ -1177,9 +1178,9 @@ TEST_F(ORMErrorTest, ChunkedInsertRollsBackOnConstraintViolation) {
     EXPECT_EQ(count.value(), 1) << "Transaction rollback should leave only the seeded row";
 }
 
-// NOLINTEND(bugprone-implicit-widening-of-multiplication-result)
-// NOLINTEND(readability-identifier-length,cppcoreguidelines-init-variables)
-// NOLINTEND(readability-convert-member-functions-to-static,readability-uppercase-literal-suffix)
-// NOLINTEND(misc-const-correctness,misc-unused-alias-decls,modernize-use-std-numbers)
-// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)
+// NOLINTEND(bugprone-implicit-widening-of-multiplication-result) // NOSONAR
+// NOLINTEND(readability-identifier-length,cppcoreguidelines-init-variables) // NOSONAR
+// NOLINTEND(readability-convert-member-functions-to-static,readability-uppercase-literal-suffix) // NOSONAR
+// NOLINTEND(misc-const-correctness,misc-unused-alias-decls,modernize-use-std-numbers) // NOSONAR
+// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR

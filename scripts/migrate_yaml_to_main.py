@@ -136,6 +136,191 @@ def compute_agg(data, agg_field, query_type):
     raise ValueError(f"Unknown agg: {query_type}")
 
 
+def _sort_with_nulls(data, field, asc):
+    """Sort data by field, placing None values first (asc) or last (desc)."""
+    none_items = [p for p in data if p.get(field) is None]
+    non_none = [p for p in data if p.get(field) is not None]
+    non_none.sort(key=lambda p: p[field], reverse=not asc)
+    if asc:
+        return none_items + non_none
+    return non_none + none_items
+
+
+def _apply_limit_offset(data, tc):
+    """Apply limit and offset from test case to data list."""
+    offset = tc.get("offset_value", 0)
+    limit = tc.get("limit_value")
+    if offset:
+        data = data[offset:]
+    if limit is not None:
+        data = data[:limit]
+    return data
+
+
+def _process_select(tc, filtered, exp):
+    """Process SELECT/FIRST/ONE query types."""
+    exp["count"] = len(filtered)
+
+    ob = tc.get("order_by")
+    if ob and filtered:
+        field = ob["field"]
+        asc = ob.get("asc", True)
+        sorted_data = _sort_with_nulls(filtered, field, asc)
+        sorted_data = _apply_limit_offset(sorted_data, tc)
+        exp["count"] = len(sorted_data)
+
+        if sorted_data:
+            if "first_name" in exp:
+                exp["first_name"] = sorted_data[0]["name"]
+            if "first_age" in exp:
+                exp["first_age"] = sorted_data[0]["age"]
+    else:
+        result = _apply_limit_offset(filtered, tc)
+        exp["count"] = len(result)
+
+
+def _process_scalar_agg(tc, filtered, exp):
+    """Process scalar aggregate query types (count, sum, avg, etc.)."""
+    qt = tc.get("query_type", "")
+    agg_field = tc.get("agg_field", "age")
+    val, typ = compute_agg(filtered, agg_field, qt)
+    if typ == "int":
+        exp["int_val"] = val
+        exp.pop("dbl_val", None)
+    else:
+        exp["dbl_val"] = val
+        exp.pop("int_val", None)
+
+
+def _get_having_value(tc):
+    """Extract HAVING comparison value from test case."""
+    having_val = tc.get("having_value_int")
+    if having_val is None:
+        having_val = tc.get("having_value_dbl")
+    if having_val is None:
+        having_val = tc.get("having_value_str")
+    return having_val
+
+
+def _compute_group_agg_value(agg_type, members, agg_field):
+    """Compute a single aggregation value for a group."""
+    if agg_type == "count":
+        return len(members)
+    vals = [p[agg_field] for p in members if p.get(agg_field) is not None]
+    if agg_type == "sum":
+        return sum(vals)
+    if agg_type == "avg":
+        return sum(vals) / len(vals) if vals else 0
+    if agg_type == "min":
+        return min(vals) if vals else 0
+    if agg_type == "max":
+        return max(vals) if vals else 0
+    return 0
+
+
+def _process_group_by(tc, filtered, exp):
+    """Process GROUP BY query types."""
+    qt = tc.get("query_type", "")
+    gb_field = tc.get("group_by_field")
+    agg_field = tc.get("agg_field", "age")
+    agg_type = qt.replace("group_", "")
+
+    groups = defaultdict(list)
+    for p in filtered:
+        groups[p.get(gb_field)].append(p)
+
+    having_field = tc.get("having_field")
+    having_op = tc.get("having_op")
+    having_val = _get_having_value(tc)
+
+    if having_field and having_op:
+        groups = {
+            key: members for key, members in groups.items()
+            if key is not None and compare(key, having_op, having_val)
+        }
+
+    non_none_keys = sorted(k for k in groups if k is not None)
+    group_keys = list(non_none_keys)
+    group_agg = [_compute_group_agg_value(agg_type, groups[k], agg_field) for k in group_keys]
+
+    ob = tc.get("order_by")
+    if ob:
+        asc = ob.get("asc", True)
+        combined = sorted(zip(group_keys, group_agg), key=lambda x: x[0], reverse=not asc)
+        group_keys = [c[0] for c in combined]
+        group_agg = [c[1] for c in combined]
+
+    offset = tc.get("offset_value", 0)
+    limit = tc.get("limit_value")
+    if offset:
+        group_keys = group_keys[offset:]
+        group_agg = group_agg[offset:]
+    if limit is not None:
+        group_keys = group_keys[:limit]
+        group_agg = group_agg[:limit]
+
+    count_keys = non_none_keys if not having_field else group_keys
+    total_count = sum(len(groups[k]) for k in count_keys)
+    has_pagination = offset or limit
+    if not has_pagination:
+        exp["count"] = total_count
+    elif agg_type == "count":
+        exp["count"] = sum(group_agg)
+    else:
+        exp["count"] = total_count
+    exp["groups_count"] = len(group_keys)
+
+    if group_keys:
+        if isinstance(group_keys[0], str):
+            exp["group_keys"] = group_keys
+        else:
+            exp["group_keys"] = [int(k) if isinstance(k, (int, float)) and k == int(k) else k for k in group_keys]
+
+        if agg_type in ("avg", "min", "max"):
+            exp["group_agg_dbl"] = [round(v, 2) for v in group_agg]
+            exp.pop("group_agg_int", None)
+        else:
+            exp["group_agg_int"] = [int(v) for v in group_agg]
+            exp.pop("group_agg_dbl", None)
+
+
+def _process_chain(filtered, tc):
+    """Process chain aggregate query types."""
+    for agg in tc.get("aggregations", []):
+        func = agg.get("func", "")
+        field = agg.get("field", "age")
+        if func == "count":
+            agg["res_value"] = len(filtered)
+            continue
+        vals = [p[field] for p in filtered if p.get(field) is not None]
+        if func == "sum":
+            agg["res_value"] = sum(vals)
+        elif func == "avg":
+            agg["res_value"] = round(sum(vals) / len(vals), 1) if vals else 0.0
+        elif func == "min":
+            agg["res_value"] = float(min(vals)) if vals else 0.0
+        elif func == "max":
+            agg["res_value"] = float(max(vals)) if vals else 0.0
+
+
+def _process_distinct(tc, filtered, exp):
+    """Process DISTINCT query types."""
+    d_fields = []
+    f1 = tc.get("distinct_field")
+    if f1:
+        d_fields.append(f1)
+    f2 = tc.get("distinct_field2")
+    if f2:
+        d_fields.append(f2)
+
+    if len(d_fields) == 1:
+        vals = {p.get(d_fields[0]) for p in filtered if p.get(d_fields[0]) is not None}
+        exp["count"] = len(vals)
+    elif len(d_fields) == 2:
+        vals = {(p.get(d_fields[0]), p.get(d_fields[1])) for p in filtered}
+        exp["count"] = len(vals)
+
+
 def process_case(tc):
     """Process a single test case and update expected values."""
     old_ds = tc.get("dataset", "")
@@ -150,7 +335,6 @@ def process_case(tc):
     qt = tc.get("query_type", "")
     where = tc.get("where")
 
-    # Determine data source
     if model == "person":
         data = list(PEOPLE)
     elif model == "message":
@@ -158,209 +342,19 @@ def process_case(tc):
     else:
         return tc
 
-    # Apply WHERE filter
     filtered = apply_where(data, where)
-
     exp = tc.get("expected", {})
 
-    # SELECT queries
     if qt in ("select", "first", "one"):
-        exp["count"] = len(filtered)
-
-        # Order by first_name / first_age
-        ob = tc.get("order_by")
-        if ob and filtered:
-            field = ob["field"]
-            asc = ob.get("asc", True)
-            # Sort, handling None
-            def sort_key(p):
-                v = p.get(field)
-                if v is None:
-                    return (0, "") if asc else (1, "")
-                return (1, v) if asc else (0, v)
-
-            sorted_data = sorted(filtered, key=lambda p: sort_key(p), reverse=not asc if not isinstance(sort_key(filtered[0]), tuple) else False)
-            # Actually, let's do proper sorting
-            none_items = [p for p in filtered if p.get(field) is None]
-            non_none = [p for p in filtered if p.get(field) is not None]
-            non_none.sort(key=lambda p: p[field], reverse=not asc)
-            if asc:
-                sorted_data = none_items + non_none
-            else:
-                sorted_data = non_none + none_items
-
-            # Apply limit/offset
-            offset = tc.get("offset_value", 0)
-            limit = tc.get("limit_value")
-            if offset:
-                sorted_data = sorted_data[offset:]
-            if limit is not None:
-                sorted_data = sorted_data[:limit]
-
-            exp["count"] = len(sorted_data)
-
-            if sorted_data:
-                if "first_name" in exp:
-                    exp["first_name"] = sorted_data[0]["name"]
-                if "first_age" in exp:
-                    exp["first_age"] = sorted_data[0]["age"]
-        else:
-            # Apply limit/offset without order
-            offset = tc.get("offset_value", 0)
-            limit = tc.get("limit_value")
-            result = filtered
-            if offset:
-                result = result[offset:]
-            if limit is not None:
-                result = result[:limit]
-            exp["count"] = len(result)
-
-    # Scalar aggregates
+        _process_select(tc, filtered, exp)
     elif qt in ("count", "count_field", "count_distinct", "sum", "avg", "min", "max"):
-        agg_field = tc.get("agg_field", "age")
-        val, typ = compute_agg(filtered, agg_field, qt)
-        if typ == "int":
-            exp["int_val"] = val
-            exp.pop("dbl_val", None)
-        else:
-            exp["dbl_val"] = val
-            exp.pop("int_val", None)
-
-    # GROUP BY
+        _process_scalar_agg(tc, filtered, exp)
     elif qt.startswith("group_"):
-        gb_field = tc.get("group_by_field")
-        agg_field = tc.get("agg_field", "age")
-        agg_type = qt.replace("group_", "")  # count, sum, avg, min, max
-
-        # Apply WHERE first
-        groups = defaultdict(list)
-        for p in filtered:
-            key = p.get(gb_field)
-            groups[key].append(p)
-
-        # Apply HAVING if present
-        having_field = tc.get("having_field")
-        having_op = tc.get("having_op")
-        having_val = tc.get("having_value_int")
-        if having_val is None:
-            having_val = tc.get("having_value_dbl")
-        if having_val is None:
-            having_val = tc.get("having_value_str")
-
-        if having_field and having_op:
-            filtered_groups = {}
-            for key, members in groups.items():
-                if key is not None and compare(key, having_op, having_val):
-                    filtered_groups[key] = members
-            groups = filtered_groups
-
-        # Sort group keys
-        non_none_keys = sorted(k for k in groups if k is not None)
-        group_keys = non_none_keys
-
-        # Compute aggregation per group
-        group_agg = []
-        for key in group_keys:
-            members = groups[key]
-            if agg_type == "count":
-                group_agg.append(len(members))
-            elif agg_type == "sum":
-                vals = [p[agg_field] for p in members if p.get(agg_field) is not None]
-                group_agg.append(sum(vals))
-            elif agg_type == "avg":
-                vals = [p[agg_field] for p in members if p.get(agg_field) is not None]
-                group_agg.append(sum(vals) / len(vals) if vals else 0)
-            elif agg_type == "min":
-                vals = [p[agg_field] for p in members if p.get(agg_field) is not None]
-                group_agg.append(min(vals) if vals else 0)
-            elif agg_type == "max":
-                vals = [p[agg_field] for p in members if p.get(agg_field) is not None]
-                group_agg.append(max(vals) if vals else 0)
-
-        # Apply order_by on groups
-        ob = tc.get("order_by")
-        if ob:
-            asc = ob.get("asc", True)
-            # Sort by key
-            combined = list(zip(group_keys, group_agg))
-            combined.sort(key=lambda x: x[0], reverse=not asc)
-            group_keys = [c[0] for c in combined]
-            group_agg = [c[1] for c in combined]
-
-        # Apply limit/offset
-        offset = tc.get("offset_value", 0)
-        limit = tc.get("limit_value")
-        if offset:
-            group_keys = group_keys[offset:]
-            group_agg = group_agg[offset:]
-        if limit is not None:
-            group_keys = group_keys[:limit]
-            group_agg = group_agg[:limit]
-
-        total_count = sum(len(groups[k]) for k in (non_none_keys if not having_field else group_keys))
-        exp["count"] = total_count if not (offset or limit) else sum(group_agg) if agg_type == "count" else total_count
-        exp["groups_count"] = len(group_keys)
-
-        if group_keys:
-            # Determine if keys are int or string
-            if isinstance(group_keys[0], str):
-                exp["group_keys"] = group_keys
-            else:
-                exp["group_keys"] = [int(k) if isinstance(k, (int, float)) and k == int(k) else k for k in group_keys]
-
-            # Determine if agg values are int or float
-            if agg_type in ("avg", "min", "max"):
-                exp["group_agg_dbl"] = [round(v, 2) for v in group_agg]
-                exp.pop("group_agg_int", None)
-            else:
-                exp["group_agg_int"] = [int(v) for v in group_agg]
-                exp.pop("group_agg_dbl", None)
-
-    # Chain aggregates
+        _process_group_by(tc, filtered, exp)
     elif qt == "chain":
-        aggs = tc.get("aggregations", [])
-        for agg in aggs:
-            func = agg.get("func", "")
-            field = agg.get("field", "age")
-            if func == "count":
-                agg["res_value"] = len(filtered)
-            elif func == "sum":
-                vals = [p[field] for p in filtered if p.get(field) is not None]
-                agg["res_value"] = sum(vals)
-            elif func == "avg":
-                vals = [p[field] for p in filtered if p.get(field) is not None]
-                agg["res_value"] = round(sum(vals) / len(vals), 1) if vals else 0.0
-            elif func == "min":
-                vals = [p[field] for p in filtered if p.get(field) is not None]
-                agg["res_value"] = float(min(vals)) if vals else 0.0
-            elif func == "max":
-                vals = [p[field] for p in filtered if p.get(field) is not None]
-                agg["res_value"] = float(max(vals)) if vals else 0.0
-
-    # DISTINCT
+        _process_chain(filtered, tc)
     elif qt == "distinct":
-        d_fields = []
-        for i in range(1, 3):
-            f = tc.get(f"distinct_field" if i == 1 else f"distinct_field{i}")
-            if i == 1:
-                f = tc.get("distinct_field")
-            if f:
-                d_fields.append(f)
-
-        if len(d_fields) == 1:
-            vals = set()
-            for p in filtered:
-                v = p.get(d_fields[0])
-                if v is not None:
-                    vals.add(v)
-            exp["count"] = len(vals)
-        elif len(d_fields) == 2:
-            vals = set()
-            for p in filtered:
-                v1 = p.get(d_fields[0])
-                v2 = p.get(d_fields[1])
-                vals.add((v1, v2))
-            exp["count"] = len(vals)
+        _process_distinct(tc, filtered, exp)
 
     tc["expected"] = exp
     return tc

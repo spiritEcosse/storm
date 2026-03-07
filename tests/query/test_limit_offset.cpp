@@ -130,8 +130,6 @@ TYPED_TEST(LimitOffsetTest, LimitOffsetPagination) {
 // ===== LIMIT/OFFSET with WHERE =====
 
 // LimitWithWhere: migrated to unified_cases.yaml (limit_where_age_gt25)
-// LimitOffsetWithWhere: migrated to unified_cases.yaml (limit_offset_where_age_gt25)
-
 TYPED_TEST(LimitOffsetTest, WhereWithOffsetNoLimit) {
     QuerySet<Person, TypeParam> qs;
 

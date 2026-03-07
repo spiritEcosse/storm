@@ -133,23 +133,23 @@ template <typename ConnType> inline void populate_join_test_data() {
 
 template <typename Model> Model make_record(int i) = delete;
 template <> inline Person make_record<Person>(int i) {
-    return {.name = "P" + std::to_string(i + 1),
+    return {.name = std::format("P{}", i + 1),
             .age = 20 + (i % 50),
             .salary = 1000.0 * (i + 1),
             .is_active = (i % 2 == 0),
             .years_experience = i % 30};
 }
-template <> inline SimpleRecord make_record<SimpleRecord>(int i) { return {0, "R" + std::to_string(i), i}; }
-template <> inline Message make_record<Message>(int i) { return {.content = "M" + std::to_string(i), .value = i}; }
+template <> inline SimpleRecord make_record<SimpleRecord>(int i) { return {0, std::format("R{}", i), i}; }
+template <> inline Message make_record<Message>(int i) { return {.content = std::format("M{}", i), .value = i}; }
 
 template <typename Model> Model make_updated_record(const Model &) = delete;
 template <> inline Person make_updated_record<Person>(const Person &p) {
     Person u = p;
-    u.name = "Updated" + std::to_string(p.id);
+    u.name = std::format("Updated{}", p.id);
     return u;
 }
 template <> inline SimpleRecord make_updated_record<SimpleRecord>(const SimpleRecord &r) {
-    return {r.id, "Updated" + std::to_string(r.id), r.value * 2};
+    return {r.id, std::format("Updated{}", r.id), r.value * 2};
 }
 
 template <typename Model> bool is_original_record(const Model &) = delete;

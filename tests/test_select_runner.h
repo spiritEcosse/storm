@@ -21,7 +21,7 @@ namespace storm::test {
 // ---------------------------------------------------------------------------
 template <typename Model, typename ConnType> class SelectRunner : public SelectQueryRunnerBase<Model, ConnType> {
   public:
-    template <const auto &Tc> void run() {
+    template <const auto &Tc> void run() { // NOSONAR(S3776) -- inherent constexpr dispatch
         this->template apply_query_filters<Tc>();
         if constexpr (Tc.query_type == "first") {
             auto r = this->qs_.first().execute();
@@ -69,7 +69,7 @@ template <typename Model, typename ConnType> class SelectRunner : public SelectQ
 // ---------------------------------------------------------------------------
 template <typename Model, typename ConnType> class AggregateRunner : public SelectQueryRunnerBase<Model, ConnType> {
   public:
-    template <const auto &Tc> void run() {
+    template <const auto &Tc> void run() { // NOSONAR(S3776) -- inherent constexpr dispatch
         this->template apply_query_filters<Tc>();
 
         if constexpr (Tc.query_type == "count") {
@@ -129,7 +129,7 @@ template <typename Model, typename ConnType> class ChainAggRunner : public Selec
   public:
     template <const auto &Tc>
     // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-    void run() {
+    void run() { // NOSONAR(S3776) -- inherent constexpr dispatch
         this->template apply_query_filters<Tc>();
 
         if constexpr (Tc.chain_len == 2) {
@@ -311,7 +311,7 @@ template <typename Model, typename ConnType> class DistinctRunner : public Selec
 // ---------------------------------------------------------------------------
 template <typename Model, typename ConnType> class GroupByRunner : public SelectQueryRunnerBase<Model, ConnType> {
   public:
-    template <const auto &Tc> void run() {
+    template <const auto &Tc> void run() { // NOSONAR(S3776) -- inherent constexpr dispatch
         this->template apply_query_filters<Tc>();
 
         constexpr auto gb_fi = dispatch_field<Model>(Tc.group_by_field.view());
@@ -335,11 +335,11 @@ template <typename Model, typename ConnType> class GroupByRunner : public Select
                     auto r = this->qs_.template group_by<gb_fi>().count().select();
                     ASSERT_TRUE(r.has_value()) << r.error().message();
                     EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
-                    if constexpr (Tc.expected.groups_count > 0) {
+                    if constexpr (Tc.expected.groups_count > 0) { // NOSONAR(S134) -- constexpr nesting
                         std::vector<std::pair<int, int64_t>> groups;
                         for (const auto &[key, agg] : r.value())
                             groups.emplace_back(static_cast<int>(key), agg);
-                        std::sort(groups.begin(), groups.end());
+                        std::ranges::sort(groups);
                         ASSERT_EQ(groups.size(), Tc.expected.groups_count);
                         for (size_t g = 0; g < Tc.expected.groups_count; ++g) {
                             EXPECT_EQ(groups[g].first, Tc.expected.group_keys[g])
@@ -360,7 +360,7 @@ template <typename Model, typename ConnType> class GroupByRunner : public Select
                 std::vector<std::pair<int, int64_t>> groups;
                 for (const auto &[key, agg] : r.value())
                     groups.emplace_back(static_cast<int>(key), agg);
-                std::sort(groups.begin(), groups.end());
+                std::ranges::sort(groups);
                 ASSERT_EQ(groups.size(), Tc.expected.groups_count);
                 for (size_t g = 0; g < Tc.expected.groups_count; ++g) {
                     EXPECT_EQ(groups[g].first, Tc.expected.group_keys[g]) << "Group key mismatch at index " << g;
@@ -377,7 +377,7 @@ template <typename Model, typename ConnType> class GroupByRunner : public Select
                 std::vector<std::pair<int, double>> groups;
                 for (const auto &[key, agg] : r.value())
                     groups.emplace_back(static_cast<int>(key), agg);
-                std::sort(groups.begin(), groups.end());
+                std::ranges::sort(groups);
                 ASSERT_EQ(groups.size(), Tc.expected.groups_count);
                 for (size_t g = 0; g < Tc.expected.groups_count; ++g) {
                     EXPECT_EQ(groups[g].first, Tc.expected.group_keys[g]) << "Group key mismatch at index " << g;
@@ -395,7 +395,7 @@ template <typename Model, typename ConnType> class GroupByRunner : public Select
                 std::vector<std::pair<int, double>> groups;
                 for (const auto &[key, agg] : r.value())
                     groups.emplace_back(static_cast<int>(key), agg);
-                std::sort(groups.begin(), groups.end());
+                std::ranges::sort(groups);
                 ASSERT_EQ(groups.size(), Tc.expected.groups_count);
                 for (size_t g = 0; g < Tc.expected.groups_count; ++g) {
                     EXPECT_EQ(groups[g].first, Tc.expected.group_keys[g]) << "Group key mismatch at index " << g;
@@ -413,7 +413,7 @@ template <typename Model, typename ConnType> class GroupByRunner : public Select
                 std::vector<std::pair<int, double>> groups;
                 for (const auto &[key, agg] : r.value())
                     groups.emplace_back(static_cast<int>(key), agg);
-                std::sort(groups.begin(), groups.end());
+                std::ranges::sort(groups);
                 ASSERT_EQ(groups.size(), Tc.expected.groups_count);
                 for (size_t g = 0; g < Tc.expected.groups_count; ++g) {
                     EXPECT_EQ(groups[g].first, Tc.expected.group_keys[g]) << "Group key mismatch at index " << g;

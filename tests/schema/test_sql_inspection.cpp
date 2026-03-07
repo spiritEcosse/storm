@@ -28,8 +28,8 @@ TYPED_TEST_SUITE(SqlInspectionTest, DatabaseTypes);
 // Helper: check that string contains a substring
 // ============================================================================
 
-static auto contains(const std::string& str, std::string_view substr) -> bool {
-    return str.find(substr) != std::string::npos;
+static auto contains(std::string_view str, std::string_view substr) -> bool {
+    return str.contains(substr);
 }
 
 // ============================================================================

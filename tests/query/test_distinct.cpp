@@ -232,7 +232,6 @@ TYPED_TEST(DistinctTest, DistinctTwoFieldsNameAndAge) {
 
     const auto& pairs = result.value();
 
-    // Expected unique pairs: (Alice, 30), (Bob, 25), (Alice, 35), (Charlie, 30)
     EXPECT_EQ(pairs.size(), 4) << "Expected 4 unique (name, age) pairs";
 
     // Convert to set for verification
@@ -259,8 +258,6 @@ TYPED_TEST(DistinctTest, DistinctThreeFieldsAllFields) {
     auto insert_result = queryset.insert(std::span<const Person>(people_to_insert)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    // SELECT DISTINCT name, age (should return 4 unique combinations)
-    // (Alice,30), (Bob,25), (Alice,25), (Bob,30)
     auto result = queryset.template distinct<^^Person::name, ^^Person::age>().select();
     ASSERT_TRUE(result.has_value());
 
@@ -677,7 +674,7 @@ TYPED_TEST(DistinctTest, RawSQLWorkaround) {
             const auto* text_bytes = stmt.extract_text_ptr(0);
             user_names.emplace_back(
                     reinterpret_cast<const char*>(text_bytes)
-            ); // NOSONAR(cpp:S3630) - SQLite API returns unsigned char*
+            ); // NOSONAR - SQLite API returns unsigned char*, reinterpret_cast required
         } else if (step == decltype(stmt)::NO_MORE_ROWS) {
             break;
         } else {
@@ -823,7 +820,6 @@ TYPED_TEST(DistinctTest, DistinctWithWhereMultipleFields) {
 
     const auto& pairs = result.value();
 
-    // Should return 3 unique (name, age) pairs: (Alice, 25), (Bob, 30), (Alice, 35)
     EXPECT_EQ(pairs.size(), 3);
 
     std::set<std::tuple<std::string, int>> const unique_pairs(pairs.begin(), pairs.end());
@@ -1335,9 +1331,9 @@ TYPED_TEST(DistinctTest, DistinctOptionalStringFieldWithNulls) {
     EXPECT_EQ(nicknames.size(), 3) << "Expected 3 distinct nicknames (Ali, Evie, NULL)";
 
     // Count NULLs and non-NULLs, verify values
-    int                   null_count     = 0; // NOLINT(misc-const-correctness) - modified in loop
-    int                   non_null_count = 0; // NOLINT(misc-const-correctness) - modified in loop
-    std::set<std::string> seen_values;
+    int                                null_count     = 0; // NOLINT(misc-const-correctness) - modified in loop
+    int                                non_null_count = 0; // NOLINT(misc-const-correctness) - modified in loop
+    std::set<std::string, std::less<>> seen_values;
     for (const auto& nickname : nicknames) {
         if (nickname.has_value()) {
             non_null_count++;
@@ -1428,7 +1424,6 @@ TYPED_TEST(DistinctTest, DistinctMultiFieldWithOptional) {
 
     const auto& pairs = result.value();
 
-    // Expected: (Alice, 25), (Alice, NULL), (Bob, 25), (Bob, NULL)
     EXPECT_EQ(pairs.size(), 4);
 }
 

@@ -269,19 +269,19 @@ TYPED_TEST(WhereTest, WhereComposableFilters) {
 
     // Combine filters
     QuerySet<Person, TypeParam> qs3;
-    auto                        young_or_old = qs3.where(young_filter or old_filter).select().execute();
+    auto                        young_or_old = qs3.where(young_filter || old_filter).select().execute();
     ASSERT_TRUE(young_or_old.has_value());
     EXPECT_EQ(young_or_old.value().size(), 20) << "Expected 20 people (young or old)";
 
     // Complex composition
     QuerySet<Person, TypeParam> qs4;
-    auto                        young_a_names = qs4.where(young_filter and name_starts_with_a).select().execute();
+    auto                        young_a_names = qs4.where(young_filter && name_starts_with_a).select().execute();
     ASSERT_TRUE(young_a_names.has_value());
     EXPECT_EQ(young_a_names.value().size(), 1) << "Expected 1 person (Alice, age 25, starts with A)";
 
     // Reuse filters in different combinations
     QuerySet<Person, TypeParam> qs5;
-    auto                        old_a_names = qs5.where(old_filter and name_starts_with_a).select().execute();
+    auto                        old_a_names = qs5.where(old_filter && name_starts_with_a).select().execute();
     ASSERT_TRUE(old_a_names.has_value());
     EXPECT_EQ(old_a_names.value().size(), 0) << "Expected 0 people (no old people with A names)";
 }
@@ -400,15 +400,8 @@ TYPED_TEST(WhereTest, ExprDirectConstructionFromVariant) {
     EXPECT_EQ(result.value().size(), 20) << "Should find 20 people with age > 25";
 }
 
-// =============================================================================
-// Complex WHERE Conditions — OR operator coverage (from test_coverage_gaps.cpp)
-// =============================================================================
-
-// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-// NOLINTBEGIN(misc-const-correctness)
-
 template <typename ConnType> class ComplexWhereTest : public StormTestFixture<Person, ConnType> {
-  protected:
+  public:
     auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
         StormTestFixture<Person, ConnType>::on_setup(conn);
         if (this->HasFatalFailure())
@@ -436,7 +429,7 @@ TYPED_TEST(ComplexWhereTest, OrWithAnd) {
     auto young    = field<^^Person::age>() < 26;
     auto old      = field<^^Person::age>() > 35;
     auto mkt      = field<^^Person::department>() == "Marketing";
-    auto combined = young or (old and mkt);
+    auto combined = young || (old && mkt);
 
     auto result = this->qs->where(combined).select().execute();
     ASSERT_TRUE(result.has_value()) << "Complex OR/AND should work";
@@ -445,15 +438,12 @@ TYPED_TEST(ComplexWhereTest, OrWithAnd) {
 
 TYPED_TEST(ComplexWhereTest, NestedAndOr) {
     // Nested: (dept = "Engineering" AND age < 30) OR (dept = "Sales" AND age > 29)
-    auto eng_young = field<^^Person::department>() == "Engineering" and field<^^Person::age>() < 30;
-    auto sales_old = field<^^Person::department>() == "Sales" and field<^^Person::age>() > 29;
+    auto eng_young = field<^^Person::department>() == "Engineering" && field<^^Person::age>() < 30;
+    auto sales_old = field<^^Person::department>() == "Sales" && field<^^Person::age>() > 29;
 
-    auto result = this->qs->where(eng_young or sales_old).select().execute();
+    auto result = this->qs->where(eng_young || sales_old).select().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_GE(result.value().size(), 1);
 }
-
-// NOLINTEND(misc-const-correctness)
-// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

@@ -719,7 +719,7 @@ TYPED_TEST_SUITE(OptionalTypesTest, DatabaseTypes);
 
 TYPED_TEST(OptionalTypesTest, OptionalDoubleWithValue) {
     QuerySet<ExtendedTypes, TypeParam> qs;
-    ExtendedTypes const                obj{.id = 0, .opt_double = 3.14159, .label = "pi"};
+    ExtendedTypes const                obj{.id = 0, .opt_double = std::numbers::pi, .label = "pi"};
 
     auto result = qs.insert(obj).execute();
     ASSERT_TRUE(result.has_value());
@@ -832,11 +832,8 @@ TYPED_TEST(OptionalTypesTest, UpdateOptionalInt64FromNull) {
 // Unsigned Integer Type Coverage (from test_coverage_gaps.cpp)
 // =============================================================================
 
-// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-// NOLINTBEGIN(misc-const-correctness)
-
 template <typename ConnType> class UnsignedTypesTest : public StormTestFixture<ExtendedTypes, ConnType> {
-  protected:
+  public:
     auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
         StormTestFixture<ExtendedTypes, ConnType>::on_setup(conn);
         if (this->HasFatalFailure())
@@ -915,7 +912,7 @@ TYPED_TEST(UnsignedTypesTest, UpdateUnsignedTypes) {
 // =============================================================================
 
 template <typename ConnType> class FloatTypeTest : public StormTestFixture<ExtendedTypes, ConnType> {
-  protected:
+  public:
     auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
         StormTestFixture<ExtendedTypes, ConnType>::on_setup(conn);
         if (this->HasFatalFailure())
@@ -934,7 +931,7 @@ template <typename ConnType> class FloatTypeTest : public StormTestFixture<Exten
 TYPED_TEST_SUITE(FloatTypeTest, DatabaseTypes);
 
 TYPED_TEST(FloatTypeTest, InsertFloatValue) {
-    ExtendedTypes const obj{.id = 0, .approx = 3.14159f, .label = "pi"};
+    ExtendedTypes const obj{.id = 0, .approx = std::numbers::pi_v<float>, .label = "pi"};
 
     auto result = this->qs->insert(obj).execute();
     ASSERT_TRUE(result.has_value());
@@ -969,9 +966,5 @@ TYPED_TEST(FloatTypeTest, BatchFloatValues) {
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 3);
 }
-
-// NOLINTEND(misc-const-correctness)
-// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-// NOLINTEND(readability-identifier-length,readability-uppercase-literal-suffix,modernize-use-std-numbers)
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

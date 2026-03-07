@@ -21,7 +21,7 @@ using namespace storm;
 
 // Test fixture for aggregate functions
 template <typename ConnType> class AggregateTest : public StormTestFixture<Person, ConnType> {
-  protected:
+  public:
     auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
         ASSERT_TRUE((storm::test::ensure_table<Person, ConnType>(conn).has_value())) << "Failed to create Person table";
         ASSERT_TRUE((storm::test::ensure_table<Message, ConnType>(conn).has_value()))
@@ -225,7 +225,6 @@ TYPED_TEST(AggregateTest, LargeDataset_Sum) {
     auto batch_result = this->qs->insert(std::span<const Person>(people)).execute();
     ASSERT_TRUE(batch_result.has_value()) << "Batch insert failed: " << batch_result.error().message();
 
-    // SUM(age) = 1+2+3+...+1000 = 1000*1001/2 = 500500
     auto result = this->qs->template sum<^^Person::age>().get();
     ASSERT_TRUE(result.has_value()) << "SUM large dataset failed: " << result.error().message();
     EXPECT_EQ(result.value(), 500500);
@@ -650,8 +649,6 @@ TYPED_TEST(AggregateTest, GroupByFullChain_WhereJoinGroupByAggregate) {
                               .template sum<^^Message::value>()
                               .select();
     ASSERT_TRUE(sum_result.has_value()) << "Full chain SUM failed: " << sum_result.error().message();
-    // Messages with value < 50: A1(10), A2(20), A3(30), C1(5), C2(15), C3(25), C4(35)
-    // That's 7 messages, each with unique content
     EXPECT_EQ(sum_result.value().size(), 7) << "Expected 7 groups (7 messages with value < 50)";
 
     // Reset QuerySet state
@@ -722,7 +719,7 @@ TYPED_TEST(AggregateTest, CountDistinctRepeatedQueries) {
 // =============================================================================
 
 template <typename ConnType> class OptionalAggregateTest : public StormTestFixture<Person, ConnType> {
-  protected:
+  public:
     auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
         StormTestFixture<Person, ConnType>::on_setup(conn);
         if (this->HasFatalFailure())
@@ -1610,11 +1607,8 @@ TYPED_TEST(AggregateTest, HavingLogicalOnAggregateStatement) {
 // GROUP BY + ORDER BY Tests (from test_coverage_gaps.cpp)
 // =============================================================================
 
-// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-// NOLINTBEGIN(misc-const-correctness,readability-identifier-length)
-
 template <typename ConnType> class GroupByOrderByTest : public StormTestFixture<Person, ConnType> {
-  protected:
+  public:
     auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
         ASSERT_TRUE((storm::test::ensure_table<Person, ConnType>(conn).has_value()));
 
@@ -1698,10 +1692,5 @@ TYPED_TEST(GroupByOrderByTest, GroupByWithDifferentAggregatesSequentially) {
     EXPECT_EQ(count_result.value().size(), sum_result.value().size());
     EXPECT_EQ(count_result.value().size(), avg_result.value().size());
 }
-
-// NOLINTEND(misc-const-correctness,readability-identifier-length)
-// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-
-// Note: main() is provided by main.cpp (shared across all test files)
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

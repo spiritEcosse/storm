@@ -69,8 +69,6 @@ TYPED_TEST(QuerySetRemoveTest, DatabaseSetup) {
     EXPECT_TRUE(this->personExists(3)) << "Charlie should exist";
 }
 
-// RemoveExistingPerson, RemoveNonExistentPerson: migrated to unified_cases.yaml (remove_* tests)
-
 TYPED_TEST(QuerySetRemoveTest, RemoveMultiplePersonsSequentially) {
     auto queryset = storm::QuerySet<Person, TypeParam>{};
 
@@ -81,12 +79,10 @@ TYPED_TEST(QuerySetRemoveTest, RemoveMultiplePersonsSequentially) {
     // Verify initial state
     EXPECT_EQ(this->countPersons(), 3) << "Should have 3 persons initially";
 
-    // Remove Alice using QuerySet.remove()
     auto result1 = queryset.remove(alice).execute();
     ASSERT_TRUE(result1.has_value()) << "First remove should succeed";
     EXPECT_EQ(this->countPersons(), 2) << "Should have 2 persons after first removal";
 
-    // Remove Bob using QuerySet.remove()
     auto result2 = queryset.remove(bob).execute();
     ASSERT_TRUE(result2.has_value()) << "Second remove should succeed";
     EXPECT_EQ(this->countPersons(), 1) << "Should have 1 person after second removal";
@@ -96,11 +92,6 @@ TYPED_TEST(QuerySetRemoveTest, RemoveMultiplePersonsSequentially) {
     EXPECT_FALSE(this->personExists(2)) << "Bob should be removed";
     EXPECT_TRUE(this->personExists(3)) << "Charlie should still exist";
 }
-
-// RemoveWithZeroId: migrated to unified_cases.yaml
-
-// RemoveBatchSmall, RemoveBatchLarge, RemoveBatchEmpty, RemoveBatchPartialExist:
-// migrated to unified_cases.yaml (remove_batch_*, remove_all_* tests)
 
 TYPED_TEST(QuerySetRemoveTest, RemoveBatchPerformance) {
     auto queryset = storm::QuerySet<Person, TypeParam>{};
@@ -118,7 +109,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchPerformance) {
     // Measure individual removes
     auto start_individual = std::chrono::steady_clock::now();
     for (int i = 1; i <= 50; i++) {
-        Person const person{.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 60)};
+        Person const person{.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 60)};
         auto         result = queryset.remove(person).execute();
         ASSERT_TRUE(result.has_value()) << "Individual remove should succeed";
     }
@@ -129,7 +120,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchPerformance) {
     // Prepare batch for batch remove
     std::vector<Person> batch;
     for (int i = 51; i <= 100; i++) {
-        batch.emplace_back(i, "Person" + std::to_string(i), 20 + (i % 60));
+        batch.emplace_back(i, std::format("Person{}", i), 20 + (i % 60));
     }
 
     // Measure batch remove
@@ -149,9 +140,6 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchPerformance) {
     // Verify correct deletions
     EXPECT_EQ(this->countPersons(), num_records - 100) << "Should have correct number of persons after removes";
 }
-
-// InsertSinglePerson, InsertSmallBatch, InsertMediumBatch, InsertLargeBatch, InsertEmptyBatch:
-// migrated to unified_cases.yaml (insert_one_person, insert_batch_*, insert_empty_batch)
 
 // Test chunked remove (>799 rows to trigger execute_chunked path)
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -175,7 +163,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunked) {
     // Create batch of >799 persons to remove (triggers chunked path)
     std::vector<Person> chunked_batch;
     for (int i = 1; i <= 850; i++) {
-        chunked_batch.emplace_back(i, "Person" + std::to_string(i), 20 + (i % 60));
+        chunked_batch.emplace_back(i, std::format("Person{}", i), 20 + (i % 60));
     }
 
     // Remove chunked batch - should use execute_chunked with transaction
@@ -221,7 +209,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunkedWithRemainder) {
     // Create batch of 1650 persons (2 full chunks + 52 remainder)
     std::vector<Person> chunked_batch;
     for (int i = 1; i <= 1650; i++) {
-        chunked_batch.emplace_back(i, "Person" + std::to_string(i), 20 + (i % 60));
+        chunked_batch.emplace_back(i, std::format("Person{}", i), 20 + (i % 60));
     }
 
     // Remove chunked batch - should use execute_chunked with remainder
@@ -281,8 +269,6 @@ TYPED_TEST(QuerySetUpdateTest, DatabaseSetup) {
     EXPECT_EQ(charlie->age, 35);
 }
 
-// UpdateExistingPerson, UpdateNonExistingPerson: migrated to unified_cases.yaml (update_batch_* tests)
-
 TYPED_TEST(QuerySetUpdateTest, UpdateMultipleTimes) {
     auto queryset = storm::QuerySet<Person, TypeParam>{};
 
@@ -315,23 +301,19 @@ TYPED_TEST(QuerySetUpdateTest, UpdateMultipleTimes) {
     EXPECT_EQ(check3->age, 33);
 }
 
-// UpdateBatchSmall, UpdateBatchMedium, UpdateBatchLarge, UpdateBatchSingleElement,
-// UpdateBatchEmpty, UpdateBatchPartialExist:
-// migrated to unified_cases.yaml (update_batch_* tests)
-
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(QuerySetUpdateTest, UpdateCachedStatementReuse) {
     auto queryset = storm::QuerySet<Person, TypeParam>{};
 
     // Perform multiple updates to verify statement caching works correctly
     for (int i = 0; i < 10; ++i) {
-        Person const updated_alice{.id = 1, .name = "Alice V" + std::to_string(i), .age = 30 + i};
+        Person const updated_alice{.id = 1, .name = std::format("Alice V{}", i), .age = 30 + i};
         auto         result = queryset.update(updated_alice).execute();
         ASSERT_TRUE(result.has_value()) << "Update iteration " << i << " should succeed";
 
         auto alice = this->getPerson(1);
         ASSERT_TRUE(alice.has_value());
-        EXPECT_EQ(alice->name, "Alice V" + std::to_string(i));
+        EXPECT_EQ(alice->name, std::format("Alice V{}", i));
         EXPECT_EQ(alice->age, 30 + i);
     }
 

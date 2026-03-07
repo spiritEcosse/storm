@@ -27,15 +27,16 @@ namespace storm::test {
     // assertion overhead (~13 constexpr steps per j[p] vs ~2 for ptr[p]).
     // ============================================================================
 
-    constexpr void skip_ws(std::string_view j, size_t& p) {
-        const char*  ptr = j.data();
-        const size_t sz  = j.size();
+    constexpr void skip_ws(const char* ptr, size_t sz, size_t& p) {
         while (p < sz) {
-            char c = ptr[p];
-            if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
+            if (char c = ptr[p]; c != ' ' && c != '\n' && c != '\r' && c != '\t')
                 break;
             ++p;
         }
+    }
+
+    constexpr void skip_ws(std::string_view j, size_t& p) {
+        skip_ws(j.data(), j.size(), p);
     }
 
     constexpr void skip_char(std::string_view j, size_t& p, char c) {
@@ -133,14 +134,25 @@ namespace storm::test {
         }
     }
 
-    constexpr void skip_value(std::string_view j, size_t& p) {
+    constexpr void skip_array(std::string_view j, size_t& p) {
+        const char*  ptr   = j.data();
+        const size_t sz    = j.size();
+        int          depth = 0;
+        while (p < sz) {
+            if (char c = ptr[p++]; c == '[')
+                ++depth;
+            else if (c == ']' && --depth == 0)
+                return;
+        }
+    }
+
+    constexpr void skip_value(std::string_view j, size_t& p) { // NOSONAR(S3776) -- consteval JSON parser
         skip_ws(j, p);
         const char*  ptr = j.data();
         const size_t sz  = j.size();
         if (p >= sz)
             return;
-        char first = ptr[p];
-        if (first == '"') {
+        if (char first = ptr[p]; first == '"') {
             ++p;
             while (p < sz && ptr[p] != '"') {
                 if (ptr[p] == '\\')
@@ -149,58 +161,35 @@ namespace storm::test {
             }
             if (p < sz)
                 ++p;
-            return;
-        }
-        if (first == '[') {
-            int depth = 0;
-            while (p < sz) {
-                char c = ptr[p++];
-                if (c == '[')
-                    ++depth;
-                else if (c == ']') {
-                    --depth;
-                    if (depth == 0)
-                        return;
-                }
-            }
-            return;
-        }
-        if (first == '{') {
+        } else if (first == '[') {
+            skip_array(j, p);
+        } else if (first == '{') {
             skip_object(j, p);
-            return;
-        }
-        while (p < sz) {
-            char c = ptr[p];
-            if (c == ',' || c == '}' || c == ']' || c == ' ' || c == '\n' || c == '\r' || c == '\t')
-                break;
-            ++p;
+        } else {
+            while (p < sz) {
+                if (char c = ptr[p];
+                    c == ',' || c == '}' || c == ']' || c == ' ' || c == '\n' || c == '\r' || c == '\t')
+                    break;
+                ++p;
+            }
         }
     }
 
     constexpr size_t count_objects(std::string_view j) {
-        size_t n = 0, p = 0;
+        size_t n = 0;
+        size_t p = 0;
         skip_char(j, p, '[');
         const char*  ptr = j.data();
         const size_t sz  = j.size();
         while (p < sz) {
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
+            skip_ws(ptr, sz, p);
             if (p >= sz || ptr[p] == ']')
                 break;
             if (ptr[p] == '{') {
                 ++n;
                 skip_object(j, p);
             }
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
+            skip_ws(ptr, sz, p);
             if (p < sz && ptr[p] == ',')
                 ++p;
         }
@@ -224,13 +213,8 @@ namespace storm::test {
         size_t len   = 0;
     };
 
-    constexpr JsonKeyRef parse_key_ref(const char* ptr, size_t sz, size_t& p) {
-        while (p < sz) {
-            char c = ptr[p];
-            if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                break;
-            ++p;
-        }
+    constexpr JsonKeyRef parse_key_ref(const char* ptr, size_t sz, size_t& p) { // NOSONAR — ptr+sz needed for consteval
+        skip_ws(ptr, sz, p);
         JsonKeyRef ref;
         if (p < sz && ptr[p] == '"') {
             ++p;
@@ -271,23 +255,13 @@ namespace storm::test {
         size_t n  = 0;
         int*   od = out.data();
         while (p < sz && n < MaxLen) {
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
+            skip_ws(ptr, sz, p);
             if (ptr[p] == ']') {
                 ++p;
                 break;
             }
             od[n++] = parse_int(j, p);
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
+            skip_ws(ptr, sz, p);
             if (p < sz && ptr[p] == ',')
                 ++p;
         }
@@ -305,23 +279,13 @@ namespace storm::test {
         size_t  n  = 0;
         double* od = out.data();
         while (p < sz && n < MaxLen) {
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
+            skip_ws(ptr, sz, p);
             if (ptr[p] == ']') {
                 ++p;
                 break;
             }
             od[n++] = parse_double(j, p);
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
+            skip_ws(ptr, sz, p);
             if (p < sz && ptr[p] == ',')
                 ++p;
         }
@@ -337,25 +301,41 @@ namespace storm::test {
         const size_t     sz  = j.size();
         skip_char(j, p, '[');
         for (size_t i = 0; i < N; ++i) {
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
+            skip_ws(ptr, sz, p);
             if (p >= sz || ptr[p] == ']')
                 break;
             parse_fn(j, p, arr.data()[i]);
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
+            skip_ws(ptr, sz, p);
             if (p < sz && ptr[p] == ',')
                 ++p;
         }
         return arr;
+    }
+
+    // Helper: check for end-of-object '}'.  Returns true (and advances p) if found.
+    constexpr bool at_object_end(const char* ptr, size_t sz, size_t& p) {
+        skip_ws(ptr, sz, p);
+        if (p < sz && ptr[p] == '}') {
+            ++p;
+            return true;
+        }
+        return false;
+    }
+
+    // Helper: parse key and skip colon.  Returns the key reference.
+    constexpr JsonKeyRef parse_key_and_colon(const char* ptr, size_t sz, size_t& p) {
+        auto kr = parse_key_ref(ptr, sz, p);
+        skip_ws(ptr, sz, p);
+        if (p < sz && ptr[p] == ':')
+            ++p;
+        return kr;
+    }
+
+    // Helper: skip trailing comma after a value inside an object/array.
+    constexpr void skip_comma(const char* ptr, size_t sz, size_t& p) {
+        skip_ws(ptr, sz, p);
+        if (p < sz && ptr[p] == ',')
+            ++p;
     }
 
     // ============================================================================
@@ -429,12 +409,14 @@ namespace storm::test {
 
     // Auto-detect JSON value type for polymorphic "value" fields.
     // Sets the appropriate typed field in the where spec.
+    enum class TypedValueKind { Int, Dbl, Bool, Str };
+
     struct TypedValue {
         int                 i = 0;
         double              d = 0.0;
         bool                b = false;
         ConstexprString<64> s;
-        enum Kind { Int, Dbl, Bool, Str } kind = Int;
+        TypedValueKind      kind = TypedValueKind::Int;
     };
 
     constexpr TypedValue parse_typed_value(std::string_view j, size_t& p) {
@@ -443,115 +425,111 @@ namespace storm::test {
         TypedValue  tv;
         if (ptr[p] == '"') {
             tv.s    = parse_str<64>(j, p);
-            tv.kind = TypedValue::Str;
+            tv.kind = TypedValueKind::Str;
         } else if (ptr[p] == 't' || ptr[p] == 'f') {
             tv.b    = parse_bool(j, p);
-            tv.kind = TypedValue::Bool;
+            tv.kind = TypedValueKind::Bool;
         } else if (is_number_with_dot(j, p)) {
             tv.d    = parse_double(j, p);
-            tv.kind = TypedValue::Dbl;
+            tv.kind = TypedValueKind::Dbl;
         } else {
             tv.i    = parse_int(j, p);
-            tv.kind = TypedValue::Int;
+            tv.kind = TypedValueKind::Int;
         }
         return tv;
     }
 
+    // Assign typed value into primary where fields.
+    constexpr void assign_where_value(WhereSpec& w, const TypedValue& tv) {
+        if (tv.kind == TypedValueKind::Bool)
+            w.value_bool = tv.b;
+        else if (tv.kind == TypedValueKind::Str)
+            w.value_str = tv.s;
+        else if (tv.kind == TypedValueKind::Dbl)
+            w.value_dbl = tv.d;
+        else
+            w.value_int = tv.i;
+    }
+
+    // Assign typed value into secondary where fields (value2).
+    constexpr void assign_where_value2(WhereSpec& w, const TypedValue& tv) {
+        if (tv.kind == TypedValueKind::Bool)
+            w.value_bool2 = tv.b;
+        else if (tv.kind == TypedValueKind::Dbl)
+            w.value_dbl2 = tv.d;
+        else
+            w.value_int_2 = tv.i;
+    }
+
+    // Parse len-5 keys inside "where" object.
+    constexpr void
+    parse_where_key5(std::string_view j, size_t& p, const char* ptr, JsonKeyRef kr, WhereSpec& w) { // NOSONAR(S3776)
+        if (jkey_eq(ptr, kr.start, kr.len, "field"))
+            w.field = parse_str<32>(j, p);
+        else if (jkey_eq(ptr, kr.start, kr.len, "upper"))
+            w.value_int2 = parse_int(j, p);
+        else if (jkey_eq(ptr, kr.start, kr.len, "logic"))
+            w.logic = parse_str<8>(j, p);
+        else if (jkey_eq(ptr, kr.start, kr.len, "value"))
+            assign_where_value(w, parse_typed_value(j, p));
+        else
+            skip_value(j, p);
+    }
+
+    // Parse len-6 keys inside "where" object.
+    constexpr void parse_where_key6(std::string_view j, size_t& p, const char* ptr, JsonKeyRef kr, WhereSpec& w) {
+        if (jkey_eq(ptr, kr.start, kr.len, "field2"))
+            w.field2 = parse_str<32>(j, p);
+        else if (jkey_eq(ptr, kr.start, kr.len, "field3"))
+            w.field3 = parse_str<32>(j, p);
+        else if (jkey_eq(ptr, kr.start, kr.len, "value2"))
+            assign_where_value2(w, parse_typed_value(j, p));
+        else if (jkey_eq(ptr, kr.start, kr.len, "value3")) {
+            auto tv = parse_typed_value(j, p);
+            if (tv.kind == TypedValueKind::Bool)
+                w.value_bool3 = tv.b;
+            else
+                skip_value(j, p);
+        } else if (jkey_eq(ptr, kr.start, kr.len, "values"))
+            w.value_list_count = parse_int_array<WhereSpec::MAX_IN>(j, p, w.value_list);
+        else
+            skip_value(j, p);
+    }
+
     // Parse "where": { field, op, value, upper, values, field2, op2, value2, field3, value3, logic }
-    constexpr void parse_where_into(std::string_view j, size_t& p, WhereSpec& w) {
+    constexpr void parse_where_into(std::string_view j, size_t& p, WhereSpec& w) { // NOSONAR(S3776)
         const char*  ptr = j.data();
         const size_t sz  = j.size();
         skip_char(j, p, '{');
         while (p < sz) {
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (ptr[p] == '}') {
-                ++p;
+            if (at_object_end(ptr, sz, p))
                 break;
-            }
-            auto kr = parse_key_ref(ptr, sz, p);
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (p < sz && ptr[p] == ':')
-                ++p;
+            auto kr = parse_key_and_colon(ptr, sz, p);
 
             switch (kr.len) {
-            case 2: // op
+            case 2:
                 if (jkey_eq(ptr, kr.start, kr.len, "op"))
                     w.op = parse_str<16>(j, p);
                 else
                     skip_value(j, p);
                 break;
-            case 3: // op2
+            case 3:
                 if (jkey_eq(ptr, kr.start, kr.len, "op2"))
                     w.op2 = parse_str<16>(j, p);
                 else
                     skip_value(j, p);
                 break;
-            case 5: // field, upper, logic, value
-                if (jkey_eq(ptr, kr.start, kr.len, "field"))
-                    w.field = parse_str<32>(j, p);
-                else if (jkey_eq(ptr, kr.start, kr.len, "upper"))
-                    w.value_int2 = parse_int(j, p);
-                else if (jkey_eq(ptr, kr.start, kr.len, "logic"))
-                    w.logic = parse_str<8>(j, p);
-                else if (jkey_eq(ptr, kr.start, kr.len, "value")) {
-                    auto tv = parse_typed_value(j, p);
-                    if (tv.kind == TypedValue::Bool)
-                        w.value_bool = tv.b;
-                    else if (tv.kind == TypedValue::Str)
-                        w.value_str = tv.s;
-                    else if (tv.kind == TypedValue::Dbl)
-                        w.value_dbl = tv.d;
-                    else
-                        w.value_int = tv.i;
-                } else
-                    skip_value(j, p);
+            case 5:
+                parse_where_key5(j, p, ptr, kr, w);
                 break;
-            case 6: // field2, field3, value2, value3, values
-                if (jkey_eq(ptr, kr.start, kr.len, "field2"))
-                    w.field2 = parse_str<32>(j, p);
-                else if (jkey_eq(ptr, kr.start, kr.len, "field3"))
-                    w.field3 = parse_str<32>(j, p);
-                else if (jkey_eq(ptr, kr.start, kr.len, "value2")) {
-                    auto tv = parse_typed_value(j, p);
-                    if (tv.kind == TypedValue::Bool)
-                        w.value_bool2 = tv.b;
-                    else if (tv.kind == TypedValue::Dbl)
-                        w.value_dbl2 = tv.d;
-                    else
-                        w.value_int_2 = tv.i;
-                } else if (jkey_eq(ptr, kr.start, kr.len, "value3")) {
-                    auto tv = parse_typed_value(j, p);
-                    if (tv.kind == TypedValue::Bool)
-                        w.value_bool3 = tv.b;
-                    else
-                        skip_value(j, p);
-                } else if (jkey_eq(ptr, kr.start, kr.len, "values"))
-                    w.value_list_count = parse_int_array<WhereSpec::MAX_IN>(j, p, w.value_list);
-                else
-                    skip_value(j, p);
+            case 6:
+                parse_where_key6(j, p, ptr, kr, w);
                 break;
             default:
                 skip_value(j, p);
                 break;
             }
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (p < sz && ptr[p] == ',')
-                ++p;
+            skip_comma(ptr, sz, p);
         }
     }
 
@@ -561,77 +539,38 @@ namespace storm::test {
         const size_t sz  = j.size();
         skip_char(j, p, '{');
         while (p < sz) {
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (ptr[p] == '}') {
-                ++p;
+            if (at_object_end(ptr, sz, p))
                 break;
-            }
-            auto kr = parse_key_ref(ptr, sz, p);
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (p < sz && ptr[p] == ':')
-                ++p;
+            auto kr = parse_key_and_colon(ptr, sz, p);
             if (jkey_eq(ptr, kr.start, kr.len, "field"))
                 ob.field = parse_str<32>(j, p);
             else if (jkey_eq(ptr, kr.start, kr.len, "asc"))
                 ob.asc = parse_bool(j, p);
             else
                 skip_value(j, p);
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (p < sz && ptr[p] == ',')
-                ++p;
+            skip_comma(ptr, sz, p);
         }
     }
 
     // Parse "expected": { count, int_val, dbl_val, unchanged, remaining, first_name, first_age,
     //                     groups_count, group_keys, group_agg_int, group_agg_dbl }
-    constexpr void parse_expected_into(std::string_view j, size_t& p, ExpectedSpec& e) {
+    constexpr void parse_expected_into(std::string_view j, size_t& p, ExpectedSpec& e) { // NOSONAR(S3776)
         const char*  ptr = j.data();
         const size_t sz  = j.size();
         skip_char(j, p, '{');
         while (p < sz) {
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (ptr[p] == '}') {
-                ++p;
+            if (at_object_end(ptr, sz, p))
                 break;
-            }
-            auto kr = parse_key_ref(ptr, sz, p);
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (p < sz && ptr[p] == ':')
-                ++p;
+            auto kr = parse_key_and_colon(ptr, sz, p);
 
             switch (kr.len) {
-            case 5: // count
+            case 5:
                 if (jkey_eq(ptr, kr.start, kr.len, "count"))
                     e.count = parse_int(j, p);
                 else
                     skip_value(j, p);
                 break;
-            case 7: // int_val, dbl_val
+            case 7:
                 if (jkey_eq(ptr, kr.start, kr.len, "int_val"))
                     e.int_val = parse_int(j, p);
                 else if (jkey_eq(ptr, kr.start, kr.len, "dbl_val"))
@@ -639,7 +578,7 @@ namespace storm::test {
                 else
                     skip_value(j, p);
                 break;
-            case 9: // unchanged, remaining, first_age
+            case 9:
                 if (jkey_eq(ptr, kr.start, kr.len, "unchanged"))
                     e.unchanged = parse_int(j, p);
                 else if (jkey_eq(ptr, kr.start, kr.len, "remaining"))
@@ -649,7 +588,7 @@ namespace storm::test {
                 else
                     skip_value(j, p);
                 break;
-            case 10: // first_name, group_keys
+            case 10:
                 if (jkey_eq(ptr, kr.start, kr.len, "first_name"))
                     e.first_name = parse_str<64>(j, p);
                 else if (jkey_eq(ptr, kr.start, kr.len, "group_keys"))
@@ -657,13 +596,13 @@ namespace storm::test {
                 else
                     skip_value(j, p);
                 break;
-            case 12: // groups_count
+            case 12:
                 if (jkey_eq(ptr, kr.start, kr.len, "groups_count"))
                     e.groups_count = static_cast<size_t>(parse_int(j, p));
                 else
                     skip_value(j, p);
                 break;
-            case 13: // group_agg_int, group_agg_dbl
+            case 13:
                 if (jkey_eq(ptr, kr.start, kr.len, "group_agg_int"))
                     parse_int_array<ExpectedSpec::MAX_GROUPS>(j, p, e.group_agg_int);
                 else if (jkey_eq(ptr, kr.start, kr.len, "group_agg_dbl"))
@@ -675,14 +614,7 @@ namespace storm::test {
                 skip_value(j, p);
                 break;
             }
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (p < sz && ptr[p] == ',')
-                ++p;
+            skip_comma(ptr, sz, p);
         }
     }
 
@@ -699,25 +631,9 @@ namespace storm::test {
         const size_t sz  = j.size();
         skip_char(j, p, '{');
         while (p < sz) {
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (ptr[p] == '}') {
-                ++p;
+            if (at_object_end(ptr, sz, p))
                 break;
-            }
-            auto kr = parse_key_ref(ptr, sz, p);
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (p < sz && ptr[p] == ':')
-                ++p;
+            auto kr = parse_key_and_colon(ptr, sz, p);
             if (jkey_eq(ptr, kr.start, kr.len, "func")) {
                 auto v = parse_str<32>(j, p);
                 if (query_type.len == 0)
@@ -728,14 +644,7 @@ namespace storm::test {
                 join_name = parse_str<16>(j, p);
             } else
                 skip_value(j, p);
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (p < sz && ptr[p] == ',')
-                ++p;
+            skip_comma(ptr, sz, p);
         }
     }
 
@@ -745,39 +654,16 @@ namespace storm::test {
         const size_t sz  = j.size();
         skip_char(j, p, '{');
         while (p < sz) {
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (ptr[p] == '}') {
-                ++p;
+            if (at_object_end(ptr, sz, p))
                 break;
-            }
-            auto kr = parse_key_ref(ptr, sz, p);
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (p < sz && ptr[p] == ':')
-                ++p;
+            auto kr = parse_key_and_colon(ptr, sz, p);
             if (jkey_eq(ptr, kr.start, kr.len, "type"))
                 spec.res_type = parse_str<8>(j, p);
             else if (jkey_eq(ptr, kr.start, kr.len, "value"))
                 spec.res_value = parse_double(j, p);
             else
                 skip_value(j, p);
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (p < sz && ptr[p] == ',')
-                ++p;
+            skip_comma(ptr, sz, p);
         }
     }
 
@@ -788,25 +674,9 @@ namespace storm::test {
         const size_t sz  = j.size();
         skip_char(j, p, '{');
         while (p < sz) {
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (ptr[p] == '}') {
-                ++p;
+            if (at_object_end(ptr, sz, p))
                 break;
-            }
-            auto kr = parse_key_ref(ptr, sz, p);
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (p < sz && ptr[p] == ':')
-                ++p;
+            auto kr = parse_key_and_colon(ptr, sz, p);
             if (jkey_eq(ptr, kr.start, kr.len, "func"))
                 spec.func = parse_str<16>(j, p);
             else if (jkey_eq(ptr, kr.start, kr.len, "field"))
@@ -815,20 +685,14 @@ namespace storm::test {
                 parse_chain_result_into(j, p, spec);
             else
                 skip_value(j, p);
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (p < sz && ptr[p] == ',')
-                ++p;
+            skip_comma(ptr, sz, p);
         }
         return spec;
     }
 
     template <size_t MaxLen>
-    constexpr size_t parse_chain_agg_array(std::string_view j, size_t& p, std::array<ChainAggSpec, MaxLen>& out) {
+    constexpr size_t
+    parse_chain_agg_array(std::string_view j, size_t& p, std::array<ChainAggSpec, MaxLen>& out) { // NOSONAR(S3776)
         skip_ws(j, p);
         const char*  ptr = j.data();
         const size_t sz  = j.size();
@@ -837,12 +701,7 @@ namespace storm::test {
         ++p;
         size_t n = 0;
         while (p < sz) {
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
+            skip_ws(ptr, sz, p);
             if (p >= sz || ptr[p] == ']') {
                 if (p < sz)
                     ++p;
@@ -854,12 +713,7 @@ namespace storm::test {
                 else
                     skip_object(j, p);
             }
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
+            skip_ws(ptr, sz, p);
             if (p < sz && ptr[p] == ',')
                 ++p;
         }
@@ -873,7 +727,9 @@ namespace storm::test {
     // JSON leaf:      {"field":"age","op":">","value_int":30}
     // JSON composite: {"op":"AND","left":{...},"right":{...}}
     template <int MaxNodes>
-    constexpr int parse_where_expr_dfs(std::string_view j, size_t& p, WhereNode (&nodes)[MaxNodes], int& count) {
+    constexpr int parse_where_expr_dfs(
+            std::string_view j, size_t& p, std::array<WhereNode, MaxNodes>& nodes, int& count
+    ) { // NOSONAR — consteval recursive DFS
         const char*  ptr = j.data();
         const size_t sz  = j.size();
         if (count >= MaxNodes) {
@@ -881,37 +737,22 @@ namespace storm::test {
             return -1;
         }
 
-        int idx    = count++;
+        int idx = count;
+        ++count;
         nodes[idx] = WhereNode{};
 
-        // First pass: parse all keys into a temporary, collecting left/right
-        // sub-object positions for later recursive parsing.
-        // We need two passes because "left"/"right" may appear before "op"/"field".
-        // Instead, parse flat keys immediately and remember positions of sub-objects.
-        size_t left_pos = 0, right_pos = 0;
-        bool   has_left = false, has_right = false;
+        // Parse flat keys immediately and remember positions of sub-objects
+        // for later recursive parsing (left/right may appear before op/field).
+        size_t left_pos  = 0;
+        size_t right_pos = 0;
+        bool   has_left  = false;
+        bool   has_right = false;
 
         skip_char(j, p, '{');
         while (p < sz) {
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (ptr[p] == '}') {
-                ++p;
+            if (at_object_end(ptr, sz, p))
                 break;
-            }
-            auto kr = parse_key_ref(ptr, sz, p);
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (p < sz && ptr[p] == ':')
-                ++p;
+            auto kr = parse_key_and_colon(ptr, sz, p);
             skip_ws(j, p);
 
             if (jkey_eq(ptr, kr.start, kr.len, "field"))
@@ -938,14 +779,7 @@ namespace storm::test {
                     skip_value(j, p);
             } else
                 skip_value(j, p);
-            while (p < sz) {
-                char c = ptr[p];
-                if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
-                    break;
-                ++p;
-            }
-            if (p < sz && ptr[p] == ',')
-                ++p;
+            skip_comma(ptr, sz, p);
         }
 
         // Now recurse into saved sub-object positions (pre-order: left then right).
@@ -965,7 +799,7 @@ namespace storm::test {
     // UnifiedTestCase struct + top-level parser
     // ============================================================================
 
-    struct UnifiedTestCase {
+    struct UnifiedTestCase { // NOSONAR(S1820) -- flat struct for consteval JSON parsing
         ConstexprString<64> name;
         ConstexprString<16> model;
         ConstexprString<32> query_type;
@@ -974,9 +808,9 @@ namespace storm::test {
 
         WhereSpec where;
 
-        static constexpr int MAX_WHERE_NODES = 7;
-        WhereNode            where_nodes[MAX_WHERE_NODES]{};
-        int                  where_node_count = 0;
+        static constexpr int                   MAX_WHERE_NODES = 7;
+        std::array<WhereNode, MAX_WHERE_NODES> where_nodes{};
+        int                                    where_node_count = 0;
 
         ConstexprString<16> join_name;
         int                 limit_value  = -1;
@@ -1015,7 +849,7 @@ namespace storm::test {
     //     remove_count,update_count
     // 14: distinct_field,group_by_field
     // 15: distinct_field2,group_by_field2,having_value_int
-    constexpr void parse_unified_case_into(std::string_view j, size_t& p, UnifiedTestCase& tc) {
+    constexpr void parse_unified_case_into(std::string_view j, size_t& p, UnifiedTestCase& tc) { // NOSONAR(S3776)
         const char*  ptr = j.data();
         const size_t sz  = j.size();
         skip_char(j, p, '{');
