@@ -103,6 +103,34 @@ The `/sonarcloud-status` skill (and `./scripts/sonarcloud-check.sh`) is **branch
 **Checking overall project health (on `develop`):**
 Run `/sonarcloud-status` while on `develop` to see the full project picture — all existing issues, overall metrics, and quality gate status for the branch.
 
+### SonarCloud Coding Rules (follow proactively when writing code)
+
+These rules are enforced by SonarCloud analysis. Follow them when writing new code to avoid issues:
+
+| Rule | What to do | Why |
+|---|---|---|
+| **S125** | Never leave commented-out code. Remove migration comments, old code, data comments like `// (Alice,30), (Bob,25)` | SonarCloud flags any comment that looks like code |
+| **S3656** | Use `public:` (not `protected:`) for GTest fixture member variables | SonarCloud forbids protected members in classes |
+| **S6185** | Use `std::format("Person{}", i)` instead of `"Person" + std::to_string(i)` | Prefer std::format over string concatenation |
+| **S3659** | Use `\|\|` and `&&` instead of `or` and `and` | Alternative operators forbidden |
+| **S6164** | Use `std::numbers::pi` instead of `3.14159` | Use standard math constants |
+| **S6197** | Use `std::ranges::sort(vec)` instead of `std::ranges::sort(vec.begin(), vec.end())` | Prefer range overloads |
+| **S6177** | Use `using enum EnumType;` to avoid verbose `EnumType::Value` repetition | Reduce enum verbosity |
+| **S7034** | Use `str.contains(substr)` instead of `str.find(substr) != npos` | Prefer C++23 contains() |
+| **S6009** | Use `std::string_view` for read-only string parameters | Avoid const std::string& for read-only |
+| **S6003** | Use `emplace_back` instead of `push_back` when constructing in-place | Avoid unnecessary copies |
+| **S1659** | Avoid `auto x = Type{};` — use `Type x;` directly | SonarCloud may flag brace-init as multi-identifier |
+| **S912** | No side effects in `&&`/`\|\|` right operands (e.g., `--depth` in `&& --depth == 0`) | Separate side effects from conditions |
+| **S6045** | Use `std::set<T, std::less<>>` for string containers | Transparent comparator for heterogeneous lookup |
+
+**When NOSONAR is acceptable** (add `// NOSONAR` on the exact flagged line):
+- `S5025`: GTest `RegisterTest` requires raw `new` — can't use smart pointers
+- `S6188`: consteval functions use `ptr+sz` pattern — `std::span` not reliable in consteval
+- `S3776`: consteval JSON parsers and `if constexpr` dispatch have inherent complexity
+- `S1820`: Flat structs for consteval parsing intentionally exceed 20 fields
+- `S6024`: GTest fixture static helpers are idiomatic — no need to extract as free functions
+- `S954`: `#include "test_models.h"` MUST come after `import storm;` — can't move to top
+
 ### Commit & Push Workflow
 ```bash
 git status --short           # Show files
