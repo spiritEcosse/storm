@@ -672,9 +672,7 @@ TYPED_TEST(DistinctTest, RawSQLWorkaround) {
         int const step = stmt.step_raw();
         if (step == decltype(stmt)::ROW_AVAILABLE) {
             const auto* text_bytes = stmt.extract_text_ptr(0);
-            user_names.emplace_back(
-                    reinterpret_cast<const char*>(text_bytes)
-            ); // NOSONAR - SQLite API returns unsigned char*
+            user_names.emplace_back(reinterpret_cast<const char*>(text_bytes)); // NOSONAR
         } else if (step == decltype(stmt)::NO_MORE_ROWS) {
             break;
         } else {

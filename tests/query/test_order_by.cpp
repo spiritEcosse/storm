@@ -21,8 +21,8 @@ template <typename ConnType> class OrderByTest : public StormTestFixture<Person,
   protected:
     // Helper: verify age and name at each position in result set.
     // entries is a vector of {expected_age, expected_name} pairs.
-    static void verify_order( // NOSONAR(S6024)
-            const auto& people, const std::vector<std::pair<int, std::string>>& entries) {
+    static void
+    verify_order(const auto& people, const std::vector<std::pair<int, std::string>>& entries) { // NOSONAR(S6024)
         auto it = people.begin();
         for (size_t i = 0; i < entries.size(); ++i) {
             EXPECT_EQ(std::ranges::next(people.begin(), static_cast<std::ptrdiff_t>(i))->age, entries[i].first)
