@@ -674,7 +674,7 @@ TYPED_TEST(DistinctTest, RawSQLWorkaround) {
             const auto* text_bytes = stmt.extract_text_ptr(0);
             user_names.emplace_back(
                     reinterpret_cast<const char*>(text_bytes)
-            ); // NOSONAR - SQLite API returns unsigned char*, reinterpret_cast required
+            ); // NOSONAR - SQLite API returns unsigned char*
         } else if (step == decltype(stmt)::NO_MORE_ROWS) {
             break;
         } else {

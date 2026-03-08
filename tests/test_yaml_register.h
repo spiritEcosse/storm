@@ -32,13 +32,13 @@ template <const auto &Tests, typename Fixture, typename ConnType>
 void register_for_backend(const char *suite, const char *backend) {
     static const std::string suite_name = std::string(suite) + "/" + backend;
     [suite_ptr = suite_name.c_str()]<size_t... I>(std::index_sequence<I...>) {
-        (...,
-         ::testing::RegisterTest(suite_ptr,
-                                 Tests[I].name.c_str(),                // ConstexprString::c_str() -> static storage
-                                 nullptr, nullptr, __FILE__, __LINE__, // NOSONAR - GTest API requires raw file/line
-                                 []() -> Fixture * {
-                                     return new YamlTestInstance<I, Fixture, ConnType>();
-                                 })); // NOSONAR - GTest API owns the pointer
+        (..., ::testing::RegisterTest(
+                  suite_ptr,
+                  Tests[I].name.c_str(),                // ConstexprString::c_str() -> static storage
+                  nullptr, nullptr, __FILE__, __LINE__, // NOSONAR - GTest API requires raw file/line
+                  []() -> Fixture * {
+                      return new YamlTestInstance<I, Fixture, ConnType>(); // NOSONAR - GTest API owns the pointer
+                  }));
     }(std::make_index_sequence<Tests.size()>{});
 }
 

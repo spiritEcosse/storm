@@ -27,7 +27,8 @@ namespace storm::test {
     // assertion overhead (~13 constexpr steps per j[p] vs ~2 for ptr[p]).
     // ============================================================================
 
-    constexpr void skip_ws(const char* ptr, size_t sz, size_t& p) {
+    constexpr void
+    skip_ws(const char* ptr, size_t sz, size_t& p) { // NOSONAR(S6188) -- ptr+sz pattern for consteval performance
         while (p < sz) {
             if (char c = ptr[p]; c != ' ' && c != '\n' && c != '\r' && c != '\t')
                 break;
@@ -141,8 +142,11 @@ namespace storm::test {
         while (p < sz) {
             if (char c = ptr[p++]; c == '[')
                 ++depth;
-            else if (c == ']' && --depth == 0)
-                return;
+            else if (c == ']') {
+                --depth;
+                if (depth == 0)
+                    return;
+            }
         }
     }
 
@@ -420,32 +424,34 @@ namespace storm::test {
     };
 
     constexpr TypedValue parse_typed_value(std::string_view j, size_t& p) {
+        using enum TypedValueKind;
         skip_ws(j, p);
         const char* ptr = j.data();
         TypedValue  tv;
         if (ptr[p] == '"') {
             tv.s    = parse_str<64>(j, p);
-            tv.kind = TypedValueKind::Str;
+            tv.kind = Str;
         } else if (ptr[p] == 't' || ptr[p] == 'f') {
             tv.b    = parse_bool(j, p);
-            tv.kind = TypedValueKind::Bool;
+            tv.kind = Bool;
         } else if (is_number_with_dot(j, p)) {
             tv.d    = parse_double(j, p);
-            tv.kind = TypedValueKind::Dbl;
+            tv.kind = Dbl;
         } else {
             tv.i    = parse_int(j, p);
-            tv.kind = TypedValueKind::Int;
+            tv.kind = Int;
         }
         return tv;
     }
 
     // Assign typed value into primary where fields.
     constexpr void assign_where_value(WhereSpec& w, const TypedValue& tv) {
-        if (tv.kind == TypedValueKind::Bool)
+        using enum TypedValueKind;
+        if (tv.kind == Bool)
             w.value_bool = tv.b;
-        else if (tv.kind == TypedValueKind::Str)
+        else if (tv.kind == Str)
             w.value_str = tv.s;
-        else if (tv.kind == TypedValueKind::Dbl)
+        else if (tv.kind == Dbl)
             w.value_dbl = tv.d;
         else
             w.value_int = tv.i;
@@ -453,9 +459,10 @@ namespace storm::test {
 
     // Assign typed value into secondary where fields (value2).
     constexpr void assign_where_value2(WhereSpec& w, const TypedValue& tv) {
-        if (tv.kind == TypedValueKind::Bool)
+        using enum TypedValueKind;
+        if (tv.kind == Bool)
             w.value_bool2 = tv.b;
-        else if (tv.kind == TypedValueKind::Dbl)
+        else if (tv.kind == Dbl)
             w.value_dbl2 = tv.d;
         else
             w.value_int_2 = tv.i;

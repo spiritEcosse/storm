@@ -46,7 +46,7 @@ class storm::test::YamlTestInstance<I, UnifiedYamlTest<ConnType>, ConnType> : pu
         constexpr auto& tc = UNIFIED_TESTS[I];
 
         // --- Per-test isolation: clean all tables ---
-        auto conn = storm::QuerySet<Person, ConnType>::get_default_connection();
+        std::shared_ptr<ConnType> conn = storm::QuerySet<Person, ConnType>::get_default_connection();
         ASSERT_NE(conn, nullptr);
         storm::test::rollback_test_txn<ConnType>(conn);
         ASSERT_TRUE((storm::test::ensure_table<Person, ConnType>(conn).has_value()));

@@ -70,7 +70,7 @@ TYPED_TEST(QuerySetRemoveTest, DatabaseSetup) {
 }
 
 TYPED_TEST(QuerySetRemoveTest, RemoveMultiplePersonsSequentially) {
-    auto queryset = storm::QuerySet<Person, TypeParam>{};
+    storm::QuerySet<Person, TypeParam> queryset;
 
     // Create person objects to remove
     Person const alice{.id = 1, .name = "Alice", .age = 30};
@@ -94,7 +94,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveMultiplePersonsSequentially) {
 }
 
 TYPED_TEST(QuerySetRemoveTest, RemoveBatchPerformance) {
-    auto queryset = storm::QuerySet<Person, TypeParam>{};
+    storm::QuerySet<Person, TypeParam> queryset;
 
     // Add test data for performance comparison (batch insert to avoid per-row round-trips)
     const int           num_records = 1000;
@@ -144,7 +144,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchPerformance) {
 // Test chunked remove (>799 rows to trigger execute_chunked path)
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunked) {
-    auto queryset = storm::QuerySet<Person, TypeParam>{};
+    storm::QuerySet<Person, TypeParam> queryset;
 
     // Add many test records (1000+) to test chunked deletion (batch insert to avoid per-row round-trips)
     // MAX_CHUNK_SIZE is 799, so >799 triggers chunked path
@@ -190,7 +190,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunked) {
 // Test chunked remove with remainder (tests both full chunks and remainder processing)
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunkedWithRemainder) {
-    auto queryset = storm::QuerySet<Person, TypeParam>{};
+    storm::QuerySet<Person, TypeParam> queryset;
 
     // Add many test records to test chunked deletion with remainder (batch insert to avoid per-row round-trips)
     // MAX_CHUNK_SIZE is 799, so 1650 rows = 2 full chunks (1598) + 52 remainder
@@ -270,7 +270,7 @@ TYPED_TEST(QuerySetUpdateTest, DatabaseSetup) {
 }
 
 TYPED_TEST(QuerySetUpdateTest, UpdateMultipleTimes) {
-    auto queryset = storm::QuerySet<Person, TypeParam>{};
+    storm::QuerySet<Person, TypeParam> queryset;
 
     // Update Alice multiple times
     Person const alice_v1{.id = 1, .name = "Alice A", .age = 31};
@@ -303,7 +303,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateMultipleTimes) {
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(QuerySetUpdateTest, UpdateCachedStatementReuse) {
-    auto queryset = storm::QuerySet<Person, TypeParam>{};
+    storm::QuerySet<Person, TypeParam> queryset;
 
     // Perform multiple updates to verify statement caching works correctly
     for (int i = 0; i < 10; ++i) {
@@ -328,11 +328,8 @@ TYPED_TEST(QuerySetUpdateTest, UpdateCachedStatementReuse) {
 // Transaction Edge Cases (from test_coverage_gaps.cpp)
 // =============================================================================
 
-// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-// NOLINTBEGIN(misc-const-correctness)
-
 template <typename ConnType> class TransactionTest : public StormTestFixture<SimpleRecord, ConnType> {
-  protected:
+  public:
     auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
         StormTestFixture<SimpleRecord, ConnType>::on_setup(conn);
         if (this->HasFatalFailure())
@@ -511,8 +508,5 @@ TYPED_TEST(QueryResetTest, AggregatesWithWhere) {
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), 442);
 }
-
-// NOLINTEND(misc-const-correctness)
-// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

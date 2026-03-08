@@ -218,6 +218,43 @@ def _compute_group_agg_value(agg_type, members, agg_field):
     return 0
 
 
+def _apply_group_pagination(group_keys, group_agg, tc):
+    """Apply order_by, offset, limit to group results."""
+    ob = tc.get("order_by")
+    if ob:
+        asc = ob.get("asc", True)
+        combined = sorted(zip(group_keys, group_agg), key=lambda x: x[0], reverse=not asc)
+        group_keys = [c[0] for c in combined]
+        group_agg = [c[1] for c in combined]
+
+    offset = tc.get("offset_value", 0)
+    limit = tc.get("limit_value")
+    if offset:
+        group_keys = group_keys[offset:]
+        group_agg = group_agg[offset:]
+    if limit is not None:
+        group_keys = group_keys[:limit]
+        group_agg = group_agg[:limit]
+    return group_keys, group_agg
+
+
+def _write_group_expected(exp, group_keys, group_agg, agg_type):
+    """Write group results into expected dict."""
+    if not group_keys:
+        return
+    if isinstance(group_keys[0], str):
+        exp["group_keys"] = group_keys
+    else:
+        exp["group_keys"] = [int(k) if isinstance(k, (int, float)) and k == int(k) else k for k in group_keys]
+
+    if agg_type in ("avg", "min", "max"):
+        exp["group_agg_dbl"] = [round(v, 2) for v in group_agg]
+        exp.pop("group_agg_int", None)
+    else:
+        exp["group_agg_int"] = [int(v) for v in group_agg]
+        exp.pop("group_agg_dbl", None)
+
+
 def _process_group_by(tc, filtered, exp):
     """Process GROUP BY query types."""
     qt = tc.get("query_type", "")
@@ -243,24 +280,12 @@ def _process_group_by(tc, filtered, exp):
     group_keys = list(non_none_keys)
     group_agg = [_compute_group_agg_value(agg_type, groups[k], agg_field) for k in group_keys]
 
-    ob = tc.get("order_by")
-    if ob:
-        asc = ob.get("asc", True)
-        combined = sorted(zip(group_keys, group_agg), key=lambda x: x[0], reverse=not asc)
-        group_keys = [c[0] for c in combined]
-        group_agg = [c[1] for c in combined]
-
-    offset = tc.get("offset_value", 0)
-    limit = tc.get("limit_value")
-    if offset:
-        group_keys = group_keys[offset:]
-        group_agg = group_agg[offset:]
-    if limit is not None:
-        group_keys = group_keys[:limit]
-        group_agg = group_agg[:limit]
+    group_keys, group_agg = _apply_group_pagination(group_keys, group_agg, tc)
 
     count_keys = non_none_keys if not having_field else group_keys
     total_count = sum(len(groups[k]) for k in count_keys)
+    offset = tc.get("offset_value", 0)
+    limit = tc.get("limit_value")
     has_pagination = offset or limit
     if not has_pagination:
         exp["count"] = total_count
@@ -270,18 +295,20 @@ def _process_group_by(tc, filtered, exp):
         exp["count"] = total_count
     exp["groups_count"] = len(group_keys)
 
-    if group_keys:
-        if isinstance(group_keys[0], str):
-            exp["group_keys"] = group_keys
-        else:
-            exp["group_keys"] = [int(k) if isinstance(k, (int, float)) and k == int(k) else k for k in group_keys]
+    _write_group_expected(exp, group_keys, group_agg, agg_type)
 
-        if agg_type in ("avg", "min", "max"):
-            exp["group_agg_dbl"] = [round(v, 2) for v in group_agg]
-            exp.pop("group_agg_int", None)
-        else:
-            exp["group_agg_int"] = [int(v) for v in group_agg]
-            exp.pop("group_agg_dbl", None)
+
+def _compute_chain_agg(func, vals):
+    """Compute a single chain aggregate value."""
+    if func == "sum":
+        return sum(vals)
+    if func == "avg":
+        return round(sum(vals) / len(vals), 1) if vals else 0.0
+    if func == "min":
+        return float(min(vals)) if vals else 0.0
+    if func == "max":
+        return float(max(vals)) if vals else 0.0
+    return 0
 
 
 def _process_chain(filtered, tc):
@@ -293,14 +320,7 @@ def _process_chain(filtered, tc):
             agg["res_value"] = len(filtered)
             continue
         vals = [p[field] for p in filtered if p.get(field) is not None]
-        if func == "sum":
-            agg["res_value"] = sum(vals)
-        elif func == "avg":
-            agg["res_value"] = round(sum(vals) / len(vals), 1) if vals else 0.0
-        elif func == "min":
-            agg["res_value"] = float(min(vals)) if vals else 0.0
-        elif func == "max":
-            agg["res_value"] = float(max(vals)) if vals else 0.0
+        agg["res_value"] = _compute_chain_agg(func, vals)
 
 
 def _process_distinct(tc, filtered, exp):

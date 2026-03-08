@@ -129,11 +129,9 @@ TYPED_TEST(LimitOffsetTest, LimitOffsetPagination) {
 
 // ===== LIMIT/OFFSET with WHERE =====
 
-// LimitWithWhere: migrated to unified_cases.yaml (limit_where_age_gt25)
 TYPED_TEST(LimitOffsetTest, WhereWithOffsetNoLimit) {
     QuerySet<Person, TypeParam> qs;
 
-    // age < 30: Alice(25), Diana(28), Grace(25), Karen(25), Mia(28), Paul(22), Tina(27), Wendy(29), Yara(22) = 9
     auto result =
             qs.template order_by<^^Person::name>().where(field<^^Person::age>() < 30).offset(2).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT WHERE with OFFSET failed: " << result.error().message();
