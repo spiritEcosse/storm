@@ -42,6 +42,7 @@ Storm is a C++26 ORM library for SQLite using compile-time reflection to automat
 | `ninja-prod` | Release | — | — | — | — | Production artifact |
 | `ninja-asan-ubsan` | Debug | ✓ | — | — | ASAN+UBSAN | Memory safety + undefined behavior |
 | `ninja-tsan` | Debug | ✓ | — | — | TSAN | Data race detection |
+| `ninja-msan` | Debug | ✓ | — | — | MSAN | Uninitialized memory reads |
 
 ### Build & Test
 ```bash
