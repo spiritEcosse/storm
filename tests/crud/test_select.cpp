@@ -18,16 +18,7 @@ template <typename ConnType> class SelectTest : public StormTestFixture<Person, 
 
 TYPED_TEST_SUITE(SelectTest, DatabaseTypes);
 
-// Test: SELECT from empty table returns empty vector
-TYPED_TEST(SelectTest, SelectFromEmptyTable) {
-    QuerySet<Person, TypeParam> queryset;
-
-    auto result = queryset.select().execute();
-    ASSERT_TRUE(result.has_value()) << "SELECT failed: " << result.error().message();
-
-    const auto& people = result.value();
-    EXPECT_TRUE(people.empty()) << "Expected empty result from empty table";
-}
+// SelectFromEmptyTable: migrated to unified_cases.yaml (select_empty_table)
 
 // Test: SELECT single row
 TYPED_TEST(SelectTest, SelectSingleRow) {

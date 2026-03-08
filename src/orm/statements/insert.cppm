@@ -41,9 +41,9 @@ export namespace storm::orm::statements {
         using Statement  = typename ConnType::Statement;
 
         // Pre-compute placeholders for SQL VALUES clause (excluding PK for auto-increment)
-        static consteval auto build_placeholders() -> std::string {
-            std::string result;
-            bool        first = true;
+        static consteval auto build_placeholders() {
+            ConstexprString<utilities::buffer_size::SQL_SMALL> result;
+            bool                                               first = true;
             for (size_t i = 0; i < Base::field_count_; ++i) {
                 // Skip primary key
                 if (Base::all_members_[i] == Base::primary_key_) {
@@ -79,7 +79,7 @@ export namespace storm::orm::statements {
             size += VALUES_OPEN; // ") VALUES ("
 
             // Placeholders length
-            size += placeholders_.size();
+            size += placeholders_.len;
 
             size += 1; // ")"
             size += 1; // null terminator

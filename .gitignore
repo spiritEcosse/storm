@@ -6,6 +6,7 @@ bw-output/
 Testing
 *.pyc
 __pycache__
+tests/test_cases/*.json
 
 # Benchmark executables
 benchmarks/bench_sqlite

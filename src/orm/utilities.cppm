@@ -174,14 +174,14 @@ export namespace storm::orm::utilities {
     // SQL String Building Utilities
     // ============================================================================
 
-    // Compile-time string utility for SQL generation
+    // Compile-time string utility for SQL generation and constexpr parsing
     template <size_t N> struct ConstexprString {
         std::array<char, N> data{};
         size_t              len = 0;
 
-        consteval ConstexprString() = default;
+        constexpr ConstexprString() = default;
 
-        consteval ConstexprString(const char* str) {
+        constexpr ConstexprString(const char* str) {
             size_t i = 0;
             while (str[i] != '\0' && i < N - 1) {
                 data[i] = str[i];
@@ -191,7 +191,26 @@ export namespace storm::orm::utilities {
             data[len] = '\0';
         }
 
-        consteval auto append(const char* str) -> void {
+        // LCOV_EXCL_START — constexpr-only methods: evaluated at compile time, no runtime code generated
+        // Read access
+        constexpr std::string_view view() const {
+            return {data.data(), len};
+        }
+        constexpr const char* c_str() const {
+            return data.data();
+        }
+        constexpr bool empty() const {
+            return len == 0;
+        }
+
+        constexpr bool operator==(std::string_view other) const {
+            return view() == other;
+        }
+        constexpr bool operator!=(std::string_view other) const {
+            return view() != other;
+        }
+
+        constexpr auto append(const char* str) -> void {
             size_t i = 0;
             while (str[i] != '\0' && len < N - 1) {
                 data[len] = str[i];
@@ -201,7 +220,7 @@ export namespace storm::orm::utilities {
             data[len] = '\0';
         }
 
-        consteval auto append(const std::string_view& str) -> void {
+        constexpr auto append(const std::string_view& str) -> void {
             for (char c : str) {
                 if (len < N - 1) {
                     data[len] = c;
@@ -212,7 +231,7 @@ export namespace storm::orm::utilities {
         }
 
         // Append another ConstexprString
-        template <size_t M> consteval auto append(const ConstexprString<M>& other) -> void {
+        template <size_t M> constexpr auto append(const ConstexprString<M>& other) -> void {
             for (size_t i = 0; i < other.len && len < N - 1; ++i) {
                 data[len] = other.data[i];
                 ++len;
@@ -221,29 +240,30 @@ export namespace storm::orm::utilities {
         }
 
         // Operator+= overloads (for convenient syntax)
-        consteval auto operator+=(const char* str) -> ConstexprString& {
+        constexpr auto operator+=(const char* str) -> ConstexprString& {
             append(str);
             return *this;
         }
 
-        consteval auto operator+=(const std::string_view& str) -> ConstexprString& {
+        constexpr auto operator+=(const std::string_view& str) -> ConstexprString& {
             append(str);
             return *this;
         }
 
-        template <size_t M> consteval auto operator+=(const ConstexprString<M>& other) -> ConstexprString& {
+        template <size_t M> constexpr auto operator+=(const ConstexprString<M>& other) -> ConstexprString& {
             append(other);
             return *this;
         }
 
         // Append a single digit (0-9) for compile-time number formatting
-        consteval auto append_digit(size_t digit) -> void {
+        constexpr auto append_digit(size_t digit) -> void {
             if (digit <= numeric::MAX_SINGLE_DIGIT && len < N - 1) {
                 data[len] = '0' + static_cast<char>(digit);
                 ++len;
                 data[len] = '\0';
             }
         }
+        // LCOV_EXCL_STOP
 
         // Runtime conversion to std::string
         operator std::string() const {
