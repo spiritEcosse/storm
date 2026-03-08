@@ -454,7 +454,7 @@ export namespace storm::orm::statements {
                 return std::unexpected(prepare_result.error());
             }
             int  param_index = 1;
-            auto bind_result =
+            auto bind_result = // NOSONAR(S1659)
                     orm::where::bind_params_direct<Statement, Error>(*where_expr_, *prepare_result, param_index);
             if (!bind_result) [[unlikely]] {
                 (*prepare_result)->reset();

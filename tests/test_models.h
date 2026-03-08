@@ -254,7 +254,7 @@ template <typename Model, typename ConnType> class StormTestFixture : public ::t
             GTEST_SKIP() << "Backend unavailable";
             return;
         }
-        const auto &conn = storm::QuerySet<Model, ConnType>::get_default_connection();
+        const auto &conn = storm::QuerySet<Model, ConnType>::get_default_connection(); // NOSONAR(S1659)
         storm::test::pg_schema_init<ConnType>(conn);
         on_setup(conn);
     }
@@ -280,7 +280,7 @@ template <typename Model, typename ConnType> class StormTestFixture : public ::t
     auto setup_connection() -> bool {
         if (!storm::test::backend_available<ConnType>())
             return false;
-        auto result =
+        auto result = // NOSONAR(S1659)
             storm::QuerySet<Model, ConnType>::set_default_connection(storm::test::get_connection_string<ConnType>());
         return result.has_value();
     }
