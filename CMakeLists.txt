@@ -75,6 +75,7 @@ include(cmake/coverage-targets.cmake)
 include(cmake/bench.cmake)
 include(cmake/sanitizers.cmake)
 include(cmake/fuzz.cmake)
+include(cmake/python.cmake)
 include(cmake/format.cmake)
 
 # ── Build summary ─────────────────────────────────────────────────────────────
@@ -88,4 +89,5 @@ message(STATUS "Benchmarks: ${ENABLE_BENCH}")
 message(STATUS "Coverage: ${ENABLE_COVERAGE}")
 message(STATUS "Sanitizer: ${USE_SANITIZER}")
 message(STATUS "Fuzzing: ${ENABLE_FUZZING}")
+message(STATUS "Python bindings: ${ENABLE_PYTHON}")
 message(STATUS "===================================")
