@@ -8,8 +8,9 @@ Storm provides sanitizer-enabled CMake presets for catching memory, concurrency,
 |--------|-----------|---------|-------------------|
 | `ninja-asan-ubsan` | ASAN + LSAN + UBSAN | Memory errors, leaks, undefined behavior | `ninja-asan-ubsan-sqlite` |
 | `ninja-tsan` | TSAN | Data races in `thread_local` patterns | `ninja-tsan-sqlite` |
+| `ninja-msan` | MSAN | Reads from uninitialized memory | `ninja-msan-sqlite` |
 
-> **Note**: ASAN and TSAN are mutually exclusive — they cannot be combined in a single build.
+> **Note**: ASAN, TSAN, and MSAN are mutually exclusive — they cannot be combined in a single build.
 
 ## Quick Start
 
@@ -27,6 +28,13 @@ ctest --preset ninja-tsan
 
 # TSAN SQLite only
 ctest --preset ninja-tsan-sqlite
+
+# Configure + build + test with MSAN
+cmake --preset ninja-msan && cmake --build --preset ninja-msan
+ctest --preset ninja-msan
+
+# MSAN SQLite only
+ctest --preset ninja-msan-sqlite
 ```
 
 ## What Each Sanitizer Catches
@@ -60,6 +68,17 @@ so that every UB violation prints a full stack trace and aborts immediately.
 Particularly relevant for Storm's `thread_local` connection pattern.
 The test preset uses `jobs: 1` (serial execution) for clean, non-interleaved output.
 
+### MSAN — MemorySanitizer
+
+- Reads from uninitialized memory (stack, heap, globals)
+- Use-of-uninitialized-value in conditionals, function args, returns
+
+MSAN with origin tracking (`-fsanitize-memory-track-origins`) is enabled by default in the `ninja-msan` preset. This reports **where** the uninitialized memory was allocated, making bugs much easier to diagnose.
+
+The test preset sets `MSAN_OPTIONS=abort_on_error=1:print_stats=1`.
+
+> **Important**: MSAN requires **every library in the dependency chain** to be compiled with MSAN instrumentation. The custom `clang-p2996` toolchain (libc++, libc++abi, libunwind) must be built with `-fsanitize=memory`. Uninstrumented libraries produce false positives.
+
 ## Build Directories
 
 Each sanitizer preset uses its own binary directory to avoid cache conflicts:
@@ -69,6 +88,7 @@ Each sanitizer preset uses its own binary directory to avoid cache conflicts:
 | `ninja-debug` | `build/debug` |
 | `ninja-asan-ubsan` | `build/asan-ubsan` |
 | `ninja-tsan` | `build/tsan` |
+| `ninja-msan` | `build/msan` |
 
 ## Important Notes
 
@@ -77,8 +97,4 @@ Each sanitizer preset uses its own binary directory to avoid cache conflicts:
 - **Stack traces**: All presets add `-fno-omit-frame-pointer` for accurate stack traces in sanitizer reports.
 - **False positives**: TSAN may produce false positives if SQLite or libpq were not compiled with TSAN. If you see races only in third-party code, suppress them with a TSAN suppression file.
 
-## MSAN — MemorySanitizer (not yet available)
-
-MSAN detects reads from **uninitialized memory** — a bug class not covered by the other sanitizers.
-
-It is tracked in issue [#116](https://github.com/spiritEcosse/storm/issues/116) but is not currently available because MSAN requires **every library in the dependency chain** (including libc++) to be compiled with MSAN instrumentation. Storm depends on a custom `clang-p2996` build for C++26 reflection support, and rebuilding this entire toolchain with MSAN is not practical until C++26 / P2996 reflection stabilizes in upstream Clang.
+- **False positives (MSAN)**: MSAN is the strictest sanitizer — any uninstrumented library call can trigger false positives. If you see reports only in third-party code (e.g., SQLite, libpq), ensure those libraries were built with MSAN or suppress the specific reports.

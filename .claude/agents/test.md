@@ -49,15 +49,23 @@ ctest --preset ninja-tsan
 
 # TSAN SQLite only
 ctest --preset ninja-tsan-sqlite
+
+# MSAN (reads from uninitialized memory, with origin tracking)
+cmake --preset ninja-msan && cmake --build --preset ninja-msan
+ctest --preset ninja-msan
+
+# MSAN SQLite only
+ctest --preset ninja-msan-sqlite
 ```
 
-> **Note**: ASAN and TSAN are mutually exclusive — separate builds required.
+> **Note**: ASAN, TSAN, and MSAN are mutually exclusive — separate builds required.
 > Serial execution (`jobs: 1`) is used for readable sanitizer output (~35s per run).
 
 | Preset | Binary dir | Sanitizers |
 |--------|-----------|------------|
 | `ninja-asan-ubsan` | `build/asan-ubsan` | ASAN + LSAN + UBSAN |
 | `ninja-tsan` | `build/tsan` | TSAN |
+| `ninja-msan` | `build/msan` | MSAN (with origin tracking) |
 
 ## Failure Analysis Framework
 
@@ -131,9 +139,13 @@ ctest --preset ninja-asan-ubsan
 # 3. TSAN (data races)
 cmake --preset ninja-tsan && cmake --build --preset ninja-tsan
 ctest --preset ninja-tsan
+
+# 4. MSAN (uninitialized memory reads)
+cmake --preset ninja-msan && cmake --build --preset ninja-msan
+ctest --preset ninja-msan
 ```
 
-Use SQLite-only variants (`ninja-asan-ubsan-sqlite`, `ninja-tsan-sqlite`) when PostgreSQL is unavailable.
+Use SQLite-only variants (`ninja-asan-ubsan-sqlite`, `ninja-tsan-sqlite`, `ninja-msan-sqlite`) when PostgreSQL is unavailable.
 
 ## Quality Assurance Checklist
 
@@ -141,6 +153,7 @@ Before declaring tests successful:
 - [ ] All unit tests pass (`ninja-debug`)
 - [ ] No memory leaks or ASAN/UBSAN violations (`ninja-asan-ubsan`)
 - [ ] No data races (`ninja-tsan`)
+- [ ] No uninitialized memory reads (`ninja-msan`)
 - [ ] Module dependencies correctly resolved
 - [ ] Database operations properly transactional
 

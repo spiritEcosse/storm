@@ -72,6 +72,18 @@
       }
     },
     {
+      "name": "ninja-msan",
+      "displayName": "Ninja MSAN",
+      "description": "Debug build with MemorySanitizer — detects reads from uninitialized memory",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/msan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_TESTS": "ON",
+        "USE_SANITIZER": "memorywithorigins"
+      }
+    },
+    {
       "name": "ninja-fuzz",
       "displayName": "Ninja Fuzzing",
       "description": "Release build with libFuzzer + ASAN harnesses — fuzz the runtime SQL binding layer",
@@ -110,6 +122,10 @@
     {
       "name": "ninja-tsan",
       "configurePreset": "ninja-tsan"
+    },
+    {
+      "name": "ninja-msan",
+      "configurePreset": "ninja-msan"
     },
     {
       "name": "ninja-fuzz",
@@ -186,6 +202,27 @@
     {
       "name": "ninja-tsan-sqlite",
       "inherits": "ninja-tsan",
+      "environment": {
+        "STORM_PG_CONNSTR": null
+      }
+    },
+    {
+      "name": "ninja-msan",
+      "configurePreset": "ninja-msan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "jobs": 1
+      },
+      "environment": {
+        "STORM_PG_CONNSTR": "host=/var/run/postgresql dbname=storm_db user=storm_db",
+        "MSAN_OPTIONS": "abort_on_error=1:print_stats=1"
+      }
+    },
+    {
+      "name": "ninja-msan-sqlite",
+      "inherits": "ninja-msan",
       "environment": {
         "STORM_PG_CONNSTR": null
       }
