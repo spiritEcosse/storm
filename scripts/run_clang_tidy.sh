@@ -175,6 +175,9 @@ echo ""
 #       pre-#364 7-category config and with a single readability check, so it is
 #       a toolchain crash, not a Storm-code or check-config issue. Tracked with
 #       the other clang-p2996 module crashes under issue #262.
+#
+#   python/bindings.cpp — `import storm;`, same standalone-parse issue as the
+#       test/benchmark headers above.
 is_known_unparseable() {
     local file="$1"
     case "$file" in
@@ -203,6 +206,7 @@ is_known_unparseable() {
         benchmarks/dashboard/tui_render.hpp) return 0 ;;
         benchmarks/dashboard/models.hpp) return 0 ;;
         benchmarks/schema.cppm) return 0 ;;
+        python/bindings.cpp) return 0 ;;
         *) return 1 ;;
     esac
 }
