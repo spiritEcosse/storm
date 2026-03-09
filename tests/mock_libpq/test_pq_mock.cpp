@@ -86,7 +86,7 @@ TEST_F(PqMockDefaultTest, ColumnDefaultsAreEmpty) {
     PGconn*   conn = PQconnectdb("host=localhost"); // NOSONAR(cpp:S5350) - PQfinish/PQclear require non-const ptr
     PGresult* res  = PQexecPrepared(
             conn, "stmt1", 0, nullptr, nullptr, nullptr, 0
-    ); // NOSONAR(cpp:S5350) - PQfinish/PQclear require non-const ptr
+    ); // NOSONAR(cpp:S5350) - PQclear requires non-const ptr
     EXPECT_STREQ(PQgetvalue(res, 0, 0), "");
     EXPECT_EQ(PQgetlength(res, 0, 0), 0);
     EXPECT_EQ(PQgetisnull(res, 0, 0), 0);
@@ -231,7 +231,7 @@ TEST_F(PqMockExecPreparedTest, ExecPreparedReturnsConfiguredNtuples) {
     MockPqConfig::exec_prepared_ntuples(5);
     PGresult* const res = PQexecPrepared(
             conn_, "stmt1", 0, nullptr, nullptr, nullptr, 0
-    ); // NOSONAR(cpp:S5350) - PQfinish/PQclear require non-const ptr
+    ); // NOSONAR(cpp:S5350) - PQclear requires non-const ptr
     EXPECT_EQ(PQntuples(res), 5);
     PQclear(res);
 }
@@ -395,14 +395,12 @@ TEST_F(PqMockCallCountTest, PrepareCallsTracked) {
     PGconn* const conn = PQconnectdb("host=localhost"); // NOSONAR(cpp:S5350) - PQfinish/PQclear require non-const ptr
     EXPECT_EQ(MockPqConfig::get_prepare_call_count(), 0);
 
-    PGresult* const res1 = PQprepare(
-            conn, "s1", "SELECT 1", 0, nullptr
-    ); // NOSONAR(cpp:S5350) - PQfinish/PQclear require non-const ptr
+    PGresult* const res1 =
+            PQprepare(conn, "s1", "SELECT 1", 0, nullptr); // NOSONAR(cpp:S5350) - PQclear requires non-const ptr
     EXPECT_EQ(MockPqConfig::get_prepare_call_count(), 1);
 
-    PGresult* const res2 = PQprepare(
-            conn, "s2", "SELECT 2", 0, nullptr
-    ); // NOSONAR(cpp:S5350) - PQfinish/PQclear require non-const ptr
+    PGresult* const res2 =
+            PQprepare(conn, "s2", "SELECT 2", 0, nullptr); // NOSONAR(cpp:S5350) - PQclear requires non-const ptr
     EXPECT_EQ(MockPqConfig::get_prepare_call_count(), 2);
 
     PQclear(res1);
@@ -427,7 +425,7 @@ TEST_F(PqMockCallCountTest, ExecPreparedCallsTracked) {
 
     PGresult* const res = PQexecPrepared(
             conn, "stmt1", 0, nullptr, nullptr, nullptr, 0
-    ); // NOSONAR(cpp:S5350) - PQfinish/PQclear require non-const ptr
+    ); // NOSONAR(cpp:S5350) - PQclear requires non-const ptr
     EXPECT_EQ(MockPqConfig::get_exec_prepared_call_count(), 1);
 
     PQclear(res);
