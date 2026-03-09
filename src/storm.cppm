@@ -58,23 +58,8 @@ export namespace storm {
         return orm::schema::SchemaStatement<T>::create_table_sql();
     }
 
-    // Executes CREATE TABLE IF NOT EXISTS for model T on the default connection.
-    // For PostgreSQL, dialect transforms are applied automatically.
-    template <typename T, db::DatabaseConnection ConnType = db::sqlite::Connection>
-    [[nodiscard]] auto create_table_if_not_exists() -> std::expected<void, typename ConnType::Error> {
-        auto conn = QuerySet<T, ConnType>::get_default_connection();
-        return orm::schema::SchemaStatement<T>::create_table_if_not_exists(conn);
-    }
-
     // Returns the pre-computed CREATE INDEX SQL statements for model T.
     template <typename T> auto create_index_sql() -> const std::vector<std::string>& {
         return orm::schema::SchemaStatement<T>::create_index_sql();
-    }
-
-    // Executes all CREATE INDEX IF NOT EXISTS statements for model T on the given connection.
-    template <typename T, db::DatabaseConnection ConnType>
-    [[nodiscard]] auto create_indexes_if_not_exist(std::shared_ptr<ConnType> conn)
-            -> std::expected<void, typename ConnType::Error> {
-        return orm::schema::SchemaStatement<T>::create_indexes_if_not_exist(conn);
     }
 } // namespace storm
