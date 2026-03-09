@@ -96,11 +96,18 @@ The `/sonarcloud-status` skill (and `./scripts/sonarcloud-check.sh`) is **branch
 | `develop` / `master` / `main` | **Branch mode** | Full project — ALL existing issues on the branch |
 | Feature branch or explicit PR number | **PR mode** | New code only — waits for Sonar to finish, then checks changed lines |
 
+**Quality gate: "Storm Strict"** (custom gate assigned to this project):
+- `new_violations > 0` → FAIL (zero new issues of ANY severity: bugs, smells, vulnerabilities, even minor)
+- `new_duplicated_lines_density > 0` → FAIL (zero code duplication on new lines)
+- `new_security_hotspots_reviewed < 100%` → FAIL
+
+**GitHub branch protection**: `develop` requires `SonarCloud Code Analysis` to pass before any merge — enforced at the repository level, cannot be bypassed.
+
 **Before merging a PR (run from the feature branch):**
 1. Run `/sonarcloud-status` — it auto-detects the PR and **waits** for SonarCloud analysis to finish.
-2. **If gate passes** (no issues on new code): merge the PR into `develop`.
-3. **If gate fails** (any issues — code duplication, bugs, code smells, security hotspots, even minor ones): fix ALL reported issues on the feature branch, push the fixes, then re-check SonarCloud until the gate passes.
-4. **Only merge after a clean SonarCloud gate** — no exceptions (rule 11).
+2. **If gate passes** (zero violations, zero duplications): merge the PR into `develop`.
+3. **If gate fails** (ANY issue or ANY duplication — no matter how minor): fix ALL reported issues on the feature branch, push, then re-check until the gate passes.
+4. **Only merge after a clean SonarCloud gate** — GitHub will block the merge otherwise.
 
 **Checking overall project health (on `develop`):**
 Run `/sonarcloud-status` while on `develop` to see the full project picture — all existing issues, overall metrics, and quality gate status for the branch.
