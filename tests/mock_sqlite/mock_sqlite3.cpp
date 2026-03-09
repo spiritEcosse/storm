@@ -374,9 +374,9 @@ auto sqlite3_step(const sqlite3_stmt* pStmt) -> int {
 auto sqlite3_exec(
         sqlite3*    db,
         const char* sql,
-        int (*callback)(void*, int, char**, char**),
+        int (*callback)(void*, int, char**, char**), // NOSONAR(cpp:S5205) - C callback API
         void*  arg,
-        char** errmsg // NOSONAR(cpp:S5205)
+        char** errmsg
 ) -> int {
     (void)sql;
     (void)callback;
@@ -439,9 +439,12 @@ auto sqlite3_bind_double(const sqlite3_stmt* pStmt, int idx, double value) -> in
 }
 
 auto sqlite3_bind_text(
-        const sqlite3_stmt* pStmt, int idx, const char* value, int nBytes, void (*destructor)(void*)
-) // NOSONAR(cpp:S5205)
-        -> int {
+        const sqlite3_stmt* pStmt,
+        int                 idx,
+        const char*         value,
+        int                 nBytes,
+        void (*destructor)(void*) // NOSONAR(cpp:S5205) - C callback API
+) -> int {
     (void)pStmt;
     (void)idx;
     (void)value;
@@ -465,9 +468,12 @@ auto sqlite3_bind_null(const sqlite3_stmt* pStmt, int idx) -> int {
 }
 
 auto sqlite3_bind_blob(
-        const sqlite3_stmt* pStmt, int idx, const void* value, int nBytes, void (*destructor)(void*)
-) // NOSONAR(cpp:S5205)
-        -> int {
+        const sqlite3_stmt* pStmt,
+        int                 idx,
+        const void*         value,
+        int                 nBytes,
+        void (*destructor)(void*) // NOSONAR(cpp:S5205) - C callback API
+) -> int {
     (void)pStmt;
     (void)idx;
     (void)value;

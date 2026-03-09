@@ -185,7 +185,7 @@ namespace storm::benchmark {
     }
 
     // Helper: Parse and assign key-value pair to BenchmarkTest
-    constexpr void parse_and_assign_field(
+    constexpr void parse_and_assign_field( // NOSONAR(cpp:S3776) - consteval JSON parser dispatches on 20+ field names; complexity is inherent
             BenchmarkTest& test, std::string_view key, std::string_view json, size_t& pos
     ) { // NOSONAR(cpp:S3776)
         if (key == "test_name") {

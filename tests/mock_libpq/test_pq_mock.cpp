@@ -35,7 +35,7 @@ class PqMockDefaultTest : public ::testing::Test {
 };
 
 TEST_F(PqMockDefaultTest, ConnectdbReturnsValidConnection) {
-    PGconn* conn = PQconnectdb("host=localhost");
+    PGconn* const conn = PQconnectdb("host=localhost");
     EXPECT_NE(conn, nullptr);
     EXPECT_EQ(PQstatus(conn), CONNECTION_OK);
     PQfinish(conn);
@@ -101,13 +101,13 @@ class PqMockConnectionTest : public ::testing::Test {
 
 TEST_F(PqMockConnectionTest, ConnectdbReturnsNullWhenConfigured) {
     MockPqConfig::connectdb_returns_null();
-    PGconn* conn = PQconnectdb("host=localhost");
+    PGconn* const conn = PQconnectdb("host=localhost");
     EXPECT_EQ(conn, nullptr);
 }
 
 TEST_F(PqMockConnectionTest, StatusReturnsBadWhenConfigured) {
     MockPqConfig::status_returns(CONNECTION_BAD);
-    PGconn* conn = PQconnectdb("host=localhost");
+    PGconn* const conn = PQconnectdb("host=localhost");
     EXPECT_NE(conn, nullptr);
     EXPECT_EQ(PQstatus(conn), CONNECTION_BAD);
     PQfinish(conn);
@@ -115,7 +115,7 @@ TEST_F(PqMockConnectionTest, StatusReturnsBadWhenConfigured) {
 
 TEST_F(PqMockConnectionTest, ErrorMessageReturnsConfiguredMessage) {
     MockPqConfig::error_message("Connection refused");
-    PGconn* conn = PQconnectdb("host=localhost");
+    PGconn* const conn = PQconnectdb("host=localhost");
     EXPECT_STREQ(PQerrorMessage(conn), "Connection refused");
     PQfinish(conn);
 }
@@ -149,13 +149,13 @@ class PqMockPrepareTest : public ::testing::Test {
 
 TEST_F(PqMockPrepareTest, PrepareReturnsNullWhenConfigured) {
     MockPqConfig::prepare_returns_null();
-    PGresult* res = PQprepare(conn_, "stmt1", "SELECT 1", 0, nullptr);
+    PGresult* const res = PQprepare(conn_, "stmt1", "SELECT 1", 0, nullptr);
     EXPECT_EQ(res, nullptr);
 }
 
 TEST_F(PqMockPrepareTest, PrepareReturnsFatalErrorStatus) {
     MockPqConfig::prepare_status(PGRES_FATAL_ERROR);
-    PGresult* res = PQprepare(conn_, "stmt1", "SELECT 1", 0, nullptr);
+    PGresult* const res = PQprepare(conn_, "stmt1", "SELECT 1", 0, nullptr);
     EXPECT_NE(res, nullptr);
     EXPECT_EQ(PQresultStatus(res), PGRES_FATAL_ERROR);
     PQclear(res);
@@ -165,13 +165,13 @@ TEST_F(PqMockPrepareTest, PrepareFailsOnSpecificCall) {
     MockPqConfig::prepare_fails_on_call(2);
 
     // First call succeeds
-    PGresult* res1 = PQprepare(conn_, "stmt1", "SELECT 1", 0, nullptr);
+    PGresult* const res1 = PQprepare(conn_, "stmt1", "SELECT 1", 0, nullptr);
     EXPECT_NE(res1, nullptr);
     EXPECT_EQ(PQresultStatus(res1), PGRES_COMMAND_OK);
     PQclear(res1);
 
     // Second call fails (returns null)
-    PGresult* res2 = PQprepare(conn_, "stmt2", "SELECT 2", 0, nullptr);
+    PGresult* const res2 = PQprepare(conn_, "stmt2", "SELECT 2", 0, nullptr);
     EXPECT_EQ(res2, nullptr);
 
     // Third call succeeds again
@@ -201,7 +201,7 @@ class PqMockExecPreparedTest : public ::testing::Test {
 
 TEST_F(PqMockExecPreparedTest, ExecPreparedReturnsFatalError) {
     MockPqConfig::exec_prepared_status(PGRES_FATAL_ERROR);
-    PGresult* res = PQexecPrepared(conn_, "stmt1", 0, nullptr, nullptr, nullptr, 0);
+    PGresult* const res = PQexecPrepared(conn_, "stmt1", 0, nullptr, nullptr, nullptr, 0);
     EXPECT_NE(res, nullptr);
     EXPECT_EQ(PQresultStatus(res), PGRES_FATAL_ERROR);
     PQclear(res);
@@ -209,7 +209,7 @@ TEST_F(PqMockExecPreparedTest, ExecPreparedReturnsFatalError) {
 
 TEST_F(PqMockExecPreparedTest, ExecPreparedReturnsConfiguredNtuples) {
     MockPqConfig::exec_prepared_ntuples(5);
-    PGresult* res = PQexecPrepared(conn_, "stmt1", 0, nullptr, nullptr, nullptr, 0);
+    PGresult* const res = PQexecPrepared(conn_, "stmt1", 0, nullptr, nullptr, nullptr, 0);
     EXPECT_EQ(PQntuples(res), 5);
     PQclear(res);
 }
@@ -239,13 +239,13 @@ class PqMockExecTest : public ::testing::Test {
 
 TEST_F(PqMockExecTest, ExecReturnsNullWhenConfigured) {
     MockPqConfig::exec_returns_null();
-    PGresult* res = PQexec(conn_, "DROP TABLE test");
+    PGresult* const res = PQexec(conn_, "DROP TABLE test");
     EXPECT_EQ(res, nullptr);
 }
 
 TEST_F(PqMockExecTest, ExecReturnsFatalErrorStatus) {
     MockPqConfig::exec_status(PGRES_FATAL_ERROR);
-    PGresult* res = PQexec(conn_, "DROP TABLE test");
+    PGresult* const res = PQexec(conn_, "DROP TABLE test");
     EXPECT_NE(res, nullptr);
     EXPECT_EQ(PQresultStatus(res), PGRES_FATAL_ERROR);
     PQclear(res);
@@ -255,13 +255,13 @@ TEST_F(PqMockExecTest, ExecFailsOnSpecificCall) {
     MockPqConfig::exec_fails_on_call(2);
 
     // First call succeeds
-    PGresult* res1 = PQexec(conn_, "SELECT 1");
+    PGresult* const res1 = PQexec(conn_, "SELECT 1");
     EXPECT_NE(res1, nullptr);
     EXPECT_EQ(PQresultStatus(res1), PGRES_COMMAND_OK);
     PQclear(res1);
 
     // Second call fails
-    PGresult* res2 = PQexec(conn_, "SELECT 2");
+    PGresult* const res2 = PQexec(conn_, "SELECT 2");
     EXPECT_NE(res2, nullptr);
     EXPECT_EQ(PQresultStatus(res2), PGRES_FATAL_ERROR);
     PQclear(res2);
@@ -276,7 +276,7 @@ TEST_F(PqMockExecTest, ExecFailsOnSpecificCall) {
 TEST_F(PqMockExecTest, ExecFailsOnCallWithNullConfigured) {
     MockPqConfig::exec_returns_null();
     MockPqConfig::exec_fails_on_call(1);
-    PGresult* res = PQexec(conn_, "SELECT 1");
+    PGresult* const res = PQexec(conn_, "SELECT 1");
     EXPECT_EQ(res, nullptr);
 }
 
@@ -359,22 +359,22 @@ class PqMockCallCountTest : public ::testing::Test {
 
 TEST_F(PqMockCallCountTest, ConnectdbCallsTracked) {
     EXPECT_EQ(MockPqConfig::get_connectdb_call_count(), 0);
-    PGconn* conn1 = PQconnectdb("host=localhost");
+    PGconn* const conn1 = PQconnectdb("host=localhost");
     EXPECT_EQ(MockPqConfig::get_connectdb_call_count(), 1);
-    PGconn* conn2 = PQconnectdb("host=localhost");
+    PGconn* const conn2 = PQconnectdb("host=localhost");
     EXPECT_EQ(MockPqConfig::get_connectdb_call_count(), 2);
     PQfinish(conn1);
     PQfinish(conn2);
 }
 
 TEST_F(PqMockCallCountTest, PrepareCallsTracked) {
-    PGconn* conn = PQconnectdb("host=localhost");
+    PGconn* const conn = PQconnectdb("host=localhost");
     EXPECT_EQ(MockPqConfig::get_prepare_call_count(), 0);
 
-    PGresult* res1 = PQprepare(conn, "s1", "SELECT 1", 0, nullptr);
+    PGresult* const res1 = PQprepare(conn, "s1", "SELECT 1", 0, nullptr);
     EXPECT_EQ(MockPqConfig::get_prepare_call_count(), 1);
 
-    PGresult* res2 = PQprepare(conn, "s2", "SELECT 2", 0, nullptr);
+    PGresult* const res2 = PQprepare(conn, "s2", "SELECT 2", 0, nullptr);
     EXPECT_EQ(MockPqConfig::get_prepare_call_count(), 2);
 
     PQclear(res1);
@@ -383,10 +383,10 @@ TEST_F(PqMockCallCountTest, PrepareCallsTracked) {
 }
 
 TEST_F(PqMockCallCountTest, ExecCallsTracked) {
-    PGconn* conn = PQconnectdb("host=localhost");
+    PGconn* const conn = PQconnectdb("host=localhost");
     EXPECT_EQ(MockPqConfig::get_exec_call_count(), 0);
 
-    PGresult* res = PQexec(conn, "SELECT 1");
+    PGresult* const res = PQexec(conn, "SELECT 1");
     EXPECT_EQ(MockPqConfig::get_exec_call_count(), 1);
 
     PQclear(res);
@@ -394,10 +394,10 @@ TEST_F(PqMockCallCountTest, ExecCallsTracked) {
 }
 
 TEST_F(PqMockCallCountTest, ExecPreparedCallsTracked) {
-    PGconn* conn = PQconnectdb("host=localhost");
+    PGconn* const conn = PQconnectdb("host=localhost");
     EXPECT_EQ(MockPqConfig::get_exec_prepared_call_count(), 0);
 
-    PGresult* res = PQexecPrepared(conn, "stmt1", 0, nullptr, nullptr, nullptr, 0);
+    PGresult* const res = PQexecPrepared(conn, "stmt1", 0, nullptr, nullptr, nullptr, 0);
     EXPECT_EQ(MockPqConfig::get_exec_prepared_call_count(), 1);
 
     PQclear(res);
@@ -420,12 +420,12 @@ TEST_F(PqMockGuardTest, GuardResetsOnDestruction) {
         MockPqGuard guard;
         MockPqConfig::connectdb_returns_null();
 
-        PGconn* conn = PQconnectdb("host=localhost");
+        PGconn* const conn = PQconnectdb("host=localhost");
         EXPECT_EQ(conn, nullptr);
     }
     // Guard destructor called, config should be reset
 
-    PGconn* conn = PQconnectdb("host=localhost");
+    PGconn* const conn = PQconnectdb("host=localhost");
     EXPECT_NE(conn, nullptr);
     EXPECT_EQ(PQstatus(conn), CONNECTION_OK);
     PQfinish(conn);
@@ -440,7 +440,7 @@ TEST_F(PqMockGuardTest, ResetClearsAllConfiguration) {
 
     MockPqConfig::reset();
 
-    PGconn* conn = PQconnectdb("host=localhost");
+    PGconn* const conn = PQconnectdb("host=localhost");
     EXPECT_NE(conn, nullptr);
     EXPECT_EQ(PQstatus(conn), CONNECTION_OK);
 
@@ -458,7 +458,7 @@ TEST_F(PqMockGuardTest, ResetClearsAllConfiguration) {
 }
 
 TEST_F(PqMockGuardTest, ResetClearsCallCounts) {
-    PGconn* conn = PQconnectdb("host=localhost");
+    PGconn* const conn = PQconnectdb("host=localhost");
     EXPECT_EQ(MockPqConfig::get_connectdb_call_count(), 1);
     PQfinish(conn);
 

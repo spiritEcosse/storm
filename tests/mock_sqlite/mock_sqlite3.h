@@ -208,11 +208,13 @@ auto sqlite3_exec(sqlite3 *db, const char *sql, int (*callback)(void *, int, cha
 auto sqlite3_bind_int(const sqlite3_stmt *pStmt, int idx, int value) -> int;
 auto sqlite3_bind_int64(const sqlite3_stmt *pStmt, int idx, int64_t value) -> int;
 auto sqlite3_bind_double(const sqlite3_stmt *pStmt, int idx, double value) -> int;
-auto sqlite3_bind_text(const sqlite3_stmt *pStmt, int idx, const char *value, int nBytes, void (*destructor)(void *))
-    -> int; // NOSONAR(cpp:S5205)
+auto sqlite3_bind_text(const sqlite3_stmt *pStmt, int idx, const char *value, int nBytes,
+                       void (*destructor)(void *) // NOSONAR(cpp:S5205) - C callback API
+                       ) -> int;
 auto sqlite3_bind_null(const sqlite3_stmt *pStmt, int idx) -> int;
-auto sqlite3_bind_blob(const sqlite3_stmt *pStmt, int idx, const void *value, int nBytes, void (*destructor)(void *))
-    -> int; // NOSONAR(cpp:S5205)
+auto sqlite3_bind_blob(const sqlite3_stmt *pStmt, int idx, const void *value, int nBytes,
+                       void (*destructor)(void *) // NOSONAR(cpp:S5205) - C callback API
+                       ) -> int;
 
 // Extracting column values
 auto sqlite3_column_int(sqlite3_stmt *pStmt, int iCol) -> int;

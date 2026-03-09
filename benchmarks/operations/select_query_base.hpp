@@ -174,7 +174,9 @@ namespace storm::benchmark {
             }
         }
 
-        throw std::runtime_error("Field not found");
+        throw std::runtime_error(
+                "Field not found"
+        ); // NOSONAR(cpp:S112) - std::runtime_error is the appropriate exception for field lookup failure
     }
 
     // ========================================================================

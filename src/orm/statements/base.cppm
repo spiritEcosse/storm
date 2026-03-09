@@ -34,7 +34,7 @@ export namespace storm::orm::statements {
 
     // Concept: T must have at least one field annotated with FieldAttr::primary
     template <typename T>
-    concept ModelWithPrimaryKey = []() consteval -> bool {
+    concept ModelWithPrimaryKey = []() consteval {
         for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
             auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
             if (attr.has_value() && attr.value() == meta::FieldAttr::primary)
@@ -46,7 +46,8 @@ export namespace storm::orm::statements {
     // Shared reflection utilities for all statement types
     template <typename T>
         requires ModelWithPrimaryKey<T>
-    class BaseStatement {
+    class BaseStatement { // NOSONAR(cpp:S1448) - statement base centralises all shared reflection utilities; splitting
+                          // would scatter compile-time SQL logic
       public:
         // Compile-time accessor for table name (used in SQL generation)
         static consteval auto get_table_name() -> std::string_view {
@@ -522,8 +523,10 @@ export namespace storm::orm::statements {
         }
 
         // Utility to determine if transaction should be used
-        template <typename ContainerType>
-        static constexpr auto should_use_transaction(const ContainerType& container) -> bool { // NOSONAR(cpp:S6024)
+        template <typename ContainerType> // NOSONAR(cpp:S6024) - static member needed for access to class template
+                                          // context
+                                          static constexpr auto should_use_transaction(const ContainerType& container)
+                                                  -> bool {
             return container.size() > 1;
         }
 

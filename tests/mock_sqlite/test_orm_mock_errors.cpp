@@ -15,11 +15,12 @@
  * - Step failures during execution
  */
 
+#include <format>
 #include <gtest/gtest.h>
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)
-// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-// NOLINTBEGIN(readability-convert-member-functions-to-static,misc-const-correctness)
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR(cpp:S125)
+// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR(cpp:S125)
+// NOLINTBEGIN(readability-convert-member-functions-to-static,misc-const-correctness) // NOSONAR(cpp:S125)
 
 #include "mock_sqlite3.h"
 
@@ -1600,7 +1601,7 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> large_batch;
         for (int i = 0; i < 850; ++i) {
-            large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
+            large_batch.push_back({.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 50)});
         }
 
         auto result = qs.remove(std::span{large_batch}).execute();
@@ -1620,7 +1621,7 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> large_batch;
         for (int i = 0; i < 850; ++i) {
-            large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
+            large_batch.push_back({.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 50)});
         }
 
         auto result = qs.remove(std::span{large_batch}).execute();
@@ -1637,7 +1638,7 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> large_batch;
         for (int i = 0; i < 850; ++i) {
-            large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
+            large_batch.push_back({.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 50)});
         }
 
         auto result = qs.remove(std::span{large_batch}).execute();
@@ -1655,7 +1656,7 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> large_batch;
         for (int i = 0; i < 850; ++i) {
-            large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
+            large_batch.push_back({.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 50)});
         }
 
         auto result = qs.remove(std::span{large_batch}).execute();
@@ -1672,7 +1673,7 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> large_batch;
         for (int i = 0; i < 850; ++i) {
-            large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
+            large_batch.push_back({.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 50)});
         }
 
         auto result = qs.remove(std::span{large_batch}).execute();
@@ -1692,7 +1693,7 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> large_batch;
         for (int i = 0; i < 850; ++i) {
-            large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
+            large_batch.push_back({.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 50)});
         }
 
         auto result = qs.update(std::span{large_batch}).execute();
@@ -1712,7 +1713,7 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> large_batch;
         for (int i = 0; i < 850; ++i) {
-            large_batch.push_back({.id = i, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
+            large_batch.push_back({.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 50)});
         }
 
         auto result = qs.update(std::span{large_batch}).execute();
@@ -1733,7 +1734,7 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> large_batch;
         for (int i = 0; i < 400; ++i) { // 400 * 3 fields = 1200 > 999, triggers chunked
-            large_batch.push_back({.id = 0, .name = "Person" + std::to_string(i), .age = 20 + (i % 50)});
+            large_batch.push_back({.id = 0, .name = std::format("Person{}", i), .age = 20 + (i % 50)});
         }
 
         auto result = qs.insert(std::span{large_batch}).execute();
@@ -1961,7 +1962,7 @@ namespace {
     }
 
     TEST_F(ORMMockErrorTest, TransactionGuardCommitOnMovedFromReturnsSuccess) {
-        // Covers line 396-397: commit() when conn_ == nullptr (moved-from)
+        // Covers line 396-397: commit() when conn_ == nullptr (moved-from) // NOSONAR(cpp:S125)
         auto conn_result = db::sqlite::Connection::open(":memory:");
         ASSERT_TRUE(conn_result.has_value());
         auto& conn = *conn_result;
@@ -2364,6 +2365,6 @@ namespace {
 
 } // namespace
 
-// NOLINTEND(readability-convert-member-functions-to-static,misc-const-correctness)
-// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)
+// NOLINTEND(readability-convert-member-functions-to-static,misc-const-correctness) // NOSONAR(cpp:S125)
+// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR(cpp:S125)
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR(cpp:S125)

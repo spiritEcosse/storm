@@ -47,7 +47,8 @@ namespace detail {
 // Tracks the current per-process test schema name.
 // Empty means no schema has been created yet for this process.
 inline std::string
-    current_test_schema; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables) // NOSONAR(cpp:S5421)
+    current_test_schema; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables) // NOSONAR(cpp:S5421) - mutable
+                         // by design: tracks runtime schema state per process
 } // namespace detail
 
 // Check if the backend is available (PG requires STORM_PG_CONNSTR set and server reachable;
