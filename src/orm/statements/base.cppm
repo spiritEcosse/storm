@@ -525,8 +525,7 @@ export namespace storm::orm::statements {
         // Utility to determine if transaction should be used
         template <typename ContainerType> // NOSONAR(cpp:S6024) - static member needed for access to class template
                                           // context
-                                          static constexpr auto should_use_transaction(const ContainerType& container)
-                                                  -> bool {
+        static constexpr auto should_use_transaction(const ContainerType& container) -> bool {
             return container.size() > 1;
         }
 

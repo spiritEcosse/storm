@@ -108,8 +108,8 @@ class MockPqGuard {
   public:
     MockPqGuard() = default;
     ~MockPqGuard() noexcept {
-        MockPqConfig::reset();
-    } // NOSONAR(cpp:S1048) - reset() is noexcept; no exception can propagate
+        MockPqConfig::reset(); // NOSONAR(cpp:S1048) - reset() is noexcept; no exception can propagate
+    }
 
     MockPqGuard(const MockPqGuard &) = delete;
     auto operator=(const MockPqGuard &) -> MockPqGuard & = delete;

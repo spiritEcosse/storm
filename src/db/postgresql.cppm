@@ -396,11 +396,10 @@ export namespace storm::db::postgresql {
                 blob_buffer_.resize(static_cast<size_t>(binary_len));
                 for (int i = 0; i < binary_len;
                      ++i) { // NOSONAR(cpp:S6022) - unsigned char required for uint8_t blob API compatibility
-                    const char hi                        = hex_str[2 + i * 2];
-                    const char lo                        = hex_str[2 + i * 2 + 1];
-                    blob_buffer_[static_cast<size_t>(i)] = static_cast<unsigned char>(
-                            (hex_digit(hi) << 4) | hex_digit(lo)
-                    ); // NOSONAR(cpp:S6022) - unsigned char required for uint8_t blob API
+                    const char hi = hex_str[2 + i * 2];
+                    const char lo = hex_str[2 + i * 2 + 1];
+                    blob_buffer_[static_cast<size_t>(i)] =
+                            static_cast<unsigned char>((hex_digit(hi) << 4) | hex_digit(lo)); // NOSONAR(cpp:S6022)
                 }
                 blob_decoded_size_ = static_cast<size_t>(binary_len);
             } else {
