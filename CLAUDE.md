@@ -75,7 +75,7 @@ cmake/
 ### GitHub Issue Workflow
 - **Before starting**: Read the issue body with `gh issue view <N>`. Check for a **"Definition of done"** section or checkbox subtasks (e.g., `- [ ] Each error path has a test`).
 - **Verify context**: Before planning or making changes, cross-check the issue description (file paths, line numbers, API references, assumptions) against the actual codebase. If anything is outdated or wrong, **report discrepancies to the user** before proceeding.
-- **Track subtasks**: Use those checkboxes as your acceptance criteria. After completing each one, update the issue to mark it done: `gh issue edit <N> --body "..."` with `- [x]` replacing `- [ ]`.
+- **Track subtasks**: Use those checkboxes as your acceptance criteria. **Before committing**, check off all verified subtasks: `gh issue edit <N> --body "..."` with `- [x]` replacing `- [ ]`. Do not defer this to after the commit or merge.
 - **Close when done**: After all subtasks are checked off, close the issue with `gh issue close <N>`.
 
 ### Branching Rules
