@@ -21,6 +21,7 @@ import <optional>;
 import <vector>;
 import <cstdint>;
 import <memory>;
+import <tuple>;
 
 export namespace storm::orm::statements {
 
@@ -31,6 +32,24 @@ export namespace storm::orm::statements {
     namespace meta {
         enum class FieldAttr { primary, indexed, unique, fk };
     }
+
+    // Composite index types — variadic on std::meta::info field reflections
+    template <std::meta::info... Fields> struct Index {
+        static constexpr auto fields = std::array{Fields...};
+        static constexpr bool unique = false;
+    };
+
+    template <std::meta::info... Fields> struct UniqueIndex {
+        static constexpr auto fields = std::array{Fields...};
+        static constexpr bool unique = true;
+    };
+
+    // Default trait — no composite indexes. Users specialize for their models.
+    template <typename T> struct Indexes {
+        using type = std::tuple<>;
+    };
+
+    template <typename T> using indexes_t = typename Indexes<T>::type;
 
     // Shared reflection utilities for all statement types
     template <typename T> class BaseStatement {

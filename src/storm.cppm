@@ -65,6 +65,12 @@ export namespace storm {
         return orm::schema::SchemaStatement<T>::create_table_if_not_exists(conn);
     }
 
+    // Composite index types — convenience aliases in storm:: namespace
+    using orm::statements::Index;
+    using orm::statements::UniqueIndex;
+    // Note: Indexes<T> trait lives in storm::orm::statements::Indexes<T>.
+    // Users specialize it as: template<> struct storm::orm::statements::Indexes<MyModel> { ... };
+
     // Returns the pre-computed CREATE INDEX SQL statements for model T.
     template <typename T> auto create_index_sql() -> const std::vector<std::string>& {
         return orm::schema::SchemaStatement<T>::create_index_sql();

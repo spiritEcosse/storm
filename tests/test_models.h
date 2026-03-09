@@ -36,6 +36,12 @@ struct Person {
     std::vector<uint8_t> avatar;
 };
 
+// Composite indexes for Person — specialize the trait after struct definition
+template <> struct storm::orm::statements::Indexes<Person> {
+    using type = std::tuple<storm::Index<^^Person::department, ^^Person::age>,
+                            storm::UniqueIndex<^^Person::name, ^^Person::department>>;
+};
+
 // Shared simple record — covers batch/transaction/update/reset tests needing {id, name, value}.
 struct SimpleRecord {
     [[= storm::meta::FieldAttr::primary]] int id{};
