@@ -77,7 +77,7 @@ namespace storm::benchmark {
     };
 
     // Main benchmark test with nested structure
-    struct BenchmarkTest {
+    struct BenchmarkTest { // NOSONAR(cpp:S1820)
         ConstexprString<64>  test_name;
         ConstexprString<32>  test_category;
         ConstexprString<128> description;

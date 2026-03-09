@@ -36,16 +36,17 @@ namespace storm::benchmark {
 
     // Calculate actual iterations based on mode
     inline auto calculate_iterations(int base_iterations, BenchmarkMode mode) -> int {
+        using enum BenchmarkMode;
         switch (mode) {
-        case BenchmarkMode::Quick:
+        case Quick:
             // 0.3x multiplier, minimum 1 iteration
             return std::max(1, static_cast<int>(base_iterations * 0.3));
-        case BenchmarkMode::Thorough:
+        case Thorough:
             // 1.5x multiplier, minimum 3 for very small counts
             if (base_iterations <= 2)
                 return 3;
             return static_cast<int>(base_iterations * 1.5);
-        case BenchmarkMode::Default:
+        case Default:
         default:
             return base_iterations;
         }
@@ -133,7 +134,7 @@ namespace storm::benchmark {
         return Color::RED;
     }
 
-    class BenchmarkRunner {
+    class BenchmarkRunner { // NOSONAR(cpp:S1448)
       public:
         // List available tests (optionally filtered by category prefix)
         auto list_tests(const std::string& category_filter = "") -> void {
@@ -309,13 +310,13 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::BatchStandard) {
                 for (int size : sizes::BATCH_STANDARD) {
                     int         actual_iterations = sizes::iterations_for_batch(size);
-                    std::string name = std::string(test.test_name.view()) + sizes::get_name_suffix(size, true);
+                    std::string name = std::format("{}{}", test.test_name.view(), sizes::get_name_suffix(size, true));
                     runner.run_benchmark(name.c_str(), InsertBenchmark<Model>{size}, actual_iterations);
                 }
             } else if constexpr (profile == sizes::SizeProfile::BatchInsertEdge) {
                 for (int size : sizes::BATCH_INSERT_EDGE) {
                     int         actual_iterations = sizes::iterations_for_batch(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(name.c_str(), InsertBenchmark<Model>{size}, actual_iterations);
                 }
             } else {
@@ -332,7 +333,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::BatchStandard) {
                 for (int size : sizes::BATCH_STANDARD) {
                     int         actual_iterations = sizes::iterations_for_batch(size);
-                    std::string name = std::string(test.test_name.view()) + sizes::get_name_suffix(size, true);
+                    std::string name = std::format("{}{}", test.test_name.view(), sizes::get_name_suffix(size, true));
                     runner.run_benchmark(name.c_str(), DeleteBenchmark<Model>{size}, actual_iterations);
                 }
             } else {
@@ -349,13 +350,13 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::BatchStandard) {
                 for (int size : sizes::BATCH_STANDARD) {
                     int         actual_iterations = sizes::iterations_for_batch(size);
-                    std::string name = std::string(test.test_name.view()) + sizes::get_name_suffix(size, true);
+                    std::string name = std::format("{}{}", test.test_name.view(), sizes::get_name_suffix(size, true));
                     runner.run_benchmark(name.c_str(), UpdateBenchmark<Model>{size}, actual_iterations);
                 }
             } else if constexpr (profile == sizes::SizeProfile::BatchUpdateEdge) {
                 for (int size : sizes::BATCH_UPDATE_EDGE) {
                     int         actual_iterations = sizes::iterations_for_batch(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(name.c_str(), UpdateBenchmark<Model>{size}, actual_iterations);
                 }
             } else {
@@ -372,7 +373,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
                 for (int size : sizes::DATASET_STANDARD) {
                     int         actual_iterations = sizes::iterations_for_dataset(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(name.c_str(), SelectBenchmark<Model>{size}, actual_iterations);
                 }
             } else {
@@ -390,7 +391,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
                 for (int size : sizes::DATASET_STANDARD) {
                     int         actual_iterations = sizes::iterations_for_dataset(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(
                             name.c_str(),
                             SelectJoinBenchmark<FKMessage, User, &FKMessage::sender>{size},
@@ -421,7 +422,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
                 for (int size : sizes::DATASET_STANDARD) {
                     int         actual_iterations = sizes::iterations_for_dataset(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(
                             name.c_str(),
                             SelectWhereJoinBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
@@ -454,7 +455,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
                 for (int size : sizes::DATASET_STANDARD) {
                     int         actual_iterations = sizes::iterations_for_dataset(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(
                             name.c_str(),
                             SelectLeftJoinBenchmark<FKMessage, User, &FKMessage::sender>{size},
@@ -484,7 +485,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
                 for (int size : sizes::DATASET_STANDARD) {
                     int         actual_iterations = sizes::iterations_for_dataset(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(
                             name.c_str(),
                             SelectLeftJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
@@ -517,7 +518,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
                 for (int size : sizes::DATASET_STANDARD) {
                     int         actual_iterations = sizes::iterations_for_dataset(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(
                             name.c_str(),
                             SelectRightJoinBenchmark<FKMessage, User, &FKMessage::sender>{size},
@@ -547,7 +548,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
                 for (int size : sizes::DATASET_STANDARD) {
                     int         actual_iterations = sizes::iterations_for_dataset(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(
                             name.c_str(),
                             SelectRightJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
@@ -580,7 +581,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
                 for (int size : sizes::DATASET_STANDARD) {
                     int         actual_iterations = sizes::iterations_for_dataset(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(
                             name.c_str(), SelectMultiFKJoinBenchmark<FKMessage, User>{size}, actual_iterations
                     );
@@ -605,13 +606,13 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
                 for (int size : sizes::DATASET_SMALL) {
                     int         actual_iterations = sizes::iterations_for_aggregate(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(name.c_str(), CountBenchmark<Model>{size}, actual_iterations);
                 }
             } else if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
                 for (int size : sizes::DATASET_STANDARD) {
                     int         actual_iterations = sizes::iterations_for_aggregate(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(name.c_str(), CountBenchmark<Model>{size}, actual_iterations);
                 }
             } else {
@@ -630,7 +631,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
                 for (int size : sizes::DATASET_SMALL) {
                     int         actual_iterations = sizes::iterations_for_aggregate(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(name.c_str(), CountFieldBenchmark<Model, field_info>{size}, actual_iterations);
                 }
             } else {
@@ -651,7 +652,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
                 for (int size : sizes::DATASET_SMALL) {
                     int         actual_iterations = sizes::iterations_for_aggregate(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(
                             name.c_str(), CountDistinctBenchmark<Model, field_info>{size}, actual_iterations
                     );
@@ -674,7 +675,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
                 for (int size : sizes::DATASET_SMALL) {
                     int         actual_iterations = sizes::iterations_for_aggregate(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(name.c_str(), SumBenchmark<Model, field_info>{size}, actual_iterations);
                 }
             } else {
@@ -693,7 +694,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
                 for (int size : sizes::DATASET_SMALL) {
                     int         actual_iterations = sizes::iterations_for_aggregate(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(name.c_str(), AvgBenchmark<Model, field_info>{size}, actual_iterations);
                 }
             } else {
@@ -712,7 +713,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
                 for (int size : sizes::DATASET_SMALL) {
                     int         actual_iterations = sizes::iterations_for_aggregate(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(name.c_str(), MinBenchmark<Model, field_info>{size}, actual_iterations);
                 }
             } else {
@@ -731,7 +732,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
                 for (int size : sizes::DATASET_SMALL) {
                     int         actual_iterations = sizes::iterations_for_aggregate(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(name.c_str(), MaxBenchmark<Model, field_info>{size}, actual_iterations);
                 }
             } else {
@@ -754,7 +755,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
                 for (int size : sizes::DATASET_STANDARD) {
                     int         actual_iterations = sizes::iterations_for_dataset(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(
                             name.c_str(), SimpleDistinctBenchmark<Model, field_info>{size}, actual_iterations
                     );
@@ -781,7 +782,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
                 for (int size : sizes::DATASET_STANDARD) {
                     int         actual_iterations = sizes::iterations_for_dataset(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(
                             name.c_str(),
                             DistinctWhereBenchmark<Model, distinct_field_info, where_field_info, op_str, double>{
@@ -812,7 +813,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
                 for (int size : sizes::DATASET_STANDARD) {
                     int         actual_iterations = sizes::iterations_for_dataset(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(
                             name.c_str(),
                             DistinctJoinBenchmark<FKMessage, User, &FKMessage::sender, distinct_field_info>{size},
@@ -843,7 +844,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
                 for (int size : sizes::DATASET_STANDARD) {
                     int         actual_iterations = sizes::iterations_for_dataset(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(
                             name.c_str(),
                             DistinctWhereJoinBenchmark<
@@ -1403,7 +1404,7 @@ namespace storm::benchmark {
             if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
                 for (int size : sizes::DATASET_STANDARD) {
                     int         actual_iterations = sizes::iterations_for_dataset(size);
-                    std::string name              = std::string(test.test_name.view()) + "_" + std::to_string(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
                     runner.run_benchmark(name.c_str(), FirstBenchmark<Model>{size}, actual_iterations);
                 }
             } else {
@@ -1446,9 +1447,8 @@ namespace storm::benchmark {
       public:
         // Template recursion to execute tests at compile time
         template <typename Model, size_t TestIndex, size_t TotalTests> struct TestExecutor {
-            // NOSONAR(cpp:S3776) - Cognitive complexity is inherent to compile-time dispatch; template metaprogramming
             static void
-            execute(BenchmarkRunner&   runner,
+            execute(BenchmarkRunner&   runner,              // NOSONAR(cpp:S3776)
                     int                iterations_override, // 0 = use JSON value
                     const std::string& filter     = "",
                     const std::string& category   = "",

@@ -231,25 +231,24 @@ auto PQconnectdb(const char* conninfo) -> PGconn* {
 }
 
 auto PQstatus(const PGconn* conn) -> ConnStatusType {
-    auto* fake = reinterpret_cast<const FakePGconn*>(conn); // NOSONAR(cpp:S3630)
-    if (fake)
+    if (auto* fake = reinterpret_cast<const FakePGconn*>(conn); fake) // NOSONAR(cpp:S3630)
         return fake->status;
     return CONNECTION_BAD;
 }
 
-auto PQfinish(PGconn* conn) -> void {
+auto PQfinish(const PGconn* conn) -> void {
     (void)conn;
     // Memory managed by g_fake_conns vector
 }
 
 auto PQerrorMessage(const PGconn* conn) -> char* {
-    auto* fake = reinterpret_cast<const FakePGconn*>(conn); // NOSONAR(cpp:S3630)
-    if (fake)
+    if (auto* fake = reinterpret_cast<const FakePGconn*>(conn); fake) // NOSONAR(cpp:S3630)
         return const_cast<char*>(fake->error_message.c_str()); // NOSONAR - mock returns mutable ptr per libpq API
     return const_cast<char*>("");                              // NOSONAR
 }
 
-auto PQprepare(PGconn* conn, const char* stmtName, const char* query, int nParams, const Oid* paramTypes) -> PGresult* {
+auto PQprepare(const PGconn* conn, const char* stmtName, const char* query, int nParams, const Oid* paramTypes)
+        -> PGresult* {
     (void)conn;
     (void)stmtName;
     (void)query;
@@ -274,7 +273,7 @@ auto PQprepare(PGconn* conn, const char* stmtName, const char* query, int nParam
 }
 
 auto PQexecPrepared(
-        PGconn*            conn,
+        const PGconn*      conn,
         const char*        stmtName,
         int                nParams,
         const char* const* paramValues,
@@ -299,7 +298,7 @@ auto PQexecPrepared(
     return result;
 }
 
-auto PQexec(PGconn* conn, const char* query) -> PGresult* {
+auto PQexec(const PGconn* conn, const char* query) -> PGresult* {
     (void)conn;
     (void)query;
     g_mock_config.exec_calls++;
@@ -326,20 +325,18 @@ auto PQexec(PGconn* conn, const char* query) -> PGresult* {
 }
 
 auto PQresultStatus(const PGresult* res) -> ExecStatusType {
-    auto* fake = reinterpret_cast<const FakePGresult*>(res); // NOSONAR(cpp:S3630)
-    if (fake)
+    if (auto* fake = reinterpret_cast<const FakePGresult*>(res); fake) // NOSONAR(cpp:S3630)
         return fake->status;
     return PGRES_FATAL_ERROR;
 }
 
-auto PQclear(PGresult* res) -> void {
+auto PQclear(const PGresult* res) -> void {
     (void)res;
     // Memory managed by g_fake_results vector
 }
 
 auto PQntuples(const PGresult* res) -> int {
-    auto* fake = reinterpret_cast<const FakePGresult*>(res); // NOSONAR(cpp:S3630)
-    if (fake)
+    if (auto* fake = reinterpret_cast<const FakePGresult*>(res); fake) // NOSONAR(cpp:S3630)
         return fake->ntuples;
     return 0;
 }
@@ -347,8 +344,7 @@ auto PQntuples(const PGresult* res) -> int {
 auto PQgetvalue(const PGresult* res, int tup_num, int field_num) -> char* {
     (void)res;
     const auto key = cell_key(tup_num, field_num);
-    auto       it  = g_mock_config.column_values.find(key);
-    if (it != g_mock_config.column_values.end())
+    if (auto it = g_mock_config.column_values.find(key); it != g_mock_config.column_values.end())
         return const_cast<char*>(it->second.c_str()); // NOSONAR - libpq API returns non-const char*
     g_empty_string = "";
     return const_cast<char*>(g_empty_string.c_str()); // NOSONAR
@@ -359,13 +355,11 @@ auto PQgetlength(const PGresult* res, int tup_num, int field_num) -> int {
     const auto key = cell_key(tup_num, field_num);
 
     // Check explicit length override first
-    auto len_it = g_mock_config.column_lengths.find(key);
-    if (len_it != g_mock_config.column_lengths.end())
+    if (auto len_it = g_mock_config.column_lengths.find(key); len_it != g_mock_config.column_lengths.end())
         return len_it->second;
 
     // Fall back to actual value length
-    auto val_it = g_mock_config.column_values.find(key);
-    if (val_it != g_mock_config.column_values.end())
+    if (auto val_it = g_mock_config.column_values.find(key); val_it != g_mock_config.column_values.end())
         return static_cast<int>(val_it->second.size());
 
     return 0;
@@ -374,8 +368,7 @@ auto PQgetlength(const PGresult* res, int tup_num, int field_num) -> int {
 auto PQgetisnull(const PGresult* res, int tup_num, int field_num) -> int {
     (void)res;
     const auto key = cell_key(tup_num, field_num);
-    auto       it  = g_mock_config.column_nulls.find(key);
-    if (it != g_mock_config.column_nulls.end())
+    if (auto it = g_mock_config.column_nulls.find(key); it != g_mock_config.column_nulls.end())
         return it->second ? 1 : 0;
     return 0; // Not null by default
 }

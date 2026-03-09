@@ -31,18 +31,19 @@ export namespace storm::orm::statements {
 
     // LCOV_EXCL_START - compile-time only
     constexpr auto get_agg_function_name(AggregateType type) -> std::string_view {
+        using enum AggregateType;
         switch (type) {
-        case AggregateType::SUM:
+        case SUM:
             return "SUM";
-        case AggregateType::COUNT:
+        case COUNT:
             return "COUNT";
-        case AggregateType::AVG:
+        case AVG:
             return "AVG";
-        case AggregateType::MIN:
+        case MIN:
             return "MIN";
-        case AggregateType::MAX:
+        case MAX:
             return "MAX";
-        case AggregateType::COUNT_DISTINCT:
+        case COUNT_DISTINCT:
             return "COUNT";
         }
         return "";
@@ -213,7 +214,7 @@ export namespace storm::orm::statements {
         // HAVING clause - only available when GROUP BY is present
         // LCOV_EXCL_START — tested via AggregateTest.Having*; C++26 module coverage gap
         auto having(orm::where::ExpressionVariantPtr expr)
-            requires(HasGroupBy)
+            requires HasGroupBy
         {
             return AggregateStatement<T, ConnType, GroupFields, Ops...>{
                     conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_, std::move(expr)

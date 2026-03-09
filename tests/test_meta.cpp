@@ -25,7 +25,7 @@ struct Author {
 };
 
 TEST(AuthorReflection, PrimaryKeyTest) {
-    constexpr auto primary_key_member = find_primary_key(^^Author);
+    constexpr auto primary_key_member = find_primary_key<Author>();
     constexpr auto primary_key_name   = identifier_of(primary_key_member);
 
     // Verify that the reflection correctly identifies "id" as the primary key field

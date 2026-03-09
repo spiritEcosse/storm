@@ -183,14 +183,14 @@ def convert_yaml_to_json(yaml_path: Path, json_path: Path) -> None:
     data = parse_simple_yaml(yaml_content)
 
     if 'tests' not in data:
-        print(f"Error: YAML file must have a 'tests' key", file=sys.stderr)
+        print("Error: YAML file must have a 'tests' key", file=sys.stderr)
         print(f"Parsed keys: {list(data.keys())}", file=sys.stderr)
         sys.exit(1)
 
     tests = data['tests']
 
     if tests is None:
-        print(f"Error: 'tests' is None - parsing failed", file=sys.stderr)
+        print("Error: 'tests' is None - parsing failed", file=sys.stderr)
         sys.exit(1)
 
     # Transform YAML format to JSON format expected by C++ parser

@@ -81,7 +81,7 @@ namespace {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
     auto parse_args(int argc, char* argv[]) -> Args {
         Args args;
-        for (int i = 1; i < argc; i++) {
+        for (int i = 1; i < argc; i++) { // NOSONAR(cpp:S886)
             const std::string arg = argv[i];
             if (arg.starts_with("--filter=")) {
                 args.filter = arg.substr(9);

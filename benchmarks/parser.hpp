@@ -171,7 +171,8 @@ namespace storm::benchmark {
                 break;
             }
 
-            where.in_values_int[count++] = parse_int(json, pos);
+            where.in_values_int[count] = parse_int(json, pos);
+            count++;
             skip_whitespace(json, pos);
 
             if (json[pos] == ',') {
@@ -184,9 +185,9 @@ namespace storm::benchmark {
     }
 
     // Helper: Parse and assign key-value pair to BenchmarkTest
-    // NOSONAR(cpp:S3776) - Cognitive complexity is inherent to JSON field dispatch; compile-time parser
-    constexpr void
-    parse_and_assign_field(BenchmarkTest& test, std::string_view key, std::string_view json, size_t& pos) {
+    constexpr void parse_and_assign_field(
+            BenchmarkTest& test, std::string_view key, std::string_view json, size_t& pos
+    ) { // NOSONAR(cpp:S3776)
         if (key == "test_name") {
             test.test_name = parse_string<64>(json, pos);
         } else if (key == "test_category") {

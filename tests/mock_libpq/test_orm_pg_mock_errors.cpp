@@ -20,14 +20,15 @@
 
 #include <gtest/gtest.h>
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)
-// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-// NOLINTBEGIN(readability-convert-member-functions-to-static,misc-const-correctness)
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR(cpp:S125)
+// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR(cpp:S125)
+// NOLINTBEGIN(readability-convert-member-functions-to-static,misc-const-correctness) // NOSONAR(cpp:S125)
 
 #include "mock_libpq.h"
 
 import storm;
 import <expected>;
+import <numbers>;
 import <string>;
 import <vector>;
 
@@ -44,8 +45,8 @@ namespace {
     // ============================================================================
 
     class PgConnectionErrorTest : public ::testing::Test {
-      protected:
-        MockPqGuard guard_;
+      public:
+        [[no_unique_address]] MockPqGuard guard_;
 
         auto SetUp() -> void override {
             MockPqConfig::reset();
@@ -62,7 +63,8 @@ namespace {
     }
 
     TEST_F(PgConnectionErrorTest, StatusReturnsBad) {
-        MockPqConfig::status_returns(CONNECTION_BAD).error_message("Connection refused");
+        MockPqConfig::status_returns(CONNECTION_BAD);
+        MockPqConfig::error_message("Connection refused");
         auto result = PgConnection::open("host=localhost");
 
         ASSERT_FALSE(result.has_value());
@@ -89,8 +91,8 @@ namespace {
     // ============================================================================
 
     class PgPrepareErrorTest : public ::testing::Test {
-      protected:
-        MockPqGuard guard_;
+      public:
+        [[no_unique_address]] MockPqGuard guard_;
 
         auto SetUp() -> void override {
             MockPqConfig::reset();
@@ -126,7 +128,8 @@ namespace {
         auto conn_result = PgConnection::open("host=localhost");
         ASSERT_TRUE(conn_result.has_value());
 
-        MockPqConfig::prepare_status(PGRES_FATAL_ERROR).error_message("syntax error");
+        MockPqConfig::prepare_status(PGRES_FATAL_ERROR);
+        MockPqConfig::error_message("syntax error");
         auto result = conn_result->prepare("INVALID SQL");
 
         ASSERT_FALSE(result.has_value());
@@ -164,7 +167,8 @@ namespace {
         auto conn_result = PgConnection::open("host=localhost");
         ASSERT_TRUE(conn_result.has_value());
 
-        MockPqConfig::prepare_status(PGRES_FATAL_ERROR).error_message("relation not found");
+        MockPqConfig::prepare_status(PGRES_FATAL_ERROR);
+        MockPqConfig::error_message("relation not found");
         auto result = conn_result->prepare_cached("SELECT * FROM nonexistent");
 
         ASSERT_FALSE(result.has_value());
@@ -176,8 +180,8 @@ namespace {
     // ============================================================================
 
     class PgExecuteErrorTest : public ::testing::Test {
-      protected:
-        MockPqGuard guard_;
+      public:
+        [[no_unique_address]] MockPqGuard guard_;
 
         auto SetUp() -> void override {
             MockPqConfig::reset();
@@ -211,7 +215,8 @@ namespace {
         auto conn_result = PgConnection::open("host=localhost");
         ASSERT_TRUE(conn_result.has_value());
 
-        MockPqConfig::exec_status(PGRES_FATAL_ERROR).error_message("table already exists");
+        MockPqConfig::exec_status(PGRES_FATAL_ERROR);
+        MockPqConfig::error_message("table already exists");
         auto result = conn_result->execute("CREATE TABLE test (id INTEGER)");
 
         ASSERT_FALSE(result.has_value());
@@ -223,8 +228,8 @@ namespace {
     // ============================================================================
 
     class PgStatementErrorTest : public ::testing::Test {
-      protected:
-        MockPqGuard guard_;
+      public:
+        [[no_unique_address]] MockPqGuard guard_;
 
         auto SetUp() -> void override {
             MockPqConfig::reset();
@@ -239,7 +244,8 @@ namespace {
         auto stmt_result = conn_result->prepare("INSERT INTO test VALUES ($1)");
         ASSERT_TRUE(stmt_result.has_value());
 
-        MockPqConfig::exec_prepared_status(PGRES_FATAL_ERROR).error_message("constraint violation");
+        MockPqConfig::exec_prepared_status(PGRES_FATAL_ERROR);
+        MockPqConfig::error_message("constraint violation");
 
         auto exec_result = stmt_result->execute();
         ASSERT_FALSE(exec_result.has_value());
@@ -324,8 +330,8 @@ namespace {
     // ============================================================================
 
     class PgBlobExtractionTest : public ::testing::Test {
-      protected:
-        MockPqGuard guard_;
+      public:
+        [[no_unique_address]] MockPqGuard guard_;
 
         auto SetUp() -> void override {
             MockPqConfig::reset();
@@ -340,7 +346,8 @@ namespace {
         ASSERT_TRUE(stmt_result.has_value());
 
         // Configure: 1 row, column 0 is null
-        MockPqConfig::exec_prepared_ntuples(1).set_column_null(0, 0);
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_null(0, 0);
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
         ASSERT_TRUE(step.value());
@@ -357,7 +364,8 @@ namespace {
         ASSERT_TRUE(stmt_result.has_value());
 
         // Configure: 1 row, column 0 has raw data (no \x prefix)
-        MockPqConfig::exec_prepared_ntuples(1).set_column_value(0, 0, "rawdata");
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_value(0, 0, "rawdata");
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
         ASSERT_TRUE(step.value());
@@ -378,7 +386,8 @@ namespace {
         ASSERT_TRUE(stmt_result.has_value());
 
         // Configure: 1 row, column 0 has uppercase hex BYTEA
-        MockPqConfig::exec_prepared_ntuples(1).set_column_value(0, 0, "\\xDEADBEEF");
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_value(0, 0, "\\xDEADBEEF");
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
         ASSERT_TRUE(step.value());
@@ -406,7 +415,8 @@ namespace {
         ASSERT_TRUE(stmt_result.has_value());
 
         // Hex string with numeric digits (0-9) to cover hex_digit() numeric branch
-        MockPqConfig::exec_prepared_ntuples(1).set_column_value(0, 0, "\\x0123456789");
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_value(0, 0, "\\x0123456789");
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
         ASSERT_TRUE(step.value());
@@ -433,7 +443,8 @@ namespace {
         ASSERT_TRUE(stmt_result.has_value());
 
         // Hex string with invalid hex characters to cover hex_digit() return 0 fallback
-        MockPqConfig::exec_prepared_ntuples(1).set_column_value(0, 0, "\\xGG");
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_value(0, 0, "\\xGG");
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
         ASSERT_TRUE(step.value());
@@ -455,7 +466,8 @@ namespace {
         auto stmt_result = conn_result->prepare("SELECT data FROM test");
         ASSERT_TRUE(stmt_result.has_value());
 
-        MockPqConfig::exec_prepared_ntuples(1).set_column_value(0, 0, "\\xdeadbeef");
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_value(0, 0, "\\xdeadbeef");
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
         ASSERT_TRUE(step.value());
@@ -494,8 +506,8 @@ namespace {
     // ============================================================================
 
     class PgCacheUtilityTest : public ::testing::Test {
-      protected:
-        MockPqGuard guard_;
+      public:
+        [[no_unique_address]] MockPqGuard guard_;
 
         auto SetUp() -> void override {
             MockPqConfig::reset();
@@ -539,8 +551,8 @@ namespace {
     // ============================================================================
 
     class PgConnectionAccessorTest : public ::testing::Test {
-      protected:
-        MockPqGuard guard_;
+      public:
+        [[no_unique_address]] MockPqGuard guard_;
 
         auto SetUp() -> void override {
             MockPqConfig::reset();
@@ -573,8 +585,8 @@ namespace {
     // ============================================================================
 
     class PgQuoteHandlingTest : public ::testing::Test {
-      protected:
-        MockPqGuard guard_;
+      public:
+        [[no_unique_address]] MockPqGuard guard_;
 
         auto SetUp() -> void override {
             MockPqConfig::reset();
@@ -681,7 +693,7 @@ namespace {
         auto r3 = stmt_result->bind_int64(3, 123456789LL);
         EXPECT_TRUE(r3.has_value());
 
-        auto r4 = stmt_result->bind_double(4, 3.14);
+        auto r4 = stmt_result->bind_double(4, std::numbers::pi);
         EXPECT_TRUE(r4.has_value());
 
         auto r5 = stmt_result->bind_null(5);
@@ -798,8 +810,8 @@ namespace {
     // ============================================================================
 
     class PgColumnExtractionTest : public ::testing::Test {
-      protected:
-        MockPqGuard guard_;
+      public:
+        [[no_unique_address]] MockPqGuard guard_;
 
         auto SetUp() -> void override {
             MockPqConfig::reset();
@@ -813,7 +825,8 @@ namespace {
         auto stmt_result = conn_result->prepare("SELECT age FROM test");
         ASSERT_TRUE(stmt_result.has_value());
 
-        MockPqConfig::exec_prepared_ntuples(1).set_column_value(0, 0, "42");
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_value(0, 0, "42");
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
         ASSERT_TRUE(step.value());
@@ -828,7 +841,8 @@ namespace {
         auto stmt_result = conn_result->prepare("SELECT bigid FROM test");
         ASSERT_TRUE(stmt_result.has_value());
 
-        MockPqConfig::exec_prepared_ntuples(1).set_column_value(0, 0, "9876543210");
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_value(0, 0, "9876543210");
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
 
@@ -842,11 +856,12 @@ namespace {
         auto stmt_result = conn_result->prepare("SELECT price FROM test");
         ASSERT_TRUE(stmt_result.has_value());
 
-        MockPqConfig::exec_prepared_ntuples(1).set_column_value(0, 0, "3.14159");
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_value(0, 0, "3.14159");
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
 
-        EXPECT_NEAR(stmt_result->extract_double(0), 3.14159, 0.0001);
+        EXPECT_NEAR(stmt_result->extract_double(0), std::numbers::pi, 0.001);
     }
 
     TEST_F(PgColumnExtractionTest, ExtractTextPtr) {
@@ -856,7 +871,8 @@ namespace {
         auto stmt_result = conn_result->prepare("SELECT name FROM test");
         ASSERT_TRUE(stmt_result.has_value());
 
-        MockPqConfig::exec_prepared_ntuples(1).set_column_value(0, 0, "hello");
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_value(0, 0, "hello");
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
 
@@ -872,7 +888,8 @@ namespace {
         auto stmt_result = conn_result->prepare("SELECT name FROM test");
         ASSERT_TRUE(stmt_result.has_value());
 
-        MockPqConfig::exec_prepared_ntuples(1).set_column_value(0, 0, "world");
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_value(0, 0, "world");
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
 
@@ -887,7 +904,8 @@ namespace {
         auto stmt_result = conn_result->prepare("SELECT name FROM test");
         ASSERT_TRUE(stmt_result.has_value());
 
-        MockPqConfig::exec_prepared_ntuples(1).set_column_null(0, 0);
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_null(0, 0);
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
 
@@ -902,7 +920,8 @@ namespace {
         auto stmt_result = conn_result->prepare("SELECT active FROM test");
         ASSERT_TRUE(stmt_result.has_value());
 
-        MockPqConfig::exec_prepared_ntuples(1).set_column_value(0, 0, "t");
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_value(0, 0, "t");
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
 
@@ -916,7 +935,8 @@ namespace {
         auto stmt_result = conn_result->prepare("SELECT active FROM test");
         ASSERT_TRUE(stmt_result.has_value());
 
-        MockPqConfig::exec_prepared_ntuples(1).set_column_value(0, 0, "f");
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_value(0, 0, "f");
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
 
@@ -930,7 +950,8 @@ namespace {
         auto stmt_result = conn_result->prepare("SELECT score FROM test");
         ASSERT_TRUE(stmt_result.has_value());
 
-        MockPqConfig::exec_prepared_ntuples(1).set_column_value(0, 0, "2.5");
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_value(0, 0, "2.5");
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
 
@@ -944,7 +965,8 @@ namespace {
         auto stmt_result = conn_result->prepare("SELECT name FROM test");
         ASSERT_TRUE(stmt_result.has_value());
 
-        MockPqConfig::exec_prepared_ntuples(1).set_column_value(0, 0, "hello");
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_value(0, 0, "hello");
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
 
@@ -958,7 +980,8 @@ namespace {
         auto stmt_result = conn_result->prepare("SELECT name FROM test");
         ASSERT_TRUE(stmt_result.has_value());
 
-        MockPqConfig::exec_prepared_ntuples(1).set_column_null(0, 0);
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_null(0, 0);
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
 
@@ -1063,8 +1086,8 @@ namespace {
     using PgQuerySet = storm::QuerySet<MockPgPerson, PgConnection>;
 
     class PgOrmInsertReturningTest : public ::testing::Test {
-      protected:
-        MockPqGuard guard_;
+      public:
+        [[no_unique_address]] MockPqGuard guard_;
 
         auto SetUp() -> void override {
             MockPqConfig::reset();
@@ -1076,7 +1099,8 @@ namespace {
     // Covers insert.cppm lines 251-285: INSERT RETURNING happy path
     TEST_F(PgOrmInsertReturningTest, InsertReturningSuccess) {
         // Configure mock: exec_prepared returns 1 row with the generated ID
-        MockPqConfig::exec_prepared_ntuples(1).set_column_value(0, 0, "42");
+        MockPqConfig::exec_prepared_ntuples(1);
+        MockPqConfig::set_column_value(0, 0, "42");
 
         PgQuerySet         qs;
         MockPgPerson const person{.id = 0, .name = "Alice", .age = 30};
@@ -1099,7 +1123,8 @@ namespace {
 
     // Covers insert.cppm LCOV_EXCL lines: INSERT RETURNING step error
     TEST_F(PgOrmInsertReturningTest, InsertReturningStepError) {
-        MockPqConfig::exec_prepared_status(PGRES_FATAL_ERROR).error_message("constraint violation");
+        MockPqConfig::exec_prepared_status(PGRES_FATAL_ERROR);
+        MockPqConfig::error_message("constraint violation");
 
         PgQuerySet         qs;
         MockPgPerson const person{.id = 0, .name = "Charlie", .age = 35};
@@ -1181,7 +1206,8 @@ namespace {
         }
 
         template <typename = void>
-        [[nodiscard]] auto bind_blob(int /*index*/, const void* /*data*/, size_t /*size*/) noexcept
+        [[nodiscard]] auto
+        bind_blob(int /*index*/, const void* /*data*/, size_t /*size*/) noexcept // NOSONAR(cpp:S5008)
                 -> std::expected<void, Error> {
             return check_fail();
         }
@@ -1198,11 +1224,15 @@ namespace {
             return ROW_AVAILABLE;
         }
 
-        template <typename = void> auto reset() noexcept -> void {}
+        template <typename = void> auto reset() noexcept -> void {
+            // Intentionally empty.
+        }
 
-        template <typename = void> auto finalize() noexcept -> void {}
+        template <typename = void> auto finalize() noexcept -> void {
+            // Intentionally empty.
+        }
 
-        template <typename = void> [[nodiscard]] auto handle() const noexcept -> void* {
+        template <typename = void> [[nodiscard]] auto handle() const noexcept -> void* { // NOSONAR(cpp:S5008)
             return nullptr;
         }
 
@@ -1240,7 +1270,8 @@ namespace {
             return 0.0f;
         }
 
-        template <typename = void> [[nodiscard]] auto extract_blob_ptr(int /*col_index*/) noexcept -> const void* {
+        template <typename = void>
+        [[nodiscard]] auto extract_blob_ptr(int /*col_index*/) noexcept -> const void* { // NOSONAR(cpp:S5008)
             return nullptr;
         }
 
@@ -1283,7 +1314,9 @@ namespace {
             return BindFailConnection{};
         }
 
-        auto prepare_common_statements() -> void {}
+        auto prepare_common_statements() -> void {
+            // Intentionally empty.
+        }
 
         [[nodiscard]] constexpr auto is_open() const noexcept -> bool {
             return true;
@@ -1298,7 +1331,9 @@ namespace {
             return &cached_stmt_;
         }
 
-        auto clear_statement_cache() noexcept -> void {}
+        auto clear_statement_cache() noexcept -> void {
+            // Intentionally empty.
+        }
 
         [[nodiscard]] auto cached_statement_count() const noexcept -> size_t {
             return 0;
@@ -1308,7 +1343,7 @@ namespace {
             return {};
         }
 
-        [[nodiscard]] auto get() const noexcept -> void* {
+        [[nodiscard]] auto get() const noexcept -> void* { // NOSONAR(cpp:S5008)
             return nullptr;
         }
 
@@ -1316,7 +1351,9 @@ namespace {
             return 0;
         }
 
-        auto set_last_insert_rowid(int64_t /*rowid*/) noexcept -> void {}
+        auto set_last_insert_rowid(int64_t /*rowid*/) noexcept -> void {
+            // Intentionally empty.
+        }
 
         auto set_fail_binds(bool fail) noexcept -> void {
             fail_binds_ = fail;
@@ -1408,9 +1445,9 @@ namespace {
     // ============================================================================
 
     class PgSchemaDetailTest : public ::testing::Test {
+      public:
         [[no_unique_address]] MockPqGuard guard_;
 
-      protected:
         auto SetUp() -> void override {
             MockPqConfig::reset();
         }
@@ -1454,6 +1491,6 @@ namespace {
 
 } // namespace
 
-// NOLINTEND(readability-convert-member-functions-to-static,misc-const-correctness)
-// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)
+// NOLINTEND(readability-convert-member-functions-to-static,misc-const-correctness) // NOSONAR(cpp:S125)
+// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR(cpp:S125)
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR(cpp:S125)

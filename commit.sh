@@ -52,11 +52,9 @@ if [[ -n "$STAGED_FILES" ]]; then
     fi
 fi
 
-if [[ "$RUN_FORMAT" == true || "$RUN_CMAKE_FORMAT" == true ]]; then
-    if [[ ! -f "build/debug/build.ninja" ]]; then
-        echo "📐 Configuring debug build for format targets..."
-        cmake --preset ninja-debug
-    fi
+if [[ ("$RUN_FORMAT" == true || "$RUN_CMAKE_FORMAT" == true) && ! -f "build/debug/build.ninja" ]]; then
+    echo "📐 Configuring debug build for format targets..."
+    cmake --preset ninja-debug
 fi
 
 if [[ "$RUN_FORMAT" == true ]]; then

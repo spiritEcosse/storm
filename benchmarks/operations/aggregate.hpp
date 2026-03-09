@@ -43,20 +43,21 @@ namespace storm::benchmark {
 
     // Get aggregate operation name for display
     constexpr std::string_view aggregate_op_name(AggregateOp op) {
+        using enum AggregateOp;
         switch (op) {
-        case AggregateOp::Count:
+        case Count:
             return "COUNT(*)";
-        case AggregateOp::CountField:
+        case CountField:
             return "COUNT(field)";
-        case AggregateOp::CountDistinct:
+        case CountDistinct:
             return "COUNT(DISTINCT)";
-        case AggregateOp::Sum:
+        case Sum:
             return "SUM";
-        case AggregateOp::Avg:
+        case Avg:
             return "AVG";
-        case AggregateOp::Min:
+        case Min:
             return "MIN";
-        case AggregateOp::Max:
+        case Max:
             return "MAX";
         }
         return "UNKNOWN";
@@ -141,19 +142,20 @@ namespace storm::benchmark {
       private:
         // Create the aggregate statement once (like raw prepares once)
         auto create_aggregate_stmt() {
-            if constexpr (Op == AggregateOp::Count) {
+            using enum AggregateOp;
+            if constexpr (Op == Count) {
                 return Base::qs().count();
-            } else if constexpr (Op == AggregateOp::CountField) {
+            } else if constexpr (Op == CountField) {
                 return Base::qs().template count<FieldInfo>();
-            } else if constexpr (Op == AggregateOp::CountDistinct) {
+            } else if constexpr (Op == CountDistinct) {
                 return Base::qs().template count_distinct<FieldInfo>();
-            } else if constexpr (Op == AggregateOp::Sum) {
+            } else if constexpr (Op == Sum) {
                 return Base::qs().template sum<FieldInfo>();
-            } else if constexpr (Op == AggregateOp::Avg) {
+            } else if constexpr (Op == Avg) {
                 return Base::qs().template avg<FieldInfo>();
-            } else if constexpr (Op == AggregateOp::Min) {
+            } else if constexpr (Op == Min) {
                 return Base::qs().template min<FieldInfo>();
-            } else if constexpr (Op == AggregateOp::Max) {
+            } else if constexpr (Op == Max) {
                 return Base::qs().template max<FieldInfo>();
             }
         }
@@ -268,13 +270,13 @@ namespace storm::benchmark {
             // Error type matching Storm's return type for fair comparison
             // (same decision logic: wrap result in std::expected, check has_value, extract value)
             using StormError = storm::db::sqlite::Error;
+            using enum AggregateOp;
 
             int total = 0;
             for (int i = 0; i < iterations; i++) {
                 sqlite3_reset(stmt);
 
-                if constexpr (Op == AggregateOp::Count || Op == AggregateOp::CountField ||
-                              Op == AggregateOp::CountDistinct || Op == AggregateOp::Sum) {
+                if constexpr (Op == Count || Op == CountField || Op == CountDistinct || Op == Sum) {
                     std::expected<int64_t, StormError> result;
                     int                                rc = sqlite3_step(stmt);
                     if (rc == SQLITE_ROW) {

@@ -4,6 +4,7 @@ module;
 
 export module storm_db_postgresql;
 import storm_db_concept;
+import <array>;
 import <expected>;
 import <string_view>;
 import <string>;
@@ -140,9 +141,9 @@ export namespace storm::db::postgresql {
             ensure_param_slot(index);
             // std::to_string uses %f (6 decimal places) — insufficient for double precision.
             // Use snprintf with %.17g for full double precision (17 significant digits).
-            char buf[32]; // NOLINT(modernize-avoid-c-arrays) - stack buffer for snprintf
-            std::snprintf(buf, sizeof(buf), "%.17g", value);
-            param_values_[index - 1] = buf;
+            std::array<char, 32> buf{};
+            std::snprintf(buf.data(), buf.size(), "%.17g", value);
+            param_values_[index - 1] = buf.data();
             update_param_ptrs(index);
             return {};
         }
@@ -265,6 +266,23 @@ export namespace storm::db::postgresql {
             return result_;
         }
 
+        // Append a quoted parameter value to result, escaping single quotes
+        auto append_quoted_param(std::string& result, size_t idx) const -> void {
+            if (param_ptrs_[idx] == nullptr) {
+                result += "NULL";
+                return;
+            }
+            result += '\'';
+            for (const char c : param_values_[idx]) {
+                if (c == '\'') {
+                    result += "''";
+                } else {
+                    result += c;
+                }
+            }
+            result += '\'';
+        }
+
         // Returns SQL string with all bound parameters inlined (for debugging / SQL inspection)
         // Substitutes ? placeholders with quoted param_values_ strings
         template <typename = void> [[nodiscard]] auto expanded_sql() const -> std::string {
@@ -283,24 +301,10 @@ export namespace storm::db::postgresql {
                     result += ch;
                 } else if (ch == '?' && !in_single_quote && !in_double_quote) {
                     if (param_idx < param_count_) {
-                        const auto idx = static_cast<size_t>(param_idx);
-                        if (param_ptrs_[idx] == nullptr) {
-                            result += "NULL";
-                        } else {
-                            // Quote the value as a SQL string literal
-                            result += '\'';
-                            for (const char c : param_values_[idx]) {
-                                if (c == '\'') {
-                                    result += "''"; // Escape single quotes
-                                } else {
-                                    result += c;
-                                }
-                            }
-                            result += '\'';
-                        }
+                        append_quoted_param(result, static_cast<size_t>(param_idx));
                         ++param_idx;
                     } else {
-                        result += ch; // No param for this ?, leave as-is
+                        result += ch;
                     }
                 } else {
                     result += ch;
@@ -389,7 +393,8 @@ export namespace storm::db::postgresql {
             if (hex_len >= 2 && hex_str[0] == '\\' && hex_str[1] == 'x') {
                 const int binary_len = (hex_len - 2) / 2;
                 blob_buffer_.resize(static_cast<size_t>(binary_len));
-                for (int i = 0; i < binary_len; ++i) {
+                for (int i = 0; i < binary_len;
+                     ++i) { // NOSONAR(cpp:S6022) - unsigned char required for uint8_t blob API compatibility
                     const char hi = hex_str[2 + i * 2];
                     const char lo = hex_str[2 + i * 2 + 1];
                     blob_buffer_[static_cast<size_t>(i)] =

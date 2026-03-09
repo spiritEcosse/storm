@@ -295,7 +295,7 @@ auto sqlite3_open_v2(const char* filename, sqlite3** ppDb, int flags, const char
     return SQLITE_OK;
 }
 
-auto sqlite3_close_v2(sqlite3* db) -> int {
+auto sqlite3_close_v2(const sqlite3* db) -> int {
     (void)db;
     // In mock, we don't actually clean up - memory is managed by g_fake_dbs
     return SQLITE_OK;
@@ -335,21 +335,20 @@ auto sqlite3_prepare_v2(sqlite3* db, const char* zSql, int nByte, sqlite3_stmt**
     return SQLITE_OK;
 }
 
-auto sqlite3_finalize(sqlite3_stmt* pStmt) -> int {
+auto sqlite3_finalize(const sqlite3_stmt* pStmt) -> int {
     (void)pStmt;
     // Memory managed by g_fake_stmts
     return SQLITE_OK;
 }
 
 auto sqlite3_reset(sqlite3_stmt* pStmt) -> int {
-    if (pStmt) {
-        auto* fake_stmt            = reinterpret_cast<FakeSqlite3Stmt*>(pStmt); // NOSONAR(cpp:S3630)
+    if (auto* fake_stmt = reinterpret_cast<FakeSqlite3Stmt*>(pStmt); fake_stmt) { // NOSONAR(cpp:S3630)
         fake_stmt->step_call_count = 0;
     }
     return SQLITE_OK;
 }
 
-auto sqlite3_step(sqlite3_stmt* pStmt) -> int {
+auto sqlite3_step(const sqlite3_stmt* pStmt) -> int {
     (void)pStmt;
     g_mock_config.step_calls++;
 
@@ -361,7 +360,8 @@ auto sqlite3_step(sqlite3_stmt* pStmt) -> int {
     // Check for sequence
     if (!g_mock_config.step_sequence.empty()) {
         if (g_mock_config.step_sequence_index < g_mock_config.step_sequence.size()) {
-            const auto idx = g_mock_config.step_sequence_index++;
+            const auto idx = g_mock_config.step_sequence_index;
+            g_mock_config.step_sequence_index++;
             return g_mock_config.step_sequence[idx];
         }
         // After sequence exhausted, return DONE
@@ -372,9 +372,12 @@ auto sqlite3_step(sqlite3_stmt* pStmt) -> int {
 }
 
 auto sqlite3_exec(
-        sqlite3* db, const char* sql, int (*callback)(void*, int, char**, char**), void* arg, char** errmsg
-) // NOSONAR(cpp:S5205)
-        -> int {
+        sqlite3*    db,
+        const char* sql,
+        int (*callback)(void*, int, char**, char**),
+        void*  arg,
+        char** errmsg // NOSONAR(cpp:S5205)
+) -> int {
     (void)sql;
     (void)callback;
     (void)arg;
@@ -390,8 +393,7 @@ auto sqlite3_exec(
                 std::memcpy(*errmsg, g_mock_config.exec_error_message.c_str(), len);
             }
         }
-        auto* fake_db = reinterpret_cast<FakeSqlite3*>(db); // NOSONAR(cpp:S3630)
-        if (fake_db) {
+        if (auto* fake_db = reinterpret_cast<FakeSqlite3*>(db); fake_db) { // NOSONAR(cpp:S3630)
             fake_db->error_message = g_mock_config.exec_error_message;
         }
         return g_mock_config.exec_return;
@@ -400,7 +402,7 @@ auto sqlite3_exec(
     return SQLITE_OK;
 }
 
-auto sqlite3_bind_int(sqlite3_stmt* pStmt, int idx, int value) -> int {
+auto sqlite3_bind_int(const sqlite3_stmt* pStmt, int idx, int value) -> int {
     (void)pStmt;
     (void)idx;
     (void)value;
@@ -414,7 +416,7 @@ auto sqlite3_bind_int(sqlite3_stmt* pStmt, int idx, int value) -> int {
     return g_mock_config.bind_int_return;
 }
 
-auto sqlite3_bind_int64(sqlite3_stmt* pStmt, int idx, int64_t value) -> int {
+auto sqlite3_bind_int64(const sqlite3_stmt* pStmt, int idx, int64_t value) -> int {
     (void)pStmt;
     (void)idx;
     (void)value;
@@ -428,7 +430,7 @@ auto sqlite3_bind_int64(sqlite3_stmt* pStmt, int idx, int64_t value) -> int {
     return g_mock_config.bind_int64_return;
 }
 
-auto sqlite3_bind_double(sqlite3_stmt* pStmt, int idx, double value) -> int {
+auto sqlite3_bind_double(const sqlite3_stmt* pStmt, int idx, double value) -> int {
     (void)pStmt;
     (void)idx;
     (void)value;
@@ -436,8 +438,10 @@ auto sqlite3_bind_double(sqlite3_stmt* pStmt, int idx, double value) -> int {
     return g_mock_config.bind_double_return;
 }
 
-auto sqlite3_bind_text(sqlite3_stmt* pStmt, int idx, const char* value, int nBytes, void (*destructor)(void*))
-        -> int { // NOSONAR(cpp:S5205)
+auto sqlite3_bind_text(
+        const sqlite3_stmt* pStmt, int idx, const char* value, int nBytes, void (*destructor)(void*)
+) // NOSONAR(cpp:S5205)
+        -> int {
     (void)pStmt;
     (void)idx;
     (void)value;
@@ -453,15 +457,17 @@ auto sqlite3_bind_text(sqlite3_stmt* pStmt, int idx, const char* value, int nByt
     return g_mock_config.bind_text_return;
 }
 
-auto sqlite3_bind_null(sqlite3_stmt* pStmt, int idx) -> int {
+auto sqlite3_bind_null(const sqlite3_stmt* pStmt, int idx) -> int {
     (void)pStmt;
     (void)idx;
     g_mock_config.bind_null_calls++;
     return g_mock_config.bind_null_return;
 }
 
-auto sqlite3_bind_blob(sqlite3_stmt* pStmt, int idx, const void* value, int nBytes, void (*destructor)(void*))
-        -> int { // NOSONAR(cpp:S5205)
+auto sqlite3_bind_blob(
+        const sqlite3_stmt* pStmt, int idx, const void* value, int nBytes, void (*destructor)(void*)
+) // NOSONAR(cpp:S5205)
+        -> int {
     (void)pStmt;
     (void)idx;
     (void)value;
@@ -472,82 +478,80 @@ auto sqlite3_bind_blob(sqlite3_stmt* pStmt, int idx, const void* value, int nByt
 }
 
 auto sqlite3_column_int(sqlite3_stmt* pStmt, int iCol) -> int {
-    auto* fake_stmt = reinterpret_cast<FakeSqlite3Stmt*>(pStmt); // NOSONAR(cpp:S3630)
-    if (fake_stmt && iCol >= 0 && static_cast<size_t>(iCol) < fake_stmt->int_columns.size()) {
+    if (auto* fake_stmt = reinterpret_cast<FakeSqlite3Stmt*>(pStmt); // NOSONAR(cpp:S3630)
+        fake_stmt && iCol >= 0 && static_cast<size_t>(iCol) < fake_stmt->int_columns.size()) {
         return fake_stmt->int_columns[iCol];
     }
     return 0;
 }
 
 auto sqlite3_column_int64(sqlite3_stmt* pStmt, int iCol) -> int64_t {
-    auto* fake_stmt = reinterpret_cast<FakeSqlite3Stmt*>(pStmt);
-    if (fake_stmt && iCol >= 0 && static_cast<size_t>(iCol) < fake_stmt->int64_columns.size()) {
+    if (auto* fake_stmt = reinterpret_cast<FakeSqlite3Stmt*>(pStmt); // NOSONAR(cpp:S3630)
+        fake_stmt && iCol >= 0 && static_cast<size_t>(iCol) < fake_stmt->int64_columns.size()) {
         return fake_stmt->int64_columns[iCol];
     }
     return 0;
 }
 
 auto sqlite3_column_double(sqlite3_stmt* pStmt, int iCol) -> double {
-    auto* fake_stmt = reinterpret_cast<FakeSqlite3Stmt*>(pStmt);
-    if (fake_stmt && iCol >= 0 && static_cast<size_t>(iCol) < fake_stmt->double_columns.size()) {
+    if (auto* fake_stmt = reinterpret_cast<FakeSqlite3Stmt*>(pStmt); // NOSONAR(cpp:S3630)
+        fake_stmt && iCol >= 0 && static_cast<size_t>(iCol) < fake_stmt->double_columns.size()) {
         return fake_stmt->double_columns[iCol];
     }
     return 0.0;
 }
 
 auto sqlite3_column_text(sqlite3_stmt* pStmt, int iCol) -> const unsigned char* {
-    auto* fake_stmt = reinterpret_cast<FakeSqlite3Stmt*>(pStmt);
-    if (fake_stmt && iCol >= 0 && static_cast<size_t>(iCol) < fake_stmt->text_columns.size()) {
-        return reinterpret_cast<const unsigned char*>(fake_stmt->text_columns[iCol].c_str());
+    if (auto* fake_stmt = reinterpret_cast<FakeSqlite3Stmt*>(pStmt); // NOSONAR(cpp:S3630)
+        fake_stmt && iCol >= 0 && static_cast<size_t>(iCol) < fake_stmt->text_columns.size()) {
+        return reinterpret_cast<const unsigned char*>(fake_stmt->text_columns[iCol].c_str()); // NOSONAR(cpp:S3630)
     }
     return nullptr;
 }
 
-auto sqlite3_column_blob(sqlite3_stmt* pStmt, int iCol) -> const void* {
+auto sqlite3_column_blob(const sqlite3_stmt* pStmt, int iCol) -> const void* {
     (void)pStmt;
     (void)iCol;
     return nullptr; // Mock returns null for blobs
 }
 
 auto sqlite3_column_bytes(sqlite3_stmt* pStmt, int iCol) -> int {
-    auto* fake_stmt = reinterpret_cast<FakeSqlite3Stmt*>(pStmt);
-    if (fake_stmt && iCol >= 0 && static_cast<size_t>(iCol) < fake_stmt->text_columns.size()) {
+    if (auto* fake_stmt = reinterpret_cast<FakeSqlite3Stmt*>(pStmt); // NOSONAR(cpp:S3630)
+        fake_stmt && iCol >= 0 && static_cast<size_t>(iCol) < fake_stmt->text_columns.size()) {
         return static_cast<int>(fake_stmt->text_columns[iCol].size());
     }
     return 0;
 }
 
 auto sqlite3_column_type(sqlite3_stmt* pStmt, int iCol) -> int {
-    auto* fake_stmt = reinterpret_cast<FakeSqlite3Stmt*>(pStmt);
-    if (fake_stmt && iCol >= 0 && static_cast<size_t>(iCol) < fake_stmt->column_types.size()) {
+    if (auto* fake_stmt = reinterpret_cast<FakeSqlite3Stmt*>(pStmt); // NOSONAR(cpp:S3630)
+        fake_stmt && iCol >= 0 && static_cast<size_t>(iCol) < fake_stmt->column_types.size()) {
         return fake_stmt->column_types[iCol];
     }
     return SQLITE_NULL;
 }
 
-auto sqlite3_errmsg(sqlite3* db) -> const char* {
-    auto* fake_db = reinterpret_cast<FakeSqlite3*>(db);
-    if (fake_db) {
+auto sqlite3_errmsg(const sqlite3* db) -> const char* {
+    if (auto* fake_db = reinterpret_cast<const FakeSqlite3*>(db); fake_db) { // NOSONAR(cpp:S3630)
         return fake_db->error_message.c_str();
     }
     return "unknown error";
 }
 
 auto sqlite3_db_handle(sqlite3_stmt* pStmt) -> sqlite3* {
-    auto* fake_stmt = reinterpret_cast<FakeSqlite3Stmt*>(pStmt);
-    if (fake_stmt && fake_stmt->parent_db) {
-        return reinterpret_cast<sqlite3*>(fake_stmt->parent_db);
+    if (auto* fake_stmt = reinterpret_cast<FakeSqlite3Stmt*>(pStmt); // NOSONAR(cpp:S3630)
+        fake_stmt && fake_stmt->parent_db) {
+        return reinterpret_cast<sqlite3*>(fake_stmt->parent_db); // NOSONAR(cpp:S3630)
     }
     return nullptr;
 }
 
 auto sqlite3_free(void* ptr) -> void {
-    free(ptr);
+    free(ptr); // NOSONAR(cpp:S1231) - SQLite API contract: memory allocated by sqlite3_exec must be freed with free()
 }
 
 auto sqlite3_last_insert_rowid(sqlite3* db) -> int64_t {
-    auto* fake_db = reinterpret_cast<FakeSqlite3*>(db);
-    if (fake_db) {
+    if (auto* fake_db = reinterpret_cast<FakeSqlite3*>(db); fake_db) { // NOSONAR(cpp:S3630)
         return fake_db->last_insert_rowid++;
     }
     return 0;

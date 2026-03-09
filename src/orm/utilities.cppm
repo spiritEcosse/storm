@@ -181,7 +181,7 @@ export namespace storm::orm::utilities {
 
         constexpr ConstexprString() = default;
 
-        constexpr ConstexprString(const char* str) {
+        explicit constexpr ConstexprString(const char* str) {
             size_t i = 0;
             while (str[i] != '\0' && i < N - 1) {
                 data[i] = str[i];

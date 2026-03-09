@@ -23,6 +23,7 @@
  */
 
 #include <cstdlib>
+#include <format>
 #include <gtest/gtest.h>
 #include <libpq-fe.h>
 #include <string>
@@ -45,7 +46,8 @@ namespace storm::test {
 namespace detail {
 // Tracks the current per-process test schema name.
 // Empty means no schema has been created yet for this process.
-inline std::string current_test_schema; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+inline std::string
+    current_test_schema; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables) // NOSONAR(cpp:S5421)
 } // namespace detail
 
 // Check if the backend is available (PG requires STORM_PG_CONNSTR set and server reachable;
@@ -82,12 +84,12 @@ inline auto get_connection_string() -> std::string { return ":memory:"; }
 template <typename ConnType> auto pg_schema_init(auto &conn) -> void {
     if constexpr (std::is_same_v<ConnType, storm::db::postgresql::Connection>) {
         if (detail::current_test_schema.empty()) {
-            detail::current_test_schema = "test_" + std::to_string(getpid());
-            (void)conn->execute("DROP SCHEMA IF EXISTS " + detail::current_test_schema + " CASCADE");
-            (void)conn->execute("CREATE SCHEMA " + detail::current_test_schema);
+            detail::current_test_schema = std::format("test_{}", getpid());
+            (void)conn->execute(std::format("DROP SCHEMA IF EXISTS {} CASCADE", detail::current_test_schema));
+            (void)conn->execute(std::format("CREATE SCHEMA {}", detail::current_test_schema));
         }
         // Always set search_path — each test gets a fresh connection
-        (void)conn->execute("SET search_path TO " + detail::current_test_schema);
+        (void)conn->execute(std::format("SET search_path TO {}", detail::current_test_schema));
     }
 }
 
@@ -96,8 +98,8 @@ template <typename ConnType> auto pg_schema_init(auto &conn) -> void {
 template <typename ConnType> void rollback_test_txn(auto &conn) {
     if constexpr (std::is_same_v<ConnType, storm::db::postgresql::Connection>) {
         if (!detail::current_test_schema.empty()) {
-            (void)conn->execute("DROP SCHEMA IF EXISTS " + detail::current_test_schema + " CASCADE");
-            (void)conn->execute("CREATE SCHEMA " + detail::current_test_schema);
+            (void)conn->execute(std::format("DROP SCHEMA IF EXISTS {} CASCADE", detail::current_test_schema));
+            (void)conn->execute(std::format("CREATE SCHEMA {}", detail::current_test_schema));
             // DON'T clear current_test_schema — schema is recreated and ready for next test.
             // pg_schema_init will skip CREATE (schema exists) and just SET search_path.
         }

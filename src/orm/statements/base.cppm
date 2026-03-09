@@ -32,8 +32,21 @@ export namespace storm::orm::statements {
         enum class FieldAttr { primary, indexed, unique, fk };
     }
 
+    // Concept: T must have at least one field annotated with FieldAttr::primary
+    template <typename T>
+    concept ModelWithPrimaryKey = []() consteval -> bool {
+        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+            auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
+            if (attr.has_value() && attr.value() == meta::FieldAttr::primary)
+                return true;
+        }
+        return false;
+    }();
+
     // Shared reflection utilities for all statement types
-    template <typename T> class BaseStatement {
+    template <typename T>
+        requires ModelWithPrimaryKey<T>
+    class BaseStatement {
       public:
         // Compile-time accessor for table name (used in SQL generation)
         static consteval auto get_table_name() -> std::string_view {
@@ -50,7 +63,7 @@ export namespace storm::orm::statements {
                     return member;
                 }
             }
-            throw "Model must have exactly one field marked with [[=storm::meta::FieldAttr::primary]]";
+            std::unreachable(); // never reached: ModelWithPrimaryKey<T> guarantees a primary key exists
         }
 
         // FK field detection utilities
@@ -90,7 +103,9 @@ export namespace storm::orm::statements {
         }
 
         // Find primary key of a FK type (unwraps std::optional<T> → T first)
-        template <typename FKType> static consteval auto find_fk_primary_key() -> std::meta::info {
+        template <typename FKType>
+            requires ModelWithPrimaryKey<utilities::optional_inner_type_t<FKType>>
+        static consteval auto find_fk_primary_key() -> std::meta::info {
             using InnerType = utilities::optional_inner_type_t<FKType>;
             for (const std::meta::info member :
                  std::meta::nonstatic_data_members_of(^^InnerType, std::meta::access_context::unchecked())) {
@@ -99,7 +114,7 @@ export namespace storm::orm::statements {
                     return member;
                 }
             }
-            throw "FK type must have exactly one field marked with [[=storm::meta::FieldAttr::primary]]";
+            std::unreachable(); // never reached: requires ModelWithPrimaryKey<...> guarantees a primary key exists
         }
 
         // Helper to get the number of fields
@@ -626,6 +641,27 @@ export namespace storm::orm::statements {
         // SQL CLAUSE HELPERS - Shared across SELECT, DISTINCT, AGGREGATE
         // =====================================================================
 
+        // Helper: Adapt ORDER BY SQL for PostgreSQL NULL ordering semantics
+        // Adds NULLS FIRST after ASC and NULLS LAST after DESC to match SQLite behavior
+        static void adapt_order_by_for_pg(std::string& adapted) {
+            size_t pos = 0;
+            while ((pos = adapted.find(" ASC", pos)) != std::string::npos) {
+                size_t after = pos + 4;
+                if (adapted.substr(after, 6) != " NULLS") {
+                    adapted.insert(after, " NULLS FIRST");
+                }
+                pos = after + 12;
+            }
+            pos = 0;
+            while ((pos = adapted.find(" DESC", pos)) != std::string::npos) {
+                size_t after = pos + 5;
+                if (adapted.substr(after, 6) != " NULLS") {
+                    adapted.insert(after, " NULLS LAST");
+                }
+                pos = after + 11;
+            }
+        }
+
         // Helper: Append ORDER BY clause to SQL from wrapper
         // NOTE: ORDER BY must come before LIMIT/OFFSET in SQLite
         // For PostgreSQL, adds NULLS FIRST/LAST to match SQLite semantics
@@ -635,28 +671,8 @@ export namespace storm::orm::statements {
             if (order_by_wrapper.has_value() && !order_by_wrapper->empty()) {
                 const auto& order_sql = order_by_wrapper->get_order_by_sql();
                 if constexpr (requires { ConnTypeForDialect::supports_returning; }) {
-                    // PostgreSQL: add NULLS FIRST for ASC, NULLS LAST for DESC
-                    // to match SQLite semantics (NULLs first in ASC, last in DESC)
                     std::string adapted = order_sql;
-                    // Replace " ASC" with " ASC NULLS FIRST" and " DESC" with " DESC NULLS LAST"
-                    // Process from end to avoid offset issues
-                    size_t pos = 0;
-                    while ((pos = adapted.find(" ASC", pos)) != std::string::npos) {
-                        size_t after = pos + 4;
-                        // Only add if not already followed by " NULLS"
-                        if (adapted.substr(after, 6) != " NULLS") {
-                            adapted.insert(after, " NULLS FIRST");
-                        }
-                        pos = after + 12;
-                    }
-                    pos = 0;
-                    while ((pos = adapted.find(" DESC", pos)) != std::string::npos) {
-                        size_t after = pos + 5;
-                        if (adapted.substr(after, 6) != " NULLS") {
-                            adapted.insert(after, " NULLS LAST");
-                        }
-                        pos = after + 11;
-                    }
+                    adapt_order_by_for_pg(adapted);
                     sql += adapted;
                 } else {
                     sql += order_sql;

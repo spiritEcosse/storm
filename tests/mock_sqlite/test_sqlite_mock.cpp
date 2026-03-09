@@ -10,12 +10,8 @@
  */
 
 #include <gtest/gtest.h>
+#include <numbers>
 #include "mock_sqlite3.h"
-
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)
-// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-// NOLINTBEGIN(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr,misc-const-correctness)
-// NOLINTBEGIN(readability-convert-member-functions-to-static,readability-static-accessed-through-instance)
 
 using namespace storm::test;
 
@@ -24,9 +20,10 @@ using namespace storm::test;
 // ============================================================================
 
 class MockConfigTest : public ::testing::Test {
-  protected:
-    MockSqlite3Guard guard_; // Reset mock config after each test
+  public:
+    [[no_unique_address]] MockSqlite3Guard guard_; // Reset mock config after each test
 
+  protected:
     auto SetUp() -> void override {
         MockSqlite3Config::reset();
     }
@@ -84,7 +81,8 @@ TEST_F(MockConfigTest, CanConfigureStepFailure) {
 }
 
 TEST_F(MockConfigTest, CanConfigurePrepareFailure) {
-    MockSqlite3Config::prepare_returns(SQLITE_ERROR).prepare_error_message("Custom error message");
+    MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+    MockSqlite3Config::prepare_error_message("Custom error message");
 
     sqlite3* db = nullptr;
     sqlite3_open_v2(":memory:", &db, 0, nullptr);
@@ -101,7 +99,8 @@ TEST_F(MockConfigTest, CanConfigurePrepareFailure) {
 }
 
 TEST_F(MockConfigTest, CanConfigureOpenFailure) {
-    MockSqlite3Config::open_returns(SQLITE_CANTOPEN).open_error_message("Cannot open database");
+    MockSqlite3Config::open_returns(SQLITE_CANTOPEN);
+    MockSqlite3Config::open_error_message("Cannot open database");
 
     sqlite3* db = nullptr;
     int      rc = sqlite3_open_v2("/nonexistent/path.db", &db, 0, nullptr);
@@ -115,7 +114,8 @@ TEST_F(MockConfigTest, CanConfigureOpenFailure) {
 }
 
 TEST_F(MockConfigTest, CanConfigureExecFailure) {
-    MockSqlite3Config::exec_returns(SQLITE_ERROR).exec_error_message("Exec failed");
+    MockSqlite3Config::exec_returns(SQLITE_ERROR);
+    MockSqlite3Config::exec_error_message("Exec failed");
 
     sqlite3* db = nullptr;
     sqlite3_open_v2(":memory:", &db, 0, nullptr);
@@ -199,11 +199,12 @@ TEST_F(MockConfigTest, CanConfigureStepSequence) {
 // ============================================================================
 
 class BindErrorCoverageTest : public ::testing::Test {
-  protected:
-    MockSqlite3Guard guard_;
-    sqlite3*         db_   = nullptr;
-    sqlite3_stmt*    stmt_ = nullptr;
+  public:
+    [[no_unique_address]] MockSqlite3Guard guard_;
+    sqlite3*                               db_   = nullptr;
+    sqlite3_stmt*                          stmt_ = nullptr;
 
+  protected:
     auto SetUp() -> void override {
         MockSqlite3Config::reset();
         sqlite3_open_v2(":memory:", &db_, 0, nullptr);
@@ -230,7 +231,7 @@ TEST_F(BindErrorCoverageTest, BindInt64Nomem) {
 
 TEST_F(BindErrorCoverageTest, BindDoubleNomem) {
     MockSqlite3Config::bind_double_returns(SQLITE_NOMEM);
-    int rc = sqlite3_bind_double(stmt_, 1, 3.14);
+    int rc = sqlite3_bind_double(stmt_, 1, std::numbers::pi);
     EXPECT_EQ(rc, SQLITE_NOMEM);
 }
 
@@ -251,11 +252,12 @@ TEST_F(BindErrorCoverageTest, BindBlobNomem) {
 // ============================================================================
 
 class StepErrorCoverageTest : public ::testing::Test {
-  protected:
-    MockSqlite3Guard guard_;
-    sqlite3*         db_   = nullptr;
-    sqlite3_stmt*    stmt_ = nullptr;
+  public:
+    [[no_unique_address]] MockSqlite3Guard guard_;
+    sqlite3*                               db_   = nullptr;
+    sqlite3_stmt*                          stmt_ = nullptr;
 
+  protected:
     auto SetUp() -> void override {
         MockSqlite3Config::reset();
         sqlite3_open_v2(":memory:", &db_, 0, nullptr);
@@ -317,7 +319,9 @@ class MockResetTest : public ::testing::Test {
 
 TEST_F(MockResetTest, ResetClearsAllConfiguration) {
     // Configure various failures
-    MockSqlite3Config::bind_int_returns(SQLITE_NOMEM).step_returns(SQLITE_CORRUPT).prepare_returns(SQLITE_ERROR);
+    MockSqlite3Config::bind_int_returns(SQLITE_NOMEM);
+    MockSqlite3Config::step_returns(SQLITE_CORRUPT);
+    MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
     // Reset
     MockSqlite3Config::reset();
@@ -369,8 +373,3 @@ TEST_F(MockResetTest, GuardResetsOnDestruction) {
     sqlite3_finalize(stmt);
     sqlite3_close_v2(db);
 }
-
-// NOLINTEND(readability-convert-member-functions-to-static,readability-static-accessed-through-instance)
-// NOLINTEND(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr,misc-const-correctness)
-// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)

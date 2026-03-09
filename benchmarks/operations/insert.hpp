@@ -118,7 +118,7 @@ namespace storm::benchmark {
                     sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr);
                 }
 
-                for (auto& [_, stmt] : stmts)
+                for (const auto& [_, stmt] : stmts)
                     sqlite3_finalize(stmt);
             }
             return total;

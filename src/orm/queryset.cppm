@@ -130,17 +130,7 @@ export namespace storm {
         }
 
         // ORDER BY clause support - builder pattern with method chaining
-        // Supports all variations:
-        //   order_by<^^Person::age>()                          // Single field, default ASC
-        //   order_by<^^Person::age, false>()                   // Single field, explicit DESC
-        //   order_by<^^Person::age, ^^Person::name>()          // Multiple fields, all ASC
-        //   order_by<^^Person::age, true, ^^Person::name, false>()  // Mixed directions
-        //
-        // Usage examples:
-        //   queryset.order_by<^^Person::age>().select()
-        //   queryset.where(age > 25).order_by<^^Person::name>().select()
-        //   queryset.order_by<^^Person::age, false>().limit(10).select()
-        //
+        // Supports single/multiple fields with ASC (default) or DESC direction
         template <auto... Args> constexpr auto order_by(this auto&& self) -> auto&& { // NOSONAR(cpp:S6189)
             // Create lightweight wrapper to compile-time generated static SQL
             self.order_by_wrapper_ = orm::statements::make_order_by_wrapper<Args...>();
@@ -159,7 +149,8 @@ export namespace storm {
         // Automatically applies LIMIT 1 to the query for optimal performance
         // Usage: auto result = queryset.where(age > 30).first().execute();
         [[nodiscard]] __attribute__((hot)) auto first() {
-            const bool fast = !where_expr_ && !join_stmt_ && !order_by_wrapper_ && !offset_value_;
+            const bool fast = !where_expr_ && !join_stmt_.has_value() && !order_by_wrapper_.has_value() &&
+                              !offset_value_.has_value();
             return get_select_statement()
                     .query_first(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_, fast);
         }
@@ -170,7 +161,8 @@ export namespace storm {
         // Uses LIMIT 2 internally for efficient duplicate detection without plf::hive allocation
         // Usage: auto result = queryset.where(id == 42).get().execute();
         [[nodiscard]] __attribute__((hot)) auto get() {
-            const bool fast = !where_expr_ && !join_stmt_ && !order_by_wrapper_ && !offset_value_;
+            const bool fast = !where_expr_ && !join_stmt_.has_value() && !order_by_wrapper_.has_value() &&
+                              !offset_value_.has_value();
             return get_select_statement()
                     .query_get(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_, fast);
         }

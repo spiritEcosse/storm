@@ -14,10 +14,10 @@
 #include <gtest/gtest.h>
 #include "mock_libpq.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)
-// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-// NOLINTBEGIN(cppcoreguidelines-pro-type-cstyle-cast,misc-const-correctness)
-// NOLINTBEGIN(readability-convert-member-functions-to-static,readability-static-accessed-through-instance)
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR(cpp:S125)
+// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR(cpp:S125)
+// NOLINTBEGIN(cppcoreguidelines-pro-type-cstyle-cast,misc-const-correctness) // NOSONAR(cpp:S125)
+// NOLINTBEGIN(readability-convert-member-functions-to-static,readability-static-accessed-through-instance) // NOSONAR(cpp:S125)
 
 using namespace storm::test;
 
@@ -26,8 +26,8 @@ using namespace storm::test;
 // ============================================================================
 
 class PqMockDefaultTest : public ::testing::Test {
-  protected:
-    MockPqGuard guard_;
+  public:
+    [[no_unique_address]] MockPqGuard guard_;
 
     auto SetUp() -> void override {
         MockPqConfig::reset();
@@ -70,8 +70,8 @@ TEST_F(PqMockDefaultTest, ExecPreparedReturnsCommandOk) {
 }
 
 TEST_F(PqMockDefaultTest, ErrorMessageReturnsEmptyByDefault) {
-    PGconn* conn = PQconnectdb("host=localhost");
-    char*   msg  = PQerrorMessage(conn);
+    PGconn*     conn = PQconnectdb("host=localhost");
+    const char* msg  = PQerrorMessage(conn);
     EXPECT_STREQ(msg, "");
     PQfinish(conn);
 }
@@ -91,8 +91,8 @@ TEST_F(PqMockDefaultTest, ColumnDefaultsAreEmpty) {
 // ============================================================================
 
 class PqMockConnectionTest : public ::testing::Test {
-  protected:
-    MockPqGuard guard_;
+  public:
+    [[no_unique_address]] MockPqGuard guard_;
 
     auto SetUp() -> void override {
         MockPqConfig::reset();
@@ -133,9 +133,9 @@ TEST_F(PqMockConnectionTest, ErrorMessageOnNullReturnsEmpty) {
 // ============================================================================
 
 class PqMockPrepareTest : public ::testing::Test {
-  protected:
-    MockPqGuard guard_;
-    PGconn*     conn_ = nullptr;
+  public:
+    [[no_unique_address]] MockPqGuard guard_;
+    PGconn*                           conn_ = nullptr;
 
     auto SetUp() -> void override {
         MockPqConfig::reset();
@@ -185,9 +185,9 @@ TEST_F(PqMockPrepareTest, PrepareFailsOnSpecificCall) {
 // ============================================================================
 
 class PqMockExecPreparedTest : public ::testing::Test {
-  protected:
-    MockPqGuard guard_;
-    PGconn*     conn_ = nullptr;
+  public:
+    [[no_unique_address]] MockPqGuard guard_;
+    PGconn*                           conn_ = nullptr;
 
     auto SetUp() -> void override {
         MockPqConfig::reset();
@@ -223,9 +223,9 @@ TEST_F(PqMockExecPreparedTest, NtuplesOnNullReturnsZero) {
 // ============================================================================
 
 class PqMockExecTest : public ::testing::Test {
-  protected:
-    MockPqGuard guard_;
-    PGconn*     conn_ = nullptr;
+  public:
+    [[no_unique_address]] MockPqGuard guard_;
+    PGconn*                           conn_ = nullptr;
 
     auto SetUp() -> void override {
         MockPqConfig::reset();
@@ -274,7 +274,8 @@ TEST_F(PqMockExecTest, ExecFailsOnSpecificCall) {
 }
 
 TEST_F(PqMockExecTest, ExecFailsOnCallWithNullConfigured) {
-    MockPqConfig::exec_returns_null().exec_fails_on_call(1);
+    MockPqConfig::exec_returns_null();
+    MockPqConfig::exec_fails_on_call(1);
     PGresult* res = PQexec(conn_, "SELECT 1");
     EXPECT_EQ(res, nullptr);
 }
@@ -288,10 +289,10 @@ TEST_F(PqMockExecTest, ResultStatusOnNullReturnsFatalError) {
 // ============================================================================
 
 class PqMockColumnDataTest : public ::testing::Test {
-  protected:
-    MockPqGuard guard_;
-    PGconn*     conn_ = nullptr;
-    PGresult*   res_  = nullptr;
+  public:
+    [[no_unique_address]] MockPqGuard guard_;
+    PGconn*                           conn_ = nullptr;
+    PGresult*                         res_  = nullptr;
 
     auto SetUp() -> void override {
         MockPqConfig::reset();
@@ -317,7 +318,8 @@ TEST_F(PqMockColumnDataTest, GetlengthReturnsValueLength) {
 }
 
 TEST_F(PqMockColumnDataTest, GetlengthReturnsExplicitOverride) {
-    MockPqConfig::set_column_value(0, 0, "abc").set_column_length(0, 0, 100);
+    MockPqConfig::set_column_value(0, 0, "abc");
+    MockPqConfig::set_column_length(0, 0, 100);
     EXPECT_EQ(PQgetlength(res_, 0, 0), 100);
 }
 
@@ -331,10 +333,10 @@ TEST_F(PqMockColumnDataTest, GetisnullReturnsFalseByDefault) {
 }
 
 TEST_F(PqMockColumnDataTest, MultipleRowsAndColumns) {
-    MockPqConfig::set_column_value(0, 0, "r0c0")
-            .set_column_value(0, 1, "r0c1")
-            .set_column_value(1, 0, "r1c0")
-            .set_column_value(1, 1, "r1c1");
+    MockPqConfig::set_column_value(0, 0, "r0c0");
+    MockPqConfig::set_column_value(0, 1, "r0c1");
+    MockPqConfig::set_column_value(1, 0, "r1c0");
+    MockPqConfig::set_column_value(1, 1, "r1c1");
 
     EXPECT_STREQ(PQgetvalue(res_, 0, 0), "r0c0");
     EXPECT_STREQ(PQgetvalue(res_, 0, 1), "r0c1");
@@ -347,8 +349,8 @@ TEST_F(PqMockColumnDataTest, MultipleRowsAndColumns) {
 // ============================================================================
 
 class PqMockCallCountTest : public ::testing::Test {
-  protected:
-    MockPqGuard guard_;
+  public:
+    [[no_unique_address]] MockPqGuard guard_;
 
     auto SetUp() -> void override {
         MockPqConfig::reset();
@@ -430,11 +432,11 @@ TEST_F(PqMockGuardTest, GuardResetsOnDestruction) {
 }
 
 TEST_F(PqMockGuardTest, ResetClearsAllConfiguration) {
-    MockPqConfig::connectdb_returns_null()
-            .status_returns(CONNECTION_BAD)
-            .error_message("test error")
-            .prepare_returns_null()
-            .exec_returns_null();
+    MockPqConfig::connectdb_returns_null();
+    MockPqConfig::status_returns(CONNECTION_BAD);
+    MockPqConfig::error_message("test error");
+    MockPqConfig::prepare_returns_null();
+    MockPqConfig::exec_returns_null();
 
     MockPqConfig::reset();
 
@@ -479,7 +481,7 @@ TEST_F(PqMockGuardTest, FinishOnNullIsSafe) {
     PQfinish(nullptr); // Should not crash
 }
 
-// NOLINTEND(readability-convert-member-functions-to-static,readability-static-accessed-through-instance)
-// NOLINTEND(cppcoreguidelines-pro-type-cstyle-cast,misc-const-correctness)
-// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter)
+// NOLINTEND(readability-convert-member-functions-to-static,readability-static-accessed-through-instance) // NOSONAR(cpp:S125)
+// NOLINTEND(cppcoreguidelines-pro-type-cstyle-cast,misc-const-correctness) // NOSONAR(cpp:S125)
+// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR(cpp:S125)
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR(cpp:S125)

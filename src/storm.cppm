@@ -39,17 +39,17 @@ export namespace storm {
             return field_attr.has_value() && field_attr.value() == FieldAttr::primary;
         }
 
-        // Find primary key member with compile-time error if not found
-        consteval auto find_primary_key(std::meta::info type) -> std::meta::info {
+        // Find primary key member — T must satisfy ModelWithPrimaryKey<T>
+        template <typename T>
+            requires orm::statements::ModelWithPrimaryKey<T>
+        consteval auto find_primary_key() -> std::meta::info {
             for (const std::meta::info member :
-                 std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())) {
+                 std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
                 if (has_primary_attr(member)) {
                     return member;
                 }
             }
-
-            // Compile-time error using throw in consteval context
-            throw "Model must have exactly one field marked with [[=storm::meta::FieldAttr::primary]]";
+            std::unreachable(); // never reached: ModelWithPrimaryKey<T> guarantees a primary key exists
         }
     } // namespace meta
 

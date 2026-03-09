@@ -257,13 +257,11 @@ export namespace storm::orm::statements {
             }
             Statement* stmt_ptr = *prepare_result;
             if (join_wrapper) {
-                return execute_query_loop(stmt_ptr, [&join_wrapper](Statement* stmt, T& obj) -> void {
+                return execute_query_loop(stmt_ptr, [&join_wrapper](Statement* stmt, T& obj) {
                     join_wrapper->extract_row(stmt, &obj);
                 });
             }
-            return execute_query_loop(stmt_ptr, [](Statement* stmt, T& obj) -> void {
-                Base::extract_all_columns(stmt, obj);
-            });
+            return execute_query_loop(stmt_ptr, [](Statement* stmt, T& obj) { Base::extract_all_columns(stmt, obj); });
         }
 
         // Zero-parameter fast path for first() — no checks, no parameter passing overhead
@@ -277,7 +275,7 @@ export namespace storm::orm::statements {
                 }
                 cached_first_stmt_ = *prepare_result;
             }
-            return execute_single_row(cached_first_stmt_, [](Statement* stmt, T& obj) -> void {
+            return execute_single_row(cached_first_stmt_, [](Statement* stmt, T& obj) {
                 Base::extract_all_columns(stmt, obj);
             });
         }
@@ -297,14 +295,12 @@ export namespace storm::orm::statements {
             }
             Statement* stmt_ptr = *prepare_result;
             if (join_wrapper) {
-                return execute_single_row(stmt_ptr, [&join_wrapper](Statement* stmt, T& obj) -> void {
+                return execute_single_row(stmt_ptr, [&join_wrapper](Statement* stmt, T& obj) {
                     join_wrapper->extract_row(stmt, &obj);
                 });
             }
             // LCOV_EXCL_START — tested via first() tests; C++26 module coverage gap
-            return execute_single_row(stmt_ptr, [](Statement* stmt, T& obj) -> void {
-                Base::extract_all_columns(stmt, obj);
-            });
+            return execute_single_row(stmt_ptr, [](Statement* stmt, T& obj) { Base::extract_all_columns(stmt, obj); });
             // LCOV_EXCL_STOP
         }
 
@@ -318,7 +314,7 @@ export namespace storm::orm::statements {
                 }
                 cached_get_stmt_ = *prepare_result;
             }
-            return execute_exact_one(cached_get_stmt_, [](Statement* stmt, T& obj) -> void {
+            return execute_exact_one(cached_get_stmt_, [](Statement* stmt, T& obj) {
                 Base::extract_all_columns(stmt, obj);
             });
         }
@@ -338,13 +334,11 @@ export namespace storm::orm::statements {
             }
             Statement* stmt_ptr = *prepare_result;
             if (join_wrapper) {
-                return execute_exact_one(stmt_ptr, [&join_wrapper](Statement* stmt, T& obj) -> void {
+                return execute_exact_one(stmt_ptr, [&join_wrapper](Statement* stmt, T& obj) {
                     join_wrapper->extract_row(stmt, &obj);
                 });
             }
-            return execute_exact_one(stmt_ptr, [](Statement* stmt, T& obj) -> void {
-                Base::extract_all_columns(stmt, obj);
-            });
+            return execute_exact_one(stmt_ptr, [](Statement* stmt, T& obj) { Base::extract_all_columns(stmt, obj); });
         }
 
       private:

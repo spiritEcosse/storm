@@ -167,8 +167,7 @@ class MockSqlite3Guard {
     ~MockSqlite3Guard() noexcept {
         try {
             MockSqlite3Config::reset();
-        } catch (...) {
-            // Suppress exceptions in destructor
+        } catch (...) { // NOSONAR(cpp:S2486) - intentionally suppress all exceptions in noexcept destructor
         }
     }
 
@@ -191,38 +190,41 @@ extern "C" {
 // Database connection management
 auto sqlite3_open_v2(const char *filename, sqlite3 **ppDb, int flags, const char *zVfs) -> int;
 
-auto sqlite3_close_v2(sqlite3 *db) -> int;
+auto sqlite3_close_v2(const sqlite3 *db) -> int;
 
 // Statement preparation
 auto sqlite3_prepare_v2(sqlite3 *db, const char *zSql, int nByte, sqlite3_stmt **ppStmt, const char **pzTail) -> int;
 
-auto sqlite3_finalize(sqlite3_stmt *pStmt) -> int;
+auto sqlite3_finalize(const sqlite3_stmt *pStmt) -> int;
 auto sqlite3_reset(sqlite3_stmt *pStmt) -> int;
 
 // Statement execution
-auto sqlite3_step(sqlite3_stmt *pStmt) -> int;
-auto sqlite3_exec(sqlite3 *db, const char *sql, int (*callback)(void *, int, char **, char **), void *arg,
+auto sqlite3_step(const sqlite3_stmt *pStmt) -> int;
+auto sqlite3_exec(sqlite3 *db, const char *sql, int (*callback)(void *, int, char **, char **),
+                  void *arg, // NOSONAR(cpp:S5205)
                   char **errmsg) -> int;
 
 // Binding values
-auto sqlite3_bind_int(sqlite3_stmt *pStmt, int idx, int value) -> int;
-auto sqlite3_bind_int64(sqlite3_stmt *pStmt, int idx, int64_t value) -> int;
-auto sqlite3_bind_double(sqlite3_stmt *pStmt, int idx, double value) -> int;
-auto sqlite3_bind_text(sqlite3_stmt *pStmt, int idx, const char *value, int nBytes, void (*destructor)(void *)) -> int;
-auto sqlite3_bind_null(sqlite3_stmt *pStmt, int idx) -> int;
-auto sqlite3_bind_blob(sqlite3_stmt *pStmt, int idx, const void *value, int nBytes, void (*destructor)(void *)) -> int;
+auto sqlite3_bind_int(const sqlite3_stmt *pStmt, int idx, int value) -> int;
+auto sqlite3_bind_int64(const sqlite3_stmt *pStmt, int idx, int64_t value) -> int;
+auto sqlite3_bind_double(const sqlite3_stmt *pStmt, int idx, double value) -> int;
+auto sqlite3_bind_text(const sqlite3_stmt *pStmt, int idx, const char *value, int nBytes, void (*destructor)(void *))
+    -> int; // NOSONAR(cpp:S5205)
+auto sqlite3_bind_null(const sqlite3_stmt *pStmt, int idx) -> int;
+auto sqlite3_bind_blob(const sqlite3_stmt *pStmt, int idx, const void *value, int nBytes, void (*destructor)(void *))
+    -> int; // NOSONAR(cpp:S5205)
 
 // Extracting column values
 auto sqlite3_column_int(sqlite3_stmt *pStmt, int iCol) -> int;
 auto sqlite3_column_int64(sqlite3_stmt *pStmt, int iCol) -> int64_t;
 auto sqlite3_column_double(sqlite3_stmt *pStmt, int iCol) -> double;
 auto sqlite3_column_text(sqlite3_stmt *pStmt, int iCol) -> const unsigned char *;
-auto sqlite3_column_blob(sqlite3_stmt *pStmt, int iCol) -> const void *;
+auto sqlite3_column_blob(const sqlite3_stmt *pStmt, int iCol) -> const void *;
 auto sqlite3_column_bytes(sqlite3_stmt *pStmt, int iCol) -> int;
 auto sqlite3_column_type(sqlite3_stmt *pStmt, int iCol) -> int;
 
 // Error handling
-auto sqlite3_errmsg(sqlite3 *db) -> const char *;
+auto sqlite3_errmsg(const sqlite3 *db) -> const char *;
 auto sqlite3_db_handle(sqlite3_stmt *pStmt) -> sqlite3 *;
 auto sqlite3_free(void *ptr) -> void;
 

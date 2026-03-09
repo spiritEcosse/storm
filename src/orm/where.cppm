@@ -43,18 +43,19 @@ export namespace storm::orm::where {
     enum class CompOp { Equal, NotEqual, Greater, GreaterEqual, Less, LessEqual };
 
     constexpr auto comp_op_to_sql(CompOp op) noexcept -> std::string_view {
+        using enum CompOp;
         switch (op) {
-        case CompOp::Equal:
+        case Equal:
             return " = ";
-        case CompOp::NotEqual:
+        case NotEqual:
             return " != ";
-        case CompOp::Greater:
+        case Greater:
             return " > ";
-        case CompOp::GreaterEqual:
+        case GreaterEqual:
             return " >= ";
-        case CompOp::Less:
+        case Less:
             return " < ";
-        case CompOp::LessEqual:
+        case LessEqual:
             return " <= ";
         }
         return " = "; // LCOV_EXCL_LINE - unreachable: all enum values handled above
@@ -315,7 +316,7 @@ export namespace storm::orm::where {
     class Expr {
       public:
         // Constructor from ExpressionVariantPtr
-        Expr(ExpressionVariantPtr expr) noexcept : expr_(std::move(expr)) {}
+        explicit Expr(ExpressionVariantPtr expr) noexcept : expr_(std::move(expr)) {}
 
         // Constructor from ExpressionVariant (wraps in shared_ptr)
         // NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved) - std::move IS used in initializer list
@@ -328,12 +329,12 @@ export namespace storm::orm::where {
 
         // Logical AND operator (also accessible via 'and' keyword)
         auto operator&&(const Expr& other) const -> Expr {
-            return {std::make_shared<ExpressionVariant>(LogicalExpr{expr_, LogicalOp::And, other.expr_})};
+            return Expr(std::make_shared<ExpressionVariant>(LogicalExpr{expr_, LogicalOp::And, other.expr_}));
         }
 
         // Logical OR operator (also accessible via 'or' keyword)
         auto operator||(const Expr& other) const -> Expr {
-            return {std::make_shared<ExpressionVariant>(LogicalExpr{expr_, LogicalOp::Or, other.expr_})};
+            return Expr(std::make_shared<ExpressionVariant>(LogicalExpr{expr_, LogicalOp::Or, other.expr_}));
         }
 
         // Access the underlying expression

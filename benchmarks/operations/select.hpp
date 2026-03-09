@@ -644,32 +644,34 @@ namespace storm::benchmark {
     enum class GroupByAggOp { Count, Sum, Avg, Min, Max };
 
     static consteval const char* agg_op_name(GroupByAggOp op) {
+        using enum GroupByAggOp;
         switch (op) {
-        case GroupByAggOp::Count:
+        case Count:
             return "COUNT(*)";
-        case GroupByAggOp::Sum:
+        case Sum:
             return "SUM";
-        case GroupByAggOp::Avg:
+        case Avg:
             return "AVG";
-        case GroupByAggOp::Min:
+        case Min:
             return "MIN";
-        case GroupByAggOp::Max:
+        case Max:
             return "MAX";
         }
         return ""; // unreachable: all enum values handled above
     }
 
     static consteval const char* agg_op_sql(GroupByAggOp op) {
+        using enum GroupByAggOp;
         switch (op) {
-        case GroupByAggOp::Count:
+        case Count:
             return "COUNT(*)";
-        case GroupByAggOp::Sum:
+        case Sum:
             return "SUM(";
-        case GroupByAggOp::Avg:
+        case Avg:
             return "AVG(";
-        case GroupByAggOp::Min:
+        case Min:
             return "MIN(";
-        case GroupByAggOp::Max:
+        case Max:
             return "MAX(";
         }
         return ""; // unreachable: all enum values handled above
@@ -696,8 +698,9 @@ namespace storm::benchmark {
         explicit constexpr GroupByAggregateBenchmark(int dataset_size = 1000) : Base(dataset_size) {}
 
         void print_info() const {
+            using enum GroupByAggOp;
             constexpr std::string_view group_field_name = std::meta::identifier_of(GroupByFieldInfo);
-            if constexpr (AggOp == GroupByAggOp::Count) {
+            if constexpr (AggOp == Count) {
                 std::cout << "Operation: SELECT " << group_field_name << ", COUNT(*) GROUP BY " << group_field_name;
             } else {
                 constexpr std::string_view agg_field_name = std::meta::identifier_of(AggregateFieldInfo);
@@ -708,22 +711,23 @@ namespace storm::benchmark {
         }
 
         int execute_iteration() {
-            if constexpr (AggOp == GroupByAggOp::Count) {
+            using enum GroupByAggOp;
+            if constexpr (AggOp == Count) {
                 auto result = Base::qs().template group_by<GroupByFieldInfo>().count().select();
                 return result.has_value() ? static_cast<int>(result.value().size()) : 0;
-            } else if constexpr (AggOp == GroupByAggOp::Sum) {
+            } else if constexpr (AggOp == Sum) {
                 auto result =
                         Base::qs().template group_by<GroupByFieldInfo>().template sum<AggregateFieldInfo>().select();
                 return result.has_value() ? static_cast<int>(result.value().size()) : 0;
-            } else if constexpr (AggOp == GroupByAggOp::Avg) {
+            } else if constexpr (AggOp == Avg) {
                 auto result =
                         Base::qs().template group_by<GroupByFieldInfo>().template avg<AggregateFieldInfo>().select();
                 return result.has_value() ? static_cast<int>(result.value().size()) : 0;
-            } else if constexpr (AggOp == GroupByAggOp::Min) {
+            } else if constexpr (AggOp == Min) {
                 auto result =
                         Base::qs().template group_by<GroupByFieldInfo>().template min<AggregateFieldInfo>().select();
                 return result.has_value() ? static_cast<int>(result.value().size()) : 0;
-            } else if constexpr (AggOp == GroupByAggOp::Max) {
+            } else if constexpr (AggOp == Max) {
                 auto result =
                         Base::qs().template group_by<GroupByFieldInfo>().template max<AggregateFieldInfo>().select();
                 return result.has_value() ? static_cast<int>(result.value().size()) : 0;

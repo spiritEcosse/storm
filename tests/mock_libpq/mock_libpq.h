@@ -47,11 +47,11 @@
 // libpq Types (opaque handles)
 // ============================================================================
 
-typedef struct pg_conn PGconn;     // NOLINT(modernize-use-using) - matches libpq C API
-typedef struct pg_result PGresult; // NOLINT(modernize-use-using) - matches libpq C API
-typedef int ConnStatusType;        // NOLINT(modernize-use-using) - matches libpq C API
-typedef int ExecStatusType;        // NOLINT(modernize-use-using) - matches libpq C API
-typedef unsigned int Oid;          // NOLINT(modernize-use-using) - matches libpq C API
+using PGconn = struct pg_conn;     // matches libpq C API
+using PGresult = struct pg_result; // matches libpq C API
+using ConnStatusType = int;        // matches libpq C API
+using ExecStatusType = int;        // matches libpq C API
+using Oid = unsigned int;          // matches libpq C API
 
 // ============================================================================
 // Mock Configuration API
@@ -107,13 +107,7 @@ class MockPqConfig {
 class MockPqGuard {
   public:
     MockPqGuard() = default;
-    ~MockPqGuard() noexcept {
-        try {
-            MockPqConfig::reset();
-        } catch (...) {
-            // Suppress exceptions in destructor
-        }
-    }
+    ~MockPqGuard() noexcept { MockPqConfig::reset(); }
 
     MockPqGuard(const MockPqGuard &) = delete;
     auto operator=(const MockPqGuard &) -> MockPqGuard & = delete;
@@ -134,18 +128,19 @@ extern "C" {
 // Connection management
 auto PQconnectdb(const char *conninfo) -> PGconn *;
 auto PQstatus(const PGconn *conn) -> ConnStatusType;
-auto PQfinish(PGconn *conn) -> void;
+auto PQfinish(const PGconn *conn) -> void;
 auto PQerrorMessage(const PGconn *conn) -> char *;
 
 // Statement preparation and execution
-auto PQprepare(PGconn *conn, const char *stmtName, const char *query, int nParams, const Oid *paramTypes) -> PGresult *;
-auto PQexecPrepared(PGconn *conn, const char *stmtName, int nParams, const char *const *paramValues,
+auto PQprepare(const PGconn *conn, const char *stmtName, const char *query, int nParams, const Oid *paramTypes)
+    -> PGresult *;
+auto PQexecPrepared(const PGconn *conn, const char *stmtName, int nParams, const char *const *paramValues,
                     const int *paramLengths, const int *paramFormats, int resultFormat) -> PGresult *;
-auto PQexec(PGconn *conn, const char *query) -> PGresult *;
+auto PQexec(const PGconn *conn, const char *query) -> PGresult *;
 
 // Result inspection
 auto PQresultStatus(const PGresult *res) -> ExecStatusType;
-auto PQclear(PGresult *res) -> void;
+auto PQclear(const PGresult *res) -> void;
 auto PQntuples(const PGresult *res) -> int;
 
 // Column value extraction

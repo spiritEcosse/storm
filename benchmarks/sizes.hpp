@@ -17,6 +17,7 @@
 
 #include <array>
 #include <algorithm>
+#include <format>
 #include <string_view>
 
 namespace storm::benchmark::sizes {
@@ -90,17 +91,18 @@ namespace storm::benchmark::sizes {
 
     // Convert string to SizeProfile
     constexpr SizeProfile profile_from_string(std::string_view str) {
+        using enum SizeProfile;
         if (str == "batch_standard")
-            return SizeProfile::BatchStandard;
+            return BatchStandard;
         if (str == "batch_insert_edge")
-            return SizeProfile::BatchInsertEdge;
+            return BatchInsertEdge;
         if (str == "batch_update_edge")
-            return SizeProfile::BatchUpdateEdge;
+            return BatchUpdateEdge;
         if (str == "dataset_standard")
-            return SizeProfile::DatasetStandard;
+            return DatasetStandard;
         if (str == "dataset_small")
-            return SizeProfile::DatasetSmall;
-        return SizeProfile::None;
+            return DatasetSmall;
+        return None;
     }
 
     // Get test name suffix for a given size
@@ -109,7 +111,7 @@ namespace storm::benchmark::sizes {
         if (is_batch && size == 1) {
             return "_single";
         }
-        return "_" + std::to_string(size);
+        return std::format("_{}", size);
     }
 
 } // namespace storm::benchmark::sizes

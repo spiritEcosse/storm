@@ -188,8 +188,7 @@ namespace storm::benchmark {
 
         // Helper: Re-insert data using Storm ORM (not timed - just setup)
         void reinsert_data() {
-            auto insert_result = Base::qs().insert(Base::data()).execute();
-            if (!insert_result.has_value()) {
+            if (auto insert_result = Base::qs().insert(Base::data()).execute(); !insert_result.has_value()) {
                 return;
             }
 

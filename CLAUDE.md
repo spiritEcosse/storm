@@ -26,6 +26,7 @@ Storm is a C++26 ORM library for SQLite using compile-time reflection to automat
 8. **ALWAYS update docs AND agent files after changes** - Code + docs + `.claude/agents/*.md` commit together. If you change a feature, preset, command, or pattern described in any agent file, update that agent file too.
 9. **ALWAYS write thorough unit tests BEFORE implementing** - Every feature or fix needs comprehensive tests first (see [Testing Checklist](#thorough-testing-checklist)). Workflow: (1) write tests → (2) run — new tests MUST fail (proves they test real behavior) → (3) implement → (4) run again — ALL tests must pass
 10. **SonarCloud gate MUST pass before merging** - Zero issues on new code; no exceptions, even for minor issues (see [SonarCloud Gate](#sonarcloud-gate-mandatory-before-merge))
+11. **NEVER use `throw` for compile-time errors in `consteval` functions** - Use `requires` constraints instead. Define a concept that checks the condition and constrain the template. The `throw "string literal"` trick works but fires late with a poor error message. `requires` fires at the call site with a clear constraint violation. Use `std::unreachable()` after the loop body if needed to satisfy the return type.
 
 **Doc conventions:**
 - ASK before creating new `.md` files
@@ -242,6 +243,23 @@ See [docs/reference/FIELD_TYPES.md](docs/reference/FIELD_TYPES.md).
 - **C headers**: Must `#include`, not `import`
 - **Template alias can't be specialized**: `template<T> using X = Y<T>;` doesn't allow `template<> struct X<Foo>`. Use a real class template in a dedicated module to avoid circular deps.
 - **`if constexpr` in consteval loops**: `if constexpr(f(arr[i]))` fails even in `consteval` — loop variable `i` isn't a core constant expression. Use plain `if` (both branches must compile, but that's fine in consteval).
+- **Compile-time errors: use `requires`, not `throw`**: `throw "msg"` in `consteval` produces a poor error message. Instead define a concept and constrain the template — the error fires at the call site with a clear constraint violation:
+  ```cpp
+  // ❌ Bad — throw fires late, poor message
+  static consteval auto find_pk() -> std::meta::info {
+      for (auto m : members) { if (is_pk(m)) return m; }
+      throw "No primary key"; // NOSONAR needed, ugly error
+  }
+  // ✅ Good — requires fires at call site
+  template<typename T>
+  concept ModelWithPrimaryKey = []() consteval -> bool {
+      for (auto m : std::meta::nonstatic_data_members_of(^^T, ...))
+          if (is_pk(m)) return true;
+      return false;
+  }();
+  template<typename T> requires ModelWithPrimaryKey<T>
+  class BaseStatement { ... };  // constraint violation = clear error
+  ```
 
 See [docs/development/COMPILER_ISSUES.md](docs/development/COMPILER_ISSUES.md).
 

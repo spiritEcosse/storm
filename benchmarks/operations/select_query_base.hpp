@@ -42,7 +42,6 @@ namespace storm::benchmark {
         static constexpr bool enabled = false;
     };
 
-    // JOIN type enum (matches storm::orm::statements::JoinType)
     enum class JoinType { Inner, Left, Right };
 
     // JOIN configuration - encodes FK field, related model type, and join type
@@ -220,11 +219,11 @@ namespace storm::benchmark {
     class SelectQueryBenchmarkBase : public DataBenchmarkBase<Derived, BaseModel, 1> {
         using Base = DataBenchmarkBase<Derived, BaseModel, 1>;
 
-      protected:
+      public:
         // WHERE value storage - zero size if NoWhere, otherwise stores the value
         using WhereValueType = typename WhereValueHelper<WhereCfg>::type;
         // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes)
-        [[no_unique_address]] WhereValueType where_value_{}; // NOSONAR(cpp:S3656) - CRTP pattern requires protected
+        [[no_unique_address]] WhereValueType where_value_{};
 
         // QuerySets - use BaseModel's QuerySet, and RelatedModel's if JOIN enabled
         using RelatedModel = typename RelatedModelHelper<JoinCfg>::type;
@@ -232,7 +231,7 @@ namespace storm::benchmark {
         // For JOIN operations, we need a separate QuerySet for related model insertion
         // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes)
         [[no_unique_address]]
-        typename RelatedQSHelper<JoinCfg, std::monostate>::type related_qs_{}; // NOSONAR(cpp:S3656)
+        typename RelatedQSHelper<JoinCfg, std::monostate>::type related_qs_{};
 
         // Accessor for where_value_ from derived classes
         const WhereValueType& where_value() const {
@@ -422,8 +421,7 @@ namespace storm::benchmark {
                     users.push_back(RelatedModel{.id = 0, .name = std::format("User{}", i + 1), .age = 20 + (i % 50)});
                 }
 
-                auto user_result = related_qs_.insert(users).execute();
-                if (!user_result.has_value()) {
+                if (auto user_result = related_qs_.insert(users).execute(); !user_result.has_value()) {
                     std::cerr << "Failed to insert users for benchmark\n";
                     return;
                 }

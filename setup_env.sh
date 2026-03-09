@@ -9,20 +9,23 @@
 unset LLVM_CONFIG
 unset LIBRARY_PATH
 
+# Constant for legacy LLVM version string to detect ABI conflicts
+readonly LEGACY_LLVM_VERSION="llvm@11"
+
 # Explicitly unset any LLVM@11 related variables that might cause ABI conflicts
-if [[ "$LDFLAGS" == *"llvm@11"* ]]; then
+if [[ "$LDFLAGS" == *"${LEGACY_LLVM_VERSION}"* ]]; then
     echo "⚠️ Detected LLVM@11 in LDFLAGS, clearing it"
     unset LDFLAGS
 fi
 
-if [[ "$CPPFLAGS" == *"llvm@11"* ]]; then
+if [[ "$CPPFLAGS" == *"${LEGACY_LLVM_VERSION}"* ]]; then
     echo "⚠️ Detected LLVM@11 in CPPFLAGS, clearing it"
     unset CPPFLAGS
 fi
 
-if [[ "$PATH" == *"llvm@11"* ]]; then
+if [[ "$PATH" == *"${LEGACY_LLVM_VERSION}"* ]]; then
     echo "⚠️ Detected LLVM@11 in PATH, removing those entries"
-    export PATH=$(echo $PATH | tr ":" "\n" | grep -v "llvm@11" | tr "\n" ":")
+    export PATH=$(echo $PATH | tr ":" "\n" | grep -v "${LEGACY_LLVM_VERSION}" | tr "\n" ":")
 fi
 
 # Check if we're on macOS
@@ -32,15 +35,15 @@ fi
 
 # Check if Homebrew LLVM is installed
 if [[ ! -d "/opt/homebrew/opt/llvm" ]]; then
-    echo "❌ Error: Homebrew LLVM not found at /opt/homebrew/opt/llvm"
-    echo "Please install it with: brew install llvm"
+    echo "❌ Error: Homebrew LLVM not found at /opt/homebrew/opt/llvm" >&2
+    echo "Please install it with: brew install llvm" >&2
     return 1
 fi
 
 # Check if SQLite is installed
 if [[ ! -d "/opt/homebrew/opt/sqlite" ]]; then
-    echo "❌ Error: Homebrew SQLite not found at /opt/homebrew/opt/sqlite"
-    echo "Please install it with: brew install sqlite"
+    echo "❌ Error: Homebrew SQLite not found at /opt/homebrew/opt/sqlite" >&2
+    echo "Please install it with: brew install sqlite" >&2
     return 1
 fi
 
@@ -53,9 +56,9 @@ export CXX="/opt/homebrew/opt/llvm/bin/clang++"
 
 # Find macOS SDK path
 SDK_PATH="$(xcrun --show-sdk-path)"
-if [ -z "$SDK_PATH" ]; then
-    echo "❌ Error: Could not find macOS SDK path"
-    echo "Make sure Xcode Command Line Tools are installed"
+if [[ -z "$SDK_PATH" ]]; then
+    echo "❌ Error: Could not find macOS SDK path" >&2
+    echo "Make sure Xcode Command Line Tools are installed" >&2
     return 1
 fi
 echo "Found macOS SDK at: $SDK_PATH"

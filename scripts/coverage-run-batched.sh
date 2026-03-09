@@ -13,7 +13,7 @@ TEST_BIN="${BUILD_DIR}/tests/storm_tests"
 MAX_TESTS_PER_BATCH=50
 
 if [[ ! -x "$TEST_BIN" ]]; then
-    echo "ERROR: Test binary not found: $TEST_BIN"
+    echo "ERROR: Test binary not found: $TEST_BIN" >&2
     exit 1
 fi
 
@@ -29,15 +29,16 @@ FAILED=0
 # Run a single batch: args = filter_pattern safe_name
 run_batch() {
     local filter="$1" name="$2"
-    local PROFRAW="${BUILD_DIR}/batch_${name}.profraw"
-    LLVM_PROFILE_FILE="$PROFRAW" \
+    local profraw="${BUILD_DIR}/batch_${name}.profraw"
+    LLVM_PROFILE_FILE="$profraw" \
         "$TEST_BIN" --gtest_filter="$filter" > /dev/null 2>&1 || {
             echo "  WARN: batch $name crashed (coverage data may be partial)"
             FAILED=$((FAILED + 1))
         }
     # Remove empty profraw files from crashed runs (llvm-profdata merge rejects them)
-    [[ -f "$PROFRAW" && ! -s "$PROFRAW" ]] && rm -f "$PROFRAW"
+    [[ -f "$profraw" && ! -s "$profraw" ]] && rm -f "$profraw"
     TOTAL=$((TOTAL + 1))
+    return 0
 }
 
 current_suite=""
