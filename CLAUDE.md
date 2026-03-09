@@ -183,6 +183,7 @@ src/
 └── orm/
     ├── queryset.cppm           # QuerySet ORM interface
     ├── utilities.cppm          # ConstexprString, SQLCache
+    ├── indexes.cppm            # Index, UniqueIndex, Indexes<T> trait (namespace storm)
     └── statements/             # INSERT, SELECT, UPDATE, DELETE, DISTINCT, JOIN
 ```
 
@@ -239,6 +240,8 @@ See [docs/reference/FIELD_TYPES.md](docs/reference/FIELD_TYPES.md).
 - **std::mutex segfaults**: Use per-thread connections
 - **std::function errors**: Use abstract base classes
 - **C headers**: Must `#include`, not `import`
+- **Template alias can't be specialized**: `template<T> using X = Y<T>;` doesn't allow `template<> struct X<Foo>`. Use a real class template in a dedicated module to avoid circular deps.
+- **`if constexpr` in consteval loops**: `if constexpr(f(arr[i]))` fails even in `consteval` — loop variable `i` isn't a core constant expression. Use plain `if` (both branches must compile, but that's fine in consteval).
 
 See [docs/development/COMPILER_ISSUES.md](docs/development/COMPILER_ISSUES.md).
 
