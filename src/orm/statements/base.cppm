@@ -65,6 +65,23 @@ export namespace storm::orm::statements {
             return field_attr.has_value() && field_attr.value() == meta::FieldAttr::unique;
         }
 
+        // Indexed field detection (explicit [[= FieldAttr::indexed]])
+        static consteval auto is_indexed_field(std::meta::info member) -> bool {
+            auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
+            return field_attr.has_value() && field_attr.value() == meta::FieldAttr::indexed;
+        }
+
+        // Check if a field needs an index (indexed, unique, or fk — but not primary key)
+        static consteval auto needs_index(std::meta::info member) -> bool {
+            if (member == primary_key_)
+                return false;
+            auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
+            if (!field_attr.has_value())
+                return false;
+            auto val = field_attr.value();
+            return val == meta::FieldAttr::indexed || val == meta::FieldAttr::unique || val == meta::FieldAttr::fk;
+        }
+
         // Get database column name for FK field: User sender → "sender_id"
         static consteval auto get_fk_column_name(std::meta::info member) -> std::string {
             const std::string field_name(std::meta::identifier_of(member));

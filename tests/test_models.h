@@ -25,12 +25,12 @@
 // is_active ordering, optional score/nickname, and avatar BLOB.
 struct Person {
     [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string name;
+    [[= storm::meta::FieldAttr::unique]] std::string name;
     int age{};
     double salary{};
     bool is_active{};
     int years_experience{};
-    std::string department;
+    [[= storm::meta::FieldAttr::indexed]] std::string department;
     std::optional<int> score;
     std::optional<std::string> nickname;
     std::vector<uint8_t> avatar;

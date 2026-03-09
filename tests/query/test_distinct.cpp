@@ -31,29 +31,29 @@ template <typename ConnType> class DistinctTest : public StormTestFixture<Person
 
 TYPED_TEST_SUITE(DistinctTest, DatabaseTypes);
 
-// Test: DISTINCT on name field with duplicates
+// Test: DISTINCT on age field with duplicates
 TYPED_TEST(DistinctTest, DistinctNameFieldWithDuplicates) {
     QuerySet<Person, TypeParam> queryset;
 
-    // Insert people with duplicate names
+    // Insert people with duplicate ages (unique names for UNIQUE constraint)
     std::vector<Person> people_to_insert =
-            {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Alice", 35}, {4, "Charlie", 40}, {5, "Bob", 28}};
+            {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Charlie", 30}, {4, "Dave", 40}, {5, "Eve", 25}};
 
     auto insert_result = queryset.insert(std::span<const Person>(people_to_insert)).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
-    // SELECT DISTINCT name
-    auto result = queryset.template distinct<^^Person::name>().select();
+    // SELECT DISTINCT age
+    auto result = queryset.template distinct<^^Person::age>().select();
     ASSERT_TRUE(result.has_value()) << "SELECT DISTINCT failed: " << result.error().message();
 
-    const auto& names = result.value();
-    EXPECT_EQ(names.size(), 3) << "Expected 3 unique names";
+    const auto& ages = result.value();
+    EXPECT_EQ(ages.size(), 3) << "Expected 3 unique ages";
 
     // Convert to set for easier verification
-    std::set<std::string, std::less<>> const unique_names(names.begin(), names.end());
-    EXPECT_EQ(unique_names.count("Alice"), 1);
-    EXPECT_EQ(unique_names.count("Bob"), 1);
-    EXPECT_EQ(unique_names.count("Charlie"), 1);
+    std::set<int> const unique_ages(ages.begin(), ages.end());
+    EXPECT_EQ(unique_ages.count(25), 1);
+    EXPECT_EQ(unique_ages.count(30), 1);
+    EXPECT_EQ(unique_ages.count(40), 1);
 }
 
 // Test: DISTINCT on age field
@@ -147,44 +147,44 @@ TYPED_TEST(DistinctTest, DistinctWithSingleRow) {
 TYPED_TEST(DistinctTest, DistinctWithLargeDataset) {
     QuerySet<Person, TypeParam> queryset;
 
-    // Insert 1000 people with 10 unique names (100 duplicates each)
+    // Insert 1000 people with unique names but only 10 unique ages (100 duplicates each)
     std::vector<Person> people_to_insert;
     for (int i = 1; i <= 1000; ++i) {
         const int pattern = (i - 1) % 10;
-        people_to_insert.emplace_back(i, std::format("Name{}", pattern), 20 + pattern);
+        people_to_insert.emplace_back(i, std::format("Person{}", i), 20 + pattern);
     }
 
     auto insert_result = queryset.insert(std::span<const Person>(people_to_insert)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    // SELECT DISTINCT name
-    auto result = queryset.template distinct<^^Person::name>().select();
+    // SELECT DISTINCT age
+    auto result = queryset.template distinct<^^Person::age>().select();
     ASSERT_TRUE(result.has_value());
 
-    const auto& names = result.value();
-    EXPECT_EQ(names.size(), 10) << "Expected 10 unique names";
+    const auto& ages = result.value();
+    EXPECT_EQ(ages.size(), 10) << "Expected 10 unique ages";
 }
 
 // Test: DISTINCT with empty strings
 TYPED_TEST(DistinctTest, DistinctWithEmptyStrings) {
     QuerySet<Person, TypeParam> queryset;
 
-    // Insert people with empty and non-empty names
-    std::vector<Person> people_to_insert = {{1, "", 25}, {2, "", 30}, {3, "Alice", 25}, {4, "", 35}};
+    // Insert people with duplicate ages (unique names for UNIQUE constraint)
+    std::vector<Person> people_to_insert = {{1, "Alice", 25}, {2, "Bob", 25}, {3, "Charlie", 30}, {4, "Dave", 25}};
 
     auto insert_result = queryset.insert(std::span<const Person>(people_to_insert)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    // SELECT DISTINCT name
-    auto result = queryset.template distinct<^^Person::name>().select();
+    // SELECT DISTINCT age
+    auto result = queryset.template distinct<^^Person::age>().select();
     ASSERT_TRUE(result.has_value());
 
-    const auto& names = result.value();
-    EXPECT_EQ(names.size(), 2) << "Expected 2 unique names (empty string and 'Alice')";
+    const auto& ages = result.value();
+    EXPECT_EQ(ages.size(), 2) << "Expected 2 unique ages (25 and 30)";
 
-    std::set<std::string, std::less<>> const name_set(names.begin(), names.end());
-    EXPECT_TRUE(name_set.count(""));
-    EXPECT_TRUE(name_set.count("Alice"));
+    std::set<int> const age_set(ages.begin(), ages.end());
+    EXPECT_TRUE(age_set.count(25));
+    EXPECT_TRUE(age_set.count(30));
 }
 
 // Test: Return type verification
@@ -213,33 +213,35 @@ TYPED_TEST(DistinctTest, VerifyReturnTypes) {
 TYPED_TEST(DistinctTest, DistinctTwoFieldsNameAndAge) {
     QuerySet<Person, TypeParam> queryset;
 
-    // Insert people with duplicate names but different ages, and duplicate ages but different names
+    // Insert people with unique names but duplicate ages
     std::vector<Person> people_to_insert = {
             {1, "Alice", 30},
             {2, "Bob", 25},
-            {3, "Alice", 30},  // Duplicate (name, age) pair
-            {4, "Alice", 35},  // Same name, different age
-            {5, "Bob", 25},    // Duplicate (name, age) pair
-            {6, "Charlie", 30} // Different name, same age as Alice#1
+            {3, "Charlie", 30}, // Same age as Alice
+            {4, "Dave", 25},    // Same age as Bob
+            {5, "Eve", 35},
+            {6, "Frank", 30} // Same age as Alice and Charlie
     };
 
     auto insert_result = queryset.insert(std::span<const Person>(people_to_insert)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    // SELECT DISTINCT name, age
+    // SELECT DISTINCT name, age — all (name, age) pairs are unique since names are unique
     auto result = queryset.template distinct<^^Person::name, ^^Person::age>().select();
     ASSERT_TRUE(result.has_value()) << "SELECT DISTINCT failed: " << result.error().message();
 
     const auto& pairs = result.value();
 
-    EXPECT_EQ(pairs.size(), 4) << "Expected 4 unique (name, age) pairs";
+    EXPECT_EQ(pairs.size(), 6) << "Expected 6 unique (name, age) pairs";
 
     // Convert to set for verification
     std::set<std::tuple<std::string, int>> const unique_pairs(pairs.begin(), pairs.end());
     EXPECT_TRUE(unique_pairs.count(std::make_tuple("Alice", 30)));
     EXPECT_TRUE(unique_pairs.count(std::make_tuple("Bob", 25)));
-    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Alice", 35)));
     EXPECT_TRUE(unique_pairs.count(std::make_tuple("Charlie", 30)));
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Dave", 25)));
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Eve", 35)));
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Frank", 30)));
 }
 
 // Test: DISTINCT on three fields (name, age) with different field ordering
@@ -250,9 +252,9 @@ TYPED_TEST(DistinctTest, DistinctThreeFieldsAllFields) {
     std::vector<Person> people_to_insert = {
             {1, "Alice", 30},
             {2, "Bob", 25},
-            {3, "Alice", 30}, // Same name and age as #1
-            {4, "Alice", 25}, // Same name as #1, same age as #2
-            {5, "Bob", 30}    // Same name as #2, same age as #1
+            {3, "Charlie", 30}, // Same age as #1
+            {4, "Dave", 25},    // Same age as #2
+            {5, "Eve", 30}      // Same age as #1
     };
 
     auto insert_result = queryset.insert(std::span<const Person>(people_to_insert)).execute();
@@ -262,38 +264,38 @@ TYPED_TEST(DistinctTest, DistinctThreeFieldsAllFields) {
     ASSERT_TRUE(result.has_value());
 
     const auto& pairs = result.value();
-    EXPECT_EQ(pairs.size(), 4) << "Expected 4 unique (name, age) combinations";
+    EXPECT_EQ(pairs.size(), 5) << "Expected 5 unique (name, age) combinations";
 
     // Verify we got the expected tuples
     std::set<std::tuple<std::string, int>> const unique_pairs(pairs.begin(), pairs.end());
     EXPECT_TRUE(unique_pairs.count(std::make_tuple("Alice", 30)));
     EXPECT_TRUE(unique_pairs.count(std::make_tuple("Bob", 25)));
-    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Alice", 25)));
-    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Bob", 30)));
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Charlie", 30)));
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Dave", 25)));
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple("Eve", 30)));
 }
 
 // Test: DISTINCT two fields with all duplicates
 TYPED_TEST(DistinctTest, DistinctTwoFieldsAllDuplicates) {
     QuerySet<Person, TypeParam> queryset;
 
-    // Insert 10 people with the same (name, age) combination
+    // Insert 10 people with unique names but the same age
     std::vector<Person> people_to_insert;
     for (int i = 1; i <= 10; ++i) {
-        people_to_insert.emplace_back(i, "SameName", 42);
+        people_to_insert.emplace_back(i, std::format("Person{}", i), 42);
     }
 
     auto insert_result = queryset.insert(std::span<const Person>(people_to_insert)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    // SELECT DISTINCT name, age
-    auto result = queryset.template distinct<^^Person::name, ^^Person::age>().select();
+    // SELECT DISTINCT age — all have the same age, so only 1 result
+    auto result = queryset.template distinct<^^Person::age>().select();
     ASSERT_TRUE(result.has_value());
 
-    const auto& pairs = result.value();
-    EXPECT_EQ(pairs.size(), 1) << "Expected only 1 unique (name, age) pair";
+    const auto& ages = result.value();
+    EXPECT_EQ(ages.size(), 1) << "Expected only 1 unique age";
 
-    EXPECT_EQ(std::get<0>((*pairs.begin())), "SameName");
-    EXPECT_EQ(std::get<1>((*pairs.begin())), 42);
+    EXPECT_EQ(*ages.begin(), 42);
 }
 
 // DistinctTwoFieldsFromEmptyTable: migrated to unified_cases.yaml (distinct_two_fields_empty)
@@ -302,33 +304,31 @@ TYPED_TEST(DistinctTest, DistinctTwoFieldsAllDuplicates) {
 TYPED_TEST(DistinctTest, DistinctTwoFieldsLargeDataset) {
     QuerySet<Person, TypeParam> queryset;
 
-    // Insert 10,000 people with 100 unique (name, age) combinations (100 duplicates each)
+    // Insert 10,000 people with unique names but only 10 unique ages (duplicate ages)
     std::vector<Person> people_to_insert;
     for (int i = 1; i <= 10000; ++i) {
-        int const combo_idx = (i - 1) % 100;
-        // Generate 100 unique (name, age) combinations: 10 names × 10 ages
-        people_to_insert.emplace_back(i, std::format("Person{}", combo_idx / 10), 20 + (combo_idx % 10));
+        // Each person gets a unique name, but only 10 possible ages (20-29)
+        people_to_insert.emplace_back(i, std::format("Person{}", i), 20 + ((i - 1) % 10));
     }
 
     auto insert_result = queryset.insert(std::span<const Person>(people_to_insert)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    // SELECT DISTINCT name, age
-    auto result = queryset.template distinct<^^Person::name, ^^Person::age>().select();
+    // SELECT DISTINCT age — should deduplicate to 10 unique ages
+    auto result = queryset.template distinct<^^Person::age>().select();
     ASSERT_TRUE(result.has_value());
 
-    const auto& pairs = result.value();
+    const auto& ages = result.value();
 
-    // We have 10 unique names (Person0-Person9) and 10 unique ages (20-29), giving 100 unique
-    // combinations
-    EXPECT_EQ(pairs.size(), 100) << "Expected 100 unique (name, age) pairs";
+    // We have 10 unique ages (20-29), each appearing 1000 times
+    EXPECT_EQ(ages.size(), 10) << "Expected 10 unique ages";
 }
 
 // Test: DISTINCT two fields (age, name) - different order than previous test
 TYPED_TEST(DistinctTest, DistinctTwoFieldsDifferentOrder) {
     QuerySet<Person, TypeParam> queryset;
 
-    std::vector<Person> people_to_insert = {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Alice", 30}, {4, "Charlie", 25}};
+    std::vector<Person> people_to_insert = {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Charlie", 30}, {4, "Dave", 25}};
 
     auto insert_result = queryset.insert(std::span<const Person>(people_to_insert)).execute();
     ASSERT_TRUE(insert_result.has_value());
@@ -338,13 +338,14 @@ TYPED_TEST(DistinctTest, DistinctTwoFieldsDifferentOrder) {
     ASSERT_TRUE(result.has_value());
 
     const auto& pairs = result.value();
-    EXPECT_EQ(pairs.size(), 3) << "Expected 3 unique (age, name) pairs";
+    EXPECT_EQ(pairs.size(), 4) << "Expected 4 unique (age, name) pairs";
 
     // Verify we got the expected tuples (age first, then name)
     std::set<std::tuple<int, std::string>> const unique_pairs(pairs.begin(), pairs.end());
     EXPECT_TRUE(unique_pairs.count(std::make_tuple(30, "Alice")));
     EXPECT_TRUE(unique_pairs.count(std::make_tuple(25, "Bob")));
-    EXPECT_TRUE(unique_pairs.count(std::make_tuple(25, "Charlie")));
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple(30, "Charlie")));
+    EXPECT_TRUE(unique_pairs.count(std::make_tuple(25, "Dave")));
 }
 
 // Test: Return type verification for multi-field DISTINCT
@@ -385,35 +386,35 @@ TYPED_TEST(DistinctTest, DistinctTwoFieldsWithSingleRow) {
 TYPED_TEST(DistinctTest, DuplicateFieldSpecification) {
     QuerySet<Person, TypeParam> queryset;
 
-    // Insert test data
+    // Insert test data with duplicate ages (unique names for UNIQUE constraint)
     std::vector<Person> people = {
-            {1, "Alice", 30}, {2, "Bob", 25}, {3, "Alice", 35} // Different Alice (different age)
+            {1, "Alice", 30}, {2, "Bob", 25}, {3, "Charlie", 30} // Charlie has same age as Alice
     };
 
     auto insert_result = queryset.insert(std::span<const Person>(people)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    // SELECT DISTINCT name, name (redundant but valid SQL)
-    auto result = queryset.template distinct<^^Person::name, ^^Person::name>().select();
+    // SELECT DISTINCT age, age (redundant but valid SQL)
+    auto result = queryset.template distinct<^^Person::age, ^^Person::age>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& pairs = result.value();
 
-    // Should return 2 unique names, but each appears twice in the tuple
+    // Should return 2 unique ages, but each appears twice in the tuple
     EXPECT_EQ(pairs.size(), 2);
 
     // Each tuple should have identical elements
-    for (const auto& [name1, name2] : pairs) {
-        EXPECT_EQ(name1, name2) << "Duplicate field should have identical values";
+    for (const auto& [age1, age2] : pairs) {
+        EXPECT_EQ(age1, age2) << "Duplicate field should have identical values";
     }
 
-    // Verify we got Alice and Bob
-    std::set<std::string, std::less<>> names;
-    for (const auto& [name1, name2] : pairs) {
-        names.insert(name1);
+    // Verify we got 25 and 30
+    std::set<int> ages;
+    for (const auto& [age1, age2] : pairs) {
+        ages.insert(age1);
     }
-    EXPECT_TRUE(names.count("Alice"));
-    EXPECT_TRUE(names.count("Bob"));
+    EXPECT_TRUE(ages.count(25));
+    EXPECT_TRUE(ages.count(30));
 }
 
 // Test: Same field three times
@@ -487,20 +488,20 @@ TYPED_TEST(DistinctTest, MixedDuplicateFields) {
     QuerySet<Person, TypeParam> queryset;
 
     std::vector<Person> people = {
-            {1, "Alice", 30}, {2, "Bob", 25}, {3, "Alice", 30} // Duplicate (name, age)
+            {1, "Alice", 30}, {2, "Bob", 30}, {3, "Charlie", 25} // Alice and Bob share age 30
     };
     std::ignore = queryset.insert(std::span<const Person>(people)).execute();
 
-    // SELECT DISTINCT name, age, name (name appears twice)
-    auto result = queryset.template distinct<^^Person::name, ^^Person::age, ^^Person::name>().select();
+    // SELECT DISTINCT age, name, age (age appears twice)
+    auto result = queryset.template distinct<^^Person::age, ^^Person::name, ^^Person::age>().select();
     ASSERT_TRUE(result.has_value());
 
     const auto& triples = result.value();
-    EXPECT_EQ(triples.size(), 2); // 2 unique (name, age) pairs
+    EXPECT_EQ(triples.size(), 3); // 3 unique (age, name) pairs
 
     // Verify that first and third elements of each tuple are identical
-    for (const auto& [name1, age, name2] : triples) {
-        EXPECT_EQ(name1, name2);
+    for (const auto& [age1, name, age2] : triples) {
+        EXPECT_EQ(age1, age2);
     }
 }
 
@@ -764,35 +765,35 @@ TYPED_TEST(DistinctTest, AlternativeApproaches) {
 TYPED_TEST(DistinctTest, DistinctWithWhereSingleField) {
     QuerySet<Person, TypeParam> queryset;
 
-    // Insert test data with different ages
+    // Insert test data with duplicate ages (unique names for UNIQUE constraint)
     std::vector<Person> people = {
             {0, "Alice", 25},
-            {0, "Alice", 25}, // Duplicate
-            {0, "Bob", 30},
-            {0, "Bob", 30}, // Duplicate
-            {0, "Charlie", 20},
-            {0, "Charlie", 20}, // Duplicate (filtered out by WHERE)
-            {0, "David", 35},   // Unique
+            {0, "Bob", 25}, // Duplicate age
+            {0, "Charlie", 30},
+            {0, "Dave", 30}, // Duplicate age
+            {0, "Eve", 20},
+            {0, "Frank", 20}, // Duplicate age (filtered out by WHERE)
+            {0, "Grace", 35},
     };
 
     auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    // SELECT DISTINCT name WHERE age > 22
-    auto result = queryset.where(field<^^Person::age>() > 22).template distinct<^^Person::name>().select();
+    // SELECT DISTINCT age WHERE age > 22
+    auto result = queryset.where(field<^^Person::age>() > 22).template distinct<^^Person::age>().select();
     ASSERT_TRUE(result.has_value()) << "DISTINCT with WHERE failed: " << result.error().message();
 
-    const auto& names = result.value();
+    const auto& ages = result.value();
 
-    // Should return 3 unique names: Alice, Bob, David (Charlie filtered out by WHERE)
-    EXPECT_EQ(names.size(), 3);
+    // Should return 3 unique ages: 25, 30, 35 (20 filtered out by WHERE)
+    EXPECT_EQ(ages.size(), 3);
 
-    std::set<std::string, std::less<>> const unique_names(names.begin(), names.end());
-    EXPECT_EQ(unique_names.size(), 3);
-    EXPECT_TRUE(unique_names.contains("Alice"));
-    EXPECT_TRUE(unique_names.contains("Bob"));
-    EXPECT_TRUE(unique_names.contains("David"));
-    EXPECT_FALSE(unique_names.contains("Charlie")); // Filtered out by WHERE
+    std::set<int> const unique_ages(ages.begin(), ages.end());
+    EXPECT_EQ(unique_ages.size(), 3);
+    EXPECT_TRUE(unique_ages.contains(25));
+    EXPECT_TRUE(unique_ages.contains(30));
+    EXPECT_TRUE(unique_ages.contains(35));
+    EXPECT_FALSE(unique_ages.contains(20)); // Filtered out by WHERE
 }
 
 // Test DISTINCT with WHERE clause - multiple fields
@@ -801,11 +802,11 @@ TYPED_TEST(DistinctTest, DistinctWithWhereMultipleFields) {
 
     std::vector<Person> people = {
             {0, "Alice", 25},
-            {0, "Alice", 25},
-            {0, "Bob", 30},
-            {0, "Bob", 20},     // Age 20 - filtered out
-            {0, "Charlie", 15}, // Age 15 - filtered out
-            {0, "Alice", 35},
+            {0, "Bob", 25}, // Duplicate age
+            {0, "Charlie", 30},
+            {0, "Dave", 20}, // Age 20 - filtered out
+            {0, "Eve", 15},  // Age 15 - filtered out
+            {0, "Frank", 35},
     };
 
     auto insert_result = queryset.insert(people).execute();
@@ -818,13 +819,14 @@ TYPED_TEST(DistinctTest, DistinctWithWhereMultipleFields) {
 
     const auto& pairs = result.value();
 
-    EXPECT_EQ(pairs.size(), 3);
+    EXPECT_EQ(pairs.size(), 4);
 
     std::set<std::tuple<std::string, int>> const unique_pairs(pairs.begin(), pairs.end());
-    EXPECT_EQ(unique_pairs.size(), 3);
+    EXPECT_EQ(unique_pairs.size(), 4);
     EXPECT_TRUE(unique_pairs.contains(std::make_tuple("Alice", 25)));
-    EXPECT_TRUE(unique_pairs.contains(std::make_tuple("Bob", 30)));
-    EXPECT_TRUE(unique_pairs.contains(std::make_tuple("Alice", 35)));
+    EXPECT_TRUE(unique_pairs.contains(std::make_tuple("Bob", 25)));
+    EXPECT_TRUE(unique_pairs.contains(std::make_tuple("Charlie", 30)));
+    EXPECT_TRUE(unique_pairs.contains(std::make_tuple("Frank", 35)));
 }
 
 // Test DISTINCT with WHERE clause - no results
@@ -853,29 +855,29 @@ TYPED_TEST(DistinctTest, DistinctWithComplexWhere) {
 
     std::vector<Person> people = {
             {0, "Alice", 25},
-            {0, "Alice", 25},
-            {0, "Bob", 30},
-            {0, "Bob", 30},
-            {0, "Charlie", 20},
-            {0, "Charlie", 35},
-            {0, "David", 40},
+            {0, "Bob", 25}, // Duplicate age
+            {0, "Charlie", 30},
+            {0, "Dave", 30}, // Duplicate age
+            {0, "Eve", 20},
+            {0, "Frank", 35},
+            {0, "Grace", 40},
     };
 
     auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    // SELECT DISTINCT name WHERE age >= 25 AND age <= 35
-    auto result = queryset.where(field<^^Person::age>().between(25, 35)).template distinct<^^Person::name>().select();
+    // SELECT DISTINCT age WHERE age >= 25 AND age <= 35
+    auto result = queryset.where(field<^^Person::age>().between(25, 35)).template distinct<^^Person::age>().select();
     ASSERT_TRUE(result.has_value());
 
-    const auto& names = result.value();
+    const auto& ages = result.value();
 
-    std::set<std::string, std::less<>> const unique_names(names.begin(), names.end());
-    // Alice (25), Bob (30), Charlie (35) - Charlie (20) and David (40) filtered out
-    EXPECT_GE(unique_names.size(), 3);
-    EXPECT_TRUE(unique_names.contains("Alice"));
-    EXPECT_TRUE(unique_names.contains("Bob"));
-    EXPECT_TRUE(unique_names.contains("Charlie"));
+    std::set<int> const unique_ages(ages.begin(), ages.end());
+    // 25, 30, 35 pass the filter — 20 and 40 filtered out
+    EXPECT_EQ(unique_ages.size(), 3);
+    EXPECT_TRUE(unique_ages.contains(25));
+    EXPECT_TRUE(unique_ages.contains(30));
+    EXPECT_TRUE(unique_ages.contains(35));
 }
 
 // Test DISTINCT with JOIN - single field
@@ -1029,24 +1031,24 @@ TYPED_TEST(DistinctTest, DistinctWithOrderByAsc) {
             {0, "Charlie", 30},
             {0, "Alice", 25},
             {0, "Bob", 35},
-            {0, "Alice", 40}, // Duplicate name
+            {0, "Dave", 25}, // Duplicate age
     };
 
     auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    // SELECT DISTINCT name ORDER BY name ASC
-    auto result = queryset.template order_by<^^Person::name>().template distinct<^^Person::name>().select();
+    // SELECT DISTINCT age ORDER BY age ASC
+    auto result = queryset.template order_by<^^Person::age>().template distinct<^^Person::age>().select();
     ASSERT_TRUE(result.has_value()) << "DISTINCT with ORDER BY failed: " << result.error().message();
 
-    const auto& names = result.value();
-    ASSERT_EQ(names.size(), 3); // Alice, Bob, Charlie
+    const auto& ages = result.value();
+    ASSERT_EQ(ages.size(), 3); // 25, 30, 35
 
-    // Verify order: Alice, Bob, Charlie (ASC)
-    auto it = names.begin();
-    EXPECT_EQ(*it++, "Alice");
-    EXPECT_EQ(*it++, "Bob");
-    EXPECT_EQ(*it++, "Charlie");
+    // Verify order: 25, 30, 35 (ASC)
+    auto it = ages.begin();
+    EXPECT_EQ(*it++, 25);
+    EXPECT_EQ(*it++, 30);
+    EXPECT_EQ(*it++, 35);
 }
 
 // Test: DISTINCT with ORDER BY DESC
@@ -1111,8 +1113,8 @@ TYPED_TEST(DistinctTest, DistinctMultiFieldWithOrderBy) {
     std::vector<Person> people = {
             {0, "Charlie", 30},
             {0, "Alice", 25},
-            {0, "Bob", 25},
-            {0, "Alice", 30},
+            {0, "Bob", 25},  // Duplicate age with Alice
+            {0, "Dave", 30}, // Duplicate age with Charlie
     };
 
     auto insert_result = queryset.insert(people).execute();
@@ -1408,15 +1410,15 @@ TYPED_TEST(DistinctTest, DistinctMultiFieldWithOptional) {
 
     std::vector<Person> people = {
             {.id = 0, .name = "Alice", .score = 25, .nickname = "Ali"},
-            {.id = 0, .name = "Alice", .score = std::nullopt, .nickname = "Ali"}, // Same name, NULL age
-            {.id = 0, .name = "Bob", .score = 25, .nickname = "Bobby"},           // Same age as Alice
-            {.id = 0, .name = "Bob", .score = std::nullopt, .nickname = "Bobby"}, // Same name as above, NULL age
+            {.id = 0, .name = "Bob", .score = std::nullopt, .nickname = "Bobby"},  // NULL score
+            {.id = 0, .name = "Charlie", .score = 25, .nickname = "Chuck"},        // Same score as Alice
+            {.id = 0, .name = "Dave", .score = std::nullopt, .nickname = "Davey"}, // NULL score like Bob
     };
 
     auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    // SELECT DISTINCT name, age
+    // SELECT DISTINCT name, score
     auto result = queryset.template distinct<^^Person::name, ^^Person::score>().select();
     ASSERT_TRUE(result.has_value());
 

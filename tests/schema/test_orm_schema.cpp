@@ -23,7 +23,7 @@ using namespace storm;
 TEST(SchemaUnitTest, PersonSqlMatchesHandWritten) {
     const std::string expected = "CREATE TABLE Person (\n"
                                  "    id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
-                                 "    name TEXT NOT NULL,\n"
+                                 "    name TEXT NOT NULL UNIQUE,\n"
                                  "    age INTEGER NOT NULL,\n"
                                  "    salary REAL NOT NULL,\n"
                                  "    is_active INTEGER NOT NULL,\n"
@@ -58,10 +58,11 @@ TEST(SchemaUnitTest, PersonIdFieldIsPrimaryKeyAutoincrement) {
             << "Expected 'id INTEGER PRIMARY KEY AUTOINCREMENT' in: " << sql;
 }
 
-// Test: Person name field generates TEXT NOT NULL
-TEST(SchemaUnitTest, PersonNameFieldIsTextNotNull) {
+// Test: Person name field generates TEXT NOT NULL UNIQUE
+TEST(SchemaUnitTest, PersonNameFieldIsTextNotNullUnique) {
     const std::string& sql = storm::create_table_sql<Person>();
-    EXPECT_NE(sql.find("name TEXT NOT NULL"), std::string::npos) << "Expected 'name TEXT NOT NULL' in: " << sql;
+    EXPECT_NE(sql.find("name TEXT NOT NULL UNIQUE"), std::string::npos)
+            << "Expected 'name TEXT NOT NULL UNIQUE' in: " << sql;
 }
 
 // Test: Person age field generates INTEGER NOT NULL
@@ -151,6 +152,67 @@ TEST(SchemaUnitTest, PersonSqlEndsWithClosingParen) {
 }
 
 // ============================================================================
+// INDEX SQL Generation Unit Tests (no DB connection needed)
+// ============================================================================
+
+// Test: Person index SQL contains CREATE INDEX for the indexed department field
+TEST(SchemaUnitTest, PersonIndexSqlContainsIndexedField) {
+    const auto& indexes = storm::create_index_sql<Person>();
+    bool        found   = false;
+    for (const auto& sql : indexes) {
+        if (sql.contains("CREATE INDEX IF NOT EXISTS idx_Person_department ON Person(department)")) {
+            found = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found) << "Expected CREATE INDEX for department field";
+}
+
+// Test: Person index SQL contains CREATE UNIQUE INDEX for the unique name field
+TEST(SchemaUnitTest, PersonIndexSqlContainsUniqueField) {
+    const auto& indexes = storm::create_index_sql<Person>();
+    bool        found   = false;
+    for (const auto& sql : indexes) {
+        if (sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS idx_Person_name ON Person(name)")) {
+            found = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found) << "Expected CREATE UNIQUE INDEX for name field";
+}
+
+// Test: Person has exactly 2 index SQL statements (name + department)
+TEST(SchemaUnitTest, PersonIndexSqlCount) {
+    const auto& indexes = storm::create_index_sql<Person>();
+    EXPECT_EQ(indexes.size(), 2u) << "Expected 2 indexes (name + department), got " << indexes.size();
+}
+
+// Test: Message index SQL contains CREATE INDEX for FK sender_id field
+TEST(SchemaUnitTest, MessageIndexSqlContainsFkField) {
+    const auto& indexes = storm::create_index_sql<Message>();
+    bool        found   = false;
+    for (const auto& sql : indexes) {
+        if (sql.contains("CREATE INDEX IF NOT EXISTS idx_Message_sender_id ON Message(sender_id)")) {
+            found = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found) << "Expected CREATE INDEX for sender_id FK field";
+}
+
+// Test: SimpleRecord has no indexed/unique/FK fields — empty index list
+TEST(SchemaUnitTest, SimpleRecordIndexSqlIsEmpty) {
+    const auto& indexes = storm::create_index_sql<SimpleRecord>();
+    EXPECT_TRUE(indexes.empty()) << "Expected no indexes for SimpleRecord, got " << indexes.size();
+}
+
+// Test: Task has 2 FK indexes (assignee_id + reviewer_id)
+TEST(SchemaUnitTest, TaskIndexSqlContainsTwoFkFields) {
+    const auto& indexes = storm::create_index_sql<Task>();
+    EXPECT_EQ(indexes.size(), 2u) << "Expected 2 indexes for Task (2 FKs), got " << indexes.size();
+}
+
+// ============================================================================
 // Integration Tests (TYPED_TEST — both SQLite + PostgreSQL)
 //
 // SetUp uses ensure_table to create the Person table and handle PostgreSQL
@@ -209,6 +271,36 @@ TYPED_TEST(SchemaTest, MessageTableIsUsableAfterCreate) {
     QuerySet<Message, TypeParam> msg_qs;
     auto                         msg_select = msg_qs.select().execute();
     ASSERT_TRUE(msg_select.has_value()) << "SELECT on created Message table failed: " << msg_select.error().message();
+}
+
+// ============================================================================
+// INDEX Integration Tests (TYPED_TEST — both SQLite + PostgreSQL)
+// ============================================================================
+
+// Test: create_indexes_if_not_exist() for Person executes without error
+TYPED_TEST(SchemaTest, CreatePersonIndexesSucceeds) {
+    const auto& conn   = QuerySet<Person, TypeParam>::get_default_connection();
+    auto        result = orm::schema::SchemaStatement<Person>::create_indexes_if_not_exist(conn);
+    ASSERT_TRUE(result.has_value()) << "create_indexes_if_not_exist() failed: " << result.error().message();
+}
+
+// Test: create_indexes_if_not_exist() is idempotent (IF NOT EXISTS — can call twice)
+TYPED_TEST(SchemaTest, CreateIndexesIsIdempotent) {
+    const auto& conn    = QuerySet<Person, TypeParam>::get_default_connection();
+    auto        result1 = orm::schema::SchemaStatement<Person>::create_indexes_if_not_exist(conn);
+    ASSERT_TRUE(result1.has_value()) << "First call failed: " << result1.error().message();
+
+    auto result2 = orm::schema::SchemaStatement<Person>::create_indexes_if_not_exist(conn);
+    ASSERT_TRUE(result2.has_value()) << "Second call failed (not idempotent): " << result2.error().message();
+}
+
+// Test: FK auto-index works for Message.sender_id
+TYPED_TEST(SchemaTest, CreateMessageFkIndexSucceeds) {
+    const auto& conn = QuerySet<Person, TypeParam>::get_default_connection();
+    ASSERT_TRUE((storm::test::ensure_table<Message, TypeParam>(conn).has_value()));
+
+    auto result = orm::schema::SchemaStatement<Message>::create_indexes_if_not_exist(conn);
+    ASSERT_TRUE(result.has_value()) << "create_indexes_if_not_exist() for Message failed: " << result.error().message();
 }
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
