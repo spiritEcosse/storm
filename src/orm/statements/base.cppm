@@ -73,13 +73,14 @@ export namespace storm::orm::statements {
 
         // Check if a field needs an index (indexed, unique, or fk — but not primary key)
         static consteval auto needs_index(std::meta::info member) -> bool {
+            using enum meta::FieldAttr;
             if (member == primary_key_)
                 return false;
             auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
             if (!field_attr.has_value())
                 return false;
             auto val = field_attr.value();
-            return val == meta::FieldAttr::indexed || val == meta::FieldAttr::unique || val == meta::FieldAttr::fk;
+            return val == indexed || val == unique || val == fk;
         }
 
         // Get database column name for FK field: User sender → "sender_id"
