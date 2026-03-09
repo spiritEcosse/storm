@@ -16,6 +16,8 @@ import <optional>;
 import <vector>;
 import <array>;
 import <utility>;
+import <tuple>;
+import <iterator>;
 
 export namespace storm::orm::schema {
 
@@ -256,8 +258,59 @@ export namespace storm::orm::schema {
             return result;
         }
 
+        // Build CREATE INDEX SQL for a single composite index type at compile-time
+        template <typename IdxType> static consteval auto build_composite_index_sql() {
+            ConstexprString<INDEX_SQL_BUFFER> sql;
+            if constexpr (IdxType::unique) {
+                sql.append("CREATE UNIQUE INDEX IF NOT EXISTS idx_");
+            } else {
+                sql.append("CREATE INDEX IF NOT EXISTS idx_");
+            }
+            sql.append(Base::table_name_);
+            for (size_t i = 0; i < IdxType::fields.size(); ++i) {
+                sql.append("_");
+                sql.append(std::meta::identifier_of(IdxType::fields[i]));
+            }
+            sql.append(" ON ");
+            sql.append(Base::table_name_);
+            sql.append("(");
+            for (size_t i = 0; i < IdxType::fields.size(); ++i) {
+                if (i > 0) {
+                    sql.append(", ");
+                }
+                if (Base::is_fk_field(IdxType::fields[i])) {
+                    sql.append(std::meta::identifier_of(IdxType::fields[i]));
+                    sql.append("_id");
+                } else {
+                    sql.append(std::meta::identifier_of(IdxType::fields[i]));
+                }
+            }
+            sql.append(")");
+            return sql;
+        }
+
+        // Collect composite index SQL strings into a vector
+        template <typename Tuple, size_t... Is>
+        static auto build_composite_index_sql_vector(std::index_sequence<Is...> /*unused*/)
+                -> std::vector<std::string> {
+            std::vector<std::string> result;
+            ((result.emplace_back(std::string(build_composite_index_sql<std::tuple_element_t<Is, Tuple>>()))), ...);
+            return result;
+        }
+
         static auto build_all_index_sql() -> std::vector<std::string> {
-            return build_index_sql_vector(std::make_index_sequence<Base::field_count_>{});
+            auto result         = build_index_sql_vector(std::make_index_sequence<Base::field_count_>{});
+            using CompositeIdxs = statements::indexes_t<T>;
+            if constexpr (std::tuple_size_v<CompositeIdxs> > 0) {
+                auto composite = build_composite_index_sql_vector<CompositeIdxs>(
+                        std::make_index_sequence<std::tuple_size_v<CompositeIdxs>>{}
+                );
+                result
+                        .insert(result.end(),
+                                std::make_move_iterator(composite.begin()),
+                                std::make_move_iterator(composite.end()));
+            }
+            return result;
         }
 
         // Pre-computed index SQL strings

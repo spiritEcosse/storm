@@ -181,10 +181,10 @@ TEST(SchemaUnitTest, PersonIndexSqlContainsUniqueField) {
     EXPECT_TRUE(found) << "Expected CREATE UNIQUE INDEX for name field";
 }
 
-// Test: Person has exactly 2 index SQL statements (name + department)
+// Test: Person has exactly 4 index SQL statements (2 single-column + 2 composite)
 TEST(SchemaUnitTest, PersonIndexSqlCount) {
     const auto& indexes = storm::create_index_sql<Person>();
-    EXPECT_EQ(indexes.size(), 2u) << "Expected 2 indexes (name + department), got " << indexes.size();
+    EXPECT_EQ(indexes.size(), 4u) << "Expected 4 indexes (name + department + 2 composite), got " << indexes.size();
 }
 
 // Test: Message index SQL contains CREATE INDEX for FK sender_id field
@@ -210,6 +210,42 @@ TEST(SchemaUnitTest, SimpleRecordIndexSqlIsEmpty) {
 TEST(SchemaUnitTest, TaskIndexSqlContainsTwoFkFields) {
     const auto& indexes = storm::create_index_sql<Task>();
     EXPECT_EQ(indexes.size(), 2u) << "Expected 2 indexes for Task (2 FKs), got " << indexes.size();
+}
+
+// ============================================================================
+// COMPOSITE INDEX SQL Generation Unit Tests
+// ============================================================================
+
+// Test: Person composite index SQL contains CREATE INDEX for (department, age)
+TEST(SchemaUnitTest, CompositeIndexSqlContainsDeptAge) {
+    const auto& indexes = storm::create_index_sql<Person>();
+    bool        found   = false;
+    for (const auto& sql : indexes) {
+        if (sql.contains("CREATE INDEX IF NOT EXISTS idx_Person_department_age ON Person(department, age)")) {
+            found = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found) << "Expected composite CREATE INDEX for (department, age)";
+}
+
+// Test: Person composite unique index SQL contains CREATE UNIQUE INDEX for (name, department)
+TEST(SchemaUnitTest, CompositeUniqueIndexSqlContainsNameDept) {
+    const auto& indexes = storm::create_index_sql<Person>();
+    bool        found   = false;
+    for (const auto& sql : indexes) {
+        if (sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS idx_Person_name_department ON Person(name, department)")) {
+            found = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found) << "Expected composite CREATE UNIQUE INDEX for (name, department)";
+}
+
+// Test: SimpleRecord has no composite indexes (no Indexes<> specialization)
+TEST(SchemaUnitTest, SimpleRecordNoCompositeIndexes) {
+    const auto& indexes = storm::create_index_sql<SimpleRecord>();
+    EXPECT_TRUE(indexes.empty()) << "Expected no indexes for SimpleRecord, got " << indexes.size();
 }
 
 // ============================================================================
