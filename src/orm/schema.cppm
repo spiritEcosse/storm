@@ -182,10 +182,109 @@ export namespace storm::orm::schema {
         static constexpr auto           create_table_sql_array_  = build_create_table_sql();
         static inline const std::string create_table_sql_string_ = std::string(create_table_sql_array_);
 
+        // =====================================================================
+        // INDEX SQL GENERATION
+        // =====================================================================
+
+        // Index SQL buffer — generous for "CREATE UNIQUE INDEX IF NOT EXISTS idx_<table>_<field> ON <table>(<field>)"
+        static constexpr size_t INDEX_SQL_BUFFER = 256;
+
+        // Build CREATE INDEX SQL for a single field at compile-time
+        template <size_t Index> static consteval auto build_create_index_sql() {
+            ConstexprString<INDEX_SQL_BUFFER> sql;
+            constexpr auto                    member = Base::all_members_[Index];
+
+            if constexpr (!Base::needs_index(member)) {
+                return sql;
+            } else if constexpr (Base::is_unique_field(member)) {
+                sql.append("CREATE UNIQUE INDEX IF NOT EXISTS idx_");
+                sql.append(Base::table_name_);
+                sql.append("_");
+                sql.append(std::meta::identifier_of(member));
+                sql.append(" ON ");
+                sql.append(Base::table_name_);
+                sql.append("(");
+                sql.append(std::meta::identifier_of(member));
+                sql.append(")");
+            } else if constexpr (Base::is_fk_field(member)) {
+                sql.append("CREATE INDEX IF NOT EXISTS idx_");
+                sql.append(Base::table_name_);
+                sql.append("_");
+                sql.append(std::meta::identifier_of(member));
+                sql.append("_id ON ");
+                sql.append(Base::table_name_);
+                sql.append("(");
+                sql.append(std::meta::identifier_of(member));
+                sql.append("_id)");
+            } else {
+                sql.append("CREATE INDEX IF NOT EXISTS idx_");
+                sql.append(Base::table_name_);
+                sql.append("_");
+                sql.append(std::meta::identifier_of(member));
+                sql.append(" ON ");
+                sql.append(Base::table_name_);
+                sql.append("(");
+                sql.append(std::meta::identifier_of(member));
+                sql.append(")");
+            }
+            return sql;
+        }
+
+        // Count how many fields need indexes at compile-time
+        static consteval auto count_indexes() -> size_t {
+            size_t count = 0;
+            for (size_t i = 0; i < Base::field_count_; ++i) {
+                if (Base::needs_index(Base::all_members_[i])) {
+                    ++count;
+                }
+            }
+            return count;
+        }
+
+        // Collect all index SQL strings into a vector at runtime (from constexpr data)
+        template <size_t... Is>
+        static auto build_index_sql_vector(std::index_sequence<Is...> /*unused*/) -> std::vector<std::string> {
+            std::vector<std::string> result;
+            result.reserve(count_indexes());
+            (([&] {
+                 constexpr auto sql = build_create_index_sql<Is>();
+                 if constexpr (sql.len > 0) {
+                     result.emplace_back(std::string(sql));
+                 }
+             }()),
+             ...);
+            return result;
+        }
+
+        static auto build_all_index_sql() -> std::vector<std::string> {
+            return build_index_sql_vector(std::make_index_sequence<Base::field_count_>{});
+        }
+
+        // Pre-computed index SQL strings
+        static inline const std::vector<std::string> index_sql_strings_ = build_all_index_sql();
+
       public:
         // Return the pre-computed CREATE TABLE SQL (SQLite dialect).
         static auto create_table_sql() -> const std::string& {
             return create_table_sql_string_;
+        }
+
+        // Return pre-computed CREATE INDEX SQL statements for all indexed/unique/FK fields.
+        static auto create_index_sql() -> const std::vector<std::string>& {
+            return index_sql_strings_;
+        }
+
+        // Execute all CREATE INDEX IF NOT EXISTS statements on the given connection.
+        template <db::DatabaseConnection ConnType>
+        static auto create_indexes_if_not_exist(std::shared_ptr<ConnType> conn)
+                -> std::expected<void, typename ConnType::Error> {
+            for (const auto& sql : index_sql_strings_) {
+                auto result = conn->execute(sql);
+                if (!result) {
+                    return result; // LCOV_EXCL_LINE
+                } // LCOV_EXCL_LINE
+            }
+            return {};
         }
 
         // Execute CREATE TABLE IF NOT EXISTS on the given connection.

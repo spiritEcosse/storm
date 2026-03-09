@@ -35,23 +35,23 @@ TYPED_TEST_SUITE(ValuesTest, DatabaseTypes);
 // Single-Field Projection Tests
 // ============================================================================
 
-// Test: values() on name field — returns all rows including duplicates
+// Test: values() on age field — returns all rows including duplicate ages
 TYPED_TEST(ValuesTest, SingleFieldNameWithDuplicates) {
     QuerySet<Person, TypeParam> queryset;
 
     std::vector<Person> people =
-            {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Alice", 35}, {4, "Charlie", 40}, {5, "Bob", 28}};
+            {{1, "Alice", 30}, {2, "Bob", 25}, {3, "Carol", 30}, {4, "Charlie", 25}, {5, "Dan", 28}};
 
     auto insert_result = queryset.insert(std::span<const Person>(people)).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
-    // SELECT name (no DISTINCT — should return ALL rows including duplicates)
-    auto result = queryset.template values<^^Person::name>().select();
+    // SELECT age (no DISTINCT — should return ALL rows including duplicates)
+    auto result = queryset.template values<^^Person::age>().select();
     ASSERT_TRUE(result.has_value()) << "SELECT values failed: " << result.error().message();
 
-    const auto& names = result.value();
-    // Key difference from DISTINCT: should return 5 rows, not 3
-    EXPECT_EQ(names.size(), 5) << "Expected all 5 rows (duplicates preserved)";
+    const auto& ages = result.value();
+    // Key difference from DISTINCT: should return 5 rows (duplicate ages preserved)
+    EXPECT_EQ(ages.size(), 5) << "Expected all 5 rows (duplicates preserved)";
 }
 
 // Test: values() on age field
@@ -116,14 +116,14 @@ TYPED_TEST(ValuesTest, SingleFieldWithSingleRow) {
 // Multi-Field Projection Tests
 // ============================================================================
 
-// Test: values() on two fields (name, age)
+// Test: values() on two fields (name, age) — duplicate ages preserved
 TYPED_TEST(ValuesTest, TwoFieldsNameAndAge) {
     QuerySet<Person, TypeParam> queryset;
 
     std::vector<Person> people = {
             {1, "Alice", 30},
             {2, "Bob", 25},
-            {3, "Alice", 30}, // Duplicate pair — should still appear
+            {3, "Carol", 30},
             {4, "Charlie", 30},
     };
 
@@ -134,8 +134,8 @@ TYPED_TEST(ValuesTest, TwoFieldsNameAndAge) {
     ASSERT_TRUE(result.has_value()) << "SELECT values failed: " << result.error().message();
 
     const auto& pairs = result.value();
-    // Should return ALL 4 rows (duplicates preserved, unlike DISTINCT)
-    EXPECT_EQ(pairs.size(), 4) << "Expected all 4 rows including duplicate pair";
+    // Should return ALL 4 rows (duplicate ages preserved, unlike DISTINCT)
+    EXPECT_EQ(pairs.size(), 4) << "Expected all 4 rows including duplicate ages";
 }
 
 // Test: Return type verification for multi-field values
@@ -169,23 +169,23 @@ TYPED_TEST(ValuesTest, VerifyReturnTypes) {
 TYPED_TEST(ValuesTest, DuplicatesPreserved) {
     QuerySet<Person, TypeParam> queryset;
 
-    // Insert 10 people with the same name
+    // Insert 10 people with the same age (unique names due to UNIQUE constraint)
     std::vector<Person> people;
     for (int i = 1; i <= 10; ++i) {
-        people.emplace_back(i, "SameName", 42);
+        people.emplace_back(i, std::format("Person{}", i), 42);
     }
 
     auto insert_result = queryset.insert(std::span<const Person>(people)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    // values() should return ALL 10 rows
-    auto values_result = queryset.template values<^^Person::name>().select();
+    // values() should return ALL 10 rows (duplicate ages preserved)
+    auto values_result = queryset.template values<^^Person::age>().select();
     ASSERT_TRUE(values_result.has_value());
     EXPECT_EQ(values_result.value().size(), 10) << "values() should preserve all duplicates";
 
-    // Verify all values are "SameName"
-    for (const auto& name : values_result.value()) {
-        EXPECT_EQ(name, "SameName");
+    // Verify all values are 42
+    for (const auto& age : values_result.value()) {
+        EXPECT_EQ(age, 42);
     }
 }
 
@@ -199,7 +199,7 @@ TYPED_TEST(ValuesTest, WithWhereSingleField) {
 
     std::vector<Person> people = {
             {0, "Alice", 25},
-            {0, "Alice", 25}, // Duplicate
+            {0, "Betty", 25},
             {0, "Bob", 30},
             {0, "Charlie", 20},
             {0, "David", 35},
@@ -213,7 +213,7 @@ TYPED_TEST(ValuesTest, WithWhereSingleField) {
     ASSERT_TRUE(result.has_value()) << "values with WHERE failed: " << result.error().message();
 
     const auto& names = result.value();
-    // Alice (25), Alice (25), Bob (30), David (35) — 4 rows (Charlie filtered out)
+    // Alice (25), Betty (25), Bob (30), David (35) — 4 rows (Charlie filtered out)
     EXPECT_EQ(names.size(), 4);
 }
 
