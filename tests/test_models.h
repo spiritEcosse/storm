@@ -37,7 +37,7 @@ struct Person {
 };
 
 // Composite indexes for Person — specialize the trait after struct definition
-template <> struct storm::orm::statements::Indexes<Person> {
+template <> struct storm::Indexes<Person> {
     using type = std::tuple<storm::Index<^^Person::department, ^^Person::age>,
                             storm::UniqueIndex<^^Person::name, ^^Person::department>>;
 };

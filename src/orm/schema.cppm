@@ -5,6 +5,7 @@ module;
 export module storm_orm_schema;
 
 import storm_orm_statements_base;
+import storm_orm_indexes;
 import storm_orm_utilities;
 import storm_db_concept;
 
@@ -300,7 +301,7 @@ export namespace storm::orm::schema {
 
         static auto build_all_index_sql() -> std::vector<std::string> {
             auto result         = build_index_sql_vector(std::make_index_sequence<Base::field_count_>{});
-            using CompositeIdxs = statements::indexes_t<T>;
+            using CompositeIdxs = storm::indexes_t<T>;
             if constexpr (std::tuple_size_v<CompositeIdxs> > 0) {
                 auto composite = build_composite_index_sql_vector<CompositeIdxs>(
                         std::make_index_sequence<std::tuple_size_v<CompositeIdxs>>{}
