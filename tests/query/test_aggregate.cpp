@@ -1600,23 +1600,7 @@ TYPED_TEST(AggregateTest, HavingLogicalOnAggregateStatement) {
 // GROUP BY + ORDER BY Tests (from test_coverage_gaps.cpp)
 // =============================================================================
 
-template <typename ConnType> class GroupByOrderByTest : public StormTestFixture<Person, ConnType> {
-  public:
-    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
-        qs = std::make_unique<QuerySet<Person, ConnType>>();
-
-        ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(
-                std::vector<Person>(storm::test::PEOPLE_25.begin(), storm::test::PEOPLE_25.end())
-        )));
-    }
-
-    auto TearDown() -> void override {
-        qs = nullptr;
-        StormTestFixture<Person, ConnType>::TearDown();
-    }
-
-    std::unique_ptr<QuerySet<Person, ConnType>> qs;
-};
+template <typename ConnType> class GroupByOrderByTest : public PersonSeedFixture<ConnType> {};
 
 TYPED_TEST_SUITE(GroupByOrderByTest, DatabaseTypes);
 

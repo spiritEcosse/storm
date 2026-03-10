@@ -392,23 +392,7 @@ TYPED_TEST(WhereTest, ExprDirectConstructionFromVariant) {
     EXPECT_EQ(result.value().size(), 20) << "Should find 20 people with age > 25";
 }
 
-template <typename ConnType> class ComplexWhereTest : public StormTestFixture<Person, ConnType> {
-  public:
-    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
-        qs = std::make_unique<QuerySet<Person, ConnType>>();
-
-        ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(
-                std::vector<Person>(storm::test::PEOPLE_25.begin(), storm::test::PEOPLE_25.end())
-        )));
-    }
-
-    auto TearDown() -> void override {
-        qs = nullptr;
-        StormTestFixture<Person, ConnType>::TearDown();
-    }
-
-    std::unique_ptr<QuerySet<Person, ConnType>> qs;
-};
+template <typename ConnType> class ComplexWhereTest : public PersonSeedFixture<ConnType> {};
 
 TYPED_TEST_SUITE(ComplexWhereTest, DatabaseTypes);
 

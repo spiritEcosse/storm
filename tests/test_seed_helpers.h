@@ -67,3 +67,22 @@ template <typename Model, typename ConnType> auto batch_remove(const std::vector
 }
 
 } // namespace storm::test
+
+/// Fixture that creates a Person QuerySet and seeds PEOPLE_25.
+/// Reuse to avoid duplicating the same on_after_setup / TearDown / qs boilerplate.
+template <typename ConnType> class PersonSeedFixture : public StormTestFixture<Person, ConnType> {
+  public:
+    auto on_after_setup(const std::shared_ptr<ConnType> &) -> void override {
+        qs = std::make_unique<storm::QuerySet<Person, ConnType>>();
+
+        ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(
+            std::vector<Person>(storm::test::PEOPLE_25.begin(), storm::test::PEOPLE_25.end()))));
+    }
+
+    auto TearDown() -> void override {
+        qs = nullptr;
+        StormTestFixture<Person, ConnType>::TearDown();
+    }
+
+    std::unique_ptr<storm::QuerySet<Person, ConnType>> qs;
+};
