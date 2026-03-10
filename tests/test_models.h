@@ -263,7 +263,7 @@ template <typename Model, typename ConnType, typename... ExtraModels> class Stor
         const auto &conn = storm::QuerySet<Model, ConnType>::get_default_connection(); // NOSONAR(S1659)
         storm::test::pg_schema_init<ConnType>(conn);
         on_setup(conn);
-        if (this->HasFatalFailure())
+        if (StormTestFixture::HasFatalFailure())
             return;
         on_after_setup(conn);
     }
@@ -277,7 +277,9 @@ template <typename Model, typename ConnType, typename... ExtraModels> class Stor
     // Hook for additional setup after primary table creation succeeds.
     // Override to create extra tables, seed data, or initialize QuerySet members.
     // No need to call base or check HasFatalFailure() — SetUp() handles that.
-    virtual auto on_after_setup(const std::shared_ptr<ConnType> &) -> void {}
+    virtual auto on_after_setup(const std::shared_ptr<ConnType> & /*conn*/) -> void {
+        // Default: no additional setup. Override in fixtures that need seeding or extra initialization.
+    }
 
     // Universal TearDown — rolls back PG schema and clears the default connection.
     auto TearDown() -> void override {

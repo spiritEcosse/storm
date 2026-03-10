@@ -25,38 +25,22 @@ template <typename Model, typename ConnType> class SelectRunner : public SelectQ
     // Uses `if constexpr (requires { ... })` to guard model-specific field access.
     template <const auto &Tc, typename Row>
     void verify_first_row(const Row &row) { // NOSONAR(S3776) -- constexpr dispatch
-        if constexpr (Tc.expected.first.has_name) {
-            if constexpr (requires { row.name; })
-                EXPECT_EQ(row.name, std::string(Tc.expected.first.name.view()));
-        }
-        if constexpr (Tc.expected.first.has_age) {
-            if constexpr (requires { row.age; })
-                EXPECT_EQ(row.age, Tc.expected.first.age);
-        }
-        if constexpr (Tc.expected.first.has_salary) {
-            if constexpr (requires { row.salary; })
-                EXPECT_NEAR(row.salary, Tc.expected.first.salary, 0.01);
-        }
-        if constexpr (Tc.expected.first.has_is_active) {
-            if constexpr (requires { row.is_active; })
-                EXPECT_EQ(row.is_active, Tc.expected.first.is_active);
-        }
-        if constexpr (Tc.expected.first.has_years_experience) {
-            if constexpr (requires { row.years_experience; })
-                EXPECT_EQ(row.years_experience, Tc.expected.first.years_experience);
-        }
-        if constexpr (Tc.expected.first.has_department) {
-            if constexpr (requires { row.department; })
-                EXPECT_EQ(row.department, std::string(Tc.expected.first.department.view()));
-        }
-        if constexpr (Tc.expected.first.has_content) {
-            if constexpr (requires { row.content; })
-                EXPECT_EQ(row.content, std::string(Tc.expected.first.content.view()));
-        }
-        if constexpr (Tc.expected.first.has_value) {
-            if constexpr (requires { row.value; })
-                EXPECT_EQ(row.value, Tc.expected.first.value);
-        }
+        if constexpr (Tc.expected.first.has_name && requires { row.name; })
+            EXPECT_EQ(row.name, std::string(Tc.expected.first.name.view()));
+        if constexpr (Tc.expected.first.has_age && requires { row.age; })
+            EXPECT_EQ(row.age, Tc.expected.first.age);
+        if constexpr (Tc.expected.first.has_salary && requires { row.salary; })
+            EXPECT_NEAR(row.salary, Tc.expected.first.salary, 0.01);
+        if constexpr (Tc.expected.first.has_is_active && requires { row.is_active; })
+            EXPECT_EQ(row.is_active, Tc.expected.first.is_active);
+        if constexpr (Tc.expected.first.has_years_experience && requires { row.years_experience; })
+            EXPECT_EQ(row.years_experience, Tc.expected.first.years_experience);
+        if constexpr (Tc.expected.first.has_department && requires { row.department; })
+            EXPECT_EQ(row.department, std::string(Tc.expected.first.department.view()));
+        if constexpr (Tc.expected.first.has_content && requires { row.content; })
+            EXPECT_EQ(row.content, std::string(Tc.expected.first.content.view()));
+        if constexpr (Tc.expected.first.has_value && requires { row.value; })
+            EXPECT_EQ(row.value, Tc.expected.first.value);
     }
 
     template <const auto &Tc> void run() { // NOSONAR(S3776) -- inherent constexpr dispatch
