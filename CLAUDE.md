@@ -377,6 +377,18 @@ Every new feature or modification MUST include thorough tests covering these cat
 #### Cross-Backend
 - Tests use TYPED_TEST with DatabaseTypes to run on both SQLite and PostgreSQL
 
+## Python Bindings
+
+```bash
+cmake --preset ninja-python && cmake --build --preset ninja-python
+PYTHONPATH=build/python/python python3 python/benchmark.py  # Performance comparison
+PYTHONPATH=build/python/python python3 python/demo.py       # CRUD demo
+```
+
+**APIs**: `insert()`, `fast_insert(name, age)`, `fast_insert_many(names, ages)`, `bulk_insert()`, `select()`, `select_array()` (NumPy), `select_where()`, `count()`, `remove()`, `remove_all()`
+
+See [python/README.md](python/README.md) for full API docs.
+
 ## Documentation
 
 - [docs/architecture/](docs/architecture/) - Design decisions, module system
