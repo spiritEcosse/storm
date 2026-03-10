@@ -21,6 +21,28 @@ namespace storm::test {
 // ---------------------------------------------------------------------------
 template <typename Model, typename ConnType> class SelectRunner : public SelectQueryRunnerBase<Model, ConnType> {
   public:
+    // Verify first-row fields specified in the expected.first spec.
+    // Uses `if constexpr (requires { ... })` to guard model-specific field access.
+    template <const auto &Tc, typename Row>
+    void verify_first_row(const Row &row) { // NOSONAR(S3776) -- constexpr dispatch
+        if constexpr (Tc.expected.first.has_name && requires { row.name; })
+            EXPECT_EQ(row.name, std::string(Tc.expected.first.name.view()));
+        if constexpr (Tc.expected.first.has_age && requires { row.age; })
+            EXPECT_EQ(row.age, Tc.expected.first.age);
+        if constexpr (Tc.expected.first.has_salary && requires { row.salary; })
+            EXPECT_NEAR(row.salary, Tc.expected.first.salary, 0.01);
+        if constexpr (Tc.expected.first.has_is_active && requires { row.is_active; })
+            EXPECT_EQ(row.is_active, Tc.expected.first.is_active);
+        if constexpr (Tc.expected.first.has_years_experience && requires { row.years_experience; })
+            EXPECT_EQ(row.years_experience, Tc.expected.first.years_experience);
+        if constexpr (Tc.expected.first.has_department && requires { row.department; })
+            EXPECT_EQ(row.department, std::string(Tc.expected.first.department.view()));
+        if constexpr (Tc.expected.first.has_content && requires { row.content; })
+            EXPECT_EQ(row.content, std::string(Tc.expected.first.content.view()));
+        if constexpr (Tc.expected.first.has_value && requires { row.value; })
+            EXPECT_EQ(row.value, Tc.expected.first.value);
+    }
+
     template <const auto &Tc> void run() { // NOSONAR(S3776) -- inherent constexpr dispatch
         this->template apply_query_filters<Tc>();
         if constexpr (Tc.query_type == "first") {
@@ -28,37 +50,24 @@ template <typename Model, typename ConnType> class SelectRunner : public SelectQ
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_EQ(r.value().has_value() ? 1 : 0, Tc.expected.count);
             if constexpr (Tc.expected.count == 1) {
-                if constexpr (!Tc.expected.first_name.empty()) {
-                    ASSERT_TRUE(r.value().has_value());
-                    EXPECT_EQ(r.value().value().name, Tc.expected.first_name.view());
-                }
-                if constexpr (Tc.expected.first_age != -1) {
-                    ASSERT_TRUE(r.value().has_value());
-                    EXPECT_EQ(r.value().value().age, Tc.expected.first_age);
-                }
+                ASSERT_TRUE(r.value().has_value());
+                verify_first_row<Tc>(r.value().value());
             }
         } else if constexpr (Tc.query_type == "one") {
             auto r = this->qs_.get().execute();
             if constexpr (Tc.expected.count == 1) {
                 ASSERT_TRUE(r.has_value()) << r.error().message();
-                if constexpr (!Tc.expected.first_name.empty())
-                    EXPECT_EQ(r.value().name, Tc.expected.first_name.view());
-                if constexpr (Tc.expected.first_age != -1)
-                    EXPECT_EQ(r.value().age, Tc.expected.first_age);
+                verify_first_row<Tc>(r.value());
             } else {
-                EXPECT_FALSE(r.has_value()); // expected error
+                EXPECT_FALSE(r.has_value());
             }
         } else {
             auto result = this->qs_.select().execute();
             ASSERT_TRUE(result.has_value()) << result.error().message();
             EXPECT_EQ(static_cast<int>(result.value().size()), Tc.expected.count);
-            if constexpr (Tc.expected.first_age != -1) {
+            if constexpr (Tc.expected.count > 0) {
                 ASSERT_FALSE(result.value().empty());
-                EXPECT_EQ(result.value().begin()->age, Tc.expected.first_age);
-            }
-            if constexpr (!Tc.expected.first_name.empty()) {
-                ASSERT_FALSE(result.value().empty());
-                EXPECT_EQ(result.value().begin()->name, std::string(Tc.expected.first_name.view()));
+                verify_first_row<Tc>(*result.value().begin());
             }
         }
     }

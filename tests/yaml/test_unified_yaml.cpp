@@ -27,16 +27,8 @@ using storm::test::MESSAGES_8;
 using storm::test::PEOPLE_25;
 
 // Fixture for unified YAML tests
-template <typename ConnType> class UnifiedYamlTest : public StormTestFixture<Person, ConnType> {
-  protected:
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        ASSERT_TRUE((storm::test::ensure_table<Person, ConnType>(conn).has_value())) << "Failed to create Person table";
-        ASSERT_TRUE((storm::test::ensure_table<SimpleRecord, ConnType>(conn).has_value()))
-                << "Failed to create SimpleRecord table";
-        ASSERT_TRUE((storm::test::ensure_table<Message, ConnType>(conn).has_value()))
-                << "Failed to create Message table";
-    }
-};
+template <typename ConnType>
+class UnifiedYamlTest : public StormTestFixture<Person, ConnType, SimpleRecord, Message> {};
 
 // Partial specialization of YamlTestInstance for UnifiedYamlTest
 template <size_t I, typename ConnType>
@@ -50,9 +42,7 @@ class storm::test::YamlTestInstance<I, UnifiedYamlTest<ConnType>, ConnType> : pu
                 storm::QuerySet<Person, ConnType>::get_default_connection();
         ASSERT_NE(conn, nullptr);
         storm::test::rollback_test_txn<ConnType>(conn);
-        ASSERT_TRUE((storm::test::ensure_table<Person, ConnType>(conn).has_value()));
-        ASSERT_TRUE((storm::test::ensure_table<SimpleRecord, ConnType>(conn).has_value()));
-        ASSERT_TRUE((storm::test::ensure_table<Message, ConnType>(conn).has_value()));
+        ASSERT_TRUE((storm::test::ensure_tables<ConnType, Person, SimpleRecord, Message>(conn)));
         {
             storm::QuerySet<Person, ConnType>       cp;
             storm::QuerySet<SimpleRecord, ConnType> cs;

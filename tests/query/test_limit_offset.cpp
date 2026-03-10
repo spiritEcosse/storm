@@ -17,11 +17,7 @@ using namespace storm::orm::where;
 // Test fixture for LIMIT/OFFSET operations — templated on database backend
 template <typename ConnType> class LimitOffsetTest : public StormTestFixture<Person, ConnType> {
   protected:
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        StormTestFixture<Person, ConnType>::on_setup(conn);
-        if (this->HasFatalFailure())
-            return;
-
+    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
         ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(
                 std::vector<Person>(storm::test::PEOPLE_25.begin(), storm::test::PEOPLE_25.end())
         )));

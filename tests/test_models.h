@@ -106,6 +106,12 @@ template <typename T, typename ConnType> inline auto ensure_table(auto &conn) {
     return storm::orm::schema::SchemaStatement<T>::create_table_if_not_exists(conn);
 }
 
+// Variadic helper — creates tables for all given model types.
+// Returns true only if all tables were created successfully.
+template <typename ConnType, typename... Models> inline bool ensure_tables(const std::shared_ptr<ConnType> &conn) {
+    return (ensure_table<Models, ConnType>(conn).has_value() && ...);
+}
+
 // Populates join test data: 3 Persons + 5 Messages with sender FKs.
 // Used by DistinctTest, ValuesTest, and AggregateTest fixtures.
 template <typename ConnType> inline void populate_join_test_data() {
@@ -226,35 +232,29 @@ inline constexpr std::array<Message, 8> MESSAGES_8 = {
  *   template <typename ConnType>
  *   class MyTest : public StormTestFixture<Person, ConnType> {};
  *
- * Usage — seeding or multi-table:
+ * Usage — multi-table (no override needed):
+ *   template <typename ConnType>
+ *   class JoinTest : public StormTestFixture<Person, ConnType, Message> {};
+ *
+ * Usage — additional setup after table creation (seeding, QS init):
  *   template <typename ConnType>
  *   class MyTest : public StormTestFixture<Person, ConnType> {
  *   protected:
- *     auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
- *       StormTestFixture<Person, ConnType>::on_setup(conn); // creates Person table + txn
- *       if (HasFatalFailure()) return;
- *       ASSERT_TRUE((storm::test::ensure_table<Message, ConnType>(conn).has_value()));
- *       // seed data ...
+ *     auto on_after_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+ *       // seed data, create QuerySet members, etc.
  *     }
  *   };
- *
- * For multi-table fixtures, override on_setup completely:
- *   auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
- *       ASSERT_TRUE((storm::test::ensure_table<Person, ConnType>(conn).has_value()));
- *       ASSERT_TRUE((storm::test::ensure_table<Message, ConnType>(conn).has_value()));
- *       // seed data ...
- *   }
  *
  * Note: the Model type only determines which QuerySet<> holds the default connection.
  * Because Storm uses a per-ConnType shared connection, any QuerySet<*, ConnType>
  * within the test will use the same underlying database.
  */
-template <typename Model, typename ConnType> class StormTestFixture : public ::testing::Test {
+template <typename Model, typename ConnType, typename... ExtraModels> class StormTestFixture : public ::testing::Test {
   public:
     using connection_type = std::shared_ptr<ConnType>;
 
   protected:
-    // Handles the universal SetUp: connection check → pg_schema_init (once) → on_setup().
+    // Handles the universal SetUp: connection → pg_schema_init → on_setup → on_after_setup.
     auto SetUp() -> void override {
         if (!setup_connection()) {
             GTEST_SKIP() << "Backend unavailable";
@@ -263,12 +263,22 @@ template <typename Model, typename ConnType> class StormTestFixture : public ::t
         const auto &conn = storm::QuerySet<Model, ConnType>::get_default_connection(); // NOSONAR(S1659)
         storm::test::pg_schema_init<ConnType>(conn);
         on_setup(conn);
+        if (StormTestFixture::HasFatalFailure())
+            return;
+        on_after_setup(conn);
     }
 
-    // Default: create primary model table.
-    // Override for multi-table fixtures or test-data seeding.
+    // Default: create tables for Model + ExtraModels.
+    // Override only for fixtures that need completely custom table creation.
     virtual auto on_setup(const std::shared_ptr<ConnType> &conn) -> void {
-        ASSERT_TRUE((storm::test::ensure_table<Model, ConnType>(conn).has_value())) << "Failed to create table";
+        ASSERT_TRUE((storm::test::ensure_tables<ConnType, Model, ExtraModels...>(conn))) << "Failed to create table(s)";
+    }
+
+    // Hook for additional setup after primary table creation succeeds.
+    // Override to create extra tables, seed data, or initialize QuerySet members.
+    // No need to call base or check HasFatalFailure() — SetUp() handles that.
+    virtual auto on_after_setup(const std::shared_ptr<ConnType> & /*conn*/) -> void {
+        // Default: no additional setup. Override in fixtures that need seeding or extra initialization.
     }
 
     // Universal TearDown — rolls back PG schema and clears the default connection.

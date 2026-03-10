@@ -32,11 +32,7 @@ template <typename ConnType> class OrderByTest : public StormTestFixture<Person,
         }
     }
 
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        StormTestFixture<Person, ConnType>::on_setup(conn);
-        if (this->HasFatalFailure())
-            return;
-
+    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
         ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(
                 std::vector<Person>(storm::test::PEOPLE_25.begin(), storm::test::PEOPLE_25.end())
         )));
@@ -229,11 +225,7 @@ TYPED_TEST(OrderByTest, ChainedWithMultipleClauses) {
 
 template <typename ConnType> class OrderByNullableTest : public StormTestFixture<Person, ConnType> {
   protected:
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        StormTestFixture<Person, ConnType>::on_setup(conn);
-        if (this->HasFatalFailure())
-            return;
-
+    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
         // Insert test data with mix of NULL and non-NULL values
         std::vector<Person> const test_data = {
                 {.id = 1, .name = "Alice", .score = std::optional<int>(100)},
@@ -401,11 +393,7 @@ TYPED_TEST(OrderByNullableTest, AllNullValues) {
 
 template <typename ConnType> class OrderByBlobTest : public StormTestFixture<Person, ConnType> {
   protected:
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        StormTestFixture<Person, ConnType>::on_setup(conn);
-        if (this->HasFatalFailure())
-            return;
-
+    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
         // Insert test data with various BLOB values
         // SQLite compares BLOBs byte-by-byte in memcmp order
         std::vector<Person> const test_data = {
