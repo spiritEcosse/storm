@@ -51,13 +51,7 @@ struct Summary {
 using namespace storm;
 
 // Test fixture for FK field operations — templated on database backend
-template <typename ConnType> class FKFieldTest : public StormTestFixture<Person, ConnType> {
-  protected:
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        ASSERT_TRUE((storm::test::ensure_table<Person, ConnType>(conn).has_value()));
-        ASSERT_TRUE((storm::test::ensure_table<Task, ConnType>(conn).has_value()));
-    }
-};
+template <typename ConnType> class FKFieldTest : public StormTestFixture<Person, ConnType, Task> {};
 
 TYPED_TEST_SUITE(FKFieldTest, DatabaseTypes);
 
@@ -665,13 +659,7 @@ TYPED_TEST(FKFieldTest, RightJoinMultipleFKFields) {
 }
 
 // Test fixture for nullable FK fields — templated on database backend
-template <typename ConnType> class NullableFKTest : public StormTestFixture<Person, ConnType> {
-  protected:
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        ASSERT_TRUE((storm::test::ensure_table<Person, ConnType>(conn).has_value()));
-        ASSERT_TRUE((storm::test::ensure_table<NullableFKMessage, ConnType>(conn).has_value()));
-    }
-};
+template <typename ConnType> class NullableFKTest : public StormTestFixture<Person, ConnType, NullableFKMessage> {};
 
 TYPED_TEST_SUITE(NullableFKTest, DatabaseTypes);
 
@@ -811,13 +799,7 @@ TYPED_TEST(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
 }
 
 // Test fixture for extended type support in JOINs — templated on database backend
-template <typename ConnType> class ExtendedTypesJoinTest : public StormTestFixture<Person, ConnType> {
-  protected:
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        ASSERT_TRUE((storm::test::ensure_table<Person, ConnType>(conn).has_value()));
-        ASSERT_TRUE((storm::test::ensure_table<Project, ConnType>(conn).has_value()));
-    }
-};
+template <typename ConnType> class ExtendedTypesJoinTest : public StormTestFixture<Person, ConnType, Project> {};
 
 TYPED_TEST_SUITE(ExtendedTypesJoinTest, DatabaseTypes);
 
@@ -1115,12 +1097,9 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithLongType) {
 // JOIN Type Extraction Tests (from test_coverage_additional.cpp)
 // =============================================================================
 
-template <typename ConnType> class JoinTypeExtractionTest : public StormTestFixture<Person, ConnType> {
+template <typename ConnType> class JoinTypeExtractionTest : public StormTestFixture<Person, ConnType, Message> {
   public:
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        ASSERT_TRUE((storm::test::ensure_table<Person, ConnType>(conn).has_value()));
-        ASSERT_TRUE((storm::test::ensure_table<Message, ConnType>(conn).has_value()));
-
+    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
         person_qs = std::make_unique<QuerySet<Person, ConnType>>();
         msg_qs    = std::make_unique<QuerySet<Message, ConnType>>();
 
@@ -1147,7 +1126,7 @@ template <typename ConnType> class JoinTypeExtractionTest : public StormTestFixt
     auto TearDown() -> void override {
         person_qs = nullptr;
         msg_qs    = nullptr;
-        StormTestFixture<Person, ConnType>::TearDown();
+        StormTestFixture<Person, ConnType, Message>::TearDown();
     }
 
     std::unique_ptr<QuerySet<Person, ConnType>>  person_qs;

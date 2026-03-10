@@ -20,14 +20,10 @@ import <iomanip>;
 #include "test_yaml_register.h"
 #include "test_parser.hpp"
 
-// Common base fixture for Remove/Update tests — shared on_setup + helpers.
+// Common base fixture for Remove/Update tests — shared setup + helpers.
 template <typename ConnType> class PersonCrudTestBase : public StormTestFixture<Person, ConnType> {
   protected:
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        StormTestFixture<Person, ConnType>::on_setup(conn);
-        if (this->HasFatalFailure())
-            return;
-
+    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
         std::vector<Person> const initial = {
                 {.name = "Alice", .age = 30},
                 {.name = "Bob", .age = 25},
@@ -330,10 +326,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateCachedStatementReuse) {
 
 template <typename ConnType> class TransactionTest : public StormTestFixture<SimpleRecord, ConnType> {
   public:
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        StormTestFixture<SimpleRecord, ConnType>::on_setup(conn);
-        if (this->HasFatalFailure())
-            return;
+    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
         qs = std::make_unique<storm::QuerySet<SimpleRecord, ConnType>>();
     }
 
@@ -413,11 +406,7 @@ TYPED_TEST(TransactionTest, SingleRowOperations) {
 
 template <typename ConnType> class QueryResetTest : public StormTestFixture<Person, ConnType> {
   protected:
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        StormTestFixture<Person, ConnType>::on_setup(conn);
-        if (this->HasFatalFailure())
-            return;
-
+    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
         qs = std::make_unique<storm::QuerySet<Person, ConnType>>();
 
         ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(

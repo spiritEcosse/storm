@@ -383,14 +383,33 @@ namespace storm::test {
         constexpr OrderBySpec() = default;
     };
 
+    struct FirstRowSpec {
+        ConstexprString<64> name;
+        bool                has_name             = false;
+        int                 age                  = 0;
+        bool                has_age              = false;
+        double              salary               = 0.0;
+        bool                has_salary           = false;
+        bool                is_active            = false;
+        bool                has_is_active        = false;
+        int                 years_experience     = 0;
+        bool                has_years_experience = false;
+        ConstexprString<64> department;
+        bool                has_department = false;
+        ConstexprString<64> content;
+        bool                has_content = false;
+        int                 value       = 0;
+        bool                has_value   = false;
+        constexpr FirstRowSpec()        = default;
+    };
+
     struct ExpectedSpec {
         int                            count     = 0;
         int                            int_val   = -1;
         double                         dbl_val   = -1.0;
         int                            unchanged = -1;
         int                            remaining = -1;
-        ConstexprString<64>            first_name;
-        int                            first_age  = -1;
+        FirstRowSpec                   first;
         static constexpr size_t        MAX_GROUPS = 20;
         std::array<int, MAX_GROUPS>    group_keys{};
         std::array<int, MAX_GROUPS>    group_agg_int{};
@@ -559,7 +578,82 @@ namespace storm::test {
         }
     }
 
-    // Parse "expected": { count, int_val, dbl_val, unchanged, remaining, first_name, first_age,
+    // Parse "first": { name, age, salary, is_active, years_experience, department, content, value }
+    constexpr void parse_first_row_into(std::string_view j, size_t& p, FirstRowSpec& f) { // NOSONAR(S3776)
+        const char*  ptr = j.data();
+        const size_t sz  = j.size();
+        skip_char(j, p, '{');
+        while (p < sz) {
+            if (at_object_end(ptr, sz, p))
+                break;
+            auto kr = parse_key_and_colon(ptr, sz, p);
+
+            switch (kr.len) {
+            case 3: // age
+                if (jkey_eq(ptr, kr.start, kr.len, "age")) {
+                    f.age     = parse_int(j, p);
+                    f.has_age = true;
+                } else
+                    skip_value(j, p);
+                break;
+            case 4: // name
+                if (jkey_eq(ptr, kr.start, kr.len, "name")) {
+                    f.name     = parse_str<64>(j, p);
+                    f.has_name = true;
+                } else
+                    skip_value(j, p);
+                break;
+            case 5: // value
+                if (jkey_eq(ptr, kr.start, kr.len, "value")) {
+                    f.value     = parse_int(j, p);
+                    f.has_value = true;
+                } else
+                    skip_value(j, p);
+                break;
+            case 6: // salary
+                if (jkey_eq(ptr, kr.start, kr.len, "salary")) {
+                    f.salary     = parse_double(j, p);
+                    f.has_salary = true;
+                } else
+                    skip_value(j, p);
+                break;
+            case 7: // content
+                if (jkey_eq(ptr, kr.start, kr.len, "content")) {
+                    f.content     = parse_str<64>(j, p);
+                    f.has_content = true;
+                } else
+                    skip_value(j, p);
+                break;
+            case 9: // is_active
+                if (jkey_eq(ptr, kr.start, kr.len, "is_active")) {
+                    f.is_active     = parse_bool(j, p);
+                    f.has_is_active = true;
+                } else
+                    skip_value(j, p);
+                break;
+            case 10: // department
+                if (jkey_eq(ptr, kr.start, kr.len, "department")) {
+                    f.department     = parse_str<64>(j, p);
+                    f.has_department = true;
+                } else
+                    skip_value(j, p);
+                break;
+            case 16: // years_experience
+                if (jkey_eq(ptr, kr.start, kr.len, "years_experience")) {
+                    f.years_experience     = parse_int(j, p);
+                    f.has_years_experience = true;
+                } else
+                    skip_value(j, p);
+                break;
+            default:
+                skip_value(j, p);
+                break;
+            }
+            skip_comma(ptr, sz, p);
+        }
+    }
+
+    // Parse "expected": { count, int_val, dbl_val, unchanged, remaining, first,
     //                     groups_count, group_keys, group_agg_int, group_agg_dbl }
     constexpr void parse_expected_into(std::string_view j, size_t& p, ExpectedSpec& e) { // NOSONAR(S3776)
         const char*  ptr = j.data();
@@ -574,6 +668,8 @@ namespace storm::test {
             case 5:
                 if (jkey_eq(ptr, kr.start, kr.len, "count"))
                     e.count = parse_int(j, p);
+                else if (jkey_eq(ptr, kr.start, kr.len, "first"))
+                    parse_first_row_into(j, p, e.first);
                 else
                     skip_value(j, p);
                 break;
@@ -590,15 +686,11 @@ namespace storm::test {
                     e.unchanged = parse_int(j, p);
                 else if (jkey_eq(ptr, kr.start, kr.len, "remaining"))
                     e.remaining = parse_int(j, p);
-                else if (jkey_eq(ptr, kr.start, kr.len, "first_age"))
-                    e.first_age = parse_int(j, p);
                 else
                     skip_value(j, p);
                 break;
             case 10:
-                if (jkey_eq(ptr, kr.start, kr.len, "first_name"))
-                    e.first_name = parse_str<64>(j, p);
-                else if (jkey_eq(ptr, kr.start, kr.len, "group_keys"))
+                if (jkey_eq(ptr, kr.start, kr.len, "group_keys"))
                     parse_int_array<ExpectedSpec::MAX_GROUPS>(j, p, e.group_keys);
                 else
                     skip_value(j, p);

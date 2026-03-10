@@ -20,14 +20,7 @@ using namespace storm::orm::where;
 #include "test_models.h" // NOSONAR cpp:S954
 
 // Test fixture for DISTINCT operations — templated on database backend
-template <typename ConnType> class DistinctTest : public StormTestFixture<Person, ConnType> {
-  protected:
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        ASSERT_TRUE((storm::test::ensure_table<Person, ConnType>(conn).has_value())) << "Failed to create Person table";
-        ASSERT_TRUE((storm::test::ensure_table<Message, ConnType>(conn).has_value()))
-                << "Failed to create Message table";
-    }
-};
+template <typename ConnType> class DistinctTest : public StormTestFixture<Person, ConnType, Message> {};
 
 TYPED_TEST_SUITE(DistinctTest, DatabaseTypes);
 

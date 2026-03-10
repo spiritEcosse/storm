@@ -20,11 +20,7 @@ using namespace storm::orm::where;
 // Test fixture for WHERE operations — templated on database backend
 template <typename ConnType> class WhereTest : public StormTestFixture<Person, ConnType> {
   protected:
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        StormTestFixture<Person, ConnType>::on_setup(conn);
-        if (this->HasFatalFailure())
-            return;
-
+    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
         ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(
                 std::vector<Person>(storm::test::PEOPLE_25.begin(), storm::test::PEOPLE_25.end())
         )));
@@ -92,14 +88,10 @@ TYPED_TEST(WhereTest, WherePreservesStateAfterSelect) {
 }
 
 // Test fixture for WHERE + JOIN operations — templated on database backend
-template <typename ConnType> class WhereJoinTest : public StormTestFixture<Message, ConnType> {
+template <typename ConnType> class WhereJoinTest : public StormTestFixture<Message, ConnType, Person> {
   protected:
     // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        ASSERT_TRUE((storm::test::ensure_table<Person, ConnType>(conn).has_value())) << "Failed to create Person table";
-        ASSERT_TRUE((storm::test::ensure_table<Message, ConnType>(conn).has_value()))
-                << "Failed to create Message table";
-
+    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
         // Insert users (use ID 0 to let AUTOINCREMENT generate IDs)
         QuerySet<Person, ConnType> user_qs;
         auto                       alice_id = user_qs.insert(Person{.id = 0, .name = "alice", .age = 10}).execute();
@@ -402,11 +394,7 @@ TYPED_TEST(WhereTest, ExprDirectConstructionFromVariant) {
 
 template <typename ConnType> class ComplexWhereTest : public StormTestFixture<Person, ConnType> {
   public:
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        StormTestFixture<Person, ConnType>::on_setup(conn);
-        if (this->HasFatalFailure())
-            return;
-
+    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
         qs = std::make_unique<QuerySet<Person, ConnType>>();
 
         ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(

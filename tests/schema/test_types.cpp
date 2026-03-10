@@ -829,15 +829,121 @@ TYPED_TEST(OptionalTypesTest, UpdateOptionalInt64FromNull) {
 }
 
 // =============================================================================
+// Optional String (nickname) Type Coverage
+// =============================================================================
+
+template <typename ConnType> class OptionalStringTest : public StormTestFixture<Person, ConnType> {};
+
+TYPED_TEST_SUITE(OptionalStringTest, DatabaseTypes);
+
+TYPED_TEST(OptionalStringTest, InsertWithValue) {
+    QuerySet<Person, TypeParam> qs;
+    Person const                obj{.id = 0, .name = "alice", .nickname = "Ali"};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_TRUE(selected.value().begin()->nickname.has_value());
+    EXPECT_EQ(selected.value().begin()->nickname.value(), "Ali");
+}
+
+TYPED_TEST(OptionalStringTest, InsertWithNull) {
+    QuerySet<Person, TypeParam> qs;
+    Person const                obj{.id = 0, .name = "bob", .nickname = std::nullopt};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_FALSE(selected.value().begin()->nickname.has_value());
+}
+
+TYPED_TEST(OptionalStringTest, UpdateFromValueToNull) {
+    QuerySet<Person, TypeParam> qs;
+    Person const                obj{.id = 0, .name = "charlie", .nickname = "Chuck"};
+
+    auto insert_result = qs.insert(obj).execute();
+    ASSERT_TRUE(insert_result.has_value());
+    int64_t const id = insert_result.value();
+
+    Person const updated{.id = static_cast<int>(id), .name = "charlie", .nickname = std::nullopt};
+    auto         update_result = qs.update(updated).execute();
+    ASSERT_TRUE(update_result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_FALSE(selected.value().begin()->nickname.has_value());
+}
+
+TYPED_TEST(OptionalStringTest, UpdateFromNullToValue) {
+    QuerySet<Person, TypeParam> qs;
+    Person const                obj{.id = 0, .name = "diana", .nickname = std::nullopt};
+
+    auto insert_result = qs.insert(obj).execute();
+    ASSERT_TRUE(insert_result.has_value());
+    int64_t const id = insert_result.value();
+
+    Person const updated{.id = static_cast<int>(id), .name = "diana", .nickname = "Di"};
+    auto         update_result = qs.update(updated).execute();
+    ASSERT_TRUE(update_result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_TRUE(selected.value().begin()->nickname.has_value());
+    EXPECT_EQ(selected.value().begin()->nickname.value(), "Di");
+}
+
+TYPED_TEST(OptionalStringTest, InsertBatchMixedNulls) {
+    QuerySet<Person, TypeParam> qs;
+    std::vector<Person>         batch = {
+            {.id = 1, .name = "p1", .nickname = "Nick1"},
+            {.id = 2, .name = "p2", .nickname = std::nullopt},
+            {.id = 3, .name = "p3", .nickname = "Nick3"},
+            {.id = 4, .name = "p4", .nickname = std::nullopt},
+    };
+
+    auto result = qs.insert(batch).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().size(), 4);
+
+    auto it = selected.value().begin();
+    ASSERT_TRUE(it->nickname.has_value());
+    EXPECT_EQ(it->nickname.value(), "Nick1");
+    ++it;
+    EXPECT_FALSE(it->nickname.has_value());
+    ++it;
+    ASSERT_TRUE(it->nickname.has_value());
+    EXPECT_EQ(it->nickname.value(), "Nick3");
+    ++it;
+    EXPECT_FALSE(it->nickname.has_value());
+}
+
+TYPED_TEST(OptionalStringTest, InsertEmptyString) {
+    QuerySet<Person, TypeParam> qs;
+    Person const                obj{.id = 0, .name = "eve", .nickname = std::string("")};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_TRUE(selected.value().begin()->nickname.has_value());
+    EXPECT_EQ(selected.value().begin()->nickname.value(), "");
+}
+
+// =============================================================================
 // Unsigned Integer Type Coverage (from test_coverage_gaps.cpp)
 // =============================================================================
 
 template <typename ConnType> class UnsignedTypesTest : public StormTestFixture<ExtendedTypes, ConnType> {
   public:
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        StormTestFixture<ExtendedTypes, ConnType>::on_setup(conn);
-        if (this->HasFatalFailure())
-            return;
+    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
         qs = std::make_unique<QuerySet<ExtendedTypes, ConnType>>();
     }
 
@@ -913,10 +1019,7 @@ TYPED_TEST(UnsignedTypesTest, UpdateUnsignedTypes) {
 
 template <typename ConnType> class FloatTypeTest : public StormTestFixture<ExtendedTypes, ConnType> {
   public:
-    auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-        StormTestFixture<ExtendedTypes, ConnType>::on_setup(conn);
-        if (this->HasFatalFailure())
-            return;
+    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
         qs = std::make_unique<QuerySet<ExtendedTypes, ConnType>>();
     }
 
