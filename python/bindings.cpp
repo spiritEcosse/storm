@@ -1,10 +1,14 @@
 #include <nanobind/nanobind.h>
+#include <nanobind/ndarray.h>
+#include <nanobind/stl/list.h>
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 
 import storm;
 import <array>;
+import <cstdint>;
+import <cstring>;
 import <expected>;
 import <memory>;
 import <meta>;
@@ -12,6 +16,7 @@ import <optional>;
 import <span>;
 import <stdexcept>;
 import <string>;
+import <string_view>;
 import <type_traits>;
 import <vector>;
 
@@ -44,6 +49,18 @@ namespace {
     }
 
     constexpr auto kPyPersonFields = py_person_fields();
+
+    // ── Module-level cached QuerySet ─────────────────────────────────────
+    // Avoids constructing a new PersonQS on every Python call.
+    // Reset by connect() so it picks up the new thread-local connection.
+    std::optional<PersonQS> g_qs;
+
+    auto get_qs() -> PersonQS& {
+        if (!g_qs) {
+            g_qs.emplace();
+        }
+        return *g_qs;
+    }
 
     // ── Filter expression objects ────────────────────────────────────────
     // Captured by Python-side operator overloads (FieldProxy.__gt__, etc.)
@@ -174,6 +191,7 @@ NB_MODULE(_storm, m) {
                 if (!result) {
                     throw std::runtime_error("Failed to connect: " + std::string(result.error().message()));
                 }
+                g_qs.emplace(); // reset cached QS to bind to new connection
             },
             nb::arg("db_path"),
             "Open a SQLite database and set it as the default connection."
@@ -191,8 +209,7 @@ NB_MODULE(_storm, m) {
     m.def(
             "insert",
             [](PyPerson& person) -> int {
-                PersonQS qs;
-                auto     result = qs.insert(person).execute();
+                auto result = get_qs().insert(person).execute();
                 if (!result) {
                     throw std::runtime_error("Insert failed: " + std::string(result.error().message()));
                 }
@@ -203,11 +220,48 @@ NB_MODULE(_storm, m) {
             "Insert a single Person. Returns the auto-generated ID."
     );
 
+    // fast_insert: const char* avoids intermediate std::string — nanobind passes
+    // Python's internal UTF-8 buffer pointer directly.
+    m.def(
+            "fast_insert",
+            [](const char* name, int age) -> int {
+                PyPerson p{.name = name, .age = age};
+                auto     result = get_qs().insert(p).execute();
+                if (!result) {
+                    throw std::runtime_error("Insert failed: " + std::string(result.error().message()));
+                }
+                return static_cast<int>(result.value());
+            },
+            nb::arg("name"),
+            nb::arg("age"),
+            "Insert a Person by field values (no Person object needed). Returns the auto-generated ID."
+    );
+
+    // fast_insert_many: loop in C++ — pays nanobind crossing cost once, not N times.
+    m.def(
+            "fast_insert_many",
+            [](const std::vector<std::string>& names, const std::vector<int>& ages) {
+                if (names.size() != ages.size()) {
+                    throw std::invalid_argument("names and ages must have equal length");
+                }
+                auto& qs = get_qs();
+                for (size_t i = 0; i < names.size(); ++i) {
+                    PyPerson p{.name = names[i], .age = ages[i]};
+                    auto     result = qs.insert(p).execute();
+                    if (!result) {
+                        throw std::runtime_error("Insert failed: " + std::string(result.error().message()));
+                    }
+                }
+            },
+            nb::arg("names"),
+            nb::arg("ages"),
+            "Insert many Persons from parallel name/age lists — loop runs in C++."
+    );
+
     m.def(
             "bulk_insert",
             [](std::vector<PyPerson>& persons) {
-                PersonQS qs;
-                auto     result = qs.insert(std::span<const PyPerson>(persons)).execute();
+                auto result = get_qs().insert(std::span<const PyPerson>(persons)).execute();
                 if (!result) {
                     throw std::runtime_error("Bulk insert failed: " + std::string(result.error().message()));
                 }
@@ -230,6 +284,59 @@ NB_MODULE(_storm, m) {
         return out;
     });
 
+    // ── Select as NumPy structured array (zero Python object construction) ──
+    // dtype: [('id','<i4'),('name','S64'),('age','<i4')] — 72 bytes/row, no padding.
+    // numpy allocates the buffer; we write into it directly via the buffer protocol.
+    m.def(
+            "select_array",
+            []() -> nb::object {
+                PersonQS qs;
+                auto     result = qs.select().execute();
+                if (!result) {
+                    throw std::runtime_error("Select failed: " + std::string(result.error().message()));
+                }
+                const auto&  hive = result.value();
+                const size_t n    = hive.size();
+
+                nb::object np = nb::module_::import_("numpy");
+                // np.dtype() needs a LIST of (name,dtype) tuples — a tuple is interpreted
+                // as (base_dtype, shape), causing "Tuple must have size 2" errors.
+                nb::list field_specs;
+                field_specs.append(nb::make_tuple("id", "<i4"));
+                field_specs.append(nb::make_tuple("name", "S64"));
+                field_specs.append(nb::make_tuple("age", "<i4"));
+                nb::object dtype = np.attr("dtype")(field_specs);
+                nb::object arr   = np.attr("empty")(n, dtype);
+
+                // Write directly into numpy's buffer via the CPython buffer protocol.
+                // Layout confirmed: id@0(4) name@4(64) age@68(4) itemsize=72 — no padding.
+                static constexpr size_t ITEMSIZE = 72;
+                static constexpr size_t OFF_ID   = 0;
+                static constexpr size_t OFF_NAME = 4;
+                static constexpr size_t OFF_AGE  = 68;
+
+                Py_buffer view{};
+                if (PyObject_GetBuffer(arr.ptr(), &view, PyBUF_WRITABLE) != 0) {
+                    throw std::runtime_error("Failed to get writable buffer from numpy array");
+                }
+                auto* buf = static_cast<uint8_t*>(view.buf);
+
+                size_t i = 0;
+                for (const auto& p : hive) {
+                    uint8_t* row                               = buf + i * ITEMSIZE;
+                    *reinterpret_cast<int32_t*>(row + OFF_ID)  = static_cast<int32_t>(p.id);
+                    *reinterpret_cast<int32_t*>(row + OFF_AGE) = static_cast<int32_t>(p.age);
+                    const size_t len                           = std::min(p.name.size(), size_t{63});
+                    std::memcpy(row + OFF_NAME, p.name.data(), len);
+                    std::memset(row + OFF_NAME + len, '\0', 64 - len);
+                    ++i;
+                }
+                PyBuffer_Release(&view);
+                return arr;
+            },
+            "Select all persons as a NumPy structured array — zero Python object construction per row."
+    );
+
     // ── Filtered select (WHERE) ─────────────────────────────────────
     m.def(
             "select_where",
@@ -241,8 +348,7 @@ NB_MODULE(_storm, m) {
 
     // ── Remove ──────────────────────────────────────────────────────
     m.def("remove_all", []() {
-        PersonQS qs;
-        auto     result = qs.remove_all().execute();
+        auto result = get_qs().remove_all().execute();
         if (!result) {
             throw std::runtime_error("Remove failed: " + std::string(result.error().message()));
         }
@@ -251,8 +357,7 @@ NB_MODULE(_storm, m) {
     m.def(
             "remove",
             [](const PyPerson& person) {
-                PersonQS qs;
-                auto     result = qs.remove(person).execute();
+                auto result = get_qs().remove(person).execute();
                 if (!result) {
                     throw std::runtime_error("Remove failed: " + std::string(result.error().message()));
                 }
@@ -263,8 +368,7 @@ NB_MODULE(_storm, m) {
 
     // ── Count ───────────────────────────────────────────────────────
     m.def("count", []() -> int64_t {
-        PersonQS qs;
-        auto     result = qs.count().get();
+        auto result = get_qs().count().get();
         if (!result) {
             throw std::runtime_error("Count failed: " + std::string(result.error().message()));
         }
