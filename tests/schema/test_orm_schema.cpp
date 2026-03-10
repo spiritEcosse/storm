@@ -1,4 +1,7 @@
 #include <gtest/gtest.h>
+#include <meta>
+#include <print>
+
 #include "test_db_helpers.h"
 
 // NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
@@ -337,6 +340,22 @@ TYPED_TEST(SchemaTest, CreateMessageFkIndexSucceeds) {
 
     auto result = orm::schema::SchemaStatement<Message>::create_indexes_if_not_exist(conn);
     ASSERT_TRUE(result.has_value()) << "create_indexes_if_not_exist() for Message failed: " << result.error().message();
+}
+
+// ============================================================================
+// Reflection Unit Tests
+// ============================================================================
+
+TEST(PersonReflection, PrimaryKeyTest) {
+    constexpr auto primary_key_member = storm::meta::find_primary_key<Person>();
+    constexpr auto primary_key_name   = std::meta::identifier_of(primary_key_member);
+
+    EXPECT_EQ(primary_key_name, "id") << "Expected to find 'id' field as primary key";
+    EXPECT_FALSE(primary_key_name.empty()) << "Primary key field should be found";
+
+    std::println(
+            "Person primary key found: {:.{}}", primary_key_name.data(), static_cast<int>(primary_key_name.size())
+    );
 }
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
