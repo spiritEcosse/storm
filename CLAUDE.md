@@ -387,7 +387,7 @@ PYTHONPATH=build/python/python python3 python/demo.py       # CRUD demo
 
 **APIs**: `insert()`, `fast_insert(name, age)`, `fast_insert_many(names, ages)`, `bulk_insert()`, `select()`, `select_array()` (NumPy), `select_where()`, `count()`, `remove()`, `remove_all()`
 
-See [python/README.md](python/README.md) for full API docs.
+See [python/README.md](python/README.md) for API docs, [docs/development/PYTHON_BINDINGS.md](docs/development/PYTHON_BINDINGS.md) for architecture, performance, and pitfalls.
 
 ## Documentation
 
