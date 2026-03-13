@@ -18,6 +18,7 @@ import storm_orm_statements_join;
 import storm_orm_statements_orderby;
 import storm_orm_where;
 import storm_orm_statements_aggregate;
+import storm_orm_statements_setop;
 import storm_orm_utilities;
 
 import <expected>;
@@ -286,6 +287,43 @@ export namespace storm {
                     conn_.get(), where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_
             };
         }
+        // =====================================================================
+        // SET OPERATIONS: UNION, UNION ALL, EXCEPT, INTERSECT
+        // =====================================================================
+
+        auto union_(const QuerySet& other) {
+            return make_setop_builder(other, orm::statements::SetOpType::Union);
+        }
+
+        auto union_all(const QuerySet& other) {
+            return make_setop_builder(other, orm::statements::SetOpType::UnionAll);
+        }
+
+        auto except_(const QuerySet& other) {
+            return make_setop_builder(other, orm::statements::SetOpType::Except);
+        }
+
+        auto intersect_(const QuerySet& other) {
+            return make_setop_builder(other, orm::statements::SetOpType::Intersect);
+        }
+
+        // Replace assert with [[pre:]] when C++26 contracts land in Clang
+        auto capture_operand() const -> orm::statements::SetOpOperand<T> {
+            assert(!order_by_wrapper_.has_value() &&
+                   "ORDER BY on individual set operation operand is ignored — use SetOpBuilder.order_by()");
+            assert(!limit_value_.has_value() &&
+                   "LIMIT on individual set operation operand is ignored — use SetOpBuilder.limit()");
+            assert(!offset_value_.has_value() &&
+                   "OFFSET on individual set operation operand is ignored — use SetOpBuilder.offset()");
+            std::string sql = join_stmt_.has_value() ? std::string(join_stmt_->get_complete_sql())
+                                                     : orm::statements::SelectStatement<T, ConnType>::get_select_sql();
+            if (where_expr_) {
+                sql += " WHERE ";
+                sql += orm::where::to_sql(*where_expr_);
+            }
+            return {std::move(sql), where_expr_};
+        }
+
         // SUM aggregate (multi-field: SUM(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
         // Usage: queryset.sum<^^Person::age>().get()
@@ -439,6 +477,18 @@ export namespace storm {
                 select_stmt_ = std::make_unique<orm::statements::SelectStatement<T, ConnType>>(conn_);
             }
             return *select_stmt_;
+        }
+
+        auto make_setop_builder(const QuerySet& other, orm::statements::SetOpType op)
+                -> orm::statements::SetOpBuilder<T, ConnType> {
+            auto                                          left  = capture_operand();
+            auto                                          right = other.capture_operand();
+            std::vector<orm::statements::SetOpOperand<T>> operands;
+            operands.push_back(std::move(left));
+            operands.push_back(std::move(right));
+            std::vector<orm::statements::SetOpType> operators;
+            operators.push_back(op);
+            return {conn_, std::move(operands), std::move(operators)};
         }
 
         std::shared_ptr<ConnType>                                              conn_;

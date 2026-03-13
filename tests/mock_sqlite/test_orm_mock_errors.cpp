@@ -2363,6 +2363,75 @@ namespace {
         EXPECT_GE(MockSqlite3Config::get_step_call_count(), 5);
     }
 
+    // ============================================================================
+    // SetOp Error Tests — covers error paths in setop.cppm
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, SetOpExecuteFailsOnPrepareError) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson> qs1;
+        QuerySet<MockPerson> qs2;
+        auto                 result = qs1.where(storm::orm::where::field<^^MockPerson::age>() > 30)
+                              .union_(qs2.where(storm::orm::where::field<^^MockPerson::age>() < 10))
+                              .execute();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    TEST_F(ORMMockErrorTest, SetOpExecuteFailsOnBindError) {
+        MockSqlite3Config::bind_int_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs1;
+        QuerySet<MockPerson> qs2;
+        auto                 result = qs1.where(storm::orm::where::field<^^MockPerson::age>() > 30)
+                              .union_(qs2.where(storm::orm::where::field<^^MockPerson::age>() < 10))
+                              .execute();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    TEST_F(ORMMockErrorTest, SetOpExecuteFailsOnStepError) {
+        MockSqlite3Config::step_returns(SQLITE_CORRUPT);
+
+        QuerySet<MockPerson> qs1;
+        QuerySet<MockPerson> qs2;
+        auto                 result = qs1.where(storm::orm::where::field<^^MockPerson::age>() > 30)
+                              .union_(qs2.where(storm::orm::where::field<^^MockPerson::age>() < 10))
+                              .execute();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
+    }
+
+    TEST_F(ORMMockErrorTest, SetOpToSqlFailsOnPrepareError) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson> qs1;
+        QuerySet<MockPerson> qs2;
+        auto                 result = qs1.where(storm::orm::where::field<^^MockPerson::age>() > 30)
+                              .union_(qs2.where(storm::orm::where::field<^^MockPerson::age>() < 10))
+                              .to_sql();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    TEST_F(ORMMockErrorTest, SetOpToSqlFailsOnBindError) {
+        MockSqlite3Config::bind_int_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs1;
+        QuerySet<MockPerson> qs2;
+        auto                 result = qs1.where(storm::orm::where::field<^^MockPerson::age>() > 30)
+                              .union_(qs2.where(storm::orm::where::field<^^MockPerson::age>() < 10))
+                              .to_sql();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
 } // namespace
 
 // NOLINTEND(readability-convert-member-functions-to-static,misc-const-correctness) // NOSONAR(cpp:S125)
