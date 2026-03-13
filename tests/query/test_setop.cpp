@@ -37,9 +37,8 @@ TYPED_TEST(SetOpTest, UnionBasic) {
     QuerySet<Person, TypeParam> qs_left;
     QuerySet<Person, TypeParam> qs_right;
 
-    // age > 40: Frank(45), Leo(42), Olivia(48), Victor(45) = 4
-    // age < 24: Paul(22), Yara(22) = 2
-    // No overlap -> UNION = 6
+    // Left: 4 people with age above 40, right: 2 people with age below 24
+    // No overlap, UNION yields 6
     auto result =
             qs_left.where(field<^^Person::age>() > 40).union_(qs_right.where(field<^^Person::age>() < 24)).execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
@@ -117,7 +116,7 @@ TYPED_TEST(SetOpTest, UnionBothWithWhere) {
     QuerySet<Person, TypeParam> qs_left;
     QuerySet<Person, TypeParam> qs_right;
 
-    // Engineering(6) UNION Sales(5) = 11
+    // 6 Engineering + 5 Sales, no overlap, UNION yields 11
     auto result = qs_left.where(field<^^Person::department>() == "Engineering")
                           .union_(qs_right.where(field<^^Person::department>() == "Sales"))
                           .execute();
@@ -223,7 +222,7 @@ TYPED_TEST(SetOpTest, ThreeWayUnion) {
     QuerySet<Person, TypeParam> qs2;
     QuerySet<Person, TypeParam> qs3;
 
-    // Engineering(6) UNION Sales(5) UNION HR(4) = 15
+    // 6 Engineering + 5 Sales + 4 HR, no overlap, UNION yields 15
     auto builder = qs1.where(field<^^Person::department>() == "Engineering")
                            .union_(qs2.where(field<^^Person::department>() == "Sales"));
     auto result =
@@ -708,7 +707,7 @@ TYPED_TEST(SetOpTest, FourWayUnion) {
     QuerySet<Person, TypeParam> qs3;
     QuerySet<Person, TypeParam> qs4;
 
-    // Engineering(6) UNION Sales(5) UNION HR(4) UNION Marketing(5) = 20
+    // 6 Engineering + 5 Sales + 4 HR + 5 Marketing, no overlap, UNION yields 20
     auto builder = qs1.where(field<^^Person::department>() == "Engineering")
                            .union_(qs2.where(field<^^Person::department>() == "Sales"));
     auto result = std::move(builder)

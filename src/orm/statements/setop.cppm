@@ -190,14 +190,15 @@ export namespace storm::orm::statements {
         }
 
         static constexpr auto op_to_sql(SetOpType op) -> std::string_view {
+            using enum SetOpType;
             switch (op) {
-            case SetOpType::Union:
+            case Union:
                 return " UNION ";
-            case SetOpType::UnionAll:
+            case UnionAll:
                 return " UNION ALL ";
-            case SetOpType::Except:
+            case Except:
                 return " EXCEPT ";
-            case SetOpType::Intersect:
+            case Intersect:
                 return " INTERSECT ";
             } // LCOV_EXCL_START
             std::unreachable();

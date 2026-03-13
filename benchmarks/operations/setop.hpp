@@ -158,33 +158,36 @@ namespace storm::benchmark {
 
       private:
         static constexpr const char* op_name() {
-            if constexpr (OpType == SetOpBenchType::Union)
+            using enum SetOpBenchType;
+            if constexpr (OpType == Union)
                 return "UNION";
-            else if constexpr (OpType == SetOpBenchType::UnionAll)
+            else if constexpr (OpType == UnionAll)
                 return "UNION ALL";
-            else if constexpr (OpType == SetOpBenchType::Except)
+            else if constexpr (OpType == Except)
                 return "EXCEPT";
             else
                 return "INTERSECT";
         }
 
         static constexpr const char* op_sql() {
-            if constexpr (OpType == SetOpBenchType::Union)
+            using enum SetOpBenchType;
+            if constexpr (OpType == Union)
                 return " UNION ";
-            else if constexpr (OpType == SetOpBenchType::UnionAll)
+            else if constexpr (OpType == UnionAll)
                 return " UNION ALL ";
-            else if constexpr (OpType == SetOpBenchType::Except)
+            else if constexpr (OpType == Except)
                 return " EXCEPT ";
             else
                 return " INTERSECT ";
         }
 
         auto make_builder(QuerySet<Model>& left, QuerySet<Model>& right) {
-            if constexpr (OpType == SetOpBenchType::Union) {
+            using enum SetOpBenchType;
+            if constexpr (OpType == Union) {
                 return left.union_(right);
-            } else if constexpr (OpType == SetOpBenchType::UnionAll) {
+            } else if constexpr (OpType == UnionAll) {
                 return left.union_all(right);
-            } else if constexpr (OpType == SetOpBenchType::Except) {
+            } else if constexpr (OpType == Except) {
                 return left.except_(right);
             } else {
                 return left.intersect_(right);
