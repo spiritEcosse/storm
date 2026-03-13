@@ -24,6 +24,7 @@
 #include "operations/distinct.hpp"        // DISTINCT benchmarks
 #include "operations/where_operators.hpp" // LIKE, BETWEEN, IN, AND/OR benchmarks
 #include "operations/first_get.hpp"       // first() and get() benchmarks
+#include "operations/setop.hpp"           // UNION, UNION ALL, EXCEPT, INTERSECT benchmarks
 
 namespace storm::benchmark {
 
@@ -1444,6 +1445,83 @@ namespace storm::benchmark {
             );
         }
 
+        // ====================================================================
+        // SET OPERATION handlers (UNION, UNION ALL, EXCEPT, INTERSECT)
+        // ====================================================================
+
+        template <typename Model, auto& test, SetOpBenchType OpType, bool WithOrderBy = false, bool WithLimit = false>
+        static void run_setop_operation_impl(BenchmarkRunner& runner, int iterations) {
+            constexpr auto profile_str = test.size_profile.view();
+            constexpr auto profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
+                for (int size : sizes::DATASET_STANDARD) {
+                    int         actual_iterations = sizes::iterations_for_dataset(size);
+                    std::string name              = std::format("{}_{}", test.test_name.view(), size);
+                    if constexpr (WithLimit) {
+                        constexpr int limit_value = test.limit_value;
+                        runner.run_benchmark(
+                                name.c_str(),
+                                SetOpBenchmark<Model, OpType, WithOrderBy, WithLimit>{size, limit_value},
+                                actual_iterations
+                        );
+                    } else {
+                        runner.run_benchmark(
+                                name.c_str(),
+                                SetOpBenchmark<Model, OpType, WithOrderBy, WithLimit>{size},
+                                actual_iterations
+                        );
+                    }
+                }
+            } else {
+                constexpr int dataset_size = test.dataset_size;
+                if constexpr (WithLimit) {
+                    constexpr int limit_value = test.limit_value;
+                    runner.run_benchmark(
+                            test.test_name.c_str(),
+                            SetOpBenchmark<Model, OpType, WithOrderBy, WithLimit>{dataset_size, limit_value},
+                            iterations
+                    );
+                } else {
+                    runner.run_benchmark(
+                            test.test_name.c_str(),
+                            SetOpBenchmark<Model, OpType, WithOrderBy, WithLimit>{dataset_size},
+                            iterations
+                    );
+                }
+            }
+        }
+
+        template <typename Model, auto& test>
+        static void run_setop_union_operation(BenchmarkRunner& runner, int iterations) {
+            run_setop_operation_impl<Model, test, SetOpBenchType::Union>(runner, iterations);
+        }
+
+        template <typename Model, auto& test>
+        static void run_setop_union_all_operation(BenchmarkRunner& runner, int iterations) {
+            run_setop_operation_impl<Model, test, SetOpBenchType::UnionAll>(runner, iterations);
+        }
+
+        template <typename Model, auto& test>
+        static void run_setop_except_operation(BenchmarkRunner& runner, int iterations) {
+            run_setop_operation_impl<Model, test, SetOpBenchType::Except>(runner, iterations);
+        }
+
+        template <typename Model, auto& test>
+        static void run_setop_intersect_operation(BenchmarkRunner& runner, int iterations) {
+            run_setop_operation_impl<Model, test, SetOpBenchType::Intersect>(runner, iterations);
+        }
+
+        template <typename Model, auto& test>
+        static void run_setop_union_order_by_operation(BenchmarkRunner& runner, int iterations) {
+            run_setop_operation_impl<Model, test, SetOpBenchType::Union, true>(runner, iterations);
+        }
+
+        template <typename Model, auto& test>
+        static void run_setop_union_limit_operation(BenchmarkRunner& runner, int iterations) {
+            run_setop_operation_impl<Model, test, SetOpBenchType::Union, false, true>(runner, iterations);
+        }
+
       public:
         // Template recursion to execute tests at compile time
         template <typename Model, size_t TestIndex, size_t TotalTests> struct TestExecutor {
@@ -1600,6 +1678,18 @@ namespace storm::benchmark {
                         runner.run_first_where_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "get_where") {
                         runner.run_get_where_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "setop_union") {
+                        runner.run_setop_union_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "setop_union_all") {
+                        runner.run_setop_union_all_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "setop_except") {
+                        runner.run_setop_except_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "setop_intersect") {
+                        runner.run_setop_intersect_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "setop_union_order_by") {
+                        runner.run_setop_union_order_by_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "setop_union_limit") {
+                        runner.run_setop_union_limit_operation<Model, test>(runner, actual_iterations);
                     }
                 }
 

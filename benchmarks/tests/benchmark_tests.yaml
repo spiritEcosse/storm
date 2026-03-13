@@ -716,3 +716,49 @@ tests:
     where_value_int: 1
     iterations: 10000
     dataset_size: 10000
+
+  # ============================================================================
+  # SET OPERATIONS (UNION, UNION ALL, EXCEPT, INTERSECT)
+  # ============================================================================
+  - name: setop_union
+    category: SETOP
+    description: "UNION with WHERE on both sides"
+    model: Person
+    operation: setop_union
+    size_profile: dataset_standard
+
+  - name: setop_union_all
+    category: SETOP
+    description: "UNION ALL with WHERE on both sides"
+    model: Person
+    operation: setop_union_all
+    size_profile: dataset_standard
+
+  - name: setop_except
+    category: SETOP
+    description: "EXCEPT with WHERE on both sides"
+    model: Person
+    operation: setop_except
+    size_profile: dataset_standard
+
+  - name: setop_intersect
+    category: SETOP
+    description: "INTERSECT with WHERE on both sides"
+    model: Person
+    operation: setop_intersect
+    size_profile: dataset_standard
+
+  - name: setop_union_order_by
+    category: SETOP_ORDER
+    description: "UNION + ORDER BY age ASC"
+    model: Person
+    operation: setop_union_order_by
+    size_profile: dataset_standard
+
+  - name: setop_union_limit
+    category: SETOP_LIMIT
+    description: "UNION + LIMIT 100"
+    model: Person
+    operation: setop_union_limit
+    limit_value: 100
+    size_profile: dataset_standard

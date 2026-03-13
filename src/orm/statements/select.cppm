@@ -69,12 +69,12 @@ export namespace storm::orm::statements {
         // Pre-computed SELECT ... LIMIT 2 SQL for get() fast path
         static inline const std::string select_limit2_sql_string = std::string(select_sql_array) + " LIMIT 2";
 
+      public:
         // Generate SELECT SQL string (compile-time computed, runtime accessible)
         static auto get_select_sql() -> const std::string& {
             return select_sql_string;
         }
 
-      public:
         explicit SelectStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
         // Returns the SQL that would be executed by select()
