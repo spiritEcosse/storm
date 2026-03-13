@@ -157,7 +157,7 @@ export namespace storm::orm::statements {
             int param_index = 1;
             for (const auto& operand : operands_) {
                 if (operand.where_expr) {
-                    auto bind_result = orm::where::bind_params_direct<Statement, Error>(
+                    std::expected<void, Error> bind_result = orm::where::bind_params_direct<Statement, Error>(
                             *operand.where_expr, stmt_ptr, param_index
                     );
                     if (!bind_result) [[unlikely]] {
