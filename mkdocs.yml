@@ -1,0 +1,79 @@
+site_name: Storm ORM
+site_description: C++26 ORM with compile-time reflection for SQLite
+site_url: https://spiritecosse.github.io/storm/
+repo_url: https://github.com/spiritEcosse/storm
+repo_name: spiritEcosse/storm
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - toc:
+      permalink: true
+  - tables
+
+nav:
+  - Home: README.md
+  - Architecture:
+      - Overview: architecture/OVERVIEW.md
+      - Design Decisions: architecture/DESIGN_DECISIONS.md
+      - Module System: architecture/MODULE_SYSTEM.md
+      - Reflection: architecture/REFLECTION.md
+      - SQL Generation: architecture/SQL_GENERATION.md
+      - Statement Caching: architecture/STATEMENT_CACHING.md
+      - Compile-Time vs Runtime: architecture/COMPILE_TIME_VS_RUNTIME.md
+  - Features:
+      - CRUD Operations: features/CRUD_OPERATIONS.md
+      - SELECT Queries: features/SELECT_QUERIES.md
+      - WHERE Clauses: features/WHERE_CLAUSES.md
+      - JOIN Operations: features/JOIN_OPERATIONS.md
+      - Batch Operations: features/BATCH_OPERATIONS.md
+  - Development:
+      - Adding Features: development/ADDING_FEATURES.md
+      - Code Coverage: development/CODE_COVERAGE.md
+      - Common Tasks: development/COMMON_TASKS.md
+      - Compiler Attributes: development/COMPILER_ATTRIBUTES.md
+      - Compiler Issues: development/COMPILER_ISSUES.md
+      - C++26 Coding Standards: development/CPP26_CODING_STANDARDS.md
+      - Formatting: development/FORMATTING.md
+      - Fuzzing: development/FUZZING.md
+      - Performance Guidelines: development/PERFORMANCE_GUIDELINES.md
+      - Performance Testing: development/PERFORMANCE_TESTING.md
+      - Performance Tips: development/PERFORMANCE_TIPS.md
+      - Sanitizers: development/SANITIZERS.md
+      - Testing: development/TESTING.md
+  - Benchmarks:
+      - DISTINCT Analysis: benchmarks/DISTINCT_ANALYSIS.md
+      - JOIN Analysis: benchmarks/JOIN_ANALYSIS.md
+  - Archive:
+      - SELECT Optimization Report: archive/SELECT_OPTIMIZATION_REPORT.md
+      - SELECT Performance Analysis: archive/SELECT_PERFORMANCE_ANALYSIS.md
+      - UPDATE Optimization Report: archive/UPDATE_OPTIMIZATION_REPORT.md
+  - Reference:
+      - Field Types: reference/FIELD_TYPES.md
