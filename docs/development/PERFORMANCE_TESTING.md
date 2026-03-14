@@ -256,4 +256,4 @@ void raw_benchmark(int batch_size) { ... }  // Same decision logic
 ## See Also
 
 - [Adding Features](ADDING_FEATURES.md) - Development workflow
-- [Benchmarks](../../benchmarks/README.md) - Current benchmark results
+- [Benchmarks](https://github.com/spiritEcosse/storm/blob/develop/benchmarks/README.md) - Current benchmark results

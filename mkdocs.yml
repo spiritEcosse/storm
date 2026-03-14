@@ -40,6 +40,7 @@ markdown_extensions:
 
 nav:
   - Home: README.md
+  - Cookbook: COOKBOOK.md
   - Architecture:
       - Overview: architecture/OVERVIEW.md
       - Design Decisions: architecture/DESIGN_DECISIONS.md

@@ -1,5 +1,28 @@
 # Common Development Tasks
 
+## Building and Serving Documentation
+
+Storm uses [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) for hosted documentation.
+
+```bash
+# Install (Arch Linux)
+sudo pacman -S mkdocs-material python-pymdown-extensions
+
+# Install (pip)
+pip install mkdocs-material
+
+# Live preview (http://127.0.0.1:8000)
+mkdocs serve
+
+# Build static site
+mkdocs build
+
+# Build with strict mode (fails on broken links)
+mkdocs build --strict
+```
+
+Documentation auto-deploys to GitHub Pages on push to `develop` when `docs/` or `mkdocs.yml` changes.
+
 ## Adding a New Database Operation
 
 1. Create statement class in `src/orm/statements/` inheriting from `BaseStatement<T>`
