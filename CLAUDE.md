@@ -27,6 +27,7 @@ Storm is a C++26 ORM library for SQLite using compile-time reflection to automat
 9. **ALWAYS write thorough unit tests BEFORE implementing** - Every feature or fix needs comprehensive tests first (see [Testing Checklist](#thorough-testing-checklist)). Workflow: (1) write tests → (2) run — new tests MUST fail (proves they test real behavior) → (3) implement → (4) run again — ALL tests must pass
 10. **SonarCloud gate MUST pass before merging** - Zero issues on new code; no exceptions, even for minor issues (see [SonarCloud Gate](#sonarcloud-gate-mandatory-before-merge))
 11. **NEVER use `throw` for compile-time errors in `consteval` functions** - Use `requires` constraints instead. Define a concept that checks the condition and constrain the template. The `throw "string literal"` trick works but fires late with a poor error message. `requires` fires at the call site with a clear constraint violation. Use `std::unreachable()` after the loop body if needed to satisfy the return type.
+12. **NEVER close an issue without verifying all subtasks** - Before closing, read the issue body and confirm every "Definition of done" checkbox was genuinely completed. Only check off items that were delivered. If some are intentionally skipped, ask the user first.
 
 **Doc conventions:**
 - ASK before creating new `.md` files
