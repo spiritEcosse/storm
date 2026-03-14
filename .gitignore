@@ -19,6 +19,9 @@ benchmarks/tests/benchmark_tests.json
 *.profraw
 default.profraw
 
+# MkDocs build output
+site/
+
 # SonarCloud scanner working directory
 .scannerwork/
 
