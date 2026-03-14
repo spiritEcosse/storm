@@ -425,12 +425,9 @@ template <typename ConnType> class QueryResetTest : public StormTestFixture<Pers
 TYPED_TEST_SUITE(QueryResetTest, DatabaseTypes);
 
 TYPED_TEST(QueryResetTest, ResetClearsAllState) {
-    this->qs->where(storm::orm::where::field<^^Person::age>() > 25)
-            .template order_by<^^Person::name>()
-            .limit(2)
-            .offset(1);
+    this->qs->where(storm::orm::where::field<^^Person::age>() > 25);
 
-    auto result1 = this->qs->select().execute();
+    auto result1 = this->qs->template order_by<^^Person::name>().limit(2).offset(1).select().execute();
     ASSERT_TRUE(result1.has_value());
     EXPECT_LE(result1.value().size(), 2);
 

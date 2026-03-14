@@ -45,14 +45,25 @@ export namespace storm {
         }
     } // namespace detail
 
-    template <class T, storm::db::DatabaseConnection ConnType = storm::db::sqlite::Connection>
+    template <
+            class T,
+            storm::db::DatabaseConnection ConnType   = storm::db::sqlite::Connection,
+            bool                          Finalized_ = false>
     class QuerySet { // NOSONAR(cpp:S1448) — ORM facade class; method count grows with supported operations
         using Error     = typename ConnType::Error;
         using Statement = typename ConnType::Statement;
 
+        template <class U, storm::db::DatabaseConnection C, bool F> friend class QuerySet;
+
       public:
         // Default constructor using default connection
         QuerySet() : conn_(get_default_connection()) {}
+
+        // LCOV_EXCL_START — compile-time only, used in static_assert
+        static constexpr auto is_finalized() -> bool {
+            return Finalized_;
+        }
+        // LCOV_EXCL_STOP
 
         // Remove single object - returns proxy with .execute() and .to_sql()
         auto remove(const T& obj) {
@@ -114,28 +125,30 @@ export namespace storm {
             return std::forward<decltype(self)>(self);
         }
 
-        // LIMIT clause support - builder pattern with method chaining
+        // LIMIT clause support - returns finalized QuerySet (prevents use as set-op operand)
         // Usage: queryset.limit(10).select()
         //        queryset.where(age > 25).limit(10).select()
-        constexpr auto limit(this auto&& self, int n) -> auto&& { // NOSONAR(cpp:S6189)
-            self.limit_value_ = n;
-            return std::forward<decltype(self)>(self);
+        constexpr auto limit(int n) -> QuerySet<T, ConnType, true> {
+            auto result         = to_finalized();
+            result.limit_value_ = n;
+            return result;
         }
 
-        // OFFSET clause support - builder pattern with method chaining
+        // OFFSET clause support - returns finalized QuerySet (prevents use as set-op operand)
         // Usage: queryset.offset(5).select()
         //        queryset.limit(10).offset(5).select()
-        constexpr auto offset(this auto&& self, int n) -> auto&& { // NOSONAR(cpp:S6189)
-            self.offset_value_ = n;
-            return std::forward<decltype(self)>(self);
+        constexpr auto offset(int n) -> QuerySet<T, ConnType, true> {
+            auto result          = to_finalized();
+            result.offset_value_ = n;
+            return result;
         }
 
-        // ORDER BY clause support - builder pattern with method chaining
+        // ORDER BY clause support - returns finalized QuerySet (prevents use as set-op operand)
         // Supports single/multiple fields with ASC (default) or DESC direction
-        template <auto... Args> constexpr auto order_by(this auto&& self) -> auto&& { // NOSONAR(cpp:S6189)
-            // Create lightweight wrapper to compile-time generated static SQL
-            self.order_by_wrapper_ = orm::statements::make_order_by_wrapper<Args...>();
-            return std::forward<decltype(self)>(self);
+        template <auto... Args> constexpr auto order_by() -> QuerySet<T, ConnType, true> {
+            auto result              = to_finalized();
+            result.order_by_wrapper_ = orm::statements::make_order_by_wrapper<Args...>();
+            return result;
         }
 
         // Select - returns proxy with .execute() and .to_sql()
@@ -291,30 +304,38 @@ export namespace storm {
         // SET OPERATIONS: UNION, UNION ALL, EXCEPT, INTERSECT
         // =====================================================================
 
-        auto union_(const QuerySet& other) {
+        template <bool F_ = Finalized_>
+        auto union_(const QuerySet<T, ConnType, false>& other)
+            requires(!F_)
+        {
             return make_setop_builder(other, orm::statements::SetOpType::Union);
         }
 
-        auto union_all(const QuerySet& other) {
+        template <bool F_ = Finalized_>
+        auto union_all(const QuerySet<T, ConnType, false>& other)
+            requires(!F_)
+        {
             return make_setop_builder(other, orm::statements::SetOpType::UnionAll);
         }
 
-        auto except_(const QuerySet& other) {
+        template <bool F_ = Finalized_>
+        auto except_(const QuerySet<T, ConnType, false>& other)
+            requires(!F_)
+        {
             return make_setop_builder(other, orm::statements::SetOpType::Except);
         }
 
-        auto intersect_(const QuerySet& other) {
+        template <bool F_ = Finalized_>
+        auto intersect_(const QuerySet<T, ConnType, false>& other)
+            requires(!F_)
+        {
             return make_setop_builder(other, orm::statements::SetOpType::Intersect);
         }
 
-        // Replace assert with [[pre:]] when C++26 contracts land in Clang
-        auto capture_operand() const -> orm::statements::SetOpOperand<T> {
-            assert(!order_by_wrapper_.has_value() &&
-                   "ORDER BY on individual set operation operand is ignored — use SetOpBuilder.order_by()");
-            assert(!limit_value_.has_value() &&
-                   "LIMIT on individual set operation operand is ignored — use SetOpBuilder.limit()");
-            assert(!offset_value_.has_value() &&
-                   "OFFSET on individual set operation operand is ignored — use SetOpBuilder.offset()");
+        template <bool F_ = Finalized_>
+        auto capture_operand() const -> orm::statements::SetOpOperand<T>
+            requires(!F_)
+        {
             std::string sql = join_stmt_.has_value() ? std::string(join_stmt_->get_complete_sql())
                                                      : orm::statements::SelectStatement<T, ConnType>::get_select_sql();
             if (where_expr_) {
@@ -479,7 +500,22 @@ export namespace storm {
             return *select_stmt_;
         }
 
-        auto make_setop_builder(const QuerySet& other, orm::statements::SetOpType op)
+        // Private constructor for to_finalized() — takes explicit connection
+        explicit QuerySet(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
+
+        // Create a finalized copy carrying conn_, where, join, limit, offset, order_by state
+        // Statement caches are NOT copied — they are lazy-init'd on demand via prepare_cached()
+        auto to_finalized() const -> QuerySet<T, ConnType, true> {
+            QuerySet<T, ConnType, true> result(conn_);
+            result.where_expr_       = where_expr_;
+            result.join_stmt_        = join_stmt_;
+            result.limit_value_      = limit_value_;
+            result.offset_value_     = offset_value_;
+            result.order_by_wrapper_ = order_by_wrapper_;
+            return result;
+        }
+
+        auto make_setop_builder(const QuerySet<T, ConnType, false>& other, orm::statements::SetOpType op)
                 -> orm::statements::SetOpBuilder<T, ConnType> {
             auto                                          left  = capture_operand();
             auto                                          right = other.capture_operand();
