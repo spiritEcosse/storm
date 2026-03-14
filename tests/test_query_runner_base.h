@@ -94,9 +94,8 @@ template <typename Model, typename ConnType> class QueryRunnerBase {
         }
     }
 
-    // NTTP twin of SelectQueryBenchmarkBase::apply_query_filters()
-    // Tc must have: join_name, where (WhereSpec), order_by (OrderBySpec), limit_value, offset_value
-    template <const auto &Tc> void apply_query_filters() {
+    // Apply WHERE and JOIN filters (mutates qs_ in place)
+    template <const auto &Tc> void apply_where_and_join() {
         if constexpr (!Tc.join_name.empty()) {
             qs_.template join<&Model::sender>();
         }
@@ -104,17 +103,42 @@ template <typename Model, typename ConnType> class QueryRunnerBase {
             qs_.where(build_where_node_expr<0, Tc, Model>());
         else if constexpr (!Tc.where.field.empty())
             apply_where<Tc>();
+    }
+
+    // Return a QuerySet with ORDER BY / LIMIT / OFFSET applied
+    // order_by/limit/offset return finalized QuerySet<T,C,true> by value
+    // When no modifiers: returns qs_ by reference (avoids copy — QuerySet has unique_ptr members)
+    template <const auto &Tc> decltype(auto) qs_with_modifiers() { // NOSONAR(S3776) -- inherent constexpr dispatch
         if constexpr (!Tc.order_by.field.empty()) {
             constexpr auto fi = dispatch_field<Model>(Tc.order_by.field.view());
-            if constexpr (Tc.order_by.asc)
-                qs_.template order_by<fi, true>();
-            else
-                qs_.template order_by<fi, false>();
+            if constexpr (Tc.order_by.asc) {
+                if constexpr (Tc.limit_value >= 0 && Tc.offset_value >= 0)
+                    return qs_.template order_by<fi, true>().limit(Tc.limit_value).offset(Tc.offset_value);
+                else if constexpr (Tc.limit_value >= 0)
+                    return qs_.template order_by<fi, true>().limit(Tc.limit_value);
+                else if constexpr (Tc.offset_value >= 0)
+                    return qs_.template order_by<fi, true>().offset(Tc.offset_value);
+                else
+                    return qs_.template order_by<fi, true>();
+            } else {
+                if constexpr (Tc.limit_value >= 0 && Tc.offset_value >= 0)
+                    return qs_.template order_by<fi, false>().limit(Tc.limit_value).offset(Tc.offset_value);
+                else if constexpr (Tc.limit_value >= 0)
+                    return qs_.template order_by<fi, false>().limit(Tc.limit_value);
+                else if constexpr (Tc.offset_value >= 0)
+                    return qs_.template order_by<fi, false>().offset(Tc.offset_value);
+                else
+                    return qs_.template order_by<fi, false>();
+            }
+        } else if constexpr (Tc.limit_value >= 0 && Tc.offset_value >= 0) {
+            return qs_.limit(Tc.limit_value).offset(Tc.offset_value);
+        } else if constexpr (Tc.limit_value >= 0) {
+            return qs_.limit(Tc.limit_value);
+        } else if constexpr (Tc.offset_value >= 0) {
+            return qs_.offset(Tc.offset_value);
+        } else {
+            return (qs_); // parentheses → returns by reference (no copy)
         }
-        if constexpr (Tc.limit_value >= 0)
-            qs_.limit(Tc.limit_value);
-        if constexpr (Tc.offset_value >= 0)
-            qs_.offset(Tc.offset_value);
     }
 };
 

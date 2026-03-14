@@ -743,4 +743,54 @@ TYPED_TEST(SetOpTest, AllFourOpsChained) {
     EXPECT_EQ(result->size(), 7);
 }
 
+// ============================================================================
+// Compile-time safety: Finalized QuerySet cannot be used as set-op operand
+// ============================================================================
+
+// is_finalized() compile-time checks
+static_assert(!QuerySet<Person, storm::db::sqlite::Connection>::is_finalized());
+static_assert(QuerySet<Person, storm::db::sqlite::Connection, true>::is_finalized());
+
+// Concepts for compile-time constraint verification
+// (template SFINAE via concepts avoids experimental Clang requires-expression bug)
+template <typename QS, typename Other>
+concept CanUnion = requires(QS qs, Other other) { qs.union_(other); };
+
+template <typename QS, typename Other>
+concept CanUnionAll = requires(QS qs, Other other) { qs.union_all(other); };
+
+template <typename QS, typename Other>
+concept CanExcept = requires(QS qs, Other other) { qs.except_(other); };
+
+template <typename QS, typename Other>
+concept CanIntersect = requires(QS qs, Other other) { qs.intersect_(other); };
+
+template <typename QS>
+concept CanCaptureOperand = requires(QS qs) { qs.capture_operand(); };
+
+using NormalQS    = QuerySet<Person, storm::db::sqlite::Connection>;
+using FinalizedQS = QuerySet<Person, storm::db::sqlite::Connection, true>;
+
+// Finalized QuerySet must NOT have set-op methods
+static_assert(!CanUnion<FinalizedQS, NormalQS>);
+static_assert(!CanUnionAll<FinalizedQS, NormalQS>);
+static_assert(!CanExcept<FinalizedQS, NormalQS>);
+static_assert(!CanIntersect<FinalizedQS, NormalQS>);
+
+// Set-op methods must NOT accept finalized operands
+static_assert(!CanUnion<NormalQS, FinalizedQS>);
+static_assert(!CanUnionAll<NormalQS, FinalizedQS>);
+static_assert(!CanExcept<NormalQS, FinalizedQS>);
+static_assert(!CanIntersect<NormalQS, FinalizedQS>);
+
+// capture_operand() must NOT be callable on finalized QuerySet
+static_assert(!CanCaptureOperand<FinalizedQS>);
+
+// Non-finalized QuerySet MUST still have set-op methods (positive checks)
+static_assert(CanUnion<NormalQS, NormalQS>);
+static_assert(CanUnionAll<NormalQS, NormalQS>);
+static_assert(CanExcept<NormalQS, NormalQS>);
+static_assert(CanIntersect<NormalQS, NormalQS>);
+static_assert(CanCaptureOperand<NormalQS>);
+
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

@@ -34,15 +34,14 @@ namespace storm::benchmark {
 
         // Left WHERE: age <op> left_threshold_
         // Right WHERE: age <op> right_threshold_
-        int left_threshold_  = 0;
-        int right_threshold_ = 0;
-        int limit_value_     = 0;
+        int             left_threshold_  = 0;
+        int             right_threshold_ = 0;
+        int             limit_value_     = 0;
         QuerySet<Model> qs_right_;
 
         // For UNION/UNION ALL: disjoint halves (age < 45, age >= 45)
         // For EXCEPT/INTERSECT: overlapping ranges (age < 55, age > 35)
-        static constexpr bool needs_overlap =
-                (OpType == SetOpBenchType::Except || OpType == SetOpBenchType::Intersect);
+        static constexpr bool needs_overlap = (OpType == SetOpBenchType::Except || OpType == SetOpBenchType::Intersect);
 
       public:
         explicit SetOpBenchmark(int dataset_size = 1000, int limit_value = 0)
@@ -83,8 +82,8 @@ namespace storm::benchmark {
                 std::cout << " (WHERE age < " << left_threshold_ << " " << op_name() << " WHERE age > "
                           << right_threshold_ << ")";
             } else {
-                std::cout << " (WHERE age < " << left_threshold_ << " " << op_name() << " WHERE age >= "
-                          << right_threshold_ << ")";
+                std::cout << " (WHERE age < " << left_threshold_ << " " << op_name()
+                          << " WHERE age >= " << right_threshold_ << ")";
             }
             std::cout << "\n";
             std::cout << "  Dataset: " << Base::batch_size() << " rows\n";
@@ -223,20 +222,15 @@ namespace storm::benchmark {
     };
 
     // Type aliases for cleaner usage
-    template <typename Model>
-    using SetOpUnionBenchmark = SetOpBenchmark<Model, SetOpBenchType::Union>;
+    template <typename Model> using SetOpUnionBenchmark = SetOpBenchmark<Model, SetOpBenchType::Union>;
 
-    template <typename Model>
-    using SetOpUnionAllBenchmark = SetOpBenchmark<Model, SetOpBenchType::UnionAll>;
+    template <typename Model> using SetOpUnionAllBenchmark = SetOpBenchmark<Model, SetOpBenchType::UnionAll>;
 
-    template <typename Model>
-    using SetOpExceptBenchmark = SetOpBenchmark<Model, SetOpBenchType::Except>;
+    template <typename Model> using SetOpExceptBenchmark = SetOpBenchmark<Model, SetOpBenchType::Except>;
 
-    template <typename Model>
-    using SetOpIntersectBenchmark = SetOpBenchmark<Model, SetOpBenchType::Intersect>;
+    template <typename Model> using SetOpIntersectBenchmark = SetOpBenchmark<Model, SetOpBenchType::Intersect>;
 
-    template <typename Model>
-    using SetOpUnionOrderByBenchmark = SetOpBenchmark<Model, SetOpBenchType::Union, true>;
+    template <typename Model> using SetOpUnionOrderByBenchmark = SetOpBenchmark<Model, SetOpBenchType::Union, true>;
 
     template <typename Model, int LimitValue>
     using SetOpUnionLimitBenchmark = SetOpBenchmark<Model, SetOpBenchType::Union, false, true>;

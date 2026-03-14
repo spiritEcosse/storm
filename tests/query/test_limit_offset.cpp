@@ -171,17 +171,17 @@ TYPED_TEST(LimitOffsetTest, ResetClearsLimitOffset) {
 TYPED_TEST(LimitOffsetTest, ReuseLimitOffset) {
     QuerySet<Person, TypeParam> qs;
 
-    // Set ORDER BY + LIMIT/OFFSET once
-    qs.template order_by<^^Person::name>().limit(5).offset(10);
+    // Chain ORDER BY + LIMIT/OFFSET — returns finalized QS by value
+    auto finalized = qs.template order_by<^^Person::name>().limit(5).offset(10);
 
     // First query — names 11-15: Karen, Leo, Mia, Nick, Olivia
-    auto result1 = qs.select().execute();
+    auto result1 = finalized.select().execute();
     ASSERT_TRUE(result1.has_value());
     ASSERT_EQ(result1.value().size(), 5);
     EXPECT_EQ(result1.value().begin()->name, "Karen");
 
-    // Second query reuses same LIMIT/OFFSET
-    auto result2 = qs.select().execute();
+    // Second query reuses same finalized QS
+    auto result2 = finalized.select().execute();
     ASSERT_TRUE(result2.has_value());
     ASSERT_EQ(result2.value().size(), 5);
     EXPECT_EQ(result2.value().begin()->name, "Karen");

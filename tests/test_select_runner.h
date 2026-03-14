@@ -44,9 +44,9 @@ template <typename Model, typename ConnType> class SelectRunner : public SelectQ
     }
 
     template <const auto &Tc> void run() { // NOSONAR(S3776) -- inherent constexpr dispatch
-        this->template apply_query_filters<Tc>();
+        this->template apply_where_and_join<Tc>();
         if constexpr (Tc.query_type == "first") {
-            auto r = this->qs_.first().execute();
+            auto r = this->template qs_with_modifiers<Tc>().first().execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_EQ(r.value().has_value() ? 1 : 0, Tc.expected.count);
             if constexpr (Tc.expected.count == 1) {
@@ -54,7 +54,7 @@ template <typename Model, typename ConnType> class SelectRunner : public SelectQ
                 verify_first_row<Tc>(r.value().value());
             }
         } else if constexpr (Tc.query_type == "one") {
-            auto r = this->qs_.get().execute();
+            auto r = this->template qs_with_modifiers<Tc>().get().execute();
             if constexpr (Tc.expected.count == 1) {
                 ASSERT_TRUE(r.has_value()) << r.error().message();
                 verify_first_row<Tc>(r.value());
@@ -62,7 +62,7 @@ template <typename Model, typename ConnType> class SelectRunner : public SelectQ
                 EXPECT_FALSE(r.has_value());
             }
         } else {
-            auto result = this->qs_.select().execute();
+            auto result = this->template qs_with_modifiers<Tc>().select().execute();
             ASSERT_TRUE(result.has_value()) << result.error().message();
             EXPECT_EQ(static_cast<int>(result.value().size()), Tc.expected.count);
             if constexpr (Tc.expected.count > 0) {
@@ -79,7 +79,7 @@ template <typename Model, typename ConnType> class SelectRunner : public SelectQ
 template <typename Model, typename ConnType> class AggregateRunner : public SelectQueryRunnerBase<Model, ConnType> {
   public:
     template <const auto &Tc> void run() { // NOSONAR(S3776) -- inherent constexpr dispatch
-        this->template apply_query_filters<Tc>();
+        this->template apply_where_and_join<Tc>();
 
         if constexpr (Tc.query_type == "count") {
             auto r = this->qs_.count().get();
@@ -139,7 +139,7 @@ template <typename Model, typename ConnType> class ChainAggRunner : public Selec
     template <const auto &Tc>
     // NOLINTNEXTLINE(readability-function-cognitive-complexity)
     void run() { // NOSONAR(S3776) -- inherent constexpr dispatch
-        this->template apply_query_filters<Tc>();
+        this->template apply_where_and_join<Tc>();
 
         if constexpr (Tc.chain_len == 2) {
             if constexpr (Tc.aggregations[0].func == "sum" && Tc.aggregations[1].func == "count") {
@@ -299,16 +299,16 @@ template <typename Model, typename ConnType> class ChainAggRunner : public Selec
 template <typename Model, typename ConnType> class DistinctRunner : public SelectQueryRunnerBase<Model, ConnType> {
   public:
     template <const auto &Tc> void run() {
-        this->template apply_query_filters<Tc>();
+        this->template apply_where_and_join<Tc>();
         if constexpr (!Tc.distinct_field2.empty()) {
             constexpr auto fi1 = dispatch_field<Model>(Tc.distinct_field.view());
             constexpr auto fi2 = dispatch_field<Model>(Tc.distinct_field2.view());
-            auto r = this->qs_.template distinct<fi1, fi2>().select();
+            auto r = this->template qs_with_modifiers<Tc>().template distinct<fi1, fi2>().select();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
         } else {
             constexpr auto fi = dispatch_field<Model>(Tc.distinct_field.view());
-            auto r = this->qs_.template distinct<fi>().select();
+            auto r = this->template qs_with_modifiers<Tc>().template distinct<fi>().select();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
         }
@@ -321,27 +321,28 @@ template <typename Model, typename ConnType> class DistinctRunner : public Selec
 template <typename Model, typename ConnType> class GroupByRunner : public SelectQueryRunnerBase<Model, ConnType> {
   public:
     template <const auto &Tc> void run() { // NOSONAR(S3776) -- inherent constexpr dispatch
-        this->template apply_query_filters<Tc>();
+        this->template apply_where_and_join<Tc>();
+        decltype(auto) qs = this->template qs_with_modifiers<Tc>();
 
         constexpr auto gb_fi = dispatch_field<Model>(Tc.group_by_field.view());
 
         if constexpr (Tc.query_type == "group_count") {
             if constexpr (!Tc.group_by_field2.empty()) {
                 constexpr auto gb_fi2 = dispatch_field<Model>(Tc.group_by_field2.view());
-                auto r = this->qs_.template group_by<gb_fi, gb_fi2>().count().select();
+                auto r = qs.template group_by<gb_fi, gb_fi2>().count().select();
                 ASSERT_TRUE(r.has_value()) << r.error().message();
                 EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
             } else {
                 if constexpr (!Tc.having_field.empty()) {
                     constexpr auto hv_fi = dispatch_field<Model>(Tc.having_field.view());
-                    auto r = this->qs_.template group_by<gb_fi>()
+                    auto r = qs.template group_by<gb_fi>()
                                  .having(build_where_expr<hv_fi>(Tc.having_op.view(), Tc.having_value_int))
                                  .count()
                                  .select();
                     ASSERT_TRUE(r.has_value()) << r.error().message();
                     EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
                 } else {
-                    auto r = this->qs_.template group_by<gb_fi>().count().select();
+                    auto r = qs.template group_by<gb_fi>().count().select();
                     ASSERT_TRUE(r.has_value()) << r.error().message();
                     EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
                     if constexpr (Tc.expected.groups_count > 0) { // NOSONAR(S134) -- constexpr nesting
@@ -362,7 +363,7 @@ template <typename Model, typename ConnType> class GroupByRunner : public Select
 
         } else if constexpr (Tc.query_type == "group_sum") {
             constexpr auto agg_fi = dispatch_field<Model>(Tc.agg_field.view());
-            auto r = this->qs_.template group_by<gb_fi>().template sum<agg_fi>().select();
+            auto r = qs.template group_by<gb_fi>().template sum<agg_fi>().select();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
             if constexpr (Tc.expected.groups_count > 0) {
@@ -379,7 +380,7 @@ template <typename Model, typename ConnType> class GroupByRunner : public Select
 
         } else if constexpr (Tc.query_type == "group_avg") {
             constexpr auto agg_fi = dispatch_field<Model>(Tc.agg_field.view());
-            auto r = this->qs_.template group_by<gb_fi>().template avg<agg_fi>().select();
+            auto r = qs.template group_by<gb_fi>().template avg<agg_fi>().select();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
             if constexpr (Tc.expected.groups_count > 0) {
@@ -397,7 +398,7 @@ template <typename Model, typename ConnType> class GroupByRunner : public Select
 
         } else if constexpr (Tc.query_type == "group_min") {
             constexpr auto agg_fi = dispatch_field<Model>(Tc.agg_field.view());
-            auto r = this->qs_.template group_by<gb_fi>().template min<agg_fi>().select();
+            auto r = qs.template group_by<gb_fi>().template min<agg_fi>().select();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
             if constexpr (Tc.expected.groups_count > 0) {
@@ -415,7 +416,7 @@ template <typename Model, typename ConnType> class GroupByRunner : public Select
 
         } else if constexpr (Tc.query_type == "group_max") {
             constexpr auto agg_fi = dispatch_field<Model>(Tc.agg_field.view());
-            auto r = this->qs_.template group_by<gb_fi>().template max<agg_fi>().select();
+            auto r = qs.template group_by<gb_fi>().template max<agg_fi>().select();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
             if constexpr (Tc.expected.groups_count > 0) {
