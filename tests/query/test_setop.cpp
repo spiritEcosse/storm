@@ -786,6 +786,11 @@ static_assert(!CanIntersect<NormalQS, FinalizedQS>);
 // capture_operand() must NOT be callable on finalized QuerySet
 static_assert(!CanCaptureOperand<FinalizedQS>);
 
+// limit/offset/order_by return finalized QS (not void) — [[nodiscard]] makes discard a warning
+static_assert(!std::is_void_v<decltype(std::declval<NormalQS>().limit(1))>);
+static_assert(!std::is_void_v<decltype(std::declval<NormalQS>().offset(1))>);
+static_assert(!std::is_void_v<decltype(std::declval<NormalQS>().template order_by<^^Person::name>())>);
+
 // Non-finalized QuerySet MUST still have set-op methods (positive checks)
 static_assert(CanUnion<NormalQS, NormalQS>);
 static_assert(CanUnionAll<NormalQS, NormalQS>);
