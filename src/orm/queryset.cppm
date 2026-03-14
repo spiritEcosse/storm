@@ -128,7 +128,7 @@ export namespace storm {
         // LIMIT clause support - returns finalized QuerySet (prevents use as set-op operand)
         // Usage: queryset.limit(10).select()
         //        queryset.where(age > 25).limit(10).select()
-        constexpr auto limit(int n) -> QuerySet<T, ConnType, true> {
+        [[nodiscard]] constexpr auto limit(int n) -> QuerySet<T, ConnType, true> {
             auto result         = to_finalized();
             result.limit_value_ = n;
             return result;
@@ -137,7 +137,7 @@ export namespace storm {
         // OFFSET clause support - returns finalized QuerySet (prevents use as set-op operand)
         // Usage: queryset.offset(5).select()
         //        queryset.limit(10).offset(5).select()
-        constexpr auto offset(int n) -> QuerySet<T, ConnType, true> {
+        [[nodiscard]] constexpr auto offset(int n) -> QuerySet<T, ConnType, true> {
             auto result          = to_finalized();
             result.offset_value_ = n;
             return result;
@@ -145,7 +145,7 @@ export namespace storm {
 
         // ORDER BY clause support - returns finalized QuerySet (prevents use as set-op operand)
         // Supports single/multiple fields with ASC (default) or DESC direction
-        template <auto... Args> constexpr auto order_by() -> QuerySet<T, ConnType, true> {
+        template <auto... Args> [[nodiscard]] constexpr auto order_by() -> QuerySet<T, ConnType, true> {
             auto result              = to_finalized();
             result.order_by_wrapper_ = orm::statements::make_order_by_wrapper<Args...>();
             return result;
