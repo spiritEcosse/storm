@@ -153,7 +153,7 @@ conn.execute("CREATE TABLE Person ("
 
 Unified caching pattern across UPDATE/DELETE/SELECT operations achieves near-raw SQLite performance.
 
-See [Statement Caching Reference](../reference/statement-caching.md) for detailed implementation.
+See [Statement Caching](STATEMENT_CACHING.md) for detailed implementation.
 
 **Performance Impact Examples:**
 - **DELETE**: 947K → 21.6M ops/sec (22.8x speedup, 73% of raw SQLite)
@@ -198,7 +198,7 @@ auto result = message_qs.join<&Message::sender>().select();
 auto result = message_qs.join<&Message::sender, &Message::receiver>().select();
 ```
 
-See [JOIN Performance Analysis](../benchmarks/join-analysis.md) for detailed performance data.
+See [JOIN Performance Analysis](../benchmarks/JOIN_ANALYSIS.md) for detailed performance data.
 
 ## 12. DISTINCT Query Support (Single & Multi-Field)
 
@@ -219,7 +219,7 @@ class DistinctStatement : private BaseStatement<T> {
 };
 ```
 
-See [DISTINCT Analysis](../benchmarks/distinct-analysis.md) for detailed implementation and performance data.
+See [DISTINCT Analysis](../benchmarks/DISTINCT_ANALYSIS.md) for detailed implementation and performance data.
 
 ## Implementation Notes
 

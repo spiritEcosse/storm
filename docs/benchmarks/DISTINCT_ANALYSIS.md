@@ -164,7 +164,7 @@ Multiple QuerySet instances can safely share the same cached `DistinctQuerySet` 
 - `where_expr_` object (each QuerySet instance has its own)
 - Bound parameters (temporary, overwritten on each bind call)
 
-See [Parameter Binding Safety](../reference/statement-caching.md#parameter-binding-safety-with-shared-cached-statements) for comprehensive explanation and examples.
+See [Statement Caching](../architecture/STATEMENT_CACHING.md) for comprehensive explanation and examples.
 
 ## Future Enhancements
 

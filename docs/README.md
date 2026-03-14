@@ -6,8 +6,8 @@ Welcome to Storm ORM - a modern C++26 ORM library using compile-time reflection 
 
 ## Quick Links
 
-- **[Main Project Guide (CLAUDE.md)](../CLAUDE.md)** - Quick start and common tasks
-- **[Benchmarks](../benchmarks/README.md)** - Performance results and benchmark system
+- **[Main Project Guide (CLAUDE.md)](https://github.com/spiritEcosse/storm/blob/develop/CLAUDE.md)** - Quick start and common tasks
+- **[Benchmarks](https://github.com/spiritEcosse/storm/blob/develop/benchmarks/README.md)** - Performance results and benchmark system
 
 ## Features
 
@@ -30,7 +30,7 @@ Welcome to Storm ORM - a modern C++26 ORM library using compile-time reflection 
 
 ## Benchmarks
 
-- **[Benchmark System](../benchmarks/README.md)** - Compile-time benchmark system with size profiles and category filtering
+- **[Benchmark System](https://github.com/spiritEcosse/storm/blob/develop/benchmarks/README.md)** - Compile-time benchmark system with size profiles and category filtering
 - **[JOIN Analysis](benchmarks/JOIN_ANALYSIS.md)** - JOIN performance deep dive
 - **[DISTINCT Analysis](benchmarks/DISTINCT_ANALYSIS.md)** - DISTINCT performance analysis
 

@@ -31,7 +31,7 @@
 - DISTINCT queries
 - Batch operations
 
-See [benchmarks/README.md](../../benchmarks/README.md) for detailed benchmark documentation.
+See [benchmarks/README.md](https://github.com/spiritEcosse/storm/blob/develop/benchmarks/README.md) for detailed benchmark documentation.
 
 ## Running Tests
 

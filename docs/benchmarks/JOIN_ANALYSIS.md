@@ -24,7 +24,7 @@ All benchmarks performed on 10,000 rows with 100 iterations in Release builds.
 
 ## Architecture
 
-See [Design Decisions](../architecture/design-decisions.md#11-join-architecture-type-erased-sql-builder-pattern) for detailed architecture.
+See [Design Decisions](../architecture/DESIGN_DECISIONS.md#11-join-architecture-type-erased-sql-builder-pattern) for detailed architecture.
 
 **Key Components:**
 - Abstract base class (`IJoinStatement`) for type erasure
@@ -126,4 +126,4 @@ python3 bench.py --joins --messages=10000  # Custom size
 ./build/release/benchmarks/bench_join --storm-join-1 --raw-join-1 --size=10000
 ```
 
-See [benchmarks/README.md](../../benchmarks/README.md) for comprehensive guide.
+See [benchmarks/README.md](https://github.com/spiritEcosse/storm/blob/develop/benchmarks/README.md) for comprehensive guide.
