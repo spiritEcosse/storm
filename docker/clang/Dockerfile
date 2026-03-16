@@ -14,6 +14,10 @@ COPY build/bin/clang-scan-deps /opt/clang-p2996/build/bin/clang-scan-deps
 COPY build/bin/clang-format    /opt/clang-p2996/build/bin/clang-format
 COPY build/bin/clang-tidy      /opt/clang-p2996/build/bin/clang-tidy
 
+# Coverage tools
+COPY build/bin/llvm-profdata   /opt/clang-p2996/build/bin/llvm-profdata
+COPY build/bin/llvm-cov        /opt/clang-p2996/build/bin/llvm-cov
+
 # Compiler runtime (builtins, sanitizer runtimes, etc.)
 COPY build/lib/clang/ /opt/clang-p2996/build/lib/clang/
 
