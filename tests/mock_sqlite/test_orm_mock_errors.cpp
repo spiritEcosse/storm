@@ -2432,6 +2432,63 @@ namespace {
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
     }
 
+    // ============================================================================
+    // rows() Generator Error Tests
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, RowsFailsOnPrepareError) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson> qs;
+        for (auto&& result : qs.rows()) {
+            ASSERT_FALSE(result.has_value());
+            EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+        }
+    }
+
+    TEST_F(ORMMockErrorTest, RowsFailsOnBindError) {
+        MockSqlite3Config::bind_int_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        auto                 age       = storm::orm::where::field<^^MockPerson::age>();
+        bool                 got_error = false;
+        for (auto&& result : qs.where(age > 25).rows()) {
+            if (!result.has_value()) {
+                EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+                got_error = true;
+            }
+        }
+        EXPECT_TRUE(got_error);
+    }
+
+    TEST_F(ORMMockErrorTest, RowsFailsOnStepError) {
+        MockSqlite3Config::step_returns(SQLITE_CORRUPT);
+
+        QuerySet<MockPerson> qs;
+        bool                 got_error = false;
+        for (auto&& result : qs.rows()) {
+            if (!result.has_value()) {
+                EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
+                got_error = true;
+            }
+        }
+        EXPECT_TRUE(got_error);
+    }
+
+    TEST_F(JoinMockErrorTest, JoinRowsFailsOnStepError) {
+        MockSqlite3Config::step_returns(SQLITE_IOERR);
+
+        QuerySet<MockMessage> qs;
+        bool                  got_error = false;
+        for (auto&& result : qs.template join<&MockMessage::sender>().rows()) {
+            if (!result.has_value()) {
+                EXPECT_EQ(result.error().code(), SQLITE_IOERR);
+                got_error = true;
+            }
+        }
+        EXPECT_TRUE(got_error);
+    }
+
 } // namespace
 
 // NOLINTEND(readability-convert-member-functions-to-static,misc-const-correctness) // NOSONAR(cpp:S125)

@@ -5,6 +5,7 @@ module;
 
 export module storm_orm_statements_select;
 
+import storm_orm_generator;
 import storm_orm_statements_base;
 import storm_orm_statements_join;
 import storm_orm_statements_orderby;
@@ -12,6 +13,7 @@ import storm_orm_utilities;
 import storm_orm_where;
 import storm_db_concept;
 
+import <coroutine>;
 import <expected>;
 import <string>;
 import <vector>;
@@ -339,6 +341,63 @@ export namespace storm::orm::statements {
                 });
             }
             return execute_exact_one(stmt_ptr, [](Statement* stmt, T& obj) { Base::extract_all_columns(stmt, obj); });
+        }
+
+        // Lazy row-by-row iteration via coroutine — yields std::expected<T, Error> per row
+        // Uses a DEDICATED (non-cached) statement to avoid conflicts with cached queries
+        // The statement lives in the coroutine frame and is finalized on generator destruction
+        auto rows_generator(
+                std::shared_ptr<ConnType>           conn,
+                std::optional<JoinStatementWrapper> join_wrapper     = std::nullopt,
+                orm::where::ExpressionVariantPtr    where_expr       = nullptr,
+                std::optional<int>                  limit            = std::nullopt,
+                std::optional<int>                  offset           = std::nullopt,
+                std::optional<OrderByWrapper>       order_by_wrapper = std::nullopt
+        ) -> storm::generator<std::expected<T, Error>&&> {
+            std::string sql = join_wrapper ? join_wrapper->get_complete_sql() : std::string(get_select_sql());
+            if (where_expr) {
+                sql += " WHERE ";
+                sql += orm::where::to_sql(*where_expr);
+            }
+            Base::template append_order_by<ConnType>(sql, order_by_wrapper);
+            Base::template append_limit_offset<ConnType>(sql, limit, offset);
+
+            auto stmt_result = conn->prepare(sql);
+            if (!stmt_result) {
+                co_yield std::unexpected(stmt_result.error());
+                co_return;
+            }
+            auto& stmt = stmt_result.value();
+
+            if (where_expr) {
+                auto bind_result = Base::template bind_where_params<Statement, Error>(&stmt, where_expr);
+                if (!bind_result) {
+                    co_yield std::unexpected(bind_result.error());
+                    co_return;
+                }
+            }
+
+            if (join_wrapper) {
+                int step_result = 0;
+                while ((step_result = stmt.step_raw()) == Statement::ROW_AVAILABLE) {
+                    T obj;
+                    join_wrapper->extract_row(&stmt, &obj);
+                    co_yield std::move(obj);
+                }
+                if (step_result != Statement::NO_MORE_ROWS) {
+                    co_yield std::unexpected(Error{step_result, stmt.get_error_message()});
+                }
+            } else {
+                int step_result = 0;
+                while ((step_result = stmt.step_raw()) == Statement::ROW_AVAILABLE) {
+                    T obj;
+                    Base::extract_all_columns(&stmt, obj);
+                    co_yield std::move(obj);
+                }
+                if (step_result != Statement::NO_MORE_ROWS) {
+                    co_yield std::unexpected(Error{step_result, stmt.get_error_message()});
+                }
+            }
         }
 
       private:
