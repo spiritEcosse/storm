@@ -80,7 +80,7 @@ jobs:
           ln -s clang-21 /opt/clang-p2996/build/bin/clang++
 
           # Symlink so ${sourceDir}/../clang-p2996 resolves to /opt/clang-p2996
-          parent=$(dirname "${{ github.workspace }}")
+          parent=$(dirname "$GITHUB_WORKSPACE")
           mkdir -p "$parent"
           ln -s /opt/clang-p2996 "$parent/clang-p2996"
 
