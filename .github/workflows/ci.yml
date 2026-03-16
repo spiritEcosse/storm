@@ -94,11 +94,18 @@ jobs:
 
       - name: Build
         run: |
-          cmake --build --preset ${{ matrix.preset }} || {
-            echo "First build failed — clearing module cache and retrying"
+          for attempt in 1 2 3; do
+            echo "Build attempt $attempt"
+            if cmake --build --preset ${{ matrix.preset }}; then
+              break
+            fi
+            echo "Attempt $attempt failed — clearing module cache"
             rm -rf ~/.cache/clang/ModuleCache
-            cmake --build --preset ${{ matrix.preset }}
-          }
+            if [ "$attempt" -eq 3 ]; then
+              echo "All 3 attempts failed"
+              exit 1
+            fi
+          done
 
       - name: Test
         env:
