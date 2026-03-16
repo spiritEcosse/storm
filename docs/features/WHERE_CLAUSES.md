@@ -60,89 +60,89 @@ SELECT id, name, age FROM Person WHERE name = ? OR name = ?
 
 **Performance**: 9.45M rows/sec (89.5% of raw SQLite)
 
-## State Management
+## Immutable QuerySet (Django-Style)
 
-**Important**: WHERE and JOIN state is **preserved after `select()`** to enable query reusability. Call `reset()` to clear state when needed.
+**`where()` returns a new QuerySet** — the original is never modified. This is the same pattern as Django's `.filter()`.
 
-### Persistent State Pattern
-
-```cpp
-storm::orm::QuerySet<Person> queryset(conn);
-
-// Set base filter
-queryset.where(field<^^Person::age>() >= 18);
-
-// Reuse the same filter multiple times
-auto result1 = queryset.select();  // WHERE age >= 18
-auto result2 = queryset.select();  // Still WHERE age >= 18 ✓
-
-// Add more conditions - they accumulate with AND
-queryset.where(field<^^Person::age>() < 65);
-auto result3 = queryset.select();  // WHERE age >= 18 AND age < 65 ✓
-```
-
-### Clearing State
-
-Use `reset()` to clear all WHERE and JOIN conditions:
+### Basic Pattern
 
 ```cpp
-storm::orm::QuerySet<Person> queryset(conn);
+storm::orm::QuerySet<Person> qs;
 
-// Build complex filter
-queryset.where(field<^^Person::age>() >= 25);
-queryset.where(field<^^Person::is_active>() == true);
-auto filtered = queryset.select();  // WHERE age >= 25 AND is_active = true
+// where() returns a NEW QuerySet — qs is unchanged
+auto adults = qs.where(field<^^Person::age>() >= 18);
 
-// Clear state and start fresh
-queryset.reset();
-auto all = queryset.select();  // No WHERE - selects all rows
+auto result1 = adults.select();  // WHERE age >= 18
+auto result2 = qs.select();      // No WHERE — qs was never mutated
 ```
 
-### Common Patterns
+### Reusable Base QuerySet
 
-**Reusable Base QuerySet**:
 ```cpp
-// Create base filtered QuerySet
-auto active_qs = QuerySet<Person>(conn);
-active_qs.where(field<^^Person::is_active>() == true);
+// Create a base filter — reuse it safely
+auto active = qs.where(field<^^Person::is_active>() == true);
 
-// Use it multiple times
-auto all_active = active_qs.select();
-auto still_active = active_qs.select();  // State preserved ✓
+auto all_active = active.select();        // WHERE is_active = true
+auto still_active = active.select();      // Same — state preserved ✓
+auto unfiltered = qs.select();            // No WHERE — original untouched ✓
 ```
 
-**Progressive Query Building**:
+### Progressive Query Building
+
+Each `.where()` call returns a new QuerySet with conditions combined via AND:
+
 ```cpp
-// Start with broad filter
-queryset.where(field<^^Person::age>() >= 20);
+auto q1 = qs.where(field<^^Person::age>() >= 20);
+auto q2 = q1.where(field<^^Person::age>() < 35);
+auto q3 = q2.where(field<^^Person::is_active>() == true);
 
-// Narrow it down progressively
-queryset.where(field<^^Person::age>() < 35);
-queryset.where(field<^^Person::is_active>() == true);
-
-// Execute the accumulated filters
-auto result = queryset.select();  // All conditions combined
+auto result = q3.select();  // WHERE age >= 20 AND age < 35 AND is_active = true
+// q1 and q2 are still usable with their own conditions
 ```
 
-### Why Persistent State?
+### Loop-Safe — No `.reset()` Needed
 
-This design enables:
-- **Reusable base filters** - Set up common filters once, use many times
-- **Progressive refinement** - Build complex queries step-by-step
-- **Memory efficiency** - No need to create multiple QuerySet instances
-- **Explicit control** - Call `reset()` when you need a clean slate
+Because `where()` never mutates the original, loops work without accumulation bugs:
 
-Compare to Django ORM:
-```python
-# Django (immutable QuerySets)
-Person.objects.filter(age__gte=18).all()  # Filter preserved
-Person.objects.filter(age__gte=18).count()  # Can reuse
+```cpp
+auto qs = QuerySet<Person>();
 
-# Storm ORM (mutable QuerySet with persistent state)
-queryset.where(field<^^Person::age>() >= 18);
-queryset.select();  // Filter preserved ✓
-queryset.select();  // Can reuse ✓
+for (int age : {25, 30, 35, 40}) {
+    // Each iteration creates a fresh copy — no condition accumulation
+    auto results = qs.where(field<^^Person::age>() == age).select().execute();
+}
+// qs is still unfiltered after the loop
 ```
+
+### Conditional Query Building
+
+```cpp
+auto qs = QuerySet<Person>();
+auto q = qs.where(field<^^Person::age>() > 18);
+
+if (filter_by_name) {
+    q = q.where(field<^^Person::name>() == "Alice");  // ANDs with existing
+}
+auto result = q.select();
+```
+
+### Clearing State with `reset()`
+
+`reset()` is still available for clearing state on a QuerySet instance:
+
+```cpp
+auto qs = QuerySet<Person>();
+qs.select();   // cached statement
+qs.reset();    // clears WHERE, JOIN, LIMIT, OFFSET, ORDER BY + invalidates statement cache
+qs.select();   // fresh query
+```
+
+### Why Immutable?
+
+- **No silent accumulation bugs** — forgetting `.reset()` in a loop can't cause wrong results
+- **Safe to share** — pass a base QuerySet to functions without defensive copies
+- **Familiar pattern** — same as Django's `.filter()`, SQLAlchemy's `.where()`
+- **Progressive refinement** — build complex queries step-by-step from a common base
 
 ## Two Equivalent Syntaxes
 
@@ -191,12 +191,12 @@ auto old = field<^^Person::age>() > 35;
 auto not_charlie = field<^^Person::name>() != "Charlie";
 auto result = queryset.where((young || old) && not_charlie).select();
 
-// Conditional expression building (use progressive where() calls)
-auto qs = QuerySet<Person>().where(field<^^Person::age>() > 18);
+// Conditional expression building
+auto q = QuerySet<Person>().where(field<^^Person::age>() > 18);
 if (filter_by_name) {
-    qs = qs.where(field<^^Person::name>() == "Alice");  // ANDs with existing
+    q = q.where(field<^^Person::name>() == "Alice");  // ANDs with existing
 }
-auto result = qs.select();
+auto result = q.select();
 ```
 
 ## Syntax Guide
@@ -659,6 +659,7 @@ void bind(Statement& stmt, int& idx) const override {
 ## Key Benefits
 
 ✅ **Pure C++26 reflection** - No macros, fully module-compatible
+✅ **Immutable QuerySet** - `where()` returns a new copy, original unchanged (Django-style)
 ✅ **Type safety** - Compile-time type checking
 ✅ **Natural operators** - Use `&&` and `||` directly
 ✅ **Zero SQL injection** - All values bound as parameters

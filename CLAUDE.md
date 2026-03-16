@@ -287,6 +287,8 @@ void worker() {
 
 ## QuerySet API
 
+**Immutable `where()`**: Returns a new QuerySet — the original is never modified (Django-style).
+
 ```cpp
 // Fluent chaining
 auto results = QuerySet<Person>()
@@ -294,6 +296,11 @@ auto results = QuerySet<Person>()
     .order_by<^^Person::name>()
     .limit(10)
     .select();
+
+// where() returns a copy — safe to reuse base QuerySet
+auto base = QuerySet<Person>();
+auto young = base.where(age < 30);    // base unchanged
+auto old   = base.where(age > 50);    // base still unchanged
 
 // Scalar aggregates (no GROUP BY) → .get()
 qs.count().get();                          // int64_t
