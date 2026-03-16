@@ -12,6 +12,8 @@ import <sstream>;
 import <tuple>;
 import <expected>;
 import <variant>;
+import <format>;
+import <ranges>;
 import storm_orm_utilities; // For ConstexprString
 
 export namespace storm::orm::where {
@@ -79,18 +81,9 @@ export namespace storm::orm::where {
         std::string field_name_;
         CompOp      op_;
         ValueType   value_;
-        std::string sql_; // Cached SQL string (pre-generated in constructor)
-
-        ComparisonExpr(std::string_view field_name, CompOp op, ValueType value)
-            : field_name_(field_name), op_(op), value_(std::move(value)), sql_(field_name) {
-            // Pre-generate SQL in constructor for consistency with InExpression
-            // and to benchmark whether simple concatenation benefits from caching
-            sql_ += comp_op_to_sql(op);
-            sql_ += "?";
-        }
 
         [[nodiscard]] __attribute__((always_inline)) auto to_sql() const -> std::string {
-            return sql_;
+            return std::format("{}{}?", field_name_, comp_op_to_sql(op_));
         }
 
         template <typename StmtType, typename ErrorType>
@@ -105,16 +98,9 @@ export namespace storm::orm::where {
     struct LikeExpr {
         std::string field_name_;
         std::string pattern_;
-        std::string sql_; // Cached SQL string (pre-generated in constructor)
-
-        LikeExpr(std::string_view field_name, std::string_view pattern)
-            : field_name_(field_name), pattern_(pattern), sql_(field_name) {
-            // Pre-generate SQL in constructor for consistency with ComparisonExpr
-            sql_ += " LIKE ?";
-        }
 
         [[nodiscard]] __attribute__((always_inline)) auto to_sql() const -> std::string {
-            return sql_;
+            return std::format("{} LIKE ?", field_name_);
         }
 
         template <typename StmtType, typename ErrorType>
@@ -130,16 +116,9 @@ export namespace storm::orm::where {
         std::string field_name_;
         ValueType   min_val_;
         ValueType   max_val_;
-        std::string sql_; // Cached SQL string (pre-generated in constructor)
-
-        BetweenExpr(std::string_view field_name, ValueType min_val, ValueType max_val)
-            : field_name_(field_name), min_val_(std::move(min_val)), max_val_(std::move(max_val)), sql_(field_name) {
-            // Pre-generate SQL in constructor for consistency with ComparisonExpr
-            sql_ += " BETWEEN ? AND ?";
-        }
 
         [[nodiscard]] __attribute__((always_inline)) auto to_sql() const -> std::string {
-            return sql_;
+            return std::format("{} BETWEEN ? AND ?", field_name_);
         }
 
         template <typename StmtType, typename ErrorType>
@@ -160,30 +139,14 @@ export namespace storm::orm::where {
     template <typename ValueType> struct InExpression {
         std::string            field_name_;
         std::vector<ValueType> values_;
-        std::string            sql_; // Pre-generated SQL string
-
-        InExpression(std::string_view field_name, std::vector<ValueType> values)
-            : field_name_(field_name), values_(std::move(values)) {
-            // OPTIMIZATION: Pre-generate SQL once in constructor to avoid repeated string concatenations
-            if (values_.empty()) {
-                sql_ = "1 = 0"; // SQL that always evaluates to false
-            } else {
-                // Reserve capacity to avoid reallocations
-                sql_.reserve(field_name_.size() + utilities::sql_len::IN_CLAUSE + (values_.size() * 3));
-                sql_ = field_name_;
-                sql_ += " IN (";
-                for (size_t i = 0; i < values_.size(); ++i) {
-                    if (i > 0) {
-                        sql_ += ", ";
-                    }
-                    sql_ += "?";
-                }
-                sql_ += ")";
-            }
-        }
 
         [[nodiscard]] __attribute__((always_inline)) auto to_sql() const -> std::string {
-            return sql_; // Return pre-generated SQL
+            if (values_.empty()) {
+                return "1 = 0"; // SQL that always evaluates to false
+            }
+            auto placeholders = std::views::repeat(std::string_view("?"), values_.size()) |
+                                std::views::join_with(std::string_view(", "));
+            return std::format("{} IN ({})", field_name_, std::string(placeholders.begin(), placeholders.end()));
         }
 
         template <typename StmtType, typename ErrorType>
@@ -258,18 +221,7 @@ export namespace storm::orm::where {
     // Visitor for to_sql() - called via std::visit
     struct ToSqlVisitor {
         [[nodiscard]] auto operator()(const LogicalExpr& expr) const -> std::string {
-            // Recursive case: visit left and right expressions
-            auto left_sql  = to_sql(*expr.left);
-            auto right_sql = to_sql(*expr.right);
-
-            std::string result;
-            result.reserve(left_sql.size() + right_sql.size() + utilities::sql_len::LOGICAL_OP_PARENS);
-            result = "(";
-            result += left_sql;
-            result += logical_op_to_sql(expr.op);
-            result += right_sql;
-            result += ")";
-            return result;
+            return std::format("({}{}{})", to_sql(*expr.left), logical_op_to_sql(expr.op), to_sql(*expr.right));
         }
 
         // All other expression types have their own to_sql() method
@@ -362,7 +314,8 @@ export namespace storm::orm::where {
         auto in(Values&&... values) const {
             return Expr(
                     std::make_shared<ExpressionVariant>(InExpression<FieldType>{
-                            std::string(field_name_sv), {FieldType{std::forward<Values>(values)}...}
+                            .field_name_ = std::string(field_name_sv),
+                            .values_     = {FieldType{std::forward<Values>(values)}...}
                     })
             );
         }
@@ -372,7 +325,9 @@ export namespace storm::orm::where {
         template <typename V> auto operator==(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
-                            std::string(field_name_sv), CompOp::Equal, std::forward<V>(value)
+                            .field_name_ = std::string(field_name_sv),
+                            .op_         = CompOp::Equal,
+                            .value_      = std::forward<V>(value)
                     })
             );
         }
@@ -381,7 +336,9 @@ export namespace storm::orm::where {
         template <typename V> auto operator!=(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
-                            std::string(field_name_sv), CompOp::NotEqual, std::forward<V>(value)
+                            .field_name_ = std::string(field_name_sv),
+                            .op_         = CompOp::NotEqual,
+                            .value_      = std::forward<V>(value)
                     })
             );
         }
@@ -390,7 +347,9 @@ export namespace storm::orm::where {
         template <typename V> auto operator>(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
-                            std::string(field_name_sv), CompOp::Greater, std::forward<V>(value)
+                            .field_name_ = std::string(field_name_sv),
+                            .op_         = CompOp::Greater,
+                            .value_      = std::forward<V>(value)
                     })
             );
         }
@@ -399,7 +358,9 @@ export namespace storm::orm::where {
         template <typename V> auto operator>=(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
-                            std::string(field_name_sv), CompOp::GreaterEqual, std::forward<V>(value)
+                            .field_name_ = std::string(field_name_sv),
+                            .op_         = CompOp::GreaterEqual,
+                            .value_      = std::forward<V>(value)
                     })
             );
         }
@@ -408,7 +369,9 @@ export namespace storm::orm::where {
         template <typename V> auto operator<(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
-                            std::string(field_name_sv), CompOp::Less, std::forward<V>(value)
+                            .field_name_ = std::string(field_name_sv),
+                            .op_         = CompOp::Less,
+                            .value_      = std::forward<V>(value)
                     })
             );
         }
@@ -417,21 +380,29 @@ export namespace storm::orm::where {
         template <typename V> auto operator<=(V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
-                            std::string(field_name_sv), CompOp::LessEqual, std::forward<V>(value)
+                            .field_name_ = std::string(field_name_sv),
+                            .op_         = CompOp::LessEqual,
+                            .value_      = std::forward<V>(value)
                     })
             );
         }
 
         // Special methods - return VARIANT-BASED Expr
         [[nodiscard]] auto like(std::string_view pattern) const -> Expr {
-            return Expr(std::make_shared<ExpressionVariant>(LikeExpr{std::string(field_name_sv), pattern}));
+            return Expr(
+                    std::make_shared<ExpressionVariant>(
+                            LikeExpr{.field_name_ = std::string(field_name_sv), .pattern_ = std::string(pattern)}
+                    )
+            );
         }
 
         // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
         template <typename V> auto between(V&& min_val, V&& max_val) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(BetweenExpr<std::decay_t<V>>{
-                            std::string(field_name_sv), std::forward<V>(min_val), std::forward<V>(max_val)
+                            .field_name_ = std::string(field_name_sv),
+                            .min_val_    = std::forward<V>(min_val),
+                            .max_val_    = std::forward<V>(max_val)
                     })
             );
         }

@@ -6,6 +6,7 @@
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables,readability-implicit-bool-conversion) // NOSONAR(cpp:S125)
 // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-owning-memory) // NOSONAR(cpp:S125)
 // NOLINTBEGIN(cppcoreguidelines-no-malloc,readability-braces-around-statements) // NOSONAR(cpp:S125)
+// NOLINTBEGIN(bugprone-easily-swappable-parameters) // mock signatures must match real SQLite3 API // NOSONAR(cpp:S125)
 
 #include "mock_sqlite3.h"
 #include <cstring>
@@ -565,6 +566,7 @@ auto sqlite3_last_insert_rowid(sqlite3* db) -> int64_t {
 
 } // extern "C"
 
+// NOLINTEND(bugprone-easily-swappable-parameters) // NOSONAR(cpp:S125)
 // NOLINTEND(cppcoreguidelines-no-malloc,readability-braces-around-statements) // NOSONAR(cpp:S125)
 // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-owning-memory) // NOSONAR(cpp:S125)
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables,readability-implicit-bool-conversion) // NOSONAR(cpp:S125)

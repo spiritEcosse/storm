@@ -21,7 +21,6 @@ Checks: >
   -*,
   bugprone-*,
   -bugprone-argument-comment,
-  -bugprone-easily-swappable-parameters,
   -bugprone-unchecked-optional-access,
   cert-*,
   -cert-err33-c,
