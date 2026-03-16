@@ -14,7 +14,7 @@ jobs:
     name: "${{ matrix.preset }} / PG ${{ matrix.postgres }}"
     runs-on: ubuntu-24.04
     container:
-      image: archlinux:latest
+      image: manjarolinux/base:latest
 
     services:
       postgres:
@@ -61,15 +61,13 @@ jobs:
           pacman -Syu --noconfirm
           pacman -S --noconfirm --needed \
             cmake ninja gcc sqlite postgresql-libs \
-            python python-yaml lcov git
+            python python-yaml lcov git skopeo umoci
 
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Extract clang-p2996 from container image
         run: |
-          pacman -S --noconfirm --needed skopeo umoci
-
           # Extract scratch image without Docker daemon (not available inside container)
           skopeo copy "docker://${CLANG_IMAGE}" oci:clang-oci:latest
           umoci unpack --image clang-oci:latest clang-bundle
@@ -95,17 +93,6 @@ jobs:
           restore-keys: |
             cpm-${{ matrix.preset }}-
             cpm-
-
-      - name: Debug info
-        run: |
-          # Check glibc version
-          ldd --version 2>&1 | head -1
-          # Check clang-scan-deps dependencies
-          ldd /opt/clang-p2996/build/bin/clang-scan-deps 2>&1 | head -20
-          # Check clang-21 dependencies
-          ldd /opt/clang-p2996/build/bin/clang-21 2>&1 | head -20
-          # Verify files exist
-          ls -la /opt/clang-p2996/build/bin/
 
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
