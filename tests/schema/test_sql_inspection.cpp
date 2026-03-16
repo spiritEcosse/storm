@@ -264,6 +264,7 @@ TYPED_TEST(SqlInspectionTest, InsertSingleToSql) {
     EXPECT_TRUE(contains(sql, "VALUES")) << "Should contain VALUES";
     EXPECT_TRUE(contains(sql, "Alice")) << "Should contain name value";
     EXPECT_TRUE(contains(sql, "30")) << "Should contain age value";
+    EXPECT_TRUE(contains(sql, "RETURNING")) << "Both SQLite 3.35+ and PostgreSQL support RETURNING";
 }
 
 TYPED_TEST(SqlInspectionTest, InsertSingleToSqlDoesNotExecute) {

@@ -83,6 +83,10 @@ message(STATUS "=== Storm Build Configuration ===")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(
   STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+message(
+  STATUS
+    "SQLite: ${SQLite3_VERSION} (RIGHT_JOIN=${STORM_SQLITE_RIGHT_JOIN}, STRICT=${STORM_SQLITE_STRICT_TABLES})"
+)
 message(STATUS "Testing: ${ENABLE_TESTS}")
 message(STATUS "Benchmarks: ${ENABLE_BENCH}")
 message(STATUS "Coverage: ${ENABLE_COVERAGE}")

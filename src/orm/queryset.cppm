@@ -254,11 +254,12 @@ export namespace storm {
         }
 
         // RIGHT JOIN support for single or multiple FK fields
+        // Requires backend support (SQLite 3.39.0+, PostgreSQL always)
         // Usage:
         //   Single FK: message_qs.right_join<&Message::sender>().select()
         //   Multi FK:  message_qs.right_join<&Message::sender, &Message::receiver>().select()
         template <auto... FKFieldPtrs>
-            requires(sizeof...(FKFieldPtrs) >= 1)
+            requires(sizeof...(FKFieldPtrs) >= 1 && ConnType::supports_right_join)
         constexpr auto right_join(this auto&& self) -> auto&& { // NOSONAR(cpp:S6189)
             // Create type-erased wrapper with compile-time generated SQL (RIGHT JOIN)
             self.join_stmt_ =

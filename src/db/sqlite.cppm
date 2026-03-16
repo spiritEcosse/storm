@@ -297,9 +297,19 @@ export namespace storm::db::sqlite {
         using Error     = sqlite::Error;
         using Statement = sqlite::Statement;
 
-        // Dialect traits
+        // Dialect traits (version-gated via CMake — see cmake/db.cmake)
         static constexpr bool supports_limit_all = false;
-        static constexpr bool supports_returning = false;
+        static constexpr bool supports_returning = true; // SQLite 3.35+ required
+#ifdef STORM_SQLITE_STRICT_TABLES
+        static constexpr bool supports_strict_tables = true; // SQLite 3.37+
+#else
+        static constexpr bool supports_strict_tables = false;
+#endif
+#ifdef STORM_SQLITE_RIGHT_JOIN
+        static constexpr bool supports_right_join = true; // SQLite 3.39+
+#else
+        static constexpr bool supports_right_join = false;
+#endif
 
         // Factory method with error handling and thread-safe flags
         [[nodiscard]] static auto open(std::string_view db_path) -> std::expected<Connection, Error> {
@@ -447,10 +457,12 @@ export namespace storm::db::sqlite {
         }
         // LCOV_EXCL_STOP
 
+        // LCOV_EXCL_START — public API, not called by ORM (uses RETURNING instead)
         // Get the row ID of the most recent successful INSERT
         [[nodiscard]] auto last_insert_rowid() const noexcept -> int64_t {
             return sqlite3_last_insert_rowid(db.get());
         }
+        // LCOV_EXCL_STOP
 
       private:
         explicit Connection(SqlitePtr db_ptr) : db(std::move(db_ptr)) {
