@@ -60,6 +60,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
       - name: Extract clang-p2996 from container image
         run: |
           docker pull "${CLANG_IMAGE}"
