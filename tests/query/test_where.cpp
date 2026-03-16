@@ -57,34 +57,32 @@ TYPED_TEST(WhereTest, WhereComplexExpression) {
     ASSERT_EQ(people.size(), 18) << "Expected 18 people matching complex condition";
 }
 
-// Test: WHERE state persists after select() - enables query reusability
-TYPED_TEST(WhereTest, WherePreservesStateAfterSelect) {
+// Test: where() returns a new QuerySet; original is unchanged; returned copy is reusable
+TYPED_TEST(WhereTest, WhereReturnsCopyReusable) {
     QuerySet<Person, TypeParam> queryset;
 
-    // Set base filter
-    queryset.where(field<^^Person::age>() >= 25);
+    // where() returns a new QuerySet — original unchanged
+    auto filtered = queryset.where(field<^^Person::age>() >= 25);
 
-    // First query uses the filter
-    auto result1 = queryset.select().execute();
+    auto result1 = filtered.select().execute();
     ASSERT_TRUE(result1.has_value());
     ASSERT_EQ(result1.value().size(), 23) << "Expected 23 people with age >= 25";
 
-    // Second query still has the same filter (state preserved)
-    auto result2 = queryset.select().execute();
+    // Returned copy is reusable (state preserved after select)
+    auto result2 = filtered.select().execute();
     ASSERT_TRUE(result2.has_value());
     ASSERT_EQ(result2.value().size(), 23) << "State should persist after first select()";
 
-    // Add more conditions - they accumulate
-    queryset.where(field<^^Person::age>() < 40);
-    auto result3 = queryset.select().execute();
+    // Chaining further narrows without affecting the original filtered copy
+    auto narrower = filtered.where(field<^^Person::age>() < 40);
+    auto result3  = narrower.select().execute();
     ASSERT_TRUE(result3.has_value());
     ASSERT_EQ(result3.value().size(), 17) << "Expected 17 people with age >= 25 AND age < 40";
 
-    // reset() clears all state
-    queryset.reset();
-    auto result4 = queryset.select().execute();
-    ASSERT_TRUE(result4.has_value());
-    ASSERT_EQ(result4.value().size(), 25) << "After reset() should select all rows";
+    // Original queryset is still unfiltered
+    auto all = queryset.select().execute();
+    ASSERT_TRUE(all.has_value());
+    ASSERT_EQ(all.value().size(), 25) << "Original should be unfiltered";
 }
 
 // Test fixture for WHERE + JOIN operations — templated on database backend
@@ -278,79 +276,138 @@ TYPED_TEST(WhereTest, WhereComposableFilters) {
     EXPECT_EQ(old_a_names.value().size(), 0) << "Expected 0 people (no old people with A names)";
 }
 
-// Test: Reusable base QuerySet pattern
+// Test: Reusable base QuerySet pattern — where() returns independent copies
 TYPED_TEST(WhereTest, ReusableBaseQuerySet) {
     QuerySet<Person, TypeParam> queryset;
 
     // Create a base filtered QuerySet (age >= 25)
-    queryset.where(field<^^Person::age>() >= 25);
+    auto base = queryset.where(field<^^Person::age>() >= 25);
 
     // Reuse base filter multiple times
-    auto result1 = queryset.select().execute();
+    auto result1 = base.select().execute();
     ASSERT_TRUE(result1.has_value());
     ASSERT_EQ(result1.value().size(), 23) << "Expected 23 people with age >= 25";
 
     // Still has base filter on second call
-    auto result2 = queryset.select().execute();
+    auto result2 = base.select().execute();
     ASSERT_TRUE(result2.has_value());
     ASSERT_EQ(result2.value().size(), 23) << "Base filter should persist";
 
-    // Refine the base filter
-    queryset.where(field<^^Person::age>() >= 30);
-    auto adults = queryset.select().execute();
+    // Refine the base filter — creates new copy, base unchanged
+    auto adults = base.where(field<^^Person::age>() >= 30).select().execute();
     ASSERT_TRUE(adults.has_value());
     ASSERT_EQ(adults.value().size(), 16) << "Expected 16 people (age >= 25 AND age >= 30)";
+
+    // Base is still unchanged
+    auto result3 = base.select().execute();
+    ASSERT_TRUE(result3.has_value());
+    ASSERT_EQ(result3.value().size(), 23) << "Base should be unchanged after refinement";
 }
 
-// Test: Building query progressively
+// Test: Building query progressively — each where() returns a narrower copy
 TYPED_TEST(WhereTest, ProgressiveQueryBuilding) {
     QuerySet<Person, TypeParam> queryset;
 
     // Start with broad filter
-    queryset.where(field<^^Person::age>() >= 25);
-    auto result1 = queryset.select().execute();
+    auto q1      = queryset.where(field<^^Person::age>() >= 25);
+    auto result1 = q1.select().execute();
     ASSERT_TRUE(result1.has_value());
     EXPECT_EQ(result1.value().size(), 23) << "23 people have age >= 25";
 
     // Narrow it down
-    queryset.where(field<^^Person::age>() < 35);
-    auto result2 = queryset.select().execute();
+    auto q2      = q1.where(field<^^Person::age>() < 35);
+    auto result2 = q2.select().execute();
     ASSERT_TRUE(result2.has_value());
     EXPECT_EQ(result2.value().size(), 12) << "Expected 12 people (25 <= age < 35)";
 
     // Add another condition (names starting with certain letter)
-    queryset.where(field<^^Person::name>().like("D%"));
-    auto result3 = queryset.select().execute();
+    auto q3      = q2.where(field<^^Person::name>().like("D%"));
+    auto result3 = q3.select().execute();
     ASSERT_TRUE(result3.has_value());
     EXPECT_EQ(result3.value().size(), 1) << "Expected 1 person matching all conditions (Diana)";
     EXPECT_EQ(result3.value().begin()->name, "Diana");
+
+    // All previous stages remain unchanged
+    EXPECT_EQ(q1.select().execute().value().size(), 23);
+    EXPECT_EQ(q2.select().execute().value().size(), 12);
 }
 
-// Test: reset() clears all accumulated conditions
-TYPED_TEST(WhereTest, ResetClearsAllConditions) {
+// Test: chaining where() builds complex filters without mutating the original
+TYPED_TEST(WhereTest, ChainingBuildsComplexFilter) {
     QuerySet<Person, TypeParam> queryset;
 
-    // Build up complex filter
-    queryset.where(field<^^Person::age>() >= 25);
-    queryset.where(field<^^Person::age>() < 40);
-    queryset.where(field<^^Person::name>().like("D%"));
+    // Build up complex filter via chaining
+    auto filtered = queryset.where(field<^^Person::age>() >= 25)
+                            .where(field<^^Person::age>() < 40)
+                            .where(field<^^Person::name>().like("D%"));
 
-    auto filtered = queryset.select().execute();
-    ASSERT_TRUE(filtered.has_value());
-    EXPECT_EQ(filtered.value().size(), 1) << "Complex filter should match Diana only";
-    EXPECT_EQ(filtered.value().begin()->name, "Diana");
+    auto result = filtered.select().execute();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().size(), 1) << "Complex filter should match Diana only";
+    EXPECT_EQ(result.value().begin()->name, "Diana");
 
-    // Reset and verify clean slate
-    queryset.reset();
+    // Original is unchanged
     auto all_people = queryset.select().execute();
     ASSERT_TRUE(all_people.has_value());
-    EXPECT_EQ(all_people.value().size(), 25) << "After reset() should get all rows";
+    EXPECT_EQ(all_people.value().size(), 25) << "Original should have all rows";
 
-    // Can build new filter after reset
-    queryset.where(field<^^Person::age>() == 25);
-    auto age25 = queryset.select().execute();
+    // Can create a different filter from the same base
+    auto age25 = queryset.where(field<^^Person::age>() == 25).select().execute();
     ASSERT_TRUE(age25.has_value());
-    EXPECT_EQ(age25.value().size(), 3) << "New filter after reset works (Alice, Grace, Karen)";
+    EXPECT_EQ(age25.value().size(), 3) << "Different filter from same base (Alice, Grace, Karen)";
+}
+
+// Test: where() does not mutate the original QuerySet (returns new copy)
+TYPED_TEST(WhereTest, WhereDoesNotMutateOriginal) {
+    QuerySet<Person, TypeParam> queryset;
+
+    // Call where() — original should be unchanged
+    auto filtered = queryset.where(field<^^Person::age>() > 30);
+    auto all      = queryset.select().execute();
+    ASSERT_TRUE(all.has_value());
+    EXPECT_EQ(all.value().size(), 25) << "Original QuerySet must not be mutated by where()";
+
+    // The returned copy should have the filter
+    auto result = filtered.select().execute();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().size(), 13) << "Returned QuerySet should have the WHERE filter";
+}
+
+// Test: where() in a loop works without reset()
+TYPED_TEST(WhereTest, WhereInLoopWithoutReset) {
+    QuerySet<Person, TypeParam> queryset;
+
+    for (int i = 0; i < 10; ++i) {
+        auto result = queryset.where(field<^^Person::age>() > 30).count().get();
+        ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed: " << result.error().message();
+        EXPECT_EQ(result.value(), 13) << "Each iteration should return 13 (no accumulation)";
+    }
+
+    // Original should still be unfiltered
+    auto all = queryset.select().execute();
+    ASSERT_TRUE(all.has_value());
+    EXPECT_EQ(all.value().size(), 25) << "Original QuerySet must remain unfiltered after loop";
+}
+
+// Test: chaining where() returns progressively narrowed copies
+TYPED_TEST(WhereTest, WhereChainingReturnsNewCopies) {
+    QuerySet<Person, TypeParam> queryset;
+
+    auto q1 = queryset.where(field<^^Person::age>() >= 25);
+    auto q2 = q1.where(field<^^Person::age>() < 35);
+
+    // Original, q1, q2 should all be independent
+    auto all = queryset.select().execute();
+    ASSERT_TRUE(all.has_value());
+    EXPECT_EQ(all.value().size(), 25) << "Original unchanged";
+
+    auto r1 = q1.select().execute();
+    ASSERT_TRUE(r1.has_value());
+    EXPECT_EQ(r1.value().size(), 23) << "q1: age >= 25";
+
+    auto r2 = q2.select().execute();
+    ASSERT_TRUE(r2.has_value());
+    EXPECT_EQ(r2.value().size(), 12) << "q2: age >= 25 AND age < 35";
 }
 
 // ============================================================================

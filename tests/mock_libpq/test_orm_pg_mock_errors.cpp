@@ -1155,6 +1155,24 @@ namespace {
         EXPECT_TRUE(results.value().empty());
     }
 
+    // Covers queryset.cppm lines 296-298: reset() invalidates cached select statement
+    // Covers select.cppm lines 239-244: invalidate_cache() body
+    TEST_F(PgOrmInsertReturningTest, ResetInvalidatesSelectCache) {
+        MockPqConfig::exec_prepared_ntuples(0);
+
+        PgQuerySet qs;
+        // Execute a select to populate select_stmt_ cache
+        auto results = qs.select().execute();
+        ASSERT_TRUE(results.has_value());
+
+        // Reset should invalidate the cached select statement
+        qs.reset();
+
+        // Verify the queryset works correctly after reset
+        auto results2 = qs.select().execute();
+        ASSERT_TRUE(results2.has_value());
+    }
+
     // ============================================================================
     // Concept-based mock connection with failing binds
     // Tests INSERT RETURNING bind error path (insert.cppm line 264-267)

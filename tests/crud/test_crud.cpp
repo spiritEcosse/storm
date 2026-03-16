@@ -425,14 +425,13 @@ template <typename ConnType> class QueryResetTest : public StormTestFixture<Pers
 TYPED_TEST_SUITE(QueryResetTest, DatabaseTypes);
 
 TYPED_TEST(QueryResetTest, ResetClearsAllState) {
-    this->qs->where(storm::orm::where::field<^^Person::age>() > 25);
+    auto filtered = this->qs->where(storm::orm::where::field<^^Person::age>() > 25);
 
-    auto result1 = this->qs->template order_by<^^Person::name>().limit(2).offset(1).select().execute();
+    auto result1 = filtered.template order_by<^^Person::name>().limit(2).offset(1).select().execute();
     ASSERT_TRUE(result1.has_value());
     EXPECT_LE(result1.value().size(), 2);
 
-    this->qs->reset();
-
+    // Original qs is unaffected — no reset needed
     auto result2 = this->qs->select().execute();
     ASSERT_TRUE(result2.has_value());
     EXPECT_EQ(result2.value().size(), 25);
@@ -443,11 +442,12 @@ TYPED_TEST(QueryResetTest, ReuseSameQuerySetMultipleTimes) {
     ASSERT_TRUE(result1.has_value());
     EXPECT_EQ(result1.value().size(), 9);
 
+    // Original qs is unaffected by where() — still returns all rows
     auto result2 = this->qs->select().execute();
     ASSERT_TRUE(result2.has_value());
-    EXPECT_EQ(result2.value().size(), 9);
+    EXPECT_EQ(result2.value().size(), 25);
 
-    this->qs->reset();
+    // Can create a different filter without reset
     auto result3 = this->qs->where(storm::orm::where::field<^^Person::age>() < 35).select().execute();
     ASSERT_TRUE(result3.has_value());
     EXPECT_EQ(result3.value().size(), 14);

@@ -319,7 +319,7 @@ namespace storm::benchmark {
             }
             if constexpr (WhereCfg::enabled) {
                 auto where_clause = build_where_clause();
-                Base::qs().where(where_clause);
+                Base::qs()        = Base::qs().where(where_clause);
             }
             if constexpr (OrderByCfg::enabled) {
                 // Storm ORM order_by uses boolean: true = ASC (default), false = DESC
