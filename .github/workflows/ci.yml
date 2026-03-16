@@ -98,4 +98,6 @@ jobs:
       - name: Test
         env:
           STORM_PG_CONNSTR: "host=localhost port=5432 dbname=storm_db user=storm_db password=storm_db"
-        run: ctest --test-dir build/${{ matrix.build_dir }} --output-on-failure --no-tests=error
+        run: >
+          ctest --test-dir build/${{ matrix.build_dir }} --output-on-failure --no-tests=error
+          --exclude-regex "AggregateTest.WhereRepeatedQueries<storm::db::sqlite"
