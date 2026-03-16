@@ -13,6 +13,8 @@ jobs:
   test:
     name: "${{ matrix.preset }} / PG ${{ matrix.postgres }}"
     runs-on: ubuntu-24.04
+    container:
+      image: archlinux:latest
 
     services:
       postgres:
@@ -21,8 +23,6 @@ jobs:
           POSTGRES_DB: storm_db
           POSTGRES_USER: storm_db
           POSTGRES_PASSWORD: storm_db
-        ports:
-          - 5432:5432
         options: >-
           --health-cmd "pg_isready -U storm_db"
           --health-interval 10s
@@ -58,27 +58,32 @@ jobs:
     steps:
       - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build libsqlite3-dev libpq-dev \
-            python3 python3-yaml lcov
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm --needed \
+            cmake ninja sqlite postgresql-libs \
+            python python-yaml lcov git
 
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Extract clang-p2996 from container image
         run: |
-          docker pull "${CLANG_IMAGE}"
-          id=$(docker create "${CLANG_IMAGE}" /bin/true)
-          sudo docker cp "$id":/opt/clang-p2996 /opt/clang-p2996
-          docker rm "$id"
+          pacman -S --noconfirm --needed docker-cli skopeo umoci
+
+          # Extract scratch image without Docker daemon (not available inside container)
+          skopeo copy "docker://${CLANG_IMAGE}" oci:clang-oci:latest
+          umoci unpack --image clang-oci:latest clang-bundle
+          mv clang-bundle/rootfs/opt/clang-p2996 /opt/clang-p2996
 
           # Create clang/clang++ symlinks
-          sudo ln -s clang-21 /opt/clang-p2996/build/bin/clang
-          sudo ln -s clang-21 /opt/clang-p2996/build/bin/clang++
+          ln -s clang-21 /opt/clang-p2996/build/bin/clang
+          ln -s clang-21 /opt/clang-p2996/build/bin/clang++
 
           # Symlink so ${sourceDir}/../clang-p2996 resolves to /opt/clang-p2996
           ln -s /opt/clang-p2996 "${{ github.workspace }}/../clang-p2996"
+
+          # Cleanup
+          rm -rf clang-oci clang-bundle
 
       - name: Cache CPM packages
         uses: actions/cache@v4
@@ -93,23 +98,11 @@ jobs:
         run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
-        run: |
-          for attempt in 1 2 3; do
-            echo "Build attempt $attempt"
-            if cmake --build --preset ${{ matrix.preset }}; then
-              break
-            fi
-            echo "Attempt $attempt failed — clearing module cache"
-            rm -rf ~/.cache/clang/ModuleCache
-            if [ "$attempt" -eq 3 ]; then
-              echo "All 3 attempts failed"
-              exit 1
-            fi
-          done
+        run: cmake --build --preset ${{ matrix.preset }}
 
       - name: Test
         env:
-          STORM_PG_CONNSTR: "host=localhost port=5432 dbname=storm_db user=storm_db password=storm_db"
+          STORM_PG_CONNSTR: "host=postgres port=5432 dbname=storm_db user=storm_db password=storm_db"
         run: >
           ctest --test-dir build/${{ matrix.build_dir }} --output-on-failure --no-tests=error
           --exclude-regex "AggregateTest.WhereRepeatedQueries<storm::db::sqlite"
