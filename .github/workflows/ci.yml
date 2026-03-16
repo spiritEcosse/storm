@@ -96,6 +96,17 @@ jobs:
             cpm-${{ matrix.preset }}-
             cpm-
 
+      - name: Debug info
+        run: |
+          # Check glibc version
+          ldd --version 2>&1 | head -1
+          # Check clang-scan-deps dependencies
+          ldd /opt/clang-p2996/build/bin/clang-scan-deps 2>&1 | head -20
+          # Check clang-21 dependencies
+          ldd /opt/clang-p2996/build/bin/clang-21 2>&1 | head -20
+          # Verify files exist
+          ls -la /opt/clang-p2996/build/bin/
+
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
 
