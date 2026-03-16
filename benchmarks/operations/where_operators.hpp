@@ -317,7 +317,7 @@ namespace storm::benchmark {
             // Use InExpression directly since we have a runtime vector
             return storm::orm::where::Expr(
                     std::make_shared<storm::orm::where::ExpressionVariant>(storm::orm::where::InExpression<ValueType>{
-                            std::string(std::meta::identifier_of(FieldInfo)), values_
+                            .field_name_ = std::string(std::meta::identifier_of(FieldInfo)), .values_ = values_
                     })
             );
         }

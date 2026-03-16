@@ -6,6 +6,7 @@
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables,readability-implicit-bool-conversion) // NOSONAR(cpp:S125)
 // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-owning-memory) // NOSONAR(cpp:S125)
 // NOLINTBEGIN(readability-braces-around-statements) // NOSONAR(cpp:S125)
+// NOLINTBEGIN(bugprone-easily-swappable-parameters) // mock signatures must match real libpq API // NOSONAR(cpp:S125)
 
 #include "mock_libpq.h"
 #include <cstring>
@@ -375,6 +376,7 @@ auto PQgetisnull(const PGresult* res, int tup_num, int field_num) -> int {
 
 } // extern "C"
 
+// NOLINTEND(bugprone-easily-swappable-parameters) // NOSONAR(cpp:S125)
 // NOLINTEND(readability-braces-around-statements) // NOSONAR(cpp:S125)
 // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-owning-memory) // NOSONAR(cpp:S125)
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables,readability-implicit-bool-conversion) // NOSONAR(cpp:S125)
