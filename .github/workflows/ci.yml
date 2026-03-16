@@ -43,6 +43,9 @@ jobs:
           - preset: ninja-tsan
             build_dir: tsan
             postgres: 17
+          - preset: ninja-msan
+            build_dir: msan
+            postgres: 17
 
           # PG compat — same build, different PG service
           - preset: ninja-debug
