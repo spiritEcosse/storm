@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+env:
+  CLANG_IMAGE: ghcr.io/spiritecosse/storm-clang:latest
+
+jobs:
+  test:
+    name: "${{ matrix.preset }} / PG ${{ matrix.postgres }}"
+    runs-on: ubuntu-24.04
+
+    services:
+      postgres:
+        image: "postgres:${{ matrix.postgres }}"
+        env:
+          POSTGRES_DB: storm_db
+          POSTGRES_USER: storm_db
+          POSTGRES_PASSWORD: storm_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U storm_db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Core presets — latest PG
+          - preset: ninja-debug
+            postgres: 17
+          - preset: ninja-asan-ubsan
+            postgres: 17
+          - preset: ninja-tsan
+            postgres: 17
+
+          # PG compat — same build, different PG service
+          - preset: ninja-debug
+            postgres: 14
+          - preset: ninja-debug
+            postgres: 15
+          - preset: ninja-debug
+            postgres: 16
+
+    steps:
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build libsqlite3-dev libpq-dev \
+            python3 python3-pyyaml
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract clang-p2996 from container image
+        run: |
+          docker pull "${CLANG_IMAGE}"
+          id=$(docker create "${CLANG_IMAGE}")
+          sudo docker cp "$id":/opt/clang-p2996 /opt/clang-p2996
+          docker rm "$id"
+
+          # Create clang/clang++ symlinks
+          sudo ln -s clang-21 /opt/clang-p2996/build/bin/clang
+          sudo ln -s clang-21 /opt/clang-p2996/build/bin/clang++
+
+          # Symlink so ${sourceDir}/../clang-p2996 resolves to /opt/clang-p2996
+          ln -s /opt/clang-p2996 "${{ github.workspace }}/../clang-p2996"
+
+      - name: Cache CPM packages
+        uses: actions/cache@v4
+        with:
+          path: .cache/CPM
+          key: cpm-${{ matrix.preset }}-${{ hashFiles('cmake/cpm.cmake', 'cmake/tests.cmake', 'cmake/bench.cmake') }}
+          restore-keys: |
+            cpm-${{ matrix.preset }}-
+            cpm-
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        env:
+          STORM_PG_CONNSTR: "host=localhost port=5432 dbname=storm_db user=storm_db password=storm_db"
+        run: ctest --preset ${{ matrix.preset }}
