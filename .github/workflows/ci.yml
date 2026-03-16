@@ -93,7 +93,12 @@ jobs:
         run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
-        run: cmake --build --preset ${{ matrix.preset }} || cmake --build --preset ${{ matrix.preset }}
+        run: |
+          cmake --build --preset ${{ matrix.preset }} || {
+            echo "First build failed — clearing module cache and retrying"
+            rm -rf ~/.cache/clang/ModuleCache
+            cmake --build --preset ${{ matrix.preset }}
+          }
 
       - name: Test
         env:
