@@ -159,6 +159,15 @@ export namespace storm {
                     .query(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_);
         }
 
+        // Lazy row-by-row iteration via std::generator — no full materialization
+        // Each iteration yields std::expected<T, Error> — one row at a time from DB
+        // Uses a dedicated (non-cached) prepared statement per generator instance
+        // Usage: for (auto&& result : qs.where(age > 30).rows()) { ... }
+        [[nodiscard]] auto rows() {
+            return get_select_statement()
+                    .rows_generator(conn_, join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_);
+        }
+
         // First - returns proxy with .execute() and .to_sql()
         // Automatically applies LIMIT 1 to the query for optimal performance
         // Usage: auto result = queryset.where(age > 30).first().execute();
