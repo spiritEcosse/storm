@@ -14,7 +14,7 @@ jobs:
     name: "${{ matrix.preset }} / PG ${{ matrix.postgres }}"
     runs-on: ubuntu-24.04
     container:
-      image: manjarolinux/base:latest
+      image: manjarolinux/base:20260315
 
     services:
       postgres:
