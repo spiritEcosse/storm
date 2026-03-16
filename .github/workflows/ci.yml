@@ -60,7 +60,7 @@ jobs:
         run: |
           pacman -Syu --noconfirm
           pacman -S --noconfirm --needed \
-            cmake ninja sqlite postgresql-libs \
+            cmake ninja gcc sqlite postgresql-libs \
             python python-yaml lcov git
 
       - name: Checkout
