@@ -99,10 +99,20 @@ jobs:
 
       - name: Build
         run: |
-          # clang-scan-deps may segfault on first run (known C++26 module issue);
-          # retry uses cached scan results and succeeds
-          cmake --build --preset ${{ matrix.preset }} || \
-          cmake --build --preset ${{ matrix.preset }}
+          # clang-scan-deps may segfault (known C++26 module issue);
+          # clear module cache and retry up to 3 times
+          for attempt in 1 2 3; do
+            echo "=== Build attempt $attempt ==="
+            if cmake --build --preset ${{ matrix.preset }}; then
+              echo "Build succeeded on attempt $attempt"
+              exit 0
+            fi
+            echo "Build failed on attempt $attempt, clearing caches..."
+            find build/ -name "*.pcm" -delete 2>/dev/null || true
+            find build/ -name "*.ddi" -delete 2>/dev/null || true
+          done
+          echo "Build failed after 3 attempts"
+          exit 1
 
       - name: Test
         env:
