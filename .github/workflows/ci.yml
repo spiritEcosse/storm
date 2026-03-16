@@ -80,7 +80,9 @@ jobs:
           ln -s clang-21 /opt/clang-p2996/build/bin/clang++
 
           # Symlink so ${sourceDir}/../clang-p2996 resolves to /opt/clang-p2996
-          ln -s /opt/clang-p2996 "${{ github.workspace }}/../clang-p2996"
+          parent=$(dirname "${{ github.workspace }}")
+          mkdir -p "$parent"
+          ln -s /opt/clang-p2996 "$parent/clang-p2996"
 
           # Cleanup
           rm -rf clang-oci clang-bundle
