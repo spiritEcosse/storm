@@ -399,8 +399,9 @@ TYPED_TEST(AggregateTest, WhereRepeatedQueries) {
 
     // Run same WHERE + aggregate query multiple times (tests caching)
     for (int i = 0; i < 100; ++i) {
+        (*this->qs).reset();
         auto result = this->qs->where(storm::orm::where::field<^^Person::age>() > 30).count().get();
-        ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed";
+        ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed: " << result.error().message();
         EXPECT_EQ(result.value(), 13);
     }
 }
@@ -435,11 +436,12 @@ TYPED_TEST(AggregateTest, WhereJoinRepeatedQueries) {
 
     // Run same WHERE + JOIN + aggregate query multiple times (tests caching)
     for (int i = 0; i < 50; ++i) {
+        (*this->msg_qs).reset();
         auto result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() > 20)
                               .template join<&Message::sender>()
                               .count()
                               .get();
-        ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed";
+        ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed: " << result.error().message();
         EXPECT_EQ(result.value(), 4); // 30, 40, 50, 60
     }
 }
