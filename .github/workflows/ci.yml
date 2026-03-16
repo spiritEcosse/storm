@@ -57,6 +57,9 @@ jobs:
             cmake ninja-build libsqlite3-dev libpq-dev \
             python3 python3-yaml
 
+          # Remove system libstdc++ headers to avoid conflicts with custom libc++
+          sudo apt-get remove -y libstdc++-*-dev || true
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -87,7 +90,7 @@ jobs:
         run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
-        run: cmake --build --preset ${{ matrix.preset }}
+        run: cmake --build --preset ${{ matrix.preset }} || cmake --build --preset ${{ matrix.preset }}
 
       - name: Test
         env:
