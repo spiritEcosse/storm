@@ -92,31 +92,39 @@ namespace storm::benchmark {
         int execute(int iterations) {
             // Build WHERE expressions and set operation builder ONCE (setup cost)
             auto left_where = field<^^Model::age>() < left_threshold_;
-            Base::qs().where(left_where);
+            auto qs_left    = Base::qs().where(left_where);
 
             if constexpr (needs_overlap) {
                 auto right_where = field<^^Model::age>() > right_threshold_;
-                qs_right_.where(right_where);
+                auto qs_r        = qs_right_.where(right_where);
+
+                auto builder = make_builder(qs_left, qs_r);
+                apply_modifiers(builder);
+
+                int total = 0;
+                for (int i = 0; i < iterations; i++) {
+                    auto result = builder.execute();
+                    if (result.has_value()) {
+                        total += static_cast<int>(result.value().size());
+                    }
+                }
+                return total;
             } else {
                 auto right_where = field<^^Model::age>() >= right_threshold_;
-                qs_right_.where(right_where);
-            }
+                auto qs_r        = qs_right_.where(right_where);
 
-            auto builder = make_builder(Base::qs(), qs_right_);
-            apply_modifiers(builder);
+                auto builder = make_builder(qs_left, qs_r);
+                apply_modifiers(builder);
 
-            // Execute in loop — statement caching kicks in after first call
-            int total = 0;
-            for (int i = 0; i < iterations; i++) {
-                auto result = builder.execute();
-                if (result.has_value()) {
-                    total += static_cast<int>(result.value().size());
+                int total = 0;
+                for (int i = 0; i < iterations; i++) {
+                    auto result = builder.execute();
+                    if (result.has_value()) {
+                        total += static_cast<int>(result.value().size());
+                    }
                 }
+                return total;
             }
-
-            Base::qs().reset();
-            qs_right_.reset();
-            return total;
         }
 
         int execute_raw(int iterations) {

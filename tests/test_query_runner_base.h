@@ -46,51 +46,51 @@ template <typename Model, typename ConnType> class QueryRunnerBase {
 
         if constexpr (Tc.where.op == "LIKE") {
             constexpr auto fi = dispatch_field<Model>(Tc.where.field.view());
-            qs_.where(field<fi>().like(Tc.where.value_str.view()));
+            qs_ = qs_.where(field<fi>().like(Tc.where.value_str.view()));
 
         } else if constexpr (Tc.where.op == "BETWEEN") {
             constexpr auto fi = dispatch_field<Model>(Tc.where.field.view());
-            qs_.where(field<fi>().between(Tc.where.value_int, Tc.where.value_int2));
+            qs_ = qs_.where(field<fi>().between(Tc.where.value_int, Tc.where.value_int2));
 
         } else if constexpr (Tc.where.op == "IN") {
             constexpr auto fi = dispatch_field<Model>(Tc.where.field.view());
             constexpr size_t n = Tc.where.value_list_count;
             [&]<size_t... J>(std::index_sequence<J...>) {
-                qs_.where(field<fi>().in(Tc.where.value_list[J]...));
+                qs_ = qs_.where(field<fi>().in(Tc.where.value_list[J]...));
             }(std::make_index_sequence<n>{});
 
         } else if constexpr (!Tc.where.field3.empty()) {
             constexpr auto fi1 = dispatch_field<Model>(Tc.where.field.view());
             constexpr auto fi2 = dispatch_field<Model>(Tc.where.field2.view());
             constexpr auto fi3 = dispatch_field<Model>(Tc.where.field3.view());
-            qs_.where(field<fi1>() > Tc.where.value_int && field<fi2>() > Tc.where.value_dbl2 &&
-                      field<fi3>() == Tc.where.value_bool3);
+            qs_ = qs_.where(field<fi1>() > Tc.where.value_int && field<fi2>() > Tc.where.value_dbl2 &&
+                            field<fi3>() == Tc.where.value_bool3);
 
         } else if constexpr (!Tc.where.field2.empty() && Tc.where.logic == "AND") {
             constexpr auto fi1 = dispatch_field<Model>(Tc.where.field.view());
             constexpr auto fi2 = dispatch_field<Model>(Tc.where.field2.view());
-            qs_.where(field<fi1>() > Tc.where.value_int && field<fi2>() == Tc.where.value_bool2);
+            qs_ = qs_.where(field<fi1>() > Tc.where.value_int && field<fi2>() == Tc.where.value_bool2);
 
         } else if constexpr (!Tc.where.field2.empty() && Tc.where.logic == "OR") {
             constexpr auto fi1 = dispatch_field<Model>(Tc.where.field.view());
             constexpr auto fi2 = dispatch_field<Model>(Tc.where.field2.view());
-            qs_.where(field<fi1>() < Tc.where.value_int || field<fi2>() > Tc.where.value_int_2);
+            qs_ = qs_.where(field<fi1>() < Tc.where.value_int || field<fi2>() > Tc.where.value_int_2);
 
         } else if constexpr (!Tc.where.value_str.empty()) {
             constexpr auto fi = dispatch_field<Model>(Tc.where.field.view());
-            qs_.where(build_where_expr<fi>(Tc.where.op.view(), Tc.where.value_str.view()));
+            qs_ = qs_.where(build_where_expr<fi>(Tc.where.op.view(), Tc.where.value_str.view()));
 
         } else if constexpr (Tc.where.value_dbl != 0.0) {
             constexpr auto fi = dispatch_field<Model>(Tc.where.field.view());
-            qs_.where(build_where_expr<fi>(Tc.where.op.view(), Tc.where.value_dbl));
+            qs_ = qs_.where(build_where_expr<fi>(Tc.where.op.view(), Tc.where.value_dbl));
 
         } else if constexpr (Tc.where.value_bool) {
             constexpr auto fi = dispatch_field<Model>(Tc.where.field.view());
-            qs_.where(build_where_expr<fi>(Tc.where.op.view(), Tc.where.value_bool));
+            qs_ = qs_.where(build_where_expr<fi>(Tc.where.op.view(), Tc.where.value_bool));
 
         } else {
             constexpr auto fi = dispatch_field<Model>(Tc.where.field.view());
-            qs_.where(build_where_expr<fi>(Tc.where.op.view(), Tc.where.value_int));
+            qs_ = qs_.where(build_where_expr<fi>(Tc.where.op.view(), Tc.where.value_int));
         }
     }
 
@@ -100,7 +100,7 @@ template <typename Model, typename ConnType> class QueryRunnerBase {
             qs_.template join<&Model::sender>();
         }
         if constexpr (Tc.where_node_count > 0)
-            qs_.where(build_where_node_expr<0, Tc, Model>());
+            qs_ = qs_.where(build_where_node_expr<0, Tc, Model>());
         else if constexpr (!Tc.where.field.empty())
             apply_where<Tc>();
     }

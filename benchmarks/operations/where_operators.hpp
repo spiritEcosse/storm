@@ -53,16 +53,15 @@ namespace storm::benchmark {
 
         int execute(int iterations) {
             auto where_clause = field<FieldInfo>().like(pattern_);
-            Base::qs().where(where_clause);
+            auto filtered     = Base::qs().where(where_clause);
 
             int total = 0;
             for (int i = 0; i < iterations; i++) {
-                auto result = Base::qs().select().execute();
+                auto result = filtered.select().execute();
                 if (result.has_value()) {
                     total += result.value().size();
                 }
             }
-            Base::qs().reset();
             return total;
         }
 
@@ -144,16 +143,15 @@ namespace storm::benchmark {
 
         int execute(int iterations) {
             auto where_clause = field<FieldInfo>().between(min_value_, max_value_);
-            Base::qs().where(where_clause);
+            auto filtered     = Base::qs().where(where_clause);
 
             int total = 0;
             for (int i = 0; i < iterations; i++) {
-                auto result = Base::qs().select().execute();
+                auto result = filtered.select().execute();
                 if (result.has_value()) {
                     total += result.value().size();
                 }
             }
-            Base::qs().reset();
             return total;
         }
 
@@ -249,16 +247,15 @@ namespace storm::benchmark {
             // Build IN expression using field<>().in(values...)
             // We need to use the runtime API since we have a vector
             auto where_clause = build_in_clause();
-            Base::qs().where(where_clause);
+            auto filtered     = Base::qs().where(where_clause);
 
             int total = 0;
             for (int i = 0; i < iterations; i++) {
-                auto result = Base::qs().select().execute();
+                auto result = filtered.select().execute();
                 if (result.has_value()) {
                     total += result.value().size();
                 }
             }
-            Base::qs().reset();
             return total;
         }
 
@@ -384,16 +381,15 @@ namespace storm::benchmark {
 
         int execute(int iterations) {
             auto where_clause = build_where_clause();
-            Base::qs().where(where_clause);
+            auto filtered     = Base::qs().where(where_clause);
 
             int total = 0;
             for (int i = 0; i < iterations; i++) {
-                auto result = Base::qs().select().execute();
+                auto result = filtered.select().execute();
                 if (result.has_value()) {
                     total += result.value().size();
                 }
             }
-            Base::qs().reset();
             return total;
         }
 

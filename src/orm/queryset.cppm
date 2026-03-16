@@ -113,16 +113,17 @@ export namespace storm {
         //   queryset.where(field<^^Person::age>() > 25 and field<^^Person::is_active>() == true).select()
         //   queryset.where((field<^^Person::age>() > 25) or (field<^^Person::name>().like("A%"))).select()
         //
-        constexpr auto where(this auto&& self, orm::where::ExpressionVariantPtr expr) -> auto&& { // NOSONAR(cpp:S6189)
-            if (self.where_expr_) {
+        [[nodiscard]] auto where(orm::where::ExpressionVariantPtr expr) const -> QuerySet {
+            auto result = clone_state();
+            if (result.where_expr_) {
                 // Combine with existing expression using AND
-                self.where_expr_ = std::make_shared<orm::where::ExpressionVariant>(
-                        orm::where::LogicalExpr{self.where_expr_, orm::where::LogicalOp::And, expr}
+                result.where_expr_ = std::make_shared<orm::where::ExpressionVariant>(
+                        orm::where::LogicalExpr{result.where_expr_, orm::where::LogicalOp::And, expr}
                 );
             } else {
-                self.where_expr_ = expr;
+                result.where_expr_ = expr;
             }
-            return std::forward<decltype(self)>(self);
+            return result;
         }
 
         // LIMIT clause support - returns finalized QuerySet (prevents use as set-op operand)
@@ -511,6 +512,18 @@ export namespace storm {
 
         // Private constructor for to_finalized() — takes explicit connection
         explicit QuerySet(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
+
+        // Create a shallow copy carrying query state (where, join, limit, offset, order_by)
+        // Statement caches are NOT copied — they are lazy-init'd on demand via prepare_cached()
+        auto clone_state() const -> QuerySet {
+            QuerySet result(conn_);
+            result.where_expr_       = where_expr_;
+            result.join_stmt_        = join_stmt_;
+            result.limit_value_      = limit_value_;
+            result.offset_value_     = offset_value_;
+            result.order_by_wrapper_ = order_by_wrapper_;
+            return result;
+        }
 
         // Create a finalized copy carrying conn_, where, join, limit, offset, order_by state
         // Statement caches are NOT copied — they are lazy-init'd on demand via prepare_cached()
