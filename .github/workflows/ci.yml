@@ -98,7 +98,11 @@ jobs:
         run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
-        run: cmake --build --preset ${{ matrix.preset }}
+        run: |
+          # clang-scan-deps may segfault on first run (known C++26 module issue);
+          # retry uses cached scan results and succeeds
+          cmake --build --preset ${{ matrix.preset }} || \
+          cmake --build --preset ${{ matrix.preset }}
 
       - name: Test
         env:
