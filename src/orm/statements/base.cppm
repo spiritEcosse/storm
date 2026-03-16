@@ -643,6 +643,7 @@ export namespace storm::orm::statements {
         // SQL CLAUSE HELPERS - Shared across SELECT, DISTINCT, AGGREGATE
         // =====================================================================
 
+        // LCOV_EXCL_START — PostgreSQL-only; covered by CI PG tests, not local SQLite mock
         // Helper: Adapt ORDER BY SQL for PostgreSQL NULL ordering semantics
         // Adds NULLS FIRST after ASC and NULLS LAST after DESC to match SQLite behavior
         static void adapt_order_by_for_pg(std::string& adapted) {
@@ -663,6 +664,7 @@ export namespace storm::orm::statements {
                 pos = after + 11;
             }
         }
+        // LCOV_EXCL_STOP
 
         // Helper: Append ORDER BY clause to SQL from wrapper
         // NOTE: ORDER BY must come before LIMIT/OFFSET in SQLite
@@ -672,10 +674,10 @@ export namespace storm::orm::statements {
         append_order_by(std::string& sql, const std::optional<OrderByWrapper>& order_by_wrapper) {
             if (order_by_wrapper.has_value() && !order_by_wrapper->empty()) {
                 const auto& order_sql = order_by_wrapper->get_order_by_sql();
-                if constexpr (requires { ConnTypeForDialect::supports_returning; }) {
-                    std::string adapted = order_sql;
-                    adapt_order_by_for_pg(adapted);
-                    sql += adapted;
+                if constexpr (requires { ConnTypeForDialect::uses_pg_dialect; }) {
+                    std::string adapted = order_sql; // LCOV_EXCL_LINE — PG-only
+                    adapt_order_by_for_pg(adapted);  // LCOV_EXCL_LINE — PG-only
+                    sql += adapted;                  // LCOV_EXCL_LINE — PG-only
                 } else {
                     sql += order_sql;
                 }

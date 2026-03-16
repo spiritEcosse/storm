@@ -977,18 +977,19 @@ namespace {
     // Tests the [[unlikely]] path in execute() method
     // ============================================================================
 
-    TEST_F(ORMMockErrorTest, StatementExecuteReturnsRowInsteadOfDone) {
-        // execute() expects SQLITE_DONE, but gets SQLITE_ROW
-        MockSqlite3Config::step_returns(SQLITE_ROW);
+    TEST_F(ORMMockErrorTest, InsertStepReturnsUnexpectedError) {
+        // With supports_returning=true (SQLite 3.35+), INSERT uses step() which
+        // expects SQLITE_ROW to retrieve the RETURNING result. Test that an
+        // unexpected error code (not ROW, not DONE) causes failure.
+        MockSqlite3Config::step_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
 
         auto result = qs.insert(person).execute();
 
-        // INSERT uses execute() which expects DONE, so ROW is an error
         ASSERT_FALSE(result.has_value());
-        EXPECT_EQ(result.error().code(), SQLITE_ROW);
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
     }
 
     // ============================================================================

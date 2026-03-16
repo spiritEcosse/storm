@@ -544,8 +544,10 @@ export namespace storm::db::postgresql {
         using Statement = postgresql::Statement;
 
         // Dialect traits
-        static constexpr bool supports_limit_all = true;
-        static constexpr bool supports_returning = true;
+        static constexpr bool supports_limit_all  = true;
+        static constexpr bool supports_returning  = true;
+        static constexpr bool supports_right_join = true;
+        static constexpr bool uses_pg_dialect     = true;
 
         // Pre-populate statement cache with common operations (stub for PostgreSQL)
         auto prepare_common_statements() -> void {

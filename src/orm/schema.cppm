@@ -349,7 +349,7 @@ export namespace storm::orm::schema {
             std::string sql = create_table_sql();
 
             // Apply PostgreSQL transforms if needed
-            if constexpr (ConnType::supports_returning) {
+            if constexpr (requires { ConnType::uses_pg_dialect; }) {
                 sql = detail::apply_pg_transforms(std::move(sql));
             }
 
