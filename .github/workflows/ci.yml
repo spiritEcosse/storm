@@ -63,7 +63,7 @@ jobs:
       - name: Extract clang-p2996 from container image
         run: |
           docker pull "${CLANG_IMAGE}"
-          id=$(docker create "${CLANG_IMAGE}")
+          id=$(docker create "${CLANG_IMAGE}" /bin/true)
           sudo docker cp "$id":/opt/clang-p2996 /opt/clang-p2996
           docker rm "$id"
 
