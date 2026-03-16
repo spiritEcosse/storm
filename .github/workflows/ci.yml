@@ -35,18 +35,24 @@ jobs:
         include:
           # Core presets — latest PG
           - preset: ninja-debug
+            build_dir: debug
             postgres: 17
           - preset: ninja-asan-ubsan
+            build_dir: asan-ubsan
             postgres: 17
           - preset: ninja-tsan
+            build_dir: tsan
             postgres: 17
 
           # PG compat — same build, different PG service
           - preset: ninja-debug
+            build_dir: debug
             postgres: 14
           - preset: ninja-debug
+            build_dir: debug
             postgres: 15
           - preset: ninja-debug
+            build_dir: debug
             postgres: 16
 
     steps:
@@ -92,4 +98,4 @@ jobs:
       - name: Test
         env:
           STORM_PG_CONNSTR: "host=localhost port=5432 dbname=storm_db user=storm_db password=storm_db"
-        run: ctest --preset ${{ matrix.preset }}
+        run: ctest --test-dir build/${{ matrix.build_dir }} --output-on-failure --no-tests=error
