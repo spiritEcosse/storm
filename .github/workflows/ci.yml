@@ -68,7 +68,7 @@ jobs:
 
       - name: Extract clang-p2996 from container image
         run: |
-          pacman -S --noconfirm --needed docker-cli skopeo umoci
+          pacman -S --noconfirm --needed skopeo umoci
 
           # Extract scratch image without Docker daemon (not available inside container)
           skopeo copy "docker://${CLANG_IMAGE}" oci:clang-oci:latest
