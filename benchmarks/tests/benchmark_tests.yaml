@@ -408,6 +408,57 @@ tests:
     dataset_size: 10000
 
   # ============================================================================
+  # ORDER BY + COLLATE Operations
+  # ============================================================================
+
+  - name: order_by_collate_nocase_asc
+    category: ORDER_BY_COLLATE
+    description: "SELECT ORDER BY name COLLATE NOCASE ASC (10000 rows)"
+    model: Person
+    operation: order_by_collate
+    order_by_field: name
+    order_by_direction: ASC
+    order_by_collate: NOCASE
+    iterations: 1000
+    dataset_size: 10000
+
+  - name: order_by_collate_nocase_desc
+    category: ORDER_BY_COLLATE
+    description: "SELECT ORDER BY name COLLATE NOCASE DESC (10000 rows)"
+    model: Person
+    operation: order_by_collate
+    order_by_field: name
+    order_by_direction: DESC
+    order_by_collate: NOCASE
+    iterations: 1000
+    dataset_size: 10000
+
+  - name: order_by_collate_binary
+    category: ORDER_BY_COLLATE
+    description: "SELECT ORDER BY name COLLATE BINARY ASC (10000 rows)"
+    model: Person
+    operation: order_by_collate
+    order_by_field: name
+    order_by_direction: ASC
+    order_by_collate: BINARY
+    iterations: 1000
+    dataset_size: 10000
+
+  - name: order_by_collate_where
+    category: ORDER_BY_COLLATE_WHERE
+    description: "SELECT WHERE age > 30 ORDER BY name COLLATE NOCASE DESC"
+    model: Person
+    operation: order_by_collate_where
+    order_by_field: name
+    order_by_direction: DESC
+    order_by_collate: NOCASE
+    where_field: age
+    where_op: ">"
+    where_value_int: 30
+    iterations: 1000
+    dataset_size: 10000
+
+  # ============================================================================
   # GROUP BY Operations (fixed size)
   # ============================================================================
   - name: group_by_single_age

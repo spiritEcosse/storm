@@ -140,6 +140,15 @@ namespace storm::benchmark {
         static constexpr OrderDirection  direction  = Dir;
     };
 
+    // ORDER BY with COLLATE configuration
+    template <std::meta::info FieldInfo, storm::orm::utilities::Collate Col, OrderDirection Dir = OrderDirection::ASC>
+    struct OrderByCollateConfig {
+        static constexpr bool                           enabled    = true;
+        static constexpr std::meta::info                field_info = FieldInfo;
+        static constexpr OrderDirection                 direction  = Dir;
+        static constexpr storm::orm::utilities::Collate collation  = Col;
+    };
+
     // Multi-field ORDER BY configuration (2 fields with individual directions)
     template <std::meta::info FieldInfo1, OrderDirection Dir1, std::meta::info FieldInfo2, OrderDirection Dir2>
     struct OrderBy2Config {
@@ -278,6 +287,9 @@ namespace storm::benchmark {
             if constexpr (OrderByCfg::enabled) {
                 constexpr std::string_view field_name = std::meta::identifier_of(OrderByCfg::field_info);
                 std::cout << " ORDER BY " << field_name;
+                if constexpr (requires { OrderByCfg::collation; }) {
+                    std::cout << storm::orm::utilities::collate_to_sql(OrderByCfg::collation);
+                }
                 if constexpr (OrderByCfg::direction == OrderDirection::DESC) {
                     std::cout << " DESC";
                 } else {
@@ -322,11 +334,20 @@ namespace storm::benchmark {
                 Base::qs()        = Base::qs().where(where_clause);
             }
             if constexpr (OrderByCfg::enabled) {
-                // Storm ORM order_by uses boolean: true = ASC (default), false = DESC
-                if constexpr (OrderByCfg::direction == OrderDirection::DESC) {
-                    Base::qs().template order_by<OrderByCfg::field_info, false>();
+                if constexpr (requires { OrderByCfg::collation; }) {
+                    // ORDER BY with COLLATE
+                    if constexpr (OrderByCfg::direction == OrderDirection::DESC) {
+                        Base::qs().template order_by<OrderByCfg::field_info, OrderByCfg::collation, false>();
+                    } else {
+                        Base::qs().template order_by<OrderByCfg::field_info, OrderByCfg::collation, true>();
+                    }
                 } else {
-                    Base::qs().template order_by<OrderByCfg::field_info, true>();
+                    // Storm ORM order_by uses boolean: true = ASC (default), false = DESC
+                    if constexpr (OrderByCfg::direction == OrderDirection::DESC) {
+                        Base::qs().template order_by<OrderByCfg::field_info, false>();
+                    } else {
+                        Base::qs().template order_by<OrderByCfg::field_info, true>();
+                    }
                 }
             }
             if constexpr (GroupByCfg::enabled) {
@@ -518,6 +539,9 @@ namespace storm::benchmark {
                 constexpr std::string_view field_name = std::meta::identifier_of(OrderByCfg::field_info);
                 sql += " ORDER BY ";
                 sql += std::string(field_name);
+                if constexpr (requires { OrderByCfg::collation; }) {
+                    sql += storm::orm::utilities::collate_to_sql(OrderByCfg::collation);
+                }
                 if constexpr (OrderByCfg::direction == OrderDirection::DESC) {
                     sql += " DESC";
                 } else {

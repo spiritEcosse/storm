@@ -1102,6 +1102,67 @@ namespace storm::benchmark {
         }
 
         // ====================================================================
+        // ORDER BY + COLLATE operation handlers
+        // ====================================================================
+
+        // Helper: parse collate string to enum at compile time
+        static consteval auto parse_collate(std::string_view col_str) -> storm::orm::utilities::Collate {
+            if (col_str == "BINARY")
+                return storm::orm::utilities::Collate::Binary;
+            if (col_str == "RTRIM")
+                return storm::orm::utilities::Collate::RTrim;
+            return storm::orm::utilities::Collate::NoCase;
+        }
+
+        template <typename Model, auto& test>
+        static void run_select_order_by_collate_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.order_by_field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            constexpr auto             collation    = parse_collate(test.order_by_collate.view());
+            constexpr std::string_view dir_str      = test.order_by_direction.view();
+
+            if constexpr (dir_str == "DESC") {
+                runner.run_benchmark(
+                        test.test_name.c_str(),
+                        SelectOrderByCollateDescBenchmark<Model, field_info, collation>{dataset_size},
+                        iterations
+                );
+            } else {
+                runner.run_benchmark(
+                        test.test_name.c_str(),
+                        SelectOrderByCollateAscBenchmark<Model, field_info, collation>{dataset_size},
+                        iterations
+                );
+            }
+        }
+
+        template <typename Model, auto& test>
+        static void run_select_order_by_collate_where_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr auto order_field_info = dispatch_field<Model>(test.order_by_field.view());
+            constexpr auto where_field_info = dispatch_field<Model>(test.where.field.view());
+            constexpr auto op_str           = test.where.op;
+            constexpr int  value            = test.where.value_int;
+            constexpr int  dataset_size     = test.dataset_size;
+            constexpr auto collation        = parse_collate(test.order_by_collate.view());
+            constexpr auto dir =
+                    (test.order_by_direction.view() == "DESC") ? OrderDirection::DESC : OrderDirection::ASC;
+
+            runner.run_benchmark(
+                    test.test_name.c_str(),
+                    (SelectOrderByCollateWhereBenchmark<
+                            Model,
+                            order_field_info,
+                            collation,
+                            dir,
+                            where_field_info,
+                            op_str,
+                            int>{value, dataset_size}),
+                    iterations
+            );
+        }
+
+        // ====================================================================
         // Multi-Field ORDER BY operation handlers
         // ====================================================================
 
@@ -1636,6 +1697,10 @@ namespace storm::benchmark {
                         runner.run_select_order_by_where_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "order_by_limit") {
                         runner.run_select_order_by_limit_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "order_by_collate") {
+                        runner.run_select_order_by_collate_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "order_by_collate_where") {
+                        runner.run_select_order_by_collate_where_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "order_by_multi_2_asc") {
                         runner.run_order_by_multi_2_asc_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "order_by_multi_2_desc") {

@@ -194,6 +194,7 @@ export namespace storm::orm::where {
                                        BetweenExpr<int>,
                                        BetweenExpr<int64_t>,
                                        BetweenExpr<double>,
+                                       BetweenExpr<std::string>,
                                        InExpression<int>,
                                        InExpression<int64_t>,
                                        InExpression<double>,
@@ -298,6 +299,86 @@ export namespace storm::orm::where {
         ExpressionVariantPtr expr_; // VARIANT-based, not virtual!
     };
 
+    // CollatedField proxy - wraps field name with COLLATE clause
+    // Created via field<^^Person::name>().collate(Collate::NoCase)
+    // All comparison operators produce SQL like: "name COLLATE NOCASE = ?"
+    template <std::meta::info MemberInfo>
+        requires(std::meta::is_nonstatic_data_member(MemberInfo))
+    class CollatedField {
+      public:
+        using FieldType = typename[:std::meta::type_of(MemberInfo):];
+
+        explicit CollatedField(utilities::Collate col) : collated_name_(make_collated_name(col)) {}
+
+        template <typename... Values>
+            requires(std::constructible_from<FieldType, Values> && ...)
+        auto in(Values&&... values) const {
+            return Expr(
+                    std::make_shared<ExpressionVariant>(InExpression<FieldType>{
+                            .field_name_ = collated_name_, .values_ = {FieldType{std::forward<Values>(values)}...}
+                    })
+            );
+        }
+
+        template <typename V> auto operator==(V&& value) const -> Expr {
+            return make_comparison(CompOp::Equal, std::forward<V>(value));
+        }
+
+        template <typename V> auto operator!=(V&& value) const -> Expr {
+            return make_comparison(CompOp::NotEqual, std::forward<V>(value));
+        }
+
+        template <typename V> auto operator>(V&& value) const -> Expr {
+            return make_comparison(CompOp::Greater, std::forward<V>(value));
+        }
+
+        template <typename V> auto operator>=(V&& value) const -> Expr {
+            return make_comparison(CompOp::GreaterEqual, std::forward<V>(value));
+        }
+
+        template <typename V> auto operator<(V&& value) const -> Expr {
+            return make_comparison(CompOp::Less, std::forward<V>(value));
+        }
+
+        template <typename V> auto operator<=(V&& value) const -> Expr {
+            return make_comparison(CompOp::LessEqual, std::forward<V>(value));
+        }
+
+        [[nodiscard]] auto like(std::string_view pattern) const -> Expr {
+            return Expr(
+                    std::make_shared<ExpressionVariant>(
+                            LikeExpr{.field_name_ = collated_name_, .pattern_ = std::string(pattern)}
+                    )
+            );
+        }
+
+        template <typename V> auto between(V&& min_val, V&& max_val) const -> Expr {
+            return Expr(
+                    std::make_shared<ExpressionVariant>(BetweenExpr<std::decay_t<V>>{
+                            .field_name_ = collated_name_,
+                            .min_val_    = std::forward<V>(min_val),
+                            .max_val_    = std::forward<V>(max_val)
+                    })
+            );
+        }
+
+      private:
+        std::string collated_name_;
+
+        static auto make_collated_name(utilities::Collate col) -> std::string {
+            return std::format("{}{}", std::meta::identifier_of(MemberInfo), utilities::collate_to_sql(col));
+        }
+
+        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
+        template <typename V> auto make_comparison(CompOp op, V&& value) const -> Expr {
+            return Expr(
+                    std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
+                            .field_name_ = collated_name_, .op_ = op, .value_ = std::forward<V>(value)
+                    })
+            );
+        }
+    };
+
     // Field proxy - stores reflection info as template parameter
     // Provides compile-time IN expression and runtime comparison/special methods
     template <std::meta::info MemberInfo>
@@ -306,6 +387,11 @@ export namespace storm::orm::where {
       public:
         static constexpr auto field_name_sv = std::meta::identifier_of(MemberInfo);
         using FieldType                     = typename[:std::meta::type_of(MemberInfo):];
+
+        // Return a CollatedField proxy for COLLATE-qualified comparisons
+        [[nodiscard]] auto collate(utilities::Collate col) const -> CollatedField<MemberInfo> {
+            return CollatedField<MemberInfo>(col);
+        }
 
         // IN: Returns Expr wrapping VARIANT (no heap allocation for expression itself!)
         // Usage: field<^^Person::id>().in(100, 200, 300)

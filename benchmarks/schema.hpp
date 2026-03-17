@@ -107,6 +107,7 @@ namespace storm::benchmark {
         // ORDER BY clause parameters
         ConstexprString<32> order_by_field;      // Field name to order by (empty = no ORDER BY)
         ConstexprString<8>  order_by_direction;  // "ASC" or "DESC" (empty = default ASC)
+        ConstexprString<16> order_by_collate;    // "NOCASE", "BINARY", "RTRIM" (empty = no COLLATE)
         ConstexprString<32> order_by_field2;     // Second field for multi-field ORDER BY
         ConstexprString<8>  order_by_direction2; // "ASC" or "DESC" for second field
 
