@@ -13,20 +13,40 @@ import <meta>;
 import <utility>;
 
 namespace detail {
+
+    using storm::orm::utilities::Collate;
+
+    struct OrderByField {
+        std::meta::info field = std::meta::info{};
+        bool            asc   = true;
+        Collate         col   = Collate::None;
+    };
+
     // Free consteval helper — avoids generic-lambda-in-consteval compiler bug
     template <size_t N, auto Arg>
-    consteval void process_order_by_arg(std::array<std::pair<std::meta::info, bool>, N>& result, size_t& idx) {
+    consteval void process_order_by_arg(std::array<OrderByField, N>& result, size_t& idx) {
         if constexpr (std::same_as<decltype(Arg), bool>) {
-            result[idx - 1].second = Arg;
+            result[idx - 1].asc = Arg;
+        } else if constexpr (std::same_as<decltype(Arg), Collate>) {
+            result[idx - 1].col = Arg;
         } else {
-            result[idx++] = {Arg, true}; // default ASC
+            result[idx] = {.field = Arg, .asc = true, .col = Collate::None};
+            ++idx;
         }
     }
+
+    // Count field args (skip bool and Collate modifiers)
+    template <auto Arg> consteval auto is_field_arg() -> bool {
+        return !std::same_as<decltype(Arg), bool> && !std::same_as<decltype(Arg), Collate>;
+    }
+
 } // namespace detail
 
 export namespace storm::orm::statements {
 
     namespace buffer_size = storm::orm::utilities::buffer_size;
+    using storm::orm::utilities::Collate;
+    using storm::orm::utilities::collate_to_sql;
     using storm::orm::utilities::ConstexprString;
 
     // ============================================================================
@@ -34,13 +54,13 @@ export namespace storm::orm::statements {
     // ============================================================================
 
     template <auto... Args> struct OrderByClause {
-        // Count non-bool args (each is a field; bools are directions)
-        static constexpr size_t count = ((std::same_as<decltype(Args), bool> ? 0 : 1) + ... + 0);
+        // Count field args (skip bool and Collate modifiers)
+        static constexpr size_t count = ((detail::is_field_arg<Args>() ? 1 : 0) + ... + 0);
 
         static constexpr auto fields = [] consteval // NOSONAR(cpp:S1659)
-                -> std::array<std::pair<std::meta::info, bool>, count> {
-            std::array<std::pair<std::meta::info, bool>, count> result{};
-            size_t                                              idx = 0;
+                -> std::array<detail::OrderByField, count> {
+            std::array<detail::OrderByField, count> result{};
+            size_t                                  idx = 0;
             (detail::process_order_by_arg<count, Args>(result, idx), ...);
             return result;
         }();
@@ -65,11 +85,14 @@ export namespace storm::orm::statements {
                     result.append(", ");
                 }
 
-                constexpr auto field_info = fields[i].first;
+                constexpr auto field_info = fields[i].field;
                 constexpr auto field_name = std::meta::identifier_of(field_info);
                 result.append(field_name);
 
-                constexpr bool ascending = fields[i].second;
+                constexpr auto collation = fields[i].col;
+                result.append(collate_to_sql(collation));
+
+                constexpr bool ascending = fields[i].asc;
                 if (ascending) {
                     result.append(" ASC");
                 } else {
@@ -101,10 +124,13 @@ export namespace storm::orm::statements {
                 result += ", ";
             }
 
-            constexpr auto field_info = fields[I].first;
+            constexpr auto field_info = fields[I].field;
             result += std::string(std::meta::identifier_of(field_info));
 
-            constexpr bool ascending = fields[I].second;
+            constexpr auto collation = fields[I].col;
+            result += collate_to_sql(collation);
+
+            constexpr bool ascending = fields[I].asc;
             result += ascending ? " ASC" : " DESC";
         }
     };

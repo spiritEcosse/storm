@@ -386,6 +386,40 @@ namespace storm::benchmark {
     using SelectOrderByDescBenchmark =
             SelectBenchmark<Model, NoJoin, NoWhere, NoLimitOffset, OrderByConfig<FieldInfo, OrderDirection::DESC>>;
 
+    // SELECT ORDER BY + COLLATE ASC
+    template <typename Model, std::meta::info FieldInfo, storm::orm::utilities::Collate Col>
+    using SelectOrderByCollateAscBenchmark = SelectBenchmark<
+            Model,
+            NoJoin,
+            NoWhere,
+            NoLimitOffset,
+            OrderByCollateConfig<FieldInfo, Col, OrderDirection::ASC>>;
+
+    // SELECT ORDER BY + COLLATE DESC
+    template <typename Model, std::meta::info FieldInfo, storm::orm::utilities::Collate Col>
+    using SelectOrderByCollateDescBenchmark = SelectBenchmark<
+            Model,
+            NoJoin,
+            NoWhere,
+            NoLimitOffset,
+            OrderByCollateConfig<FieldInfo, Col, OrderDirection::DESC>>;
+
+    // SELECT WHERE + ORDER BY COLLATE
+    template <
+            typename Model,
+            std::meta::info                OrderField,
+            storm::orm::utilities::Collate Col,
+            OrderDirection                 Dir,
+            std::meta::info                WhereField,
+            auto                           Op,
+            typename ValueType>
+    using SelectOrderByCollateWhereBenchmark = SelectBenchmark<
+            Model,
+            NoJoin,
+            WhereConfig<WhereField, Op, ValueType>,
+            NoLimitOffset,
+            OrderByCollateConfig<OrderField, Col, Dir>>;
+
     // SELECT ORDER BY + WHERE
     template <
             typename Model,

@@ -249,6 +249,8 @@ namespace storm::benchmark {
             test.order_by_field = parse_string<32>(json, pos);
         } else if (key == "order_by_direction") {
             test.order_by_direction = parse_string<8>(json, pos);
+        } else if (key == "order_by_collate") {
+            test.order_by_collate = parse_string<16>(json, pos);
         } else if (key == "order_by_field2") {
             test.order_by_field2 = parse_string<32>(json, pos);
         } else if (key == "order_by_direction2") {

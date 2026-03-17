@@ -88,6 +88,27 @@ export namespace storm::orm::utilities {
     } // namespace numeric
 
     // ============================================================================
+    // Collation Support
+    // ============================================================================
+
+    enum class Collate { None, Binary, NoCase, RTrim };
+
+    constexpr auto collate_to_sql(Collate col) noexcept -> std::string_view {
+        using enum Collate;
+        switch (col) {
+        case None:
+            return "";
+        case Binary:
+            return " COLLATE BINARY";
+        case NoCase:
+            return " COLLATE NOCASE";
+        case RTrim:
+            return " COLLATE RTRIM";
+        }
+        return ""; // LCOV_EXCL_LINE - unreachable: all enum values handled above
+    }
+
+    // ============================================================================
     // Parameter Binding Utilities
     // ============================================================================
 
