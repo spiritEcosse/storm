@@ -278,9 +278,9 @@ export namespace storm::orm::statements {
                         return std::unexpected(result.error()); // LCOV_EXCL_LINE
                     } // LCOV_EXCL_LINE
                 } else {
-                    auto           fk_object    = obj.[:member:];
+                    const auto&    fk_object    = obj.[:member:];
                     constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
-                    auto           pk_value     = fk_object.[:fk_pk_member:];
+                    const auto&    pk_value     = fk_object.[:fk_pk_member:];
                     auto           result       = bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
                     if (!result) {
                         return std::unexpected(result.error());
@@ -289,8 +289,8 @@ export namespace storm::orm::statements {
                 ++param_index;
                 return {};
             } else {
-                auto field_value = obj.[:member:];
-                auto result      = bind_value_by_type<ConnType>(*stmt, param_index, field_value);
+                const auto& field_value = obj.[:member:];
+                auto        result      = bind_value_by_type<ConnType>(*stmt, param_index, field_value);
                 if (!result) {
                     return std::unexpected(result.error());
                 }

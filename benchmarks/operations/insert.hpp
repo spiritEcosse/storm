@@ -21,6 +21,11 @@ namespace storm::benchmark {
     template <typename Model> class InsertBenchmark : public DataBenchmarkBase<InsertBenchmark<Model>, Model, 4> {
         using Base = DataBenchmarkBase<InsertBenchmark<Model>, Model, 4>;
 
+        // Build single-row INSERT SQL with RETURNING (matches Storm ORM behavior)
+        static std::string sql_insert_single_returning() {
+            return "INSERT INTO Person (name, age, is_active, salary) VALUES (?, ?, ?, ?) RETURNING id";
+        }
+
         // Build multi-row INSERT SQL for bulk operations
         static std::string sql_insert_batch(size_t count) {
             std::string sql = "INSERT INTO Person (id, name, age, is_active, salary) VALUES ";
@@ -91,17 +96,35 @@ namespace storm::benchmark {
             int total = 0;
 
             // Runtime check - FAIR comparison with Storm ORM
-            // Single-row or small batch: one prepared statement
-            if (Base::batch_size() == 1 || static_cast<size_t>(Base::batch_size()) <= Base::bulk_threshold) {
-                size_t rows_per_stmt = (Base::batch_size() == 1) ? 1 : std::min(Base::max_bulk, Base::data().size());
-                std::string sql      = sql_insert_batch(rows_per_stmt);
+            if (Base::batch_size() == 1) {
+                // Single-row: use INSERT ... RETURNING to match Storm ORM behavior
+                std::string sql = sql_insert_single_returning();
 
                 sqlite3_stmt* stmt = nullptr;
                 if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
                     return 0;
 
                 for (int i = 0; i < iterations; i++) {
-                    bind_rows(stmt, &Base::data()[(Base::batch_size() == 1) ? i : 0], rows_per_stmt);
+                    int idx = 1;
+                    Base::bind_model_fields(stmt, Base::data()[i], idx);
+                    if (sqlite3_step(stmt) == SQLITE_ROW) {
+                        [[maybe_unused]] int64_t id = sqlite3_column_int64(stmt, 0);
+                        total++;
+                    }
+                    sqlite3_reset(stmt);
+                }
+                sqlite3_finalize(stmt);
+            } else if (static_cast<size_t>(Base::batch_size()) <= Base::bulk_threshold) {
+                // Small batch: one prepared statement
+                size_t      rows_per_stmt = std::min(Base::max_bulk, Base::data().size());
+                std::string sql           = sql_insert_batch(rows_per_stmt);
+
+                sqlite3_stmt* stmt = nullptr;
+                if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+                    return 0;
+
+                for (int i = 0; i < iterations; i++) {
+                    bind_rows(stmt, &Base::data()[0], rows_per_stmt);
                     total += Base::step_and_reset(stmt, db, rows_per_stmt);
                 }
                 sqlite3_finalize(stmt);
