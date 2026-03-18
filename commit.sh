@@ -33,6 +33,7 @@ print_header() {
     echo ""
     echo -e "${BLUE}${BOLD}[$step_num/$total]${RESET} ${BOLD}$name${RESET}"
     echo -e "${DIM}$(printf '%.0s─' {1..60})${RESET}"
+    return 0
 }
 
 run_step() {
@@ -139,7 +140,7 @@ print_summary() {
         for i in "${!STEP_NAMES[@]}"; do
             if [[ "${STEP_RESULTS[$i]}" == "FAIL" ]]; then
                 echo ""
-                echo -e "${RED}${BOLD}─── ${STEP_NAMES[$i]} — error details ───${RESET}"
+                echo -e "${RED}${BOLD}─── ${STEP_NAMES[$i]} — error details ───${RESET}" >&2
                 echo ""
                 # Show last 30 lines to avoid noise, full output was shown live or can be re-run
                 echo "${STEP_ERRORS[$i]}" | tail -30
@@ -152,6 +153,7 @@ print_summary() {
     fi
 
     echo ""
+    return 0
 }
 
 # --- Smart skip: detect staged file changes ---
