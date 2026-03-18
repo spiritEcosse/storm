@@ -300,18 +300,19 @@ export namespace storm::orm::statements {
                 return std::unexpected(bind_result.error());
             }
 
-            // Execute — step() to get the RETURNING result row
-            auto step_result = cached_insert_returning_stmt_->step();
-            if (!step_result) [[unlikely]] {
+            // Execute — step_raw() avoids std::expected overhead on hot path
+            const int rc = cached_insert_returning_stmt_->step_raw();
+            if (rc == Statement::ROW_AVAILABLE) [[likely]] {
+                // RETURNING produced a row — extract the ID
+                int64_t id = return_id ? cached_insert_returning_stmt_->extract_int64(0) : 0;
                 cached_insert_returning_stmt_->reset();
-                return std::unexpected(step_result.error());
+                return id;
             }
-
-            // Extract the returned ID from the first column
-            int64_t id = return_id ? cached_insert_returning_stmt_->extract_int64(0) : 0;
             cached_insert_returning_stmt_->reset();
-
-            return id;
+            if (rc == Statement::NO_MORE_ROWS) [[unlikely]] {
+                return 0; // No row returned (shouldn't happen with RETURNING)
+            }
+            return std::unexpected(Error{rc, cached_insert_returning_stmt_->get_error_message()});
         }
 
       protected: // Changed to protected so BaseStatement can access
