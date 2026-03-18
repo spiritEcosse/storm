@@ -81,12 +81,13 @@ export namespace storm {
         }
 
         // Insert single object - returns proxy with .execute() and .to_sql()
-        // .execute() returns the auto-generated ID
+        // ReturnId::Yes (default): .execute() returns std::expected<int64_t, Error>
+        // ReturnId::No: .execute() returns std::expected<void, Error> (faster, no RETURNING clause)
         // (SFINAE: only accept T, not span/container)
-        template <typename U = T>
+        template <orm::statements::ReturnId R = orm::statements::ReturnId::Yes, typename U = T>
             requires std::same_as<std::remove_cvref_t<U>, T>
         auto insert(const U& obj) {
-            return get_insert_statement().query(obj);
+            return get_insert_statement().template query<R>(obj);
         }
 
         // Bulk insert - returns proxy with .execute() and .to_sql()

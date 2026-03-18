@@ -27,6 +27,9 @@ export namespace storm::orm::statements {
     using storm::orm::utilities::ConstexprString;
     using storm::orm::utilities::TransactionGuard;
 
+    // Controls whether single INSERT returns the auto-generated ID
+    enum class ReturnId : bool { No = false, Yes = true };
+
     // Configuration options for batch INSERT operations
     struct InsertOptions {
         std::optional<size_t> batch_size = std::nullopt; // nullopt = automatic (999/field_count)
@@ -108,6 +111,26 @@ export namespace storm::orm::statements {
         // Pre-computed INSERT ... RETURNING SQL (both SQLite 3.35+ and PostgreSQL)
         static constexpr auto           insert_returning_sql_array  = build_insert_returning_sql_array();
         static inline const std::string insert_returning_sql_string = std::string(insert_returning_sql_array);
+
+        // Build INSERT SQL without RETURNING clause (faster path when ID not needed)
+        static consteval auto build_insert_sql_array() {
+            constexpr size_t          sql_size = calculate_insert_sql_size() + utilities::sql_len::XL_BUFFER;
+            ConstexprString<sql_size> result;
+
+            result.append("INSERT INTO ");
+            result.append(Base::table_name_);
+            result.append(" (");
+            result.append(Base::build_non_pk_field_names_list());
+            result.append(") VALUES (");
+            result.append(placeholders_);
+            result.append(")");
+
+            return result;
+        }
+
+        // Pre-computed INSERT SQL without RETURNING
+        static constexpr auto           insert_sql_array  = build_insert_sql_array();
+        static inline const std::string insert_sql_string = std::string(insert_sql_array);
 
       private:
         // Compile-time bulk INSERT prefix calculation
@@ -199,6 +222,17 @@ export namespace storm::orm::statements {
             }
         };
 
+        struct VoidQuery {
+            InsertStatement&   stmt;
+            const T&           obj;
+            [[nodiscard]] auto execute() -> std::expected<void, Error> {
+                return stmt.execute_single_void(obj);
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+                return stmt.to_sql_no_returning(obj);
+            }
+        };
+
         struct BulkQuery {
             InsertStatement&             stmt;
             std::span<const T>           objects;
@@ -211,8 +245,12 @@ export namespace storm::orm::statements {
             }
         };
 
-        auto query(const T& obj) -> SingleQuery {
-            return {*this, obj};
+        template <ReturnId R = ReturnId::Yes> auto query(const T& obj) {
+            if constexpr (R == ReturnId::Yes) {
+                return SingleQuery{*this, obj};
+            } else {
+                return VoidQuery{*this, obj};
+            }
         }
         auto query(std::span<const T> objects, std::optional<InsertOptions> opts = std::nullopt) -> BulkQuery {
             return {*this, objects, opts};
@@ -221,6 +259,22 @@ export namespace storm::orm::statements {
         // Returns SQL string with bound parameters inlined for a single INSERT (for debugging)
         [[nodiscard]] auto to_sql(const T& obj) -> std::expected<std::string, Error> {
             auto stmt_result = conn_->prepare_cached(insert_returning_sql_string);
+            if (!stmt_result) {
+                return std::unexpected(stmt_result.error());
+            }
+            auto* stmt        = *stmt_result;
+            auto  bind_result = Base::template bind_non_pk_fields_impl<ConnType, Statement>(
+                    *stmt, obj, typename Base::field_indices_t()
+            );
+            if (!bind_result) {
+                return std::unexpected(bind_result.error());
+            }
+            return stmt->expanded_sql();
+        }
+
+        // Returns SQL string for INSERT without RETURNING (for debugging)
+        [[nodiscard]] auto to_sql_no_returning(const T& obj) -> std::expected<std::string, Error> {
+            auto stmt_result = conn_->prepare_cached(insert_sql_string);
             if (!stmt_result) {
                 return std::unexpected(stmt_result.error());
             }
@@ -315,6 +369,32 @@ export namespace storm::orm::statements {
             return std::unexpected(Error{rc, cached_insert_returning_stmt_->get_error_message()});
         }
 
+        // Optimized single INSERT without RETURNING — no ID extraction overhead
+        [[nodiscard]] __attribute__((hot)) auto execute_single_void(const T& obj) noexcept
+                -> std::expected<void, Error> {
+            if (cached_insert_stmt_ == nullptr) [[unlikely]] {
+                auto stmt_result = conn_->prepare_cached(insert_sql_string);
+                if (!stmt_result) {
+                    return std::unexpected(stmt_result.error());
+                }
+                cached_insert_stmt_ = *stmt_result;
+            }
+
+            auto bind_result = Base::template bind_non_pk_fields_impl<ConnType, Statement>(
+                    *cached_insert_stmt_, obj, typename Base::field_indices_t()
+            );
+            if (!bind_result) [[unlikely]] {
+                return std::unexpected(bind_result.error());
+            }
+
+            const int rc = cached_insert_stmt_->step_raw();
+            cached_insert_stmt_->reset();
+            if (rc == Statement::NO_MORE_ROWS) [[likely]] {
+                return {};
+            }
+            return std::unexpected(Error{rc, cached_insert_stmt_->get_error_message()});
+        }
+
       protected: // Changed to protected so BaseStatement can access
         // Bind non-PK fields for INSERT (skips primary key for auto-increment)
         [[nodiscard]] auto bind_all_fields(Statement& stmt, const T& obj) noexcept -> std::expected<void, Error> {
@@ -373,7 +453,8 @@ export namespace storm::orm::statements {
       private:
         std::shared_ptr<ConnType> conn_;
         mutable Statement*        cached_insert_returning_stmt_ = nullptr;
-        // SAFETY: Safe to cache raw pointer because Connection reserves capacity (32)
+        mutable Statement*        cached_insert_stmt_           = nullptr;
+        // SAFETY: Safe to cache raw pointers because Connection reserves capacity (32)
         // to prevent rehashing. Typical ORM usage won't exceed 32 unique statements.
     };
 

@@ -26,6 +26,11 @@ namespace storm::benchmark {
             return "INSERT INTO Person (name, age, is_active, salary) VALUES (?, ?, ?, ?) RETURNING id";
         }
 
+        // Build single-row INSERT SQL without RETURNING (faster path)
+        static std::string sql_insert_single() {
+            return "INSERT INTO Person (name, age, is_active, salary) VALUES (?, ?, ?, ?)";
+        }
+
         // Build multi-row INSERT SQL for bulk operations
         static std::string sql_insert_batch(size_t count) {
             std::string sql = "INSERT INTO Person (id, name, age, is_active, salary) VALUES ";
@@ -58,6 +63,19 @@ namespace storm::benchmark {
         // Use unified execute with compile-time operation binding
         int execute(int iterations) {
             return Base::template execute_unified<OperationType::Insert>(iterations);
+        }
+
+        void print_info_no_return() const {
+            std::cout << "Operation: INSERT (no return, single row)\n";
+        }
+
+        int execute_no_return(int iterations) {
+            int total = 0;
+            for (int i = 0; i < iterations; i++) {
+                Base::qs().template insert<storm::orm::statements::ReturnId::No>(Base::data()[i]).execute();
+                total++;
+            }
+            return total;
         }
 
         // Helper: Prepare statements for unique chunk sizes (reduces nesting)
@@ -145,6 +163,51 @@ namespace storm::benchmark {
                     sqlite3_finalize(stmt);
             }
             return total;
+        }
+
+        // Raw SQLite INSERT without RETURNING — fair comparison for insert_no_return
+        int execute_raw_no_return(int iterations) {
+            sqlite3* db = get_db<Model>();
+            if (!db)
+                return 0;
+
+            int         total = 0;
+            std::string sql   = sql_insert_single();
+
+            sqlite3_stmt* stmt = nullptr;
+            if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+                return 0;
+
+            for (int i = 0; i < iterations; i++) {
+                int idx = 1;
+                Base::bind_model_fields(stmt, Base::data()[i], idx);
+                if (sqlite3_step(stmt) == SQLITE_DONE) {
+                    total++;
+                }
+                sqlite3_reset(stmt);
+            }
+            sqlite3_finalize(stmt);
+            return total;
+        }
+    };
+
+    // Wrapper for INSERT without RETURNING benchmarks — routes to no-return methods
+    template <typename Model> class InsertNoReturnBenchmark : public InsertBenchmark<Model> {
+        using Base = InsertBenchmark<Model>;
+
+      public:
+        explicit InsertNoReturnBenchmark(int batch_size = 1) : Base(batch_size) {}
+
+        void print_info() const {
+            Base::print_info_no_return();
+        }
+
+        int execute(int iterations) {
+            return Base::execute_no_return(iterations);
+        }
+
+        int execute_raw(int iterations) {
+            return Base::execute_raw_no_return(iterations);
         }
     };
 

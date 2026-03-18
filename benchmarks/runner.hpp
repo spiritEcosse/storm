@@ -327,6 +327,26 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
+        static void run_insert_no_return_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr auto profile_str = test.size_profile.view();
+            constexpr auto profile     = sizes::profile_from_string(profile_str);
+
+            if constexpr (profile == sizes::SizeProfile::BatchStandard) {
+                for (int size : sizes::BATCH_STANDARD) {
+                    if (size != 1)
+                        continue; // No-return only meaningful for single inserts
+                    int         actual_iterations = sizes::iterations_for_batch(size);
+                    std::string name = std::format("{}{}", test.test_name.view(), sizes::get_name_suffix(size, true));
+                    runner.run_benchmark(name.c_str(), InsertNoReturnBenchmark<Model>{size}, actual_iterations);
+                }
+            } else {
+                runner.run_benchmark(
+                        test.test_name.c_str(), InsertNoReturnBenchmark<Model>{test.batch_size}, iterations
+                );
+            }
+        }
+
+        template <typename Model, auto& test>
         static void run_delete_pk_operation(BenchmarkRunner& runner, int iterations) {
             constexpr auto profile_str = test.size_profile.view();
             constexpr auto profile     = sizes::profile_from_string(profile_str);
@@ -1627,6 +1647,8 @@ namespace storm::benchmark {
                         runner.run_where_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "insert") {
                         runner.run_insert_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "insert_no_return") {
+                        runner.run_insert_no_return_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "update_pk") {
                         runner.run_update_pk_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "delete_pk") {

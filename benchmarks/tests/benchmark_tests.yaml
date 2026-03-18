@@ -66,6 +66,13 @@ tests:
     operation: insert
     size_profile: batch_standard
 
+  - name: insert_no_return
+    category: INSERT
+    description: "INSERT without RETURNING clause (no ID retrieval)"
+    model: Person
+    operation: insert_no_return
+    size_profile: batch_standard
+
   - name: insert_edge
     category: INSERT_EDGE
     description: "INSERT at SQLite chunk boundary (999/4 fields = 249)"

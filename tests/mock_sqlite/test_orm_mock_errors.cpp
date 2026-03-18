@@ -2490,6 +2490,72 @@ namespace {
         EXPECT_TRUE(got_error);
     }
 
+    // ============================================================================
+    // InsertNoReturn Error Tests — insert<ReturnId::No> error paths
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, InsertNoReturnPrepareFailure) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson> qs;
+        MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
+
+        auto result = qs.insert<storm::orm::statements::ReturnId::No>(person).execute();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    TEST_F(ORMMockErrorTest, InsertNoReturnBindFailure) {
+        MockSqlite3Config::bind_text_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
+
+        auto result = qs.insert<storm::orm::statements::ReturnId::No>(person).execute();
+
+        if (!result.has_value()) {
+            EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+        }
+    }
+
+    TEST_F(ORMMockErrorTest, InsertNoReturnStepFailure) {
+        MockSqlite3Config::step_returns(SQLITE_IOERR);
+
+        QuerySet<MockPerson> qs;
+        MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
+
+        auto result = qs.insert<storm::orm::statements::ReturnId::No>(person).execute();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_IOERR);
+    }
+
+    TEST_F(ORMMockErrorTest, InsertNoReturnToSqlPrepareFailure) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson> qs;
+        MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
+
+        auto result = qs.insert<storm::orm::statements::ReturnId::No>(person).to_sql();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    TEST_F(ORMMockErrorTest, InsertNoReturnToSqlBindFailure) {
+        MockSqlite3Config::bind_text_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        MockPerson const     person{.id = 0, .name = "Alice", .age = 30};
+
+        auto result = qs.insert<storm::orm::statements::ReturnId::No>(person).to_sql();
+
+        if (!result.has_value()) {
+            EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+        }
+    }
+
 } // namespace
 
 // NOLINTEND(readability-convert-member-functions-to-static,misc-const-correctness) // NOSONAR(cpp:S125)
