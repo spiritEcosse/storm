@@ -45,6 +45,7 @@ namespace {
         bool        scale_test    = false;
         bool        use_disk      = false;
         bool        show_help     = false;
+        bool        smoke_mode    = false; // 0.3x iterations, 3 runs, reduced sizes
         bool        quick_mode    = false; // 0.3x iterations for fast validation
         bool        thorough_mode = false; // 1.5x iterations for regression testing
     };
@@ -57,6 +58,7 @@ namespace {
         std::cout << "  -c, --category=<name>   Run tests matching category prefix (SELECT matches SELECT*)\n";
         std::cout << "  --scale-test            Test performance with increasing sizes (substring match)\n";
         std::cout << "  --iterations=<n>        Override iterations for all tests (default: use JSON values)\n";
+        std::cout << "  --smoke                 Smoke test mode (~2-3 min, 0.3x iterations, reduced sizes)\n";
         std::cout << "  --quick                 Quick validation mode (~3-5 min, 0.3x iterations)\n";
         std::cout << "  --thorough              Thorough regression mode (~15-20 min, 1.5x iterations)\n";
         std::cout << "  --disk                  Use disk-based database (default: in-memory)\n";
@@ -65,9 +67,11 @@ namespace {
         std::cout << "  --help, -h              Show this help message\n\n";
         std::cout << "Modes:\n";
         std::cout << "  (default)               Use JSON-defined iterations (~10 min for all tests)\n";
+        std::cout << "  --smoke                 0.3x iterations, 3 runs, fewer sizes (~2-3 min)\n";
         std::cout << "  --quick                 0.3x iterations for fast development feedback\n";
         std::cout << "  --thorough              1.5x iterations for pre-commit validation\n\n";
         std::cout << "Examples:\n";
+        std::cout << "  " << prog << " --smoke                          # Smoke test (~2-3 min)\n";
         std::cout << "  " << prog << " --quick                          # Fast validation (~3-5 min)\n";
         std::cout << "  " << prog << " --quick -c SELECT                # Quick SELECT tests only\n";
         std::cout << "  " << prog << " --thorough                       # Thorough regression test\n";
@@ -91,6 +95,8 @@ namespace {
                 args.list_tests = true;
             } else if (arg == "--scale-test") {
                 args.scale_test = true;
+            } else if (arg == "--smoke") {
+                args.smoke_mode = true;
             } else if (arg == "--quick") {
                 args.quick_mode = true;
             } else if (arg == "--thorough") {
@@ -126,14 +132,17 @@ auto main(int argc, char* argv[]) -> int {
         }
 
         // Validate mutually exclusive flags
-        if (args.quick_mode && args.thorough_mode) {
-            std::cerr << "Error: --quick and --thorough are mutually exclusive\n";
+        int mode_count = (args.smoke_mode ? 1 : 0) + (args.quick_mode ? 1 : 0) + (args.thorough_mode ? 1 : 0);
+        if (mode_count > 1) {
+            std::cerr << "Error: --smoke, --quick, and --thorough are mutually exclusive\n";
             return 1;
         }
 
         // Determine benchmark mode
         BenchmarkMode mode = BenchmarkMode::Default;
-        if (args.quick_mode) {
+        if (args.smoke_mode) {
+            mode = BenchmarkMode::Smoke;
+        } else if (args.quick_mode) {
             mode = BenchmarkMode::Quick;
         } else if (args.thorough_mode) {
             mode = BenchmarkMode::Thorough;

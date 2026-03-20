@@ -18,6 +18,7 @@
 #include <array>
 #include <algorithm>
 #include <format>
+#include <span>
 #include <string_view>
 
 namespace storm::benchmark::sizes {
@@ -25,17 +26,32 @@ namespace storm::benchmark::sizes {
     // Standard batch sizes for INSERT/UPDATE/DELETE operations
     inline constexpr std::array BATCH_STANDARD = {1, 10, 100, 500, 1000, 5000, 10000, 50000, 100000};
 
+    // Smoke batch sizes — representative subset for fast regression detection
+    inline constexpr std::array BATCH_SMOKE = {1, 100, 1000};
+
     // Edge case sizes for INSERT (SQLite chunk boundary: 999/4 fields = 249)
     inline constexpr std::array BATCH_INSERT_EDGE = {248, 249, 250};
+
+    // Smoke edge sizes — just the boundary value
+    inline constexpr std::array BATCH_INSERT_EDGE_SMOKE = {249};
 
     // Edge case sizes for UPDATE (999/5 fields = 199)
     inline constexpr std::array BATCH_UPDATE_EDGE = {198, 199, 200};
 
+    // Smoke edge sizes — just the boundary value
+    inline constexpr std::array BATCH_UPDATE_EDGE_SMOKE = {199};
+
     // Standard dataset sizes for SELECT/JOIN/DISTINCT operations
     inline constexpr std::array DATASET_STANDARD = {100, 1000, 10000, 100000};
 
+    // Smoke dataset sizes — small + medium only
+    inline constexpr std::array DATASET_SMOKE = {100, 10000};
+
     // Dataset sizes for aggregate tests (≥10000 for reliable COUNT(*) efficiency)
     inline constexpr std::array DATASET_SMALL = {10000, 50000};
+
+    // Smoke aggregate sizes — single representative size
+    inline constexpr std::array DATASET_SMALL_SMOKE = {10000};
 
     // Calculate iterations inversely proportional to batch size
     // Larger batches get fewer iterations to maintain consistent total work
@@ -103,6 +119,37 @@ namespace storm::benchmark::sizes {
         if (str == "dataset_small")
             return DatasetSmall;
         return None;
+    }
+
+    // Get size arrays for the current mode (smoke = reduced subset)
+    inline auto batch_standard_sizes(bool smoke) -> std::span<const int> {
+        if (smoke)
+            return BATCH_SMOKE;
+        return BATCH_STANDARD;
+    }
+
+    inline auto batch_insert_edge_sizes(bool smoke) -> std::span<const int> {
+        if (smoke)
+            return BATCH_INSERT_EDGE_SMOKE;
+        return BATCH_INSERT_EDGE;
+    }
+
+    inline auto batch_update_edge_sizes(bool smoke) -> std::span<const int> {
+        if (smoke)
+            return BATCH_UPDATE_EDGE_SMOKE;
+        return BATCH_UPDATE_EDGE;
+    }
+
+    inline auto dataset_standard_sizes(bool smoke) -> std::span<const int> {
+        if (smoke)
+            return DATASET_SMOKE;
+        return DATASET_STANDARD;
+    }
+
+    inline auto dataset_small_sizes(bool smoke) -> std::span<const int> {
+        if (smoke)
+            return DATASET_SMALL_SMOKE;
+        return DATASET_SMALL;
     }
 
     // Get test name suffix for a given size

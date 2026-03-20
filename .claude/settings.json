@@ -16,6 +16,7 @@
       "Bash(cat:*)",
       "Bash(curl:*)",
       "Bash(jq:*)",
+      "Bash(rtk:*)",
       "Read",
       "Write",
       "Edit",
@@ -26,5 +27,18 @@
     ],
     "deny": [],
     "ask": []
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/ihor/projects/storm/storm_develop/.claude/rtk-hook.sh"
+          }
+        ]
+      }
+    ]
   }
 }
