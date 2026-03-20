@@ -133,7 +133,8 @@ jobs:
         run: |
           pacman -Syu --noconfirm
           pacman -S --noconfirm --needed \
-            cmake ninja gcc sqlite postgresql-libs git skopeo umoci
+            cmake ninja gcc sqlite postgresql-libs \
+            python python-yaml git skopeo umoci
 
       - name: Checkout
         uses: actions/checkout@v4
