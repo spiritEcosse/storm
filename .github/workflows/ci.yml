@@ -59,34 +59,17 @@ jobs:
             postgres: 16
 
     steps:
-      - name: Install system dependencies
-        run: |
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm --needed \
-            cmake ninja gcc sqlite postgresql-libs \
-            python python-yaml lcov git skopeo umoci
+      - name: Install git
+        run: pacman -Syu --noconfirm && pacman -S --noconfirm git
 
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        run: ./scripts/ci-install-deps.sh --with-lcov
+
       - name: Extract clang-p2996 from container image
-        run: |
-          # Extract scratch image without Docker daemon (not available inside container)
-          skopeo copy "docker://${CLANG_IMAGE}" oci:clang-oci:latest
-          umoci unpack --image clang-oci:latest clang-bundle
-          mv clang-bundle/rootfs/opt/clang-p2996 /opt/clang-p2996
-
-          # Create clang/clang++ symlinks
-          ln -s clang-21 /opt/clang-p2996/build/bin/clang
-          ln -s clang-21 /opt/clang-p2996/build/bin/clang++
-
-          # Symlink so ${sourceDir}/../clang-p2996 resolves to /opt/clang-p2996
-          parent=$(dirname "$GITHUB_WORKSPACE")
-          mkdir -p "$parent"
-          ln -s /opt/clang-p2996 "$parent/clang-p2996"
-
-          # Cleanup
-          rm -rf clang-oci clang-bundle
+        run: ./scripts/ci-extract-clang.sh
 
       - name: Cache CPM packages
         uses: actions/cache@v4
@@ -115,27 +98,17 @@ jobs:
       image: manjarolinux/base:20260315
 
     steps:
-      - name: Install system dependencies
-        run: |
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm --needed \
-            cmake ninja gcc sqlite postgresql-libs \
-            python python-yaml git skopeo umoci
+      - name: Install git
+        run: pacman -Syu --noconfirm && pacman -S --noconfirm git
 
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        run: ./scripts/ci-install-deps.sh
+
       - name: Extract clang-p2996 from container image
-        run: |
-          skopeo copy "docker://${CLANG_IMAGE}" oci:clang-oci:latest
-          umoci unpack --image clang-oci:latest clang-bundle
-          mv clang-bundle/rootfs/opt/clang-p2996 /opt/clang-p2996
-          ln -s clang-21 /opt/clang-p2996/build/bin/clang
-          ln -s clang-21 /opt/clang-p2996/build/bin/clang++
-          parent=$(dirname "$GITHUB_WORKSPACE")
-          mkdir -p "$parent"
-          ln -s /opt/clang-p2996 "$parent/clang-p2996"
-          rm -rf clang-oci clang-bundle
+        run: ./scripts/ci-extract-clang.sh
 
       - name: Cache CPM packages
         uses: actions/cache@v4
