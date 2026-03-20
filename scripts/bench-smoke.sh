@@ -9,8 +9,8 @@ set -euo pipefail
 BENCH="${1:-./build/release/benchmarks/storm_bench}"
 
 if [[ ! -x "$BENCH" ]]; then
-    echo "Error: benchmark binary not found at $BENCH"
-    echo "Build with: cmake --preset ninja-release && cmake --build --preset ninja-release"
+    echo "Error: benchmark binary not found at $BENCH" >&2
+    echo "Build with: cmake --preset ninja-release && cmake --build --preset ninja-release" >&2
     exit 1
 fi
 
@@ -43,7 +43,7 @@ while IFS= read -r line; do
     eff="${line##* }"
 
     # Skip NaN/inf (near-zero timing on trivial ops)
-    case "$eff" in *nan*|*inf*) continue ;; esac
+    case "$eff" in *nan*|*inf*) continue ;; *) ;; esac
 
     # Skip known-weak benchmarks
     if echo "$name" | grep -qE "^(${SKIP})$"; then
