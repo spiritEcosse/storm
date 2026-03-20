@@ -449,6 +449,147 @@ TYPED_TEST(WhereTest, ExprDirectConstructionFromVariant) {
     EXPECT_EQ(result.value().size(), 20) << "Should find 20 people with age > 25";
 }
 
+// ============================================================================
+// IS NULL / IS NOT NULL Tests
+// ============================================================================
+
+// Test: field.is_null() — method syntax
+TYPED_TEST(WhereTest, IsNull_MethodSyntax) {
+    QuerySet<Person, TypeParam> queryset;
+
+    auto result = queryset.where(field<^^Person::score>().is_null()).select().execute();
+    ASSERT_TRUE(result.has_value()) << "IS NULL failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 10) << "Expected 10 people with NULL score";
+}
+
+// Test: field.is_not_null() — method syntax
+TYPED_TEST(WhereTest, IsNotNull_MethodSyntax) {
+    QuerySet<Person, TypeParam> queryset;
+
+    auto result = queryset.where(field<^^Person::score>().is_not_null()).select().execute();
+    ASSERT_TRUE(result.has_value()) << "IS NOT NULL failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 15) << "Expected 15 people with non-NULL score";
+}
+
+// Test: field == std::nullopt — operator syntax
+TYPED_TEST(WhereTest, IsNull_NulloptSyntax) {
+    QuerySet<Person, TypeParam> queryset;
+
+    auto result = queryset.where(field<^^Person::score>() == std::nullopt).select().execute();
+    ASSERT_TRUE(result.has_value()) << "== nullopt failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 10) << "Expected 10 people with NULL score (nullopt syntax)";
+}
+
+// Test: field != std::nullopt — operator syntax
+TYPED_TEST(WhereTest, IsNotNull_NulloptSyntax) {
+    QuerySet<Person, TypeParam> queryset;
+
+    auto result = queryset.where(field<^^Person::score>() != std::nullopt).select().execute();
+    ASSERT_TRUE(result.has_value()) << "!= nullopt failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 15) << "Expected 15 people with non-NULL score (nullopt syntax)";
+}
+
+// Test: IS NULL on optional<string> field
+TYPED_TEST(WhereTest, IsNull_StringField) {
+    QuerySet<Person, TypeParam> queryset;
+
+    auto result = queryset.where(field<^^Person::nickname>().is_null()).select().execute();
+    ASSERT_TRUE(result.has_value()) << "IS NULL on nickname failed: " << result.error().message();
+    // Count people with nickname = std::nullopt in PEOPLE_25
+    size_t expected_null_nicknames = 0;
+    for (const auto& p : storm::test::PEOPLE_25) {
+        if (!p.nickname.has_value())
+            expected_null_nicknames++;
+    }
+    EXPECT_EQ(result.value().size(), expected_null_nicknames)
+            << "Expected " << expected_null_nicknames << " people with NULL nickname";
+}
+
+// Test: IS NULL AND value comparison
+TYPED_TEST(WhereTest, IsNull_AndCombination) {
+    QuerySet<Person, TypeParam> queryset;
+
+    auto result = queryset.where(field<^^Person::score>().is_null() && field<^^Person::age>() > 30).select().execute();
+    ASSERT_TRUE(result.has_value()) << "IS NULL AND failed: " << result.error().message();
+    // NULL score AND age > 30: Charlie(35), Eve(40), Henry(33), Jack(38), Olivia(48), Quinn(30→no), Sam(40) = 6
+    size_t expected = 0;
+    for (const auto& p : storm::test::PEOPLE_25) {
+        if (!p.score.has_value() && p.age > 30)
+            expected++;
+    }
+    EXPECT_EQ(result.value().size(), expected) << "Expected " << expected << " people with NULL score AND age > 30";
+}
+
+// Test: IS NULL OR value comparison
+TYPED_TEST(WhereTest, IsNull_OrCombination) {
+    QuerySet<Person, TypeParam> queryset;
+
+    auto result = queryset.where(field<^^Person::score>().is_null() || field<^^Person::age>() < 25).select().execute();
+    ASSERT_TRUE(result.has_value()) << "IS NULL OR failed: " << result.error().message();
+    // NULL score (10) OR age < 25 (Paul=22, Yara=22 — but Yara has score=92, Paul has score=40)
+    size_t expected = 0;
+    for (const auto& p : storm::test::PEOPLE_25) {
+        if (!p.score.has_value() || p.age < 25)
+            expected++;
+    }
+    EXPECT_EQ(result.value().size(), expected) << "Expected " << expected << " people with NULL score OR age < 25";
+}
+
+// Test: IS NULL on field where no rows match (all non-NULL)
+TYPED_TEST(WhereTest, IsNull_EmptyResult) {
+    QuerySet<Person, TypeParam> queryset;
+
+    // age is NOT optional — it's always set, so IS NULL on a non-optional field won't make sense
+    // Instead, filter to only non-NULL scores first, then check IS NULL on score → 0 results
+    auto result = queryset.where(field<^^Person::score>().is_not_null())
+                          .where(field<^^Person::score>().is_null())
+                          .select()
+                          .execute();
+    ASSERT_TRUE(result.has_value()) << "IS NULL empty result failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 0) << "IS NOT NULL AND IS NULL should match nothing";
+}
+
+// Test: IS NULL with JOIN
+TYPED_TEST(WhereJoinTest, IsNull_WithJoin) {
+    QuerySet<Message, TypeParam> queryset;
+
+    // In WhereJoinTest fixture, Person rows are inserted without score → all NULL
+    // So IS NULL on score matches all 4 messages
+    auto result =
+            queryset.template join<&Message::sender>().where(field<^^Person::score>().is_null()).select().execute();
+    ASSERT_TRUE(result.has_value()) << "IS NULL with JOIN failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 4) << "Expected 4 messages (all senders have NULL score in this fixture)";
+}
+
+// ============================================================================
+// IS NULL + COLLATE (SQLite only — COLLATE NOCASE is SQLite-specific)
+// ============================================================================
+using SqliteConn = storm::db::sqlite::Connection;
+
+class WhereNullCollateTest : public StormTestFixture<Person, SqliteConn> {
+  protected:
+    auto on_after_setup(const std::shared_ptr<SqliteConn>&) -> void override {
+        ASSERT_TRUE((storm::test::batch_insert<Person, SqliteConn>(
+                std::vector<Person>(storm::test::PEOPLE_25.begin(), storm::test::PEOPLE_25.end())
+        )));
+    }
+};
+
+TEST_F(WhereNullCollateTest, IsNull_Collated) {
+    QuerySet<Person, SqliteConn> queryset;
+
+    auto result = queryset.where(field<^^Person::nickname>().collate(storm::orm::utilities::Collate::NoCase).is_null())
+                          .select()
+                          .execute();
+    ASSERT_TRUE(result.has_value()) << "Collated IS NULL failed: " << result.error().message();
+    size_t expected_null_nicknames = 0;
+    for (const auto& p : storm::test::PEOPLE_25) {
+        if (!p.nickname.has_value())
+            expected_null_nicknames++;
+    }
+    EXPECT_EQ(result.value().size(), expected_null_nicknames) << "Collated IS NULL should work same as plain IS NULL";
+}
+
 template <typename ConnType> class ComplexWhereTest : public PersonSeedFixture<ConnType> {};
 
 TYPED_TEST_SUITE(ComplexWhereTest, DatabaseTypes);

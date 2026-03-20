@@ -298,6 +298,43 @@ SELECT id, name, age FROM Person WHERE (id IN (?, ?, ?) OR age > ?)
 
 **Design Decision**: IN clauses use the unified runtime expression API for consistency and composability. While this adds some overhead compared to a theoretical compile-time approach, it enables natural composition with logical operators and maintains API simplicity.
 
+#### IS NULL / IS NOT NULL (NULL Checks)
+
+Filter rows where optional fields are NULL or non-NULL. Works with any `std::optional<T>` field.
+
+```cpp
+// Method syntax
+auto nulls = queryset.where(field<^^Person::score>().is_null()).select();
+auto non_nulls = queryset.where(field<^^Person::score>().is_not_null()).select();
+
+// Operator syntax with std::nullopt (natural C++ idiom)
+auto nulls = queryset.where(field<^^Person::score>() == std::nullopt).select();
+auto non_nulls = queryset.where(field<^^Person::score>() != std::nullopt).select();
+
+// Composable with AND/OR
+auto result = queryset.where(
+    field<^^Person::score>().is_null() && field<^^Person::age>() > 30
+).select();
+
+// Works with COLLATE (SQLite only)
+auto result = queryset.where(
+    field<^^Person::nickname>().collate(Collate::NoCase).is_null()
+).select();
+```
+
+**SQL Generated**:
+```sql
+SELECT ... FROM Person WHERE score IS NULL
+SELECT ... FROM Person WHERE score IS NOT NULL
+SELECT ... FROM Person WHERE (score IS NULL AND age > ?)
+```
+
+**Key Features**:
+- No parameters to bind (IS NULL/IS NOT NULL are parameterless SQL expressions)
+- Uses `NullCheckExpr` in the variant-based expression system
+- `std::nullopt_t` overloads provide idiomatic C++ syntax
+- Fully composable with all other WHERE expressions via AND/OR
+
 ## Combining with JOIN
 
 WHERE clauses can filter on both base table and joined table fields:

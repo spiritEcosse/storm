@@ -656,6 +656,27 @@ tests:
     dataset_size: 10000
 
   # ============================================================================
+  # IS NULL / IS NOT NULL (fixed size)
+  # ============================================================================
+  - name: where_is_null
+    category: WHERE_IS_NULL
+    description: "WHERE score IS NULL"
+    model: Person
+    operation: where_is_null
+    where_field: score
+    iterations: 1000
+    dataset_size: 10000
+
+  - name: where_is_not_null
+    category: WHERE_IS_NULL
+    description: "WHERE score IS NOT NULL"
+    model: Person
+    operation: where_is_not_null
+    where_field: score
+    iterations: 1000
+    dataset_size: 10000
+
+  # ============================================================================
   # Multi-Field DISTINCT (fixed size)
   # ============================================================================
   - name: distinct_multi_field_2

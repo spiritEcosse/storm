@@ -349,7 +349,7 @@ Every new feature or modification MUST include thorough tests covering these cat
 
 #### Expression/Filter Features (WHERE, HAVING, future clauses)
 - **All 6 comparison operators**: `==`, `!=`, `>`, `>=`, `<`, `<=`
-- **Special expressions**: `IN` (multiple values), `BETWEEN` (range), `LIKE` (pattern)
+- **Special expressions**: `IN` (multiple values), `BETWEEN` (range), `LIKE` (pattern), `IS NULL` / `IS NOT NULL` (null checks)
 - **Logical combinations**: `AND`, `OR`, complex nested `(A && B) || C`
 - **Type coverage**: Test with int, string, double at minimum
 

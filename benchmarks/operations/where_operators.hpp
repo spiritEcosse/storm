@@ -524,4 +524,99 @@ namespace storm::benchmark {
         }
     };
 
+    // ========================================================================
+    // IS NULL / IS NOT NULL Operator Benchmark
+    // ========================================================================
+    template <typename Model, std::meta::info FieldInfo, bool IsNull = true>
+    class WhereIsNullBenchmark : public DataBenchmarkBase<WhereIsNullBenchmark<Model, FieldInfo, IsNull>, Model, 1> {
+        using Base = DataBenchmarkBase<WhereIsNullBenchmark<Model, FieldInfo, IsNull>, Model, 1>;
+
+      public:
+        explicit constexpr WhereIsNullBenchmark(int dataset_size = 1000) : Base(dataset_size) {}
+
+        static Model create_model(int index = 0) {
+            int i = index + 1;
+            return Model{
+                    .id        = 0,
+                    .name      = std::format("Person{}", i),
+                    .age       = 20 + (i % 50),
+                    .is_active = (i % 2 == 0),
+                    .salary    = 30000.0 + (i * 1000.0),
+                    .score     = (i % 2 == 0) ? std::optional<int>(50 + i) : std::nullopt
+            };
+        }
+
+        void prepare(int iterations) {
+            Base::prepare_with_insert(iterations);
+        }
+
+        void print_info() const {
+            constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
+            constexpr const char*      null_str   = IsNull ? "IS NULL" : "IS NOT NULL";
+            std::cout << "SELECT (WHERE " << null_str << "): " << field_name << " " << null_str << "\n";
+            std::cout << "  Dataset: " << Base::batch_size() << " rows\n";
+        }
+
+        int execute(int iterations) {
+            auto where_clause = [] {
+                if constexpr (IsNull)
+                    return field<FieldInfo>().is_null();
+                else
+                    return field<FieldInfo>().is_not_null();
+            }();
+            auto filtered = Base::qs().where(where_clause);
+
+            int total = 0;
+            for (int i = 0; i < iterations; i++) {
+                auto result = filtered.select().execute();
+                if (result.has_value()) {
+                    total += result.value().size();
+                }
+            }
+            return total;
+        }
+
+        int execute_raw(int iterations) {
+            sqlite3* db = get_db<Model>();
+            if (!db)
+                return 0;
+
+            constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
+            constexpr const char*      null_str   = IsNull ? "IS NULL" : "IS NOT NULL";
+            std::string                sql        = std::format(
+                    "SELECT id, name, age, is_active, salary, score FROM Person WHERE {} {}", field_name, null_str
+            );
+
+            sqlite3_stmt* stmt = nullptr;
+            sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+
+            int total = 0;
+            for (int i = 0; i < iterations; i++) {
+                sqlite3_reset(stmt);
+                plf::hive<Model> results;
+                while (sqlite3_step(stmt) == SQLITE_ROW) {
+                    results.insert(extract_row(stmt));
+                }
+                total += results.size();
+            }
+
+            sqlite3_finalize(stmt);
+            return total;
+        }
+
+      private:
+        __attribute__((always_inline)) static Model extract_row(sqlite3_stmt* stmt) {
+            Model obj;
+            obj.id        = sqlite3_column_int64(stmt, 0);
+            obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            obj.age       = sqlite3_column_int(stmt, 2);
+            obj.is_active = sqlite3_column_int(stmt, 3) != 0;
+            obj.salary    = sqlite3_column_double(stmt, 4);
+            if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
+                obj.score = sqlite3_column_int(stmt, 5);
+            }
+            return obj;
+        }
+    };
+
 } // namespace storm::benchmark
