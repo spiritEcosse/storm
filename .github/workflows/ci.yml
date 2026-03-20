@@ -101,21 +101,7 @@ jobs:
         run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
-        run: |
-          # clang-scan-deps may segfault (known C++26 module issue);
-          # clear module cache and retry up to 3 times
-          for attempt in 1 2 3; do
-            echo "=== Build attempt $attempt ==="
-            if cmake --build --preset ${{ matrix.preset }}; then
-              echo "Build succeeded on attempt $attempt"
-              exit 0
-            fi
-            echo "Build failed on attempt $attempt, clearing caches..."
-            find build/ -name "*.pcm" -delete 2>/dev/null || true
-            find build/ -name "*.ddi" -delete 2>/dev/null || true
-          done
-          echo "Build failed after 3 attempts"
-          exit 1
+        run: ./scripts/build-with-retry.sh ${{ matrix.preset }}
 
       - name: Test
         env:
@@ -164,71 +150,7 @@ jobs:
         run: cmake --preset ninja-release
 
       - name: Build
-        run: |
-          for attempt in 1 2 3; do
-            echo "=== Build attempt $attempt ==="
-            if cmake --build --preset ninja-release; then
-              echo "Build succeeded on attempt $attempt"
-              exit 0
-            fi
-            echo "Build failed on attempt $attempt, clearing caches..."
-            find build/ -name "*.pcm" -delete 2>/dev/null || true
-            find build/ -name "*.ddi" -delete 2>/dev/null || true
-          done
-          echo "Build failed after 3 attempts"
-          exit 1
+        run: ./scripts/build-with-retry.sh ninja-release
 
       - name: Smoke benchmark
-        run: |
-          ./build/release/benchmarks/storm_bench --smoke 2>&1 | tee bench_output.txt
-
-          # Strip ANSI codes, extract test names with efficiency
-          sed 's/\x1b\[[0-9;]*m//g' bench_output.txt \
-            | awk '/^=== .* ===$/ { name=$0; gsub(/^=== | ===$/, "", name) }
-                   /^Efficiency:/ { split($2, a, "%"); printf "%s %s\n", name, a[1] }' \
-            > bench_results.txt
-
-          echo "=== Efficiency results ==="
-          cat bench_results.txt
-
-          # Known-weak benchmarks excluded from threshold check
-          # (tracked in issues #157, #158 — fix perf, then remove from list)
-          SKIP="where_int_comparison_gt|update_pk_single|delete_pk_single"
-          SKIP="${SKIP}|distinct_join_100|distinct_where_join_100|first_100"
-          SKIP="${SKIP}|aggregate_count_10000"
-          SKIP="${SKIP}|select_multi_fk_join_100|select_multi_fk_join_10000"
-          SKIP="${SKIP}|setop_union_all_100|setop_union_all_10000"
-          SKIP="${SKIP}|first_where|select_where_limit_100|group_by_with_avg"
-
-          threshold=95.0
-          failed=false
-          while IFS= read -r line; do
-            name="${line% *}"
-            eff="${line##* }"
-
-            # Skip NaN/inf (near-zero timing on trivial ops)
-            case "$eff" in *nan*|*inf*) continue ;; esac
-
-            # Skip known-weak benchmarks
-            if echo "$name" | grep -qE "^(${SKIP})$"; then
-              continue
-            fi
-
-            # Skip extreme outliers (>200%) — trivial ops with near-zero raw time
-            if awk "BEGIN { if ($eff > 200) exit 0; exit 1 }"; then
-              continue
-            fi
-
-            if awk "BEGIN { if ($eff >= $threshold) exit 0; exit 1 }"; then
-              :
-            else
-              echo "FAIL: ${name} at ${eff}% (below ${threshold}%)"
-              failed=true
-            fi
-          done < bench_results.txt
-
-          if [ "$failed" = true ]; then
-            echo "Benchmark regression detected — fix or add to skip list"
-            exit 1
-          fi
-          echo "All benchmarks passed ${threshold}% threshold"
+        run: ./scripts/bench-smoke.sh
