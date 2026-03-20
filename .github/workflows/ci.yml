@@ -59,34 +59,17 @@ jobs:
             postgres: 16
 
     steps:
-      - name: Install system dependencies
-        run: |
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm --needed \
-            cmake ninja gcc sqlite postgresql-libs \
-            python python-yaml lcov git skopeo umoci
+      - name: Install git
+        run: pacman -Syu --noconfirm && pacman -S --noconfirm git
 
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        run: ./scripts/ci-install-deps.sh --with-lcov
+
       - name: Extract clang-p2996 from container image
-        run: |
-          # Extract scratch image without Docker daemon (not available inside container)
-          skopeo copy "docker://${CLANG_IMAGE}" oci:clang-oci:latest
-          umoci unpack --image clang-oci:latest clang-bundle
-          mv clang-bundle/rootfs/opt/clang-p2996 /opt/clang-p2996
-
-          # Create clang/clang++ symlinks
-          ln -s clang-21 /opt/clang-p2996/build/bin/clang
-          ln -s clang-21 /opt/clang-p2996/build/bin/clang++
-
-          # Symlink so ${sourceDir}/../clang-p2996 resolves to /opt/clang-p2996
-          parent=$(dirname "$GITHUB_WORKSPACE")
-          mkdir -p "$parent"
-          ln -s /opt/clang-p2996 "$parent/clang-p2996"
-
-          # Cleanup
-          rm -rf clang-oci clang-bundle
+        run: ./scripts/ci-extract-clang.sh
 
       - name: Cache CPM packages
         uses: actions/cache@v4
@@ -101,23 +84,46 @@ jobs:
         run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
-        run: |
-          # clang-scan-deps may segfault (known C++26 module issue);
-          # clear module cache and retry up to 3 times
-          for attempt in 1 2 3; do
-            echo "=== Build attempt $attempt ==="
-            if cmake --build --preset ${{ matrix.preset }}; then
-              echo "Build succeeded on attempt $attempt"
-              exit 0
-            fi
-            echo "Build failed on attempt $attempt, clearing caches..."
-            find build/ -name "*.pcm" -delete 2>/dev/null || true
-            find build/ -name "*.ddi" -delete 2>/dev/null || true
-          done
-          echo "Build failed after 3 attempts"
-          exit 1
+        run: ./scripts/build-with-retry.sh ${{ matrix.preset }}
 
       - name: Test
         env:
           STORM_PG_CONNSTR: "host=postgres port=5432 dbname=storm_db user=storm_db password=storm_db"
         run: ctest --test-dir build/${{ matrix.build_dir }} --output-on-failure --no-tests=error
+
+  benchmark:
+    name: "benchmark smoke test"
+    runs-on: ubuntu-24.04
+    container:
+      image: manjarolinux/base:20260315
+
+    steps:
+      - name: Install git
+        run: pacman -Syu --noconfirm && pacman -S --noconfirm git
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: ./scripts/ci-install-deps.sh
+
+      - name: Extract clang-p2996 from container image
+        run: ./scripts/ci-extract-clang.sh
+
+      - name: Cache CPM packages
+        uses: actions/cache@v4
+        with:
+          path: .cache/CPM
+          key: cpm-ninja-release-${{ hashFiles('cmake/cpm.cmake', 'cmake/tests.cmake', 'cmake/bench.cmake') }}
+          restore-keys: |
+            cpm-ninja-release-
+            cpm-
+
+      - name: Configure
+        run: cmake --preset ninja-release
+
+      - name: Build
+        run: ./scripts/build-with-retry.sh ninja-release
+
+      - name: Smoke benchmark
+        run: ./scripts/bench-smoke.sh
