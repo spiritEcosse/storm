@@ -1496,6 +1496,29 @@ namespace storm::benchmark {
         }
 
         // ====================================================================
+        // IS NULL / IS NOT NULL operations
+        // ====================================================================
+        template <typename Model, auto& test>
+        static void run_where_is_null_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.where.field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(), WhereIsNullBenchmark<Model, field_info, true>{dataset_size}, iterations
+            );
+        }
+
+        template <typename Model, auto& test>
+        static void run_where_is_not_null_operation(BenchmarkRunner& runner, int iterations) {
+            constexpr std::string_view field_name   = test.where.field.view();
+            constexpr auto             field_info   = dispatch_field<Model>(field_name);
+            constexpr int              dataset_size = test.dataset_size;
+            runner.run_benchmark(
+                    test.test_name.c_str(), WhereIsNullBenchmark<Model, field_info, false>{dataset_size}, iterations
+            );
+        }
+
+        // ====================================================================
         // FIRST operations
         // ====================================================================
         template <typename Model, auto& test> static void run_first_operation(BenchmarkRunner& runner, int iterations) {
@@ -1778,6 +1801,10 @@ namespace storm::benchmark {
                         runner.run_where_and_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "where_or") {
                         runner.run_where_or_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "where_is_null") {
+                        runner.run_where_is_null_operation<Model, test>(runner, actual_iterations);
+                    } else if constexpr (operation == "where_is_not_null") {
+                        runner.run_where_is_not_null_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "first") {
                         runner.run_first_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "first_where") {

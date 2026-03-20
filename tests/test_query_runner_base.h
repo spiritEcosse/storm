@@ -44,7 +44,15 @@ template <typename Model, typename ConnType> class QueryRunnerBase {
     template <const auto &Tc> void apply_where() {
         using storm::orm::where::field;
 
-        if constexpr (Tc.where.op == "LIKE") {
+        if constexpr (Tc.where.op == "is_null") {
+            constexpr auto fi = dispatch_field<Model>(Tc.where.field.view());
+            qs_ = qs_.where(field<fi>().is_null());
+
+        } else if constexpr (Tc.where.op == "is_not_null") {
+            constexpr auto fi = dispatch_field<Model>(Tc.where.field.view());
+            qs_ = qs_.where(field<fi>().is_not_null());
+
+        } else if constexpr (Tc.where.op == "LIKE") {
             constexpr auto fi = dispatch_field<Model>(Tc.where.field.view());
             qs_ = qs_.where(field<fi>().like(Tc.where.value_str.view()));
 

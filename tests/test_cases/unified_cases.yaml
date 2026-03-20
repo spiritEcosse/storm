@@ -1802,6 +1802,63 @@
     logic: AND
   expected:
     count: 15
+# ===========================================================================
+# IS NULL / IS NOT NULL
+# ===========================================================================
+- name: where_score_is_null
+  model: person
+  query_type: select
+  dataset: main
+  where:
+    field: score
+    op: is_null
+  expected:
+    count: 10
+- name: where_score_is_not_null
+  model: person
+  query_type: select
+  dataset: main
+  where:
+    field: score
+    op: is_not_null
+  expected:
+    count: 15
+- name: where_nickname_is_null
+  model: person
+  query_type: select
+  dataset: main
+  where:
+    field: nickname
+    op: is_null
+  expected:
+    count: 14
+- name: where_nickname_is_not_null
+  model: person
+  query_type: select
+  dataset: main
+  where:
+    field: nickname
+    op: is_not_null
+  expected:
+    count: 11
+- name: count_where_score_is_null
+  model: person
+  query_type: count
+  dataset: main
+  where:
+    field: score
+    op: is_null
+  expected:
+    int_val: 10
+- name: count_where_score_is_not_null
+  model: person
+  query_type: count
+  dataset: main
+  where:
+    field: score
+    op: is_not_null
+  expected:
+    int_val: 15
 - name: limit_5_from_20
   model: person
   query_type: select

@@ -8,6 +8,7 @@
  */
 
 import storm;
+import <optional>;
 
 namespace storm::benchmark {
 
@@ -18,6 +19,7 @@ namespace storm::benchmark {
         int                                       age;
         bool                                      is_active;
         double                                    salary;
+        std::optional<int>                        score;
     };
 
     // Test models for JOIN operations

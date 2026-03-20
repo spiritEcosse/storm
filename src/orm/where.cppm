@@ -94,6 +94,23 @@ export namespace storm::orm::where {
         }
     };
 
+    // NULL check expression: field IS NULL / field IS NOT NULL
+    struct NullCheckExpr {
+        std::string field_name_;
+        bool        is_null_; // true = IS NULL, false = IS NOT NULL
+
+        [[nodiscard]] __attribute__((always_inline)) auto to_sql() const -> std::string {
+            return is_null_ ? std::format("{} IS NULL", field_name_) : std::format("{} IS NOT NULL", field_name_);
+        }
+
+        template <typename StmtType, typename ErrorType>
+        [[nodiscard]] __attribute__((always_inline)) auto
+        bind_params_direct(ErasedStatementPtr /*stmt_ptr*/, int& /*param_index*/) const
+                -> std::expected<void, ErrorType> {
+            return {};
+        }
+    };
+
     // LIKE expression: field.like("pattern%")
     struct LikeExpr {
         std::string field_name_;
@@ -190,6 +207,7 @@ export namespace storm::orm::where {
                                        ComparisonExpr<std::string_view>,
                                        ComparisonExpr<const char*>,
                                        ComparisonExpr<bool>,
+                                       NullCheckExpr,
                                        LikeExpr,
                                        BetweenExpr<int>,
                                        BetweenExpr<int64_t>,
@@ -299,6 +317,10 @@ export namespace storm::orm::where {
         ExpressionVariantPtr expr_; // VARIANT-based, not virtual!
     };
 
+    // Concept: field type is std::optional<T> (nullable in the database)
+    template <typename T>
+    concept NullableField = requires { typename T::value_type; };
+
     // CollatedField proxy - wraps field name with COLLATE clause
     // Created via field<^^Person::name>().collate(Collate::NoCase)
     // All comparison operators produce SQL like: "name COLLATE NOCASE = ?"
@@ -342,6 +364,33 @@ export namespace storm::orm::where {
 
         template <typename V> auto operator<=(V&& value) const -> Expr {
             return make_comparison(CompOp::LessEqual, std::forward<V>(value));
+        }
+
+        [[nodiscard]] auto is_null() const -> Expr
+            requires NullableField<FieldType>
+        {
+            return Expr(
+                    std::make_shared<ExpressionVariant>(NullCheckExpr{.field_name_ = collated_name_, .is_null_ = true})
+            );
+        }
+
+        [[nodiscard]] auto is_not_null() const -> Expr
+            requires NullableField<FieldType>
+        {
+            return Expr(
+                    std::make_shared<ExpressionVariant>(NullCheckExpr{.field_name_ = collated_name_, .is_null_ = false})
+            );
+        }
+
+        auto operator==(std::nullopt_t) const -> Expr
+            requires NullableField<FieldType>
+        {
+            return is_null();
+        }
+        auto operator!=(std::nullopt_t) const -> Expr
+            requires NullableField<FieldType>
+        {
+            return is_not_null();
         }
 
         [[nodiscard]] auto like(std::string_view pattern) const -> Expr {
@@ -471,6 +520,38 @@ export namespace storm::orm::where {
                             .value_      = std::forward<V>(value)
                     })
             );
+        }
+
+        // NULL check methods — constrained to std::optional<T> fields only
+        [[nodiscard]] auto is_null() const -> Expr
+            requires NullableField<FieldType>
+        {
+            return Expr(
+                    std::make_shared<ExpressionVariant>(
+                            NullCheckExpr{.field_name_ = std::string(field_name_sv), .is_null_ = true}
+                    )
+            );
+        }
+
+        [[nodiscard]] auto is_not_null() const -> Expr
+            requires NullableField<FieldType>
+        {
+            return Expr(
+                    std::make_shared<ExpressionVariant>(
+                            NullCheckExpr{.field_name_ = std::string(field_name_sv), .is_null_ = false}
+                    )
+            );
+        }
+
+        auto operator==(std::nullopt_t) const -> Expr
+            requires NullableField<FieldType>
+        {
+            return is_null();
+        }
+        auto operator!=(std::nullopt_t) const -> Expr
+            requires NullableField<FieldType>
+        {
+            return is_not_null();
         }
 
         // Special methods - return VARIANT-BASED Expr
