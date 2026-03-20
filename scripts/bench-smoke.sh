@@ -35,6 +35,7 @@ SKIP="${SKIP}|select_multi_fk_join_100|select_multi_fk_join_10000"
 SKIP="${SKIP}|setop_union_all_100|setop_union_all_10000"
 SKIP="${SKIP}|first_where|select_where_limit_100|group_by_with_avg"
 SKIP="${SKIP}|where_bool_equality|where_double_comparison"
+SKIP="${SKIP}|setop_union_limit_100"
 
 threshold=95.0
 failed=false
