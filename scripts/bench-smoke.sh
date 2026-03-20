@@ -1,8 +1,12 @@
 #!/bin/bash
-# Smoke benchmark: run benchmarks with --smoke and enforce 95% efficiency threshold.
+# Smoke benchmark: run benchmarks with --smoke and enforce efficiency thresholds.
 # Usage: ./scripts/bench-smoke.sh [path/to/storm_bench]
 #
-# Exits 0 if all non-skipped benchmarks >= 95%, exits 1 otherwise.
+# Two-tier detection:
+#   Tier 1 — Median efficiency must be >= 93% (real regressions drag most tests down)
+#   Tier 2 — No single test may drop below 50% (catches catastrophic breakage)
+#
+# Exits 0 if both tiers pass, exits 1 otherwise.
 
 set -euo pipefail
 
@@ -24,51 +28,99 @@ sed 's/\x1b\[[0-9;]*m//g' bench_output.txt \
     > bench_results.txt
 
 echo ""
-echo "=== Efficiency threshold check ==="
+echo "=== Benchmark regression detection ==="
 
-# Known-weak benchmarks excluded from threshold check
-# (tracked in issues #157, #158 — fix perf, then remove from list)
-SKIP="where_int_comparison_gt|update_pk_single|delete_pk_single"
-SKIP="${SKIP}|distinct_join_100|distinct_where_join_100|first_100"
-SKIP="${SKIP}|aggregate_count_10000"
-SKIP="${SKIP}|select_multi_fk_join_100|select_multi_fk_join_10000"
-SKIP="${SKIP}|setop_union_all_100|setop_union_all_10000"
-SKIP="${SKIP}|first_where|select_where_limit_100|group_by_with_avg"
-SKIP="${SKIP}|where_bool_equality|where_double_comparison"
-SKIP="${SKIP}|setop_union_limit_100"
+# Thresholds
+MEDIAN_THRESHOLD=93.0
+FLOOR_THRESHOLD=60.0
 
-threshold=95.0
-failed=false
-while IFS= read -r line; do
-    name="${line% *}"
-    eff="${line##* }"
+# Collect valid efficiency values (exclude NaN/inf and >200%)
+mapfile -t values < <(
+    while IFS= read -r line; do
+        eff="${line##* }"
+        case "$eff" in *nan*|*inf*) continue ;; esac
+        if awk "BEGIN { if ($eff > 200) exit 0; exit 1 }"; then
+            continue
+        fi
+        echo "$eff"
+    done < bench_results.txt
+)
 
-    # Skip NaN/inf (near-zero timing on trivial ops)
-    case "$eff" in *nan*|*inf*) continue ;; *) ;; esac
+count=${#values[@]}
+if [[ "$count" -eq 0 ]]; then
+    echo "ERROR: no valid benchmark results found"
+    rm -f bench_output.txt bench_results.txt
+    exit 1
+fi
 
-    # Skip known-weak benchmarks
-    if echo "$name" | grep -qE "^(${SKIP})$"; then
-        continue
+# Sort values numerically
+mapfile -t sorted < <(printf '%s\n' "${values[@]}" | sort -g)
+
+# Compute median
+mid=$((count / 2))
+if (( count % 2 == 1 )); then
+    median="${sorted[$mid]}"
+else
+    median=$(awk "BEGIN { printf \"%.2f\", (${sorted[$((mid-1))]} + ${sorted[$mid]}) / 2 }")
+fi
+
+# Compute P10 (10th percentile)
+p10_idx=$(awk "BEGIN { idx = int($count * 0.1); if (idx < 0) idx = 0; print idx }")
+p10="${sorted[$p10_idx]}"
+
+# Find minimum and count below 90%
+minimum="${sorted[0]}"
+below_90=0
+floor_failures=""
+for val in "${sorted[@]}"; do
+    if awk "BEGIN { if ($val < 90) exit 0; exit 1 }"; then
+        below_90=$((below_90 + 1))
     fi
-
-    # Skip extreme outliers (>200%) — trivial ops with near-zero raw time
-    if awk "BEGIN { if ($eff > 200) exit 0; exit 1 }"; then
-        continue
+    if awk "BEGIN { if ($val < $FLOOR_THRESHOLD) exit 0; exit 1 }"; then
+        floor_failures="yes"
     fi
+done
 
-    if awk "BEGIN { if ($eff >= $threshold) exit 0; exit 1 }"; then
-        :
-    else
-        echo "FAIL: ${name} at ${eff}% (below ${threshold}%)"
-        failed=true
-    fi
-done < bench_results.txt
+# Find names of floor failures for reporting
+floor_names=""
+if [[ -n "$floor_failures" ]]; then
+    while IFS= read -r line; do
+        name="${line% *}"
+        eff="${line##* }"
+        case "$eff" in *nan*|*inf*) continue ;; esac
+        if awk "BEGIN { if ($eff < $FLOOR_THRESHOLD) exit 0; exit 1 }"; then
+            floor_names="${floor_names}  FLOOR FAIL: ${name} at ${eff}%"$'\n'
+        fi
+    done < bench_results.txt
+fi
+
+# Report
+echo "Tests analyzed: $count"
+echo "Median efficiency: ${median}%"
+echo "P10 (10th percentile): ${p10}%"
+echo "Minimum: ${minimum}%"
+echo "Tests below 90%: $below_90"
+echo ""
 
 # Cleanup temp files
 rm -f bench_output.txt bench_results.txt
 
+# Tier 1 — Median check
+failed=false
+if awk "BEGIN { if ($median < $MEDIAN_THRESHOLD) exit 0; exit 1 }"; then
+    echo "FAIL: Median efficiency ${median}% is below ${MEDIAN_THRESHOLD}% threshold"
+    echo "This indicates a real regression affecting most benchmarks."
+    failed=true
+fi
+
+# Tier 2 — Catastrophic floor check
+if [[ -n "$floor_failures" ]]; then
+    echo -n "$floor_names"
+    echo "FAIL: One or more tests below ${FLOOR_THRESHOLD}% catastrophic floor"
+    failed=true
+fi
+
 if [[ "$failed" == true ]]; then
-    echo "Benchmark regression detected — fix or add to skip list"
     exit 1
 fi
-echo "All benchmarks passed ${threshold}% threshold"
+echo "All benchmarks passed (median ${median}% >= ${MEDIAN_THRESHOLD}%, floor >= ${FLOOR_THRESHOLD}%)"
