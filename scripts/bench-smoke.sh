@@ -38,7 +38,7 @@ FLOOR_THRESHOLD=60.0
 mapfile -t values < <(
     while IFS= read -r line; do
         eff="${line##* }"
-        case "$eff" in *nan*|*inf*) continue ;; esac
+        case "$eff" in *nan*|*inf*) continue ;; *) ;; esac
         if awk "BEGIN { if ($eff > 200) exit 0; exit 1 }"; then
             continue
         fi
@@ -48,7 +48,7 @@ mapfile -t values < <(
 
 count=${#values[@]}
 if [[ "$count" -eq 0 ]]; then
-    echo "ERROR: no valid benchmark results found"
+    echo "ERROR: no valid benchmark results found" >&2
     rm -f bench_output.txt bench_results.txt
     exit 1
 fi
@@ -87,7 +87,7 @@ if [[ -n "$floor_failures" ]]; then
     while IFS= read -r line; do
         name="${line% *}"
         eff="${line##* }"
-        case "$eff" in *nan*|*inf*) continue ;; esac
+        case "$eff" in *nan*|*inf*) continue ;; *) ;; esac
         if awk "BEGIN { if ($eff < $FLOOR_THRESHOLD) exit 0; exit 1 }"; then
             floor_names="${floor_names}  FLOOR FAIL: ${name} at ${eff}%"$'\n'
         fi
