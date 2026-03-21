@@ -12,10 +12,14 @@ import <expected>;
 import <optional>;
 import <cstdint>;
 import <span>;
+import <chrono>;
+import <filesystem>;
+import <cstddef>;
 
 #include "test_models.h"
 
 using namespace storm;
+using storm::orm::where::field;
 
 // ===== INTEGER TYPES TESTS =====
 
@@ -1068,6 +1072,547 @@ TYPED_TEST(FloatTypeTest, BatchFloatValues) {
     auto selected = this->qs->select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 3);
+}
+
+// ===== CHAR TYPES TESTS =====
+
+template <typename ConnType> class CharTypesTest : public StormTestFixture<ExtendedTypes, ConnType> {};
+TYPED_TEST_SUITE(CharTypesTest, DatabaseTypes);
+
+TYPED_TEST(CharTypesTest, InsertAndSelectCharTypes) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes obj{.label = "char_test", .tiny_signed = -42, .tiny_unsigned = 200, .single_char = 'Z'};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_EQ(selected.value().size(), 1);
+    auto it = selected.value().begin();
+    EXPECT_EQ(it->tiny_signed, -42);
+    EXPECT_EQ(it->tiny_unsigned, 200);
+    EXPECT_EQ(it->single_char, 'Z');
+}
+
+TYPED_TEST(CharTypesTest, MinMaxCharValues) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes                      obj{
+                                 .label         = "minmax",
+                                 .tiny_signed   = -128, // SCHAR_MIN
+                                 .tiny_unsigned = 255,  // UCHAR_MAX
+                                 .single_char   = '\0'
+    };
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    auto it = selected.value().begin();
+    EXPECT_EQ(it->tiny_signed, -128);
+    EXPECT_EQ(it->tiny_unsigned, 255);
+    EXPECT_EQ(it->single_char, '\0');
+}
+
+TYPED_TEST(CharTypesTest, UpdateCharTypes) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes                      obj{.label = "upd", .tiny_signed = 10, .tiny_unsigned = 20, .single_char = 'A'};
+    auto                               insert_result = qs.insert(obj).execute();
+    ASSERT_TRUE(insert_result.has_value());
+    int64_t id = insert_result.value();
+
+    ExtendedTypes updated{
+            .id = static_cast<int>(id), .label = "upd", .tiny_signed = -10, .tiny_unsigned = 30, .single_char = 'B'
+    };
+    auto update_result = qs.update(updated).execute();
+    ASSERT_TRUE(update_result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    auto it = selected.value().begin();
+    EXPECT_EQ(it->tiny_signed, -10);
+    EXPECT_EQ(it->tiny_unsigned, 30);
+    EXPECT_EQ(it->single_char, 'B');
+}
+
+// ===== ENUM TYPES TESTS =====
+
+template <typename ConnType> class EnumTypesTest : public StormTestFixture<ExtendedTypes, ConnType> {};
+TYPED_TEST_SUITE(EnumTypesTest, DatabaseTypes);
+
+TYPED_TEST(EnumTypesTest, InsertAndSelectEnum) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes                      obj{.label = "enum_test", .color = Color::Blue};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().begin()->color, Color::Blue);
+}
+
+TYPED_TEST(EnumTypesTest, InsertAllEnumValues) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    std::vector<ExtendedTypes>         batch = {
+            {.label = "red", .color = Color::Red},
+            {.label = "green", .color = Color::Green},
+            {.label = "blue", .color = Color::Blue},
+    };
+
+    auto result = qs.insert(batch).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_EQ(selected.value().size(), 3);
+    auto it = selected.value().begin();
+    EXPECT_EQ(it->color, Color::Red);
+    ++it;
+    EXPECT_EQ(it->color, Color::Green);
+    ++it;
+    EXPECT_EQ(it->color, Color::Blue);
+}
+
+TYPED_TEST(EnumTypesTest, OptionalEnumNull) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes                      obj{.label = "opt_null"};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_FALSE(selected.value().begin()->opt_color.has_value());
+}
+
+TYPED_TEST(EnumTypesTest, OptionalEnumWithValue) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes                      obj{.label = "opt_val", .opt_color = Color::Green};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_TRUE(selected.value().begin()->opt_color.has_value());
+    EXPECT_EQ(selected.value().begin()->opt_color.value(), Color::Green);
+}
+
+TYPED_TEST(EnumTypesTest, WhereEnumEqual) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    std::vector<ExtendedTypes>         batch = {
+            {.label = "r", .color = Color::Red},
+            {.label = "g", .color = Color::Green},
+            {.label = "b", .color = Color::Blue},
+    };
+    auto insert_result = qs.insert(batch).execute();
+    ASSERT_TRUE(insert_result.has_value());
+
+    auto selected = qs.where(field<^^ExtendedTypes::color>() == Color::Green).select().execute();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_EQ(selected.value().size(), 1);
+    EXPECT_EQ(selected.value().begin()->label, "g");
+}
+
+TYPED_TEST(EnumTypesTest, WhereEnumNotEqual) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    std::vector<ExtendedTypes>         batch = {
+            {.label = "r", .color = Color::Red},
+            {.label = "g", .color = Color::Green},
+            {.label = "b", .color = Color::Blue},
+    };
+    auto insert_result = qs.insert(batch).execute();
+    ASSERT_TRUE(insert_result.has_value());
+
+    auto selected = qs.where(field<^^ExtendedTypes::color>() != Color::Red).select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().size(), 2);
+}
+
+TYPED_TEST(EnumTypesTest, WhereEnumBetween) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    std::vector<ExtendedTypes>         batch = {
+            {.label = "r", .color = Color::Red},
+            {.label = "g", .color = Color::Green},
+            {.label = "b", .color = Color::Blue},
+    };
+    auto insert_result = qs.insert(batch).execute();
+    ASSERT_TRUE(insert_result.has_value());
+
+    auto selected = qs.where(field<^^ExtendedTypes::color>().between(Color::Green, Color::Blue)).select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().size(), 2);
+}
+
+// ===== CHRONO DATE TESTS =====
+
+template <typename ConnType> class ChronoDateTest : public StormTestFixture<ExtendedTypes, ConnType> {};
+TYPED_TEST_SUITE(ChronoDateTest, DatabaseTypes);
+
+TYPED_TEST(ChronoDateTest, InsertAndSelectDate) {
+    using namespace std::chrono;
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    auto                               ymd = year_month_day{year{2026}, month{3}, day{21}};
+    ExtendedTypes                      obj{.label = "date_test", .date_field = ymd};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    auto stored = selected.value().begin()->date_field;
+    EXPECT_EQ(stored.year(), year{2026});
+    EXPECT_EQ(stored.month(), month{3});
+    EXPECT_EQ(stored.day(), day{21});
+}
+
+TYPED_TEST(ChronoDateTest, InsertAndSelectDatetime) {
+    using namespace std::chrono;
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    auto          tp = sys_days{year_month_day{year{2024}, month{12}, day{25}}} + hours{14} + minutes{30} + seconds{45};
+    ExtendedTypes obj{.label = "dt_test", .datetime_field = tp};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    auto stored_tp = selected.value().begin()->datetime_field;
+    EXPECT_EQ(stored_tp, tp);
+}
+
+TYPED_TEST(ChronoDateTest, InsertAndSelectDuration) {
+    using namespace std::chrono;
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes                      obj{.label = "dur_test", .duration_field = seconds{3600}};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().begin()->duration_field, seconds{3600});
+}
+
+TYPED_TEST(ChronoDateTest, ZeroDuration) {
+    using namespace std::chrono;
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes                      obj{.label = "zero_dur", .duration_field = seconds{0}};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().begin()->duration_field, seconds{0});
+}
+
+TYPED_TEST(ChronoDateTest, EpochDatetime) {
+    using namespace std::chrono;
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    auto                               epoch = system_clock::time_point{};
+    ExtendedTypes                      obj{.label = "epoch", .datetime_field = epoch};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().begin()->datetime_field, epoch);
+}
+
+TYPED_TEST(ChronoDateTest, OptionalTimestampNull) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes                      obj{.label = "opt_ts_null"};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_FALSE(selected.value().begin()->opt_timestamp.has_value());
+}
+
+TYPED_TEST(ChronoDateTest, OptionalTimestampWithValue) {
+    using namespace std::chrono;
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    auto                               tp = sys_days{year_month_day{year{2025}, month{6}, day{15}}} + hours{10};
+    ExtendedTypes                      obj{.label = "opt_ts_val", .opt_timestamp = tp};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_TRUE(selected.value().begin()->opt_timestamp.has_value());
+    EXPECT_EQ(selected.value().begin()->opt_timestamp.value(), tp);
+}
+
+TYPED_TEST(ChronoDateTest, BatchChronoInsert) {
+    using namespace std::chrono;
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    std::vector<ExtendedTypes>         batch = {
+            {.label = "d1", .date_field = year_month_day{year{2024}, month{1}, day{1}}, .duration_field = seconds{60}},
+            {.label          = "d2",
+                     .date_field     = year_month_day{year{2024}, month{6}, day{15}},
+                     .duration_field = seconds{120}},
+            {.label          = "d3",
+                     .date_field     = year_month_day{year{2024}, month{12}, day{31}},
+                     .duration_field = seconds{180}},
+    };
+
+    auto result = qs.insert(batch).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_EQ(selected.value().size(), 3);
+}
+
+// ===== FILESYSTEM PATH TESTS =====
+
+template <typename ConnType> class PathTypesTest : public StormTestFixture<ExtendedTypes, ConnType> {};
+TYPED_TEST_SUITE(PathTypesTest, DatabaseTypes);
+
+TYPED_TEST(PathTypesTest, InsertAndSelectPath) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes obj{.label = "path_test", .file_path = std::filesystem::path("/home/user/file.txt")};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().begin()->file_path, std::filesystem::path("/home/user/file.txt"));
+}
+
+TYPED_TEST(PathTypesTest, EmptyPath) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes                      obj{.label = "empty_path", .file_path = std::filesystem::path{}};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_TRUE(selected.value().begin()->file_path.empty());
+}
+
+TYPED_TEST(PathTypesTest, OptionalPathNull) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes                      obj{.label = "opt_path_null"};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_FALSE(selected.value().begin()->opt_path.has_value());
+}
+
+TYPED_TEST(PathTypesTest, OptionalPathWithValue) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes                      obj{.label = "opt_path_val", .opt_path = std::filesystem::path("/tmp/test")};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_TRUE(selected.value().begin()->opt_path.has_value());
+    EXPECT_EQ(selected.value().begin()->opt_path.value(), std::filesystem::path("/tmp/test"));
+}
+
+// ===== VECTOR<BYTE> TESTS =====
+
+template <typename ConnType> class ByteVectorTest : public StormTestFixture<ExtendedTypes, ConnType> {};
+TYPED_TEST_SUITE(ByteVectorTest, DatabaseTypes);
+
+TYPED_TEST(ByteVectorTest, InsertAndSelectByteVector) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    std::vector<std::byte>             data = {std::byte{0xDE}, std::byte{0xAD}, std::byte{0xBE}, std::byte{0xEF}};
+    ExtendedTypes                      obj{.label = "byte_test", .raw_data = data};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().begin()->raw_data, data);
+}
+
+TYPED_TEST(ByteVectorTest, EmptyByteVector) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes                      obj{.label = "empty_bytes"};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_TRUE(selected.value().begin()->raw_data.empty());
+}
+
+// ===== UUID TESTS =====
+
+template <typename ConnType> class UUIDTypesTest : public StormTestFixture<ExtendedTypes, ConnType> {};
+TYPED_TEST_SUITE(UUIDTypesTest, DatabaseTypes);
+
+TYPED_TEST(UUIDTypesTest, InsertAndSelectUUID) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes obj{.label = "uuid_test", .uuid_field = storm::UUID{"550e8400-e29b-41d4-a716-446655440000"}};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().begin()->uuid_field.value, "550e8400-e29b-41d4-a716-446655440000");
+}
+
+TYPED_TEST(UUIDTypesTest, EmptyUUID) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes                      obj{.label = "empty_uuid"};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_TRUE(selected.value().begin()->uuid_field.value.empty());
+}
+
+TYPED_TEST(UUIDTypesTest, BatchUUIDInsert) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    std::vector<ExtendedTypes>         batch = {
+            {.label = "u1", .uuid_field = storm::UUID{"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}},
+            {.label = "u2", .uuid_field = storm::UUID{"11111111-2222-3333-4444-555555555555"}},
+            {.label = "u3", .uuid_field = storm::UUID{"99999999-8888-7777-6666-555544443333"}},
+    };
+
+    auto result = qs.insert(batch).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_EQ(selected.value().size(), 3);
+    auto it = selected.value().begin();
+    EXPECT_EQ(it->uuid_field.value, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+}
+
+TYPED_TEST(UUIDTypesTest, StringViewConstructorAndConversion) {
+    std::string_view sv = "abcdefab-1234-5678-9abc-def012345678";
+    storm::UUID      uuid{sv};
+    EXPECT_EQ(uuid.value, sv);
+
+    std::string_view converted = uuid;
+    EXPECT_EQ(converted, sv);
+
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes                      obj{.label = "sv_test", .uuid_field = storm::UUID{sv}};
+    auto                               result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(std::string_view(selected.value().begin()->uuid_field), sv);
+}
+
+// ===== SCHEMA GENERATION TESTS =====
+
+template <typename ConnType> class NewTypesSchemaTest : public StormTestFixture<ExtendedTypes, ConnType> {};
+TYPED_TEST_SUITE(NewTypesSchemaTest, DatabaseTypes);
+
+TYPED_TEST(NewTypesSchemaTest, SchemaContainsNewColumns) {
+    const auto& sql = storm::create_table_sql<ExtendedTypes>();
+    EXPECT_NE(sql.find("tiny_signed INTEGER NOT NULL"), std::string::npos);
+    EXPECT_NE(sql.find("tiny_unsigned INTEGER NOT NULL"), std::string::npos);
+    EXPECT_NE(sql.find("single_char INTEGER NOT NULL"), std::string::npos);
+    EXPECT_NE(sql.find("color INTEGER NOT NULL"), std::string::npos);
+    EXPECT_NE(sql.find("date_field TEXT NOT NULL"), std::string::npos);
+    EXPECT_NE(sql.find("datetime_field TEXT NOT NULL"), std::string::npos);
+    EXPECT_NE(sql.find("duration_field INTEGER NOT NULL"), std::string::npos);
+    EXPECT_NE(sql.find("file_path TEXT NOT NULL"), std::string::npos);
+    EXPECT_NE(sql.find("raw_data BLOB"), std::string::npos);
+    EXPECT_NE(sql.find("uuid_field TEXT NOT NULL"), std::string::npos);
+    EXPECT_NE(sql.find("opt_color INTEGER"), std::string::npos);
+    EXPECT_NE(sql.find("opt_timestamp TEXT"), std::string::npos);
+    EXPECT_NE(sql.find("opt_path TEXT"), std::string::npos);
+}
+
+// ===== COMBINED ROUNDTRIP TEST =====
+
+template <typename ConnType> class AllNewTypesRoundtripTest : public StormTestFixture<ExtendedTypes, ConnType> {};
+TYPED_TEST_SUITE(AllNewTypesRoundtripTest, DatabaseTypes);
+
+TYPED_TEST(AllNewTypesRoundtripTest, FullRoundtrip) {
+    using namespace std::chrono;
+    QuerySet<ExtendedTypes, TypeParam> qs;
+
+    auto date     = year_month_day{year{2025}, month{1}, day{15}};
+    auto datetime = sys_days{year_month_day{year{2025}, month{6}, day{20}}} + hours{8} + minutes{30} + seconds{0};
+    std::vector<std::byte> blob = {std::byte{0x01}, std::byte{0x02}, std::byte{0x03}};
+
+    ExtendedTypes obj{
+            .big_num        = 42LL,
+            .precise        = 3.14,
+            .approx         = 2.71f,
+            .u_int          = 100,
+            .ll_signed      = 999LL,
+            .opt_double     = 1.5,
+            .opt_int64      = 123LL,
+            .label          = "roundtrip",
+            .tiny_signed    = -50,
+            .tiny_unsigned  = 200,
+            .single_char    = 'X',
+            .color          = Color::Blue,
+            .date_field     = date,
+            .datetime_field = datetime,
+            .duration_field = seconds{7200},
+            .file_path      = std::filesystem::path("/data/file.csv"),
+            .raw_data       = blob,
+            .uuid_field     = storm::UUID{"12345678-1234-1234-1234-123456789abc"},
+            .opt_color      = Color::Green,
+            .opt_timestamp  = datetime,
+            .opt_path       = std::filesystem::path("/opt/backup"),
+    };
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_EQ(selected.value().size(), 1);
+
+    auto it = selected.value().begin();
+    EXPECT_EQ(it->big_num, 42LL);
+    EXPECT_NEAR(it->precise, 3.14, 1e-10);
+    EXPECT_NEAR(it->approx, 2.71f, 1e-6);
+    EXPECT_EQ(it->u_int, 100u);
+    EXPECT_EQ(it->ll_signed, 999LL);
+    ASSERT_TRUE(it->opt_double.has_value());
+    EXPECT_NEAR(it->opt_double.value(), 1.5, 1e-10);
+    ASSERT_TRUE(it->opt_int64.has_value());
+    EXPECT_EQ(it->opt_int64.value(), 123LL);
+    EXPECT_EQ(it->label, "roundtrip");
+    EXPECT_EQ(it->tiny_signed, -50);
+    EXPECT_EQ(it->tiny_unsigned, 200);
+    EXPECT_EQ(it->single_char, 'X');
+    EXPECT_EQ(it->color, Color::Blue);
+    EXPECT_EQ(it->date_field, date);
+    EXPECT_EQ(it->datetime_field, datetime);
+    EXPECT_EQ(it->duration_field, seconds{7200});
+    EXPECT_EQ(it->file_path, std::filesystem::path("/data/file.csv"));
+    EXPECT_EQ(it->raw_data, blob);
+    EXPECT_EQ(it->uuid_field.value, "12345678-1234-1234-1234-123456789abc");
+    ASSERT_TRUE(it->opt_color.has_value());
+    EXPECT_EQ(it->opt_color.value(), Color::Green);
+    ASSERT_TRUE(it->opt_timestamp.has_value());
+    EXPECT_EQ(it->opt_timestamp.value(), datetime);
+    ASSERT_TRUE(it->opt_path.has_value());
+    EXPECT_EQ(it->opt_path.value(), std::filesystem::path("/opt/backup"));
 }
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

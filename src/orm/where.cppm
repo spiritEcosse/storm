@@ -14,6 +14,8 @@ import <expected>;
 import <variant>;
 import <format>;
 import <ranges>;
+import <type_traits>;
+import <utility>;
 import storm_orm_utilities; // For ConstexprString
 
 export namespace storm::orm::where {
@@ -203,6 +205,7 @@ export namespace storm::orm::where {
                                        ComparisonExpr<int>,
                                        ComparisonExpr<int64_t>,
                                        ComparisonExpr<double>,
+                                       ComparisonExpr<float>,
                                        ComparisonExpr<std::string>,
                                        ComparisonExpr<std::string_view>,
                                        ComparisonExpr<const char*>,
@@ -212,10 +215,12 @@ export namespace storm::orm::where {
                                        BetweenExpr<int>,
                                        BetweenExpr<int64_t>,
                                        BetweenExpr<double>,
+                                       BetweenExpr<float>,
                                        BetweenExpr<std::string>,
                                        InExpression<int>,
                                        InExpression<int64_t>,
                                        InExpression<double>,
+                                       InExpression<float>,
                                        InExpression<std::string>,
                                        LogicalExpr> {
         // Inherit constructors from variant
@@ -444,82 +449,48 @@ export namespace storm::orm::where {
 
         // IN: Returns Expr wrapping VARIANT (no heap allocation for expression itself!)
         // Usage: field<^^Person::id>().in(100, 200, 300)
+        // For enum types, converts to underlying int automatically
         template <typename... Values>
             requires(std::constructible_from<FieldType, Values> && ...)
         auto in(Values&&... values) const {
-            return Expr(
-                    std::make_shared<ExpressionVariant>(InExpression<FieldType>{
-                            .field_name_ = std::string(field_name_sv),
-                            .values_     = {FieldType{std::forward<Values>(values)}...}
-                    })
-            );
+            if constexpr (std::is_enum_v<FieldType>) {
+                using StoredType = int;
+                return Expr(
+                        std::make_shared<ExpressionVariant>(InExpression<StoredType>{
+                                .field_name_ = std::string(field_name_sv),
+                                .values_     = {static_cast<StoredType>(static_cast<std::underlying_type_t<FieldType>>(
+                                        FieldType{std::forward<Values>(values)}
+                                ))...}
+                        })
+                );
+            } else {
+                return Expr(
+                        std::make_shared<ExpressionVariant>(InExpression<FieldType>{
+                                .field_name_ = std::string(field_name_sv),
+                                .values_     = {FieldType{std::forward<Values>(values)}...}
+                        })
+                );
+            }
         }
 
-        // Comparison operators - return runtime Expr for flexibility
-        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
+        // Comparison operators — enum values are auto-converted to underlying int
         template <typename V> auto operator==(V&& value) const -> Expr {
-            return Expr(
-                    std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
-                            .field_name_ = std::string(field_name_sv),
-                            .op_         = CompOp::Equal,
-                            .value_      = std::forward<V>(value)
-                    })
-            );
+            return make_comp(CompOp::Equal, std::forward<V>(value));
         }
-
-        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
         template <typename V> auto operator!=(V&& value) const -> Expr {
-            return Expr(
-                    std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
-                            .field_name_ = std::string(field_name_sv),
-                            .op_         = CompOp::NotEqual,
-                            .value_      = std::forward<V>(value)
-                    })
-            );
+            return make_comp(CompOp::NotEqual, std::forward<V>(value));
         }
-
-        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
         template <typename V> auto operator>(V&& value) const -> Expr {
-            return Expr(
-                    std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
-                            .field_name_ = std::string(field_name_sv),
-                            .op_         = CompOp::Greater,
-                            .value_      = std::forward<V>(value)
-                    })
-            );
+            return make_comp(CompOp::Greater, std::forward<V>(value));
         }
-
-        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
         template <typename V> auto operator>=(V&& value) const -> Expr {
-            return Expr(
-                    std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
-                            .field_name_ = std::string(field_name_sv),
-                            .op_         = CompOp::GreaterEqual,
-                            .value_      = std::forward<V>(value)
-                    })
-            );
+            return make_comp(CompOp::GreaterEqual, std::forward<V>(value));
         }
-
-        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
         template <typename V> auto operator<(V&& value) const -> Expr {
-            return Expr(
-                    std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
-                            .field_name_ = std::string(field_name_sv),
-                            .op_         = CompOp::Less,
-                            .value_      = std::forward<V>(value)
-                    })
-            );
+            return make_comp(CompOp::Less, std::forward<V>(value));
         }
-
-        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
         template <typename V> auto operator<=(V&& value) const -> Expr {
-            return Expr(
-                    std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
-                            .field_name_ = std::string(field_name_sv),
-                            .op_         = CompOp::LessEqual,
-                            .value_      = std::forward<V>(value)
-                    })
-            );
+            return make_comp(CompOp::LessEqual, std::forward<V>(value));
         }
 
         // NULL check methods — constrained to std::optional<T> fields only
@@ -565,13 +536,47 @@ export namespace storm::orm::where {
 
         // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
         template <typename V> auto between(V&& min_val, V&& max_val) const -> Expr {
-            return Expr(
-                    std::make_shared<ExpressionVariant>(BetweenExpr<std::decay_t<V>>{
-                            .field_name_ = std::string(field_name_sv),
-                            .min_val_    = std::forward<V>(min_val),
-                            .max_val_    = std::forward<V>(max_val)
-                    })
-            );
+            using D = std::decay_t<V>;
+            if constexpr (std::is_enum_v<D>) {
+                using StoredType = int;
+                return Expr(
+                        std::make_shared<ExpressionVariant>(BetweenExpr<StoredType>{
+                                .field_name_ = std::string(field_name_sv),
+                                .min_val_    = static_cast<StoredType>(static_cast<std::underlying_type_t<D>>(min_val)),
+                                .max_val_    = static_cast<StoredType>(static_cast<std::underlying_type_t<D>>(max_val))
+                        })
+                );
+            } else {
+                return Expr(
+                        std::make_shared<ExpressionVariant>(BetweenExpr<D>{
+                                .field_name_ = std::string(field_name_sv),
+                                .min_val_    = std::forward<V>(min_val),
+                                .max_val_    = std::forward<V>(max_val)
+                        })
+                );
+            }
+        }
+
+      private:
+        // Helper: create comparison expression, converting enum values to int
+        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
+        template <typename V> auto make_comp(CompOp op, V&& value) const -> Expr {
+            using D = std::decay_t<V>;
+            if constexpr (std::is_enum_v<D>) {
+                return Expr(
+                        std::make_shared<ExpressionVariant>(ComparisonExpr<int>{
+                                .field_name_ = std::string(field_name_sv),
+                                .op_         = op,
+                                .value_      = static_cast<int>(static_cast<std::underlying_type_t<D>>(value))
+                        })
+                );
+            } else {
+                return Expr(
+                        std::make_shared<ExpressionVariant>(ComparisonExpr<D>{
+                                .field_name_ = std::string(field_name_sv), .op_ = op, .value_ = std::forward<V>(value)
+                        })
+                );
+            }
         }
     };
 

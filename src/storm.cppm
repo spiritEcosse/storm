@@ -29,6 +29,9 @@ export namespace storm {
     // Storm ORM functionality with reflection support
     constexpr auto version = "0.1.0";
 
+    // Re-export UUID type for convenient access as storm::UUID
+    using UUID = orm::utilities::UUID;
+
     // Meta functionality for ORM field attributes and reflection
     namespace meta {
         // Note: FieldAttr enum is defined in storm_orm_statements_base module

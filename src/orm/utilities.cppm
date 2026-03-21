@@ -13,6 +13,10 @@ import <optional>;
 import <vector>;
 import <cstdint>;
 import <type_traits>;
+import <chrono>;
+import <filesystem>;
+import <cstddef>;
+import <format>;
 import <meta>;
 
 export namespace storm::orm::utilities {
@@ -126,10 +130,97 @@ export namespace storm::orm::utilities {
     };
     template <typename T> using optional_inner_type_t = typename optional_inner_type<T>::type;
 
+    // Helper trait to detect std::chrono::duration types
+    template <typename T> struct is_chrono_duration : std::false_type {};
+    template <typename Rep, typename Period>
+    struct is_chrono_duration<std::chrono::duration<Rep, Period>> : std::true_type {};
+    template <typename T> constexpr bool is_chrono_duration_v = is_chrono_duration<T>::value;
+
+    // UUID type — thin wrapper for RFC 4122 UUID strings stored as TEXT in SQLite
+    struct UUID {
+        std::string value;
+
+        UUID() = default;
+        explicit UUID(std::string v) : value(std::move(v)) {}
+        explicit UUID(const char* v) : value(v) {}
+        explicit UUID(std::string_view v) : value(v) {}
+
+        auto operator==(const UUID&) const -> bool = default;
+             operator std::string_view() const noexcept {
+            return value;
+        } // NOLINT(google-explicit-constructor)
+    };
+
+    // ============================================================================
+    // Chrono / String Conversion Helpers (ISO-8601 format)
+    // ============================================================================
+
+    namespace chrono_conv {
+
+        inline auto parse_int(std::string_view sv) -> int {
+            int val = 0;
+            for (char c : sv) {
+                val = val * 10 + (c - '0');
+            }
+            return val;
+        }
+
+        // year_month_day → "YYYY-MM-DD"
+        inline auto ymd_to_string(std::chrono::year_month_day ymd) -> std::string {
+            return std::format(
+                    "{:04d}-{:02d}-{:02d}",
+                    static_cast<int>(ymd.year()),
+                    static_cast<unsigned>(ymd.month()),
+                    static_cast<unsigned>(ymd.day())
+            );
+        }
+
+        // "YYYY-MM-DD" → year_month_day
+        inline auto string_to_ymd(std::string_view s) -> std::chrono::year_month_day {
+            return std::chrono::year_month_day{
+                    std::chrono::year{parse_int(s.substr(0, 4))},
+                    std::chrono::month{static_cast<unsigned>(parse_int(s.substr(5, 2)))},
+                    std::chrono::day{static_cast<unsigned>(parse_int(s.substr(8, 2)))}
+            };
+        }
+
+        // system_clock::time_point → "YYYY-MM-DD HH:MM:SS"
+        inline auto tp_to_string(std::chrono::system_clock::time_point tp) -> std::string {
+            auto dp            = std::chrono::floor<std::chrono::days>(tp);
+            auto ymd           = std::chrono::year_month_day{dp};
+            auto time_since_dp = std::chrono::floor<std::chrono::seconds>(tp) - dp;
+            auto h             = std::chrono::duration_cast<std::chrono::hours>(time_since_dp);
+            auto m             = std::chrono::duration_cast<std::chrono::minutes>(time_since_dp - h);
+            auto s             = time_since_dp - h - m;
+            return std::format(
+                    "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}",
+                    static_cast<int>(ymd.year()),
+                    static_cast<unsigned>(ymd.month()),
+                    static_cast<unsigned>(ymd.day()),
+                    static_cast<int>(h.count()),
+                    static_cast<int>(m.count()),
+                    static_cast<int>(s.count())
+            );
+        }
+
+        // "YYYY-MM-DD HH:MM:SS" → system_clock::time_point
+        inline auto string_to_tp(std::string_view s) -> std::chrono::system_clock::time_point {
+            auto ymd = std::chrono::year_month_day{
+                    std::chrono::year{parse_int(s.substr(0, 4))},
+                    std::chrono::month{static_cast<unsigned>(parse_int(s.substr(5, 2)))},
+                    std::chrono::day{static_cast<unsigned>(parse_int(s.substr(8, 2)))}
+            };
+            auto dp = std::chrono::sys_days{ymd};
+            return dp + std::chrono::hours{parse_int(s.substr(11, 2))} +
+                   std::chrono::minutes{parse_int(s.substr(14, 2))} + std::chrono::seconds{parse_int(s.substr(17, 2))};
+        }
+
+    } // namespace chrono_conv
+
     // Generic parameter binding - unified implementation for WHERE and CRUD statements
     // No dependency on entity type T - pure type dispatch based on value type
     template <typename StmtType, typename ErrorType>
-    [[nodiscard]] auto bind_parameter_value(StmtType& stmt, int param_index, const auto& value) noexcept
+    [[nodiscard]] auto bind_parameter_value(StmtType& stmt, int param_index, const auto& value) noexcept // NOSONAR
             -> std::expected<void, ErrorType> {
         using ValueType = std::decay_t<decltype(value)>;
 
@@ -159,11 +250,44 @@ export namespace storm::orm::utilities {
                              std::is_same_v<ValueType, unsigned int>) {
             return stmt.bind_int(param_index, static_cast<int>(value));
         }
+        // Char types (stored as INTEGER)
+        else if constexpr (std::is_same_v<ValueType, signed char> || std::is_same_v<ValueType, unsigned char> ||
+                           std::is_same_v<ValueType, char>) {
+            return stmt.bind_int(param_index, static_cast<int>(value));
+        }
+        // Enum types (stored as INTEGER via underlying type)
+        else if constexpr (std::is_enum_v<ValueType>) {
+            using Underlying = std::underlying_type_t<ValueType>;
+            if constexpr (sizeof(Underlying) <= sizeof(int)) {
+                return stmt.bind_int(param_index, static_cast<int>(static_cast<Underlying>(value)));
+            } else {
+                return stmt.bind_int64(param_index, static_cast<int64_t>(static_cast<Underlying>(value)));
+            }
+        }
         // Floating point types
         else if constexpr (std::is_same_v<ValueType, double>) {
             return stmt.bind_double(param_index, value);
         } else if constexpr (std::is_same_v<ValueType, float>) {
             return stmt.bind_double(param_index, static_cast<double>(value));
+        }
+        // Chrono date type (stored as TEXT "YYYY-MM-DD")
+        else if constexpr (std::is_same_v<ValueType, std::chrono::year_month_day>) {
+            auto str = chrono_conv::ymd_to_string(value);
+            return stmt.bind_text(param_index, std::string_view{str});
+        }
+        // Chrono datetime type (stored as TEXT "YYYY-MM-DD HH:MM:SS")
+        else if constexpr (std::is_same_v<ValueType, std::chrono::system_clock::time_point>) {
+            auto str = chrono_conv::tp_to_string(value);
+            return stmt.bind_text(param_index, std::string_view{str});
+        }
+        // Chrono duration types (stored as INTEGER — raw count)
+        else if constexpr (is_chrono_duration_v<ValueType>) {
+            return stmt.bind_int64(param_index, static_cast<int64_t>(value.count()));
+        }
+        // Filesystem path (stored as TEXT)
+        else if constexpr (std::is_same_v<ValueType, std::filesystem::path>) {
+            auto str = value.string();
+            return stmt.bind_text(param_index, std::string_view{str});
         }
         // BLOB types (std::vector<uint8_t>)
         else if constexpr (std::is_same_v<ValueType, std::vector<uint8_t>> ||
@@ -172,6 +296,17 @@ export namespace storm::orm::utilities {
                 return stmt.bind_blob(param_index, nullptr, 0);
             }
             return stmt.bind_blob(param_index, value.data(), value.size());
+        }
+        // BLOB type (std::vector<std::byte>)
+        else if constexpr (std::is_same_v<ValueType, std::vector<std::byte>>) {
+            if (value.empty()) {
+                return stmt.bind_blob(param_index, nullptr, 0);
+            }
+            return stmt.bind_blob(param_index, value.data(), value.size());
+        }
+        // UUID type (stored as TEXT)
+        else if constexpr (std::is_same_v<ValueType, UUID>) {
+            return stmt.bind_text(param_index, std::string_view{value.value});
         }
         // String types (must be last to avoid matching everything)
         else if constexpr (std::is_convertible_v<ValueType, std::string_view>) {
@@ -182,9 +317,11 @@ export namespace storm::orm::utilities {
                             std::is_same_v<ValueType, double> || std::is_same_v<ValueType, bool> ||
                             std::is_convertible_v<ValueType, std::string_view>,
                     "Unsupported field type for binding. Supported types: "
-                    "int, int64_t, long, short, unsigned variants, "
+                    "int, int64_t, long, short, char, unsigned variants, enum, "
                     "double, float, bool, std::string, std::string_view, "
-                    "std::optional<T>, std::vector<uint8_t>"
+                    "chrono::year_month_day, chrono::time_point, chrono::duration, "
+                    "filesystem::path, UUID, std::optional<T>, "
+                    "std::vector<uint8_t>, std::vector<std::byte>"
             );
             // Unreachable due to static_assert, but needed for return type
             return std::unexpected(ErrorType{});
