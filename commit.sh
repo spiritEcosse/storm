@@ -246,6 +246,88 @@ if [[ "$RUN_COVERAGE" == true ]]; then
         cmake --preset ninja-debug > /dev/null 2>&1
     fi
 
+    # Format line numbers as compact ranges (e.g., "5, 10-15, 20")
+    format_line_ranges() {
+        local -n _lines=$1
+        local result="" range_start="" range_end=""
+        for ln in "${_lines[@]}"; do
+            if [[ -z "$range_start" ]]; then
+                range_start=$ln; range_end=$ln
+            elif [[ $ln -eq $((range_end + 1)) ]]; then
+                range_end=$ln
+            else
+                if [[ "$range_start" == "$range_end" ]]; then
+                    result+="${result:+, }$range_start"
+                else
+                    result+="${result:+, }${range_start}-${range_end}"
+                fi
+                range_start=$ln; range_end=$ln
+            fi
+        done
+        if [[ -n "$range_start" ]]; then
+            if [[ "$range_start" == "$range_end" ]]; then
+                result+="${result:+, }$range_start"
+            else
+                result+="${result:+, }${range_start}-${range_end}"
+            fi
+        fi
+        echo "$result"
+    }
+
+    # Parse lcov file and display uncovered files + line ranges
+    show_uncovered_lines() {
+        local lcov_file="build/debug/coverage/coverage-filtered.lcov"
+        if [[ ! -f "$lcov_file" ]]; then
+            return
+        fi
+
+        echo ""
+        echo -e "${BOLD}Uncovered lines:${RESET}"
+        echo -e "${DIM}$(printf '%.0s─' {1..60})${RESET}"
+
+        local current_file=""
+        local uncovered_lines=()
+        local has_uncovered=false
+
+        # Flush accumulated uncovered lines for current file
+        flush_file() {
+            if [[ ${#uncovered_lines[@]} -gt 0 ]]; then
+                local rel_path="${current_file#$PWD/}"
+                echo -e "  ${YELLOW}${rel_path}${RESET}"
+                echo -e "    Lines: ${RED}$(format_line_ranges uncovered_lines)${RESET}"
+                has_uncovered=true
+            fi
+        }
+
+        while IFS= read -r line; do
+            case "$line" in
+                SF:*)
+                    flush_file
+                    current_file="${line#SF:}"
+                    uncovered_lines=()
+                    ;;
+                DA:*)
+                    local da_data="${line#DA:}"
+                    local ln_num="${da_data%%,*}"
+                    local exec_count="${da_data#*,}"
+                    if [[ "$exec_count" == "0" ]]; then
+                        uncovered_lines+=("$ln_num")
+                    fi
+                    ;;
+            esac
+        done < "$lcov_file"
+        flush_file
+
+        if [[ "$has_uncovered" == false ]]; then
+            echo -e "  ${DIM}(could not parse uncovered lines from lcov)${RESET}"
+        fi
+
+        echo ""
+        echo -e "${DIM}For detailed HTML report:${RESET}"
+        echo -e "${DIM}  cmake --build --preset ninja-debug-coverage --target coverage-html${RESET}"
+        echo -e "${DIM}  open build/debug/coverage/html-filtered/index.html${RESET}"
+    }
+
     # Run coverage as a compound check: build + parse + threshold
     run_coverage_check() {
         local output
@@ -273,11 +355,8 @@ if [[ "$RUN_COVERAGE" == true ]]; then
 
         if [[ "$line_cov" != "100.0" ]]; then
             echo ""
-            echo "Line coverage: ${line_cov}% (required: 100.0%)"
-            echo ""
-            echo "To find uncovered lines:"
-            echo "  cmake --build --preset ninja-debug-coverage --target coverage-html"
-            echo "  open build/debug/coverage/html-filtered/index.html"
+            echo -e "${RED}${BOLD}Line coverage: ${line_cov}% (required: 100.0%)${RESET}"
+            show_uncovered_lines
             return 1
         fi
 
