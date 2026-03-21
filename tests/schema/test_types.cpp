@@ -15,6 +15,7 @@ import <span>;
 import <chrono>;
 import <filesystem>;
 import <cstddef>;
+import <set>;
 
 #include "test_models.h"
 
@@ -1472,7 +1473,7 @@ TYPED_TEST(UUIDTypesTest, InsertAndSelectUUID) {
     EXPECT_EQ(selected.value().begin()->uuid_field.value, "550e8400-e29b-41d4-a716-446655440000");
 }
 
-TYPED_TEST(UUIDTypesTest, EmptyUUID) {
+TYPED_TEST(UUIDTypesTest, EmptyUUIDAutoGeneratesOnInsert) {
     QuerySet<ExtendedTypes, TypeParam> qs;
     ExtendedTypes                      obj{.label = "empty_uuid"};
 
@@ -1481,7 +1482,14 @@ TYPED_TEST(UUIDTypesTest, EmptyUUID) {
 
     auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_TRUE(selected.value().begin()->uuid_field.value.empty());
+
+    const auto& stored_uuid = selected.value().begin()->uuid_field.value;
+    EXPECT_FALSE(stored_uuid.empty());
+    EXPECT_EQ(stored_uuid.size(), 36);
+    EXPECT_EQ(stored_uuid[14], '4');
+
+    char variant_char = stored_uuid[19];
+    EXPECT_TRUE(variant_char == '8' || variant_char == '9' || variant_char == 'a' || variant_char == 'b');
 }
 
 TYPED_TEST(UUIDTypesTest, BatchUUIDInsert) {
@@ -1518,6 +1526,133 @@ TYPED_TEST(UUIDTypesTest, StringViewConstructorAndConversion) {
     auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(std::string_view(selected.value().begin()->uuid_field), sv);
+}
+
+TYPED_TEST(UUIDTypesTest, IsValidAcceptsCorrectFormat) {
+    EXPECT_TRUE(storm::UUID::is_valid("550e8400-e29b-41d4-a716-446655440000"));
+    EXPECT_TRUE(storm::UUID::is_valid("ABCDEF00-1234-5678-9abc-DEF012345678"));
+    EXPECT_TRUE(storm::UUID::is_valid("00000000-0000-0000-0000-000000000000"));
+}
+
+TYPED_TEST(UUIDTypesTest, IsValidRejectsInvalidFormat) {
+    EXPECT_FALSE(storm::UUID::is_valid(""));
+    EXPECT_FALSE(storm::UUID::is_valid("not-a-uuid"));
+    EXPECT_FALSE(storm::UUID::is_valid("1234"));
+    EXPECT_FALSE(storm::UUID::is_valid("zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz"));
+    EXPECT_FALSE(storm::UUID::is_valid("550e8400e29b41d4a716446655440000"));
+    EXPECT_FALSE(storm::UUID::is_valid("550e8400-e29b-41d4-a716-4466554400001"));
+    EXPECT_FALSE(storm::UUID::is_valid("550e8400ae29b-41d4-a716-446655440000"));
+}
+
+TYPED_TEST(UUIDTypesTest, GenerateProducesValidV4Format) {
+    auto uuid = storm::UUID::generate();
+
+    EXPECT_EQ(uuid.value.size(), 36);
+    EXPECT_EQ(uuid.value[8], '-');
+    EXPECT_EQ(uuid.value[13], '-');
+    EXPECT_EQ(uuid.value[18], '-');
+    EXPECT_EQ(uuid.value[23], '-');
+
+    EXPECT_EQ(uuid.value[14], '4');
+
+    char variant_char = uuid.value[19];
+    EXPECT_TRUE(variant_char == '8' || variant_char == '9' || variant_char == 'a' || variant_char == 'b');
+}
+
+TYPED_TEST(UUIDTypesTest, GenerateProducesUniqueValues) {
+    std::set<std::string> uuids;
+    for (int i = 0; i < 100; ++i) {
+        uuids.insert(storm::UUID::generate().value);
+    }
+    EXPECT_EQ(uuids.size(), 100);
+}
+
+TYPED_TEST(UUIDTypesTest, GeneratedUUIDRoundTrip) {
+    auto generated = storm::UUID::generate();
+
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes                      obj{.label = "generated", .uuid_field = generated};
+    auto                               result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().begin()->uuid_field.value, generated.value);
+}
+
+TYPED_TEST(UUIDTypesTest, GenerateAllHexChars) {
+    auto uuid = storm::UUID::generate();
+    for (size_t i = 0; i < uuid.value.size(); ++i) {
+        char c = uuid.value[i];
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+            EXPECT_EQ(c, '-');
+        } else {
+            EXPECT_TRUE(std::isxdigit(static_cast<unsigned char>(c)));
+        }
+    }
+}
+
+TYPED_TEST(UUIDTypesTest, BatchEmptyUUIDsAutoGenerate) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    std::vector<ExtendedTypes>         batch = {
+            {.label = "auto1"},
+            {.label = "auto2"},
+            {.label = "auto3"},
+    };
+
+    auto result = qs.insert(batch).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    ASSERT_EQ(selected.value().size(), 3);
+
+    std::set<std::string> generated_uuids;
+    for (const auto& row : selected.value()) {
+        EXPECT_FALSE(row.uuid_field.value.empty());
+        EXPECT_EQ(row.uuid_field.value.size(), 36);
+        EXPECT_EQ(row.uuid_field.value[14], '4');
+        generated_uuids.insert(row.uuid_field.value);
+    }
+    EXPECT_EQ(generated_uuids.size(), 3);
+}
+
+TYPED_TEST(UUIDTypesTest, UserProvidedUUIDPreserved) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    std::string                        custom_uuid = "a0b1c2d3-e4f5-1678-9abc-def012345678";
+    ExtendedTypes                      obj{.label = "custom", .uuid_field = storm::UUID{custom_uuid}};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_TRUE(result.has_value());
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value());
+    EXPECT_EQ(selected.value().begin()->uuid_field.value, custom_uuid);
+}
+
+TYPED_TEST(UUIDTypesTest, InvalidUUIDFormatRejected) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes                      obj{.label = "bad", .uuid_field = storm::UUID{"not-a-valid-uuid"}};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_FALSE(result.has_value());
+    EXPECT_NE(result.error().message().find("Invalid UUID format"), std::string::npos);
+}
+
+TYPED_TEST(UUIDTypesTest, InvalidUUIDWrongLength) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes                      obj{.label = "short", .uuid_field = storm::UUID{"1234"}};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_FALSE(result.has_value());
+}
+
+TYPED_TEST(UUIDTypesTest, InvalidUUIDNonHexChars) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    ExtendedTypes obj{.label = "nonhex", .uuid_field = storm::UUID{"zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz"}};
+
+    auto result = qs.insert(obj).execute();
+    ASSERT_FALSE(result.has_value());
 }
 
 // ===== SCHEMA GENERATION TESTS =====

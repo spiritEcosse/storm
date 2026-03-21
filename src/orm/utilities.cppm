@@ -1,6 +1,7 @@
 module;
 
 #include <meta>
+#include <uuid.h>
 
 export module storm_orm_utilities;
 
@@ -17,6 +18,7 @@ import <chrono>;
 import <filesystem>;
 import <cstddef>;
 import <format>;
+import <random>;
 import <meta>;
 
 export namespace storm::orm::utilities {
@@ -149,6 +151,33 @@ export namespace storm::orm::utilities {
              operator std::string_view() const noexcept {
             return value;
         } // NOLINT(google-explicit-constructor)
+
+        // Validate UUID format: 8-4-4-4-12 hex digits with dashes (Django-style, any version)
+        [[nodiscard]] static auto is_valid(std::string_view sv) -> bool {
+            if (sv.size() != 36) {
+                return false;
+            }
+            for (size_t i = 0; i < 36; ++i) {
+                if (i == 8 || i == 13 || i == 18 || i == 23) {
+                    if (sv[i] != '-') {
+                        return false;
+                    }
+                } else {
+                    auto c = static_cast<unsigned char>(sv[i]);
+                    if (std::isxdigit(c) == 0) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        // Generate a random RFC 4122 v4 UUID using stduuid
+        static auto generate() -> UUID {
+            static thread_local std::mt19937 gen{std::random_device{}()};
+            uuids::uuid_random_generator     gen_uuid{gen};
+            return UUID{uuids::to_string(gen_uuid())};
+        }
     };
 
     // ============================================================================
@@ -304,8 +333,15 @@ export namespace storm::orm::utilities {
             }
             return stmt.bind_blob(param_index, value.data(), value.size());
         }
-        // UUID type (stored as TEXT)
+        // UUID type (stored as TEXT) — auto-generate if empty, validate if provided
         else if constexpr (std::is_same_v<ValueType, UUID>) {
+            if (value.value.empty()) {
+                auto generated = UUID::generate();
+                return stmt.bind_text(param_index, std::string_view{generated.value});
+            }
+            if (!UUID::is_valid(value.value)) {
+                return std::unexpected(ErrorType{-1, std::format("Invalid UUID format: '{}'", value.value)});
+            }
             return stmt.bind_text(param_index, std::string_view{value.value});
         }
         // String types (must be last to avoid matching everything)
