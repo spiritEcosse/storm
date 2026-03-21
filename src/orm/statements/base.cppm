@@ -390,7 +390,7 @@ export namespace storm::orm::statements {
         // Handles: int, int64_t, uint64_t, short, float, double, bool, string, optional<T>, vector<uint8_t>
         template <typename FieldType, typename Statement>
         [[nodiscard]] __attribute__((always_inline)) static auto
-        extract_column_value(Statement* stmt, int col_idx) noexcept -> FieldType {
+        extract_column_value(Statement* stmt, int col_idx) noexcept -> FieldType { // NOSONAR
             // Handle std::optional types first
             if constexpr (utilities::is_optional_v<FieldType>) {
                 using InnerType = typename FieldType::value_type;

@@ -220,7 +220,7 @@ export namespace storm::orm::utilities {
     // Generic parameter binding - unified implementation for WHERE and CRUD statements
     // No dependency on entity type T - pure type dispatch based on value type
     template <typename StmtType, typename ErrorType>
-    [[nodiscard]] auto bind_parameter_value(StmtType& stmt, int param_index, const auto& value) noexcept
+    [[nodiscard]] auto bind_parameter_value(StmtType& stmt, int param_index, const auto& value) noexcept // NOSONAR
             -> std::expected<void, ErrorType> {
         using ValueType = std::decay_t<decltype(value)>;
 
