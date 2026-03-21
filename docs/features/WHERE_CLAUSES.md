@@ -1,786 +1,179 @@
 # WHERE Clauses
 
-Storm ORM provides type-safe WHERE clause filtering using **pure C++26 reflection** - no macros needed, fully module-compatible, achieving **86-90% efficiency** compared to raw SQLite.
+Build WHERE filters using field expressions and operators.
 
-## Overview
+## Basic Syntax
 
-Key features:
-- **Pure C++26 reflection** - Uses `field<^^T::member>()` syntax
-- **Type safety** - Compile-time type checking via templates
-- **Two equivalent syntaxes** - Natural operators or explicit functions
-- **Expression trees** - Composable WHERE clauses using shared_ptr
-- **Zero SQL injection** - All values bound as parameters
-- **86-90% efficiency** - Near-raw SQLite performance
-
-## Basic Usage
-
-### Single Condition
+WHERE expressions use field access via reflection with compile-time operators.
 
 ```cpp
-using namespace storm::orm::where;
-
-struct Person {
-    [[=storm::meta::FieldAttr::primary]] int id;
-    std::string name;
-    int age;
-};
-
-storm::orm::QuerySet<Person> queryset(conn);
-
-// Pure reflection - no macro needed!
-auto result = queryset.where(field<^^Person::age>() > 30).select();
-```
-
-**SQL Generated**:
-```sql
-SELECT id, name, age FROM Person WHERE age > ?
-```
-
-**Performance**: 11.88M rows/sec (86% of raw SQLite)
-
-### Multiple Conditions
-
-```cpp
-// Natural 'and' keyword (or use &&)
-auto result = queryset.where(field<^^Person::age>() > 25 and
-                              field<^^Person::age>() < 50)
-                      .select();
-
-// Natural 'or' keyword (or use ||)
-auto result = queryset.where(field<^^Person::name>() == "Alice" or
-                              field<^^Person::name>() == "Bob")
-                      .select();
-```
-
-**SQL Generated**:
-```sql
-SELECT id, name, age FROM Person WHERE age > ? AND age < ?
-SELECT id, name, age FROM Person WHERE name = ? OR name = ?
-```
-
-**Performance**: 9.45M rows/sec (89.5% of raw SQLite)
-
-## Immutable QuerySet (Django-Style)
-
-**`where()` returns a new QuerySet** — the original is never modified. This is the same pattern as Django's `.filter()`.
-
-### Basic Pattern
-
-```cpp
-storm::orm::QuerySet<Person> qs;
-
-// where() returns a NEW QuerySet — qs is unchanged
-auto adults = qs.where(field<^^Person::age>() >= 18);
-
-auto result1 = adults.select();  // WHERE age >= 18
-auto result2 = qs.select();      // No WHERE — qs was never mutated
-```
-
-### Reusable Base QuerySet
-
-```cpp
-// Create a base filter — reuse it safely
-auto active = qs.where(field<^^Person::is_active>() == true);
-
-auto all_active = active.select();        // WHERE is_active = true
-auto still_active = active.select();      // Same — state preserved ✓
-auto unfiltered = qs.select();            // No WHERE — original untouched ✓
-```
-
-### Progressive Query Building
-
-Each `.where()` call returns a new QuerySet with conditions combined via AND:
-
-```cpp
-auto q1 = qs.where(field<^^Person::age>() >= 20);
-auto q2 = q1.where(field<^^Person::age>() < 35);
-auto q3 = q2.where(field<^^Person::is_active>() == true);
-
-auto result = q3.select();  // WHERE age >= 20 AND age < 35 AND is_active = true
-// q1 and q2 are still usable with their own conditions
-```
-
-### Loop-Safe — No `.reset()` Needed
-
-Because `where()` never mutates the original, loops work without accumulation bugs:
-
-```cpp
-auto qs = QuerySet<Person>();
-
-for (int age : {25, 30, 35, 40}) {
-    // Each iteration creates a fresh copy — no condition accumulation
-    auto results = qs.where(field<^^Person::age>() == age).select().execute();
-}
-// qs is still unfiltered after the loop
-```
-
-### Conditional Query Building
-
-```cpp
-auto qs = QuerySet<Person>();
-auto q = qs.where(field<^^Person::age>() > 18);
-
-if (filter_by_name) {
-    q = q.where(field<^^Person::name>() == "Alice");  // ANDs with existing
-}
-auto result = q.select();
-```
-
-### Clearing State with `reset()`
-
-`reset()` is still available for clearing state on a QuerySet instance:
-
-```cpp
-auto qs = QuerySet<Person>();
-qs.select();   // cached statement
-qs.reset();    // clears WHERE, JOIN, LIMIT, OFFSET, ORDER BY + invalidates statement cache
-qs.select();   // fresh query
-```
-
-### Why Immutable?
-
-- **No silent accumulation bugs** — forgetting `.reset()` in a loop can't cause wrong results
-- **Safe to share** — pass a base QuerySet to functions without defensive copies
-- **Familiar pattern** — same as Django's `.filter()`, SQLAlchemy's `.where()`
-- **Progressive refinement** — build complex queries step-by-step from a common base
-
-## Two Equivalent Syntaxes
-
-Storm ORM supports two syntaxes for combining conditions:
-
-### 1. Natural Operator Syntax (Recommended for Direct Queries)
-
-More readable for inline queries:
-
-```cpp
-using namespace storm::orm::where;
-
-// Single condition
-auto result = queryset.where(field<^^Person::age>() > 30).select();
-
-// Multiple conditions with 'and'/'or' keywords
-auto result = queryset.where(field<^^Person::age>() > 25 and
-                              field<^^Person::age>() < 50).select();
-
-// Complex expressions - use parentheses for precedence
-auto result = queryset.where((field<^^Person::age>() < 30 or
-                               field<^^Person::age>() > 35) and
-                              field<^^Person::name>() != "Charlie")
-                      .select();
-
-// Both 'and'/'or' keywords and &&/|| work identically
-auto result = queryset.where(field<^^Person::age>() > 25 &&
-                              field<^^Person::age>() < 50).select();
-```
-
-### 2. Composing Expressions Programmatically
-
-For dynamic query building, store expressions in variables and combine with `&&` / `||`:
-
-```cpp
-using namespace storm::orm::where;
-
-// Basic composition
-auto expr1 = field<^^Person::age>() > 25;
-auto expr2 = field<^^Person::age>() < 50;
-auto result = queryset.where(expr1 && expr2).select();
-
-// Nested composition
-auto young = field<^^Person::age>() < 30;
-auto old = field<^^Person::age>() > 35;
-auto not_charlie = field<^^Person::name>() != "Charlie";
-auto result = queryset.where((young || old) && not_charlie).select();
-
-// Conditional expression building
-auto q = QuerySet<Person>().where(field<^^Person::age>() > 18);
-if (filter_by_name) {
-    q = q.where(field<^^Person::name>() == "Alice");  // ANDs with existing
-}
-auto result = q.select();
-```
-
-## Syntax Guide
-
-Use natural `&&` and `||` operators for combining expressions:
-
-```cpp
-// Simple conditions
-qs.where(age > 25 && is_active == true).select();
-
-// Complex nested conditions (use parentheses for clarity)
-qs.where((age > 25 || name.like("A%")) && is_active == true).select();
-
-// Building queries progressively
-auto base_query = qs.where(is_active == true);
-auto filtered = base_query.where(age > 25);  // Combines with AND
-```
-
-## Supported Operators
-
-### Comparison Operators
-
-```cpp
-// Equality
-field<^^Person::age>() == 30
-field<^^Person::age>() != 30
-
-// Ordering
-field<^^Person::age>() > 30
-field<^^Person::age>() >= 30
-field<^^Person::age>() < 30
-field<^^Person::age>() <= 30
-```
-
-### Special Methods
-
-#### LIKE (String Pattern Matching)
-
-```cpp
-// Starts with 'A'
-auto result = queryset.where(field<^^Person::name>().like("A%")).select();
-
-// Contains 'smith'
-auto result = queryset.where(field<^^Person::name>().like("%smith%")).select();
-
-// Ends with 'son'
-auto result = queryset.where(field<^^Person::name>().like("%son")).select();
-```
-
-**SQL Generated**:
-```sql
-SELECT id, name, age FROM Person WHERE name LIKE ?
-```
-
-#### BETWEEN (Range Checks)
-
-```cpp
-// Age between 28 and 35 (inclusive)
-auto result = queryset.where(field<^^Person::age>().between(28, 35)).select();
-```
-
-**SQL Generated**:
-```sql
-SELECT id, name, age FROM Person WHERE age BETWEEN ? AND ?
-```
-
-#### IN (Multiple Values)
-
-Storm ORM provides **IN expressions** that work with the builder pattern and can be composed with logical operators:
-
-```cpp
-// IN clause - requires .select() like other WHERE expressions
-auto result = queryset.where(field<^^Person::id>().in(1, 2, 3)).select();
-
-// Works with any type
-auto result = queryset.where(field<^^Person::name>().in("Alice", "Bob", "Charlie")).select();
-
-// Can now be combined with logical operators!
-auto result = queryset.where(
-    field<^^Person::id>().in(1, 2, 3) or field<^^Person::age>() > 50
-).select();
-```
-
-**Performance**: 35-50% efficiency vs raw SQLite (expected for highly selective queries)
-
-**SQL Generated**:
-```sql
-SELECT id, name, age FROM Person WHERE id IN (?, ?, ?)
-SELECT id, name, age FROM Person WHERE name IN (?, ?, ?)
-SELECT id, name, age FROM Person WHERE (id IN (?, ?, ?) OR age > ?)
-```
-
-**Key Features**:
-- Uses runtime expression tree (consistent with other operators)
-- Direct parameter binding via `bind_params_direct()` (eliminates `std::variant` overhead)
-- **Can be composed with AND/OR operators** (major improvement!)
-- Builder pattern allows method chaining
-- Type-safe with heterogeneous value support using `std::common_type_t`
-
-**Design Decision**: IN clauses use the unified runtime expression API for consistency and composability. While this adds some overhead compared to a theoretical compile-time approach, it enables natural composition with logical operators and maintains API simplicity.
-
-#### IS NULL / IS NOT NULL (NULL Checks)
-
-Filter rows where optional fields are NULL or non-NULL. Works with any `std::optional<T>` field.
-
-```cpp
-// Method syntax
-auto nulls = queryset.where(field<^^Person::score>().is_null()).select();
-auto non_nulls = queryset.where(field<^^Person::score>().is_not_null()).select();
-
-// Operator syntax with std::nullopt (natural C++ idiom)
-auto nulls = queryset.where(field<^^Person::score>() == std::nullopt).select();
-auto non_nulls = queryset.where(field<^^Person::score>() != std::nullopt).select();
-
-// Composable with AND/OR
-auto result = queryset.where(
-    field<^^Person::score>().is_null() && field<^^Person::age>() > 30
-).select();
-
-// Works with COLLATE (SQLite only)
-auto result = queryset.where(
-    field<^^Person::nickname>().collate(Collate::NoCase).is_null()
-).select();
-```
-
-**SQL Generated**:
-```sql
-SELECT ... FROM Person WHERE score IS NULL
-SELECT ... FROM Person WHERE score IS NOT NULL
-SELECT ... FROM Person WHERE (score IS NULL AND age > ?)
-```
-
-**Key Features**:
-- No parameters to bind (IS NULL/IS NOT NULL are parameterless SQL expressions)
-- Uses `NullCheckExpr` in the variant-based expression system
-- `std::nullopt_t` overloads provide idiomatic C++ syntax
-- Fully composable with all other WHERE expressions via AND/OR
-
-## Combining with JOIN
-
-WHERE clauses can filter on both base table and joined table fields:
-
-```cpp
-struct User {
-    [[=storm::meta::FieldAttr::primary]] int id;
-    std::string username;
-    int level;
-};
-
-struct Message {
-    [[=storm::meta::FieldAttr::primary]] int id;
-    std::string content;
-    User sender;
-};
-
-storm::orm::QuerySet<Message> message_qs(conn);
-
-// Inline syntax
-auto result = message_qs.join<&Message::sender>()
-                        .where(field<^^User::level>() > 5 &&
-                               field<^^Message::content>().like("%urgent%"))
-                        .select();
-
-// Or with named expressions
-auto level_check = field<^^User::level>() > 5;
-auto content_check = field<^^Message::content>().like("%urgent%");
-auto result = message_qs.join<&Message::sender>()
-                        .where(level_check && content_check)
-                        .select();
-```
-
-**SQL Generated**:
-```sql
-SELECT t1.id, t1.content, t1.sender_id, t2.id, t2.username, t2.level
-FROM Message t1
-INNER JOIN User t2 ON t2.id = t1.sender_id
-WHERE t2.level > ? AND t1.content LIKE ?
-```
-
-See [JOIN Operations](JOIN_OPERATIONS.md) for more details.
-
-## Best Practices
-
-### Simple, Unified API
-
-Storm ORM provides a simple `field<>()` function for all WHERE operations:
-
-```cpp
-using namespace storm::orm::where;
-
-// Comparison operators - support chaining with AND/OR
-auto result = queryset.where(
-    field<^^Person::age>() > 25 and
-    field<^^Person::age>() < 50
-).select();
-
-// Special methods - support chaining with AND/OR
-auto result = queryset.where(
-    field<^^Person::name>().like("A%") or
-    field<^^Person::age>().between(28, 35)
-).select();
-
-// IN clauses - now support chaining like other operators
-auto result = queryset.where(field<^^Person::id>().in(1, 2, 3)).select();
-```
-
-### Performance Tips
-
-1. **Use IN for simple lookups**
-   ```cpp
-   // ✅ Convenient - builder pattern (35-50% efficiency, expected for highly selective queries)
-   auto result = queryset.where(field<^^Person::id>().in(1, 2, 3)).select();
-   ```
-
-2. **Use comparison operators for complex queries**
-   ```cpp
-   // ✅ Flexible - runtime expressions support AND/OR (90-95% efficiency)
-   auto result = queryset.where(
-       field<^^Person::age>() > 25 and
-       field<^^Person::name>() == "Alice"
-   ).select();
-   ```
-
-3. **Cache expressions for repeated queries**
-   ```cpp
-   // ✅ Good - reuse expression
-   auto adult_filter = field<^^Person::age>() >= 18;
-
-   for (int i = 0; i < 1000; ++i) {
-       auto result = queryset.where(adult_filter).select();  // Reuses cached SQL
-   }
-   ```
-
-### Common Pitfalls
-
-✅ **DO call .select() after IN (like all WHERE expressions)**
-```cpp
-// ✅ Correct - builder pattern requires .select()
-auto result = queryset.where(field<^^User::id>().in(1, 2, 3)).select();
-
-// ✅ Can now compose with other conditions
-auto result = queryset.where(
-    field<^^User::id>().in(1, 2, 3) or field<^^User::age>() > 50
-).select();
-
-// ✅ Method chaining works naturally
-auto result = queryset
-    .where(field<^^User::id>().in(1, 2, 3))
-    .where(field<^^User::is_active>() == true)
+auto results = QuerySet<Person>()
+    .where(field<^^Person::age>() > 30)
     .select();
 ```
 
-### Understanding IN Performance
+The `field<^^Member>()` function creates a field expression for type-safe comparisons at compile time.
 
-IN clause efficiency appears low (35-50%) because:
-- High selectivity: fetching only 3-10 rows from 10,000
-- Result set size dominates the measurement
-- This is expected behavior, not a bug
-- Comparable to other WHERE operations for similar selectivity
+## Comparison Operators
 
-The runtime design provides:
-- Consistent API with other WHERE operations
-- Composability with logical operators (AND/OR)
-- Direct parameter binding via `bind_params_direct()` (eliminates `std::variant` overhead)
-- Natural method chaining with builder pattern
-
-See [Compile-Time vs Runtime](../architecture/COMPILE_TIME_VS_RUNTIME.md) for detailed analysis of design tradeoffs.
-
-## Architecture
-
-### Field Expression
-
-The `field<^^T::member>()` function uses pure C++26 reflection:
+All 6 comparison operators are supported.
 
 ```cpp
-template <std::meta::info FieldInfo>
-auto field() {
-    // Extract field information at compile-time
-    constexpr auto field_name = std::meta::identifier_of(FieldInfo);
-    constexpr auto field_type = std::meta::type_of(FieldInfo);
-    constexpr auto parent_type = std::meta::parent_of(FieldInfo);
+// Equals
+auto results = QuerySet<Person>()
+    .where(field<^^Person::age>() == 30)
+    .select();
 
-    return Field<parent_type, field_type>{
-        .table_name = get_table_name<parent_type>(),
-        .field_name = field_name
-    };
-}
+// Not equals
+auto results = QuerySet<Person>()
+    .where(field<^^Person::age>() != 30)
+    .select();
+
+// Greater/Less than
+auto results = QuerySet<Person>()
+    .where(field<^^Person::age>() > 30)
+    .select();
+
+auto results = QuerySet<Person>()
+    .where(field<^^Person::age>() <= 65)
+    .select();
 ```
 
-**Key features**:
-- No macros needed
-- Fully module-compatible
-- Compile-time type extraction
-- Zero runtime overhead
+| Operator | SQL | Example |
+|---|---|---|
+| `==` | `=` | `age == 30` |
+| `!=` | `!=` | `age != 30` |
+| `>` | `>` | `age > 30` |
+| `>=` | `>=` | `age >= 30` |
+| `<` | `<` | `age < 30` |
+| `<=` | `<=` | `age <= 30` |
 
-### Expression Trees
+## String Operations
 
-WHERE clauses are represented as composable expression trees:
+### LIKE pattern matching
+
+The `%` wildcard matches any sequence of characters.
 
 ```cpp
-class IExpression {
-    virtual std::string to_sql() const = 0;
-    virtual void bind(Statement& stmt, int& idx) const = 0;
-};
-
-// Comparison expression
-template <typename T, typename FieldType>
-class ComparisonExpr : public IExpression {
-    Field<T, FieldType> field_;
-    std::string op_;
-    FieldType value_;
-};
-
-// Logical expression (AND/OR)
-class LogicalExpr : public IExpression {
-    std::shared_ptr<IExpression> left_;
-    std::shared_ptr<IExpression> right_;
-    std::string op_;  // "AND" or "OR"
-};
+// WHERE name LIKE 'Al%'
+auto results = QuerySet<Person>()
+    .where(field<^^Person::name>().like("Al%"))
+    .select();
 ```
 
-### Expr Wrapper (Natural Operators)
+### BETWEEN range queries
 
-The `Expr` class enables natural `and`/`or` syntax without ambiguity:
+The `between()` method creates a range check.
 
 ```cpp
-class Expr {
-    std::shared_ptr<IExpression> expr_;
-
-public:
-    // Natural 'and' keyword (or &&)
-    friend Expr operator and(const Expr& lhs, const Expr& rhs) {
-        return Expr{std::make_shared<LogicalExpr>(lhs.expr_, rhs.expr_, "AND")};
-    }
-
-    // Natural 'or' keyword (or ||)
-    friend Expr operator or(const Expr& lhs, const Expr& rhs) {
-        return Expr{std::make_shared<LogicalExpr>(lhs.expr_, rhs.expr_, "OR")};
-    }
-};
+// WHERE age BETWEEN 25 AND 65
+auto results = QuerySet<Person>()
+    .where(field<^^Person::age>().between(25, 65))
+    .select();
 ```
 
-**Benefits**:
-- Intuitive syntax matching SQL
-- No conflicts with built-in operators
-- Works with both keywords and symbols
-- Fully composable
+## COLLATE
 
-### Type Safety
-
-Compile-time type checking ensures type safety:
+Collation for string comparisons (case-insensitive, etc).
 
 ```cpp
-// Compile error: comparing int field with string
-auto expr = field<^^Person::age>() > "invalid";  // ❌ Compile error
-
-// OK: correct types
-auto expr = field<^^Person::age>() > 30;         // ✅ OK
-auto expr = field<^^Person::name>() == "Alice";  // ✅ OK
+auto results = QuerySet<Person>()
+    .where(field<^^Person::name>().collate(Collate::NoCase) == "alice")
+    .select();
 ```
 
-### SQL Injection Prevention
+| Option | Behavior |
+|---|---|
+| `Collate::Binary` | Binary comparison (default) |
+| `Collate::NoCase` | Case-insensitive (locale-independent) |
+| `Collate::RTrim` | Right-trim whitespace before comparing |
 
-All values are bound as parameters, never concatenated into SQL:
+Collation is applied during query construction and compiled into the WHERE SQL.
+
+## NULL Checks
+
+Test for NULL or NOT NULL values on optional fields.
+
+### is_null()
+
+Generate an `IS NULL` check.
 
 ```cpp
-// User input
-std::string user_input = "'; DROP TABLE Person; --";
-
-// Safe - bound as parameter, not concatenated
-auto result = queryset.where(field<^^Person::name>() == user_input).select();
-
-// Generated SQL uses placeholders
-// SELECT id, name, age FROM Person WHERE name = ?
-// Parameter: "'; DROP TABLE Person; --" (treated as string literal)
+// SELECT * FROM person WHERE score IS NULL
+auto nulls = QuerySet<Person>()
+    .where(field<^^Person::score>().is_null())
+    .select();
 ```
 
-## Performance Results
+### is_not_null()
 
-### Comprehensive Benchmark Results (10,000 rows, Release build)
-
-| Operation | Storm ORM | Raw SQLite | Efficiency |
-|-----------|-----------|------------|------------|
-| **Baseline** | | | |
-| SELECT (no WHERE) | 9.94M rows/sec | - | - |
-| **Data Type Comparisons** | | | |
-| int (`age > 30`) | 9.51M rows/sec | 10.21M rows/sec | **93.1%** |
-| bool (`is_active == true`) | 9.09M rows/sec | 10.17M rows/sec | **89.4%** |
-| **Special Methods** | | | |
-| LIKE (`name LIKE "Person5%"`) | 2.82M rows/sec | 2.90M rows/sec | **97.2%** |
-| BETWEEN (`age BETWEEN 28 AND 35`) | 5.01M rows/sec | 5.23M rows/sec | **95.9%** |
-| IN (3 values) | 0.36-0.42M rows/sec | 0.99M rows/sec | **36-42%** |
-| IN (10 values) | 0.98-1.00M rows/sec | 1.97M rows/sec | **49-51%** |
-| **Complex Queries** | | | |
-| Simple (2 conditions) | 7.44M rows/sec | 7.81M rows/sec | **95.2%** |
-| Medium (4 conditions) | 1.38M rows/sec | 1.40M rows/sec | **98.6%** |
-| Complex (8+ conditions) | 0.57M rows/sec | 0.58M rows/sec | **98.3%** |
-
-**Average Efficiency**: 89-98% for most operations (meeting 95% target)
-
-**Note on IN operator**: Lower efficiency (32-50%) is expected due to result set selectivity (fetching only 3-10 rows from 10,000). Complex queries show excellent efficiency because SQLite performs most of the work.
-
-### Performance Characteristics by Category
-
-**Data Type Comparisons** (89-93% efficiency):
-- Integer and bool comparisons are nearly as fast as raw SQLite
-- Minimal overhead from expression tree construction
-- Single parameter binding is very efficient
-
-**Special Methods** (95-97% efficiency for LIKE/BETWEEN, 32-50% for IN):
-- LIKE and BETWEEN show excellent efficiency (95-97%)
-- IN operator has lower efficiency due to:
-  - High selectivity (fetching only 3-10 rows from 10,000)
-  - Multiple parameter bindings
-  - Result set size dominates overhead measurement
-- When IN returns more rows, efficiency improves (32% for 3 values → 49.8% for 10 values)
-
-**Complex Queries** (95-98% efficiency):
-- Surprisingly high efficiency for complex nested queries
-- SQLite does most of the work (query planning, execution)
-- Storm's overhead is constant regardless of query complexity
-- Expression tree traversal is very efficient
-
-**Key Insight**: Storm WHERE clause overhead is primarily constant (~0.5-1 µs per query), making it negligible for complex queries where SQLite execution dominates.
-
-**Bottlenecks**:
-1. Result set extraction (~6-8% for large result sets)
-2. Expression tree allocation (~1-2%)
-3. SQL string construction (~1%)
-4. Parameter binding (<1% for simple queries)
-5. SQLite execution (unavoidable, dominates for complex queries)
-
-## Benchmarking
-
-Run WHERE performance benchmarks:
-
-```bash
-# Python benchmark suite (recommended)
-python3 bench.py --all
-
-# Direct C++ benchmark
-cmake --preset ninja-release -DENABLE_BENCH=ON
-cmake --build --preset ninja-release
-./build/release/benchmarks/bench_where --size=10000
-```
-
-See `benchmarks/bench_where.cpp` for benchmark implementation.
-
-## Testing
-
-Comprehensive WHERE tests in `tests/test_where.cpp`:
-- Single condition queries
-- Multiple condition queries
-- Complex nested expressions
-- Special methods (like, between, in)
-- Type safety verification
-- WHERE with JOIN operations
-
-## Implementation Details
-
-### Compile-Time Field Extraction
+Generate an `IS NOT NULL` check.
 
 ```cpp
-template <std::meta::info FieldInfo>
-consteval auto extract_field_metadata() {
-    return FieldMetadata{
-        .name = std::meta::identifier_of(FieldInfo),
-        .type = std::meta::type_of(FieldInfo),
-        .parent = std::meta::parent_of(FieldInfo)
-    };
-}
+// SELECT * FROM person WHERE score IS NOT NULL
+auto non_nulls = QuerySet<Person>()
+    .where(field<^^Person::score>().is_not_null())
+    .select();
 ```
 
-### Expression Tree Traversal
+### Using nullopt for NULL checks
+
+Comparison with `std::nullopt` generates the same SQL.
 
 ```cpp
-std::string to_sql() const override {
-    // Build SQL recursively
-    if (is_logical_expr()) {
-        return left_->to_sql() + " " + op_ + " " + right_->to_sql();
-    } else {
-        return field_name_ + " " + op_ + " ?";
-    }
-}
+// These are equivalent:
+.where(field<^^Person::score>().is_null())
+.where(field<^^Person::score>() == std::nullopt)
 
-void bind(Statement& stmt, int& idx) const override {
-    // Bind parameters recursively
-    if (is_logical_expr()) {
-        left_->bind(stmt, idx);
-        right_->bind(stmt, idx);
-    } else {
-        stmt.bind(idx++, value_);
-    }
-}
+// These are equivalent:
+.where(field<^^Person::score>().is_not_null())
+.where(field<^^Person::score>() != std::nullopt)
 ```
 
-## Key Benefits
+### NULL checks with COLLATE
 
-✅ **Pure C++26 reflection** - No macros, fully module-compatible
-✅ **Immutable QuerySet** - `where()` returns a new copy, original unchanged (Django-style)
-✅ **Type safety** - Compile-time type checking
-✅ **Natural operators** - Use `&&` and `||` directly
-✅ **Zero SQL injection** - All values bound as parameters
-✅ **Composable** - Build complex expressions dynamically
-✅ **86-90% efficiency** - Near-raw SQLite performance
+COLLATE can be combined with NULL checks on optional string fields.
 
-## Performance Optimization Investigation
-
-### Can We Reach 99% Efficiency?
-
-**TL;DR**: The current 86-90% efficiency represents an excellent balance between developer experience and performance. Reaching 99% would require fundamental changes that sacrifice the elegant API.
-
-### Investigation Summary (2025-10)
-
-An investigation was conducted to determine if compile-time SQL generation could improve WHERE clause performance from 90-92% to 96-99% efficiency.
-
-**Approach Tested**: Compile-time WHERE API with template-based SQL generation:
 ```cpp
-// Compile-time API (tested but not adopted)
-queryset.where_gt<^^Person::age>(30);  // 90-92% efficiency
-
-// Current runtime API (kept)
-queryset.where(field<^^Person::age>() > 30).select();  // 88-91% efficiency
+// SELECT * FROM person WHERE nickname COLLATE NOCASE IS NULL
+auto results = QuerySet<Person>()
+    .where(field<^^Person::nickname>().collate(Collate::NoCase).is_null())
+    .select();
 ```
 
-**Results** (10,000 rows, 500-1000 iterations):
-- **Runtime WHERE** (expression tree): 88.5-91.3% efficiency
-- **Compile-time WHERE** (direct SQL): 90.6-91.2% efficiency
-- **Improvement**: +0-2% (within measurement variance)
+### Composing NULL checks
 
-**Root Cause Analysis**: The real bottleneck isn't WHERE clause overhead—it's row extraction and result management:
-1. **Row extraction** (~6-8%): Converting SQLite rows to C++ objects
-2. **Vector resizing** (~1-2%): Dynamic memory management
-3. **Parameter binding** (~1%): Even direct binding has overhead
-4. **SQL construction** (~1%): Even compile-time has initialization cost
+NULL checks compose with AND/OR like any other expression.
 
-The expression tree overhead we could eliminate was only **~1-2%** of total overhead.
+```cpp
+// SELECT * FROM person WHERE score IS NULL AND age > 30
+auto results = QuerySet<Person>()
+    .where(field<^^Person::score>().is_null() && field<^^Person::age>() > 30)
+    .select();
+```
 
-**Conclusion**:
-- **88-91% efficiency is excellent** for an ORM with elegant, type-safe API
-- Compile-time SQL provides marginal improvement (~0-2%)
-- The 9-12% gap vs raw SQLite is primarily unavoidable ORM abstraction cost
-- The natural `field<^^Person::age>() > 30` syntax is worth the minimal overhead
+## Logical Composition
 
-To reach 96-99% efficiency would require:
-- Optimizing row extraction (not WHERE clauses)
-- Pre-allocated result buffers
-- Zero-copy string handling
-- These optimizations would apply equally to all SELECT operations, not just WHERE
+Expressions can be combined with `&&` (AND) and `||` (OR).
 
-**Recommendation**: Keep the current elegant runtime WHERE API. The performance is already excellent and the developer experience is superior.
+```cpp
+// WHERE (age > 30) AND (name == "Alice")
+auto results = QuerySet<Person>()
+    .where((field<^^Person::age>() > 30) && (field<^^Person::name>() == "Alice"))
+    .select();
 
-## Performance Investigation: Virtual Functions vs Function Pointers
+// WHERE (age < 25) OR (salary > 100000)
+auto results = QuerySet<Person>()
+    .where((field<^^Person::age>() < 25) || (field<^^Person::salary>() > 100000))
+    .select();
 
-**Date**: 2025-10-27
-**Investigation**: Evaluated function pointer-based type erasure (similar to JoinStatementWrapper) as an alternative to virtual functions for WHERE expression building.
+// Complex nesting
+auto results = QuerySet<Person>()
+    .where(
+        (field<^^Person::age>() > 30 && field<^^Person::salary>() > 50000) ||
+        (field<^^Person::years_experience>() >= 10)
+    )
+    .select();
+```
 
-### Results
-
-Benchmarked 1M iterations of expression building (not query execution):
-
-| Operation | Virtual Functions | Function Pointers | Difference |
-|-----------|-------------------|-------------------|------------|
-| Simple comparison (`field > value`) | 58.10 ns/op | 51.97 ns/op | +10.6% faster |
-| Complex expression (`(a > 25 && a < 50) \|\| b == "Test"`) | 258.25 ns/op | 250.29 ns/op | +3.1% faster |
-| LIKE expression | 34.93 ns/op | 34.39 ns/op | +1.5% faster |
-| BETWEEN expression | 39.02 ns/op | 38.92 ns/op | +0.3% faster |
-| IN expression (5 values) | 122.48 ns/op | 126.33 ns/op | -3.1% slower |
-
-### Decision: Keep Virtual Functions
-
-**Rationale**:
-1. **Marginal gains** - 6-8 nanoseconds saved on expression building (not query execution)
-2. **Expression building ≠ bottleneck** - WHERE filtering runs at 9.45-11.88M rows/sec (86-90% efficiency). The bottleneck is SQLite execution, not expression construction.
-3. **Increased complexity** - Function pointers require factory functions, manual memory management (`void*` casts), and move-only semantics
-4. **Different usage pattern than JOIN** - JOINs benefit from compile-time SQL generation with static function pointers. WHERE clauses are inherently dynamic with runtime value binding, requiring heap allocation regardless of approach.
-5. **Code maintainability** - Virtual function approach is cleaner, uses `shared_ptr` for automatic memory management, and is easier to debug
-
-**Conclusion**: The 3-10% speedup on expression building does not justify the increased code complexity, especially when expression building cost is negligible compared to query execution. The virtual function approach remains the right choice for WHERE clauses.
-
-## See Also
-
-- [SELECT Queries](SELECT_QUERIES.md) - Statement caching with WHERE
-- [JOIN Operations](JOIN_OPERATIONS.md) - Combine WHERE with JOINs
-- [C++26 Reflection](../architecture/REFLECTION.md) - How reflection works
-- [Compile-Time vs Runtime](../architecture/COMPILE_TIME_VS_RUNTIME.md) - Design tradeoffs and performance analysis
-- [SQL Generation](../architecture/SQL_GENERATION.md) - Compile-time SQL generation
+Parentheses improve readability and ensure correct precedence.
