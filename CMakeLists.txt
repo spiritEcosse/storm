@@ -59,6 +59,7 @@ link_sqlite(${PROJECT_NAME})
 link_postgresql(${PROJECT_NAME})
 
 include(cmake/cpm.cmake)
+include(cmake/uuid.cmake)
 include(cmake/cmake-scripts.cmake)
 
 # ── Feature options ───────────────────────────────────────────────────────────
