@@ -14,7 +14,10 @@
  */
 
 #include <array>
+#include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <gtest/gtest.h>
 #include <optional>
 #include <span>
@@ -61,11 +64,13 @@ struct Message {
 // Section 1: Type coverage structs (no FK dependencies)
 // =============================================================================
 
-// Extended numeric types model — covers int64_t, float, double, unsigned int,
-// long long, optional<double>, optional<int64_t>, and a label string.
-// Limited to 8 non-PK fields to stay within constexpr SSO (22-char placeholder limit).
-// Replaces: IntTypes, FloatTypes, MixedTypes, OptTypes, DataTypes, UnsignedTypes,
-// LongLongTypes, FloatType, OptionalDouble, OptionalInt64.
+// Enum type for testing enum field support
+enum class Color : int { Red = 0, Green = 1, Blue = 2 };
+
+// Extended types model — covers all supported SQLite column types.
+// Includes: int64, float, double, unsigned, long long, char types, enum,
+// chrono date/datetime/duration, filesystem::path, UUID, vector<byte>,
+// plus optional variants.
 struct ExtendedTypes {
     [[= storm::meta::FieldAttr::primary]] int id{};
     int64_t big_num{};
@@ -76,6 +81,19 @@ struct ExtendedTypes {
     std::optional<double> opt_double;
     std::optional<int64_t> opt_int64;
     std::string label;
+    signed char tiny_signed{};
+    unsigned char tiny_unsigned{};
+    char single_char{};
+    Color color{Color::Red};
+    std::chrono::year_month_day date_field{};
+    std::chrono::system_clock::time_point datetime_field{};
+    std::chrono::seconds duration_field{};
+    std::filesystem::path file_path;
+    std::vector<std::byte> raw_data;
+    storm::UUID uuid_field;
+    std::optional<Color> opt_color;
+    std::optional<std::chrono::system_clock::time_point> opt_timestamp;
+    std::optional<std::filesystem::path> opt_path;
 };
 
 // =============================================================================

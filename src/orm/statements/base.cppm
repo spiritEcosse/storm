@@ -21,6 +21,10 @@ import <optional>;
 import <vector>;
 import <cstdint>;
 import <memory>;
+import <type_traits>;
+import <chrono>;
+import <filesystem>;
+import <cstddef>;
 
 export namespace storm::orm::statements {
 
@@ -412,11 +416,60 @@ export namespace storm::orm::statements {
                                  std::is_same_v<FieldType, unsigned int>) {
                 return static_cast<FieldType>(stmt->extract_int(col_idx));
             }
+            // Char types (stored as INTEGER)
+            else if constexpr (std::is_same_v<FieldType, signed char> || std::is_same_v<FieldType, unsigned char> ||
+                               std::is_same_v<FieldType, char>) {
+                return static_cast<FieldType>(stmt->extract_int(col_idx));
+            }
+            // Enum types (stored as INTEGER via underlying type)
+            else if constexpr (std::is_enum_v<FieldType>) {
+                using Underlying = std::underlying_type_t<FieldType>;
+                if constexpr (sizeof(Underlying) <= sizeof(int)) {
+                    return static_cast<FieldType>(stmt->extract_int(col_idx));
+                } else {
+                    return static_cast<FieldType>(stmt->extract_int64(col_idx));
+                }
+            }
             // Floating point types
             else if constexpr (std::is_same_v<FieldType, double>) {
                 return stmt->extract_double(col_idx);
             } else if constexpr (std::is_same_v<FieldType, float>) {
                 return stmt->extract_float(col_idx);
+            }
+            // Chrono date type (stored as TEXT "YYYY-MM-DD")
+            else if constexpr (std::is_same_v<FieldType, std::chrono::year_month_day>) {
+                const unsigned char* text = stmt->extract_text_ptr(col_idx);
+                if (text) {
+                    int len = stmt->extract_bytes(col_idx);
+                    return utilities::chrono_conv::string_to_ymd(
+                            std::string_view(reinterpret_cast<const char*>(text), len)
+                    );
+                }
+                return FieldType{}; // LCOV_EXCL_LINE — NOT NULL column, defensive fallback
+            }
+            // Chrono datetime type (stored as TEXT "YYYY-MM-DD HH:MM:SS")
+            else if constexpr (std::is_same_v<FieldType, std::chrono::system_clock::time_point>) {
+                const unsigned char* text = stmt->extract_text_ptr(col_idx);
+                if (text) {
+                    int len = stmt->extract_bytes(col_idx);
+                    return utilities::chrono_conv::string_to_tp(
+                            std::string_view(reinterpret_cast<const char*>(text), len)
+                    );
+                }
+                return FieldType{}; // LCOV_EXCL_LINE — NOT NULL column, defensive fallback
+            }
+            // Chrono duration types (stored as INTEGER — raw count)
+            else if constexpr (utilities::is_chrono_duration_v<FieldType>) {
+                return FieldType{static_cast<typename FieldType::rep>(stmt->extract_int64(col_idx))};
+            }
+            // Filesystem path (stored as TEXT)
+            else if constexpr (std::is_same_v<FieldType, std::filesystem::path>) {
+                const unsigned char* text = stmt->extract_text_ptr(col_idx);
+                if (text) {
+                    int len = stmt->extract_bytes(col_idx);
+                    return std::filesystem::path(std::string(reinterpret_cast<const char*>(text), len));
+                }
+                return FieldType{}; // LCOV_EXCL_LINE — NOT NULL column, defensive fallback
             }
             // BLOB types
             else if constexpr (std::is_same_v<FieldType, std::vector<uint8_t>> ||
@@ -428,6 +481,25 @@ export namespace storm::orm::statements {
                     return FieldType(data, data + size);
                 }
                 return FieldType{};
+            }
+            // BLOB type (std::vector<std::byte>)
+            else if constexpr (std::is_same_v<FieldType, std::vector<std::byte>>) {
+                const void* blob = stmt->extract_blob_ptr(col_idx);
+                const int   size = stmt->extract_bytes(col_idx);
+                if (blob && size > 0) {
+                    const auto* data = static_cast<const std::byte*>(blob);
+                    return FieldType(data, data + size);
+                }
+                return FieldType{};
+            }
+            // UUID type (stored as TEXT)
+            else if constexpr (std::is_same_v<FieldType, utilities::UUID>) {
+                const unsigned char* text = stmt->extract_text_ptr(col_idx);
+                if (text) {
+                    int len = stmt->extract_bytes(col_idx);
+                    return utilities::UUID{std::string(reinterpret_cast<const char*>(text), len)};
+                }
+                return FieldType{}; // LCOV_EXCL_LINE — NOT NULL column, defensive fallback
             }
             // String types
             else if constexpr (std::is_same_v<FieldType, std::string>) {
@@ -441,9 +513,10 @@ export namespace storm::orm::statements {
                 static_assert(
                         std::is_same_v<FieldType, int> || std::is_same_v<FieldType, std::string>,
                         "Unsupported field type for column extraction. Supported types: "
-                        "int, int64_t, long, short, unsigned variants, "
-                        "float, double, bool, std::string, "
-                        "std::optional<T>, std::vector<uint8_t>"
+                        "int, int64_t, long, short, char, unsigned variants, enum, "
+                        "float, double, bool, std::string, chrono types, "
+                        "filesystem::path, UUID, std::optional<T>, "
+                        "std::vector<uint8_t>, std::vector<std::byte>"
                 );
             }
         }

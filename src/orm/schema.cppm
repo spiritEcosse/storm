@@ -19,6 +19,10 @@ import <array>;
 import <utility>;
 import <tuple>;
 import <iterator>;
+import <type_traits>;
+import <chrono>;
+import <filesystem>;
+import <cstddef>;
 
 export namespace storm::orm::schema {
 
@@ -30,9 +34,18 @@ export namespace storm::orm::schema {
         // Map a C++ field type to its SQLite column definition string
         // Returns the column type portion (after the column name)
         template <typename FieldType> consteval auto sql_col_def() -> std::string_view {
+            using utilities::is_chrono_duration_v;
+            using utilities::is_optional_v;
+            using utilities::optional_inner_type_t;
+
+            // === OPTIONAL TYPES (nullable, no NOT NULL) ===
             if constexpr (std::is_same_v<FieldType, std::optional<int>> ||
                           std::is_same_v<FieldType, std::optional<int64_t>> ||
                           std::is_same_v<FieldType, std::optional<bool>>) {
+                return "INTEGER";
+            } else if constexpr (is_optional_v<FieldType> && std::is_enum_v<optional_inner_type_t<FieldType>>) {
+                return "INTEGER";
+            } else if constexpr (is_optional_v<FieldType> && is_chrono_duration_v<optional_inner_type_t<FieldType>>) {
                 return "INTEGER";
             } else if constexpr (std::is_same_v<FieldType, std::optional<double>> ||
                                  std::is_same_v<FieldType, std::optional<float>>) {
@@ -40,20 +53,43 @@ export namespace storm::orm::schema {
             } else if constexpr (std::is_same_v<FieldType, std::optional<std::string>> ||
                                  std::is_same_v<FieldType, std::optional<std::string_view>>) {
                 return "TEXT";
-            } else if constexpr (std::is_same_v<FieldType, std::vector<uint8_t>> ||
-                                 std::is_same_v<FieldType, std::vector<unsigned char>>) {
+            } else if constexpr (is_optional_v<FieldType> &&
+                                 (std::is_same_v<optional_inner_type_t<FieldType>, std::chrono::year_month_day> ||
+                                  std::is_same_v<
+                                          optional_inner_type_t<FieldType>,
+                                          std::chrono::system_clock::time_point> ||
+                                  std::is_same_v<optional_inner_type_t<FieldType>, std::filesystem::path> ||
+                                  std::is_same_v<optional_inner_type_t<FieldType>, utilities::UUID>)) {
+                return "TEXT";
+            }
+            // === BLOB TYPES ===
+            else if constexpr (std::is_same_v<FieldType, std::vector<uint8_t>> ||
+                               std::is_same_v<FieldType, std::vector<unsigned char>> ||
+                               std::is_same_v<FieldType, std::vector<std::byte>>) {
                 return "BLOB";
-            } else if constexpr (std::is_same_v<FieldType, int> || std::is_same_v<FieldType, int64_t> ||
-                                 std::is_same_v<FieldType, bool> || std::is_same_v<FieldType, short> ||
-                                 std::is_same_v<FieldType, unsigned int> || std::is_same_v<FieldType, unsigned short> ||
-                                 std::is_same_v<FieldType, long> || std::is_same_v<FieldType, unsigned long> ||
-                                 std::is_same_v<FieldType, long long> ||
-                                 std::is_same_v<FieldType, unsigned long long>) {
+            }
+            // === NON-OPTIONAL TYPES (NOT NULL) ===
+            else if constexpr (std::is_same_v<FieldType, int> || std::is_same_v<FieldType, int64_t> ||
+                               std::is_same_v<FieldType, bool> || std::is_same_v<FieldType, short> ||
+                               std::is_same_v<FieldType, unsigned int> || std::is_same_v<FieldType, unsigned short> ||
+                               std::is_same_v<FieldType, long> || std::is_same_v<FieldType, unsigned long> ||
+                               std::is_same_v<FieldType, long long> || std::is_same_v<FieldType, unsigned long long> ||
+                               std::is_same_v<FieldType, signed char> || std::is_same_v<FieldType, unsigned char> ||
+                               std::is_same_v<FieldType, char>) {
+                return "INTEGER NOT NULL";
+            } else if constexpr (std::is_enum_v<FieldType>) {
+                return "INTEGER NOT NULL";
+            } else if constexpr (is_chrono_duration_v<FieldType>) {
                 return "INTEGER NOT NULL";
             } else if constexpr (std::is_same_v<FieldType, double> || std::is_same_v<FieldType, float>) {
                 return "REAL NOT NULL";
             } else if constexpr (std::is_same_v<FieldType, std::string> ||
                                  std::is_same_v<FieldType, std::string_view>) {
+                return "TEXT NOT NULL";
+            } else if constexpr (std::is_same_v<FieldType, std::chrono::year_month_day> ||
+                                 std::is_same_v<FieldType, std::chrono::system_clock::time_point> ||
+                                 std::is_same_v<FieldType, std::filesystem::path> ||
+                                 std::is_same_v<FieldType, utilities::UUID>) {
                 return "TEXT NOT NULL";
             } else {
                 // Fallback for unknown types — treat as TEXT
