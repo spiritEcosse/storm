@@ -38,6 +38,7 @@ file(
   "${CMAKE_CURRENT_SOURCE_DIR}/crud/*.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/query/*.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/schema/*.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/db/*.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/errors/*.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/yaml/*.cpp")
 
