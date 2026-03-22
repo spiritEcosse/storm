@@ -8,6 +8,7 @@ export module storm_orm_queryset;
 
 import storm_db_concept;
 import storm_db_sqlite;
+import storm_db_pool;
 import storm_orm_statements_base;
 import storm_orm_statements_remove;
 import storm_orm_statements_insert;
@@ -462,6 +463,19 @@ export namespace storm {
             }
 
             detail::get_default_connection_ptr<ConnType>() = conn_ptr;
+            return {};
+        }
+
+        // Set default connection from a connection pool
+        // Checks out a connection from the pool and sets it as the thread-local default.
+        // When clear_default_connection() is called, the custom deleter returns it to the pool.
+        [[nodiscard]] static auto set_default_connection(storm::db::ConnectionPool<ConnType>& pool)
+                -> std::expected<void, typename ConnType::Error> {
+            auto conn = pool.checkout();
+            if (!conn) {
+                return std::unexpected(conn.error());
+            }
+            detail::get_default_connection_ptr<ConnType>() = std::move(*conn);
             return {};
         }
 

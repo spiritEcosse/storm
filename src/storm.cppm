@@ -10,6 +10,7 @@ export import storm_orm_utilities;
 export import storm_db_concept;
 export import storm_db_sqlite;
 export import storm_db_postgresql;
+export import storm_db_pool;
 export import storm_orm_statements_base;
 export import storm_orm_statements_insert;
 export import storm_orm_statements_select;
