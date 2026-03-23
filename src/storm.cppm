@@ -59,9 +59,10 @@ export namespace storm {
         }
     } // namespace meta
 
-    // Returns the compile-time generated CREATE TABLE SQL for model T (SQLite dialect, lazy-cached).
-    template <typename T> auto create_table_sql() -> const std::string& {
-        return orm::schema::SchemaStatement<T>::create_table_sql();
+    // Returns the compile-time generated CREATE TABLE SQL for model T and dialect D.
+    template <typename T, orm::schema::Dialect D = orm::schema::Dialect::SQLite>
+    auto create_table_sql() -> const std::string& {
+        return orm::schema::SchemaStatement<T>::template create_table_sql<D>();
     }
 
     // Returns the pre-computed CREATE INDEX SQL statements for model T.

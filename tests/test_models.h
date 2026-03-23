@@ -85,7 +85,7 @@ struct ExtendedTypes {
     unsigned char tiny_unsigned{};
     char single_char{};
     Color color{Color::Red};
-    std::chrono::year_month_day date_field{};
+    std::chrono::year_month_day date_field{std::chrono::year{2000} / std::chrono::January / std::chrono::day{1}};
     std::chrono::system_clock::time_point datetime_field{};
     std::chrono::seconds duration_field{};
     std::filesystem::path file_path;
