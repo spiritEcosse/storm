@@ -36,7 +36,8 @@ export namespace storm::orm::schema {
 
         // Map a C++ field type to its SQL column definition string for the given dialect.
         // Returns the column type portion (after the column name).
-        template <typename FieldType, Dialect D = Dialect::SQLite> consteval auto sql_col_def() -> std::string_view {
+        template <typename FieldType, Dialect D = Dialect::SQLite>
+        consteval auto sql_col_def() -> std::string_view { // NOSONAR(cpp:S3776) if-constexpr type dispatch
             using utilities::is_chrono_duration_v;
             using utilities::is_optional_v;
             using utilities::optional_inner_type_t;
