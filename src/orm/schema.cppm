@@ -26,93 +26,161 @@ import <cstddef>;
 
 export namespace storm::orm::schema {
 
+    // SQL dialect for compile-time schema generation
+    enum class Dialect { SQLite, PostgreSQL };
+
     // Import utilities for compile-time string building
     using storm::orm::utilities::ConstexprString;
 
     namespace detail {
 
-        // Map a C++ field type to its SQLite column definition string
-        // Returns the column type portion (after the column name)
-        template <typename FieldType> consteval auto sql_col_def() -> std::string_view {
+        // Map a C++ field type to its SQL column definition string for the given dialect.
+        // Returns the column type portion (after the column name).
+        template <typename FieldType, Dialect D = Dialect::SQLite> consteval auto sql_col_def() -> std::string_view {
             using utilities::is_chrono_duration_v;
             using utilities::is_optional_v;
             using utilities::optional_inner_type_t;
+            constexpr bool pg = (D == Dialect::PostgreSQL);
 
             // === OPTIONAL TYPES (nullable, no NOT NULL) ===
-            if constexpr (std::is_same_v<FieldType, std::optional<int>> ||
-                          std::is_same_v<FieldType, std::optional<int64_t>> ||
-                          std::is_same_v<FieldType, std::optional<bool>>) {
-                return "INTEGER";
+            if constexpr (std::is_same_v<FieldType, std::optional<bool>>) {
+                if constexpr (pg) {
+                    return "BOOLEAN";
+                } else {
+                    return "INTEGER";
+                }
+            } else if constexpr (std::is_same_v<FieldType, std::optional<int>> ||
+                                 std::is_same_v<FieldType, std::optional<int64_t>>) {
+                if constexpr (pg) {
+                    return "BIGINT";
+                } else {
+                    return "INTEGER";
+                }
             } else if constexpr (is_optional_v<FieldType> && std::is_enum_v<optional_inner_type_t<FieldType>>) {
-                return "INTEGER";
+                if constexpr (pg) {
+                    return "BIGINT";
+                } else {
+                    return "INTEGER";
+                }
             } else if constexpr (is_optional_v<FieldType> && is_chrono_duration_v<optional_inner_type_t<FieldType>>) {
-                return "INTEGER";
-            } else if constexpr (std::is_same_v<FieldType, std::optional<double>> ||
-                                 std::is_same_v<FieldType, std::optional<float>>) {
+                if constexpr (pg) {
+                    return "BIGINT";
+                } else {
+                    return "INTEGER";
+                }
+            } else if constexpr (std::is_same_v<FieldType, std::optional<double>>) {
+                if constexpr (pg) {
+                    return "DOUBLE PRECISION";
+                } else {
+                    return "REAL";
+                }
+            } else if constexpr (std::is_same_v<FieldType, std::optional<float>>) {
                 return "REAL";
             } else if constexpr (std::is_same_v<FieldType, std::optional<std::string>> ||
                                  std::is_same_v<FieldType, std::optional<std::string_view>>) {
                 return "TEXT";
             } else if constexpr (is_optional_v<FieldType> &&
-                                 (std::is_same_v<optional_inner_type_t<FieldType>, std::chrono::year_month_day> ||
-                                  std::is_same_v<
-                                          optional_inner_type_t<FieldType>,
-                                          std::chrono::system_clock::time_point> ||
-                                  std::is_same_v<optional_inner_type_t<FieldType>, std::filesystem::path> ||
-                                  std::is_same_v<optional_inner_type_t<FieldType>, utilities::UUID>)) {
+                                 std::is_same_v<optional_inner_type_t<FieldType>, std::chrono::year_month_day>) {
+                if constexpr (pg) {
+                    return "DATE";
+                } else {
+                    return "TEXT";
+                }
+            } else if constexpr (is_optional_v<FieldType> && std::is_same_v<
+                                                                     optional_inner_type_t<FieldType>,
+                                                                     std::chrono::system_clock::time_point>) {
+                if constexpr (pg) {
+                    return "TIMESTAMP";
+                } else {
+                    return "TEXT";
+                }
+            } else if constexpr (is_optional_v<FieldType> &&
+                                 std::is_same_v<optional_inner_type_t<FieldType>, utilities::UUID>) {
+                if constexpr (pg) {
+                    return "UUID";
+                } else {
+                    return "TEXT";
+                }
+            } else if constexpr (is_optional_v<FieldType> &&
+                                 std::is_same_v<optional_inner_type_t<FieldType>, std::filesystem::path>) {
                 return "TEXT";
             }
             // === BLOB TYPES ===
             else if constexpr (std::is_same_v<FieldType, std::vector<uint8_t>> ||
                                std::is_same_v<FieldType, std::vector<unsigned char>> ||
                                std::is_same_v<FieldType, std::vector<std::byte>>) {
-                return "BLOB";
+                if constexpr (pg) {
+                    return "BYTEA";
+                } else {
+                    return "BLOB";
+                }
             }
             // === NON-OPTIONAL TYPES (NOT NULL) ===
-            else if constexpr (std::is_same_v<FieldType, int> || std::is_same_v<FieldType, int64_t> ||
-                               std::is_same_v<FieldType, bool> || std::is_same_v<FieldType, short> ||
-                               std::is_same_v<FieldType, unsigned int> || std::is_same_v<FieldType, unsigned short> ||
-                               std::is_same_v<FieldType, long> || std::is_same_v<FieldType, unsigned long> ||
-                               std::is_same_v<FieldType, long long> || std::is_same_v<FieldType, unsigned long long> ||
-                               std::is_same_v<FieldType, signed char> || std::is_same_v<FieldType, unsigned char> ||
-                               std::is_same_v<FieldType, char>) {
-                return "INTEGER NOT NULL";
+            else if constexpr (std::is_same_v<FieldType, bool>) {
+                if constexpr (pg) {
+                    return "BOOLEAN NOT NULL";
+                } else {
+                    return "INTEGER NOT NULL";
+                }
+            } else if constexpr (std::is_same_v<FieldType, int> || std::is_same_v<FieldType, int64_t> ||
+                                 std::is_same_v<FieldType, short> || std::is_same_v<FieldType, unsigned int> ||
+                                 std::is_same_v<FieldType, unsigned short> || std::is_same_v<FieldType, long> ||
+                                 std::is_same_v<FieldType, unsigned long> || std::is_same_v<FieldType, long long> ||
+                                 std::is_same_v<FieldType, unsigned long long> ||
+                                 std::is_same_v<FieldType, signed char> || std::is_same_v<FieldType, unsigned char> ||
+                                 std::is_same_v<FieldType, char>) {
+                if constexpr (pg) {
+                    return "BIGINT NOT NULL";
+                } else {
+                    return "INTEGER NOT NULL";
+                }
             } else if constexpr (std::is_enum_v<FieldType>) {
-                return "INTEGER NOT NULL";
+                if constexpr (pg) {
+                    return "BIGINT NOT NULL";
+                } else {
+                    return "INTEGER NOT NULL";
+                }
             } else if constexpr (is_chrono_duration_v<FieldType>) {
-                return "INTEGER NOT NULL";
-            } else if constexpr (std::is_same_v<FieldType, double> || std::is_same_v<FieldType, float>) {
+                if constexpr (pg) {
+                    return "BIGINT NOT NULL";
+                } else {
+                    return "INTEGER NOT NULL";
+                }
+            } else if constexpr (std::is_same_v<FieldType, double>) {
+                if constexpr (pg) {
+                    return "DOUBLE PRECISION NOT NULL";
+                } else {
+                    return "REAL NOT NULL";
+                }
+            } else if constexpr (std::is_same_v<FieldType, float>) {
                 return "REAL NOT NULL";
             } else if constexpr (std::is_same_v<FieldType, std::string> ||
                                  std::is_same_v<FieldType, std::string_view>) {
                 return "TEXT NOT NULL";
-            } else if constexpr (std::is_same_v<FieldType, std::chrono::year_month_day> ||
-                                 std::is_same_v<FieldType, std::chrono::system_clock::time_point> ||
-                                 std::is_same_v<FieldType, std::filesystem::path> ||
-                                 std::is_same_v<FieldType, utilities::UUID>) {
+            } else if constexpr (std::is_same_v<FieldType, std::chrono::year_month_day>) {
+                if constexpr (pg) {
+                    return "DATE NOT NULL";
+                } else {
+                    return "TEXT NOT NULL";
+                }
+            } else if constexpr (std::is_same_v<FieldType, std::chrono::system_clock::time_point>) {
+                if constexpr (pg) {
+                    return "TIMESTAMP NOT NULL";
+                } else {
+                    return "TEXT NOT NULL";
+                }
+            } else if constexpr (std::is_same_v<FieldType, utilities::UUID>) {
+                if constexpr (pg) {
+                    return "UUID NOT NULL";
+                } else {
+                    return "TEXT NOT NULL";
+                }
+            } else if constexpr (std::is_same_v<FieldType, std::filesystem::path>) {
                 return "TEXT NOT NULL";
             } else {
                 // Fallback for unknown types — treat as TEXT
                 return "TEXT";
             }
-        }
-
-        // Replace all occurrences of `from` with `to` in `sql` (in-place)
-        inline auto replace_all(std::string& sql, std::string_view from, std::string_view to) -> void {
-            size_t pos = 0;
-            while ((pos = sql.find(from, pos)) != std::string::npos) {
-                sql.replace(pos, from.size(), to);
-                pos += to.size();
-            }
-        }
-
-        // Apply PostgreSQL dialect transforms inline (no regex — pure string find/replace)
-        inline auto apply_pg_transforms(std::string sql) -> std::string {
-            replace_all(sql, "AUTOINCREMENT", "GENERATED BY DEFAULT AS IDENTITY");
-            replace_all(sql, "BLOB", "BYTEA");
-            replace_all(sql, "REAL", "DOUBLE PRECISION");
-            replace_all(sql, "INTEGER", "BIGINT");
-            return sql;
         }
 
     } // namespace detail
@@ -124,22 +192,34 @@ export namespace storm::orm::schema {
         static constexpr size_t COL_DEF_BUFFER = 128;
 
         // Build column definition for field at compile-time index
-        template <size_t Index> static consteval auto build_column_def() {
+        template <size_t Index, Dialect D = Dialect::SQLite> static consteval auto build_column_def() {
             ConstexprString<COL_DEF_BUFFER> col;
             constexpr auto                  member = Base::all_members_[Index];
 
             // Primary key field
             if constexpr (Base::all_members_[Index] == Base::primary_key_) {
-                col.append("id INTEGER PRIMARY KEY AUTOINCREMENT");
+                if constexpr (D == Dialect::PostgreSQL) {
+                    col.append("id BIGINT PRIMARY KEY GENERATED BY DEFAULT AS IDENTITY");
+                } else {
+                    col.append("id INTEGER PRIMARY KEY AUTOINCREMENT");
+                }
             }
-            // FK field — generate "<name>_id INTEGER NOT NULL" (or nullable if optional FK)
+            // FK field — generate "<name>_id INTEGER/BIGINT NOT NULL" (or nullable if optional FK)
             else if constexpr (Base::is_fk_field(member)) {
                 using FieldType = std::remove_cvref_t<typename[:std::meta::type_of(member):]>;
                 col.append(std::meta::identifier_of(member));
                 if constexpr (storm::orm::utilities::is_optional_v<FieldType>) {
-                    col.append("_id INTEGER"); // nullable optional FK
+                    if constexpr (D == Dialect::PostgreSQL) {
+                        col.append("_id BIGINT");
+                    } else {
+                        col.append("_id INTEGER");
+                    }
                 } else {
-                    col.append("_id INTEGER NOT NULL");
+                    if constexpr (D == Dialect::PostgreSQL) {
+                        col.append("_id BIGINT NOT NULL");
+                    } else {
+                        col.append("_id INTEGER NOT NULL");
+                    }
                 }
             }
             // Unique field — same as regular but with UNIQUE constraint
@@ -147,7 +227,7 @@ export namespace storm::orm::schema {
                 using FieldType = std::remove_cvref_t<typename[:std::meta::type_of(member):]>;
                 col.append(std::meta::identifier_of(member));
                 col.append(" ");
-                col.append(detail::sql_col_def<FieldType>());
+                col.append(detail::sql_col_def<FieldType, D>());
                 col.append(" UNIQUE");
             }
             // Regular field
@@ -155,13 +235,21 @@ export namespace storm::orm::schema {
                 using FieldType = std::remove_cvref_t<typename[:std::meta::type_of(member):]>;
                 col.append(std::meta::identifier_of(member));
                 col.append(" ");
-                col.append(detail::sql_col_def<FieldType>());
+                col.append(detail::sql_col_def<FieldType, D>());
             }
             return col;
         }
 
         // Compile-time SQL size calculation for CREATE TABLE
-        static consteval auto calculate_column_defs_size() -> size_t {
+        template <Dialect D = Dialect::SQLite> static consteval auto calculate_column_defs_size() -> size_t {
+            // PG PK: "id BIGINT PRIMARY KEY GENERATED BY DEFAULT AS IDENTITY" = 54
+            // SQLite PK: "id INTEGER PRIMARY KEY AUTOINCREMENT" = 36
+            constexpr size_t pk_size = (D == Dialect::PostgreSQL) ? 54 : 36;
+            // PG max type: "DOUBLE PRECISION NOT NULL" = 25; SQLite max: "INTEGER NOT NULL" = 16
+            constexpr size_t max_type_def = (D == Dialect::PostgreSQL) ? 25 : 16;
+            // PG FK: "_id BIGINT NOT NULL" = 19; SQLite FK: "_id INTEGER NOT NULL" = 20
+            constexpr size_t max_fk_suffix = 3 + ((D == Dialect::PostgreSQL) ? 16 : 20);
+
             size_t size = 0;
             for (size_t i = 0; i < Base::field_count_; ++i) {
                 if (i > 0) {
@@ -170,28 +258,29 @@ export namespace storm::orm::schema {
                 size += 4; // "    " indent
 
                 if (Base::all_members_[i] == Base::primary_key_) {
-                    size += 36; // "id INTEGER PRIMARY KEY AUTOINCREMENT"
+                    size += pk_size;
                 } else {
                     auto field_attr = std::meta::annotation_of_type<statements::meta::FieldAttr>(Base::all_members_[i]);
                     size += std::meta::identifier_of(Base::all_members_[i]).size();
                     if (field_attr.has_value() && field_attr.value() == statements::meta::FieldAttr::fk) {
-                        size += 3 + 20; // "_id" + " INTEGER NOT NULL" (max)
+                        size += max_fk_suffix;
                     } else {
-                        size += 1 + 16 + 7; // " " + type def (max ~16) + " UNIQUE"
+                        size += 1 + max_type_def + 7; // " " + type def + " UNIQUE"
                     }
                 }
             }
             return size;
         }
 
-        static consteval auto calculate_create_table_sql_size() -> size_t {
-            return 13 + Base::table_name_.size() + 3 + calculate_column_defs_size() + 2;
+        template <Dialect D = Dialect::SQLite> static consteval auto calculate_create_table_sql_size() -> size_t {
+            return 13 + Base::table_name_.size() + 3 + calculate_column_defs_size<D>() + 2;
         }
 
         // Build the full CREATE TABLE SQL at compile-time using index sequence fold
-        template <size_t... Is> static consteval auto build_sql_impl(std::index_sequence<Is...> /*unused*/) {
+        template <Dialect D = Dialect::SQLite, size_t... Is>
+        static consteval auto build_sql_impl(std::index_sequence<Is...> /*unused*/) {
             // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
-            constexpr size_t          sql_size = calculate_create_table_sql_size() + utilities::sql_len::XL_BUFFER;
+            constexpr size_t          sql_size = calculate_create_table_sql_size<D>() + utilities::sql_len::XL_BUFFER;
             ConstexprString<sql_size> sql;
 
             sql.append("CREATE TABLE ");
@@ -204,7 +293,7 @@ export namespace storm::orm::schema {
                      sql.append(",\n");
                  }
                  sql.append("    ");
-                 sql.append(build_column_def<Is>());
+                 sql.append(build_column_def<Is, D>());
                  first = false;
              }()),
              ...);
@@ -213,13 +302,16 @@ export namespace storm::orm::schema {
             return sql;
         }
 
-        static consteval auto build_create_table_sql() {
-            return build_sql_impl(std::make_index_sequence<Base::field_count_>{});
+        template <Dialect D = Dialect::SQLite> static consteval auto build_create_table_sql() {
+            return build_sql_impl<D>(std::make_index_sequence<Base::field_count_>{});
         }
 
-        // Pre-computed CREATE TABLE SQL generated at compile-time
-        static constexpr auto           create_table_sql_array_  = build_create_table_sql();
-        static inline const std::string create_table_sql_string_ = std::string(create_table_sql_array_);
+        // Pre-computed CREATE TABLE SQL generated at compile-time (one per dialect)
+        static constexpr auto           sqlite_create_table_sql_array_  = build_create_table_sql<Dialect::SQLite>();
+        static inline const std::string sqlite_create_table_sql_string_ = std::string(sqlite_create_table_sql_array_);
+
+        static constexpr auto           pg_create_table_sql_array_  = build_create_table_sql<Dialect::PostgreSQL>();
+        static inline const std::string pg_create_table_sql_string_ = std::string(pg_create_table_sql_array_);
 
         // =====================================================================
         // INDEX SQL GENERATION
@@ -354,9 +446,13 @@ export namespace storm::orm::schema {
         static inline const std::vector<std::string> index_sql_strings_ = build_all_index_sql();
 
       public:
-        // Return the pre-computed CREATE TABLE SQL (SQLite dialect).
-        static auto create_table_sql() -> const std::string& {
-            return create_table_sql_string_;
+        // Return the pre-computed CREATE TABLE SQL for the given dialect.
+        template <Dialect D = Dialect::SQLite> static auto create_table_sql() -> const std::string& {
+            if constexpr (D == Dialect::PostgreSQL) {
+                return pg_create_table_sql_string_;
+            } else {
+                return sqlite_create_table_sql_string_;
+            }
         }
 
         // Return pre-computed CREATE INDEX SQL statements for all indexed/unique/FK fields.
@@ -378,19 +474,18 @@ export namespace storm::orm::schema {
         }
 
         // Execute CREATE TABLE IF NOT EXISTS on the given connection.
-        // For PostgreSQL, applies dialect transforms inline.
+        // Selects the appropriate dialect at compile time.
         template <db::DatabaseConnection ConnType>
         static auto create_table_if_not_exists(std::shared_ptr<ConnType> conn)
                 -> std::expected<void, typename ConnType::Error> {
-            std::string sql = create_table_sql();
-
-            // Apply PostgreSQL transforms if needed
+            std::string sql;
             if constexpr (requires { ConnType::uses_pg_dialect; }) {
-                sql = detail::apply_pg_transforms(std::move(sql));
+                sql = create_table_sql<Dialect::PostgreSQL>();
+            } else {
+                sql = create_table_sql<Dialect::SQLite>();
             }
 
             // Inject IF NOT EXISTS
-            // Replace "CREATE TABLE " with "CREATE TABLE IF NOT EXISTS "
             const std::string create_prefix = "CREATE TABLE ";
             const std::string if_not_exists = "CREATE TABLE IF NOT EXISTS ";
             if (sql.substr(0, create_prefix.size()) == create_prefix) {

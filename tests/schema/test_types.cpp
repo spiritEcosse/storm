@@ -1750,4 +1750,130 @@ TYPED_TEST(AllNewTypesRoundtripTest, FullRoundtrip) {
     EXPECT_EQ(it->opt_path.value(), std::filesystem::path("/opt/backup"));
 }
 
+// ============================================================================
+// PostgreSQL Dialect Schema Tests for ExtendedTypes (no DB connection needed)
+// ============================================================================
+
+using storm::orm::schema::Dialect;
+using storm::orm::schema::SchemaStatement;
+
+TEST(PgDialectTypesSchemaTest, DateFieldIsDate) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("date_field DATE NOT NULL"), std::string::npos)
+            << "Expected 'date_field DATE NOT NULL' in PG SQL: " << sql;
+}
+
+TEST(PgDialectTypesSchemaTest, DatetimeFieldIsTimestamp) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("datetime_field TIMESTAMP NOT NULL"), std::string::npos)
+            << "Expected 'datetime_field TIMESTAMP NOT NULL' in PG SQL: " << sql;
+}
+
+TEST(PgDialectTypesSchemaTest, UuidFieldIsUuid) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("uuid_field UUID NOT NULL"), std::string::npos)
+            << "Expected 'uuid_field UUID NOT NULL' in PG SQL: " << sql;
+}
+
+TEST(PgDialectTypesSchemaTest, DurationFieldIsBigint) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("duration_field BIGINT NOT NULL"), std::string::npos)
+            << "Expected 'duration_field BIGINT NOT NULL' in PG SQL: " << sql;
+}
+
+TEST(PgDialectTypesSchemaTest, OptionalTimestampIsTimestamp) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("opt_timestamp TIMESTAMP"), std::string::npos)
+            << "Expected 'opt_timestamp TIMESTAMP' (nullable) in PG SQL: " << sql;
+    const size_t pos = sql.find("opt_timestamp TIMESTAMP");
+    ASSERT_NE(pos, std::string::npos);
+    const std::string after = sql.substr(pos, 30);
+    EXPECT_EQ(after.find("NOT NULL"), std::string::npos) << "opt_timestamp should be nullable, got: " << after;
+}
+
+TEST(PgDialectTypesSchemaTest, FilePathIsText) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("file_path TEXT NOT NULL"), std::string::npos)
+            << "Expected 'file_path TEXT NOT NULL' (unchanged) in PG SQL: " << sql;
+}
+
+TEST(PgDialectTypesSchemaTest, BlobIsBytea) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("raw_data BYTEA"), std::string::npos) << "Expected 'raw_data BYTEA' in PG SQL: " << sql;
+}
+
+TEST(PgDialectTypesSchemaTest, OptPathIsText) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("opt_path TEXT"), std::string::npos)
+            << "Expected 'opt_path TEXT' (unchanged) in PG SQL: " << sql;
+}
+
+TEST(PgDialectTypesSchemaTest, SqliteDialectUnchanged) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql();
+    EXPECT_NE(sql.find("date_field TEXT NOT NULL"), std::string::npos)
+            << "SQLite dialect should use TEXT for date: " << sql;
+    EXPECT_NE(sql.find("uuid_field TEXT NOT NULL"), std::string::npos)
+            << "SQLite dialect should use TEXT for UUID: " << sql;
+}
+
+TEST(PgDialectTypesSchemaTest, BoolFieldIsBoolean) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_EQ(sql.find("BOOLEAN"), std::string::npos)
+            << "ExtendedTypes has no bool field, should not contain BOOLEAN: " << sql;
+    const std::string& person_sql = SchemaStatement<Person>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(person_sql.find("is_active BOOLEAN NOT NULL"), std::string::npos)
+            << "Expected 'is_active BOOLEAN NOT NULL' in PG SQL: " << person_sql;
+}
+
+TEST(PgDialectTypesSchemaTest, FloatFieldIsReal) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("approx REAL NOT NULL"), std::string::npos)
+            << "Expected 'approx REAL NOT NULL' for float in PG SQL: " << sql;
+}
+
+TEST(PgDialectTypesSchemaTest, DoubleFieldIsDoublePrecision) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("precise DOUBLE PRECISION NOT NULL"), std::string::npos)
+            << "Expected 'precise DOUBLE PRECISION NOT NULL' for double in PG SQL: " << sql;
+}
+
+// Test PG-dialect optional types that have no dedicated fields in ExtendedTypes
+struct PgOptionalSpecialTypes {
+    [[= storm::meta::FieldAttr::primary]] int  id{};
+    std::optional<std::chrono::year_month_day> opt_date;
+    std::optional<storm::UUID>                 opt_uuid;
+    std::optional<bool>                        opt_bool;
+};
+
+TEST(PgDialectTypesSchemaTest, OptionalDateIsPgDate) {
+    const std::string& sql = SchemaStatement<PgOptionalSpecialTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("opt_date DATE"), std::string::npos) << "Expected 'opt_date DATE' in PG SQL: " << sql;
+    const size_t pos = sql.find("opt_date DATE");
+    ASSERT_NE(pos, std::string::npos);
+    EXPECT_EQ(sql.substr(pos, 20).find("NOT NULL"), std::string::npos) << "opt_date should be nullable";
+}
+
+TEST(PgDialectTypesSchemaTest, OptionalUuidIsPgUuid) {
+    const std::string& sql = SchemaStatement<PgOptionalSpecialTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("opt_uuid UUID"), std::string::npos) << "Expected 'opt_uuid UUID' in PG SQL: " << sql;
+    const size_t pos = sql.find("opt_uuid UUID");
+    ASSERT_NE(pos, std::string::npos);
+    EXPECT_EQ(sql.substr(pos, 20).find("NOT NULL"), std::string::npos) << "opt_uuid should be nullable";
+}
+
+TEST(PgDialectTypesSchemaTest, OptionalBoolIsBoolean) {
+    const std::string& sql = SchemaStatement<PgOptionalSpecialTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("opt_bool BOOLEAN"), std::string::npos) << "Expected 'opt_bool BOOLEAN' in PG SQL: " << sql;
+    const size_t pos = sql.find("opt_bool BOOLEAN");
+    ASSERT_NE(pos, std::string::npos);
+    EXPECT_EQ(sql.substr(pos, 23).find("NOT NULL"), std::string::npos) << "opt_bool should be nullable";
+}
+
+TEST(PgDialectTypesSchemaTest, OptionalSpecialTypesSqliteUnchanged) {
+    const std::string& sql = SchemaStatement<PgOptionalSpecialTypes>::create_table_sql();
+    EXPECT_NE(sql.find("opt_date TEXT"), std::string::npos) << "SQLite should use TEXT for opt date: " << sql;
+    EXPECT_NE(sql.find("opt_uuid TEXT"), std::string::npos) << "SQLite should use TEXT for opt UUID: " << sql;
+    EXPECT_NE(sql.find("opt_bool INTEGER"), std::string::npos) << "SQLite should use INTEGER for opt bool: " << sql;
+}
+
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
