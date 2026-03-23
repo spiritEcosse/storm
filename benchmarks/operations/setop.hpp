@@ -154,6 +154,9 @@ namespace storm::benchmark {
                     obj.age       = sqlite3_column_int(stmt, 2);
                     obj.is_active = sqlite3_column_int(stmt, 3) != 0;
                     obj.salary    = sqlite3_column_double(stmt, 4);
+                    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
+                        obj.score = sqlite3_column_int(stmt, 5);
+                    }
                     results.push_back(std::move(obj));
                 }
                 total += static_cast<int>(results.size());
@@ -211,12 +214,12 @@ namespace storm::benchmark {
         }
 
         std::string build_raw_sql() const {
-            std::string sql = "SELECT id, name, age, is_active, salary FROM Person WHERE age < ?";
+            std::string sql = "SELECT id, name, age, is_active, salary, score FROM Person WHERE age < ?";
             sql += op_sql();
             if constexpr (needs_overlap) {
-                sql += "SELECT id, name, age, is_active, salary FROM Person WHERE age > ?";
+                sql += "SELECT id, name, age, is_active, salary, score FROM Person WHERE age > ?";
             } else {
-                sql += "SELECT id, name, age, is_active, salary FROM Person WHERE age >= ?";
+                sql += "SELECT id, name, age, is_active, salary, score FROM Person WHERE age >= ?";
             }
             if constexpr (WithOrderBy) {
                 sql += " ORDER BY age ASC";

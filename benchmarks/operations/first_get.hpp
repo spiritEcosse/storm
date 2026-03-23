@@ -64,7 +64,7 @@ namespace storm::benchmark {
             if (!db)
                 return 0;
 
-            std::string sql = "SELECT id, name, age, is_active, salary FROM Person";
+            std::string sql = "SELECT id, name, age, is_active, salary, score FROM Person";
 
             if constexpr (WhereCfg::enabled) {
                 constexpr std::string_view where_field = std::meta::identifier_of(WhereCfg::field_info);
@@ -100,6 +100,9 @@ namespace storm::benchmark {
                     obj.age       = sqlite3_column_int(stmt, 2);
                     obj.is_active = sqlite3_column_int(stmt, 3) != 0;
                     obj.salary    = sqlite3_column_double(stmt, 4);
+                    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
+                        obj.score = sqlite3_column_int(stmt, 5);
+                    }
                     result.emplace(std::move(obj));
                 }
                 if (result.has_value()) {
@@ -159,7 +162,7 @@ namespace storm::benchmark {
                 return 0;
 
             // get() uses LIMIT 2 internally to detect multiple rows
-            std::string sql = "SELECT id, name, age, is_active, salary FROM Person";
+            std::string sql = "SELECT id, name, age, is_active, salary, score FROM Person";
 
             if constexpr (WhereCfg::enabled) {
                 constexpr std::string_view where_field = std::meta::identifier_of(WhereCfg::field_info);
@@ -195,6 +198,9 @@ namespace storm::benchmark {
                         obj.age       = sqlite3_column_int(stmt, 2);
                         obj.is_active = sqlite3_column_int(stmt, 3) != 0;
                         obj.salary    = sqlite3_column_double(stmt, 4);
+                        if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
+                            obj.score = sqlite3_column_int(stmt, 5);
+                        }
                     }
                     row_count++;
                 }

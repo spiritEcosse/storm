@@ -163,8 +163,9 @@ export namespace storm::orm::utilities {
                         return false;
                     }
                 } else {
-                    auto c = static_cast<unsigned char>(sv[i]);
-                    if (std::isxdigit(c) == 0) {
+                    auto c      = sv[i];
+                    bool is_hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+                    if (!is_hex) {
                         return false;
                     }
                 }
