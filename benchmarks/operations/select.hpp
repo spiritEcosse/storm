@@ -209,7 +209,7 @@ namespace storm::benchmark {
                 }
             } else {
                 // Basic SELECT query
-                sql = "SELECT id, name, age, is_active, salary FROM Person";
+                sql = "SELECT id, name, age, is_active, salary, score FROM Person";
 
                 if constexpr (WhereCfg::enabled) {
                     constexpr std::string_view where_field = std::meta::identifier_of(WhereCfg::field_info);
@@ -234,7 +234,7 @@ namespace storm::benchmark {
             return sql;
         }
 
-        // Extract row for basic SELECT (Person model)
+        // Extract row for basic SELECT (Person model) — must match Storm's column list
         __attribute__((always_inline)) static BaseModel extract_row_basic(sqlite3_stmt* stmt) {
             BaseModel obj;
             obj.id        = sqlite3_column_int64(stmt, 0);
@@ -242,6 +242,9 @@ namespace storm::benchmark {
             obj.age       = sqlite3_column_int(stmt, 2);
             obj.is_active = sqlite3_column_int(stmt, 3) != 0;
             obj.salary    = sqlite3_column_double(stmt, 4);
+            if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
+                obj.score = sqlite3_column_int(stmt, 5);
+            }
             return obj;
         }
 
@@ -513,7 +516,7 @@ namespace storm::benchmark {
             constexpr std::string_view field1 = std::meta::identifier_of(OrderByFieldInfo1);
             constexpr std::string_view field2 = std::meta::identifier_of(OrderByFieldInfo2);
 
-            std::string sql = "SELECT id, name, age, is_active, salary FROM Person ORDER BY ";
+            std::string sql = "SELECT id, name, age, is_active, salary, score FROM Person ORDER BY ";
             sql += field1;
             sql += (Dir1 == OrderDirection::DESC) ? " DESC, " : " ASC, ";
             sql += field2;
@@ -546,6 +549,9 @@ namespace storm::benchmark {
             obj.age       = sqlite3_column_int(stmt, 2);
             obj.is_active = sqlite3_column_int(stmt, 3) != 0;
             obj.salary    = sqlite3_column_double(stmt, 4);
+            if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
+                obj.score = sqlite3_column_int(stmt, 5);
+            }
             return obj;
         }
     };
@@ -631,7 +637,7 @@ namespace storm::benchmark {
                 return 0;
 
             // Build SQL with variadic fold expression
-            std::string sql   = "SELECT id, name, age, is_active, salary FROM Person GROUP BY ";
+            std::string sql   = "SELECT id, name, age, is_active, salary, score FROM Person GROUP BY ";
             bool        first = true;
             ((sql += (first ? (first = false, "") : ", "),
               sql += std::string(std::meta::identifier_of(GroupByFieldInfos))),
@@ -664,6 +670,9 @@ namespace storm::benchmark {
             obj.age       = sqlite3_column_int(stmt, 2);
             obj.is_active = sqlite3_column_int(stmt, 3) != 0;
             obj.salary    = sqlite3_column_double(stmt, 4);
+            if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
+                obj.score = sqlite3_column_int(stmt, 5);
+            }
             return obj;
         }
     };

@@ -407,7 +407,8 @@ namespace storm::benchmark {
                         .name      = std::format("Person{}", i),
                         .age       = 20 + (i % 50),
                         .is_active = (i % 2 == 0),
-                        .salary    = 30000.0 + (i * 1000.0)
+                        .salary    = 30000.0 + (i * 1000.0),
+                        .score     = (i % 3 == 0) ? std::optional<int>(60 + (i % 40)) : std::nullopt
                 };
             }
         }
