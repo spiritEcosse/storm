@@ -35,6 +35,11 @@ export namespace storm::orm::statements {
     // Supports 1+ fields with compile-time type safety
     // Mode controls whether DISTINCT keyword is applied
     //
+    // Architecture: Persistent instance with proxy pattern (matches SelectStatement)
+    // - Cached via static thread_local in QuerySet::distinct()/values()
+    // - query() returns lightweight Query proxy holding references
+    // - Instance-level caching eliminates per-call TLS access and object construction
+    //
     // API: Use ^^ operator to pass reflected field information directly
     // Example: qs.distinct<^^Person::name>().select()
     //          qs.values<^^Person::name, ^^Person::age>().select()
@@ -80,6 +85,15 @@ export namespace storm::orm::statements {
             return (get_field_size<Is>() + ...);
         }
 
+        // Append column name for field I (with FK _id suffix if needed)
+        template <size_t I, size_t N> static consteval void append_column_name(ConstexprString<N>& result) {
+            constexpr auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member_infos_[I]);
+            result.append(std::meta::identifier_of(member_infos_[I]));
+            if constexpr (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
+                result.append("_id");
+            }
+        }
+
         // Compile-time field list generation (returns ConstexprString)
         template <size_t... Is>
         static consteval auto build_field_list_constexpr(std::index_sequence<Is...> /*unused*/) {
@@ -89,21 +103,34 @@ export namespace storm::orm::statements {
                 if constexpr (I > 0) {
                     result.append(", ");
                 }
-                // Check if this field is a FK - if so, use column name (field_name_id)
-                constexpr auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member_infos_[I]);
-                if constexpr (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
-                    result.append(std::meta::identifier_of(member_infos_[I]));
-                    result.append("_id");
-                } else {
-                    result.append(std::meta::identifier_of(member_infos_[I]));
-                }
+                append_column_name<I>(result);
             };
             (append_field.template operator()<Is>(), ...);
             return result;
         }
 
-        // Pre-computed field list for use in JOIN path
+        // Pre-computed field list for use in non-JOIN path
         static constexpr auto field_list_constexpr_ = build_field_list_constexpr(std::make_index_sequence<NumFields>{});
+
+        // Compile-time field list with "t1." table alias prefix for JOIN queries
+        template <size_t... Is>
+        static consteval auto build_join_field_list_constexpr(std::index_sequence<Is...> /*unused*/) {
+            constexpr size_t total_size =
+                    calculate_field_list_size(std::make_index_sequence<NumFields>{}) + NumFields * 3; // "t1." per field
+            ConstexprString<total_size + 10> result;
+            auto                             append_field = [&result]<size_t I>() {
+                if constexpr (I > 0) {
+                    result.append(", ");
+                }
+                result.append("t1.");
+                append_column_name<I>(result);
+            };
+            (append_field.template operator()<Is>(), ...);
+            return result;
+        }
+
+        static constexpr auto join_field_list_constexpr_ =
+                build_join_field_list_constexpr(std::make_index_sequence<NumFields>{});
 
         // Calculate SQL size at compile-time
         static consteval auto calculate_select_sql_size() -> size_t {
@@ -144,7 +171,14 @@ export namespace storm::orm::statements {
         }
 
         // Pre-computed SQL generated at compile-time
-        static constexpr auto projection_sql_array_ = build_projection_sql_array();
+        static constexpr auto           projection_sql_array_  = build_projection_sql_array();
+        static inline const std::string projection_sql_string_ = std::string(projection_sql_array_);
+        static inline const std::string field_list_string_{
+                field_list_constexpr_.data.data(), field_list_constexpr_.len
+        };
+        static inline const std::string join_field_list_string_{
+                join_field_list_constexpr_.data.data(), join_field_list_constexpr_.len
+        };
 
       public:
         // Result type: hive of single field OR hive of tuple
@@ -173,111 +207,94 @@ export namespace storm::orm::statements {
             return execute();
         }
 
+        // Return the SQL that would be executed (for testing/debugging)
+        // LCOV_EXCL_START — Clang C++26 modules coverage bug: method on temporary not instrumented
+        [[nodiscard]] auto sql() -> std::string {
+            return build_sql();
+        }
+        // LCOV_EXCL_STOP
+
         // Execute SELECT or SELECT DISTINCT query on the specified field(s)
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute() -> std::expected<ResultType, Error> {
-            static const std::string base_sql{projection_sql_array_.data.data(), projection_sql_array_.len};
+            auto sql = build_sql();
 
-            // Build SQL: base or JOIN with projection applied
-            std::string sql;
-            if (join_stmt_.has_value()) {
-                const std::string& join_sql = join_stmt_->get_complete_sql();
-                sql.reserve(join_sql.size() + utilities::sql_len::LARGE_BUFFER);
-                if constexpr (Mode == ProjectionMode::Distinct) { // LCOV_EXCL_START — if constexpr: only one branch is
-                                                                  // instantiated per Mode
-                    // Inject "DISTINCT " after "SELECT "
-                    sql = join_sql.substr(0, utilities::sql_len::SELECT);
-                    sql += "DISTINCT ";
-                    sql += join_sql.substr(utilities::sql_len::SELECT);
-                } else {
-                    // Replace field list with our projected fields
-                    static const std::string field_list_str{
-                            field_list_constexpr_.data.data(), field_list_constexpr_.len
-                    };
-                    auto from_pos = join_sql.find(" FROM ");
-                    sql           = "SELECT ";
-                    sql += field_list_str;
-                    sql += join_sql.substr(from_pos);
-                } // LCOV_EXCL_STOP
-            } else {
-                sql = base_sql;
+            auto stmt_result = conn_->prepare_cached(sql);
+            if (!stmt_result) [[unlikely]] {
+                return std::unexpected(stmt_result.error());
             }
 
-            // Append WHERE clause if present
+            // Bind WHERE params if needed
             if (where_expr_) {
-                sql += " WHERE ";
-                sql += orm::where::to_sql(*where_expr_);
-            }
-
-            // Append ORDER BY, LIMIT, OFFSET using shared helpers
-            Base::template append_order_by<ConnType>(sql, order_by_wrapper_);
-            Base::template append_limit_offset<ConnType>(sql, limit_, offset_);
-
-            // Prepare statement
-            auto prepare_result = conn_->prepare_cached(sql);
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
-            }
-
-            // Bind WHERE parameters if present
-            if (where_expr_) {
-                auto bind_result = Base::template bind_where_params<Statement, Error>(*prepare_result, where_expr_);
+                auto bind_result = Base::template bind_where_params<Statement, Error>(*stmt_result, where_expr_);
                 if (!bind_result) [[unlikely]] {
                     return std::unexpected(bind_result.error());
                 }
             }
 
-            return execute_query_loop(*prepare_result);
+            return execute_query_loop(*stmt_result);
         }
 
       private:
-        // Unified query execution loop for all projection query types
+        // Build the complete SQL string for this projection query
+        [[nodiscard]] auto build_sql() -> std::string {
+            std::string sql;
+            if (join_stmt_.has_value()) {
+                const std::string& join_sql = join_stmt_->get_complete_sql();
+                sql.reserve(join_sql.size() + utilities::sql_len::LARGE_BUFFER);
+                // Replace the JOIN's full field list with only our projected field(s).
+                // Uses t1-qualified names (join_field_list_string_) to avoid column ambiguity.
+                auto from_pos = join_sql.find(" FROM ");
+                if constexpr (Mode == ProjectionMode::Distinct) { // LCOV_EXCL_START — if constexpr: only one branch is
+                                                                  // instantiated per Mode
+                    sql = "SELECT DISTINCT ";
+                } else {
+                    sql = "SELECT ";
+                } // LCOV_EXCL_STOP
+                sql += join_field_list_string_;
+                sql.append(join_sql, from_pos, std::string::npos);
+            } else {
+                sql = projection_sql_string_;
+            }
+            if (where_expr_) {
+                sql += " WHERE ";
+                sql += orm::where::to_sql(*where_expr_);
+            }
+            Base::template append_order_by<ConnType>(sql, order_by_wrapper_);
+            Base::template append_limit_offset<ConnType>(sql, limit_, offset_);
+            return sql;
+        }
+
+        // Extract results from prepared statement
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_query_loop(Statement* stmt)
                 -> std::expected<ResultType, Error> {
-            // plf::hive OPTIMIZATION: Stable pointers + fast insertion/iteration
-            // - No reallocation overhead (multi-block architecture)
-            // - Superior cache locality during iteration vs std::list/std::deque
-            // - Optimal for scenarios with frequent insertions during result processing
             ResultType results;
-
-            int step_result = Statement::NO_MORE_ROWS;
-
-            if constexpr (NumFields == 1) {
-                // Single field: direct insertion
-                using FieldType = std::tuple_element_t<0, FieldTypesTuple>;
-
-                while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
+            int        rc = 0;
+            while ((rc = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
+                if constexpr (NumFields == 1) {
+                    using FieldType = std::tuple_element_t<0, FieldTypesTuple>;
                     results.insert(Base::template extract_column_value<FieldType>(stmt, 0));
-                }
-            } else {
-                // Multi-field: insert tuples
-                while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
-                    insert_tuple_from_columns(results, stmt, std::make_index_sequence<NumFields>{});
+                } else {
+                    [&]<size_t... Is>(std::index_sequence<Is...>) {
+                        results.insert(
+                                std::make_tuple(
+                                        Base::template extract_column_value<std::tuple_element_t<Is, FieldTypesTuple>>(
+                                                stmt, Is
+                                        )...
+                                )
+                        );
+                    }(std::make_index_sequence<NumFields>{});
                 }
             }
-
-            // Check for errors
-            if (step_result != Statement::NO_MORE_ROWS) {
-                stmt->reset();
-                return std::unexpected(Error{step_result, stmt->get_error_message()});
-            }
-
             stmt->reset();
+            if (rc != Statement::NO_MORE_ROWS) [[unlikely]] {
+                return std::unexpected(Error{rc, stmt->get_error_message()});
+            }
             return results;
         }
 
-        // OPTIMIZATION: Insert tuple by extracting columns in-place
-        // Constructs tuple directly in hive without intermediate temporaries
-        // Template parameter R delays evaluation until method is called (avoids void& when NumFields == 0)
-        template <size_t... Is, typename R = ResultType>
-        void insert_tuple_from_columns(R& results, Statement* stmt, std::index_sequence<Is...> /*unused*/)
-            requires(NumFields > 0)
-        {
-            results.insert(
-                    std::make_tuple(
-                            Base::template extract_column_value<std::tuple_element_t<Is, FieldTypesTuple>>(stmt, Is)...
-                    )
-            );
-        }
+        // =====================================================================
+        // MEMBERS
+        // =====================================================================
 
         std::shared_ptr<ConnType>           conn_;
         orm::where::ExpressionVariantPtr    where_expr_;

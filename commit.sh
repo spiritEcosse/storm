@@ -328,8 +328,10 @@ if [[ "$RUN_COVERAGE" == true ]]; then
         echo -e "${DIM}  open build/debug/coverage/html-filtered/index.html${RESET}"
     }
 
-    # Run coverage as a compound check: build + parse + threshold
+    # Run coverage as a compound check: clean + build + parse + threshold
     run_coverage_check() {
+        # Clean stale profraw/profdata to prevent false uncovered lines
+        cmake --build --preset ninja-debug-coverage --target coverage-clean > /dev/null 2>&1
         local output
         output=$(cmake --build --preset ninja-debug-coverage --target coverage 2>&1)
         local build_exit=$?
