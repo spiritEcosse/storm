@@ -124,6 +124,11 @@ is_cpp26_module_file() {
         return 0
     fi
 
+    # Python bindings import Storm modules
+    if [[ "$file" == python/*.cpp ]]; then
+        return 0
+    fi
+
     return 1
 }
 export -f is_cpp26_module_file

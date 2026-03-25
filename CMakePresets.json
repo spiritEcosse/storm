@@ -93,6 +93,17 @@
         "CMAKE_BUILD_TYPE": "Release",
         "ENABLE_FUZZING": "ON"
       }
+    },
+    {
+      "name": "ninja-python",
+      "displayName": "Ninja Python Bindings",
+      "description": "Release build with nanobind Python extension module",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/python",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ENABLE_PYTHON": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -130,6 +141,10 @@
     {
       "name": "ninja-fuzz",
       "configurePreset": "ninja-fuzz"
+    },
+    {
+      "name": "ninja-python",
+      "configurePreset": "ninja-python"
     }
   ],
   "testPresets": [
