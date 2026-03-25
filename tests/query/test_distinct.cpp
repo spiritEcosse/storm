@@ -1601,4 +1601,132 @@ TYPED_TEST(DistinctTest, DifferentWhereExpressionsWithCaching) {
     EXPECT_EQ(result3.value().size(), 1); // Alice only
 }
 
+// ============================================================================
+// SQL Verification Tests — prevent SQL generation regressions
+// ============================================================================
+
+// Helper: returns "ASC" or "ASC NULLS FIRST" depending on backend
+template <typename ConnType> constexpr auto order_asc() -> std::string_view {
+    if constexpr (storm::test::is_postgresql<ConnType>()) {
+        return "ASC NULLS FIRST";
+    } else {
+        return "ASC";
+    }
+}
+
+// Test: DISTINCT simple (no JOIN) generates correct SQL
+TYPED_TEST(DistinctTest, SqlVerifyDistinctSimple) {
+    QuerySet<Person, TypeParam> queryset;
+    auto                        sql = queryset.template distinct<^^Person::name>().sql();
+    EXPECT_EQ(sql, "SELECT DISTINCT name FROM Person");
+}
+
+// Test: DISTINCT on integer field
+TYPED_TEST(DistinctTest, SqlVerifyDistinctIntField) {
+    QuerySet<Person, TypeParam> queryset;
+    auto                        sql = queryset.template distinct<^^Person::age>().sql();
+    EXPECT_EQ(sql, "SELECT DISTINCT age FROM Person");
+}
+
+// Test: DISTINCT default PK
+TYPED_TEST(DistinctTest, SqlVerifyDistinctDefaultPK) {
+    QuerySet<Person, TypeParam> queryset;
+    auto                        sql = queryset.distinct().sql();
+    EXPECT_EQ(sql, "SELECT DISTINCT id FROM Person");
+}
+
+// Test: DISTINCT multi-field
+TYPED_TEST(DistinctTest, SqlVerifyDistinctMultiField) {
+    QuerySet<Person, TypeParam> queryset;
+    auto                        sql = queryset.template distinct<^^Person::name, ^^Person::age>().sql();
+    EXPECT_EQ(sql, "SELECT DISTINCT name, age FROM Person");
+}
+
+// Test: DISTINCT + WHERE generates correct SQL
+TYPED_TEST(DistinctTest, SqlVerifyDistinctWithWhere) {
+    QuerySet<Person, TypeParam> queryset;
+    auto sql = queryset.where(field<^^Person::age>() > 30).template distinct<^^Person::name>().sql();
+    EXPECT_EQ(sql, "SELECT DISTINCT name FROM Person WHERE age > ?");
+}
+
+// Test: DISTINCT + JOIN generates projected fields with t1 prefix (the bug fix)
+TYPED_TEST(DistinctTest, SqlVerifyDistinctWithJoin) {
+    QuerySet<Message, TypeParam> msg_qs;
+    auto sql = msg_qs.template join<&Message::sender>().template distinct<^^Message::content>().sql();
+    EXPECT_EQ(sql, "SELECT DISTINCT t1.content FROM Message t1 INNER JOIN Person t2 ON t2.id = t1.sender_id");
+}
+
+// Test: DISTINCT + JOIN + WHERE
+TYPED_TEST(DistinctTest, SqlVerifyDistinctWithJoinAndWhere) {
+    QuerySet<Message, TypeParam> msg_qs;
+    auto                         sql = msg_qs.template join<&Message::sender>()
+                       .where(field<^^Message::content>().like("%test%"))
+                       .template distinct<^^Message::content>()
+                       .sql();
+    EXPECT_EQ(
+            sql,
+            "SELECT DISTINCT t1.content FROM Message t1 INNER JOIN Person t2 ON t2.id = t1.sender_id"
+            " WHERE content LIKE ?"
+    );
+}
+
+// Test: DISTINCT + JOIN multi-field with FK field
+TYPED_TEST(DistinctTest, SqlVerifyDistinctJoinMultiFieldWithFK) {
+    QuerySet<Message, TypeParam> msg_qs;
+    auto                         sql =
+            msg_qs.template join<&Message::sender>().template distinct<^^Message::content, ^^Message::sender>().sql();
+    EXPECT_EQ(
+            sql,
+            "SELECT DISTINCT t1.content, t1.sender_id"
+            " FROM Message t1 INNER JOIN Person t2 ON t2.id = t1.sender_id"
+    );
+}
+
+// Test: VALUES (no DISTINCT keyword) + JOIN
+TYPED_TEST(DistinctTest, SqlVerifyValuesWithJoin) {
+    QuerySet<Message, TypeParam> msg_qs;
+    auto sql = msg_qs.template join<&Message::sender>().template values<^^Message::content>().sql();
+    EXPECT_EQ(sql, "SELECT t1.content FROM Message t1 INNER JOIN Person t2 ON t2.id = t1.sender_id");
+}
+
+// Test: VALUES simple (no JOIN)
+TYPED_TEST(DistinctTest, SqlVerifyValuesSimple) {
+    QuerySet<Person, TypeParam> queryset;
+    auto                        sql = queryset.template values<^^Person::name>().sql();
+    EXPECT_EQ(sql, "SELECT name FROM Person");
+}
+
+// Test: DISTINCT + ORDER BY
+TYPED_TEST(DistinctTest, SqlVerifyDistinctWithOrderBy) {
+    QuerySet<Person, TypeParam> queryset;
+    auto sql = queryset.template order_by<^^Person::name>().template distinct<^^Person::name>().sql();
+    EXPECT_EQ(sql, std::format("SELECT DISTINCT name FROM Person ORDER BY name {}", order_asc<TypeParam>()));
+}
+
+// Test: DISTINCT + LIMIT + OFFSET
+TYPED_TEST(DistinctTest, SqlVerifyDistinctWithLimitOffset) {
+    QuerySet<Person, TypeParam> queryset;
+    auto                        sql = queryset.limit(10).offset(5).template distinct<^^Person::name>().sql();
+    EXPECT_EQ(sql, "SELECT DISTINCT name FROM Person LIMIT 10 OFFSET 5");
+}
+
+// Test: DISTINCT + JOIN + WHERE + ORDER BY + LIMIT (full combo)
+TYPED_TEST(DistinctTest, SqlVerifyDistinctFullCombo) {
+    QuerySet<Message, TypeParam> msg_qs;
+    auto                         sql = msg_qs.template join<&Message::sender>()
+                       .where(field<^^Message::value>() > 10)
+                       .template order_by<^^Message::content>()
+                       .limit(5)
+                       .template distinct<^^Message::content>()
+                       .sql();
+    EXPECT_EQ(
+            sql,
+            std::format(
+                    "SELECT DISTINCT t1.content FROM Message t1 INNER JOIN Person t2 ON t2.id = t1.sender_id"
+                    " WHERE value > ? ORDER BY content {} LIMIT 5",
+                    order_asc<TypeParam>()
+            )
+    );
+}
+
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

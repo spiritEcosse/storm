@@ -9,8 +9,10 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
 
   add_custom_target(
     coverage-run-main
-    COMMAND ${CMAKE_SOURCE_DIR}/scripts/coverage-run-batched.sh
-            ${CMAKE_BINARY_DIR}
+    COMMAND
+      ${CMAKE_COMMAND} -E env
+      "STORM_PG_CONNSTR=host=/var/run/postgresql dbname=storm_db user=storm_db"
+      ${CMAKE_SOURCE_DIR}/scripts/coverage-run-batched.sh ${CMAKE_BINARY_DIR}
     DEPENDS storm_tests
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     COMMENT "Running main tests with coverage instrumentation (batched)"
