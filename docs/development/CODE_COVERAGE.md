@@ -17,10 +17,10 @@ cmake --build --preset ninja-debug-coverage --target coverage
 Output shows filtered coverage with `LCOV_EXCL_*` markers applied:
 ```
 Summary coverage rate:
-  source files: 14
-  lines.......: 100.0% (3462 of 3462 lines)
-  functions...: 78.3% (3969 of 5071 functions)
-  branches....: 89.5% (342 of 382 branches)
+  source files: 20
+  lines.......: 100.0% (5713 of 5713 lines)
+  functions...: 66.0% (3730 of 5649 functions)
+  branches....: 91.5% (787 of 860 branches)
 ```
 
 ### HTML Report (Detailed)
@@ -118,10 +118,12 @@ build/debug/coverage/
 
 ### Uncovered Code Categories
 
-1. **Error paths** (`[[unlikely]]`) - Test via mock tests
-2. **Compile-time code** (`consteval`) - Exclude with `LCOV_EXCL_*`
-3. **Dead code** - Remove it
-4. **Missing tests** - Add tests
+1. **Error paths** (`[[unlikely]]`) - Test via mock tests, or exclude with `LCOV_EXCL_LINE`
+2. **Compile-time code** (`consteval`, `constexpr`) - Exclude with `LCOV_EXCL_*`
+3. **`if constexpr` branches** - Only one branch instantiated per template type, exclude other
+4. **Template instantiation artifacts** - Some instantiations instrumented, others not
+5. **Dead code** - Remove it
+6. **Missing tests** - Add tests
 
 ### Function Coverage vs Line Coverage
 
@@ -139,6 +141,20 @@ Error handling paths are tested in `tests/mock_sqlite/test_orm_mock_errors.cpp` 
 # Run mock tests separately
 cmake --build --preset ninja-debug --target coverage-run-mock
 ```
+
+## Batched Test Execution
+
+Coverage tests run via `scripts/coverage-run-batched.sh`, which executes each GTest suite
+in a separate process. This works around a Clang C++26 coverage segfault that occurs when
+running all ~1700 tests in a single process.
+
+**Important**: Suites must NOT be split into individual test runs. Per-test profraw files
+lose cross-module template coverage data because profiling counters for template
+instantiations across module boundaries require enough test volume within a single process
+to be properly recorded. Running a single test produces a profraw that shows 0 for
+functions like `having()` and `first()`, but running the full suite correctly records them.
+
+See [#176](https://github.com/spiritEcosse/storm/issues/176) for the investigation details.
 
 ## Troubleshooting
 

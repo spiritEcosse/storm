@@ -208,11 +208,9 @@ export namespace storm::orm::statements {
         }
 
         // Return the SQL that would be executed (for testing/debugging)
-        // LCOV_EXCL_START — Clang C++26 modules coverage bug: method on temporary not instrumented
         [[nodiscard]] auto sql() -> std::string {
             return build_sql();
         }
-        // LCOV_EXCL_STOP
 
         // Execute SELECT or SELECT DISTINCT query on the specified field(s)
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute() -> std::expected<ResultType, Error> {

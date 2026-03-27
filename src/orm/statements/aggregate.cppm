@@ -212,7 +212,6 @@ export namespace storm::orm::statements {
             , having_expr_(std::move(having_expr)) {}
 
         // HAVING clause - only available when GROUP BY is present
-        // LCOV_EXCL_START — tested via AggregateTest.Having*; C++26 module coverage gap
         auto having(orm::where::ExpressionVariantPtr expr)
             requires HasGroupBy
         {
@@ -220,7 +219,6 @@ export namespace storm::orm::statements {
                     conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_, std::move(expr)
             };
         }
-        // LCOV_EXCL_STOP
 
         // Chaining methods (only for non-GROUP BY queries building aggregates)
         template <std::meta::info... FieldInfos> auto sum() {
@@ -229,7 +227,6 @@ export namespace storm::orm::statements {
             };
         }
 
-        // LCOV_EXCL_START — tested via GroupByWithCount etc.; C++26 module coverage gap
         template <std::meta::info... FieldInfos> auto count() {
             return AggregateStatement<
                     T,
@@ -240,7 +237,6 @@ export namespace storm::orm::statements {
                     conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_, having_expr_
             };
         }
-        // LCOV_EXCL_STOP
 
         template <std::meta::info... FieldInfos> auto avg() {
             return AggregateStatement<T, ConnType, GroupFields, Ops..., AggregateOp<AggregateType::AVG, FieldInfos...>>{
@@ -358,8 +354,8 @@ export namespace storm::orm::statements {
                 // LCOV_EXCL_STOP
             }
 
-            // LCOV_EXCL_START — tested via scalar + chain aggregates; C++26 module coverage gap
             ResultType result;
+            // LCOV_EXCL_START — if constexpr: only one branch instantiated per NumOps
             if constexpr (NumOps == 1) {
                 result = Base::template extract_column_value<ResultType>(stmt, 0);
             } else {
@@ -429,12 +425,10 @@ export namespace storm::orm::statements {
             }
         }
 
-        // LCOV_EXCL_START — tested via AggregateTest.Having*; C++26 module coverage gap
         void insert_having_clause(std::string& sql) const {
             sql += " HAVING ";
             sql += orm::where::to_sql(*having_expr_);
         }
-        // LCOV_EXCL_STOP
 
         void append_modifiers(std::string& sql) const {
             Base::template append_order_by<ConnType>(sql, order_by_wrapper_);
@@ -461,33 +455,29 @@ export namespace storm::orm::statements {
                 (*prepare_result)->reset();
                 return std::unexpected(bind_result.error());
             }
-            // LCOV_EXCL_START — tested via AggregateTest.Having*; C++26 module coverage gap
             if (having_expr_) {
                 auto having_bind =
                         Base::template bind_having_params<Statement, Error>(*prepare_result, having_expr_, param_index);
-                if (!having_bind) [[unlikely]] {
-                    return std::unexpected(having_bind.error());
-                }
+                if (!having_bind) [[unlikely]] {                 // LCOV_EXCL_LINE
+                    return std::unexpected(having_bind.error()); // LCOV_EXCL_LINE
+                } // LCOV_EXCL_LINE
             }
-            // LCOV_EXCL_STOP
             return extract_results(*prepare_result);
         }
 
-        // LCOV_EXCL_START — tested via AggregateTest.Having*; C++26 module coverage gap
         [[nodiscard]] auto prepare_bind_having_extract(const std::string& sql) -> std::expected<ResultType, Error> {
             auto prepare_result = conn_->prepare_cached(sql);
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
-            }
+            if (!prepare_result) [[unlikely]] {                 // LCOV_EXCL_LINE
+                return std::unexpected(prepare_result.error()); // LCOV_EXCL_LINE
+            } // LCOV_EXCL_LINE
             int  param_index = 1;
             auto having_bind =
                     Base::template bind_having_params<Statement, Error>(*prepare_result, having_expr_, param_index);
-            if (!having_bind) [[unlikely]] {
-                return std::unexpected(having_bind.error());
-            }
+            if (!having_bind) [[unlikely]] {                 // LCOV_EXCL_LINE
+                return std::unexpected(having_bind.error()); // LCOV_EXCL_LINE
+            } // LCOV_EXCL_LINE
             return extract_results(*prepare_result);
         }
-        // LCOV_EXCL_STOP
 
         // ---- SQL Builders ----
         [[nodiscard]] auto build_join_sql() const -> std::string {
@@ -496,7 +486,6 @@ export namespace storm::orm::statements {
             // JoinStatement::build_complete_sql_array() which unconditionally appends it.
             const size_t from_pos = join_sql.find(" FROM ");
 
-            // LCOV_EXCL_START — tested via GroupByWithJoinAndSum etc.; C++26 module coverage gap
             std::string result;
             result.reserve(select_clause_.size() + join_sql.size() + utilities::sql_len::MEDIUM_BUFFER);
             result = "SELECT ";
@@ -509,7 +498,6 @@ export namespace storm::orm::statements {
             }
 
             return result;
-            // LCOV_EXCL_STOP
         }
 
         // ---- Inline extraction for simple aggregate (no trailing reset) ----
@@ -531,7 +519,6 @@ export namespace storm::orm::statements {
                 // LCOV_EXCL_STOP
             }
 
-            // LCOV_EXCL_START — tested via chain aggregates; C++26 module coverage gap
             if constexpr (NumOps == 1) {
                 return Base::template extract_column_value<ResultType>(stmt, 0);
             } else {
@@ -541,23 +528,22 @@ export namespace storm::orm::statements {
                         )...
                 };
             }
-            // LCOV_EXCL_STOP
         }
 
         // ---- Execution Paths ----
         [[nodiscard]] __attribute__((hot)) auto execute_simple() -> std::expected<ResultType, Error> {
             if constexpr (HasGroupBy) {
                 const bool has_modifiers = order_by_wrapper_.has_value() || limit_.has_value() || offset_.has_value();
-                // LCOV_EXCL_START — tested via AggregateTest.Having*; C++26 module coverage gap
                 if (having_expr_) {
                     std::string sql = base_sql_;
                     insert_having_clause(sql);
+                    // LCOV_EXCL_START — HAVING + ORDER BY/LIMIT combo
                     if (has_modifiers) {
                         append_modifiers(sql);
                     }
+                    // LCOV_EXCL_STOP
                     return prepare_bind_having_extract(sql);
                 }
-                // LCOV_EXCL_STOP
                 if (has_modifiers) {
                     std::string sql = base_sql_;
                     append_modifiers(sql);
@@ -595,11 +581,9 @@ export namespace storm::orm::statements {
             std::string sql = base_sql_;
             insert_where_clause(sql);
             if constexpr (HasGroupBy) {
-                // LCOV_EXCL_START — tested via AggregateTest.HavingWithWhere*; C++26 module coverage gap
                 if (having_expr_) {
                     insert_having_clause(sql);
                 }
-                // LCOV_EXCL_STOP
                 append_modifiers(sql);
             }
             return prepare_bind_extract(sql);
@@ -607,7 +591,6 @@ export namespace storm::orm::statements {
 
         [[nodiscard]] __attribute__((hot)) auto execute_join() -> std::expected<ResultType, Error> {
             std::string sql = build_join_sql();
-            // LCOV_EXCL_START — tested via GroupByWithJoinAndSum, HavingWithJoin; C++26 module coverage gap
             if constexpr (HasGroupBy) {
                 if (having_expr_) {
                     insert_having_clause(sql);
@@ -617,21 +600,18 @@ export namespace storm::orm::statements {
             if (having_expr_) {
                 return prepare_bind_having_extract(sql);
             }
-            // LCOV_EXCL_STOP
             return prepare_and_extract(sql);
         }
 
         [[nodiscard]] __attribute__((hot)) auto execute_where_join() -> std::expected<ResultType, Error> {
             std::string sql = build_join_sql();
             insert_where_clause(sql);
-            // LCOV_EXCL_START — tested via HavingWithWhereAndJoin; C++26 module coverage gap
             if constexpr (HasGroupBy) {
                 if (having_expr_) {
                     insert_having_clause(sql);
                 }
                 append_modifiers(sql);
             }
-            // LCOV_EXCL_STOP
             return prepare_bind_extract(sql);
         }
 
@@ -675,13 +655,11 @@ export namespace storm::orm::statements {
             , having_expr_(std::move(having_expr)) {}
 
         // HAVING clause - stores expression and returns new GroupByBuilder
-        // LCOV_EXCL_START — tested via AggregateTest.HavingOnGroupByBuilder; C++26 module coverage gap
         auto having(orm::where::ExpressionVariantPtr expr) {
             return GroupByBuilder<T, ConnType, GroupFieldInfos...>{
                     conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_, std::move(expr)
             };
         }
-        // LCOV_EXCL_STOP
 
         template <std::meta::info... FieldInfos> auto count() {
             return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::COUNT, FieldInfos...>>{

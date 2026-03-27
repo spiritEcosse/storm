@@ -34,7 +34,8 @@
       "Bash(CC=/home/ihor/projects/storm/clang-p2996/build/bin/clang CXX=/home/ihor/projects/storm/clang-p2996/build/bin/clang++ cmake ../.. -GNinja -DCMAKE_BUILD_TYPE=Release -DLIBCXX_ROOT=/home/ihor/projects/storm/clang-p2996 -DENABLE_BENCH=ON)",
       "Bash(nm:*)",
       "Bash(/home/ihor/projects/storm/storm_develop/build/debug/benchmarks/bench_storm --help)",
-      "Bash(git show:*)"
+      "Bash(git show:*)",
+      "Bash(gh issue:*)"
     ],
     "deny": [],
     "ask": []
