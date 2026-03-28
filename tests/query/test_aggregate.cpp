@@ -1670,4 +1670,72 @@ TYPED_TEST(GroupByOrderByTest, GroupByWithDifferentAggregatesSequentially) {
     EXPECT_EQ(count_result.value().size(), avg_result.value().size());
 }
 
+// ============================================================================
+// HAVING + ORDER BY/LIMIT combined tests (#177)
+// Covers aggregate.cppm:540-544 — HAVING with modifiers path
+// ============================================================================
+
+TYPED_TEST(AggregateTest, HavingWithOrderByAndLimit) {
+    // ORDER BY + LIMIT set on QuerySet, then GROUP BY + HAVING + COUNT
+    // Exercises execute_simple() path: HasGroupBy=true, having_expr_!=null, has_modifiers=true
+    auto result = this->qs->template order_by<^^Person::age>()
+                          .limit(3)
+                          .template group_by<^^Person::age>()
+                          .having(storm::orm::where::field<^^Person::age>() > 25)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING + ORDER BY + LIMIT failed: " << result.error().message();
+
+    const auto& groups = result.value();
+    EXPECT_LE(groups.size(), 3) << "LIMIT 3 should return at most 3 groups";
+
+    // Verify ordering — ages should be ascending
+    int prev_age = 0;
+    for (const auto& [age, count] : groups) {
+        EXPECT_GT(age, 25) << "HAVING age > 25 should filter out ages <= 25";
+        EXPECT_GE(age, prev_age) << "ORDER BY age ASC violated";
+        prev_age = age;
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingWithOrderByOnly) {
+    // ORDER BY DESC set before GROUP BY + HAVING
+    auto result = this->qs->template order_by<^^Person::age, false>()
+                          .template group_by<^^Person::age>()
+                          .having(storm::orm::where::field<^^Person::age>() > 30)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING + ORDER BY failed: " << result.error().message();
+
+    const auto& groups   = result.value();
+    int         prev_age = 100;
+    for (const auto& [age, count] : groups) {
+        EXPECT_GT(age, 30) << "HAVING age > 30 should filter";
+        EXPECT_LE(age, prev_age) << "ORDER BY DESC violated";
+        prev_age = age;
+    }
+}
+
+TYPED_TEST(AggregateTest, HavingWithLimitOnly) {
+    // LIMIT set before GROUP BY + HAVING
+    auto result = this->qs->limit(2)
+                          .template group_by<^^Person::age>()
+                          .having(storm::orm::where::field<^^Person::age>() > 25)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING + LIMIT failed: " << result.error().message();
+
+    EXPECT_LE(result.value().size(), 2) << "LIMIT 2 should return at most 2 groups";
+}
+
+TYPED_TEST(AggregateTest, HavingWithOffsetOnly) {
+    // OFFSET set before GROUP BY + HAVING
+    auto result = this->qs->offset(1)
+                          .template group_by<^^Person::age>()
+                          .having(storm::orm::where::field<^^Person::age>() > 25)
+                          .count()
+                          .select();
+    ASSERT_TRUE(result.has_value()) << "HAVING + OFFSET failed: " << result.error().message();
+}
+
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

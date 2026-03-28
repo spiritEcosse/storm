@@ -338,11 +338,12 @@ export namespace storm::orm::statements {
                 -> std::expected<ResultType, Error> {
             int step_result = stmt->step_raw();
 
+            // LCOV_EXCL_START — LLVM instrumentation bug: counters don't fire despite
+            // code executing (verified via fprintf). if constexpr branches also untraceable.
+            // Tested by mock: AggregateWithWhereStepErrorInExtractSimpleResult,
+            //                 AggregateWithWhereStepNoRowsInExtractSimpleResult
             if (step_result != Statement::ROW_AVAILABLE) {
                 stmt->reset();
-                // LCOV_EXCL_START - SQLite aggregate queries always return ≥1 row;
-                // these defensive paths are tested via mock (test_orm_mock_errors.cpp)
-                // but LLVM coverage can't track them (template + if constexpr issue)
                 if (step_result == Statement::NO_MORE_ROWS) {
                     if constexpr (NumOps == 1) {
                         return ResultType{};
@@ -351,8 +352,8 @@ export namespace storm::orm::statements {
                     }
                 }
                 return std::unexpected(Error{step_result, stmt->get_error_message()});
-                // LCOV_EXCL_STOP
             }
+            // LCOV_EXCL_STOP
 
             ResultType result;
             // LCOV_EXCL_START — if constexpr: only one branch instantiated per NumOps
@@ -458,24 +459,24 @@ export namespace storm::orm::statements {
             if (having_expr_) {
                 auto having_bind =
                         Base::template bind_having_params<Statement, Error>(*prepare_result, having_expr_, param_index);
-                if (!having_bind) [[unlikely]] {                 // LCOV_EXCL_LINE
-                    return std::unexpected(having_bind.error()); // LCOV_EXCL_LINE
-                } // LCOV_EXCL_LINE
+                if (!having_bind) [[unlikely]] {
+                    return std::unexpected(having_bind.error());
+                }
             }
             return extract_results(*prepare_result);
         }
 
         [[nodiscard]] auto prepare_bind_having_extract(const std::string& sql) -> std::expected<ResultType, Error> {
             auto prepare_result = conn_->prepare_cached(sql);
-            if (!prepare_result) [[unlikely]] {                 // LCOV_EXCL_LINE
-                return std::unexpected(prepare_result.error()); // LCOV_EXCL_LINE
-            } // LCOV_EXCL_LINE
+            if (!prepare_result) [[unlikely]] {
+                return std::unexpected(prepare_result.error());
+            }
             int  param_index = 1;
             auto having_bind =
                     Base::template bind_having_params<Statement, Error>(*prepare_result, having_expr_, param_index);
-            if (!having_bind) [[unlikely]] {                 // LCOV_EXCL_LINE
-                return std::unexpected(having_bind.error()); // LCOV_EXCL_LINE
-            } // LCOV_EXCL_LINE
+            if (!having_bind) [[unlikely]] {
+                return std::unexpected(having_bind.error());
+            }
             return extract_results(*prepare_result);
         }
 
@@ -511,12 +512,10 @@ export namespace storm::orm::statements {
 
             if (step_result != Statement::ROW_AVAILABLE) [[unlikely]] {
                 stmt->reset();
-                // LCOV_EXCL_START
                 if (step_result == Statement::NO_MORE_ROWS) {
                     return ResultType{};
                 }
                 return std::unexpected(Error{step_result, stmt->get_error_message()});
-                // LCOV_EXCL_STOP
             }
 
             if constexpr (NumOps == 1) {
@@ -537,11 +536,9 @@ export namespace storm::orm::statements {
                 if (having_expr_) {
                     std::string sql = base_sql_;
                     insert_having_clause(sql);
-                    // LCOV_EXCL_START — HAVING + ORDER BY/LIMIT combo
                     if (has_modifiers) {
                         append_modifiers(sql);
                     }
-                    // LCOV_EXCL_STOP
                     return prepare_bind_having_extract(sql);
                 }
                 if (has_modifiers) {

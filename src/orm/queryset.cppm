@@ -204,11 +204,11 @@ export namespace storm {
         // Returns DistinctStatement by value - connection-level prepare_cached() handles SQL caching
         // No static thread_local needed since actual statement caching is at connection level
         template <std::meta::info... FieldInfos> constexpr auto distinct() {
-            if constexpr (sizeof...(FieldInfos) == 0) { // LCOV_EXCL_START — zero-arg distinct() untested template path
+            if constexpr (sizeof...(FieldInfos) == 0) {
                 using StmtType = orm::statements::
                         DistinctStatement<T, ConnType, orm::statements::BaseStatement<T>::primary_key_>;
                 return StmtType{conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_};
-            } else { // LCOV_EXCL_STOP
+            } else {
                 using StmtType = orm::statements::DistinctStatement<T, ConnType, FieldInfos...>;
                 return StmtType{conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_};
             }
