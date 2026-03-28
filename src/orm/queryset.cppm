@@ -314,7 +314,7 @@ export namespace storm {
             requires(sizeof...(GroupFieldInfos) > 0)
         auto group_by() {
             return orm::statements::GroupByBuilder<T, ConnType, GroupFieldInfos...>{
-                    conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_
+                    {conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_, nullptr}
             };
         }
         // =====================================================================
@@ -374,7 +374,7 @@ export namespace storm {
                     ConnType,
                     orm::statements::NoGroupBy,
                     orm::statements::AggregateOp<orm::statements::AggregateType::SUM, FieldInfos...>>;
-            return StmtType{conn_, where_expr_, join_stmt_};
+            return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 
         // COUNT aggregate (defaults to COUNT(*) if no fields)
@@ -389,7 +389,7 @@ export namespace storm {
                     ConnType,
                     orm::statements::NoGroupBy,
                     orm::statements::AggregateOp<orm::statements::AggregateType::COUNT, FieldInfos...>>;
-            return StmtType{conn_, where_expr_, join_stmt_};
+            return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 
         // AVG aggregate (multi-field: AVG(f1 + f2 + ...))
@@ -403,7 +403,7 @@ export namespace storm {
                     ConnType,
                     orm::statements::NoGroupBy,
                     orm::statements::AggregateOp<orm::statements::AggregateType::AVG, FieldInfos...>>;
-            return StmtType{conn_, where_expr_, join_stmt_};
+            return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 
         // MIN aggregate (multi-field: MIN(f1 + f2 + ...))
@@ -417,7 +417,7 @@ export namespace storm {
                     ConnType,
                     orm::statements::NoGroupBy,
                     orm::statements::AggregateOp<orm::statements::AggregateType::MIN, FieldInfos...>>;
-            return StmtType{conn_, where_expr_, join_stmt_};
+            return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 
         // MAX aggregate (multi-field: MAX(f1 + f2 + ...))
@@ -431,7 +431,7 @@ export namespace storm {
                     ConnType,
                     orm::statements::NoGroupBy,
                     orm::statements::AggregateOp<orm::statements::AggregateType::MAX, FieldInfos...>>;
-            return StmtType{conn_, where_expr_, join_stmt_};
+            return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 
         // COUNT(DISTINCT field) aggregate
@@ -445,7 +445,7 @@ export namespace storm {
                     ConnType,
                     orm::statements::NoGroupBy,
                     orm::statements::AggregateOp<orm::statements::AggregateType::COUNT_DISTINCT, FieldInfo>>;
-            return StmtType{conn_, where_expr_, join_stmt_};
+            return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 
         // Static methods for connection management
