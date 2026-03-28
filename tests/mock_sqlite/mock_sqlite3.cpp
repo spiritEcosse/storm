@@ -20,8 +20,7 @@ namespace {
 
     // Fake handles - just use pointers to distinguish between null and valid
     struct FakeSqlite3 {
-        std::string error_message     = "not an error";
-        int64_t     last_insert_rowid = 0;
+        std::string error_message = "not an error";
     };
 
     struct FakeSqlite3Stmt {
@@ -576,13 +575,6 @@ auto sqlite3_expanded_sql(sqlite3_stmt* pStmt) -> char* {
     auto*       copy        = static_cast<char*>(malloc(strlen(placeholder) + 1)); // NOSONAR(cpp:S1231)
     strcpy(copy, placeholder);                                                     // NOSONAR(cpp:S5025)
     return copy;
-}
-
-auto sqlite3_last_insert_rowid(sqlite3* db) -> int64_t {
-    if (auto* fake_db = reinterpret_cast<FakeSqlite3*>(db); fake_db) { // NOSONAR(cpp:S3630)
-        return fake_db->last_insert_rowid++;
-    }
-    return 0;
 }
 
 } // extern "C"

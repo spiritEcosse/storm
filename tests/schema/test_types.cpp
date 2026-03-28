@@ -467,7 +467,6 @@ TYPED_TEST(InsertOptionsTest, BatchInsertReturnsVoid) {
             {.id = 0, .big_num = 300LL, .ll_signed = 30LL},
     };
 
-    // Batch insert returns void (no IDs - SQLite's last_insert_rowid is unreliable for batch)
     auto result = qs.insert(batch).execute();
     ASSERT_TRUE(result.has_value());
 

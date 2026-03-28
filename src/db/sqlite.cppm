@@ -453,13 +453,6 @@ export namespace storm::db::sqlite {
             return db.get();
         }
 
-        // LCOV_EXCL_START — public API, not called by ORM (uses RETURNING instead)
-        // Get the row ID of the most recent successful INSERT
-        [[nodiscard]] auto last_insert_rowid() const noexcept -> int64_t {
-            return sqlite3_last_insert_rowid(db.get());
-        }
-        // LCOV_EXCL_STOP
-
       private:
         explicit Connection(SqlitePtr db_ptr) : db(std::move(db_ptr)) {
             // Reserve capacity to prevent rehashing and dangling pointers in InsertStatement
