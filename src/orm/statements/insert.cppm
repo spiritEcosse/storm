@@ -19,6 +19,7 @@ import <array>;
 import <span>;
 import <type_traits>;
 import <memory>;
+import <vector>;
 
 export namespace storm::orm::statements {
 
@@ -168,6 +169,38 @@ export namespace storm::orm::statements {
         static constexpr size_t         bulk_insert_prefix_size =
                 calculate_bulk_insert_prefix_size() - 1; // Exclude null terminator
 
+        // Pre-computed RETURNING suffix: " RETURNING <pk_name>"
+        static constexpr auto returning_suffix_array = [] consteval {
+            ConstexprString<64> result;
+            result.append(" RETURNING ");
+            result.append(Base::pk_name_);
+            return result;
+        }();
+        static inline const std::string returning_suffix = std::string(returning_suffix_array);
+
+        // Build bulk INSERT SQL body (shared by both returning and non-returning variants)
+        static auto build_bulk_insert_body(size_t count) -> std::string {
+            std::string value_template = "(";
+            value_template += placeholders_;
+            value_template += ")";
+
+            const size_t value_size     = value_template.size();
+            const size_t separator_size = 2; // ", "
+            const size_t total_size = bulk_insert_prefix_size + (value_size * count) + (separator_size * (count - 1));
+
+            std::string sql;
+            sql.reserve(total_size);
+
+            sql = bulk_insert_prefix;
+            for (size_t i = 0; i < count; ++i) {
+                if (i > 0) {
+                    sql += ", ";
+                }
+                sql += value_template;
+            }
+            return sql;
+        }
+
         // Generate bulk INSERT SQL with multiple value sets (with caching)
         // Returns const reference to avoid expensive string copy
         static auto get_bulk_insert_sql(size_t count) -> const std::string& {
@@ -179,33 +212,23 @@ export namespace storm::orm::statements {
                 return *cached; // Return by reference - no copy
             }
 
-            // Build optimized SQL with pre-allocation
-            // Pre-compute the value template once
-            std::string value_template = "(";
-            value_template += placeholders_;
-            value_template += ")";
+            cache.insert(count, build_bulk_insert_body(count));
+            return *cache.find(count); // Guaranteed to exist after insert
+        }
 
-            // Calculate exact size needed using pre-computed prefix size
-            const size_t value_size     = value_template.size();
-            const size_t separator_size = 2; // ", "
-            const size_t total_size = bulk_insert_prefix_size + (value_size * count) + (separator_size * (count - 1));
+        // Generate bulk INSERT ... RETURNING <pk> SQL (with separate cache)
+        static auto get_bulk_insert_returning_sql(size_t count) -> const std::string& {
+            static thread_local BulkSQLCache cache;
 
-            // Reserve exact memory upfront
-            std::string sql;
-            sql.reserve(total_size);
-
-            // Build SQL with minimal allocations using pre-computed prefix
-            sql = bulk_insert_prefix;
-            for (size_t i = 0; i < count; ++i) {
-                if (i > 0) {
-                    sql += ", ";
-                }
-                sql += value_template;
+            if (const auto* cached = cache.find(count)) {
+                return *cached;
             }
 
-            // Cache the result and return reference to it
+            std::string sql = build_bulk_insert_body(count);
+            sql += returning_suffix;
+
             cache.insert(count, std::move(sql));
-            return *cache.find(count); // Guaranteed to exist after insert
+            return *cache.find(count);
         }
 
       public:
@@ -245,6 +268,19 @@ export namespace storm::orm::statements {
             }
         };
 
+        struct BulkReturningQuery {
+            InsertStatement&             stmt; // NOSONAR(cpp:S1659) — aggregate struct, same pattern as BulkQuery
+            std::span<const T>           objects;
+            std::optional<InsertOptions> opts;
+
+            [[nodiscard]] auto execute() -> std::expected<std::vector<int64_t>, Error> { // NOSONAR(cpp:S1659)
+                return stmt.execute_returning(objects, opts);
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> { // NOSONAR(cpp:S1659)
+                return stmt.to_sql_returning(objects);
+            }
+        };
+
         template <ReturnId R = ReturnId::Yes> auto query(const T& obj) {
             if constexpr (R == ReturnId::Yes) {
                 return SingleQuery{*this, obj};
@@ -254,6 +290,13 @@ export namespace storm::orm::statements {
         }
         auto query(std::span<const T> objects, std::optional<InsertOptions> opts = std::nullopt) -> BulkQuery {
             return {*this, objects, opts};
+        }
+        template <ReturnId R> auto query(std::span<const T> objects, std::optional<InsertOptions> opts = std::nullopt) {
+            if constexpr (R == ReturnId::Yes) {
+                return BulkReturningQuery{*this, objects, opts};
+            } else {
+                return BulkQuery{*this, objects, opts};
+            }
         }
 
         // Returns SQL string with bound parameters inlined for a single INSERT (for debugging)
@@ -308,9 +351,48 @@ export namespace storm::orm::statements {
             return stmt->expanded_sql();
         }
 
+        // Returns SQL string with bound parameters inlined for a bulk INSERT ... RETURNING (for debugging)
+        [[nodiscard]] auto to_sql_returning(std::span<const T> objects) -> std::expected<std::string, Error> {
+            if (objects.empty()) {
+                return std::string{};
+            }
+            const auto& sql      = get_bulk_insert_returning_sql(objects.size());
+            auto        stmt_res = conn_->prepare_cached(sql);
+            if (!stmt_res) {
+                return std::unexpected(stmt_res.error());
+            }
+            auto* stmt        = *stmt_res;
+            auto  bind_result = Base::template bind_non_pk_objects_bulk_impl<ConnType, Statement>(
+                    *stmt, objects, typename Base::field_indices_t()
+            );
+            if (!bind_result) {
+                return std::unexpected(bind_result.error());
+            }
+            return stmt->expanded_sql();
+        }
+
+        // Batch insert with RETURNING — returns all inserted IDs
+        [[nodiscard]] auto // NOSONAR(cpp:S1659)
+        execute_returning(std::span<const T> objects, std::optional<InsertOptions> opts = std::nullopt)
+                -> std::expected<std::vector<int64_t>, Error> {
+            if (objects.empty()) {
+                return std::vector<int64_t>{};
+            }
+
+            InsertOptions const options = opts.value_or(InsertOptions{});
+
+            constexpr size_t max_allowed          = Base::MAX_DB_VARIABLES / Base::field_count_;
+            size_t           effective_batch_size = options.batch_size.value_or(max_allowed);
+            effective_batch_size                  = std::min(effective_batch_size, max_allowed);
+
+            if (objects.size() <= effective_batch_size) {
+                return execute_bulk_returning(objects);
+            }
+            return execute_chunked_bulk_returning(objects, effective_batch_size);
+        }
+
         // Batch insert operation with optional configuration
-        // NOTE: Returns void because SQLite's last_insert_rowid() only gives the last ID,
-        // and assuming consecutive IDs is unreliable (triggers, gaps, etc.)
+        // NOTE: Returns void — use execute_returning() when IDs are needed
         [[nodiscard]] auto execute(std::span<const T> objects, std::optional<InsertOptions> opts = std::nullopt)
                 -> std::expected<void, Error> {
             if (objects.empty()) {
@@ -448,6 +530,67 @@ export namespace storm::orm::statements {
             }
 
             return txn->commit();
+        }
+
+        // Execute bulk INSERT ... RETURNING — single chunk, returns all IDs
+        [[nodiscard]] auto execute_bulk_returning(std::span<const T> objects)
+                -> std::expected<std::vector<int64_t>, Error> {
+            const auto& sql      = get_bulk_insert_returning_sql(objects.size());
+            auto        stmt_res = conn_->prepare_cached(sql);
+            if (!stmt_res) {
+                return std::unexpected(stmt_res.error());
+            }
+            auto* stmt = *stmt_res;
+
+            auto bind_result = Base::template bind_non_pk_objects_bulk_impl<ConnType, Statement>(
+                    *stmt, objects, typename Base::field_indices_t()
+            );
+            if (!bind_result) {
+                return std::unexpected(bind_result.error());
+            }
+
+            std::vector<int64_t> ids;
+            ids.reserve(objects.size());
+
+            int rc = 0;
+            while ((rc = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
+                ids.push_back(stmt->extract_int64(0));
+            }
+            stmt->reset();
+
+            if (rc != Statement::NO_MORE_ROWS) {
+                return std::unexpected(Error{rc, stmt->get_error_message()});
+            }
+            return ids;
+        }
+
+        // Execute chunked bulk INSERT ... RETURNING — multiple chunks with transaction
+        [[nodiscard]] auto execute_chunked_bulk_returning(std::span<const T> objects, size_t custom_bulk_size)
+                -> std::expected<std::vector<int64_t>, Error> {
+            auto txn = TransactionGuard<ConnType>::begin(*conn_);
+            if (!txn) {
+                return std::unexpected(txn.error());
+            }
+
+            std::vector<int64_t> all_ids;
+            all_ids.reserve(objects.size());
+
+            for (size_t offset = 0; offset < objects.size(); offset += custom_bulk_size) {
+                size_t chunk_size = std::min(custom_bulk_size, objects.size() - offset);
+                auto   chunk      = objects.subspan(offset, chunk_size);
+
+                auto chunk_result = execute_bulk_returning(chunk);
+                if (!chunk_result) {
+                    return std::unexpected(chunk_result.error());
+                }
+                all_ids.insert(all_ids.end(), chunk_result.value().begin(), chunk_result.value().end());
+            }
+
+            auto commit_result = txn->commit();
+            if (!commit_result) {
+                return std::unexpected(commit_result.error());
+            }
+            return all_ids;
         }
 
       private:

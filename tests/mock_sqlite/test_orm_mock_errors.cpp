@@ -1949,6 +1949,171 @@ namespace {
     }
 
     // ============================================================================
+    // Batch INSERT RETURNING Error Tests
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, InsertBatchReturningFailsOnPrepareError) {
+        using ReturnId = storm::orm::statements::ReturnId;
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {
+                {.id = 0, .name = "First", .age = 30},
+                {.id = 0, .name = "Second", .age = 25},
+        };
+
+        auto result = qs.insert<ReturnId::Yes>(std::span{people}).execute();
+
+        ASSERT_FALSE(result.has_value()) << "Batch insert returning should fail on prepare error";
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    TEST_F(ORMMockErrorTest, InsertBatchReturningFailsOnBindError) {
+        using ReturnId = storm::orm::statements::ReturnId;
+        MockSqlite3Config::bind_text_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {
+                {.id = 0, .name = "First", .age = 30},
+                {.id = 0, .name = "Second", .age = 25},
+        };
+
+        auto result = qs.insert<ReturnId::Yes>(std::span{people}).execute();
+
+        if (!result.has_value()) {
+            SUCCEED() << "Insert returning failed as expected with code: " << result.error().code();
+        }
+    }
+
+    TEST_F(ORMMockErrorTest, InsertBatchReturningFailsOnStepError) {
+        using ReturnId = storm::orm::statements::ReturnId;
+        MockSqlite3Config::step_returns(SQLITE_BUSY);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {
+                {.id = 0, .name = "First", .age = 30},
+                {.id = 0, .name = "Second", .age = 25},
+        };
+
+        auto result = qs.insert<ReturnId::Yes>(std::span{people}).execute();
+
+        ASSERT_FALSE(result.has_value()) << "Batch insert returning should fail on step error";
+        EXPECT_EQ(result.error().code(), SQLITE_BUSY);
+    }
+
+    TEST_F(ORMMockErrorTest, InsertBatchReturningEmptySpan) {
+        using ReturnId = storm::orm::statements::ReturnId;
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> empty;
+
+        auto result = qs.insert<ReturnId::Yes>(std::span{empty}).execute();
+
+        ASSERT_TRUE(result.has_value()) << "Empty span insert returning should succeed";
+        EXPECT_TRUE(result.value().empty());
+    }
+
+    TEST_F(ORMMockErrorTest, InsertBatchReturningToSqlEmptySpan) {
+        using ReturnId = storm::orm::statements::ReturnId;
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> empty;
+
+        auto result = qs.insert<ReturnId::Yes>(std::span{empty}).to_sql();
+
+        ASSERT_TRUE(result.has_value()) << "Empty span to_sql returning should succeed";
+        EXPECT_TRUE(result.value().empty());
+    }
+
+    TEST_F(ORMMockErrorTest, InsertBatchReturningToSqlFailsOnPrepareError) {
+        using ReturnId = storm::orm::statements::ReturnId;
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {
+                {.id = 0, .name = "First", .age = 30},
+        };
+
+        auto result = qs.insert<ReturnId::Yes>(std::span{people}).to_sql();
+
+        ASSERT_FALSE(result.has_value()) << "to_sql returning should fail on prepare error";
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    TEST_F(ORMMockErrorTest, InsertBatchReturningToSqlFailsOnBindError) {
+        using ReturnId = storm::orm::statements::ReturnId;
+        MockSqlite3Config::bind_text_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {
+                {.id = 0, .name = "First", .age = 30},
+        };
+
+        auto result = qs.insert<ReturnId::Yes>(std::span{people}).to_sql();
+
+        if (!result.has_value()) {
+            SUCCEED() << "to_sql returning failed on bind error";
+        }
+    }
+
+    TEST_F(ORMMockErrorTest, InsertChunkedBatchReturningFailsOnTxnBeginError) {
+        using ReturnId = storm::orm::statements::ReturnId;
+        // Step failure on BEGIN TRANSACTION (first step call)
+        MockSqlite3Config::step_returns(SQLITE_BUSY);
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {
+                {.id = 0, .name = "First", .age = 30},
+                {.id = 0, .name = "Second", .age = 25},
+        };
+
+        storm::orm::statements::InsertOptions opts;
+        opts.batch_size = 1; // Forces chunking (2 chunks of 1)
+
+        auto result = qs.insert<ReturnId::Yes>(std::span{people}, opts).execute();
+
+        ASSERT_FALSE(result.has_value()) << "Chunked insert returning should fail on txn begin error";
+    }
+
+    TEST_F(ORMMockErrorTest, InsertChunkedBatchReturningFailsOnChunkError) {
+        using ReturnId = storm::orm::statements::ReturnId;
+        // First step = SQLITE_DONE (BEGIN succeeds), then SQLITE_ERROR on chunk step
+        MockSqlite3Config::step_returns_sequence({SQLITE_DONE, SQLITE_ERROR});
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {
+                {.id = 0, .name = "First", .age = 30},
+                {.id = 0, .name = "Second", .age = 25},
+        };
+
+        storm::orm::statements::InsertOptions opts;
+        opts.batch_size = 1; // Forces chunking
+
+        auto result = qs.insert<ReturnId::Yes>(std::span{people}, opts).execute();
+
+        ASSERT_FALSE(result.has_value()) << "Chunked insert returning should fail on chunk step error";
+    }
+
+    TEST_F(ORMMockErrorTest, InsertChunkedBatchReturningFailsOnCommitError) {
+        using ReturnId = storm::orm::statements::ReturnId;
+        // BEGIN=DONE, chunk1 step=ROW(id=1), chunk1 done=DONE, chunk2 step=ROW(id=2), chunk2 done=DONE, COMMIT=BUSY
+        MockSqlite3Config::step_returns_sequence(
+                {SQLITE_DONE, SQLITE_ROW, SQLITE_DONE, SQLITE_ROW, SQLITE_DONE, SQLITE_BUSY}
+        );
+
+        QuerySet<MockPerson>    qs;
+        std::vector<MockPerson> people = {
+                {.id = 0, .name = "First", .age = 30},
+                {.id = 0, .name = "Second", .age = 25},
+        };
+
+        storm::orm::statements::InsertOptions opts;
+        opts.batch_size = 1; // Forces chunking
+
+        auto result = qs.insert<ReturnId::Yes>(std::span{people}, opts).execute();
+
+        ASSERT_FALSE(result.has_value()) << "Chunked insert returning should fail on commit error";
+    }
+
+    // ============================================================================
     // TransactionGuard Direct Tests
     // Covers specific TransactionGuard paths for 100% line coverage
     // ============================================================================
