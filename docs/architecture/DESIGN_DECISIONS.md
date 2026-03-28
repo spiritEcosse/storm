@@ -139,8 +139,7 @@ Two optimized batch operation strategies:
 Returns generated IDs from insert operations:
 - Single insert: `std::expected<int64_t, Error>`
 - Batch insert: `std::expected<std::vector<int64_t>, Error>`
-- Uses SQLite's `AUTOINCREMENT` and `sqlite3_last_insert_rowid()`
-- For bulk INSERT, calculates sequential IDs from last ID
+- Uses `RETURNING id` clause for both single and bulk INSERT
 
 **Table creation requires AUTOINCREMENT:**
 ```cpp

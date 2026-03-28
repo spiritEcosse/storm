@@ -135,30 +135,6 @@ static auto get_cached_sql(size_t count) -> std::string {
 
 **Thread safety**: Each thread has its own cache (thread_local), zero synchronization overhead
 
-### Auto-Generated ID Calculation
-
-For bulk INSERT, Storm calculates sequential IDs from the last insert:
-
-```cpp
-auto execute_batch(std::span<const T> objects) -> std::expected<std::vector<int64_t>, Error> {
-    // Execute bulk INSERT
-    stmt->execute();
-
-    // Get last inserted ID
-    int64_t last_id = conn_.last_insert_rowid();
-
-    // Calculate all IDs (sequential from last_id)
-    std::vector<int64_t> ids;
-    ids.reserve(objects.size());
-    for (size_t i = 0; i < objects.size(); ++i) {
-        ids.push_back(last_id - (objects.size() - 1 - i));
-    }
-
-    return ids;
-}
-```
-
-**Requirement**: Table must use `AUTOINCREMENT` for correct sequential IDs
 
 ## Batch UPDATE
 

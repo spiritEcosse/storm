@@ -683,14 +683,6 @@ export namespace storm::db::postgresql {
             return conn_.get();
         }
 
-        [[nodiscard]] auto last_insert_rowid() const noexcept -> int64_t {
-            return last_insert_rowid_;
-        }
-
-        auto set_last_insert_rowid(int64_t rowid) noexcept -> void {
-            last_insert_rowid_ = rowid;
-        }
-
       private:
         explicit Connection(PGconnPtr conn_ptr) : conn_(std::move(conn_ptr)) {
             statement_cache_.reserve(STMT_CACHE_RESERVE);
@@ -734,8 +726,7 @@ export namespace storm::db::postgresql {
 
         PGconnPtr      conn_;
         StatementCache statement_cache_;
-        int64_t        last_insert_rowid_ = 0;
-        int            stmt_counter_      = 0;
+        int            stmt_counter_ = 0;
     };
 
     // Verify concepts are satisfied

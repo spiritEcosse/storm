@@ -236,9 +236,6 @@ auto sqlite3_free(void *ptr) -> void;
 // Expanded SQL (parameter substitution for debugging)
 auto sqlite3_expanded_sql(sqlite3_stmt *pStmt) -> char *;
 
-// Last insert rowid
-auto sqlite3_last_insert_rowid(sqlite3 *db) -> int64_t;
-
 #ifdef __cplusplus
 }
 #endif

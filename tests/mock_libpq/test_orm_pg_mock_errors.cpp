@@ -567,19 +567,6 @@ namespace {
         EXPECT_NE(raw, nullptr);
     }
 
-    TEST_F(PgConnectionAccessorTest, LastInsertRowid) {
-        auto conn_result = PgConnection::open("host=localhost");
-        ASSERT_TRUE(conn_result.has_value());
-
-        EXPECT_EQ(conn_result->last_insert_rowid(), 0);
-
-        conn_result->set_last_insert_rowid(42);
-        EXPECT_EQ(conn_result->last_insert_rowid(), 42);
-
-        conn_result->set_last_insert_rowid(100);
-        EXPECT_EQ(conn_result->last_insert_rowid(), 100);
-    }
-
     // ============================================================================
     // Quote Handling in Placeholder Translation Tests (L688-693)
     // ============================================================================
@@ -1363,14 +1350,6 @@ namespace {
 
         [[nodiscard]] auto get() const noexcept -> void* { // NOSONAR(cpp:S5008)
             return nullptr;
-        }
-
-        [[nodiscard]] auto last_insert_rowid() const noexcept -> int64_t {
-            return 0;
-        }
-
-        auto set_last_insert_rowid(int64_t /*rowid*/) noexcept -> void {
-            // Intentionally empty.
         }
 
         auto set_fail_binds(bool fail) noexcept -> void {
