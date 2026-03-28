@@ -503,7 +503,7 @@ export namespace storm::orm::statements {
         // NOTE: Transaction wrapper required - multiple INSERT statements need atomicity
         [[nodiscard]] auto execute_chunked_bulk_custom(std::span<const T> objects, size_t custom_bulk_size)
                 -> std::expected<void, Error> {
-            auto txn = TransactionGuard<ConnType>::begin(*conn_);
+            auto txn = TransactionGuard<ConnType>::begin(conn_);
             if (!txn) {
                 return std::unexpected(txn.error());
             }
@@ -567,7 +567,7 @@ export namespace storm::orm::statements {
         // Execute chunked bulk INSERT ... RETURNING — multiple chunks with transaction
         [[nodiscard]] auto execute_chunked_bulk_returning(std::span<const T> objects, size_t custom_bulk_size)
                 -> std::expected<std::vector<int64_t>, Error> {
-            auto txn = TransactionGuard<ConnType>::begin(*conn_);
+            auto txn = TransactionGuard<ConnType>::begin(conn_);
             if (!txn) {
                 return std::unexpected(txn.error());
             }

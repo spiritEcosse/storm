@@ -286,7 +286,7 @@ export namespace storm::orm::statements {
             }
 
             // Strategy 3: Chunked IN clause (800+ rows) - RAII transaction guard
-            auto txn = TransactionGuard<ConnType>::begin(*conn_);
+            auto txn = TransactionGuard<ConnType>::begin(conn_);
             if (!txn) {
                 return std::unexpected(txn.error());
             }

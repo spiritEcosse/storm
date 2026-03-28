@@ -2122,7 +2122,7 @@ namespace {
         // Covers line 396-397: commit() when committed_ == true
         auto conn_result = db::sqlite::Connection::open(":memory:");
         ASSERT_TRUE(conn_result.has_value());
-        auto& conn = *conn_result;
+        auto conn = std::make_shared<db::sqlite::Connection>(std::move(*conn_result));
 
         using TxnGuard = storm::orm::utilities::TransactionGuard<db::sqlite::Connection>;
 
@@ -2142,7 +2142,7 @@ namespace {
         // Covers line 396-397: commit() when conn_ == nullptr (moved-from) // NOSONAR(cpp:S125)
         auto conn_result = db::sqlite::Connection::open(":memory:");
         ASSERT_TRUE(conn_result.has_value());
-        auto& conn = *conn_result;
+        auto conn = std::make_shared<db::sqlite::Connection>(std::move(*conn_result));
 
         using TxnGuard = storm::orm::utilities::TransactionGuard<db::sqlite::Connection>;
 
@@ -2165,7 +2165,7 @@ namespace {
         // Covers lines 400-402: commit() when COMMIT execution fails
         auto conn_result = db::sqlite::Connection::open(":memory:");
         ASSERT_TRUE(conn_result.has_value());
-        auto& conn = *conn_result;
+        auto conn = std::make_shared<db::sqlite::Connection>(std::move(*conn_result));
 
         using TxnGuard = storm::orm::utilities::TransactionGuard<db::sqlite::Connection>;
 
