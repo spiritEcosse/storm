@@ -337,13 +337,11 @@ if [[ "$RUN_COVERAGE" == true ]]; then
         local build_exit=$?
 
         if [[ $build_exit -ne 0 ]]; then
-            echo "$output"
+            echo "$output" | tail -20
             echo ""
             echo "Coverage build/analysis failed."
             return 1
         fi
-
-        echo "$output"
 
         # Extract line coverage percentage
         local line_cov
@@ -356,18 +354,16 @@ if [[ "$RUN_COVERAGE" == true ]]; then
         fi
 
         if [[ "$line_cov" != "100.0" ]]; then
-            echo ""
             echo -e "${RED}${BOLD}Line coverage: ${line_cov}% (required: 100.0%)${RESET}"
             show_uncovered_lines
             return 1
         fi
 
-        echo ""
         echo "Line coverage: 100.0%"
         return 0
     }
 
-    run_step "coverage (100% required)" run_coverage_check || true
+    run_step_live "coverage (100% required)" run_coverage_check || true
 fi
 
 # --- Final summary ---
