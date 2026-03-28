@@ -79,6 +79,24 @@ export namespace storm::orm::statements {
 
         explicit SelectStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
+        // Build SQL string without preparing or binding (for testing/debugging)
+        [[nodiscard]] static auto build_sql(
+                const std::optional<JoinStatementWrapper>& join_wrapper,
+                const orm::where::ExpressionVariantPtr&    where_expr,
+                const std::optional<int>&                  limit,
+                const std::optional<int>&                  offset,
+                const std::optional<OrderByWrapper>&       order_by_wrapper
+        ) -> std::string {
+            std::string sql = join_wrapper ? join_wrapper->get_complete_sql() : std::string(get_select_sql());
+            if (where_expr) {
+                sql += " WHERE ";
+                sql += orm::where::to_sql(*where_expr);
+            }
+            Base::template append_order_by<ConnType>(sql, order_by_wrapper);
+            Base::template append_limit_offset<ConnType>(sql, limit, offset);
+            return sql;
+        }
+
         // Returns the SQL that would be executed by select()
         [[nodiscard]] auto
         to_sql(std::optional<JoinStatementWrapper>     join_wrapper     = std::nullopt,
@@ -87,13 +105,7 @@ export namespace storm::orm::statements {
                const std::optional<int>&               offset           = std::nullopt,
                const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt)
                 -> std::expected<std::string, Error> {
-            std::string sql = join_wrapper ? join_wrapper->get_complete_sql() : std::string(get_select_sql());
-            if (where_expr) {
-                sql += " WHERE ";
-                sql += orm::where::to_sql(*where_expr);
-            }
-            Base::template append_order_by<ConnType>(sql, order_by_wrapper);
-            Base::template append_limit_offset<ConnType>(sql, limit, offset);
+            std::string sql = build_sql(join_wrapper, where_expr, limit, offset, order_by_wrapper);
 
             auto stmt_result = conn_->prepare_cached(sql);
             if (!stmt_result) {
@@ -160,6 +172,15 @@ export namespace storm::orm::statements {
                                 this->offset_value,
                                 this->order_by_wrapper);
             }
+            [[nodiscard]] auto sql() -> std::string {
+                return build_sql(
+                        this->join_wrapper,
+                        this->where_expr,
+                        this->limit_value,
+                        this->offset_value,
+                        this->order_by_wrapper
+                );
+            }
         };
 
         struct FirstQuery : QueryBase {
@@ -180,6 +201,12 @@ export namespace storm::orm::statements {
                 return this->stmt
                         .to_sql_first(this->join_wrapper, this->where_expr, this->offset_value, this->order_by_wrapper);
             }
+            [[nodiscard]] auto sql() -> std::string {
+                std::optional<int> const limit_one = 1;
+                return build_sql(
+                        this->join_wrapper, this->where_expr, limit_one, this->offset_value, this->order_by_wrapper
+                );
+            }
         };
 
         struct GetQuery : QueryBase {
@@ -199,6 +226,12 @@ export namespace storm::orm::statements {
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
                 return this->stmt
                         .to_sql_get(this->join_wrapper, this->where_expr, this->offset_value, this->order_by_wrapper);
+            }
+            [[nodiscard]] auto sql() -> std::string {
+                std::optional<int> const limit_two = 2;
+                return build_sql(
+                        this->join_wrapper, this->where_expr, limit_two, this->offset_value, this->order_by_wrapper
+                );
             }
         };
 

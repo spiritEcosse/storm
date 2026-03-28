@@ -201,6 +201,9 @@ export namespace storm::orm::statements {
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
                 return stmt.to_sql(obj);
             }
+            [[nodiscard]] static auto sql() -> std::string {
+                return single_delete_sql_string;
+            }
         };
 
         struct BulkQuery {
@@ -212,6 +215,9 @@ export namespace storm::orm::statements {
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
                 return stmt.to_sql(objects);
             }
+            [[nodiscard]] auto sql() -> std::string {
+                return std::string(get_bulk_delete_sql(objects.size()));
+            }
         };
 
         struct DeleteAllQuery {
@@ -220,6 +226,9 @@ export namespace storm::orm::statements {
                 return stmt.execute_all();
             }
             [[nodiscard]] auto to_sql() -> std::string {
+                return delete_all_sql_string;
+            }
+            [[nodiscard]] static auto sql() -> std::string {
                 return delete_all_sql_string;
             }
         };

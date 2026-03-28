@@ -109,6 +109,11 @@ export namespace storm::orm::statements {
             return execute_query_loop(cached_stmt_);
         }
 
+        // Return the SQL template without preparing/binding (for testing/debugging)
+        [[nodiscard]] auto sql() -> std::string {
+            return build_combined_sql();
+        }
+
         [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
             if (!cached_stmt_) {
                 auto prepare_result = prepare_statement();

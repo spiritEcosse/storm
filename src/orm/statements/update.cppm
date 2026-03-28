@@ -142,6 +142,9 @@ export namespace storm::orm::statements {
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
                 return stmt.to_sql(obj);
             }
+            [[nodiscard]] static auto sql() -> std::string {
+                return update_sql_string;
+            }
         };
 
         struct BulkQuery {
@@ -152,6 +155,9 @@ export namespace storm::orm::statements {
             }
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
                 return stmt.to_sql(objects);
+            }
+            [[nodiscard]] static auto sql() -> std::string {
+                return update_sql_string;
             }
         };
 
