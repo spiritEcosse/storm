@@ -255,6 +255,28 @@ export namespace storm::orm::statements {
             };
         }
 
+        // Return the SQL that would be executed (for testing/debugging)
+        [[nodiscard]] auto sql() -> std::string
+            requires(NumOps > 0)
+        {
+            std::string result;
+            if (join_stmt_.has_value()) {
+                result = build_join_sql();
+            } else {
+                result = base_sql_;
+            }
+            if (where_expr_) {
+                insert_where_clause(result);
+            }
+            if constexpr (HasGroupBy) {
+                if (having_expr_) {
+                    insert_having_clause(result);
+                }
+            }
+            append_modifiers(result);
+            return result;
+        }
+
         // Scalar aggregate: no GROUP BY → returns single value via .get()
         [[nodiscard]] __attribute__((always_inline)) auto get() -> std::expected<ResultType, Error>
             requires(NumOps > 0 && !HasGroupBy)

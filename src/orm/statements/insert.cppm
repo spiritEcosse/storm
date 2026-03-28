@@ -243,6 +243,9 @@ export namespace storm::orm::statements {
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
                 return stmt.to_sql(obj);
             }
+            [[nodiscard]] static auto sql() -> std::string {
+                return insert_returning_sql_string;
+            }
         };
 
         struct VoidQuery {
@@ -253,6 +256,9 @@ export namespace storm::orm::statements {
             }
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
                 return stmt.to_sql_no_returning(obj);
+            }
+            [[nodiscard]] static auto sql() -> std::string {
+                return insert_sql_string;
             }
         };
 
@@ -266,6 +272,9 @@ export namespace storm::orm::statements {
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
                 return stmt.to_sql(objects);
             }
+            [[nodiscard]] auto sql() -> std::string {
+                return std::string(get_bulk_insert_sql(objects.size()));
+            }
         };
 
         struct BulkReturningQuery {
@@ -278,6 +287,9 @@ export namespace storm::orm::statements {
             }
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> { // NOSONAR(cpp:S1659)
                 return stmt.to_sql_returning(objects);
+            }
+            [[nodiscard]] auto sql() -> std::string { // NOSONAR(cpp:S1659)
+                return std::string(get_bulk_insert_returning_sql(objects.size()));
             }
         };
 
