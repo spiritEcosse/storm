@@ -207,7 +207,7 @@ export namespace storm::orm::statements {
             }
 
             // Multiple objects - use RAII transaction guard
-            auto txn = TransactionGuard<ConnType>::begin(*conn_);
+            auto txn = TransactionGuard<ConnType>::begin(conn_);
             if (!txn) {
                 return std::unexpected(txn.error());
             }
