@@ -641,66 +641,37 @@ export namespace storm::orm::statements {
         using GBFields = GroupByFields<GroupFieldInfos...>;
 
       public:
-        explicit GroupByBuilder(AggregateParams<ConnType> p)
-            : conn_(std::move(p.conn))
-            , where_expr_(std::move(p.where_expr))
-            , join_stmt_(std::move(p.join_stmt))
-            , limit_(p.limit)
-            , offset_(p.offset)
-            , order_by_wrapper_(std::move(p.order_by_wrapper))
-            , having_expr_(std::move(p.having_expr)) {}
+        explicit GroupByBuilder(AggregateParams<ConnType> p) : params_(std::move(p)) {}
 
         // HAVING clause - stores expression and returns new GroupByBuilder
         auto having(orm::where::ExpressionVariantPtr expr) {
-            return GroupByBuilder<T, ConnType, GroupFieldInfos...>{make_params(std::move(expr))};
+            auto p        = params_;
+            p.having_expr = std::move(expr);
+            return GroupByBuilder<T, ConnType, GroupFieldInfos...>{std::move(p)};
         }
 
         template <std::meta::info... FieldInfos> auto count() {
-            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::COUNT, FieldInfos...>>{
-                    make_params()
-            };
+            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::COUNT, FieldInfos...>>{params_};
         }
 
         template <std::meta::info... FieldInfos> auto sum() {
-            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::SUM, FieldInfos...>>{
-                    make_params()
-            };
+            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::SUM, FieldInfos...>>{params_};
         }
 
         template <std::meta::info... FieldInfos> auto avg() {
-            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::AVG, FieldInfos...>>{
-                    make_params()
-            };
+            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::AVG, FieldInfos...>>{params_};
         }
 
         template <std::meta::info... FieldInfos> auto min() {
-            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::MIN, FieldInfos...>>{
-                    make_params()
-            };
+            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::MIN, FieldInfos...>>{params_};
         }
 
         template <std::meta::info... FieldInfos> auto max() {
-            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::MAX, FieldInfos...>>{
-                    make_params()
-            };
+            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::MAX, FieldInfos...>>{params_};
         }
 
       private:
-        auto make_params() -> AggregateParams<ConnType> {
-            return {conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_, having_expr_};
-        }
-
-        auto make_params(orm::where::ExpressionVariantPtr having) -> AggregateParams<ConnType> {
-            return {conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_, std::move(having)};
-        }
-
-        std::shared_ptr<ConnType>           conn_;
-        orm::where::ExpressionVariantPtr    where_expr_;
-        std::optional<JoinStatementWrapper> join_stmt_;
-        std::optional<int>                  limit_;
-        std::optional<int>                  offset_;
-        std::optional<OrderByWrapper>       order_by_wrapper_;
-        orm::where::ExpressionVariantPtr    having_expr_;
+        AggregateParams<ConnType> params_;
     };
 
 } // namespace storm::orm::statements
