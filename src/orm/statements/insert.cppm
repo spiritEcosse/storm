@@ -269,10 +269,11 @@ export namespace storm::orm::statements {
         };
 
         struct BulkReturningQuery {
-            InsertStatement&             stmt;
+            InsertStatement&             stmt; // NOSONAR(cpp:S1659) — aggregate struct, same pattern as BulkQuery
             std::span<const T>           objects;
             std::optional<InsertOptions> opts;
-            [[nodiscard]] auto           execute() -> std::expected<std::vector<int64_t>, Error> {
+
+            [[nodiscard]] auto execute() -> std::expected<std::vector<int64_t>, Error> {
                 return stmt.execute_returning(objects, opts);
             }
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
