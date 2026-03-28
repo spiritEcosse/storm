@@ -92,10 +92,14 @@ export namespace storm {
         }
 
         // Bulk insert - returns proxy with .execute() and .to_sql()
-        // NOTE: Returns void because SQLite's last_insert_rowid() only gives the last ID,
-        // and assuming consecutive IDs is unreliable (triggers, gaps, etc.)
+        // Default (no template arg): .execute() returns std::expected<void, Error>
+        // ReturnId::Yes: .execute() returns std::expected<std::vector<int64_t>, Error>
         auto insert(std::span<const T> objects, std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
             return get_insert_statement().query(objects, opts);
+        }
+        template <orm::statements::ReturnId R>
+        auto insert(std::span<const T> objects, std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
+            return get_insert_statement().template query<R>(objects, opts);
         }
 
         // WHERE clause support - builder pattern with method chaining using type-safe expressions
