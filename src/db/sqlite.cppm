@@ -247,11 +247,9 @@ export namespace storm::db::sqlite {
         // Uses sqlite3_expanded_sql() which substitutes ? placeholders with actual bound values
         template <typename = void> [[nodiscard]] auto expanded_sql() const -> std::string {
             char* expanded = sqlite3_expanded_sql(raw_);
-            // LCOV_EXCL_START — sqlite3_expanded_sql returns null only on OOM, untestable via mock
             if (expanded == nullptr) {
                 return {};
             }
-            // LCOV_EXCL_STOP
             std::string result(expanded);
             sqlite3_free(expanded);
             return result;
@@ -451,11 +449,9 @@ export namespace storm::db::sqlite {
             return {};
         }
 
-        // LCOV_EXCL_START — raw handle accessor used by benchmarks
         [[nodiscard]] auto get() const noexcept -> sqlite3* {
             return db.get();
         }
-        // LCOV_EXCL_STOP
 
         // LCOV_EXCL_START — public API, not called by ORM (uses RETURNING instead)
         // Get the row ID of the most recent successful INSERT

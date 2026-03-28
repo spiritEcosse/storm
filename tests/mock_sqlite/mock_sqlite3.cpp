@@ -72,6 +72,9 @@ namespace {
         int prepare_fail_on_call    = -1;
         int prepare_fail_code       = SQLITE_OK;
 
+        // expanded_sql control
+        bool expanded_sql_returns_null = false;
+
         // Call counters
         int bind_int_calls    = 0;
         int bind_text_calls   = 0;
@@ -112,6 +115,8 @@ namespace {
             step_fail_code          = SQLITE_OK;
             prepare_fail_on_call    = -1;
             prepare_fail_code       = SQLITE_OK;
+
+            expanded_sql_returns_null = false;
 
             bind_int_calls    = 0;
             bind_text_calls   = 0;
@@ -266,6 +271,11 @@ namespace storm::test {
 
     auto MockSqlite3Config::get_exec_call_count() -> int {
         return g_mock_config.exec_calls;
+    }
+
+    auto MockSqlite3Config::expanded_sql_returns_null() -> MockSqlite3Config& {
+        g_mock_config.expanded_sql_returns_null = true;
+        return instance_;
     }
 
 } // namespace storm::test
@@ -555,6 +565,17 @@ auto sqlite3_db_handle(sqlite3_stmt* pStmt) -> sqlite3* {
 
 auto sqlite3_free(void* ptr) -> void {
     free(ptr); // NOSONAR(cpp:S1231) - SQLite API contract: memory allocated by sqlite3_exec must be freed with free()
+}
+
+auto sqlite3_expanded_sql(sqlite3_stmt* pStmt) -> char* {
+    if (g_mock_config.expanded_sql_returns_null) {
+        return nullptr;
+    }
+    // Return a malloc'd copy of a placeholder SQL string (caller must sqlite3_free)
+    const char* placeholder = "SELECT 1";
+    auto*       copy        = static_cast<char*>(malloc(strlen(placeholder) + 1)); // NOSONAR(cpp:S1231)
+    strcpy(copy, placeholder);                                                     // NOSONAR(cpp:S5025)
+    return copy;
 }
 
 auto sqlite3_last_insert_rowid(sqlite3* db) -> int64_t {

@@ -36,6 +36,17 @@ import <span>;
 using namespace storm;
 using storm::test::MockSqlite3Config;
 
+// Struct with indexes — must be at namespace scope for Indexes<> specialization
+struct MockIndexedPerson {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string                               name;
+    int                                       department{};
+};
+
+template <> struct storm::Indexes<MockIndexedPerson> {
+    using type = std::tuple<storm::Index<^^MockIndexedPerson::name, ^^MockIndexedPerson::department>>;
+};
+
 namespace {
 
     // Test model for ORM operations
@@ -2554,6 +2565,251 @@ namespace {
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
         }
+    }
+
+    // ============================================================================
+    // HAVING Error Path Tests (#177)
+    // Tests HAVING-related error paths in AggregateStatement
+    // ============================================================================
+
+    // Test: HAVING bind failure in prepare_bind_extract (aggregate.cppm:461-463)
+    // When WHERE + GROUP BY + HAVING: execute_where() → prepare_bind_extract()
+    // WHERE bind succeeds, then HAVING bind fails
+    TEST_F(ORMMockErrorTest, HavingBindFailsInPrepareBindExtract) {
+        // bind_int call order: WHERE param (age > 30), then HAVING param (age > 25)
+        // Fail on 2nd bind_int call (the HAVING param)
+        MockSqlite3Config::bind_int_fails_on_call(2, SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        auto                 age = storm::orm::where::Field<^^MockPerson::age>{};
+        auto result              = qs.where(age > 30).group_by<^^MockPerson::age>().having(age > 25).count().select();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    // Test: prepare_cached failure in prepare_bind_having_extract (aggregate.cppm:470-472)
+    // When GROUP BY + HAVING (no WHERE): execute_simple() → prepare_bind_having_extract()
+    TEST_F(ORMMockErrorTest, HavingPrepareFailsInPrepareBindHavingExtract) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson> qs;
+        auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
+        auto                 result = qs.group_by<^^MockPerson::age>().having(age > 25).count().select();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    // Test: HAVING bind failure in prepare_bind_having_extract (aggregate.cppm:476-478)
+    // When GROUP BY + HAVING (no WHERE): execute_simple() → prepare_bind_having_extract()
+    TEST_F(ORMMockErrorTest, HavingBindFailsInPrepareBindHavingExtract) {
+        // Fail on 1st bind_int call (the HAVING param — no WHERE params)
+        MockSqlite3Config::bind_int_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
+        auto                 result = qs.group_by<^^MockPerson::age>().having(age > 25).count().select();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    // Test: bind_having_params error (base.cppm:811-813)
+    // Same path as above but verifies the reset + error propagation in bind_having_params
+    TEST_F(ORMMockErrorTest, BindHavingParamsResetsOnError) {
+        MockSqlite3Config::bind_int_fails_on_call(1, SQLITE_CORRUPT);
+
+        QuerySet<MockPerson> qs;
+        auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
+        auto                 result = qs.group_by<^^MockPerson::age>().having(age > 30).count().select();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
+    }
+
+    // Test: Step error in extract_simple_no_reset (aggregate.cppm:514-519)
+    // When simple aggregate (no GROUP BY) step returns error
+    TEST_F(ORMMockErrorTest, AggregateStepErrorInExtractSimpleNoReset) {
+        MockSqlite3Config::step_returns(SQLITE_CORRUPT);
+
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.count().get();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
+    }
+
+    // Test: Step returns NO_MORE_ROWS in extract_simple_no_reset (aggregate.cppm:515-516)
+    // Returns default ResultType when no rows
+    TEST_F(ORMMockErrorTest, AggregateStepNoRowsInExtractSimpleNoReset) {
+        MockSqlite3Config::step_returns(SQLITE_DONE);
+
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.count().get();
+
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result.value(), 0);
+    }
+
+    // Test: Step error in extract_simple_result (aggregate.cppm:343-354)
+    // WHERE + non-grouped aggregate → execute_where → extract_simple_result
+    TEST_F(ORMMockErrorTest, AggregateWithWhereStepErrorInExtractSimpleResult) {
+        MockSqlite3Config::step_returns(SQLITE_CORRUPT);
+
+        QuerySet<MockPerson> qs;
+        auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
+        auto                 result = qs.where(age > 25).sum<^^MockPerson::age>().get();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
+    }
+
+    // Test: Step returns NO_MORE_ROWS in extract_simple_result (aggregate.cppm:346-351)
+    TEST_F(ORMMockErrorTest, AggregateWithWhereStepNoRowsInExtractSimpleResult) {
+        MockSqlite3Config::step_returns(SQLITE_DONE);
+
+        QuerySet<MockPerson> qs;
+        auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
+        auto                 result = qs.where(age > 25).count().get();
+
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result.value(), 0);
+    }
+
+    // ============================================================================
+    // Optional FK Bind Error Test (#177)
+    // Covers base.cppm:282-283 — optional FK bind error path
+    // ============================================================================
+
+    struct MockOptionalFKMessage {
+        [[= storm::meta::FieldAttr::primary]] int                id{};
+        [[= storm::meta::FieldAttr::fk]] std::optional<MockUser> sender;
+        std::string                                              text;
+    };
+
+    TEST_F(ORMMockErrorTest, InsertOptionalFKBindFailure) {
+        // MockOptionalFKMessage has optional<MockUser> sender
+        // When sender has value, bind_int is called for sender.id (FK PK)
+        // Fail on first bind_int call
+        MockSqlite3Config::bind_int_fails_on_call(1, SQLITE_NOMEM);
+
+        (void)QuerySet<MockOptionalFKMessage>::set_default_connection(":memory:");
+        QuerySet<MockOptionalFKMessage> qs;
+        MockUser const                  sender{.id = 1, .name = "Sender", .age = 30};
+        MockOptionalFKMessage const     msg{.id = 0, .sender = sender, .text = "Hello"};
+
+        auto result = qs.insert(msg).execute();
+
+        ASSERT_FALSE(result.has_value()) << "Insert should fail when optional FK bind fails";
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    TEST_F(ORMMockErrorTest, InsertOptionalFKNullBindFailure) {
+        // When sender is nullopt, bind_null is called
+        MockSqlite3Config::bind_null_returns(SQLITE_NOMEM);
+
+        (void)QuerySet<MockOptionalFKMessage>::set_default_connection(":memory:");
+        QuerySet<MockOptionalFKMessage> qs;
+        MockOptionalFKMessage const     msg{.id = 0, .sender = std::nullopt, .text = "No sender"};
+
+        auto result = qs.insert(msg).execute();
+
+        ASSERT_FALSE(result.has_value()) << "Insert should fail when optional FK null bind fails";
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    // ============================================================================
+    // Schema Error Test (#177)
+    // Covers schema.cppm:471-472 — create_indexes_if_not_exist failure
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, CreateIndexesFailsOnExecError) {
+        // Configure exec to fail (create_indexes_if_not_exist uses conn->execute)
+        MockSqlite3Config::exec_returns(SQLITE_ERROR);
+        MockSqlite3Config::exec_error_message("index creation failed");
+
+        auto conn_result = db::sqlite::Connection::open(":memory:");
+        ASSERT_TRUE(conn_result.has_value());
+        auto conn = std::make_shared<db::sqlite::Connection>(std::move(conn_result.value()));
+
+        // MockIndexedPerson has Index<name, department> → exec runs → fails
+        auto result = orm::schema::SchemaStatement<MockIndexedPerson>::create_indexes_if_not_exist(conn);
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    // ============================================================================
+    // SQLCache Round-Robin Eviction Test (#177)
+    // Covers utilities.cppm:497-502
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, SQLCacheRoundRobinEviction) {
+        // CACHE_DEFAULT = 8 — fill all slots, then insert more to trigger eviction
+        storm::orm::utilities::SQLCache<size_t, 4> cache;
+
+        // Fill all 4 slots
+        cache.insert(1, "SELECT 1");
+        cache.insert(2, "SELECT 2");
+        cache.insert(3, "SELECT 3");
+        cache.insert(4, "SELECT 4");
+
+        // Verify all entries present
+        EXPECT_NE(cache.find(1), nullptr);
+        EXPECT_NE(cache.find(2), nullptr);
+        EXPECT_NE(cache.find(3), nullptr);
+        EXPECT_NE(cache.find(4), nullptr);
+
+        // Insert 5th — should evict slot 0 (key=1) via round-robin
+        cache.insert(5, "SELECT 5");
+        EXPECT_EQ(cache.find(1), nullptr) << "Key 1 should be evicted";
+        EXPECT_NE(cache.find(5), nullptr);
+        EXPECT_EQ(*cache.find(5), "SELECT 5");
+
+        // Insert 6th — should evict slot 1 (key=2)
+        cache.insert(6, "SELECT 6");
+        EXPECT_EQ(cache.find(2), nullptr) << "Key 2 should be evicted";
+        EXPECT_NE(cache.find(6), nullptr);
+        EXPECT_EQ(*cache.find(6), "SELECT 6");
+
+        // Keys 3, 4 should still be present
+        EXPECT_NE(cache.find(3), nullptr);
+        EXPECT_NE(cache.find(4), nullptr);
+    }
+
+    // ============================================================================
+    // Raw Handle get() Test (#177)
+    // Covers sqlite.cppm:454-458
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, ExpandedSqlReturnsEmptyOnNull) {
+        auto conn_result = db::sqlite::Connection::open(":memory:");
+        ASSERT_TRUE(conn_result.has_value());
+
+        MockPerson const                             alice{.id = 0, .name = "Alice", .age = 30};
+        QuerySet<MockPerson, db::sqlite::Connection> queryset;
+
+        // First insert normally to get a prepared statement
+        auto insert_result = queryset.insert(alice).execute();
+        ASSERT_TRUE(insert_result.has_value());
+
+        // Configure expanded_sql to return null
+        MockSqlite3Config::expanded_sql_returns_null();
+
+        // to_sql() calls expanded_sql internally — should return empty string when null
+        auto sql_result = queryset.insert(alice).to_sql();
+        ASSERT_TRUE(sql_result.has_value());
+        EXPECT_TRUE(sql_result.value().empty());
+    }
+
+    TEST_F(ORMMockErrorTest, ConnectionRawHandleGet) {
+        auto conn_result = db::sqlite::Connection::open(":memory:");
+        ASSERT_TRUE(conn_result.has_value());
+
+        // get() should return a non-null raw sqlite3 pointer
+        auto* raw = conn_result.value().get();
+        EXPECT_NE(raw, nullptr);
     }
 
 } // namespace

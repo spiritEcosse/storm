@@ -279,8 +279,8 @@ export namespace storm::orm::statements {
                         result = stmt->bind_null(param_index);
                     }
                     if (!result) {
-                        return std::unexpected(result.error()); // LCOV_EXCL_LINE
-                    } // LCOV_EXCL_LINE
+                        return std::unexpected(result.error());
+                    }
                 } else {
                     const auto&    fk_object    = obj.[:member:];
                     constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
@@ -808,9 +808,9 @@ export namespace storm::orm::statements {
                 -> std::expected<void, Error> {
             auto bind_result = orm::where::bind_params_direct<Statement, Error>(*having_expr, stmt_ptr, param_index);
             if (!bind_result) [[unlikely]] {
-                stmt_ptr->reset();                           // LCOV_EXCL_LINE
-                return std::unexpected(bind_result.error()); // LCOV_EXCL_LINE
-            } // LCOV_EXCL_LINE
+                stmt_ptr->reset();
+                return std::unexpected(bind_result.error());
+            }
             return {};
         }
     };

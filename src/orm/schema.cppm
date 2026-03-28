@@ -468,8 +468,8 @@ export namespace storm::orm::schema {
             for (const auto& sql : index_sql_strings_) {
                 auto result = conn->execute(sql);
                 if (!result) {
-                    return result; // LCOV_EXCL_LINE
-                } // LCOV_EXCL_LINE
+                    return result;
+                }
             }
             return {};
         }

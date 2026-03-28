@@ -81,4 +81,33 @@ TYPED_TEST(SelectOneTest, GetWhereMultipleMatch) {
     EXPECT_EQ(result.error().message(), "Multiple rows found matching query");
 }
 
+// Test: first() with WHERE (no JOIN) — covers execute_one() non-join lambda path
+TYPED_TEST(SelectOneTest, FirstWithWhereNoJoin) {
+    QuerySet<Person, TypeParam> queryset;
+
+    Person const alice{.id = 0, .name = "Alice", .age = 30};
+    Person const bob{.id = 0, .name = "Bob", .age = 25};
+    auto         r1 = queryset.insert(alice).execute();
+    auto         r2 = queryset.insert(bob).execute();
+    ASSERT_TRUE(r1.has_value());
+    ASSERT_TRUE(r2.has_value());
+
+    auto result = queryset.where(field<^^Person::age>() == 30).first().execute();
+    ASSERT_TRUE(result.has_value()) << "first() with WHERE failed: " << result.error().message();
+    ASSERT_TRUE(result.value().has_value()) << "Expected a row";
+    EXPECT_EQ(result.value().value().name, "Alice");
+}
+
+// Test: first() with WHERE returns nullopt when no match
+TYPED_TEST(SelectOneTest, FirstWithWhereNoMatch) {
+    QuerySet<Person, TypeParam> queryset;
+
+    Person const alice{.id = 0, .name = "Alice", .age = 30};
+    ASSERT_TRUE(queryset.insert(alice).execute().has_value());
+
+    auto result = queryset.where(field<^^Person::age>() == 999).first().execute();
+    ASSERT_TRUE(result.has_value()) << "first() should succeed even with no match";
+    EXPECT_FALSE(result.value().has_value()) << "Expected nullopt when no rows match";
+}
+
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

@@ -494,12 +494,10 @@ export namespace storm::orm::utilities {
                     return;
                 }
             }
-            // LCOV_EXCL_START — round-robin eviction requires >CACHE_SIZE unique batch sizes
             entries[next_slot].key = std::move(key);
             entries[next_slot].sql = std::move(sql);
             next_slot              = (next_slot + 1) % CACHE_SIZE;
         }
-        // LCOV_EXCL_STOP
 
         auto clear() -> void {
             for (auto& entry : entries) {

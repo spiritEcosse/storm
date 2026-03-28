@@ -154,6 +154,9 @@ class MockSqlite3Config {
     static auto get_prepare_call_count() -> int;
     static auto get_exec_call_count() -> int;
 
+    // Configure expanded_sql to return null
+    static auto expanded_sql_returns_null() -> MockSqlite3Config &;
+
   private:
     static MockSqlite3Config instance_;
 };
@@ -229,6 +232,9 @@ auto sqlite3_column_type(sqlite3_stmt *pStmt, int iCol) -> int;
 auto sqlite3_errmsg(const sqlite3 *db) -> const char *;
 auto sqlite3_db_handle(sqlite3_stmt *pStmt) -> sqlite3 *;
 auto sqlite3_free(void *ptr) -> void;
+
+// Expanded SQL (parameter substitution for debugging)
+auto sqlite3_expanded_sql(sqlite3_stmt *pStmt) -> char *;
 
 // Last insert rowid
 auto sqlite3_last_insert_rowid(sqlite3 *db) -> int64_t;
