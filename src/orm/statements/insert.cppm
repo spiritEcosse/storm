@@ -273,10 +273,10 @@ export namespace storm::orm::statements {
             std::span<const T>           objects;
             std::optional<InsertOptions> opts;
 
-            [[nodiscard]] auto execute() -> std::expected<std::vector<int64_t>, Error> {
+            [[nodiscard]] auto execute() -> std::expected<std::vector<int64_t>, Error> { // NOSONAR(cpp:S1659)
                 return stmt.execute_returning(objects, opts);
             }
-            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> { // NOSONAR(cpp:S1659)
                 return stmt.to_sql_returning(objects);
             }
         };
@@ -372,7 +372,7 @@ export namespace storm::orm::statements {
         }
 
         // Batch insert with RETURNING — returns all inserted IDs
-        [[nodiscard]] auto
+        [[nodiscard]] auto // NOSONAR(cpp:S1659)
         execute_returning(std::span<const T> objects, std::optional<InsertOptions> opts = std::nullopt)
                 -> std::expected<std::vector<int64_t>, Error> {
             if (objects.empty()) {
