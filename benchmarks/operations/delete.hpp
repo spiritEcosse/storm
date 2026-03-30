@@ -32,18 +32,18 @@ namespace storm::benchmark {
         explicit DeleteBenchmark(int batch_size = 1) : Base(batch_size) {}
 
         // Use unified print_info with compile-time operation name
-        void print_info() const {
+        auto print_info() const -> void {
             Base::template print_info_unified<OperationType::Delete>();
         }
 
-        void prepare(int iterations) {
+        auto prepare(int iterations) -> void {
             // Clear table, generate data, insert to get IDs
             Base::prepare_with_insert(iterations);
         }
 
         // DELETE needs special handling: re-insert data before each batch iteration
         // because after one DELETE, all rows are gone
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             int total = 0;
             // Runtime check - same as Storm ORM
             if (Base::batch_size() == 1) {
@@ -65,7 +65,7 @@ namespace storm::benchmark {
 
       private:
         // Build DELETE SQL with IN clause for bulk operations
-        static std::string sql_delete_batch(size_t count) {
+        static auto sql_delete_batch(size_t count) -> std::string {
             if (count == 1) {
                 return "DELETE FROM Person WHERE id = ?";
             }
@@ -80,14 +80,14 @@ namespace storm::benchmark {
         }
 
         // Bind IDs for IN clause
-        static void bind_ids(sqlite3_stmt* stmt, const Model* data, size_t count, int idx = 1) {
+        static auto bind_ids(sqlite3_stmt* stmt, const Model* data, size_t count, int idx = 1) -> void {
             for (size_t i = 0; i < count; i++) {
                 sqlite3_bind_int64(stmt, idx++, data[i].id);
             }
         }
 
         // Helper: Execute single-row deletes
-        int execute_single_row(sqlite3_stmt* stmt, int iterations) {
+        auto execute_single_row(sqlite3_stmt* stmt, int iterations) -> int {
             int total = 0;
             for (int i = 0; i < iterations; i++) {
                 sqlite3_bind_int64(stmt, 1, Base::data()[i].id);
@@ -104,7 +104,7 @@ namespace storm::benchmark {
 
         // Helper: Execute large batch using chunked IN clauses with transaction
         // (matches Storm ORM's execute_chunked strategy)
-        int execute_chunked_batch(sqlite3* db, int iterations) {
+        auto execute_chunked_batch(sqlite3* db, int iterations) -> int {
             int total = 0;
 
             // Pre-prepare statements for each unique chunk size we'll need
@@ -164,7 +164,7 @@ namespace storm::benchmark {
 
         // Runtime check for bulk SQL strategy (matches Storm ORM's logic)
         // Returns true if batch should use bulk IN clause, false for individual deletes
-        bool should_use_bulk_sql() const {
+        auto should_use_bulk_sql() const -> bool {
             // max_bulk_size = 999 / fields_per_row = 999 for DELETE (1 field per row)
             constexpr size_t max_bulk_size   = 999 / Base::fields_per_row;
             constexpr size_t bulk_sweet_spot = std::max(size_t(50), max_bulk_size / 2);
@@ -187,7 +187,7 @@ namespace storm::benchmark {
         }
 
         // Helper: Re-insert data using Storm ORM (not timed - just setup)
-        void reinsert_data() {
+        auto reinsert_data() -> void {
             if (auto insert_result = Base::qs().insert(Base::data()).execute(); !insert_result.has_value()) {
                 return;
             }
@@ -211,7 +211,7 @@ namespace storm::benchmark {
         }
 
       public:
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<Model>();
             if (!db)
                 return 0;

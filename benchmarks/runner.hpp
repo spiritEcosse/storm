@@ -307,7 +307,8 @@ namespace storm::benchmark {
         // Operation handlers - one function per operation type
         // Clean, simple, easy to add new operations
 
-        template <typename Model, auto& test> static void run_where_operation(BenchmarkRunner& runner, int iterations) {
+        template <typename Model, auto& test>
+        static auto run_where_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name   = test.where.field.view();
             constexpr auto             op_str       = test.where.op;
             constexpr int              value        = test.where.value_int;
@@ -323,7 +324,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_insert_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_insert_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr auto profile_str = test.size_profile.view();
             constexpr auto profile     = sizes::profile_from_string(profile_str);
 
@@ -346,7 +347,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_insert_no_return_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_insert_no_return_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr auto profile_str = test.size_profile.view();
             constexpr auto profile     = sizes::profile_from_string(profile_str);
 
@@ -366,7 +367,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_delete_pk_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_delete_pk_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr auto profile_str = test.size_profile.view();
             constexpr auto profile     = sizes::profile_from_string(profile_str);
 
@@ -383,7 +384,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_update_pk_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_update_pk_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr auto profile_str = test.size_profile.view();
             constexpr auto profile     = sizes::profile_from_string(profile_str);
 
@@ -406,7 +407,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_select_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr auto profile_str = test.size_profile.view();
             constexpr auto profile     = sizes::profile_from_string(profile_str);
 
@@ -424,7 +425,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_select_join_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_join_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr auto profile_str = test.size_profile.view();
             constexpr auto profile     = sizes::profile_from_string(profile_str);
 
@@ -450,7 +451,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_select_where_join_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_where_join_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name = test.where.field.view();
             constexpr auto             op_str     = test.where.op;
             constexpr int              value      = test.where.value_int;
@@ -488,7 +489,7 @@ namespace storm::benchmark {
         // ====================================================================
 
         template <typename Model, auto& test>
-        static void run_select_left_join_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_left_join_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr auto profile_str = test.size_profile.view();
             constexpr auto profile     = sizes::profile_from_string(profile_str);
 
@@ -513,7 +514,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_select_left_join_where_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_left_join_where_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name = test.where.field.view();
             constexpr auto             op_str     = test.where.op;
             constexpr int              value      = test.where.value_int;
@@ -551,7 +552,7 @@ namespace storm::benchmark {
         // ====================================================================
 
         template <typename Model, auto& test>
-        static void run_select_right_join_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_right_join_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr auto profile_str = test.size_profile.view();
             constexpr auto profile     = sizes::profile_from_string(profile_str);
 
@@ -576,7 +577,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_select_right_join_where_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_right_join_where_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name = test.where.field.view();
             constexpr auto             op_str     = test.where.op;
             constexpr int              value      = test.where.value_int;
@@ -614,7 +615,7 @@ namespace storm::benchmark {
         // ====================================================================
 
         template <typename Model, auto& test>
-        static void run_select_multi_fk_join_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_multi_fk_join_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr auto profile_str = test.size_profile.view();
             constexpr auto profile     = sizes::profile_from_string(profile_str);
 
@@ -639,7 +640,7 @@ namespace storm::benchmark {
         // ====================================================================
 
         template <typename Model, auto& test>
-        static void run_aggregate_count_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_aggregate_count_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr auto profile_str = test.size_profile.view();
             constexpr auto profile     = sizes::profile_from_string(profile_str);
 
@@ -662,7 +663,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_aggregate_count_field_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_aggregate_count_field_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name  = test.aggregate_field.view();
             constexpr auto             field_info  = dispatch_field<Model>(field_name);
             constexpr auto             profile_str = test.size_profile.view();
@@ -683,7 +684,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_aggregate_count_distinct_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_aggregate_count_distinct_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name  = test.aggregate_field.view();
             constexpr auto             field_info  = dispatch_field<Model>(field_name);
             constexpr auto             profile_str = test.size_profile.view();
@@ -706,7 +707,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_aggregate_sum_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_aggregate_sum_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name  = test.aggregate_field.view();
             constexpr auto             field_info  = dispatch_field<Model>(field_name);
             constexpr auto             profile_str = test.size_profile.view();
@@ -725,7 +726,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_aggregate_avg_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_aggregate_avg_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name  = test.aggregate_field.view();
             constexpr auto             field_info  = dispatch_field<Model>(field_name);
             constexpr auto             profile_str = test.size_profile.view();
@@ -744,7 +745,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_aggregate_min_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_aggregate_min_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name  = test.aggregate_field.view();
             constexpr auto             field_info  = dispatch_field<Model>(field_name);
             constexpr auto             profile_str = test.size_profile.view();
@@ -763,7 +764,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_aggregate_max_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_aggregate_max_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name  = test.aggregate_field.view();
             constexpr auto             field_info  = dispatch_field<Model>(field_name);
             constexpr auto             profile_str = test.size_profile.view();
@@ -786,7 +787,7 @@ namespace storm::benchmark {
         // ====================================================================
 
         template <typename Model, auto& test>
-        static void run_distinct_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_distinct_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name  = test.distinct_field.view();
             constexpr auto             field_info  = dispatch_field<Model>(field_name);
             constexpr auto             profile_str = test.size_profile.view();
@@ -809,7 +810,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_distinct_where_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_distinct_where_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view distinct_field_name = test.distinct_field.view();
             constexpr auto             distinct_field_info = dispatch_field<Model>(distinct_field_name);
             constexpr std::string_view where_field_name    = test.where.field.view();
@@ -844,7 +845,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_distinct_join_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_distinct_join_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view distinct_field_name = test.distinct_field.view();
             constexpr auto             distinct_field_info = dispatch_field<FKMessage>(distinct_field_name);
             constexpr auto             profile_str         = test.size_profile.view();
@@ -871,7 +872,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_distinct_where_join_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_distinct_where_join_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view distinct_field_name = test.distinct_field.view();
             constexpr auto             distinct_field_info = dispatch_field<FKMessage>(distinct_field_name);
             constexpr std::string_view where_field_name    = test.where.field.view();
@@ -920,7 +921,7 @@ namespace storm::benchmark {
         // ====================================================================
 
         template <typename Model, auto& test>
-        static void run_distinct_multi_2_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_distinct_multi_2_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name1  = test.distinct_field.view();
             constexpr std::string_view field_name2  = test.distinct_field2.view();
             constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
@@ -934,7 +935,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_distinct_multi_3_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_distinct_multi_3_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name1  = test.distinct_field.view();
             constexpr std::string_view field_name2  = test.distinct_field2.view();
             constexpr std::string_view field_name3  = test.distinct_field3.view();
@@ -954,7 +955,7 @@ namespace storm::benchmark {
         // ====================================================================
 
         template <typename Model, auto& test>
-        static void run_distinct_order_by_asc_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_distinct_order_by_asc_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view distinct_field_name = test.distinct_field.view();
             constexpr std::string_view order_field_name    = test.order_by_field.view();
             constexpr auto             distinct_field_info = dispatch_field<Model>(distinct_field_name);
@@ -968,7 +969,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_distinct_order_by_desc_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_distinct_order_by_desc_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view distinct_field_name = test.distinct_field.view();
             constexpr std::string_view order_field_name    = test.order_by_field.view();
             constexpr auto             distinct_field_info = dispatch_field<Model>(distinct_field_name);
@@ -986,7 +987,7 @@ namespace storm::benchmark {
         // ====================================================================
 
         template <typename Model, auto& test>
-        static void run_select_limit_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_limit_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr int dataset_size = test.dataset_size;
             constexpr int limit_value  = test.limit_value;
             runner.run_benchmark(
@@ -995,7 +996,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_select_offset_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_offset_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr int dataset_size = test.dataset_size;
             constexpr int offset_value = test.offset_value;
             runner.run_benchmark(
@@ -1004,7 +1005,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_select_limit_offset_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_limit_offset_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr int dataset_size = test.dataset_size;
             constexpr int limit_value  = test.limit_value;
             constexpr int offset_value = test.offset_value;
@@ -1016,7 +1017,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_select_where_limit_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_where_limit_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name   = test.where.field.view();
             constexpr auto             op_str       = test.where.op;
             constexpr int              value        = test.where.value_int;
@@ -1031,7 +1032,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_select_join_limit_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_join_limit_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr int dataset_size = test.dataset_size;
             constexpr int limit_value  = test.limit_value;
             runner.run_benchmark(
@@ -1042,7 +1043,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_select_join_limit_offset_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_join_limit_offset_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr int dataset_size = test.dataset_size;
             constexpr int limit_value  = test.limit_value;
             constexpr int offset_value = test.offset_value;
@@ -1060,7 +1061,7 @@ namespace storm::benchmark {
         // ====================================================================
 
         template <typename Model, auto& test>
-        static void run_select_order_by_asc_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_order_by_asc_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name   = test.order_by_field.view();
             constexpr auto             field_info   = dispatch_field<Model>(field_name);
             constexpr int              dataset_size = test.dataset_size;
@@ -1070,7 +1071,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_select_order_by_desc_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_order_by_desc_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name   = test.order_by_field.view();
             constexpr auto             field_info   = dispatch_field<Model>(field_name);
             constexpr int              dataset_size = test.dataset_size;
@@ -1080,7 +1081,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_select_order_by_where_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_order_by_where_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view order_field_name = test.order_by_field.view();
             constexpr auto             order_field_info = dispatch_field<Model>(order_field_name);
             constexpr std::string_view where_field_name = test.where.field.view();
@@ -1118,7 +1119,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_select_order_by_limit_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_order_by_limit_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name   = test.order_by_field.view();
             constexpr auto             field_info   = dispatch_field<Model>(field_name);
             constexpr int              dataset_size = test.dataset_size;
@@ -1154,7 +1155,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_select_order_by_collate_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_order_by_collate_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name   = test.order_by_field.view();
             constexpr auto             field_info   = dispatch_field<Model>(field_name);
             constexpr int              dataset_size = test.dataset_size;
@@ -1177,7 +1178,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_select_order_by_collate_where_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_select_order_by_collate_where_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr auto order_field_info = dispatch_field<Model>(test.order_by_field.view());
             constexpr auto where_field_info = dispatch_field<Model>(test.where.field.view());
             constexpr auto op_str           = test.where.op;
@@ -1206,7 +1207,7 @@ namespace storm::benchmark {
         // ====================================================================
 
         template <typename Model, auto& test>
-        static void run_order_by_multi_2_asc_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_order_by_multi_2_asc_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name1  = test.order_by_field.view();
             constexpr std::string_view field_name2  = test.order_by_field2.view();
             constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
@@ -1220,7 +1221,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_order_by_multi_2_desc_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_order_by_multi_2_desc_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name1  = test.order_by_field.view();
             constexpr std::string_view field_name2  = test.order_by_field2.view();
             constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
@@ -1234,7 +1235,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_order_by_multi_2_mixed_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_order_by_multi_2_mixed_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name1  = test.order_by_field.view();
             constexpr std::string_view field_name2  = test.order_by_field2.view();
             constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
@@ -1252,7 +1253,7 @@ namespace storm::benchmark {
         // ====================================================================
 
         template <typename Model, auto& test>
-        static void run_group_by_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_group_by_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name   = test.group_by_field.view();
             constexpr auto             field_info   = dispatch_field<Model>(field_name);
             constexpr int              dataset_size = test.dataset_size;
@@ -1262,7 +1263,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_group_by_where_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_group_by_where_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view group_field_name = test.group_by_field.view();
             constexpr auto             group_field_info = dispatch_field<Model>(group_field_name);
             constexpr std::string_view where_field_name = test.where.field.view();
@@ -1280,7 +1281,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_group_by_multi_2_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_group_by_multi_2_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name1  = test.group_by_field.view();
             constexpr std::string_view field_name2  = test.group_by_field2.view();
             constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
@@ -1294,7 +1295,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_group_by_with_count_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_group_by_with_count_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name   = test.group_by_field.view();
             constexpr auto             field_info   = dispatch_field<Model>(field_name);
             constexpr int              dataset_size = test.dataset_size;
@@ -1304,7 +1305,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_group_by_with_sum_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_group_by_with_sum_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view group_field_name = test.group_by_field.view();
             constexpr std::string_view agg_field_name   = test.aggregate_field.view();
             constexpr auto             group_field_info = dispatch_field<Model>(group_field_name);
@@ -1318,7 +1319,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_group_by_with_avg_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_group_by_with_avg_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view group_field_name = test.group_by_field.view();
             constexpr std::string_view agg_field_name   = test.aggregate_field.view();
             constexpr auto             group_field_info = dispatch_field<Model>(group_field_name);
@@ -1332,7 +1333,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_group_by_with_min_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_group_by_with_min_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view group_field_name = test.group_by_field.view();
             constexpr std::string_view agg_field_name   = test.aggregate_field.view();
             constexpr auto             group_field_info = dispatch_field<Model>(group_field_name);
@@ -1346,7 +1347,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_group_by_with_max_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_group_by_with_max_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view group_field_name = test.group_by_field.view();
             constexpr std::string_view agg_field_name   = test.aggregate_field.view();
             constexpr auto             group_field_info = dispatch_field<Model>(group_field_name);
@@ -1364,7 +1365,7 @@ namespace storm::benchmark {
         // ====================================================================
 
         template <typename Model, auto& test>
-        static void run_group_by_having_count_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_group_by_having_count_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view group_field_name  = test.group_by_field.view();
             constexpr std::string_view having_field_name = test.having_field.view();
             constexpr auto             group_field_info  = dispatch_field<Model>(group_field_name);
@@ -1381,7 +1382,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_group_by_having_sum_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_group_by_having_sum_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view group_field_name  = test.group_by_field.view();
             constexpr std::string_view agg_field_name    = test.aggregate_field.view();
             constexpr std::string_view having_field_name = test.having_field.view();
@@ -1407,7 +1408,7 @@ namespace storm::benchmark {
         // ====================================================================
 
         template <typename Model, auto& test>
-        static void run_where_like_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_where_like_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name   = test.where.field.view();
             constexpr auto             field_info   = dispatch_field<Model>(field_name);
             constexpr int              dataset_size = test.dataset_size;
@@ -1420,7 +1421,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_where_between_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_where_between_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name   = test.where.field.view();
             constexpr auto             field_info   = dispatch_field<Model>(field_name);
             constexpr int              dataset_size = test.dataset_size;
@@ -1434,7 +1435,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_where_in_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_where_in_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name   = test.where.field.view();
             constexpr auto             field_info   = dispatch_field<Model>(field_name);
             constexpr int              dataset_size = test.dataset_size;
@@ -1454,7 +1455,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_where_and_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_where_and_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name1  = test.where.field.view();
             constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
             constexpr auto             op1          = test.where.op;
@@ -1475,7 +1476,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_where_or_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_where_or_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name1  = test.where.field.view();
             constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
             constexpr auto             op1          = test.where.op;
@@ -1499,7 +1500,7 @@ namespace storm::benchmark {
         // IS NULL / IS NOT NULL operations
         // ====================================================================
         template <typename Model, auto& test>
-        static void run_where_is_null_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_where_is_null_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name   = test.where.field.view();
             constexpr auto             field_info   = dispatch_field<Model>(field_name);
             constexpr int              dataset_size = test.dataset_size;
@@ -1509,7 +1510,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_where_is_not_null_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_where_is_not_null_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name   = test.where.field.view();
             constexpr auto             field_info   = dispatch_field<Model>(field_name);
             constexpr int              dataset_size = test.dataset_size;
@@ -1521,7 +1522,8 @@ namespace storm::benchmark {
         // ====================================================================
         // FIRST operations
         // ====================================================================
-        template <typename Model, auto& test> static void run_first_operation(BenchmarkRunner& runner, int iterations) {
+        template <typename Model, auto& test>
+        static auto run_first_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr auto profile_str = test.size_profile.view();
             constexpr auto profile     = sizes::profile_from_string(profile_str);
 
@@ -1538,7 +1540,7 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_first_where_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_first_where_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name   = test.where.field.view();
             constexpr auto             field_info   = dispatch_field<Model>(field_name);
             constexpr auto             op           = test.where.op;
@@ -1555,7 +1557,7 @@ namespace storm::benchmark {
         // GET operations
         // ====================================================================
         template <typename Model, auto& test>
-        static void run_get_where_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_get_where_operation(BenchmarkRunner& runner, int iterations) -> void {
             constexpr std::string_view field_name   = test.where.field.view();
             constexpr auto             field_info   = dispatch_field<Model>(field_name);
             constexpr auto             op           = test.where.op;
@@ -1573,7 +1575,7 @@ namespace storm::benchmark {
         // ====================================================================
 
         template <typename Model, auto& test, SetOpBenchType OpType, bool WithOrderBy = false, bool WithLimit = false>
-        static void run_setop_operation_impl(BenchmarkRunner& runner, int iterations) {
+        static auto run_setop_operation_impl(BenchmarkRunner& runner, int iterations) -> void {
             constexpr auto profile_str = test.size_profile.view();
             constexpr auto profile     = sizes::profile_from_string(profile_str);
 
@@ -1616,32 +1618,32 @@ namespace storm::benchmark {
         }
 
         template <typename Model, auto& test>
-        static void run_setop_union_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_setop_union_operation(BenchmarkRunner& runner, int iterations) -> void {
             run_setop_operation_impl<Model, test, SetOpBenchType::Union>(runner, iterations);
         }
 
         template <typename Model, auto& test>
-        static void run_setop_union_all_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_setop_union_all_operation(BenchmarkRunner& runner, int iterations) -> void {
             run_setop_operation_impl<Model, test, SetOpBenchType::UnionAll>(runner, iterations);
         }
 
         template <typename Model, auto& test>
-        static void run_setop_except_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_setop_except_operation(BenchmarkRunner& runner, int iterations) -> void {
             run_setop_operation_impl<Model, test, SetOpBenchType::Except>(runner, iterations);
         }
 
         template <typename Model, auto& test>
-        static void run_setop_intersect_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_setop_intersect_operation(BenchmarkRunner& runner, int iterations) -> void {
             run_setop_operation_impl<Model, test, SetOpBenchType::Intersect>(runner, iterations);
         }
 
         template <typename Model, auto& test>
-        static void run_setop_union_order_by_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_setop_union_order_by_operation(BenchmarkRunner& runner, int iterations) -> void {
             run_setop_operation_impl<Model, test, SetOpBenchType::Union, true>(runner, iterations);
         }
 
         template <typename Model, auto& test>
-        static void run_setop_union_limit_operation(BenchmarkRunner& runner, int iterations) {
+        static auto run_setop_union_limit_operation(BenchmarkRunner& runner, int iterations) -> void {
             run_setop_operation_impl<Model, test, SetOpBenchType::Union, false, true>(runner, iterations);
         }
 

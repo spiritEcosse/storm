@@ -32,11 +32,11 @@ namespace storm::benchmark {
             data[len] = '\0';
         }
 
-        constexpr std::string_view view() const {
+        constexpr auto view() const -> std::string_view {
             return std::string_view(data.data(), len);
         }
 
-        constexpr const char* c_str() const {
+        constexpr auto c_str() const -> const char* {
             return data.data();
         }
 

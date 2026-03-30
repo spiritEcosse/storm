@@ -36,17 +36,17 @@ namespace storm::test {
         }
     }
 
-    constexpr void skip_ws(std::string_view j, size_t& p) {
+    constexpr auto skip_ws(std::string_view j, size_t& p) -> void {
         skip_ws(j.data(), j.size(), p);
     }
 
-    constexpr void skip_char(std::string_view j, size_t& p, char c) {
+    constexpr auto skip_char(std::string_view j, size_t& p, char c) -> void {
         skip_ws(j, p);
         if (p < j.size() && j.data()[p] == c)
             ++p;
     }
 
-    constexpr int parse_int(std::string_view j, size_t& p) {
+    constexpr auto parse_int(std::string_view j, size_t& p) -> int {
         skip_ws(j, p);
         const char*  ptr = j.data();
         const size_t sz  = j.size();
@@ -61,7 +61,7 @@ namespace storm::test {
         return neg ? -v : v;
     }
 
-    constexpr double parse_double(std::string_view j, size_t& p) {
+    constexpr auto parse_double(std::string_view j, size_t& p) -> double {
         skip_ws(j, p);
         const char*  ptr = j.data();
         const size_t sz  = j.size();
@@ -84,7 +84,7 @@ namespace storm::test {
         return neg ? -v : v;
     }
 
-    constexpr bool parse_bool(std::string_view j, size_t& p) {
+    constexpr auto parse_bool(std::string_view j, size_t& p) -> bool {
         skip_ws(j, p);
         const char*  ptr = j.data();
         const size_t sz  = j.size();
@@ -100,7 +100,7 @@ namespace storm::test {
         return false;
     }
 
-    template <size_t N> constexpr ConstexprString<N> parse_str(std::string_view j, size_t& p) {
+    template <size_t N> constexpr auto parse_str(std::string_view j, size_t& p) -> ConstexprString<N> {
         skip_ws(j, p);
         const char*        ptr = j.data();
         const size_t       sz  = j.size();
@@ -119,7 +119,7 @@ namespace storm::test {
         return r;
     }
 
-    constexpr void skip_object(std::string_view j, size_t& p) {
+    constexpr auto skip_object(std::string_view j, size_t& p) -> void {
         const char*  ptr   = j.data();
         const size_t sz    = j.size();
         int          depth = 0;
@@ -135,7 +135,7 @@ namespace storm::test {
         }
     }
 
-    constexpr void skip_array(std::string_view j, size_t& p) {
+    constexpr auto skip_array(std::string_view j, size_t& p) -> void {
         const char*  ptr   = j.data();
         const size_t sz    = j.size();
         int          depth = 0;
@@ -150,7 +150,7 @@ namespace storm::test {
         }
     }
 
-    constexpr void skip_value(std::string_view j, size_t& p) { // NOSONAR(S3776) -- consteval JSON parser
+    constexpr auto skip_value(std::string_view j, size_t& p) -> void { // NOSONAR(S3776) -- consteval JSON parser
         skip_ws(j, p);
         const char*  ptr = j.data();
         const size_t sz  = j.size();
@@ -179,7 +179,7 @@ namespace storm::test {
         }
     }
 
-    constexpr size_t count_objects(std::string_view j) {
+    constexpr auto count_objects(std::string_view j) -> size_t {
         size_t n = 0;
         size_t p = 0;
         skip_char(j, p, '[');
@@ -202,7 +202,8 @@ namespace storm::test {
 
     // Zero-alloc key comparison directly from JSON buffer.
     template <size_t M>
-    constexpr bool jkey_eq(const char* json_ptr, size_t key_start, size_t key_len, const char (&lit)[M]) noexcept {
+    constexpr auto jkey_eq(const char* json_ptr, size_t key_start, size_t key_len, const char (&lit)[M]) noexcept
+            -> bool {
         constexpr size_t len = M - 1;
         if (key_len != len)
             return false;
@@ -217,7 +218,8 @@ namespace storm::test {
         size_t len   = 0;
     };
 
-    constexpr JsonKeyRef parse_key_ref(const char* ptr, size_t sz, size_t& p) { // NOSONAR — ptr+sz needed for consteval
+    constexpr auto parse_key_ref(const char* ptr, size_t sz, size_t& p)
+            -> JsonKeyRef { // NOSONAR — ptr+sz needed for consteval
         skip_ws(ptr, sz, p);
         JsonKeyRef ref;
         if (p < sz && ptr[p] == '"') {
@@ -234,7 +236,7 @@ namespace storm::test {
 
     // Detect JSON value type and parse into the appropriate where.value_* field.
     // Checks the first non-whitespace character: " = string, t/f = bool, [ = array, else number.
-    constexpr bool is_number_with_dot(std::string_view j, size_t p) {
+    constexpr auto is_number_with_dot(std::string_view j, size_t p) -> bool {
         const char*  ptr = j.data();
         const size_t sz  = j.size();
         while (p < sz) {
@@ -249,7 +251,7 @@ namespace storm::test {
     }
 
     template <size_t MaxLen>
-    constexpr size_t parse_int_array(std::string_view j, size_t& p, std::array<int, MaxLen>& out) {
+    constexpr auto parse_int_array(std::string_view j, size_t& p, std::array<int, MaxLen>& out) -> size_t {
         skip_ws(j, p);
         const char*  ptr = j.data();
         const size_t sz  = j.size();
@@ -273,7 +275,7 @@ namespace storm::test {
     }
 
     template <size_t MaxLen>
-    constexpr size_t parse_double_array(std::string_view j, size_t& p, std::array<double, MaxLen>& out) {
+    constexpr auto parse_double_array(std::string_view j, size_t& p, std::array<double, MaxLen>& out) -> size_t {
         skip_ws(j, p);
         const char*  ptr = j.data();
         const size_t sz  = j.size();
@@ -298,7 +300,7 @@ namespace storm::test {
 
     // In-place array parser — calls parse_fn(j, p, arr[i]) to avoid copy overhead.
     template <typename T, size_t N, typename ParseIntoFn>
-    constexpr std::array<T, N> parse_array_into(std::string_view j, ParseIntoFn parse_fn) {
+    constexpr auto parse_array_into(std::string_view j, ParseIntoFn parse_fn) -> std::array<T, N> {
         std::array<T, N> arr{};
         size_t           p   = 0;
         const char*      ptr = j.data();
@@ -317,7 +319,7 @@ namespace storm::test {
     }
 
     // Helper: check for end-of-object '}'.  Returns true (and advances p) if found.
-    constexpr bool at_object_end(const char* ptr, size_t sz, size_t& p) {
+    constexpr auto at_object_end(const char* ptr, size_t sz, size_t& p) -> bool {
         skip_ws(ptr, sz, p);
         if (p < sz && ptr[p] == '}') {
             ++p;
@@ -327,7 +329,7 @@ namespace storm::test {
     }
 
     // Helper: parse key and skip colon.  Returns the key reference.
-    constexpr JsonKeyRef parse_key_and_colon(const char* ptr, size_t sz, size_t& p) {
+    constexpr auto parse_key_and_colon(const char* ptr, size_t sz, size_t& p) -> JsonKeyRef {
         auto kr = parse_key_ref(ptr, sz, p);
         skip_ws(ptr, sz, p);
         if (p < sz && ptr[p] == ':')
@@ -336,7 +338,7 @@ namespace storm::test {
     }
 
     // Helper: skip trailing comma after a value inside an object/array.
-    constexpr void skip_comma(const char* ptr, size_t sz, size_t& p) {
+    constexpr auto skip_comma(const char* ptr, size_t sz, size_t& p) -> void {
         skip_ws(ptr, sz, p);
         if (p < sz && ptr[p] == ',')
             ++p;
@@ -442,7 +444,7 @@ namespace storm::test {
         TypedValueKind      kind = TypedValueKind::Int;
     };
 
-    constexpr TypedValue parse_typed_value(std::string_view j, size_t& p) {
+    constexpr auto parse_typed_value(std::string_view j, size_t& p) -> TypedValue {
         using enum TypedValueKind;
         skip_ws(j, p);
         const char* ptr = j.data();
@@ -464,7 +466,7 @@ namespace storm::test {
     }
 
     // Assign typed value into primary where fields.
-    constexpr void assign_where_value(WhereSpec& w, const TypedValue& tv) {
+    constexpr auto assign_where_value(WhereSpec& w, const TypedValue& tv) -> void {
         using enum TypedValueKind;
         if (tv.kind == Bool)
             w.value_bool = tv.b;
@@ -477,7 +479,7 @@ namespace storm::test {
     }
 
     // Assign typed value into secondary where fields (value2).
-    constexpr void assign_where_value2(WhereSpec& w, const TypedValue& tv) {
+    constexpr auto assign_where_value2(WhereSpec& w, const TypedValue& tv) -> void {
         using enum TypedValueKind;
         if (tv.kind == Bool)
             w.value_bool2 = tv.b;
@@ -503,7 +505,8 @@ namespace storm::test {
     }
 
     // Parse len-6 keys inside "where" object.
-    constexpr void parse_where_key6(std::string_view j, size_t& p, const char* ptr, JsonKeyRef kr, WhereSpec& w) {
+    constexpr auto parse_where_key6(std::string_view j, size_t& p, const char* ptr, JsonKeyRef kr, WhereSpec& w)
+            -> void {
         if (jkey_eq(ptr, kr.start, kr.len, "field2"))
             w.field2 = parse_str<32>(j, p);
         else if (jkey_eq(ptr, kr.start, kr.len, "field3"))
@@ -523,7 +526,7 @@ namespace storm::test {
     }
 
     // Parse "where": { field, op, value, upper, values, field2, op2, value2, field3, value3, logic }
-    constexpr void parse_where_into(std::string_view j, size_t& p, WhereSpec& w) { // NOSONAR(S3776)
+    constexpr auto parse_where_into(std::string_view j, size_t& p, WhereSpec& w) -> void { // NOSONAR(S3776)
         const char*  ptr = j.data();
         const size_t sz  = j.size();
         skip_char(j, p, '{');
@@ -560,7 +563,7 @@ namespace storm::test {
     }
 
     // Parse "order_by": { field, asc }
-    constexpr void parse_order_by_into(std::string_view j, size_t& p, OrderBySpec& ob) {
+    constexpr auto parse_order_by_into(std::string_view j, size_t& p, OrderBySpec& ob) -> void {
         const char*  ptr = j.data();
         const size_t sz  = j.size();
         skip_char(j, p, '{');
@@ -579,7 +582,7 @@ namespace storm::test {
     }
 
     // Parse "first": { name, age, salary, is_active, years_experience, department, content, value }
-    constexpr void parse_first_row_into(std::string_view j, size_t& p, FirstRowSpec& f) { // NOSONAR(S3776)
+    constexpr auto parse_first_row_into(std::string_view j, size_t& p, FirstRowSpec& f) -> void { // NOSONAR(S3776)
         const char*  ptr = j.data();
         const size_t sz  = j.size();
         skip_char(j, p, '{');
@@ -655,7 +658,7 @@ namespace storm::test {
 
     // Parse "expected": { count, int_val, dbl_val, unchanged, remaining, first,
     //                     groups_count, group_keys, group_agg_int, group_agg_dbl }
-    constexpr void parse_expected_into(std::string_view j, size_t& p, ExpectedSpec& e) { // NOSONAR(S3776)
+    constexpr auto parse_expected_into(std::string_view j, size_t& p, ExpectedSpec& e) -> void { // NOSONAR(S3776)
         const char*  ptr = j.data();
         const size_t sz  = j.size();
         skip_char(j, p, '{');
@@ -748,7 +751,7 @@ namespace storm::test {
     }
 
     // Parse nested "result": { type, value } inside a ChainAggSpec.
-    constexpr void parse_chain_result_into(std::string_view j, size_t& p, ChainAggSpec& spec) {
+    constexpr auto parse_chain_result_into(std::string_view j, size_t& p, ChainAggSpec& spec) -> void {
         const char*  ptr = j.data();
         const size_t sz  = j.size();
         skip_char(j, p, '{');
@@ -767,7 +770,7 @@ namespace storm::test {
     }
 
     // Parse a single ChainAggSpec: { func, field, result: { type, value } }
-    constexpr ChainAggSpec parse_chain_agg_spec(std::string_view j, size_t& p) {
+    constexpr auto parse_chain_agg_spec(std::string_view j, size_t& p) -> ChainAggSpec {
         ChainAggSpec spec;
         const char*  ptr = j.data();
         const size_t sz  = j.size();
@@ -948,7 +951,8 @@ namespace storm::test {
     //     remove_count,update_count
     // 14: distinct_field,group_by_field
     // 15: distinct_field2,group_by_field2,having_value_int
-    constexpr void parse_unified_case_into(std::string_view j, size_t& p, UnifiedTestCase& tc) { // NOSONAR(S3776)
+    constexpr auto parse_unified_case_into(std::string_view j, size_t& p, UnifiedTestCase& tc)
+            -> void { // NOSONAR(S3776)
         const char*  ptr = j.data();
         const size_t sz  = j.size();
         skip_char(j, p, '{');

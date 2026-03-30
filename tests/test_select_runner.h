@@ -24,7 +24,7 @@ template <typename Model, typename ConnType> class SelectRunner : public SelectQ
     // Verify first-row fields specified in the expected.first spec.
     // Uses `if constexpr (requires { ... })` to guard model-specific field access.
     template <const auto &Tc, typename Row>
-    void verify_first_row(const Row &row) { // NOSONAR(S3776) -- constexpr dispatch
+    auto verify_first_row(const Row &row) -> void { // NOSONAR(S3776) -- constexpr dispatch
         if constexpr (Tc.expected.first.has_name && requires { row.name; })
             EXPECT_EQ(row.name, std::string(Tc.expected.first.name.view()));
         if constexpr (Tc.expected.first.has_age && requires { row.age; })
@@ -43,7 +43,7 @@ template <typename Model, typename ConnType> class SelectRunner : public SelectQ
             EXPECT_EQ(row.value, Tc.expected.first.value);
     }
 
-    template <const auto &Tc> void run() { // NOSONAR(S3776) -- inherent constexpr dispatch
+    template <const auto &Tc> auto run() -> void { // NOSONAR(S3776) -- inherent constexpr dispatch
         this->template apply_where_and_join<Tc>();
         if constexpr (Tc.query_type == "first") {
             auto r = this->template qs_with_modifiers<Tc>().first().execute();
@@ -78,7 +78,7 @@ template <typename Model, typename ConnType> class SelectRunner : public SelectQ
 // ---------------------------------------------------------------------------
 template <typename Model, typename ConnType> class AggregateRunner : public SelectQueryRunnerBase<Model, ConnType> {
   public:
-    template <const auto &Tc> void run() { // NOSONAR(S3776) -- inherent constexpr dispatch
+    template <const auto &Tc> auto run() -> void { // NOSONAR(S3776) -- inherent constexpr dispatch
         this->template apply_where_and_join<Tc>();
 
         if constexpr (Tc.query_type == "count") {
@@ -138,7 +138,7 @@ template <typename Model, typename ConnType> class ChainAggRunner : public Selec
   public:
     template <const auto &Tc>
     // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-    void run() { // NOSONAR(S3776) -- inherent constexpr dispatch
+    auto run() -> void { // NOSONAR(S3776) -- inherent constexpr dispatch
         this->template apply_where_and_join<Tc>();
 
         if constexpr (Tc.chain_len == 2) {
@@ -298,7 +298,7 @@ template <typename Model, typename ConnType> class ChainAggRunner : public Selec
 // ---------------------------------------------------------------------------
 template <typename Model, typename ConnType> class DistinctRunner : public SelectQueryRunnerBase<Model, ConnType> {
   public:
-    template <const auto &Tc> void run() {
+    template <const auto &Tc> auto run() -> void {
         this->template apply_where_and_join<Tc>();
         if constexpr (!Tc.distinct_field2.empty()) {
             constexpr auto fi1 = dispatch_field<Model>(Tc.distinct_field.view());
@@ -320,7 +320,7 @@ template <typename Model, typename ConnType> class DistinctRunner : public Selec
 // ---------------------------------------------------------------------------
 template <typename Model, typename ConnType> class GroupByRunner : public SelectQueryRunnerBase<Model, ConnType> {
   public:
-    template <const auto &Tc> void run() { // NOSONAR(S3776) -- inherent constexpr dispatch
+    template <const auto &Tc> auto run() -> void { // NOSONAR(S3776) -- inherent constexpr dispatch
         this->template apply_where_and_join<Tc>();
         decltype(auto) qs = this->template qs_with_modifiers<Tc>();
 

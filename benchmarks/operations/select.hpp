@@ -152,7 +152,7 @@ namespace storm::benchmark {
         // ====================================================================
         // print_info - Uses shared footer from base class
         // ====================================================================
-        void print_info() const {
+        auto print_info() const -> void {
             std::cout << "Operation: SELECT";
             Base::print_info_footer();
         }
@@ -160,12 +160,12 @@ namespace storm::benchmark {
         // ====================================================================
         // execute - Storm ORM SELECT using base class helpers
         // ====================================================================
-        int execute_iteration() {
+        auto execute_iteration() -> int {
             auto results = Base::qs().select().execute();
             return results.value().size();
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             return Base::execute_with_filters(iterations);
         }
 
@@ -174,7 +174,7 @@ namespace storm::benchmark {
         // ====================================================================
       private:
         // Helper to get JOIN keyword based on JoinType
-        static constexpr const char* get_join_keyword() {
+        static constexpr auto get_join_keyword() -> const char* {
             if constexpr (!JoinCfg::enabled) {
                 return "";
             } else if constexpr (JoinCfg::join_type == JoinType::Left) {
@@ -187,7 +187,7 @@ namespace storm::benchmark {
         }
 
         // Build SQL string based on enabled features
-        static std::string build_select_sql() {
+        static auto build_select_sql() -> std::string {
             std::string sql;
 
             if constexpr (JoinCfg::enabled) {
@@ -235,7 +235,7 @@ namespace storm::benchmark {
         }
 
         // Extract row for basic SELECT (Person model) — must match Storm's column list
-        __attribute__((always_inline)) static BaseModel extract_row_basic(sqlite3_stmt* stmt) {
+        __attribute__((always_inline)) static auto extract_row_basic(sqlite3_stmt* stmt) -> BaseModel {
             BaseModel obj;
             obj.id        = sqlite3_column_int64(stmt, 0);
             obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
@@ -249,7 +249,7 @@ namespace storm::benchmark {
         }
 
         // Extract row for JOIN SELECT (FKMessage model with joined User)
-        __attribute__((always_inline)) static BaseModel extract_row_join(sqlite3_stmt* stmt)
+        __attribute__((always_inline)) static auto extract_row_join(sqlite3_stmt* stmt) -> BaseModel
             requires(JoinCfg::enabled)
         {
             BaseModel obj;
@@ -270,7 +270,7 @@ namespace storm::benchmark {
         }
 
       public:
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<BaseModel>();
             if (!db)
                 return 0;
@@ -478,7 +478,7 @@ namespace storm::benchmark {
             requires(!WhereCfg::enabled)
             : Base(dataset_size) {}
 
-        void print_info() const {
+        auto print_info() const -> void {
             constexpr std::string_view field1   = std::meta::identifier_of(OrderByFieldInfo1);
             constexpr std::string_view field2   = std::meta::identifier_of(OrderByFieldInfo2);
             constexpr const char*      dir1_str = (Dir1 == OrderDirection::ASC) ? "ASC" : "DESC";
@@ -488,7 +488,7 @@ namespace storm::benchmark {
             Base::print_info_footer();
         }
 
-        int execute_iteration() {
+        auto execute_iteration() -> int {
             // Use Storm ORM's multi-field order_by syntax
             // Convert OrderDirection to bool: ASC=true, DESC=false
             constexpr bool asc1 = (Dir1 == OrderDirection::ASC);
@@ -500,7 +500,7 @@ namespace storm::benchmark {
             return results.value().size();
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             int total = 0;
             for (int i = 0; i < iterations; i++) {
                 total += execute_iteration();
@@ -508,7 +508,7 @@ namespace storm::benchmark {
             return total;
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<BaseModel>();
             if (db == nullptr)
                 return 0;
@@ -542,7 +542,7 @@ namespace storm::benchmark {
         }
 
       private:
-        __attribute__((always_inline)) static BaseModel extract_row_basic(sqlite3_stmt* stmt) {
+        __attribute__((always_inline)) static auto extract_row_basic(sqlite3_stmt* stmt) -> BaseModel {
             BaseModel obj;
             obj.id        = sqlite3_column_int64(stmt, 0);
             obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
@@ -609,21 +609,21 @@ namespace storm::benchmark {
       public:
         explicit constexpr GroupByMultiFieldBenchmark(int dataset_size = 1000) : Base(dataset_size) {}
 
-        void print_info() const {
+        auto print_info() const -> void {
             std::cout << "Operation: SELECT GROUP BY ";
             bool first = true;
             ((std::cout << (first ? (first = false, "") : ", ") << std::meta::identifier_of(GroupByFieldInfos)), ...);
             Base::print_info_footer();
         }
 
-        int execute_iteration() {
+        auto execute_iteration() -> int {
             Base::qs().template group_by<GroupByFieldInfos...>();
             auto results = Base::qs().select().execute();
             Base::qs().reset();
             return results.value().size();
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             int total = 0;
             for (int i = 0; i < iterations; i++) {
                 total += execute_iteration();
@@ -631,7 +631,7 @@ namespace storm::benchmark {
             return total;
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<BaseModel>();
             if (db == nullptr)
                 return 0;
@@ -663,7 +663,7 @@ namespace storm::benchmark {
         }
 
       private:
-        __attribute__((always_inline)) static BaseModel extract_row_basic(sqlite3_stmt* stmt) {
+        __attribute__((always_inline)) static auto extract_row_basic(sqlite3_stmt* stmt) -> BaseModel {
             BaseModel obj;
             obj.id        = sqlite3_column_int64(stmt, 0);
             obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
@@ -686,7 +686,7 @@ namespace storm::benchmark {
     // ========================================================================
     enum class GroupByAggOp { Count, Sum, Avg, Min, Max };
 
-    static consteval const char* agg_op_name(GroupByAggOp op) {
+    static consteval auto agg_op_name(GroupByAggOp op) -> const char* {
         using enum GroupByAggOp;
         switch (op) {
         case Count:
@@ -703,7 +703,7 @@ namespace storm::benchmark {
         return ""; // unreachable: all enum values handled above
     }
 
-    static consteval const char* agg_op_sql(GroupByAggOp op) {
+    static consteval auto agg_op_sql(GroupByAggOp op) -> const char* {
         using enum GroupByAggOp;
         switch (op) {
         case Count:
@@ -740,7 +740,7 @@ namespace storm::benchmark {
       public:
         explicit constexpr GroupByAggregateBenchmark(int dataset_size = 1000) : Base(dataset_size) {}
 
-        void print_info() const {
+        auto print_info() const -> void {
             using enum GroupByAggOp;
             constexpr std::string_view group_field_name = std::meta::identifier_of(GroupByFieldInfo);
             if constexpr (AggOp == Count) {
@@ -753,7 +753,7 @@ namespace storm::benchmark {
             std::cout << "\n  Dataset: " << Base::batch_size() << " rows\n";
         }
 
-        int execute_iteration() {
+        auto execute_iteration() -> int {
             using enum GroupByAggOp;
             if constexpr (AggOp == Count) {
                 auto result = Base::qs().template group_by<GroupByFieldInfo>().count().select();
@@ -777,7 +777,7 @@ namespace storm::benchmark {
             }
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             int total = 0;
             for (int i = 0; i < iterations; i++) {
                 total += execute_iteration();
@@ -785,7 +785,7 @@ namespace storm::benchmark {
             return total;
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<BaseModel>();
             if (db == nullptr)
                 return 0;
@@ -872,7 +872,7 @@ namespace storm::benchmark {
       public:
         explicit constexpr GroupByHavingAggregateBenchmark(int dataset_size = 1000) : Base(dataset_size) {}
 
-        void print_info() const {
+        auto print_info() const -> void {
             constexpr std::string_view group_field_name  = std::meta::identifier_of(GroupByFieldInfo);
             constexpr std::string_view having_field_name = std::meta::identifier_of(HavingFieldInfo);
             if constexpr (AggOp == GroupByAggOp::Count) {
@@ -887,7 +887,7 @@ namespace storm::benchmark {
             std::cout << "\n  Dataset: " << Base::batch_size() << " rows\n";
         }
 
-        int execute_iteration() {
+        auto execute_iteration() -> int {
             auto having_expr = storm::orm::where::field<HavingFieldInfo>() > HavingValue;
             if constexpr (AggOp == GroupByAggOp::Count) {
                 auto result = Base::qs().template group_by<GroupByFieldInfo>().having(having_expr).count().select();
@@ -923,7 +923,7 @@ namespace storm::benchmark {
             }
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             int total = 0;
             for (int i = 0; i < iterations; i++) {
                 total += execute_iteration();
@@ -931,7 +931,7 @@ namespace storm::benchmark {
             return total;
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<BaseModel>();
             if (db == nullptr)
                 return 0;
@@ -1078,12 +1078,12 @@ namespace storm::benchmark {
       public:
         explicit SelectMultiFKJoinBenchmark(int dataset_size) : dataset_size_(dataset_size) {}
 
-        void print_info() const {
+        auto print_info() const -> void {
             std::cout << "Operation: SELECT + Multi-FK INNER JOIN (sender + receiver)\n";
             std::cout << "  Dataset: " << dataset_size_ << " rows\n";
         }
 
-        void prepare([[maybe_unused]] int iterations) {
+        auto prepare([[maybe_unused]] int iterations) -> void {
             sqlite3* db = get_db<BaseModel>();
             if (!db)
                 return;
@@ -1139,7 +1139,7 @@ namespace storm::benchmark {
             }
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             // JOIN on both sender AND receiver FK fields
             qs_.template join<&BaseModel::sender, &BaseModel::receiver>();
 
@@ -1152,7 +1152,7 @@ namespace storm::benchmark {
             return total;
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<BaseModel>();
             if (!db)
                 return 0;

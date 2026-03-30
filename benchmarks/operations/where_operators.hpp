@@ -30,7 +30,7 @@ namespace storm::benchmark {
         explicit constexpr WhereLikeBenchmark(std::string pattern, int dataset_size = 1000)
             : Base(dataset_size), pattern_(std::move(pattern)) {}
 
-        static Model create_model(int index = 0) {
+        static auto create_model(int index = 0) -> Model {
             int i = index + 1;
             return Model{
                     .id        = 0,
@@ -41,17 +41,17 @@ namespace storm::benchmark {
             };
         }
 
-        void prepare(int iterations) {
+        auto prepare(int iterations) -> void {
             Base::prepare_with_insert(iterations);
         }
 
-        void print_info() const {
+        auto print_info() const -> void {
             constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
             std::cout << "SELECT (WHERE LIKE): " << field_name << " LIKE '" << pattern_ << "'\n";
             std::cout << "  Dataset: " << Base::batch_size() << " rows\n";
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             auto where_clause = field<FieldInfo>().like(pattern_);
             auto filtered     = Base::qs().where(where_clause);
 
@@ -65,7 +65,7 @@ namespace storm::benchmark {
             return total;
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<Model>();
             if (!db)
                 return 0;
@@ -94,7 +94,7 @@ namespace storm::benchmark {
         }
 
       private:
-        __attribute__((always_inline)) static Model extract_row(sqlite3_stmt* stmt) {
+        __attribute__((always_inline)) static auto extract_row(sqlite3_stmt* stmt) -> Model {
             Model obj;
             obj.id        = sqlite3_column_int64(stmt, 0);
             obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
@@ -123,7 +123,7 @@ namespace storm::benchmark {
         explicit constexpr WhereBetweenBenchmark(ValueType min_val, ValueType max_val, int dataset_size = 1000)
             : Base(dataset_size), min_value_(min_val), max_value_(max_val) {}
 
-        static Model create_model(int index = 0) {
+        static auto create_model(int index = 0) -> Model {
             int i = index + 1;
             return Model{
                     .id        = 0,
@@ -134,18 +134,18 @@ namespace storm::benchmark {
             };
         }
 
-        void prepare(int iterations) {
+        auto prepare(int iterations) -> void {
             Base::prepare_with_insert(iterations);
         }
 
-        void print_info() const {
+        auto print_info() const -> void {
             constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
             std::cout << "SELECT (WHERE BETWEEN): " << field_name << " BETWEEN " << min_value_ << " AND " << max_value_
                       << "\n";
             std::cout << "  Dataset: " << Base::batch_size() << " rows\n";
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             auto where_clause = field<FieldInfo>().between(min_value_, max_value_);
             auto filtered     = Base::qs().where(where_clause);
 
@@ -159,7 +159,7 @@ namespace storm::benchmark {
             return total;
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<Model>();
             if (!db)
                 return 0;
@@ -196,7 +196,7 @@ namespace storm::benchmark {
         }
 
       private:
-        __attribute__((always_inline)) static Model extract_row(sqlite3_stmt* stmt) {
+        __attribute__((always_inline)) static auto extract_row(sqlite3_stmt* stmt) -> Model {
             Model obj;
             obj.id        = sqlite3_column_int64(stmt, 0);
             obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
@@ -223,7 +223,7 @@ namespace storm::benchmark {
         explicit WhereInBenchmark(std::vector<ValueType> values, int dataset_size = 1000)
             : Base(dataset_size), values_(std::move(values)) {}
 
-        static Model create_model(int index = 0) {
+        static auto create_model(int index = 0) -> Model {
             int i = index + 1;
             return Model{
                     .id        = 0,
@@ -234,11 +234,11 @@ namespace storm::benchmark {
             };
         }
 
-        void prepare(int iterations) {
+        auto prepare(int iterations) -> void {
             Base::prepare_with_insert(iterations);
         }
 
-        void print_info() const {
+        auto print_info() const -> void {
             constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
             std::cout << "SELECT (WHERE IN): " << field_name << " IN (";
             for (size_t i = 0; i < values_.size(); i++) {
@@ -250,7 +250,7 @@ namespace storm::benchmark {
             std::cout << "  Dataset: " << Base::batch_size() << " rows\n";
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             // Build IN expression using field<>().in(values...)
             // We need to use the runtime API since we have a vector
             auto where_clause = build_in_clause();
@@ -266,7 +266,7 @@ namespace storm::benchmark {
             return total;
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<Model>();
             if (!db)
                 return 0;
@@ -309,7 +309,7 @@ namespace storm::benchmark {
             return total;
         }
 
-        __attribute__((always_inline)) static Model extract_row(sqlite3_stmt* stmt) {
+        __attribute__((always_inline)) static auto extract_row(sqlite3_stmt* stmt) -> Model {
             Model obj;
             obj.id        = sqlite3_column_int64(stmt, 0);
             obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
@@ -362,7 +362,7 @@ namespace storm::benchmark {
         explicit constexpr WhereAndOrBenchmark(ValueType1 value1, ValueType2 value2, int dataset_size = 1000)
             : Base(dataset_size), value1_(value1), value2_(value2) {}
 
-        static Model create_model(int index = 0) {
+        static auto create_model(int index = 0) -> Model {
             int i = index + 1;
             return Model{
                     .id        = 0,
@@ -373,11 +373,11 @@ namespace storm::benchmark {
             };
         }
 
-        void prepare(int iterations) {
+        auto prepare(int iterations) -> void {
             Base::prepare_with_insert(iterations);
         }
 
-        void print_info() const {
+        auto print_info() const -> void {
             constexpr std::string_view field_name1 = std::meta::identifier_of(FieldInfo1);
             constexpr std::string_view field_name2 = std::meta::identifier_of(FieldInfo2);
             constexpr std::string_view op_str1     = Op1.view();
@@ -389,7 +389,7 @@ namespace storm::benchmark {
             std::cout << "  Dataset: " << Base::batch_size() << " rows\n";
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             auto where_clause = build_where_clause();
             auto filtered     = Base::qs().where(where_clause);
 
@@ -403,7 +403,7 @@ namespace storm::benchmark {
             return total;
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<Model>();
             if (!db)
                 return 0;
@@ -459,7 +459,7 @@ namespace storm::benchmark {
         }
 
       private:
-        __attribute__((always_inline)) static Model extract_row(sqlite3_stmt* stmt) {
+        __attribute__((always_inline)) static auto extract_row(sqlite3_stmt* stmt) -> Model {
             Model obj;
             obj.id        = sqlite3_column_int64(stmt, 0);
             obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
@@ -472,7 +472,7 @@ namespace storm::benchmark {
             return obj;
         }
 
-        static constexpr std::string_view get_sql_op(std::string_view op) {
+        static constexpr auto get_sql_op(std::string_view op) -> std::string_view {
             if (op == ">")
                 return ">";
             if (op == ">=")
@@ -547,7 +547,7 @@ namespace storm::benchmark {
       public:
         explicit constexpr WhereIsNullBenchmark(int dataset_size = 1000) : Base(dataset_size) {}
 
-        static Model create_model(int index = 0) {
+        static auto create_model(int index = 0) -> Model {
             int i = index + 1;
             return Model{
                     .id        = 0,
@@ -559,18 +559,18 @@ namespace storm::benchmark {
             };
         }
 
-        void prepare(int iterations) {
+        auto prepare(int iterations) -> void {
             Base::prepare_with_insert(iterations);
         }
 
-        void print_info() const {
+        auto print_info() const -> void {
             constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
             constexpr const char*      null_str   = IsNull ? "IS NULL" : "IS NOT NULL";
             std::cout << "SELECT (WHERE " << null_str << "): " << field_name << " " << null_str << "\n";
             std::cout << "  Dataset: " << Base::batch_size() << " rows\n";
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             auto where_clause = [] {
                 if constexpr (IsNull)
                     return field<FieldInfo>().is_null();
@@ -589,7 +589,7 @@ namespace storm::benchmark {
             return total;
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<Model>();
             if (!db)
                 return 0;
@@ -618,7 +618,7 @@ namespace storm::benchmark {
         }
 
       private:
-        __attribute__((always_inline)) static Model extract_row(sqlite3_stmt* stmt) {
+        __attribute__((always_inline)) static auto extract_row(sqlite3_stmt* stmt) -> Model {
             Model obj;
             obj.id        = sqlite3_column_int64(stmt, 0);
             obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));

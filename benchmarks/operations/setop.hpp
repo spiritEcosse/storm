@@ -55,7 +55,7 @@ namespace storm::benchmark {
             }
         }
 
-        static Model create_model(int index = 0) {
+        static auto create_model(int index = 0) -> Model {
             int i = index + 1;
             return Model{
                     .id        = 0,
@@ -66,11 +66,11 @@ namespace storm::benchmark {
             };
         }
 
-        void prepare(int iterations) {
+        auto prepare(int iterations) -> void {
             Base::prepare_with_insert(iterations);
         }
 
-        void print_info() const {
+        auto print_info() const -> void {
             std::cout << "Operation: SELECT " << op_name();
             if constexpr (WithOrderBy) {
                 std::cout << " + ORDER BY";
@@ -89,7 +89,7 @@ namespace storm::benchmark {
             std::cout << "  Dataset: " << Base::batch_size() << " rows\n";
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             // Build WHERE expressions and set operation builder ONCE (setup cost)
             auto left_where = field<^^Model::age>() < left_threshold_;
             auto qs_left    = Base::qs().where(left_where);
@@ -127,7 +127,7 @@ namespace storm::benchmark {
             }
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<Model>();
             if (!db)
                 return 0;
@@ -167,7 +167,7 @@ namespace storm::benchmark {
         }
 
       private:
-        static constexpr const char* op_name() {
+        static constexpr auto op_name() -> const char* {
             using enum SetOpBenchType;
             if constexpr (OpType == Union)
                 return "UNION";
@@ -179,7 +179,7 @@ namespace storm::benchmark {
                 return "INTERSECT";
         }
 
-        static constexpr const char* op_sql() {
+        static constexpr auto op_sql() -> const char* {
             using enum SetOpBenchType;
             if constexpr (OpType == Union)
                 return " UNION ";
@@ -204,7 +204,7 @@ namespace storm::benchmark {
             }
         }
 
-        template <typename Builder> void apply_modifiers(Builder& builder) {
+        template <typename Builder> auto apply_modifiers(Builder& builder) -> void {
             if constexpr (WithOrderBy) {
                 builder.template order_by<^^Model::age, true>();
             }
@@ -213,7 +213,7 @@ namespace storm::benchmark {
             }
         }
 
-        std::string build_raw_sql() const {
+        auto build_raw_sql() const -> std::string {
             std::string sql = "SELECT id, name, age, is_active, salary, score FROM Person WHERE age < ?";
             sql += op_sql();
             if constexpr (needs_overlap) {

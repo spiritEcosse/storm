@@ -173,7 +173,7 @@ namespace storm::benchmark {
     // ========================================================================
     // Field dispatcher - compile-time field lookup by name
     // ========================================================================
-    template <typename Model> consteval std::meta::info dispatch_field(std::string_view field_name) {
+    template <typename Model> consteval auto dispatch_field(std::string_view field_name) -> std::meta::info {
         constexpr auto model_info = ^^Model;
 
         for (std::meta::info member :
@@ -245,14 +245,14 @@ namespace storm::benchmark {
         typename RelatedQSHelper<JoinCfg, std::monostate>::type related_qs_{};
 
         // Accessor for where_value_ from derived classes
-        const WhereValueType& where_value() const {
+        auto where_value() const -> const WhereValueType& {
             return where_value_;
         }
 
         // ====================================================================
         // print_info helpers - shared formatting for WHERE/JOIN/dataset
         // ====================================================================
-        void print_where_suffix() const {
+        auto print_where_suffix() const -> void {
             if constexpr (WhereCfg::enabled) {
                 constexpr std::string_view field_name = std::meta::identifier_of(WhereCfg::field_info);
                 constexpr std::string_view op_str     = WhereCfg::op.view();
@@ -260,7 +260,7 @@ namespace storm::benchmark {
             }
         }
 
-        void print_join_suffix() const {
+        auto print_join_suffix() const -> void {
             if constexpr (JoinCfg::enabled) {
                 if constexpr (JoinCfg::join_type == JoinType::Left) {
                     std::cout << " + LEFT JOIN";
@@ -272,7 +272,7 @@ namespace storm::benchmark {
             }
         }
 
-        void print_limit_offset_suffix() const {
+        auto print_limit_offset_suffix() const -> void {
             if constexpr (LimitOffsetCfg::enabled) {
                 if constexpr (LimitOffsetCfg::limit_value > 0) {
                     std::cout << " LIMIT " << LimitOffsetCfg::limit_value;
@@ -283,7 +283,7 @@ namespace storm::benchmark {
             }
         }
 
-        void print_order_by_suffix() const {
+        auto print_order_by_suffix() const -> void {
             if constexpr (OrderByCfg::enabled) {
                 constexpr std::string_view field_name = std::meta::identifier_of(OrderByCfg::field_info);
                 std::cout << " ORDER BY " << field_name;
@@ -298,14 +298,14 @@ namespace storm::benchmark {
             }
         }
 
-        void print_group_by_suffix() const {
+        auto print_group_by_suffix() const -> void {
             if constexpr (GroupByCfg::enabled) {
                 constexpr std::string_view field_name = std::meta::identifier_of(GroupByCfg::field_info);
                 std::cout << " GROUP BY " << field_name;
             }
         }
 
-        void print_info_footer() const {
+        auto print_info_footer() const -> void {
             print_where_suffix();
             print_join_suffix();
             print_group_by_suffix();
@@ -318,7 +318,7 @@ namespace storm::benchmark {
         // ====================================================================
         // execute helpers - shared JOIN/WHERE application and loop structure
         // ====================================================================
-        void apply_query_filters() {
+        auto apply_query_filters() -> void {
             if constexpr (JoinCfg::enabled) {
                 // Dispatch to correct JOIN method based on join_type
                 if constexpr (JoinCfg::join_type == JoinType::Left) {
@@ -364,7 +364,7 @@ namespace storm::benchmark {
         }
 
         // CRTP execute helper - derived class provides execute_iteration()
-        int execute_with_filters(int iterations) {
+        auto execute_with_filters(int iterations) -> int {
             apply_query_filters();
             int total = 0;
             for (int i = 0; i < iterations; i++) {
@@ -393,7 +393,7 @@ namespace storm::benchmark {
         // ====================================================================
         // create_model - Generate varied data for WHERE clause testing
         // ====================================================================
-        static BaseModel create_model(int index = 0) {
+        static auto create_model(int index = 0) -> BaseModel {
             int i = index + 1;
 
             if constexpr (JoinCfg::enabled) {
@@ -416,7 +416,7 @@ namespace storm::benchmark {
         // ====================================================================
         // prepare - Feature-aware data preparation
         // ====================================================================
-        void prepare(int iterations) {
+        auto prepare(int iterations) -> void {
             if constexpr (JoinCfg::enabled) {
                 prepare_join_data(iterations);
             } else {
@@ -426,7 +426,7 @@ namespace storm::benchmark {
 
       protected:
         // Prepare data for JOIN benchmarks (creates related records + FK references)
-        void prepare_join_data([[maybe_unused]] int iterations) {
+        auto prepare_join_data([[maybe_unused]] int iterations) -> void {
             if constexpr (JoinCfg::enabled) {
                 sqlite3* db = get_db<BaseModel>();
                 if (!db)
@@ -512,7 +512,7 @@ namespace storm::benchmark {
         }
 
         // Bind WHERE value to prepared statement
-        void bind_where_value(sqlite3_stmt* stmt) const
+        auto bind_where_value(sqlite3_stmt* stmt) const -> void
             requires(WhereCfg::enabled)
         {
             using V = typename WhereCfg::value_type;
@@ -535,7 +535,7 @@ namespace storm::benchmark {
         // ====================================================================
         // ORDER BY SQL helpers for raw SQLite benchmarks
         // ====================================================================
-        static void append_order_by_sql(std::string& sql) {
+        static auto append_order_by_sql(std::string& sql) -> void {
             if constexpr (OrderByCfg::enabled) {
                 constexpr std::string_view field_name = std::meta::identifier_of(OrderByCfg::field_info);
                 sql += " ORDER BY ";
@@ -554,7 +554,7 @@ namespace storm::benchmark {
         // ====================================================================
         // LIMIT/OFFSET SQL helpers for raw SQLite benchmarks
         // ====================================================================
-        static void append_limit_offset_sql(std::string& sql) {
+        static auto append_limit_offset_sql(std::string& sql) -> void {
             if constexpr (LimitOffsetCfg::enabled) {
                 if constexpr (LimitOffsetCfg::limit_value > 0) {
                     sql += " LIMIT ";
@@ -573,7 +573,7 @@ namespace storm::benchmark {
         // ====================================================================
         // GROUP BY SQL helpers for raw SQLite benchmarks
         // ====================================================================
-        static void append_group_by_sql(std::string& sql) {
+        static auto append_group_by_sql(std::string& sql) -> void {
             if constexpr (GroupByCfg::enabled) {
                 constexpr std::string_view field_name = std::meta::identifier_of(GroupByCfg::field_info);
                 sql += " GROUP BY ";

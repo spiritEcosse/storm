@@ -41,7 +41,7 @@ template <typename ConnType> class AggregateTest : public StormTestFixture<Perso
     }
 
     // Helper to insert PEOPLE_25 + MESSAGES_8 with FK safety (query back IDs for PG)
-    void insert_join_test_data() {
+    auto insert_join_test_data() -> void {
         ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(
                 std::vector<Person>(storm::test::PEOPLE_25.begin(), storm::test::PEOPLE_25.end())
         )));

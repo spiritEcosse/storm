@@ -51,7 +51,7 @@ inline std::string current_test_schema; // NOLINT // NOSONAR(cpp:S5421)
 
 // Check if the backend is available (PG requires STORM_PG_CONNSTR set and server reachable;
 // SQLite is always available)
-template <typename ConnType> bool backend_available() {
+template <typename ConnType> auto backend_available() -> bool {
     if constexpr (std::is_same_v<ConnType, storm::db::postgresql::Connection>) {
         const char *connstr = std::getenv("STORM_PG_CONNSTR");
         if (!connstr)
@@ -94,7 +94,7 @@ template <typename ConnType> auto pg_schema_init(auto &conn) -> void {
 
 // End test isolation. For PG: drops the per-process schema (instant cleanup).
 // For SQLite: no-op (:memory: is destroyed with the connection).
-template <typename ConnType> void rollback_test_txn(auto &conn) {
+template <typename ConnType> auto rollback_test_txn(auto &conn) -> void {
     if constexpr (std::is_same_v<ConnType, storm::db::postgresql::Connection>) {
         if (!detail::current_test_schema.empty()) {
             (void)conn->execute(std::format("DROP SCHEMA IF EXISTS {} CASCADE", detail::current_test_schema));
@@ -107,12 +107,12 @@ template <typename ConnType> void rollback_test_txn(auto &conn) {
 }
 
 // Check if we're running against PostgreSQL
-template <typename ConnType> constexpr bool is_postgresql() {
+template <typename ConnType> constexpr auto is_postgresql() -> bool {
     return std::is_same_v<ConnType, storm::db::postgresql::Connection>;
 }
 
 // Check if we're running against SQLite
-template <typename ConnType> constexpr bool is_sqlite() {
+template <typename ConnType> constexpr auto is_sqlite() -> bool {
     return std::is_same_v<ConnType, storm::db::sqlite::Connection>;
 }
 

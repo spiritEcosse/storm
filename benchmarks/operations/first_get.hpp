@@ -45,21 +45,21 @@ namespace storm::benchmark {
             requires(WhereCfg::enabled)
             : Base(value, dataset_size) {}
 
-        void print_info() const {
+        auto print_info() const -> void {
             std::cout << "Operation: FIRST";
             Base::print_info_footer();
         }
 
-        int execute_iteration() {
+        auto execute_iteration() -> int {
             auto result = Base::qs().first().execute();
             return (result.has_value() && result.value().has_value()) ? 1 : 0;
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             return Base::execute_with_filters(iterations);
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<BaseModel>();
             if (!db)
                 return 0;
@@ -142,21 +142,21 @@ namespace storm::benchmark {
             requires(WhereCfg::enabled)
             : Base(value, dataset_size) {}
 
-        void print_info() const {
+        auto print_info() const -> void {
             std::cout << "Operation: GET";
             Base::print_info_footer();
         }
 
-        int execute_iteration() {
+        auto execute_iteration() -> int {
             auto result = Base::qs().get().execute();
             return result.has_value() ? 1 : 0;
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             return Base::execute_with_filters(iterations);
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<BaseModel>();
             if (!db)
                 return 0;

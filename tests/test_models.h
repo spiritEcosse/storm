@@ -126,13 +126,14 @@ template <typename T, typename ConnType> inline auto ensure_table(auto &conn) {
 
 // Variadic helper — creates tables for all given model types.
 // Returns true only if all tables were created successfully.
-template <typename ConnType, typename... Models> inline bool ensure_tables(const std::shared_ptr<ConnType> &conn) {
+template <typename ConnType, typename... Models>
+inline auto ensure_tables(const std::shared_ptr<ConnType> &conn) -> bool {
     return (ensure_table<Models, ConnType>(conn).has_value() && ...);
 }
 
 // Populates join test data: 3 Persons + 5 Messages with sender FKs.
 // Used by DistinctTest, ValuesTest, and AggregateTest fixtures.
-template <typename ConnType> inline void populate_join_test_data() {
+template <typename ConnType> inline auto populate_join_test_data() -> void {
     storm::QuerySet<Person, ConnType> person_qs;
     std::vector<Person> const people = {
         {.name = "Alice", .age = 30},
@@ -161,30 +162,34 @@ template <typename ConnType> inline void populate_join_test_data() {
 // Model record generators -- used by InsertRunner/UpdateRunner/RemoveRunner
 // ============================================================================
 
-template <typename Model> Model make_record(int i) = delete;
-template <> inline Person make_record<Person>(int i) {
+template <typename Model> auto make_record(int i) -> Model = delete;
+template <> inline auto make_record<Person>(int i) -> Person {
     return {.name = std::format("P{}", i + 1),
             .age = 20 + (i % 50),
             .salary = 1000.0 * (i + 1),
             .is_active = (i % 2 == 0),
             .years_experience = i % 30};
 }
-template <> inline SimpleRecord make_record<SimpleRecord>(int i) { return {0, std::format("R{}", i), i}; }
-template <> inline Message make_record<Message>(int i) { return {.content = std::format("M{}", i), .value = i}; }
+template <> inline auto make_record<SimpleRecord>(int i) -> SimpleRecord { return {0, std::format("R{}", i), i}; }
+template <> inline auto make_record<Message>(int i) -> Message {
+    return {.content = std::format("M{}", i), .value = i};
+}
 
-template <typename Model> Model make_updated_record(const Model &) = delete;
-template <> inline Person make_updated_record<Person>(const Person &p) {
+template <typename Model> auto make_updated_record(const Model &) -> Model = delete;
+template <> inline auto make_updated_record<Person>(const Person &p) -> Person {
     Person u = p;
     u.name = std::format("Updated{}", p.id);
     return u;
 }
-template <> inline SimpleRecord make_updated_record<SimpleRecord>(const SimpleRecord &r) {
+template <> inline auto make_updated_record<SimpleRecord>(const SimpleRecord &r) -> SimpleRecord {
     return {r.id, std::format("Updated{}", r.id), r.value * 2};
 }
 
-template <typename Model> bool is_original_record(const Model &) = delete;
-template <> inline bool is_original_record<Person>(const Person &p) { return p.name.starts_with("P"); }
-template <> inline bool is_original_record<SimpleRecord>(const SimpleRecord &r) { return r.name.starts_with("R"); }
+template <typename Model> auto is_original_record(const Model &) -> bool = delete;
+template <> inline auto is_original_record<Person>(const Person &p) -> bool { return p.name.starts_with("P"); }
+template <> inline auto is_original_record<SimpleRecord>(const SimpleRecord &r) -> bool {
+    return r.name.starts_with("R");
+}
 
 // ---------------------------------------------------------------------------
 // Unified seed dataset — ONE shared 25-row Person + 8-row Message dataset.

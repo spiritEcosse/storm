@@ -55,7 +55,7 @@ namespace storm::benchmark::sizes {
 
     // Calculate iterations inversely proportional to batch size
     // Larger batches get fewer iterations to maintain consistent total work
-    constexpr int iterations_for_batch(int size) {
+    constexpr auto iterations_for_batch(int size) -> int {
         if (size <= 1)
             return 10000;
         if (size <= 10)
@@ -74,7 +74,7 @@ namespace storm::benchmark::sizes {
     }
 
     // Calculate iterations inversely proportional to dataset size
-    constexpr int iterations_for_dataset(int size) {
+    constexpr auto iterations_for_dataset(int size) -> int {
         if (size <= 100)
             return 10000;
         if (size <= 1000)
@@ -85,7 +85,7 @@ namespace storm::benchmark::sizes {
     }
 
     // Calculate iterations for aggregate operations
-    constexpr int iterations_for_aggregate(int size) {
+    constexpr auto iterations_for_aggregate(int size) -> int {
         if (size <= 1000)
             return 10000;
         if (size <= 10000)
@@ -106,7 +106,7 @@ namespace storm::benchmark::sizes {
     };
 
     // Convert string to SizeProfile
-    constexpr SizeProfile profile_from_string(std::string_view str) {
+    constexpr auto profile_from_string(std::string_view str) -> SizeProfile {
         using enum SizeProfile;
         if (str == "batch_standard")
             return BatchStandard;

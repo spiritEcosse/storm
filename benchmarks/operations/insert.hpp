@@ -22,17 +22,17 @@ namespace storm::benchmark {
         using Base = DataBenchmarkBase<InsertBenchmark<Model>, Model, 4>;
 
         // Build single-row INSERT SQL with RETURNING (matches Storm ORM behavior)
-        static std::string sql_insert_single_returning() {
+        static auto sql_insert_single_returning() -> std::string {
             return "INSERT INTO Person (name, age, is_active, salary) VALUES (?, ?, ?, ?) RETURNING id";
         }
 
         // Build single-row INSERT SQL without RETURNING (faster path)
-        static std::string sql_insert_single() {
+        static auto sql_insert_single() -> std::string {
             return "INSERT INTO Person (name, age, is_active, salary) VALUES (?, ?, ?, ?)";
         }
 
         // Build multi-row INSERT SQL for bulk operations
-        static std::string sql_insert_batch(size_t count) {
+        static auto sql_insert_batch(size_t count) -> std::string {
             std::string sql = "INSERT INTO Person (id, name, age, is_active, salary) VALUES ";
             for (size_t i = 0; i < count; i++) {
                 if (i > 0)
@@ -43,7 +43,7 @@ namespace storm::benchmark {
         }
 
         // Bind a range of models starting at parameter index `idx`
-        static void bind_rows(sqlite3_stmt* stmt, const Model* data, size_t count, int idx = 1) {
+        static auto bind_rows(sqlite3_stmt* stmt, const Model* data, size_t count, int idx = 1) -> void {
             for (size_t i = 0; i < count; i++) {
                 int local_idx = idx;
                 Base::bind_model_fields(stmt, data[i], local_idx);
@@ -56,20 +56,20 @@ namespace storm::benchmark {
         explicit InsertBenchmark(int batch_size = 1) : Base(batch_size) {}
 
         // Use unified print_info with compile-time operation name
-        void print_info() const {
+        auto print_info() const -> void {
             Base::template print_info_unified<OperationType::Insert>();
         }
 
         // Use unified execute with compile-time operation binding
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             return Base::template execute_unified<OperationType::Insert>(iterations);
         }
 
-        void print_info_no_return() const {
+        auto print_info_no_return() const -> void {
             std::cout << "Operation: INSERT (no return, single row)\n";
         }
 
-        int execute_no_return(int iterations) {
+        auto execute_no_return(int iterations) -> int {
             int total = 0;
             for (int i = 0; i < iterations; i++) {
                 Base::qs().template insert<storm::orm::statements::ReturnId::No>(Base::data()[i]).execute();
@@ -79,7 +79,7 @@ namespace storm::benchmark {
         }
 
         // Helper: Prepare statements for unique chunk sizes (reduces nesting)
-        void prepare_chunk_statements(sqlite3* db, std::unordered_map<size_t, sqlite3_stmt*>& stmts) {
+        auto prepare_chunk_statements(sqlite3* db, std::unordered_map<size_t, sqlite3_stmt*>& stmts) -> void {
             for (size_t off = 0; off < Base::data().size(); off += Base::max_bulk) {
                 size_t chunk = std::min(Base::max_bulk, Base::data().size() - off);
                 if (stmts.contains(chunk))
@@ -92,7 +92,7 @@ namespace storm::benchmark {
         }
 
         // Helper: Execute one batch iteration (reduces nesting)
-        int execute_batch_iteration(sqlite3* db, const std::unordered_map<size_t, sqlite3_stmt*>& stmts) {
+        auto execute_batch_iteration(sqlite3* db, const std::unordered_map<size_t, sqlite3_stmt*>& stmts) -> int {
             int total = 0;
             for (size_t off = 0; off < Base::data().size(); off += Base::max_bulk) {
                 size_t chunk = std::min(Base::max_bulk, Base::data().size() - off);
@@ -106,7 +106,7 @@ namespace storm::benchmark {
             return total;
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<Model>();
             if (!db)
                 return 0;
@@ -166,7 +166,7 @@ namespace storm::benchmark {
         }
 
         // Raw SQLite INSERT without RETURNING — fair comparison for insert_no_return
-        int execute_raw_no_return(int iterations) {
+        auto execute_raw_no_return(int iterations) -> int {
             sqlite3* db = get_db<Model>();
             if (!db)
                 return 0;
@@ -198,15 +198,15 @@ namespace storm::benchmark {
       public:
         explicit InsertNoReturnBenchmark(int batch_size = 1) : Base(batch_size) {}
 
-        void print_info() const {
+        auto print_info() const -> void {
             Base::print_info_no_return();
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             return Base::execute_no_return(iterations);
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             return Base::execute_raw_no_return(iterations);
         }
     };
