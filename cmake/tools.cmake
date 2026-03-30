@@ -1,0 +1,6 @@
+if(ENABLE_TOOLS)
+  message(STATUS "Tools are enabled.")
+  add_subdirectory(tests/tools)
+else()
+  message(STATUS "Tools are disabled.")
+endif()

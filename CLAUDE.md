@@ -37,14 +37,14 @@ Storm is a C++26 ORM library for SQLite using compile-time reflection to automat
 
 ### CMake Presets
 
-| Preset | Build type | Tests | Coverage | Bench | Sanitizer | Use for |
-|---|---|---|---|---|---|---|
-| `ninja-debug` | Debug | ✓ | ✓ | — | — | Development, coverage |
-| `ninja-release` | Release | ✓ | — | ✓ | — | CI, benchmarking |
-| `ninja-prod` | Release | — | — | — | — | Production artifact |
-| `ninja-asan-ubsan` | Debug | ✓ | — | — | ASAN+UBSAN | Memory safety + undefined behavior |
-| `ninja-tsan` | Debug | ✓ | — | — | TSAN | Data race detection |
-| `ninja-msan` | Debug | ✓ | — | — | MSAN | Uninitialized memory reads |
+| Preset | Build type | Tests | Coverage | Bench | Sanitizer | Tools | Use for |
+|---|---|---|---|---|---|---|---|
+| `ninja-debug` | Debug | ✓ | ✓ | — | — | ✓ | Development, coverage |
+| `ninja-release` | Release | ✓ | — | ✓ | — | ✓ | CI, benchmarking |
+| `ninja-prod` | Release | — | — | — | — | — | Production artifact |
+| `ninja-asan-ubsan` | Debug | ✓ | — | — | ASAN+UBSAN | — | Memory safety + undefined behavior |
+| `ninja-tsan` | Debug | ✓ | — | — | TSAN | — | Data race detection |
+| `ninja-msan` | Debug | ✓ | — | — | MSAN | — | Uninitialized memory reads |
 
 ### Build & Test
 ```bash
@@ -71,7 +71,8 @@ cmake/
 ├── tests.cmake           # GoogleTest via CPM + add_subdirectory(tests)
 ├── bench.cmake           # add_subdirectory(benchmarks)
 ├── sanitizers.cmake      # USE_SANITIZER option + cmake-scripts integration
-└── format.cmake          # clang-format/cmake-format targets (see docs/development/FORMATTING.md)
+├── format.cmake          # clang-format/cmake-format targets (see docs/development/FORMATTING.md)
+└── tools.cmake           # ENABLE_TOOLS option + add_subdirectory(tools) (storm-schema CLI)
 ```
 
 ### GitHub Issue Workflow
@@ -391,4 +392,5 @@ Every new feature or modification MUST include thorough tests covering these cat
 - [docs/development/](docs/development/) - Getting started, common tasks, performance
 - [docs/benchmarks/](docs/benchmarks/) - Performance results
 - [docs/reference/](docs/reference/) - Field types, compiler issues
+- [docs/development/MIGRATIONS.md](docs/development/MIGRATIONS.md) - Atlas schema migrations
 - [benchmarks/README.md](benchmarks/README.md) - Benchmark system guide

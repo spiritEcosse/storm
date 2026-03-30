@@ -22,7 +22,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "ENABLE_TESTS": "ON",
-        "ENABLE_COVERAGE": "ON"
+        "ENABLE_COVERAGE": "ON",
+        "ENABLE_TOOLS": "ON"
       }
     },
     {
@@ -34,7 +35,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "ENABLE_TESTS": "ON",
-        "ENABLE_BENCH": "ON"
+        "ENABLE_BENCH": "ON",
+        "ENABLE_TOOLS": "ON"
       }
     },
     {
