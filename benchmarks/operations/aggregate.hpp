@@ -42,7 +42,7 @@ namespace storm::benchmark {
     enum class AggregateOp { Count, CountField, CountDistinct, Sum, Avg, Min, Max };
 
     // Get aggregate operation name for display
-    constexpr std::string_view aggregate_op_name(AggregateOp op) {
+    constexpr auto aggregate_op_name(AggregateOp op) -> std::string_view {
         using enum AggregateOp;
         switch (op) {
         case Count:
@@ -125,7 +125,7 @@ namespace storm::benchmark {
         // ====================================================================
         // print_info - Uses shared footer from base class
         // ====================================================================
-        void print_info() const {
+        auto print_info() const -> void {
             std::cout << "Operation: " << aggregate_op_name(Op);
 
             if constexpr (Op != AggregateOp::Count) {
@@ -162,12 +162,12 @@ namespace storm::benchmark {
 
       public:
         // For compatibility with execute_with_filters
-        int execute_iteration() {
+        auto execute_iteration() -> int {
             auto result = create_aggregate_stmt().select().execute();
             return (result.has_value() && result.value() >= 0) ? 1 : 0;
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             // Create aggregate statement ONCE (like raw prepares statement once)
             // then call execute() in the loop - matches fair benchmark pattern
             Base::apply_query_filters();
@@ -186,7 +186,7 @@ namespace storm::benchmark {
         // execute_raw - Raw SQLite aggregate query
         // ====================================================================
       private:
-        static std::string build_aggregate_sql() {
+        static auto build_aggregate_sql() -> std::string {
             std::string sql = "SELECT ";
 
             // Build aggregate function
@@ -250,7 +250,7 @@ namespace storm::benchmark {
         }
 
       public:
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<Model>();
             if (!db)
                 return 0;

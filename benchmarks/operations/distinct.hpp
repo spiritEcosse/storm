@@ -93,7 +93,7 @@ namespace storm::benchmark {
         // ====================================================================
         // print_info - Uses shared footer from base class
         // ====================================================================
-        void print_info() const {
+        auto print_info() const -> void {
             constexpr std::string_view distinct_field = std::meta::identifier_of(DistinctFieldInfo);
             std::cout << "Operation: SELECT DISTINCT " << distinct_field;
             Base::print_info_footer();
@@ -102,12 +102,12 @@ namespace storm::benchmark {
         // ====================================================================
         // execute - Storm ORM DISTINCT using base class helpers
         // ====================================================================
-        int execute_iteration() {
+        auto execute_iteration() -> int {
             auto results = Base::qs().template distinct<DistinctFieldInfo>().select();
             return results.value().size();
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             return Base::execute_with_filters(iterations);
         }
 
@@ -116,7 +116,7 @@ namespace storm::benchmark {
         // ====================================================================
       private:
         // Build DISTINCT SQL string based on enabled features
-        static std::string build_distinct_sql() {
+        static auto build_distinct_sql() -> std::string {
             constexpr std::string_view distinct_field = std::meta::identifier_of(DistinctFieldInfo);
             std::string                sql;
 
@@ -156,7 +156,7 @@ namespace storm::benchmark {
         }
 
       public:
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<BaseModel>();
             if (db == nullptr)
                 return 0;
@@ -269,23 +269,23 @@ namespace storm::benchmark {
             requires(!WhereCfg::enabled)
             : Base(dataset_size) {}
 
-        void print_info() const {
+        auto print_info() const -> void {
             constexpr std::string_view field1 = std::meta::identifier_of(DistinctFieldInfo1);
             constexpr std::string_view field2 = std::meta::identifier_of(DistinctFieldInfo2);
             std::cout << "Operation: SELECT DISTINCT " << field1 << ", " << field2;
             Base::print_info_footer();
         }
 
-        int execute_iteration() {
+        auto execute_iteration() -> int {
             auto results = Base::qs().template distinct<DistinctFieldInfo1, DistinctFieldInfo2>().select();
             return results.value().size();
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             return Base::execute_with_filters(iterations);
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<BaseModel>();
             if (db == nullptr)
                 return 0;
@@ -325,7 +325,8 @@ namespace storm::benchmark {
         }
 
       private:
-        template <typename T> __attribute__((always_inline)) static T extract_column(sqlite3_stmt* stmt, int col) {
+        template <typename T>
+        __attribute__((always_inline)) static auto extract_column(sqlite3_stmt* stmt, int col) -> T {
             if constexpr (std::is_same_v<T, std::string>) {
                 auto text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, col));
                 return text != nullptr ? T(text) : T{};
@@ -380,7 +381,7 @@ namespace storm::benchmark {
             requires(!WhereCfg::enabled)
             : Base(dataset_size) {}
 
-        void print_info() const {
+        auto print_info() const -> void {
             constexpr std::string_view field1 = std::meta::identifier_of(DistinctFieldInfo1);
             constexpr std::string_view field2 = std::meta::identifier_of(DistinctFieldInfo2);
             constexpr std::string_view field3 = std::meta::identifier_of(DistinctFieldInfo3);
@@ -388,17 +389,17 @@ namespace storm::benchmark {
             Base::print_info_footer();
         }
 
-        int execute_iteration() {
+        auto execute_iteration() -> int {
             auto results =
                     Base::qs().template distinct<DistinctFieldInfo1, DistinctFieldInfo2, DistinctFieldInfo3>().select();
             return results.value().size();
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             return Base::execute_with_filters(iterations);
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<BaseModel>();
             if (db == nullptr)
                 return 0;
@@ -443,7 +444,8 @@ namespace storm::benchmark {
         }
 
       private:
-        template <typename T> __attribute__((always_inline)) static T extract_column(sqlite3_stmt* stmt, int col) {
+        template <typename T>
+        __attribute__((always_inline)) static auto extract_column(sqlite3_stmt* stmt, int col) -> T {
             if constexpr (std::is_same_v<T, std::string>) {
                 auto text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, col));
                 return text != nullptr ? T(text) : T{};
@@ -494,25 +496,25 @@ namespace storm::benchmark {
             requires(!WhereCfg::enabled)
             : Base(dataset_size) {}
 
-        void print_info() const {
+        auto print_info() const -> void {
             constexpr std::string_view distinct_field = std::meta::identifier_of(DistinctFieldInfo);
             std::cout << "Operation: SELECT DISTINCT " << distinct_field;
             // ORDER BY is printed by base class print_info_footer()
             Base::print_info_footer();
         }
 
-        int execute_iteration() {
+        auto execute_iteration() -> int {
             // NOTE: Storm ORM handles ORDER BY via the base class apply_query_filters()
             // which was already called, so just call distinct().select()
             auto results = Base::qs().template distinct<DistinctFieldInfo>().select();
             return results.value().size();
         }
 
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             return Base::execute_with_filters(iterations);
         }
 
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<BaseModel>();
             if (db == nullptr)
                 return 0;

@@ -14,14 +14,14 @@
 namespace storm::benchmark {
 
     // Helper: Skip whitespace
-    constexpr void skip_whitespace(std::string_view json, size_t& pos) {
+    constexpr auto skip_whitespace(std::string_view json, size_t& pos) -> void {
         while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\n' || json[pos] == '\r' || json[pos] == '\t')) {
             pos++;
         }
     }
 
     // Helper: Skip specific character with whitespace
-    constexpr void skip_char(std::string_view json, size_t& pos, char c) {
+    constexpr auto skip_char(std::string_view json, size_t& pos, char c) -> void {
         skip_whitespace(json, pos);
         if (pos < json.size() && json[pos] == c) {
             pos++;
@@ -29,7 +29,7 @@ namespace storm::benchmark {
     }
 
     // Parse int
-    constexpr int parse_int(std::string_view json, size_t& pos) {
+    constexpr auto parse_int(std::string_view json, size_t& pos) -> int {
         skip_whitespace(json, pos);
 
         int  result   = 0;
@@ -49,7 +49,7 @@ namespace storm::benchmark {
     }
 
     // Parse double
-    constexpr double parse_double(std::string_view json, size_t& pos) {
+    constexpr auto parse_double(std::string_view json, size_t& pos) -> double {
         skip_whitespace(json, pos);
 
         double result   = 0.0;
@@ -81,7 +81,7 @@ namespace storm::benchmark {
     }
 
     // Parse bool
-    constexpr bool parse_bool(std::string_view json, size_t& pos) {
+    constexpr auto parse_bool(std::string_view json, size_t& pos) -> bool {
         skip_whitespace(json, pos);
 
         if (pos + 4 <= json.size() && json.substr(pos, 4) == "true") {
@@ -97,7 +97,7 @@ namespace storm::benchmark {
     }
 
     // Parse string into ConstexprString
-    template <size_t N> constexpr ConstexprString<N> parse_string(std::string_view json, size_t& pos) {
+    template <size_t N> constexpr auto parse_string(std::string_view json, size_t& pos) -> ConstexprString<N> {
         skip_whitespace(json, pos);
 
         ConstexprString<N> result;
@@ -123,7 +123,7 @@ namespace storm::benchmark {
     }
 
     // Skip a JSON value (string, number, bool, null)
-    constexpr void skip_value(std::string_view json, size_t& pos) {
+    constexpr auto skip_value(std::string_view json, size_t& pos) -> void {
         skip_whitespace(json, pos);
 
         if (pos >= json.size())
@@ -150,12 +150,12 @@ namespace storm::benchmark {
     }
 
     // Parse key name from JSON (returns the key string)
-    constexpr ConstexprString<64> parse_key(std::string_view json, size_t& pos) {
+    constexpr auto parse_key(std::string_view json, size_t& pos) -> ConstexprString<64> {
         return parse_string<64>(json, pos);
     }
 
     // Helper: Parse JSON array of integers into WhereClause (reduces nesting in main parser)
-    constexpr void parse_int_array_into_where(WhereClause& where, std::string_view json, size_t& pos) {
+    constexpr auto parse_int_array_into_where(WhereClause& where, std::string_view json, size_t& pos) -> void {
         skip_whitespace(json, pos);
         if (pos >= json.size() || json[pos] != '[') {
             return;
@@ -272,7 +272,7 @@ namespace storm::benchmark {
     }
 
     // Parse single benchmark test object from flat JSON
-    constexpr BenchmarkTest parse_test_object(std::string_view json, size_t& pos) {
+    constexpr auto parse_test_object(std::string_view json, size_t& pos) -> BenchmarkTest {
         BenchmarkTest test;
         skip_char(json, pos, '{');
 
@@ -299,7 +299,7 @@ namespace storm::benchmark {
     }
 
     // Helper: Skip to end of JSON object (reduces nesting depth)
-    constexpr void skip_json_object(std::string_view json, size_t& pos) {
+    constexpr auto skip_json_object(std::string_view json, size_t& pos) -> void {
         int brace_depth = 0;
         while (pos < json.size()) {
             if (json[pos] == '{')
@@ -316,7 +316,7 @@ namespace storm::benchmark {
     }
 
     // Count tests in JSON array (needed for std::array size)
-    constexpr size_t count_tests(std::string_view json) {
+    constexpr auto count_tests(std::string_view json) -> size_t {
         size_t count = 0;
         size_t pos   = 0;
 
@@ -344,7 +344,7 @@ namespace storm::benchmark {
     }
 
     // Parse entire JSON array
-    template <size_t N> constexpr std::array<BenchmarkTest, N> parse_tests(std::string_view json) {
+    template <size_t N> constexpr auto parse_tests(std::string_view json) -> std::array<BenchmarkTest, N> {
         std::array<BenchmarkTest, N> tests{};
 
         size_t pos = 0;

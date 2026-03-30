@@ -28,7 +28,7 @@ namespace storm::test {
 // Field dispatcher — resolves a field name string to its consteval meta::info
 // ============================================================================
 
-template <typename Model> consteval std::meta::info dispatch_field(std::string_view field_name) {
+template <typename Model> consteval auto dispatch_field(std::string_view field_name) -> std::meta::info {
     for (std::meta::info member :
          std::meta::nonstatic_data_members_of(^^Model, std::meta::access_context::unchecked())) {
         if (std::meta::identifier_of(member) == field_name) {

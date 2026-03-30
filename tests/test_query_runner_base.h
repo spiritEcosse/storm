@@ -41,7 +41,7 @@ template <typename Model, typename ConnType> class QueryRunnerBase {
 
     // NTTP twin of SelectQueryBenchmarkBase::build_where_clause()
     // Tc must have a WhereSpec-compatible `where` member.
-    template <const auto &Tc> void apply_where() {
+    template <const auto &Tc> auto apply_where() -> void {
         using storm::orm::where::field;
 
         if constexpr (Tc.where.op == "is_null") {
@@ -103,7 +103,7 @@ template <typename Model, typename ConnType> class QueryRunnerBase {
     }
 
     // Apply WHERE and JOIN filters (mutates qs_ in place)
-    template <const auto &Tc> void apply_where_and_join() {
+    template <const auto &Tc> auto apply_where_and_join() -> void {
         if constexpr (!Tc.join_name.empty()) {
             qs_.template join<&Model::sender>();
         }

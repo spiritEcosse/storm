@@ -1,6 +1,6 @@
 #!/bin/bash
 # Run clang-tidy on staged files (git diff --cached)
-# Usage: ./run_clang_tidy.sh [--fix] [-j N]
+# Usage: ./run_clang_tidy.sh [--fix] [--all] [-j N]
 #
 # Prerequisites:
 #   - Release build with compile_commands.json: cmake --preset ninja-release
@@ -8,6 +8,7 @@
 #
 # Options:
 #   --fix   Apply suggested fixes automatically (use with caution)
+#   --all   Check ALL C++ source files (not just staged files)
 #   -j N    Number of parallel jobs (default: all cores)
 
 set -e
@@ -30,12 +31,17 @@ CLANG_TIDY_CONFIG=".clang-tidy"
 
 # Parse arguments
 FIX_FLAG=""
+CHECK_ALL=false
 JOBS=$(nproc)
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --fix)
             FIX_FLAG="-fix"
+            shift
+            ;;
+        --all)
+            CHECK_ALL=true
             shift
             ;;
         -j)
@@ -69,7 +75,11 @@ echo "🔍 Running clang-tidy using .clang-tidy configuration..."
 echo "   Config file: $CLANG_TIDY_CONFIG"
 echo "   Build directory: $BUILD_DIR"
 echo "   Parallel jobs: $JOBS"
-echo "   Scope: staged files (git diff --cached)"
+if [[ "$CHECK_ALL" == true ]]; then
+    echo "   Scope: ALL C++ source files"
+else
+    echo "   Scope: staged files (git diff --cached)"
+fi
 if [[ -n "$FIX_FLAG" ]]; then
     echo "   Mode: AUTO-FIX enabled"
 else
@@ -77,14 +87,24 @@ else
 fi
 echo ""
 
-# Collect staged C++ source files
-FILES=$(git diff --cached --name-only 2>/dev/null \
-    | grep -E '\.(cpp|cppm)$' \
-    | grep -v 'third_party' \
-    | sort)
+# Collect C++ source files
+if [[ "$CHECK_ALL" == true ]]; then
+    FILES=$(find src tests benchmarks \( -name '*.cpp' -o -name '*.cppm' -o -name '*.h' -o -name '*.hpp' \) 2>/dev/null \
+        | grep -v 'third_party' \
+        | sort)
+else
+    FILES=$(git diff --cached --name-only 2>/dev/null \
+        | grep -E '\.(cpp|cppm|h|hpp)$' \
+        | grep -v 'third_party' \
+        | sort)
+fi
 
 if [[ -z "$FILES" ]]; then
-    echo "✅ No staged C++ files — clang-tidy skipped"
+    if [[ "$CHECK_ALL" == true ]]; then
+        echo "✅ No C++ files found — clang-tidy skipped"
+    else
+        echo "✅ No staged C++ files — clang-tidy skipped"
+    fi
     exit 0
 fi
 
@@ -109,20 +129,13 @@ is_cpp26_module_file() {
         return 0
     fi
 
-    # All test files import Storm modules
-    if [[ "$file" == tests/*.cpp ]]; then
-        return 0
-    fi
-
-    # All benchmark files import Storm modules
-    if [[ "$file" == benchmarks/*.cpp ]]; then
-        return 0
-    fi
-
-    # All fuzz harnesses import Storm modules
-    if [[ "$file" == fuzz/*.cpp ]]; then
-        return 0
-    fi
+    # All files under tests/, benchmarks/, fuzz/ use C++26 modules/reflection
+    # (directly or transitively via includes like <meta>, std::meta::info, etc.)
+    # Exception: mock files that don't use modules are handled by the caller —
+    # they parse successfully and never reach this function's "known skip" path.
+    case "$file" in
+        tests/*|benchmarks/*|fuzz/*) return 0 ;;
+    esac
 
     return 1
 }

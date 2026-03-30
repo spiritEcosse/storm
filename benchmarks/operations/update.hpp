@@ -29,11 +29,11 @@ namespace storm::benchmark {
         explicit UpdateBenchmark(int batch_size = 1) : Base(batch_size) {}
 
         // Use unified print_info with compile-time operation name
-        void print_info() const {
+        auto print_info() const -> void {
             Base::template print_info_unified<OperationType::UpdatePK>();
         }
 
-        void prepare(int iterations) {
+        auto prepare(int iterations) -> void {
             // 1. Clear table, generate data, insert to get IDs
             Base::prepare_with_insert(iterations);
 
@@ -47,13 +47,13 @@ namespace storm::benchmark {
         }
 
         // Use unified execute with compile-time operation binding
-        int execute(int iterations) {
+        auto execute(int iterations) -> int {
             return Base::template execute_unified<OperationType::UpdatePK>(iterations);
         }
 
       private:
         // Helper: Bind model fields for UPDATE (name, age, is_active, salary, id)
-        static void bind_update_fields(sqlite3_stmt* stmt, const Model& p) {
+        static auto bind_update_fields(sqlite3_stmt* stmt, const Model& p) -> void {
             int idx = 1;
             sqlite3_bind_text(stmt, idx++, p.name.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_int(stmt, idx++, p.age);
@@ -63,7 +63,7 @@ namespace storm::benchmark {
         }
 
         // Helper: Execute single-row updates
-        int execute_single_row(sqlite3_stmt* stmt, int iterations) {
+        auto execute_single_row(sqlite3_stmt* stmt, int iterations) -> int {
             int total = 0;
             for (int i = 0; i < iterations; i++) {
                 bind_update_fields(stmt, Base::data()[i]);
@@ -76,7 +76,7 @@ namespace storm::benchmark {
         }
 
         // Helper: Execute batch updates with transaction
-        int execute_batch(sqlite3_stmt* stmt, int iterations) {
+        auto execute_batch(sqlite3_stmt* stmt, int iterations) -> int {
             int total = 0;
             for (int iter = 0; iter < iterations; iter++) {
                 sqlite3_exec(sqlite3_db_handle(stmt), "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
@@ -93,7 +93,7 @@ namespace storm::benchmark {
         }
 
       public:
-        int execute_raw(int iterations) {
+        auto execute_raw(int iterations) -> int {
             sqlite3* db = get_db<Model>();
             if (!db)
                 return 0;

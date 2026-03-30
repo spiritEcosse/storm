@@ -76,24 +76,24 @@ namespace storm::benchmark {
             bool                                        enabled_ = false;
 
           public:
-            static TraceContext& instance() {
+            static auto instance() -> TraceContext& {
                 static thread_local TraceContext ctx;
                 return ctx;
             }
 
-            void set_enabled(bool enabled) {
+            auto set_enabled(bool enabled) -> void {
                 enabled_ = enabled;
             }
-            bool is_enabled() const {
+            auto is_enabled() const -> bool {
                 return enabled_;
             }
 
-            void reset() {
+            auto reset() -> void {
                 entries_.clear();
                 order_.clear();
             }
 
-            void start(const char* name) {
+            auto start(const char* name) -> void {
                 if (!enabled_)
                     return;
                 auto& entry = entries_[name];
@@ -104,7 +104,7 @@ namespace storm::benchmark {
                 entry.start_time = now_ns();
             }
 
-            void end(const char* name) {
+            auto end(const char* name) -> void {
                 if (!enabled_)
                     return;
                 auto it = entries_.find(name);
@@ -115,7 +115,7 @@ namespace storm::benchmark {
                 }
             }
 
-            void report(int iterations = 1) {
+            auto report(int iterations = 1) -> void {
                 if (entries_.empty())
                     return;
 
@@ -154,7 +154,7 @@ namespace storm::benchmark {
             }
 
           private:
-            static uint64_t now_ns() {
+            static auto now_ns() -> uint64_t {
                 return std::chrono::duration_cast<std::chrono::nanoseconds>(
                                std::chrono::high_resolution_clock::now().time_since_epoch()
                 )

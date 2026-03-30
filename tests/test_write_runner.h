@@ -18,7 +18,7 @@ namespace storm::test {
 // ---------------------------------------------------------------------------
 template <typename Model, typename ConnType> class InsertRunner : public QueryRunnerBase<Model, ConnType> {
   public:
-    template <const auto &Tc> void run() {
+    template <const auto &Tc> auto run() -> void {
         if constexpr (Tc.query_type == "insert_one") {
             auto r = this->qs_.insert(make_record<Model>(0)).execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
@@ -45,7 +45,7 @@ template <typename Model, typename ConnType> class InsertRunner : public QueryRu
 // ---------------------------------------------------------------------------
 template <typename Model, typename ConnType> class UpdateRunner : public QueryRunnerBase<Model, ConnType> {
   public:
-    template <const auto &Tc> void run() {
+    template <const auto &Tc> auto run() -> void {
         // Seed initial dataset
         std::vector<Model> initial;
         initial.reserve(static_cast<size_t>(Tc.dataset_size));
@@ -88,7 +88,7 @@ template <typename Model, typename ConnType> class UpdateRunner : public QueryRu
 // ---------------------------------------------------------------------------
 template <typename Model, typename ConnType> class RemoveRunner : public QueryRunnerBase<Model, ConnType> {
   public:
-    template <const auto &Tc> void run() {
+    template <const auto &Tc> auto run() -> void {
         if constexpr (Tc.query_type == "remove_all") {
             // Seed dataset_size records, then remove all
             std::vector<Model> initial;

@@ -29,7 +29,7 @@ template <size_t I, typename Fixture, typename ConnType> class YamlTestInstance 
 // The factory returns Fixture* (not YamlTestInstance*) so GTest sees a single
 // fixture type for the whole suite -- avoids "different fixture class" errors.
 template <const auto &Tests, typename Fixture, typename ConnType>
-void register_for_backend(const char *suite, const char *backend) {
+auto register_for_backend(const char *suite, const char *backend) -> void {
     static const std::string suite_name = std::string(suite) + "/" + backend;
     [suite_ptr = suite_name.c_str()]<size_t... I>(std::index_sequence<I...>) {
         (..., ::testing::RegisterTest(
@@ -44,7 +44,8 @@ void register_for_backend(const char *suite, const char *backend) {
 
 // Convenience: register for both SQLite and PostgreSQL.
 // Returns true so callers can assign to [[maybe_unused]] const bool for static init.
-template <const auto &Tests, template <typename> class FixtureTpl> bool register_both_backends(const char *suite) {
+template <const auto &Tests, template <typename> class FixtureTpl>
+auto register_both_backends(const char *suite) -> bool {
     using sqlite_t = storm::db::sqlite::Connection;
     using pg_t = storm::db::postgresql::Connection;
     register_for_backend<Tests, FixtureTpl<sqlite_t>, sqlite_t>(suite, "SQLite");

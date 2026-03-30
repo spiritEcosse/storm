@@ -24,7 +24,7 @@ namespace storm::benchmark {
     // ========================================================================
     // get_db: Helper to get raw sqlite3* from default connection
     // ========================================================================
-    template <typename Model> sqlite3* get_db() {
+    template <typename Model> auto get_db() -> sqlite3* {
         auto& conn = storm::QuerySet<Model>::get_default_connection();
         return conn->get();
     }
@@ -38,7 +38,7 @@ namespace storm::benchmark {
 
     // INSERT operation specialization
     template <> struct OperationDispatcher<OperationType::Insert> {
-        static constexpr std::string_view name() {
+        static constexpr auto name() -> std::string_view {
             return "INSERT";
         }
 
@@ -49,7 +49,7 @@ namespace storm::benchmark {
 
     // UPDATE operation specialization
     template <> struct OperationDispatcher<OperationType::UpdatePK> {
-        static constexpr std::string_view name() {
+        static constexpr auto name() -> std::string_view {
             return "UPDATE by PK";
         }
 
@@ -60,7 +60,7 @@ namespace storm::benchmark {
 
     // DELETE operation specialization (for future use)
     template <> struct OperationDispatcher<OperationType::Delete> {
-        static constexpr std::string_view name() {
+        static constexpr auto name() -> std::string_view {
             return "DELETE";
         }
 
@@ -71,7 +71,7 @@ namespace storm::benchmark {
 
     // SELECT operation specialization
     template <> struct OperationDispatcher<OperationType::Select> {
-        static constexpr std::string_view name() {
+        static constexpr auto name() -> std::string_view {
             return "SELECT WHERE";
         }
     };
@@ -86,16 +86,16 @@ namespace storm::benchmark {
 
       protected:
         // Accessor methods for derived classes
-        QuerySet<Model>& qs() {
+        auto qs() -> QuerySet<Model>& {
             return qs_;
         }
-        const QuerySet<Model>& qs() const {
+        auto qs() const -> const QuerySet<Model>& {
             return qs_;
         }
-        std::vector<Model>& data() {
+        auto data() -> std::vector<Model>& {
             return data_;
         }
-        const std::vector<Model>& data() const {
+        auto data() const -> const std::vector<Model>& {
             return data_;
         }
         auto batch_size() const -> int {
@@ -115,13 +115,13 @@ namespace storm::benchmark {
 
         // Default model creation - derived classes can override via static method hiding
         // index parameter allows generating varied data (useful for SELECT WHERE benchmarks)
-        static Model create_model([[maybe_unused]] int index = 0) {
+        static auto create_model([[maybe_unused]] int index = 0) -> Model {
             return Model{.id = 0, .name = "BenchmarkPerson", .age = 30, .is_active = true, .salary = 50000.0};
         }
 
         // Bind model fields to statement (name, age, is_active, salary)
         // idx is 1-based SQLite parameter index, incremented after each bind
-        static void bind_model_fields(sqlite3_stmt* stmt, const Model& p, int& idx) {
+        static auto bind_model_fields(sqlite3_stmt* stmt, const Model& p, int& idx) -> void {
             sqlite3_bind_text(stmt, idx++, p.name.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_int(stmt, idx++, p.age);
             sqlite3_bind_int(stmt, idx++, p.is_active ? 1 : 0);
@@ -129,7 +129,7 @@ namespace storm::benchmark {
         }
 
         // Execute statement, reset, return success count
-        static int step_and_reset(sqlite3_stmt* stmt, [[maybe_unused]] sqlite3* db, int rows) {
+        static auto step_and_reset(sqlite3_stmt* stmt, [[maybe_unused]] sqlite3* db, int rows) -> int {
             if (sqlite3_step(stmt) == SQLITE_DONE) {
                 sqlite3_reset(stmt);
                 return rows;
@@ -191,7 +191,7 @@ namespace storm::benchmark {
         // ====================================================================
         // Unified print_info() with compile-time operation name
         // ====================================================================
-        template <OperationType Op> void print_info_unified() const {
+        template <OperationType Op> auto print_info_unified() const -> void {
             constexpr std::string_view op_name = OperationDispatcher<Op>::name();
             if (batch_size_ == 1)
                 std::cout << "Operation: " << op_name << " (single row)\n";
@@ -203,7 +203,7 @@ namespace storm::benchmark {
         // Unified execute() with compile-time operation dispatch
         // Runtime batch size check (same as Storm ORM for fair comparison)
         // ====================================================================
-        template <OperationType Op> int execute_unified(int iterations) {
+        template <OperationType Op> auto execute_unified(int iterations) -> int {
             int total = 0;
             if (batch_size_ == 1) {
                 for (int i = 0; i < iterations; i++) {

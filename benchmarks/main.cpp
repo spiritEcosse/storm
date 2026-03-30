@@ -50,7 +50,7 @@ namespace {
         bool        thorough_mode = false; // 1.5x iterations for regression testing
     };
 
-    void print_help(const char* prog) {
+    auto print_help(const char* prog) -> void {
         std::cout << "Storm ORM Benchmark System\n\n";
         std::cout << "Usage: " << prog << " [options]\n\n";
         std::cout << "Options:\n";

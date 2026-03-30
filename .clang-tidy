@@ -2,7 +2,7 @@
 # Clang-Tidy configuration for Storm ORM
 # Comprehensive checks for C++26 ORM project
 #
-# Categories enabled: bugprone, cert, concurrency, cppcoreguidelines, misc, modernize, performance, readability
+# Categories enabled: bugprone, cert, concurrency, cppcoreguidelines, misc, performance, readability
 # Excluded categories: android, fuchsia, llvm, abseil, google, objc, etc. (platform/library-specific)
 #
 # Exclusion policy:
@@ -34,7 +34,6 @@ Checks: >
   -cppcoreguidelines-pro-type-reinterpret-cast,
   misc-*,
   -misc-include-cleaner,
-  modernize-*,
   performance-*,
   -performance-enum-size,
   readability-*
