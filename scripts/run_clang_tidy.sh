@@ -135,9 +135,8 @@ is_cpp26_module_file() {
     # they parse successfully and never reach this function's "known skip" path.
     case "$file" in
         tests/*|benchmarks/*|fuzz/*) return 0 ;;
+        *) return 1 ;;
     esac
-
-    return 1
 }
 export -f is_cpp26_module_file
 
