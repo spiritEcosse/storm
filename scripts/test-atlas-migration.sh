@@ -24,13 +24,17 @@ pass=0
 fail=0
 
 ok() {
-    echo -e "  ${GREEN}PASS${NC} $1"
+    local msg="$1"
+    echo -e "  ${GREEN}PASS${NC} ${msg}"
     pass=$((pass + 1))
+    return 0
 }
 
 ko() {
-    echo -e "  ${RED}FAIL${NC} $1"
+    local msg="$1"
+    echo -e "  ${RED}FAIL${NC} ${msg}"
     fail=$((fail + 1))
+    return 0
 }
 
 # ── Prerequisites ────────────────────────────────────────────────────────────
