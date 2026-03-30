@@ -67,6 +67,7 @@ include(cmake/cmake-scripts.cmake)
 option(ENABLE_TESTS "Enable testing support" OFF)
 option(ENABLE_BENCH "Enable benchmarking with sqlite_orm" OFF)
 option(ENABLE_COVERAGE "Enable code coverage (requires LLVM tools)" OFF)
+option(ENABLE_TOOLS "Build CLI tools (storm-schema, etc.)" OFF)
 
 # coverage flags must be set before test targets are compiled
 include(cmake/coverage.cmake)
@@ -77,6 +78,7 @@ include(cmake/bench.cmake)
 include(cmake/sanitizers.cmake)
 include(cmake/fuzz.cmake)
 include(cmake/format.cmake)
+include(cmake/tools.cmake)
 
 # ── Build summary ─────────────────────────────────────────────────────────────
 
@@ -93,4 +95,5 @@ message(STATUS "Benchmarks: ${ENABLE_BENCH}")
 message(STATUS "Coverage: ${ENABLE_COVERAGE}")
 message(STATUS "Sanitizer: ${USE_SANITIZER}")
 message(STATUS "Fuzzing: ${ENABLE_FUZZING}")
+message(STATUS "Tools: ${ENABLE_TOOLS}")
 message(STATUS "===================================")

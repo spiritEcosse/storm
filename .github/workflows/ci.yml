@@ -91,6 +91,12 @@ jobs:
           STORM_PG_CONNSTR: "host=postgres port=5432 dbname=storm_db user=storm_db password=storm_db"
         run: ctest --test-dir build/${{ matrix.build_dir }} --output-on-failure --no-tests=error
 
+      - name: Atlas integration test
+        if: matrix.preset == 'ninja-debug' && matrix.postgres == 17
+        run: |
+          curl -sSf https://atlasgo.sh | sh
+          ./scripts/test-atlas-migration.sh
+
   benchmark:
     name: "benchmark smoke test"
     runs-on: ubuntu-24.04
