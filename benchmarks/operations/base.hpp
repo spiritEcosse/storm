@@ -11,13 +11,12 @@
  * - Unified execute() with compile-time operation dispatch
  */
 
-#include <sqlite3.h>
+#include "../raw_helpers.hpp"
+#include <format>
 #include <plf_hive/plf_hive.h>
 #include <iostream>
 #include <string_view>
 #include <vector>
-
-import storm;
 
 namespace storm::benchmark {
 
@@ -78,7 +77,8 @@ namespace storm::benchmark {
 
     // CRTP base class for data-driven benchmarks (Insert, UpdateByPK)
     // BatchSize is now a runtime parameter for fair comparison with Storm ORM
-    template <typename Derived, typename Model, size_t FieldsPerRow = 4> class DataBenchmarkBase {
+    template <typename Derived, typename Model, size_t FieldsPerRow = non_pk_field_count<Model>()>
+    class DataBenchmarkBase {
       private:
         QuerySet<Model>    qs_;
         std::vector<Model> data_;
@@ -115,17 +115,13 @@ namespace storm::benchmark {
 
         // Default model creation - derived classes can override via static method hiding
         // index parameter allows generating varied data (useful for SELECT WHERE benchmarks)
-        static auto create_model([[maybe_unused]] int index = 0) -> Model {
-            return Model{.id = 0, .name = "BenchmarkPerson", .age = 30, .is_active = true, .salary = 50000.0};
-        }
-
-        // Bind model fields to statement (name, age, is_active, salary)
-        // idx is 1-based SQLite parameter index, incremented after each bind
-        static auto bind_model_fields(sqlite3_stmt* stmt, const Model& p, int& idx) -> void {
-            sqlite3_bind_text(stmt, idx++, p.name.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_int(stmt, idx++, p.age);
-            sqlite3_bind_int(stmt, idx++, p.is_active ? 1 : 0);
-            sqlite3_bind_double(stmt, idx++, p.salary);
+        static auto create_model(int index = 0) -> Model {
+            return Model{
+                    .name      = std::format("Person{}", index),
+                    .age       = 20 + (index % 50),
+                    .salary    = 30000.0 + (index * 1000.0),
+                    .is_active = (index % 2 == 0)
+            };
         }
 
         // Execute statement, reset, return success count
@@ -157,7 +153,8 @@ namespace storm::benchmark {
         auto prepare_with_insert(int iterations) -> void {
             // 1. Clear table using raw SQLite
             if (sqlite3* db = get_db<Model>()) {
-                sqlite3_exec(db, "DELETE FROM Person", nullptr, nullptr, nullptr);
+                auto delete_sql = std::format("DELETE FROM {}", std::meta::identifier_of(^^Model));
+                sqlite3_exec(db, delete_sql.c_str(), nullptr, nullptr, nullptr);
             }
 
             // 2. Generate test data

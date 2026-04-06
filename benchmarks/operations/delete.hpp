@@ -64,19 +64,13 @@ namespace storm::benchmark {
         }
 
       private:
-        // Build DELETE SQL with IN clause for bulk operations
+        // SQL from ORM — single source of truth
         static auto sql_delete_batch(size_t count) -> std::string {
             if (count == 1) {
-                return "DELETE FROM Person WHERE id = ?";
+                return storm::QuerySet<Model>().remove(Model{}).sql();
             }
-            std::string sql = "DELETE FROM Person WHERE id IN (";
-            for (size_t i = 0; i < count; i++) {
-                if (i > 0)
-                    sql += ",";
-                sql += "?";
-            }
-            sql += ")";
-            return sql;
+            std::vector<Model> batch(count);
+            return storm::QuerySet<Model>().remove(batch).sql();
         }
 
         // Bind IDs for IN clause

@@ -4,51 +4,52 @@
  * INSERT Benchmark
  *
  * Tests INSERT performance for single and batch operations.
- * Inherits from DataBenchmarkBase with 4 fields (id is auto-increment).
+ * Inherits from DataBenchmarkBase.
  *
  * FAIR COMPARISON: Both Storm ORM and raw SQLite now use RUNTIME checks
  * for batch size decisions. No compile-time advantages for raw SQLite.
+ *
+ * Note: Person has a UNIQUE constraint on name, so the table must be
+ * cleared before each iteration to avoid constraint violations.
  */
 
 #include "base.hpp"
-#include <sqlite3.h>
 #include <algorithm>
 #include <unordered_map>
 #include <iostream>
 
 namespace storm::benchmark {
 
-    template <typename Model> class InsertBenchmark : public DataBenchmarkBase<InsertBenchmark<Model>, Model, 4> {
-        using Base = DataBenchmarkBase<InsertBenchmark<Model>, Model, 4>;
+    template <typename Model> class InsertBenchmark : public DataBenchmarkBase<InsertBenchmark<Model>, Model> {
+        using Base = DataBenchmarkBase<InsertBenchmark<Model>, Model>;
 
-        // Build single-row INSERT SQL with RETURNING (matches Storm ORM behavior)
+        // SQL from ORM: single-row INSERT with RETURNING
         static auto sql_insert_single_returning() -> std::string {
-            return "INSERT INTO Person (name, age, is_active, salary) VALUES (?, ?, ?, ?) RETURNING id";
+            return storm::QuerySet<Model>().insert(Model{}).sql();
         }
 
-        // Build single-row INSERT SQL without RETURNING (faster path)
+        // SQL from ORM: single-row INSERT without RETURNING
         static auto sql_insert_single() -> std::string {
-            return "INSERT INTO Person (name, age, is_active, salary) VALUES (?, ?, ?, ?)";
+            return storm::QuerySet<Model>().template insert<storm::orm::statements::ReturnId::No>(Model{}).sql();
         }
 
-        // Build multi-row INSERT SQL for bulk operations
+        // SQL from ORM: multi-row INSERT for bulk operations
         static auto sql_insert_batch(size_t count) -> std::string {
-            std::string sql = "INSERT INTO Person (id, name, age, is_active, salary) VALUES ";
-            for (size_t i = 0; i < count; i++) {
-                if (i > 0)
-                    sql += ", ";
-                sql += "(NULL, ?, ?, ?, ?)";
-            }
-            return sql;
+            std::vector<Model> batch(count);
+            return storm::QuerySet<Model>().insert(batch).sql();
         }
 
         // Bind a range of models starting at parameter index `idx`
         static auto bind_rows(sqlite3_stmt* stmt, const Model* data, size_t count, int idx = 1) -> void {
             for (size_t i = 0; i < count; i++) {
-                int local_idx = idx;
-                Base::bind_model_fields(stmt, data[i], local_idx);
-                idx = local_idx;
+                bind_non_pk_fields(stmt, data[i], idx);
             }
+        }
+
+        // Clear table — needed before each insert iteration due to UNIQUE constraint on name
+        static auto clear_table(sqlite3* db) -> void {
+            auto sql = std::format("DELETE FROM {}", std::meta::identifier_of(^^Model));
+            sqlite3_exec(db, sql.c_str(), nullptr, nullptr, nullptr);
         }
 
       public:
@@ -60,9 +61,24 @@ namespace storm::benchmark {
             Base::template print_info_unified<OperationType::Insert>();
         }
 
-        // Use unified execute with compile-time operation binding
+        // ORM execute — clear table before each iteration for fair comparison
         auto execute(int iterations) -> int {
-            return Base::template execute_unified<OperationType::Insert>(iterations);
+            sqlite3* db    = get_db<Model>();
+            int      total = 0;
+            if (Base::batch_size() == 1) {
+                for (int i = 0; i < iterations; i++) {
+                    OperationDispatcher<OperationType::Insert>::call(Base::qs(), Base::data()[i]).execute();
+                    total++;
+                }
+            } else {
+                for (int i = 0; i < iterations; i++) {
+                    if (db)
+                        clear_table(db);
+                    OperationDispatcher<OperationType::Insert>::call(Base::qs(), Base::data()).execute();
+                    total += Base::data().size();
+                }
+            }
+            return total;
         }
 
         auto print_info_no_return() const -> void {
@@ -115,7 +131,8 @@ namespace storm::benchmark {
 
             // Runtime check - FAIR comparison with Storm ORM
             if (Base::batch_size() == 1) {
-                // Single-row: use INSERT ... RETURNING to match Storm ORM behavior
+                // Single-row: clear once, each row has unique name
+                clear_table(db);
                 std::string sql = sql_insert_single_returning();
 
                 sqlite3_stmt* stmt = nullptr;
@@ -124,7 +141,7 @@ namespace storm::benchmark {
 
                 for (int i = 0; i < iterations; i++) {
                     int idx = 1;
-                    Base::bind_model_fields(stmt, Base::data()[i], idx);
+                    bind_non_pk_fields(stmt, Base::data()[i], idx);
                     if (sqlite3_step(stmt) == SQLITE_ROW) {
                         [[maybe_unused]] int64_t id = sqlite3_column_int64(stmt, 0);
                         total++;
@@ -133,7 +150,7 @@ namespace storm::benchmark {
                 }
                 sqlite3_finalize(stmt);
             } else if (static_cast<size_t>(Base::batch_size()) <= Base::bulk_threshold) {
-                // Small batch: one prepared statement
+                // Small batch: clear before each iteration
                 size_t      rows_per_stmt = std::min(Base::max_bulk, Base::data().size());
                 std::string sql           = sql_insert_batch(rows_per_stmt);
 
@@ -142,18 +159,19 @@ namespace storm::benchmark {
                     return 0;
 
                 for (int i = 0; i < iterations; i++) {
+                    clear_table(db);
                     bind_rows(stmt, &Base::data()[0], rows_per_stmt);
                     total += Base::step_and_reset(stmt, db, rows_per_stmt);
                 }
                 sqlite3_finalize(stmt);
             }
-            // Large batch: chunked with transaction
+            // Large batch: chunked with transaction — clear before each iteration
             else {
-                // Prepare statements for each unique chunk size
                 std::unordered_map<size_t, sqlite3_stmt*> stmts;
                 prepare_chunk_statements(db, stmts);
 
                 for (int iter = 0; iter < iterations; iter++) {
+                    clear_table(db);
                     sqlite3_exec(db, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
                     total += execute_batch_iteration(db, stmts);
                     sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr);
@@ -171,6 +189,8 @@ namespace storm::benchmark {
             if (!db)
                 return 0;
 
+            clear_table(db);
+
             int         total = 0;
             std::string sql   = sql_insert_single();
 
@@ -180,7 +200,7 @@ namespace storm::benchmark {
 
             for (int i = 0; i < iterations; i++) {
                 int idx = 1;
-                Base::bind_model_fields(stmt, Base::data()[i], idx);
+                bind_non_pk_fields(stmt, Base::data()[i], idx);
                 if (sqlite3_step(stmt) == SQLITE_DONE) {
                     total++;
                 }

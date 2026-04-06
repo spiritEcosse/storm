@@ -186,67 +186,88 @@ namespace storm::benchmark {
         // execute_raw - Raw SQLite aggregate query
         // ====================================================================
       private:
-        static auto build_aggregate_sql() -> std::string {
-            std::string sql = "SELECT ";
-
-            // Build aggregate function
-            if constexpr (Op == AggregateOp::Count) {
-                sql += "COUNT(*)";
-            } else if constexpr (Op == AggregateOp::CountField) {
-                constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
-                sql += "COUNT(";
-                sql += field_name;
-                sql += ")";
-            } else if constexpr (Op == AggregateOp::CountDistinct) {
-                constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
-                sql += "COUNT(DISTINCT ";
-                sql += field_name;
-                sql += ")";
-            } else if constexpr (Op == AggregateOp::Sum) {
-                constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
-                sql += "SUM(";
-                sql += field_name;
-                sql += ")";
-            } else if constexpr (Op == AggregateOp::Avg) {
-                constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
-                sql += "AVG(";
-                sql += field_name;
-                sql += ")";
-            } else if constexpr (Op == AggregateOp::Min) {
-                constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
-                sql += "MIN(";
-                sql += field_name;
-                sql += ")";
-            } else if constexpr (Op == AggregateOp::Max) {
-                constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
-                sql += "MAX(";
-                sql += field_name;
-                sql += ")";
-            }
-
-            // Build FROM clause
+        // Build aggregate SQL — ORM-generated for non-JOIN, manual for JOIN
+        auto build_aggregate_sql() const -> std::string {
             if constexpr (JoinCfg::enabled) {
-                sql += " FROM FKMessage fm INNER JOIN User u ON fm.sender_id = u.id";
-            } else {
-                sql += " FROM Person";
-            }
-
-            // Build WHERE clause if configured
-            if constexpr (WhereCfg::enabled) {
-                constexpr std::string_view where_field = std::meta::identifier_of(WhereCfg::field_info);
-                constexpr std::string_view op_str      = WhereCfg::op.view();
-
-                sql += " WHERE ";
-                if constexpr (JoinCfg::enabled) {
-                    sql += "u."; // Assume WHERE is on joined table for JOIN benchmarks
+                // JOIN uses custom aliases (fm/u) — keep manual
+                std::string sql = "SELECT ";
+                if constexpr (Op == AggregateOp::Count) {
+                    sql += "COUNT(*)";
+                } else {
+                    constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
+                    if constexpr (Op == AggregateOp::CountField) {
+                        sql += "COUNT(";
+                        sql += field_name;
+                        sql += ")";
+                    } else if constexpr (Op == AggregateOp::CountDistinct) {
+                        sql += "COUNT(DISTINCT ";
+                        sql += field_name;
+                        sql += ")";
+                    } else if constexpr (Op == AggregateOp::Sum) {
+                        sql += "SUM(";
+                        sql += field_name;
+                        sql += ")";
+                    } else if constexpr (Op == AggregateOp::Avg) {
+                        sql += "AVG(";
+                        sql += field_name;
+                        sql += ")";
+                    } else if constexpr (Op == AggregateOp::Min) {
+                        sql += "MIN(";
+                        sql += field_name;
+                        sql += ")";
+                    } else if constexpr (Op == AggregateOp::Max) {
+                        sql += "MAX(";
+                        sql += field_name;
+                        sql += ")";
+                    }
                 }
-                sql += std::string(where_field);
-                sql += " ";
-                sql += std::string(op_str);
-                sql += " ?";
+                sql += " FROM FKMessage fm INNER JOIN User u ON fm.sender_id = u.id";
+                if constexpr (WhereCfg::enabled) {
+                    constexpr std::string_view where_field = std::meta::identifier_of(WhereCfg::field_info);
+                    constexpr std::string_view op_str      = WhereCfg::op.view();
+                    sql += " WHERE u.";
+                    sql += std::string(where_field);
+                    sql += " ";
+                    sql += std::string(op_str);
+                    sql += " ?";
+                }
+                return sql;
+            } else {
+                // SQL from ORM — single source of truth
+                QuerySet<Model> qs_tmp;
+                if constexpr (WhereCfg::enabled) {
+                    qs_tmp = qs_tmp.where(Base::build_where_clause());
+                }
+                if constexpr (Op == AggregateOp::Count) {
+                    return qs_tmp.count().sql();
+                } else if constexpr (Op == AggregateOp::CountField) {
+                    return qs_tmp.template count<FieldInfo>().sql();
+                } else if constexpr (Op == AggregateOp::CountDistinct) {
+                    // ORM doesn't have count_distinct — keep manual
+                    constexpr std::string_view field_name = std::meta::identifier_of(FieldInfo);
+                    std::string                sql        = "SELECT COUNT(DISTINCT ";
+                    sql += field_name;
+                    sql += std::format(") FROM {}", std::meta::identifier_of(^^Model));
+                    if constexpr (WhereCfg::enabled) {
+                        constexpr std::string_view where_field = std::meta::identifier_of(WhereCfg::field_info);
+                        constexpr std::string_view op_str      = WhereCfg::op.view();
+                        sql += " WHERE ";
+                        sql += std::string(where_field);
+                        sql += " ";
+                        sql += std::string(op_str);
+                        sql += " ?";
+                    }
+                    return sql;
+                } else if constexpr (Op == AggregateOp::Sum) {
+                    return qs_tmp.template sum<FieldInfo>().sql();
+                } else if constexpr (Op == AggregateOp::Avg) {
+                    return qs_tmp.template avg<FieldInfo>().sql();
+                } else if constexpr (Op == AggregateOp::Min) {
+                    return qs_tmp.template min<FieldInfo>().sql();
+                } else if constexpr (Op == AggregateOp::Max) {
+                    return qs_tmp.template max<FieldInfo>().sql();
+                }
             }
-
-            return sql;
         }
 
       public:

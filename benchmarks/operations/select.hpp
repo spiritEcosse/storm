@@ -186,15 +186,13 @@ namespace storm::benchmark {
             }
         }
 
-        // Build SQL string based on enabled features
-        static auto build_select_sql() -> std::string {
-            std::string sql;
-
+        // Build SQL string using ORM .sql() for non-JOIN, manual for JOIN
+        auto build_select_sql() const -> std::string {
             if constexpr (JoinCfg::enabled) {
-                // JOIN query
-                sql = "SELECT fm.id, fm.sender_id, fm.receiver_id, fm.text, "
-                      "u.id, u.name, u.age "
-                      "FROM FKMessage fm ";
+                // JOIN query — ORM uses t1/t2 aliases; keep manual SQL for benchmark
+                std::string sql = "SELECT fm.id, fm.sender_id, fm.receiver_id, fm.text, "
+                                  "u.id, u.name, u.age "
+                                  "FROM FKMessage fm ";
                 sql += get_join_keyword();
                 sql += " User u ON fm.sender_id = u.id";
 
@@ -207,45 +205,55 @@ namespace storm::benchmark {
                     sql += std::string(op_str);
                     sql += " ?";
                 }
+                Base::append_group_by_sql(sql);
+                Base::append_order_by_sql(sql);
+                Base::append_limit_offset_sql(sql);
+                return sql;
             } else {
-                // Basic SELECT query
-                sql = "SELECT id, name, age, is_active, salary, score FROM Person";
-
+                // Non-JOIN: use ORM .sql() — single source of truth
+                QuerySet<BaseModel> qs;
                 if constexpr (WhereCfg::enabled) {
-                    constexpr std::string_view where_field = std::meta::identifier_of(WhereCfg::field_info);
-                    constexpr std::string_view op_str      = WhereCfg::op.view();
-                    sql += " WHERE ";
-                    sql += std::string(where_field);
-                    sql += " ";
-                    sql += std::string(op_str);
-                    sql += " ?";
+                    constexpr std::string_view op_str = WhereCfg::op.view();
+                    if constexpr (op_str == ">") {
+                        qs = qs.where(field<WhereCfg::field_info>() > Base::where_value_);
+                    } else if constexpr (op_str == ">=") {
+                        qs = qs.where(field<WhereCfg::field_info>() >= Base::where_value_);
+                    } else if constexpr (op_str == "<") {
+                        qs = qs.where(field<WhereCfg::field_info>() < Base::where_value_);
+                    } else if constexpr (op_str == "<=") {
+                        qs = qs.where(field<WhereCfg::field_info>() <= Base::where_value_);
+                    } else if constexpr (op_str == "==") {
+                        qs = qs.where(field<WhereCfg::field_info>() == Base::where_value_);
+                    } else if constexpr (op_str == "!=") {
+                        qs = qs.where(field<WhereCfg::field_info>() != Base::where_value_);
+                    }
                 }
+                if constexpr (OrderByCfg::enabled) {
+                    if constexpr (requires { OrderByCfg::collation; }) {
+                        if constexpr (OrderByCfg::direction == OrderDirection::DESC) {
+                            qs.template order_by<OrderByCfg::field_info, OrderByCfg::collation, false>();
+                        } else {
+                            qs.template order_by<OrderByCfg::field_info, OrderByCfg::collation, true>();
+                        }
+                    } else if constexpr (OrderByCfg::direction == OrderDirection::DESC) {
+                        qs.template order_by<OrderByCfg::field_info, false>();
+                    } else {
+                        qs.template order_by<OrderByCfg::field_info, true>();
+                    }
+                }
+                if constexpr (GroupByCfg::enabled) {
+                    qs.template group_by<GroupByCfg::field_info>();
+                }
+                if constexpr (LimitOffsetCfg::enabled) {
+                    if constexpr (LimitOffsetCfg::limit_value > 0) {
+                        qs.limit(LimitOffsetCfg::limit_value);
+                    }
+                    if constexpr (LimitOffsetCfg::offset_value > 0) {
+                        qs.offset(LimitOffsetCfg::offset_value);
+                    }
+                }
+                return qs.select().sql();
             }
-
-            // Append GROUP BY if configured (must come before ORDER BY)
-            Base::append_group_by_sql(sql);
-
-            // Append ORDER BY if configured (must come before LIMIT/OFFSET)
-            Base::append_order_by_sql(sql);
-
-            // Append LIMIT/OFFSET if configured
-            Base::append_limit_offset_sql(sql);
-
-            return sql;
-        }
-
-        // Extract row for basic SELECT (Person model) — must match Storm's column list
-        __attribute__((always_inline)) static auto extract_row_basic(sqlite3_stmt* stmt) -> BaseModel {
-            BaseModel obj;
-            obj.id        = sqlite3_column_int64(stmt, 0);
-            obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-            obj.age       = sqlite3_column_int(stmt, 2);
-            obj.is_active = sqlite3_column_int(stmt, 3) != 0;
-            obj.salary    = sqlite3_column_double(stmt, 4);
-            if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
-                obj.score = sqlite3_column_int(stmt, 5);
-            }
-            return obj;
         }
 
         // Extract row for JOIN SELECT (FKMessage model with joined User)
@@ -296,7 +304,7 @@ namespace storm::benchmark {
                     if constexpr (JoinCfg::enabled) {
                         results.insert(extract_row_join(stmt));
                     } else {
-                        results.insert(extract_row_basic(stmt));
+                        results.insert(storm::benchmark::extract_row<BaseModel>(stmt));
                     }
                 }
                 total_rows += results.size();
@@ -516,11 +524,12 @@ namespace storm::benchmark {
             constexpr std::string_view field1 = std::meta::identifier_of(OrderByFieldInfo1);
             constexpr std::string_view field2 = std::meta::identifier_of(OrderByFieldInfo2);
 
-            std::string sql = "SELECT id, name, age, is_active, salary, score FROM Person ORDER BY ";
-            sql += field1;
-            sql += (Dir1 == OrderDirection::DESC) ? " DESC, " : " ASC, ";
-            sql += field2;
-            sql += (Dir2 == OrderDirection::DESC) ? " DESC" : " ASC";
+            // SQL from ORM — single source of truth
+            QuerySet<BaseModel> qs;
+            constexpr bool      asc1 = (Dir1 == OrderDirection::ASC);
+            constexpr bool      asc2 = (Dir2 == OrderDirection::ASC);
+            qs.template order_by<OrderByFieldInfo1, asc1, OrderByFieldInfo2, asc2>();
+            std::string sql = qs.select().sql();
 
             sqlite3_stmt* stmt = nullptr;
             if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -532,27 +541,13 @@ namespace storm::benchmark {
                 sqlite3_reset(stmt);
                 plf::hive<BaseModel> results;
                 while (sqlite3_step(stmt) == SQLITE_ROW) {
-                    results.insert(extract_row_basic(stmt));
+                    results.insert(storm::benchmark::extract_row<BaseModel>(stmt));
                 }
                 total_rows += results.size();
             }
 
             sqlite3_finalize(stmt);
             return total_rows;
-        }
-
-      private:
-        __attribute__((always_inline)) static auto extract_row_basic(sqlite3_stmt* stmt) -> BaseModel {
-            BaseModel obj;
-            obj.id        = sqlite3_column_int64(stmt, 0);
-            obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-            obj.age       = sqlite3_column_int(stmt, 2);
-            obj.is_active = sqlite3_column_int(stmt, 3) != 0;
-            obj.salary    = sqlite3_column_double(stmt, 4);
-            if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
-                obj.score = sqlite3_column_int(stmt, 5);
-            }
-            return obj;
         }
     };
 
@@ -636,12 +631,10 @@ namespace storm::benchmark {
             if (db == nullptr)
                 return 0;
 
-            // Build SQL with variadic fold expression
-            std::string sql   = "SELECT id, name, age, is_active, salary, score FROM Person GROUP BY ";
-            bool        first = true;
-            ((sql += (first ? (first = false, "") : ", "),
-              sql += std::string(std::meta::identifier_of(GroupByFieldInfos))),
-             ...);
+            // SQL from ORM — single source of truth
+            QuerySet<BaseModel> qs;
+            qs.template group_by<GroupByFieldInfos...>();
+            std::string sql = qs.select().sql();
 
             sqlite3_stmt* stmt = nullptr;
             if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -653,27 +646,13 @@ namespace storm::benchmark {
                 sqlite3_reset(stmt);
                 plf::hive<BaseModel> results;
                 while (sqlite3_step(stmt) == SQLITE_ROW) {
-                    results.insert(extract_row_basic(stmt));
+                    results.insert(storm::benchmark::extract_row<BaseModel>(stmt));
                 }
                 total_rows += results.size();
             }
 
             sqlite3_finalize(stmt);
             return total_rows;
-        }
-
-      private:
-        __attribute__((always_inline)) static auto extract_row_basic(sqlite3_stmt* stmt) -> BaseModel {
-            BaseModel obj;
-            obj.id        = sqlite3_column_int64(stmt, 0);
-            obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-            obj.age       = sqlite3_column_int(stmt, 2);
-            obj.is_active = sqlite3_column_int(stmt, 3) != 0;
-            obj.salary    = sqlite3_column_double(stmt, 4);
-            if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
-                obj.score = sqlite3_column_int(stmt, 5);
-            }
-            return obj;
         }
     };
 
@@ -790,22 +769,22 @@ namespace storm::benchmark {
             if (db == nullptr)
                 return 0;
 
-            constexpr std::string_view group_field_name = std::meta::identifier_of(GroupByFieldInfo);
-
-            // Build SQL: SELECT group_field, AGG_FUNC(...) FROM table GROUP BY group_field
-            std::string sql = "SELECT ";
-            sql += group_field_name;
-            sql += ", ";
-            if constexpr (AggOp == GroupByAggOp::Count) {
-                sql += "COUNT(*)";
-            } else {
-                constexpr std::string_view agg_field_name = std::meta::identifier_of(AggregateFieldInfo);
-                sql += agg_op_sql(AggOp);
-                sql += agg_field_name;
-                sql += ")";
-            }
-            sql += " FROM Person GROUP BY ";
-            sql += group_field_name;
+            // SQL from ORM — single source of truth
+            auto build_group_sql = [&]() -> std::string {
+                auto gb = QuerySet<BaseModel>().template group_by<GroupByFieldInfo>();
+                if constexpr (AggOp == GroupByAggOp::Count) {
+                    return gb.count().sql();
+                } else if constexpr (AggOp == GroupByAggOp::Sum) {
+                    return gb.template sum<AggregateFieldInfo>().sql();
+                } else if constexpr (AggOp == GroupByAggOp::Avg) {
+                    return gb.template avg<AggregateFieldInfo>().sql();
+                } else if constexpr (AggOp == GroupByAggOp::Min) {
+                    return gb.template min<AggregateFieldInfo>().sql();
+                } else if constexpr (AggOp == GroupByAggOp::Max) {
+                    return gb.template max<AggregateFieldInfo>().sql();
+                }
+            };
+            std::string sql = build_group_sql();
 
             sqlite3_stmt* stmt = nullptr;
             if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -936,25 +915,22 @@ namespace storm::benchmark {
             if (db == nullptr)
                 return 0;
 
-            constexpr std::string_view group_field_name  = std::meta::identifier_of(GroupByFieldInfo);
-            constexpr std::string_view having_field_name = std::meta::identifier_of(HavingFieldInfo);
-
-            std::string sql = "SELECT ";
-            sql += group_field_name;
-            sql += ", ";
-            if constexpr (AggOp == GroupByAggOp::Count) {
-                sql += "COUNT(*)";
-            } else {
-                constexpr std::string_view agg_field_name = std::meta::identifier_of(AggregateFieldInfo);
-                sql += agg_op_sql(AggOp);
-                sql += agg_field_name;
-                sql += ")";
-            }
-            sql += " FROM Person GROUP BY ";
-            sql += group_field_name;
-            sql += " HAVING ";
-            sql += having_field_name;
-            sql += " > ?";
+            // SQL from ORM — single source of truth
+            auto build_having_sql = [&]() -> std::string {
+                auto gb = QuerySet<BaseModel>().template group_by<GroupByFieldInfo>();
+                if constexpr (AggOp == GroupByAggOp::Count) {
+                    return gb.count().having(field<HavingFieldInfo>() > HavingValue).sql();
+                } else if constexpr (AggOp == GroupByAggOp::Sum) {
+                    return gb.template sum<AggregateFieldInfo>().having(field<HavingFieldInfo>() > HavingValue).sql();
+                } else if constexpr (AggOp == GroupByAggOp::Avg) {
+                    return gb.template avg<AggregateFieldInfo>().having(field<HavingFieldInfo>() > HavingValue).sql();
+                } else if constexpr (AggOp == GroupByAggOp::Min) {
+                    return gb.template min<AggregateFieldInfo>().having(field<HavingFieldInfo>() > HavingValue).sql();
+                } else if constexpr (AggOp == GroupByAggOp::Max) {
+                    return gb.template max<AggregateFieldInfo>().having(field<HavingFieldInfo>() > HavingValue).sql();
+                }
+            };
+            std::string sql = build_having_sql();
 
             sqlite3_stmt* stmt = nullptr;
             if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
