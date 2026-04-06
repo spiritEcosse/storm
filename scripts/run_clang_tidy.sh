@@ -134,7 +134,7 @@ is_cpp26_module_file() {
     # Exception: mock files that don't use modules are handled by the caller —
     # they parse successfully and never reach this function's "known skip" path.
     case "$file" in
-        tests/*|benchmarks/*|fuzz/*) return 0 ;;
+        tests/*|benchmarks/*|fuzz/*|shared/*) return 0 ;;
         *) return 1 ;;
     esac
 }

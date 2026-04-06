@@ -3,26 +3,23 @@
 /**
  * Benchmark Models
  *
- * Defines all models used in benchmarks.
- * This file must be included before runner.hpp to provide complete types.
+ * Person comes from shared/models.h (single source of truth).
+ * User and FKMessage are benchmark-specific (JOIN benchmarks with 2 FKs).
+ *
+ * This file must be included after `import storm;` to provide complete types.
  */
 
 import storm;
-import <optional>;
+
+// Shared model structs — used by both tests and benchmarks
+#include "../shared/models.h"
 
 namespace storm::benchmark {
 
-    // Test model for basic operations (INSERT, UPDATE, DELETE, SELECT WHERE)
-    struct Person {
-        [[= storm::meta::FieldAttr::primary]] int id;
-        std::string                               name;
-        int                                       age;
-        bool                                      is_active;
-        double                                    salary;
-        std::optional<int>                        score;
-    };
+    // Bring shared Person into benchmark namespace
+    using ::Person;
 
-    // Test models for JOIN operations
+    // Benchmark-specific models for JOIN tests (2 FK relationships)
     struct User {
         [[= storm::meta::FieldAttr::primary]] int id;
         std::string                               name;

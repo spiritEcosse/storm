@@ -115,14 +115,12 @@ namespace storm::benchmark {
         // execute_raw - Raw SQLite DISTINCT with compile-time feature dispatch
         // ====================================================================
       private:
-        // Build DISTINCT SQL string based on enabled features
-        static auto build_distinct_sql() -> std::string {
-            constexpr std::string_view distinct_field = std::meta::identifier_of(DistinctFieldInfo);
-            std::string                sql;
-
+        // Build DISTINCT SQL string — ORM-generated for non-JOIN, manual for JOIN
+        auto build_distinct_sql() const -> std::string {
             if constexpr (JoinCfg::enabled) {
-                // DISTINCT + JOIN query
-                sql = "SELECT DISTINCT fm.";
+                // JOIN uses custom aliases (fm/u) — keep manual
+                constexpr std::string_view distinct_field = std::meta::identifier_of(DistinctFieldInfo);
+                std::string                sql            = "SELECT DISTINCT fm.";
                 sql += distinct_field;
                 sql += " FROM FKMessage fm INNER JOIN User u ON fm.sender_id = u.id";
 
@@ -135,24 +133,15 @@ namespace storm::benchmark {
                     sql += std::string(op_str);
                     sql += " ?";
                 }
+                return sql;
             } else {
-                // Basic DISTINCT query
-                sql = "SELECT DISTINCT ";
-                sql += distinct_field;
-                sql += " FROM Person";
-
+                // SQL from ORM — single source of truth
+                QuerySet<BaseModel> qs_tmp;
                 if constexpr (WhereCfg::enabled) {
-                    constexpr std::string_view where_field = std::meta::identifier_of(WhereCfg::field_info);
-                    constexpr std::string_view op_str      = WhereCfg::op.view();
-                    sql += " WHERE ";
-                    sql += std::string(where_field);
-                    sql += " ";
-                    sql += std::string(op_str);
-                    sql += " ?";
+                    qs_tmp = qs_tmp.where(Base::build_where_clause());
                 }
+                return qs_tmp.template distinct<DistinctFieldInfo>().sql();
             }
-
-            return sql;
         }
 
       public:
@@ -290,14 +279,8 @@ namespace storm::benchmark {
             if (db == nullptr)
                 return 0;
 
-            constexpr std::string_view field1 = std::meta::identifier_of(DistinctFieldInfo1);
-            constexpr std::string_view field2 = std::meta::identifier_of(DistinctFieldInfo2);
-
-            std::string sql = "SELECT DISTINCT ";
-            sql += field1;
-            sql += ", ";
-            sql += field2;
-            sql += " FROM Person";
+            // SQL from ORM — single source of truth
+            std::string sql = QuerySet<BaseModel>().template distinct<DistinctFieldInfo1, DistinctFieldInfo2>().sql();
 
             sqlite3_stmt* stmt = nullptr;
             if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -404,17 +387,10 @@ namespace storm::benchmark {
             if (db == nullptr)
                 return 0;
 
-            constexpr std::string_view field1 = std::meta::identifier_of(DistinctFieldInfo1);
-            constexpr std::string_view field2 = std::meta::identifier_of(DistinctFieldInfo2);
-            constexpr std::string_view field3 = std::meta::identifier_of(DistinctFieldInfo3);
-
-            std::string sql = "SELECT DISTINCT ";
-            sql += field1;
-            sql += ", ";
-            sql += field2;
-            sql += ", ";
-            sql += field3;
-            sql += " FROM Person";
+            // SQL from ORM — single source of truth
+            std::string sql = QuerySet<BaseModel>()
+                                      .template distinct<DistinctFieldInfo1, DistinctFieldInfo2, DistinctFieldInfo3>()
+                                      .sql();
 
             sqlite3_stmt* stmt = nullptr;
             if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -519,18 +495,10 @@ namespace storm::benchmark {
             if (db == nullptr)
                 return 0;
 
-            constexpr std::string_view distinct_field = std::meta::identifier_of(DistinctFieldInfo);
-            constexpr std::string_view order_field    = std::meta::identifier_of(OrderByFieldInfo);
-
-            std::string sql = "SELECT DISTINCT ";
-            sql += distinct_field;
-            sql += " FROM Person ORDER BY ";
-            sql += order_field;
-            if constexpr (Dir == OrderDirection::DESC) {
-                sql += " DESC";
-            } else {
-                sql += " ASC";
-            }
+            // SQL from ORM — single source of truth
+            constexpr bool asc    = (Dir == OrderDirection::ASC);
+            auto           qs_tmp = QuerySet<BaseModel>().template order_by<OrderByFieldInfo, asc>();
+            std::string    sql    = qs_tmp.template distinct<DistinctFieldInfo>().sql();
 
             sqlite3_stmt* stmt = nullptr;
             if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {

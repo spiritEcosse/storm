@@ -64,20 +64,12 @@ namespace storm::benchmark {
             if (!db)
                 return 0;
 
-            std::string sql = "SELECT id, name, age, is_active, salary, score FROM Person";
-
+            // SQL from ORM — single source of truth
+            QuerySet<BaseModel> qs_tmp;
             if constexpr (WhereCfg::enabled) {
-                constexpr std::string_view where_field = std::meta::identifier_of(WhereCfg::field_info);
-                constexpr std::string_view op_str      = WhereCfg::op.view();
-                sql += " WHERE ";
-                sql += std::string(where_field);
-                sql += " ";
-                sql += std::string(op_str);
-                sql += " ?";
+                qs_tmp = qs_tmp.where(Base::build_where_clause());
             }
-
-            Base::append_order_by_sql(sql);
-            sql += " LIMIT 1";
+            std::string sql = qs_tmp.first().sql();
 
             sqlite3_stmt* stmt = nullptr;
             if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -91,19 +83,9 @@ namespace storm::benchmark {
             int total = 0;
             for (int i = 0; i < iterations; i++) {
                 sqlite3_reset(stmt);
-                // Fair comparison: wrap result in std::optional like Storm's first()
                 std::optional<BaseModel> result;
                 if (sqlite3_step(stmt) == SQLITE_ROW) {
-                    BaseModel obj;
-                    obj.id        = sqlite3_column_int64(stmt, 0);
-                    obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-                    obj.age       = sqlite3_column_int(stmt, 2);
-                    obj.is_active = sqlite3_column_int(stmt, 3) != 0;
-                    obj.salary    = sqlite3_column_double(stmt, 4);
-                    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
-                        obj.score = sqlite3_column_int(stmt, 5);
-                    }
-                    result.emplace(std::move(obj));
+                    result.emplace(storm::benchmark::extract_row<BaseModel>(stmt));
                 }
                 if (result.has_value()) {
                     total++;
@@ -161,20 +143,12 @@ namespace storm::benchmark {
             if (!db)
                 return 0;
 
-            // get() uses LIMIT 2 internally to detect multiple rows
-            std::string sql = "SELECT id, name, age, is_active, salary, score FROM Person";
-
+            // SQL from ORM — single source of truth (get() uses LIMIT 2 internally)
+            QuerySet<BaseModel> qs_tmp;
             if constexpr (WhereCfg::enabled) {
-                constexpr std::string_view where_field = std::meta::identifier_of(WhereCfg::field_info);
-                constexpr std::string_view op_str      = WhereCfg::op.view();
-                sql += " WHERE ";
-                sql += std::string(where_field);
-                sql += " ";
-                sql += std::string(op_str);
-                sql += " ?";
+                qs_tmp = qs_tmp.where(Base::build_where_clause());
             }
-
-            sql += " LIMIT 2";
+            std::string sql = qs_tmp.get().sql();
 
             sqlite3_stmt* stmt = nullptr;
             if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -193,14 +167,7 @@ namespace storm::benchmark {
                 BaseModel obj;
                 while (sqlite3_step(stmt) == SQLITE_ROW) {
                     if (row_count == 0) {
-                        obj.id        = sqlite3_column_int64(stmt, 0);
-                        obj.name      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-                        obj.age       = sqlite3_column_int(stmt, 2);
-                        obj.is_active = sqlite3_column_int(stmt, 3) != 0;
-                        obj.salary    = sqlite3_column_double(stmt, 4);
-                        if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
-                            obj.score = sqlite3_column_int(stmt, 5);
-                        }
+                        obj = storm::benchmark::extract_row<BaseModel>(stmt);
                     }
                     row_count++;
                 }

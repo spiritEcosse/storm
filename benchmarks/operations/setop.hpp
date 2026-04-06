@@ -214,12 +214,14 @@ namespace storm::benchmark {
         }
 
         auto build_raw_sql() const -> std::string {
-            std::string sql = "SELECT id, name, age, is_active, salary, score FROM Person WHERE age < ?";
+            // Column list from ORM — single source of truth
+            std::string base = QuerySet<Model>().select().sql();
+            std::string sql  = base + " WHERE age < ?";
             sql += op_sql();
             if constexpr (needs_overlap) {
-                sql += "SELECT id, name, age, is_active, salary, score FROM Person WHERE age > ?";
+                sql += base + " WHERE age > ?";
             } else {
-                sql += "SELECT id, name, age, is_active, salary, score FROM Person WHERE age >= ?";
+                sql += base + " WHERE age >= ?";
             }
             if constexpr (WithOrderBy) {
                 sql += " ORDER BY age ASC";
