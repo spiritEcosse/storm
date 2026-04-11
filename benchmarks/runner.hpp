@@ -303,6 +303,64 @@ namespace storm::benchmark {
             std::cout << Color::GREEN << "✅ Benchmark complete!" << Color::RESET << "\n";
         }
 
+        // ====================================================================
+        // dispatch_sized — absorbs the SizeProfile loop boilerplate duplicated
+        // across every scaled run_*_operation. Picks size array, name format,
+        // and iteration calc from the test's size_profile; calls make_bench(size)
+        // at each step and routes to run_benchmark.
+        //
+        // For tests with no size_profile, invokes make_bench(fallback_size) once
+        // with the caller's iterations.
+        //
+        // IterKind overrides the natural iteration calculator — aggregate tests
+        // need iterations_for_aggregate even when scaled over DatasetStandard.
+        // ====================================================================
+        enum class IterKind { Batch, Dataset, Aggregate };
+
+        template <auto& test, IterKind Iter = IterKind::Dataset, typename MakeBench>
+        auto dispatch_sized(int iterations, int fallback_size, MakeBench make_bench) -> void {
+            constexpr auto profile = sizes::profile_from_string(test.size_profile.view());
+
+            auto calc = [this](int size) -> int {
+                if constexpr (Iter == IterKind::Batch) {
+                    return calculate_iterations(sizes::iterations_for_batch(size), mode_);
+                } else if constexpr (Iter == IterKind::Aggregate) {
+                    return calculate_iterations(sizes::iterations_for_aggregate(size), mode_);
+                } else {
+                    return calculate_iterations(sizes::iterations_for_dataset(size), mode_);
+                }
+            };
+
+            if constexpr (profile == sizes::SizeProfile::BatchStandard) {
+                for (int size : sizes::batch_standard_sizes(is_smoke())) {
+                    std::string name = std::format("{}{}", test.test_name.view(), sizes::get_name_suffix(size, true));
+                    run_benchmark(name.c_str(), make_bench(size), calc(size));
+                }
+            } else if constexpr (profile == sizes::SizeProfile::BatchInsertEdge) {
+                for (int size : sizes::batch_insert_edge_sizes(is_smoke())) {
+                    std::string name = std::format("{}_{}", test.test_name.view(), size);
+                    run_benchmark(name.c_str(), make_bench(size), calc(size));
+                }
+            } else if constexpr (profile == sizes::SizeProfile::BatchUpdateEdge) {
+                for (int size : sizes::batch_update_edge_sizes(is_smoke())) {
+                    std::string name = std::format("{}_{}", test.test_name.view(), size);
+                    run_benchmark(name.c_str(), make_bench(size), calc(size));
+                }
+            } else if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
+                for (int size : sizes::dataset_standard_sizes(is_smoke())) {
+                    std::string name = std::format("{}_{}", test.test_name.view(), size);
+                    run_benchmark(name.c_str(), make_bench(size), calc(size));
+                }
+            } else if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
+                for (int size : sizes::dataset_small_sizes(is_smoke())) {
+                    std::string name = std::format("{}_{}", test.test_name.view(), size);
+                    run_benchmark(name.c_str(), make_bench(size), calc(size));
+                }
+            } else {
+                run_benchmark(test.test_name.c_str(), make_bench(fallback_size), iterations);
+            }
+        }
+
       private:
         // Operation handlers - one function per operation type
         // Clean, simple, easy to add new operations
@@ -325,36 +383,19 @@ namespace storm::benchmark {
 
         template <typename Model, auto& test>
         static auto run_insert_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr auto profile_str = test.size_profile.view();
-            constexpr auto profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::BatchStandard) {
-                for (int size : sizes::batch_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_batch(size), runner.mode());
-                    std::string name = std::format("{}{}", test.test_name.view(), sizes::get_name_suffix(size, true));
-                    runner.run_benchmark(name.c_str(), InsertBenchmark<Model>{size}, actual_iterations);
-                }
-            } else if constexpr (profile == sizes::SizeProfile::BatchInsertEdge) {
-                for (int size : sizes::batch_insert_edge_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_batch(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(name.c_str(), InsertBenchmark<Model>{size}, actual_iterations);
-                }
-            } else {
-                // No profile - use fixed batch_size from JSON
-                runner.run_benchmark(test.test_name.c_str(), InsertBenchmark<Model>{test.batch_size}, iterations);
-            }
+            runner.dispatch_sized<test, IterKind::Batch>(iterations, test.batch_size, [](int size) {
+                return InsertBenchmark<Model>{size};
+            });
         }
 
         template <typename Model, auto& test>
         static auto run_insert_no_return_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr auto profile_str = test.size_profile.view();
-            constexpr auto profile     = sizes::profile_from_string(profile_str);
-
+            // Special case: no-return only meaningful for single inserts; skip non-1 sizes
+            constexpr auto profile = sizes::profile_from_string(test.size_profile.view());
             if constexpr (profile == sizes::SizeProfile::BatchStandard) {
                 for (int size : sizes::batch_standard_sizes(runner.is_smoke())) {
                     if (size != 1)
-                        continue; // No-return only meaningful for single inserts
+                        continue;
                     int actual_iterations = calculate_iterations(sizes::iterations_for_batch(size), runner.mode());
                     std::string name = std::format("{}{}", test.test_name.view(), sizes::get_name_suffix(size, true));
                     runner.run_benchmark(name.c_str(), InsertNoReturnBenchmark<Model>{size}, actual_iterations);
@@ -368,120 +409,42 @@ namespace storm::benchmark {
 
         template <typename Model, auto& test>
         static auto run_delete_pk_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr auto profile_str = test.size_profile.view();
-            constexpr auto profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::BatchStandard) {
-                for (int size : sizes::batch_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_batch(size), runner.mode());
-                    std::string name = std::format("{}{}", test.test_name.view(), sizes::get_name_suffix(size, true));
-                    runner.run_benchmark(name.c_str(), DeleteBenchmark<Model>{size}, actual_iterations);
-                }
-            } else {
-                // No profile - use fixed batch_size from JSON
-                runner.run_benchmark(test.test_name.c_str(), DeleteBenchmark<Model>{test.batch_size}, iterations);
-            }
+            runner.dispatch_sized<test, IterKind::Batch>(iterations, test.batch_size, [](int size) {
+                return DeleteBenchmark<Model>{size};
+            });
         }
 
         template <typename Model, auto& test>
         static auto run_update_pk_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr auto profile_str = test.size_profile.view();
-            constexpr auto profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::BatchStandard) {
-                for (int size : sizes::batch_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_batch(size), runner.mode());
-                    std::string name = std::format("{}{}", test.test_name.view(), sizes::get_name_suffix(size, true));
-                    runner.run_benchmark(name.c_str(), UpdateBenchmark<Model>{size}, actual_iterations);
-                }
-            } else if constexpr (profile == sizes::SizeProfile::BatchUpdateEdge) {
-                for (int size : sizes::batch_update_edge_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_batch(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(name.c_str(), UpdateBenchmark<Model>{size}, actual_iterations);
-                }
-            } else {
-                // No profile - use fixed batch_size from JSON
-                runner.run_benchmark(test.test_name.c_str(), UpdateBenchmark<Model>{test.batch_size}, iterations);
-            }
+            runner.dispatch_sized<test, IterKind::Batch>(iterations, test.batch_size, [](int size) {
+                return UpdateBenchmark<Model>{size};
+            });
         }
 
         template <typename Model, auto& test>
         static auto run_select_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr auto profile_str = test.size_profile.view();
-            constexpr auto profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
-                for (int size : sizes::dataset_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_dataset(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(name.c_str(), SelectBenchmark<Model>{size}, actual_iterations);
-                }
-            } else {
-                // No profile - use fixed dataset_size from JSON
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(test.test_name.c_str(), SelectBenchmark<Model>{dataset_size}, iterations);
-            }
+            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
+                return SelectBenchmark<Model>{size};
+            });
         }
 
         template <typename Model, auto& test>
         static auto run_select_join_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr auto profile_str = test.size_profile.view();
-            constexpr auto profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
-                for (int size : sizes::dataset_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_dataset(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(
-                            name.c_str(),
-                            SelectJoinBenchmark<FKMessage, User, &FKMessage::sender>{size},
-                            actual_iterations
-                    );
-                }
-            } else {
-                // No profile - use fixed dataset_size from JSON
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(
-                        test.test_name.c_str(),
-                        SelectJoinBenchmark<FKMessage, User, &FKMessage::sender>{dataset_size},
-                        iterations
-                );
-            }
+            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
+                return SelectJoinBenchmark<FKMessage, User, &FKMessage::sender>{size};
+            });
         }
 
         template <typename Model, auto& test>
         static auto run_select_where_join_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name = test.where.field.view();
-            constexpr auto             op_str     = test.where.op;
-            constexpr int              value      = test.where.value.as_int;
-            constexpr auto             field_info = dispatch_field<User>(field_name);
-
-            constexpr auto profile_str = test.size_profile.view();
-            constexpr auto profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
-                for (int size : sizes::dataset_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_dataset(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(
-                            name.c_str(),
-                            SelectWhereJoinBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
-                                    value, size
-                            },
-                            actual_iterations
-                    );
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(
-                        test.test_name.c_str(),
-                        SelectWhereJoinBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
-                                value, dataset_size
-                        },
-                        iterations
-                );
-            }
+            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
+                constexpr auto field_info = dispatch_field<User>(test.where.field.view());
+                constexpr auto op_str     = test.where.op;
+                constexpr int  value      = test.where.value.as_int;
+                return SelectWhereJoinBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
+                        value, size
+                };
+            });
         }
 
         // ====================================================================
@@ -490,61 +453,21 @@ namespace storm::benchmark {
 
         template <typename Model, auto& test>
         static auto run_select_left_join_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr auto profile_str = test.size_profile.view();
-            constexpr auto profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
-                for (int size : sizes::dataset_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_dataset(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(
-                            name.c_str(),
-                            SelectLeftJoinBenchmark<FKMessage, User, &FKMessage::sender>{size},
-                            actual_iterations
-                    );
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(
-                        test.test_name.c_str(),
-                        SelectLeftJoinBenchmark<FKMessage, User, &FKMessage::sender>{dataset_size},
-                        iterations
-                );
-            }
+            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
+                return SelectLeftJoinBenchmark<FKMessage, User, &FKMessage::sender>{size};
+            });
         }
 
         template <typename Model, auto& test>
         static auto run_select_left_join_where_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name = test.where.field.view();
-            constexpr auto             op_str     = test.where.op;
-            constexpr int              value      = test.where.value.as_int;
-            constexpr auto             field_info = dispatch_field<User>(field_name);
-
-            constexpr auto profile_str = test.size_profile.view();
-            constexpr auto profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
-                for (int size : sizes::dataset_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_dataset(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(
-                            name.c_str(),
-                            SelectLeftJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
-                                    value, size
-                            },
-                            actual_iterations
-                    );
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(
-                        test.test_name.c_str(),
-                        SelectLeftJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
-                                value, dataset_size
-                        },
-                        iterations
-                );
-            }
+            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
+                constexpr auto field_info = dispatch_field<User>(test.where.field.view());
+                constexpr auto op_str     = test.where.op;
+                constexpr int  value      = test.where.value.as_int;
+                return SelectLeftJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
+                        value, size
+                };
+            });
         }
 
         // ====================================================================
@@ -553,61 +476,21 @@ namespace storm::benchmark {
 
         template <typename Model, auto& test>
         static auto run_select_right_join_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr auto profile_str = test.size_profile.view();
-            constexpr auto profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
-                for (int size : sizes::dataset_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_dataset(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(
-                            name.c_str(),
-                            SelectRightJoinBenchmark<FKMessage, User, &FKMessage::sender>{size},
-                            actual_iterations
-                    );
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(
-                        test.test_name.c_str(),
-                        SelectRightJoinBenchmark<FKMessage, User, &FKMessage::sender>{dataset_size},
-                        iterations
-                );
-            }
+            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
+                return SelectRightJoinBenchmark<FKMessage, User, &FKMessage::sender>{size};
+            });
         }
 
         template <typename Model, auto& test>
         static auto run_select_right_join_where_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name = test.where.field.view();
-            constexpr auto             op_str     = test.where.op;
-            constexpr int              value      = test.where.value.as_int;
-            constexpr auto             field_info = dispatch_field<User>(field_name);
-
-            constexpr auto profile_str = test.size_profile.view();
-            constexpr auto profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
-                for (int size : sizes::dataset_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_dataset(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(
-                            name.c_str(),
-                            SelectRightJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
-                                    value, size
-                            },
-                            actual_iterations
-                    );
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(
-                        test.test_name.c_str(),
-                        SelectRightJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
-                                value, dataset_size
-                        },
-                        iterations
-                );
-            }
+            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
+                constexpr auto field_info = dispatch_field<User>(test.where.field.view());
+                constexpr auto op_str     = test.where.op;
+                constexpr int  value      = test.where.value.as_int;
+                return SelectRightJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
+                        value, size
+                };
+            });
         }
 
         // ====================================================================
@@ -616,23 +499,9 @@ namespace storm::benchmark {
 
         template <typename Model, auto& test>
         static auto run_select_multi_fk_join_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr auto profile_str = test.size_profile.view();
-            constexpr auto profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
-                for (int size : sizes::dataset_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_dataset(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(
-                            name.c_str(), SelectMultiFKJoinBenchmark<FKMessage, User>{size}, actual_iterations
-                    );
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(
-                        test.test_name.c_str(), SelectMultiFKJoinBenchmark<FKMessage, User>{dataset_size}, iterations
-                );
-            }
+            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
+                return SelectMultiFKJoinBenchmark<FKMessage, User>{size};
+            });
         }
 
         // ====================================================================
@@ -641,145 +510,57 @@ namespace storm::benchmark {
 
         template <typename Model, auto& test>
         static auto run_aggregate_count_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr auto profile_str = test.size_profile.view();
-            constexpr auto profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
-                for (int size : sizes::dataset_small_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_aggregate(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(name.c_str(), CountBenchmark<Model>{size}, actual_iterations);
-                }
-            } else if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
-                for (int size : sizes::dataset_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_aggregate(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(name.c_str(), CountBenchmark<Model>{size}, actual_iterations);
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(test.test_name.c_str(), CountBenchmark<Model>{dataset_size}, iterations);
-            }
+            runner.dispatch_sized<test, IterKind::Aggregate>(iterations, test.dataset_size, [](int size) {
+                return CountBenchmark<Model>{size};
+            });
         }
 
         template <typename Model, auto& test>
         static auto run_aggregate_count_field_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name  = test.aggregate.field.view();
-            constexpr auto             field_info  = dispatch_field<Model>(field_name);
-            constexpr auto             profile_str = test.size_profile.view();
-            constexpr auto             profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
-                for (int size : sizes::dataset_small_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_aggregate(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(name.c_str(), CountFieldBenchmark<Model, field_info>{size}, actual_iterations);
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(
-                        test.test_name.c_str(), CountFieldBenchmark<Model, field_info>{dataset_size}, iterations
-                );
-            }
+            runner.dispatch_sized<test, IterKind::Aggregate>(iterations, test.dataset_size, [](int size) {
+                constexpr auto field_info = dispatch_field<Model>(test.aggregate.field.view());
+                return CountFieldBenchmark<Model, field_info>{size};
+            });
         }
 
         template <typename Model, auto& test>
         static auto run_aggregate_count_distinct_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name  = test.aggregate.field.view();
-            constexpr auto             field_info  = dispatch_field<Model>(field_name);
-            constexpr auto             profile_str = test.size_profile.view();
-            constexpr auto             profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
-                for (int size : sizes::dataset_small_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_aggregate(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(
-                            name.c_str(), CountDistinctBenchmark<Model, field_info>{size}, actual_iterations
-                    );
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(
-                        test.test_name.c_str(), CountDistinctBenchmark<Model, field_info>{dataset_size}, iterations
-                );
-            }
+            runner.dispatch_sized<test, IterKind::Aggregate>(iterations, test.dataset_size, [](int size) {
+                constexpr auto field_info = dispatch_field<Model>(test.aggregate.field.view());
+                return CountDistinctBenchmark<Model, field_info>{size};
+            });
         }
 
         template <typename Model, auto& test>
         static auto run_aggregate_sum_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name  = test.aggregate.field.view();
-            constexpr auto             field_info  = dispatch_field<Model>(field_name);
-            constexpr auto             profile_str = test.size_profile.view();
-            constexpr auto             profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
-                for (int size : sizes::dataset_small_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_aggregate(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(name.c_str(), SumBenchmark<Model, field_info>{size}, actual_iterations);
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(test.test_name.c_str(), SumBenchmark<Model, field_info>{dataset_size}, iterations);
-            }
+            runner.dispatch_sized<test, IterKind::Aggregate>(iterations, test.dataset_size, [](int size) {
+                constexpr auto field_info = dispatch_field<Model>(test.aggregate.field.view());
+                return SumBenchmark<Model, field_info>{size};
+            });
         }
 
         template <typename Model, auto& test>
         static auto run_aggregate_avg_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name  = test.aggregate.field.view();
-            constexpr auto             field_info  = dispatch_field<Model>(field_name);
-            constexpr auto             profile_str = test.size_profile.view();
-            constexpr auto             profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
-                for (int size : sizes::dataset_small_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_aggregate(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(name.c_str(), AvgBenchmark<Model, field_info>{size}, actual_iterations);
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(test.test_name.c_str(), AvgBenchmark<Model, field_info>{dataset_size}, iterations);
-            }
+            runner.dispatch_sized<test, IterKind::Aggregate>(iterations, test.dataset_size, [](int size) {
+                constexpr auto field_info = dispatch_field<Model>(test.aggregate.field.view());
+                return AvgBenchmark<Model, field_info>{size};
+            });
         }
 
         template <typename Model, auto& test>
         static auto run_aggregate_min_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name  = test.aggregate.field.view();
-            constexpr auto             field_info  = dispatch_field<Model>(field_name);
-            constexpr auto             profile_str = test.size_profile.view();
-            constexpr auto             profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
-                for (int size : sizes::dataset_small_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_aggregate(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(name.c_str(), MinBenchmark<Model, field_info>{size}, actual_iterations);
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(test.test_name.c_str(), MinBenchmark<Model, field_info>{dataset_size}, iterations);
-            }
+            runner.dispatch_sized<test, IterKind::Aggregate>(iterations, test.dataset_size, [](int size) {
+                constexpr auto field_info = dispatch_field<Model>(test.aggregate.field.view());
+                return MinBenchmark<Model, field_info>{size};
+            });
         }
 
         template <typename Model, auto& test>
         static auto run_aggregate_max_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name  = test.aggregate.field.view();
-            constexpr auto             field_info  = dispatch_field<Model>(field_name);
-            constexpr auto             profile_str = test.size_profile.view();
-            constexpr auto             profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetSmall) {
-                for (int size : sizes::dataset_small_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_aggregate(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(name.c_str(), MaxBenchmark<Model, field_info>{size}, actual_iterations);
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(test.test_name.c_str(), MaxBenchmark<Model, field_info>{dataset_size}, iterations);
-            }
+            runner.dispatch_sized<test, IterKind::Aggregate>(iterations, test.dataset_size, [](int size) {
+                constexpr auto field_info = dispatch_field<Model>(test.aggregate.field.view());
+                return MaxBenchmark<Model, field_info>{size};
+            });
         }
 
         // ====================================================================
@@ -788,132 +569,49 @@ namespace storm::benchmark {
 
         template <typename Model, auto& test>
         static auto run_distinct_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name  = test.distinct.fields[0].view();
-            constexpr auto             field_info  = dispatch_field<Model>(field_name);
-            constexpr auto             profile_str = test.size_profile.view();
-            constexpr auto             profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
-                for (int size : sizes::dataset_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_dataset(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(
-                            name.c_str(), SimpleDistinctBenchmark<Model, field_info>{size}, actual_iterations
-                    );
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(
-                        test.test_name.c_str(), SimpleDistinctBenchmark<Model, field_info>{dataset_size}, iterations
-                );
-            }
+            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
+                constexpr auto field_info = dispatch_field<Model>(test.distinct.fields[0].view());
+                return SimpleDistinctBenchmark<Model, field_info>{size};
+            });
         }
 
         template <typename Model, auto& test>
         static auto run_distinct_where_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view distinct_field_name = test.distinct.fields[0].view();
-            constexpr auto             distinct_field_info = dispatch_field<Model>(distinct_field_name);
-            constexpr std::string_view where_field_name    = test.where.field.view();
-            constexpr auto             where_field_info    = dispatch_field<Model>(where_field_name);
-            constexpr auto             op_str              = test.where.op;
-            constexpr double           value               = test.where.value.as_double;
-            constexpr auto             profile_str         = test.size_profile.view();
-            constexpr auto             profile             = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
-                for (int size : sizes::dataset_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_dataset(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(
-                            name.c_str(),
-                            DistinctWhereBenchmark<Model, distinct_field_info, where_field_info, op_str, double>{
-                                    value, size
-                            },
-                            actual_iterations
-                    );
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(
-                        test.test_name.c_str(),
-                        DistinctWhereBenchmark<Model, distinct_field_info, where_field_info, op_str, double>{
-                                value, dataset_size
-                        },
-                        iterations
-                );
-            }
+            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
+                constexpr auto   distinct_field_info = dispatch_field<Model>(test.distinct.fields[0].view());
+                constexpr auto   where_field_info    = dispatch_field<Model>(test.where.field.view());
+                constexpr auto   op_str              = test.where.op;
+                constexpr double value               = test.where.value.as_double;
+                return DistinctWhereBenchmark<Model, distinct_field_info, where_field_info, op_str, double>{
+                        value, size
+                };
+            });
         }
 
         template <typename Model, auto& test>
         static auto run_distinct_join_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view distinct_field_name = test.distinct.fields[0].view();
-            constexpr auto             distinct_field_info = dispatch_field<FKMessage>(distinct_field_name);
-            constexpr auto             profile_str         = test.size_profile.view();
-            constexpr auto             profile             = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
-                for (int size : sizes::dataset_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_dataset(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(
-                            name.c_str(),
-                            DistinctJoinBenchmark<FKMessage, User, &FKMessage::sender, distinct_field_info>{size},
-                            actual_iterations
-                    );
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(
-                        test.test_name.c_str(),
-                        DistinctJoinBenchmark<FKMessage, User, &FKMessage::sender, distinct_field_info>{dataset_size},
-                        iterations
-                );
-            }
+            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
+                constexpr auto distinct_field_info = dispatch_field<FKMessage>(test.distinct.fields[0].view());
+                return DistinctJoinBenchmark<FKMessage, User, &FKMessage::sender, distinct_field_info>{size};
+            });
         }
 
         template <typename Model, auto& test>
         static auto run_distinct_where_join_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view distinct_field_name = test.distinct.fields[0].view();
-            constexpr auto             distinct_field_info = dispatch_field<FKMessage>(distinct_field_name);
-            constexpr std::string_view where_field_name    = test.where.field.view();
-            constexpr auto             where_field_info    = dispatch_field<User>(where_field_name);
-            constexpr auto             op_str              = test.where.op;
-            constexpr int              value               = test.where.value.as_int;
-            constexpr auto             profile_str         = test.size_profile.view();
-            constexpr auto             profile             = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
-                for (int size : sizes::dataset_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_dataset(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(
-                            name.c_str(),
-                            DistinctWhereJoinBenchmark<
-                                    FKMessage,
-                                    User,
-                                    &FKMessage::sender,
-                                    distinct_field_info,
-                                    where_field_info,
-                                    op_str,
-                                    int>{value, size},
-                            actual_iterations
-                    );
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(
-                        test.test_name.c_str(),
-                        DistinctWhereJoinBenchmark<
-                                FKMessage,
-                                User,
-                                &FKMessage::sender,
-                                distinct_field_info,
-                                where_field_info,
-                                op_str,
-                                int>{value, dataset_size},
-                        iterations
-                );
-            }
+            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
+                constexpr auto distinct_field_info = dispatch_field<FKMessage>(test.distinct.fields[0].view());
+                constexpr auto where_field_info    = dispatch_field<User>(test.where.field.view());
+                constexpr auto op_str              = test.where.op;
+                constexpr int  value               = test.where.value.as_int;
+                return DistinctWhereJoinBenchmark<
+                        FKMessage,
+                        User,
+                        &FKMessage::sender,
+                        distinct_field_info,
+                        where_field_info,
+                        op_str,
+                        int>{value, size};
+            });
         }
 
         // ====================================================================
@@ -1524,19 +1222,9 @@ namespace storm::benchmark {
         // ====================================================================
         template <typename Model, auto& test>
         static auto run_first_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr auto profile_str = test.size_profile.view();
-            constexpr auto profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
-                for (int size : sizes::dataset_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_dataset(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    runner.run_benchmark(name.c_str(), FirstBenchmark<Model>{size}, actual_iterations);
-                }
-            } else {
-                constexpr int dataset_size = test.dataset_size;
-                runner.run_benchmark(test.test_name.c_str(), FirstBenchmark<Model>{dataset_size}, iterations);
-            }
+            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
+                return FirstBenchmark<Model>{size};
+            });
         }
 
         template <typename Model, auto& test>
@@ -1576,44 +1264,15 @@ namespace storm::benchmark {
 
         template <typename Model, auto& test, SetOpBenchType OpType, bool WithOrderBy = false, bool WithLimit = false>
         static auto run_setop_operation_impl(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr auto profile_str = test.size_profile.view();
-            constexpr auto profile     = sizes::profile_from_string(profile_str);
-
-            if constexpr (profile == sizes::SizeProfile::DatasetStandard) {
-                for (int size : sizes::dataset_standard_sizes(runner.is_smoke())) {
-                    int actual_iterations = calculate_iterations(sizes::iterations_for_dataset(size), runner.mode());
-                    std::string name      = std::format("{}_{}", test.test_name.view(), size);
-                    if constexpr (WithLimit) {
-                        constexpr int limit_value = test.limit.value;
-                        runner.run_benchmark(
-                                name.c_str(),
-                                SetOpBenchmark<Model, OpType, WithOrderBy, WithLimit>{size, limit_value},
-                                actual_iterations
-                        );
-                    } else {
-                        runner.run_benchmark(
-                                name.c_str(),
-                                SetOpBenchmark<Model, OpType, WithOrderBy, WithLimit>{size},
-                                actual_iterations
-                        );
-                    }
-                }
+            if constexpr (WithLimit) {
+                constexpr int limit_value = test.limit.value;
+                runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
+                    return SetOpBenchmark<Model, OpType, WithOrderBy, WithLimit>{size, limit_value};
+                });
             } else {
-                constexpr int dataset_size = test.dataset_size;
-                if constexpr (WithLimit) {
-                    constexpr int limit_value = test.limit.value;
-                    runner.run_benchmark(
-                            test.test_name.c_str(),
-                            SetOpBenchmark<Model, OpType, WithOrderBy, WithLimit>{dataset_size, limit_value},
-                            iterations
-                    );
-                } else {
-                    runner.run_benchmark(
-                            test.test_name.c_str(),
-                            SetOpBenchmark<Model, OpType, WithOrderBy, WithLimit>{dataset_size},
-                            iterations
-                    );
-                }
+                runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
+                    return SetOpBenchmark<Model, OpType, WithOrderBy, WithLimit>{size};
+                });
             }
         }
 
