@@ -2,8 +2,8 @@
 """
 Convert benchmark_tests.yaml to benchmark_tests.json
 
-This script converts the human-friendly YAML benchmark definitions
-to JSON format for compile-time parsing with C++26 #embed.
+Reads the nested-format YAML benchmark definitions and emits JSON that the
+compile-time C++ parser (parser.hpp) consumes via #embed.
 
 Usage:
     python yaml_to_json.py [input.yaml] [output.json]
@@ -12,250 +12,146 @@ If no arguments provided, uses default paths:
     Input:  benchmarks/tests/benchmark_tests.yaml
     Output: benchmarks/tests/benchmark_tests.json
 
-Note: Uses built-in simple YAML parser (no external dependencies required).
-      Supports the subset of YAML used by benchmark definitions.
+Requires PyYAML.
 """
 
 import json
 import sys
 from pathlib import Path
 
-
-def parse_yaml_value(value: str):
-    """Parse a YAML value string into Python type."""
-    value = value.strip()
-
-    if not value:
-        return None
-
-    # Handle quoted strings
-    if (value.startswith('"') and value.endswith('"')) or \
-       (value.startswith("'") and value.endswith("'")):
-        return value[1:-1]
-
-    # Handle booleans
-    if value.lower() == 'true':
-        return True
-    if value.lower() == 'false':
-        return False
-
-    # Handle null
-    if value.lower() in ('null', '~'):
-        return None
-
-    # Handle numbers
-    try:
-        if '.' in value:
-            return float(value)
-        return int(value)
-    except ValueError:
-        pass
-
-    # Handle inline arrays [1, 2, 3]
-    if value.startswith('[') and value.endswith(']'):
-        inner = value[1:-1].strip()
-        if not inner:
-            return []
-        items = [parse_yaml_value(item.strip()) for item in inner.split(',')]
-        return items
-
-    # Return as string
-    return value
+try:
+    import yaml  # type: ignore
+except ImportError:
+    print("Error: PyYAML is required. Install with: pip install pyyaml", file=sys.stderr)
+    sys.exit(1)
 
 
-class _YamlParserState:
-    """Mutable state for the simple YAML parser."""
+# Top-level keys from YAML to JSON (with 'test_' prefix where parser.hpp expects it)
+TOP_LEVEL_RENAME = {
+    "name": "test_name",
+    "category": "test_category",
+}
 
-    def __init__(self):
-        self.result = {}
-        self.in_list = False
-        self.list_key = None
-        self.list_items = []
-        self.current_item = None
-        self.list_item_indent = 0
+# Nested spec keys that are passed through as-is
+NESTED_KEYS = {"where", "order_by", "group_by", "distinct", "limit", "aggregate", "join"}
 
-    def finalize_list(self):
-        """Save the current list into result and reset list state."""
-        if self.current_item is not None:
-            self.list_items.append(self.current_item)
-        self.result[self.list_key] = self.list_items
-        self.in_list = False
-        self.list_key = None
-        self.list_items = []
-        self.current_item = None
-
-
-def _parse_list_item_start(state: _YamlParserState, stripped: str, indent: int):
-    """Handle a '- ' prefixed list item line."""
-    if not state.in_list:
-        return
-
-    # Save previous item if exists
-    if state.current_item is not None:
-        state.list_items.append(state.current_item)
-
-    rest = stripped[2:].strip()
-    state.list_item_indent = indent
-
-    if ':' in rest:
-        key, _, value = rest.partition(':')
-        state.current_item = {}
-        value = value.strip()
-        if value:
-            state.current_item[key.strip()] = parse_yaml_value(value)
-    else:
-        state.current_item = parse_yaml_value(rest)
+# Scalar top-level keys that are passed through as-is
+SCALAR_PASSTHROUGH = {
+    "description",
+    "model",
+    "operation",
+    "iterations",
+    "dataset_size",
+    "batch_size",
+    "size_profile",
+}
 
 
-def _parse_nested_list_kv(state: _YamlParserState, stripped: str):
-    """Handle a nested key-value pair inside a list item."""
-    if not isinstance(state.current_item, dict):
-        return
-    key, _, value = stripped.partition(':')
-    value = value.strip()
-    if value:
-        state.current_item[key.strip()] = parse_yaml_value(value)
+def typed_value(v):
+    """Wrap a scalar in the {kind, value} form that parser.hpp's parse_typed_value expects."""
+    if isinstance(v, bool):
+        return {"kind": "bool", "value": v}
+    if isinstance(v, int):
+        return {"kind": "int", "value": v}
+    if isinstance(v, float):
+        return {"kind": "double", "value": v}
+    if isinstance(v, str):
+        return {"kind": "string", "value": v}
+    raise TypeError(f"Unsupported scalar type for typed_value: {type(v).__name__}")
 
 
-def _parse_top_level_kv(state: _YamlParserState, stripped: str):
-    """Handle a top-level key-value pair (outside any list)."""
-    key, _, value = stripped.partition(':')
-    key = key.strip()
-    value = value.strip()
-
-    if value:
-        state.result[key] = parse_yaml_value(value)
-    else:
-        # Assume it starts a list
-        state.in_list = True
-        state.list_key = key
-        state.list_items = []
-        state.current_item = None
+def transform_where(w: dict) -> dict:
+    """Wrap raw YAML scalar values in the TypedValue envelope."""
+    out = {}
+    for k, v in w.items():
+        if k in ("value", "value2", "value2_rhs"):
+            out[k] = typed_value(v)
+        elif k == "in_values":
+            out[k] = list(v)  # array of ints, stays flat
+        else:
+            out[k] = v
+    return out
 
 
-def parse_simple_yaml(yaml_content: str) -> dict:
-    """
-    Parse a simple subset of YAML used by benchmark definitions.
+def transform_having(h: dict) -> dict:
+    out = {}
+    for k, v in h.items():
+        if k == "value":
+            out[k] = typed_value(v)
+        else:
+            out[k] = v
+    return out
 
-    Supports:
-    - Comments (#)
-    - Key-value pairs
-    - Lists (with - prefix)
-    - Nested objects (via indentation)
-    - Inline arrays [1, 2, 3]
-    - Strings, integers, floats, booleans
-    """
-    state = _YamlParserState()
 
-    for line in yaml_content.split('\n'):
-        stripped = line.strip()
-        if not stripped or stripped.startswith('#'):
-            continue
+def transform_group_by(g: dict) -> dict:
+    out = {}
+    for k, v in g.items():
+        if k == "having":
+            out[k] = transform_having(v)
+        else:
+            out[k] = v
+    return out
 
-        indent = len(line) - len(line.lstrip())
 
-        # Check if we're ending a list (dedent)
-        if state.in_list and indent == 0 and not stripped.startswith('-'):
-            state.finalize_list()
+def transform_test(test: dict) -> dict:
+    """Transform one YAML test entry into the JSON shape parser.hpp expects."""
+    out: dict = {}
 
-        # Dispatch to appropriate handler
-        if stripped.startswith('- '):
-            _parse_list_item_start(state, stripped, indent)
-        elif state.in_list and indent > state.list_item_indent and ':' in stripped:
-            _parse_nested_list_kv(state, stripped)
-        elif ':' in stripped and not state.in_list:
-            _parse_top_level_kv(state, stripped)
+    for yaml_key, json_key in TOP_LEVEL_RENAME.items():
+        if yaml_key in test and test[yaml_key] is not None:
+            out[json_key] = test[yaml_key]
 
-    # Don't forget the last item/list
-    if state.in_list:
-        state.finalize_list()
+    for key in SCALAR_PASSTHROUGH:
+        if key in test and test[key] is not None:
+            out[key] = test[key]
 
-    return state.result
+    if "where" in test and test["where"]:
+        out["where"] = transform_where(test["where"])
+
+    if "order_by" in test and test["order_by"]:
+        out["order_by"] = list(test["order_by"])  # array of OrderBySpec dicts
+
+    if "group_by" in test and test["group_by"]:
+        out["group_by"] = transform_group_by(test["group_by"])
+
+    if "distinct" in test and test["distinct"]:
+        out["distinct"] = test["distinct"]
+
+    if "limit" in test and test["limit"]:
+        out["limit"] = test["limit"]
+
+    if "aggregate" in test and test["aggregate"]:
+        out["aggregate"] = test["aggregate"]
+
+    if "join" in test and test["join"]:
+        out["join"] = test["join"]
+
+    return out
 
 
 def convert_yaml_to_json(yaml_path: Path, json_path: Path) -> None:
-    """Convert YAML benchmark definitions to JSON format."""
+    with open(yaml_path) as f:
+        data = yaml.safe_load(f)
 
-    # Read YAML
-    with open(yaml_path, 'r') as f:
-        yaml_content = f.read()
-
-    data = parse_simple_yaml(yaml_content)
-
-    if 'tests' not in data:
-        print("Error: YAML file must have a 'tests' key", file=sys.stderr)
-        print(f"Parsed keys: {list(data.keys())}", file=sys.stderr)
+    if not isinstance(data, dict) or "tests" not in data:
+        print("Error: YAML file must have a top-level 'tests' key", file=sys.stderr)
         sys.exit(1)
 
-    tests = data['tests']
-
+    tests = data["tests"]
     if tests is None:
-        print("Error: 'tests' is None - parsing failed", file=sys.stderr)
+        print("Error: 'tests' is None — parsing failed", file=sys.stderr)
         sys.exit(1)
 
-    # Transform YAML format to JSON format expected by C++ parser
-    json_tests = []
-    for test in tests:
-        if not isinstance(test, dict):
-            continue
+    json_tests = [transform_test(t) for t in tests if isinstance(t, dict)]
 
-        json_test = {}
-
-        # Map YAML keys to JSON keys (with test_ prefix where needed)
-        key_mapping = {
-            'name': 'test_name',
-            'category': 'test_category',
-            'description': 'description',
-            'model': 'model',
-            'operation': 'operation',
-            'size_profile': 'size_profile',
-            'iterations': 'iterations',
-            'dataset_size': 'dataset_size',
-            'batch_size': 'batch_size',
-            'where_field': 'where_field',
-            'where_op': 'where_op',
-            'where_value_int': 'where_value_int',
-            'where_value_int2': 'where_value_int2',
-            'where_value_double': 'where_value_double',
-            'where_value_bool': 'where_value_bool',
-            'where_value_string': 'where_value_string',
-            'where_field2': 'where_field2',
-            'where_op2': 'where_op2',
-            'where_value2_int': 'where_value2_int',
-            'where_in_values': 'where_in_values',
-            'distinct_field': 'distinct_field',
-            'distinct_field2': 'distinct_field2',
-            'distinct_field3': 'distinct_field3',
-            'aggregate_field': 'aggregate_field',
-            'limit_value': 'limit_value',
-            'offset_value': 'offset_value',
-            'order_by_field': 'order_by_field',
-            'order_by_direction': 'order_by_direction',
-            'order_by_field2': 'order_by_field2',
-            'order_by_direction2': 'order_by_direction2',
-            'group_by_field': 'group_by_field',
-            'group_by_field2': 'group_by_field2',
-            'having_field': 'having_field',
-            'having_value_int': 'having_value_int',
-        }
-
-        for yaml_key, json_key in key_mapping.items():
-            if yaml_key in test and test[yaml_key] is not None:
-                json_test[json_key] = test[yaml_key]
-
-        if json_test:  # Only add non-empty tests
-            json_tests.append(json_test)
-
-    # Write JSON with nice formatting
-    with open(json_path, 'w') as f:
+    with open(json_path, "w") as f:
         json.dump(json_tests, f, indent=2)
-        f.write('\n')  # Trailing newline
+        f.write("\n")
 
     print(f"Converted {len(json_tests)} tests: {yaml_path} -> {json_path}")
 
 
 def main():
-    # Determine paths
     script_dir = Path(__file__).parent
     benchmarks_dir = script_dir.parent
 
@@ -264,10 +160,10 @@ def main():
         json_path = Path(sys.argv[2])
     elif len(sys.argv) == 2:
         yaml_path = Path(sys.argv[1])
-        json_path = yaml_path.with_suffix('.json')
+        json_path = yaml_path.with_suffix(".json")
     else:
-        yaml_path = benchmarks_dir / 'tests' / 'benchmark_tests.yaml'
-        json_path = benchmarks_dir / 'tests' / 'benchmark_tests.json'
+        yaml_path = benchmarks_dir / "tests" / "benchmark_tests.yaml"
+        json_path = benchmarks_dir / "tests" / "benchmark_tests.json"
 
     if not yaml_path.exists():
         print(f"Error: YAML file not found: {yaml_path}", file=sys.stderr)
@@ -276,5 +172,5 @@ def main():
     convert_yaml_to_json(yaml_path, json_path)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

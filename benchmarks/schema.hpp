@@ -1,16 +1,30 @@
 #pragma once
 
 /**
- * Benchmark Test Schema with Nested Structs
+ * Benchmark Test Schema — Nested Layout
  *
- * JSON is FLAT (for constexpr parsing):
- *   "where_field": "age", "where_op": ">", "where_value_int": 30
+ * JSON source (human-readable, nested):
+ *   {
+ *     "where": { "field": "age", "op": ">", "value": 30 },
+ *     "order_by": [ { "field": "salary", "direction": "DESC" } ],
+ *     "group_by": { "fields": ["department"], "having": { "field": "age", "op": ">", "value": 30 } },
+ *     ...
+ *   }
  *
- * C++ is NESTED (for clean organization):
- *   test.where.field, test.where.op, test.where.value_int
+ * C++ mirrors this layout: test.where.field, test.order_by[0].field,
+ * test.group_by.fields[0], test.group_by.having.field, etc.
+ *
+ * Each sub-spec carries a `bool enabled` flag set by the parser when the
+ * corresponding JSON object is present, so consumers can dispatch at
+ * compile time with `if constexpr (test.where.enabled) { ... }`.
+ *
+ * Values use a tagged TypedValue so the parser sniffs the JSON token type
+ * (int / double / bool / string) — no more where_value_int / _double / _bool / _string
+ * suffix proliferation.
  */
 
 #include <array>
+#include <cstddef>
 #include <string_view>
 
 namespace storm::benchmark {
@@ -40,43 +54,139 @@ namespace storm::benchmark {
             return data.data();
         }
 
+        constexpr auto empty() const -> bool {
+            return len == 0;
+        }
+
         constexpr bool operator==(std::string_view other) const {
             return view() == other;
         }
     };
 
-    // Nested WHERE clause structure
-    struct WhereClause {
+    // ========================================================================
+    // TypedValue — tagged union of supported leaf value types
+    // ========================================================================
+    struct TypedValue {
+        enum class Kind : unsigned char { None, Int, Double, Bool, String };
+
+        Kind                kind      = Kind::None;
+        int                 as_int    = 0;
+        double              as_double = 0.0;
+        bool                as_bool   = false;
+        ConstexprString<64> as_string;
+
+        constexpr auto is_set() const -> bool {
+            return kind != Kind::None;
+        }
+    };
+
+    // ========================================================================
+    // WhereSpec — a WHERE clause, optionally combined with a second clause via AND/OR
+    //
+    // Supports leaf operators (>, >=, <, <=, ==, !=, LIKE, BETWEEN, IN,
+    // IS NULL, IS NOT NULL) plus a single optional AND/OR right-hand side.
+    // Two-value operators (BETWEEN) use value2. IN uses in_values.
+    // ========================================================================
+    struct WhereSpec {
+        bool                enabled = false;
         ConstexprString<32> field;
-        ConstexprString<16> op; // Increased for operators like "BETWEEN", "LIKE", "IN", "AND_OR"
+        ConstexprString<16> op;
+        TypedValue          value;
+        TypedValue          value2; // for BETWEEN
 
-        // Union-like for different value types
-        int                 value_int    = 0;
-        double              value_double = 0.0;
-        bool                value_bool   = false;
-        ConstexprString<64> value_string;
-
-        // Second value for BETWEEN operator
-        int    value_int2    = 0;
-        double value_double2 = 0.0;
-
-        // Array values for IN operator (fixed size for compile-time)
         static constexpr size_t        MAX_IN_VALUES = 10;
         std::array<int, MAX_IN_VALUES> in_values_int{};
         size_t                         in_values_count = 0;
 
-        // Second field for complex AND/OR expressions
+        // Optional second clause combined with and/or
+        // We only ever have depth 1 in practice, so we encode as flat second clause
+        // rather than recursive (which would blow up structural-type complexity).
+        bool                combine_and = false; // true if combined with AND
+        bool                combine_or  = false; // true if combined with OR
         ConstexprString<32> field2;
         ConstexprString<8>  op2;
-        int                 value2_int = 0;
-
-        enum class ValueType { None, Int, Double, Bool, String };
-        ValueType value_type = ValueType::None;
-
-        consteval WhereClause() = default;
+        TypedValue          value2_rhs; // right-hand value of the combined clause
     };
 
-    // Main benchmark test with nested structure
+    // ========================================================================
+    // OrderBySpec — one ORDER BY term. Tests use an array of up to 2 terms.
+    // ========================================================================
+    struct OrderBySpec {
+        bool                enabled = false;
+        ConstexprString<32> field;
+        ConstexprString<8>  direction; // "ASC" / "DESC" (empty = ASC)
+        ConstexprString<16> collate;   // "NOCASE" / "BINARY" / "RTRIM" (empty = none)
+    };
+
+    // ========================================================================
+    // HavingSpec — HAVING clause, only valid nested inside GroupBySpec.
+    // ========================================================================
+    struct HavingSpec {
+        bool                enabled = false;
+        ConstexprString<32> field;
+        ConstexprString<16> op;
+        TypedValue          value;
+    };
+
+    // ========================================================================
+    // GroupBySpec — one or more GROUP BY fields, optional HAVING.
+    // ========================================================================
+    struct GroupBySpec {
+        bool                                        enabled    = false;
+        static constexpr size_t                     MAX_FIELDS = 2;
+        std::array<ConstexprString<32>, MAX_FIELDS> fields{};
+        size_t                                      field_count = 0;
+        HavingSpec                                  having;
+    };
+
+    // ========================================================================
+    // DistinctSpec — SELECT DISTINCT over 1..3 fields.
+    // ========================================================================
+    struct DistinctSpec {
+        bool                                        enabled    = false;
+        static constexpr size_t                     MAX_FIELDS = 3;
+        std::array<ConstexprString<32>, MAX_FIELDS> fields{};
+        size_t                                      field_count = 0;
+    };
+
+    // ========================================================================
+    // LimitSpec — LIMIT and/or OFFSET. `enabled` is true if either is set.
+    // ========================================================================
+    struct LimitSpec {
+        bool enabled = false;
+        int  value   = 0; // 0 = no LIMIT
+        int  offset  = 0; // 0 = no OFFSET
+    };
+
+    // ========================================================================
+    // AggregateSpec — aggregate function (count/sum/avg/min/max/count_distinct)
+    // over an optional field. `count` with empty field means COUNT(*).
+    // ========================================================================
+    struct AggregateSpec {
+        bool                enabled = false;
+        ConstexprString<16> func;  // "count" / "sum" / "avg" / "min" / "max" / "count_distinct"
+        ConstexprString<32> field; // optional — empty means COUNT(*)
+    };
+
+    // ========================================================================
+    // JoinSpec — JOIN configuration. Reserved for PR2 (schema-driven JOINs).
+    // In PR1 this is parsed-but-unused; existing run_*_operation methods
+    // continue to hardcode JOIN types until PR2.
+    // ========================================================================
+    struct JoinSpec {
+        bool                enabled = false;
+        ConstexprString<8>  type;    // "inner" / "left" / "right"
+        ConstexprString<32> related; // related model name ("User")
+        ConstexprString<32> fk;      // FK field name ("sender")
+        // Multi-FK support (up to 2 for now)
+        static constexpr size_t                  MAX_FKS = 2;
+        std::array<ConstexprString<32>, MAX_FKS> fks{};
+        size_t                                   fk_count = 0;
+    };
+
+    // ========================================================================
+    // BenchmarkTest — nested top-level test definition.
+    // ========================================================================
     struct BenchmarkTest { // NOSONAR(cpp:S1820)
         ConstexprString<64>  test_name;
         ConstexprString<32>  test_category;
@@ -84,51 +194,31 @@ namespace storm::benchmark {
         ConstexprString<32>  model;
         ConstexprString<32>  operation;
 
-        // Nested WHERE clause
-        WhereClause where;
+        // Nested specs
+        WhereSpec                             where;
+        static constexpr size_t               MAX_ORDER_BY = 2;
+        std::array<OrderBySpec, MAX_ORDER_BY> order_by{};
+        size_t                                order_by_count = 0;
+        GroupBySpec                           group_by;
+        DistinctSpec                          distinct;
+        LimitSpec                             limit;
+        AggregateSpec                         aggregate;
+        JoinSpec                              join;
 
-        // Aggregate field (for SUM, AVG, MIN, MAX, COUNT(field), COUNT(DISTINCT))
-        ConstexprString<32> aggregate_field;
-
-        // Distinct field (for SELECT DISTINCT operations)
-        ConstexprString<32> distinct_field;
-        ConstexprString<32> distinct_field2; // Second field for multi-field DISTINCT
-        ConstexprString<32> distinct_field3; // Third field for multi-field DISTINCT
-
-        // Test parameters
+        // Scalar test parameters
         int iterations   = 1000;
         int dataset_size = 10000;
-        int batch_size   = 1; // For batch operations (1 = single operation)
-
-        // LIMIT/OFFSET clause parameters
-        int limit_value  = 0; // 0 = no LIMIT, > 0 = LIMIT n
-        int offset_value = 0; // 0 = no OFFSET, > 0 = OFFSET n
-
-        // ORDER BY clause parameters
-        ConstexprString<32> order_by_field;      // Field name to order by (empty = no ORDER BY)
-        ConstexprString<8>  order_by_direction;  // "ASC" or "DESC" (empty = default ASC)
-        ConstexprString<16> order_by_collate;    // "NOCASE", "BINARY", "RTRIM" (empty = no COLLATE)
-        ConstexprString<32> order_by_field2;     // Second field for multi-field ORDER BY
-        ConstexprString<8>  order_by_direction2; // "ASC" or "DESC" for second field
-
-        // GROUP BY clause parameters
-        ConstexprString<32> group_by_field;  // Field name to group by (empty = no GROUP BY)
-        ConstexprString<32> group_by_field2; // Second field for multi-field GROUP BY
-
-        // HAVING clause parameters
-        ConstexprString<32> having_field;         // Field name for HAVING condition
-        int                 having_value_int = 0; // Integer value for HAVING comparison
+        int batch_size   = 1;
 
         // Size profile for automatic iteration over sizes
         // Values: "none", "batch_standard", "batch_insert_edge", "batch_update_edge",
         //         "dataset_standard", "dataset_small"
-        ConstexprString<32> size_profile; // Empty or "none" = non-scaled test (run once)
+        ConstexprString<32> size_profile;
 
         consteval BenchmarkTest() = default;
     };
 
-    // Note: BENCHMARK_TESTS will be defined after including benchmark_json_parser.hpp
-    // Forward declaration only
+    // Forward declaration — defined in parser.hpp
     consteval auto load_benchmark_tests();
 
 } // namespace storm::benchmark
