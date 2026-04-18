@@ -679,7 +679,7 @@ namespace storm::benchmark {
         // ====================================================================
         static auto run_terminal(auto& stmt) -> void {
             if constexpr (is_group_by_op() || is_distinct_op()) {
-                stmt.select();
+                (void)stmt.select();
             } else {
                 (void)stmt.execute();
             }
