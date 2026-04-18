@@ -1,5 +1,14 @@
 # JOIN Performance Analysis & Implementation
 
+> **Note (2026-04-18, #194):** The QueryBenchmark collapse unified the raw-SQLite
+> side to generate SQL via `QuerySet::sql()` instead of hand-written strings.
+> Raw JOINs now carry Storm's `t1`/`t2` table aliases instead of the previous
+> hand-written `fm`/`u` aliases. This keeps the comparison fair (one source of
+> truth for both sides) but may shift JOIN latency numbers by a few percent vs.
+> the values recorded below. Numbers in the table predate the change and will
+> be refreshed after the smoke test regression is resolved and `--thorough`
+> re-runs land.
+
 ## Performance Results
 
 All benchmarks performed on 10,000 rows with 100 iterations in Release builds.
