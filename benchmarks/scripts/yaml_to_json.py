@@ -33,7 +33,7 @@ TOP_LEVEL_RENAME = {
 }
 
 # Nested spec keys that are passed through as-is
-NESTED_KEYS = {"where", "order_by", "group_by", "distinct", "limit", "aggregate", "join"}
+NESTED_KEYS = {"where", "order_by", "group_by", "distinct", "limit", "aggregate", "join", "setop"}
 
 # Scalar top-level keys that are passed through as-is
 SCALAR_PASSTHROUGH = {
@@ -60,17 +60,32 @@ def typed_value(v):
     raise TypeError(f"Unsupported scalar type for typed_value: {type(v).__name__}")
 
 
-def transform_where(w: dict) -> dict:
-    """Wrap raw YAML scalar values in the TypedValue envelope."""
+def transform_condition(c: dict) -> dict:
+    """Transform a single WHERE condition: {field, op, value} → {field, op, values: [...]}."""
     out = {}
-    for k, v in w.items():
-        if k in ("value", "value2", "value2_rhs"):
-            out[k] = typed_value(v)
-        elif k == "in_values":
-            out[k] = list(v)  # array of ints, stays flat
+    for k, v in c.items():
+        if k == "value":
+            # Emit raw values — parse_typed_value sniffs type from JSON token
+            out["values"] = list(v) if isinstance(v, list) else [v]
         else:
             out[k] = v
     return out
+
+
+def transform_where(w: dict) -> dict:
+    """Transform WHERE spec.
+
+    Supports two formats:
+    - Single condition: {field, op, value} → {conditions: [{field, op, values: [...]}]}
+    - Multi-condition (AND/OR): {conditions: [...], combine: "and"/"or"}
+    """
+    if "conditions" in w:
+        return {
+            "conditions": [transform_condition(c) for c in w["conditions"]],
+            "combine": w["combine"],
+        }
+
+    return {"conditions": [transform_condition(w)]}
 
 
 def transform_having(h: dict) -> dict:
@@ -125,6 +140,9 @@ def transform_test(test: dict) -> dict:
 
     if "join" in test and test["join"]:
         out["join"] = test["join"]
+
+    if "setop" in test and test["setop"]:
+        out["setop"] = test["setop"]
 
     return out
 

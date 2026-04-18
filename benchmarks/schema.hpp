@@ -80,32 +80,50 @@ namespace storm::benchmark {
         }
     };
 
+    // Extract numeric value with correct type (int or double).
+    // TypedValue must be passed as NTTP so if constexpr can dispatch on kind.
+    template <TypedValue tv> consteval auto numeric_value() {
+        if constexpr (tv.kind == TypedValue::Kind::Double) {
+            return tv.as_double;
+        } else {
+            return tv.as_int;
+        }
+    }
+
     // ========================================================================
-    // WhereSpec — a WHERE clause, optionally combined with a second clause via AND/OR
+    // WhereCondition — a single WHERE clause term (field + operator + values)
     //
-    // Supports leaf operators (>, >=, <, <=, ==, !=, LIKE, BETWEEN, IN,
-    // IS NULL, IS NOT NULL) plus a single optional AND/OR right-hand side.
-    // Two-value operators (BETWEEN) use value2. IN uses in_values.
+    // values[] holds all operand values:
+    //   Comparison (>, <, ==, ...): values[0]        (value_count=1)
+    //   LIKE:                       values[0] string  (value_count=1)
+    //   BETWEEN:                    values[0], [1]    (value_count=2)
+    //   IN:                         values[0..N]      (value_count=N)
+    //   IS NULL / IS NOT NULL:      (value_count=0)
     // ========================================================================
-    struct WhereSpec {
-        bool                enabled = false;
+    struct WhereCondition {
         ConstexprString<32> field;
         ConstexprString<16> op;
-        TypedValue          value;
-        TypedValue          value2; // for BETWEEN
 
-        static constexpr size_t        MAX_IN_VALUES = 10;
-        std::array<int, MAX_IN_VALUES> in_values_int{};
-        size_t                         in_values_count = 0;
+        static constexpr size_t            MAX_VALUES = 10;
+        std::array<TypedValue, MAX_VALUES> values{};
+        size_t                             value_count = 0;
+    };
 
-        // Optional second clause combined with and/or
-        // We only ever have depth 1 in practice, so we encode as flat second clause
-        // rather than recursive (which would blow up structural-type complexity).
-        bool                combine_and = false; // true if combined with AND
-        bool                combine_or  = false; // true if combined with OR
-        ConstexprString<32> field2;
-        ConstexprString<8>  op2;
-        TypedValue          value2_rhs; // right-hand value of the combined clause
+    // ========================================================================
+    // WhereSpec — one or more WHERE conditions, optionally combined with AND/OR
+    //
+    // Single condition: conditions[0] holds the clause.
+    // Combined (AND/OR): conditions[0..1] hold two clauses, combine_and/combine_or set.
+    // ========================================================================
+    struct WhereSpec {
+        bool enabled = false;
+
+        static constexpr size_t                    MAX_CONDITIONS = 2;
+        std::array<WhereCondition, MAX_CONDITIONS> conditions{};
+        size_t                                     condition_count = 0;
+
+        bool combine_and = false;
+        bool combine_or  = false;
     };
 
     // ========================================================================
@@ -135,8 +153,16 @@ namespace storm::benchmark {
         bool                                        enabled    = false;
         static constexpr size_t                     MAX_FIELDS = 2;
         std::array<ConstexprString<32>, MAX_FIELDS> fields{};
-        size_t                                      field_count = 0;
         HavingSpec                                  having;
+
+        consteval auto field_count() const -> size_t {
+            size_t n = 0;
+            for (size_t i = 0; i < MAX_FIELDS; ++i) {
+                if (!fields[i].empty())
+                    ++n;
+            }
+            return n;
+        }
     };
 
     // ========================================================================
@@ -146,7 +172,15 @@ namespace storm::benchmark {
         bool                                        enabled    = false;
         static constexpr size_t                     MAX_FIELDS = 3;
         std::array<ConstexprString<32>, MAX_FIELDS> fields{};
-        size_t                                      field_count = 0;
+
+        consteval auto field_count() const -> size_t {
+            size_t n = 0;
+            for (size_t i = 0; i < MAX_FIELDS; ++i) {
+                if (!fields[i].empty())
+                    ++n;
+            }
+            return n;
+        }
     };
 
     // ========================================================================
@@ -185,6 +219,14 @@ namespace storm::benchmark {
     };
 
     // ========================================================================
+    // SetOpSpec — set operation type (union/union_all/except/intersect)
+    // ========================================================================
+    struct SetOpSpec {
+        bool                enabled = false;
+        ConstexprString<16> type; // "union" / "union_all" / "except" / "intersect"
+    };
+
+    // ========================================================================
     // BenchmarkTest — nested top-level test definition.
     // ========================================================================
     struct BenchmarkTest { // NOSONAR(cpp:S1820)
@@ -204,6 +246,7 @@ namespace storm::benchmark {
         LimitSpec                             limit;
         AggregateSpec                         aggregate;
         JoinSpec                              join;
+        SetOpSpec                             setop;
 
         // Scalar test parameters
         int iterations   = 1000;

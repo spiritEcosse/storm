@@ -16,15 +16,11 @@
 #include "parser.hpp"
 #include "models.hpp"
 #include "sizes.hpp"
-#include "operations/select.hpp" // Unified SELECT benchmark (WHERE, JOIN, WHERE+JOIN)
 #include "operations/insert.hpp"
 #include "operations/update.hpp"
 #include "operations/delete.hpp"
-#include "operations/aggregate.hpp"
-#include "operations/distinct.hpp"        // DISTINCT benchmarks
-#include "operations/where_operators.hpp" // LIKE, BETWEEN, IN, AND/OR benchmarks
-#include "operations/first_get.hpp"       // first() and get() benchmarks
-#include "operations/setop.hpp"           // UNION, UNION ALL, EXCEPT, INTERSECT benchmarks
+#include "operations/query_benchmark.hpp" // Unified QueryBenchmark<Model, test>
+#include "model_registry.hpp"             // Compile-time model/FK resolution
 
 namespace storm::benchmark {
 
@@ -223,14 +219,18 @@ namespace storm::benchmark {
             storm_throughputs.reserve(num_runs);
             raw_throughputs.reserve(num_runs);
 
-            int operations_storm = 0;
-            int operations_raw   = 0;
+            int operations_storm = iterations;
+            int operations_raw   = iterations;
 
             for (int run = 0; run < num_runs; run++) {
                 // ===== Storm ORM Execution =====
                 auto start_storm = std::chrono::steady_clock::now();
-                operations_storm = bench.execute(iterations);
-                auto end_storm   = std::chrono::steady_clock::now();
+                if constexpr (std::is_void_v<decltype(bench.execute(iterations))>) {
+                    bench.execute(iterations);
+                } else {
+                    operations_storm = bench.execute(iterations);
+                }
+                auto end_storm = std::chrono::steady_clock::now();
 
                 auto   duration_storm = std::chrono::duration_cast<std::chrono::nanoseconds>(end_storm - start_storm);
                 double storm_ops_per_sec = (operations_storm / (duration_storm.count() / 1e9));
@@ -238,8 +238,12 @@ namespace storm::benchmark {
 
                 // ===== Raw SQLite Execution =====
                 auto start_raw = std::chrono::steady_clock::now();
-                operations_raw = bench.execute_raw(iterations);
-                auto end_raw   = std::chrono::steady_clock::now();
+                if constexpr (std::is_void_v<decltype(bench.execute_raw(iterations))>) {
+                    bench.execute_raw(iterations);
+                } else {
+                    operations_raw = bench.execute_raw(iterations);
+                }
+                auto end_raw = std::chrono::steady_clock::now();
 
                 auto   duration_raw    = std::chrono::duration_cast<std::chrono::nanoseconds>(end_raw - start_raw);
                 double raw_ops_per_sec = (operations_raw / (duration_raw.count() / 1e9));
@@ -362,24 +366,9 @@ namespace storm::benchmark {
         }
 
       private:
-        // Operation handlers - one function per operation type
-        // Clean, simple, easy to add new operations
-
-        template <typename Model, auto& test>
-        static auto run_where_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name   = test.where.field.view();
-            constexpr auto             op_str       = test.where.op;
-            constexpr int              value        = test.where.value.as_int;
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-
-            // Use new unified SelectBenchmark with WhereConfig
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectWhereBenchmark<Model, field_info, op_str, int>{value, dataset_size},
-                    iterations
-            );
-        }
+        // ====================================================================
+        // CRUD operation handlers (INSERT/UPDATE/DELETE — not migrated to QueryBenchmark)
+        // ====================================================================
 
         template <typename Model, auto& test>
         static auto run_insert_operation(BenchmarkRunner& runner, int iterations) -> void {
@@ -390,7 +379,6 @@ namespace storm::benchmark {
 
         template <typename Model, auto& test>
         static auto run_insert_no_return_operation(BenchmarkRunner& runner, int iterations) -> void {
-            // Special case: no-return only meaningful for single inserts; skip non-1 sizes
             constexpr auto profile = sizes::profile_from_string(test.size_profile.view());
             if constexpr (profile == sizes::SizeProfile::BatchStandard) {
                 for (int size : sizes::batch_standard_sizes(runner.is_smoke())) {
@@ -421,896 +409,11 @@ namespace storm::benchmark {
             });
         }
 
-        template <typename Model, auto& test>
-        static auto run_select_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
-                return SelectBenchmark<Model>{size};
-            });
-        }
-
-        template <typename Model, auto& test>
-        static auto run_select_join_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
-                return SelectJoinBenchmark<FKMessage, User, &FKMessage::sender>{size};
-            });
-        }
-
-        template <typename Model, auto& test>
-        static auto run_select_where_join_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
-                constexpr auto field_info = dispatch_field<User>(test.where.field.view());
-                constexpr auto op_str     = test.where.op;
-                constexpr int  value      = test.where.value.as_int;
-                return SelectWhereJoinBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
-                        value, size
-                };
-            });
-        }
-
-        // ====================================================================
-        // LEFT JOIN operation handlers
-        // ====================================================================
-
-        template <typename Model, auto& test>
-        static auto run_select_left_join_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
-                return SelectLeftJoinBenchmark<FKMessage, User, &FKMessage::sender>{size};
-            });
-        }
-
-        template <typename Model, auto& test>
-        static auto run_select_left_join_where_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
-                constexpr auto field_info = dispatch_field<User>(test.where.field.view());
-                constexpr auto op_str     = test.where.op;
-                constexpr int  value      = test.where.value.as_int;
-                return SelectLeftJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
-                        value, size
-                };
-            });
-        }
-
-        // ====================================================================
-        // RIGHT JOIN operation handlers
-        // ====================================================================
-
-        template <typename Model, auto& test>
-        static auto run_select_right_join_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
-                return SelectRightJoinBenchmark<FKMessage, User, &FKMessage::sender>{size};
-            });
-        }
-
-        template <typename Model, auto& test>
-        static auto run_select_right_join_where_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
-                constexpr auto field_info = dispatch_field<User>(test.where.field.view());
-                constexpr auto op_str     = test.where.op;
-                constexpr int  value      = test.where.value.as_int;
-                return SelectRightJoinWhereBenchmark<FKMessage, User, &FKMessage::sender, field_info, op_str, int>{
-                        value, size
-                };
-            });
-        }
-
-        // ====================================================================
-        // Multi-FK JOIN operation handler
-        // ====================================================================
-
-        template <typename Model, auto& test>
-        static auto run_select_multi_fk_join_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
-                return SelectMultiFKJoinBenchmark<FKMessage, User>{size};
-            });
-        }
-
-        // ====================================================================
-        // Aggregate operation handlers
-        // ====================================================================
-
-        template <typename Model, auto& test>
-        static auto run_aggregate_count_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test, IterKind::Aggregate>(iterations, test.dataset_size, [](int size) {
-                return CountBenchmark<Model>{size};
-            });
-        }
-
-        template <typename Model, auto& test>
-        static auto run_aggregate_count_field_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test, IterKind::Aggregate>(iterations, test.dataset_size, [](int size) {
-                constexpr auto field_info = dispatch_field<Model>(test.aggregate.field.view());
-                return CountFieldBenchmark<Model, field_info>{size};
-            });
-        }
-
-        template <typename Model, auto& test>
-        static auto run_aggregate_count_distinct_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test, IterKind::Aggregate>(iterations, test.dataset_size, [](int size) {
-                constexpr auto field_info = dispatch_field<Model>(test.aggregate.field.view());
-                return CountDistinctBenchmark<Model, field_info>{size};
-            });
-        }
-
-        template <typename Model, auto& test>
-        static auto run_aggregate_sum_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test, IterKind::Aggregate>(iterations, test.dataset_size, [](int size) {
-                constexpr auto field_info = dispatch_field<Model>(test.aggregate.field.view());
-                return SumBenchmark<Model, field_info>{size};
-            });
-        }
-
-        template <typename Model, auto& test>
-        static auto run_aggregate_avg_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test, IterKind::Aggregate>(iterations, test.dataset_size, [](int size) {
-                constexpr auto field_info = dispatch_field<Model>(test.aggregate.field.view());
-                return AvgBenchmark<Model, field_info>{size};
-            });
-        }
-
-        template <typename Model, auto& test>
-        static auto run_aggregate_min_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test, IterKind::Aggregate>(iterations, test.dataset_size, [](int size) {
-                constexpr auto field_info = dispatch_field<Model>(test.aggregate.field.view());
-                return MinBenchmark<Model, field_info>{size};
-            });
-        }
-
-        template <typename Model, auto& test>
-        static auto run_aggregate_max_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test, IterKind::Aggregate>(iterations, test.dataset_size, [](int size) {
-                constexpr auto field_info = dispatch_field<Model>(test.aggregate.field.view());
-                return MaxBenchmark<Model, field_info>{size};
-            });
-        }
-
-        // ====================================================================
-        // DISTINCT operation handlers
-        // ====================================================================
-
-        template <typename Model, auto& test>
-        static auto run_distinct_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
-                constexpr auto field_info = dispatch_field<Model>(test.distinct.fields[0].view());
-                return SimpleDistinctBenchmark<Model, field_info>{size};
-            });
-        }
-
-        template <typename Model, auto& test>
-        static auto run_distinct_where_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
-                constexpr auto   distinct_field_info = dispatch_field<Model>(test.distinct.fields[0].view());
-                constexpr auto   where_field_info    = dispatch_field<Model>(test.where.field.view());
-                constexpr auto   op_str              = test.where.op;
-                constexpr double value               = test.where.value.as_double;
-                return DistinctWhereBenchmark<Model, distinct_field_info, where_field_info, op_str, double>{
-                        value, size
-                };
-            });
-        }
-
-        template <typename Model, auto& test>
-        static auto run_distinct_join_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
-                constexpr auto distinct_field_info = dispatch_field<FKMessage>(test.distinct.fields[0].view());
-                return DistinctJoinBenchmark<FKMessage, User, &FKMessage::sender, distinct_field_info>{size};
-            });
-        }
-
-        template <typename Model, auto& test>
-        static auto run_distinct_where_join_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
-                constexpr auto distinct_field_info = dispatch_field<FKMessage>(test.distinct.fields[0].view());
-                constexpr auto where_field_info    = dispatch_field<User>(test.where.field.view());
-                constexpr auto op_str              = test.where.op;
-                constexpr int  value               = test.where.value.as_int;
-                return DistinctWhereJoinBenchmark<
-                        FKMessage,
-                        User,
-                        &FKMessage::sender,
-                        distinct_field_info,
-                        where_field_info,
-                        op_str,
-                        int>{value, size};
-            });
-        }
-
-        // ====================================================================
-        // DISTINCT Multi-Field operation handlers
-        // ====================================================================
-
-        template <typename Model, auto& test>
-        static auto run_distinct_multi_2_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name1  = test.distinct.fields[0].view();
-            constexpr std::string_view field_name2  = test.distinct.fields[1].view();
-            constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
-            constexpr auto             field_info2  = dispatch_field<Model>(field_name2);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SimpleDistinct2FieldBenchmark<Model, field_info1, field_info2>{dataset_size},
-                    iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_distinct_multi_3_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name1  = test.distinct.fields[0].view();
-            constexpr std::string_view field_name2  = test.distinct.fields[1].view();
-            constexpr std::string_view field_name3  = test.distinct.fields[2].view();
-            constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
-            constexpr auto             field_info2  = dispatch_field<Model>(field_name2);
-            constexpr auto             field_info3  = dispatch_field<Model>(field_name3);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SimpleDistinct3FieldBenchmark<Model, field_info1, field_info2, field_info3>{dataset_size},
-                    iterations
-            );
-        }
-
-        // ====================================================================
-        // DISTINCT + ORDER BY operation handlers
-        // ====================================================================
-
-        template <typename Model, auto& test>
-        static auto run_distinct_order_by_asc_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view distinct_field_name = test.distinct.fields[0].view();
-            constexpr std::string_view order_field_name    = test.order_by[0].field.view();
-            constexpr auto             distinct_field_info = dispatch_field<Model>(distinct_field_name);
-            constexpr auto             order_field_info    = dispatch_field<Model>(order_field_name);
-            constexpr int              dataset_size        = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SimpleDistinctOrderByAscBenchmark<Model, distinct_field_info, order_field_info>{dataset_size},
-                    iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_distinct_order_by_desc_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view distinct_field_name = test.distinct.fields[0].view();
-            constexpr std::string_view order_field_name    = test.order_by[0].field.view();
-            constexpr auto             distinct_field_info = dispatch_field<Model>(distinct_field_name);
-            constexpr auto             order_field_info    = dispatch_field<Model>(order_field_name);
-            constexpr int              dataset_size        = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SimpleDistinctOrderByDescBenchmark<Model, distinct_field_info, order_field_info>{dataset_size},
-                    iterations
-            );
-        }
-
-        // ====================================================================
-        // LIMIT/OFFSET operation handlers
-        // ====================================================================
-
-        template <typename Model, auto& test>
-        static auto run_select_limit_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr int dataset_size = test.dataset_size;
-            constexpr int limit_value  = test.limit.value;
-            runner.run_benchmark(
-                    test.test_name.c_str(), SelectLimitBenchmark<Model, limit_value>{dataset_size}, iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_select_offset_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr int dataset_size = test.dataset_size;
-            constexpr int offset_value = test.limit.offset;
-            runner.run_benchmark(
-                    test.test_name.c_str(), SelectOffsetBenchmark<Model, offset_value>{dataset_size}, iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_select_limit_offset_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr int dataset_size = test.dataset_size;
-            constexpr int limit_value  = test.limit.value;
-            constexpr int offset_value = test.limit.offset;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectLimitOffsetBenchmark<Model, limit_value, offset_value>{dataset_size},
-                    iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_select_where_limit_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name   = test.where.field.view();
-            constexpr auto             op_str       = test.where.op;
-            constexpr int              value        = test.where.value.as_int;
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            constexpr int              limit_value  = test.limit.value;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectWhereLimitBenchmark<Model, field_info, op_str, int, limit_value>{value, dataset_size},
-                    iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_select_join_limit_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr int dataset_size = test.dataset_size;
-            constexpr int limit_value  = test.limit.value;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectJoinLimitBenchmark<FKMessage, User, &FKMessage::sender, limit_value>{dataset_size},
-                    iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_select_join_limit_offset_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr int dataset_size = test.dataset_size;
-            constexpr int limit_value  = test.limit.value;
-            constexpr int offset_value = test.limit.offset;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectJoinLimitOffsetBenchmark<FKMessage, User, &FKMessage::sender, limit_value, offset_value>{
-                            dataset_size
-                    },
-                    iterations
-            );
-        }
-
-        // ====================================================================
-        // ORDER BY operation handlers
-        // ====================================================================
-
-        template <typename Model, auto& test>
-        static auto run_select_order_by_asc_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name   = test.order_by[0].field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(), SelectOrderByAscBenchmark<Model, field_info>{dataset_size}, iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_select_order_by_desc_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name   = test.order_by[0].field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(), SelectOrderByDescBenchmark<Model, field_info>{dataset_size}, iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_select_order_by_where_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view order_field_name = test.order_by[0].field.view();
-            constexpr auto             order_field_info = dispatch_field<Model>(order_field_name);
-            constexpr std::string_view where_field_name = test.where.field.view();
-            constexpr auto             where_field_info = dispatch_field<Model>(where_field_name);
-            constexpr auto             op_str           = test.where.op;
-            constexpr int              value            = test.where.value.as_int;
-            constexpr int              dataset_size     = test.dataset_size;
-            constexpr std::string_view dir_str          = test.order_by[0].direction.view();
-            // Default to ASC if direction not specified
-            if constexpr (dir_str == "DESC") {
-                runner.run_benchmark(
-                        test.test_name.c_str(),
-                        SelectOrderByWhereBenchmark<
-                                Model,
-                                order_field_info,
-                                OrderDirection::DESC,
-                                where_field_info,
-                                op_str,
-                                int>{value, dataset_size},
-                        iterations
-                );
-            } else {
-                runner.run_benchmark(
-                        test.test_name.c_str(),
-                        SelectOrderByWhereBenchmark<
-                                Model,
-                                order_field_info,
-                                OrderDirection::ASC,
-                                where_field_info,
-                                op_str,
-                                int>{value, dataset_size},
-                        iterations
-                );
-            }
-        }
-
-        template <typename Model, auto& test>
-        static auto run_select_order_by_limit_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name   = test.order_by[0].field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            constexpr int              limit_value  = test.limit.value;
-            constexpr std::string_view dir_str      = test.order_by[0].direction.view();
-            // Default to ASC if direction not specified
-            if constexpr (dir_str == "DESC") {
-                runner.run_benchmark(
-                        test.test_name.c_str(),
-                        SelectOrderByLimitBenchmark<Model, field_info, OrderDirection::DESC, limit_value>{dataset_size},
-                        iterations
-                );
-            } else {
-                runner.run_benchmark(
-                        test.test_name.c_str(),
-                        SelectOrderByLimitBenchmark<Model, field_info, OrderDirection::ASC, limit_value>{dataset_size},
-                        iterations
-                );
-            }
-        }
-
-        // ====================================================================
-        // ORDER BY + COLLATE operation handlers
-        // ====================================================================
-
-        // Helper: parse collate string to enum at compile time
-        static consteval auto parse_collate(std::string_view col_str) -> storm::orm::utilities::Collate {
-            if (col_str == "BINARY")
-                return storm::orm::utilities::Collate::Binary;
-            if (col_str == "RTRIM")
-                return storm::orm::utilities::Collate::RTrim;
-            return storm::orm::utilities::Collate::NoCase;
-        }
-
-        template <typename Model, auto& test>
-        static auto run_select_order_by_collate_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name   = test.order_by[0].field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            constexpr auto             collation    = parse_collate(test.order_by[0].collate.view());
-            constexpr std::string_view dir_str      = test.order_by[0].direction.view();
-
-            if constexpr (dir_str == "DESC") {
-                runner.run_benchmark(
-                        test.test_name.c_str(),
-                        SelectOrderByCollateDescBenchmark<Model, field_info, collation>{dataset_size},
-                        iterations
-                );
-            } else {
-                runner.run_benchmark(
-                        test.test_name.c_str(),
-                        SelectOrderByCollateAscBenchmark<Model, field_info, collation>{dataset_size},
-                        iterations
-                );
-            }
-        }
-
-        template <typename Model, auto& test>
-        static auto run_select_order_by_collate_where_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr auto order_field_info = dispatch_field<Model>(test.order_by[0].field.view());
-            constexpr auto where_field_info = dispatch_field<Model>(test.where.field.view());
-            constexpr auto op_str           = test.where.op;
-            constexpr int  value            = test.where.value.as_int;
-            constexpr int  dataset_size     = test.dataset_size;
-            constexpr auto collation        = parse_collate(test.order_by[0].collate.view());
-            constexpr auto dir =
-                    (test.order_by[0].direction.view() == "DESC") ? OrderDirection::DESC : OrderDirection::ASC;
-
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    (SelectOrderByCollateWhereBenchmark<
-                            Model,
-                            order_field_info,
-                            collation,
-                            dir,
-                            where_field_info,
-                            op_str,
-                            int>{value, dataset_size}),
-                    iterations
-            );
-        }
-
-        // ====================================================================
-        // Multi-Field ORDER BY operation handlers
-        // ====================================================================
-
-        template <typename Model, auto& test>
-        static auto run_order_by_multi_2_asc_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name1  = test.order_by[0].field.view();
-            constexpr std::string_view field_name2  = test.order_by[1].field.view();
-            constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
-            constexpr auto             field_info2  = dispatch_field<Model>(field_name2);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectOrderBy2AscBenchmark<Model, field_info1, field_info2>{dataset_size},
-                    iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_order_by_multi_2_desc_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name1  = test.order_by[0].field.view();
-            constexpr std::string_view field_name2  = test.order_by[1].field.view();
-            constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
-            constexpr auto             field_info2  = dispatch_field<Model>(field_name2);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectOrderBy2DescBenchmark<Model, field_info1, field_info2>{dataset_size},
-                    iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_order_by_multi_2_mixed_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name1  = test.order_by[0].field.view();
-            constexpr std::string_view field_name2  = test.order_by[1].field.view();
-            constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
-            constexpr auto             field_info2  = dispatch_field<Model>(field_name2);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectOrderBy2MixedBenchmark<Model, field_info1, field_info2>{dataset_size},
-                    iterations
-            );
-        }
-
-        // ====================================================================
-        // GROUP BY operation handlers
-        // ====================================================================
-
-        template <typename Model, auto& test>
-        static auto run_group_by_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name   = test.group_by.fields[0].view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(), SelectGroupByBenchmark<Model, field_info>{dataset_size}, iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_group_by_where_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view group_field_name = test.group_by.fields[0].view();
-            constexpr auto             group_field_info = dispatch_field<Model>(group_field_name);
-            constexpr std::string_view where_field_name = test.where.field.view();
-            constexpr auto             where_field_info = dispatch_field<Model>(where_field_name);
-            constexpr auto             op_str           = test.where.op;
-            constexpr int              value            = test.where.value.as_int;
-            constexpr int              dataset_size     = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectGroupByWhereBenchmark<Model, group_field_info, where_field_info, op_str, int>{
-                            value, dataset_size
-                    },
-                    iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_group_by_multi_2_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name1  = test.group_by.fields[0].view();
-            constexpr std::string_view field_name2  = test.group_by.fields[1].view();
-            constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
-            constexpr auto             field_info2  = dispatch_field<Model>(field_name2);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectGroupBy2Benchmark<Model, field_info1, field_info2>{dataset_size},
-                    iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_group_by_with_count_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name   = test.group_by.fields[0].view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(), SelectGroupByCountBenchmark<Model, field_info>{dataset_size}, iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_group_by_with_sum_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view group_field_name = test.group_by.fields[0].view();
-            constexpr std::string_view agg_field_name   = test.aggregate.field.view();
-            constexpr auto             group_field_info = dispatch_field<Model>(group_field_name);
-            constexpr auto             agg_field_info   = dispatch_field<Model>(agg_field_name);
-            constexpr int              dataset_size     = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectGroupBySumBenchmark<Model, group_field_info, agg_field_info>{dataset_size},
-                    iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_group_by_with_avg_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view group_field_name = test.group_by.fields[0].view();
-            constexpr std::string_view agg_field_name   = test.aggregate.field.view();
-            constexpr auto             group_field_info = dispatch_field<Model>(group_field_name);
-            constexpr auto             agg_field_info   = dispatch_field<Model>(agg_field_name);
-            constexpr int              dataset_size     = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectGroupByAvgBenchmark<Model, group_field_info, agg_field_info>{dataset_size},
-                    iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_group_by_with_min_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view group_field_name = test.group_by.fields[0].view();
-            constexpr std::string_view agg_field_name   = test.aggregate.field.view();
-            constexpr auto             group_field_info = dispatch_field<Model>(group_field_name);
-            constexpr auto             agg_field_info   = dispatch_field<Model>(agg_field_name);
-            constexpr int              dataset_size     = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectGroupByMinBenchmark<Model, group_field_info, agg_field_info>{dataset_size},
-                    iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_group_by_with_max_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view group_field_name = test.group_by.fields[0].view();
-            constexpr std::string_view agg_field_name   = test.aggregate.field.view();
-            constexpr auto             group_field_info = dispatch_field<Model>(group_field_name);
-            constexpr auto             agg_field_info   = dispatch_field<Model>(agg_field_name);
-            constexpr int              dataset_size     = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectGroupByMaxBenchmark<Model, group_field_info, agg_field_info>{dataset_size},
-                    iterations
-            );
-        }
-
-        // ====================================================================
-        // GROUP BY + HAVING + aggregate handlers
-        // ====================================================================
-
-        template <typename Model, auto& test>
-        static auto run_group_by_having_count_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view group_field_name  = test.group_by.fields[0].view();
-            constexpr std::string_view having_field_name = test.group_by.having.field.view();
-            constexpr auto             group_field_info  = dispatch_field<Model>(group_field_name);
-            constexpr auto             having_field_info = dispatch_field<Model>(having_field_name);
-            constexpr int              having_value      = test.group_by.having.value.as_int;
-            constexpr int              dataset_size      = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectGroupByHavingCountBenchmark<Model, group_field_info, having_field_info, having_value>{
-                            dataset_size
-                    },
-                    iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_group_by_having_sum_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view group_field_name  = test.group_by.fields[0].view();
-            constexpr std::string_view agg_field_name    = test.aggregate.field.view();
-            constexpr std::string_view having_field_name = test.group_by.having.field.view();
-            constexpr auto             group_field_info  = dispatch_field<Model>(group_field_name);
-            constexpr auto             agg_field_info    = dispatch_field<Model>(agg_field_name);
-            constexpr auto             having_field_info = dispatch_field<Model>(having_field_name);
-            constexpr int              having_value      = test.group_by.having.value.as_int;
-            constexpr int              dataset_size      = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    SelectGroupByHavingSumBenchmark<
-                            Model,
-                            group_field_info,
-                            agg_field_info,
-                            having_field_info,
-                            having_value>{dataset_size},
-                    iterations
-            );
-        }
-
-        // ====================================================================
-        // WHERE operator handlers (LIKE, BETWEEN, IN, AND/OR)
-        // ====================================================================
-
-        template <typename Model, auto& test>
-        static auto run_where_like_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name   = test.where.field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            std::string                pattern(test.where.value.as_string.view());
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    WhereLikeBenchmark<Model, field_info>{std::move(pattern), dataset_size},
-                    iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_where_between_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name   = test.where.field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            constexpr int              min_value    = test.where.value.as_int;
-            constexpr int              max_value    = test.where.value2.as_int;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    WhereBetweenBenchmark<Model, field_info, int>{min_value, max_value, dataset_size},
-                    iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_where_in_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name   = test.where.field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-
-            // Build vector from compile-time array
-            std::vector<int> values;
-            values.reserve(test.where.in_values_count);
-            for (size_t i = 0; i < test.where.in_values_count; i++) {
-                values.push_back(test.where.in_values_int[i]);
-            }
-
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    WhereInBenchmark<Model, field_info, int>{std::move(values), dataset_size},
-                    iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_where_and_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name1  = test.where.field.view();
-            constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
-            constexpr auto             op1          = test.where.op;
-            constexpr int              value1       = test.where.value.as_int;
-            constexpr std::string_view field_name2  = test.where.field2.view();
-            constexpr auto             field_info2  = dispatch_field<Model>(field_name2);
-            constexpr auto             op2          = test.where.op2;
-            constexpr int              value2       = test.where.value2_rhs.as_int;
-            constexpr int              dataset_size = test.dataset_size;
-            constexpr bool             is_and       = true;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    WhereAndOrBenchmark<Model, field_info1, op1, int, field_info2, op2, int, is_and>{
-                            value1, value2, dataset_size
-                    },
-                    iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_where_or_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name1  = test.where.field.view();
-            constexpr auto             field_info1  = dispatch_field<Model>(field_name1);
-            constexpr auto             op1          = test.where.op;
-            constexpr int              value1       = test.where.value.as_int;
-            constexpr std::string_view field_name2  = test.where.field2.view();
-            constexpr auto             field_info2  = dispatch_field<Model>(field_name2);
-            constexpr auto             op2          = test.where.op2;
-            constexpr int              value2       = test.where.value2_rhs.as_int;
-            constexpr int              dataset_size = test.dataset_size;
-            constexpr bool             is_and       = false;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    WhereAndOrBenchmark<Model, field_info1, op1, int, field_info2, op2, int, is_and>{
-                            value1, value2, dataset_size
-                    },
-                    iterations
-            );
-        }
-
-        // ====================================================================
-        // IS NULL / IS NOT NULL operations
-        // ====================================================================
-        template <typename Model, auto& test>
-        static auto run_where_is_null_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name   = test.where.field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(), WhereIsNullBenchmark<Model, field_info, true>{dataset_size}, iterations
-            );
-        }
-
-        template <typename Model, auto& test>
-        static auto run_where_is_not_null_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name   = test.where.field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(), WhereIsNullBenchmark<Model, field_info, false>{dataset_size}, iterations
-            );
-        }
-
-        // ====================================================================
-        // FIRST operations
-        // ====================================================================
-        template <typename Model, auto& test>
-        static auto run_first_operation(BenchmarkRunner& runner, int iterations) -> void {
-            runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
-                return FirstBenchmark<Model>{size};
-            });
-        }
-
-        template <typename Model, auto& test>
-        static auto run_first_where_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name   = test.where.field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr auto             op           = test.where.op;
-            constexpr int              value        = test.where.value.as_int;
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    FirstWhereBenchmark<Model, field_info, op, int>{value, dataset_size},
-                    iterations
-            );
-        }
-
-        // ====================================================================
-        // GET operations
-        // ====================================================================
-        template <typename Model, auto& test>
-        static auto run_get_where_operation(BenchmarkRunner& runner, int iterations) -> void {
-            constexpr std::string_view field_name   = test.where.field.view();
-            constexpr auto             field_info   = dispatch_field<Model>(field_name);
-            constexpr auto             op           = test.where.op;
-            constexpr int              value        = test.where.value.as_int;
-            constexpr int              dataset_size = test.dataset_size;
-            runner.run_benchmark(
-                    test.test_name.c_str(),
-                    GetWhereBenchmark<Model, field_info, op, int>{value, dataset_size},
-                    iterations
-            );
-        }
-
-        // ====================================================================
-        // SET OPERATION handlers (UNION, UNION ALL, EXCEPT, INTERSECT)
-        // ====================================================================
-
-        template <typename Model, auto& test, SetOpBenchType OpType, bool WithOrderBy = false, bool WithLimit = false>
-        static auto run_setop_operation_impl(BenchmarkRunner& runner, int iterations) -> void {
-            if constexpr (WithLimit) {
-                constexpr int limit_value = test.limit.value;
-                runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
-                    return SetOpBenchmark<Model, OpType, WithOrderBy, WithLimit>{size, limit_value};
-                });
-            } else {
-                runner.dispatch_sized<test>(iterations, test.dataset_size, [](int size) {
-                    return SetOpBenchmark<Model, OpType, WithOrderBy, WithLimit>{size};
-                });
-            }
-        }
-
-        template <typename Model, auto& test>
-        static auto run_setop_union_operation(BenchmarkRunner& runner, int iterations) -> void {
-            run_setop_operation_impl<Model, test, SetOpBenchType::Union>(runner, iterations);
-        }
-
-        template <typename Model, auto& test>
-        static auto run_setop_union_all_operation(BenchmarkRunner& runner, int iterations) -> void {
-            run_setop_operation_impl<Model, test, SetOpBenchType::UnionAll>(runner, iterations);
-        }
-
-        template <typename Model, auto& test>
-        static auto run_setop_except_operation(BenchmarkRunner& runner, int iterations) -> void {
-            run_setop_operation_impl<Model, test, SetOpBenchType::Except>(runner, iterations);
-        }
-
-        template <typename Model, auto& test>
-        static auto run_setop_intersect_operation(BenchmarkRunner& runner, int iterations) -> void {
-            run_setop_operation_impl<Model, test, SetOpBenchType::Intersect>(runner, iterations);
-        }
-
-        template <typename Model, auto& test>
-        static auto run_setop_union_order_by_operation(BenchmarkRunner& runner, int iterations) -> void {
-            run_setop_operation_impl<Model, test, SetOpBenchType::Union, true>(runner, iterations);
-        }
-
-        template <typename Model, auto& test>
-        static auto run_setop_union_limit_operation(BenchmarkRunner& runner, int iterations) -> void {
-            run_setop_operation_impl<Model, test, SetOpBenchType::Union, false, true>(runner, iterations);
-        }
-
       public:
         // Template recursion to execute tests at compile time
         template <typename Model, size_t TestIndex, size_t TotalTests> struct TestExecutor {
             static void
-            execute(BenchmarkRunner&   runner,              // NOSONAR(cpp:S3776)
+            execute(BenchmarkRunner&   runner,
                     int                iterations_override, // 0 = use JSON value
                     const std::string& filter     = "",
                     const std::string& category   = "",
@@ -1324,166 +427,49 @@ namespace storm::benchmark {
                 // Calculate actual iterations: explicit override > mode-adjusted JSON value
                 int actual_iterations;
                 if (iterations_override > 0) {
-                    actual_iterations = iterations_override; // Explicit --iterations wins
+                    actual_iterations = iterations_override;
                 } else {
-                    // Use JSON-defined iterations with mode multiplier
                     actual_iterations = calculate_iterations(test.iterations, mode);
                 }
 
-                // Check if test matches category (empty = all categories, prefix match supported)
+                // Check if test matches category and filter
                 std::string category_str(test_category.data(), test_category.size());
                 bool        category_match = category.empty() || category_str.starts_with(category);
 
-                // Check if test matches filter (runtime check, but minimal overhead)
-                // - Empty filter: run all tests
-                // - scale_test=true: substring match (e.g., "insert_batch" matches "insert_batch_100")
-                // - scale_test=false: exact match (e.g., "insert_batch_100" only matches "insert_batch_100")
                 std::string test_name_str(test_name.data(), test_name.size());
                 bool        filter_match =
                         filter.empty() || (scale_test ? test_name_str.contains(filter) : (test_name_str == filter));
 
-                bool should_run = category_match && filter_match;
-
-                if (should_run) {
-                    // Dispatch to handler - still compile-time, just cleaner
-                    if constexpr (operation == "where") {
-                        runner.run_where_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "insert") {
-                        runner.run_insert_operation<Model, test>(runner, actual_iterations);
+                if (category_match && filter_match) {
+                    // CRUD operations — keep existing specialized classes
+                    if constexpr (operation == "insert") {
+                        run_insert_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "insert_no_return") {
-                        runner.run_insert_no_return_operation<Model, test>(runner, actual_iterations);
+                        run_insert_no_return_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "update_pk") {
-                        runner.run_update_pk_operation<Model, test>(runner, actual_iterations);
+                        run_update_pk_operation<Model, test>(runner, actual_iterations);
                     } else if constexpr (operation == "delete_pk") {
-                        runner.run_delete_pk_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "select") {
-                        runner.run_select_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "select_join") {
-                        runner.run_select_join_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "select_where_join") {
-                        runner.run_select_where_join_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "select_left_join") {
-                        runner.run_select_left_join_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "select_left_join_where") {
-                        runner.run_select_left_join_where_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "select_right_join") {
-                        runner.run_select_right_join_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "select_right_join_where") {
-                        runner.run_select_right_join_where_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "select_multi_fk_join") {
-                        runner.run_select_multi_fk_join_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "aggregate_count") {
-                        runner.run_aggregate_count_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "aggregate_count_field") {
-                        runner.run_aggregate_count_field_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "aggregate_count_distinct") {
-                        runner.run_aggregate_count_distinct_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "aggregate_sum") {
-                        runner.run_aggregate_sum_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "aggregate_avg") {
-                        runner.run_aggregate_avg_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "aggregate_min") {
-                        runner.run_aggregate_min_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "aggregate_max") {
-                        runner.run_aggregate_max_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "distinct") {
-                        runner.run_distinct_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "distinct_where") {
-                        runner.run_distinct_where_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "distinct_join") {
-                        runner.run_distinct_join_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "distinct_where_join") {
-                        runner.run_distinct_where_join_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "distinct_multi_2") {
-                        runner.run_distinct_multi_2_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "distinct_multi_3") {
-                        runner.run_distinct_multi_3_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "distinct_order_by_asc") {
-                        runner.run_distinct_order_by_asc_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "distinct_order_by_desc") {
-                        runner.run_distinct_order_by_desc_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "select_limit") {
-                        runner.run_select_limit_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "select_offset") {
-                        runner.run_select_offset_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "select_limit_offset") {
-                        runner.run_select_limit_offset_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "select_where_limit") {
-                        runner.run_select_where_limit_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "select_join_limit") {
-                        runner.run_select_join_limit_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "select_join_limit_offset") {
-                        runner.run_select_join_limit_offset_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "order_by_asc") {
-                        runner.run_select_order_by_asc_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "order_by_desc") {
-                        runner.run_select_order_by_desc_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "order_by_where") {
-                        runner.run_select_order_by_where_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "order_by_limit") {
-                        runner.run_select_order_by_limit_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "order_by_collate") {
-                        runner.run_select_order_by_collate_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "order_by_collate_where") {
-                        runner.run_select_order_by_collate_where_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "order_by_multi_2_asc") {
-                        runner.run_order_by_multi_2_asc_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "order_by_multi_2_desc") {
-                        runner.run_order_by_multi_2_desc_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "order_by_multi_2_mixed") {
-                        runner.run_order_by_multi_2_mixed_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "group_by") {
-                        runner.run_group_by_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "group_by_where") {
-                        runner.run_group_by_where_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "group_by_multi_2") {
-                        runner.run_group_by_multi_2_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "group_by_with_count") {
-                        runner.run_group_by_with_count_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "group_by_with_sum") {
-                        runner.run_group_by_with_sum_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "group_by_with_avg") {
-                        runner.run_group_by_with_avg_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "group_by_with_min") {
-                        runner.run_group_by_with_min_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "group_by_with_max") {
-                        runner.run_group_by_with_max_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "group_by_having_count") {
-                        runner.run_group_by_having_count_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "group_by_having_sum") {
-                        runner.run_group_by_having_sum_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "where_like") {
-                        runner.run_where_like_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "where_between") {
-                        runner.run_where_between_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "where_in") {
-                        runner.run_where_in_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "where_and") {
-                        runner.run_where_and_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "where_or") {
-                        runner.run_where_or_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "where_is_null") {
-                        runner.run_where_is_null_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "where_is_not_null") {
-                        runner.run_where_is_not_null_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "first") {
-                        runner.run_first_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "first_where") {
-                        runner.run_first_where_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "get_where") {
-                        runner.run_get_where_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "setop_union") {
-                        runner.run_setop_union_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "setop_union_all") {
-                        runner.run_setop_union_all_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "setop_except") {
-                        runner.run_setop_except_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "setop_intersect") {
-                        runner.run_setop_intersect_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "setop_union_order_by") {
-                        runner.run_setop_union_order_by_operation<Model, test>(runner, actual_iterations);
-                    } else if constexpr (operation == "setop_union_limit") {
-                        runner.run_setop_union_limit_operation<Model, test>(runner, actual_iterations);
+                        run_delete_pk_operation<Model, test>(runner, actual_iterations);
+                    } else {
+                        // ALL SELECT-family operations — unified via QueryBenchmark
+                        // Model dispatch: test.model resolves Person / FKMessage / User
+                        registry::with_base_model<test>([&]<typename M>() {
+                            // Aggregate operations use IterKind::Aggregate for iteration calc
+                            constexpr bool is_agg = test.aggregate.enabled && !test.group_by.enabled;
+                            if constexpr (is_agg) {
+                                runner.template dispatch_sized<test, IterKind::Aggregate>(
+                                        actual_iterations, test.dataset_size, [](int size) {
+                                            return QueryBenchmark<M, test>{size};
+                                        }
+                                );
+                            } else {
+                                runner.template dispatch_sized<test>(
+                                        actual_iterations, test.dataset_size, [](int size) {
+                                            return QueryBenchmark<M, test>{size};
+                                        }
+                                );
+                            }
+                        });
                     }
                 }
 

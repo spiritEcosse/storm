@@ -242,27 +242,28 @@ namespace storm::benchmark {
     // ========================================================================
     // Array of integers — used by where.in_values
     // ========================================================================
-    constexpr auto parse_int_array_into_where(WhereSpec& where, std::string_view json, size_t& pos) -> void {
+    // Parse a "values" array of TypedValues into a WhereCondition
+    constexpr auto parse_values_array(WhereCondition& cond, std::string_view json, size_t& pos) -> void {
         skip_whitespace(json, pos);
         if (pos >= json.size() || json[pos] != '[') {
             return;
         }
         pos++; // '['
         size_t count = 0;
-        while (pos < json.size() && count < WhereSpec::MAX_IN_VALUES) {
+        while (pos < json.size() && count < WhereCondition::MAX_VALUES) {
             skip_whitespace(json, pos);
             if (json[pos] == ']') {
                 pos++;
                 break;
             }
-            where.in_values_int[count] = parse_int(json, pos);
+            cond.values[count] = parse_typed_value(json, pos);
             count++;
             skip_whitespace(json, pos);
             if (json[pos] == ',') {
                 pos++;
             }
         }
-        where.in_values_count = count;
+        cond.value_count = count;
     }
 
     // ========================================================================
@@ -323,83 +324,60 @@ namespace storm::benchmark {
         }
     }
 
-    // --- where leaf fields (shared by WhereSpec top level and inner and/or) ---
-    constexpr auto parse_where_leaf_field( // NOSONAR(cpp:S3776)
-            std::string_view key, std::string_view json, size_t& pos, ConstexprString<32>& field_out,
-            ConstexprString<16>& op_out, TypedValue& value_out
-    ) -> bool {
-        if (key == "field") {
-            field_out = parse_string<32>(json, pos);
-            return true;
-        }
-        if (key == "op") {
-            op_out = parse_string<16>(json, pos);
-            return true;
-        }
-        if (key == "value") {
-            value_out = parse_typed_value(json, pos);
-            return true;
-        }
-        return false;
+    // --- parse_where_condition_into (one condition: {field, op, values: [...]}) ---
+    constexpr auto parse_where_condition_into(WhereCondition& cond, std::string_view json, size_t& pos) -> void {
+        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, size_t& p) {
+            if (key == "field") {
+                cond.field = parse_string<32>(j, p);
+            } else if (key == "op") {
+                cond.op = parse_string<16>(j, p);
+            } else if (key == "values") {
+                parse_values_array(cond, j, p);
+            } else {
+                skip_value(j, p);
+            }
+        });
     }
 
-    // --- parse_where_into ---
-    constexpr auto parse_where_into(WhereSpec& w, std::string_view json, size_t& pos) -> void { // NOSONAR(cpp:S3776)
+    // --- parse_where_into (conditions array + optional combine) ---
+    constexpr auto parse_where_into(WhereSpec& w, std::string_view json, size_t& pos) -> void {
         w.enabled = true;
         parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, size_t& p) {
-            if (parse_where_leaf_field(key, j, p, w.field, w.op, w.value)) {
-                return;
-            }
-            if (key == "value2") {
-                w.value2 = parse_typed_value(j, p);
-                return;
-            }
-            if (key == "in_values") {
-                parse_int_array_into_where(w, j, p);
-                return;
-            }
-            if (key == "field2") {
-                w.field2 = parse_string<32>(j, p);
-                return;
-            }
-            if (key == "op2") {
-                w.op2 = parse_string<8>(j, p);
-                return;
-            }
-            if (key == "value2_rhs") {
-                w.value2_rhs = parse_typed_value(j, p);
-                return;
-            }
-            if (key == "combine") {
-                auto s = parse_string<8>(j, p);
-                if (s == std::string_view("and"))
-                    w.combine_and = true;
-                else if (s == std::string_view("or"))
-                    w.combine_or = true;
-                return;
-            }
-            if (key == "and" || key == "or") {
-                if (key == "and") {
-                    w.combine_and = true;
-                }
-                if (key == "or") {
-                    w.combine_or = true;
-                }
-                // Parse nested {field, op, value} into the _rhs fields
-                parse_object_keys(j, p, [&](std::string_view k2, std::string_view j2, size_t& p2) {
-                    if (k2 == "field") {
-                        w.field2 = parse_string<32>(j2, p2);
-                    } else if (k2 == "op") {
-                        w.op2 = parse_string<8>(j2, p2);
-                    } else if (k2 == "value") {
-                        w.value2_rhs = parse_typed_value(j2, p2);
-                    } else {
-                        skip_value(j2, p2);
+            if (key == "conditions") {
+                // Parse array of WhereCondition objects
+                skip_whitespace(j, p);
+                if (p < j.size() && j[p] == '[') {
+                    p++; // '['
+                    size_t idx = 0;
+                    while (p < j.size()) {
+                        skip_whitespace(j, p);
+                        if (j[p] == ']') {
+                            p++;
+                            break;
+                        }
+                        if (idx < WhereSpec::MAX_CONDITIONS) {
+                            parse_where_condition_into(w.conditions[idx], j, p);
+                            idx++;
+                            w.condition_count = idx;
+                        } else {
+                            skip_value(j, p);
+                        }
+                        skip_whitespace(j, p);
+                        if (j[p] == ',') {
+                            p++;
+                        }
                     }
-                });
-                return;
+                }
+            } else if (key == "combine") {
+                auto s = parse_string<8>(j, p);
+                if (s == std::string_view("and")) {
+                    w.combine_and = true;
+                } else if (s == std::string_view("or")) {
+                    w.combine_or = true;
+                }
+            } else {
+                skip_value(j, p);
             }
-            skip_value(j, p);
         });
     }
 
@@ -468,10 +446,9 @@ namespace storm::benchmark {
         g.enabled = true;
         parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, size_t& p) {
             if (key == "fields") {
-                g.field_count =
-                        parse_string_array<GroupBySpec::MAX_FIELDS>(j, p, [&](size_t i, const ConstexprString<32>& s) {
-                            g.fields[i] = s;
-                        });
+                parse_string_array<GroupBySpec::MAX_FIELDS>(j, p, [&](size_t i, const ConstexprString<32>& s) {
+                    g.fields[i] = s;
+                });
             } else if (key == "having") {
                 parse_having_into(g.having, j, p);
             } else {
@@ -485,10 +462,9 @@ namespace storm::benchmark {
         d.enabled = true;
         parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, size_t& p) {
             if (key == "fields") {
-                d.field_count =
-                        parse_string_array<DistinctSpec::MAX_FIELDS>(j, p, [&](size_t i, const ConstexprString<32>& s) {
-                            d.fields[i] = s;
-                        });
+                parse_string_array<DistinctSpec::MAX_FIELDS>(j, p, [&](size_t i, const ConstexprString<32>& s) {
+                    d.fields[i] = s;
+                });
             } else {
                 skip_value(j, p);
             }
@@ -543,6 +519,18 @@ namespace storm::benchmark {
         });
     }
 
+    // --- parse_setop_into ---
+    constexpr auto parse_setop_into(SetOpSpec& s, std::string_view json, size_t& pos) -> void {
+        s.enabled = true;
+        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, size_t& p) {
+            if (key == "type") {
+                s.type = parse_string<16>(j, p);
+            } else {
+                skip_value(j, p);
+            }
+        });
+    }
+
     // ========================================================================
     // Top-level BenchmarkTest field dispatcher
     // ========================================================================
@@ -581,6 +569,8 @@ namespace storm::benchmark {
             parse_aggregate_into(test.aggregate, json, pos);
         } else if (key == "join") {
             parse_join_into(test.join, json, pos);
+        } else if (key == "setop") {
+            parse_setop_into(test.setop, json, pos);
         } else {
             skip_value(json, pos);
         }

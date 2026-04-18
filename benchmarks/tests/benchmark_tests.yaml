@@ -130,6 +130,10 @@ tests:
     model: FKMessage
     operation: select_join
     size_profile: dataset_standard
+    join:
+        type: inner
+        related: User
+        fk: sender
 
   - name: select_where_join
     category: SELECT_WHERE_JOIN
@@ -137,6 +141,10 @@ tests:
     model: FKMessage
     operation: select_where_join
     size_profile: dataset_standard
+    join:
+        type: inner
+        related: User
+        fk: sender
     where:
         field: age
         op: ">"
@@ -148,6 +156,10 @@ tests:
     model: FKMessage
     operation: select_left_join
     size_profile: dataset_standard
+    join:
+        type: left
+        related: User
+        fk: sender
 
   - name: select_left_join_where
     category: SELECT_LEFT_JOIN_WHERE
@@ -155,6 +167,10 @@ tests:
     model: FKMessage
     operation: select_left_join_where
     size_profile: dataset_standard
+    join:
+        type: left
+        related: User
+        fk: sender
     where:
         field: age
         op: ">"
@@ -166,6 +182,10 @@ tests:
     model: FKMessage
     operation: select_right_join
     size_profile: dataset_standard
+    join:
+        type: right
+        related: User
+        fk: sender
 
   - name: select_right_join_where
     category: SELECT_RIGHT_JOIN_WHERE
@@ -173,6 +193,10 @@ tests:
     model: FKMessage
     operation: select_right_join_where
     size_profile: dataset_standard
+    join:
+        type: right
+        related: User
+        fk: sender
     where:
         field: age
         op: ">"
@@ -184,6 +208,10 @@ tests:
     model: FKMessage
     operation: select_multi_fk_join
     size_profile: dataset_standard
+    join:
+        type: inner
+        related: User
+        fks: [sender, receiver]
 
   # ============================================================================
   # AGGREGATE Operations (with size profiles)
@@ -194,6 +222,8 @@ tests:
     model: Person
     operation: aggregate_count
     size_profile: dataset_small
+    aggregate:
+        func: count
 
   - name: aggregate_count_field
     category: AGGREGATE
@@ -202,6 +232,7 @@ tests:
     operation: aggregate_count_field
     size_profile: dataset_small
     aggregate:
+        func: count
         field: age
 
   - name: aggregate_count_distinct
@@ -211,6 +242,7 @@ tests:
     operation: aggregate_count_distinct
     size_profile: dataset_small
     aggregate:
+        func: count_distinct
         field: age
 
   - name: aggregate_sum
@@ -220,6 +252,7 @@ tests:
     operation: aggregate_sum
     size_profile: dataset_small
     aggregate:
+        func: sum
         field: age
 
   - name: aggregate_avg
@@ -229,6 +262,7 @@ tests:
     operation: aggregate_avg
     size_profile: dataset_small
     aggregate:
+        func: avg
         field: salary
 
   - name: aggregate_min
@@ -238,6 +272,7 @@ tests:
     operation: aggregate_min
     size_profile: dataset_small
     aggregate:
+        func: min
         field: age
 
   - name: aggregate_max
@@ -247,6 +282,7 @@ tests:
     operation: aggregate_max
     size_profile: dataset_small
     aggregate:
+        func: max
         field: salary
 
   # ============================================================================
@@ -280,6 +316,10 @@ tests:
     model: FKMessage
     operation: distinct_join
     size_profile: dataset_standard
+    join:
+        type: inner
+        related: User
+        fk: sender
     distinct:
         fields: [text]
 
@@ -289,6 +329,10 @@ tests:
     model: FKMessage
     operation: distinct_where_join
     size_profile: dataset_standard
+    join:
+        type: inner
+        related: User
+        fk: sender
     where:
         field: age
         op: ">"
@@ -382,6 +426,10 @@ tests:
     operation: select_join_limit
     iterations: 2000
     dataset_size: 10000
+    join:
+        type: inner
+        related: User
+        fk: sender
     limit:
         value: 100
 
@@ -392,6 +440,10 @@ tests:
     operation: select_join_limit_offset
     iterations: 2000
     dataset_size: 10000
+    join:
+        type: inner
+        related: User
+        fk: sender
     limit:
         value: 100
         offset: 0
@@ -516,6 +568,8 @@ tests:
     dataset_size: 10000
     group_by:
         fields: [age]
+    aggregate:
+        func: count
 
   - name: group_by_single_is_active
     category: GROUP_BY
@@ -526,6 +580,8 @@ tests:
     dataset_size: 10000
     group_by:
         fields: [is_active]
+    aggregate:
+        func: count
 
   - name: group_by_with_where_gt
     category: GROUP_BY_WHERE
@@ -540,6 +596,8 @@ tests:
         value: 50000
     group_by:
         fields: [age]
+    aggregate:
+        func: count
 
   - name: group_by_multi_2
     category: GROUP_BY_MULTI
@@ -550,6 +608,8 @@ tests:
     dataset_size: 10000
     group_by:
         fields: [age, is_active]
+    aggregate:
+        func: count
 
   - name: group_by_with_count
     category: GROUP_BY_COUNT
@@ -560,6 +620,8 @@ tests:
     dataset_size: 10000
     group_by:
         fields: [age]
+    aggregate:
+        func: count
 
   - name: group_by_with_sum
     category: GROUP_BY_SUM
@@ -571,6 +633,7 @@ tests:
     group_by:
         fields: [age]
     aggregate:
+        func: sum
         field: salary
 
   - name: group_by_with_avg
@@ -583,6 +646,7 @@ tests:
     group_by:
         fields: [age]
     aggregate:
+        func: avg
         field: salary
 
   - name: group_by_with_min
@@ -595,6 +659,7 @@ tests:
     group_by:
         fields: [age]
     aggregate:
+        func: min
         field: salary
 
   - name: group_by_with_max
@@ -607,6 +672,7 @@ tests:
     group_by:
         fields: [age]
     aggregate:
+        func: max
         field: salary
 
   # ============================================================================
@@ -625,6 +691,8 @@ tests:
           field: age
           op: ">"
           value: 30
+    aggregate:
+        func: count
 
   - name: group_by_having_sum
     category: GROUP_BY_HAVING
@@ -640,6 +708,7 @@ tests:
           op: ">"
           value: 30
     aggregate:
+        func: sum
         field: salary
 
   # ============================================================================
@@ -654,6 +723,7 @@ tests:
     dataset_size: 10000
     where:
         field: name
+        op: LIKE
         value: "Person1%"
 
   - name: where_like_contains
@@ -665,6 +735,7 @@ tests:
     dataset_size: 10000
     where:
         field: name
+        op: LIKE
         value: "%son%"
 
   - name: where_between_int
@@ -676,8 +747,8 @@ tests:
     dataset_size: 10000
     where:
         field: age
-        value: 25
-        value2: 45
+        op: BETWEEN
+        value: [25, 45]
 
   - name: where_in_small
     category: WHERE_IN
@@ -688,7 +759,8 @@ tests:
     dataset_size: 10000
     where:
         field: age
-        in_values: [25, 30, 35]
+        op: IN
+        value: [25, 30, 35]
 
   - name: where_and_simple
     category: WHERE_AND
@@ -698,13 +770,14 @@ tests:
     iterations: 1000
     dataset_size: 10000
     where:
-        field: age
-        op: ">"
-        value: 30
-        field2: salary
-        op2: ">"
+        conditions:
+            - field: age
+              op: ">"
+              value: 30
+            - field: salary
+              op: ">"
+              value: 50000
         combine: and
-        value2_rhs: 50000
 
   - name: where_or_simple
     category: WHERE_OR
@@ -714,13 +787,14 @@ tests:
     iterations: 1000
     dataset_size: 10000
     where:
-        field: age
-        op: <
-        value: 25
-        field2: age
-        op2: ">"
+        conditions:
+            - field: age
+              op: "<"
+              value: 25
+            - field: age
+              op: ">"
+              value: 60
         combine: or
-        value2_rhs: 60
 
   # ============================================================================
   # IS NULL / IS NOT NULL (fixed size)
@@ -734,6 +808,7 @@ tests:
     dataset_size: 10000
     where:
         field: score
+        op: IS NULL
 
   - name: where_is_not_null
     category: WHERE_IS_NULL
@@ -744,6 +819,7 @@ tests:
     dataset_size: 10000
     where:
         field: score
+        op: IS NOT NULL
 
   # ============================================================================
   # Multi-Field DISTINCT (fixed size)
@@ -880,43 +956,58 @@ tests:
     category: SETOP
     description: UNION with WHERE on both sides
     model: Person
-    operation: setop_union
+    operation: setop
     size_profile: dataset_standard
+    setop:
+      type: union
 
   - name: setop_union_all
     category: SETOP
     description: UNION ALL with WHERE on both sides
     model: Person
-    operation: setop_union_all
+    operation: setop
     size_profile: dataset_standard
+    setop:
+      type: union_all
 
   - name: setop_except
     category: SETOP
     description: EXCEPT with WHERE on both sides
     model: Person
-    operation: setop_except
+    operation: setop
     size_profile: dataset_standard
+    setop:
+      type: except
 
   - name: setop_intersect
     category: SETOP
     description: INTERSECT with WHERE on both sides
     model: Person
-    operation: setop_intersect
+    operation: setop
     size_profile: dataset_standard
+    setop:
+      type: intersect
 
   - name: setop_union_order_by
     category: SETOP_ORDER
     description: UNION + ORDER BY age ASC
     model: Person
-    operation: setop_union_order_by
+    operation: setop
     size_profile: dataset_standard
+    setop:
+      type: union
+    order_by:
+      - field: age
+        direction: ASC
 
   - name: setop_union_limit
     category: SETOP_LIMIT
     description: UNION + LIMIT 100
     model: Person
-    operation: setop_union_limit
+    operation: setop
     size_profile: dataset_standard
+    setop:
+      type: union
     limit:
         value: 100
 
