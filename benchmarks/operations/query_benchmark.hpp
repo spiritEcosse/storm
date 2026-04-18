@@ -33,6 +33,10 @@ namespace storm::benchmark {
     // ========================================================================
     // Field dispatcher — compile-time field lookup by name (standalone version)
     // ========================================================================
+    // Field lookup by name. Callers must gate with static_assert(has_field<Model>(name))
+    // so a missing field fails at the call site with a clear message. If the static_assert
+    // is in place, the loop is guaranteed to return; std::unreachable() satisfies the
+    // return type (field_name is a runtime string_view, so we cannot constrain with requires).
     template <typename Model> consteval auto dispatch_field(std::string_view field_name) -> std::meta::info {
         for (std::meta::info member :
              std::meta::nonstatic_data_members_of(^^Model, std::meta::access_context::unchecked())) {
@@ -40,7 +44,7 @@ namespace storm::benchmark {
                 return member;
             }
         }
-        throw "Field not found in model"; // NOSONAR(cpp:S112) — consteval: fires at compile time if field missing
+        std::unreachable();
     }
 
     // Check whether a field name exists on a model at compile time
@@ -53,6 +57,32 @@ namespace storm::benchmark {
         }
         return false;
     }
+
+    // ========================================================================
+    // Concepts that validate op-strings and aggregate function names at the
+    // call site. A bogus value produces a constraint-violation error naming
+    // the concept, rather than a late `throw "…"` in a consteval body.
+    // ========================================================================
+    template <auto op_str, typename FieldType>
+    concept ValidOperator = []() consteval {
+        constexpr std::string_view op = op_str.view();
+        if (op == ">" || op == ">=" || op == "<" || op == "<=" || op == "==" || op == "!=" || op == "LIKE" ||
+            op == "BETWEEN" || op == "IN") {
+            return true;
+        }
+        // IS NULL / IS NOT NULL require an optional field.
+        if (op == "IS NULL" || op == "IS NOT NULL") {
+            return orm::where::NullableField<FieldType>;
+        }
+        return false;
+    }();
+
+    template <auto func_str>
+    concept ValidAggregate = []() consteval {
+        constexpr std::string_view func = func_str.view();
+        return func == "count" || func == "count_distinct" || func == "sum" || func == "avg" || func == "min" ||
+               func == "max";
+    }();
 
     // ========================================================================
     // QueryBenchmark — one class for all SELECT-family operations
@@ -130,7 +160,8 @@ namespace storm::benchmark {
         // Branches only on argument shape — op-string → method dispatch lives in resolve_operator.
         template <size_t I> static auto build_condition_expr() {
             constexpr auto& cond = test.where.conditions[I];
-            constexpr auto  fi   = dispatch_field<WhereModel>(cond.field.view());
+            static_assert(has_field<WhereModel>(cond.field.view()), "WHERE condition field not found on model");
+            constexpr auto fi = dispatch_field<WhereModel>(cond.field.view());
             static_assert(std::meta::is_nonstatic_data_member(fi), "Field must be a non-static data member");
             constexpr std::string_view op = cond.op.view();
             using FieldType               = typename[:std::meta::type_of(fi):];
@@ -175,7 +206,9 @@ namespace storm::benchmark {
         // actually selected — otherwise e.g. `in<bool>` instantiates even for
         // scalar `==` on a bool field, hitting `InExpression<bool>` which is
         // not in ExpressionVariant.
-        template <auto fi, auto op_str, typename... Ts> static consteval auto resolve_operator() -> std::meta::info {
+        template <auto fi, auto op_str, typename... Ts>
+            requires ValidOperator<op_str, typename std::remove_cvref_t<decltype(field<fi>())>::FieldType>
+        static consteval auto resolve_operator() -> std::meta::info {
             using FE                      = std::remove_cvref_t<decltype(field<fi>())>;
             using FieldType               = typename FE::FieldType;
             constexpr std::string_view op = op_str.view();
@@ -209,10 +242,12 @@ namespace storm::benchmark {
                     return ^^FE::is_not_null;
             }
 
-            throw "Unknown or invalid operator"; // NOSONAR(cpp:S112) — consteval
+            std::unreachable();
         }
 
-        template <auto fi, auto op_str, typename... Ts> static auto build_compare_expr(Ts&&... vs) {
+        template <auto fi, auto op_str, typename... Ts>
+            requires ValidOperator<op_str, typename std::remove_cvref_t<decltype(field<fi>())>::FieldType>
+        static auto build_compare_expr(Ts&&... vs) {
             constexpr auto method = resolve_operator<fi, op_str, std::remove_cvref_t<Ts>...>();
             return (field<fi>().[:method:](std::forward<Ts>(vs)...));
         }
@@ -296,9 +331,10 @@ namespace storm::benchmark {
             } else if constexpr (!test.order_by[I].enabled) {
                 return apply_order_by_impl<I + 1>(std::move(qs));
             } else {
-                constexpr auto& ob  = test.order_by[I];
-                constexpr auto  oi  = dispatch_field<Model>(ob.field.view());
-                constexpr bool  asc = (ob.direction.view() != "DESC");
+                constexpr auto& ob = test.order_by[I];
+                static_assert(has_field<Model>(ob.field.view()), "ORDER BY field not found on model");
+                constexpr auto oi  = dispatch_field<Model>(ob.field.view());
+                constexpr bool asc = (ob.direction.view() != "DESC");
                 if constexpr (ob.collate.view() != "") {
                     constexpr auto collation = parse_collate(ob.collate.view());
                     return apply_order_by_impl<I + 1>(qs.template order_by<oi, asc, collation>());
@@ -503,13 +539,17 @@ namespace storm::benchmark {
         // ====================================================================
         // apply_aggregate — reflection-based dispatch via ^^ splice
         // ====================================================================
-        // Resolve aggregate method by name via ^^ reflection
+        // Resolve aggregate method by name via ^^ reflection.
+        // ValidAggregate constrains the function name; when a field is present
+        // it's further gated by has_field<Model>(...) for a clear call-site error.
         template <typename Stmt, bool HasField = !test.aggregate.field.empty()>
+            requires(!HasField) || ValidAggregate<test.aggregate.func>
         static consteval auto resolve_aggregate() -> std::meta::info {
             constexpr std::string_view func = test.aggregate.func.view();
             if constexpr (!HasField) {
                 return ^^Stmt::template count<>;
             } else {
+                static_assert(has_field<Model>(test.aggregate.field.view()), "aggregate field not found on model");
                 constexpr auto fi = dispatch_field<Model>(test.aggregate.field.view());
                 if (func == "count")
                     return ^^Stmt::template count<fi>;
@@ -523,7 +563,7 @@ namespace storm::benchmark {
                     return ^^Stmt::template min<fi>;
                 if (func == "max")
                     return ^^Stmt::template max<fi>;
-                throw "Unknown aggregate function"; // NOSONAR(cpp:S112) — consteval
+                std::unreachable();
             }
         }
 
@@ -551,6 +591,7 @@ namespace storm::benchmark {
             }(std::make_index_sequence<test.group_by.field_count()>{});
 
             if constexpr (test.group_by.having.enabled) {
+                static_assert(has_field<Model>(test.group_by.having.field.view()), "HAVING field not found on model");
                 constexpr auto hf = dispatch_field<Model>(test.group_by.having.field.view());
                 // Pass a prvalue — `build_compare_expr` forwards into a
                 // forwarding-reference parameter on `operator>` etc. A constexpr
