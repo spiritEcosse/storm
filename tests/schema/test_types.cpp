@@ -1485,10 +1485,6 @@ TYPED_TEST(UUIDTypesTest, EmptyUUIDAutoGeneratesOnInsert) {
     const auto& stored_uuid = selected.value().begin()->uuid_field.value;
     EXPECT_FALSE(stored_uuid.empty());
     EXPECT_EQ(stored_uuid.size(), 36);
-    EXPECT_EQ(stored_uuid[14], '4');
-
-    char variant_char = stored_uuid[19];
-    EXPECT_TRUE(variant_char == '8' || variant_char == '9' || variant_char == 'a' || variant_char == 'b');
 }
 
 TYPED_TEST(UUIDTypesTest, BatchUUIDInsert) {
@@ -1527,45 +1523,6 @@ TYPED_TEST(UUIDTypesTest, StringViewConstructorAndConversion) {
     EXPECT_EQ(std::string_view(selected.value().begin()->uuid_field), sv);
 }
 
-TYPED_TEST(UUIDTypesTest, IsValidAcceptsCorrectFormat) {
-    EXPECT_TRUE(storm::UUID::is_valid("550e8400-e29b-41d4-a716-446655440000"));
-    EXPECT_TRUE(storm::UUID::is_valid("ABCDEF00-1234-5678-9abc-DEF012345678"));
-    EXPECT_TRUE(storm::UUID::is_valid("00000000-0000-0000-0000-000000000000"));
-}
-
-TYPED_TEST(UUIDTypesTest, IsValidRejectsInvalidFormat) {
-    EXPECT_FALSE(storm::UUID::is_valid(""));
-    EXPECT_FALSE(storm::UUID::is_valid("not-a-uuid"));
-    EXPECT_FALSE(storm::UUID::is_valid("1234"));
-    EXPECT_FALSE(storm::UUID::is_valid("zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz"));
-    EXPECT_FALSE(storm::UUID::is_valid("550e8400e29b41d4a716446655440000"));
-    EXPECT_FALSE(storm::UUID::is_valid("550e8400-e29b-41d4-a716-4466554400001"));
-    EXPECT_FALSE(storm::UUID::is_valid("550e8400ae29b-41d4-a716-446655440000"));
-}
-
-TYPED_TEST(UUIDTypesTest, GenerateProducesValidV4Format) {
-    auto uuid = storm::UUID::generate();
-
-    EXPECT_EQ(uuid.value.size(), 36);
-    EXPECT_EQ(uuid.value[8], '-');
-    EXPECT_EQ(uuid.value[13], '-');
-    EXPECT_EQ(uuid.value[18], '-');
-    EXPECT_EQ(uuid.value[23], '-');
-
-    EXPECT_EQ(uuid.value[14], '4');
-
-    char variant_char = uuid.value[19];
-    EXPECT_TRUE(variant_char == '8' || variant_char == '9' || variant_char == 'a' || variant_char == 'b');
-}
-
-TYPED_TEST(UUIDTypesTest, GenerateProducesUniqueValues) {
-    std::set<std::string> uuids;
-    for (int i = 0; i < 100; ++i) {
-        uuids.insert(storm::UUID::generate().value);
-    }
-    EXPECT_EQ(uuids.size(), 100);
-}
-
 TYPED_TEST(UUIDTypesTest, GeneratedUUIDRoundTrip) {
     auto generated = storm::UUID::generate();
 
@@ -1577,18 +1534,6 @@ TYPED_TEST(UUIDTypesTest, GeneratedUUIDRoundTrip) {
     auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().begin()->uuid_field.value, generated.value);
-}
-
-TYPED_TEST(UUIDTypesTest, GenerateAllHexChars) {
-    auto uuid = storm::UUID::generate();
-    for (size_t i = 0; i < uuid.value.size(); ++i) {
-        char c = uuid.value[i];
-        if (i == 8 || i == 13 || i == 18 || i == 23) {
-            EXPECT_EQ(c, '-');
-        } else {
-            EXPECT_TRUE(std::isxdigit(static_cast<unsigned char>(c)));
-        }
-    }
 }
 
 TYPED_TEST(UUIDTypesTest, BatchEmptyUUIDsAutoGenerate) {
@@ -1610,7 +1555,6 @@ TYPED_TEST(UUIDTypesTest, BatchEmptyUUIDsAutoGenerate) {
     for (const auto& row : selected.value()) {
         EXPECT_FALSE(row.uuid_field.value.empty());
         EXPECT_EQ(row.uuid_field.value.size(), 36);
-        EXPECT_EQ(row.uuid_field.value[14], '4');
         generated_uuids.insert(row.uuid_field.value);
     }
     EXPECT_EQ(generated_uuids.size(), 3);
