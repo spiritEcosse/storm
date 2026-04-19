@@ -869,20 +869,16 @@ COMMIT;
 
 **Architecture:**
 ```cpp
-// Per-thread, per-field-combination caching
-template <std::meta::info DistinctFieldInfo>
-class DistinctBenchmark {
-    // Compile-time field dispatch
-    using FieldType = decltype(std::declval<Model>().[:DistinctFieldInfo:]);
-
-    // Execute with WHERE/JOIN support via template parameters
-    int execute(int iterations) {
-        for (int i = 0; i < iterations; i++) {
-            auto results = qs.template distinct<DistinctFieldInfo>().select();
-            total_rows += results.value().size();
-        }
-        return total_rows;
-    }
+// All SELECT-family operations (including DISTINCT) are driven by a single
+// QueryBenchmark<Model, test> class; features dispatch at compile time via
+// if constexpr on test.distinct.enabled / test.where.enabled / etc.
+template <typename Model, auto const& test>
+class QueryBenchmark : public DataBenchmarkBase<QueryBenchmark<Model, test>, Model, 1> {
+    // Builds a fully configured QuerySet (JOIN → WHERE → ORDER BY → LIMIT)
+    // and stores the terminal (.select() / .execute() / aggregate / distinct / group_by).
+    static auto build_qs();
+    auto execute(int iterations) -> void;     // Storm ORM path
+    auto execute_raw(int iterations) -> void; // Raw SQLite — SQL from the same terminal
 };
 ```
 
@@ -1552,25 +1548,29 @@ Each test is executed via template recursion with compile-time dispatch:
 ```cpp
 template<typename Model, size_t TestIndex, size_t TotalTests>
 struct TestExecutor {
-    static void execute(BenchmarkRunner& runner, int iterations) {
+    static void execute(BenchmarkRunner& runner, int iterations, ...) {
         constexpr auto& test = BENCHMARK_TESTS[TestIndex];
         constexpr std::string_view operation = test.operation.view();
 
-        // Dispatch based on operation type at COMPILE TIME
-        if constexpr (operation == "where") {
-            constexpr std::string_view field_name = test.where.field.view();
-            constexpr auto field_info = dispatch_field<Model>(field_name);
-            SelectBenchmark<Model, field_info, ...> bench(...);
-            runner.run_benchmark(test.test_name.c_str(), bench, iterations);
-        } else if constexpr (operation == "insert") {
-            InsertBenchmark<Model> bench;
-            runner.run_benchmark(test.test_name.c_str(), bench, iterations);
+        // CRUD operations keep dedicated classes (data-driven, not query-driven).
+        if constexpr (operation == "insert") {
+            run_insert_operation<Model, test>(runner, iterations);
+        } else if constexpr (operation == "update_pk") {
+            run_update_pk_operation<Model, test>(runner, iterations);
+        } else if constexpr (operation == "delete_pk") {
+            run_delete_pk_operation<Model, test>(runner, iterations);
+        } else {
+            // ALL SELECT-family operations — one unified class, feature dispatch
+            // happens inside QueryBenchmark via if constexpr on test.*.enabled.
+            registry::with_base_model<test>([&]<typename M>() {
+                runner.template dispatch_sized<test, IterKind::Dataset>(
+                    iterations, test.dataset_size,
+                    [](int size) { return QueryBenchmark<M, test>{size}; });
+            });
         }
 
-        // Recurse to next test at compile time
-        if constexpr (TestIndex + 1 < TotalTests) {
-            TestExecutor<Model, TestIndex + 1, TotalTests>::execute(runner, iterations);
-        }
+        if constexpr (TestIndex + 1 < TotalTests)
+            TestExecutor<Model, TestIndex + 1, TotalTests>::execute(runner, iterations, ...);
     }
 };
 ```

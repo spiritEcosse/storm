@@ -234,43 +234,46 @@ export namespace storm {
         }
 
         // INNER JOIN support for single or multiple FK fields
+        // Immutable: returns a new QuerySet with the join attached (Django-style).
         // Usage:
         //   Single FK: message_qs.join<&Message::sender>().select()
         //   Multi FK:  message_qs.join<&Message::sender, &Message::receiver>().select()
         template <auto... FKFieldPtrs>
             requires(sizeof...(FKFieldPtrs) >= 1)
-        constexpr auto join(this auto&& self) -> auto&& { // NOSONAR(cpp:S6189)
-            // Create type-erased wrapper with compile-time generated SQL (INNER JOIN)
-            self.join_stmt_ =
+        [[nodiscard]] auto join() const -> QuerySet {
+            auto result = clone_state();
+            result.join_stmt_ =
                     orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Inner, FKFieldPtrs...>();
-            return std::forward<decltype(self)>(self);
+            return result;
         }
 
         // LEFT JOIN support for single or multiple FK fields
+        // Immutable: returns a new QuerySet with the join attached.
         // Usage:
         //   Single FK: message_qs.left_join<&Message::sender>().select()
         //   Multi FK:  message_qs.left_join<&Message::sender, &Message::receiver>().select()
         template <auto... FKFieldPtrs>
             requires(sizeof...(FKFieldPtrs) >= 1)
-        constexpr auto left_join(this auto&& self) -> auto&& { // NOSONAR(cpp:S6189)
-            // Create type-erased wrapper with compile-time generated SQL (LEFT JOIN)
-            self.join_stmt_ =
+        [[nodiscard]] auto left_join() const -> QuerySet {
+            auto result = clone_state();
+            result.join_stmt_ =
                     orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Left, FKFieldPtrs...>();
-            return std::forward<decltype(self)>(self);
+            return result;
         }
 
         // RIGHT JOIN support for single or multiple FK fields
+        // Immutable: returns a new QuerySet with the join attached.
         // Requires backend support (SQLite 3.39.0+, PostgreSQL always)
         // Usage:
         //   Single FK: message_qs.right_join<&Message::sender>().select()
         //   Multi FK:  message_qs.right_join<&Message::sender, &Message::receiver>().select()
         template <auto... FKFieldPtrs>
             requires(sizeof...(FKFieldPtrs) >= 1 && ConnType::supports_right_join)
-        constexpr auto right_join(this auto&& self) -> auto&& { // NOSONAR(cpp:S6189)
-            // Create type-erased wrapper with compile-time generated SQL (RIGHT JOIN)
-            self.join_stmt_ =
+        [[nodiscard]] auto right_join() const -> QuerySet {
+            auto result = clone_state();
+            result.join_stmt_ =
                     orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Right, FKFieldPtrs...>();
-            return std::forward<decltype(self)>(self);
+            return result;
         }
 
         // Update single object - returns proxy with .execute() and .to_sql()

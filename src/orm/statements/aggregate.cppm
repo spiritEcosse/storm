@@ -676,6 +676,12 @@ export namespace storm::orm::statements {
             return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::COUNT, FieldInfos...>>{params_};
         }
 
+        template <std::meta::info... FieldInfos> auto count_distinct() {
+            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::COUNT_DISTINCT, FieldInfos...>>{
+                    params_
+            };
+        }
+
         template <std::meta::info... FieldInfos> auto sum() {
             return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::SUM, FieldInfos...>>{params_};
         }
