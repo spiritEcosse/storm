@@ -152,25 +152,9 @@ export namespace storm::orm::utilities {
             return value;
         } // NOLINT(google-explicit-constructor)
 
-        // Validate UUID format: 8-4-4-4-12 hex digits with dashes (Django-style, any version)
+        // Validate UUID using stduuid library (checks RFC 4122 compliance)
         [[nodiscard]] static auto is_valid(std::string_view sv) -> bool {
-            if (sv.size() != 36) {
-                return false;
-            }
-            for (size_t i = 0; i < 36; ++i) {
-                if (i == 8 || i == 13 || i == 18 || i == 23) {
-                    if (sv[i] != '-') {
-                        return false;
-                    }
-                } else {
-                    auto c      = sv[i];
-                    bool is_hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-                    if (!is_hex) {
-                        return false;
-                    }
-                }
-            }
-            return true;
+            return uuids::uuid::from_string(sv).has_value();
         }
 
         // Generate a random RFC 4122 v4 UUID using stduuid
