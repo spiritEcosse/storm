@@ -101,7 +101,7 @@ TYPED_TEST(BatchInsertReturningTest, SingleElementBatch) {
     EXPECT_GT(result.value()[0], 0) << "Returned ID should be positive";
 
     // Verify count
-    auto count = qs.count().get();
+    auto count = qs.count().execute();
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 1);
 }
@@ -268,7 +268,7 @@ TYPED_TEST(ChunkedBatchInsertReturningTest, ChunkedBatchReturnsAllIds) {
     }
 
     // Verify total count
-    auto count = qs.count().get();
+    auto count = qs.count().execute();
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), num_records);
 }
@@ -337,7 +337,7 @@ TYPED_TEST(ChunkedBatchInsertReturningTest, MultipleChunksWithRemainder) {
     ASSERT_EQ(result.value().size(), static_cast<size_t>(num_records));
 
     // Verify count
-    auto count = qs.count().get();
+    auto count = qs.count().execute();
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), num_records);
 }
@@ -408,7 +408,7 @@ TYPED_TEST(BatchInsertReturningTest, ExplicitReturnIdNoBatchReturnsVoid) {
     );
     ASSERT_TRUE(result.has_value()) << "Explicit ReturnId::No batch insert should succeed";
 
-    auto count = qs.count().get();
+    auto count = qs.count().execute();
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 3);
 }

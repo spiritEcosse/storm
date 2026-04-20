@@ -378,7 +378,7 @@ TYPED_TEST(WhereTest, WhereInLoopWithoutReset) {
     QuerySet<Person, TypeParam> queryset;
 
     for (int i = 0; i < 10; ++i) {
-        auto result = queryset.where(field<^^Person::age>() > 30).count().get();
+        auto result = queryset.where(field<^^Person::age>() > 30).count().execute();
         ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed: " << result.error().message();
         EXPECT_EQ(result.value(), 13) << "Each iteration should return 13 (no accumulation)";
     }

@@ -36,7 +36,7 @@ TYPED_TEST(DistinctTest, DistinctNameFieldWithDuplicates) {
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     // SELECT DISTINCT age
-    auto result = queryset.template distinct<^^Person::age>().select();
+    auto result = queryset.template distinct<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT DISTINCT failed: " << result.error().message();
 
     const auto& ages = result.value();
@@ -61,7 +61,7 @@ TYPED_TEST(DistinctTest, DistinctAgeFieldWithDuplicates) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT age
-    auto result = queryset.template distinct<^^Person::age>().select();
+    auto result = queryset.template distinct<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& ages = result.value();
@@ -85,7 +85,7 @@ TYPED_TEST(DistinctTest, DistinctDefaultsToPrimaryKey) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT (defaults to PK)
-    auto result = queryset.distinct().select();
+    auto result = queryset.distinct().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& ids = result.value();
@@ -109,7 +109,7 @@ TYPED_TEST(DistinctTest, DistinctNameFieldAllUnique) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name
-    auto result = queryset.template distinct<^^Person::name>().select();
+    auto result = queryset.template distinct<^^Person::name>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -128,7 +128,7 @@ TYPED_TEST(DistinctTest, DistinctWithSingleRow) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name
-    auto result = queryset.template distinct<^^Person::name>().select();
+    auto result = queryset.template distinct<^^Person::name>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -151,7 +151,7 @@ TYPED_TEST(DistinctTest, DistinctWithLargeDataset) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT age
-    auto result = queryset.template distinct<^^Person::age>().select();
+    auto result = queryset.template distinct<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& ages = result.value();
@@ -169,7 +169,7 @@ TYPED_TEST(DistinctTest, DistinctWithEmptyStrings) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT age
-    auto result = queryset.template distinct<^^Person::age>().select();
+    auto result = queryset.template distinct<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& ages = result.value();
@@ -188,15 +188,15 @@ TYPED_TEST(DistinctTest, VerifyReturnTypes) {
     std::ignore = queryset.insert(Person{.id = 0, .name = "Alice", .age = 30}).execute();
 
     // Verify return type for distinct on name field is hive of strings
-    auto names_result = queryset.template distinct<^^Person::name>().select();
+    auto names_result = queryset.template distinct<^^Person::name>().execute();
     static_assert(std::is_same_v<decltype(names_result.value()), plf::hive<std::string>&>);
 
     // Verify return type for distinct on age field is hive of integers
-    auto ages_result = queryset.template distinct<^^Person::age>().select();
+    auto ages_result = queryset.template distinct<^^Person::age>().execute();
     static_assert(std::is_same_v<decltype(ages_result.value()), plf::hive<int>&>);
 
     // Verify return type for distinct on primary key is hive of integers
-    auto ids_result = queryset.distinct().select();
+    auto ids_result = queryset.distinct().execute();
     static_assert(std::is_same_v<decltype(ids_result.value()), plf::hive<int>&>);
 }
 
@@ -220,7 +220,7 @@ TYPED_TEST(DistinctTest, DistinctTwoFieldsNameAndAge) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name, age — all (name, age) pairs are unique since names are unique
-    auto result = queryset.template distinct<^^Person::name, ^^Person::age>().select();
+    auto result = queryset.template distinct<^^Person::name, ^^Person::age>().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT DISTINCT failed: " << result.error().message();
 
     const auto& pairs = result.value();
@@ -253,7 +253,7 @@ TYPED_TEST(DistinctTest, DistinctThreeFieldsAllFields) {
     auto insert_result = queryset.insert(std::span<const Person>(people_to_insert)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto result = queryset.template distinct<^^Person::name, ^^Person::age>().select();
+    auto result = queryset.template distinct<^^Person::name, ^^Person::age>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& pairs = result.value();
@@ -282,7 +282,7 @@ TYPED_TEST(DistinctTest, DistinctTwoFieldsAllDuplicates) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT age — all have the same age, so only 1 result
-    auto result = queryset.template distinct<^^Person::age>().select();
+    auto result = queryset.template distinct<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& ages = result.value();
@@ -308,7 +308,7 @@ TYPED_TEST(DistinctTest, DistinctTwoFieldsLargeDataset) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT age — should deduplicate to 10 unique ages
-    auto result = queryset.template distinct<^^Person::age>().select();
+    auto result = queryset.template distinct<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& ages = result.value();
@@ -327,7 +327,7 @@ TYPED_TEST(DistinctTest, DistinctTwoFieldsDifferentOrder) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT age, name (reversed order)
-    auto result = queryset.template distinct<^^Person::age, ^^Person::name>().select();
+    auto result = queryset.template distinct<^^Person::age, ^^Person::name>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& pairs = result.value();
@@ -349,11 +349,11 @@ TYPED_TEST(DistinctTest, VerifyMultiFieldReturnTypes) {
     std::ignore = queryset.insert(Person{.id = 0, .name = "Alice", .age = 30}).execute();
 
     // Verify return type for distinct on name and age is hive of tuples containing string and int
-    auto pairs_result = queryset.template distinct<^^Person::name, ^^Person::age>().select();
+    auto pairs_result = queryset.template distinct<^^Person::name, ^^Person::age>().execute();
     static_assert(std::is_same_v<decltype(pairs_result.value()), plf::hive<std::tuple<std::string, int>>&>);
 
     // Verify return type for distinct on age and name (reversed order) is hive of tuples containing int and string
-    auto reversed_result = queryset.template distinct<^^Person::age, ^^Person::name>().select();
+    auto reversed_result = queryset.template distinct<^^Person::age, ^^Person::name>().execute();
     static_assert(std::is_same_v<decltype(reversed_result.value()), plf::hive<std::tuple<int, std::string>>&>);
 }
 
@@ -365,7 +365,7 @@ TYPED_TEST(DistinctTest, DistinctTwoFieldsWithSingleRow) {
     auto         insert_result = queryset.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto result = queryset.template distinct<^^Person::name, ^^Person::age>().select();
+    auto result = queryset.template distinct<^^Person::name, ^^Person::age>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& pairs = result.value();
@@ -388,7 +388,7 @@ TYPED_TEST(DistinctTest, DuplicateFieldSpecification) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT age, age (redundant but valid SQL)
-    auto result = queryset.template distinct<^^Person::age, ^^Person::age>().select();
+    auto result = queryset.template distinct<^^Person::age, ^^Person::age>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& pairs = result.value();
@@ -418,7 +418,7 @@ TYPED_TEST(DistinctTest, TriplicateFieldSpecification) {
     std::ignore                = queryset.insert(std::span<const Person>(people)).execute();
 
     // SELECT DISTINCT age, age, age (extreme redundancy)
-    auto result = queryset.template distinct<^^Person::age, ^^Person::age, ^^Person::age>().select();
+    auto result = queryset.template distinct<^^Person::age, ^^Person::age, ^^Person::age>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& triples = result.value();
@@ -450,7 +450,7 @@ TYPED_TEST(DistinctTest, CrossStructFieldAccessPrevented) {
      *
      * Example that WON'T compile:
      *   QuerySet<Person> person_qs;
-     *   person_qs.template distinct<&Message::sender_id>().select(); // COMPILE ERROR!
+     *   person_qs.template distinct<&Message::sender_id>().execute(); // COMPILE ERROR!
      *
      * Error: "left hand operand to .* must be a class compatible with the right hand operand"
      *
@@ -468,11 +468,11 @@ TYPED_TEST(DistinctTest, VerifyDuplicateFieldReturnTypes) {
     std::ignore = queryset.insert(Person{.id = 0, .name = "Alice", .age = 30}).execute();
 
     // Duplicate field returns tuple with same type repeated
-    auto dup_result = queryset.template distinct<^^Person::name, ^^Person::name>().select();
+    auto dup_result = queryset.template distinct<^^Person::name, ^^Person::name>().execute();
     static_assert(std::is_same_v<decltype(dup_result.value()), plf::hive<std::tuple<std::string, std::string>>&>);
 
     // Triple duplicate
-    auto trip_result = queryset.template distinct<^^Person::age, ^^Person::age, ^^Person::age>().select();
+    auto trip_result = queryset.template distinct<^^Person::age, ^^Person::age, ^^Person::age>().execute();
     static_assert(std::is_same_v<decltype(trip_result.value()), plf::hive<std::tuple<int, int, int>>&>);
 }
 
@@ -486,7 +486,7 @@ TYPED_TEST(DistinctTest, MixedDuplicateFields) {
     std::ignore = queryset.insert(std::span<const Person>(people)).execute();
 
     // SELECT DISTINCT age, name, age (age appears twice)
-    auto result = queryset.template distinct<^^Person::age, ^^Person::name, ^^Person::age>().select();
+    auto result = queryset.template distinct<^^Person::age, ^^Person::name, ^^Person::age>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& triples = result.value();
@@ -551,7 +551,7 @@ TYPED_TEST(DistinctTest, DistinctOnBaseTableWithoutJoin) {
     QuerySet<Message, TypeParam> msg_qs;
 
     // DISTINCT on Message.content (no JOIN involved)
-    auto result = msg_qs.template distinct<^^Message::content>().select();
+    auto result = msg_qs.template distinct<^^Message::content>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& contents = result.value();
@@ -622,12 +622,12 @@ TYPED_TEST(DistinctTest, DesiredSQLForDistinctWithJoin) {
      * Option A: Chaining
      *   msg_qs.template join<&Message::sender>()
      *         .template distinct<&Person::name>()  // PROBLEM: &Person::name won't match Message fields
-     *         .select()
+     *         .execute()
      *
      * Option B: Separate DISTINCT type for JOINs
      *   msg_qs.template join<&Message::sender>()
      *         .distinct_joined<&Message::sender, &Person::name>()
-     *         .select()
+     *         .execute()
      *
      * Option C: SQL-style field selection
      *   msg_qs.template join<&Message::sender>()
@@ -773,7 +773,7 @@ TYPED_TEST(DistinctTest, DistinctWithWhereSingleField) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT age WHERE age > 22
-    auto result = queryset.where(field<^^Person::age>() > 22).template distinct<^^Person::age>().select();
+    auto result = queryset.where(field<^^Person::age>() > 22).template distinct<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value()) << "DISTINCT with WHERE failed: " << result.error().message();
 
     const auto& ages = result.value();
@@ -807,7 +807,7 @@ TYPED_TEST(DistinctTest, DistinctWithWhereMultipleFields) {
 
     // SELECT DISTINCT name, age WHERE age > 22
     auto result =
-            queryset.where(field<^^Person::age>() > 22).template distinct<^^Person::name, ^^Person::age>().select();
+            queryset.where(field<^^Person::age>() > 22).template distinct<^^Person::name, ^^Person::age>().execute();
     ASSERT_TRUE(result.has_value()) << "DISTINCT with WHERE failed: " << result.error().message();
 
     const auto& pairs = result.value();
@@ -835,7 +835,7 @@ TYPED_TEST(DistinctTest, DistinctWithWhereNoResults) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name WHERE age > 100 (no matches)
-    auto result = queryset.where(field<^^Person::age>() > 100).template distinct<^^Person::name>().select();
+    auto result = queryset.where(field<^^Person::age>() > 100).template distinct<^^Person::name>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -860,7 +860,7 @@ TYPED_TEST(DistinctTest, DistinctWithComplexWhere) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT age WHERE age >= 25 AND age <= 35
-    auto result = queryset.where(field<^^Person::age>().between(25, 35)).template distinct<^^Person::age>().select();
+    auto result = queryset.where(field<^^Person::age>().between(25, 35)).template distinct<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& ages = result.value();
@@ -882,7 +882,7 @@ TYPED_TEST(DistinctTest, DistinctWithJoinSingleField) {
     // SELECT DISTINCT sender.name (via JOIN)
     // Note: We need to select from Message and distinct on Message fields
     // The JOIN should expand the result set
-    auto result = msg_qs.template join<&Message::sender>().template distinct<^^Message::content>().select();
+    auto result = msg_qs.template join<&Message::sender>().template distinct<^^Message::content>().execute();
     ASSERT_TRUE(result.has_value()) << "DISTINCT with JOIN failed: " << result.error().message();
 
     const auto& contents = result.value();
@@ -905,7 +905,7 @@ TYPED_TEST(DistinctTest, ChainingOrderWhereJoinDistinct) {
     auto result = msg_qs.where(field<^^Message::content>().like("%e%"))
                           .template join<&Message::sender>()
                           .template distinct<^^Message::content>()
-                          .select();
+                          .execute();
     ASSERT_TRUE(result.has_value()) << "WHERE -> JOIN -> DISTINCT failed: " << result.error().message();
 }
 
@@ -920,7 +920,7 @@ TYPED_TEST(DistinctTest, ChainingOrderJoinWhereDistinct) {
     auto result = msg_qs.template join<&Message::sender>()
                           .where(field<^^Message::content>().like("%e%"))
                           .template distinct<^^Message::content>()
-                          .select();
+                          .execute();
     ASSERT_TRUE(result.has_value()) << "JOIN -> WHERE -> DISTINCT failed: " << result.error().message();
 }
 
@@ -938,7 +938,7 @@ TYPED_TEST(DistinctTest, DistinctDefaultPKWithWhere) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT id (default PK) WHERE age > 22
-    auto result = queryset.where(field<^^Person::age>() > 22).distinct().select();
+    auto result = queryset.where(field<^^Person::age>() > 22).distinct().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& ids = result.value();
@@ -963,7 +963,7 @@ TYPED_TEST(DistinctTest, MultipleWhereClausesWithDistinct) {
     auto result = queryset.where(field<^^Person::age>() > 22)
                           .where(field<^^Person::age>() < 32)
                           .template distinct<^^Person::name>()
-                          .select();
+                          .execute();
     ASSERT_TRUE(result.has_value());
 
     const auto&                              names = result.value();
@@ -999,7 +999,7 @@ TYPED_TEST(DistinctTest, DistinctKeywordInjectionInJoinQueries) {
     QuerySet<Message, TypeParam> msg_qs;
 
     // Test 1: Verify JOIN + DISTINCT works (implicit validation of SELECT clause injection)
-    auto result = msg_qs.template join<&Message::sender>().template distinct<^^Message::content>().select();
+    auto result = msg_qs.template join<&Message::sender>().template distinct<^^Message::content>().execute();
     ASSERT_TRUE(result.has_value()) << "JOIN + DISTINCT failed: " << result.error().message();
 
     const auto& contents = result.value();
@@ -1031,7 +1031,7 @@ TYPED_TEST(DistinctTest, DistinctWithOrderByAsc) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT age ORDER BY age ASC
-    auto result = queryset.template order_by<^^Person::age>().template distinct<^^Person::age>().select();
+    auto result = queryset.template order_by<^^Person::age>().template distinct<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value()) << "DISTINCT with ORDER BY failed: " << result.error().message();
 
     const auto& ages = result.value();
@@ -1058,7 +1058,7 @@ TYPED_TEST(DistinctTest, DistinctWithOrderByDesc) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name ORDER BY name DESC
-    auto result = queryset.template order_by<^^Person::name, false>().template distinct<^^Person::name>().select();
+    auto result = queryset.template order_by<^^Person::name, false>().template distinct<^^Person::name>().execute();
     ASSERT_TRUE(result.has_value()) << "DISTINCT with ORDER BY DESC failed: " << result.error().message();
 
     const auto& names = result.value();
@@ -1086,7 +1086,7 @@ TYPED_TEST(DistinctTest, DistinctWithOrderByIntegerField) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT age ORDER BY age ASC
-    auto result = queryset.template order_by<^^Person::age>().template distinct<^^Person::age>().select();
+    auto result = queryset.template order_by<^^Person::age>().template distinct<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& ages = result.value();
@@ -1115,7 +1115,7 @@ TYPED_TEST(DistinctTest, DistinctMultiFieldWithOrderBy) {
 
     // SELECT DISTINCT name, age ORDER BY name ASC
     auto result =
-            queryset.template order_by<^^Person::name>().template distinct<^^Person::name, ^^Person::age>().select();
+            queryset.template order_by<^^Person::name>().template distinct<^^Person::name, ^^Person::age>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& pairs = result.value();
@@ -1146,7 +1146,7 @@ TYPED_TEST(DistinctTest, DistinctWithOrderByAndLimit) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name ORDER BY name ASC LIMIT 3
-    auto result = queryset.template order_by<^^Person::name>().limit(3).template distinct<^^Person::name>().select();
+    auto result = queryset.template order_by<^^Person::name>().limit(3).template distinct<^^Person::name>().execute();
     ASSERT_TRUE(result.has_value()) << "DISTINCT with ORDER BY and LIMIT failed: " << result.error().message();
 
     const auto& names = result.value();
@@ -1176,7 +1176,7 @@ TYPED_TEST(DistinctTest, DistinctWithOrderByDescAndLimit) {
 
     // SELECT DISTINCT name ORDER BY name DESC LIMIT 2
     auto result =
-            queryset.template order_by<^^Person::name, false>().limit(2).template distinct<^^Person::name>().select();
+            queryset.template order_by<^^Person::name, false>().limit(2).template distinct<^^Person::name>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -1209,7 +1209,7 @@ TYPED_TEST(DistinctTest, DistinctWithOrderByLimitOffset) {
                           .limit(2)
                           .offset(2)
                           .template distinct<^^Person::name>()
-                          .select();
+                          .execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -1241,7 +1241,7 @@ TYPED_TEST(DistinctTest, DistinctWithWhereOrderByLimit) {
                           .template order_by<^^Person::name>()
                           .limit(2)
                           .template distinct<^^Person::name>()
-                          .select();
+                          .execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -1274,7 +1274,7 @@ TYPED_TEST(DistinctTest, DistinctOptionalIntFieldWithNulls) {
     ASSERT_TRUE(insert_result.has_value()) << "Insert failed: " << insert_result.error().message();
 
     // SELECT DISTINCT age (should include NULL as a distinct value)
-    auto result = queryset.template distinct<^^Person::score>().select();
+    auto result = queryset.template distinct<^^Person::score>().execute();
     ASSERT_TRUE(result.has_value()) << "DISTINCT on optional field failed: " << result.error().message();
 
     const auto& ages = result.value();
@@ -1315,7 +1315,7 @@ TYPED_TEST(DistinctTest, DistinctOptionalStringFieldWithNulls) {
     ASSERT_TRUE(insert_result.has_value()) << "Insert failed: " << insert_result.error().message();
 
     // SELECT DISTINCT nickname (should include NULL as a distinct value)
-    auto result = queryset.template distinct<^^Person::nickname>().select();
+    auto result = queryset.template distinct<^^Person::nickname>().execute();
     ASSERT_TRUE(result.has_value()) << "DISTINCT on optional string field failed: " << result.error().message();
 
     const auto& nicknames = result.value();
@@ -1359,7 +1359,7 @@ TYPED_TEST(DistinctTest, DistinctOptionalFieldAllNulls) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT age (all NULLs)
-    auto result = queryset.template distinct<^^Person::score>().select();
+    auto result = queryset.template distinct<^^Person::score>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& ages = result.value();
@@ -1383,7 +1383,7 @@ TYPED_TEST(DistinctTest, DistinctOptionalFieldNoNulls) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT age (no NULLs)
-    auto result = queryset.template distinct<^^Person::score>().select();
+    auto result = queryset.template distinct<^^Person::score>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& ages = result.value();
@@ -1412,7 +1412,7 @@ TYPED_TEST(DistinctTest, DistinctMultiFieldWithOptional) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name, score
-    auto result = queryset.template distinct<^^Person::name, ^^Person::score>().select();
+    auto result = queryset.template distinct<^^Person::name, ^^Person::score>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& pairs = result.value();
@@ -1435,7 +1435,7 @@ TYPED_TEST(DistinctTest, DistinctOptionalWithWhereOnOptional) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name WHERE age > 20 (filters out NULLs)
-    auto result = queryset.where(field<^^Person::score>() > 20).template distinct<^^Person::name>().select();
+    auto result = queryset.where(field<^^Person::score>() > 20).template distinct<^^Person::name>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -1466,7 +1466,7 @@ TYPED_TEST(DistinctTest, DistinctOptionalWithOrderBy) {
 
     // SELECT DISTINCT age ORDER BY age ASC
     // NULL values typically sort first or last depending on DB
-    auto result = queryset.template order_by<^^Person::score>().template distinct<^^Person::score>().select();
+    auto result = queryset.template order_by<^^Person::score>().template distinct<^^Person::score>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& ages = result.value();
@@ -1487,7 +1487,7 @@ TYPED_TEST(DistinctTest, DistinctReturnsExpectedType) {
     std::ignore = queryset.insert(Person{.id = 0, .name = "Alice", .age = 30}).execute();
 
     // Verify return type is std::expected
-    auto result = queryset.template distinct<^^Person::name>().select();
+    auto result = queryset.template distinct<^^Person::name>().execute();
 
     // Verify result is a std::expected type by checking has_value()
     // The exact type includes the connection's Error type, which is internal
@@ -1526,7 +1526,7 @@ TYPED_TEST(DistinctTest, ErrorHandlingDocumentation) {
      *
      * 5. **Example Error Handling**:
      *    ```cpp
-     *    auto result = queryset.template distinct<^^Person::name>().select();
+     *    auto result = queryset.template distinct<^^Person::name>().execute();
      *    if (!result.has_value()) {
      *        // Handle error
      *        std::cerr << "Error: " << result.error().message() << std::endl;
@@ -1561,7 +1561,7 @@ TYPED_TEST(DistinctTest, StatementReuseStability) {
     // Execute the same DISTINCT query multiple times
     // This tests that statement caching works correctly
     for (int i = 0; i < 5; ++i) {
-        auto result = queryset.template distinct<^^Person::name>().select();
+        auto result = queryset.template distinct<^^Person::name>().execute();
         ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed: " << result.error().message();
         EXPECT_EQ(result.value().size(), 3) << "Iteration " << i << " returned wrong count";
     }
@@ -1581,7 +1581,7 @@ TYPED_TEST(DistinctTest, DifferentWhereExpressionsWithCaching) {
     std::ignore = queryset.insert(people).execute();
 
     // Query 1: age > 25
-    auto result1 = queryset.where(field<^^Person::age>() > 25).template distinct<^^Person::name>().select();
+    auto result1 = queryset.where(field<^^Person::age>() > 25).template distinct<^^Person::name>().execute();
     ASSERT_TRUE(result1.has_value());
     EXPECT_EQ(result1.value().size(), 3); // Bob, Charlie, Dave
 
@@ -1589,14 +1589,14 @@ TYPED_TEST(DistinctTest, DifferentWhereExpressionsWithCaching) {
     queryset.reset();
 
     // Query 2: age > 35
-    auto result2 = queryset.where(field<^^Person::age>() > 35).template distinct<^^Person::name>().select();
+    auto result2 = queryset.where(field<^^Person::age>() > 35).template distinct<^^Person::name>().execute();
     ASSERT_TRUE(result2.has_value());
     EXPECT_EQ(result2.value().size(), 1); // Dave only
 
     // Reset and Query 3: different condition
     queryset.reset();
 
-    auto result3 = queryset.where(field<^^Person::age>() < 30).template distinct<^^Person::name>().select();
+    auto result3 = queryset.where(field<^^Person::age>() < 30).template distinct<^^Person::name>().execute();
     ASSERT_TRUE(result3.has_value());
     EXPECT_EQ(result3.value().size(), 1); // Alice only
 }

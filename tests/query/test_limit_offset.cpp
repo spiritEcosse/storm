@@ -144,7 +144,7 @@ TYPED_TEST(LimitOffsetTest, WhereWithOffsetNoLimit) {
 TYPED_TEST(LimitOffsetTest, DistinctWithLimit) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.limit(5).template distinct<^^Person::name>().select();
+    auto result = qs.limit(5).template distinct<^^Person::name>().execute();
     ASSERT_TRUE(result.has_value()) << "DISTINCT with LIMIT failed: " << result.error().message();
 
     const auto& names = result.value();

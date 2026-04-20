@@ -819,7 +819,7 @@ COMMIT;
 - `distinct_where_join_1000` / `distinct_where_join_10000` - DISTINCT with WHERE + JOIN
 
 **What's tested:**
-- **Storm ORM**: Uses `QuerySet::distinct<Field>().select()` with automatic SQL generation
+- **Storm ORM**: Uses `QuerySet::distinct<Field>().execute()` with automatic SQL generation
 - **Raw SQLite**: Manual `SELECT DISTINCT field FROM table` with prepared statements
 - **Fair comparison**: Both versions use prepared statement caching and identical query patterns
 
@@ -904,7 +904,7 @@ class QueryBenchmark : public DataBenchmarkBase<QueryBenchmark<Model, test>, Mod
 - `distinct_order_by_desc_1000` / `distinct_order_by_desc_10000` - DISTINCT + ORDER BY DESC
 
 **What's tested:**
-- **Storm ORM**: Uses `QuerySet::distinct<Field1, Field2>().select()` for multi-field
+- **Storm ORM**: Uses `QuerySet::distinct<Field1, Field2>().execute()` for multi-field
 - **Raw SQLite**: Manual `SELECT DISTINCT field1, field2 FROM table` with prepared statements
 - **Fair comparison**: Both versions use statement caching and identical query patterns
 
@@ -1197,7 +1197,7 @@ class QueryBenchmark : public DataBenchmarkBase<QueryBenchmark<Model, test>, Mod
 - `group_by_multi_2_is_active_age_10000` - 2-field GROUP BY reversed order (10K rows)
 
 **What's tested:**
-- **Storm ORM**: Uses `QuerySet::group_by<Field>().select()` with automatic SQL generation
+- **Storm ORM**: Uses `QuerySet::group_by<Field>().execute()` with automatic SQL generation
 - **Raw SQLite**: Manual `SELECT ... GROUP BY field` with prepared statements
 - **Fair comparison**: Both versions use prepared statement caching
 
@@ -1270,7 +1270,7 @@ class QueryBenchmark : public DataBenchmarkBase<QueryBenchmark<Model, test>, Mod
 - `group_by_with_count_age_100000` - COUNT per age group (100K rows)
 
 **What's tested:**
-- **Storm ORM**: Uses `qs.group_by<field>().count().select()` returning `plf::hive<std::tuple<GroupKeyType, int64_t>>`
+- **Storm ORM**: Uses `qs.group_by<field>().count().execute()` returning `plf::hive<std::tuple<GroupKeyType, int64_t>>`
 - **Raw SQLite**: Manual `SELECT field, COUNT(*) FROM table GROUP BY field`
 - **Fair comparison**: Both count actual groups returned
 
@@ -1286,7 +1286,7 @@ class QueryBenchmark : public DataBenchmarkBase<QueryBenchmark<Model, test>, Mod
 **Key Findings:**
 
 1. **GROUP BY + COUNT achieves near-parity (98.9-100.1%)**
-   - Proper chaining: `group_by<field>().count().select()`
+   - Proper chaining: `group_by<field>().count().execute()`
    - Both Storm and raw SQLite return same group count
 
 2. **Low throughput is expected:**
@@ -1313,7 +1313,7 @@ class QueryBenchmark : public DataBenchmarkBase<QueryBenchmark<Model, test>, Mod
 - `group_by_with_sum_age_salary_100000` - SUM(salary) per age group (100K rows)
 
 **What's tested:**
-- **Storm ORM**: Uses `qs.group_by<field>().sum<agg_field>().select()` returning `plf::hive<std::tuple<GroupKeyType, double>>`
+- **Storm ORM**: Uses `qs.group_by<field>().sum<agg_field>().execute()` returning `plf::hive<std::tuple<GroupKeyType, double>>`
 - **Raw SQLite**: Manual `SELECT field, SUM(agg_field) FROM table GROUP BY field`
 - **Fair comparison**: Both count actual groups returned
 
@@ -1329,7 +1329,7 @@ class QueryBenchmark : public DataBenchmarkBase<QueryBenchmark<Model, test>, Mod
 **Key Findings:**
 
 1. **GROUP BY + SUM achieves near-parity (98.4-99.6%)**
-   - Proper chaining: `group_by<field>().sum<agg_field>().select()`
+   - Proper chaining: `group_by<field>().sum<agg_field>().execute()`
    - Both Storm and raw SQLite return same group count
 
 2. **Low throughput is expected:**

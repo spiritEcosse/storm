@@ -41,8 +41,8 @@ export namespace storm::orm::statements {
     // - Instance-level caching eliminates per-call TLS access and object construction
     //
     // API: Use ^^ operator to pass reflected field information directly
-    // Example: qs.distinct<^^Person::name>().select()
-    //          qs.values<^^Person::name, ^^Person::age>().select()
+    // Example: qs.distinct<^^Person::name>().execute()
+    //          qs.values<^^Person::name, ^^Person::age>().execute()
     template <typename T, storm::db::DatabaseConnection ConnType, ProjectionMode Mode, std::meta::info... FieldInfos>
         requires(sizeof...(FieldInfos) > 0)
     class ProjectionStatement : private BaseStatement<T> {
@@ -201,11 +201,6 @@ export namespace storm::orm::statements {
             , limit_(limit)
             , offset_(offset)
             , order_by_wrapper_(order_by_wrapper) {}
-
-        // Alias for execute() - provides familiar QuerySet-like API
-        [[nodiscard]] auto select() -> std::expected<ResultType, Error> {
-            return execute();
-        }
 
         // Return the SQL that would be executed (for testing/debugging)
         [[nodiscard]] auto sql() -> std::string {

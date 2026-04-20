@@ -34,7 +34,7 @@ template <typename ConnType> class PersonCrudTestBase : public StormTestFixture<
 
     static auto countPersons() -> int {
         storm::QuerySet<Person, ConnType> qs;
-        auto                              result = qs.count().get();
+        auto                              result = qs.count().execute();
         if (!result.has_value()) {
             return -1;
         }
@@ -454,43 +454,43 @@ TYPED_TEST(QueryResetTest, ReuseSameQuerySetMultipleTimes) {
 }
 
 TYPED_TEST(QueryResetTest, ResetBetweenDifferentOperations) {
-    auto count1 = this->qs->count().get();
+    auto count1 = this->qs->count().execute();
     ASSERT_TRUE(count1.has_value());
     EXPECT_EQ(count1.value(), 25);
 
     this->qs->reset();
 
-    auto sum1 = this->qs->template sum<^^Person::age>().get();
+    auto sum1 = this->qs->template sum<^^Person::age>().execute();
     ASSERT_TRUE(sum1.has_value());
     EXPECT_EQ(sum1.value(), 829);
 
     this->qs->reset();
 
-    auto avg1 = this->qs->template avg<^^Person::age>().get();
+    auto avg1 = this->qs->template avg<^^Person::age>().execute();
     ASSERT_TRUE(avg1.has_value());
     EXPECT_NEAR(avg1.value(), 33.16, 0.01);
 
     this->qs->reset();
 
-    auto min1 = this->qs->template min<^^Person::age>().get();
+    auto min1 = this->qs->template min<^^Person::age>().execute();
     ASSERT_TRUE(min1.has_value());
     EXPECT_EQ(min1.value(), 22);
 
     this->qs->reset();
 
-    auto max1 = this->qs->template max<^^Person::age>().get();
+    auto max1 = this->qs->template max<^^Person::age>().execute();
     ASSERT_TRUE(max1.has_value());
     EXPECT_EQ(max1.value(), 48);
 }
 
 TYPED_TEST(QueryResetTest, AggregatesWithWhere) {
-    auto count = this->qs->where(storm::orm::where::field<^^Person::age>() >= 35).count().get();
+    auto count = this->qs->where(storm::orm::where::field<^^Person::age>() >= 35).count().execute();
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 11);
 
     this->qs->reset();
 
-    auto sum = this->qs->where(storm::orm::where::field<^^Person::age>() >= 35).template sum<^^Person::age>().get();
+    auto sum = this->qs->where(storm::orm::where::field<^^Person::age>() >= 35).template sum<^^Person::age>().execute();
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), 442);
 }
@@ -511,7 +511,7 @@ TYPED_TEST(InsertNoReturnTest, SingleInsertNoReturnSucceeds) {
 
     ASSERT_TRUE(result.has_value()) << "insert<ReturnId::No> should succeed";
 
-    auto count = qs.count().get();
+    auto count = qs.count().execute();
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 1) << "Should have 1 row after insert";
 }
@@ -591,7 +591,7 @@ TYPED_TEST(InsertNoReturnTest, MultipleInsertNoReturn) {
     ASSERT_TRUE(qs.template insert<ReturnId::No>(bob).execute().has_value());
     ASSERT_TRUE(qs.template insert<ReturnId::No>(charlie).execute().has_value());
 
-    auto count = qs.count().get();
+    auto count = qs.count().execute();
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 3);
 }
@@ -632,7 +632,7 @@ TYPED_TEST(InsertNoReturnTest, MixedInsertModes) {
     auto         void_result = qs.template insert<ReturnId::No>(bob).execute();
     ASSERT_TRUE(void_result.has_value());
 
-    auto count = qs.count().get();
+    auto count = qs.count().execute();
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 2);
 }

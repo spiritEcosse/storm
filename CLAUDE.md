@@ -370,23 +370,23 @@ auto young = base.where(age < 30);    // base unchanged
 auto old   = base.where(age > 50);    // base still unchanged
 
 // Scalar aggregates (no GROUP BY) → .get()
-qs.count().get();                          // int64_t
-qs.sum<^^Person::age>().get();             // int64_t
-qs.avg<^^Person::salary>().get();          // double
+qs.count().execute();                          // int64_t
+qs.sum<^^Person::age>().execute();             // int64_t
+qs.avg<^^Person::salary>().execute();          // double
 
 // GROUP BY with aggregates → .select()
-qs.group_by<^^Person::department>().count().select();
+qs.group_by<^^Person::department>().count().execute();
 
 // HAVING (only with GROUP BY) — filters groups after aggregation
-qs.group_by<^^Person::age>().having(field<^^Person::age>() > 30).count().select();
-qs.group_by<^^Person::dept>().count().having(field<^^Person::dept>() == "Eng").select();
+qs.group_by<^^Person::age>().having(field<^^Person::age>() > 30).count().execute();
+qs.group_by<^^Person::dept>().count().having(field<^^Person::dept>() == "Eng").execute();
 
 // DISTINCT
-qs.distinct<^^Person::name>().select();
+qs.distinct<^^Person::name>().execute();
 
 // Column projection (SELECT specific columns, duplicates preserved)
-qs.values<^^Person::name>().select();                      // plf::hive<std::string>
-qs.values<^^Person::name, ^^Person::age>().select();       // plf::hive<std::tuple<std::string, int>>
+qs.values<^^Person::name>().execute();                      // plf::hive<std::string>
+qs.values<^^Person::name, ^^Person::age>().execute();       // plf::hive<std::tuple<std::string, int>>
 
 // JOIN
 qs.join<Message>().where(...).select();

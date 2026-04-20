@@ -112,48 +112,48 @@ qs.remove_all();
 
 ```cpp
 // Scalar aggregates (no GROUP BY) — use .get()
-auto count = qs.count().get();                           // int64_t
-auto total = qs.sum<^^Person::salary>().get();           // int64_t
-auto avg   = qs.avg<^^Person::salary>().get();           // double
-auto lo    = qs.min<^^Person::age>().get();              // int64_t
-auto hi    = qs.max<^^Person::age>().get();              // int64_t
+auto count = qs.count().execute();                           // int64_t
+auto total = qs.sum<^^Person::salary>().execute();           // int64_t
+auto avg   = qs.avg<^^Person::salary>().execute();           // double
+auto lo    = qs.min<^^Person::age>().execute();              // int64_t
+auto hi    = qs.max<^^Person::age>().execute();              // int64_t
 
 // With WHERE
-auto active_count = qs.where(field<^^Person::is_active>() == true).count().get();
+auto active_count = qs.where(field<^^Person::is_active>() == true).count().execute();
 ```
 
 ## GROUP BY + HAVING
 
 ```cpp
 // Group and count
-auto groups = qs.group_by<^^Person::is_active>().count().select();
+auto groups = qs.group_by<^^Person::is_active>().count().execute();
 
 // GROUP BY with HAVING
 auto large_groups = qs
     .group_by<^^Person::age>()
     .having(field<^^Person::age>() > 30)
     .count()
-    .select();
+    .execute();
 ```
 
 ## DISTINCT
 
 ```cpp
 // Single field
-auto names = qs.distinct<^^Person::name>().select();
+auto names = qs.distinct<^^Person::name>().execute();
 
 // Multi-field
-auto combos = qs.distinct<^^Person::name, ^^Person::age>().select();
+auto combos = qs.distinct<^^Person::name, ^^Person::age>().execute();
 ```
 
 ## Column Projection (VALUES)
 
 ```cpp
 // Single column → hive<T>
-auto names = qs.values<^^Person::name>().select();  // plf::hive<std::string>
+auto names = qs.values<^^Person::name>().execute();  // plf::hive<std::string>
 
 // Multiple columns → hive<tuple<...>>
-auto pairs = qs.values<^^Person::name, ^^Person::age>().select();
+auto pairs = qs.values<^^Person::name, ^^Person::age>().execute();
 // plf::hive<std::tuple<std::string, int>>
 ```
 

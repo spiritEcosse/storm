@@ -22,7 +22,7 @@ template <typename Model, typename ConnType> class InsertRunner : public QueryRu
         if constexpr (Tc.query_type == "insert_one") {
             auto r = this->qs_.insert(make_record<Model>(0)).execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
-            auto cnt = this->qs_.count().get();
+            auto cnt = this->qs_.count().execute();
             ASSERT_TRUE(cnt.has_value()) << cnt.error().message();
             EXPECT_EQ(static_cast<int>(cnt.value()), Tc.expected.count);
 
@@ -33,7 +33,7 @@ template <typename Model, typename ConnType> class InsertRunner : public QueryRu
                 batch.push_back(make_record<Model>(i));
             auto r = this->qs_.insert(std::span<const Model>(batch)).execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
-            auto cnt = this->qs_.count().get();
+            auto cnt = this->qs_.count().execute();
             ASSERT_TRUE(cnt.has_value()) << cnt.error().message();
             EXPECT_EQ(static_cast<int>(cnt.value()), Tc.expected.count);
         }
@@ -101,7 +101,7 @@ template <typename Model, typename ConnType> class RemoveRunner : public QueryRu
             auto rem = this->qs_.remove_all().execute();
             ASSERT_TRUE(rem.has_value()) << rem.error().message();
 
-            auto cnt = this->qs_.count().get();
+            auto cnt = this->qs_.count().execute();
             ASSERT_TRUE(cnt.has_value()) << cnt.error().message();
             EXPECT_EQ(static_cast<int>(cnt.value()), Tc.expected.remaining);
 
@@ -130,7 +130,7 @@ template <typename Model, typename ConnType> class RemoveRunner : public QueryRu
             auto rem = this->qs_.remove(std::span<const Model>(to_remove)).execute();
             ASSERT_TRUE(rem.has_value()) << rem.error().message();
 
-            auto cnt = this->qs_.count().get();
+            auto cnt = this->qs_.count().execute();
             ASSERT_TRUE(cnt.has_value()) << cnt.error().message();
             EXPECT_EQ(static_cast<int>(cnt.value()), Tc.expected.remaining);
         }

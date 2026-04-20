@@ -43,6 +43,36 @@ SKIP_SONAR=1 git commit -m "docs: update README"
 
 The hook automatically: runs clang-format, clang-tidy --fix, re-stages modified files, runs full test suite, runs sonar check, runs benchmark sanity check.
 
+## After Push: Always Create the PR
+
+After a successful `git push` on a `feature/<N>-<description>` branch, **always** create the PR immediately — do not wait to be asked. Exceptions: only skip if the caller explicitly said "push only, do not open PR" or the branch is not issue-linked.
+
+```bash
+# Check if a PR already exists for this branch
+gh pr view --json number,url 2>/dev/null && echo "PR exists" || gh pr create \
+  --base develop \
+  --title "<same subject as the commit>" \
+  --body "$(cat <<'EOF'
+## Summary
+<1-3 bullets describing what changed and why>
+
+## Test plan
+- [ ] `ctest --preset ninja-debug` (SQLite + PG): all pass
+- [ ] `ctest --preset ninja-asan-ubsan`: all pass
+- [ ] `ctest --preset ninja-tsan`: all pass
+- [ ] SonarCloud quality gate clean
+
+Closes #<N>
+EOF
+)"
+```
+
+Rules:
+1. The PR title should match the commit subject (conventional commit form). Keep it ≤70 chars.
+2. The body **must** include `Closes #<N>` so the issue auto-closes on merge.
+3. Populate the `## Test plan` checklist based on verifications the caller already reported — do not invent claims.
+4. After creating the PR, report back the PR URL and number to the caller. Do NOT merge — the caller runs the SonarCloud gate check separately and decides when to merge.
+
 ## Branching & PR Workflow
 
 Per CLAUDE.md rules:
