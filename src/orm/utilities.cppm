@@ -358,6 +358,11 @@ export namespace storm::orm::utilities {
         std::array<char, N> data{};
         size_t              len = 0;
 
+        // NOTE: A stripped-down consteval copy of this template also lives in
+        // benchmarks/schema.hpp. The benchmark code is built as traditional
+        // headers (#pragma once) and cannot import this module, so the
+        // duplicate is kept on purpose. See issue #204 — Option 1 was chosen
+        // over refactoring benchmarks into modules.
         constexpr ConstexprString() = default;
 
         explicit constexpr ConstexprString(const char* str) {

@@ -29,7 +29,14 @@
 
 namespace storm::benchmark {
 
-    // Fixed-size constexpr string
+    // Fixed-size constexpr string for compile-time JSON parsing.
+    //
+    // Intentionally duplicated from storm::orm::utilities::ConstexprString (see
+    // src/orm/utilities.cppm). This header is #included by traditional headers
+    // (parser.hpp, runner.hpp, ...) that cannot `import storm_orm_utilities`.
+    // The ORM version is feature-rich for runtime SQL building; this one is a
+    // minimal consteval variant tailored to benchmark JSON parsing. See issue
+    // #204 — Option 1 (keep separate) was chosen over a module refactor.
     template <size_t N> struct ConstexprString {
         std::array<char, N> data{};
         size_t              len = 0;
