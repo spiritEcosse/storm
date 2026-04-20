@@ -675,14 +675,10 @@ namespace storm::benchmark {
         }
 
         // ====================================================================
-        // run_terminal — executes the terminal statement (.execute() vs .select())
+        // run_terminal — executes the terminal statement
         // ====================================================================
         static auto run_terminal(auto& stmt) -> void {
-            if constexpr (is_group_by_op() || is_distinct_op()) {
-                (void)stmt.select();
-            } else {
-                (void)stmt.execute();
-            }
+            (void)stmt.execute();
         }
 
         // Derive QuerySet type from build_qs — it may be finalized (<..., true>)

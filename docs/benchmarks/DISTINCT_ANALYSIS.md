@@ -46,15 +46,15 @@ class DistinctStatement : private BaseStatement<T> {
 QuerySet<Person> qs;
 
 // Single field DISTINCT (backward compatible)
-auto names = qs.distinct<&Person::name>().select();
+auto names = qs.distinct<&Person::name>().execute();
 // Returns: std::vector<std::string>
 
 // Multiple field DISTINCT
-auto pairs = qs.distinct<&Person::name, &Person::age>().select();
+auto pairs = qs.distinct<&Person::name, &Person::age>().execute();
 // Returns: std::vector<std::tuple<std::string, int>>
 
 // Default to primary key
-auto ids = qs.distinct().select();
+auto ids = qs.distinct().execute();
 // Returns: std::vector<int>
 ```
 

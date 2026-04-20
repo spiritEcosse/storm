@@ -223,7 +223,7 @@ void worker_thread() {
     QuerySet<Person> qs{conn};
 
     for (int i = 0; i < 1000; i++) {
-        qs.where(age > 30).distinct<^^Person::name>().select();
+        qs.where(age > 30).distinct<^^Person::name>().execute();
     }
 }
 
@@ -251,30 +251,30 @@ auto results = qs.select();  // Returns plf::hive<Person>
 
 ```cpp
 // Single field - returns plf::hive<std::string>
-auto names = qs.distinct<^^Person::name>().select();
+auto names = qs.distinct<^^Person::name>().execute();
 
 // Multiple fields - returns plf::hive<std::tuple<std::string, int>>
-auto pairs = qs.distinct<^^Person::name, ^^Person::age>().select();
+auto pairs = qs.distinct<^^Person::name, ^^Person::age>().execute();
 
 // values() for specific columns
-auto values = qs.values<^^Person::name, ^^Person::age>().select();
+auto values = qs.values<^^Person::name, ^^Person::age>().execute();
 ```
 
 ### Aggregate Mode (via aggregates)
 
 ```cpp
 // Standalone aggregates - return scalar values via .get()
-auto min_age = qs.min<^^Person::age>().get();
-auto max_age = qs.max<^^Person::age>().get();
-auto count = qs.count().get();
+auto min_age = qs.min<^^Person::age>().execute();
+auto max_age = qs.max<^^Person::age>().execute();
+auto count = qs.count().execute();
 
 // GROUP BY + aggregate - returns tuples
-auto by_dept = qs.group_by<^^Person::department>().count().select();
+auto by_dept = qs.group_by<^^Person::department>().count().execute();
 // Returns: plf::hive<std::tuple<DeptType, int64_t>>
 
 // Multiple GROUP BY fields
 auto by_age_dept = qs.group_by<^^Person::age, ^^Person::department>()
-                     .sum<^^Person::salary>().select();
+                     .sum<^^Person::salary>().execute();
 ```
 
 ### Available Methods

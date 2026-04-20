@@ -967,17 +967,17 @@ TEST_F(ORMErrorTest, AggregateOnEmptyTable) {
     storm::QuerySet<Person> qs;
 
     // COUNT on empty table should return 0
-    auto count_result = qs.count().get();
+    auto count_result = qs.count().execute();
     ASSERT_TRUE(count_result.has_value()) << "COUNT on empty table should succeed";
     EXPECT_EQ(count_result.value(), 0);
 
     // SUM on empty table should return 0 (NULL coerced to 0)
-    auto sum_result = qs.sum<^^Person::age>().get();
+    auto sum_result = qs.sum<^^Person::age>().execute();
     ASSERT_TRUE(sum_result.has_value()) << "SUM on empty table should succeed";
     EXPECT_EQ(sum_result.value(), 0);
 
     // AVG on empty table should return 0.0
-    auto avg_result = qs.avg<^^Person::age>().get();
+    auto avg_result = qs.avg<^^Person::age>().execute();
     ASSERT_TRUE(avg_result.has_value()) << "AVG on empty table should succeed";
     EXPECT_DOUBLE_EQ(avg_result.value(), 0.0);
 }
@@ -991,7 +991,7 @@ TEST_F(ORMErrorTest, AggregateWithWhereNoMatch) {
     ASSERT_TRUE(insert_result.has_value());
 
     // COUNT with WHERE that matches nothing
-    auto count_result = qs.where(storm::orm::where::field<^^Person::age>() > 100).count().get();
+    auto count_result = qs.where(storm::orm::where::field<^^Person::age>() > 100).count().execute();
     ASSERT_TRUE(count_result.has_value()) << "COUNT with no matches should succeed";
     EXPECT_EQ(count_result.value(), 0);
 }
@@ -1000,7 +1000,7 @@ TEST_F(ORMErrorTest, DistinctOnEmptyTable) {
     storm::QuerySet<Person> qs;
 
     // DISTINCT on empty table
-    auto result = qs.distinct<^^Person::name>().select();
+    auto result = qs.distinct<^^Person::name>().execute();
     ASSERT_TRUE(result.has_value()) << "DISTINCT on empty table should succeed";
     EXPECT_TRUE(result.value().empty());
 }
@@ -1009,7 +1009,7 @@ TEST_F(ORMErrorTest, GroupByOnEmptyTable) {
     storm::QuerySet<Person> qs;
 
     // GROUP BY on empty table
-    auto result = qs.group_by<^^Person::age>().count().select();
+    auto result = qs.group_by<^^Person::age>().count().execute();
     ASSERT_TRUE(result.has_value()) << "GROUP BY on empty table should succeed";
     EXPECT_TRUE(result.value().empty());
 }
@@ -1074,7 +1074,7 @@ TEST_F(ORMErrorTest, LargeBatchInsertThenRemove) {
     ASSERT_TRUE(insert_result.has_value()) << "Large batch insert should succeed";
 
     // Verify count
-    auto count_result = qs.count().get();
+    auto count_result = qs.count().execute();
     ASSERT_TRUE(count_result.has_value());
     EXPECT_EQ(count_result.value(), 100);
 
@@ -1093,7 +1093,7 @@ TEST_F(ORMErrorTest, LargeBatchInsertThenRemove) {
     ASSERT_TRUE(remove_result.has_value()) << "Large batch remove should succeed";
 
     // Verify all removed
-    auto final_count = qs.count().get();
+    auto final_count = qs.count().execute();
     ASSERT_TRUE(final_count.has_value());
     EXPECT_EQ(final_count.value(), 0);
 }
@@ -1173,7 +1173,7 @@ TEST_F(ORMErrorTest, ChunkedInsertRollsBackOnConstraintViolation) {
     EXPECT_TRUE((result.error().code() & 0xFF) == SQLITE_CONSTRAINT);
 
     // Verify rollback: only the seed row exists, the first chunk was rolled back too
-    auto count = qs.count().get();
+    auto count = qs.count().execute();
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 1) << "Transaction rollback should leave only the seeded row";
 }
