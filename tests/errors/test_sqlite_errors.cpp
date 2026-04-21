@@ -955,12 +955,12 @@ TEST_F(ORMErrorTest, SelectWithWhereNoMatch) {
 TEST_F(ORMErrorTest, RemoveNonExistent) {
     storm::QuerySet<Person> qs;
 
-    // Try to remove non-existent person
+    // Try to erase non-existent person
     Person const nonexistent{.id = 999, .name = "Ghost", .age = 0};
-    auto         result = qs.remove(nonexistent).execute();
+    auto         result = qs.erase(nonexistent).execute();
 
-    // Remove of non-existent should succeed (SQLite DELETE with no matches is not an error)
-    ASSERT_TRUE(result.has_value()) << "Remove of non-existent should succeed";
+    // Erase of non-existent should succeed (SQLite DELETE with no matches is not an error)
+    ASSERT_TRUE(result.has_value()) << "Erase of non-existent should succeed";
 }
 
 TEST_F(ORMErrorTest, AggregateOnEmptyTable) {
@@ -1051,12 +1051,12 @@ TEST_F(ORMErrorTest, BatchUpdateWithConstraintViolation) {
 TEST_F(ORMErrorTest, BatchRemoveFromEmptyTable) {
     storm::QuerySet<Person> qs;
 
-    // Try to batch remove from empty table
+    // Try to batch erase from empty table
     std::vector<Person> to_remove = {{1, "Ghost1", 25}, {2, "Ghost2", 30}, {3, "Ghost3", 35}};
 
-    auto result = qs.remove(std::span<const Person>(to_remove)).execute();
+    auto result = qs.erase(std::span<const Person>(to_remove)).execute();
     // Should succeed - SQLite DELETE with no matches is not an error
-    ASSERT_TRUE(result.has_value()) << "Batch remove of non-existent should succeed";
+    ASSERT_TRUE(result.has_value()) << "Batch erase of non-existent should succeed";
 }
 
 TEST_F(ORMErrorTest, LargeBatchInsertThenRemove) {
@@ -1078,7 +1078,7 @@ TEST_F(ORMErrorTest, LargeBatchInsertThenRemove) {
     ASSERT_TRUE(count_result.has_value());
     EXPECT_EQ(count_result.value(), 100);
 
-    // Now batch remove all
+    // Now batch erase all
     auto select_result = qs.select().execute();
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().size(), 100);
@@ -1089,8 +1089,8 @@ TEST_F(ORMErrorTest, LargeBatchInsertThenRemove) {
         to_remove.push_back(p);
     }
 
-    auto remove_result = qs.remove(std::span<const Person>(to_remove)).execute();
-    ASSERT_TRUE(remove_result.has_value()) << "Large batch remove should succeed";
+    auto remove_result = qs.erase(std::span<const Person>(to_remove)).execute();
+    ASSERT_TRUE(remove_result.has_value()) << "Large batch erase should succeed";
 
     // Verify all removed
     auto final_count = qs.count().execute();

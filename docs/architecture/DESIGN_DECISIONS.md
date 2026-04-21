@@ -54,7 +54,7 @@ concept DatabaseConnection = requires(Conn conn, const std::string& sql) {
 - **Compile-Time SQL Generation**: Pre-computed SQL using ConstexprString and consteval functions
 - **Performance Optimization**: Smart thresholds for bulk vs individual operations (SQLite variable limit = 999)
 - **Thread-Local SQL Caching**: 8-entry cache for bulk INSERT SQL strings
-- **Statement-Level Caching**: RemoveStatement, SelectStatement, UpdateStatement use statement caching pattern
+- **Statement-Level Caching**: EraseStatement, SelectStatement, UpdateStatement use statement caching pattern
 
 ## 5. Compile-Time Index Sequence Optimization
 
@@ -122,7 +122,7 @@ Two optimized batch operation strategies:
 - Individual statements with transactions for >50 objects
 - Thread-local SQL caching with compile-time prefix optimization
 
-### RemoveStatement
+### EraseStatement
 - Bulk DELETE with IN clause: `DELETE FROM table WHERE id IN (?,?,?)`
 - Same smart thresholds as InsertStatement
 

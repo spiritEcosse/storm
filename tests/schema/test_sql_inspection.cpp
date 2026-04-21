@@ -366,8 +366,8 @@ TYPED_TEST(SqlInspectionTest, RemoveSingleToSql) {
     ASSERT_TRUE(insert_result.has_value());
     alice.id = static_cast<int>(insert_result.value());
 
-    auto result = qs.remove(alice).to_sql();
-    ASSERT_TRUE(result.has_value()) << "remove().to_sql() failed: " << result.error().message();
+    auto result = qs.erase(alice).to_sql();
+    ASSERT_TRUE(result.has_value()) << "erase().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
     EXPECT_TRUE(contains(sql, "DELETE FROM")) << "Should contain DELETE FROM";
@@ -383,7 +383,7 @@ TYPED_TEST(SqlInspectionTest, RemoveToSqlDoesNotExecute) {
     alice.id = static_cast<int>(insert_result.value());
 
     // Get SQL without executing
-    auto sql_result = qs.remove(alice).to_sql();
+    auto sql_result = qs.erase(alice).to_sql();
     ASSERT_TRUE(sql_result.has_value());
 
     // Row should still be there
@@ -406,8 +406,8 @@ TYPED_TEST(SqlInspectionTest, RemoveBulkToSql) {
         p.id = static_cast<int>(r.value());
     }
 
-    auto result = qs.remove(std::span<const Person>(people)).to_sql();
-    ASSERT_TRUE(result.has_value()) << "bulk remove().to_sql() failed: " << result.error().message();
+    auto result = qs.erase(std::span<const Person>(people)).to_sql();
+    ASSERT_TRUE(result.has_value()) << "bulk erase().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
     EXPECT_TRUE(contains(sql, "DELETE FROM")) << "Should contain DELETE FROM";
@@ -470,7 +470,7 @@ TYPED_TEST(SqlInspectionTest, RemoveEmptySpanToSql) {
     QuerySet<Person, TypeParam> qs;
     std::vector<Person>         empty;
 
-    auto result = qs.remove(std::span<const Person>(empty)).to_sql();
+    auto result = qs.erase(std::span<const Person>(empty)).to_sql();
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(result.value().empty()) << "Empty span should return empty SQL";
 }

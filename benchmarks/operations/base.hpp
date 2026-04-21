@@ -64,7 +64,7 @@ namespace storm::benchmark {
         }
 
         template <typename QS, typename Data> static auto call(QS& qs, const Data& data) {
-            return qs.remove(data);
+            return qs.erase(data);
         }
     };
 

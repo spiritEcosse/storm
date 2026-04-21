@@ -203,7 +203,7 @@ std::vector<Person> people = {
     {3, "Charlie", 35}
 };
 
-auto result = queryset.remove(std::span<const Person>(people));
+auto result = queryset.erase(std::span<const Person>(people));
 ```
 
 **Performance**: 3.9M rows/sec
@@ -365,7 +365,7 @@ conn.execute("BEGIN TRANSACTION");
 // Multiple batch operations
 queryset.insert(std::span<const Person>(new_people));
 queryset.update(std::span<const Person>(modified_people));
-queryset.remove(std::span<const Person>(deleted_people));
+queryset.erase(std::span<const Person>(deleted_people));
 
 conn.execute("COMMIT");
 ```

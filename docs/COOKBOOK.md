@@ -97,15 +97,15 @@ qs.update(people);
 ## DELETE
 
 ```cpp
-// Single remove
-qs.remove(p);
+// Single erase
+qs.erase(p);
 
-// Remove all matching
+// Erase all matching
 auto inactive = qs.where(field<^^Person::is_active>() == false).select();
-qs.remove(inactive);
+qs.erase(inactive);
 
-// Remove all
-qs.remove_all();
+// Erase all
+qs.erase_all();
 ```
 
 ## Aggregates

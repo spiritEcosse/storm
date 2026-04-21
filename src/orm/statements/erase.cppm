@@ -2,7 +2,7 @@ module;
 
 #include <meta>
 
-export module storm_orm_statements_remove;
+export module storm_orm_statements_erase;
 
 import storm_orm_statements_base;
 import storm_orm_utilities;
@@ -26,8 +26,8 @@ export namespace storm::orm::statements {
     using storm::orm::utilities::ConstexprString;
     using storm::orm::utilities::TransactionGuard;
 
-    // Statement class for ORM remove operations
-    template <typename T, storm::db::DatabaseConnection ConnType> class RemoveStatement : private BaseStatement<T> {
+    // Statement class for ORM erase operations
+    template <typename T, storm::db::DatabaseConnection ConnType> class EraseStatement : private BaseStatement<T> {
         friend class BaseStatement<T>; // Allow BaseStatement to access protected/private members
         using Base       = BaseStatement<T>;
         using Connection = ConnType;
@@ -190,10 +190,10 @@ export namespace storm::orm::statements {
         }
 
       public:
-        explicit RemoveStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
+        explicit EraseStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
         struct SingleQuery {
-            RemoveStatement&   stmt;
+            EraseStatement&    stmt;
             const T&           obj;
             [[nodiscard]] auto execute() -> std::expected<void, Error> {
                 return stmt.execute_one(obj);
@@ -207,7 +207,7 @@ export namespace storm::orm::statements {
         };
 
         struct BulkQuery {
-            RemoveStatement&   stmt;
+            EraseStatement&    stmt;
             std::span<const T> objects;
             [[nodiscard]] auto execute() -> std::expected<void, Error> {
                 return stmt.execute(objects);
@@ -221,7 +221,7 @@ export namespace storm::orm::statements {
         };
 
         struct DeleteAllQuery {
-            RemoveStatement&   stmt;
+            EraseStatement&    stmt;
             [[nodiscard]] auto execute() -> std::expected<void, Error> {
                 return stmt.execute_all();
             }

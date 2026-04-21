@@ -567,7 +567,7 @@ return txn->commit();
 - `delete_pk_batch_1000` to `delete_pk_batch_100000` - Large batch sizes
 
 **What's tested:**
-- **Storm ORM**: Uses `QuerySet::remove(span)` with automatic strategy selection (bulk IN clause vs individual deletes in transaction)
+- **Storm ORM**: Uses `QuerySet::erase(span)` with automatic strategy selection (bulk IN clause vs individual deletes in transaction)
 - **Raw SQLite**: Manual `DELETE FROM ... WHERE id=?` with transaction wrapping for batches
 - **Fair comparison**: Both versions tested with same batch sizes
 

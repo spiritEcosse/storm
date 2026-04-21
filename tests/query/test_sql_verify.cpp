@@ -326,7 +326,7 @@ TYPED_TEST(SqlVerifyTest, UpdateMessageWithFK) {
 TYPED_TEST(SqlVerifyTest, DeleteSingle) {
     QuerySet<Person, TypeParam> qs;
     Person const                p{};
-    auto                        sql = qs.remove(p).sql();
+    auto                        sql = qs.erase(p).sql();
     EXPECT_EQ(sql, "DELETE FROM Person WHERE id = ?");
 }
 
@@ -334,20 +334,20 @@ TYPED_TEST(SqlVerifyTest, DeleteBulk) {
     QuerySet<Person, TypeParam>   qs;
     std::array<Person, 3> const   people{};
     std::span<const Person> const span{people};
-    auto                          sql = qs.remove(span).sql();
+    auto                          sql = qs.erase(span).sql();
     EXPECT_EQ(sql, "DELETE FROM Person WHERE id IN (?,?,?)");
 }
 
 TYPED_TEST(SqlVerifyTest, DeleteAll) {
     QuerySet<Person, TypeParam> qs;
-    auto                        sql = qs.remove_all().sql();
+    auto                        sql = qs.erase_all().sql();
     EXPECT_EQ(sql, "DELETE FROM Person");
 }
 
 TYPED_TEST(SqlVerifyTest, DeleteSimpleRecord) {
     QuerySet<SimpleRecord, TypeParam> qs;
     SimpleRecord const                r{};
-    auto                              sql = qs.remove(r).sql();
+    auto                              sql = qs.erase(r).sql();
     EXPECT_EQ(sql, "DELETE FROM SimpleRecord WHERE id = ?");
 }
 

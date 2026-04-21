@@ -31,7 +31,7 @@ When implementing features:
 - `storm_db_sqlite` / `storm_db_postgresql` implement concepts
 - `storm_orm_utilities`, `storm_orm_transaction` — no storm imports
 - `storm_orm_statements_base` uses db_concept + utilities
-- Statement modules (insert, remove, update, select, etc.) use statements_base
+- Statement modules (insert, erase, update, select, etc.) use statements_base
 - `storm_orm_queryset` at the top, imports all statement modules
 
 **Concept-Based Abstraction**: All database operations work through `DatabaseConnection` and `DatabaseStatement` concepts — SQLite-specific code stays in `storm_db_sqlite`.
