@@ -63,7 +63,7 @@ queryset.update(person);
 
 // Batch update/delete
 queryset.update(std::span<const Person>(people));
-queryset.remove(std::span<const Person>(people));
+queryset.erase(std::span<const Person>(people));
 ```
 
 ### SELECT operations

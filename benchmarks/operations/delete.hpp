@@ -8,7 +8,7 @@
  *
  * Workflow:
  * 1. prepare(): Clear table, insert test data
- * 2. execute(): Storm ORM remove() - uses IN clause for batch
+ * 2. execute(): Storm ORM erase() - uses IN clause for batch
  * 3. execute_raw(): Raw SQLite DELETE...WHERE id IN (?, ?, ...) - same strategy
  *
  * Note: DELETE is destructive. After first iteration, rows are gone.
@@ -49,14 +49,14 @@ namespace storm::benchmark {
             if (Base::batch_size() == 1) {
                 // Single-row: delete one row per iteration (standard behavior)
                 for (int i = 0; i < iterations; i++) {
-                    Base::qs().remove(Base::data()[i]).execute();
+                    Base::qs().erase(Base::data()[i]).execute();
                     total++;
                 }
             } else {
                 // Batch: must re-insert before each DELETE iteration
                 for (int i = 0; i < iterations; i++) {
                     reinsert_data();
-                    Base::qs().remove(Base::data()).execute();
+                    Base::qs().erase(Base::data()).execute();
                     total += Base::data().size();
                 }
             }
@@ -67,10 +67,10 @@ namespace storm::benchmark {
         // SQL from ORM — single source of truth
         static auto sql_delete_batch(size_t count) -> std::string {
             if (count == 1) {
-                return storm::QuerySet<Model>().remove(Model{}).sql();
+                return storm::QuerySet<Model>().erase(Model{}).sql();
             }
             std::vector<Model> batch(count);
-            return storm::QuerySet<Model>().remove(batch).sql();
+            return storm::QuerySet<Model>().erase(batch).sql();
         }
 
         // Bind IDs for IN clause

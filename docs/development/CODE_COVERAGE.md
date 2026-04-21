@@ -127,9 +127,9 @@ build/debug/coverage/
 
 ### Function Coverage vs Line Coverage
 
-Function coverage is typically lower than line coverage in Storm due to C++ template instantiation. Each template class (e.g., `RemoveStatement<T>`) is instantiated per model type used in tests (`SqlitePerson`, `MockPerson`, `BatchPerson`, etc.). The compiler generates a separate copy of every method for each type, and lcov counts each copy as a distinct "function."
+Function coverage is typically lower than line coverage in Storm due to C++ template instantiation. Each template class (e.g., `EraseStatement<T>`) is instantiated per model type used in tests (`SqlitePerson`, `MockPerson`, `BatchPerson`, etc.). The compiler generates a separate copy of every method for each type, and lcov counts each copy as a distinct "function."
 
-For example, `RemoveStatement` has 8 methods × ~9 model types = ~52 "functions" in lcov. If `TxnPerson` tests only exercise single removes (never bulk or chunked), the `RemoveStatement<TxnPerson>::execute_bulk` instantiation shows as unhit — even though the identical logic is fully covered via `RemoveStatement<SqlitePerson>::execute_bulk`.
+For example, `EraseStatement` has 8 methods × ~9 model types = ~52 "functions" in lcov. If `TxnPerson` tests only exercise single removes (never bulk or chunked), the `EraseStatement<TxnPerson>::execute_bulk` instantiation shows as unhit — even though the identical logic is fully covered via `EraseStatement<SqlitePerson>::execute_bulk`.
 
 **Guideline**: Focus on **line coverage** (required: 100%). Function coverage gaps from unexercised template instantiations are expected and do not indicate missing test coverage.
 

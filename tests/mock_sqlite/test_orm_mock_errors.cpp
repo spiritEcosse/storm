@@ -224,7 +224,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "ToDelete", .age = 25};
 
-        auto result = qs.remove(person).execute();
+        auto result = qs.erase(person).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -236,7 +236,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "ToDelete", .age = 25};
 
-        auto result = qs.remove(person).execute();
+        auto result = qs.erase(person).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_LOCKED);
@@ -646,7 +646,7 @@ namespace {
                 {.id = 2, .name = "Bob", .age = 25},
         };
 
-        auto result = qs.remove(std::span{people}).execute();
+        auto result = qs.erase(std::span{people}).execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_LOCKED);
@@ -907,7 +907,7 @@ namespace {
     }
 
     // ============================================================================
-    // Remove with Bind Error Tests
+    // Erase with Bind Error Tests
     // ============================================================================
 
     TEST_F(ORMMockErrorTest, RemoveFailsOnBindInt64Error) {
@@ -916,7 +916,7 @@ namespace {
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "ToDelete", .age = 25};
 
-        auto result = qs.remove(person).execute();
+        auto result = qs.erase(person).execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -1601,11 +1601,11 @@ namespace {
     }
 
     // ============================================================================
-    // Remove Transaction Begin Failure
+    // Erase Transaction Begin Failure
     // ============================================================================
 
     TEST_F(ORMMockErrorTest, ChunkedRemoveFailsOnTransactionBeginError) {
-        // For chunked remove (800+ rows), transaction begin failure
+        // For chunked erase (800+ rows), transaction begin failure
         // This requires a large batch that triggers chunked processing
         // Transaction begin = first step call
         MockSqlite3Config::step_fails_on_call(1, SQLITE_BUSY);
@@ -1616,7 +1616,7 @@ namespace {
             large_batch.push_back({.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 50)});
         }
 
-        auto result = qs.remove(std::span{large_batch}).execute();
+        auto result = qs.erase(std::span{large_batch}).execute();
 
         // Should fail on transaction begin
         if (!result.has_value()) {
@@ -1636,9 +1636,9 @@ namespace {
             large_batch.push_back({.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 50)});
         }
 
-        auto result = qs.remove(std::span{large_batch}).execute();
+        auto result = qs.erase(std::span{large_batch}).execute();
 
-        ASSERT_FALSE(result.has_value()) << "Chunked remove should fail when max bulk prepare fails";
+        ASSERT_FALSE(result.has_value()) << "Chunked erase should fail when max bulk prepare fails";
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
     }
 
@@ -1653,9 +1653,9 @@ namespace {
             large_batch.push_back({.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 50)});
         }
 
-        auto result = qs.remove(std::span{large_batch}).execute();
+        auto result = qs.erase(std::span{large_batch}).execute();
 
-        ASSERT_FALSE(result.has_value()) << "Chunked remove should fail when remainder prepare fails";
+        ASSERT_FALSE(result.has_value()) << "Chunked erase should fail when remainder prepare fails";
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
     }
 
@@ -1671,9 +1671,9 @@ namespace {
             large_batch.push_back({.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 50)});
         }
 
-        auto result = qs.remove(std::span{large_batch}).execute();
+        auto result = qs.erase(std::span{large_batch}).execute();
 
-        ASSERT_FALSE(result.has_value()) << "Chunked remove should fail when full chunk exec fails";
+        ASSERT_FALSE(result.has_value()) << "Chunked erase should fail when full chunk exec fails";
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
     }
 
@@ -1688,9 +1688,9 @@ namespace {
             large_batch.push_back({.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 50)});
         }
 
-        auto result = qs.remove(std::span{large_batch}).execute();
+        auto result = qs.erase(std::span{large_batch}).execute();
 
-        ASSERT_FALSE(result.has_value()) << "Chunked remove should fail when remainder exec fails";
+        ASSERT_FALSE(result.has_value()) << "Chunked erase should fail when remainder exec fails";
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
     }
 
@@ -1807,7 +1807,7 @@ namespace {
     }
 
     // ============================================================================
-    // Remove Span Operations
+    // Erase Span Operations
     // ============================================================================
 
     TEST_F(ORMMockErrorTest, SpanOfOneRemoveSuccess) {
@@ -1815,10 +1815,10 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> single = {{.id = 1, .name = "ToDelete", .age = 30}};
 
-        auto result = qs.remove(std::span{single}).execute();
+        auto result = qs.erase(std::span{single}).execute();
 
         // Mock returns DONE by default
-        EXPECT_TRUE(result.has_value()) << "Span-of-one remove should succeed";
+        EXPECT_TRUE(result.has_value()) << "Span-of-one erase should succeed";
     }
 
     TEST_F(ORMMockErrorTest, SpanOfOneRemoveFailsOnStepError) {
@@ -1828,9 +1828,9 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> single = {{.id = 1, .name = "ToDelete", .age = 30}};
 
-        auto result = qs.remove(std::span{single}).execute();
+        auto result = qs.erase(std::span{single}).execute();
 
-        ASSERT_FALSE(result.has_value()) << "Span-of-one remove should fail on step error";
+        ASSERT_FALSE(result.has_value()) << "Span-of-one erase should fail on step error";
         EXPECT_EQ(result.error().code(), SQLITE_LOCKED);
     }
 
@@ -1844,9 +1844,9 @@ namespace {
                 {.id = 2, .name = "Second", .age = 25},
         };
 
-        auto result = qs.remove(std::span{people}).execute();
+        auto result = qs.erase(std::span{people}).execute();
 
-        ASSERT_FALSE(result.has_value()) << "Bulk remove should fail on prepare error";
+        ASSERT_FALSE(result.has_value()) << "Bulk erase should fail on prepare error";
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
     }
 
@@ -1860,7 +1860,7 @@ namespace {
                 {.id = 2, .name = "Second", .age = 25},
         };
 
-        auto result = qs.remove(std::span{people}).execute();
+        auto result = qs.erase(std::span{people}).execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -1877,9 +1877,9 @@ namespace {
                 {.id = 2, .name = "Second", .age = 25},
         };
 
-        auto result = qs.remove(std::span{people}).execute();
+        auto result = qs.erase(std::span{people}).execute();
 
-        ASSERT_FALSE(result.has_value()) << "Bulk remove should fail on exec error";
+        ASSERT_FALSE(result.has_value()) << "Bulk erase should fail on exec error";
         EXPECT_EQ(result.error().code(), SQLITE_BUSY);
     }
 
@@ -1888,9 +1888,9 @@ namespace {
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> empty;
 
-        auto result = qs.remove(std::span{empty}).execute();
+        auto result = qs.erase(std::span{empty}).execute();
 
-        EXPECT_TRUE(result.has_value()) << "Empty span remove should succeed immediately";
+        EXPECT_TRUE(result.has_value()) << "Empty span erase should succeed immediately";
     }
 
     // ============================================================================
@@ -2412,7 +2412,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "Alice", .age = 30};
-        auto                 result = qs.remove(person).to_sql();
+        auto                 result = qs.erase(person).to_sql();
 
         ASSERT_FALSE(result.has_value());
     }
@@ -2422,7 +2422,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         MockPerson const     person{.id = 1, .name = "Alice", .age = 30};
-        auto                 result = qs.remove(person).to_sql();
+        auto                 result = qs.erase(person).to_sql();
 
         ASSERT_FALSE(result.has_value());
     }
@@ -2436,7 +2436,7 @@ namespace {
 
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> people = {MockPerson{.id = 1, .name = "Alice", .age = 30}};
-        auto                    result = qs.remove(std::span<const MockPerson>(people)).to_sql();
+        auto                    result = qs.erase(std::span<const MockPerson>(people)).to_sql();
 
         ASSERT_FALSE(result.has_value());
     }
@@ -2446,7 +2446,7 @@ namespace {
 
         QuerySet<MockPerson>    qs;
         std::vector<MockPerson> people = {MockPerson{.id = 1, .name = "Alice", .age = 30}};
-        auto                    result = qs.remove(std::span<const MockPerson>(people)).to_sql();
+        auto                    result = qs.erase(std::span<const MockPerson>(people)).to_sql();
 
         ASSERT_FALSE(result.has_value());
     }

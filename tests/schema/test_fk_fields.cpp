@@ -307,7 +307,7 @@ TYPED_TEST(FKFieldTest, DeleteWithFKField) {
             .description = ""
     };
 
-    auto delete_result = message_qs.remove(to_delete).execute();
+    auto delete_result = message_qs.erase(to_delete).execute();
     ASSERT_TRUE(delete_result.has_value()) << "DELETE failed: " << delete_result.error().message();
 
     // Verify only one task remains

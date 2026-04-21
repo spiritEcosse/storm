@@ -12,7 +12,7 @@ QuerySet maintains cached statement instances:
 template <class T> class QuerySet {
     mutable std::unique_ptr<SelectStatement<T, ConnType>> select_stmt_;
     mutable std::unique_ptr<UpdateStatement<T, ConnType>> update_stmt_;
-    mutable std::unique_ptr<RemoveStatement<T, ConnType>> remove_stmt_;
+    mutable std::unique_ptr<EraseStatement<T, ConnType>> erase_stmt_;
 
     auto get_select_statement() const -> SelectStatement<T, ConnType>& {
         if (!select_stmt_) {

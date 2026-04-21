@@ -69,7 +69,7 @@ PG tests use **per-process schema isolation** (`test_<pid>`). Each CTest process
 - `backend_available<ConnType>()` returns bool; call `GTEST_SKIP()` directly in `SetUp()` (not in a helper — `GTEST_SKIP()` contains `return` that only exits the calling function)
 
 Key constraints discovered:
-- **ORM batch operations** (chunked remove/update) issue their own `BEGIN`/`COMMIT` — incompatible with outer test transactions
+- **ORM batch operations** (chunked erase/update) issue their own `BEGIN`/`COMMIT` — incompatible with outer test transactions
 - **TRUNCATE** takes `ACCESS EXCLUSIVE` lock — deadlocks with concurrent `INSERT` + `ALTER TABLE`
 - **Per-process schemas** solve both problems: each process has its own namespace
 - **Rejected `STORM_REUSE_DB`** (TRUNCATE instead of DROP/CREATE schema) — CTest spawns a fresh process per test binary, so no cross-process schema reuse; TRUNCATE per-table was actually slower than one-time DROP+CREATE

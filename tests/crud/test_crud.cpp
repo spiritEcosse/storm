@@ -20,7 +20,7 @@ import <iomanip>;
 #include "test_yaml_register.h"
 #include "test_parser.hpp"
 
-// Common base fixture for Remove/Update tests — shared setup + helpers.
+// Common base fixture for Erase/Update tests — shared setup + helpers.
 template <typename ConnType> class PersonCrudTestBase : public StormTestFixture<Person, ConnType> {
   protected:
     auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
@@ -49,12 +49,12 @@ template <typename ConnType> class PersonCrudTestBase : public StormTestFixture<
     }
 };
 
-// Test QuerySet.remove() functionality
-template <typename ConnType> class QuerySetRemoveTest : public PersonCrudTestBase<ConnType> {};
+// Test QuerySet.erase() functionality
+template <typename ConnType> class QuerySetEraseTest : public PersonCrudTestBase<ConnType> {};
 
-TYPED_TEST_SUITE(QuerySetRemoveTest, DatabaseTypes);
+TYPED_TEST_SUITE(QuerySetEraseTest, DatabaseTypes);
 
-TYPED_TEST(QuerySetRemoveTest, DatabaseSetup) {
+TYPED_TEST(QuerySetEraseTest, DatabaseSetup) {
     // Verify database was created and populated correctly
     EXPECT_TRUE((storm::QuerySet<Person, TypeParam>::has_default_connection())) << "Should have default connection";
     EXPECT_EQ(this->countPersons(), 3) << "Should have 3 persons in database";
@@ -65,22 +65,22 @@ TYPED_TEST(QuerySetRemoveTest, DatabaseSetup) {
     EXPECT_TRUE(this->personExists(3)) << "Charlie should exist";
 }
 
-TYPED_TEST(QuerySetRemoveTest, RemoveMultiplePersonsSequentially) {
+TYPED_TEST(QuerySetEraseTest, EraseMultiplePersonsSequentially) {
     storm::QuerySet<Person, TypeParam> queryset;
 
-    // Create person objects to remove
+    // Create person objects to erase
     Person const alice{.id = 1, .name = "Alice", .age = 30};
     Person const bob{.id = 2, .name = "Bob", .age = 25};
 
     // Verify initial state
     EXPECT_EQ(this->countPersons(), 3) << "Should have 3 persons initially";
 
-    auto result1 = queryset.remove(alice).execute();
-    ASSERT_TRUE(result1.has_value()) << "First remove should succeed";
+    auto result1 = queryset.erase(alice).execute();
+    ASSERT_TRUE(result1.has_value()) << "First erase should succeed";
     EXPECT_EQ(this->countPersons(), 2) << "Should have 2 persons after first removal";
 
-    auto result2 = queryset.remove(bob).execute();
-    ASSERT_TRUE(result2.has_value()) << "Second remove should succeed";
+    auto result2 = queryset.erase(bob).execute();
+    ASSERT_TRUE(result2.has_value()) << "Second erase should succeed";
     EXPECT_EQ(this->countPersons(), 1) << "Should have 1 person after second removal";
 
     // Verify only Charlie remains
@@ -89,7 +89,7 @@ TYPED_TEST(QuerySetRemoveTest, RemoveMultiplePersonsSequentially) {
     EXPECT_TRUE(this->personExists(3)) << "Charlie should still exist";
 }
 
-TYPED_TEST(QuerySetRemoveTest, RemoveBatchPerformance) {
+TYPED_TEST(QuerySetEraseTest, EraseBatchPerformance) {
     storm::QuerySet<Person, TypeParam> queryset;
 
     // Add test data for performance comparison (batch insert to avoid per-row round-trips)
@@ -106,30 +106,30 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchPerformance) {
     auto start_individual = std::chrono::steady_clock::now();
     for (int i = 1; i <= 50; i++) {
         Person const person{.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 60)};
-        auto         result = queryset.remove(person).execute();
-        ASSERT_TRUE(result.has_value()) << "Individual remove should succeed";
+        auto         result = queryset.erase(person).execute();
+        ASSERT_TRUE(result.has_value()) << "Individual erase should succeed";
     }
     auto end_individual = std::chrono::steady_clock::now();
     auto duration_individual =
             std::chrono::duration_cast<std::chrono::microseconds>(end_individual - start_individual).count();
 
-    // Prepare batch for batch remove
+    // Prepare batch for batch erase
     std::vector<Person> batch;
     for (int i = 51; i <= 100; i++) {
         batch.emplace_back(i, std::format("Person{}", i), 20 + (i % 60));
     }
 
-    // Measure batch remove
+    // Measure batch erase
     auto start_batch = std::chrono::steady_clock::now();
-    auto result      = queryset.remove(std::span<const Person>(batch)).execute();
-    ASSERT_TRUE(result.has_value()) << "Batch remove should succeed";
+    auto result      = queryset.erase(std::span<const Person>(batch)).execute();
+    ASSERT_TRUE(result.has_value()) << "Batch erase should succeed";
     auto end_batch      = std::chrono::steady_clock::now();
     auto duration_batch = std::chrono::duration_cast<std::chrono::microseconds>(end_batch - start_batch).count();
 
     // Log performance comparison (batch should be faster)
     std::cout << "\nPerformance Comparison (50 deletes):" << '\n';
     std::cout << "  Individual removes: " << duration_individual << " μs" << '\n';
-    std::cout << "  Batch remove: " << duration_batch << " μs" << '\n';
+    std::cout << "  Batch erase: " << duration_batch << " μs" << '\n';
     std::cout << "  Speedup: " << std::fixed << std::setprecision(2)
               << static_cast<double>(duration_individual) / static_cast<double>(duration_batch) << "x" << '\n';
 
@@ -137,9 +137,9 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchPerformance) {
     EXPECT_EQ(this->countPersons(), num_records - 100) << "Should have correct number of persons after removes";
 }
 
-// Test chunked remove (>799 rows to trigger execute_chunked path)
+// Test chunked erase (>799 rows to trigger execute_chunked path)
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunked) {
+TYPED_TEST(QuerySetEraseTest, EraseBatchChunked) {
     storm::QuerySet<Person, TypeParam> queryset;
 
     // Add many test records (1000+) to test chunked deletion (batch insert to avoid per-row round-trips)
@@ -156,20 +156,20 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunked) {
     // Verify initial state
     EXPECT_EQ(this->countPersons(), 1000) << "Should have 1000 persons initially";
 
-    // Create batch of >799 persons to remove (triggers chunked path)
+    // Create batch of >799 persons to erase (triggers chunked path)
     std::vector<Person> chunked_batch;
     for (int i = 1; i <= 850; i++) {
         chunked_batch.emplace_back(i, std::format("Person{}", i), 20 + (i % 60));
     }
 
-    // Remove chunked batch - should use execute_chunked with transaction
-    auto result = queryset.remove(std::span<const Person>(chunked_batch)).execute();
+    // Erase chunked batch - should use execute_chunked with transaction
+    auto result = queryset.erase(std::span<const Person>(chunked_batch)).execute();
 
     // Verify removal was successful
     if (!result.has_value()) {
         std::cout << "Error: " << result.error().message() << '\n';
     }
-    ASSERT_TRUE(result.has_value()) << "Chunked batch remove operation should succeed: "
+    ASSERT_TRUE(result.has_value()) << "Chunked batch erase operation should succeed: "
                                     << (result.has_value() ? "" : result.error().message());
 
     // Verify correct number of persons removed
@@ -183,9 +183,9 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunked) {
     EXPECT_TRUE(this->personExists(1000)) << "Last remaining person should still exist";
 }
 
-// Test chunked remove with remainder (tests both full chunks and remainder processing)
+// Test chunked erase with remainder (tests both full chunks and remainder processing)
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunkedWithRemainder) {
+TYPED_TEST(QuerySetEraseTest, EraseBatchChunkedWithRemainder) {
     storm::QuerySet<Person, TypeParam> queryset;
 
     // Add many test records to test chunked deletion with remainder (batch insert to avoid per-row round-trips)
@@ -208,11 +208,11 @@ TYPED_TEST(QuerySetRemoveTest, RemoveBatchChunkedWithRemainder) {
         chunked_batch.emplace_back(i, std::format("Person{}", i), 20 + (i % 60));
     }
 
-    // Remove chunked batch - should use execute_chunked with remainder
-    auto result = queryset.remove(std::span<const Person>(chunked_batch)).execute();
+    // Erase chunked batch - should use execute_chunked with remainder
+    auto result = queryset.erase(std::span<const Person>(chunked_batch)).execute();
 
     // Verify removal was successful
-    ASSERT_TRUE(result.has_value()) << "Chunked batch remove with remainder should succeed: "
+    ASSERT_TRUE(result.has_value()) << "Chunked batch erase with remainder should succeed: "
                                     << (result.has_value() ? "" : result.error().message());
 
     // Verify correct number of persons removed
@@ -373,7 +373,7 @@ TYPED_TEST(TransactionTest, EmptyBatchOperations) {
     auto update_result = this->qs->update(std::span<const SimpleRecord>(empty)).execute();
     ASSERT_TRUE(update_result.has_value());
 
-    auto remove_result = this->qs->remove(std::span<const SimpleRecord>(empty)).execute();
+    auto remove_result = this->qs->erase(std::span<const SimpleRecord>(empty)).execute();
     ASSERT_TRUE(remove_result.has_value());
 }
 
@@ -392,7 +392,7 @@ TYPED_TEST(TransactionTest, SingleRowOperations) {
     ASSERT_TRUE(select_result.has_value());
     EXPECT_EQ(select_result.value().begin()->value, 99);
 
-    auto remove_result = this->qs->remove(updated).execute();
+    auto remove_result = this->qs->erase(updated).execute();
     ASSERT_TRUE(remove_result.has_value());
 
     auto empty_result = this->qs->select().execute();

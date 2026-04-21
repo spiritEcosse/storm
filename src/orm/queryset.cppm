@@ -10,7 +10,7 @@ import storm_db_concept;
 import storm_db_sqlite;
 import storm_db_pool;
 import storm_orm_statements_base;
-import storm_orm_statements_remove;
+import storm_orm_statements_erase;
 import storm_orm_statements_insert;
 import storm_orm_statements_select;
 import storm_orm_statements_projection;
@@ -66,19 +66,19 @@ export namespace storm {
         }
         // LCOV_EXCL_STOP
 
-        // Remove single object - returns proxy with .execute() and .to_sql()
-        auto remove(const T& obj) {
-            return get_remove_statement().query(obj);
+        // Erase single object - returns proxy with .execute() and .to_sql()
+        auto erase(const T& obj) {
+            return get_erase_statement().query(obj);
         }
 
-        // Bulk remove - returns proxy with .execute() and .to_sql()
-        auto remove(std::span<const T> objects) {
-            return get_remove_statement().query(objects);
+        // Bulk erase - returns proxy with .execute() and .to_sql()
+        auto erase(std::span<const T> objects) {
+            return get_erase_statement().query(objects);
         }
 
-        // Remove all rows — executes DELETE FROM <table> with no WHERE clause
-        [[nodiscard]] auto remove_all() {
-            return get_remove_statement().query_all();
+        // Erase all rows — executes DELETE FROM <table> with no WHERE clause
+        [[nodiscard]] auto erase_all() {
+            return get_erase_statement().query_all();
         }
 
         // Insert single object - returns proxy with .execute() and .to_sql()
@@ -509,12 +509,12 @@ export namespace storm {
             return *insert_stmt_;
         }
 
-        // Lazy-initialize and return cached RemoveStatement for optimal performance
-        auto get_remove_statement() const -> orm::statements::RemoveStatement<T, ConnType>& {
-            if (!remove_stmt_) [[unlikely]] {
-                remove_stmt_ = std::make_unique<orm::statements::RemoveStatement<T, ConnType>>(conn_);
+        // Lazy-initialize and return cached EraseStatement for optimal performance
+        auto get_erase_statement() const -> orm::statements::EraseStatement<T, ConnType>& {
+            if (!erase_stmt_) [[unlikely]] {
+                erase_stmt_ = std::make_unique<orm::statements::EraseStatement<T, ConnType>>(conn_);
             }
-            return *remove_stmt_;
+            return *erase_stmt_;
         }
 
         // Lazy-initialize and return cached UpdateStatement for optimal performance
@@ -574,7 +574,7 @@ export namespace storm {
 
         std::shared_ptr<ConnType>                                              conn_;
         mutable std::unique_ptr<orm::statements::InsertStatement<T, ConnType>> insert_stmt_;
-        mutable std::unique_ptr<orm::statements::RemoveStatement<T, ConnType>> remove_stmt_;
+        mutable std::unique_ptr<orm::statements::EraseStatement<T, ConnType>>  erase_stmt_;
         mutable std::unique_ptr<orm::statements::SelectStatement<T, ConnType>> select_stmt_;
         mutable std::unique_ptr<orm::statements::UpdateStatement<T, ConnType>> update_stmt_;
 

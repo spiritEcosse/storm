@@ -366,10 +366,10 @@ TYPED_TEST(AggregateTest, Integration_AfterDelete) {
     ASSERT_TRUE(people.has_value());
 
     auto it            = people.value().begin();
-    auto delete_result = this->qs->remove(*it).execute();
+    auto delete_result = this->qs->erase(*it).execute();
     ASSERT_TRUE(delete_result.has_value());
     ++it;
-    delete_result = this->qs->remove(*it).execute();
+    delete_result = this->qs->erase(*it).execute();
     ASSERT_TRUE(delete_result.has_value());
 
     // COUNT should now be 23

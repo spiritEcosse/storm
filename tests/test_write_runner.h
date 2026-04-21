@@ -2,7 +2,7 @@
 
 /**
  * @file test_write_runner.h
- * @brief InsertRunner, UpdateRunner, RemoveRunner for UnifiedTestCase.
+ * @brief InsertRunner, UpdateRunner, EraseRunner for UnifiedTestCase.
  *
  * Include AFTER `import storm;`, test_models.h, test_seed_helpers.h,
  * test_query_runner_base.h.
@@ -84,13 +84,13 @@ template <typename Model, typename ConnType> class UpdateRunner : public QueryRu
 };
 
 // ---------------------------------------------------------------------------
-// RemoveRunner -- remove_all / remove_where / remove_batch
+// EraseRunner -- erase_all / erase_where / erase_batch
 // ---------------------------------------------------------------------------
-template <typename Model, typename ConnType> class RemoveRunner : public QueryRunnerBase<Model, ConnType> {
+template <typename Model, typename ConnType> class EraseRunner : public QueryRunnerBase<Model, ConnType> {
   public:
     template <const auto &Tc> auto run() -> void {
-        if constexpr (Tc.query_type == "remove_all") {
-            // Seed dataset_size records, then remove all
+        if constexpr (Tc.query_type == "erase_all") {
+            // Seed dataset_size records, then erase all
             std::vector<Model> initial;
             initial.reserve(static_cast<size_t>(Tc.dataset_size));
             for (int i = 0; i < Tc.dataset_size; ++i)
@@ -98,14 +98,14 @@ template <typename Model, typename ConnType> class RemoveRunner : public QueryRu
             auto ins = this->qs_.insert(std::span<const Model>(initial)).execute();
             ASSERT_TRUE(ins.has_value()) << ins.error().message();
 
-            auto rem = this->qs_.remove_all().execute();
+            auto rem = this->qs_.erase_all().execute();
             ASSERT_TRUE(rem.has_value()) << rem.error().message();
 
             auto cnt = this->qs_.count().execute();
             ASSERT_TRUE(cnt.has_value()) << cnt.error().message();
             EXPECT_EQ(static_cast<int>(cnt.value()), Tc.expected.remaining);
 
-        } else if constexpr (Tc.query_type == "remove_batch") {
+        } else if constexpr (Tc.query_type == "erase_batch") {
             // Seed dataset_size records
             std::vector<Model> initial;
             initial.reserve(static_cast<size_t>(Tc.dataset_size));
@@ -118,16 +118,16 @@ template <typename Model, typename ConnType> class RemoveRunner : public QueryRu
             auto sel = this->qs_.select().execute();
             ASSERT_TRUE(sel.has_value()) << sel.error().message();
 
-            // Remove first remove_count records
-            std::vector<Model> to_remove;
-            to_remove.reserve(static_cast<size_t>(Tc.remove_count));
+            // Erase first erase_count records
+            std::vector<Model> to_erase;
+            to_erase.reserve(static_cast<size_t>(Tc.erase_count));
             size_t n = 0;
             for (const auto &r : sel.value()) {
-                if (n++ >= static_cast<size_t>(Tc.remove_count))
+                if (n++ >= static_cast<size_t>(Tc.erase_count))
                     break;
-                to_remove.push_back(r);
+                to_erase.push_back(r);
             }
-            auto rem = this->qs_.remove(std::span<const Model>(to_remove)).execute();
+            auto rem = this->qs_.erase(std::span<const Model>(to_erase)).execute();
             ASSERT_TRUE(rem.has_value()) << rem.error().message();
 
             auto cnt = this->qs_.count().execute();

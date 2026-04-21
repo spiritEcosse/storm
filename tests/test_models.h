@@ -72,7 +72,7 @@ template <typename ConnType> inline auto populate_join_test_data() -> void {
 }
 
 // ============================================================================
-// Model record generators -- used by InsertRunner/UpdateRunner/RemoveRunner
+// Model record generators -- used by InsertRunner/UpdateRunner/EraseRunner
 // ============================================================================
 
 template <typename Model> auto make_record(int i) -> Model = delete;

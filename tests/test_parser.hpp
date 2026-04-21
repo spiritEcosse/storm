@@ -8,7 +8,7 @@
  * structs. The JSON uses nested objects for where/expected/order_by/aggregation.
  *
  * Supported schemas:
- *   UnifiedTestCase — all query types (select/insert/update/remove/group_by/distinct/aggregate/chain/…)
+ *   UnifiedTestCase — all query types (select/insert/update/erase/group_by/distinct/aggregate/chain/…)
  *
  * Usage example:
  *   #include "test_parser.hpp"
@@ -936,7 +936,7 @@ namespace storm::test {
 
         int insert_count = 0;
         int update_count = 0;
-        int remove_count = 0;
+        int erase_count  = 0;
 
         ExpectedSpec expected;
 
@@ -946,9 +946,9 @@ namespace storm::test {
     // Top-level keys (26 unique):
     //  4: name  5: model,where  7: dataset  8: expected,order_by
     //  9: agg_field,chain_len,having_op,join_name
-    // 10: query_type  11: aggregation,limit_value,where_nodes
+    // 10: query_type  11: aggregation,erase_count,limit_value,where_nodes
     // 12: aggregations,dataset_size,having_field,insert_count,offset_value,
-    //     remove_count,update_count
+    //     update_count
     // 14: distinct_field,group_by_field
     // 15: distinct_field2,group_by_field2,having_value_int
     constexpr auto parse_unified_case_into(std::string_view j, size_t& p, UnifiedTestCase& tc)
@@ -1028,15 +1028,17 @@ namespace storm::test {
                 } else
                     skip_value(j, p);
                 break;
-            case 11: // aggregation, limit_value
+            case 11: // aggregation, limit_value, erase_count
                 if (jkey_eq(ptr, kr.start, kr.len, "aggregation"))
                     parse_aggregation_into(j, p, tc.query_type, tc.agg_field, tc.join_name);
                 else if (jkey_eq(ptr, kr.start, kr.len, "limit_value"))
                     tc.limit_value = parse_int(j, p);
+                else if (jkey_eq(ptr, kr.start, kr.len, "erase_count"))
+                    tc.erase_count = parse_int(j, p);
                 else
                     skip_value(j, p);
                 break;
-            case 12: // aggregations, dataset_size, having_field, insert/update/remove_count, offset_value
+            case 12: // aggregations, dataset_size, having_field, insert/update_count, offset_value
                 if (jkey_eq(ptr, kr.start, kr.len, "aggregations"))
                     tc.chain_len = parse_chain_agg_array<UnifiedTestCase::MAX_CHAIN>(j, p, tc.aggregations);
                 else if (jkey_eq(ptr, kr.start, kr.len, "dataset_size"))
@@ -1047,8 +1049,6 @@ namespace storm::test {
                     tc.insert_count = parse_int(j, p);
                 else if (jkey_eq(ptr, kr.start, kr.len, "update_count"))
                     tc.update_count = parse_int(j, p);
-                else if (jkey_eq(ptr, kr.start, kr.len, "remove_count"))
-                    tc.remove_count = parse_int(j, p);
                 else if (jkey_eq(ptr, kr.start, kr.len, "offset_value"))
                     tc.offset_value = parse_int(j, p);
                 else

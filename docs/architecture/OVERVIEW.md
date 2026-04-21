@@ -85,7 +85,7 @@ src/
         ├── insert.cppm             # InsertStatement
         ├── select.cppm             # SelectStatement + JOIN
         ├── update.cppm             # UpdateStatement
-        ├── remove.cppm             # RemoveStatement
+        ├── erase.cppm              # EraseStatement
         └── join.cppm               # JoinStatement (SQL builder)
 ```
 
@@ -97,7 +97,7 @@ storm (main module)
 ├── storm_db_sqlite
 ├── storm_orm_statements_base
 ├── storm_orm_utilities
-├── storm_orm_statements_{insert,update,remove,select,join}
+├── storm_orm_statements_{insert,update,erase,select,join}
 └── storm_orm_queryset
 ```
 

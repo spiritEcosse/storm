@@ -2,7 +2,7 @@
 
 /**
  * @file test_seed_helpers.h
- * @brief Batch insert/update/remove helpers for test fixture setup.
+ * @brief Batch insert/update/erase helpers for test fixture setup.
  *
  * Centralises the ORM batch API calls so that if the API changes,
  * only this file needs updating. All test fixtures should use these
@@ -50,7 +50,7 @@ template <typename Model, typename ConnType> auto batch_update(const std::vector
     return true;
 }
 
-/// Batch-remove a vector of Model objects.  Returns true on success.
+/// Batch-erase a vector of Model objects.  Returns true on success.
 /// On failure, records the error via ADD_FAILURE() and returns false.
 /// An empty vector is a no-op that always succeeds.
 template <typename Model, typename ConnType> auto batch_remove(const std::vector<Model> &objects) -> bool {
@@ -58,7 +58,7 @@ template <typename Model, typename ConnType> auto batch_remove(const std::vector
         return true;
 
     storm::QuerySet<Model, ConnType> qs;
-    auto result = qs.remove(std::span<const Model>(objects)).execute();
+    auto result = qs.erase(std::span<const Model>(objects)).execute();
     if (!result.has_value()) {
         ADD_FAILURE() << "batch_remove failed: " << result.error().message();
         return false;

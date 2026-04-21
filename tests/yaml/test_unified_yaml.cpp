@@ -47,9 +47,9 @@ class storm::test::YamlTestInstance<I, UnifiedYamlTest<ConnType>, ConnType> : pu
             storm::QuerySet<Person, ConnType>       cp;
             storm::QuerySet<SimpleRecord, ConnType> cs;
             storm::QuerySet<Message, ConnType>      cm;
-            ASSERT_TRUE(cp.remove_all().execute().has_value());
-            ASSERT_TRUE(cs.remove_all().execute().has_value());
-            ASSERT_TRUE(cm.remove_all().execute().has_value());
+            ASSERT_TRUE(cp.erase_all().execute().has_value());
+            ASSERT_TRUE(cs.erase_all().execute().has_value());
+            ASSERT_TRUE(cm.erase_all().execute().has_value());
         }
 
         // --- Seed dataset ---
@@ -165,13 +165,13 @@ class storm::test::YamlTestInstance<I, UnifiedYamlTest<ConnType>, ConnType> : pu
                 runner.template run<tc>();
             }
 
-        } else if constexpr (tc.query_type == "remove_all" || tc.query_type == "remove_batch") {
+        } else if constexpr (tc.query_type == "erase_all" || tc.query_type == "erase_batch") {
             // REMOVE operations
             if constexpr (tc.model == "person") {
-                storm::test::RemoveRunner<Person, ConnType> runner;
+                storm::test::EraseRunner<Person, ConnType> runner;
                 runner.template run<tc>();
             } else if constexpr (tc.model == "simple") {
-                storm::test::RemoveRunner<SimpleRecord, ConnType> runner;
+                storm::test::EraseRunner<SimpleRecord, ConnType> runner;
                 runner.template run<tc>();
             }
         }

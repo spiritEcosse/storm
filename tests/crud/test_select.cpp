@@ -131,7 +131,7 @@ TYPED_TEST(SelectTest, SelectAfterInsertAndDelete) {
 
     // Delete Bob
     Person const bob_to_delete{.id = bob_id, .name = "Bob", .age = 25};
-    auto         delete_result = queryset.remove(bob_to_delete).execute();
+    auto         delete_result = queryset.erase(bob_to_delete).execute();
     ASSERT_TRUE(delete_result.has_value()) << "DELETE failed: " << delete_result.error().message();
 
     // Select all rows again

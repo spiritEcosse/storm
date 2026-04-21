@@ -363,7 +363,7 @@ TYPED_TEST(OrderByNullableTest, NullableFieldWithSecondarySort) {
 TYPED_TEST(OrderByNullableTest, AllNullValues) {
     // Create a new table with only NULL values
     const auto& conn = QuerySet<Person, TypeParam>::get_default_connection();
-    (void)QuerySet<Person, TypeParam>().remove_all().execute();
+    (void)QuerySet<Person, TypeParam>().erase_all().execute();
 
     QuerySet<Person, TypeParam> qs;
     std::vector<Person> const   all_nulls = {
@@ -501,7 +501,7 @@ TYPED_TEST(OrderByBlobTest, BlobWithSecondarySort) {
 TYPED_TEST(OrderByBlobTest, EmptyBlobsOnly) {
     // Test with only empty BLOBs
     const auto& conn = QuerySet<Person, TypeParam>::get_default_connection();
-    (void)QuerySet<Person, TypeParam>().remove_all().execute();
+    (void)QuerySet<Person, TypeParam>().erase_all().execute();
 
     QuerySet<Person, TypeParam> qs;
     std::vector<Person> const   empty_blobs = {

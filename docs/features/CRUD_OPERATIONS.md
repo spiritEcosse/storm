@@ -155,7 +155,7 @@ template <typename T> class UpdateStatement {
 
 ```cpp
 Person person{1, "Alice", 25};  // Only ID matters
-auto result = queryset.remove(person);
+auto result = queryset.erase(person);
 ```
 
 **SQL Generated**:
@@ -172,7 +172,7 @@ std::vector<Person> people = {
     {3, "Charlie", 35}
 };
 
-auto result = queryset.remove(std::span<const Person>(people));
+auto result = queryset.erase(std::span<const Person>(people));
 ```
 
 **SQL Generated** (bulk IN clause):
@@ -278,7 +278,7 @@ UPDATE Message SET content=?, sender_id=? WHERE id=?
 FK fields are ignored during DELETE - only the primary key matters:
 
 ```cpp
-auto result = message_qs.remove(msg);  // Only msg.id is used
+auto result = message_qs.erase(msg);  // Only msg.id is used
 ```
 
 ## Performance Optimization Tips
