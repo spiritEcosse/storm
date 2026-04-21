@@ -30,6 +30,16 @@ execute_process(
 add_compile_options(-ferror-limit=1
                     $<$<CONFIG:Debug>:-ftemplate-backtrace-limit=0>)
 
+# Pin Clang's module cache to the build dir. Clang hashes compile flags into the
+# module cache path, so two presets with different flags (coverage vs no
+# coverage, sanitizer vs none, etc.) write _Builtin_stddef etc. under different
+# hash subdirs of the shared global cache (~/.cache/clang/ModuleCache/). When a
+# later TU imports a module, Clang sees the same builtin module in both dirs and
+# emits a fatal "module defined in both" error. Keeping the cache local to
+# ${CMAKE_BINARY_DIR} guarantees preset isolation, since every preset already
+# has its own binaryDir.
+add_compile_options("-fmodules-cache-path=${CMAKE_BINARY_DIR}/module-cache")
+
 include(cmake/libcxx.cmake)
 
 # ── Core library ──────────────────────────────────────────────────────────────
