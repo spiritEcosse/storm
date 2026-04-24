@@ -50,8 +50,4 @@ add_storm_benchmark(storm_bench "main.cpp")
 # Ensure JSON is generated before building storm_bench
 add_dependencies(storm_bench generate_benchmark_json)
 
-# Increase constexpr steps limit for compile-time JSON parsing Required due to
-# large number of benchmark tests parsed at compile time
-target_compile_options(storm_bench PRIVATE -fconstexpr-steps=20000000)
-
 message(STATUS "Benchmark executable: storm_bench")
