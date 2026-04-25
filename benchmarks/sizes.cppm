@@ -1,27 +1,24 @@
-#pragma once
+// storm_benchmark_sizes
+//
+// Compile-time size profiles for benchmark categories: standard / smoke / edge
+// arrays for batch + dataset operations, plus iteration calculators. Pure
+// constexpr — no SQLite, no reflection, no model deps — so it converts cleanly
+// to a leaf module with no GMF preprocessing required.
+//
+// Was: benchmarks/sizes.hpp (textual header with `inline constexpr` arrays).
+// Issue #221 — Phase 2 of the benchmark module conversion.
 
-/**
- * Benchmark Size Profiles
- *
- * Defines constexpr size arrays for different benchmark categories.
- * This centralizes size definitions and iteration calculations,
- * replacing duplicated entries in benchmark_tests.yaml.
- *
- * Size profiles:
- *   - batch_standard: Standard sizes for INSERT/UPDATE/DELETE batch operations
- *   - batch_insert_edge: SQLite chunk boundary tests for INSERT (999/4 fields = 249)
- *   - batch_update_edge: SQLite chunk boundary tests for UPDATE (999/5 fields = 199)
- *   - dataset_standard: Standard sizes for SELECT/JOIN/DISTINCT operations
- *   - dataset_small: Smaller sizes for aggregate tests
- */
+module;
 
-#include <array>
-#include <algorithm>
-#include <format>
-#include <span>
-#include <string_view>
+export module storm_benchmark_sizes;
 
-namespace storm::benchmark::sizes {
+import <array>;
+import <format>;
+import <span>;
+import <string>;
+import <string_view>;
+
+export namespace storm::benchmark::sizes {
 
     // Standard batch sizes for INSERT/UPDATE/DELETE operations
     inline constexpr std::array BATCH_STANDARD = {1, 10, 100, 500, 1000, 5000, 10000, 50000, 100000};

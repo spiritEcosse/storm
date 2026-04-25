@@ -48,7 +48,7 @@ benchmarks/
 ├── runner.hpp                  # BenchmarkRunner with template recursion
 ├── parser.hpp                  # Compile-time JSON parser using #embed
 ├── schema.hpp                  # Benchmark test schema (C++ structs)
-├── sizes.hpp                   # Size profile definitions (batch/dataset sizes)
+├── sizes.cppm                  # Size profile definitions (storm_benchmark_sizes module)
 ├── operations/
 │   ├── base.hpp               # CRTP base class for data-driven benchmarks
 │   ├── select.hpp             # WHERE clause benchmark implementation
@@ -111,7 +111,7 @@ The runner automatically generates: `insert_single`, `insert_10`, `insert_100`, 
 
 ### Size Profile Definitions
 
-Defined in `benchmarks/sizes.hpp`:
+Defined in `benchmarks/sizes.cppm` (`storm_benchmark_sizes` module):
 
 ```cpp
 namespace storm::benchmark::sizes {
