@@ -18,7 +18,6 @@ module;
 #include <tuple>
 
 #include "models.hpp"
-#include "schema.hpp"
 
 #include <stdexcept>
 

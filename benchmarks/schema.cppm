@@ -1,67 +1,42 @@
-#pragma once
+// storm_benchmark_schema
+//
+// Compile-time C++ schema mirroring the YAML/JSON benchmark test descriptors.
+// Provides BenchmarkTest plus its nested sub-specs (WhereSpec, OrderBySpec,
+// HavingSpec, GroupBySpec, DistinctSpec, LimitSpec, AggregateSpec, JoinSpec,
+// SetOpSpec) and the TypedValue tagged-union for sniffed JSON leaf values.
+//
+// Was: benchmarks/schema.hpp (textual header that re-defined a local
+// `ConstexprString<N>`). Issue #221 — Phase 3 of the benchmark module
+// conversion.
+//
+// DRY win
+// -------
+// The local ConstexprString is gone — we re-export
+// `storm::orm::utilities::ConstexprString` into the `storm::benchmark`
+// namespace, removing the duplication noted in Issue #204. The ORM template
+// is API-compatible (ctor, view, c_str, empty, operator==, public data/len)
+// and uses `constexpr` rather than `consteval`, which is strictly more
+// permissive — every consteval call site continues to work.
 
-/**
- * Benchmark Test Schema — Nested Layout
- *
- * JSON source (human-readable, nested):
- *   {
- *     "where": { "field": "age", "op": ">", "value": 30 },
- *     "order_by": [ { "field": "salary", "direction": "DESC" } ],
- *     "group_by": { "fields": ["department"], "having": { "field": "age", "op": ">", "value": 30 } },
- *     ...
- *   }
- *
- * C++ mirrors this layout: test.where.field, test.order_by[0].field,
- * test.group_by.fields[0], test.group_by.having.field, etc.
- *
- * Each sub-spec carries a `bool enabled` flag set by the parser when the
- * corresponding JSON object is present, so consumers can dispatch at
- * compile time with `if constexpr (test.where.enabled) { ... }`.
- *
- * Values use a tagged TypedValue so the parser sniffs the JSON token type
- * (int / double / bool / string) — no more where_value_int / _double / _bool / _string
- * suffix proliferation.
- */
+module;
 
-#include <array>
-#include <cstddef>
-#include <string_view>
+export module storm_benchmark_schema;
 
-namespace storm::benchmark {
+// Pull ConstexprString via the umbrella `storm` module rather than reaching
+// directly into `storm_orm_utilities`. Importing the leaf submodule alone
+// produced a `clang-scan-deps` crash inside ModuleMap::addHeader (PCM-cache
+// hash divergence vs the path main.cpp uses to see the same symbols). The
+// raw/base/registry modules that already work all use `import storm;`.
+import storm;
 
-    // Fixed-size constexpr string
-    template <size_t N> struct ConstexprString {
-        std::array<char, N> data{};
-        size_t              len = 0;
+import <array>;
+import <cstddef>;
+import <string_view>;
 
-        consteval ConstexprString() = default;
+export namespace storm::benchmark {
 
-        explicit consteval ConstexprString(const char* str) {
-            size_t i = 0;
-            while (str[i] != '\0' && i < N - 1) {
-                data[i] = str[i];
-                ++i;
-            }
-            len       = i;
-            data[len] = '\0';
-        }
-
-        constexpr auto view() const -> std::string_view {
-            return std::string_view(data.data(), len);
-        }
-
-        constexpr auto c_str() const -> const char* {
-            return data.data();
-        }
-
-        constexpr auto empty() const -> bool {
-            return len == 0;
-        }
-
-        constexpr bool operator==(std::string_view other) const {
-            return view() == other;
-        }
-    };
+    // Re-use the ORM-side ConstexprString — same layout, same API surface.
+    using storm::orm::utilities::ConstexprString;
 
     // ========================================================================
     // TypedValue — tagged union of supported leaf value types
@@ -261,7 +236,9 @@ namespace storm::benchmark {
         consteval BenchmarkTest() = default;
     };
 
-    // Forward declaration — defined in parser.hpp
-    consteval auto load_benchmark_tests();
+    // `load_benchmark_tests()` is declared+defined in parser.hpp, which lives
+    // in the global module (it's still a textual header). We deliberately do
+    // NOT forward-declare it here — a declaration in the module purview would
+    // module-attach the entity and clash with the global-module definition.
 
 } // namespace storm::benchmark

@@ -35,7 +35,8 @@
 
 #include <array>
 #include <string_view>
-#include "schema.hpp"
+
+import storm_benchmark_schema; // BenchmarkTest + sub-specs + ConstexprString alias
 
 namespace storm::benchmark {
 

@@ -12,7 +12,6 @@
 #include <vector>
 #include <algorithm>
 #include <cmath>
-#include "schema.hpp"
 #include "parser.hpp"
 #include "models.hpp"
 #include "operations/insert.hpp"
@@ -20,6 +19,7 @@
 #include "operations/delete.hpp"
 #include "operations/query_benchmark.hpp" // Unified QueryBenchmark<Model, test>
 
+import storm_benchmark_schema;   // BenchmarkTest + sub-specs + ConstexprString alias
 import storm_benchmark_registry; // Compile-time model/FK resolution
 import storm_benchmark_sizes;    // Size profiles + iteration calculators
 

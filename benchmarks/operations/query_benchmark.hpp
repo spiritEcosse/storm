@@ -17,8 +17,8 @@
 
 import storm_benchmark_base;
 import storm_benchmark_registry;
+import storm_benchmark_schema;
 
-#include "../schema.hpp"
 #include <format>
 #include <meta>
 #include <optional>
