@@ -13,7 +13,8 @@
  * cleared before each iteration to avoid constraint violations.
  */
 
-#include "base.hpp"
+import storm_benchmark_base;
+
 #include <algorithm>
 #include <unordered_map>
 #include <iostream>

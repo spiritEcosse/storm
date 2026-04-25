@@ -1,23 +1,38 @@
-#pragma once
+// storm_benchmark_registry
+//
+// Compile-time model registry for benchmark schema-driven dispatch. Maps
+// BenchmarkTest.model / .join string fields to concrete C++ types and
+// member pointers, all at compile time.
+//
+// The annotated model types (Person / User / FKMessage) live in models.hpp
+// because C++26 reflection-annotated structs are simpler to consume from
+// plain headers — see models.hpp itself for the rationale. We pull that
+// header in via the GMF so its declarations are textually visible inside
+// this module's purview, then re-export the names via using-declarations.
 
-/**
- * Compile-Time Model Registry for Benchmark Schema-Driven Dispatch
- *
- * Maps BenchmarkTest.model / .join fields to concrete C++ types and
- * member pointers at compile time.  Only three models exist in the
- * benchmark suite: Person, User, FKMessage.
- *
- * Provides:
- *   - resolve_fk_ptr(name)   : FK field name  → FKMessage member pointer
- *   - FKRelated              : type alias for the related model (User)
- *   - with_base_model<test>  : dispatches a generic lambda with the right
- *                              base-model type deduced from test.model
- */
+module;
+
+// shared/models.h (pulled in by models.hpp) uses std::tuple for the
+// Indexes<Person>::type typedef — needs to be visible textually before that
+// header expands inside the GMF.
+#include <tuple>
 
 #include "models.hpp"
 #include "schema.hpp"
 
-namespace storm::benchmark::registry {
+#include <stdexcept>
+
+export module storm_benchmark_registry;
+
+import storm;
+
+export namespace storm::benchmark {
+    using ::storm::benchmark::FKMessage;
+    using ::storm::benchmark::Person;
+    using ::storm::benchmark::User;
+} // namespace storm::benchmark
+
+export namespace storm::benchmark::registry {
 
     // ========================================================================
     // FK field resolution for FKMessage (the only FK model in benchmarks).
@@ -38,7 +53,7 @@ namespace storm::benchmark::registry {
 
     // ========================================================================
     // Model dispatch — calls fn.template operator()<ModelType>() with the
-    // concrete type matching test.model.  Enables QueryBenchmark to resolve
+    // concrete type matching test.model. Enables QueryBenchmark to resolve
     // Person / FKMessage / User without hard-coding in TestExecutor.
     //
     // Usage:

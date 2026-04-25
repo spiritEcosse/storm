@@ -20,7 +20,8 @@
 #include "operations/update.hpp"
 #include "operations/delete.hpp"
 #include "operations/query_benchmark.hpp" // Unified QueryBenchmark<Model, test>
-#include "model_registry.hpp"             // Compile-time model/FK resolution
+
+import storm_benchmark_registry; // Compile-time model/FK resolution
 
 namespace storm::benchmark {
 

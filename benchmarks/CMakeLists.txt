@@ -31,9 +31,18 @@ add_custom_command(
 # Custom target for the conversion (allows manual regeneration)
 add_custom_target(generate_benchmark_json DEPENDS "${JSON_OUTPUT}")
 
+# Auto-discover benchmark-local C++26 module units (.cppm) so the executable
+# compiles them as part of its FILE_SET cxx_modules. Mirrors the GLOB pattern
+# used by the top-level CMakeLists.txt for src/. Non-recursive so .bak/*.ref
+# reference files are skipped.
+file(GLOB STORM_BENCH_MODULE_UNITS CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/*.cppm")
+
 # Helper function for Storm ORM benchmarks with custom clang
 function(add_storm_benchmark target_name source_file)
   add_executable(${target_name} "${CMAKE_CURRENT_SOURCE_DIR}/${source_file}")
+  target_sources(${target_name} PRIVATE FILE_SET cxx_modules TYPE CXX_MODULES
+                                        FILES ${STORM_BENCH_MODULE_UNITS})
   target_link_libraries(${target_name} PRIVATE storm pthread)
   link_sqlite(${target_name})
   link_postgresql(${target_name})

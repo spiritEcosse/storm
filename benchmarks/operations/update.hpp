@@ -17,7 +17,7 @@
  * for batch size decisions. No compile-time advantages for raw SQLite.
  */
 
-#include "base.hpp"
+import storm_benchmark_base;
 
 namespace storm::benchmark {
 

@@ -1,24 +1,37 @@
-#pragma once
+// storm_benchmark_base
+//
+// CRTP base class for data-driven benchmarks (Insert / UpdateByPK / Delete /
+// Select). Wraps the QuerySet / plf_hive / SQLite-binding plumbing shared by
+// all operation benchmarks.
+//
+// Living in a module keeps `<plf_hive/plf_hive.h>` (which transitively pulls
+// `<cassert>` → `<__config>`) inside this module's compile context. That
+// preprocessor state never leaks into main.cpp, sidestepping the
+// `_LIBCPP_HAS_THREAD_API_PTHREAD` macro-redefinition + PCM-corruption trap
+// that fires when the same chain is textually included into a TU that also
+// imports the std module.
 
-/**
- * CRTP Base Class for Data-Driven Benchmarks
- *
- * Provides shared functionality for Insert and UpdateByPK benchmarks:
- * - Data storage and generation
- * - QuerySet member
- * - SQLite binding utilities
- * - Common constants (SQLite limits)
- * - Unified execute() with compile-time operation dispatch
- */
+module;
 
-#include "../raw_helpers.hpp"
-#include <format>
+// sqlite3.h provides the `sqlite3` and `sqlite3_stmt` typedefs used in this
+// module's purview signatures. It's also pulled in by storm_benchmark_raw's
+// GMF, but we need it textually visible here too.
+#include <sqlite3.h>
 #include <plf_hive/plf_hive.h>
-#include <iostream>
-#include <string_view>
-#include <vector>
 
-namespace storm::benchmark {
+export module storm_benchmark_base;
+
+import storm;
+export import storm_benchmark_raw;
+
+import <cstddef>;
+import <format>;
+import <iostream>;
+import <meta>;
+import <string_view>;
+import <vector>;
+
+export namespace storm::benchmark {
 
     // ========================================================================
     // get_db: Helper to get raw sqlite3* from default connection
@@ -57,7 +70,7 @@ namespace storm::benchmark {
         }
     };
 
-    // DELETE operation specialization (for future use)
+    // DELETE operation specialization
     template <> struct OperationDispatcher<OperationType::Delete> {
         static constexpr auto name() -> std::string_view {
             return "DELETE";
