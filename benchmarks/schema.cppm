@@ -236,9 +236,7 @@ export namespace storm::benchmark {
         consteval BenchmarkTest() = default;
     };
 
-    // `load_benchmark_tests()` is declared+defined in parser.hpp, which lives
-    // in the global module (it's still a textual header). We deliberately do
-    // NOT forward-declare it here — a declaration in the module purview would
-    // module-attach the entity and clash with the global-module definition.
+    // `load_benchmark_tests()` lives in the storm_benchmark_parser module —
+    // import it directly where the JSON tests array is needed.
 
 } // namespace storm::benchmark

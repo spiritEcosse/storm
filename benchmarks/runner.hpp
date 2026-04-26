@@ -12,12 +12,12 @@
 #include <vector>
 #include <algorithm>
 #include <cmath>
-#include "parser.hpp"
 #include "models.hpp"
 #include "operations/insert.hpp"
 #include "operations/update.hpp"
 #include "operations/delete.hpp"
 #include "operations/query_benchmark.hpp" // Unified QueryBenchmark<Model, test>
+#include "benchmark_tests.hpp"            // BENCHMARK_TESTS (calls load_benchmark_tests)
 
 import storm_benchmark_schema;   // BenchmarkTest + sub-specs + ConstexprString alias
 import storm_benchmark_registry; // Compile-time model/FK resolution

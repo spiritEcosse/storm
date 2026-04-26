@@ -1,44 +1,50 @@
-#pragma once
+// storm_benchmark_parser
+//
+// Compile-time nested JSON parser for benchmark tests. Reads
+// tests/benchmark_tests.json via C++26 `#embed` and converts it into a
+// `std::array<BenchmarkTest, N>` of compile-time test descriptors.
+//
+// JSON layout example:
+//   {
+//     "test_name": "...",
+//     "model": "Person",
+//     "operation": "order_by_where",
+//     "iterations": 1000,
+//     "dataset_size": 10000,
+//     "where":    { "field": "age", "op": ">", "value": 30 },
+//     "order_by": [ { "field": "salary", "direction": "DESC" } ],
+//     "group_by": { "fields": ["department"],
+//                   "having": { "field": "age", "op": ">", "value": 30 } },
+//     "distinct": { "fields": ["name", "age"] },
+//     "limit":    { "value": 10, "offset": 20 },
+//     "aggregate": { "func": "sum", "field": "salary" },
+//     "join":     { "type": "inner", "related": "User", "fk": "sender" }
+//   }
+//
+// `where.value` is sniffed from the JSON token type — int, double, bool,
+// or string — and stored in a TypedValue tagged union. Two-value operators
+// (BETWEEN) use `value2`; IN uses `in_values`. A second clause combined
+// with AND/OR is expressed via `"and": { ... }` or `"or": { ... }` inside
+// `where`, encoded as flat fields (`field2`, `op2`, `value2_rhs`) plus
+// a `combine_and`/`combine_or` flag.
+//
+// Was: benchmarks/parser.hpp (textual header). Issue #221 — Phase 4 of the
+// benchmark module conversion.
 
-/**
- * Compile-Time Nested JSON Parser for Benchmark Tests
- *
- * Parses nested JSON using C++26 #embed at compile time. Converts JSON to
- * nested C++ structs defined in schema.hpp (BenchmarkTest + WhereSpec,
- * OrderBySpec, GroupBySpec with nested HavingSpec, DistinctSpec, LimitSpec,
- * AggregateSpec, JoinSpec).
- *
- * JSON layout example:
- *   {
- *     "test_name": "...",
- *     "model": "Person",
- *     "operation": "order_by_where",
- *     "iterations": 1000,
- *     "dataset_size": 10000,
- *     "where":    { "field": "age", "op": ">", "value": 30 },
- *     "order_by": [ { "field": "salary", "direction": "DESC" } ],
- *     "group_by": { "fields": ["department"],
- *                   "having": { "field": "age", "op": ">", "value": 30 } },
- *     "distinct": { "fields": ["name", "age"] },
- *     "limit":    { "value": 10, "offset": 20 },
- *     "aggregate": { "func": "sum", "field": "salary" },
- *     "join":     { "type": "inner", "related": "User", "fk": "sender" }
- *   }
- *
- * `where.value` is sniffed from the JSON token type — int, double, bool,
- * or string — and stored in a TypedValue tagged union. Two-value operators
- * (BETWEEN) use `value2`; IN uses `in_values`. A second clause combined
- * with AND/OR is expressed via `"and": { ... }` or `"or": { ... }` inside
- * `where`, encoded as flat fields (`field2`, `op2`, `value2_rhs`) plus
- * a `combine_and`/`combine_or` flag.
- */
+module;
 
+// Header units consumed by the global module fragment. `#embed` is a
+// preprocessor directive so it expands here at preprocess time of this
+// module unit; the path is resolved relative to this source file.
 #include <array>
+#include <cstddef>
 #include <string_view>
+
+export module storm_benchmark_parser;
 
 import storm_benchmark_schema; // BenchmarkTest + sub-specs + ConstexprString alias
 
-namespace storm::benchmark {
+export namespace storm::benchmark {
 
     // ========================================================================
     // Primitive parsers
@@ -657,19 +663,12 @@ namespace storm::benchmark {
         return tests;
     }
 
-    // ========================================================================
-    // Load embedded JSON at compile time
-    // ========================================================================
-    consteval auto load_benchmark_tests() {
-        static constexpr const char json_data[] = {
-#embed "tests/benchmark_tests.json"
-                , '\0'
-        };
-        constexpr std::string_view json_str(json_data);
-        constexpr size_t           test_count = count_tests(json_str);
-        return parse_tests<test_count>(json_str);
-    }
-
-    inline constexpr auto BENCHMARK_TESTS = load_benchmark_tests();
+    // Note: `load_benchmark_tests()` and `BENCHMARK_TESTS` are deliberately
+    // NOT defined in this module. Putting a `consteval` function whose body
+    // contains a 50KB `#embed` literal into the module purview triggers a
+    // clang PCM deserialization bug ("declaration ID out-of-range for AST
+    // file") when any consumer imports the module and instantiates the call.
+    // The glue lives in benchmark_tests.hpp (textual header) instead — it
+    // imports this module to use parse_tests<>() / count_tests().
 
 } // namespace storm::benchmark
