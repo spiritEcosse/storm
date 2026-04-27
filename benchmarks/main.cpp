@@ -19,6 +19,8 @@
 #include <iostream>
 #include <cstdio>
 #include <meta>
+#include <sqlite3.h>
+#include <plf_hive/plf_hive.h>
 
 import storm;
 import storm_db_sqlite;
@@ -26,6 +28,7 @@ import storm_orm_statements_insert;
 import <expected>;
 import <string>;
 import <memory>;
+import <ranges>;
 
 #include "runner.hpp"
 

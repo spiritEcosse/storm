@@ -46,9 +46,9 @@ See [GitHub Issues (benchmarks)](https://github.com/spiritEcosse/storm/issues?q=
 benchmarks/
 ├── main.cpp                    # Main benchmark executable
 ├── runner.hpp                  # BenchmarkRunner with template recursion
-├── parser.hpp                  # Compile-time JSON parser using #embed
-├── schema.hpp                  # Benchmark test schema (C++ structs)
-├── sizes.hpp                   # Size profile definitions (batch/dataset sizes)
+├── parser.cppm                 # Compile-time JSON parser using #embed (storm_benchmark_parser module)
+├── schema.cppm                 # Benchmark test schema (storm_benchmark_schema module)
+├── sizes.cppm                  # Size profile definitions (storm_benchmark_sizes module)
 ├── operations/
 │   ├── base.hpp               # CRTP base class for data-driven benchmarks
 │   ├── select.hpp             # WHERE clause benchmark implementation
@@ -111,7 +111,7 @@ The runner automatically generates: `insert_single`, `insert_10`, `insert_100`, 
 
 ### Size Profile Definitions
 
-Defined in `benchmarks/sizes.hpp`:
+Defined in `benchmarks/sizes.cppm` (`storm_benchmark_sizes` module):
 
 ```cpp
 namespace storm::benchmark::sizes {
@@ -1532,7 +1532,7 @@ Efficiency: 144.0% (FASTER than raw SQLite)
 The system uses C++26 `#embed` to load JSON at compile time:
 
 ```cpp
-// In parser.hpp
+// In parser.cppm (storm_benchmark_parser module)
 constexpr const char* BENCHMARK_JSON =
 #embed "tests/benchmark_tests.json"
 ;

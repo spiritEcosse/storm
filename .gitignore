@@ -15,6 +15,9 @@ benchmarks/bench_sqlite_orm
 benchmarks/bench_storm
 benchmarks/bench_storm_optimized
 
+# Local reference dir for parked .cppm experiments (issue #221 work)
+benchmarks/.bak/
+
 # Auto-generated from benchmarks/tests/benchmark_tests.yaml during build
 benchmarks/tests/benchmark_tests.json
 *.profraw

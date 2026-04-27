@@ -1,26 +1,32 @@
-#pragma once
+// storm_benchmark_raw
+//
+// Reflection-based raw SQLite helpers for benchmarks. Provides generic
+// extract_row<T>() / bind_*<T>() that work with any ORM model so the raw
+// SQLite benchmark path doesn't need per-model column mapping.
+//
+// Lives in a module so consumers can `import storm_benchmark_raw;` instead of
+// textually including <sqlite3.h>. Keeping the C header in this module's GMF
+// (preprocessed before any `import`) avoids the std-PCM macro-redefinition
+// trap documented in benchmarks/.bak/runner.cppm.ref + issue #221.
 
-/**
- * Reflection-based raw SQLite helpers for benchmarks.
- *
- * Provides generic extract_row<T>() and bind_fields<T>() that work with
- * any ORM model, eliminating per-model manual column mapping.
- * Used by the raw SQLite benchmark path (not the Storm ORM path).
- */
+module;
 
 #include <sqlite3.h>
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
-#include <meta>
-#include <optional>
-#include <string>
-#include <type_traits>
-#include <vector>
+
+export module storm_benchmark_raw;
 
 import storm;
 
-namespace storm::benchmark {
+import <cstddef>;
+import <cstdint>;
+import <meta>;
+import <optional>;
+import <string>;
+import <type_traits>;
+import <utility>;
+import <vector>;
+
+export namespace storm::benchmark {
 
     // ========================================================================
     // FK field detection (mirrors ORM's BaseStatement::is_fk_field)

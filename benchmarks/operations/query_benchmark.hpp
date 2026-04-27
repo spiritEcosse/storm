@@ -15,9 +15,10 @@
  * INSERT/UPDATE/DELETE operations stay with their existing classes in base.hpp.
  */
 
-#include "base.hpp"
-#include "../model_registry.hpp"
-#include "../schema.hpp"
+import storm_benchmark_base;
+import storm_benchmark_registry;
+import storm_benchmark_schema;
+
 #include <format>
 #include <meta>
 #include <optional>
