@@ -24,11 +24,17 @@ struct RegisteredBenchmark {
     void (*run)();
 
     // Range parameters — main.cpp forwards these to gbench's Benchmark*
-    // chain.
-    bool sized; // true → use RangeMultiplier+Range, false → single Arg
+    // chain. Exactly one of (sized, !args.empty(), single Arg) applies:
+    //   sized=true            → RangeMultiplier(range_multiplier)->Range(lo, hi)
+    //   !args.empty()         → Args sweep (one ->Arg(N) per element); used
+    //                            for non-power-of-RangeMultiplier sequences
+    //                            like batch_standard {1,10,100,500,1000,...}
+    //   sized=false, args={}  → single ->Arg(range_lo)
+    bool sized;
     int64_t range_lo;
     int64_t range_hi;
     int range_multiplier;
+    std::vector<int64_t> args;
 };
 
 // Populated by register.cpp (called once before BENCHMARK_MAIN).

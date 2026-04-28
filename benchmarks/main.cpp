@@ -41,6 +41,10 @@ namespace {
                     ->Range(reg.range_lo, reg.range_hi)
                     ->Complexity(benchmark::oN)
                     ->ArgName("N");
+        } else if (!reg.args.empty()) {
+            for (auto n : reg.args)
+                bm->Arg(n);
+            bm->Complexity(benchmark::oN)->ArgName("N");
         } else {
             bm->Arg(reg.range_lo)->ArgName("N");
         }

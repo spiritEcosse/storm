@@ -373,16 +373,7 @@ SQL caching and compile-time generation eliminate the chunking overhead entirely
 - Raw SQLite was using **1000 individual INSERT statements** with transaction
 - This made Storm appear 3x faster (296% efficiency) - completely misleading!
 
-**The Root Cause:**
-```cpp
-// In benchmarks/operations/insert.hpp (line 122)
-if constexpr (BatchSize <= bulk_sweet_spot) {  // bulk_sweet_spot = 124
-    // Use bulk SQL: INSERT INTO ... VALUES (...), (...), ...
-} else {
-    // WRONG: Was using individual INSERTs for batch_1000
-    // Should use: CHUNKED bulk SQL like Storm!
-}
-```
+**The Root Cause:** The old raw-SQLite benchmark switched to individual INSERTs for batches above the bulk sweet-spot (~124 rows), while Storm kept using chunked bulk SQL. The two paths weren't comparing the same algorithm.
 
 **The Fix:**
 1. ✅ **Implemented chunked bulk SQL** in raw SQLite benchmark for large batches (>124 rows)
@@ -464,21 +455,7 @@ Both Storm ORM and the Raw SQLite benchmark use **identical strategies** for fai
 
 **Architecture: CRTP Base Class**
 
-UPDATE and INSERT benchmarks share common code via CRTP (Curiously Recurring Template Pattern):
-
-```cpp
-// In operations/base.hpp
-template<typename Derived, typename Model, int BatchSize, size_t FieldsPerRow>
-class DataBenchmarkBase {
-    // Shared: data_, qs_, create_model(), prepare(), bind utilities
-};
-
-// INSERT: 4 fields (name, age, is_active, salary - id is auto-increment)
-class InsertBenchmark : public DataBenchmarkBase<..., 4> { ... };
-
-// UPDATE: 5 fields (name, age, is_active, salary + id for WHERE clause)
-class UpdateBenchmark : public DataBenchmarkBase<..., 5> { ... };
-```
+CRUD benchmarks share data setup via CRTP through `DataBenchmarkBase` (in `base.cppm`). The `CrudBenchmark<Model, test>` fixture in `crud_benchmark.cppm` dispatches `insert` / `insert_no_return` / `update_pk` / `delete_pk` from the `BenchmarkTest` NTTP, mirroring how `QueryBenchmark` handles SELECT-family operations.
 
 **Chunking Boundary for UPDATE:**
 - UPDATE binds 5 parameters per row (4 data fields + 1 PK for WHERE clause)
