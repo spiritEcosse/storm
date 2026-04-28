@@ -1,43 +1,58 @@
-#pragma once
+// storm_benchmark_query
+//
+// SELECT-family benchmark fixture body. `QueryBenchmark<Model, test>` consumes
+// a BenchmarkTest NTTP and builds the configured QuerySet + terminal once,
+// then `run_terminal()` is called by the Google Benchmark loop body.
+//
+// Issue #235 — Phase 2.
+//
+// Was: benchmarks/operations/query_benchmark.hpp (textual header consumed by
+// the now-deleted runner.hpp). The module conversion drops the raw-SQLite
+// path (`execute_raw`, `bind_*`, `step_raw`) — Storm-only is the new contract.
+// Anchor benchmarks for raw SQLite land in their own TU in Phase 4.
 
-/**
- * QueryBenchmark<Model, test> — unified SELECT-family benchmark driven by
- * the nested BenchmarkTest schema.
- *
- * Replaces ALL per-operation benchmark classes (SelectBenchmark, AggregateBenchmark,
- * DistinctBenchmark, WhereOperator benchmarks, FirstBenchmark, GetBenchmark,
- * SetOpBenchmark, GroupBy benchmarks) with a single class whose configuration
- * comes entirely from the `test` NTTP (a reference into BENCHMARK_TESTS).
- *
- * All feature dispatch is compile-time via `if constexpr` on test.where.enabled,
- * test.join.enabled, test.group_by.enabled, test.aggregate.enabled, etc.
- *
- * INSERT/UPDATE/DELETE operations stay with their existing classes in base.hpp.
- */
+module;
 
+// `sqlite3` typedef must be textually visible — `storm_benchmark_base` exports
+// `get_db<Model>() -> sqlite3*` but the typedef is hidden behind its BMI.
+#include <sqlite3.h>
+#include <plf_hive/plf_hive.h>
+
+// `<tuple>` is needed by models.hpp (Indexes<Person>::type) before
+// reflection-annotated structs are visible. Annotations are blind across BMI
+// boundaries (clang-p2996 #262, see feedback_cpp26_module_reflection_annotations),
+// so model types must be textually visible in the consumer's GMF for any
+// reflection-touching instantiation (e.g. QuerySet<User>::insert).
+#include <tuple>
+
+#include "models.hpp"
+
+export module storm_benchmark_query;
+
+import storm;
 import storm_benchmark_base;
 import storm_benchmark_registry;
 import storm_benchmark_schema;
 
-#include <format>
-#include <meta>
-#include <optional>
-#include <string>
-#include <tuple>
-#include <utility>
-#include <vector>
+import <expected>;
+import <format>;
+import <iostream>;
+import <meta>;
+import <optional>;
+import <ranges>;
+import <string>;
+import <string_view>;
+import <tuple>;
+import <utility>;
+import <vector>;
 
-namespace storm::benchmark {
+export namespace storm::benchmark {
 
     using storm::orm::where::field;
 
     // ========================================================================
-    // Field dispatcher — compile-time field lookup by name (standalone version)
+    // Field dispatcher — compile-time field lookup by name
     // ========================================================================
-    // Field lookup by name. Callers must gate with static_assert(has_field<Model>(name))
-    // so a missing field fails at the call site with a clear message. If the static_assert
-    // is in place, the loop is guaranteed to return; std::unreachable() satisfies the
-    // return type (field_name is a runtime string_view, so we cannot constrain with requires).
     template <typename Model> consteval auto dispatch_field(std::string_view field_name) -> std::meta::info {
         for (std::meta::info member :
              std::meta::nonstatic_data_members_of(^^Model, std::meta::access_context::unchecked())) {
@@ -48,7 +63,6 @@ namespace storm::benchmark {
         std::unreachable();
     }
 
-    // Check whether a field name exists on a model at compile time
     template <typename Model> consteval auto has_field(std::string_view field_name) -> bool {
         for (std::meta::info member :
              std::meta::nonstatic_data_members_of(^^Model, std::meta::access_context::unchecked())) {
@@ -60,9 +74,7 @@ namespace storm::benchmark {
     }
 
     // ========================================================================
-    // Concepts that validate op-strings and aggregate function names at the
-    // call site. A bogus value produces a constraint-violation error naming
-    // the concept, rather than a late `throw "…"` in a consteval body.
+    // Operator/aggregate name validation concepts
     // ========================================================================
     template <auto op_str, typename FieldType>
     concept ValidOperator = []() consteval {
@@ -71,7 +83,6 @@ namespace storm::benchmark {
             op == "BETWEEN" || op == "IN") {
             return true;
         }
-        // IS NULL / IS NOT NULL require an optional field.
         if (op == "IS NULL" || op == "IS NOT NULL") {
             return orm::where::NullableField<FieldType>;
         }
@@ -86,15 +97,12 @@ namespace storm::benchmark {
     }();
 
     // ========================================================================
-    // QueryBenchmark — one class for all SELECT-family operations
+    // QueryBenchmark — SELECT-family operations driven by a BenchmarkTest NTTP
     // ========================================================================
     template <typename Model, auto const& test>
     class QueryBenchmark : public DataBenchmarkBase<QueryBenchmark<Model, test>, Model, 1> {
         using Base = DataBenchmarkBase<QueryBenchmark<Model, test>, Model, 1>;
 
-        // ====================================================================
-        // Operation family classification helpers (compile-time)
-        // ====================================================================
         static consteval auto is_setop() -> bool {
             return test.setop.enabled;
         }
@@ -107,10 +115,6 @@ namespace storm::benchmark {
         static consteval auto is_distinct_op() -> bool {
             return test.distinct.enabled;
         }
-        // Exact-match against the operation string. Enumerated from
-        // benchmarks/tests/benchmark_tests.yaml — "first", "first_where", "get_where".
-        // Prefix matching would silently mis-classify future values like
-        // "first_or_default" or "get_one".
         static consteval auto is_first_op() -> bool {
             constexpr auto op = test.operation.view();
             return op == "first" || op == "first_where";
@@ -119,14 +123,8 @@ namespace storm::benchmark {
             return test.operation.view() == "get_where";
         }
 
-        // ====================================================================
-        // WHERE clause — handles all operator types
-        // Modifies qs in-place (where/join/order_by/limit return auto&& to self).
-        // ====================================================================
-
-        // Resolve WHERE field model: use FKRelated for JOIN tests when
-        // the field isn't on the base Model (e.g., age on User via FKMessage JOIN).
-        // Checks all enabled conditions.
+        // WHERE — pick the model the field actually lives on (FKRelated for
+        // JOIN tests where the predicate field is on User, not FKMessage).
         static constexpr std::meta::info where_model_ = []() consteval {
             if constexpr (!test.where.enabled || !test.join.enabled) {
                 return ^^Model;
@@ -144,9 +142,6 @@ namespace storm::benchmark {
 
         using WhereModel = [:where_model_:];
 
-        // Extract a value from TypedValue as the field's native type.
-        // Bool fields must read `as_bool` (not `as_int`) to avoid narrowing
-        // in brace-init inside Field::operator==/in/between/compare.
         template <typename FieldType, TypedValue tv> static consteval auto typed_value_as() {
             if constexpr (std::is_same_v<FieldType, bool>) {
                 return bool{tv.as_bool};
@@ -157,8 +152,6 @@ namespace storm::benchmark {
             }
         }
 
-        // Build a single comparison expression for condition at index I.
-        // Branches only on argument shape — op-string → method dispatch lives in resolve_operator.
         template <size_t I> static auto build_condition_expr() {
             constexpr auto& cond = test.where.conditions[I];
             static_assert(has_field<WhereModel>(cond.field.view()), "WHERE condition field not found on model");
@@ -199,14 +192,9 @@ namespace storm::benchmark {
             }
         }
 
-        // Build a single comparison expression via ^^ reflection splice.
-        // op_str is ConstexprString (structural type, valid as NTTP).
-        //
-        // Each ^^FE::template <op><Ts...> forces the referenced function
-        // template to be fully instantiated (body too). Splice only the op
-        // actually selected — otherwise e.g. `in<bool>` instantiates even for
-        // scalar `==` on a bool field, hitting `InExpression<bool>` which is
-        // not in ExpressionVariant.
+        // Splice the operator method only after picking it — InExpression<bool>
+        // etc. are not in ExpressionVariant, so eager instantiation of `in<bool>`
+        // for a scalar-`==` test on a bool field would fail to compile.
         template <auto fi, auto op_str, typename... Ts>
             requires ValidOperator<op_str, typename std::remove_cvref_t<decltype(field<fi>())>::FieldType>
         static consteval auto resolve_operator() -> std::meta::info {
@@ -229,8 +217,6 @@ namespace storm::benchmark {
             else if constexpr (op == "LIKE")
                 return ^^FE::like;
             else if constexpr (op == "BETWEEN") {
-                // between has 1 template param (V used for both min and max).
-                // All Ts are the same type here — collapse to the first.
                 using V = std::tuple_element_t<0, std::tuple<Ts..., void>>;
                 return ^^FE::template between<V>;
             } else if constexpr (op == "IN")
@@ -253,19 +239,13 @@ namespace storm::benchmark {
             return (field<fi>().[:method:](std::forward<Ts>(vs)...));
         }
 
-        // ====================================================================
-        // JOIN step — schema-driven using model_registry
-        // Normalizes single-FK (`join.fk`) and multi-FK (`join.fks[]`) paths
-        // and folds both into one pack expansion.
-        // ====================================================================
+        // JOIN — schema-driven, normalizes single- and multi-FK paths
         static consteval auto join_fk_name(size_t i) -> std::string_view {
             if (test.join.fk_count >= 2)
                 return test.join.fks[i].view();
             return test.join.fk.view();
         }
 
-        // Join type dispatch via ^^ reflection splice — join methods are now
-        // regular (non-deducing-this) templates and reflectable.
         template <auto... FKs> static consteval auto resolve_join() -> std::meta::info {
             constexpr std::string_view jt = test.join.type.view();
             if (jt == "left")
@@ -289,21 +269,10 @@ namespace storm::benchmark {
             }
         }
 
-        // ====================================================================
-        // ORDER BY — fold over all slots; each slot's `enabled` guards it
-        // ====================================================================
-        // QuerySet::order_by/limit/offset are [[nodiscard]] and return
-        // QuerySet<..., true> (finalized type) BY VALUE — a reference-taking helper
-        // that discards the result silently drops the clauses. Helpers here take qs
-        // by value and return the updated qs; callers reassign.
-        //
-        // Because a mid-fold reassignment would shift qs's type between slots
-        // (QuerySet<..., false> → QuerySet<..., true>), all enabled order_by slots
-        // are collected into one template pack and passed to order_by<...>() in a
-        // single call. QuerySet's order_by<auto... Args>() accepts a flat pack of
-        // alternating field / asc / [collate] NTTPs via make_order_by_wrapper.
-
-        // Count enabled order_by slots at compile time
+        // ORDER BY — chained recursively because order_by/limit/offset are
+        // [[nodiscard]] and return QuerySet<..., true> by value (a fold-mutator
+        // that takes `qs` by reference would silently drop clauses on each
+        // type-shifted return). See project_queryset_finalization_type_shift.
         static consteval auto enabled_order_by_count() -> size_t {
             size_t n = 0;
             for (size_t i = 0; i < BenchmarkTest::MAX_ORDER_BY; ++i) {
@@ -313,19 +282,14 @@ namespace storm::benchmark {
             return n;
         }
 
-        // Apply all enabled order_by slots in one call (single type shift).
         static auto apply_order_by(auto qs) {
             if constexpr (enabled_order_by_count() == 0) {
                 return qs;
             } else {
-                // Delegate per MAX_ORDER_BY; each slot either dispatches with its
-                // args or skips. Helper below chains enabled slots sequentially.
                 return apply_order_by_impl<0>(std::move(qs));
             }
         }
 
-        // Recursive chain: at each slot I, if enabled, call qs.order_by<args>()
-        // (which finalizes qs's type) then recurse with updated qs; else skip.
         template <size_t I> static auto apply_order_by_impl(auto qs) {
             if constexpr (I >= BenchmarkTest::MAX_ORDER_BY) {
                 return qs;
@@ -345,9 +309,6 @@ namespace storm::benchmark {
             }
         }
 
-        // ====================================================================
-        // LIMIT / OFFSET
-        // ====================================================================
         static auto apply_limit(auto qs) {
             if constexpr (!test.limit.enabled) {
                 return qs;
@@ -362,9 +323,6 @@ namespace storm::benchmark {
             }
         }
 
-        // ====================================================================
-        // Collate helper
-        // ====================================================================
         static consteval auto parse_collate(std::string_view col_str) -> storm::orm::utilities::Collate {
             if (col_str == "BINARY")
                 return storm::orm::utilities::Collate::Binary;
@@ -373,17 +331,10 @@ namespace storm::benchmark {
             return storm::orm::utilities::Collate::NoCase;
         }
 
-        // ====================================================================
-        // Fully configured QuerySet — JOIN → WHERE → ORDER BY → LIMIT/OFFSET
-        // ====================================================================
         static auto build_qs() {
             QuerySet<Model> qs;
             apply_join(qs);
             apply_where(qs);
-            // For setops, order_by/limit apply to the outer union result,
-            // not the inner SELECTs — build_setop applies them on the builder.
-            // order_by/limit/offset transition qs to the finalized type <..., true>,
-            // so the return type here depends on is_setop().
             if constexpr (!is_setop()) {
                 return apply_limit(apply_order_by(std::move(qs)));
             } else {
@@ -394,10 +345,6 @@ namespace storm::benchmark {
       public:
         explicit constexpr QueryBenchmark(int dataset_size = 1000) : Base(dataset_size) {}
 
-        // ====================================================================
-        // create_model — varied row generation per model type
-        // ====================================================================
-        // TODO: i we already have this in base.hpp - DRY
         static auto create_model(int index = 0) -> Model {
             int i = index + 1;
             if constexpr (std::is_same_v<Model, Person>) {
@@ -411,14 +358,10 @@ namespace storm::benchmark {
             } else if constexpr (std::is_same_v<Model, User>) {
                 return Model{.id = 0, .name = std::format("User{}", i), .age = 20 + (i % 50)};
             } else {
-                // FKMessage — not used directly (prepare_join_data creates these)
                 return Model{};
             }
         }
 
-        // ====================================================================
-        // prepare — data setup + build terminal once
-        // ====================================================================
         auto prepare(int iterations) -> void {
             if constexpr (test.join.enabled) {
                 prepare_join_data();
@@ -430,8 +373,6 @@ namespace storm::benchmark {
         }
 
       private:
-        // TODO: looks big one, lets separate by funcs or reduce reusing
-        // create model we have if its possible
         auto prepare_join_data() -> void {
             sqlite3* db = get_db<Model>();
             if (db == nullptr)
@@ -439,11 +380,9 @@ namespace storm::benchmark {
 
             int dataset_size = Base::batch_size();
 
-            // Clear tables
             sqlite3_exec(db, "DELETE FROM FKMessage", nullptr, nullptr, nullptr);
             sqlite3_exec(db, "DELETE FROM User", nullptr, nullptr, nullptr);
 
-            // Insert related records (users)
             std::vector<registry::FKRelated> users;
             users.reserve(dataset_size);
             for (int i = 0; i < dataset_size; i++) {
@@ -457,7 +396,6 @@ namespace storm::benchmark {
                 return;
             }
 
-            // SELECT back to get auto-generated user IDs
             auto user_select = related_qs_.select().execute();
             if (!user_select.has_value()) {
                 std::cerr << "Failed to select users for benchmark\n";
@@ -470,7 +408,6 @@ namespace storm::benchmark {
                 user_ids.push_back(user.id);
             }
 
-            // Insert base records (FKMessages) with FK references
             std::vector<Model> messages;
             messages.reserve(dataset_size);
             for (int i = 0; i < dataset_size; i++) {
@@ -490,59 +427,14 @@ namespace storm::benchmark {
         }
 
       public:
-        // ====================================================================
-        // print_info — operation-aware display
-        // ====================================================================
-        auto print_info() const -> void {
-            std::cout << std::format("Operation: {}\n  Dataset: {} rows\n", test.operation.view(), Base::batch_size());
-        }
-
-        // ====================================================================
-        // execute — Storm ORM path, reuses stored terminal
-        // ====================================================================
-        auto execute(int iterations) -> void {
-            for (int i = 0; i < iterations; i++) {
-                run_terminal(*terminal_);
-            }
-        }
-
-        // ====================================================================
-        // execute_raw — Raw SQLite path, SQL from stored terminal
-        // ====================================================================
-        // TODO: I guess we can use repeated parts from CRUD - DRY
-        // maybe separate by funcs
-        auto execute_raw(int iterations) -> void {
-            sqlite3* db = get_db<Model>();
-            if (db == nullptr) {
-                std::cerr << "execute_raw: get_db returned null for " << test.operation.view() << '\n';
-                return;
-            }
-
-            const std::string sql = terminal_->sql();
-
-            sqlite3_stmt* stmt = nullptr;
-            if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-                std::cerr << "execute_raw: sqlite3_prepare_v2 failed: " << sqlite3_errmsg(db) << '\n';
-                return;
-            }
-
-            bind_raw_params(stmt);
-
-            for (int i = 0; i < iterations; i++) {
-                sqlite3_reset(stmt);
-                step_raw(stmt);
-            }
-
-            sqlite3_finalize(stmt);
+        // Single-iteration runner — Google Benchmark's `for (auto _ : state)`
+        // calls this once per iteration; data + terminal are built in prepare()
+        // so the loop body stays tight.
+        auto run_once() -> void {
+            run_terminal(*terminal_);
         }
 
       private:
-        // ====================================================================
-        // apply_aggregate — reflection-based dispatch via ^^ splice
-        // ====================================================================
-        // Resolve aggregate method by name via ^^ reflection.
-        // ValidAggregate constrains the function name; when a field is present
-        // it's further gated by has_field<Model>(...) for a clear call-site error.
         template <typename Stmt, bool HasField = !test.aggregate.field.empty()>
             requires(!HasField) || ValidAggregate<test.aggregate.func>
         static consteval auto resolve_aggregate() -> std::meta::info {
@@ -573,19 +465,12 @@ namespace storm::benchmark {
             return stmt.[:method:]();
         }
 
-        // ====================================================================
-        // DISTINCT — index_sequence dispatch (scales to any MAX_FIELDS)
-        // ====================================================================
         static auto build_distinct_stmt(auto& qs) {
             return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                 return qs.template distinct<dispatch_field<Model>(test.distinct.fields[Is].view())...>();
             }(std::make_index_sequence<test.distinct.field_count()>{});
         }
 
-        // ====================================================================
-        // GROUP BY — shared builder (index_sequence + apply_aggregate reuse)
-        // ====================================================================
-        // Returns the fully-configured group_by statement (with having + aggregate)
         static auto build_group_by_query(auto& qs) {
             auto gb = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                 return qs.template group_by<dispatch_field<Model>(test.group_by.fields[Is].view())...>();
@@ -594,10 +479,7 @@ namespace storm::benchmark {
             if constexpr (test.group_by.having.enabled) {
                 static_assert(has_field<Model>(test.group_by.having.field.view()), "HAVING field not found on model");
                 constexpr auto hf = dispatch_field<Model>(test.group_by.having.field.view());
-                // Pass a prvalue — `build_compare_expr` forwards into a
-                // forwarding-reference parameter on `operator>` etc. A constexpr
-                // lvalue would bind as `const int&` and mismatch `V&&`.
-                gb = gb.having(
+                gb                = gb.having(
                         build_compare_expr<hf, test.group_by.having.op>(
                                 auto{numeric_value<test.group_by.having.value>()}
                         )
@@ -607,11 +489,6 @@ namespace storm::benchmark {
             return apply_aggregate(gb);
         }
 
-        // ====================================================================
-        // SET OPERATIONS — build configured setop builder from ORM
-        // Uses ^^ reflection splice — setop methods are template members
-        // (template <bool F_ = Finalized_>), disambiguate with `template`.
-        // ====================================================================
         static consteval auto resolve_setop() -> std::meta::info {
             constexpr std::string_view type = test.setop.type.view();
             if (type == "union")
@@ -623,9 +500,6 @@ namespace storm::benchmark {
             return ^^QuerySet<Model>::template intersect_<>;
         }
 
-        // Shared by build_setop (ORM path) and bind_setop_params (raw path)
-        // so both sides bind the exact same operand values. Drift here silently
-        // makes the comparison unfair.
         struct SetOpThresholds {
             int  left;
             int  right;
@@ -653,10 +527,6 @@ namespace storm::benchmark {
             return builder;
         }
 
-        // ====================================================================
-        // build_terminal — shared builder, returns the terminal statement object
-        // Must be defined after all helpers it calls (apply_aggregate, etc.)
-        // ====================================================================
         static auto build_terminal(auto& qs) {
             if constexpr (is_setop()) {
                 return build_setop(qs);
@@ -675,120 +545,16 @@ namespace storm::benchmark {
             }
         }
 
-        // ====================================================================
-        // run_terminal — executes the terminal statement
-        // ====================================================================
         static auto run_terminal(auto& stmt) -> void {
             (void)stmt.execute();
         }
 
-        // Derive QuerySet type from build_qs — it may be finalized (<..., true>)
-        // when ORDER BY / LIMIT / OFFSET shift the type, or the base type for setop.
         using QsType       = decltype(build_qs());
         using TerminalType = decltype(build_terminal(std::declval<QsType&>()));
 
         QsType                        query_qs_;
         std::optional<TerminalType>   terminal_;
         QuerySet<registry::FKRelated> related_qs_;
-
-        // ====================================================================
-        // Raw helpers — param binding, row extraction
-        // ====================================================================
-        static auto bind_raw_params(sqlite3_stmt* stmt) -> void {
-            if constexpr (is_setop()) {
-                bind_setop_params(stmt);
-            } else {
-                bind_where_params(stmt);
-            }
-        }
-
-        // TODO: looks hard to read - separ by funcs - DRY
-        static auto step_raw(sqlite3_stmt* stmt) -> void {
-            if constexpr (is_aggregate_op()) {
-                constexpr bool is_fp = (test.aggregate.func.view() == "avg");
-                if (sqlite3_step(stmt) == SQLITE_ROW) {
-                    if constexpr (is_fp) {
-                        [[maybe_unused]] auto v = sqlite3_column_double(stmt, 0);
-                    } else {
-                        [[maybe_unused]] auto v = sqlite3_column_int64(stmt, 0);
-                    }
-                }
-            } else if constexpr (is_first_op()) {
-                sqlite3_step(stmt);
-            } else if constexpr (is_get_op()) {
-                while (sqlite3_step(stmt) == SQLITE_ROW) {}
-            } else if constexpr (is_distinct_op()) {
-                // Mirror ORM distinct.cppm:266–291: plf::hive<tuple<field_types...>>.
-                // Per-row: extract each DISTINCT column via raw_helpers::extract_value<T>,
-                // build a tuple, insert into hive. Matches the ORM's allocator + read pattern
-                // so the comparison stays fair. Covers both single- and multi-column DISTINCT
-                // (ORM keeps a hive-of-T for N==1; we keep hive-of-tuple<T> for simplicity —
-                // one extra move per row is negligible vs. the hive insert cost).
-                using DistinctTuple = decltype([]<size_t... Is>(std::index_sequence<Is...>) {
-                    return std::tuple<std::remove_cvref_t<
-                            decltype(std::declval<Model>()
-                                             .[:dispatch_field<Model>(test.distinct.fields[Is].view()):])>...>{};
-                }(std::make_index_sequence<test.distinct.field_count()>{}));
-
-                plf::hive<DistinctTuple> results;
-                while (sqlite3_step(stmt) == SQLITE_ROW) {
-                    results.insert([&]<size_t... Is>(std::index_sequence<Is...>) {
-                        return std::make_tuple(
-                                extract_value<std::tuple_element_t<Is, DistinctTuple>>(stmt, static_cast<int>(Is))...
-                        );
-                    }(std::make_index_sequence<test.distinct.field_count()>{}));
-                }
-            } else {
-                while (sqlite3_step(stmt) == SQLITE_ROW) {
-                    [[maybe_unused]] auto row = storm::benchmark::extract_row<Model>(stmt);
-                }
-            }
-        }
-
-        static auto bind_setop_params(sqlite3_stmt* stmt) -> void {
-            constexpr auto th = setop_thresholds();
-            sqlite3_bind_int(stmt, 1, th.left);
-            sqlite3_bind_int(stmt, 2, th.right);
-        }
-
-        // ====================================================================
-        // WHERE parameter binding for raw execute — uses typed_value_as to
-        // promote TypedValue to the field's native type, then raw_helpers::bind_value
-        // (10 overloads covering int/int64/double/float/bool/string/blob).
-        // ====================================================================
-        template <size_t I> static auto bind_condition_params(sqlite3_stmt* stmt, int& param_idx) -> void {
-            constexpr auto const&      cond    = test.where.conditions[I];
-            constexpr auto             field_i = dispatch_field<WhereModel>(cond.field.view());
-            constexpr std::string_view op      = cond.op.view();
-            using FieldType                    = typename[:std::meta::type_of(field_i):];
-
-            if constexpr (op == "LIKE") {
-                sqlite3_bind_text(stmt, param_idx++, cond.values[0].as_string.c_str(), -1, SQLITE_TRANSIENT);
-            } else if constexpr (op == "BETWEEN") {
-                storm::benchmark::bind_value(stmt, param_idx++, typed_value_as<FieldType, cond.values[0]>());
-                storm::benchmark::bind_value(stmt, param_idx++, typed_value_as<FieldType, cond.values[1]>());
-            } else if constexpr (op == "IN") {
-                [&]<size_t... Is>(std::index_sequence<Is...>) {
-                    (storm::benchmark::bind_value(stmt, param_idx++, typed_value_as<FieldType, cond.values[Is]>()),
-                     ...);
-                }(std::make_index_sequence<cond.value_count>{});
-            } else if constexpr (op == "IS NULL" || op == "IS NOT NULL") {
-                // No parameters
-            } else {
-                storm::benchmark::bind_value(stmt, param_idx++, typed_value_as<FieldType, cond.values[0]>());
-            }
-        }
-
-        static auto bind_where_params(sqlite3_stmt* stmt) -> void {
-            if constexpr (!test.where.enabled) {
-                return;
-            }
-
-            int param_idx = 1;
-            [&]<size_t... Is>(std::index_sequence<Is...>) {
-                (bind_condition_params<Is>(stmt, param_idx), ...);
-            }(std::make_index_sequence<test.where.condition_count>{});
-        }
     };
 
 } // namespace storm::benchmark

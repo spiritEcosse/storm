@@ -33,13 +33,31 @@ The "is the abstraction free?" question is already settled at 96–108% efficien
 
 **Verify**: `./build/release/benchmarks/storm_gbench --benchmark_min_time=0.5s` runs and prints a complexity report.
 
-### Phase 2 — Port one operation family end-to-end  *(SELECT)*
+### Phase 2 — Port one operation family end-to-end  *(SELECT)*  — **DONE 2026-04-28**
 
-4. Port `QueryBenchmark<Model, test>` (the SELECT-family unified class) to a Google Benchmark fixture template `StormQueryFixture<Model, Test>`. The compile-time `BENCHMARK_TESTS` array still drives instantiation — wrap each test in a `BENCHMARK_TEMPLATE` registration via the existing `TestExecutor` recursion.
-5. Replace `runner.hpp:dispatch_sized` size-profile branching with `->RangeMultiplier(10)->Range(profile.min, profile.max)`. Drop `benchmarks/sizes.cppm` once no caller references it. The YAML `size_profile` field becomes a `(range_min, range_max, multiplier)` triple parsed by `parser.cppm`.
-6. Use `state.SetComplexityN(state.range(0))` and `state.SetItemsProcessed(state.iterations() * state.range(0))` so reports include per-row cost and items/sec.
+4. Port `QueryBenchmark<Model, test>` to a benchmark-local module `storm_benchmark_query` (was textual header `operations/query_benchmark.hpp`). Storm-only execution — `execute_raw` / `bind_raw_params` / `step_raw` / `bind_*_params` paths dropped. Public surface narrowed to `prepare(int)` + `run_once()`.
+5. Drive registration from `BENCHMARK_TESTS` via runtime `benchmark::RegisterBenchmark(name, lambda)` rather than the `BENCHMARK_TEMPLATE_F` macro. The YAML `size_profile` field stays in the schema; Phase 2 maps the existing strings to ranges in C++ instead of churning the YAML:
+   - `dataset_standard` → `RangeMultiplier(10)->Range(100, 100'000)` → `{100, 1k, 10k, 100k}`
+   - `dataset_small` → `RangeMultiplier(5)->Range(10'000, 50'000)` → `{10k, 50k}`
+   - (no profile / CRUD profiles) → fixed-size `Arg(dataset_size)`
+   The `(range_min, range_max, multiplier)` YAML rename is deferred — `sizes.cppm` is no longer referenced by SELECT-family tests but stays in-tree for Phase 3 (CRUD batch profiles still use `batch_standard` / `batch_*_edge`).
+6. `state.SetComplexityN(state.range(0))` + `state.SetItemsProcessed(...)` are emitted unconditionally; sized fixtures additionally chain `->Complexity(benchmark::oN)`. Verified against `Storm/SELECT/select` sweep — fits `203.62 N, RMS 3%` over `{100, 1k, 10k, 100k}`.
 
-**Verify**: All SELECT tests in `benchmark_tests.yaml` produce results under `storm_gbench`; no per-test raw SQLite output.
+#### Build-system note: TU split for PCM-cache hash isolation
+
+Putting `<benchmark/benchmark.h>` and `import storm_*` into the same TU diverges its module-cache hash from libstorm.a's (the `-Igoogle-benchmark/include` and `-DBENCHMARK_STATIC_DEFINE` flags fold into the cache subdir hash). That trips `module '_Builtin_stddef' is defined in both ...` at the first `import storm` site (memory: `project_pcm_hash_divergence`). Phase 2 splits the entry binary into:
+
+- **`benchmarks/main.cpp`** — owns `<benchmark/benchmark.h>` + `BENCHMARK_MAIN`-equivalent glue. No imports. Per-source bench include path / `BENCHMARK_STATIC_DEFINE`.
+- **`benchmarks/register.cpp`** — owns `import storm; import storm_benchmark_query; ...` + the textual `#include "benchmark_tests.hpp"` (`#embed` driver). No bench flags.
+- **`benchmarks/bench_register.h`** — POD-only bridge: a `std::vector<RegisteredBenchmark>{name, setup_fn_ptr, run_fn_ptr, range...}`. Includes neither `<benchmark/...>` nor any storm header.
+
+Each `(Model, test)` pair gets a `Trampoline<Model, test>` whose function-local `std::optional<QueryBenchmark<Model, test>>` is rebound by `setup(N)` and read by `run()`. main.cpp wraps each registered entry in a stable lambda calling those trampoline pointers.
+
+Two additional gotchas hit in Phase 2:
+- `query_benchmark.cppm` and `register.cpp` both need `#include <tuple>` + `#include "models.hpp"` in their GMF before any `import` — model-struct annotations are blind across BMI boundaries (`feedback_cpp26_module_reflection_annotations`), so any TU that instantiates an ORM template parameterized on a model needs the annotated definition textually visible.
+- `register.cpp` needs explicit `import <expected>; import <algorithm>; import <ranges>;` even though it never uses those names directly — they're required for partial-specialization reachability when the consteval `where_model_` lambda inside `QueryBenchmark` is instantiated against the consumer's import set.
+
+**Verified**: `./build/release/benchmarks/storm_bench --benchmark_list_tests` reports 146 entries (75 SELECT-family tests × Range steps); spot-checked SELECT, JOIN (left/right/multi-FK), aggregates (count/sum/avg/min/max), DISTINCT, GROUP BY (with HAVING), set operations, ORDER BY, LIMIT — all produce real timings + items/sec, sized fixtures emit `BigO` + `RMS` annotations.
 
 ### Phase 3 — Port INSERT / UPDATE / DELETE
 

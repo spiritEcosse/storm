@@ -36,16 +36,22 @@ add_custom_target(generate_benchmark_json DEPENDS "${JSON_OUTPUT}")
 file(GLOB STORM_BENCH_MODULE_UNITS CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/*.cppm")
 
-add_executable(storm_bench "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp")
+add_executable(storm_bench "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
+                           "${CMAKE_CURRENT_SOURCE_DIR}/register.cpp")
 target_sources(storm_bench PRIVATE FILE_SET cxx_modules TYPE CXX_MODULES FILES
                                    ${STORM_BENCH_MODULE_UNITS})
-# Bypass benchmark::benchmark's INTERFACE_INCLUDE_DIRECTORIES /
-# INTERFACE_COMPILE_DEFINITIONS — we link the static archive directly so the
-# benchmark include path + BENCHMARK_STATIC_DEFINE only apply to main.cpp via
-# per-source properties below. Propagating them target-wide diverges the .cppm
-# module compilation flags from libstorm.a's flags, which produces two PCM-cache
-# hash subdirs both holding _Builtin_stddef.pcm and triggers a "module defined
-# in both" fatal during `import storm;` (project_pcm_hash_divergence).
+# Bypass benchmark::benchmark's INTERFACE_* properties (we link the static
+# archive directly) so the bench-only flags stay confined to main.cpp via
+# per-source properties below.
+#
+# Why the split — main.cpp owns <benchmark/benchmark.h>, register.cpp owns
+# `import storm_*`. Putting both in one TU diverges its PCM-cache hash from
+# libstorm's and produces two _Builtin_stddef.pcm copies under the cache,
+# tripping a "module defined in both" fatal at any `import storm` site
+# (project_pcm_hash_divergence). The split keeps main.cpp out of the import
+# graph entirely (it sees only the run-loop trampoline vector via
+# bench_register.h, a POD-only header) and register.cpp without the bench
+# include path so its hash matches libstorm's.
 target_link_libraries(storm_bench PRIVATE storm pthread
                                           $<TARGET_FILE:benchmark::benchmark>)
 add_dependencies(storm_bench benchmark::benchmark)
