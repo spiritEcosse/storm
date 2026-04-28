@@ -76,3 +76,35 @@ set_property(
 add_dependencies(storm_bench generate_benchmark_json)
 
 message(STATUS "Benchmark executable: storm_bench")
+
+# ============================================================================
+# storm_anchors — raw SQLite spot-check binary (Issue #235 — Phase 4)
+# ============================================================================
+# Sparse, intentional raw-SQLite anchors used at release time to re-verify the
+# "96–108% of raw SQLite" efficiency claim. Lives in its own binary so anchor
+# results are never confused with per-Storm-benchmark runs and so its stream
+# stays out of `storm_bench` output.
+#
+# Anchors do NOT import storm and do NOT depend on any benchmark .cppm module.
+# Single TU = anchors_raw.cpp, owns BENCHMARK_MAIN itself.
+#
+# Kept as a plain .cpp (not .cppm) — converting to a module unit segfaults
+# clang-p2996 inside ASTWriter::GenerateNameLookupTable when serializing the BMI
+# for the BENCHMARK(...) macro's static-init globals.
+add_executable(storm_anchors "${CMAKE_CURRENT_SOURCE_DIR}/anchors_raw.cpp")
+target_link_libraries(storm_anchors PRIVATE pthread
+                                            $<TARGET_FILE:benchmark::benchmark>)
+add_dependencies(storm_anchors benchmark::benchmark)
+link_sqlite(storm_anchors)
+apply_clang_flags(storm_anchors)
+
+set_property(
+  SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/anchors_raw.cpp"
+  APPEND
+  PROPERTY INCLUDE_DIRECTORIES "${_benchmark_includes}")
+set_property(
+  SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/anchors_raw.cpp"
+  APPEND
+  PROPERTY COMPILE_DEFINITIONS "BENCHMARK_STATIC_DEFINE")
+
+message(STATUS "Benchmark executable: storm_anchors")
