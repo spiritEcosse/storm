@@ -20,6 +20,9 @@ benchmarks/.bak/
 
 # Auto-generated from benchmarks/tests/benchmark_tests.yaml during build
 benchmarks/tests/benchmark_tests.json
+
+# Per-run benchmark output (compare_against_baseline.sh writes this; regenerated each run).
+current.json
 *.profraw
 default.profraw
 

@@ -81,53 +81,32 @@ Two additional gotchas hit in Phase 2:
 - `./build/release/benchmarks/storm_anchors` runs the 4 anchors; results within ±10% of pre-migration `runner.hpp` raw numbers.
 - `./build/release/benchmarks/storm_bench --benchmark_list_tests` shows zero `Anchor_Raw_*` entries (anchors live in a separate binary).
 
-### Phase 4b — Regression detection via committed baselines
+### Phase 4b — Local-dev regression detection helper (no committed baseline)
 
-**Approach**: Option A from the discussion thread — commit a JSON baseline per CMake preset, fail PRs that regress >5% with statistical significance. Defers external trend-tracking infrastructure (Bencher/CodSpeed) to a separate issue (see "Future external tracking" below).
+**Approach**: Ship the comparison machinery (Google Benchmark `compare.py` wrapper + Mann-Whitney U-test) for **local-dev investigation only**. Do **not** commit a baseline JSON. The CI gate is owned by Phase 6 (Bencher).
 
-13. Add `benchmarks/baselines/ninja-release.json` — committed JSON baseline produced by `storm_bench --benchmark_repetitions=10 --benchmark_format=json --benchmark_out=...` on a quiet machine.
-14. Add `benchmarks/scripts/compare_against_baseline.sh` — thin wrapper around Google Benchmark's [`compare.py`](https://github.com/google/benchmark/blob/main/tools/compare.py) (vendored under `third_party/google-benchmark/tools/` via the CPM fetch in Phase 1).
+**Why no committed baseline**
 
-    ```bash
-    #!/usr/bin/env bash
-    set -euo pipefail
-    BUILD_DIR="${BUILD_DIR:-build/release}"
-    BASELINE="${1:-benchmarks/baselines/ninja-release.json}"
-    THRESHOLD="${REGRESSION_THRESHOLD:-1.05}"  # 5% slowdown
-    "$BUILD_DIR/benchmarks/storm_bench" \
-        --benchmark_repetitions=10 \
-        --benchmark_format=json \
-        --benchmark_out=current.json
-    python3 third_party/google-benchmark/tools/compare.py \
-        --threshold="$THRESHOLD" benchmarks "$BASELINE" current.json
-    ```
+A JSON baseline is only meaningful when the comparison run happens on the same hardware class (CPU, frequency governor, jitter floor). Free GitHub Actions runners diverge ~30% from a local dev box; the same benchmark on two different free runners diverges ~5–10%. Committing a baseline generated on any one machine produces false positives for everything else. The right place to own this is Bencher (#235 Phase 6), which always runs the baseline AND the comparison on the same testbed and stores the JSON server-side.
 
-15. Add `.github/workflows/benchmark.yml` — runs on PRs against `develop`. Builds release, runs `compare_against_baseline.sh`, parses output, fails the job on any benchmark with `>5%` slowdown at `p<0.05`.
-16. Add a `re-baseline.sh` helper for manual rebaselining on `develop`:
+13. Add `benchmarks/scripts/compare_against_baseline.sh` — thin wrapper around Google Benchmark's [`compare.py`](https://github.com/google/benchmark/blob/main/tools/compare.py) resolved at runtime via `benchmark_SOURCE_DIR` in the CMake cache (CPM-fetched alongside `benchmark::benchmark`). The script has two modes:
 
-    ```bash
-    cmake --build --preset ninja-release
-    ./build/release/benchmarks/storm_bench \
-        --benchmark_repetitions=10 \
-        --benchmark_format=json \
-        --benchmark_out=benchmarks/baselines/ninja-release.json
-    git add benchmarks/baselines/ninja-release.json
-    git commit -m "bench: rebaseline after <reason>"
-    ```
+    - **No baseline arg / no `BASELINE` env**: run `storm_bench`, write `current.json`, print the console summary, exit 0. Useful for "give me numbers right now."
+    - **With a baseline path**: same run, then diff against the supplied JSON. Mann-Whitney U-test on per-iteration samples. Exits 1 on any `mean`/`median` row past `REGRESSION_THRESHOLD` with `p < UTEST_ALPHA`. Aggregate noise rows (`stddev`, `cv`) and `OVERALL_GEOMEAN` are ignored.
 
-17. Document the rebaselining workflow in `benchmarks/README.md`: when to rebaseline (after intentional perf change, after toolchain bump, after release), how to interpret `compare.py` output, how to override threshold for a specific PR.
+14. Document the local-dev workflow in `benchmarks/README.md`: how to snapshot before/after, how to filter, how to override threshold/repetitions/python-binary.
+
+15. Gitignore `current.json` — it is per-run output, never committed.
+
+**Explicitly NOT in Phase 4b**:
+- ~~`benchmarks/baselines/ninja-release.json`~~ — runner-class binding makes this a maintenance footgun without a stable runner. Bencher (Phase 6) owns persistence.
+- ~~`re-baseline.sh`~~ — no committed baseline means nothing to rebaseline.
+- ~~`.github/workflows/benchmark.yml`~~ — no committed baseline means CI has nothing to gate against. Phase 6 adds the workflow when Bencher comes online.
 
 **Verify**:
-- `compare_against_baseline.sh` exits 0 on `develop` HEAD (current code matches its own baseline).
-- Synthetic regression test: add a `std::this_thread::sleep_for(1us)` to a hot path, rerun script, confirm it exits non-zero with the offending benchmark named.
-- CI workflow blocks a draft PR carrying the synthetic regression.
-
-**Known limitations** (deferred to the Docker/external-tracking issue):
-- GitHub Actions free runners are noisy (±5–10% jitter). The 5% threshold catches real regressions but lets ±3% jitter through; expect occasional false positives.
-- No trend graph — only "current vs. last committed baseline." History lives in `git log -p benchmarks/baselines/`.
-- Manual rebaselining required after toolchain bumps. Easy to forget.
-
-These limitations are the trigger for moving to a self-hosted runner or external service later — see the follow-up issue.
+- Run-only mode: `./benchmarks/scripts/compare_against_baseline.sh BENCH_FILTER='Storm/WHERE/where_bool_equality' BENCH_MIN_TIME=0.1s` writes `current.json` and exits 0.
+- Compare mode against a saved snapshot of the same HEAD reports `OK: no benchmark slower than +5.00%` and exits 0.
+- Synthetic regression: artificially halve baseline times in a copy, rerun comparison; script reports `FAIL: N regression(s)` with each offender named (mean and median rows), p-value attached, exit 1.
 
 ### Phase 5 — Delete the old runner
 
@@ -139,15 +118,72 @@ These limitations are the trigger for moving to a self-hosted runner or external
 
 **Verify**: `git grep -l raw.cppm` and `git grep -l runner.hpp` return zero hits in `benchmarks/`. Pre-commit hook still passes.
 
+### Phase 6 — External trend tracking + PR-comment diffs (Bencher)
+
+Phase 4b's committed-baseline approach gives us a binary "did this PR regress vs. last accepted state?" gate. Phase 6 adds:
+
+- **Per-commit history** (trend graphs, "when did this start being slow?")
+- **PR-comment diffs** (per-benchmark deltas inline in the PR — no need to download artifacts)
+- **No manual rebaselining footgun** — every accepted commit on `develop` advances the reference
+
+**Depends on**: Step 1 of [#236](https://github.com/spiritEcosse/storm/issues/236) (Dockerized CI toolchain). Without a stable runner class, walltime numbers swing 5–15% across machines and Bencher's threshold gate becomes a coin flip — same problem Phase 4b documents under "Known limitations." Phase 6 is meaningless until the runner-class delta is bounded.
+
+**Steps**
+
+23. Add `BENCHER_API_TOKEN` repo secret (Bencher Cloud free tier; OSS projects free; plan deliberately picks Bencher over CodSpeed — see "Alternative considered" below).
+24. Augment `.github/workflows/benchmark.yml` with a `bencher run` step that wraps `storm_bench`. PRs run on the project's `feature` branch identifier; pushes to `develop` archive new reference points.
+
+    ```yaml
+    - uses: bencherdev/bencher@main
+    - run: |
+        bencher run \
+          --project storm-orm \
+          --branch "${{ github.head_ref || github.ref_name }}" \
+          --testbed gha-ubuntu-24-04 \
+          --adapter cpp_google \
+          --threshold-measure latency \
+          --threshold-test percentage \
+          --threshold-upper-boundary 0.05 \
+          --err \
+          --github-actions "${{ secrets.GITHUB_TOKEN }}" \
+          ./build/release/benchmarks/storm_bench \
+              --benchmark_format=json \
+              --benchmark_repetitions=10
+      env:
+        BENCHER_API_TOKEN: ${{ secrets.BENCHER_API_TOKEN }}
+    ```
+
+25. Bencher stores the JSON server-side per `(branch, testbed, commit)`, auto-diffs against the target branch's last accepted run, posts a PR comment with per-benchmark deltas, and fails the workflow on `>5%` with statistical significance — the same gate `compare_against_baseline.sh` enforces today, plus history.
+
+26. `compare_against_baseline.sh` keeps working as a local-dev tool — pass it any saved JSON snapshot (e.g. one downloaded from Bencher) and it diffs offline. No committed baseline file is ever introduced; runner-class binding makes that fragile and Bencher's server-side store is authoritative.
+
+**Verify**
+
+- Bencher dashboard shows continuous trend line for `develop`.
+- Synthetic regression PR (`std::this_thread::sleep_for(1us)` in a hot path) gets a PR comment naming the regressed benchmarks; merge is blocked.
+- A no-op PR on `develop` HEAD passes silently with no PR comment.
+
+**Why deferred from Phase 4b**
+
+- Bencher walltime needs a stable runner class; #236 Step 1 (Dockerized toolchain) is on the critical path. Free GHA runners as-is have ±5–10% jitter — Bencher would gate on noise.
+- Authoring the workflow step is fast (~30 min); tuning thresholds against real CI noise takes a few weeks of observed runs and a couple of intentional rebaselines.
+
+**Alternative considered — CodSpeed Macro**
+
+CodSpeed measures Cachegrind instruction counts instead of walltime, which is hardware-independent — tempting because it would sidestep the runner-class problem. Rejected for two reasons:
+
+1. **Cachegrind on clang-p2996 + libc++ + reflection is unproven.** We already have a long list of compiler workarounds in CLAUDE.md / memory. Cachegrind interacting with experimental modules + std::meta is a fresh validation cost we'd have to absorb before knowing whether the gate even produces sensible numbers.
+2. **Instruction count is a poor proxy for ORM performance.** Most of what `storm_bench` exercises is cache locality and SQLite's prepared-statement step machinery — neither shows up faithfully in Cachegrind. A change that adds 3% wall-time slowdown via cache pressure can leave instruction count flat (or *fall*, perversely). The metric would mislead.
+
+Revisit CodSpeed only if Phase 6 (Bencher) demonstrates the wall-time + GHA-noise combination is unworkable *and* the Cachegrind-on-clang-p2996 risk has been independently validated.
+
 ## Files to add / modify / delete
 
 **Add**
 - `benchmarks/gbench_main.cpp` (Phase 1, renamed to `main.cpp` in Phase 5)
 - `benchmarks/anchors_raw.cpp` (Phase 4)
-- `benchmarks/baselines/ninja-release.json` (Phase 4b)
-- `benchmarks/scripts/compare_against_baseline.sh` (Phase 4b)
-- `benchmarks/scripts/re-baseline.sh` (Phase 4b)
-- `.github/workflows/benchmark.yml` (Phase 4b)
+- `benchmarks/scripts/compare_against_baseline.sh` (Phase 4b — local-dev only, no committed baseline)
+- `.github/workflows/benchmark.yml` (Phase 6 — adds the Bencher gate; not added in 4b)
 - This document
 
 **Modify**
@@ -157,6 +193,8 @@ These limitations are the trigger for moving to a self-hosted runner or external
 - `benchmarks/parser.cppm` — replace `size_profile` string with `(range_min, range_max, multiplier)` fields
 - `benchmarks/tests/benchmark_tests.yaml` — same field rename
 - `benchmarks/README.md`, `docs/development/PERFORMANCE_GUIDELINES.md`, `CLAUDE.md`
+- `.gitignore` — Phase 4b adds `current.json`
+- `.github/workflows/benchmark.yml` — Phase 6 creates the file and wraps `storm_bench` in `bencher run`
 
 **Delete**
 - `benchmarks/runner.hpp` (556 LOC)
@@ -191,11 +229,11 @@ These limitations are the trigger for moving to a self-hosted runner or external
 2. **Anchor binary**: separate `storm_anchors` target — anchors do not import `storm` and are not invoked by the per-PR regression workflow.
 3. **CI regression threshold**: `>5%` slowdown at `p<0.05` (configurable via `REGRESSION_THRESHOLD` env var in `compare_against_baseline.sh`).
 
-## Future external tracking (deferred)
+## External tracking — phased dependency on #236
 
-Phase 4b uses committed JSON baselines because it needs zero infrastructure and works today. The known limitations (CI noise, no trend graphs, manual rebaselining) become the trigger for moving to a self-hosted/Dockerized runner and external trend service.
+Phase 4b uses committed JSON baselines because it needs zero infrastructure and works today. The known limitations (CI noise, no trend graphs, manual rebaselining) become the trigger for Phase 6.
 
-Tracked in **#236** so the Google Benchmark migration can land independently:
+Phase 6 (Bencher) lives in this issue rather than as a follow-up because the work is mechanical (one workflow step, one repo secret) — the only reason it can't land alongside Phase 4b is the **runner-class stability prerequisite**, which #236 owns:
 
-- **Dockerize Storm CI toolchain** (Step 1 of #236) — prebuilt image with clang-p2996 + libc++ + cmake + ninja + sqlite3, published to GHCR. Cuts setup time per CI job from minutes to seconds; unlocks self-hosted runners; makes Storm reproducible for outside contributors.
-- **External benchmark trend tracking** (Step 2 of #236, deferred) — once the Docker image exists, Bencher (walltime, runner-agnostic) becomes nearly free to wire up. CodSpeed Macro becomes plausible but carries Cachegrind-with-experimental-Clang risk. Revisit only if Phase 4b's false-positive rate is annoying *and* the project has outside contributors.
+- **#236 Step 1 — Dockerize Storm CI toolchain.** Prebuilt image with clang-p2996 + libc++ + cmake + ninja + sqlite3, published to GHCR. Cuts setup time per CI job from minutes to seconds; unlocks a stable self-hosted runner class; makes Storm reproducible for outside contributors. **This is the blocker for Phase 6** — without a stable runner, Bencher's walltime gate is just measuring GHA noise.
+- **#236 Step 2** is now subsumed by Phase 6. The text in #236 still pointed at "external trend tracking" as Step 2; once Phase 6 lands, #236 narrows to just the Docker-toolchain work.

@@ -40,6 +40,49 @@ The unified benchmark system is a **100% compile-time C++ solution** that loads 
 
 See [GitHub Issues (benchmarks)](https://github.com/spiritEcosse/storm/issues?q=is%3Aissue+is%3Aopen+label%3Abenchmarks) for planned improvements.
 
+## 📉 Regression detection
+
+The per-PR benchmark gate is **Bencher**, configured in [#235 Phase 6](https://github.com/spiritEcosse/storm/issues/235). Phase 6 depends on [#236 Step 1](https://github.com/spiritEcosse/storm/issues/236) (Dockerized CI toolchain) for runner-class stability — until both land, there is no automatic CI gate on benchmark regressions.
+
+For local-dev investigation, `benchmarks/scripts/compare_against_baseline.sh` runs `storm_bench` and (optionally) diffs against a previously-saved JSON via Google Benchmark's [`compare.py`](https://github.com/google/benchmark/blob/main/tools/compare.py) + Mann-Whitney U-test. There is no committed baseline file in the repo: a baseline is only meaningful on the same hardware class as the comparison run, and Bencher will own that responsibility once Phase 6 lands.
+
+**Workflow**
+
+```bash
+cmake --preset ninja-release && cmake --build --preset ninja-release
+
+# 1. Run-only — produces current.json, no comparison.
+./benchmarks/scripts/compare_against_baseline.sh
+
+# 2. Save a snapshot before making changes, then diff after.
+cp current.json /tmp/before.json
+# ... edit code, rebuild ...
+./benchmarks/scripts/compare_against_baseline.sh /tmp/before.json
+
+# Narrow scope while iterating:
+BENCH_FILTER='Storm/SELECT.*' \
+    ./benchmarks/scripts/compare_against_baseline.sh /tmp/before.json
+
+# Widen the regression threshold for noisy hardware:
+REGRESSION_THRESHOLD=1.10 \
+    ./benchmarks/scripts/compare_against_baseline.sh /tmp/before.json
+```
+
+Per-benchmark deltas are computed as `(current - baseline) / |baseline|`; the gate trips on `mean` or `median` aggregates only — `stddev`/`cv`/iteration-count rows are ignored. Significance gating uses the Mann-Whitney U-test at `p < UTEST_ALPHA` (default 0.05).
+
+**Threshold knobs** (env vars, all optional):
+
+| Var | Default | Effect |
+|---|---|---|
+| `REGRESSION_THRESHOLD` | `1.05` | Slowdown ratio. Accepts `1.05`, `0.05`, or `5%`. |
+| `UTEST_ALPHA` | `0.05` | U-test significance bar. Set `0` to disable significance gating. |
+| `BENCH_REPETITIONS` | `10` | Reps per benchmark. Lower for faster local turnaround. |
+| `BENCH_FILTER` | (empty) | Google Benchmark `--benchmark_filter` regex. |
+| `BENCH_MIN_TIME` | (empty) | Google Benchmark `--benchmark_min_time` (e.g. `0.5s`). |
+| `PYTHON` | `python3` | Override e.g. `/path/to/venv/bin/python` if numpy/scipy aren't system-installed. |
+
+`compare.py` requires `numpy` and `scipy` (used for the geometric mean and U-test respectively). Install via your distro's package manager (`pacman -S python-numpy python-scipy`, `apt install python3-numpy python3-scipy`, etc.) or a venv.
+
 ## 📦 Components
 
 ```
