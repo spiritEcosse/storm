@@ -12,10 +12,13 @@ You are the performance specialist for Storm ORM, with expertise in benchmarking
 ## Core Responsibilities
 
 ### 1. Benchmarking & Regression Detection
-- Execute benchmarks using the Release build binary:
-  - `./build/release/benchmarks/storm_bench --quick` (development, ~3-5 min)
-  - `./build/release/benchmarks/storm_bench --thorough` (pre-commit, ~15-20 min)
-  - `./build/release/benchmarks/storm_bench -c SELECT` (category filter)
+- Execute benchmarks using the Release build binary (Google Benchmark CLI):
+  - `./build/release/benchmarks/storm_bench` (full run)
+  - `./build/release/benchmarks/storm_bench --benchmark_filter='Storm/SELECT/.*'` (category filter)
+  - `./build/release/benchmarks/storm_bench --benchmark_repetitions=10 --benchmark_report_aggregates_only=true` (stats: median/mean/stddev)
+  - `./build/release/benchmarks/storm_bench --benchmark_min_time=2s` (longer-running profile-friendly run)
+  - `./build/release/benchmarks/storm_anchors` (raw SQLite anchors — separate binary, release-time spot check)
+- For local-dev regression diffs: `./benchmarks/scripts/compare_against_baseline.sh BASELINE=path/to/snapshot.json` (Mann-Whitney U-test). No committed baseline — runner-class binding makes that fragile; Bencher (Phase 6) owns server-side persistence.
 - Target: ≥95% of raw SQLite efficiency (≤5% overhead). CLAUDE.md mandates reverting on ANY measurable slowdown.
 - Flag regressions >5% as critical
 - Always build Release before benchmarking: `cmake --preset ninja-release && cmake --build --preset ninja-release`

@@ -9,57 +9,97 @@ The unified benchmark system is a **100% compile-time C++ solution** that loads 
 ### Key Features
 
 - ✅ **Pure C++26** - Uses `#embed` for compile-time JSON parsing
-- ✅ **Zero Runtime Overhead** - All test dispatch happens at compile time
-- ✅ **Template Metaprogramming** - Each test gets its own specialized function
+- ✅ **Google Benchmark backend** - median / mean / stddev / `BigO` / `RMS` come from gbench, not a custom runner
+- ✅ **Template Metaprogramming** - Each test gets its own specialized fixture
 - ✅ **Type Safety** - Field names and operators resolved at compile time
-- ✅ **Automatic Unrolling** - Template recursion unrolls test execution loop
 - ✅ **YAML Configuration** - Human-friendly test definitions in `benchmark_tests.yaml` (auto-converted to JSON at build time)
 - ✅ **Compile-Time Field Dispatch** - Uses reflection to map field names to struct members
-- ✅ **Accurate Timing** - Uses `std::chrono::steady_clock` (monotonic, nanosecond precision)
-- ✅ **Colorized Output** - Performance-based color coding for easy analysis
-- ✅ **Runtime Filtering** - Filter tests by name without rebuilding
-- ✅ **Raw SQLite Comparison** - Side-by-side Storm ORM vs Raw SQLite benchmarks
-- ✅ **Efficiency Metrics** - Automatic calculation of Storm ORM efficiency percentage
-- ✅ **Batch INSERT Support** - Benchmark single and batch insert operations (10, 100, 500, 1000 rows)
-- ✅ **Batch UPDATE Support** - Benchmark single and batch update-by-PK operations with CRTP base class
-- ✅ **Category Filtering** - Run benchmarks by category with prefix matching (`-c SELECT` matches SELECT*)
+- ✅ **Runtime Filtering** - `--benchmark_filter=...` regex without rebuilding
+- ✅ **Raw SQLite Anchors** - Sparse spot checks live in the separate `storm_anchors` binary (release-time only, not paired against per-Storm runs)
+- ✅ **Batch INSERT/UPDATE/DELETE** - YAML profiles (`batch_standard`, `batch_*_edge`) drive size sweeps via gbench `Arg()`
+- ✅ **Range / Complexity sweeps** - `dataset_standard` / `dataset_small` map to gbench `Range()` + `Complexity(oN)`
+
+> **CLI**: This benchmark binary is a Google Benchmark executable. Use `--benchmark_filter`, `--benchmark_repetitions`, `--benchmark_min_time`, `--benchmark_format=json`, etc. The pre–#235 flags `--filter`, `--iterations`, `--scale-test`, `-c <category>` are gone — older sections of this document that still show them refer to the migrated equivalents `--benchmark_filter='Storm/<category>/.*'` and `--benchmark_repetitions=N`.
 
 ## 🚀 Quick Start
 
 **When changing a module, run category benchmarks to verify performance:**
 
 ```bash
-./build/release/benchmarks/storm_bench -c SELECT         # After changing SELECT module
-./build/release/benchmarks/storm_bench -c DISTINCT       # After changing DISTINCT module
-./build/release/benchmarks/storm_bench -c INSERT         # After changing INSERT module
-./build/release/benchmarks/storm_bench -c AGGREGATE      # After changing AGGREGATE module
-./build/release/benchmarks/storm_bench -c SELECT --list  # Preview which tests will run
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/SELECT/.*'         # After changing SELECT module
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/DISTINCT/.*'       # After changing DISTINCT module
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/INSERT/.*'         # After changing INSERT module
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/AGGREGATE/.*'      # After changing AGGREGATE module
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/SELECT/.*' --benchmark_list_tests=true  # Preview which tests will run
 ```
 
 ### Open Issues
 
 See [GitHub Issues (benchmarks)](https://github.com/spiritEcosse/storm/issues?q=is%3Aissue+is%3Aopen+label%3Abenchmarks) for planned improvements.
 
+## 📉 Regression detection
+
+The per-PR benchmark gate is **Bencher**, configured in [#235 Phase 6](https://github.com/spiritEcosse/storm/issues/235). Phase 6 depends on [#236 Step 1](https://github.com/spiritEcosse/storm/issues/236) (Dockerized CI toolchain) for runner-class stability — until both land, there is no automatic CI gate on benchmark regressions.
+
+For local-dev investigation, `benchmarks/scripts/compare_against_baseline.sh` runs `storm_bench` and (optionally) diffs against a previously-saved JSON via Google Benchmark's [`compare.py`](https://github.com/google/benchmark/blob/main/tools/compare.py) + Mann-Whitney U-test. There is no committed baseline file in the repo: a baseline is only meaningful on the same hardware class as the comparison run, and Bencher will own that responsibility once Phase 6 lands.
+
+**Workflow**
+
+```bash
+cmake --preset ninja-release && cmake --build --preset ninja-release
+
+# 1. Run-only — produces current.json, no comparison.
+./benchmarks/scripts/compare_against_baseline.sh
+
+# 2. Save a snapshot before making changes, then diff after.
+cp current.json /tmp/before.json
+# ... edit code, rebuild ...
+./benchmarks/scripts/compare_against_baseline.sh /tmp/before.json
+
+# Narrow scope while iterating:
+BENCH_FILTER='Storm/SELECT.*' \
+    ./benchmarks/scripts/compare_against_baseline.sh /tmp/before.json
+
+# Widen the regression threshold for noisy hardware:
+REGRESSION_THRESHOLD=1.10 \
+    ./benchmarks/scripts/compare_against_baseline.sh /tmp/before.json
+```
+
+Per-benchmark deltas are computed as `(current - baseline) / |baseline|`; the gate trips on `mean` or `median` aggregates only — `stddev`/`cv`/iteration-count rows are ignored. Significance gating uses the Mann-Whitney U-test at `p < UTEST_ALPHA` (default 0.05).
+
+**Threshold knobs** (env vars, all optional):
+
+| Var | Default | Effect |
+|---|---|---|
+| `REGRESSION_THRESHOLD` | `1.05` | Slowdown ratio. Accepts `1.05`, `0.05`, or `5%`. |
+| `UTEST_ALPHA` | `0.05` | U-test significance bar. Set `0` to disable significance gating. |
+| `BENCH_REPETITIONS` | `10` | Reps per benchmark. Lower for faster local turnaround. |
+| `BENCH_FILTER` | (empty) | Google Benchmark `--benchmark_filter` regex. |
+| `BENCH_MIN_TIME` | (empty) | Google Benchmark `--benchmark_min_time` (e.g. `0.5s`). |
+| `PYTHON` | `python3` | Override e.g. `/path/to/venv/bin/python` if numpy/scipy aren't system-installed. |
+
+`compare.py` requires `numpy` and `scipy` (used for the geometric mean and U-test respectively). Install via your distro's package manager (`pacman -S python-numpy python-scipy`, `apt install python3-numpy python3-scipy`, etc.) or a venv.
+
 ## 📦 Components
 
 ```
 benchmarks/
-├── main.cpp                    # Main benchmark executable
-├── runner.hpp                  # BenchmarkRunner with template recursion
-├── parser.cppm                 # Compile-time JSON parser using #embed (storm_benchmark_parser module)
+├── main.cpp                    # Google Benchmark entry — owns <benchmark/benchmark.h>, no imports
+├── register.cpp                # Storm-side bridge — `import storm_*` + builds the gbench registration table
+├── bench_register.h            # POD-only handoff between main.cpp and register.cpp
+├── benchmark_tests.hpp         # `#embed`-driven BENCHMARK_TESTS array (textual; consumed by register.cpp)
+├── parser.cppm                 # Compile-time JSON parser (storm_benchmark_parser module)
 ├── schema.cppm                 # Benchmark test schema (storm_benchmark_schema module)
-├── sizes.cppm                  # Size profile definitions (storm_benchmark_sizes module)
-├── operations/
-│   ├── base.hpp               # CRTP base class for data-driven benchmarks
-│   ├── select.hpp             # WHERE clause benchmark implementation
-│   ├── insert.hpp             # INSERT benchmark implementation
-│   ├── update.hpp             # UPDATE by PK benchmark implementation
-│   ├── delete.hpp             # DELETE benchmark implementation
-│   ├── aggregate.hpp          # Aggregate functions benchmark implementation
-│   ├── distinct.hpp           # DISTINCT benchmark implementation
-│   └── where_operators.hpp    # LIKE, BETWEEN, IN, AND/OR operators
+├── sizes.cppm                  # CRUD batch-size constexpr arrays (storm_benchmark_sizes module)
+├── registry.cppm               # Compile-time model dispatch (storm_benchmark_registry module)
+├── models.hpp                  # ORM model structs (textual — annotations need to be visible)
+├── base.cppm                   # CRTP base for data-driven benchmarks (storm_benchmark_base module)
+├── query_benchmark.cppm        # SELECT-family fixture (storm_benchmark_query module)
+├── crud_benchmark.cppm         # INSERT/UPDATE/DELETE fixture (storm_benchmark_crud module)
+├── anchors_raw.cpp             # `storm_anchors` binary — release-time raw SQLite spot checks
 ├── scripts/
-│   └── yaml_to_json.py        # YAML to JSON converter (runs at build time)
+│   ├── yaml_to_json.py             # YAML → JSON converter (runs at build time)
+│   └── compare_against_baseline.sh # Local-dev regression diff (Mann-Whitney U-test)
 └── tests/
     ├── benchmark_tests.yaml   # Test definitions (human-friendly source of truth)
     └── benchmark_tests.json   # Auto-generated from YAML (loaded at compile time via #embed)
@@ -373,16 +413,7 @@ SQL caching and compile-time generation eliminate the chunking overhead entirely
 - Raw SQLite was using **1000 individual INSERT statements** with transaction
 - This made Storm appear 3x faster (296% efficiency) - completely misleading!
 
-**The Root Cause:**
-```cpp
-// In benchmarks/operations/insert.hpp (line 122)
-if constexpr (BatchSize <= bulk_sweet_spot) {  // bulk_sweet_spot = 124
-    // Use bulk SQL: INSERT INTO ... VALUES (...), (...), ...
-} else {
-    // WRONG: Was using individual INSERTs for batch_1000
-    // Should use: CHUNKED bulk SQL like Storm!
-}
-```
+**The Root Cause:** The old raw-SQLite benchmark switched to individual INSERTs for batches above the bulk sweet-spot (~124 rows), while Storm kept using chunked bulk SQL. The two paths weren't comparing the same algorithm.
 
 **The Fix:**
 1. ✅ **Implemented chunked bulk SQL** in raw SQLite benchmark for large batches (>124 rows)
@@ -464,21 +495,7 @@ Both Storm ORM and the Raw SQLite benchmark use **identical strategies** for fai
 
 **Architecture: CRTP Base Class**
 
-UPDATE and INSERT benchmarks share common code via CRTP (Curiously Recurring Template Pattern):
-
-```cpp
-// In operations/base.hpp
-template<typename Derived, typename Model, int BatchSize, size_t FieldsPerRow>
-class DataBenchmarkBase {
-    // Shared: data_, qs_, create_model(), prepare(), bind utilities
-};
-
-// INSERT: 4 fields (name, age, is_active, salary - id is auto-increment)
-class InsertBenchmark : public DataBenchmarkBase<..., 4> { ... };
-
-// UPDATE: 5 fields (name, age, is_active, salary + id for WHERE clause)
-class UpdateBenchmark : public DataBenchmarkBase<..., 5> { ... };
-```
+CRUD benchmarks share data setup via CRTP through `DataBenchmarkBase` (in `base.cppm`). The `CrudBenchmark<Model, test>` fixture in `crud_benchmark.cppm` dispatches `insert` / `insert_no_return` / `update_pk` / `delete_pk` from the `BenchmarkTest` NTTP, mirroring how `QueryBenchmark` handles SELECT-family operations.
 
 **Chunking Boundary for UPDATE:**
 - UPDATE binds 5 parameters per row (4 data fields + 1 PK for WHERE clause)
@@ -877,9 +894,11 @@ class QueryBenchmark : public DataBenchmarkBase<QueryBenchmark<Model, test>, Mod
     // Builds a fully configured QuerySet (JOIN → WHERE → ORDER BY → LIMIT)
     // and stores the terminal (.select() / .execute() / aggregate / distinct / group_by).
     static auto build_qs();
-    auto execute(int iterations) -> void;     // Storm ORM path
-    auto execute_raw(int iterations) -> void; // Raw SQLite — SQL from the same terminal
+    auto prepare(int n) -> void; // populate dataset of size n, rebuild terminal
+    auto run_once() -> void;     // one Storm-only execution — gbench owns the loop
 };
+// Raw SQLite anchors live in benchmarks/anchors_raw.cpp (the `storm_anchors`
+// binary), not on QueryBenchmark itself.
 ```
 
 ### Run Multi-Field DISTINCT Benchmarks
@@ -1637,45 +1656,22 @@ This will generate tests: `select_custom_100`, `select_custom_1000`, `select_cus
 
 > **Note:** The YAML file is automatically converted to JSON during build via `scripts/yaml_to_json.py`. The C++ parser reads the generated JSON using `#embed`.
 
-### Step 2: Implement Operation (if needed)
+### Step 2: Wire it into the right fixture
 
-If the operation type doesn't exist yet, create `benchmarks/operations/your_operation.hpp`:
+If the operation fits the SELECT family (WHERE / JOIN / aggregates / DISTINCT / GROUP BY / etc.), `benchmarks/query_benchmark.cppm` already dispatches via `if constexpr` on the test's flags — you typically only edit YAML and the matching `if constexpr` branch in `QueryBenchmark::build_qs` / `run_once`.
 
-```cpp
-template<typename Model, /* template params */>
-class YourOperationBenchmark {
-public:
-    void print_info() const {
-        std::cout << "Operation: YOUR_OPERATION\n";
-    }
+CRUD operations (insert / update_pk / delete_pk) live in `benchmarks/crud_benchmark.cppm`. Adding a new CRUD-shaped operation means a new branch in `CrudBenchmark::run_once` plus a name match in `register.cpp::is_crud`.
 
-    int execute(int iterations) {
-        // Perform operation iterations times
-        // Return total operations count
-    }
-};
-```
+For genuinely new operation families, add a fixture module alongside `query_benchmark.cppm` / `crud_benchmark.cppm`, import it from `register.cpp`, and have `register_all<>()` route the right tests to it.
 
-### Step 3: Add Dispatch Case
-
-Update `runner.hpp` to handle your operation:
-
-```cpp
-if constexpr (operation == "your_operation") {
-    // Extract compile-time parameters from test JSON
-    // Instantiate benchmark with template parameters
-    // Run benchmark
-}
-```
-
-### Step 4: Rebuild and Run
+### Step 3: Rebuild and Run
 
 ```bash
 cmake --build --preset ninja-release
-./build/release/benchmarks/storm_bench
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/<category>/<name>'
 ```
 
-The new test will be automatically included and executed with compile-time dispatch!
+Google Benchmark picks up the new entry automatically — `register.cpp` walks `BENCHMARK_TESTS` at startup and registers a `void(*)()` trampoline per test.
 
 ## ⏱️ Accurate Timing
 
@@ -1946,100 +1942,12 @@ struct Person {
 
 ## Profiling and Performance Debugging
 
-### Using timing.hpp for Detailed Profiling
+The custom `timing.hpp` / `timing_trace.hpp` macros from the pre-Google-Benchmark runner are gone. Use the tools Google Benchmark and the OS already give you:
 
-When you need to profile specific functions or code sections, use the `timing.hpp` header:
+- **Per-benchmark counters** — `state.counters["sql_build_ns"] = ...;` inside a fixture body. Renders inline in the report and works under `--benchmark_format=json` for diffs.
+- **`perf` integration** — `perf record -- ./build/release/benchmarks/storm_bench --benchmark_filter='Storm/INSERT/insert/249'` then `perf report` for hot-function profiling. Use `--benchmark_min_time=2s` to give `perf` enough samples per fixture.
+- **Hardware counters from gbench** — build with `-DBENCHMARK_ENABLE_LIBPFM=ON` then `--benchmark_perf_counters=CYCLES,INSTRUCTIONS,CACHE-MISSES`.
+- **Narrowing in on a single op** — combine `--benchmark_filter` with `--benchmark_repetitions=1 --benchmark_min_time=0.05s` to make the run cheap enough for `perf stat` round-trips.
 
-**1. Add timing to your code:**
-```cpp
-// In src/orm/statements/insert.cppm (or any file you want to profile)
-#include "benchmarks/timing.hpp"  // Add at top
-
-auto execute_bulk(std::span<const T> objects) noexcept -> ... {
-    STORM_TRACE("execute_bulk");  // Times entire function
-    
-    const auto& sql = get_bulk_insert_sql(objects.size());
-    STORM_TRACE("get_bulk_insert_sql");  // Times this call
-    
-    return conn_->prepare_cached(sql).and_then([...] {
-        STORM_TRACE("prepare_cached");  // Times prepare
-        // ...
-    });
-}
-```
-
-**2. Build with timing enabled:**
-```bash
-# Configure with timing flag
-cd build/release
-cmake ../.. -GNinja -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_CXX_FLAGS="-DSTORM_ENABLE_TIMING_TRACE" \
-    -DENABLE_BENCH=ON
-
-# Build
-ninja storm_bench
-
-# Run benchmark - will show timing output
-./benchmarks/storm_bench --filter=insert_batch_100 --iterations=100
-```
-
-**3. Example output:**
-```
-[TRACE] execute_bulk                        : 45.234 μs
-[TRACE]   get_bulk_insert_sql               : 0.412 μs
-[TRACE]   prepare_cached                    : 35.891 μs
-[TRACE]   bind_objects                      : 6.543 μs
-[TRACE]   execute                           : 2.103 μs
-```
-
-**4. Remove timing after profiling:**
-```bash
-# Remove timing includes and STORM_TRACE calls
-# Rebuild without the flag for clean benchmarks
-cmake ../.. -GNinja -DCMAKE_BUILD_TYPE=Release -DENABLE_BENCH=ON
-ninja storm_bench
-```
-
-**Tips:**
-- Use descriptive labels for STORM_TRACE
-- Nest traces to understand call hierarchy
-- Compare timings before/after optimizations
-- Only enable timing when actively profiling (adds overhead)
-- Remember to rebuild without timing for final benchmarks
-
-
-### Choosing Between timing.hpp and timing_trace.hpp
-
-There are two timing utilities available:
-
-**timing.hpp** - Compile-time control (recommended for most cases)
-- **Pros**: Zero overhead when disabled (macros compile to no-op)
-- **Cons**: Requires rebuild to enable/disable
-- **Use when**: You want minimal overhead and don't mind rebuilding
-
-```cpp
-#include "benchmarks/timing.hpp"
-
-void my_function() {
-    STORM_TRACE("my_function");  // Only active if -DSTORM_ENABLE_TIMING_TRACE
-    // ...
-}
-```
-
-**timing_trace.hpp** - Runtime control
-- **Pros**: Can enable/disable without rebuilding
-- **Cons**: Small overhead even when disabled (bool check)
-- **Use when**: You want to toggle timing on/off during execution
-
-```cpp
-#include "benchmarks/timing_trace.hpp"
-
-void my_function() {
-    const bool ENABLE_TIMING_TRACE = true;  // Control at runtime
-    STORM_TRACE_TIMER("my_function");
-    // ...
-}
-```
-
-**Recommendation**: Use `timing.hpp` for most profiling work. It has zero overhead when disabled and is simpler to use.
+When you need ad-hoc per-call timing inside a Storm code path, drop a local `auto t = std::chrono::steady_clock::now(); ...; std::cerr << ...;` into the file under investigation and remove it before committing — there is no longer a project-wide tracing macro.
 

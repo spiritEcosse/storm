@@ -14,15 +14,13 @@
 module;
 
 // sqlite3.h provides the `sqlite3` and `sqlite3_stmt` typedefs used in this
-// module's purview signatures. It's also pulled in by storm_benchmark_raw's
-// GMF, but we need it textually visible here too.
+// module's purview signatures.
 #include <sqlite3.h>
 #include <plf_hive/plf_hive.h>
 
 export module storm_benchmark_base;
 
 import storm;
-export import storm_benchmark_raw;
 
 import <cstddef>;
 import <format>;
@@ -32,6 +30,18 @@ import <string_view>;
 import <vector>;
 
 export namespace storm::benchmark {
+
+    // Count of non-PK fields for a model — used as default FieldsPerRow
+    // template argument below. Inlined here (was storm_benchmark_raw) since
+    // it was the only remaining consumer after Phase 5 dropped the raw helpers.
+    template <typename T> consteval auto non_pk_field_count() -> size_t {
+        size_t count = 0;
+        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+            if (!storm::meta::has_primary_attr(m))
+                ++count;
+        }
+        return count;
+    }
 
     // ========================================================================
     // get_db: Helper to get raw sqlite3* from default connection

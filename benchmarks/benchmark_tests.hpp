@@ -13,8 +13,8 @@
 // `#embed` driver is affected.
 //
 // Keeping `load_benchmark_tests()` + `BENCHMARK_TESTS` in this textual header
-// (currently included only by runner.hpp) sidesteps the bug while preserving
-// the rest of the parser's module conversion.
+// (included only by register.cpp) sidesteps the bug while preserving the rest
+// of the parser's module conversion.
 
 #include <array>
 #include <cstddef>

@@ -1,0 +1,197 @@
+// register.cpp — owns the storm-importing side of the bench bridge.
+//
+// Imports storm + storm_benchmark_query, walks BENCHMARK_TESTS, and emits a
+// `RegisteredBenchmark` entry per SELECT-family test into a process-wide
+// vector consumed by main.cpp. main.cpp does the actual gbench registration;
+// this TU never sees `<benchmark/benchmark.h>`.
+//
+// Why this split exists: see benchmarks/CMakeLists.txt — putting both
+// imports and benchmark.h in one TU produces a PCM-cache hash divergence
+// vs libstorm.a (project_pcm_hash_divergence) and trips a fatal at any
+// `import storm` site.
+//
+// Trampoline lifetime: each (Model, test) pair owns one process-lifetime
+// `QueryBenchmark<Model, test>` instance via a function-local static. setup(N)
+// re-binds dataset and rebuilds the Storm terminal; run() executes the cached
+// terminal once. That keeps the gbench loop body tight (no per-iteration
+// allocation, no map/lookup, just an indirect call).
+
+// `<tuple>` and models.hpp must be visible textually before any `import` —
+// reflection annotations on the model structs are blind across BMI boundaries
+// (clang-p2996 #262, feedback_cpp26_module_reflection_annotations) so any TU
+// that instantiates an ORM template parameterized on a model type must see
+// the annotations textually.
+#include <tuple>
+#include "models.hpp"
+
+#include "bench_register.h"
+#include "benchmark_tests.hpp" // BENCHMARK_TESTS — must stay textual
+
+import storm;
+import storm_benchmark_crud;
+import storm_benchmark_query;
+import storm_benchmark_registry;
+import storm_benchmark_schema;
+import storm_benchmark_sizes;
+
+import <algorithm>;
+import <expected>;
+import <format>;
+import <memory>;
+import <optional>;
+import <ranges>;
+import <span>;
+import <string>;
+import <string_view>;
+import <vector>;
+
+using namespace storm;
+
+namespace storm::benchmark {
+
+    auto registered_benchmarks() -> std::vector<RegisteredBenchmark>& {
+        static std::vector<RegisteredBenchmark> v;
+        return v;
+    }
+
+    auto initialize_db() -> bool {
+        auto open = QuerySet<Person>::set_default_connection(":memory:");
+        if (!open.has_value())
+            return false;
+        const auto& conn = QuerySet<Person>::get_default_connection();
+        if (!storm::orm::schema::SchemaStatement<Person>::create_table_if_not_exists(conn).has_value())
+            return false;
+        if (!storm::orm::schema::SchemaStatement<User>::create_table_if_not_exists(conn).has_value())
+            return false;
+        if (!storm::orm::schema::SchemaStatement<FKMessage>::create_table_if_not_exists(conn).has_value())
+            return false;
+        return true;
+    }
+
+} // namespace storm::benchmark
+
+namespace {
+
+    using storm::benchmark::BenchmarkTest;
+    using storm::benchmark::CrudBenchmark;
+    using storm::benchmark::QueryBenchmark;
+    using storm::benchmark::RegisteredBenchmark;
+
+    consteval auto is_crud(BenchmarkTest const& t) -> bool {
+        constexpr std::string_view crud[] = {"insert", "insert_no_return", "update_pk", "delete_pk"};
+        for (auto op : crud) {
+            if (t.operation.view() == op)
+                return true;
+        }
+        return false;
+    }
+
+    struct RangeSpec {
+        // Range mode (sized=true) → RangeMultiplier+Range
+        // Args mode (sized=false, !args.empty()) → explicit Arg() per element
+        // Single mode (sized=false, args.empty()) → single Arg(lo)
+        bool    sized;
+        int64_t lo;
+        int64_t hi;
+        int     multiplier;
+    };
+
+    consteval auto range_for(BenchmarkTest const& t) -> RangeSpec {
+        if (t.size_profile.view() == "dataset_standard") {
+            return {.sized = true, .lo = 100, .hi = 100'000, .multiplier = 10};
+        }
+        if (t.size_profile.view() == "dataset_small") {
+            return {.sized = true, .lo = 10'000, .hi = 50'000, .multiplier = 5};
+        }
+        return {.sized = false, .lo = t.dataset_size, .hi = t.dataset_size, .multiplier = 1};
+    }
+
+    // CRUD profiles use non-power-of-N sizes (1,10,100,500,1000,...) — gbench's
+    // RangeMultiplier can't span them, so we emit each as an explicit Arg.
+    // Returns a runtime span pointing into the inline-constexpr arrays in
+    // storm_benchmark_sizes (program-lifetime storage).
+    inline auto args_for(BenchmarkTest const& t) -> std::span<const int> {
+        std::string_view sp = t.size_profile.view();
+        if (sp == "batch_standard")
+            return {storm::benchmark::sizes::BATCH_STANDARD};
+        if (sp == "batch_insert_edge")
+            return {storm::benchmark::sizes::BATCH_INSERT_EDGE};
+        if (sp == "batch_update_edge")
+            return {storm::benchmark::sizes::BATCH_UPDATE_EDGE};
+        return {};
+    }
+
+    // Per-(Fixture, Model, test) trampoline — one set of free functions and
+    // one function-local static fixture instance per (Fixture, Model, test)
+    // tuple, generated by the template. Pointer addresses are stable for the
+    // program's lifetime, which is what gbench wants from `void(*)()`.
+    // Both fixtures are move-only (QuerySet holds a unique_ptr to its
+    // statement cache), so re-binding setup() goes through std::optional's
+    // emplace — destroy + in-place construct, no assignment required.
+    template <template <typename, auto const&> class Fixture, typename Model, auto const& test> struct Trampoline {
+        static auto storage() -> std::optional<Fixture<Model, test>>& {
+            static std::optional<Fixture<Model, test>> opt;
+            return opt;
+        }
+        static auto setup(int64_t n) -> void {
+            auto& opt = storage();
+            opt.emplace(static_cast<int>(n));
+            opt->prepare(static_cast<int>(n));
+        }
+        static auto run() -> void {
+            storage()->run_once();
+        }
+    };
+
+    template <template <typename, auto const&> class Fixture, typename Model, auto const& test>
+    auto register_one() -> void {
+        constexpr auto rng  = range_for(test);
+        auto           args = args_for(test);
+        std::string    name = std::format(
+                "Storm/{}/{}", std::string_view(test.test_category.view()), std::string_view(test.test_name.view())
+        );
+        std::vector<int64_t> args_vec;
+        args_vec.reserve(args.size());
+        for (auto n : args)
+            args_vec.push_back(n);
+
+        storm::benchmark::registered_benchmarks().push_back(
+                RegisteredBenchmark{
+                        .name             = std::move(name),
+                        .setup            = &Trampoline<Fixture, Model, test>::setup,
+                        .run              = &Trampoline<Fixture, Model, test>::run,
+                        .sized            = rng.sized,
+                        .range_lo         = rng.lo,
+                        .range_hi         = rng.hi,
+                        .range_multiplier = rng.multiplier,
+                        .args             = std::move(args_vec),
+                }
+        );
+    }
+
+    template <size_t I = 0> auto register_all() -> void {
+        if constexpr (I < storm::benchmark::BENCHMARK_TESTS.size()) {
+            constexpr auto const& t = storm::benchmark::BENCHMARK_TESTS[I];
+            if constexpr (is_crud(t)) {
+                storm::benchmark::registry::with_base_model<t>([]<typename M>() {
+                    register_one<CrudBenchmark, M, t>();
+                });
+            } else {
+                storm::benchmark::registry::with_base_model<t>([]<typename M>() {
+                    register_one<QueryBenchmark, M, t>();
+                });
+            }
+            register_all<I + 1>();
+        }
+    }
+
+} // namespace
+
+namespace storm::benchmark {
+
+    auto build_registration_table() -> void {
+        registered_benchmarks().clear();
+        register_all();
+    }
+
+} // namespace storm::benchmark
