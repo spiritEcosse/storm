@@ -224,9 +224,10 @@ git push
 ### Benchmarking (Release only!)
 ```bash
 cmake --preset ninja-release && cmake --build --preset ninja-release
-./build/release/benchmarks/storm_bench --quick     # Development (~3-5 min)
-./build/release/benchmarks/storm_bench --thorough  # Pre-commit (~15-20 min)
-./build/release/benchmarks/storm_bench -c SELECT   # Category filter
+./build/release/benchmarks/storm_bench                                          # Full Google Benchmark run
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/SELECT/.*'     # Category filter
+./build/release/benchmarks/storm_bench --benchmark_repetitions=10               # Stats: median/mean/stddev
+./build/release/benchmarks/storm_anchors                                        # Raw SQLite anchors (release-time spot check)
 ```
 
 ### Code Coverage

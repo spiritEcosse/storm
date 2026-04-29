@@ -70,17 +70,16 @@ Storm ORM follows **DRY (Don't Repeat Yourself)** and **KISS (Keep It Simple, St
 
 ```bash
 # 1. Implement feature (e.g., LIMIT support)
-# 2. Create benchmark file using common.py patterns
-touch benchmarks/bench_limit.cpp
+# 2. Add a YAML entry under benchmarks/tests/benchmark_tests.yaml describing the test
+#    — register.cpp will pick it up automatically and route to the right fixture.
 
-# 3. Build and run performance tests
-cmake --preset ninja-release -DENABLE_BENCH=ON
-cmake --build --preset ninja-release
-./build/release/benchmarks/bench_limit --size=10000 --iterations=100
+# 3. Build and run performance tests (Google Benchmark CLI)
+cmake --preset ninja-release && cmake --build --preset ninja-release
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/LIMIT/.*' \
+    --benchmark_repetitions=10 --benchmark_report_aggregates_only=true
 
-# 4. Compare with raw SQLite
-# If Storm: 8.5M rows/sec, Raw: 10M rows/sec → 85% efficiency ✅ GOOD
-# If Storm: 5M rows/sec, Raw: 10M rows/sec → 50% efficiency ❌ NEEDS WORK
+# 4. Compare with raw SQLite via the separate anchors binary (release-time only)
+./build/release/benchmarks/storm_anchors
 
 # 5. Document in docs/benchmarks/results.md
 # Add to performance results table with efficiency percentage

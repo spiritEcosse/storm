@@ -6,10 +6,9 @@
 //
 // Issue #235 — Phase 2.
 //
-// Was: benchmarks/operations/query_benchmark.hpp (textual header consumed by
-// the now-deleted runner.hpp). The module conversion drops the raw-SQLite
-// path (`execute_raw`, `bind_*`, `step_raw`) — Storm-only is the new contract.
-// Anchor benchmarks for raw SQLite land in their own TU in Phase 4.
+// Was: benchmarks/operations/query_benchmark.hpp (textual header). The module
+// conversion drops the raw-SQLite execution path — Storm-only is the new
+// contract; raw SQLite anchors live in benchmarks/anchors_raw.cpp (Phase 4).
 
 module;
 
