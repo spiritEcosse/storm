@@ -1,0 +1,58 @@
+name: Build storm-ci image
+
+on:
+  workflow_dispatch:
+    inputs:
+      clang_rev:
+        description: |
+          Tag to publish in addition to :latest (e.g. clang-rev-12345).
+          Leave empty to publish only :latest.
+        required: false
+        type: string
+        default: ''
+  push:
+    tags:
+      - 'clang-rev-*'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build and publish storm-ci
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve tags
+        id: tags
+        run: |
+          tags=("ghcr.io/spiritecosse/storm-ci:latest")
+          # Tag-triggered runs: use the git tag as the rev tag.
+          if [[ "${GITHUB_REF}" == refs/tags/clang-rev-* ]]; then
+              tags+=("ghcr.io/spiritecosse/storm-ci:${GITHUB_REF_NAME}")
+          fi
+          # workflow_dispatch with non-empty input: add it as an additional tag.
+          input_rev='${{ inputs.clang_rev }}'
+          if [[ -n "$input_rev" ]]; then
+              tags+=("ghcr.io/spiritecosse/storm-ci:${input_rev}")
+          fi
+          # Emit comma-joined list for docker/build-push-action.
+          (IFS=,; echo "tags=${tags[*]}") >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/ci/Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}

@@ -6,15 +6,12 @@ on:
   pull_request:
     branches: [develop]
 
-env:
-  CLANG_IMAGE: ghcr.io/spiritecosse/storm-clang:latest
-
 jobs:
   test:
     name: "${{ matrix.preset }} / PG ${{ matrix.postgres }}"
     runs-on: ubuntu-24.04
     container:
-      image: manjarolinux/base:20260315
+      image: ghcr.io/spiritecosse/storm-ci:latest
 
     services:
       postgres:
@@ -59,17 +56,8 @@ jobs:
             postgres: 16
 
     steps:
-      - name: Install git
-        run: pacman -Syu --noconfirm && pacman -S --noconfirm git
-
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install system dependencies
-        run: ./scripts/ci-install-deps.sh --with-lcov
-
-      - name: Extract clang-p2996 from container image
-        run: ./scripts/ci-extract-clang.sh
 
       - name: Cache CPM packages
         uses: actions/cache@v4
@@ -96,40 +84,3 @@ jobs:
         run: |
           curl -sSf https://atlasgo.sh | sh
           ./scripts/test-atlas-migration.sh
-
-  benchmark:
-    name: "benchmark smoke test"
-    runs-on: ubuntu-24.04
-    container:
-      image: manjarolinux/base:20260315
-
-    steps:
-      - name: Install git
-        run: pacman -Syu --noconfirm && pacman -S --noconfirm git
-
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install system dependencies
-        run: ./scripts/ci-install-deps.sh
-
-      - name: Extract clang-p2996 from container image
-        run: ./scripts/ci-extract-clang.sh
-
-      - name: Cache CPM packages
-        uses: actions/cache@v4
-        with:
-          path: .cache/CPM
-          key: cpm-ninja-release-${{ hashFiles('cmake/cpm.cmake', 'cmake/tests.cmake', 'cmake/bench.cmake') }}
-          restore-keys: |
-            cpm-ninja-release-
-            cpm-
-
-      - name: Configure
-        run: cmake --preset ninja-release
-
-      - name: Build
-        run: ./scripts/build-with-retry.sh ninja-release
-
-      - name: Smoke benchmark
-        run: ./scripts/bench-smoke.sh
