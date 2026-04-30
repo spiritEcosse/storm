@@ -11,7 +11,9 @@ jobs:
     name: "${{ matrix.preset }} / PG ${{ matrix.postgres }}"
     runs-on: ubuntu-24.04
     container:
-      image: ghcr.io/spiritecosse/storm-ci:latest
+      # Pinned to a specific digest so develop is unaffected by storm-ci image
+      # rebuilds. Bump this when publishing a new image (see docker-ci-image.yml).
+      image: ghcr.io/spiritecosse/storm-ci@sha256:4718aa1ec4f195aba77de4b17a9190c8223a5c215d01aa34ed230950010e304c
 
     services:
       postgres:
