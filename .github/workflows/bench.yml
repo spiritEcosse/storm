@@ -18,7 +18,7 @@ jobs:
       # Pin to the same storm-ci digest as ci.yml — Bencher's walltime gate
       # only makes sense against a fixed toolchain. Bump this in lockstep
       # with ci.yml when publishing a new image.
-      image: ghcr.io/spiritecosse/storm-ci@sha256:4718aa1ec4f195aba77de4b17a9190c8223a5c215d01aa34ed230950010e304c
+      image: ghcr.io/spiritecosse/storm-ci@sha256:90e958ac1f10ebe3721906fa67dac3a67285740974b52473fe6409404ebdd431
 
     steps:
       - name: Checkout
