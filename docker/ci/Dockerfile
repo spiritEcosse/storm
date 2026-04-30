@@ -29,19 +29,11 @@ RUN ln -s clang-21 /opt/clang-p2996/build/bin/clang \
 ENV LIBCXX_ROOT=/opt/clang-p2996 \
     PATH=/opt/clang-p2996/build/bin:$PATH
 
-# Storm's CMakePresets.json references `${sourceDir}/../clang-p2996`. We resolve
-# that symlink two ways:
-#
-#   1. Baked-in for GitHub Actions: `container:` jobs mount the workspace at
-#      /__w/<repo>/<repo>, so /__w/clang-p2996 is the ${sourceDir}/../clang-p2996
-#      Storm expects. GHA overrides ENTRYPOINT, so the symlink must already exist.
-#
-#   2. Runtime entrypoint for local `docker run`: the entrypoint creates the
-#      symlink at $(dirname $PWD)/clang-p2996 wherever the workspace is mounted.
-#
-RUN mkdir -p /__w \
-    && ln -s /opt/clang-p2996 /__w/clang-p2996
-
+# Storm's CMakePresets.json references `${sourceDir}/../clang-p2996`. The
+# entrypoint creates that symlink at $(dirname $PWD) on every container start,
+# so the image works regardless of where the workspace is mounted. GitHub
+# Actions `container:` jobs override ENTRYPOINT and need a per-job shim step
+# (`ln -s /opt/clang-p2996 ../clang-p2996`) — see .github/workflows/ci.yml.
 COPY docker/ci/entrypoint.sh /usr/local/bin/storm-ci-entrypoint
 RUN chmod +x /usr/local/bin/storm-ci-entrypoint
 
