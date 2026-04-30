@@ -42,21 +42,39 @@ jobs:
       - name: Build
         run: ./scripts/build-with-retry.sh ninja-release
 
-      - name: Setup Bencher
-        uses: bencherdev/bencher@main
+      - name: Run storm_bench
+        run: |
+          ./build/release/benchmarks/storm_bench \
+              --benchmark_format=json \
+              --benchmark_repetitions=10 \
+              --benchmark_out=storm_bench.json
 
-      - name: Run storm_bench via Bencher
+      - name: Strip BigO/RMS aggregate rows for Bencher
+        # Google Benchmark emits *_BigO and *_RMS rows for benchmarks declared
+        # with ->Complexity(). Those rows omit `real_time`, which Bencher's
+        # `cpp_google` adapter requires — its strict serde parser rejects the
+        # entire batch on one missing field, so the report lands with empty
+        # `results` and the gate fails. Drop those two aggregate types here.
+        run: |
+          jq '.benchmarks |= map(select(.aggregate_name != "BigO" and .aggregate_name != "RMS"))' \
+              storm_bench.json > storm_bench.bencher.json
+
+      - name: Setup Bencher
+        uses: bencherdev/bencher@46d007c103827da37db1a25b705dc73d3aaff7e6 # v0.6.3
+
+      - name: Upload to Bencher
         env:
           BENCHER_API_TOKEN: ${{ secrets.BENCHER_API_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bencher run \
             --project storm-orm \
             --branch "${{ github.head_ref || github.ref_name }}" \
             --testbed gha-ubuntu-24-04-storm-ci \
             --adapter cpp_google \
+            --file storm_bench.bencher.json \
             --threshold-measure latency \
             --threshold-test percentage \
             --threshold-upper-boundary 0.05 \
             --err \
-            --github-actions "${{ secrets.GITHUB_TOKEN }}" \
-            "./build/release/benchmarks/storm_bench --benchmark_format=json --benchmark_repetitions=10"
+            --github-actions "$GITHUB_TOKEN"

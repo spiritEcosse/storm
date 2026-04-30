@@ -16,6 +16,7 @@ RUN pacman -Syu --noconfirm \
     && pacman -S --noconfirm --needed \
         cmake ninja gcc sqlite postgresql-libs \
         python python-yaml git valgrind lcov \
+        jq \
     && pacman -Scc --noconfirm
 
 # Prebuilt clang-p2996 from the sibling data-only image.
