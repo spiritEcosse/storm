@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 # Run storm_bench and (optionally) diff the result against a baseline JSON.
 #
-# This is the local-dev counterpart to the Bencher gate (Phase 6 of #235).
-# Phase 4b deliberately ships *without* a committed baseline because:
-#   - A baseline is only meaningful when generated on the same hardware class
-#     as the comparison run (laptop vs. CI VMs differ by 30%+).
-#   - Bencher (Phase 6) owns the per-PR gate once the Dockerized runner from
-#     #236 lands, so a committed JSON would just be maintenance overhead.
+# This is the local-dev counterpart to the Bencher CI gate
+# (.github/workflows/bench.yml, issue #238). Bencher's server-side store is
+# the authoritative baseline for `develop`; this script is for offline
+# investigation against any saved JSON snapshot (e.g. one downloaded from
+# Bencher, or a /tmp/before.json captured before a local edit).
 #
-# Until then, this script is useful in two ways:
+# Two modes:
 #   1. No-arg / no baseline: just run the benchmarks, write current.json,
 #      print Google Benchmark's own console summary. Exits 0.
 #   2. With a baseline path (or BASELINE= env): diff against it via

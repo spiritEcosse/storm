@@ -39,9 +39,13 @@ See [GitHub Issues (benchmarks)](https://github.com/spiritEcosse/storm/issues?q=
 
 ## 📉 Regression detection
 
-The per-PR benchmark gate is **Bencher**, configured in [#235 Phase 6](https://github.com/spiritEcosse/storm/issues/235). Phase 6 depends on [#236 Step 1](https://github.com/spiritEcosse/storm/issues/236) (Dockerized CI toolchain) for runner-class stability — until both land, there is no automatic CI gate on benchmark regressions.
+The per-PR benchmark gate is **Bencher** (`.github/workflows/bench.yml`, issue [#238](https://github.com/spiritEcosse/storm/issues/238)). Every PR targeting `develop` runs `storm_bench` inside the pinned `storm-ci` container, ships JSON to Bencher's server-side store, and posts a PR comment with per-benchmark deltas. The gate fails the workflow on a `>5%` slowdown with statistical significance. Pushes to `develop` archive new reference points for the trend line.
 
-For local-dev investigation, `benchmarks/scripts/compare_against_baseline.sh` runs `storm_bench` and (optionally) diffs against a previously-saved JSON via Google Benchmark's [`compare.py`](https://github.com/google/benchmark/blob/main/tools/compare.py) + Mann-Whitney U-test. There is no committed baseline file in the repo: a baseline is only meaningful on the same hardware class as the comparison run, and Bencher will own that responsibility once Phase 6 lands.
+There is no committed baseline JSON: Bencher's server-side store is authoritative, and a checked-in baseline would only be meaningful on a single hardware class.
+
+For local-dev investigation, `benchmarks/scripts/compare_against_baseline.sh` runs `storm_bench` and (optionally) diffs against a previously-saved JSON via Google Benchmark's [`compare.py`](https://github.com/google/benchmark/blob/main/tools/compare.py) + Mann-Whitney U-test. Pass it any saved JSON snapshot (e.g. one downloaded from Bencher) to diff offline.
+
+**Interpreting Bencher PR comments:** the comment lists each benchmark whose latency moved past the threshold, with the percentage delta and a link to the run on bencher.dev. A green ✅ comment (or no comment on a no-op change) means the gate passed. A red ❌ comment names the regressed benchmarks and blocks merge until the regression is resolved or the upper boundary is intentionally relaxed in `bench.yml`.
 
 **Workflow**
 
