@@ -41,3 +41,11 @@ oom-*
 slow-unit-*
 corpus/
 crashes/
+
+# Local-only env files (never committed)
+.env
+.env.*
+!.env.example
+
+# Lock files from local tooling (e.g. .claude/scheduled_tasks.lock)
+*.lock

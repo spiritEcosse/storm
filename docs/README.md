@@ -40,6 +40,7 @@ Welcome to Storm ORM - a modern C++26 ORM library using compile-time reflection 
 
 ## Development
 
+- **[Getting Started](development/GETTING_STARTED.md)** - First-time setup, build via Docker (recommended) or from source
 - **[Common Tasks](development/COMMON_TASKS.md)** - Adding operations, common development workflows
 - **[Testing](development/TESTING.md)** - Test framework, PostgreSQL test isolation, running tests
 - **[Code Coverage](development/CODE_COVERAGE.md)** - How to generate and analyze test coverage
