@@ -12,10 +12,15 @@ FROM manjarolinux/base:20260315
 
 # System dependencies. valgrind is included for future CodSpeed Macro /
 # cachegrind work; lcov so the same image works for coverage builds.
+# github-cli + jq + python-numpy/scipy are for the bench.yml regression gate
+# (#241): gh fetches the develop-baseline-latest artifact and posts the PR
+# comment, jq renders the comparison table, numpy/scipy back compare.py's
+# Mann-Whitney U-test in benchmarks/scripts/compare_against_baseline.sh.
 RUN pacman -Syu --noconfirm \
     && pacman -S --noconfirm --needed \
         cmake ninja gcc sqlite postgresql-libs \
-        python python-yaml git valgrind lcov \
+        python python-yaml python-numpy python-scipy git valgrind lcov \
+        github-cli jq \
     && pacman -Scc --noconfirm
 
 # Prebuilt clang-p2996 from the sibling data-only image.
