@@ -64,6 +64,15 @@ jobs:
       - name: Configure
         run: cmake --preset ninja-release
 
+      # bench.yml is the only workflow that builds ninja-release in CI, so it
+      # owns first-run population of the release module-cache. Parallel
+      # clang-scan-deps races against the empty cache and produces duplicate
+      # builtin PCMs ("module '_Builtin_stdint' is defined in both X and X").
+      # Building the storm library alone with -j 1 seeds the cache cleanly;
+      # the parallel build below then fans out without the race.
+      - name: Warm release module-cache (storm lib, -j 1)
+        run: cmake --build --preset ninja-release --target storm -j 1
+
       - name: Build
         run: ./scripts/build-with-retry.sh ninja-release
 
