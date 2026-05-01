@@ -1,0 +1,198 @@
+name: Bench
+
+# Self-hosted regression gate (#241). On push to develop the job runs
+# storm_bench and uploads the JSON as the `develop-baseline-latest`
+# artifact (overwriting prior). On a PR the job runs storm_bench, downloads
+# the latest develop baseline, diffs via compare.py + Mann-Whitney U-test,
+# posts a marker-edited PR comment with the regression / improvement table,
+# and fails the gate on any benchmark slower than +5% with p<0.05.
+#
+# All numbers come from benchmarks/scripts/compare_against_baseline.sh —
+# the same engine we use locally — so CI and local-dev produce identical
+# verdicts.
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+permissions:
+  contents: read
+  actions: read         # download-artifact across runs needs this
+  pull-requests: write  # gh pr comment
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bench:
+    name: storm_bench
+    runs-on: ubuntu-24.04
+    container:
+      # Same digest as ci.yml; bump in lockstep when storm-ci is rebuilt.
+      image: ghcr.io/spiritecosse/storm-ci@sha256:33791aa51df55044e941edb2cebe5b12e2f9d4008df2cf08f07da33072baa9aa
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Link clang-p2996 next to source dir
+        run: ln -sfn /opt/clang-p2996 "$(dirname "$GITHUB_WORKSPACE")/clang-p2996"
+
+      - name: Cache CPM packages
+        uses: actions/cache@v4
+        with:
+          path: .cache/CPM
+          key: cpm-ninja-release-${{ hashFiles('cmake/cpm.cmake', 'cmake/tests.cmake', 'cmake/bench.cmake') }}
+          restore-keys: |
+            cpm-ninja-release-
+            cpm-
+
+      - name: Configure
+        run: cmake --preset ninja-release
+
+      - name: Build
+        run: ./scripts/build-with-retry.sh ninja-release
+
+      # ──────────────────────────────────────────────────────────────────
+      # Push-to-develop: run bench, upload as the canonical baseline.
+      # ──────────────────────────────────────────────────────────────────
+      - name: Run storm_bench (baseline)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        run: |
+          ./build/release/benchmarks/storm_bench \
+              --benchmark_format=json \
+              --benchmark_repetitions=10 \
+              --benchmark_out=storm_bench.json
+
+      - name: Upload develop baseline
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        uses: actions/upload-artifact@v4
+        with:
+          name: develop-baseline-latest
+          path: storm_bench.json
+          overwrite: true
+          retention-days: 90
+
+      # ──────────────────────────────────────────────────────────────────
+      # Pull request: run bench, download latest develop baseline, diff,
+      # post / edit the PR comment, fail gate on regressions.
+      # ──────────────────────────────────────────────────────────────────
+      - name: Find latest develop baseline run
+        if: github.event_name == 'pull_request'
+        id: baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id=$(gh run list \
+              --workflow=bench.yml \
+              --branch=develop \
+              --status=success \
+              --limit=1 \
+              --json databaseId \
+              --jq '.[0].databaseId // empty')
+          if [[ -z "$run_id" ]]; then
+              echo "No successful develop bench run yet — first-run path."
+              echo "have_baseline=false" >> "$GITHUB_OUTPUT"
+          else
+              echo "Baseline run id: $run_id"
+              echo "have_baseline=true" >> "$GITHUB_OUTPUT"
+              echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download develop baseline
+        if: github.event_name == 'pull_request' && steps.baseline.outputs.have_baseline == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: develop-baseline-latest
+          path: baseline
+          run-id: ${{ steps.baseline.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Run storm_bench + compare
+        if: github.event_name == 'pull_request' && steps.baseline.outputs.have_baseline == 'true'
+        id: compare
+        env:
+          BASELINE: baseline/storm_bench.json
+          CURRENT_JSON: current.json
+          BENCH_REPETITIONS: '10'
+        # compare_against_baseline.sh exits non-zero on regression. We capture
+        # that exit, render the PR comment regardless, then propagate the
+        # status at the end of the step list.
+        run: |
+          set +e
+          ./benchmarks/scripts/compare_against_baseline.sh
+          rc=$?
+          set -e
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+
+      - name: Re-run compare.py with diff JSON dump
+        if: github.event_name == 'pull_request' && steps.baseline.outputs.have_baseline == 'true'
+        # compare_against_baseline.sh wraps compare.py and discards the diff
+        # JSON; we re-invoke it directly here to capture the JSON the renderer
+        # consumes. This is cheap (no benchmark re-run, just JSON math).
+        run: |
+          compare_py="$(awk -F= '/^benchmark_SOURCE_DIR:STATIC=/ { print $2 }' build/release/CMakeCache.txt)/tools/compare.py"
+          python3 "$compare_py" --display_aggregates_only \
+              --dump_to_json diff.json \
+              --no-color \
+              benchmarks baseline/storm_bench.json current.json > /dev/null
+
+      - name: Render PR comment
+        if: github.event_name == 'pull_request' && steps.baseline.outputs.have_baseline == 'true'
+        run: |
+          python3 benchmarks/scripts/render_pr_comment.py diff.json \
+              --threshold 0.05 \
+              --alpha 0.05 \
+              --baseline-run-id "${{ steps.baseline.outputs.run_id }}" \
+              --current-sha "${{ github.event.pull_request.head.sha }}" \
+              > comment.md
+          cat comment.md
+
+      - name: Post / edit PR comment
+        if: github.event_name == 'pull_request' && steps.baseline.outputs.have_baseline == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        # Idempotent upsert by marker. `gh pr comment --edit-last` edits the
+        # most recent comment authored by the GITHUB_TOKEN bot, which is
+        # exactly what we want — we are the only writer using that identity.
+        run: |
+          existing=$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
+              --jq '.[] | select(.body | startswith("<!-- storm-bench-comment -->")) | .id' \
+              | head -n1)
+          if [[ -n "$existing" ]]; then
+              gh pr comment "$PR_NUMBER" --edit-last --body-file comment.md
+          else
+              gh pr comment "$PR_NUMBER" --body-file comment.md
+          fi
+
+      - name: First-run notice (no baseline yet)
+        if: github.event_name == 'pull_request' && steps.baseline.outputs.have_baseline == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          cat > comment.md <<'EOF'
+          <!-- storm-bench-comment -->
+          ## storm_bench regression gate
+
+          :information_source: **No baseline yet.** The first push to `develop` after this PR lands will seed `develop-baseline-latest`; subsequent PRs will see the regression diff here.
+          EOF
+          existing=$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
+              --jq '.[] | select(.body | startswith("<!-- storm-bench-comment -->")) | .id' \
+              | head -n1)
+          if [[ -n "$existing" ]]; then
+              gh pr comment "$PR_NUMBER" --edit-last --body-file comment.md
+          else
+              gh pr comment "$PR_NUMBER" --body-file comment.md
+          fi
+
+      - name: Propagate gate status
+        if: github.event_name == 'pull_request' && steps.baseline.outputs.have_baseline == 'true'
+        run: |
+          rc='${{ steps.compare.outputs.exit_code }}'
+          echo "compare_against_baseline.sh exit code: $rc"
+          exit "$rc"

@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
 # Run storm_bench and (optionally) diff the result against a baseline JSON.
 #
-# This is the local-dev counterpart to the Bencher gate (Phase 6 of #235).
-# Phase 4b deliberately ships *without* a committed baseline because:
-#   - A baseline is only meaningful when generated on the same hardware class
-#     as the comparison run (laptop vs. CI VMs differ by 30%+).
-#   - Bencher (Phase 6) owns the per-PR gate once the Dockerized runner from
-#     #236 lands, so a committed JSON would just be maintenance overhead.
+# This script is the engine .github/workflows/bench.yml uses for the per-PR
+# regression gate (#241), and it is the same engine you can run locally to
+# get the same verdict before pushing — CI and local-dev produce identical
+# numbers because they call the same script with the same defaults.
 #
-# Until then, this script is useful in two ways:
+# Two modes:
 #   1. No-arg / no baseline: just run the benchmarks, write current.json,
 #      print Google Benchmark's own console summary. Exits 0.
 #   2. With a baseline path (or BASELINE= env): diff against it via
 #      compare.py + Mann-Whitney U-test. Exits 1 on any benchmark slower
 #      than the threshold with statistical significance.
+#
+# No baseline is committed to the repo — a baseline is only meaningful on the
+# same hardware class as the comparison run (laptop vs. CI VMs differ by
+# 30%+). CI uploads its own baseline as the `develop-baseline-latest` GHA
+# artifact (90d retention, overwritten on each push to develop).
 #
 # Usage:
 #   benchmarks/scripts/compare_against_baseline.sh                      # run-only
