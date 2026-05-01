@@ -33,6 +33,17 @@ jobs:
     container:
       # Same digest as ci.yml; bump in lockstep when storm-ci is rebuilt.
       image: ghcr.io/spiritecosse/storm-ci@sha256:33791aa51df55044e941edb2cebe5b12e2f9d4008df2cf08f07da33072baa9aa
+    # The storm-ci image's default shell is /bin/sh; force bash for `[[`,
+    # `set +e`, and $GITHUB_OUTPUT redirects the steps below rely on.
+    defaults:
+      run:
+        shell: bash
+    env:
+      # gh otherwise calls `git` to discover the repo, which fails inside the
+      # container because the workspace UID differs from the container user
+      # ("dubious ownership"). Setting GH_REPO bypasses git autodetection
+      # entirely so we never need a `safe.directory` shim.
+      GH_REPO: ${{ github.repository }}
 
     steps:
       - name: Checkout
