@@ -47,7 +47,7 @@ The per-PR benchmark gate (#241) is self-hosted on GitHub Actions and uses **Git
 
 CI runs `benchmarks/scripts/compare_against_baseline.sh` — the same engine you can run locally against a saved JSON to get the same verdict before pushing. No committed baseline lives in the repo: a baseline is only meaningful on the same hardware class as the comparison run.
 
-**Local workflow**
+**Local workflow** (same engine, same numbers as CI)
 
 ```bash
 cmake --preset ninja-release && cmake --build --preset ninja-release
@@ -103,8 +103,7 @@ benchmarks/
 ├── anchors_raw.cpp             # `storm_anchors` binary — release-time raw SQLite spot checks
 ├── scripts/
 │   ├── yaml_to_json.py             # YAML → JSON converter (runs at build time)
-│   ├── compare_against_baseline.sh # Regression diff (Mann-Whitney U-test) — engine for both local-dev and bench.yml
-│   └── render_pr_comment.py        # Markdown renderer for the bench.yml PR comment
+│   ├── compare_against_baseline.sh # Regression diff (Mann-Whitney U-test) — engine for local-dev
 └── tests/
     ├── benchmark_tests.yaml   # Test definitions (human-friendly source of truth)
     └── benchmark_tests.json   # Auto-generated from YAML (loaded at compile time via #embed)
