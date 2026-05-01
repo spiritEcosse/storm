@@ -39,11 +39,15 @@ See [GitHub Issues (benchmarks)](https://github.com/spiritEcosse/storm/issues?q=
 
 ## 📉 Regression detection
 
-The per-PR benchmark gate is **Bencher**, configured in [#235 Phase 6](https://github.com/spiritEcosse/storm/issues/235). Phase 6 depends on [#236 Step 1](https://github.com/spiritEcosse/storm/issues/236) (Dockerized CI toolchain) for runner-class stability — until both land, there is no automatic CI gate on benchmark regressions.
+The per-PR benchmark gate (#241) is self-hosted on GitHub Actions and uses **GitHub Actions artifacts** for the baseline store — no external service.
 
-For local-dev investigation, `benchmarks/scripts/compare_against_baseline.sh` runs `storm_bench` and (optionally) diffs against a previously-saved JSON via Google Benchmark's [`compare.py`](https://github.com/google/benchmark/blob/main/tools/compare.py) + Mann-Whitney U-test. There is no committed baseline file in the repo: a baseline is only meaningful on the same hardware class as the comparison run, and Bencher will own that responsibility once Phase 6 lands.
+- **Push to `develop`** runs `storm_bench` and uploads the JSON as the `develop-baseline-latest` artifact (overwriting prior, 90-day retention).
+- **Pull requests** run `storm_bench`, download `develop-baseline-latest` from the most recent successful develop run, diff via Google Benchmark's [`compare.py`](https://github.com/google/benchmark/blob/main/tools/compare.py) + Mann-Whitney U-test, post a marker-edited PR comment with the regression / improvement table, and **fail the gate on any benchmark slower than +5% with p<0.05**.
+- **First-run case** (no `develop-baseline-latest` artifact yet): the PR comment notes the missing baseline and the gate marks green. The first push to `develop` after this lands seeds the baseline.
 
-**Workflow**
+CI runs `benchmarks/scripts/compare_against_baseline.sh` — the same engine you can run locally against a saved JSON to get the same verdict before pushing. No committed baseline lives in the repo: a baseline is only meaningful on the same hardware class as the comparison run.
+
+**Local workflow**
 
 ```bash
 cmake --preset ninja-release && cmake --build --preset ninja-release
@@ -99,7 +103,8 @@ benchmarks/
 ├── anchors_raw.cpp             # `storm_anchors` binary — release-time raw SQLite spot checks
 ├── scripts/
 │   ├── yaml_to_json.py             # YAML → JSON converter (runs at build time)
-│   └── compare_against_baseline.sh # Local-dev regression diff (Mann-Whitney U-test)
+│   ├── compare_against_baseline.sh # Regression diff (Mann-Whitney U-test) — engine for both local-dev and bench.yml
+│   └── render_pr_comment.py        # Markdown renderer for the bench.yml PR comment
 └── tests/
     ├── benchmark_tests.yaml   # Test definitions (human-friendly source of truth)
     └── benchmark_tests.json   # Auto-generated from YAML (loaded at compile time via #embed)
