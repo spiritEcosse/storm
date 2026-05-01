@@ -103,8 +103,7 @@ benchmarks/
 ├── anchors_raw.cpp             # `storm_anchors` binary — release-time raw SQLite spot checks
 ├── scripts/
 │   ├── yaml_to_json.py             # YAML → JSON converter (runs at build time)
-│   ├── compare_against_baseline.sh # Regression diff (Mann-Whitney U-test) — engine for both local-dev and bench.yml
-│   └── render_pr_comment.py        # Markdown renderer for the bench.yml PR comment
+│   ├── compare_against_baseline.sh # Regression diff (Mann-Whitney U-test) — engine for local-dev
 └── tests/
     ├── benchmark_tests.yaml   # Test definitions (human-friendly source of truth)
     └── benchmark_tests.json   # Auto-generated from YAML (loaded at compile time via #embed)

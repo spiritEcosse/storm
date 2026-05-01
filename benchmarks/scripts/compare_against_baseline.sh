@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Run storm_bench and (optionally) diff the result against a baseline JSON.
 #
-# This script is the engine .github/workflows/bench.yml uses for the per-PR
-# regression gate (#241), and it is the same engine you can run locally to
-# get the same verdict before pushing — CI and local-dev produce identical
+# It is the same engine you can run locally to
+# get the same verdict before pushing — local-dev produce identical
 # numbers because they call the same script with the same defaults.
 #
 # Two modes:
