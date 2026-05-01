@@ -47,7 +47,7 @@ The per-PR benchmark gate (#241) is self-hosted on GitHub Actions and uses **Git
 
 CI runs `benchmarks/scripts/compare_against_baseline.sh` — the same engine you can run locally against a saved JSON to get the same verdict before pushing. No committed baseline lives in the repo: a baseline is only meaningful on the same hardware class as the comparison run.
 
-**Local workflow**
+**Local workflow** (same engine, same numbers as CI)
 
 ```bash
 cmake --preset ninja-release && cmake --build --preset ninja-release
