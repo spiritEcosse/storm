@@ -108,3 +108,11 @@ set_property(
   PROPERTY COMPILE_DEFINITIONS "BENCHMARK_STATIC_DEFINE")
 
 message(STATUS "Benchmark executable: storm_anchors")
+
+# ============================================================================
+# storm_bench_dashboard — Issue #247
+# ============================================================================
+# Phase 1 skeleton lives in its own subdirectory so the dashboard's reflection
+# schema (bench_dashboard namespace) and Atlas migration targets stay isolated
+# from the gbench-side files in benchmarks/.
+add_subdirectory(dashboard)
