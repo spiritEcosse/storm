@@ -96,7 +96,9 @@ namespace bench_dashboard::wire {
         return s;
     }
 
-    inline auto build_run_complete() -> std::string { return std::string{R"({"type":"run_complete"})"}; }
+    inline auto build_run_complete() -> std::string {
+        return std::string{R"({"type":"run_complete"})"};
+    }
 
     inline auto build_result(ResultMsg const& m) -> std::string {
         std::string s;
@@ -241,8 +243,7 @@ namespace bench_dashboard::wire {
         struct Reader {
             std::string_view json;
 
-            template<typename T>
-            auto read_field(std::string_view key, T& out) const -> void {
+            template <typename T> auto read_field(std::string_view key, T& out) const -> void {
                 const auto p = find_top_level_key(json, key);
                 if (p == std::string_view::npos)
                     return;

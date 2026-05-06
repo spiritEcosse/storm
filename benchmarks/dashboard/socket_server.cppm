@@ -53,7 +53,9 @@ export namespace bench_dashboard {
             return *this;
         }
 
-        ~SocketServer() { shutdown(); }
+        ~SocketServer() {
+            shutdown();
+        }
 
         // Open the listener. Returns empty string on success, an error
         // message otherwise. Unlinks any pre-existing file at `path` first
@@ -148,8 +150,12 @@ export namespace bench_dashboard {
             }
         }
 
-        [[nodiscard]] auto is_open() const noexcept -> bool { return fd_ >= 0; }
-        [[nodiscard]] auto path() const noexcept -> std::string_view { return path_; }
+        [[nodiscard]] auto is_open() const noexcept -> bool {
+            return fd_ >= 0;
+        }
+        [[nodiscard]] auto path() const noexcept -> std::string_view {
+            return path_;
+        }
 
       private:
         int         fd_{-1};

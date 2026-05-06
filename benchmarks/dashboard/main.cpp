@@ -1,9 +1,12 @@
-// storm_bench_dashboard — Phase 2 (Issue #247).
+// storm_bench_dashboard — Phase 3 (Issue #247).
 //
-// Phase 1 verified the SQLite schema is current. Phase 2 adds the live socket
-// stream: open AF_UNIX SOCK_DGRAM, parse each NDJSON datagram from the
-// storm_bench reporter, print one line per event, exit on run_complete. No
-// TUI yet (Phase 3) and no DB inserts yet (Phase 3 alongside the TUI).
+// Phase 1 verified the SQLite schema is current. Phase 2 added the live socket
+// stream. Phase 3 turns the binary into a real TUI: every NDJSON datagram is
+// parsed, persisted to SQLite via Storm (`QuerySet<BenchRun>` /
+// `QuerySet<BenchResult>` — Storm dogfoods itself), and rendered in an
+// alt-screen ANSI view with categorised, colour-coded, newest-first results.
+// Multiple `storm_bench` invocations stack in the same dashboard process
+// (newest on top); older sessions auto-collapse and re-expand on number keys.
 //
 // Schema management is out of scope: this binary never auto-creates tables.
 // Migrations are run explicitly via `cmake --build . --target migrate-bench`
@@ -13,6 +16,7 @@
 
 import storm;
 import storm.bench_dashboard.socket_server;
+import storm.bench_dashboard.tui;
 import <expected>;
 import <memory>;
 import <filesystem>;
@@ -20,12 +24,40 @@ import <filesystem>;
 #include "models.hpp" // textual — must follow `import storm;`
 #include "wire.hpp"
 
+#include <atomic>
+#include <chrono>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
+#include <format>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
+
+    // SIGINT / SIGTERM → flip the flag the main loop already checks for `q`.
+    // Keeps the alt-screen + termios teardown on the normal exit path so a
+    // Ctrl-C doesn't leave the user with a wrecked terminal.
+    std::atomic<bool> g_should_quit{false};
+
+    extern "C" auto handle_quit_signal(int /*sig*/) -> void {
+        g_should_quit.store(true);
+    }
+
+    auto install_signal_handlers() -> void {
+        struct sigaction sa{};
+        sa.sa_handler = &handle_quit_signal;
+        ::sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0; // intentionally not SA_RESTART — we want poll() to wake on signal
+        ::sigaction(SIGINT, &sa, nullptr);
+        ::sigaction(SIGTERM, &sa, nullptr);
+    }
+
+    // -----------------------------------------------------------------------
+    // CLI parsing
+    // -----------------------------------------------------------------------
 
     // Default location for the dashboard's SQLite store, following XDG Base
     // Directory: app-managed persistent data (history, dbs the user doesn't
@@ -52,10 +84,6 @@ namespace {
         const std::string_view default_sock = bench_dashboard::wire::default_socket_path();
         std::printf(
                 "storm_bench_dashboard — real-time storm_bench result dashboard\n"
-                "\n"
-                "Phase 2: streams NDJSON results from storm_bench over an AF_UNIX\n"
-                "socket and prints one line per event. TUI + DB inserts land in\n"
-                "Phase 3.\n"
                 "\n"
                 "Usage: storm_bench_dashboard [--db PATH]\n"
                 "\n"
@@ -92,35 +120,6 @@ namespace {
         return opts;
     }
 
-    // Translate a parsed wire::ResultMsg to one human-readable stdout line.
-    // Phase 3 replaces this with the ANSI TUI render loop.
-    auto print_msg(bench_dashboard::wire::ResultMsg const& m) -> void {
-        using bench_dashboard::wire::MessageKind;
-        switch (m.kind) {
-        case MessageKind::RunStart:
-            std::printf(
-                    "[run_start]   filter=%s is_full_run=%s\n",
-                    m.filter.empty() ? "<none>" : m.filter.c_str(),
-                    m.is_full_run ? "true" : "false"
-            );
-            break;
-        case MessageKind::RunComplete:
-            std::printf("[run_complete]\n");
-            break;
-        case MessageKind::Result:
-            std::printf(
-                    "[result]      %-48s real=%.0fns  cpu=%.0fns  iters=%lld  ips=%.0f\n",
-                    m.test_name.c_str(),
-                    m.real_ns,
-                    m.cpu_ns,
-                    static_cast<long long>(m.iterations),
-                    m.items_per_second
-            );
-            break;
-        }
-        std::fflush(stdout);
-    }
-
     auto print_missing_schema_hint(std::string_view db_path) -> void {
         std::fprintf(
                 stderr,
@@ -136,10 +135,216 @@ namespace {
         );
     }
 
+    // -----------------------------------------------------------------------
+    // DashboardDB — Storm-side writer
+    //
+    // Inline here (not a .cppm) so the textual include of models.hpp stays in
+    // the same TU as `import storm;`. Cross-BMI annotation transport on
+    // clang-p2996 is unreliable (memory feedback_cpp26_module_reflection_annotations);
+    // keeping the QuerySet calls and the model definitions in one TU sidesteps
+    // that entirely.
+    // -----------------------------------------------------------------------
+
+    auto run_capture(char const* cmd) -> std::string {
+        std::unique_ptr<std::FILE, decltype(&pclose)> pipe{::popen(cmd, "r"), &::pclose};
+        if (!pipe)
+            return {};
+        std::string out;
+        char        buf[256];
+        if (std::fgets(buf, sizeof(buf), pipe.get()) != nullptr)
+            out.assign(buf);
+        while (!out.empty() && (out.back() == '\n' || out.back() == '\r'))
+            out.pop_back();
+        return out;
+    }
+
+    auto current_iso8601() -> std::string {
+        const auto now = std::chrono::system_clock::now();
+        const auto t   = std::chrono::system_clock::to_time_t(now);
+        std::tm    tm_utc{};
+        ::gmtime_r(&t, &tm_utc);
+        char buf[32];
+        std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm_utc);
+        return std::string{buf};
+    }
+
+    class DashboardDB {
+      public:
+        [[nodiscard]] auto insert_run(std::string_view filter, bool is_full_run)
+                -> std::expected<int64_t, std::string> {
+            ensure_host_context();
+
+            bench_dashboard::BenchRun row{};
+            row.git_hash    = host_.git_hash;
+            row.branch      = host_.branch;
+            row.timestamp   = current_iso8601();
+            row.hostname    = host_.hostname;
+            row.compiler    = host_.compiler;
+            row.filter      = std::string{filter};
+            row.is_full_run = is_full_run;
+
+            auto rc = storm::QuerySet<bench_dashboard::BenchRun>().insert(row).execute();
+            if (!rc)
+                return std::unexpected(std::string{rc.error().message()});
+            return *rc;
+        }
+
+        auto insert_result(int64_t run_id, bench_dashboard::wire::ResultMsg const& m)
+                -> std::expected<void, std::string> {
+            bench_dashboard::BenchResult row{};
+            row.run_id           = static_cast<int>(run_id);
+            row.test_name        = m.test_name;
+            row.category         = m.category;
+            row.dataset_size     = static_cast<int>(m.dataset_size);
+            row.real_time_ns     = m.real_ns;
+            row.cpu_time_ns      = m.cpu_ns;
+            row.iterations       = static_cast<int>(m.iterations);
+            row.items_per_second = m.items_per_second;
+
+            storm::QuerySet<bench_dashboard::BenchResult> qs;
+            auto rc = qs.template insert<storm::orm::statements::ReturnId::No>(row).execute();
+            if (!rc)
+                return std::unexpected(std::string{rc.error().message()});
+            return {};
+        }
+
+      private:
+        struct HostContext {
+            std::string git_hash;
+            std::string branch;
+            std::string hostname;
+            std::string compiler;
+        };
+
+        auto ensure_host_context() -> void {
+            if (host_initialised_)
+                return;
+            host_initialised_ = true;
+            host_.git_hash    = run_capture("git rev-parse --short HEAD 2>/dev/null");
+            host_.branch      = run_capture("git rev-parse --abbrev-ref HEAD 2>/dev/null");
+            host_.hostname    = run_capture("hostname -s 2>/dev/null");
+            host_.compiler    = std::format("Clang {}.{}", __clang_major__, __clang_minor__);
+        }
+
+        HostContext host_{};
+        bool        host_initialised_{false};
+    };
+
+    // -----------------------------------------------------------------------
+    // Event loop
+    // -----------------------------------------------------------------------
+
+    // Apply one parsed wire message to TUI state + DB. Returns false on a
+    // fatal DB error so the caller can bail. Soft errors (e.g. a duplicate
+    // result row) are surfaced on stderr but do not stop the dashboard.
+    auto apply_event(
+            bench_dashboard::wire::ResultMsg const& msg,
+            bench_dashboard::tui::DashboardState&   state,
+            DashboardDB&                            db,
+            int64_t&                                active_run_id
+    ) -> bool {
+        using bench_dashboard::wire::MessageKind;
+        switch (msg.kind) {
+        case MessageKind::RunStart: {
+            auto rc = db.insert_run(msg.filter, msg.is_full_run);
+            if (!rc) {
+                std::fprintf(stderr, "\nstorm_bench_dashboard: insert_run failed: %s\n", rc.error().c_str());
+                return false;
+            }
+            active_run_id  = *rc;
+            auto& sess     = bench_dashboard::tui::open_session(state, msg.filter, msg.is_full_run);
+            sess.run_id    = active_run_id;
+            sess.timestamp = current_iso8601();
+            return true;
+        }
+        case MessageKind::Result: {
+            if (active_run_id == 0) {
+                // Result without preceding run_start — open a synthetic
+                // session so we don't drop data. Treats the orphan stream
+                // as a single full-run session.
+                auto rc = db.insert_run(msg.filter, /*is_full_run=*/true);
+                if (!rc) {
+                    std::fprintf(
+                            stderr, "\nstorm_bench_dashboard: synthetic insert_run failed: %s\n", rc.error().c_str()
+                    );
+                    return false;
+                }
+                active_run_id = *rc;
+                auto& sess    = bench_dashboard::tui::open_session(state, "", true);
+                sess.run_id   = active_run_id;
+            }
+            if (auto rc = db.insert_result(active_run_id, msg); !rc) {
+                std::fprintf(stderr, "\nstorm_bench_dashboard: insert_result failed: %s\n", rc.error().c_str());
+            }
+            if (!state.sessions.empty())
+                bench_dashboard::tui::add_result(state.sessions.front(), msg);
+            return true;
+        }
+        case MessageKind::RunComplete:
+            bench_dashboard::tui::mark_complete(state);
+            active_run_id = 0;
+            return true;
+        }
+        return true;
+    }
+
+    // Refresh path: rebuild TUI state from the SQLite store. Proves the DB
+    // layer is honest — `r` should reproduce what was streamed.
+    auto rebuild_state_from_db(bench_dashboard::tui::DashboardState& state) -> void {
+        state.sessions.clear();
+
+        auto runs_rc = storm::QuerySet<bench_dashboard::BenchRun>()
+                               .order_by<^^bench_dashboard::BenchRun::id>()
+                               .select()
+                               .execute();
+        if (!runs_rc)
+            return;
+
+        // Copy into a vector to get a stable ORDER BY sequence — plf::hive
+        // iteration order is memory-layout order, not insertion order, so
+        // rbegin..rend on the hive doesn't reliably reverse the SQL ORDER BY.
+        std::vector<bench_dashboard::BenchRun> runs(runs_rc->begin(), runs_rc->end());
+        for (auto it = runs.rbegin(); it != runs.rend(); ++it) {
+            bench_dashboard::tui::Session sess{};
+            sess.filter      = it->filter;
+            sess.timestamp   = it->timestamp;
+            sess.is_full_run = it->is_full_run;
+            sess.complete    = true;                   // historical rows are always complete
+            sess.expanded    = state.sessions.empty(); // newest (first pushed) expanded
+            sess.run_id      = it->id;
+
+            auto rows_rc = storm::QuerySet<bench_dashboard::BenchResult>()
+                                   .where(storm::orm::where::field<^^bench_dashboard::BenchResult::run_id>() == it->id)
+                                   .order_by<^^bench_dashboard::BenchResult::id>()
+                                   .select()
+                                   .execute();
+            if (rows_rc) {
+                // Same plf::hive ordering caveat as BenchRun — copy into a
+                // vector to lock in the SQL ORDER BY id sequence.
+                std::vector<bench_dashboard::BenchResult> rows(rows_rc->begin(), rows_rc->end());
+                for (auto const& r : rows) {
+                    bench_dashboard::wire::ResultMsg m{};
+                    m.kind             = bench_dashboard::wire::MessageKind::Result;
+                    m.test_name        = r.test_name;
+                    m.category         = r.category;
+                    m.dataset_size     = r.dataset_size;
+                    m.real_ns          = r.real_time_ns;
+                    m.cpu_ns           = r.cpu_time_ns;
+                    m.iterations       = r.iterations;
+                    m.items_per_second = r.items_per_second;
+                    bench_dashboard::tui::add_result(sess, m);
+                    ++sess.result_count;
+                }
+            }
+            state.sessions.push_back(std::move(sess));
+        }
+    }
+
 } // namespace
 
 auto main(int argc, char** argv) -> int {
     const auto opts = parse_args(argc, argv);
+    install_signal_handlers();
 
     // Default location is under $XDG_STATE_HOME — the parent dir won't exist
     // on first run. Create it so SQLite's open call doesn't fail with ENOENT.
@@ -164,24 +369,24 @@ auto main(int argc, char** argv) -> int {
         return 1;
     }
 
-    auto run_count    = storm::QuerySet<bench_dashboard::BenchRun>().count().execute();
-    auto result_count = storm::QuerySet<bench_dashboard::BenchResult>().count().execute();
-
-    if (!run_count || !result_count) {
-        const std::string err_msg{!run_count ? run_count.error().message() : result_count.error().message()};
-        std::fprintf(stderr, "storm_bench_dashboard: schema check failed: %s\n", err_msg.c_str());
+    if (auto run_count = storm::QuerySet<bench_dashboard::BenchRun>().count().execute(); !run_count) {
+        std::fprintf(
+                stderr,
+                "storm_bench_dashboard: schema check failed: %s\n",
+                std::string{run_count.error().message()}.c_str()
+        );
         print_missing_schema_hint(opts.db_path);
         return 2;
     }
-
-    std::printf(
-            "storm_bench_dashboard: opened %s\n"
-            "  BenchRun rows:    %lld\n"
-            "  BenchResult rows: %lld\n",
-            opts.db_path.c_str(),
-            static_cast<long long>(*run_count),
-            static_cast<long long>(*result_count)
-    );
+    if (auto result_count = storm::QuerySet<bench_dashboard::BenchResult>().count().execute(); !result_count) {
+        std::fprintf(
+                stderr,
+                "storm_bench_dashboard: schema check failed: %s\n",
+                std::string{result_count.error().message()}.c_str()
+        );
+        print_missing_schema_hint(opts.db_path);
+        return 2;
+    }
 
     const std::string_view socket_path = bench_dashboard::wire::default_socket_path();
 
@@ -190,27 +395,81 @@ auto main(int argc, char** argv) -> int {
         std::fprintf(stderr, "storm_bench_dashboard: %s\n", err.c_str());
         return 3;
     }
-    std::printf(
-            "Listening on %.*s — run storm_bench with STORM_BENCH_SOCKET=1\n"
-            "Press Ctrl-C to stop.\n",
-            static_cast<int>(socket_path.size()),
-            socket_path.data()
-    );
-    std::fflush(stdout);
 
-    // Block forever; one storm_bench session = one run_start ... run_complete
-    // window. After run_complete we keep listening so the same dashboard
-    // process can serve multiple bench invocations (Phase 3 makes this a
-    // multi-session stacked view; Phase 2 just prints them sequentially).
-    for (;;) {
-        auto datagram = server.recv_one(/*timeout_ms=*/-1);
-        if (!datagram)
-            continue;
-        auto msg = bench_dashboard::wire::parse(*datagram);
-        if (!msg) {
-            std::fprintf(stderr, "storm_bench_dashboard: skipped unparseable datagram (%zu bytes)\n", datagram->size());
-            continue;
+    DashboardDB                          db;
+    bench_dashboard::tui::DashboardState state;
+    int64_t                              active_run_id = 0;
+
+    // Pre-load history so the first frame shows past runs even before any
+    // bench process connects.
+    rebuild_state_from_db(state);
+
+    bench_dashboard::tui::TerminalGuard guard;
+    bench_dashboard::tui::write_full_frame(bench_dashboard::tui::render(state));
+
+    // SocketServer doesn't expose its fd today, so stdin and the socket are
+    // driven independently: read_key polls stdin for 100 ms, then recv_one(0)
+    // drains all queued datagrams. A single thread suffices.
+    bool        running           = true;
+    std::size_t since_last_redraw = 0;
+    while (running) {
+        if (g_should_quit.load())
+            break;
+        // Stdin: short timeout so the spinner ticks roughly 10× per second.
+        auto key   = bench_dashboard::tui::read_key(/*timeout_ms=*/100);
+        bool dirty = false;
+
+        switch (key.kind) {
+        case bench_dashboard::tui::Key::Quit:
+            running = false;
+            break;
+        case bench_dashboard::tui::Key::Refresh:
+            rebuild_state_from_db(state);
+            active_run_id = 0;
+            dirty         = true;
+            break;
+        case bench_dashboard::tui::Key::Digit:
+            bench_dashboard::tui::toggle_session(state, key.digit - '0');
+            dirty = true;
+            break;
+        case bench_dashboard::tui::Key::None:
+            break;
         }
-        print_msg(*msg);
+
+        if (!running)
+            break;
+
+        // Drain whatever has arrived on the socket since last poll. Each
+        // recv_one(0) returns one datagram or std::nullopt (no more
+        // available); we loop until the queue empties.
+        while (true) {
+            auto datagram = server.recv_one(/*timeout_ms=*/0);
+            if (!datagram)
+                break;
+            auto msg = bench_dashboard::wire::parse(*datagram);
+            if (!msg) {
+                std::fprintf(
+                        stderr, "\nstorm_bench_dashboard: skipped unparseable datagram (%zu bytes)\n", datagram->size()
+                );
+                continue;
+            }
+            if (!apply_event(*msg, state, db, active_run_id))
+                running = false;
+            dirty = true;
+        }
+
+        // Spinner: redraw at least every ~5 ticks (~500 ms) so the active
+        // session's spinner glyph rotates even when no events arrive.
+        ++since_last_redraw;
+        if (since_last_redraw >= 5) {
+            ++state.spinner_tick;
+            dirty             = true;
+            since_last_redraw = 0;
+        }
+
+        if (dirty)
+            bench_dashboard::tui::write_full_frame(bench_dashboard::tui::render(state));
     }
+
+    return 0;
 }
