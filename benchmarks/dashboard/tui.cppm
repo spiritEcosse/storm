@@ -78,6 +78,12 @@ export namespace bench_dashboard::tui {
         std::size_t                 expected_count{0}; // from previous run, 0 = unknown
         std::vector<CategoryBucket> categories;        // first-seen order
         std::int64_t                run_id{0};         // FK into BenchRun (set by main.cpp)
+
+        // Phase 6: baseline comparison counters.
+        std::size_t ok_count{0};
+        std::size_t regression_count{0};
+        std::size_t improvement_count{0};
+        std::size_t severe_count{0}; // delta_pct ≥ 2× threshold
     };
 
     struct DashboardState {
@@ -87,6 +93,16 @@ export namespace bench_dashboard::tui {
         // in arrival (insertion) order rather than newest-first. The DB stays
         // in insert order regardless — this only affects the rendered frame.
         bool order_arrival{false};
+
+        // Phase 6: set from --regression-threshold (default 5%). Stored here
+        // so render functions receive it without extra parameters at the call site.
+        double regression_threshold{5.0};
+
+        // Phase 6: label of the active baseline, shown in the header.
+        // Empty when --baseline none or no baseline found.
+        std::string baseline_label{};
+        // run_id of the baseline BenchRun row; 0 = none.
+        std::int64_t baseline_run_id{0};
     };
 
     // -----------------------------------------------------------------------
@@ -118,8 +134,20 @@ export namespace bench_dashboard::tui {
         return s.sessions.front();
     }
 
-    inline auto add_result(Session& sess, wire::ResultMsg const& m) -> void {
+    inline auto add_result(Session& sess, wire::ResultMsg const& m, double regression_threshold) -> void {
         ++sess.result_count;
+
+        if (m.delta_pct.has_value()) {
+            const double d = *m.delta_pct;
+            if (d >= regression_threshold * 2.0)
+                ++sess.severe_count;
+            else if (d >= regression_threshold)
+                ++sess.regression_count;
+            else if (d <= -regression_threshold)
+                ++sess.improvement_count;
+            else
+                ++sess.ok_count;
+        }
 
         // Find bucket by category, in first-seen order; newest result at front.
         for (auto& bucket : sess.categories) {
@@ -252,29 +280,73 @@ export namespace bench_dashboard::tui {
         }
     }
 
-    inline auto append_result_line(std::string& out, wire::ResultMsg const& r) -> void {
+    [[nodiscard]] inline auto format_delta(double pct, double threshold) -> std::pair<std::string_view, std::string> {
+        if (pct >= threshold * 2.0)
+            return {ansi::kFgRed, std::format("{:+.1f}% SEVERE", pct)};
+        if (pct >= threshold)
+            return {ansi::kFgRed, std::format("{:+.1f}% REGRESS", pct)};
+        if (pct <= -threshold)
+            return {ansi::kFgGreen, std::format("{:+.1f}% IMPROVE", pct)};
+        return {ansi::kFgGrey, std::format("{:+.1f}%", pct)};
+    }
+
+    inline auto append_result_line(std::string& out, wire::ResultMsg const& r, double regression_threshold) -> void {
         const auto             colour = colour_for_latency(r.real_ns);
         const std::string_view name{r.test_name};
         const std::string_view shown = name.size() > 48 ? name.substr(name.size() - 48) : name;
-        out += std::format(
-                "      {}{:<48}{}  {}{}{}  {}\n",
-                ansi::kReset,
-                shown,
-                ansi::kReset,
-                colour,
-                format_latency(r.real_ns),
-                ansi::kReset,
-                format_ips(r.items_per_second)
-        );
+
+        if (r.delta_pct.has_value()) {
+            const auto [dcol, dtxt] = format_delta(*r.delta_pct, regression_threshold);
+            out += std::format(
+                    "      {}{:<48}{}  {}{}{}  {}  {}{}{}\n",
+                    ansi::kReset,
+                    shown,
+                    ansi::kReset,
+                    colour,
+                    format_latency(r.real_ns),
+                    ansi::kReset,
+                    format_ips(r.items_per_second),
+                    dcol,
+                    dtxt,
+                    ansi::kReset
+            );
+        } else if (r.baseline_looked_up) {
+            // Baseline active but no matching row — partial/filtered run.
+            out += std::format(
+                    "      {}{:<48}{}  {}{}{}  {}  {}—{}\n",
+                    ansi::kReset,
+                    shown,
+                    ansi::kReset,
+                    colour,
+                    format_latency(r.real_ns),
+                    ansi::kReset,
+                    format_ips(r.items_per_second),
+                    ansi::kFgGrey,
+                    ansi::kReset
+            );
+        } else {
+            out += std::format(
+                    "      {}{:<48}{}  {}{}{}  {}\n",
+                    ansi::kReset,
+                    shown,
+                    ansi::kReset,
+                    colour,
+                    format_latency(r.real_ns),
+                    ansi::kReset,
+                    format_ips(r.items_per_second)
+            );
+        }
     }
 
     // Bucket stores newest at front; arrival order = oldest-first = reverse.
     // views::reverse and views::all have different types, so unify via auto&&
     // in a lambda that accepts either range.
-    inline auto append_bucket_results(std::string& out, CategoryBucket const& bucket, bool order_arrival) -> void {
+    inline auto append_bucket_results(
+            std::string& out, CategoryBucket const& bucket, bool order_arrival, double regression_threshold
+    ) -> void {
         auto emit = [&](auto&& range) {
             for (auto const& r : range)
-                append_result_line(out, r);
+                append_result_line(out, r, regression_threshold);
         };
         if (order_arrival)
             emit(bucket.results | std::views::reverse);
@@ -282,7 +354,9 @@ export namespace bench_dashboard::tui {
             emit(bucket.results);
     }
 
-    inline auto append_session_body(std::string& out, Session const& sess, bool order_arrival) -> void {
+    inline auto
+    append_session_body(std::string& out, Session const& sess, bool order_arrival, double regression_threshold)
+            -> void {
         for (auto const& bucket : sess.categories) {
             out += std::format(
                     "  {}{}{} {}({}){}\n",
@@ -293,7 +367,7 @@ export namespace bench_dashboard::tui {
                     bucket.results.size(),
                     ansi::kReset
             );
-            append_bucket_results(out, bucket, order_arrival);
+            append_bucket_results(out, bucket, order_arrival, regression_threshold);
         }
     }
 
@@ -312,6 +386,23 @@ export namespace bench_dashboard::tui {
         return lines;
     }
 
+    // Render the per-session summary line when a baseline is active.
+    inline auto append_summary_line(std::string& out, Session const& sess) -> void {
+        const std::size_t total = sess.ok_count + sess.regression_count + sess.improvement_count + sess.severe_count;
+        if (total == 0)
+            return;
+        out += std::format("  {}Summary:{}", ansi::kFgGrey, ansi::kReset);
+        if (sess.ok_count > 0)
+            out += std::format("  {} ok", sess.ok_count);
+        if (sess.improvement_count > 0)
+            out += std::format("  {}{} improve{}", ansi::kFgGreen, sess.improvement_count, ansi::kReset);
+        if (sess.regression_count > 0)
+            out += std::format("  {}{} regress{}", ansi::kFgRed, sess.regression_count, ansi::kReset);
+        if (sess.severe_count > 0)
+            out += std::format("  {}{} SEVERE{}", ansi::kFgRed, sess.severe_count, ansi::kReset);
+        out += '\n';
+    }
+
     // Build a full-frame ANSI string for the current state. Caller writes it
     // to stdout in one shot — single write keeps tearing imperceptible.
     // Content is clamped to the terminal height so the newest session always
@@ -321,9 +412,12 @@ export namespace bench_dashboard::tui {
         out.reserve(4096);
         out += ansi::kClearScreen;
 
-        const int header_lines = 2; // title line + blank
+        const bool has_baseline = !s.baseline_label.empty();
+
+        // Title line (1) + baseline line if active (1) + blank (1)
+        const int header_lines = has_baseline ? 3 : 2;
         out += std::format(
-                "{}storm_bench_dashboard{}  ·  press {}q{} to quit, {}r{} to refresh, {}1-9{} to toggle sessions\n\n",
+                "{}storm_bench_dashboard{}  ·  press {}q{} to quit, {}r{} to refresh, {}1-9{} to toggle sessions\n",
                 ansi::kBold,
                 ansi::kReset,
                 ansi::kFgCyan,
@@ -333,6 +427,10 @@ export namespace bench_dashboard::tui {
                 ansi::kFgCyan,
                 ansi::kReset
         );
+        if (has_baseline) {
+            out += std::format("  {}Baseline: {}{}{}\n", ansi::kFgGrey, ansi::kReset, s.baseline_label, ansi::kReset);
+        }
+        out += '\n';
 
         if (s.sessions.empty()) {
             out += std::format("  {}waiting for storm_bench …{}\n", ansi::kDim, ansi::kReset);
@@ -349,15 +447,22 @@ export namespace bench_dashboard::tui {
             append_session_header(out, sess, ordinal++, s.spinner_tick);
             ++rows_used;
             if (sess.expanded) {
+                // Summary line (only when baseline results have been tallied).
+                const std::size_t compared =
+                        sess.ok_count + sess.regression_count + sess.improvement_count + sess.severe_count;
+                if (compared > 0) {
+                    append_summary_line(out, sess);
+                    ++rows_used;
+                }
+
                 const int body_lines = session_body_lines(sess);
                 const int available  = max_rows - rows_used;
                 if (body_lines <= available) {
-                    append_session_body(out, sess, s.order_arrival);
+                    append_session_body(out, sess, s.order_arrival, s.regression_threshold);
                     rows_used += body_lines;
                 } else {
                     // Partial body — render as many result lines as fit,
                     // then a truncation notice.
-                    int written = 0;
                     for (auto const& bucket : sess.categories) {
                         if (rows_used >= max_rows - 1)
                             break;
@@ -375,9 +480,8 @@ export namespace bench_dashboard::tui {
                             for (auto const& r : range) {
                                 if (rows_used >= max_rows - 1)
                                     break;
-                                append_result_line(out, r);
+                                append_result_line(out, r, s.regression_threshold);
                                 ++rows_used;
-                                ++written;
                             }
                         };
                         if (s.order_arrival)

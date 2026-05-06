@@ -46,6 +46,60 @@ atlas migrate apply --dir 'file://benchmarks/dashboard/migrations' --url 'sqlite
 
 The binary will print a helpful error with the exact command if the schema is missing.
 
+## Baseline Regression Detection
+
+When a baseline run exists in the database, each streamed result is compared in real time:
+
+```bash
+# Compare against most recent full run on the same branch + host (default)
+./storm_bench_dashboard
+
+# Compare against most recent full run on a specific branch
+./storm_bench_dashboard --baseline branch:develop
+
+# Compare against a specific run by id
+./storm_bench_dashboard --baseline run:38
+
+# Disable comparison
+./storm_bench_dashboard --baseline none
+
+# Custom regression threshold (default 5%)
+./storm_bench_dashboard --regression-threshold 10
+```
+
+### Baseline selectors
+
+| Selector | What it picks |
+|----------|--------------|
+| `auto` (default) | Most recent **full** run on the same branch + hostname |
+| `run:<id>` | Specific run by numeric id (see `SELECT id FROM BenchRun`) |
+| `branch:<name>` | Most recent full run on the named branch, any host |
+| `none` | No comparison column |
+
+`--baseline auto` skips partial/filtered runs (`is_full_run = false`) so percentage deltas are always against a comparable full run. If no matching baseline is found, the dashboard prints a notice and runs without comparison.
+
+### Delta column
+
+Each result line shows a delta column next to the latency:
+
+| Delta | Colour | Label |
+|-------|--------|-------|
+| within threshold | grey | `+1.2%` |
+| ≥ threshold | red | `+6.3% REGRESS` |
+| ≥ 2× threshold | red | `+11.4% SEVERE` |
+| ≤ −threshold | green | `−7.1% IMPROVE` |
+| no baseline row | grey | `—` |
+
+The `—` marker appears for benchmarks not present in the baseline run (e.g. new benchmarks, or filtered runs with a different `--benchmark_filter`).
+
+### Summary line
+
+Each session header shows a running tally:
+
+```
+Summary:  18 ok  3 improve  1 regress
+```
+
 ## CLI Flags
 
 | Flag | Default | Purpose |
@@ -53,6 +107,8 @@ The binary will print a helpful error with the exact command if the schema is mi
 | `--db PATH` | `~/.local/state/storm/dashboard/bench_results.db` | Database file path |
 | `--socket PATH` | `$XDG_RUNTIME_DIR/storm-bench.sock` (with `/tmp/storm-bench-$USER.sock` fallback) | Unix domain socket for streaming results |
 | `--order arrival` | `newest` | Render results in insertion order instead of newest-first |
+| `--baseline SELECTOR` | `auto` | Baseline for regression comparison (see above) |
+| `--regression-threshold N` | `5` | Percentage delta that counts as a regression |
 | `--upload-backup` | (one-shot, then exit) | Push database to the backup repo via `gh release upload --clobber` |
 | `--restore-backup` | (one-shot, then exit) | Pull database from the backup repo via `gh release download` |
 | `--backup-repo OWNER/REPO` | `spiritEcosse/storm-bench-private` | GitHub repo for backups |

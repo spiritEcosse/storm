@@ -27,6 +27,7 @@ import <ranges>;
 
 #include <atomic>
 #include <cerrno>
+#include <charconv>
 #include <chrono>
 #include <csignal>
 #include <cstdio>
@@ -37,6 +38,7 @@ import <ranges>;
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -100,14 +102,27 @@ namespace {
         return std::format("bench-backup-{}", host);
     }
 
+    // Phase 6: baseline selector variants.
+    struct BaselineAuto {};
+    struct BaselineNone {};
+    struct BaselineRunId {
+        std::int64_t id{};
+    };
+    struct BaselineBranch {
+        std::string name{};
+    };
+    using BaselineSelector = std::variant<BaselineAuto, BaselineNone, BaselineRunId, BaselineBranch>;
+
     struct Options {
-        std::string db_path{default_db_path()};
-        std::string socket_path{};   // empty → wire::default_socket_path()
-        bool        order_arrival{}; // false → newest-first (default)
-        bool        upload_backup{};
-        bool        restore_backup{};
-        std::string backup_repo{kDefaultBackupRepo};
-        std::string backup_tag{}; // empty → default_backup_tag()
+        std::string      db_path{default_db_path()};
+        std::string      socket_path{};   // empty → wire::default_socket_path()
+        bool             order_arrival{}; // false → newest-first (default)
+        bool             upload_backup{};
+        bool             restore_backup{};
+        std::string      backup_repo{kDefaultBackupRepo};
+        std::string      backup_tag{}; // empty → default_backup_tag()
+        BaselineSelector baseline{BaselineAuto{}};
+        double           regression_threshold{5.0};
     };
 
     auto print_help() -> void {
@@ -126,6 +141,14 @@ namespace {
                 "                          (default: %.*s)\n"
                 "  --order arrival         Render results in arrival order inside each\n"
                 "                          category (default: newest-first)\n"
+                "  --baseline SELECTOR     Baseline for regression comparison:\n"
+                "                            auto        most recent full run, same branch+host (default)\n"
+                "                            none        disable comparison\n"
+                "                            run:<id>    specific run by numeric id\n"
+                "                            branch:<name>  most recent full run on named branch\n"
+                "  --regression-threshold N\n"
+                "                          Percentage delta that counts as a regression\n"
+                "                          (default: 5)\n"
                 "  --upload-backup         One-shot: upload --db PATH to the backup repo\n"
                 "                          via `gh release upload --clobber` and exit\n"
                 "  --restore-backup        One-shot: download the DB file from the backup\n"
@@ -175,6 +198,46 @@ namespace {
                     );
                     std::exit(1);
                 }
+            } else if (arg == "--baseline" && i + 1 < argc) {
+                const std::string_view sel = argv[++i];
+                if (sel == "auto") {
+                    opts.baseline = BaselineAuto{};
+                } else if (sel == "none") {
+                    opts.baseline = BaselineNone{};
+                } else if (sel.starts_with("run:")) {
+                    std::int64_t id{};
+                    const auto   sv = sel.substr(4);
+                    const auto   r  = std::from_chars(sv.data(), sv.data() + sv.size(), id);
+                    if (r.ec != std::errc{} || id <= 0) {
+                        std::fprintf(stderr, "storm_bench_dashboard: --baseline run: expects a positive integer id\n");
+                        std::exit(1);
+                    }
+                    opts.baseline = BaselineRunId{id};
+                } else if (sel.starts_with("branch:")) {
+                    opts.baseline = BaselineBranch{std::string{sel.substr(7)}};
+                } else {
+                    std::fprintf(
+                            stderr,
+                            "storm_bench_dashboard: --baseline expects auto|none|run:<id>|branch:<name>, got: %.*s\n",
+                            static_cast<int>(sel.size()),
+                            sel.data()
+                    );
+                    std::exit(1);
+                }
+            } else if (arg == "--regression-threshold" && i + 1 < argc) {
+                const std::string_view sv = argv[++i];
+                double                 v{};
+                const auto             r = std::from_chars(sv.data(), sv.data() + sv.size(), v);
+                if (r.ec != std::errc{} || v <= 0.0) {
+                    std::fprintf(
+                            stderr,
+                            "storm_bench_dashboard: --regression-threshold expects a positive number, got: %.*s\n",
+                            static_cast<int>(sv.size()),
+                            sv.data()
+                    );
+                    std::exit(1);
+                }
+                opts.regression_threshold = v;
             } else if (arg == "--upload-backup") {
                 opts.upload_backup = true;
             } else if (arg == "--restore-backup") {
@@ -390,6 +453,90 @@ namespace {
         return 0;
     }
 
+    // -----------------------------------------------------------------------
+    // Phase 6: baseline resolution + per-result delta lookup
+    // -----------------------------------------------------------------------
+
+    // Resolve the baseline selector to a concrete (run_id, label) pair.
+    // Returns {0, ""} when no matching run is found or selector is None.
+    // Must be called AFTER set_default_connection() so Storm queries work.
+    auto resolve_baseline(BaselineSelector const& sel, std::string_view current_branch, std::string_view current_host)
+            -> std::pair<std::int64_t, std::string> {
+        if (std::holds_alternative<BaselineNone>(sel))
+            return {0, ""};
+
+        auto find_run = [&](auto qs) -> std::pair<std::int64_t, std::string> {
+            auto rows = qs.template order_by<^^bench_dashboard::BenchRun::id, false>()
+                                .limit(1)
+                                .select()
+                                .execute()
+                                .transform([](auto&& hive) {
+                                    return std::forward<decltype(hive)>(hive) | std::views::as_rvalue |
+                                           std::ranges::to<std::vector<bench_dashboard::BenchRun>>();
+                                });
+            if (!rows || rows->empty())
+                return {0, ""};
+            const auto& r   = rows->front();
+            const auto  lbl = std::format("Run #{} {} {}", r.id, r.branch, r.git_hash);
+            return {r.id, lbl};
+        };
+
+        if (std::holds_alternative<BaselineAuto>(sel)) {
+            // Most recent fully-completed run on same branch + hostname.
+            auto qs = storm::QuerySet<bench_dashboard::BenchRun>()
+                              .where(storm::orm::where::field<^^bench_dashboard::BenchRun::is_full_run>() == true)
+                              .where(storm::orm::where::field<^^bench_dashboard::BenchRun::branch>() ==
+                                     std::string{current_branch})
+                              .where(storm::orm::where::field<^^bench_dashboard::BenchRun::hostname>() ==
+                                     std::string{current_host});
+            return find_run(std::move(qs));
+        }
+
+        if (const auto* r = std::get_if<BaselineRunId>(&sel)) {
+            auto qs = storm::QuerySet<bench_dashboard::BenchRun>().where(
+                    storm::orm::where::field<^^bench_dashboard::BenchRun::id>() == static_cast<int>(r->id)
+            );
+            return find_run(std::move(qs));
+        }
+
+        if (const auto* b = std::get_if<BaselineBranch>(&sel)) {
+            auto qs = storm::QuerySet<bench_dashboard::BenchRun>()
+                              .where(storm::orm::where::field<^^bench_dashboard::BenchRun::is_full_run>() == true)
+                              .where(storm::orm::where::field<^^bench_dashboard::BenchRun::branch>() == b->name);
+            return find_run(std::move(qs));
+        }
+
+        return {0, ""};
+    }
+
+    // Look up the baseline real_time_ns for (run_id, test_name, dataset_size).
+    // Returns nullopt when no matching row exists.
+    auto lookup_baseline_ns(std::int64_t baseline_run_id, std::string const& test_name, std::int64_t dataset_size)
+            -> std::optional<double> {
+        auto rows = storm::QuerySet<bench_dashboard::BenchResult>()
+                            .where(storm::orm::where::field<^^bench_dashboard::BenchResult::run_id>() ==
+                                   static_cast<int>(baseline_run_id))
+                            .where(storm::orm::where::field<^^bench_dashboard::BenchResult::test_name>() == test_name)
+                            .where(storm::orm::where::field<^^bench_dashboard::BenchResult::dataset_size>() ==
+                                   static_cast<int>(dataset_size))
+                            .limit(1)
+                            .select()
+                            .execute()
+                            .transform([](auto&& hive) {
+                                return std::forward<decltype(hive)>(hive) | std::views::as_rvalue |
+                                       std::ranges::to<std::vector<bench_dashboard::BenchResult>>();
+                            });
+        if (!rows || rows->empty())
+            return std::nullopt;
+        return rows->front().real_time_ns;
+    }
+
+    auto compute_delta(double current_ns, double baseline_ns) -> std::optional<double> {
+        if (baseline_ns <= 0.0)
+            return std::nullopt;
+        return (current_ns - baseline_ns) / baseline_ns * 100.0;
+    }
+
     auto print_missing_schema_hint(std::string_view db_path) -> void {
         std::fprintf(
                 stderr,
@@ -543,11 +690,22 @@ namespace {
                 auto& sess    = bench_dashboard::tui::open_session(state, "", true);
                 sess.run_id   = active_run_id;
             }
-            if (auto rc = db.insert_result(active_run_id, msg); !rc) {
+
+            // Phase 6: attach delta before inserting into TUI state.
+            auto enriched = msg;
+            if (state.baseline_run_id != 0) {
+                enriched.baseline_looked_up = true;
+                if (auto base_ns = lookup_baseline_ns(state.baseline_run_id, msg.test_name, msg.dataset_size);
+                    base_ns.has_value()) {
+                    enriched.delta_pct = compute_delta(msg.real_ns, *base_ns);
+                }
+            }
+
+            if (auto rc = db.insert_result(active_run_id, enriched); !rc) {
                 std::fprintf(stderr, "\nstorm_bench_dashboard: insert_result failed: %s\n", rc.error().c_str());
             }
             if (!state.sessions.empty())
-                bench_dashboard::tui::add_result(state.sessions.front(), msg);
+                bench_dashboard::tui::add_result(state.sessions.front(), enriched, state.regression_threshold);
             return true;
         }
         case MessageKind::RunComplete:
@@ -562,6 +720,8 @@ namespace {
     // layer is honest — `r` should reproduce what was streamed.
     auto rebuild_state_from_db(bench_dashboard::tui::DashboardState& state) -> void {
         state.sessions.clear();
+        // sessions.clear() drops all Session objects including their per-session
+        // counters; both sessions and counters are re-accumulated below.
 
         // Move elements out of the plf::hive into a vector to get a stable
         // ORDER BY sequence — hive iterates in memory-layout order, not SQL
@@ -607,7 +767,14 @@ namespace {
                     m.cpu_ns           = r.cpu_time_ns;
                     m.iterations       = r.iterations;
                     m.items_per_second = r.items_per_second;
-                    bench_dashboard::tui::add_result(sess, m);
+                    if (state.baseline_run_id != 0) {
+                        m.baseline_looked_up = true;
+                        if (auto base_ns = lookup_baseline_ns(state.baseline_run_id, m.test_name, m.dataset_size);
+                            base_ns.has_value()) {
+                            m.delta_pct = compute_delta(m.real_ns, *base_ns);
+                        }
+                    }
+                    bench_dashboard::tui::add_result(sess, m, state.regression_threshold);
                     ++sess.result_count;
                 }
             }
@@ -683,8 +850,27 @@ auto main(int argc, char** argv) -> int {
 
     DashboardDB                          db;
     bench_dashboard::tui::DashboardState state;
-    state.order_arrival   = opts.order_arrival;
-    int64_t active_run_id = 0;
+    state.order_arrival        = opts.order_arrival;
+    state.regression_threshold = opts.regression_threshold;
+    int64_t active_run_id      = 0;
+
+    // Phase 6: resolve baseline after DB connection is open so Storm queries work.
+    {
+        const std::string current_branch = run_capture("git rev-parse --abbrev-ref HEAD 2>/dev/null");
+        const std::string current_host   = run_capture("hostname -s 2>/dev/null");
+        auto [bid, blabel]               = resolve_baseline(opts.baseline, current_branch, current_host);
+        state.baseline_run_id            = bid;
+        state.baseline_label             = std::move(blabel);
+        if (bid == 0 && std::holds_alternative<BaselineAuto>(opts.baseline)) {
+            std::fprintf(
+                    stderr,
+                    "storm_bench_dashboard: no baseline found for branch '%s' on host '%s' — running without "
+                    "comparison\n",
+                    current_branch.c_str(),
+                    current_host.c_str()
+            );
+        }
+    }
 
     // Pre-load history so the first frame shows past runs even before any
     // bench process connects.

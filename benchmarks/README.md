@@ -54,7 +54,19 @@ STORM_BENCH_SOCKET=1 ./build/release/benchmarks/storm_bench --benchmark_filter='
 
 Keys: `q` quit · `r` refresh from DB · `1`–`9` toggle session expand/collapse.
 
-See [docs/development/BENCHMARK_DASHBOARD.md](../docs/development/BENCHMARK_DASHBOARD.md) for full setup, schema, backup/restore, and troubleshooting.
+**Baseline comparison** — the dashboard compares each result against a previous run in real time:
+
+```bash
+./storm_bench_dashboard                          # auto: most recent full run, same branch+host
+./storm_bench_dashboard --baseline branch:develop
+./storm_bench_dashboard --baseline run:38
+./storm_bench_dashboard --baseline none          # disable
+./storm_bench_dashboard --regression-threshold 10
+```
+
+Each result line shows a delta column (`+6.3% REGRESS`, `−7.1% IMPROVE`, `—` if no baseline row). A summary line per session counts ok / improve / regress.
+
+See [docs/development/BENCHMARK_DASHBOARD.md](../docs/development/BENCHMARK_DASHBOARD.md) for full setup, schema, baseline selectors, backup/restore, and troubleshooting.
 
 ## 📉 Regression detection
 

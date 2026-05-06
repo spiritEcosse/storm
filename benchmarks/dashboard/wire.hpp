@@ -44,6 +44,12 @@ namespace bench_dashboard::wire {
         double       cpu_ns{0.0};
         std::int64_t iterations{0};
         double       items_per_second{0.0};
+
+        // Set by the dashboard when a baseline run is active (Phase 6).
+        // nullopt = no matching baseline row; baseline_looked_up distinguishes
+        // "no baseline active" (false) from "active but no match" (true+nullopt).
+        std::optional<double> delta_pct{};
+        bool                  baseline_looked_up{false};
     };
 
     // Single source of truth for the default socket path; both reporter.cpp
