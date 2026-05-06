@@ -37,6 +37,25 @@ The unified benchmark system is a **100% compile-time C++ solution** that loads 
 
 See [GitHub Issues (benchmarks)](https://github.com/spiritEcosse/storm/issues?q=is%3Aissue+is%3Aopen+label%3Abenchmarks) for planned improvements.
 
+## 📺 Live dashboard
+
+`storm_bench_dashboard` streams results to an ANSI TUI in real time and persists every result in SQLite. Two-terminal workflow:
+
+```bash
+# Terminal 1 — start the dashboard
+./build/release/benchmarks/dashboard/storm_bench_dashboard
+
+# Terminal 2 — run benchmarks with streaming enabled
+STORM_BENCH_SOCKET=1 ./build/release/benchmarks/storm_bench --benchmark_filter='Storm/WHERE/.*'
+
+# Quick smoke test (sub-second per benchmark)
+STORM_BENCH_SOCKET=1 ./build/release/benchmarks/storm_bench --benchmark_filter='Storm/WHERE/.*' --benchmark_min_time=0.2s
+```
+
+Keys: `q` quit · `r` refresh from DB · `1`–`9` toggle session expand/collapse.
+
+See [docs/development/BENCHMARK_DASHBOARD.md](../docs/development/BENCHMARK_DASHBOARD.md) for full setup, schema, backup/restore, and troubleshooting.
+
 ## 📉 Regression detection
 
 The per-PR benchmark gate (#241) is self-hosted on GitHub Actions and uses **GitHub Actions artifacts** for the baseline store — no external service.

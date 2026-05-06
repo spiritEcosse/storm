@@ -18,21 +18,25 @@ import storm;
 import storm.bench_dashboard.socket_server;
 import storm.bench_dashboard.tui;
 import <expected>;
-import <memory>;
 import <filesystem>;
+import <memory>;
+import <ranges>;
 
 #include "models.hpp" // textual — must follow `import storm;`
 #include "wire.hpp"
 
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <format>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 namespace {
@@ -75,28 +79,74 @@ namespace {
         return (base / "storm" / "dashboard" / "bench_results.db").string();
     }
 
+    // Default backup repo + tag for `--upload-backup` / `--restore-backup`.
+    // The repo must exist (and be private) — gh CLI does not create it.
+    inline constexpr std::string_view kDefaultBackupRepo = "spiritEcosse/storm-bench-private";
+
+    auto default_backup_tag() -> std::string {
+        // Hostname is used so multiple machines can share one backup repo
+        // without colliding. `hostname -s` matches what insert_run() stores.
+        std::string host;
+        if (std::unique_ptr<std::FILE, decltype(&pclose)> pipe{::popen("hostname -s 2>/dev/null", "r"), &::pclose};
+            pipe) {
+            char buf[128];
+            if (std::fgets(buf, sizeof(buf), pipe.get()) != nullptr)
+                host.assign(buf);
+            while (!host.empty() && (host.back() == '\n' || host.back() == '\r'))
+                host.pop_back();
+        }
+        if (host.empty())
+            host = "unknown";
+        return std::format("bench-backup-{}", host);
+    }
+
     struct Options {
         std::string db_path{default_db_path()};
+        std::string socket_path{};   // empty → wire::default_socket_path()
+        bool        order_arrival{}; // false → newest-first (default)
+        bool        upload_backup{};
+        bool        restore_backup{};
+        std::string backup_repo{kDefaultBackupRepo};
+        std::string backup_tag{}; // empty → default_backup_tag()
     };
 
     auto print_help() -> void {
         const std::string      default_db   = default_db_path();
         const std::string_view default_sock = bench_dashboard::wire::default_socket_path();
+        const std::string      default_tag  = default_backup_tag();
         std::printf(
                 "storm_bench_dashboard — real-time storm_bench result dashboard\n"
                 "\n"
-                "Usage: storm_bench_dashboard [--db PATH]\n"
+                "Usage: storm_bench_dashboard [options]\n"
                 "\n"
                 "Options:\n"
-                "  --db PATH   SQLite database path\n"
-                "              (default: %s)\n"
-                "  -h, --help  Show this help\n"
+                "  --db PATH               SQLite database path\n"
+                "                          (default: %s)\n"
+                "  --socket PATH           AF_UNIX socket path to listen on\n"
+                "                          (default: %.*s)\n"
+                "  --order arrival         Render results in arrival order inside each\n"
+                "                          category (default: newest-first)\n"
+                "  --upload-backup         One-shot: upload --db PATH to the backup repo\n"
+                "                          via `gh release upload --clobber` and exit\n"
+                "  --restore-backup        One-shot: download the DB file from the backup\n"
+                "                          repo via `gh release download` and exit\n"
+                "  --backup-repo OWNER/REPO  Backup repo (default: %.*s)\n"
+                "  --backup-tag NAME       Release tag (default: %s)\n"
+                "  -h, --help              Show this help\n"
                 "\n"
                 "Listens on %.*s. To opt the bench side in to streaming, run:\n"
                 "  STORM_BENCH_SOCKET=1 ./storm_bench --benchmark_filter=...\n"
                 "(STORM_BENCH_SOCKET unset → bench uses the default text reporter,\n"
-                " no network calls — what CI wants.)\n",
+                " no network calls — what CI wants.)\n"
+                "\n"
+                "--upload-backup / --restore-backup require `gh auth login` to be set up\n"
+                "in advance. The dashboard never auto-uploads on quit.\n",
                 default_db.c_str(),
+                static_cast<int>(default_sock.size()),
+                default_sock.data(),
+                static_cast<int>(kDefaultBackupRepo.size()),
+                kDefaultBackupRepo.data(),
+                default_tag.c_str(),
                 static_cast<int>(default_sock.size()),
                 default_sock.data()
         );
@@ -108,6 +158,31 @@ namespace {
             const std::string_view arg = argv[i];
             if (arg == "--db" && i + 1 < argc) {
                 opts.db_path = argv[++i];
+            } else if (arg == "--socket" && i + 1 < argc) {
+                opts.socket_path = argv[++i];
+            } else if (arg == "--order" && i + 1 < argc) {
+                const std::string_view mode = argv[++i];
+                if (mode == "arrival") {
+                    opts.order_arrival = true;
+                } else if (mode == "newest") {
+                    opts.order_arrival = false;
+                } else {
+                    std::fprintf(
+                            stderr,
+                            "storm_bench_dashboard: --order expects 'arrival' or 'newest', got: %.*s\n",
+                            static_cast<int>(mode.size()),
+                            mode.data()
+                    );
+                    std::exit(1);
+                }
+            } else if (arg == "--upload-backup") {
+                opts.upload_backup = true;
+            } else if (arg == "--restore-backup") {
+                opts.restore_backup = true;
+            } else if (arg == "--backup-repo" && i + 1 < argc) {
+                opts.backup_repo = argv[++i];
+            } else if (arg == "--backup-tag" && i + 1 < argc) {
+                opts.backup_tag = argv[++i];
             } else if (arg == "-h" || arg == "--help") {
                 print_help();
                 std::exit(0);
@@ -117,7 +192,202 @@ namespace {
                 std::exit(1);
             }
         }
+        if (opts.upload_backup && opts.restore_backup) {
+            std::fprintf(
+                    stderr, "storm_bench_dashboard: --upload-backup and --restore-backup are mutually exclusive\n"
+            );
+            std::exit(1);
+        }
+        if (opts.backup_tag.empty())
+            opts.backup_tag = default_backup_tag();
         return opts;
+    }
+
+    // -----------------------------------------------------------------------
+    // Backup / restore helpers
+    //
+    // Both operations shell out to `gh` because that's the path of least
+    // resistance: gh handles auth, retries, and rate limits. Pre-existing
+    // `gh auth login` is required — we surface a clear error otherwise.
+    // -----------------------------------------------------------------------
+
+    // Wrap a string for safe inclusion as a single-quoted shell argument.
+    // GNU shells allow any byte except `'` inside single quotes, so an
+    // embedded apostrophe must close the quote, append an escaped `\'`, and
+    // reopen the quote. Used for db paths, repo, and tag values that flow
+    // unmodified into a popen() command line.
+    auto shell_single_quote(std::string_view s) -> std::string {
+        std::string out;
+        out.reserve(s.size() + 2);
+        out += '\'';
+        for (char c : s) {
+            if (c == '\'') {
+                out += "'\\''";
+            } else {
+                out += c;
+            }
+        }
+        out += '\'';
+        return out;
+    }
+
+    // Run `cmd`, capture combined stdout+stderr, return exit_status + output.
+    // popen()'s default mode "r" forwards stderr through the parent shell
+    // unless the caller redirects — we pass `2>&1` in the command string so
+    // gh's friendly error messages reach us here.
+    struct ShellResult {
+        int         exit_status{};
+        std::string output{};
+    };
+
+    auto run_shell(std::string const& cmd) -> ShellResult {
+        ShellResult                                   result;
+        std::unique_ptr<std::FILE, decltype(&pclose)> pipe{::popen(cmd.c_str(), "r"), &::pclose};
+        if (!pipe) {
+            result.exit_status = -1;
+            result.output      = std::format("popen() failed: {}", std::strerror(errno));
+            return result;
+        }
+        char buf[1024];
+        while (std::fgets(buf, sizeof(buf), pipe.get()) != nullptr)
+            result.output.append(buf);
+        // Reclaim ownership so we can read pclose()'s return code; the
+        // unique_ptr destructor would otherwise discard it.
+        std::FILE* raw     = pipe.release();
+        const int  rc      = ::pclose(raw);
+        result.exit_status = rc;
+        return result;
+    }
+
+    auto check_gh_auth() -> std::expected<void, std::string> {
+        const auto rc = run_shell("gh auth status >/dev/null 2>&1");
+        if (rc.exit_status != 0)
+            return std::unexpected(std::string{"gh CLI is not authenticated — run `gh auth login` first"});
+        return {};
+    }
+
+    // Verify the backup repo exists and is reachable. Returns the gh stderr
+    // on failure so the caller can surface the actual reason (missing,
+    // private without access, etc.).
+    auto check_backup_repo_exists(std::string_view repo) -> std::expected<void, std::string> {
+        const auto cmd = std::format("gh repo view {} >/dev/null 2>&1", shell_single_quote(repo));
+        const auto rc  = run_shell(cmd);
+        if (rc.exit_status != 0)
+            return std::unexpected(
+                    std::format(
+                            "backup repo '{}' is not reachable — create it first: gh repo create {} --private",
+                            repo,
+                            repo
+                    )
+            );
+        return {};
+    }
+
+    // One-shot upload. Uses `gh release upload --clobber` so re-running
+    // overwrites the existing asset for that tag. Tag is created on first
+    // upload via `gh release create`; subsequent uploads attach to it.
+    auto upload_backup(Options const& opts) -> int {
+        if (auto rc = check_gh_auth(); !rc) {
+            std::fprintf(stderr, "storm_bench_dashboard: %s\n", rc.error().c_str());
+            return 1;
+        }
+        if (auto rc = check_backup_repo_exists(opts.backup_repo); !rc) {
+            std::fprintf(stderr, "storm_bench_dashboard: %s\n", rc.error().c_str());
+            return 1;
+        }
+        if (std::error_code ec; !std::filesystem::exists(opts.db_path, ec) || ec) {
+            std::fprintf(stderr, "storm_bench_dashboard: db file not found: %s\n", opts.db_path.c_str());
+            return 1;
+        }
+
+        const auto repo_q = shell_single_quote(opts.backup_repo);
+        const auto tag_q  = shell_single_quote(opts.backup_tag);
+        const auto file_q = shell_single_quote(opts.db_path);
+
+        // gh release upload fails if the release does not yet exist for the
+        // tag. Try `release view` first; create the release on miss.
+        const auto view_cmd = std::format("gh release view {} --repo {} >/dev/null 2>&1", tag_q, repo_q);
+        if (run_shell(view_cmd).exit_status != 0) {
+            const auto create_cmd = std::format(
+                    "gh release create {} --repo {} --notes 'storm_bench dashboard backup' 2>&1", tag_q, repo_q
+            );
+            const auto create_rc = run_shell(create_cmd);
+            if (create_rc.exit_status != 0) {
+                std::fprintf(stderr, "storm_bench_dashboard: gh release create failed: %s\n", create_rc.output.c_str());
+                return 1;
+            }
+        }
+
+        const auto upload_cmd = std::format("gh release upload --clobber {} {} --repo {} 2>&1", tag_q, file_q, repo_q);
+        const auto upload_rc  = run_shell(upload_cmd);
+        if (upload_rc.exit_status != 0) {
+            std::fprintf(stderr, "storm_bench_dashboard: gh release upload failed: %s\n", upload_rc.output.c_str());
+            return 1;
+        }
+        std::fprintf(
+                stdout,
+                "storm_bench_dashboard: uploaded %s to %s@%s\n",
+                opts.db_path.c_str(),
+                opts.backup_repo.c_str(),
+                opts.backup_tag.c_str()
+        );
+        return 0;
+    }
+
+    // One-shot restore. Downloads the asset matching the db filename into
+    // the parent directory of --db. We deliberately do not auto-rename the
+    // existing local file; the user is warned to move it themselves.
+    auto restore_backup(Options const& opts) -> int {
+        if (auto rc = check_gh_auth(); !rc) {
+            std::fprintf(stderr, "storm_bench_dashboard: %s\n", rc.error().c_str());
+            return 1;
+        }
+        if (auto rc = check_backup_repo_exists(opts.backup_repo); !rc) {
+            std::fprintf(stderr, "storm_bench_dashboard: %s\n", rc.error().c_str());
+            return 1;
+        }
+
+        const std::filesystem::path db{opts.db_path};
+        const std::filesystem::path dir      = db.parent_path().empty() ? std::filesystem::path{"."} : db.parent_path();
+        const std::string           filename = db.filename().string();
+
+        if (std::error_code ec; std::filesystem::exists(opts.db_path, ec) && !ec) {
+            std::fprintf(
+                    stderr,
+                    "storm_bench_dashboard: warning — '%s' already exists; "
+                    "rename or move it first if you want to keep the current copy. "
+                    "Restore will overwrite it.\n",
+                    opts.db_path.c_str()
+            );
+        }
+
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+        if (ec) {
+            std::fprintf(stderr, "storm_bench_dashboard: cannot create '%s': %s\n", dir.c_str(), ec.message().c_str());
+            return 1;
+        }
+
+        const auto repo_q    = shell_single_quote(opts.backup_repo);
+        const auto tag_q     = shell_single_quote(opts.backup_tag);
+        const auto dir_q     = shell_single_quote(dir.string());
+        const auto pattern_q = shell_single_quote(filename);
+        const auto cmd       = std::format(
+                "gh release download {} --repo {} --dir {} --pattern {} --clobber 2>&1", tag_q, repo_q, dir_q, pattern_q
+        );
+        const auto rc = run_shell(cmd);
+        if (rc.exit_status != 0) {
+            std::fprintf(stderr, "storm_bench_dashboard: gh release download failed: %s\n", rc.output.c_str());
+            return 1;
+        }
+        std::fprintf(
+                stdout,
+                "storm_bench_dashboard: restored %s from %s@%s\n",
+                opts.db_path.c_str(),
+                opts.backup_repo.c_str(),
+                opts.backup_tag.c_str()
+        );
+        return 0;
     }
 
     auto print_missing_schema_hint(std::string_view db_path) -> void {
@@ -293,40 +563,45 @@ namespace {
     auto rebuild_state_from_db(bench_dashboard::tui::DashboardState& state) -> void {
         state.sessions.clear();
 
-        auto runs_rc = storm::QuerySet<bench_dashboard::BenchRun>()
-                               .order_by<^^bench_dashboard::BenchRun::id>()
-                               .select()
-                               .execute();
-        if (!runs_rc)
+        // Move elements out of the plf::hive into a vector to get a stable
+        // ORDER BY sequence — hive iterates in memory-layout order, not SQL
+        // order. as_rvalue casts each element to rvalue so string members are
+        // moved rather than copied. DESC gives newest-first directly.
+        auto runs = storm::QuerySet<bench_dashboard::BenchRun>()
+                            .order_by<^^bench_dashboard::BenchRun::id, false>()
+                            .select()
+                            .execute()
+                            .transform([](auto&& hive) {
+                                return std::forward<decltype(hive)>(hive) | std::views::as_rvalue |
+                                       std::ranges::to<std::vector<bench_dashboard::BenchRun>>();
+                            });
+        if (!runs)
             return;
 
-        // Copy into a vector to get a stable ORDER BY sequence — plf::hive
-        // iteration order is memory-layout order, not insertion order, so
-        // rbegin..rend on the hive doesn't reliably reverse the SQL ORDER BY.
-        std::vector<bench_dashboard::BenchRun> runs(runs_rc->begin(), runs_rc->end());
-        for (auto it = runs.rbegin(); it != runs.rend(); ++it) {
+        for (auto& run : *runs) {
             bench_dashboard::tui::Session sess{};
-            sess.filter      = it->filter;
-            sess.timestamp   = it->timestamp;
-            sess.is_full_run = it->is_full_run;
+            sess.filter      = std::move(run.filter);
+            sess.timestamp   = std::move(run.timestamp);
+            sess.is_full_run = run.is_full_run;
             sess.complete    = true;                   // historical rows are always complete
             sess.expanded    = state.sessions.empty(); // newest (first pushed) expanded
-            sess.run_id      = it->id;
+            sess.run_id      = run.id;
 
-            auto rows_rc = storm::QuerySet<bench_dashboard::BenchResult>()
-                                   .where(storm::orm::where::field<^^bench_dashboard::BenchResult::run_id>() == it->id)
-                                   .order_by<^^bench_dashboard::BenchResult::id>()
-                                   .select()
-                                   .execute();
-            if (rows_rc) {
-                // Same plf::hive ordering caveat as BenchRun — copy into a
-                // vector to lock in the SQL ORDER BY id sequence.
-                std::vector<bench_dashboard::BenchResult> rows(rows_rc->begin(), rows_rc->end());
-                for (auto const& r : rows) {
+            auto rows = storm::QuerySet<bench_dashboard::BenchResult>()
+                                .where(storm::orm::where::field<^^bench_dashboard::BenchResult::run_id>() == run.id)
+                                .order_by<^^bench_dashboard::BenchResult::id>()
+                                .select()
+                                .execute()
+                                .transform([](auto&& hive) {
+                                    return std::forward<decltype(hive)>(hive) | std::views::as_rvalue |
+                                           std::ranges::to<std::vector<bench_dashboard::BenchResult>>();
+                                });
+            if (rows) {
+                for (auto& r : *rows) {
                     bench_dashboard::wire::ResultMsg m{};
                     m.kind             = bench_dashboard::wire::MessageKind::Result;
-                    m.test_name        = r.test_name;
-                    m.category         = r.category;
+                    m.test_name        = std::move(r.test_name);
+                    m.category         = std::move(r.category);
                     m.dataset_size     = r.dataset_size;
                     m.real_ns          = r.real_time_ns;
                     m.cpu_ns           = r.cpu_time_ns;
@@ -344,6 +619,15 @@ namespace {
 
 auto main(int argc, char** argv) -> int {
     const auto opts = parse_args(argc, argv);
+
+    // One-shot backup actions short-circuit before any TUI / DB-connection
+    // setup. They must NOT install signal handlers (Ctrl-C should propagate
+    // straight to gh) and must NOT call set_default_connection.
+    if (opts.upload_backup)
+        return upload_backup(opts);
+    if (opts.restore_backup)
+        return restore_backup(opts);
+
     install_signal_handlers();
 
     // Default location is under $XDG_STATE_HOME — the parent dir won't exist
@@ -388,7 +672,8 @@ auto main(int argc, char** argv) -> int {
         return 2;
     }
 
-    const std::string_view socket_path = bench_dashboard::wire::default_socket_path();
+    const std::string_view socket_path = opts.socket_path.empty() ? bench_dashboard::wire::default_socket_path()
+                                                                  : std::string_view{opts.socket_path};
 
     bench_dashboard::SocketServer server;
     if (auto err = server.open(socket_path); !err.empty()) {
@@ -398,7 +683,8 @@ auto main(int argc, char** argv) -> int {
 
     DashboardDB                          db;
     bench_dashboard::tui::DashboardState state;
-    int64_t                              active_run_id = 0;
+    state.order_arrival   = opts.order_arrival;
+    int64_t active_run_id = 0;
 
     // Pre-load history so the first frame shows past runs even before any
     // bench process connects.

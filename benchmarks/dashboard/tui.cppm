@@ -27,6 +27,7 @@ module;
 #include <poll.h>
 #include <string>
 #include <string_view>
+#include <ranges>
 #include <sys/ioctl.h>
 #include <vector>
 
@@ -82,6 +83,10 @@ export namespace bench_dashboard::tui {
     struct DashboardState {
         std::vector<Session> sessions; // newest at front (push_front)
         std::size_t          spinner_tick{0};
+        // Render-time toggle: when true, results inside each category render
+        // in arrival (insertion) order rather than newest-first. The DB stays
+        // in insert order regardless — this only affects the rendered frame.
+        bool order_arrival{false};
     };
 
     // -----------------------------------------------------------------------
@@ -263,7 +268,21 @@ export namespace bench_dashboard::tui {
         );
     }
 
-    inline auto append_session_body(std::string& out, Session const& sess) -> void {
+    // Bucket stores newest at front; arrival order = oldest-first = reverse.
+    // views::reverse and views::all have different types, so unify via auto&&
+    // in a lambda that accepts either range.
+    inline auto append_bucket_results(std::string& out, CategoryBucket const& bucket, bool order_arrival) -> void {
+        auto emit = [&](auto&& range) {
+            for (auto const& r : range)
+                append_result_line(out, r);
+        };
+        if (order_arrival)
+            emit(bucket.results | std::views::reverse);
+        else
+            emit(bucket.results);
+    }
+
+    inline auto append_session_body(std::string& out, Session const& sess, bool order_arrival) -> void {
         for (auto const& bucket : sess.categories) {
             out += std::format(
                     "  {}{}{} {}({}){}\n",
@@ -274,8 +293,7 @@ export namespace bench_dashboard::tui {
                     bucket.results.size(),
                     ansi::kReset
             );
-            for (auto const& r : bucket.results)
-                append_result_line(out, r);
+            append_bucket_results(out, bucket, order_arrival);
         }
     }
 
@@ -334,7 +352,7 @@ export namespace bench_dashboard::tui {
                 const int body_lines = session_body_lines(sess);
                 const int available  = max_rows - rows_used;
                 if (body_lines <= available) {
-                    append_session_body(out, sess);
+                    append_session_body(out, sess, s.order_arrival);
                     rows_used += body_lines;
                 } else {
                     // Partial body — render as many result lines as fit,
@@ -353,13 +371,19 @@ export namespace bench_dashboard::tui {
                                 ansi::kReset
                         );
                         ++rows_used;
-                        for (auto const& r : bucket.results) {
-                            if (rows_used >= max_rows - 1)
-                                break;
-                            append_result_line(out, r);
-                            ++rows_used;
-                            ++written;
-                        }
+                        auto emit_clipped = [&](auto&& range) {
+                            for (auto const& r : range) {
+                                if (rows_used >= max_rows - 1)
+                                    break;
+                                append_result_line(out, r);
+                                ++rows_used;
+                                ++written;
+                            }
+                        };
+                        if (s.order_arrival)
+                            emit_clipped(bucket.results | std::views::reverse);
+                        else
+                            emit_clipped(bucket.results);
                     }
                     out += std::format("  {}… resize terminal to see all results{}\n", ansi::kDim, ansi::kReset);
                     ++rows_used;
