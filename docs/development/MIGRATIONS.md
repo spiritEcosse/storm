@@ -67,7 +67,7 @@ storm_enable_migrations(NAMESPACE "schema")
 That's it. Storm:
 - Auto-detects the header containing `namespace schema {`
 - Generates a schema binary using compile-time reflection
-- Creates `makemigrations`, `migrate`, `migrate-validate`, `migrate-status`, and `migrate-hash` targets
+- Creates `makemigrations`, `migrate`, `migrate-validate`, `migrate-status`, `migrate-hash`, and `validate-schema` targets
 
 ### 3. Generate and Apply Migrations
 
@@ -86,6 +86,9 @@ STORM_DB_URL="sqlite://myapp.db" cmake --build . --target migrate-status
 
 # Recalculate atlas.sum after manual edits to migration files
 cmake --build . --target migrate-hash
+
+# Validate entity definitions match the live database (no changes made)
+STORM_DB_URL="sqlite://myapp.db" cmake --build . --target validate-schema
 ```
 
 ## How Auto-Discovery Works
