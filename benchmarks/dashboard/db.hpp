@@ -1,0 +1,258 @@
+#pragma once
+
+// DB writer (DashboardDB) + baseline resolution helpers for
+// storm_bench_dashboard (Issue #247).
+//
+// Textual header — #included from the anonymous namespace of main.cpp so
+// QuerySet calls and models.hpp stay in the same TU (clang-p2996 does not
+// transport reflection annotations across BMI boundaries — memory
+// feedback_cpp26_module_reflection_annotations). Do NOT include from any
+// other TU.
+
+#include <chrono>
+#include <cstdint>
+#include <cstdio>
+#include <ctime>
+#include <expected>
+#include <format>
+#include <memory>
+#include <optional>
+#include <ranges>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <variant>
+#include <vector>
+
+namespace {
+
+    // -----------------------------------------------------------------------
+    // Utility: shell capture + ISO-8601 timestamp
+    // -----------------------------------------------------------------------
+
+    auto run_capture(char const* cmd) -> std::string {
+        std::unique_ptr<std::FILE, decltype(&pclose)> pipe{::popen(cmd, "r"), &::pclose};
+        if (!pipe)
+            return {};
+        std::string out;
+        char        buf[256];
+        if (std::fgets(buf, sizeof(buf), pipe.get()) != nullptr)
+            out.assign(buf);
+        while (!out.empty() && (out.back() == '\n' || out.back() == '\r'))
+            out.pop_back();
+        return out;
+    }
+
+    auto current_iso8601() -> std::string {
+        const auto now = std::chrono::system_clock::now();
+        const auto t   = std::chrono::system_clock::to_time_t(now);
+        std::tm    tm_utc{};
+        ::gmtime_r(&t, &tm_utc);
+        char buf[32]{};
+        std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm_utc);
+        return std::string{buf};
+    }
+
+    // -----------------------------------------------------------------------
+    // Baseline resolution
+    // -----------------------------------------------------------------------
+
+    // Materialise a QuerySet result (plf::hive) into a std::vector<T> by
+    // moving elements out. Single source of truth used across all baseline
+    // and state-rebuild query paths.
+    template <typename T> auto hive_to_vector_lambda() {
+        return [](auto&& hive) {
+            return std::forward<decltype(hive)>(hive) | std::views::as_rvalue | std::ranges::to<std::vector<T>>();
+        };
+    }
+
+    // Execute qs and materialise into std::vector<T>. Returns empty on failure.
+    template <typename T, typename QS> auto materialise_select(QS&& qs) -> std::vector<T> {
+        auto rows = std::forward<QS>(qs).select().execute().transform(hive_to_vector_lambda<T>());
+        return rows ? std::move(*rows) : std::vector<T>{};
+    }
+
+    // Fetch at most one BenchResult row from qs.
+    template <typename QS> auto fetch_first_result_row(QS&& qs) -> std::vector<bench_dashboard::BenchResult> {
+        return materialise_select<bench_dashboard::BenchResult>(std::forward<QS>(qs).limit(1));
+    }
+
+    // Resolve the baseline selector to a concrete (run_id, label) pair.
+    // Returns {0, ""} when no matching run is found or selector is None.
+    auto resolve_baseline(BaselineSelector const& sel, std::string_view current_branch, std::string_view current_host)
+            -> std::pair<std::int64_t, std::string> {
+        if (std::holds_alternative<BaselineNone>(sel))
+            return {0, ""};
+
+        auto find_run = [&](auto qs) -> std::pair<std::int64_t, std::string> {
+            auto rows = qs.template order_by<^^bench_dashboard::BenchRun::id, false>()
+                                .limit(1)
+                                .select()
+                                .execute()
+                                .transform(hive_to_vector_lambda<bench_dashboard::BenchRun>());
+            if (!rows || rows->empty())
+                return {0, ""};
+            const auto& r   = rows->front();
+            const auto  lbl = std::format("Run #{} {} {}", r.id, r.branch, r.git_hash);
+            return {r.id, lbl};
+        };
+
+        if (std::holds_alternative<BaselineAuto>(sel)) {
+            auto qs = storm::QuerySet<bench_dashboard::BenchRun>()
+                              .where(storm::orm::where::field<^^bench_dashboard::BenchRun::is_full_run>() == true)
+                              .where(storm::orm::where::field<^^bench_dashboard::BenchRun::branch>() ==
+                                     std::string{current_branch})
+                              .where(storm::orm::where::field<^^bench_dashboard::BenchRun::hostname>() ==
+                                     std::string{current_host});
+            return find_run(std::move(qs));
+        }
+
+        if (const auto* r = std::get_if<BaselineRunId>(&sel)) {
+            auto qs = storm::QuerySet<bench_dashboard::BenchRun>().where(
+                    storm::orm::where::field<^^bench_dashboard::BenchRun::id>() == static_cast<int>(r->id)
+            );
+            return find_run(std::move(qs));
+        }
+
+        if (const auto* b = std::get_if<BaselineBranch>(&sel)) {
+            auto qs = storm::QuerySet<bench_dashboard::BenchRun>()
+                              .where(storm::orm::where::field<^^bench_dashboard::BenchRun::is_full_run>() == true)
+                              .where(storm::orm::where::field<^^bench_dashboard::BenchRun::branch>() == b->name);
+            return find_run(std::move(qs));
+        }
+
+        return {0, ""};
+    }
+
+    // Look up the baseline real_time_ns for (run_id, test_name, dataset_size).
+    auto lookup_baseline_ns(std::int64_t baseline_run_id, std::string const& test_name, std::int64_t dataset_size)
+            -> std::optional<double> {
+        auto rows = fetch_first_result_row(
+                storm::QuerySet<bench_dashboard::BenchResult>()
+                        .where(storm::orm::where::field<^^bench_dashboard::BenchResult::run_id>() ==
+                               static_cast<int>(baseline_run_id))
+                        .where(storm::orm::where::field<^^bench_dashboard::BenchResult::test_name>() == test_name)
+                        .where(storm::orm::where::field<^^bench_dashboard::BenchResult::dataset_size>() ==
+                               static_cast<int>(dataset_size))
+        );
+        if (rows.empty())
+            return std::nullopt;
+        return rows.front().real_time_ns;
+    }
+
+    auto compute_delta(double current_ns, double baseline_ns) -> std::optional<double> {
+        if (baseline_ns <= 0.0)
+            return std::nullopt;
+        return (current_ns - baseline_ns) / baseline_ns * 100.0;
+    }
+
+    struct BaselineComplexity {
+        std::string complexity_class;
+        double      complexity_coef{0.0};
+    };
+
+    // Look up the baseline BigO row for (run_id, test_name, row_kind=="bigo").
+    auto lookup_baseline_complexity(std::int64_t baseline_run_id, std::string const& test_name)
+            -> std::optional<BaselineComplexity> {
+        auto rows = fetch_first_result_row(
+                storm::QuerySet<bench_dashboard::BenchResult>()
+                        .where(storm::orm::where::field<^^bench_dashboard::BenchResult::run_id>() ==
+                               static_cast<int>(baseline_run_id))
+                        .where(storm::orm::where::field<^^bench_dashboard::BenchResult::test_name>() == test_name)
+                        .where(storm::orm::where::field<^^bench_dashboard::BenchResult::row_kind>() ==
+                               std::string{bench_dashboard::wire::kRowKindBigO})
+        );
+        if (rows.empty())
+            return std::nullopt;
+        return BaselineComplexity{rows.front().complexity_class, rows.front().complexity_coef};
+    }
+
+    auto print_missing_schema_hint(std::string_view db_path) -> void {
+        std::fprintf(
+                stderr,
+                "\n"
+                "  The dashboard schema is missing. Bootstrap it with:\n"
+                "\n"
+                "      cmake --build <build-dir> --target makemigrations   # once, after model changes\n"
+                "      atlas migrate apply \\\n"
+                "          --dir 'file://benchmarks/dashboard/migrations' \\\n"
+                "          --url 'sqlite://%.*s'\n",
+                static_cast<int>(db_path.size()),
+                db_path.data()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // DashboardDB — Storm-side writer
+    //
+    // Kept textual so models.hpp + QuerySet calls stay in the same TU as
+    // `import storm;` (clang-p2996 BMI annotation transport is unreliable).
+    // -----------------------------------------------------------------------
+
+    class DashboardDB {
+      public:
+        [[nodiscard]] auto insert_run(std::string_view filter, bool is_full_run)
+                -> std::expected<std::int64_t, std::string> {
+            ensure_host_context();
+
+            bench_dashboard::BenchRun row{};
+            row.git_hash    = host_.git_hash;
+            row.branch      = host_.branch;
+            row.timestamp   = current_iso8601();
+            row.hostname    = host_.hostname;
+            row.compiler    = host_.compiler;
+            row.filter      = std::string{filter};
+            row.is_full_run = is_full_run;
+
+            auto rc = storm::QuerySet<bench_dashboard::BenchRun>().insert(row).execute();
+            if (!rc)
+                return std::unexpected(std::string{rc.error().message()});
+            return *rc;
+        }
+
+        auto insert_result(std::int64_t run_id, bench_dashboard::wire::ResultMsg const& m)
+                -> std::expected<void, std::string> {
+            bench_dashboard::BenchResult row{};
+            row.run_id           = static_cast<int>(run_id);
+            row.test_name        = m.test_name;
+            row.category         = m.category;
+            row.dataset_size     = static_cast<int>(m.dataset_size);
+            row.row_kind         = m.row_kind;
+            row.real_time_ns     = m.real_ns;
+            row.cpu_time_ns      = m.cpu_ns;
+            row.iterations       = static_cast<int>(m.iterations);
+            row.items_per_second = m.items_per_second;
+            row.complexity_class = m.complexity_class;
+            row.complexity_coef  = m.complexity_coef;
+            row.rms_pct          = m.rms_pct;
+
+            storm::QuerySet<bench_dashboard::BenchResult> qs;
+            auto rc = qs.template insert<storm::orm::statements::ReturnId::No>(row).execute();
+            if (!rc)
+                return std::unexpected(std::string{rc.error().message()});
+            return {};
+        }
+
+      private:
+        struct HostContext {
+            std::string git_hash;
+            std::string branch;
+            std::string hostname;
+            std::string compiler;
+        };
+
+        auto ensure_host_context() -> void {
+            if (host_initialised_)
+                return;
+            host_initialised_ = true;
+            host_.git_hash    = run_capture("git rev-parse --short HEAD 2>/dev/null");
+            host_.branch      = run_capture("git rev-parse --abbrev-ref HEAD 2>/dev/null");
+            host_.hostname    = run_capture("hostname -s 2>/dev/null");
+            host_.compiler    = std::format("Clang {}.{}", __clang_major__, __clang_minor__);
+        }
+
+        HostContext host_{};
+        bool        host_initialised_{false};
+    };
+
+} // namespace

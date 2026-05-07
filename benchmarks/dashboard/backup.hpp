@@ -6,7 +6,7 @@
 // every helper here lives at internal linkage in that TU. Split out of
 // main.cpp purely to keep each TU under the 600-line code-quality cap.
 // Do NOT include this from any other TU; depends on `Options` from
-// dashboard_args.hpp being in scope.
+// args.hpp being in scope.
 
 #include <cerrno>
 #include <cstdio>
@@ -66,7 +66,7 @@ namespace {
             result.output      = std::format("popen() failed: {}", std::strerror(errno));
             return result;
         }
-        char buf[1024];
+        char buf[1024]{};
         while (std::fgets(buf, sizeof(buf), pipe.get()) != nullptr)
             result.output.append(buf);
         // Reclaim ownership so we can read pclose()'s return code; the

@@ -50,7 +50,7 @@ namespace {
         std::string host;
         if (std::unique_ptr<std::FILE, decltype(&pclose)> pipe{::popen("hostname -s 2>/dev/null", "r"), &::pclose};
             pipe) {
-            char buf[128];
+            char buf[128]{};
             if (std::fgets(buf, sizeof(buf), pipe.get()) != nullptr)
                 host.assign(buf);
             while (!host.empty() && (host.back() == '\n' || host.back() == '\r'))

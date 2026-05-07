@@ -16,21 +16,21 @@
 //
 // File layout: this TU stays small by delegating most of the implementation
 // to textual headers `#include`d from the anonymous namespace below
-// (dashboard_args.hpp, dashboard_backup.hpp, dashboard_db.hpp). The textual
-// approach is load-bearing — it keeps the model definitions in models.hpp
-// and the QuerySet calls in the same TU, which is required because
-// clang-p2996 does not transport reflection annotations across BMI
-// boundaries (memory feedback_cpp26_module_reflection_annotations).
+// (args.hpp, backup.hpp, db.hpp, events.hpp). The textual approach is
+// load-bearing — it keeps the model definitions in models.hpp and the
+// QuerySet calls in the same TU, which is required because clang-p2996
+// does not transport reflection annotations across BMI boundaries
+// (memory feedback_cpp26_module_reflection_annotations).
 
 import storm;
 import storm.bench_dashboard.socket_server;
 import storm.bench_dashboard.tui;
+import storm.bench_dashboard.wire;
 import <expected>;
 import <filesystem>;
 import <optional>;
 
 #include "models.hpp" // textual — must follow `import storm;`
-#include "wire.hpp"
 
 #include <atomic>
 #include <csignal>
@@ -65,10 +65,12 @@ namespace {
 
 // Textual headers — included after `import storm;` + models.hpp so their
 // QuerySet calls see the same models with their reflection annotations.
-// Order matters: backup needs Options, db needs Options + tui types.
-#include "dashboard_args.hpp"
-#include "dashboard_backup.hpp"
-#include "dashboard_db.hpp"
+// Order matters: backup needs Options, db needs Options + tui types,
+// events needs DashboardDB + baseline helpers from db.
+#include "args.hpp"
+#include "backup.hpp"
+#include "db.hpp"
+#include "events.hpp"
 
 namespace {
 

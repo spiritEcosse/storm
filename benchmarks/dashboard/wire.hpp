@@ -12,10 +12,13 @@
 //    "items_per_second":<double>}
 //   {"type":"run_complete"}
 //
-// Pure stdlib — no `import storm`, no `<benchmark/benchmark.h>`. Both sides
-// (textual #include in reporter.cpp and dashboard main.cpp) consume this. The
-// JSON shape is deliberately tiny: backslash and double-quote are the only
-// recognised escapes; benchmark names are ASCII-only by gbench convention.
+// Pure stdlib — no `import storm`, no `<benchmark/benchmark.h>`. reporter.cpp
+// #includes this directly (can't import — benchmark.h in same TU diverges PCM
+// hashes). main.cpp and tui.cppm import wire.cppm instead.
+//
+// IMPORTANT: the types, serialisation, and parser logic here must stay
+// byte-equivalent to wire.cppm from `namespace bench_dashboard::wire {` onward.
+// Any fix (e.g. parser bounds check) must land in BOTH files identically.
 
 #include <array>
 #include <charconv>
@@ -165,7 +168,7 @@ namespace bench_dashboard::wire {
         inline auto matches_key(std::string_view json, std::size_t pos, std::string_view key) -> bool {
             const std::size_t key_start = pos + 1;
             const std::size_t key_end   = key_start + key.size();
-            return key_end < json.size() && json[key_end] == '"' && json[key_end + 1] == ':' &&
+            return key_end + 1 < json.size() && json[key_end] == '"' && json[key_end + 1] == ':' &&
                    json.substr(key_start, key.size()) == key;
         }
 
