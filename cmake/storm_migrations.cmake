@@ -143,4 +143,18 @@ function(storm_enable_migrations)
     COMMENT "Recalculating atlas.sum checksums in ${ARG_MIGRATION_DIR}"
     VERBATIM)
 
+  # validate-schema target
+  add_custom_target(
+    validate-schema
+    COMMAND "${_schema_bin}" --dialect "${ARG_DIALECT}" --output
+            "${CMAKE_CURRENT_BINARY_DIR}/_storm_schema.sql"
+    COMMAND atlas schema diff --from "$ENV{STORM_DB_URL}" --to
+            "file://${CMAKE_CURRENT_BINARY_DIR}/_storm_schema.sql" --dev-url
+            "sqlite://dev?mode=memory"
+    DEPENDS ${ARG_TARGET_NAME}
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT
+      "Validating schema matches database (set STORM_DB_URL env var)"
+    VERBATIM)
+
 endfunction()
