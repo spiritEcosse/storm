@@ -36,8 +36,11 @@ add_custom_target(generate_benchmark_json DEPENDS "${JSON_OUTPUT}")
 file(GLOB STORM_BENCH_MODULE_UNITS CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/*.cppm")
 
-add_executable(storm_bench "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
-                           "${CMAKE_CURRENT_SOURCE_DIR}/register.cpp")
+add_executable(
+  storm_bench
+  "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/register.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/dashboard/reporter.cpp")
 target_sources(storm_bench PRIVATE FILE_SET cxx_modules TYPE CXX_MODULES FILES
                                    ${STORM_BENCH_MODULE_UNITS})
 # Bypass benchmark::benchmark's INTERFACE_* properties (we link the static
@@ -66,10 +69,12 @@ get_target_property(_benchmark_includes benchmark::benchmark
                     INTERFACE_INCLUDE_DIRECTORIES)
 set_property(
   SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/dashboard/reporter.cpp"
   APPEND
   PROPERTY INCLUDE_DIRECTORIES "${_benchmark_includes}")
 set_property(
   SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/dashboard/reporter.cpp"
   APPEND
   PROPERTY COMPILE_DEFINITIONS "BENCHMARK_STATIC_DEFINE")
 
@@ -108,3 +113,11 @@ set_property(
   PROPERTY COMPILE_DEFINITIONS "BENCHMARK_STATIC_DEFINE")
 
 message(STATUS "Benchmark executable: storm_anchors")
+
+# ============================================================================
+# storm_bench_dashboard — Issue #247
+# ============================================================================
+# Phase 1 skeleton lives in its own subdirectory so the dashboard's reflection
+# schema (bench_dashboard namespace) and Atlas migration targets stay isolated
+# from the gbench-side files in benchmarks/.
+add_subdirectory(dashboard)
