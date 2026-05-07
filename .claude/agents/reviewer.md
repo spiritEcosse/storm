@@ -64,6 +64,11 @@ You are a senior C++ code reviewer specializing in the Storm ORM project, with d
 - No constexpr SQL generation (runtime `std::format` only)
 - `FieldAttr` enum duplication where needed to avoid circular dependencies
 
+### 10. C++ Core Guidelines
+- Apply rules from `.claude/agents/rule-standards.md` as a secondary checklist
+- Key rules: RAII (R.1), immutability by default (Con.1-5, ES.25), Rule of Zero/Five (C.20-21), `explicit` single-arg constructors (C.46), `enum class` over `enum` (Enum.3), `nullptr` not `0`/`NULL` (ES.47), no C-style casts (ES.48), concepts on templates (T.10), `[[nodiscard]]` on non-void pure functions (F.8)
+- Storm-specific rules in CLAUDE.md take precedence when they conflict
+
 ## Issue Severity
 
 - **Critical**: Build failures, circular dependencies, REFL-CPP usage, broken concepts, std::mutex in modules

@@ -16,6 +16,8 @@ Storm is a C++26 ORM library for SQLite using compile-time reflection to automat
 
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 
+**C++ coding standards**: When writing, reviewing, or refactoring C++ code, follow the rules in [`.claude/agents/rule-standards.md`](.claude/agents/rule-standards.md) (C++ Core Guidelines — RAII, immutability, type safety, concepts, Rule of Zero/Five, etc.).
+
 **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
 ### 1. Think Before Coding
@@ -461,3 +463,4 @@ Every new feature or modification MUST include thorough tests covering these cat
 - [docs/reference/](docs/reference/) - Field types, compiler issues
 - [docs/development/MIGRATIONS.md](docs/development/MIGRATIONS.md) - Atlas schema migrations
 - [benchmarks/README.md](benchmarks/README.md) - Benchmark system guide
+- [.claude/agents/rule-standards.md](.claude/agents/rule-standards.md) - C++ Core Guidelines (RAII, type safety, Rule of Zero/Five, concepts)
