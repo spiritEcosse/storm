@@ -63,9 +63,26 @@ export namespace bench_dashboard::tui {
     // State model
     // -----------------------------------------------------------------------
 
+    // Phase 7: one row in the per-category complexity footer.
+    struct ComplexityEntry {
+        std::string base_name;        // e.g. "Storm/WHERE/where_int_gt"
+        std::string complexity_class; // "N", "NlgN", "N^2", ...
+        double      complexity_coef{0.0};
+        double      rms_pct{0.0};
+
+        // Baseline values (set when a baseline run is active).
+        std::string baseline_class{};
+        double      baseline_coef{0.0};
+        bool        shape_regression{false};
+        bool        coef_regression{false}; // drift above threshold
+        bool        coef_improvement{false};
+        bool        baseline_looked_up{false};
+    };
+
     struct CategoryBucket {
-        std::string                  name;    // e.g. "WHERE"
-        std::vector<wire::ResultMsg> results; // newest at front
+        std::string                  name;       // e.g. "WHERE"
+        std::vector<wire::ResultMsg> results;    // newest at front
+        std::vector<ComplexityEntry> complexity; // Phase 7: one per unique base name
     };
 
     struct Session {
@@ -103,6 +120,12 @@ export namespace bench_dashboard::tui {
         std::string baseline_label{};
         // run_id of the baseline BenchRun row; 0 = none.
         std::int64_t baseline_run_id{0};
+
+        // Phase 7: threshold for complexity coefficient drift (default 5%).
+        double complexity_threshold{5.0};
+
+        // Scroll: number of body lines scrolled past the top (↑/↓ or j/k).
+        int scroll_offset{0};
     };
 
     // -----------------------------------------------------------------------
@@ -134,7 +157,74 @@ export namespace bench_dashboard::tui {
         return s.sessions.front();
     }
 
+    // Phase 7: upsert a ComplexityEntry in a bucket from a BigO or RMS wire message.
+    // strip_bigo_suffix removes "_BigO" or "_RMS" to get the benchmark family name.
+    inline auto strip_complexity_suffix(std::string_view name) -> std::string_view {
+        for (auto suffix : {std::string_view{"_BigO"}, std::string_view{"_RMS"}}) {
+            if (name.size() > suffix.size() && name.substr(name.size() - suffix.size()) == suffix)
+                return name.substr(0, name.size() - suffix.size());
+        }
+        return name;
+    }
+
+    inline auto add_complexity(CategoryBucket& bucket, wire::ResultMsg const& m, double threshold) -> void {
+        const std::string base{strip_complexity_suffix(m.test_name)};
+        for (auto& entry : bucket.complexity) {
+            if (entry.base_name == base) {
+                if (m.row_kind == wire::kRowKindBigO) {
+                    entry.complexity_class   = m.complexity_class;
+                    entry.complexity_coef    = m.complexity_coef;
+                    entry.baseline_looked_up = m.baseline_looked_up;
+                    entry.baseline_class     = m.baseline_class;
+                    entry.baseline_coef      = m.baseline_coef;
+                    entry.shape_regression   = m.shape_regression;
+                    if (!entry.shape_regression && entry.baseline_looked_up && entry.baseline_coef > 0.0) {
+                        const double drift =
+                                (entry.complexity_coef - entry.baseline_coef) / entry.baseline_coef * 100.0;
+                        entry.coef_regression  = drift >= threshold;
+                        entry.coef_improvement = drift <= -threshold;
+                    }
+                } else {
+                    entry.rms_pct = m.rms_pct;
+                }
+                return;
+            }
+        }
+        ComplexityEntry ce{};
+        ce.base_name = base;
+        if (m.row_kind == wire::kRowKindBigO) {
+            ce.complexity_class   = m.complexity_class;
+            ce.complexity_coef    = m.complexity_coef;
+            ce.baseline_looked_up = m.baseline_looked_up;
+            ce.baseline_class     = m.baseline_class;
+            ce.baseline_coef      = m.baseline_coef;
+            ce.shape_regression   = m.shape_regression;
+            if (!ce.shape_regression && ce.baseline_looked_up && ce.baseline_coef > 0.0) {
+                const double drift  = (ce.complexity_coef - ce.baseline_coef) / ce.baseline_coef * 100.0;
+                ce.coef_regression  = drift >= threshold;
+                ce.coef_improvement = drift <= -threshold;
+            }
+        } else {
+            ce.rms_pct = m.rms_pct;
+        }
+        bucket.complexity.push_back(std::move(ce));
+    }
+
     inline auto add_result(Session& sess, wire::ResultMsg const& m, double regression_threshold) -> void {
+        // Phase 7: BigO/RMS rows go to complexity entries, not result rows.
+        if (m.row_kind == wire::kRowKindBigO || m.row_kind == wire::kRowKindRms) {
+            for (auto& bucket : sess.categories) {
+                if (bucket.name == m.category) {
+                    add_complexity(bucket, m, regression_threshold);
+                    return;
+                }
+            }
+            CategoryBucket nb{m.category, {}, {}};
+            add_complexity(nb, m, regression_threshold);
+            sess.categories.push_back(std::move(nb));
+            return;
+        }
+
         ++sess.result_count;
 
         if (m.delta_pct.has_value()) {
@@ -156,7 +246,7 @@ export namespace bench_dashboard::tui {
                 return;
             }
         }
-        CategoryBucket nb{m.category, {}};
+        CategoryBucket nb{m.category, {}, {}};
         nb.results.insert(nb.results.begin(), m);
         sess.categories.push_back(std::move(nb));
     }
@@ -355,8 +445,99 @@ export namespace bench_dashboard::tui {
     }
 
     inline auto
-    append_session_body(std::string& out, Session const& sess, bool order_arrival, double regression_threshold)
-            -> void {
+    append_complexity_footer(std::string& out, CategoryBucket const& bucket, double /*complexity_threshold*/) -> void {
+        if (bucket.complexity.empty())
+            return;
+        out += std::format("    {}Complexity:{}\n", ansi::kFgGrey, ansi::kReset);
+        for (auto const& ce : bucket.complexity) {
+            if (ce.baseline_looked_up) {
+                if (ce.shape_regression) {
+                    out += std::format(
+                            "      {}{:<40}{}  {} {} → {}  {}✗ SHAPE{}\n",
+                            ansi::kReset,
+                            ce.base_name.size() > 40 ? std::string_view{ce.base_name}.substr(ce.base_name.size() - 40)
+                                                     : std::string_view{ce.base_name},
+                            ansi::kReset,
+                            ce.baseline_class,
+                            "→",
+                            ce.complexity_class,
+                            ansi::kFgRed,
+                            ansi::kReset
+                    );
+                } else if (ce.coef_regression) {
+                    const double drift = ce.baseline_coef > 0.0
+                                                 ? (ce.complexity_coef - ce.baseline_coef) / ce.baseline_coef * 100.0
+                                                 : 0.0;
+                    out += std::format(
+                            "      {}{:<40}{}  {}  coef {:.2g} → {:.2g}  {:+.1f}%  {}⚠ DRIFT{}\n",
+                            ansi::kReset,
+                            ce.base_name.size() > 40 ? std::string_view{ce.base_name}.substr(ce.base_name.size() - 40)
+                                                     : std::string_view{ce.base_name},
+                            ansi::kReset,
+                            ce.complexity_class,
+                            ce.baseline_coef,
+                            ce.complexity_coef,
+                            drift,
+                            ansi::kFgYellow,
+                            ansi::kReset
+                    );
+                } else if (ce.coef_improvement) {
+                    const double drift = ce.baseline_coef > 0.0
+                                                 ? (ce.complexity_coef - ce.baseline_coef) / ce.baseline_coef * 100.0
+                                                 : 0.0;
+                    out += std::format(
+                            "      {}{:<40}{}  {}  coef {:.2g} → {:.2g}  {:+.1f}%  {}↑ IMPROVE{}\n",
+                            ansi::kReset,
+                            ce.base_name.size() > 40 ? std::string_view{ce.base_name}.substr(ce.base_name.size() - 40)
+                                                     : std::string_view{ce.base_name},
+                            ansi::kReset,
+                            ce.complexity_class,
+                            ce.baseline_coef,
+                            ce.complexity_coef,
+                            drift,
+                            ansi::kFgGreen,
+                            ansi::kReset
+                    );
+                } else {
+                    const double drift = ce.baseline_coef > 0.0
+                                                 ? (ce.complexity_coef - ce.baseline_coef) / ce.baseline_coef * 100.0
+                                                 : 0.0;
+                    out += std::format(
+                            "      {}{:<40}{}  {}  coef {:.2g} → {:.2g}  {:+.1f}%  {}✓{}\n",
+                            ansi::kReset,
+                            ce.base_name.size() > 40 ? std::string_view{ce.base_name}.substr(ce.base_name.size() - 40)
+                                                     : std::string_view{ce.base_name},
+                            ansi::kReset,
+                            ce.complexity_class,
+                            ce.baseline_coef,
+                            ce.complexity_coef,
+                            drift,
+                            ansi::kFgGreen,
+                            ansi::kReset
+                    );
+                }
+            } else {
+                out += std::format(
+                        "      {}{:<40}{}  {}  coef {:.2g}  rms {:.1f}%\n",
+                        ansi::kReset,
+                        ce.base_name.size() > 40 ? std::string_view{ce.base_name}.substr(ce.base_name.size() - 40)
+                                                 : std::string_view{ce.base_name},
+                        ansi::kReset,
+                        ce.complexity_class,
+                        ce.complexity_coef,
+                        ce.rms_pct
+                );
+            }
+        }
+    }
+
+    inline auto append_session_body(
+            std::string&   out,
+            Session const& sess,
+            bool           order_arrival,
+            double         regression_threshold,
+            double         complexity_threshold
+    ) -> void {
         for (auto const& bucket : sess.categories) {
             out += std::format(
                     "  {}{}{} {}({}){}\n",
@@ -368,6 +549,7 @@ export namespace bench_dashboard::tui {
                     ansi::kReset
             );
             append_bucket_results(out, bucket, order_arrival, regression_threshold);
+            append_complexity_footer(out, bucket, complexity_threshold);
         }
     }
 
@@ -381,8 +563,11 @@ export namespace bench_dashboard::tui {
     // Count the lines a session body occupies.
     inline auto session_body_lines(Session const& sess) -> int {
         int lines = 0;
-        for (auto const& bucket : sess.categories)
-            lines += 1 + static_cast<int>(bucket.results.size()); // header + rows
+        for (auto const& bucket : sess.categories) {
+            // header + result rows + optional complexity header + complexity rows
+            const int complexity_lines = bucket.complexity.empty() ? 0 : 1 + static_cast<int>(bucket.complexity.size());
+            lines += 1 + static_cast<int>(bucket.results.size()) + complexity_lines;
+        }
         return lines;
     }
 
@@ -403,33 +588,134 @@ export namespace bench_dashboard::tui {
         out += '\n';
     }
 
+    // Build all session lines into a flat vector (one string per terminal row).
+    // Scroll is applied by slicing this vector, so the header stays pinned.
+    inline auto build_body_lines(DashboardState const& s) -> std::vector<std::string> {
+        std::vector<std::string> lines;
+        lines.reserve(256);
+
+        int ordinal = 1;
+        for (auto const& sess : s.sessions) {
+            {
+                std::string hdr;
+                append_session_header(hdr, sess, ordinal++, s.spinner_tick);
+                lines.push_back(std::move(hdr));
+            }
+
+            if (!sess.expanded)
+                continue;
+
+            const std::size_t compared =
+                    sess.ok_count + sess.regression_count + sess.improvement_count + sess.severe_count;
+            if (compared > 0) {
+                std::string sumline;
+                append_summary_line(sumline, sess);
+                lines.push_back(std::move(sumline));
+            }
+
+            for (auto const& bucket : sess.categories) {
+                std::string bkt_hdr = std::format(
+                        "  {}{}{} {}({}){}\n",
+                        ansi::kBold,
+                        bucket.name,
+                        ansi::kReset,
+                        ansi::kFgGrey,
+                        bucket.results.size(),
+                        ansi::kReset
+                );
+                lines.push_back(std::move(bkt_hdr));
+
+                auto emit = [&](auto&& range) {
+                    for (auto const& r : range) {
+                        std::string row;
+                        append_result_line(row, r, s.regression_threshold);
+                        lines.push_back(std::move(row));
+                    }
+                };
+                if (s.order_arrival)
+                    emit(bucket.results | std::views::reverse);
+                else
+                    emit(bucket.results);
+
+                if (!bucket.complexity.empty()) {
+                    std::string footer;
+                    append_complexity_footer(footer, bucket, s.complexity_threshold);
+                    // complexity footer is multi-line — split on '\n' and push each
+                    std::size_t pos = 0;
+                    while (pos < footer.size()) {
+                        const auto nl  = footer.find('\n', pos);
+                        const auto end = nl == std::string::npos ? footer.size() : nl + 1;
+                        lines.push_back(footer.substr(pos, end - pos));
+                        pos = end;
+                        if (nl == std::string::npos)
+                            break;
+                    }
+                }
+            }
+
+            lines.emplace_back("\n"); // blank separator between sessions
+        }
+        return lines;
+    }
+
     // Build a full-frame ANSI string for the current state. Caller writes it
     // to stdout in one shot — single write keeps tearing imperceptible.
-    // Content is clamped to the terminal height so the newest session always
-    // stays visible at the top regardless of how many sessions exist.
+    // The header is pinned; body lines scroll via s.scroll_offset (↑/↓ or j/k).
     inline auto render(DashboardState const& s) -> std::string {
         std::string out;
         out.reserve(4096);
         out += ansi::kClearScreen;
 
         const bool has_baseline = !s.baseline_label.empty();
-
-        // Title line (1) + baseline line if active (1) + blank (1)
+        const int  term_rows    = terminal_rows();
+        // Header: title (1) + baseline (0 or 1) + blank (1)
         const int header_lines = has_baseline ? 3 : 2;
-        out += std::format(
-                "{}storm_bench_dashboard{}  ·  press {}q{} to quit, {}r{} to refresh, {}1-9{} to toggle sessions\n",
-                ansi::kBold,
-                ansi::kReset,
-                ansi::kFgCyan,
-                ansi::kReset,
-                ansi::kFgCyan,
-                ansi::kReset,
-                ansi::kFgCyan,
-                ansi::kReset
-        );
-        if (has_baseline) {
-            out += std::format("  {}Baseline: {}{}{}\n", ansi::kFgGrey, ansi::kReset, s.baseline_label, ansi::kReset);
+        const int viewport     = term_rows - header_lines;
+
+        // Build body lines first so we know total height for the scroll indicator.
+        std::vector<std::string> body_lines;
+        if (!s.sessions.empty())
+            body_lines = build_body_lines(s);
+
+        const int  total      = static_cast<int>(body_lines.size());
+        const int  max_offset = std::max(0, total - viewport);
+        const int  offset     = std::min(s.scroll_offset, max_offset);
+        const bool scrollable = total > viewport;
+
+        // Title line — append scroll hint when content overflows.
+        if (scrollable) {
+            out += std::format(
+                    "{}storm_bench_dashboard{}  ·  {}q{} quit  {}r{} refresh  {}↑↓/jk{} scroll  {}1-9{} toggle"
+                    "  {}{}%{}\n",
+                    ansi::kBold,
+                    ansi::kReset,
+                    ansi::kFgCyan,
+                    ansi::kReset,
+                    ansi::kFgCyan,
+                    ansi::kReset,
+                    ansi::kFgCyan,
+                    ansi::kReset,
+                    ansi::kFgCyan,
+                    ansi::kReset,
+                    ansi::kFgGrey,
+                    total > 0 ? (offset + viewport) * 100 / total : 100,
+                    ansi::kReset
+            );
+        } else {
+            out += std::format(
+                    "{}storm_bench_dashboard{}  ·  press {}q{} to quit, {}r{} to refresh, {}1-9{} to toggle sessions\n",
+                    ansi::kBold,
+                    ansi::kReset,
+                    ansi::kFgCyan,
+                    ansi::kReset,
+                    ansi::kFgCyan,
+                    ansi::kReset,
+                    ansi::kFgCyan,
+                    ansi::kReset
+            );
         }
+        if (has_baseline)
+            out += std::format("  {}Baseline: {}{}{}\n", ansi::kFgGrey, ansi::kReset, s.baseline_label, ansi::kReset);
         out += '\n';
 
         if (s.sessions.empty()) {
@@ -437,67 +723,21 @@ export namespace bench_dashboard::tui {
             return out;
         }
 
-        const int max_rows  = terminal_rows() - header_lines;
-        int       rows_used = 0;
-        int       ordinal   = 1; // always 1-based position in display order
+        // Emit the viewport slice.
+        const int end = std::min(offset + viewport, total);
+        for (int i = offset; i < end; ++i)
+            out += body_lines[static_cast<std::size_t>(i)];
 
-        for (auto const& sess : s.sessions) {
-            if (rows_used >= max_rows)
-                break;
-            append_session_header(out, sess, ordinal++, s.spinner_tick);
-            ++rows_used;
-            if (sess.expanded) {
-                // Summary line (only when baseline results have been tallied).
-                const std::size_t compared =
-                        sess.ok_count + sess.regression_count + sess.improvement_count + sess.severe_count;
-                if (compared > 0) {
-                    append_summary_line(out, sess);
-                    ++rows_used;
-                }
-
-                const int body_lines = session_body_lines(sess);
-                const int available  = max_rows - rows_used;
-                if (body_lines <= available) {
-                    append_session_body(out, sess, s.order_arrival, s.regression_threshold);
-                    rows_used += body_lines;
-                } else {
-                    // Partial body — render as many result lines as fit,
-                    // then a truncation notice.
-                    for (auto const& bucket : sess.categories) {
-                        if (rows_used >= max_rows - 1)
-                            break;
-                        out += std::format(
-                                "  {}{}{} {}({}){}\n",
-                                ansi::kBold,
-                                bucket.name,
-                                ansi::kReset,
-                                ansi::kFgGrey,
-                                bucket.results.size(),
-                                ansi::kReset
-                        );
-                        ++rows_used;
-                        auto emit_clipped = [&](auto&& range) {
-                            for (auto const& r : range) {
-                                if (rows_used >= max_rows - 1)
-                                    break;
-                                append_result_line(out, r, s.regression_threshold);
-                                ++rows_used;
-                            }
-                        };
-                        if (s.order_arrival)
-                            emit_clipped(bucket.results | std::views::reverse);
-                        else
-                            emit_clipped(bucket.results);
-                    }
-                    out += std::format("  {}… resize terminal to see all results{}\n", ansi::kDim, ansi::kReset);
-                    ++rows_used;
-                }
-            }
-            if (rows_used < max_rows) {
-                out += '\n';
-                ++rows_used;
-            }
+        // Scroll-position bar at the bottom when overflowing.
+        if (scrollable) {
+            const int   bar_width = 20;
+            const int   filled = total > 0 ? std::min(bar_width, (offset + viewport) * bar_width / total) : bar_width;
+            std::string bar(static_cast<std::size_t>(bar_width), '-');
+            for (int i = 0; i < filled; ++i)
+                bar[static_cast<std::size_t>(i)] = '#';
+            out += std::format("  {}[{}] ↑↓ to scroll{}\n", ansi::kFgGrey, bar, ansi::kReset);
         }
+
         return out;
     }
 
@@ -544,7 +784,7 @@ export namespace bench_dashboard::tui {
         bool    have_termios_{false};
     };
 
-    enum class Key : std::uint8_t { None, Quit, Refresh, Digit };
+    enum class Key : std::uint8_t { None, Quit, Refresh, Digit, ScrollUp, ScrollDown };
 
     struct KeyEvent {
         Key  kind{Key::None};
@@ -578,12 +818,26 @@ export namespace bench_dashboard::tui {
             return {Key::Quit, '\0'};
         if (c == 'r' || c == 'R')
             return {Key::Refresh, '\0'};
+        if (c == 'j' || c == 'J')
+            return {Key::ScrollDown, '\0'};
+        if (c == 'k' || c == 'K')
+            return {Key::ScrollUp, '\0'};
         if (c >= '1' && c <= '9')
             return {Key::Digit, c};
 
-        // Drain any remaining bytes of an escape sequence so the next call
-        // doesn't see them. termios is in non-blocking single-byte mode.
+        // Arrow keys: ESC [ A (up) / ESC [ B (down). Read the two follow-on
+        // bytes without blocking (termios VMIN=0). Anything else is drained.
         if (c == 0x1b) {
+            char seq[2]{};
+            if (::read(STDIN_FILENO, &seq[0], 1) == 1 && seq[0] == '[') {
+                if (::read(STDIN_FILENO, &seq[1], 1) == 1) {
+                    if (seq[1] == 'A')
+                        return {Key::ScrollUp, '\0'};
+                    if (seq[1] == 'B')
+                        return {Key::ScrollDown, '\0'};
+                }
+            }
+            // Drain any remaining escape bytes.
             char drain;
             while (::read(STDIN_FILENO, &drain, 1) == 1) { /* discard */
             }

@@ -42,6 +42,25 @@ namespace bench_dashboard {
         // The first segment after "Storm/" is the category in this project's
         // benchmark naming convention (e.g. "Storm/WHERE/where_int_gt/1024" →
         // "WHERE"). Names that don't follow the convention fall back to "?".
+        auto big_o_string(benchmark::BigO c) -> std::string_view {
+            switch (c) {
+            case benchmark::oN:
+                return "N";
+            case benchmark::oNSquared:
+                return "N^2";
+            case benchmark::oNCubed:
+                return "N^3";
+            case benchmark::oLogN:
+                return "lgN";
+            case benchmark::oNLogN:
+                return "NlgN";
+            case benchmark::o1:
+                return "(1)";
+            default:
+                return "f(N)";
+            }
+        }
+
         auto extract_category(std::string_view name) -> std::string {
             constexpr std::string_view prefix = "Storm/";
             if (!name.starts_with(prefix))
@@ -71,20 +90,37 @@ namespace bench_dashboard {
 
             auto ReportRuns(std::vector<Run> const& runs) -> void override {
                 for (auto const& r : runs) {
-                    // Skip aggregate rows (mean / median / stddev) and the
-                    // BigO / RMS rows. Phase 7 will lift this filter for the
-                    // complexity rows specifically.
-                    if (!r.aggregate_name.empty())
-                        continue;
-                    if (r.report_big_o || r.report_rms)
-                        continue;
                     if (r.skipped != benchmark::internal::NotSkipped)
                         continue;
 
+                    // Phase 7: pass BigO and RMS rows through with their own row_kind.
+                    // Skip other aggregate rows (mean / median / stddev).
+                    if (!r.aggregate_name.empty() && !r.report_big_o && !r.report_rms)
+                        continue;
+
                     wire::ResultMsg m{};
-                    m.kind         = wire::MessageKind::Result;
-                    m.test_name    = r.benchmark_name();
-                    m.category     = extract_category(m.test_name);
+                    m.kind      = wire::MessageKind::Result;
+                    m.test_name = r.benchmark_name();
+                    m.category  = extract_category(m.test_name);
+
+                    if (r.report_big_o) {
+                        m.row_kind         = std::string{wire::kRowKindBigO};
+                        m.complexity_class = std::string{big_o_string(r.complexity)};
+                        // In a BigO row, real_accumulated_time holds the coefficient.
+                        m.complexity_coef = r.real_accumulated_time;
+                        send_line(wire::build_result(m));
+                        continue;
+                    }
+
+                    if (r.report_rms) {
+                        m.row_kind = std::string{wire::kRowKindRms};
+                        // In an RMS row, real_accumulated_time holds the RMS percentage.
+                        m.rms_pct = r.real_accumulated_time * 100.0;
+                        send_line(wire::build_result(m));
+                        continue;
+                    }
+
+                    m.row_kind     = std::string{wire::kRowKindMeasurement};
                     m.dataset_size = static_cast<std::int64_t>(r.complexity_n);
                     m.iterations   = static_cast<std::int64_t>(r.iterations);
 

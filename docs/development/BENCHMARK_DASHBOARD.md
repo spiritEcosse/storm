@@ -100,6 +100,32 @@ Each session header shows a running tally:
 Summary:  18 ok  3 improve  1 regress
 ```
 
+## Complexity (Big-O) Tracking
+
+Every Storm benchmark calls `->Complexity(benchmark::oN)`, which makes Google Benchmark fit a curve across the dataset-size range and emit two extra rows per benchmark family: a `*_BigO` row (leading coefficient) and a `*_RMS` row (fit quality as a percentage error).
+
+The dashboard captures these rows alongside regular measurement rows. When a baseline run is active, each category shows a complexity footer:
+
+```
+  Complexity:
+    Storm/WHERE/where_int_gt    N → N     coef 1.21 → 1.23  +1.6%  ✓
+    Storm/JOIN/join_messages    N → N²                            ✗ SHAPE
+    Storm/ORDER/order_salary    NlgN → NlgN  coef 2.10 → 2.95  +40%  ⚠ DRIFT
+```
+
+Two regression types are detected:
+
+- **Shape regression** (`✗ SHAPE`, red) — the complexity class changed (e.g. `N` → `N²`). Strongest signal; always flagged regardless of threshold.
+- **Coefficient drift** (`⚠ DRIFT`, yellow) — same shape but leading coefficient grew above the threshold. Configurable via `--complexity-threshold`.
+- **Coefficient improvement** (`↑ IMPROVE`, green) — coefficient shrank below the negative threshold.
+- **Stable** (`✓`, green) — class unchanged, coefficient within threshold.
+
+Use `--complexity-threshold` to adjust sensitivity (default 5%):
+
+```bash
+./storm_bench_dashboard --complexity-threshold 10
+```
+
 ## CLI Flags
 
 | Flag | Default | Purpose |
@@ -108,7 +134,8 @@ Summary:  18 ok  3 improve  1 regress
 | `--socket PATH` | `$XDG_RUNTIME_DIR/storm-bench.sock` (with `/tmp/storm-bench-$USER.sock` fallback) | Unix domain socket for streaming results |
 | `--order arrival` | `newest` | Render results in insertion order instead of newest-first |
 | `--baseline SELECTOR` | `auto` | Baseline for regression comparison (see above) |
-| `--regression-threshold N` | `5` | Percentage delta that counts as a regression |
+| `--regression-threshold N` | `5` | Percentage delta that counts as a per-size regression |
+| `--complexity-threshold N` | `5` | Coefficient drift percentage that counts as a complexity regression |
 | `--upload-backup` | (one-shot, then exit) | Push database to the backup repo via `gh release upload --clobber` |
 | `--restore-backup` | (one-shot, then exit) | Pull database from the backup repo via `gh release download` |
 | `--backup-repo OWNER/REPO` | `spiritEcosse/storm-bench-private` | GitHub repo for backups |

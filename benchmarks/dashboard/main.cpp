@@ -123,6 +123,7 @@ namespace {
         std::string      backup_tag{}; // empty → default_backup_tag()
         BaselineSelector baseline{BaselineAuto{}};
         double           regression_threshold{5.0};
+        double           complexity_threshold{5.0}; // Phase 7: coefficient drift threshold
     };
 
     auto print_help() -> void {
@@ -149,6 +150,9 @@ namespace {
                 "  --regression-threshold N\n"
                 "                          Percentage delta that counts as a regression\n"
                 "                          (default: 5)\n"
+                "  --complexity-threshold N\n"
+                "                          Coefficient drift percentage that counts as a\n"
+                "                          complexity regression (default: 5)\n"
                 "  --upload-backup         One-shot: upload --db PATH to the backup repo\n"
                 "                          via `gh release upload --clobber` and exit\n"
                 "  --restore-backup        One-shot: download the DB file from the backup\n"
@@ -238,6 +242,20 @@ namespace {
                     std::exit(1);
                 }
                 opts.regression_threshold = v;
+            } else if (arg == "--complexity-threshold" && i + 1 < argc) {
+                const std::string_view sv = argv[++i];
+                double                 v{};
+                const auto             r = std::from_chars(sv.data(), sv.data() + sv.size(), v);
+                if (r.ec != std::errc{} || v <= 0.0) {
+                    std::fprintf(
+                            stderr,
+                            "storm_bench_dashboard: --complexity-threshold expects a positive number, got: %.*s\n",
+                            static_cast<int>(sv.size()),
+                            sv.data()
+                    );
+                    std::exit(1);
+                }
+                opts.complexity_threshold = v;
             } else if (arg == "--upload-backup") {
                 opts.upload_backup = true;
             } else if (arg == "--restore-backup") {
@@ -537,6 +555,32 @@ namespace {
         return (current_ns - baseline_ns) / baseline_ns * 100.0;
     }
 
+    struct BaselineComplexity {
+        std::string complexity_class;
+        double      complexity_coef{0.0};
+    };
+
+    // Phase 7: look up the baseline BigO row for (run_id, test_name, row_kind=="bigo").
+    auto lookup_baseline_complexity(std::int64_t baseline_run_id, std::string const& test_name)
+            -> std::optional<BaselineComplexity> {
+        auto rows = storm::QuerySet<bench_dashboard::BenchResult>()
+                            .where(storm::orm::where::field<^^bench_dashboard::BenchResult::run_id>() ==
+                                   static_cast<int>(baseline_run_id))
+                            .where(storm::orm::where::field<^^bench_dashboard::BenchResult::test_name>() == test_name)
+                            .where(storm::orm::where::field<^^bench_dashboard::BenchResult::row_kind>() ==
+                                   std::string{bench_dashboard::wire::kRowKindBigO})
+                            .limit(1)
+                            .select()
+                            .execute()
+                            .transform([](auto&& hive) {
+                                return std::forward<decltype(hive)>(hive) | std::views::as_rvalue |
+                                       std::ranges::to<std::vector<bench_dashboard::BenchResult>>();
+                            });
+        if (!rows || rows->empty())
+            return std::nullopt;
+        return BaselineComplexity{rows->front().complexity_class, rows->front().complexity_coef};
+    }
+
     auto print_missing_schema_hint(std::string_view db_path) -> void {
         std::fprintf(
                 stderr,
@@ -613,10 +657,14 @@ namespace {
             row.test_name        = m.test_name;
             row.category         = m.category;
             row.dataset_size     = static_cast<int>(m.dataset_size);
+            row.row_kind         = m.row_kind;
             row.real_time_ns     = m.real_ns;
             row.cpu_time_ns      = m.cpu_ns;
             row.iterations       = static_cast<int>(m.iterations);
             row.items_per_second = m.items_per_second;
+            row.complexity_class = m.complexity_class;
+            row.complexity_coef  = m.complexity_coef;
+            row.rms_pct          = m.rms_pct;
 
             storm::QuerySet<bench_dashboard::BenchResult> qs;
             auto rc = qs.template insert<storm::orm::statements::ReturnId::No>(row).execute();
@@ -691,13 +739,27 @@ namespace {
                 sess.run_id   = active_run_id;
             }
 
-            // Phase 6: attach delta before inserting into TUI state.
             auto enriched = msg;
-            if (state.baseline_run_id != 0) {
-                enriched.baseline_looked_up = true;
-                if (auto base_ns = lookup_baseline_ns(state.baseline_run_id, msg.test_name, msg.dataset_size);
-                    base_ns.has_value()) {
-                    enriched.delta_pct = compute_delta(msg.real_ns, *base_ns);
+
+            if (msg.row_kind == bench_dashboard::wire::kRowKindMeasurement || msg.row_kind.empty()) {
+                // Phase 6: attach per-size delta for measurement rows.
+                if (state.baseline_run_id != 0) {
+                    enriched.baseline_looked_up = true;
+                    if (auto base_ns = lookup_baseline_ns(state.baseline_run_id, msg.test_name, msg.dataset_size);
+                        base_ns.has_value()) {
+                        enriched.delta_pct = compute_delta(msg.real_ns, *base_ns);
+                    }
+                }
+            } else if (msg.row_kind == bench_dashboard::wire::kRowKindBigO) {
+                // Phase 7: attach baseline complexity for BigO rows.
+                if (state.baseline_run_id != 0) {
+                    enriched.baseline_looked_up = true;
+                    if (auto base = lookup_baseline_complexity(state.baseline_run_id, msg.test_name);
+                        base.has_value()) {
+                        enriched.baseline_class   = base->complexity_class;
+                        enriched.baseline_coef    = base->complexity_coef;
+                        enriched.shape_regression = (msg.complexity_class != base->complexity_class);
+                    }
                 }
             }
 
@@ -763,19 +825,37 @@ namespace {
                     m.test_name        = std::move(r.test_name);
                     m.category         = std::move(r.category);
                     m.dataset_size     = r.dataset_size;
+                    m.row_kind         = std::move(r.row_kind);
                     m.real_ns          = r.real_time_ns;
                     m.cpu_ns           = r.cpu_time_ns;
                     m.iterations       = r.iterations;
                     m.items_per_second = r.items_per_second;
-                    if (state.baseline_run_id != 0) {
-                        m.baseline_looked_up = true;
-                        if (auto base_ns = lookup_baseline_ns(state.baseline_run_id, m.test_name, m.dataset_size);
-                            base_ns.has_value()) {
-                            m.delta_pct = compute_delta(m.real_ns, *base_ns);
+                    m.complexity_class = std::move(r.complexity_class);
+                    m.complexity_coef  = r.complexity_coef;
+                    m.rms_pct          = r.rms_pct;
+
+                    if (m.row_kind == bench_dashboard::wire::kRowKindMeasurement || m.row_kind.empty()) {
+                        if (state.baseline_run_id != 0) {
+                            m.baseline_looked_up = true;
+                            if (auto base_ns = lookup_baseline_ns(state.baseline_run_id, m.test_name, m.dataset_size);
+                                base_ns.has_value()) {
+                                m.delta_pct = compute_delta(m.real_ns, *base_ns);
+                            }
+                        }
+                        ++sess.result_count;
+                    } else if (m.row_kind == bench_dashboard::wire::kRowKindBigO) {
+                        if (state.baseline_run_id != 0) {
+                            m.baseline_looked_up = true;
+                            if (auto base = lookup_baseline_complexity(state.baseline_run_id, m.test_name);
+                                base.has_value()) {
+                                m.baseline_class   = base->complexity_class;
+                                m.baseline_coef    = base->complexity_coef;
+                                m.shape_regression = (m.complexity_class != base->complexity_class);
+                            }
                         }
                     }
+
                     bench_dashboard::tui::add_result(sess, m, state.regression_threshold);
-                    ++sess.result_count;
                 }
             }
             state.sessions.push_back(std::move(sess));
@@ -852,6 +932,7 @@ auto main(int argc, char** argv) -> int {
     bench_dashboard::tui::DashboardState state;
     state.order_arrival        = opts.order_arrival;
     state.regression_threshold = opts.regression_threshold;
+    state.complexity_threshold = opts.complexity_threshold;
     int64_t active_run_id      = 0;
 
     // Phase 6: resolve baseline after DB connection is open so Storm queries work.
@@ -897,11 +978,21 @@ auto main(int argc, char** argv) -> int {
             break;
         case bench_dashboard::tui::Key::Refresh:
             rebuild_state_from_db(state);
-            active_run_id = 0;
-            dirty         = true;
+            active_run_id       = 0;
+            state.scroll_offset = 0;
+            dirty               = true;
             break;
         case bench_dashboard::tui::Key::Digit:
             bench_dashboard::tui::toggle_session(state, key.digit - '0');
+            dirty = true;
+            break;
+        case bench_dashboard::tui::Key::ScrollDown:
+            ++state.scroll_offset;
+            dirty = true;
+            break;
+        case bench_dashboard::tui::Key::ScrollUp:
+            if (state.scroll_offset > 0)
+                --state.scroll_offset;
             dirty = true;
             break;
         case bench_dashboard::tui::Key::None:

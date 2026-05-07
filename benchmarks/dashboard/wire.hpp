@@ -31,6 +31,11 @@ namespace bench_dashboard::wire {
 
     enum class MessageKind : std::uint8_t { Result, RunStart, RunComplete };
 
+    // row_kind values for ResultMsg (Phase 7).
+    inline constexpr std::string_view kRowKindMeasurement = "measurement";
+    inline constexpr std::string_view kRowKindBigO        = "bigo";
+    inline constexpr std::string_view kRowKindRms         = "rms";
+
     struct ResultMsg {
         MessageKind kind{MessageKind::Result};
 
@@ -40,16 +45,27 @@ namespace bench_dashboard::wire {
         std::string  test_name{};
         std::string  category{};
         std::int64_t dataset_size{0};
+        std::string  row_kind{kRowKindMeasurement}; // Phase 7: "measurement" | "bigo" | "rms"
         double       real_ns{0.0};
         double       cpu_ns{0.0};
         std::int64_t iterations{0};
         double       items_per_second{0.0};
+
+        // Phase 7: complexity fields (bigo/rms rows only).
+        std::string complexity_class{}; // "N", "NlgN", "N^2", ...
+        double      complexity_coef{0.0};
+        double      rms_pct{0.0};
 
         // Set by the dashboard when a baseline run is active (Phase 6).
         // nullopt = no matching baseline row; baseline_looked_up distinguishes
         // "no baseline active" (false) from "active but no match" (true+nullopt).
         std::optional<double> delta_pct{};
         bool                  baseline_looked_up{false};
+
+        // Phase 7: baseline complexity data (set by dashboard when baseline is active).
+        bool        shape_regression{false}; // complexity_class differs from baseline
+        std::string baseline_class{};        // baseline complexity_class
+        double      baseline_coef{0.0};      // baseline complexity_coef
     };
 
     // Single source of truth for the default socket path; both reporter.cpp
@@ -108,13 +124,16 @@ namespace bench_dashboard::wire {
 
     inline auto build_result(ResultMsg const& m) -> std::string {
         std::string s;
-        s.reserve(192 + m.test_name.size() + m.category.size());
+        s.reserve(256 + m.test_name.size() + m.category.size() + m.row_kind.size() + m.complexity_class.size());
         s.append(R"({"name":")");
         append_escaped(s, m.test_name);
         s.append(R"(","category":")");
         append_escaped(s, m.category);
         s.append(R"(","dataset_size":)");
         append_int(s, m.dataset_size);
+        s.append(R"(,"row_kind":")");
+        append_escaped(s, m.row_kind);
+        s.push_back('"');
         s.append(R"(,"real_ns":)");
         append_double(s, m.real_ns);
         s.append(R"(,"cpu_ns":)");
@@ -123,6 +142,17 @@ namespace bench_dashboard::wire {
         append_int(s, m.iterations);
         s.append(R"(,"items_per_second":)");
         append_double(s, m.items_per_second);
+        if (!m.complexity_class.empty()) {
+            s.append(R"(,"complexity_class":")");
+            append_escaped(s, m.complexity_class);
+            s.push_back('"');
+            s.append(R"(,"complexity_coef":)");
+            append_double(s, m.complexity_coef);
+        }
+        if (m.rms_pct != 0.0) {
+            s.append(R"(,"rms_pct":)");
+            append_double(s, m.rms_pct);
+        }
         s.push_back('}');
         return s;
     }
@@ -291,10 +321,16 @@ namespace bench_dashboard::wire {
         rdr.read_field("name", m.test_name);
         rdr.read_field("category", m.category);
         rdr.read_field("dataset_size", m.dataset_size);
+        rdr.read_field("row_kind", m.row_kind);
+        if (m.row_kind.empty())
+            m.row_kind = std::string{kRowKindMeasurement};
         rdr.read_field("real_ns", m.real_ns);
         rdr.read_field("cpu_ns", m.cpu_ns);
         rdr.read_field("iterations", m.iterations);
         rdr.read_field("items_per_second", m.items_per_second);
+        rdr.read_field("complexity_class", m.complexity_class);
+        rdr.read_field("complexity_coef", m.complexity_coef);
+        rdr.read_field("rms_pct", m.rms_pct);
         return m;
     }
 
