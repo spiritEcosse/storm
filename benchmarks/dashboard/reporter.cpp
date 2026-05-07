@@ -70,6 +70,64 @@ namespace bench_dashboard {
             return std::string{rest.substr(0, end == std::string_view::npos ? rest.size() : end)};
         }
 
+        // Initial msg shell with kind+name+category populated. Each ReportRuns
+        // branch then fills in its row_kind-specific fields.
+        auto base_msg_for_run(benchmark::BenchmarkReporter::Run const& r) -> wire::ResultMsg {
+            wire::ResultMsg m{};
+            m.kind      = wire::MessageKind::Result;
+            m.test_name = r.benchmark_name();
+            m.category  = extract_category(m.test_name);
+            return m;
+        }
+
+        auto build_bigo_msg(benchmark::BenchmarkReporter::Run const& r) -> wire::ResultMsg {
+            auto m             = base_msg_for_run(r);
+            m.row_kind         = std::string{wire::kRowKindBigO};
+            m.complexity_class = std::string{big_o_string(r.complexity)};
+            // In a BigO row, real_accumulated_time holds the coefficient.
+            m.complexity_coef = r.real_accumulated_time;
+            return m;
+        }
+
+        auto build_rms_msg(benchmark::BenchmarkReporter::Run const& r) -> wire::ResultMsg {
+            auto m     = base_msg_for_run(r);
+            m.row_kind = std::string{wire::kRowKindRms};
+            // In an RMS row, real_accumulated_time holds the RMS percentage.
+            m.rms_pct = r.real_accumulated_time * 100.0;
+            return m;
+        }
+
+        auto build_measurement_msg(benchmark::BenchmarkReporter::Run const& r) -> wire::ResultMsg {
+            auto m         = base_msg_for_run(r);
+            m.row_kind     = std::string{wire::kRowKindMeasurement};
+            m.dataset_size = static_cast<std::int64_t>(r.complexity_n);
+            m.iterations   = static_cast<std::int64_t>(r.iterations);
+
+            // real_accumulated_time / cpu_accumulated_time are in seconds
+            // (gbench source: src/reporter.cc:117). Convert to ns/iter by
+            // × 1e9 / iterations. Guard iterations=0 (matches gbench's
+            // GetAdjustedRealTime).
+            const double iters_safe = r.iterations > 0 ? static_cast<double>(r.iterations) : 1.0;
+            m.real_ns               = r.real_accumulated_time * 1.0e9 / iters_safe;
+            m.cpu_ns                = r.cpu_accumulated_time * 1.0e9 / iters_safe;
+
+            if (auto it = r.counters.find("items_per_second"); it != r.counters.end()) {
+                m.items_per_second = it->second.value;
+            } else if (m.real_ns > 0.0 && m.dataset_size > 0) {
+                m.items_per_second = static_cast<double>(m.dataset_size) / (m.real_ns * 1.0e-9);
+            }
+            return m;
+        }
+
+        // Pre-filter: discard skipped runs and aggregate rows we don't care
+        // about (mean/median/stddev). BigO and RMS rows have aggregate_name
+        // set but should still flow through.
+        auto should_skip_run(benchmark::BenchmarkReporter::Run const& r) -> bool {
+            if (r.skipped != benchmark::internal::NotSkipped)
+                return true;
+            return !r.aggregate_name.empty() && !r.report_big_o && !r.report_rms;
+        }
+
         class StormReporter final : public benchmark::BenchmarkReporter {
           public:
             StormReporter(int fd, std::string filter) : fd_{fd}, filter_{std::move(filter)} {}
@@ -90,55 +148,14 @@ namespace bench_dashboard {
 
             auto ReportRuns(std::vector<Run> const& runs) -> void override {
                 for (auto const& r : runs) {
-                    if (r.skipped != benchmark::internal::NotSkipped)
+                    if (should_skip_run(r))
                         continue;
-
-                    // Phase 7: pass BigO and RMS rows through with their own row_kind.
-                    // Skip other aggregate rows (mean / median / stddev).
-                    if (!r.aggregate_name.empty() && !r.report_big_o && !r.report_rms)
-                        continue;
-
-                    wire::ResultMsg m{};
-                    m.kind      = wire::MessageKind::Result;
-                    m.test_name = r.benchmark_name();
-                    m.category  = extract_category(m.test_name);
-
-                    if (r.report_big_o) {
-                        m.row_kind         = std::string{wire::kRowKindBigO};
-                        m.complexity_class = std::string{big_o_string(r.complexity)};
-                        // In a BigO row, real_accumulated_time holds the coefficient.
-                        m.complexity_coef = r.real_accumulated_time;
-                        send_line(wire::build_result(m));
-                        continue;
-                    }
-
-                    if (r.report_rms) {
-                        m.row_kind = std::string{wire::kRowKindRms};
-                        // In an RMS row, real_accumulated_time holds the RMS percentage.
-                        m.rms_pct = r.real_accumulated_time * 100.0;
-                        send_line(wire::build_result(m));
-                        continue;
-                    }
-
-                    m.row_kind     = std::string{wire::kRowKindMeasurement};
-                    m.dataset_size = static_cast<std::int64_t>(r.complexity_n);
-                    m.iterations   = static_cast<std::int64_t>(r.iterations);
-
-                    // real_accumulated_time / cpu_accumulated_time are in
-                    // seconds (gbench source: src/reporter.cc:117). Convert
-                    // to ns/iter by × 1e9 / iterations. Guard iterations=0
-                    // (matches gbench's GetAdjustedRealTime).
-                    const double iters_safe = r.iterations > 0 ? static_cast<double>(r.iterations) : 1.0;
-                    m.real_ns               = r.real_accumulated_time * 1.0e9 / iters_safe;
-                    m.cpu_ns                = r.cpu_accumulated_time * 1.0e9 / iters_safe;
-
-                    if (auto it = r.counters.find("items_per_second"); it != r.counters.end()) {
-                        m.items_per_second = it->second.value;
-                    } else if (m.real_ns > 0.0 && m.dataset_size > 0) {
-                        m.items_per_second = static_cast<double>(m.dataset_size) / (m.real_ns * 1.0e-9);
-                    }
-
-                    send_line(wire::build_result(m));
+                    if (r.report_big_o)
+                        send_line(wire::build_result(build_bigo_msg(r)));
+                    else if (r.report_rms)
+                        send_line(wire::build_result(build_rms_msg(r)));
+                    else
+                        send_line(wire::build_result(build_measurement_msg(r)));
                 }
             }
 

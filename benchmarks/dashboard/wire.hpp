@@ -159,6 +159,36 @@ namespace bench_dashboard::wire {
 
     namespace detail {
 
+        // True when `json` has `"<key>":` starting at position `pos`.
+        // Caller has already established that `json[pos] == '"'`; this check
+        // walks the candidate key + closing quote + colon in one shot.
+        inline auto matches_key(std::string_view json, std::size_t pos, std::string_view key) -> bool {
+            const std::size_t key_start = pos + 1;
+            const std::size_t key_end   = key_start + key.size();
+            return key_end < json.size() && json[key_end] == '"' && json[key_end + 1] == ':' &&
+                   json.substr(key_start, key.size()) == key;
+        }
+
+        // Step over the next character inside a JSON string literal, returning
+        // the next index. Skips over `\\` / `\"` escape pairs and clears the
+        // `in_string` flag at the closing quote.
+        inline auto step_in_string(std::string_view json, std::size_t i, bool& in_string) -> std::size_t {
+            const char c = json[i];
+            if (c == '\\' && i + 1 < json.size())
+                return i + 2;
+            if (c == '"')
+                in_string = false;
+            return i + 1;
+        }
+
+        // Update bracket depth for `{` `[` `}` `]`. No-op for any other byte.
+        inline auto update_depth(char c, int& depth) -> void {
+            if (c == '{' || c == '[')
+                ++depth;
+            else if (c == '}' || c == ']')
+                --depth;
+        }
+
         // Walk top-level (depth-1) keys, tracking whether we're inside a
         // string, so a key character that happens to appear inside a string
         // value can never match. Returns position of the value (after the
@@ -172,35 +202,19 @@ namespace bench_dashboard::wire {
             int         depth     = 0;
             std::size_t i         = 0;
             while (i < json.size()) {
-                const char c = json[i];
                 if (in_string) {
-                    if (c == '\\' && i + 1 < json.size()) {
-                        i += 2;
-                        continue;
-                    }
-                    if (c == '"')
-                        in_string = false;
-                    ++i;
+                    i = step_in_string(json, i, in_string);
                     continue;
                 }
+                const char c = json[i];
                 if (c == '"') {
-                    if (depth == 1) {
-                        // Could be the start of a top-level key.
-                        const std::size_t key_start = i + 1;
-                        const std::size_t key_end   = key_start + key.size();
-                        if (key_end < json.size() && json[key_end] == '"' && json[key_end + 1] == ':' &&
-                            json.substr(key_start, key.size()) == key) {
-                            return key_end + 2; // position right after ':'
-                        }
-                    }
+                    if (depth == 1 && matches_key(json, i, key))
+                        return i + 1 + key.size() + 2; // position right after ':'
                     in_string = true;
                     ++i;
                     continue;
                 }
-                if (c == '{' || c == '[')
-                    ++depth;
-                else if (c == '}' || c == ']')
-                    --depth;
+                update_depth(c, depth);
                 ++i;
             }
             return std::string_view::npos;
@@ -246,7 +260,10 @@ namespace bench_dashboard::wire {
             return json.substr(start, pos - start);
         }
 
-        inline auto read_double(std::string_view json, std::size_t pos, double& out) -> bool {
+        // Parse the JSON number starting at `pos` into `out` via from_chars.
+        // T may be `double` or `std::int64_t`; both share the same
+        // "empty span → fail; otherwise from_chars" pipeline.
+        template <typename T> auto read_number(std::string_view json, std::size_t pos, T& out) -> bool {
             const auto v = read_number_view(json, pos);
             if (v.empty())
                 return false;
@@ -254,12 +271,12 @@ namespace bench_dashboard::wire {
             return r.ec == std::errc{};
         }
 
+        inline auto read_double(std::string_view json, std::size_t pos, double& out) -> bool {
+            return read_number(json, pos, out);
+        }
+
         inline auto read_int64(std::string_view json, std::size_t pos, std::int64_t& out) -> bool {
-            const auto v = read_number_view(json, pos);
-            if (v.empty())
-                return false;
-            const auto r = std::from_chars(v.data(), v.data() + v.size(), out);
-            return r.ec == std::errc{};
+            return read_number(json, pos, out);
         }
 
         inline auto read_bool(std::string_view json, std::size_t pos, bool& out) -> bool {
