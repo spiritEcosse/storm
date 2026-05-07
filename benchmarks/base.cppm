@@ -31,18 +31,6 @@ import <vector>;
 
 export namespace storm::benchmark {
 
-    // Count of non-PK fields for a model — used as default FieldsPerRow
-    // template argument below. Inlined here (was storm_benchmark_raw) since
-    // it was the only remaining consumer after Phase 5 dropped the raw helpers.
-    template <typename T> consteval auto non_pk_field_count() -> size_t {
-        size_t count = 0;
-        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
-            if (!storm::meta::has_primary_attr(m))
-                ++count;
-        }
-        return count;
-    }
-
     // ========================================================================
     // get_db: Helper to get raw sqlite3* from default connection
     // ========================================================================
@@ -100,8 +88,7 @@ export namespace storm::benchmark {
 
     // CRTP base class for data-driven benchmarks (Insert, UpdateByPK)
     // BatchSize is now a runtime parameter for fair comparison with Storm ORM
-    template <typename Derived, typename Model, size_t FieldsPerRow = non_pk_field_count<Model>()>
-    class DataBenchmarkBase {
+    template <typename Derived, typename Model> class DataBenchmarkBase {
       private:
         QuerySet<Model>    qs_;
         std::vector<Model> data_;
@@ -127,14 +114,6 @@ export namespace storm::benchmark {
         auto set_batch_size(int size) -> void {
             batch_size_ = size;
         }
-
-        // SQLite binding limit constants
-        // 999 is SQLite's default SQLITE_MAX_VARIABLE_NUMBER
-        // FieldsPerRow: 4 for INSERT (name, age, is_active, salary - id is auto-increment)
-        //               5 for UPDATE (name, age, is_active, salary, id - need id for WHERE clause)
-        static constexpr size_t fields_per_row = FieldsPerRow;
-        static constexpr size_t max_bulk       = 999 / fields_per_row; // ~249 for INSERT, ~199 for UPDATE
-        static constexpr size_t bulk_threshold = (max_bulk > 100) ? (max_bulk / 2) : 50;
 
         // Default model creation - derived classes can override via static method hiding
         // index parameter allows generating varied data (useful for SELECT WHERE benchmarks)

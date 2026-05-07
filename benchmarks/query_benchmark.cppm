@@ -99,8 +99,8 @@ export namespace storm::benchmark {
     // QueryBenchmark — SELECT-family operations driven by a BenchmarkTest NTTP
     // ========================================================================
     template <typename Model, auto const& test>
-    class QueryBenchmark : public DataBenchmarkBase<QueryBenchmark<Model, test>, Model, 1> {
-        using Base = DataBenchmarkBase<QueryBenchmark<Model, test>, Model, 1>;
+    class QueryBenchmark : public DataBenchmarkBase<QueryBenchmark<Model, test>, Model> {
+        using Base = DataBenchmarkBase<QueryBenchmark<Model, test>, Model>;
 
         static consteval auto is_setop() -> bool {
             return test.setop.enabled;
