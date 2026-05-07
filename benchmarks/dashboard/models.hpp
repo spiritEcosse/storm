@@ -31,10 +31,14 @@ namespace bench_dashboard {
         std::string                               test_name; // e.g. "Storm/WHERE/where_int_gt"
         std::string                               category;  // e.g. "WHERE"
         int                                       dataset_size{};
+        std::string                               row_kind{"measurement"}; // "measurement" | "bigo" | "rms"
         double                                    real_time_ns{};
         double                                    cpu_time_ns{};
         int                                       iterations{};
         double                                    items_per_second{};
+        std::string                               complexity_class{}; // e.g. "N", "NlgN", "N^2" (bigo rows only)
+        double                                    complexity_coef{};  // leading coefficient (bigo rows only)
+        double                                    rms_pct{};          // fit quality 0-100 (rms rows only)
     };
 
 } // namespace bench_dashboard
