@@ -47,8 +47,8 @@ import <meta>;
 export namespace storm::benchmark {
 
     template <typename Model, auto const& test>
-    class CrudBenchmark : public DataBenchmarkBase<CrudBenchmark<Model, test>, Model, 1> {
-        using Base = DataBenchmarkBase<CrudBenchmark<Model, test>, Model, 1>;
+    class CrudBenchmark : public DataBenchmarkBase<CrudBenchmark<Model, test>, Model> {
+        using Base = DataBenchmarkBase<CrudBenchmark<Model, test>, Model>;
 
         static consteval auto is_insert_op() -> bool {
             constexpr auto op = test.operation.view();
