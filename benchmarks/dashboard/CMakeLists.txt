@@ -12,6 +12,14 @@
 
 add_executable(storm_bench_dashboard "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp")
 
+# C++26 modules owned by the dashboard binary. socket_server.cppm exposes the
+# AF_UNIX listener; future phases add db.cppm + tui.cppm to the same FILE_SET.
+file(GLOB STORM_DASHBOARD_MODULE_UNITS CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/*.cppm")
+target_sources(
+  storm_bench_dashboard PRIVATE FILE_SET cxx_modules TYPE CXX_MODULES FILES
+                                ${STORM_DASHBOARD_MODULE_UNITS})
+
 target_link_libraries(storm_bench_dashboard PRIVATE storm pthread)
 link_sqlite(storm_bench_dashboard)
 apply_clang_flags(storm_bench_dashboard)

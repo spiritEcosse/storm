@@ -37,6 +37,37 @@ The unified benchmark system is a **100% compile-time C++ solution** that loads 
 
 See [GitHub Issues (benchmarks)](https://github.com/spiritEcosse/storm/issues?q=is%3Aissue+is%3Aopen+label%3Abenchmarks) for planned improvements.
 
+## 📺 Live dashboard
+
+`storm_bench_dashboard` streams results to an ANSI TUI in real time and persists every result in SQLite. Two-terminal workflow:
+
+```bash
+# Terminal 1 — start the dashboard
+./build/release/benchmarks/dashboard/storm_bench_dashboard
+
+# Terminal 2 — run benchmarks with streaming enabled
+STORM_BENCH_SOCKET=1 ./build/release/benchmarks/storm_bench --benchmark_filter='Storm/WHERE/.*'
+
+# Quick smoke test (sub-second per benchmark)
+STORM_BENCH_SOCKET=1 ./build/release/benchmarks/storm_bench --benchmark_filter='Storm/WHERE/.*' --benchmark_min_time=0.2s
+```
+
+Keys: `q` quit · `r` refresh from DB · `1`–`9` toggle session expand/collapse.
+
+**Baseline comparison** — the dashboard compares each result against a previous run in real time:
+
+```bash
+./storm_bench_dashboard                          # auto: most recent full run, same branch+host
+./storm_bench_dashboard --baseline branch:develop
+./storm_bench_dashboard --baseline run:38
+./storm_bench_dashboard --baseline none          # disable
+./storm_bench_dashboard --regression-threshold 10
+```
+
+Each result line shows a delta column (`+6.3% REGRESS`, `−7.1% IMPROVE`, `—` if no baseline row). A summary line per session counts ok / improve / regress.
+
+See [docs/development/BENCHMARK_DASHBOARD.md](../docs/development/BENCHMARK_DASHBOARD.md) for full setup, schema, baseline selectors, backup/restore, and troubleshooting.
+
 ## 📉 Regression detection
 
 The per-PR benchmark gate (#241) is self-hosted on GitHub Actions and uses **GitHub Actions artifacts** for the baseline store — no external service.

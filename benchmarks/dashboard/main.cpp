@@ -1,98 +1,276 @@
-// storm_bench_dashboard — Phase 1 (Issue #247).
+// storm_bench_dashboard — Phase 3 (Issue #247).
 //
-// This is a deliberate skeleton: open the DB, verify the bench_dashboard
-// schema is current (BenchRun + BenchResult), report the row counts, exit.
-// Phases 2+ add the AF_UNIX socket listener, the TUI, and the live-stream
-// reporter wiring on the storm_bench side.
+// Phase 1 verified the SQLite schema is current. Phase 2 added the live socket
+// stream. Phase 3 turns the binary into a real TUI: every NDJSON datagram is
+// parsed, persisted to SQLite via Storm (`QuerySet<BenchRun>` /
+// `QuerySet<BenchResult>` — Storm dogfoods itself), and rendered in an
+// alt-screen ANSI view with categorised, colour-coded, newest-first results.
+// Multiple `storm_bench` invocations stack in the same dashboard process
+// (newest on top); older sessions auto-collapse and re-expand on number keys.
 //
 // Schema management is out of scope: this binary never auto-creates tables.
-// Migrations are run explicitly via `cmake --build . --target migrate`
+// Migrations are run explicitly via `cmake --build . --target migrate-bench`
 // (Atlas-backed, see docs/development/MIGRATIONS.md). If a required table is
 // missing the binary prints the migration command and exits non-zero — same
 // philosophy as the application schema flow.
+//
+// File layout: this TU stays small by delegating most of the implementation
+// to textual headers `#include`d from the anonymous namespace below
+// (dashboard_args.hpp, dashboard_backup.hpp, dashboard_db.hpp). The textual
+// approach is load-bearing — it keeps the model definitions in models.hpp
+// and the QuerySet calls in the same TU, which is required because
+// clang-p2996 does not transport reflection annotations across BMI
+// boundaries (memory feedback_cpp26_module_reflection_annotations).
 
 import storm;
+import storm.bench_dashboard.socket_server;
+import storm.bench_dashboard.tui;
 import <expected>;
-import <memory>;
 import <filesystem>;
+import <optional>;
 
 #include "models.hpp" // textual — must follow `import storm;`
+#include "wire.hpp"
 
+#include <atomic>
+#include <csignal>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 namespace {
 
-    // Default location for the dashboard's SQLite store, following XDG Base
-    // Directory: app-managed persistent data (history, dbs the user doesn't
-    // hand-edit) belongs in $XDG_STATE_HOME, not $XDG_CONFIG_HOME. Defaults
-    // to ~/.local/state/storm/dashboard/bench_results.db.
-    auto default_db_path() -> std::string {
-        std::filesystem::path base;
-        if (const char* xdg_state = std::getenv("XDG_STATE_HOME"); xdg_state != nullptr && *xdg_state != '\0') {
-            base = xdg_state;
-        } else if (const char* home = std::getenv("HOME"); home != nullptr && *home != '\0') {
-            base = std::filesystem::path{home} / ".local" / "state";
-        } else {
-            base = ".";
-        }
-        return (base / "storm" / "dashboard" / "bench_results.db").string();
+    // SIGINT / SIGTERM → flip the flag the main loop already checks for `q`.
+    // Keeps the alt-screen + termios teardown on the normal exit path so a
+    // Ctrl-C doesn't leave the user with a wrecked terminal.
+    std::atomic<bool> g_should_quit{false};
+
+    extern "C" auto handle_quit_signal(int /*sig*/) -> void {
+        g_should_quit.store(true);
     }
 
-    struct Options {
-        std::string db_path{default_db_path()};
-    };
-
-    auto print_help() -> void {
-        const std::string default_path = default_db_path();
-        std::printf(
-                "storm_bench_dashboard — real-time storm_bench result dashboard\n"
-                "\n"
-                "Phase 1: opens the SQLite store and reports current row counts.\n"
-                "\n"
-                "Usage: storm_bench_dashboard [--db PATH]\n"
-                "\n"
-                "Options:\n"
-                "  --db PATH   SQLite database path\n"
-                "              (default: %s)\n"
-                "  -h, --help  Show this help\n",
-                default_path.c_str()
-        );
+    auto install_signal_handlers() -> void {
+        struct sigaction sa{};
+        sa.sa_handler = &handle_quit_signal;
+        ::sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0; // intentionally not SA_RESTART — we want poll() to wake on signal
+        ::sigaction(SIGINT, &sa, nullptr);
+        ::sigaction(SIGTERM, &sa, nullptr);
     }
 
-    auto parse_args(int argc, char** argv) -> Options {
-        Options opts;
-        for (int i = 1; i < argc; ++i) {
-            const std::string_view arg = argv[i];
-            if (arg == "--db" && i + 1 < argc) {
-                opts.db_path = argv[++i];
-            } else if (arg == "-h" || arg == "--help") {
-                print_help();
-                std::exit(0);
-            } else {
-                std::fprintf(stderr, "storm_bench_dashboard: unknown argument: %s\n", argv[i]);
-                print_help();
-                std::exit(1);
-            }
-        }
-        return opts;
-    }
+} // namespace
 
-    auto print_missing_schema_hint(std::string_view db_path) -> void {
+// Textual headers — included after `import storm;` + models.hpp so their
+// QuerySet calls see the same models with their reflection annotations.
+// Order matters: backup needs Options, db needs Options + tui types.
+#include "dashboard_args.hpp"
+#include "dashboard_backup.hpp"
+#include "dashboard_db.hpp"
+
+namespace {
+
+    // -----------------------------------------------------------------------
+    // main() helpers — stage gates + event loop
+    // -----------------------------------------------------------------------
+
+    // Print an error of the form "<prefix> '<arg>': <reason>" and return rc.
+    // Single source of truth for the path/connection/io error pattern.
+    auto fail_with(int rc, char const* prefix, std::string_view arg, std::string_view reason) -> int {
         std::fprintf(
                 stderr,
-                "\n"
-                "  The dashboard schema is missing. Bootstrap it with:\n"
-                "\n"
-                "      cmake --build <build-dir> --target makemigrations   # once, after model changes\n"
-                "      atlas migrate apply \\\n"
-                "          --dir 'file://benchmarks/dashboard/migrations' \\\n"
-                "          --url 'sqlite://%.*s'\n",
-                static_cast<int>(db_path.size()),
-                db_path.data()
+                "storm_bench_dashboard: %s '%.*s': %.*s\n",
+                prefix,
+                static_cast<int>(arg.size()),
+                arg.data(),
+                static_cast<int>(reason.size()),
+                reason.data()
         );
+        return rc;
+    }
+
+    // mkdir -p the parent of `db_path` so SQLite's open() doesn't fail with
+    // ENOENT on first run. Returns 0 on success, 1 on filesystem error.
+    auto ensure_db_parent_dir(std::string_view db_path) -> int {
+        const auto parent = std::filesystem::path{db_path}.parent_path();
+        if (parent.empty())
+            return 0;
+        std::error_code ec;
+        std::filesystem::create_directories(parent, ec);
+        if (ec)
+            return fail_with(1, "cannot create", parent.string(), ec.message());
+        return 0;
+    }
+
+    // Open the SQLite store. Returns 0 on success, 1 on connection failure.
+    auto open_db_connection(Options const& opts) -> int {
+        auto rc = storm::QuerySet<bench_dashboard::BenchRun>::set_default_connection(opts.db_path);
+        if (!rc)
+            return fail_with(1, "cannot open", opts.db_path, std::string{rc.error().message()});
+        return 0;
+    }
+
+    // Verify a single table by issuing `count()`. Returns 0 on success or 2
+    // on missing schema (already printed).
+    auto check_table_exists(auto&& count_result, std::string_view db_path) -> int {
+        if (count_result)
+            return 0;
+        std::fprintf(
+                stderr,
+                "storm_bench_dashboard: schema check failed: %s\n",
+                std::string{count_result.error().message()}.c_str()
+        );
+        print_missing_schema_hint(db_path);
+        return 2;
+    }
+
+    auto check_schema(Options const& opts) -> int {
+        if (const int rc =
+                    check_table_exists(storm::QuerySet<bench_dashboard::BenchRun>().count().execute(), opts.db_path);
+            rc != 0)
+            return rc;
+        return check_table_exists(storm::QuerySet<bench_dashboard::BenchResult>().count().execute(), opts.db_path);
+    }
+
+    // Open the AF_UNIX listener. Returns 0 on success, 3 on bind failure.
+    auto setup_socket(Options const& opts, bench_dashboard::SocketServer& server) -> int {
+        const std::string_view socket_path = opts.socket_path.empty() ? bench_dashboard::wire::default_socket_path()
+                                                                      : std::string_view{opts.socket_path};
+        if (auto err = server.open(socket_path); !err.empty()) {
+            std::fprintf(stderr, "storm_bench_dashboard: %s\n", err.c_str());
+            return 3;
+        }
+        return 0;
+    }
+
+    // Resolve the baseline selector now that the DB is open, store the result
+    // on `state`, and warn when --baseline auto matched nothing.
+    auto resolve_and_log_baseline(Options const& opts, bench_dashboard::tui::DashboardState& state) -> void {
+        const std::string current_branch = run_capture("git rev-parse --abbrev-ref HEAD 2>/dev/null");
+        const std::string current_host   = run_capture("hostname -s 2>/dev/null");
+        auto [bid, blabel]               = resolve_baseline(opts.baseline, current_branch, current_host);
+        state.baseline_run_id            = bid;
+        state.baseline_label             = std::move(blabel);
+        if (bid == 0 && std::holds_alternative<BaselineAuto>(opts.baseline)) {
+            std::fprintf(
+                    stderr,
+                    "storm_bench_dashboard: no baseline found for branch '%s' on host '%s' — running without "
+                    "comparison\n",
+                    current_branch.c_str(),
+                    current_host.c_str()
+            );
+        }
+    }
+
+    // Translate a single key event into state mutations. Returns true when
+    // the user asked to quit. `dirty` is set when the next frame must redraw.
+    auto handle_key_event(
+            bench_dashboard::tui::KeyEvent        key,
+            bench_dashboard::tui::DashboardState& state,
+            std::int64_t&                         active_run_id,
+            bool&                                 dirty
+    ) -> bool {
+        using Key = bench_dashboard::tui::Key;
+        switch (key.kind) {
+        case Key::Quit:
+            return true;
+        case Key::Refresh:
+            rebuild_state_from_db(state);
+            active_run_id       = 0;
+            state.scroll_offset = 0;
+            dirty               = true;
+            return false;
+        case Key::Digit:
+            bench_dashboard::tui::toggle_session(state, key.digit - '0');
+            dirty = true;
+            return false;
+        case Key::ScrollDown:
+            ++state.scroll_offset;
+            dirty = true;
+            return false;
+        case Key::ScrollUp:
+            if (state.scroll_offset > 0)
+                --state.scroll_offset;
+            dirty = true;
+            return false;
+        case Key::None:
+            return false;
+        }
+        return false;
+    }
+
+    // Drain whatever datagrams have queued on the socket since last poll.
+    // Returns false on a fatal apply_event error so the caller can stop.
+    auto drain_socket_datagrams(
+            bench_dashboard::SocketServer&        server,
+            bench_dashboard::tui::DashboardState& state,
+            DashboardDB&                          db,
+            std::int64_t&                         active_run_id,
+            bool&                                 dirty
+    ) -> bool {
+        while (true) {
+            auto datagram = server.recv_one(/*timeout_ms=*/0);
+            if (!datagram)
+                return true;
+            auto msg = bench_dashboard::wire::parse(*datagram);
+            if (!msg) {
+                std::fprintf(
+                        stderr, "\nstorm_bench_dashboard: skipped unparseable datagram (%zu bytes)\n", datagram->size()
+                );
+                continue;
+            }
+            if (!apply_event(*msg, state, db, active_run_id))
+                return false;
+            dirty = true;
+        }
+    }
+
+    // Spinner: redraw at least every ~5 ticks (~500 ms) so the active
+    // session's glyph rotates even when no events arrive.
+    auto tick_spinner(bench_dashboard::tui::DashboardState& state, std::size_t& since_last_redraw, bool& dirty)
+            -> void {
+        ++since_last_redraw;
+        if (since_last_redraw >= 5) {
+            ++state.spinner_tick;
+            dirty             = true;
+            since_last_redraw = 0;
+        }
+    }
+
+    // SocketServer doesn't expose its fd today, so stdin and the socket are
+    // driven independently: read_key polls stdin for 100 ms, then recv_one(0)
+    // drains all queued datagrams. A single thread suffices.
+    auto
+    run_event_loop(bench_dashboard::tui::DashboardState& state, DashboardDB& db, bench_dashboard::SocketServer& server)
+            -> void {
+        std::int64_t active_run_id     = 0;
+        std::size_t  since_last_redraw = 0;
+        while (true) {
+            if (g_should_quit.load())
+                return;
+            const auto key   = bench_dashboard::tui::read_key(/*timeout_ms=*/100);
+            bool       dirty = false;
+            if (handle_key_event(key, state, active_run_id, dirty))
+                return;
+            if (!drain_socket_datagrams(server, state, db, active_run_id, dirty))
+                return;
+            tick_spinner(state, since_last_redraw, dirty);
+            if (dirty)
+                bench_dashboard::tui::write_full_frame(bench_dashboard::tui::render(state));
+        }
+    }
+
+    // Run any one-shot subcommand requested via CLI flags, returning the
+    // exit code. Returns nullopt when no subcommand was selected and the
+    // normal interactive flow should run.
+    auto try_run_subcommand(Options const& opts) -> std::optional<int> {
+        if (opts.upload_backup)
+            return upload_backup(opts);
+        if (opts.restore_backup)
+            return restore_backup(opts);
+        return std::nullopt;
     }
 
 } // namespace
@@ -100,47 +278,40 @@ namespace {
 auto main(int argc, char** argv) -> int {
     const auto opts = parse_args(argc, argv);
 
-    // Default location is under $XDG_STATE_HOME — the parent dir won't exist
-    // on first run. Create it so SQLite's open call doesn't fail with ENOENT.
-    if (const auto parent = std::filesystem::path{opts.db_path}.parent_path(); !parent.empty()) {
-        std::error_code ec;
-        std::filesystem::create_directories(parent, ec);
-        if (ec) {
-            std::fprintf(
-                    stderr, "storm_bench_dashboard: cannot create '%s': %s\n", parent.c_str(), ec.message().c_str()
-            );
-            return 1;
-        }
-    }
+    // One-shot backup actions short-circuit before any TUI / DB-connection
+    // setup. They must NOT install signal handlers (Ctrl-C should propagate
+    // straight to gh) and must NOT call set_default_connection.
+    if (auto code = try_run_subcommand(opts); code.has_value())
+        return *code;
 
-    if (auto rc = storm::QuerySet<bench_dashboard::BenchRun>::set_default_connection(opts.db_path); !rc) {
-        std::fprintf(
-                stderr,
-                "storm_bench_dashboard: cannot open '%s': %s\n",
-                opts.db_path.c_str(),
-                std::string{rc.error().message()}.c_str()
-        );
-        return 1;
-    }
+    install_signal_handlers();
 
-    auto run_count    = storm::QuerySet<bench_dashboard::BenchRun>().count().execute();
-    auto result_count = storm::QuerySet<bench_dashboard::BenchResult>().count().execute();
+    if (const int rc = ensure_db_parent_dir(opts.db_path); rc != 0)
+        return rc;
+    if (const int rc = open_db_connection(opts); rc != 0)
+        return rc;
+    if (const int rc = check_schema(opts); rc != 0)
+        return rc;
 
-    if (!run_count || !result_count) {
-        const std::string err_msg{!run_count ? run_count.error().message() : result_count.error().message()};
-        std::fprintf(stderr, "storm_bench_dashboard: schema check failed: %s\n", err_msg.c_str());
-        print_missing_schema_hint(opts.db_path);
-        return 2;
-    }
+    bench_dashboard::SocketServer server;
+    if (const int rc = setup_socket(opts, server); rc != 0)
+        return rc;
 
-    std::printf(
-            "storm_bench_dashboard: opened %s\n"
-            "  BenchRun rows:    %lld\n"
-            "  BenchResult rows: %lld\n"
-            "Phase 1 OK — schema present, exiting (socket + TUI land in Phase 2).\n",
-            opts.db_path.c_str(),
-            static_cast<long long>(*run_count),
-            static_cast<long long>(*result_count)
-    );
+    DashboardDB                          db;
+    bench_dashboard::tui::DashboardState state;
+    state.order_arrival        = opts.order_arrival;
+    state.regression_threshold = opts.regression_threshold;
+    state.complexity_threshold = opts.complexity_threshold;
+
+    resolve_and_log_baseline(opts, state);
+
+    // Pre-load history so the first frame shows past runs even before any
+    // bench process connects.
+    rebuild_state_from_db(state);
+
+    bench_dashboard::tui::TerminalGuard guard;
+    bench_dashboard::tui::write_full_frame(bench_dashboard::tui::render(state));
+
+    run_event_loop(state, db, server);
     return 0;
 }

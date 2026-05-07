@@ -18,8 +18,13 @@
 
 #include <benchmark/benchmark.h>
 #include "bench_register.h"
+#include "dashboard/reporter.h"
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <string_view>
 
 namespace {
 
@@ -52,6 +57,25 @@ namespace {
 
 } // namespace
 
+namespace {
+
+    // Find `--benchmark_filter=<value>` in argv without mutating the array —
+    // gbench's Initialize re-parses it. Only the `=value` form is supported;
+    // gbench's command-line parser also accepts the space-separated form,
+    // but every storm_bench invocation uses `=value` and the dashboard side
+    // only needs to mirror what users actually run.
+    auto extract_benchmark_filter(int argc, char** argv) -> std::string {
+        constexpr std::string_view prefix = "--benchmark_filter=";
+        for (int i = 1; i < argc; ++i) {
+            const std::string_view arg{argv[i]};
+            if (arg.starts_with(prefix))
+                return std::string{arg.substr(prefix.size())};
+        }
+        return {};
+    }
+
+} // namespace
+
 auto main(int argc, char** argv) -> int {
     if (!storm::benchmark::initialize_db()) {
         std::fprintf(stderr, "storm_bench: failed to open :memory: DB / create schema\n");
@@ -63,10 +87,24 @@ auto main(int argc, char** argv) -> int {
         wire_one(reg);
     }
 
+    // STORM_BENCH_SOCKET defined (any value) → opt in to streaming. The path
+    // is fixed by wire::default_socket_path() so both sides agree without
+    // bookkeeping. Unset → fall through to gbench's default text reporter,
+    // zero network calls — what CI wants.
+    ::benchmark::BenchmarkReporter* dashboard_reporter = nullptr;
+    if (std::getenv("STORM_BENCH_SOCKET") != nullptr) {
+        const std::string filter = extract_benchmark_filter(argc, argv);
+        dashboard_reporter       = bench_dashboard::install_storm_reporter(/*socket_path=*/"", filter);
+    }
+
     benchmark::Initialize(&argc, argv);
     if (benchmark::ReportUnrecognizedArguments(argc, argv))
         return 1;
-    benchmark::RunSpecifiedBenchmarks();
+    if (dashboard_reporter != nullptr) {
+        benchmark::RunSpecifiedBenchmarks(dashboard_reporter);
+    } else {
+        benchmark::RunSpecifiedBenchmarks();
+    }
     benchmark::Shutdown();
     return 0;
 }

@@ -36,7 +36,8 @@
       "Bash(/home/ihor/projects/storm/storm_develop/build/debug/benchmarks/bench_storm --help)",
       "Bash(git show:*)",
       "Bash(gh issue:*)",
-      "Bash(./build/release/benchmarks/storm_bench --filter=order_by_with_limit_10 --quick)"
+      "Bash(./build/release/benchmarks/storm_bench --filter=order_by_with_limit_10 --quick)",
+      "Bash(./build/release/benchmarks/storm_bench --benchmark_list_tests)"
     ],
     "deny": [],
     "ask": []
