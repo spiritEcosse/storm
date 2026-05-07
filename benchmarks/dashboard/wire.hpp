@@ -31,6 +31,11 @@ namespace bench_dashboard::wire {
 
     enum class MessageKind : std::uint8_t { Result, RunStart, RunComplete };
 
+    // row_kind values for ResultMsg (Phase 7).
+    inline constexpr std::string_view kRowKindMeasurement = "measurement";
+    inline constexpr std::string_view kRowKindBigO        = "bigo";
+    inline constexpr std::string_view kRowKindRms         = "rms";
+
     struct ResultMsg {
         MessageKind kind{MessageKind::Result};
 
@@ -40,10 +45,27 @@ namespace bench_dashboard::wire {
         std::string  test_name{};
         std::string  category{};
         std::int64_t dataset_size{0};
+        std::string  row_kind{kRowKindMeasurement}; // Phase 7: "measurement" | "bigo" | "rms"
         double       real_ns{0.0};
         double       cpu_ns{0.0};
         std::int64_t iterations{0};
         double       items_per_second{0.0};
+
+        // Phase 7: complexity fields (bigo/rms rows only).
+        std::string complexity_class{}; // "N", "NlgN", "N^2", ...
+        double      complexity_coef{0.0};
+        double      rms_pct{0.0};
+
+        // Set by the dashboard when a baseline run is active (Phase 6).
+        // nullopt = no matching baseline row; baseline_looked_up distinguishes
+        // "no baseline active" (false) from "active but no match" (true+nullopt).
+        std::optional<double> delta_pct{};
+        bool                  baseline_looked_up{false};
+
+        // Phase 7: baseline complexity data (set by dashboard when baseline is active).
+        bool        shape_regression{false}; // complexity_class differs from baseline
+        std::string baseline_class{};        // baseline complexity_class
+        double      baseline_coef{0.0};      // baseline complexity_coef
     };
 
     // Single source of truth for the default socket path; both reporter.cpp
@@ -102,13 +124,16 @@ namespace bench_dashboard::wire {
 
     inline auto build_result(ResultMsg const& m) -> std::string {
         std::string s;
-        s.reserve(192 + m.test_name.size() + m.category.size());
+        s.reserve(256 + m.test_name.size() + m.category.size() + m.row_kind.size() + m.complexity_class.size());
         s.append(R"({"name":")");
         append_escaped(s, m.test_name);
         s.append(R"(","category":")");
         append_escaped(s, m.category);
         s.append(R"(","dataset_size":)");
         append_int(s, m.dataset_size);
+        s.append(R"(,"row_kind":")");
+        append_escaped(s, m.row_kind);
+        s.push_back('"');
         s.append(R"(,"real_ns":)");
         append_double(s, m.real_ns);
         s.append(R"(,"cpu_ns":)");
@@ -117,11 +142,52 @@ namespace bench_dashboard::wire {
         append_int(s, m.iterations);
         s.append(R"(,"items_per_second":)");
         append_double(s, m.items_per_second);
+        if (!m.complexity_class.empty()) {
+            s.append(R"(,"complexity_class":")");
+            append_escaped(s, m.complexity_class);
+            s.push_back('"');
+            s.append(R"(,"complexity_coef":)");
+            append_double(s, m.complexity_coef);
+        }
+        if (m.rms_pct != 0.0) {
+            s.append(R"(,"rms_pct":)");
+            append_double(s, m.rms_pct);
+        }
         s.push_back('}');
         return s;
     }
 
     namespace detail {
+
+        // True when `json` has `"<key>":` starting at position `pos`.
+        // Caller has already established that `json[pos] == '"'`; this check
+        // walks the candidate key + closing quote + colon in one shot.
+        inline auto matches_key(std::string_view json, std::size_t pos, std::string_view key) -> bool {
+            const std::size_t key_start = pos + 1;
+            const std::size_t key_end   = key_start + key.size();
+            return key_end < json.size() && json[key_end] == '"' && json[key_end + 1] == ':' &&
+                   json.substr(key_start, key.size()) == key;
+        }
+
+        // Step over the next character inside a JSON string literal, returning
+        // the next index. Skips over `\\` / `\"` escape pairs and clears the
+        // `in_string` flag at the closing quote.
+        inline auto step_in_string(std::string_view json, std::size_t i, bool& in_string) -> std::size_t {
+            const char c = json[i];
+            if (c == '\\' && i + 1 < json.size())
+                return i + 2;
+            if (c == '"')
+                in_string = false;
+            return i + 1;
+        }
+
+        // Update bracket depth for `{` `[` `}` `]`. No-op for any other byte.
+        inline auto update_depth(char c, int& depth) -> void {
+            if (c == '{' || c == '[')
+                ++depth;
+            else if (c == '}' || c == ']')
+                --depth;
+        }
 
         // Walk top-level (depth-1) keys, tracking whether we're inside a
         // string, so a key character that happens to appear inside a string
@@ -136,35 +202,19 @@ namespace bench_dashboard::wire {
             int         depth     = 0;
             std::size_t i         = 0;
             while (i < json.size()) {
-                const char c = json[i];
                 if (in_string) {
-                    if (c == '\\' && i + 1 < json.size()) {
-                        i += 2;
-                        continue;
-                    }
-                    if (c == '"')
-                        in_string = false;
-                    ++i;
+                    i = step_in_string(json, i, in_string);
                     continue;
                 }
+                const char c = json[i];
                 if (c == '"') {
-                    if (depth == 1) {
-                        // Could be the start of a top-level key.
-                        const std::size_t key_start = i + 1;
-                        const std::size_t key_end   = key_start + key.size();
-                        if (key_end < json.size() && json[key_end] == '"' && json[key_end + 1] == ':' &&
-                            json.substr(key_start, key.size()) == key) {
-                            return key_end + 2; // position right after ':'
-                        }
-                    }
+                    if (depth == 1 && matches_key(json, i, key))
+                        return i + 1 + key.size() + 2; // position right after ':'
                     in_string = true;
                     ++i;
                     continue;
                 }
-                if (c == '{' || c == '[')
-                    ++depth;
-                else if (c == '}' || c == ']')
-                    --depth;
+                update_depth(c, depth);
                 ++i;
             }
             return std::string_view::npos;
@@ -210,7 +260,10 @@ namespace bench_dashboard::wire {
             return json.substr(start, pos - start);
         }
 
-        inline auto read_double(std::string_view json, std::size_t pos, double& out) -> bool {
+        // Parse the JSON number starting at `pos` into `out` via from_chars.
+        // T may be `double` or `std::int64_t`; both share the same
+        // "empty span → fail; otherwise from_chars" pipeline.
+        template <typename T> auto read_number(std::string_view json, std::size_t pos, T& out) -> bool {
             const auto v = read_number_view(json, pos);
             if (v.empty())
                 return false;
@@ -218,12 +271,12 @@ namespace bench_dashboard::wire {
             return r.ec == std::errc{};
         }
 
+        inline auto read_double(std::string_view json, std::size_t pos, double& out) -> bool {
+            return read_number(json, pos, out);
+        }
+
         inline auto read_int64(std::string_view json, std::size_t pos, std::int64_t& out) -> bool {
-            const auto v = read_number_view(json, pos);
-            if (v.empty())
-                return false;
-            const auto r = std::from_chars(v.data(), v.data() + v.size(), out);
-            return r.ec == std::errc{};
+            return read_number(json, pos, out);
         }
 
         inline auto read_bool(std::string_view json, std::size_t pos, bool& out) -> bool {
@@ -285,10 +338,16 @@ namespace bench_dashboard::wire {
         rdr.read_field("name", m.test_name);
         rdr.read_field("category", m.category);
         rdr.read_field("dataset_size", m.dataset_size);
+        rdr.read_field("row_kind", m.row_kind);
+        if (m.row_kind.empty())
+            m.row_kind = std::string{kRowKindMeasurement};
         rdr.read_field("real_ns", m.real_ns);
         rdr.read_field("cpu_ns", m.cpu_ns);
         rdr.read_field("iterations", m.iterations);
         rdr.read_field("items_per_second", m.items_per_second);
+        rdr.read_field("complexity_class", m.complexity_class);
+        rdr.read_field("complexity_coef", m.complexity_coef);
+        rdr.read_field("rms_pct", m.rms_pct);
         return m;
     }
 
