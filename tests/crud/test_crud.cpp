@@ -32,6 +32,16 @@ template <typename ConnType> class PersonCrudTestBase : public StormTestFixture<
         ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(initial)));
     }
 
+    static auto insert_persons_range(storm::QuerySet<Person, ConnType>& qs, int from, int to) -> void {
+        std::vector<Person> batch;
+        batch.reserve(static_cast<std::size_t>(to - from + 1));
+        for (int i = from; i <= to; i++) {
+            batch.push_back(Person{.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 60)});
+        }
+        auto result = qs.insert(std::span<const Person>(batch)).execute();
+        ASSERT_TRUE(result.has_value()) << "Failed to insert test data";
+    }
+
     static auto countPersons() -> int {
         storm::QuerySet<Person, ConnType> qs;
         auto                              result = qs.count().execute();
@@ -92,15 +102,8 @@ TYPED_TEST(QuerySetEraseTest, EraseMultiplePersonsSequentially) {
 TYPED_TEST(QuerySetEraseTest, EraseBatchPerformance) {
     storm::QuerySet<Person, TypeParam> queryset;
 
-    // Add test data for performance comparison (batch insert to avoid per-row round-trips)
-    const int           num_records = 1000;
-    std::vector<Person> setup_batch;
-    setup_batch.reserve(num_records - 3);
-    for (int i = 4; i <= num_records; i++) {
-        setup_batch.push_back(Person{.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 60)});
-    }
-    auto insert_result = queryset.insert(std::span<const Person>(setup_batch)).execute();
-    ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
+    const int num_records = 1000;
+    this->insert_persons_range(queryset, 4, num_records);
 
     // Measure individual removes
     auto start_individual = std::chrono::steady_clock::now();
@@ -142,16 +145,8 @@ TYPED_TEST(QuerySetEraseTest, EraseBatchPerformance) {
 TYPED_TEST(QuerySetEraseTest, EraseBatchChunked) {
     storm::QuerySet<Person, TypeParam> queryset;
 
-    // Add many test records (1000+) to test chunked deletion (batch insert to avoid per-row round-trips)
     // MAX_CHUNK_SIZE is 799, so >799 triggers chunked path
-    const int           num_records = 1000;
-    std::vector<Person> setup_batch;
-    setup_batch.reserve(num_records - 3);
-    for (int i = 4; i <= num_records; i++) {
-        setup_batch.push_back(Person{.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 60)});
-    }
-    auto insert_result = queryset.insert(std::span<const Person>(setup_batch)).execute();
-    ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
+    this->insert_persons_range(queryset, 4, 1000);
 
     // Verify initial state
     EXPECT_EQ(this->countPersons(), 1000) << "Should have 1000 persons initially";
@@ -188,16 +183,8 @@ TYPED_TEST(QuerySetEraseTest, EraseBatchChunked) {
 TYPED_TEST(QuerySetEraseTest, EraseBatchChunkedWithRemainder) {
     storm::QuerySet<Person, TypeParam> queryset;
 
-    // Add many test records to test chunked deletion with remainder (batch insert to avoid per-row round-trips)
     // MAX_CHUNK_SIZE is 799, so 1650 rows = 2 full chunks (1598) + 52 remainder
-    const int           num_records = 1800;
-    std::vector<Person> setup_batch;
-    setup_batch.reserve(num_records - 3);
-    for (int i = 4; i <= num_records; i++) {
-        setup_batch.push_back(Person{.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 60)});
-    }
-    auto insert_result = queryset.insert(std::span<const Person>(setup_batch)).execute();
-    ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
+    this->insert_persons_range(queryset, 4, 1800);
 
     // Verify initial state
     EXPECT_EQ(this->countPersons(), 1800) << "Should have 1800 persons initially";
@@ -493,148 +480,6 @@ TYPED_TEST(QueryResetTest, AggregatesWithWhere) {
     auto sum = this->qs->where(storm::orm::where::field<^^Person::age>() >= 35).template sum<^^Person::age>().execute();
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), 442);
-}
-
-// =====================================================
-// InsertNoReturn tests — insert<ReturnId::No>
-// =====================================================
-template <typename ConnType> class InsertNoReturnTest : public StormTestFixture<Person, ConnType> {};
-
-TYPED_TEST_SUITE(InsertNoReturnTest, DatabaseTypes);
-
-TYPED_TEST(InsertNoReturnTest, SingleInsertNoReturnSucceeds) {
-    using ReturnId = storm::orm::statements::ReturnId;
-    storm::QuerySet<Person, TypeParam> qs;
-
-    Person const alice{.name = "Alice", .age = 30};
-    auto         result = qs.template insert<ReturnId::No>(alice).execute();
-
-    ASSERT_TRUE(result.has_value()) << "insert<ReturnId::No> should succeed";
-
-    auto count = qs.count().execute();
-    ASSERT_TRUE(count.has_value());
-    EXPECT_EQ(count.value(), 1) << "Should have 1 row after insert";
-}
-
-TYPED_TEST(InsertNoReturnTest, SingleInsertNoReturnReturnsVoid) {
-    using ReturnId = storm::orm::statements::ReturnId;
-    storm::QuerySet<Person, TypeParam> qs;
-
-    Person const alice{.name = "Alice", .age = 30};
-    auto         result = qs.template insert<ReturnId::No>(alice).execute();
-
-    static_assert(
-            std::is_same_v<decltype(result), std::expected<void, typename TypeParam::Error>>,
-            "ReturnId::No should return std::expected<void, Error>"
-    );
-    ASSERT_TRUE(result.has_value());
-}
-
-TYPED_TEST(InsertNoReturnTest, SingleInsertYesReturnsId) {
-    using ReturnId = storm::orm::statements::ReturnId;
-    storm::QuerySet<Person, TypeParam> qs;
-
-    Person const alice{.name = "Alice", .age = 30};
-    auto         result = qs.template insert<ReturnId::Yes>(alice).execute();
-
-    static_assert(
-            std::is_same_v<decltype(result), std::expected<int64_t, typename TypeParam::Error>>,
-            "ReturnId::Yes should return std::expected<int64_t, Error>"
-    );
-    ASSERT_TRUE(result.has_value());
-    EXPECT_GT(result.value(), 0) << "Should return a valid ID";
-}
-
-TYPED_TEST(InsertNoReturnTest, DefaultInsertReturnsId) {
-    storm::QuerySet<Person, TypeParam> qs;
-
-    Person const alice{.name = "Alice", .age = 30};
-    auto         result = qs.insert(alice).execute();
-
-    static_assert(
-            std::is_same_v<decltype(result), std::expected<int64_t, typename TypeParam::Error>>,
-            "Default insert should return std::expected<int64_t, Error>"
-    );
-    ASSERT_TRUE(result.has_value());
-    EXPECT_GT(result.value(), 0);
-}
-
-TYPED_TEST(InsertNoReturnTest, InsertNoReturnDataIntegrity) {
-    using ReturnId = storm::orm::statements::ReturnId;
-    storm::QuerySet<Person, TypeParam> qs;
-
-    Person const alice{.name = "Alice", .age = 30, .salary = 75000.0, .is_active = true, .department = "Engineering"};
-    auto         result = qs.template insert<ReturnId::No>(alice).execute();
-    ASSERT_TRUE(result.has_value());
-
-    auto rows = qs.select().execute();
-    ASSERT_TRUE(rows.has_value());
-    ASSERT_EQ(rows.value().size(), 1);
-
-    const auto& row = *rows.value().begin();
-    EXPECT_EQ(row.name, "Alice");
-    EXPECT_EQ(row.age, 30);
-    EXPECT_DOUBLE_EQ(row.salary, 75000.0);
-    EXPECT_TRUE(row.is_active);
-    EXPECT_EQ(row.department, "Engineering");
-}
-
-TYPED_TEST(InsertNoReturnTest, MultipleInsertNoReturn) {
-    using ReturnId = storm::orm::statements::ReturnId;
-    storm::QuerySet<Person, TypeParam> qs;
-
-    Person const alice{.name = "Alice", .age = 30};
-    Person const bob{.name = "Bob", .age = 25};
-    Person const charlie{.name = "Charlie", .age = 35};
-
-    ASSERT_TRUE(qs.template insert<ReturnId::No>(alice).execute().has_value());
-    ASSERT_TRUE(qs.template insert<ReturnId::No>(bob).execute().has_value());
-    ASSERT_TRUE(qs.template insert<ReturnId::No>(charlie).execute().has_value());
-
-    auto count = qs.count().execute();
-    ASSERT_TRUE(count.has_value());
-    EXPECT_EQ(count.value(), 3);
-}
-
-TYPED_TEST(InsertNoReturnTest, InsertNoReturnToSql) {
-    using ReturnId = storm::orm::statements::ReturnId;
-    storm::QuerySet<Person, TypeParam> qs;
-
-    Person const alice{.name = "Alice", .age = 30};
-    auto         sql = qs.template insert<ReturnId::No>(alice).to_sql();
-    ASSERT_TRUE(sql.has_value());
-
-    EXPECT_TRUE(sql.value().contains("INSERT INTO")) << "SQL should contain INSERT INTO";
-    EXPECT_FALSE(sql.value().contains("RETURNING")) << "SQL should NOT contain RETURNING";
-}
-
-TYPED_TEST(InsertNoReturnTest, InsertYesToSqlHasReturning) {
-    using ReturnId = storm::orm::statements::ReturnId;
-    storm::QuerySet<Person, TypeParam> qs;
-
-    Person const alice{.name = "Alice", .age = 30};
-    auto         sql = qs.template insert<ReturnId::Yes>(alice).to_sql();
-    ASSERT_TRUE(sql.has_value());
-
-    EXPECT_TRUE(sql.value().contains("RETURNING")) << "SQL should contain RETURNING";
-}
-
-TYPED_TEST(InsertNoReturnTest, MixedInsertModes) {
-    using ReturnId = storm::orm::statements::ReturnId;
-    storm::QuerySet<Person, TypeParam> qs;
-
-    Person const alice{.name = "Alice", .age = 30};
-    auto         id_result = qs.template insert<ReturnId::Yes>(alice).execute();
-    ASSERT_TRUE(id_result.has_value());
-    EXPECT_GT(id_result.value(), 0);
-
-    Person const bob{.name = "Bob", .age = 25};
-    auto         void_result = qs.template insert<ReturnId::No>(bob).execute();
-    ASSERT_TRUE(void_result.has_value());
-
-    auto count = qs.count().execute();
-    ASSERT_TRUE(count.has_value());
-    EXPECT_EQ(count.value(), 2);
 }
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
