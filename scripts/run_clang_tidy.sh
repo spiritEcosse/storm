@@ -133,8 +133,13 @@ is_cpp26_module_file() {
     # (directly or transitively via includes like <meta>, std::meta::info, etc.)
     # Exception: mock files that don't use modules are handled by the caller —
     # they parse successfully and never reach this function's "known skip" path.
+    #
+    # src/orm/query_builder.hpp is a pseudo-module header: it uses ^^, consteval
+    # reflection, and must be #included after `import storm;`. It cannot be
+    # parsed standalone by clang-tidy. Add it to the known-skip list.
     case "$file" in
         tests/*|benchmarks/*|fuzz/*|shared/*) return 0 ;;
+        src/orm/query_builder.hpp) return 0 ;;
         *) return 1 ;;
     esac
 }
