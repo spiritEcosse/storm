@@ -43,6 +43,19 @@ file(
   "${CMAKE_CURRENT_SOURCE_DIR}/yaml/*.cpp")
 
 add_executable(${PROJECT_NAME} ${TEST_SOURCES})
+
+target_sources(
+  ${PROJECT_NAME}
+  PRIVATE FILE_SET
+          cxx_modules
+          TYPE
+          CXX_MODULES
+          BASE_DIRS
+          ${CMAKE_SOURCE_DIR}/benchmarks
+          FILES
+          ${CMAKE_SOURCE_DIR}/benchmarks/schema.cppm
+          ${CMAKE_SOURCE_DIR}/benchmarks/parser.cppm)
+
 include(GoogleTest)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE storm gtest gtest_main gmock
@@ -62,7 +75,7 @@ gtest_discover_tests(${PROJECT_NAME})
 # Add Clang-specific flags (modules and reflection) to tests (same as Storm
 # library)
 apply_clang_flags(${PROJECT_NAME})
-# Increase constexpr steps limit — consteval JSON parser for 210+ YAML-driven
+# Increase constexpr steps limit — consteval JSON parser for 247 YAML-driven
 # test cases
 target_compile_options(${PROJECT_NAME} PRIVATE -fconstexpr-steps=4194304)
 # Note: Custom libc++ linking now handled by global add_link_options() in main

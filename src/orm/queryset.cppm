@@ -500,6 +500,12 @@ export namespace storm {
             detail::get_default_connection_ptr<ConnType>().reset();
         }
 
+        [[nodiscard]] auto to_finalized() const -> QuerySet<T, ConnType, true> {
+            QuerySet<T, ConnType, true> result(conn_);
+            copy_state_into(result);
+            return result;
+        }
+
       private:
         // Lazy-initialize and return cached InsertStatement for optimal performance
         auto get_insert_statement() const -> orm::statements::InsertStatement<T, ConnType>& {
@@ -533,30 +539,19 @@ export namespace storm {
             return *select_stmt_;
         }
 
-        // Private constructor for to_finalized() — takes explicit connection
         explicit QuerySet(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
-        // Create a shallow copy carrying query state (where, join, limit, offset, order_by)
-        // Statement caches are NOT copied — they are lazy-init'd on demand via prepare_cached()
-        auto clone_state() const -> QuerySet {
-            QuerySet result(conn_);
-            result.where_expr_       = where_expr_;
-            result.join_stmt_        = join_stmt_;
-            result.limit_value_      = limit_value_;
-            result.offset_value_     = offset_value_;
-            result.order_by_wrapper_ = order_by_wrapper_;
-            return result;
+        template <bool F2> auto copy_state_into(QuerySet<T, ConnType, F2>& dst) const -> void {
+            dst.where_expr_       = where_expr_;
+            dst.join_stmt_        = join_stmt_;
+            dst.limit_value_      = limit_value_;
+            dst.offset_value_     = offset_value_;
+            dst.order_by_wrapper_ = order_by_wrapper_;
         }
 
-        // Create a finalized copy carrying conn_, where, join, limit, offset, order_by state
-        // Statement caches are NOT copied — they are lazy-init'd on demand via prepare_cached()
-        auto to_finalized() const -> QuerySet<T, ConnType, true> {
-            QuerySet<T, ConnType, true> result(conn_);
-            result.where_expr_       = where_expr_;
-            result.join_stmt_        = join_stmt_;
-            result.limit_value_      = limit_value_;
-            result.offset_value_     = offset_value_;
-            result.order_by_wrapper_ = order_by_wrapper_;
+        auto clone_state() const -> QuerySet {
+            QuerySet result(conn_);
+            copy_state_into(result);
             return result;
         }
 

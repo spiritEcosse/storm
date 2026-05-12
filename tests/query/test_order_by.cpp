@@ -13,9 +13,15 @@ import <cstdint>;
 
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
-#include "test_query_dispatch.h"
+#include "test_select_runner.h"
 using namespace storm;
 using namespace storm::orm::where;
+
+template <typename ConnType> auto insert_test_data(const std::vector<Person>& data) -> void {
+    QuerySet<Person, ConnType> qs;
+    auto                       result = qs.insert(data).execute();
+    ASSERT_TRUE(result.has_value()) << "Failed to insert test data";
+}
 
 template <typename ConnType> class OrderByTest : public StormTestFixture<Person, ConnType> {
   protected:
@@ -238,9 +244,7 @@ template <typename ConnType> class OrderByNullableTest : public StormTestFixture
                 {.id = 8, .name = "Henry", .score = std::optional<int>(100)},
         };
 
-        QuerySet<Person, ConnType> qs;
-        auto                       insert_result = qs.insert(test_data).execute();
-        ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
+        insert_test_data<ConnType>(test_data);
     }
 };
 
@@ -396,18 +400,14 @@ template <typename ConnType> class OrderByBlobTest : public StormTestFixture<Per
     auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
         // Insert test data with various BLOB values
         // SQLite compares BLOBs byte-by-byte in memcmp order
-        std::vector<Person> const test_data = {
-                {.id = 1, .name = "C", .avatar = {0x03, 0x00}},  // Starts with 0x03
-                {.id = 2, .name = "A", .avatar = {0x01, 0x00}},  // Starts with 0x01
-                {.id = 3, .name = "B", .avatar = {0x02, 0x00}},  // Starts with 0x02
-                {.id = 4, .name = "A2", .avatar = {0x01, 0x01}}, // Same first byte, different second
-                {.id = 5, .name = "Empty", .avatar = {}},        // Empty BLOB
-                {.id = 6, .name = "A_short", .avatar = {0x01}},  // Shorter BLOB
-        };
-
-        QuerySet<Person, ConnType> qs;
-        auto                       insert_result = qs.insert(test_data).execute();
-        ASSERT_TRUE(insert_result.has_value()) << "Failed to insert test data";
+        insert_test_data<ConnType>({
+                {.id = 1, .name = "C", .avatar = {0x03, 0x00}},
+                {.id = 2, .name = "A", .avatar = {0x01, 0x00}},
+                {.id = 3, .name = "B", .avatar = {0x02, 0x00}},
+                {.id = 4, .name = "A2", .avatar = {0x01, 0x01}},
+                {.id = 5, .name = "Empty", .avatar = {}},
+                {.id = 6, .name = "A_short", .avatar = {0x01}},
+        });
     }
 };
 

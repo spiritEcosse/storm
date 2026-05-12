@@ -34,7 +34,7 @@ auto register_for_backend(const char *suite, const char *backend) -> void {
     [suite_ptr = suite_name.c_str()]<size_t... I>(std::index_sequence<I...>) {
         (..., ::testing::RegisterTest(
                   suite_ptr,
-                  Tests[I].name.c_str(),                // ConstexprString::c_str() -> static storage
+                  Tests[I].bench.test_name.c_str(),     // ConstexprString::c_str() -> static storage
                   nullptr, nullptr, __FILE__, __LINE__, // NOSONAR - GTest API requires raw file/line
                   []() -> Fixture * {
                       return new YamlTestInstance<I, Fixture, ConnType>(); // NOSONAR - GTest API owns the pointer
