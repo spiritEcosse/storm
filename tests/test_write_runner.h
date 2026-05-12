@@ -46,13 +46,7 @@ template <typename Model, typename ConnType> class InsertRunner : public QueryRu
 template <typename Model, typename ConnType> class UpdateRunner : public QueryRunnerBase<Model, ConnType> {
   public:
     template <const auto &Tc> auto run() -> void {
-        // Seed initial dataset
-        std::vector<Model> initial;
-        initial.reserve(static_cast<size_t>(Tc.dataset_size));
-        for (int i = 0; i < Tc.dataset_size; ++i)
-            initial.push_back(make_record<Model>(i));
-        auto ins = this->qs_.insert(std::span<const Model>(initial)).execute();
-        ASSERT_TRUE(ins.has_value()) << ins.error().message();
+        this->template seed_and_insert<Tc>();
 
         // Re-fetch to get actual IDs
         auto sel = this->qs_.select().execute();
@@ -90,13 +84,7 @@ template <typename Model, typename ConnType> class EraseRunner : public QueryRun
   public:
     template <const auto &Tc> auto run() -> void {
         if constexpr (Tc.query_type == "erase_all") {
-            // Seed dataset_size records, then erase all
-            std::vector<Model> initial;
-            initial.reserve(static_cast<size_t>(Tc.dataset_size));
-            for (int i = 0; i < Tc.dataset_size; ++i)
-                initial.push_back(make_record<Model>(i));
-            auto ins = this->qs_.insert(std::span<const Model>(initial)).execute();
-            ASSERT_TRUE(ins.has_value()) << ins.error().message();
+            this->template seed_and_insert<Tc>();
 
             auto rem = this->qs_.erase_all().execute();
             ASSERT_TRUE(rem.has_value()) << rem.error().message();
@@ -106,13 +94,7 @@ template <typename Model, typename ConnType> class EraseRunner : public QueryRun
             EXPECT_EQ(static_cast<int>(cnt.value()), Tc.expected.remaining);
 
         } else if constexpr (Tc.query_type == "erase_batch") {
-            // Seed dataset_size records
-            std::vector<Model> initial;
-            initial.reserve(static_cast<size_t>(Tc.dataset_size));
-            for (int i = 0; i < Tc.dataset_size; ++i)
-                initial.push_back(make_record<Model>(i));
-            auto ins = this->qs_.insert(std::span<const Model>(initial)).execute();
-            ASSERT_TRUE(ins.has_value()) << ins.error().message();
+            this->template seed_and_insert<Tc>();
 
             // Re-fetch to get real IDs
             auto sel = this->qs_.select().execute();

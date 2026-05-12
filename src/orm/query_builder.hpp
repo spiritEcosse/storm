@@ -76,7 +76,8 @@ namespace storm::orm::query_builder {
     // fk_resolver: consteval callable (string_view) -> member-ptr for JOIN
     // field dispatch. Pass a no-op for tests that don't use JOINs.
     // ========================================================================
-    template <typename Model, auto spec, auto fk_resolver> class QueryBuilder {
+    template <typename Model, auto spec, auto fk_resolver, typename ConnType = storm::db::sqlite::Connection>
+    class QueryBuilder {
         // ----------------------------------------------------------------
         // Operator dispatch — split into 3 helpers to stay under CCN limit
         // ----------------------------------------------------------------
@@ -189,12 +190,14 @@ namespace storm::orm::query_builder {
                 }(std::make_index_sequence<cond.value_count>{});
             } else if constexpr (op == "IS NULL" || op == "IS NOT NULL") {
                 return build_compare_expr<fi, cond.op>();
+            } else if constexpr (cond.values[0].kind == decltype(cond.values[0].kind)::String) {
+                return build_compare_expr<fi, cond.op>(cond.values[0].as_string.view());
             } else {
                 return build_compare_expr<fi, cond.op>(typed_value_as<FieldType, cond.values[0]>());
             }
         }
 
-        template <typename WhereModel> static auto apply_where(QuerySet<Model>& qs) -> void {
+        template <typename WhereModel> static auto apply_where(QuerySet<Model, ConnType>& qs) -> void {
             if constexpr (spec.where.enabled) {
                 [&]<size_t... Is>(std::index_sequence<Is...>) {
                     if constexpr (spec.where.combine_and)
@@ -217,10 +220,10 @@ namespace storm::orm::query_builder {
         template <auto... FKs> static consteval auto resolve_join() -> std::meta::info {
             constexpr std::string_view jt = spec.join.type.view();
             if (jt == "left")
-                return ^^QuerySet<Model>::template left_join<FKs...>;
+                return ^^QuerySet<Model, ConnType>::template left_join<FKs...>;
             if (jt == "right")
-                return ^^QuerySet<Model>::template right_join<FKs...>;
-            return ^^QuerySet<Model>::template join<FKs...>;
+                return ^^QuerySet<Model, ConnType>::template right_join<FKs...>;
+            return ^^QuerySet<Model, ConnType>::template join<FKs...>;
         }
 
         template <auto... FKs> static auto dispatch_join_type(auto& qs) -> void {
@@ -416,15 +419,11 @@ namespace storm::orm::query_builder {
       public:
         // WhereModel defaults to Model. Pass a related model type for JOIN tests
         // where WHERE conditions live on the joined table rather than Model.
-        template <typename WhereModel = Model> static auto build_qs() {
-            QuerySet<Model> qs;
+        template <typename WhereModel = Model> static auto build_qs() -> QuerySet<Model, ConnType, true> {
+            QuerySet<Model, ConnType> qs;
             apply_join(qs);
             apply_where<WhereModel>(qs);
-            if constexpr (!is_setop()) {
-                return apply_limit(apply_order_by(std::move(qs)));
-            } else {
-                return qs;
-            }
+            return apply_limit(apply_order_by(std::move(qs))).to_finalized();
         }
 
         static auto build_terminal(auto& qs) {

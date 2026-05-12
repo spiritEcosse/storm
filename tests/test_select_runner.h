@@ -2,11 +2,10 @@
 
 /**
  * @file test_select_runner.h
- * @brief SelectRunner, DistinctValuesRunner, AggregateRunner, GroupByRunner.
+ * @brief SelectRunner, AggregateRunner, ChainAggRunner, DistinctRunner, GroupByRunner.
  *
- * Runners for UnifiedTestCase-driven SELECT, DISTINCT, VALUES, aggregate, and
- * GROUP BY queries.  Include AFTER `import storm;`, test_models.h,
- * test_query_dispatch.h, and test_query_runner_base.h.
+ * Runners for TestCase-driven SELECT, DISTINCT, aggregate, and GROUP BY queries.
+ * Include AFTER `import storm;`, test_models.h, test_query_dispatch.h, test_query_runner_base.h.
  */
 
 #include "test_query_runner_base.h"
@@ -17,14 +16,43 @@
 namespace storm::test {
 
 // ---------------------------------------------------------------------------
+// Shared group-by result verification helpers
+// ---------------------------------------------------------------------------
+
+template <const auto &Tc, typename V>
+auto check_group_keys_and_agg(const std::vector<std::pair<int, V>> &groups, bool is_int) -> void {
+    ASSERT_EQ(groups.size(), Tc.expected.groups_count);
+    for (size_t g = 0; g < Tc.expected.groups_count; ++g) {
+        EXPECT_EQ(groups[g].first, Tc.expected.group_keys[g]) << "Group key mismatch at index " << g;
+        if (is_int)
+            EXPECT_EQ(static_cast<int64_t>(groups[g].second), Tc.expected.group_agg_int[g])
+                << "Group agg mismatch at index " << g;
+        else
+            EXPECT_NEAR(groups[g].second, Tc.expected.group_agg_dbl[g], 0.01) << "Group agg mismatch at index " << g;
+    }
+}
+
+template <const auto &Tc> auto verify_group_int_results(const auto &result) -> void {
+    std::vector<std::pair<int, int64_t>> groups;
+    for (const auto &[key, agg] : result)
+        groups.emplace_back(static_cast<int>(key), agg);
+    std::ranges::sort(groups);
+    check_group_keys_and_agg<Tc>(groups, true);
+}
+
+template <const auto &Tc> auto verify_group_dbl_results(const auto &result) -> void {
+    std::vector<std::pair<int, double>> groups;
+    for (const auto &[key, agg] : result)
+        groups.emplace_back(static_cast<int>(key), agg);
+    std::ranges::sort(groups);
+    check_group_keys_and_agg<Tc>(groups, false);
+}
+
+// ---------------------------------------------------------------------------
 // SelectRunner -- plain SELECT queries (select / first / one)
 // ---------------------------------------------------------------------------
 template <typename Model, typename ConnType> class SelectRunner : public SelectQueryRunnerBase<Model, ConnType> {
-  public:
-    // Verify first-row fields specified in the expected.first spec.
-    // Uses `if constexpr (requires { ... })` to guard model-specific field access.
-    template <const auto &Tc, typename Row>
-    auto verify_first_row(const Row &row) -> void { // NOSONAR(S3776) -- constexpr dispatch
+    template <const auto &Tc, typename Row> auto verify_basic_fields(const Row &row) -> void {
         if constexpr (Tc.expected.first.has_name && requires { row.name; })
             EXPECT_EQ(row.name, std::string(Tc.expected.first.name.view()));
         if constexpr (Tc.expected.first.has_age && requires { row.age; })
@@ -33,6 +61,9 @@ template <typename Model, typename ConnType> class SelectRunner : public SelectQ
             EXPECT_NEAR(row.salary, Tc.expected.first.salary, 0.01);
         if constexpr (Tc.expected.first.has_is_active && requires { row.is_active; })
             EXPECT_EQ(row.is_active, Tc.expected.first.is_active);
+    }
+
+    template <const auto &Tc, typename Row> auto verify_extended_fields(const Row &row) -> void {
         if constexpr (Tc.expected.first.has_years_experience && requires { row.years_experience; })
             EXPECT_EQ(row.years_experience, Tc.expected.first.years_experience);
         if constexpr (Tc.expected.first.has_department && requires { row.department; })
@@ -43,10 +74,16 @@ template <typename Model, typename ConnType> class SelectRunner : public SelectQ
             EXPECT_EQ(row.value, Tc.expected.first.value);
     }
 
+  public:
+    template <const auto &Tc, typename Row> auto verify_first_row(const Row &row) -> void {
+        verify_basic_fields<Tc>(row);
+        verify_extended_fields<Tc>(row);
+    }
+
     template <const auto &Tc> auto run() -> void { // NOSONAR(S3776) -- inherent constexpr dispatch
         this->template apply_where_and_join<Tc>();
         if constexpr (Tc.query_type == "first") {
-            auto r = this->template qs_with_modifiers<Tc>().first().execute();
+            auto r = this->qs_.first().execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_EQ(r.value().has_value() ? 1 : 0, Tc.expected.count);
             if constexpr (Tc.expected.count == 1) {
@@ -54,7 +91,7 @@ template <typename Model, typename ConnType> class SelectRunner : public SelectQ
                 verify_first_row<Tc>(r.value().value());
             }
         } else if constexpr (Tc.query_type == "one") {
-            auto r = this->template qs_with_modifiers<Tc>().get().execute();
+            auto r = this->qs_.get().execute();
             if constexpr (Tc.expected.count == 1) {
                 ASSERT_TRUE(r.has_value()) << r.error().message();
                 verify_first_row<Tc>(r.value());
@@ -62,7 +99,7 @@ template <typename Model, typename ConnType> class SelectRunner : public SelectQ
                 EXPECT_FALSE(r.has_value());
             }
         } else {
-            auto result = this->template qs_with_modifiers<Tc>().select().execute();
+            auto result = this->qs_.select().execute();
             ASSERT_TRUE(result.has_value()) << result.error().message();
             EXPECT_EQ(static_cast<int>(result.value().size()), Tc.expected.count);
             if constexpr (Tc.expected.count > 0) {
@@ -87,43 +124,40 @@ template <typename Model, typename ConnType> class AggregateRunner : public Sele
             EXPECT_EQ(r.value(), Tc.expected.int_val);
 
         } else if constexpr (Tc.query_type == "count_distinct") {
-            constexpr auto fi = dispatch_field<Model>(Tc.agg_field.view());
+            constexpr auto fi = dispatch_field<Model>(Tc.bench.aggregate.field.view());
             auto r = this->qs_.template count_distinct<fi>().execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_EQ(r.value(), Tc.expected.int_val);
 
         } else if constexpr (Tc.query_type == "sum") {
-            constexpr auto fi = dispatch_field<Model>(Tc.agg_field.view());
-            if constexpr (Tc.expected.int_val != -1) {
-                auto r = this->qs_.template sum<fi>().execute();
-                ASSERT_TRUE(r.has_value()) << r.error().message();
+            constexpr auto fi = dispatch_field<Model>(Tc.bench.aggregate.field.view());
+            auto r = this->qs_.template sum<fi>().execute();
+            ASSERT_TRUE(r.has_value()) << r.error().message();
+            if constexpr (Tc.expected.int_val != -1)
                 EXPECT_EQ(r.value(), Tc.expected.int_val);
-            } else {
-                auto r = this->qs_.template sum<fi>().execute();
-                ASSERT_TRUE(r.has_value()) << r.error().message();
+            else
                 EXPECT_NEAR(r.value(), Tc.expected.dbl_val, 0.01);
-            }
 
         } else if constexpr (Tc.query_type == "avg") {
-            constexpr auto fi = dispatch_field<Model>(Tc.agg_field.view());
+            constexpr auto fi = dispatch_field<Model>(Tc.bench.aggregate.field.view());
             auto r = this->qs_.template avg<fi>().execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_NEAR(r.value(), Tc.expected.dbl_val, 0.01);
 
         } else if constexpr (Tc.query_type == "min") {
-            constexpr auto fi = dispatch_field<Model>(Tc.agg_field.view());
+            constexpr auto fi = dispatch_field<Model>(Tc.bench.aggregate.field.view());
             auto r = this->qs_.template min<fi>().execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_NEAR(r.value(), Tc.expected.dbl_val, 0.01);
 
         } else if constexpr (Tc.query_type == "max") {
-            constexpr auto fi = dispatch_field<Model>(Tc.agg_field.view());
+            constexpr auto fi = dispatch_field<Model>(Tc.bench.aggregate.field.view());
             auto r = this->qs_.template max<fi>().execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_NEAR(r.value(), Tc.expected.dbl_val, 0.01);
 
         } else if constexpr (Tc.query_type == "count_field") {
-            constexpr auto fi = dispatch_field<Model>(Tc.agg_field.view());
+            constexpr auto fi = dispatch_field<Model>(Tc.bench.aggregate.field.view());
             auto r = this->qs_.template count<fi>().execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_EQ(r.value(), Tc.expected.int_val);
@@ -135,161 +169,161 @@ template <typename Model, typename ConnType> class AggregateRunner : public Sele
 // ChainAggRunner -- multi-aggregate chain queries (query_type == "chain")
 // ---------------------------------------------------------------------------
 template <typename Model, typename ConnType> class ChainAggRunner : public SelectQueryRunnerBase<Model, ConnType> {
-  public:
-    template <const auto &Tc>
-    // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-    auto run() -> void { // NOSONAR(S3776) -- inherent constexpr dispatch
-        this->template apply_where_and_join<Tc>();
+    template <const auto &Tc> auto check_chain5(const auto &r) -> void {
+        ASSERT_TRUE(r.has_value()) << r.error().message();
+        auto [v0, v1, v2, v3, v4] = r.value();
+        EXPECT_EQ(v0, static_cast<int64_t>(Tc.aggregations[0].res_value));
+        EXPECT_EQ(v1, static_cast<int64_t>(Tc.aggregations[1].res_value));
+        EXPECT_NEAR(v2, Tc.aggregations[2].res_value, 0.01);
+        EXPECT_NEAR(v3, Tc.aggregations[3].res_value, 0.01);
+        EXPECT_NEAR(v4, Tc.aggregations[4].res_value, 0.01);
+    }
 
-        if constexpr (Tc.chain_len == 2) {
-            if constexpr (Tc.aggregations[0].func == "sum" && Tc.aggregations[1].func == "count") {
-                constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
-                auto r = this->qs_.template sum<fi0>().count().execute();
-                ASSERT_TRUE(r.has_value()) << r.error().message();
-                auto [v0, v1] = r.value();
-                EXPECT_EQ(v0, static_cast<int64_t>(Tc.aggregations[0].res_value));
-                EXPECT_EQ(v1, static_cast<int64_t>(Tc.aggregations[1].res_value));
-            } else if constexpr (Tc.aggregations[0].func == "count") {
-                constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
-                auto r = this->qs_.count().template sum<fi1>().execute();
-                ASSERT_TRUE(r.has_value()) << r.error().message();
-                auto [v0, v1] = r.value();
-                EXPECT_EQ(v0, static_cast<int64_t>(Tc.aggregations[0].res_value));
-                EXPECT_EQ(v1, static_cast<int64_t>(Tc.aggregations[1].res_value));
-            } else if constexpr (Tc.aggregations[0].func == "avg" && Tc.aggregations[1].func == "count") {
-                constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
-                auto r = this->qs_.template avg<fi0>().count().execute();
-                ASSERT_TRUE(r.has_value()) << r.error().message();
-                auto [v0, v1] = r.value();
-                EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
-                EXPECT_EQ(v1, static_cast<int64_t>(Tc.aggregations[1].res_value));
-            } else if constexpr (Tc.aggregations[0].func == "avg" && Tc.aggregations[1].func == "min") {
-                constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
-                constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
-                auto r = this->qs_.template avg<fi0>().template min<fi1>().execute();
-                ASSERT_TRUE(r.has_value()) << r.error().message();
-                auto [v0, v1] = r.value();
-                EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
-                EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
-            } else if constexpr (Tc.aggregations[0].func == "avg" && Tc.aggregations[1].func == "max") {
-                constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
-                constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
-                auto r = this->qs_.template avg<fi0>().template max<fi1>().execute();
-                ASSERT_TRUE(r.has_value()) << r.error().message();
-                auto [v0, v1] = r.value();
-                EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
-                EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
-            } else if constexpr (Tc.aggregations[0].func == "sum" && Tc.aggregations[1].func == "avg") {
-                constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
-                constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
-                auto r = this->qs_.template sum<fi0>().template avg<fi1>().execute();
-                ASSERT_TRUE(r.has_value()) << r.error().message();
-                auto [v0, v1] = r.value();
-                EXPECT_EQ(v0, static_cast<int64_t>(Tc.aggregations[0].res_value));
-                EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
-            } else if constexpr (Tc.aggregations[0].func == "min" && Tc.aggregations[1].func == "max") {
-                constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
-                constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
-                auto r = this->qs_.template min<fi0>().template max<fi1>().execute();
-                ASSERT_TRUE(r.has_value()) << r.error().message();
-                auto [v0, v1] = r.value();
-                EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
-                EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
-            } else if constexpr (Tc.aggregations[0].func == "min" && Tc.aggregations[1].func == "sum") {
-                constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
-                constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
-                auto r = this->qs_.template min<fi0>().template sum<fi1>().execute();
-                ASSERT_TRUE(r.has_value()) << r.error().message();
-                auto [v0, v1] = r.value();
-                EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
-                EXPECT_EQ(v1, static_cast<int64_t>(Tc.aggregations[1].res_value));
-            } else if constexpr (Tc.aggregations[0].func == "max" && Tc.aggregations[1].func == "avg") {
-                constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
-                constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
-                auto r = this->qs_.template max<fi0>().template avg<fi1>().execute();
-                ASSERT_TRUE(r.has_value()) << r.error().message();
-                auto [v0, v1] = r.value();
-                EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
-                EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
-            } else if constexpr (Tc.aggregations[0].func == "max" && Tc.aggregations[1].func == "min") {
-                constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
-                constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
-                auto r = this->qs_.template max<fi0>().template min<fi1>().execute();
-                ASSERT_TRUE(r.has_value()) << r.error().message();
-                auto [v0, v1] = r.value();
-                EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
-                EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
-            }
-        } else if constexpr (Tc.chain_len == 3) {
-            if constexpr (Tc.aggregations[0].func == "sum") {
-                constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
-                constexpr auto fi2 = dispatch_field<Model>(Tc.aggregations[2].field.view());
-                auto r = this->qs_.template sum<fi0>().count().template avg<fi2>().execute();
-                ASSERT_TRUE(r.has_value()) << r.error().message();
-                auto [v0, v1, v2] = r.value();
-                EXPECT_EQ(v0, static_cast<int64_t>(Tc.aggregations[0].res_value));
-                EXPECT_EQ(v1, static_cast<int64_t>(Tc.aggregations[1].res_value));
-                EXPECT_NEAR(v2, Tc.aggregations[2].res_value, 0.01);
-            } else if constexpr (Tc.aggregations[0].func == "count") {
-                constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
-                constexpr auto fi2 = dispatch_field<Model>(Tc.aggregations[2].field.view());
-                auto r = this->qs_.count().template sum<fi1>().template avg<fi2>().execute();
-                ASSERT_TRUE(r.has_value()) << r.error().message();
-                auto [v0, v1, v2] = r.value();
-                EXPECT_EQ(v0, static_cast<int64_t>(Tc.aggregations[0].res_value));
-                EXPECT_EQ(v1, static_cast<int64_t>(Tc.aggregations[1].res_value));
-                EXPECT_NEAR(v2, Tc.aggregations[2].res_value, 0.01);
-            }
-        } else if constexpr (Tc.chain_len == 4) {
+    template <const auto &Tc> auto run_chain2_sum_or_count() -> void {
+        if constexpr (Tc.aggregations[0].func == "sum" && Tc.aggregations[1].func == "count") {
+            constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
+            auto [v0, v1] = this->qs_.template sum<fi0>().count().execute().value();
+            EXPECT_EQ(v0, static_cast<int64_t>(Tc.aggregations[0].res_value));
+            EXPECT_EQ(v1, static_cast<int64_t>(Tc.aggregations[1].res_value));
+        } else if constexpr (Tc.aggregations[0].func == "count") {
             constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
+            auto [v0, v1] = this->qs_.count().template sum<fi1>().execute().value();
+            EXPECT_EQ(v0, static_cast<int64_t>(Tc.aggregations[0].res_value));
+            EXPECT_EQ(v1, static_cast<int64_t>(Tc.aggregations[1].res_value));
+        } else if constexpr (Tc.aggregations[0].func == "sum") {
+            constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
+            constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
+            auto [v0, v1] = this->qs_.template sum<fi0>().template avg<fi1>().execute().value();
+            EXPECT_EQ(v0, static_cast<int64_t>(Tc.aggregations[0].res_value));
+            EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
+        }
+    }
+
+    template <const auto &Tc> auto run_chain2_avg() -> void {
+        constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
+        if constexpr (Tc.aggregations[1].func == "count") {
+            auto [v0, v1] = this->qs_.template avg<fi0>().count().execute().value();
+            EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
+            EXPECT_EQ(v1, static_cast<int64_t>(Tc.aggregations[1].res_value));
+        } else {
+            constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
+            if constexpr (Tc.aggregations[1].func == "min") {
+                auto [v0, v1] = this->qs_.template avg<fi0>().template min<fi1>().execute().value();
+                EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
+                EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
+            } else {
+                auto [v0, v1] = this->qs_.template avg<fi0>().template max<fi1>().execute().value();
+                EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
+                EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
+            }
+        }
+    }
+
+    template <const auto &Tc> auto run_chain2_min_or_max() -> void {
+        constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
+        constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
+        if constexpr (Tc.aggregations[0].func == "min" && Tc.aggregations[1].func == "max") {
+            auto [v0, v1] = this->qs_.template min<fi0>().template max<fi1>().execute().value();
+            EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
+            EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
+        } else if constexpr (Tc.aggregations[0].func == "min") {
+            auto [v0, v1] = this->qs_.template min<fi0>().template sum<fi1>().execute().value();
+            EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
+            EXPECT_EQ(v1, static_cast<int64_t>(Tc.aggregations[1].res_value));
+        } else if constexpr (Tc.aggregations[0].func == "max" && Tc.aggregations[1].func == "avg") {
+            auto [v0, v1] = this->qs_.template max<fi0>().template avg<fi1>().execute().value();
+            EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
+            EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
+        } else if constexpr (Tc.aggregations[0].func == "max") {
+            auto [v0, v1] = this->qs_.template max<fi0>().template min<fi1>().execute().value();
+            EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
+            EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
+        }
+    }
+
+    template <const auto &Tc> auto run_chain2() -> void {
+        if constexpr (Tc.aggregations[0].func == "avg")
+            run_chain2_avg<Tc>();
+        else if constexpr (Tc.aggregations[0].func == "min" || Tc.aggregations[0].func == "max")
+            run_chain2_min_or_max<Tc>();
+        else
+            run_chain2_sum_or_count<Tc>();
+    }
+
+    template <const auto &Tc> auto run_chain3() -> void {
+        if constexpr (Tc.aggregations[0].func == "sum") {
+            constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
             constexpr auto fi2 = dispatch_field<Model>(Tc.aggregations[2].field.view());
-            constexpr auto fi3 = dispatch_field<Model>(Tc.aggregations[3].field.view());
-            auto r = this->qs_.count().template sum<fi1>().template min<fi2>().template max<fi3>().execute();
+            auto r = this->qs_.template sum<fi0>().count().template avg<fi2>().execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
-            auto [v0, v1, v2, v3] = r.value();
+            auto [v0, v1, v2] = r.value();
             EXPECT_EQ(v0, static_cast<int64_t>(Tc.aggregations[0].res_value));
             EXPECT_EQ(v1, static_cast<int64_t>(Tc.aggregations[1].res_value));
             EXPECT_NEAR(v2, Tc.aggregations[2].res_value, 0.01);
-            EXPECT_NEAR(v3, Tc.aggregations[3].res_value, 0.01);
-        } else if constexpr (Tc.chain_len == 5) {
-            if constexpr (Tc.aggregations[0].func == "sum") {
-                constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
-                constexpr auto fi2 = dispatch_field<Model>(Tc.aggregations[2].field.view());
-                constexpr auto fi3 = dispatch_field<Model>(Tc.aggregations[3].field.view());
-                constexpr auto fi4 = dispatch_field<Model>(Tc.aggregations[4].field.view());
-                auto r = this->qs_.template sum<fi0>()
+        } else if constexpr (Tc.aggregations[0].func == "count") {
+            constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
+            constexpr auto fi2 = dispatch_field<Model>(Tc.aggregations[2].field.view());
+            auto r = this->qs_.count().template sum<fi1>().template avg<fi2>().execute();
+            ASSERT_TRUE(r.has_value()) << r.error().message();
+            auto [v0, v1, v2] = r.value();
+            EXPECT_EQ(v0, static_cast<int64_t>(Tc.aggregations[0].res_value));
+            EXPECT_EQ(v1, static_cast<int64_t>(Tc.aggregations[1].res_value));
+            EXPECT_NEAR(v2, Tc.aggregations[2].res_value, 0.01);
+        }
+    }
+
+    template <const auto &Tc> auto run_chain4() -> void {
+        constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
+        constexpr auto fi2 = dispatch_field<Model>(Tc.aggregations[2].field.view());
+        constexpr auto fi3 = dispatch_field<Model>(Tc.aggregations[3].field.view());
+        auto r = this->qs_.count().template sum<fi1>().template min<fi2>().template max<fi3>().execute();
+        ASSERT_TRUE(r.has_value()) << r.error().message();
+        auto [v0, v1, v2, v3] = r.value();
+        EXPECT_EQ(v0, static_cast<int64_t>(Tc.aggregations[0].res_value));
+        EXPECT_EQ(v1, static_cast<int64_t>(Tc.aggregations[1].res_value));
+        EXPECT_NEAR(v2, Tc.aggregations[2].res_value, 0.01);
+        EXPECT_NEAR(v3, Tc.aggregations[3].res_value, 0.01);
+    }
+
+    template <const auto &Tc> auto run_chain5_sum() -> void {
+        constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
+        constexpr auto fi2 = dispatch_field<Model>(Tc.aggregations[2].field.view());
+        constexpr auto fi3 = dispatch_field<Model>(Tc.aggregations[3].field.view());
+        constexpr auto fi4 = dispatch_field<Model>(Tc.aggregations[4].field.view());
+        check_chain5<Tc>(this->qs_.template sum<fi0>()
                              .count()
                              .template avg<fi2>()
                              .template min<fi3>()
                              .template max<fi4>()
-                             .execute();
-                ASSERT_TRUE(r.has_value()) << r.error().message();
-                auto [v0, v1, v2, v3, v4] = r.value();
-                EXPECT_EQ(v0, static_cast<int64_t>(Tc.aggregations[0].res_value));
-                EXPECT_EQ(v1, static_cast<int64_t>(Tc.aggregations[1].res_value));
-                EXPECT_NEAR(v2, Tc.aggregations[2].res_value, 0.01);
-                EXPECT_NEAR(v3, Tc.aggregations[3].res_value, 0.01);
-                EXPECT_NEAR(v4, Tc.aggregations[4].res_value, 0.01);
-            } else if constexpr (Tc.aggregations[0].func == "count") {
-                constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
-                constexpr auto fi2 = dispatch_field<Model>(Tc.aggregations[2].field.view());
-                constexpr auto fi3 = dispatch_field<Model>(Tc.aggregations[3].field.view());
-                constexpr auto fi4 = dispatch_field<Model>(Tc.aggregations[4].field.view());
-                auto r = this->qs_.count()
+                             .execute());
+    }
+
+    template <const auto &Tc> auto run_chain5_count() -> void {
+        constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
+        constexpr auto fi2 = dispatch_field<Model>(Tc.aggregations[2].field.view());
+        constexpr auto fi3 = dispatch_field<Model>(Tc.aggregations[3].field.view());
+        constexpr auto fi4 = dispatch_field<Model>(Tc.aggregations[4].field.view());
+        check_chain5<Tc>(this->qs_.count()
                              .template sum<fi1>()
                              .template avg<fi2>()
                              .template min<fi3>()
                              .template max<fi4>()
-                             .execute();
-                ASSERT_TRUE(r.has_value()) << r.error().message();
-                auto [v0, v1, v2, v3, v4] = r.value();
-                EXPECT_EQ(v0, static_cast<int64_t>(Tc.aggregations[0].res_value));
-                EXPECT_EQ(v1, static_cast<int64_t>(Tc.aggregations[1].res_value));
-                EXPECT_NEAR(v2, Tc.aggregations[2].res_value, 0.01);
-                EXPECT_NEAR(v3, Tc.aggregations[3].res_value, 0.01);
-                EXPECT_NEAR(v4, Tc.aggregations[4].res_value, 0.01);
-            }
-        }
+                             .execute());
+    }
+
+  public:
+    template <const auto &Tc> auto run() -> void {
+        this->template apply_where_and_join<Tc>();
+        if constexpr (Tc.chain_len == 2)
+            run_chain2<Tc>();
+        else if constexpr (Tc.chain_len == 3)
+            run_chain3<Tc>();
+        else if constexpr (Tc.chain_len == 4)
+            run_chain4<Tc>();
+        else if constexpr (Tc.chain_len == 5 && Tc.aggregations[0].func == "sum")
+            run_chain5_sum<Tc>();
+        else if constexpr (Tc.chain_len == 5)
+            run_chain5_count<Tc>();
     }
 };
 
@@ -300,15 +334,16 @@ template <typename Model, typename ConnType> class DistinctRunner : public Selec
   public:
     template <const auto &Tc> auto run() -> void {
         this->template apply_where_and_join<Tc>();
-        if constexpr (!Tc.distinct_field2.empty()) {
-            constexpr auto fi1 = dispatch_field<Model>(Tc.distinct_field.view());
-            constexpr auto fi2 = dispatch_field<Model>(Tc.distinct_field2.view());
-            auto r = this->template qs_with_modifiers<Tc>().template distinct<fi1, fi2>().execute();
+        constexpr size_t fc = Tc.bench.distinct.field_count();
+        if constexpr (fc >= 2) {
+            constexpr auto fi1 = dispatch_field<Model>(Tc.bench.distinct.fields[0].view());
+            constexpr auto fi2 = dispatch_field<Model>(Tc.bench.distinct.fields[1].view());
+            auto r = this->qs_.template distinct<fi1, fi2>().execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
         } else {
-            constexpr auto fi = dispatch_field<Model>(Tc.distinct_field.view());
-            auto r = this->template qs_with_modifiers<Tc>().template distinct<fi>().execute();
+            constexpr auto fi = dispatch_field<Model>(Tc.bench.distinct.fields[0].view());
+            auto r = this->qs_.template distinct<fi>().execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
         }
@@ -319,118 +354,66 @@ template <typename Model, typename ConnType> class DistinctRunner : public Selec
 // GroupByRunner -- GROUP BY + aggregate (group_count, group_sum, etc.)
 // ---------------------------------------------------------------------------
 template <typename Model, typename ConnType> class GroupByRunner : public SelectQueryRunnerBase<Model, ConnType> {
+    template <const auto &Tc> auto run_group_count() -> void { // NOSONAR(S3776)
+        constexpr auto gb_fi = dispatch_field<Model>(Tc.bench.group_by.fields[0].view());
+        if constexpr (Tc.bench.group_by.field_count() >= 2) {
+            constexpr auto gb_fi2 = dispatch_field<Model>(Tc.bench.group_by.fields[1].view());
+            auto r = this->qs_.template group_by<gb_fi, gb_fi2>().count().execute();
+            ASSERT_TRUE(r.has_value()) << r.error().message();
+            EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
+        } else if constexpr (Tc.bench.group_by.having.enabled) {
+            constexpr auto hv_fi = dispatch_field<Model>(Tc.bench.group_by.having.field.view());
+            auto r = this->qs_.template group_by<gb_fi>()
+                         .having(build_where_expr<hv_fi>(Tc.bench.group_by.having.op.view(),
+                                                         Tc.bench.group_by.having.value.as_int))
+                         .count()
+                         .execute();
+            ASSERT_TRUE(r.has_value()) << r.error().message();
+            EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
+        } else {
+            auto r = this->qs_.template group_by<gb_fi>().count().execute();
+            ASSERT_TRUE(r.has_value()) << r.error().message();
+            EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
+            if constexpr (Tc.expected.groups_count > 0)
+                verify_group_int_results<Tc>(r.value());
+        }
+    }
+
   public:
     template <const auto &Tc> auto run() -> void { // NOSONAR(S3776) -- inherent constexpr dispatch
         this->template apply_where_and_join<Tc>();
-        decltype(auto) qs = this->template qs_with_modifiers<Tc>();
-
-        constexpr auto gb_fi = dispatch_field<Model>(Tc.group_by_field.view());
+        constexpr auto gb_fi = dispatch_field<Model>(Tc.bench.group_by.fields[0].view());
 
         if constexpr (Tc.query_type == "group_count") {
-            if constexpr (!Tc.group_by_field2.empty()) {
-                constexpr auto gb_fi2 = dispatch_field<Model>(Tc.group_by_field2.view());
-                auto r = qs.template group_by<gb_fi, gb_fi2>().count().execute();
-                ASSERT_TRUE(r.has_value()) << r.error().message();
-                EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
-            } else {
-                if constexpr (!Tc.having_field.empty()) {
-                    constexpr auto hv_fi = dispatch_field<Model>(Tc.having_field.view());
-                    auto r = qs.template group_by<gb_fi>()
-                                 .having(build_where_expr<hv_fi>(Tc.having_op.view(), Tc.having_value_int))
-                                 .count()
-                                 .execute();
-                    ASSERT_TRUE(r.has_value()) << r.error().message();
-                    EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
-                } else {
-                    auto r = qs.template group_by<gb_fi>().count().execute();
-                    ASSERT_TRUE(r.has_value()) << r.error().message();
-                    EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
-                    if constexpr (Tc.expected.groups_count > 0) { // NOSONAR(S134) -- constexpr nesting
-                        std::vector<std::pair<int, int64_t>> groups;
-                        for (const auto &[key, agg] : r.value())
-                            groups.emplace_back(static_cast<int>(key), agg);
-                        std::ranges::sort(groups);
-                        ASSERT_EQ(groups.size(), Tc.expected.groups_count);
-                        for (size_t g = 0; g < Tc.expected.groups_count; ++g) {
-                            EXPECT_EQ(groups[g].first, Tc.expected.group_keys[g])
-                                << "Group key mismatch at index " << g;
-                            EXPECT_EQ(groups[g].second, Tc.expected.group_agg_int[g])
-                                << "Group agg mismatch at index " << g;
-                        }
-                    }
-                } // end else (!having_field.empty())
-            } // end else (single group_by field)
-
+            run_group_count<Tc>();
         } else if constexpr (Tc.query_type == "group_sum") {
-            constexpr auto agg_fi = dispatch_field<Model>(Tc.agg_field.view());
-            auto r = qs.template group_by<gb_fi>().template sum<agg_fi>().execute();
+            constexpr auto agg_fi = dispatch_field<Model>(Tc.bench.aggregate.field.view());
+            auto r = this->qs_.template group_by<gb_fi>().template sum<agg_fi>().execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
-            if constexpr (Tc.expected.groups_count > 0) {
-                std::vector<std::pair<int, int64_t>> groups;
-                for (const auto &[key, agg] : r.value())
-                    groups.emplace_back(static_cast<int>(key), agg);
-                std::ranges::sort(groups);
-                ASSERT_EQ(groups.size(), Tc.expected.groups_count);
-                for (size_t g = 0; g < Tc.expected.groups_count; ++g) {
-                    EXPECT_EQ(groups[g].first, Tc.expected.group_keys[g]) << "Group key mismatch at index " << g;
-                    EXPECT_EQ(groups[g].second, Tc.expected.group_agg_int[g]) << "Group sum mismatch at index " << g;
-                }
-            }
-
+            if constexpr (Tc.expected.groups_count > 0)
+                verify_group_int_results<Tc>(r.value());
         } else if constexpr (Tc.query_type == "group_avg") {
-            constexpr auto agg_fi = dispatch_field<Model>(Tc.agg_field.view());
-            auto r = qs.template group_by<gb_fi>().template avg<agg_fi>().execute();
+            constexpr auto agg_fi = dispatch_field<Model>(Tc.bench.aggregate.field.view());
+            auto r = this->qs_.template group_by<gb_fi>().template avg<agg_fi>().execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
-            if constexpr (Tc.expected.groups_count > 0) {
-                std::vector<std::pair<int, double>> groups;
-                for (const auto &[key, agg] : r.value())
-                    groups.emplace_back(static_cast<int>(key), agg);
-                std::ranges::sort(groups);
-                ASSERT_EQ(groups.size(), Tc.expected.groups_count);
-                for (size_t g = 0; g < Tc.expected.groups_count; ++g) {
-                    EXPECT_EQ(groups[g].first, Tc.expected.group_keys[g]) << "Group key mismatch at index " << g;
-                    EXPECT_NEAR(groups[g].second, Tc.expected.group_agg_dbl[g], 0.01)
-                        << "Group avg mismatch at index " << g;
-                }
-            }
-
+            if constexpr (Tc.expected.groups_count > 0)
+                verify_group_dbl_results<Tc>(r.value());
         } else if constexpr (Tc.query_type == "group_min") {
-            constexpr auto agg_fi = dispatch_field<Model>(Tc.agg_field.view());
-            auto r = qs.template group_by<gb_fi>().template min<agg_fi>().execute();
+            constexpr auto agg_fi = dispatch_field<Model>(Tc.bench.aggregate.field.view());
+            auto r = this->qs_.template group_by<gb_fi>().template min<agg_fi>().execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
-            if constexpr (Tc.expected.groups_count > 0) {
-                std::vector<std::pair<int, double>> groups;
-                for (const auto &[key, agg] : r.value())
-                    groups.emplace_back(static_cast<int>(key), agg);
-                std::ranges::sort(groups);
-                ASSERT_EQ(groups.size(), Tc.expected.groups_count);
-                for (size_t g = 0; g < Tc.expected.groups_count; ++g) {
-                    EXPECT_EQ(groups[g].first, Tc.expected.group_keys[g]) << "Group key mismatch at index " << g;
-                    EXPECT_NEAR(groups[g].second, Tc.expected.group_agg_dbl[g], 0.01)
-                        << "Group min mismatch at index " << g;
-                }
-            }
-
+            if constexpr (Tc.expected.groups_count > 0)
+                verify_group_dbl_results<Tc>(r.value());
         } else if constexpr (Tc.query_type == "group_max") {
-            constexpr auto agg_fi = dispatch_field<Model>(Tc.agg_field.view());
-            auto r = qs.template group_by<gb_fi>().template max<agg_fi>().execute();
+            constexpr auto agg_fi = dispatch_field<Model>(Tc.bench.aggregate.field.view());
+            auto r = this->qs_.template group_by<gb_fi>().template max<agg_fi>().execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
             EXPECT_EQ(static_cast<int>(r.value().size()), Tc.expected.count);
-            if constexpr (Tc.expected.groups_count > 0) {
-                std::vector<std::pair<int, double>> groups;
-                for (const auto &[key, agg] : r.value())
-                    groups.emplace_back(static_cast<int>(key), agg);
-                std::ranges::sort(groups);
-                ASSERT_EQ(groups.size(), Tc.expected.groups_count);
-                for (size_t g = 0; g < Tc.expected.groups_count; ++g) {
-                    EXPECT_EQ(groups[g].first, Tc.expected.group_keys[g]) << "Group key mismatch at index " << g;
-                    EXPECT_NEAR(groups[g].second, Tc.expected.group_agg_dbl[g], 0.01)
-                        << "Group max mismatch at index " << g;
-                }
-            }
+            if constexpr (Tc.expected.groups_count > 0)
+                verify_group_dbl_results<Tc>(r.value());
         }
     }
 };

@@ -9,30 +9,38 @@
   query_type: select
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 30
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 30
   expected:
     count: 13
 - name: select_with_limit
   model: person
   query_type: select
   dataset: main
-  limit_value: 3
+  limit:
+    value: 3
+    offset: 0
   expected:
     count: 3
 - name: select_with_limit_offset
   model: person
   query_type: select
   dataset: main
-  limit_value: 2
-  offset_value: 1
+  limit:
+    value: 2
+    offset: 1
   expected:
     count: 2
 - name: count_all_standard5
   model: person
   query_type: count
   dataset: main
+  aggregate:
+    func: count
+    field: ''
   expected:
     int_val: 25
 - name: count_where_age_gte_35
@@ -40,57 +48,77 @@
   query_type: count
   dataset: main
   where:
-    field: age
-    op: '>='
-    value: 35
+    conditions:
+    - field: age
+      op: '>='
+      values:
+      - 35
+  aggregate:
+    func: count
+    field: ''
   expected:
     int_val: 11
 - name: count_empty
   model: person
   query_type: count
   dataset: empty
+  aggregate:
+    func: count
+    field: ''
   expected:
     int_val: 0
 - name: sum_age_standard5
   model: person
   query_type: sum
   dataset: main
-  agg_field: age
+  aggregate:
+    func: sum
+    field: age
   expected:
     int_val: 829
 - name: sum_salary_standard5
   model: person
   query_type: sum
   dataset: main
-  agg_field: salary
+  aggregate:
+    func: sum
+    field: salary
   expected:
     dbl_val: 1702000.0
 - name: avg_age_standard5
   model: person
   query_type: avg
   dataset: main
-  agg_field: age
+  aggregate:
+    func: avg
+    field: age
   expected:
     dbl_val: 33.16
 - name: avg_salary_standard5
   model: person
   query_type: avg
   dataset: main
-  agg_field: salary
+  aggregate:
+    func: avg
+    field: salary
   expected:
     dbl_val: 68080.0
 - name: min_age_standard5
   model: person
   query_type: min
   dataset: main
-  agg_field: age
+  aggregate:
+    func: min
+    field: age
   expected:
     dbl_val: 22.0
 - name: max_age_standard5
   model: person
   query_type: max
   dataset: main
-  agg_field: age
+  aggregate:
+    func: max
+    field: age
   expected:
     dbl_val: 48.0
 - name: insert_one_person
@@ -412,8 +440,8 @@
   query_type: select
   dataset: main
   order_by:
-    field: age
-    asc: true
+  - field: age
+    direction: ASC
   expected:
     count: 25
     first:
@@ -423,8 +451,8 @@
   query_type: select
   dataset: main
   order_by:
-    field: age
-    asc: false
+  - field: age
+    direction: DESC
   expected:
     count: 25
     first:
@@ -434,8 +462,8 @@
   query_type: select
   dataset: main
   order_by:
-    field: name
-    asc: true
+  - field: name
+    direction: ASC
   expected:
     count: 25
     first:
@@ -445,8 +473,8 @@
   query_type: select
   dataset: main
   order_by:
-    field: name
-    asc: false
+  - field: name
+    direction: DESC
   expected:
     count: 25
     first:
@@ -456,12 +484,14 @@
   query_type: select
   dataset: main
   where:
-    field: is_active
-    op: ==
-    value: true
+    conditions:
+    - field: is_active
+      op: ==
+      values:
+      - true
   order_by:
-    field: age
-    asc: false
+  - field: age
+    direction: DESC
   expected:
     count: 16
 - name: order_by_empty_result_where_no_match
@@ -469,12 +499,14 @@
   query_type: select
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 100
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 100
   order_by:
-    field: age
-    asc: true
+  - field: age
+    direction: ASC
   expected:
     count: 0
 - name: select_empty_table
@@ -488,8 +520,8 @@
   query_type: select
   dataset: empty
   order_by:
-    field: age
-    asc: true
+  - field: age
+    direction: ASC
   expected:
     count: 0
 - name: select_all_order_by_asc
@@ -497,15 +529,17 @@
   query_type: select
   dataset: main
   order_by:
-    field: age
-    asc: true
+  - field: age
+    direction: ASC
   expected:
     count: 25
 - name: group_count_by_years_experience
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: years_experience
+  group_by:
+    fields:
+    - years_experience
   expected:
     count: 3
     groups_count: 3
@@ -521,8 +555,11 @@
   model: person
   query_type: group_sum
   dataset: main
-  group_by_field: years_experience
-  agg_field: age
+  group_by:
+    fields:
+    - years_experience
+  aggregate:
+    field: age
   expected:
     count: 3
     groups_count: 3
@@ -538,7 +575,9 @@
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: age
+  group_by:
+    fields:
+    - age
   expected:
     count: 14
     groups_count: 14
@@ -576,18 +615,24 @@
   model: person
   query_type: group_count
   dataset: empty
-  group_by_field: years_experience
+  group_by:
+    fields:
+    - years_experience
   expected:
     count: 0
 - name: group_by_empty_result_where_no_match
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: years_experience
   where:
-    field: age
-    op: '>'
-    value: 1000
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 1000
+  group_by:
+    fields:
+    - years_experience
   expected:
     count: 0
     groups_count: 0
@@ -595,11 +640,15 @@
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: years_experience
-  limit_value: 2
   order_by:
-    field: years_experience
-    asc: true
+  - field: years_experience
+    direction: ASC
+  group_by:
+    fields:
+    - years_experience
+  limit:
+    value: 2
+    offset: 0
   expected:
     count: 2
     groups_count: 2
@@ -613,12 +662,15 @@
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: years_experience
-  limit_value: 2
-  offset_value: 1
   order_by:
-    field: years_experience
-    asc: true
+  - field: years_experience
+    direction: ASC
+  group_by:
+    fields:
+    - years_experience
+  limit:
+    value: 2
+    offset: 1
   expected:
     count: 2
     groups_count: 2
@@ -632,8 +684,15 @@
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: years_experience
-  offset_value: 1
+  order_by:
+  - field: years_experience
+    direction: ASC
+  group_by:
+    fields:
+    - years_experience
+  limit:
+    value: 0
+    offset: 1
   expected:
     count: 2
     groups_count: 2
@@ -643,18 +702,18 @@
     group_agg_int:
     - 8
     - 7
-  order_by:
-    field: years_experience
-    asc: true
 - name: group_by_sum_salary_order_by_yrsexp
   model: person
   query_type: group_sum
   dataset: main
-  group_by_field: years_experience
-  agg_field: salary
   order_by:
-    field: years_experience
-    asc: true
+  - field: years_experience
+    direction: ASC
+  group_by:
+    fields:
+    - years_experience
+  aggregate:
+    field: salary
   expected:
     count: 3
     groups_count: 3
@@ -670,12 +729,17 @@
   model: person
   query_type: group_avg
   dataset: main
-  group_by_field: years_experience
-  limit_value: 3
-  agg_field: salary
   order_by:
-    field: years_experience
-    asc: true
+  - field: years_experience
+    direction: ASC
+  group_by:
+    fields:
+    - years_experience
+  limit:
+    value: 3
+    offset: 0
+  aggregate:
+    field: salary
   expected:
     count: 3
     groups_count: 3
@@ -691,13 +755,17 @@
   model: person
   query_type: group_min
   dataset: main
-  group_by_field: years_experience
-  limit_value: 2
-  offset_value: 1
-  agg_field: age
   order_by:
-    field: years_experience
-    asc: true
+  - field: years_experience
+    direction: ASC
+  group_by:
+    fields:
+    - years_experience
+  limit:
+    value: 2
+    offset: 1
+  aggregate:
+    field: age
   expected:
     count: 2
     groups_count: 2
@@ -711,13 +779,17 @@
   model: person
   query_type: group_max
   dataset: main
-  group_by_field: years_experience
-  limit_value: 2
-  offset_value: 1
-  agg_field: age
   order_by:
-    field: years_experience
-    asc: true
+  - field: years_experience
+    direction: ASC
+  group_by:
+    fields:
+    - years_experience
+  limit:
+    value: 2
+    offset: 1
+  aggregate:
+    field: age
   expected:
     count: 2
     groups_count: 2
@@ -731,14 +803,18 @@
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: years_experience
   where:
-    field: age
-    op: '>'
-    value: 30
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 30
   order_by:
-    field: years_experience
-    asc: true
+  - field: years_experience
+    direction: ASC
+  group_by:
+    fields:
+    - years_experience
   expected:
     count: 3
     groups_count: 3
@@ -754,15 +830,21 @@
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: years_experience
-  limit_value: 2
   where:
-    field: salary
-    op: '>'
-    value: 70000.0
+    conditions:
+    - field: salary
+      op: '>'
+      values:
+      - 70000.0
   order_by:
-    field: years_experience
-    asc: true
+  - field: years_experience
+    direction: ASC
+  group_by:
+    fields:
+    - years_experience
+  limit:
+    value: 2
+    offset: 0
   expected:
     count: 2
     groups_count: 2
@@ -777,9 +859,11 @@
   query_type: select
   dataset: main
   where:
-    field: salary
-    op: '>'
-    value: 75000.0
+    conditions:
+    - field: salary
+      op: '>'
+      values:
+      - 75000.0
   expected:
     count: 10
 - name: select_salary_eq_70000
@@ -787,9 +871,11 @@
   query_type: select
   dataset: main
   where:
-    field: salary
-    op: ==
-    value: 70000.0
+    conditions:
+    - field: salary
+      op: ==
+      values:
+      - 70000.0
   expected:
     count: 1
 - name: select_salary_lte_60000
@@ -797,9 +883,11 @@
   query_type: select
   dataset: main
   where:
-    field: salary
-    op: <=
-    value: 60000.0
+    conditions:
+    - field: salary
+      op: <=
+      values:
+      - 60000.0
   expected:
     count: 9
 - name: first_empty
@@ -822,9 +910,11 @@
   query_type: first
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 100
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 100
   expected:
     count: 0
 - name: first_where_bob
@@ -832,9 +922,11 @@
   query_type: first
   dataset: main
   where:
-    field: name
-    op: ==
-    value: Bob
+    conditions:
+    - field: name
+      op: ==
+      values:
+      - Bob
   expected:
     count: 1
     first:
@@ -845,8 +937,8 @@
   query_type: first
   dataset: main
   order_by:
-    field: age
-    asc: true
+  - field: age
+    direction: ASC
   expected:
     count: 1
     first:
@@ -857,8 +949,8 @@
   query_type: first
   dataset: main
   order_by:
-    field: age
-    asc: false
+  - field: age
+    direction: DESC
   expected:
     count: 1
     first:
@@ -869,9 +961,11 @@
   query_type: one
   dataset: main
   where:
-    field: name
-    op: ==
-    value: Bob
+    conditions:
+    - field: name
+      op: ==
+      values:
+      - Bob
   expected:
     count: 1
     first:
@@ -882,9 +976,11 @@
   query_type: one
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 100
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 100
   expected:
     count: 0
 - name: count_age_gt_30
@@ -892,106 +988,145 @@
   query_type: count
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 30
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 30
+  aggregate:
+    func: count
+    field: ''
   expected:
     int_val: 13
 - name: sum_age_age_gt_30
   model: person
   query_type: sum
   dataset: main
-  agg_field: age
   where:
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 30
+  aggregate:
+    func: sum
     field: age
-    op: '>'
-    value: 30
   expected:
     int_val: 508
 - name: avg_salary_age_gt_30
   model: person
   query_type: avg
   dataset: main
-  agg_field: salary
   where:
-    field: age
-    op: '>'
-    value: 30
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 30
+  aggregate:
+    func: avg
+    field: salary
   expected:
     dbl_val: 83692.30769230769
 - name: min_age_age_gt_30
   model: person
   query_type: min
   dataset: main
-  agg_field: age
   where:
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 30
+  aggregate:
+    func: min
     field: age
-    op: '>'
-    value: 30
   expected:
     dbl_val: 33.0
 - name: max_age_age_lte_40
   model: person
   query_type: max
   dataset: main
-  agg_field: age
   where:
+    conditions:
+    - field: age
+      op: <=
+      values:
+      - 40
+  aggregate:
+    func: max
     field: age
-    op: <=
-    value: 40
   expected:
     dbl_val: 40.0
 - name: distinct_dept_all
   model: person
   query_type: distinct
   dataset: main
-  distinct_field: department
+  distinct:
+    fields:
+    - department
   expected:
     count: 5
 - name: distinct_dept_order_limit2
   model: person
   query_type: distinct
   dataset: main
-  distinct_field: department
-  limit_value: 2
   order_by:
-    field: department
-    asc: true
+  - field: department
+    direction: ASC
+  distinct:
+    fields:
+    - department
+  limit:
+    value: 2
+    offset: 0
   expected:
     count: 2
 - name: distinct_dept_order_limit2_offset1
   model: person
   query_type: distinct
   dataset: main
-  distinct_field: department
-  limit_value: 2
-  offset_value: 1
   order_by:
-    field: department
-    asc: true
+  - field: department
+    direction: ASC
+  distinct:
+    fields:
+    - department
+  limit:
+    value: 2
+    offset: 1
   expected:
     count: 2
 - name: distinct_dept_age_multi_order_limit5
   model: person
   query_type: distinct
   dataset: main
-  distinct_field: department
-  distinct_field2: age
-  limit_value: 5
   order_by:
-    field: department
-    asc: true
+  - field: department
+    direction: ASC
+  distinct:
+    fields:
+    - department
+    - age
+  limit:
+    value: 5
+    offset: 0
   expected:
     count: 5
 - name: group_by_join_count_order_by_value
   model: message
   query_type: group_count
   dataset: main_msg
-  group_by_field: value
-  join_name: sender
   order_by:
-    field: value
-    asc: true
+  - field: value
+    direction: ASC
+  group_by:
+    fields:
+    - value
+  join:
+    type: inner
+    related: Person
+    fk: sender
   expected:
     count: 8
     groups_count: 8
@@ -1017,12 +1152,19 @@
   model: message
   query_type: group_count
   dataset: main_msg
-  group_by_field: value
-  join_name: sender
-  limit_value: 3
   order_by:
-    field: value
-    asc: true
+  - field: value
+    direction: ASC
+  group_by:
+    fields:
+    - value
+  limit:
+    value: 3
+    offset: 0
+  join:
+    type: inner
+    related: Person
+    fk: sender
   expected:
     count: 3
     groups_count: 3
@@ -1038,14 +1180,21 @@
   model: message
   query_type: group_sum
   dataset: main_msg
-  group_by_field: value
-  join_name: sender
-  limit_value: 3
-  offset_value: 0
-  agg_field: value
   order_by:
+  - field: value
+    direction: ASC
+  group_by:
+    fields:
+    - value
+  limit:
+    value: 3
+    offset: 0
+  join:
+    type: inner
+    related: Person
+    fk: sender
+  aggregate:
     field: value
-    asc: true
   expected:
     count: 3
     groups_count: 3
@@ -1061,15 +1210,22 @@
   model: message
   query_type: group_count
   dataset: main_msg
-  group_by_field: value
-  join_name: sender
   where:
-    field: value
-    op: '>'
-    value: 10
+    conditions:
+    - field: value
+      op: '>'
+      values:
+      - 10
   order_by:
-    field: value
-    asc: true
+  - field: value
+    direction: ASC
+  group_by:
+    fields:
+    - value
+  join:
+    type: inner
+    related: Person
+    fk: sender
   expected:
     count: 7
     groups_count: 7
@@ -1093,18 +1249,27 @@
   model: message
   query_type: group_sum
   dataset: main_msg
-  group_by_field: value
-  join_name: sender
-  limit_value: 3
-  offset_value: 0
-  agg_field: value
   where:
-    field: value
-    op: '>='
-    value: 20
+    conditions:
+    - field: value
+      op: '>='
+      values:
+      - 20
   order_by:
+  - field: value
+    direction: ASC
+  group_by:
+    fields:
+    - value
+  limit:
+    value: 3
+    offset: 0
+  join:
+    type: inner
+    related: Person
+    fk: sender
+  aggregate:
     field: value
-    asc: true
   expected:
     count: 3
     groups_count: 3
@@ -1120,43 +1285,60 @@
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: years_experience
-  group_by_field2: age
   order_by:
-    field: years_experience
-    asc: true
+  - field: years_experience
+    direction: ASC
+  group_by:
+    fields:
+    - years_experience
+    - age
   expected:
     count: 16
 - name: group_by_yrsexp_age_count_order_limit5_offset1
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: years_experience
-  group_by_field2: age
-  limit_value: 5
-  offset_value: 1
   order_by:
-    field: years_experience
-    asc: true
+  - field: years_experience
+    direction: ASC
+  group_by:
+    fields:
+    - years_experience
+    - age
+  limit:
+    value: 5
+    offset: 1
   expected:
     count: 5
 - name: count_where_join_msg_value_gt15
   model: message
   query_type: count
   dataset: main_msg
-  join_name: sender
   where:
-    field: value
-    op: '>'
-    value: 15
+    conditions:
+    - field: value
+      op: '>'
+      values:
+      - 15
+  aggregate:
+    func: count
+    field: ''
+  join:
+    type: inner
+    related: Person
+    fk: sender
   expected:
     int_val: 7
 - name: group_by_years_exp_limit3
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: years_experience
-  limit_value: 3
+  group_by:
+    fields:
+    - years_experience
+  limit:
+    value: 3
+    offset: 0
   expected:
     count: 3
     groups_count: 3
@@ -1172,12 +1354,17 @@
   model: person
   query_type: group_sum
   dataset: main
-  group_by_field: years_experience
-  limit_value: 3
-  agg_field: salary
   order_by:
-    field: years_experience
-    asc: true
+  - field: years_experience
+    direction: ASC
+  group_by:
+    fields:
+    - years_experience
+  limit:
+    value: 3
+    offset: 0
+  aggregate:
+    field: salary
   expected:
     count: 3
     groups_count: 3
@@ -1193,11 +1380,15 @@
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: years_experience
-  offset_value: 2
   order_by:
-    field: years_experience
-    asc: true
+  - field: years_experience
+    direction: ASC
+  group_by:
+    fields:
+    - years_experience
+  limit:
+    value: 0
+    offset: 2
   expected:
     count: 1
     groups_count: 1
@@ -1209,15 +1400,21 @@
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: years_experience
-  limit_value: 2
   where:
-    field: age
-    op: '>'
-    value: 25
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 25
   order_by:
-    field: years_experience
-    asc: false
+  - field: years_experience
+    direction: DESC
+  group_by:
+    fields:
+    - years_experience
+  limit:
+    value: 2
+    offset: 0
   expected:
     count: 2
     groups_count: 2
@@ -1231,24 +1428,31 @@
   model: person
   query_type: distinct
   dataset: main
-  distinct_field: name
   where:
-    field: age
-    op: '>'
-    value: 25
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 25
   order_by:
-    field: name
-    asc: true
+  - field: name
+    direction: ASC
+  distinct:
+    fields:
+    - name
   expected:
     count: 20
 - name: having_age_gt30_group_by_age_count
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: age
-  having_field: age
-  having_op: '>'
-  having_value_int: 30
+  group_by:
+    fields:
+    - age
+    having:
+      field: age
+      op: '>'
+      value: 30
   expected:
     count: 8
     groups_count: 8
@@ -1274,14 +1478,19 @@
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: years_experience
-  having_field: years_experience
-  having_op: '>'
-  having_value_int: 5
   where:
-    field: salary
-    op: '>'
-    value: 50000.0
+    conditions:
+    - field: salary
+      op: '>'
+      values:
+      - 50000.0
+  group_by:
+    fields:
+    - years_experience
+    having:
+      field: years_experience
+      op: '>'
+      value: 5
   expected:
     count: 2
     groups_count: 2
@@ -1295,10 +1504,13 @@
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: age
-  having_field: age
-  having_op: '>'
-  having_value_int: 100
+  group_by:
+    fields:
+    - age
+    having:
+      field: age
+      op: '>'
+      value: 100
   expected:
     count: 0
     groups_count: 0
@@ -1306,14 +1518,19 @@
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: age
-  having_field: age
-  having_op: '>'
-  having_value_int: 25
-  limit_value: 2
   order_by:
-    field: age
-    asc: true
+  - field: age
+    direction: ASC
+  group_by:
+    fields:
+    - age
+    having:
+      field: age
+      op: '>'
+      value: 25
+  limit:
+    value: 2
+    offset: 0
   expected:
     count: 2
     groups_count: 2
@@ -1327,8 +1544,11 @@
   model: person
   query_type: group_avg
   dataset: main
-  group_by_field: age
-  agg_field: salary
+  group_by:
+    fields:
+    - age
+  aggregate:
+    field: salary
   expected:
     count: 14
     groups_count: 14
@@ -1366,15 +1586,20 @@
   model: person
   query_type: distinct
   dataset: main
-  distinct_field: age
+  distinct:
+    fields:
+    - age
   expected:
     count: 14
 - name: group_by_age_min_score_score5
   model: person
   query_type: group_min
   dataset: main
-  group_by_field: age
-  agg_field: score
+  group_by:
+    fields:
+    - age
+  aggregate:
+    field: score
   expected:
     count: 14
     groups_count: 14
@@ -1412,8 +1637,11 @@
   model: person
   query_type: group_max
   dataset: main
-  group_by_field: age
-  agg_field: score
+  group_by:
+    fields:
+    - age
+  aggregate:
+    field: score
   expected:
     count: 14
     groups_count: 14
@@ -1452,9 +1680,11 @@
   query_type: select
   dataset: main
   where:
-    field: salary
-    op: '>'
-    value: 60000.0
+    conditions:
+    - field: salary
+      op: '>'
+      values:
+      - 60000.0
   expected:
     count: 16
 - name: select_where_salary_eq60k
@@ -1462,24 +1692,30 @@
   query_type: select
   dataset: main
   where:
-    field: salary
-    op: ==
-    value: 60000.0
+    conditions:
+    - field: salary
+      op: ==
+      values:
+      - 60000.0
   expected:
     count: 0
 - name: distinct_age_name_where_salary_gte60k
   model: person
   query_type: distinct
   dataset: main
-  distinct_field: age
-  distinct_field2: name
   where:
-    field: salary
-    op: '>='
-    value: 60000.0
+    conditions:
+    - field: salary
+      op: '>='
+      values:
+      - 60000.0
   order_by:
-    field: age
-    asc: true
+  - field: age
+    direction: ASC
+  distinct:
+    fields:
+    - age
+    - name
   expected:
     count: 16
 - name: where_or_age_lt26_or_gt35
@@ -1525,51 +1761,62 @@
   query_type: select
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 25
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 25
   order_by:
-    field: age
-    asc: true
-  limit_value: 2
-  offset_value: 1
+  - field: age
+    direction: ASC
+  limit:
+    value: 2
+    offset: 1
   expected:
     count: 2
 - name: full_chain_count_dept8
   model: person
   dataset: main
   where:
-    field: age
-    op: '>='
-    value: 30
-  aggregation:
+    conditions:
+    - field: age
+      op: '>='
+      values:
+      - 30
+  aggregate:
     func: count
     field: ''
   expected:
     int_val: 16
+  query_type: count
 - name: count_with_order_by_name
   model: person
   dataset: main
   order_by:
-    field: name
-    asc: true
-  aggregation:
+  - field: name
+    direction: ASC
+  aggregate:
     func: count
     field: ''
   expected:
     int_val: 25
+  query_type: count
 - name: full_chain_distinct_dept8
   model: person
   query_type: distinct
   dataset: main
-  distinct_field: department
   where:
-    field: age
-    op: <
-    value: 35
+    conditions:
+    - field: age
+      op: <
+      values:
+      - 35
   order_by:
-    field: department
-    asc: true
+  - field: department
+    direction: ASC
+  distinct:
+    fields:
+    - department
   expected:
     count: 5
 - name: complex_nested_or_and
@@ -1599,9 +1846,11 @@
   query_type: select
   dataset: main
   where:
-    field: age
-    op: ==
-    value: 30
+    conditions:
+    - field: age
+      op: ==
+      values:
+      - 30
   expected:
     count: 3
 - name: where_age_gt_30
@@ -1609,9 +1858,11 @@
   query_type: select
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 30
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 30
   expected:
     count: 13
 - name: where_age_gte_30
@@ -1619,9 +1870,11 @@
   query_type: select
   dataset: main
   where:
-    field: age
-    op: '>='
-    value: 30
+    conditions:
+    - field: age
+      op: '>='
+      values:
+      - 30
   expected:
     count: 16
 - name: where_age_lt_30
@@ -1629,9 +1882,11 @@
   query_type: select
   dataset: main
   where:
-    field: age
-    op: <
-    value: 30
+    conditions:
+    - field: age
+      op: <
+      values:
+      - 30
   expected:
     count: 9
 - name: where_age_lte_30
@@ -1639,9 +1894,11 @@
   query_type: select
   dataset: main
   where:
-    field: age
-    op: <=
-    value: 30
+    conditions:
+    - field: age
+      op: <=
+      values:
+      - 30
   expected:
     count: 12
 - name: where_age_ne_30
@@ -1649,9 +1906,11 @@
   query_type: select
   dataset: main
   where:
-    field: age
-    op: '!='
-    value: 30
+    conditions:
+    - field: age
+      op: '!='
+      values:
+      - 30
   expected:
     count: 22
 - name: where_age_gt_100
@@ -1659,9 +1918,11 @@
   query_type: select
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 100
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 100
   expected:
     count: 0
 - name: where_age_gt_0
@@ -1669,9 +1930,11 @@
   query_type: select
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 0
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 0
   expected:
     count: 25
 - name: where_name_eq_alice
@@ -1679,9 +1942,11 @@
   query_type: select
   dataset: main
   where:
-    field: name
-    op: ==
-    value: Alice
+    conditions:
+    - field: name
+      op: ==
+      values:
+      - Alice
   expected:
     count: 1
 - name: where_name_like_A
@@ -1689,9 +1954,11 @@
   query_type: select
   dataset: main
   where:
-    field: name
-    op: LIKE
-    value: A%
+    conditions:
+    - field: name
+      op: LIKE
+      values:
+      - A%
   expected:
     count: 1
 - name: where_name_like_C
@@ -1699,9 +1966,11 @@
   query_type: select
   dataset: main
   where:
-    field: name
-    op: LIKE
-    value: C%
+    conditions:
+    - field: name
+      op: LIKE
+      values:
+      - C%
   expected:
     count: 1
 - name: where_name_like_contains_an
@@ -1709,9 +1978,11 @@
   query_type: select
   dataset: main
   where:
-    field: name
-    op: LIKE
-    value: '%an%'
+    conditions:
+    - field: name
+      op: LIKE
+      values:
+      - '%an%'
   expected:
     count: 3
 - name: where_name_like_ends_e
@@ -1719,9 +1990,11 @@
   query_type: select
   dataset: main
   where:
-    field: name
-    op: LIKE
-    value: '%e'
+    conditions:
+    - field: name
+      op: LIKE
+      values:
+      - '%e'
   expected:
     count: 4
 - name: where_name_ne_alice
@@ -1729,9 +2002,11 @@
   query_type: select
   dataset: main
   where:
-    field: name
-    op: '!='
-    value: Alice
+    conditions:
+    - field: name
+      op: '!='
+      values:
+      - Alice
   expected:
     count: 24
 - name: where_age_between_28_35
@@ -1739,10 +2014,12 @@
   query_type: select
   dataset: main
   where:
-    field: age
-    op: BETWEEN
-    value: 28
-    upper: 35
+    conditions:
+    - field: age
+      op: BETWEEN
+      values:
+      - 28
+      - 35
   expected:
     count: 10
 - name: where_age_in_25_35
@@ -1750,11 +2027,12 @@
   query_type: select
   dataset: main
   where:
-    field: age
-    op: IN
-    values:
-    - 25
-    - 35
+    conditions:
+    - field: age
+      op: IN
+      values:
+      - 25
+      - 35
   expected:
     count: 5
 - name: where_age_gt_28_and_active
@@ -1762,56 +2040,64 @@
   query_type: select
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 28
-    field2: is_active
-    op2: ==
-    value2: true
-    logic: AND
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 28
+    - field: is_active
+      op: ==
+      values:
+      - true
   expected:
     count: 9
 - name: where_age_lt_27_or_gt_34
   model: person
   query_type: select
   dataset: main
-  where:
-    field: age
-    op: <
-    value: 27
-    field2: age
-    op2: '>'
-    value2: 34
-    logic: OR
+  where_expr:
+    op: OR
+    left:
+      field: age
+      op: <
+      value_int: 27
+    right:
+      field: age
+      op: '>'
+      value_int: 34
   expected:
     count: 16
 - name: where_age_gt_24_salary_gt_20000_active
   model: person
   query_type: select
   dataset: main
-  where:
-    field: age
-    op: '>'
-    value: 24
-    field2: salary
-    op2: '>'
-    value2: 20000.0
-    field3: is_active
-    op3: ==
-    value3: true
-    logic: AND
+  where_expr:
+    op: AND
+    left:
+      op: AND
+      left:
+        field: age
+        op: '>'
+        value_int: 24
+      right:
+        field: salary
+        op: '>'
+        value_dbl: 20000.0
+    right:
+      field: is_active
+      op: ==
+      value_int: 1
   expected:
     count: 15
-# ===========================================================================
-# IS NULL / IS NOT NULL
-# ===========================================================================
 - name: where_score_is_null
   model: person
   query_type: select
   dataset: main
   where:
-    field: score
-    op: is_null
+    conditions:
+    - field: score
+      op: IS NULL
+      values: []
   expected:
     count: 10
 - name: where_score_is_not_null
@@ -1819,8 +2105,10 @@
   query_type: select
   dataset: main
   where:
-    field: score
-    op: is_not_null
+    conditions:
+    - field: score
+      op: IS NOT NULL
+      values: []
   expected:
     count: 15
 - name: where_nickname_is_null
@@ -1828,8 +2116,10 @@
   query_type: select
   dataset: main
   where:
-    field: nickname
-    op: is_null
+    conditions:
+    - field: nickname
+      op: IS NULL
+      values: []
   expected:
     count: 14
 - name: where_nickname_is_not_null
@@ -1837,8 +2127,10 @@
   query_type: select
   dataset: main
   where:
-    field: nickname
-    op: is_not_null
+    conditions:
+    - field: nickname
+      op: IS NOT NULL
+      values: []
   expected:
     count: 11
 - name: count_where_score_is_null
@@ -1846,8 +2138,13 @@
   query_type: count
   dataset: main
   where:
-    field: score
-    op: is_null
+    conditions:
+    - field: score
+      op: IS NULL
+      values: []
+  aggregate:
+    func: count
+    field: ''
   expected:
     int_val: 10
 - name: count_where_score_is_not_null
@@ -1855,514 +2152,616 @@
   query_type: count
   dataset: main
   where:
-    field: score
-    op: is_not_null
+    conditions:
+    - field: score
+      op: IS NOT NULL
+      values: []
+  aggregate:
+    func: count
+    field: ''
   expected:
     int_val: 15
 - name: limit_5_from_20
   model: person
   query_type: select
   dataset_size: 20
-  limit_value: 5
+  limit:
+    value: 5
+    offset: 0
   expected:
     count: 5
 - name: offset_10_from_20
   model: person
   query_type: select
   dataset_size: 20
-  offset_value: 10
+  limit:
+    value: 0
+    offset: 10
   expected:
     count: 10
 - name: limit_5_offset_10
   model: person
   query_type: select
   dataset_size: 20
-  limit_value: 5
-  offset_value: 10
+  limit:
+    value: 5
+    offset: 10
   expected:
     count: 5
 - name: limit_exceeds_dataset
   model: person
   query_type: select
   dataset_size: 20
-  limit_value: 100
+  limit:
+    value: 100
+    offset: 0
   expected:
     count: 20
 - name: offset_exceeds_dataset
   model: person
   query_type: select
   dataset_size: 20
-  offset_value: 100
+  limit:
+    value: 0
+    offset: 100
   expected:
     count: 0
 - name: limit_1
   model: person
   query_type: select
   dataset_size: 20
-  limit_value: 1
+  limit:
+    value: 1
+    offset: 0
   expected:
     count: 1
 - name: limit_zero
   model: person
   query_type: select
   dataset_size: 20
-  limit_value: 0
+  limit:
+    value: 0
+    offset: 0
   expected:
-    count: 0
+    count: 20
 - name: offset_zero
   model: person
   query_type: select
   dataset_size: 20
-  offset_value: 0
+  limit:
+    value: 0
+    offset: 0
   expected:
     count: 20
 - name: limit_offset_partial_page
   model: person
   query_type: select
   dataset_size: 20
-  limit_value: 10
-  offset_value: 15
+  limit:
+    value: 10
+    offset: 15
   expected:
     count: 5
 - name: limit_offset_boundary
   model: person
   query_type: select
   dataset_size: 20
-  limit_value: 5
-  offset_value: 15
+  limit:
+    value: 5
+    offset: 15
   expected:
     count: 5
 - name: limit_1_offset_1
   model: person
   query_type: select
   dataset_size: 20
-  limit_value: 1
-  offset_value: 1
+  limit:
+    value: 1
+    offset: 1
   expected:
     count: 1
 - name: distinct_name_limit_offset
   model: person
   query_type: distinct
   dataset_size: 20
-  distinct_field: name
-  limit_value: 5
-  offset_value: 3
+  distinct:
+    fields:
+    - name
+  limit:
+    value: 5
+    offset: 3
   expected:
     count: 5
 - name: distinct_name_age_limit
   model: person
   query_type: distinct
   dataset_size: 20
-  distinct_field: name
-  distinct_field2: age
-  limit_value: 10
+  distinct:
+    fields:
+    - name
+    - age
+  limit:
+    value: 10
+    offset: 0
   expected:
     count: 10
 - name: distinct_name_where_age_gt30_limit
   model: person
   query_type: distinct
   dataset_size: 20
-  distinct_field: name
   where:
-    field: age
-    op: '>'
-    value: 30
-  limit_value: 3
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 30
+  distinct:
+    fields:
+    - name
+  limit:
+    value: 3
+    offset: 0
   expected:
     count: 3
 - name: empty_count
   model: person
   dataset: empty
-  aggregation:
+  aggregate:
     func: count
     field: ''
   expected:
     int_val: 0
+  query_type: count
 - name: empty_sum_age
   model: person
   dataset: empty
-  aggregation:
+  aggregate:
     func: sum
     field: age
   expected:
     int_val: 0
+  query_type: sum
 - name: empty_avg_salary
   model: person
   dataset: empty
-  aggregation:
+  aggregate:
     func: avg
     field: salary
   expected:
     dbl_val: 0.0
+  query_type: avg
 - name: empty_min_age
   model: person
   dataset: empty
-  aggregation:
+  aggregate:
     func: min
     field: age
   expected:
     dbl_val: 0.0
+  query_type: min
 - name: empty_max_age
   model: person
   dataset: empty
-  aggregation:
+  aggregate:
     func: max
     field: age
   expected:
     dbl_val: 0.0
+  query_type: max
 - name: empty_count_with_where
   model: person
   dataset: empty
   where:
-    field: age
-    op: '>'
-    value: 25
-  aggregation:
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 25
+  aggregate:
     func: count
     field: ''
   expected:
     int_val: 0
+  query_type: count
 - name: empty_count_distinct
   model: person
   dataset: empty
-  aggregation:
+  aggregate:
     func: count_distinct
     field: age
   expected:
     int_val: 0
+  query_type: count_distinct
 - name: agg_sum_age
   model: person
   dataset: main
-  aggregation:
+  aggregate:
     func: sum
     field: age
   expected:
     int_val: 829
+  query_type: sum
 - name: agg_count_all
   model: person
   dataset: main
-  aggregation:
+  aggregate:
     func: count
     field: ''
   expected:
     int_val: 25
+  query_type: count
 - name: agg_count_field_id
   model: person
   dataset: main
-  aggregation:
+  aggregate:
     func: count_field
     field: id
   expected:
     int_val: 25
+  query_type: count_field
 - name: agg_avg_age
   model: person
   dataset: main
-  aggregation:
+  aggregate:
     func: avg
     field: age
   expected:
     dbl_val: 33.16
+  query_type: avg
 - name: agg_min_age
   model: person
   dataset: main
-  aggregation:
+  aggregate:
     func: min
     field: age
   expected:
     dbl_val: 22.0
+  query_type: min
 - name: agg_max_salary
   model: person
   dataset: main
-  aggregation:
+  aggregate:
     func: max
     field: salary
   expected:
     dbl_val: 98000.0
+  query_type: max
 - name: agg_count_distinct_years_experience
   model: person
   dataset: main
-  aggregation:
+  aggregate:
     func: count_distinct
     field: years_experience
   expected:
     int_val: 3
+  query_type: count_distinct
 - name: agg_count_distinct_age
   model: person
   dataset: main
-  aggregation:
+  aggregate:
     func: count_distinct
     field: age
   expected:
     int_val: 14
+  query_type: count_distinct
 - name: agg_where_count_age_gt_30
   model: person
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 30
-  aggregation:
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 30
+  aggregate:
     func: count
     field: ''
   expected:
     int_val: 13
+  query_type: count
 - name: agg_where_sum_age_gte_35
   model: person
   dataset: main
   where:
-    field: age
-    op: '>='
-    value: 35
-  aggregation:
+    conditions:
+    - field: age
+      op: '>='
+      values:
+      - 35
+  aggregate:
     func: sum
     field: age
   expected:
     int_val: 442
+  query_type: sum
 - name: agg_where_avg_age_lt_40
   model: person
   dataset: main
   where:
-    field: age
-    op: <
-    value: 40
-  aggregation:
+    conditions:
+    - field: age
+      op: <
+      values:
+      - 40
+  aggregate:
     func: avg
     field: age
   expected:
     dbl_val: 29.95
+  query_type: avg
 - name: agg_where_min_age_gt_25
   model: person
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 25
-  aggregation:
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 25
+  aggregate:
     func: min
     field: age
   expected:
     dbl_val: 27.0
+  query_type: min
 - name: agg_where_max_age_lte_40
   model: person
   dataset: main
   where:
-    field: age
-    op: <=
-    value: 40
-  aggregation:
+    conditions:
+    - field: age
+      op: <=
+      values:
+      - 40
+  aggregate:
     func: max
     field: age
   expected:
     dbl_val: 40.0
+  query_type: max
 - name: agg_where_sum_salary_gte_70000
   model: person
   dataset: main
   where:
-    field: salary
-    op: '>='
-    value: 70000.0
-  aggregation:
+    conditions:
+    - field: salary
+      op: '>='
+      values:
+      - 70000.0
+  aggregate:
     func: sum
     field: salary
   expected:
     dbl_val: 1019000.0
+  query_type: sum
 - name: agg_where_count_age_gt_100_no_results
   model: person
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 100
-  aggregation:
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 100
+  aggregate:
     func: count
     field: ''
   expected:
     int_val: 0
+  query_type: count
 - name: agg_where_count_age_gt_0_all_results
   model: person
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 0
-  aggregation:
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 0
+  aggregate:
     func: count
     field: ''
   expected:
     int_val: 25
+  query_type: count
 - name: agg_where_count_distinct_age_gt_30
   model: person
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 30
-  aggregation:
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 30
+  aggregate:
     func: count_distinct
     field: age
   expected:
     int_val: 8
+  query_type: count_distinct
 - name: agg_sum_salary_all
   model: person
   dataset: main
-  aggregation:
+  aggregate:
     func: sum
     field: salary
   expected:
     dbl_val: 1702000.0
+  query_type: sum
 - name: agg_avg_salary_all
   model: person
   dataset: main
-  aggregation:
+  aggregate:
     func: avg
     field: salary
   expected:
     dbl_val: 68080.0
+  query_type: avg
 - name: agg_sum_age_where_gt_30
   model: person
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 30
-  aggregation:
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 30
+  aggregate:
     func: sum
     field: age
   expected:
     int_val: 508
+  query_type: sum
 - name: agg_avg_salary_where_age_gt_30
   model: person
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 30
-  aggregation:
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 30
+  aggregate:
     func: avg
     field: salary
   expected:
     dbl_val: 83692.31
+  query_type: avg
 - name: agg_min_salary_where_age_lte_30
   model: person
   dataset: main
   where:
-    field: age
-    op: <=
-    value: 30
-  aggregation:
+    conditions:
+    - field: age
+      op: <=
+      values:
+      - 30
+  aggregate:
     func: min
     field: salary
   expected:
     dbl_val: 32000.0
+  query_type: min
 - name: agg_max_age_where_salary_gte_70000
   model: person
   dataset: main
   where:
-    field: salary
-    op: '>='
-    value: 70000.0
-  aggregation:
+    conditions:
+    - field: salary
+      op: '>='
+      values:
+      - 70000.0
+  aggregate:
     func: max
     field: age
   expected:
     dbl_val: 48.0
+  query_type: max
 - name: agg_join_count
   model: message
   dataset: main_msg
-  aggregation:
+  aggregate:
     func: count
     field: ''
-    join: sender
   expected:
     int_val: 8
+  query_type: count
 - name: agg_join_sum_value
   model: message
   dataset: main_msg
-  aggregation:
+  aggregate:
     func: sum
     field: value
-    join: sender
   expected:
     int_val: 360
+  query_type: sum
 - name: agg_join_avg_value
   model: message
   dataset: main_msg
-  aggregation:
+  aggregate:
     func: avg
     field: value
-    join: sender
   expected:
     dbl_val: 45.0
+  query_type: avg
 - name: agg_join_min_value
   model: message
   dataset: main_msg
-  aggregation:
+  aggregate:
     func: min
     field: value
-    join: sender
   expected:
     dbl_val: 10.0
+  query_type: min
 - name: agg_join_max_value
   model: message
   dataset: main_msg
-  aggregation:
+  aggregate:
     func: max
     field: value
-    join: sender
   expected:
     dbl_val: 80.0
+  query_type: max
 - name: agg_where_join_count_value_gt_30
   model: message
   dataset: main_msg
   where:
-    field: value
-    op: '>'
-    value: 30
-  aggregation:
+    conditions:
+    - field: value
+      op: '>'
+      values:
+      - 30
+  aggregate:
     func: count
     field: ''
-    join: sender
   expected:
     int_val: 5
+  query_type: count
 - name: agg_where_join_sum_value_gte_30
   model: message
   dataset: main_msg
   where:
-    field: value
-    op: '>='
-    value: 30
-  aggregation:
+    conditions:
+    - field: value
+      op: '>='
+      values:
+      - 30
+  aggregate:
     func: sum
     field: value
-    join: sender
   expected:
     int_val: 330
+  query_type: sum
 - name: agg_where_join_avg_value_lt_50
   model: message
   dataset: main_msg
   where:
-    field: value
-    op: <
-    value: 50
-  aggregation:
+    conditions:
+    - field: value
+      op: <
+      values:
+      - 50
+  aggregate:
     func: avg
     field: value
-    join: sender
   expected:
     dbl_val: 25.0
+  query_type: avg
 - name: agg_where_join_count_no_results
   model: message
   dataset: main_msg
   where:
-    field: value
-    op: '>'
-    value: 100
-  aggregation:
+    conditions:
+    - field: value
+      op: '>'
+      values:
+      - 100
+  aggregate:
     func: count
     field: ''
-    join: sender
   expected:
     int_val: 0
+  query_type: count
 - name: chain_sum_count_standard5
   model: person
   dataset: main
@@ -2371,13 +2770,14 @@
     field: age
     result:
       type: int
-      value: 175
+      value: 829
   - func: count
     field: ''
     result:
       type: int
-      value: 5
+      value: 25
   expected: {}
+  query_type: chain
 - name: chain_sum_count_avg_standard5
   model: person
   dataset: main
@@ -2386,18 +2786,19 @@
     field: age
     result:
       type: int
-      value: 175
+      value: 829
   - func: count
     field: ''
     result:
       type: int
-      value: 5
+      value: 25
   - func: avg
     field: salary
     result:
       type: double
-      value: 70000.0
+      value: 68080.0
   expected: {}
+  query_type: chain
 - name: chain_all_five_standard5
   model: person
   dataset: main
@@ -2406,68 +2807,76 @@
     field: age
     result:
       type: int
-      value: 175
+      value: 829
   - func: count
     field: ''
     result:
       type: int
-      value: 5
+      value: 25
   - func: avg
     field: salary
     result:
       type: double
-      value: 70000.0
+      value: 68080.0
   - func: min
     field: years_experience
     result:
       type: double
-      value: 3.0
+      value: 5.0
   - func: max
     field: age
     result:
       type: double
-      value: 45.0
+      value: 48.0
   expected: {}
+  query_type: chain
 - name: chain_sum_count_where_age_gt30
   model: person
   dataset: main
   where:
-    field: age
-    op: '>'
-    value: 30
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 30
   aggregations:
   - func: sum
     field: age
     result:
       type: int
-      value: 120
+      value: 508
   - func: count
     field: ''
     result:
       type: int
-      value: 3
+      value: 13
   expected: {}
+  query_type: chain
 - name: chain_sum_count_avg_join
   model: message
   dataset: main_msg
-  join_name: sender
   aggregations:
   - func: sum
     field: value
     result:
       type: int
-      value: 210
+      value: 360
   - func: count
     field: ''
     result:
       type: int
-      value: 6
+      value: 8
   - func: avg
     field: value
     result:
       type: double
-      value: 35.0
+      value: 45.0
+  join:
+    type: inner
+    related: Person
+    fk: sender
   expected: {}
+  query_type: chain
 - name: chain_sum_count_avg_empty
   model: person
   dataset: empty
@@ -2487,6 +2896,7 @@
     result:
       type: double
       value: 0.0
+  query_type: chain
 - name: chain_count_sum_standard5
   model: person
   dataset: main
@@ -2495,13 +2905,14 @@
     field: ''
     result:
       type: int
-      value: 5
+      value: 25
   - func: sum
     field: age
     result:
       type: int
-      value: 175
+      value: 829
   expected: {}
+  query_type: chain
 - name: chain_count_sum_avg_standard5
   model: person
   dataset: main
@@ -2510,18 +2921,19 @@
     field: ''
     result:
       type: int
-      value: 5
+      value: 25
   - func: sum
     field: age
     result:
       type: int
-      value: 175
+      value: 829
   - func: avg
     field: salary
     result:
       type: double
-      value: 70000.0
+      value: 68080.0
   expected: {}
+  query_type: chain
 - name: chain_avg_count_standard5
   model: person
   dataset: main
@@ -2530,13 +2942,14 @@
     field: salary
     result:
       type: double
-      value: 70000.0
+      value: 68080.0
   - func: count
     field: ''
     result:
       type: int
-      value: 5
+      value: 25
   expected: {}
+  query_type: chain
 - name: chain_avg_min_age_standard5
   model: person
   dataset: main
@@ -2545,13 +2958,14 @@
     field: salary
     result:
       type: double
-      value: 70000.0
+      value: 68080.0
   - func: min
     field: age
     result:
       type: double
-      value: 25.0
+      value: 22.0
   expected: {}
+  query_type: chain
 - name: chain_avg_max_age_standard5
   model: person
   dataset: main
@@ -2560,13 +2974,14 @@
     field: salary
     result:
       type: double
-      value: 70000.0
+      value: 68080.0
   - func: max
     field: age
     result:
       type: double
-      value: 45.0
+      value: 48.0
   expected: {}
+  query_type: chain
 - name: chain_min_max_age_standard5
   model: person
   dataset: main
@@ -2575,51 +2990,62 @@
     field: age
     result:
       type: double
-      value: 25.0
+      value: 22.0
   - func: max
     field: age
     result:
       type: double
-      value: 45.0
+      value: 48.0
   expected: {}
+  query_type: chain
 - name: agg_min_score_where_age_gt30
   model: person
   query_type: min
   dataset: main
-  agg_field: score
   where:
-    field: age
-    op: '>'
-    value: 30
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 30
+  aggregate:
+    func: min
+    field: score
   expected:
     dbl_val: 50.0
 - name: agg_max_score_where_age_gt30
   model: person
   query_type: max
   dataset: main
-  agg_field: score
   where:
-    field: age
-    op: '>'
-    value: 30
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 30
+  aggregate:
+    func: max
+    field: score
   expected:
     dbl_val: 70.0
 - name: agg_min_score
   model: person
   dataset: main
-  aggregation:
+  aggregate:
     func: min
     field: score
   expected:
     dbl_val: 40.0
+  query_type: min
 - name: agg_max_score
   model: person
   dataset: main
-  aggregation:
+  aggregate:
     func: max
     field: score
   expected:
     dbl_val: 95.0
+  query_type: max
 - name: chain_min_sum_score5
   model: person
   dataset: main
@@ -2628,13 +3054,14 @@
     field: score
     result:
       type: double
-      value: 75.0
+      value: 40.0
   - func: sum
     field: age
     result:
       type: int
-      value: 158
+      value: 829
   expected: {}
+  query_type: chain
 - name: chain_sum_avg_score5
   model: person
   dataset: main
@@ -2643,13 +3070,14 @@
     field: score
     result:
       type: int
-      value: 425
+      value: 1108
   - func: avg
     field: salary
     result:
       type: double
-      value: 63000.0
+      value: 68080.0
   expected: {}
+  query_type: chain
 - name: chain_max_avg_score5
   model: person
   dataset: main
@@ -2663,8 +3091,9 @@
     field: salary
     result:
       type: double
-      value: 63000.0
+      value: 68080.0
   expected: {}
+  query_type: chain
 - name: chain_max_min_score5
   model: person
   dataset: main
@@ -2678,8 +3107,9 @@
     field: score
     result:
       type: double
-      value: 75.0
+      value: 40.0
   expected: {}
+  query_type: chain
 - name: chain_count_sum_min_max_score5
   model: person
   dataset: main
@@ -2688,23 +3118,24 @@
     field: ''
     result:
       type: int
-      value: 5
+      value: 25
   - func: sum
     field: age
     result:
       type: int
-      value: 158
+      value: 829
   - func: min
     field: score
     result:
       type: double
-      value: 75.0
+      value: 40.0
   - func: max
     field: score
     result:
       type: double
       value: 95.0
   expected: {}
+  query_type: chain
 - name: chain_count_sum_avg_min_max_score5
   model: person
   dataset: main
@@ -2713,37 +3144,42 @@
     field: ''
     result:
       type: int
-      value: 5
+      value: 25
   - func: sum
     field: age
     result:
       type: int
-      value: 158
+      value: 829
   - func: avg
     field: salary
     result:
       type: double
-      value: 63000.0
+      value: 68080.0
   - func: min
     field: score
     result:
       type: double
-      value: 75.0
+      value: 40.0
   - func: max
     field: score
     result:
       type: double
       value: 95.0
   expected: {}
+  query_type: chain
 - name: group_by_where_age_gt30
   model: person
   query_type: group_count
   dataset: main
-  group_by_field: years_experience
   where:
-    field: age
-    op: '>'
-    value: 30
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 30
+  group_by:
+    fields:
+    - years_experience
   expected:
     count: 3
     groups_count: 3
@@ -2759,8 +3195,13 @@
   model: message
   query_type: group_count
   dataset: main_msg
-  group_by_field: value
-  join_name: sender
+  group_by:
+    fields:
+    - value
+  join:
+    type: inner
+    related: Person
+    fk: sender
   expected:
     count: 8
     groups_count: 8
@@ -2786,12 +3227,19 @@
   model: message
   query_type: group_count
   dataset: main_msg
-  group_by_field: value
-  join_name: sender
   where:
-    field: value
-    op: '>'
-    value: 20
+    conditions:
+    - field: value
+      op: '>'
+      values:
+      - 20
+  group_by:
+    fields:
+    - value
+  join:
+    type: inner
+    related: Person
+    fk: sender
   expected:
     count: 6
     groups_count: 6
@@ -2813,22 +3261,31 @@
   model: message
   query_type: select
   dataset: main_msg
-  join_name: sender
   where:
-    field: value
-    op: '>'
-    value: 25
+    conditions:
+    - field: value
+      op: '>'
+      values:
+      - 25
+  join:
+    type: inner
+    related: Person
+    fk: sender
   expected:
     count: 6
 - name: select_join_where_like_H
   model: message
   query_type: select
   dataset: main_msg
-  join_name: sender
   where:
-    field: content
-    op: LIKE
-    value_str: '%H%'
+    conditions:
+    - field: content
+      op: LIKE
+      values: []
+  join:
+    type: inner
+    related: Person
+    fk: sender
   expected:
     count: 2
 - name: limit_where_age_gt25
@@ -2836,10 +3293,14 @@
   query_type: select
   dataset_size: 20
   where:
-    field: age
-    op: '>'
-    value: 25
-  limit_value: 3
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 25
+  limit:
+    value: 3
+    offset: 0
   expected:
     count: 3
 - name: limit_offset_where_age_gt25
@@ -2847,69 +3308,89 @@
   query_type: select
   dataset_size: 20
   where:
-    field: age
-    op: '>'
-    value: 25
-  limit_value: 3
-  offset_value: 2
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 25
+  limit:
+    value: 3
+    offset: 2
   expected:
     count: 3
 - name: distinct_empty_name
   model: person
   query_type: distinct
   dataset: empty
-  distinct_field: name
+  distinct:
+    fields:
+    - name
   expected:
     count: 0
 - name: distinct_two_fields_empty
   model: person
   query_type: distinct
   dataset: empty
-  distinct_field: name
-  distinct_field2: age
+  distinct:
+    fields:
+    - name
+    - age
   expected:
     count: 0
 - name: distinct_join_where_like_o
   model: message
   query_type: distinct
   dataset: main_msg
-  distinct_field: content
-  join_name: sender
   where:
-    field: content
-    op: LIKE
-    value_str: '%o%'
+    conditions:
+    - field: content
+      op: LIKE
+      values: []
+  distinct:
+    fields:
+    - content
+  join:
+    type: inner
+    related: Person
+    fk: sender
   expected:
     count: 4
 - name: distinct_where_order_limit_all
   model: person
   query_type: distinct
   dataset: main
-  distinct_field: name
   where:
-    field: age
-    op: '>'
-    value: 20
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 20
   order_by:
-    field: name
-    asc: true
-  limit_value: 10
+  - field: name
+    direction: ASC
+  distinct:
+    fields:
+    - name
+  limit:
+    value: 10
+    offset: 0
   expected:
     count: 10
 - name: distinct_where_no_match
   model: person
   query_type: distinct
   dataset: main
-  distinct_field: name
   where:
-    field: age
-    op: '>'
-    value: 100
+    conditions:
+    - field: age
+      op: '>'
+      values:
+      - 100
+  distinct:
+    fields:
+    - name
   expected:
     count: 0
-# ===========================================================================
-# First-row field verification — extended fields (salary, department, etc.)
-# ===========================================================================
 - name: first_alice_all_fields
   model: person
   query_type: first
@@ -2928,8 +3409,8 @@
   query_type: select
   dataset: main
   order_by:
-    field: salary
-    asc: false
+  - field: salary
+    direction: DESC
   expected:
     count: 25
     first:
@@ -2940,8 +3421,8 @@
   query_type: select
   dataset: main
   order_by:
-    field: salary
-    asc: true
+  - field: salary
+    direction: ASC
   expected:
     count: 25
     first:
@@ -2952,9 +3433,11 @@
   query_type: first
   dataset: main
   where:
-    field: department
-    op: ==
-    value: Engineering
+    conditions:
+    - field: department
+      op: ==
+      values:
+      - Engineering
   expected:
     count: 1
     first:
@@ -2966,12 +3449,14 @@
   query_type: select
   dataset: main
   where:
-    field: is_active
-    op: ==
-    value: true
+    conditions:
+    - field: is_active
+      op: ==
+      values:
+      - true
   order_by:
-    field: age
-    asc: true
+  - field: age
+    direction: ASC
   expected:
     count: 16
     first:
@@ -2983,9 +3468,11 @@
   query_type: one
   dataset: main
   where:
-    field: name
-    op: ==
-    value: Olivia
+    conditions:
+    - field: name
+      op: ==
+      values:
+      - Olivia
   expected:
     count: 1
     first:
@@ -2998,8 +3485,8 @@
   query_type: first
   dataset: main
   order_by:
-    field: years_experience
-    asc: false
+  - field: years_experience
+    direction: DESC
   expected:
     count: 1
     first:

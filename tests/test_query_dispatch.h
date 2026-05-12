@@ -49,4 +49,14 @@ constexpr auto build_where_expr(std::string_view op, ValueType value) {
     return field<FieldInfo>() == value;
 }
 
+// FK resolver for test models (Message::sender → Person).
+struct TestFkResolver {
+    consteval auto operator()(std::string_view name) const {
+        if (name == "sender")
+            return &Message::sender;
+        std::unreachable();
+    }
+};
+inline constexpr TestFkResolver test_fk{};
+
 } // namespace storm::test

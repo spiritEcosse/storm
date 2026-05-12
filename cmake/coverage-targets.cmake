@@ -101,7 +101,8 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
       c_file_extensions=${LCOV_C_EXTENSIONS} --ignore-errors
       unused,deprecated,unsupported,inconsistent,range --filter
       region,branch_region --remove ${COVERAGE_OUTPUT_DIR}/coverage.lcov
-      "*/third_party/*" "*/googletest/*" "*/build/*" "*/tests/*" --output-file
+      "*/third_party/*" "*/googletest/*" "*/build/*" "*/tests/*"
+      "*/src/orm/utilities.cppm" --output-file
       ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
     COMMAND
       ${LCOV_TOOL} --rc branch_coverage=1 --ignore-errors
