@@ -14,8 +14,6 @@ using namespace storm;
 
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
-#include "test_query_dispatch.h"
-#include "test_query_runner_base.h"
 #include "test_select_runner.h"
 #include "test_write_runner.h"
 #include "test_yaml_register.h"

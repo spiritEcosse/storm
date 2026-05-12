@@ -11,8 +11,7 @@ import <optional>;
 
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
-#include "test_query_dispatch.h"
-#include "test_query_runner_base.h"
+#include "test_select_runner.h"
 
 using namespace storm;
 using namespace storm::orm::where;
@@ -24,6 +23,13 @@ template <typename ConnType> class WhereTest : public StormTestFixture<Person, C
         ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(
                 std::vector<Person>(storm::test::PEOPLE_25.begin(), storm::test::PEOPLE_25.end())
         )));
+    }
+
+    static auto check_where_count(auto expr, size_t expected_count) -> void {
+        QuerySet<Person, ConnType> qs;
+        auto                       result = qs.where(expr).select().execute();
+        ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
+        ASSERT_EQ(result.value().size(), expected_count);
     }
 };
 
@@ -45,16 +51,9 @@ TYPED_TEST(WhereTest, WhereThreeConditions) {
 
 // Test: WHERE with complex expression
 TYPED_TEST(WhereTest, WhereComplexExpression) {
-    QuerySet<Person, TypeParam> queryset;
-
-    auto expr1  = field<^^Person::age>() < 30;
-    auto expr2  = field<^^Person::age>() > 35;
-    auto expr3  = field<^^Person::name>() != "Charlie";
-    auto result = queryset.where((expr1 || expr2) && expr3).select().execute();
-    ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
-
-    const auto& people = result.value();
-    ASSERT_EQ(people.size(), 18) << "Expected 18 people matching complex condition";
+    this->check_where_count(
+            (field<^^Person::age>() < 30 || field<^^Person::age>() > 35) && field<^^Person::name>() != "Charlie", 18
+    );
 }
 
 // Test: where() returns a new QuerySet; original is unchanged; returned copy is reusable
@@ -191,19 +190,11 @@ TYPED_TEST(WhereJoinTest, WhereWithNaturalOperators) {
     EXPECT_EQ(it->sender.name, "alice");
 }
 
-// Test: Natural operators with complex expressions
+// Test: Natural operators with complex expressions (same logic as WhereComplexExpression, different syntax)
 TYPED_TEST(WhereTest, WhereNaturalOperatorsComplex) {
-    QuerySet<Person, TypeParam> queryset;
-
-    // Using natural 'and' and 'or' operators
-    auto result = queryset.where((field<^^Person::age>() < 30 or field<^^Person::age>() > 35) and
-                                 field<^^Person::name>() != "Charlie")
-                          .select()
-                          .execute();
-    ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
-
-    const auto& people = result.value();
-    ASSERT_EQ(people.size(), 18) << "Expected 18 people matching complex condition";
+    this->check_where_count(
+            (field<^^Person::age>() < 30 or field<^^Person::age>() > 35) and field<^^Person::name>() != "Charlie", 18
+    );
 }
 
 // Test: Reusing WHERE conditions across multiple queries
@@ -588,32 +579,6 @@ TEST_F(WhereNullCollateTest, IsNull_Collated) {
             expected_null_nicknames++;
     }
     EXPECT_EQ(result.value().size(), expected_null_nicknames) << "Collated IS NULL should work same as plain IS NULL";
-}
-
-template <typename ConnType> class ComplexWhereTest : public PersonSeedFixture<ConnType> {};
-
-TYPED_TEST_SUITE(ComplexWhereTest, DatabaseTypes);
-
-TYPED_TEST(ComplexWhereTest, OrWithAnd) {
-    // Combined OR and AND: (age < 26) OR (age > 35 AND department = "Marketing")
-    auto young    = field<^^Person::age>() < 26;
-    auto old      = field<^^Person::age>() > 35;
-    auto mkt      = field<^^Person::department>() == "Marketing";
-    auto combined = young || (old && mkt);
-
-    auto result = this->qs->where(combined).select().execute();
-    ASSERT_TRUE(result.has_value()) << "Complex OR/AND should work";
-    EXPECT_GE(result.value().size(), 1);
-}
-
-TYPED_TEST(ComplexWhereTest, NestedAndOr) {
-    // Nested: (dept = "Engineering" AND age < 30) OR (dept = "Sales" AND age > 29)
-    auto eng_young = field<^^Person::department>() == "Engineering" && field<^^Person::age>() < 30;
-    auto sales_old = field<^^Person::department>() == "Sales" && field<^^Person::age>() > 29;
-
-    auto result = this->qs->where(eng_young || sales_old).select().execute();
-    ASSERT_TRUE(result.has_value());
-    EXPECT_GE(result.value().size(), 1);
 }
 
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

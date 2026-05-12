@@ -2,18 +2,117 @@
 
 /**
  * @file test_select_runner.h
- * @brief SelectRunner, AggregateRunner, ChainAggRunner, DistinctRunner, GroupByRunner.
+ * @brief Field dispatch, WHERE builder, QueryRunnerBase, and SELECT runners.
  *
- * Runners for TestCase-driven SELECT, DISTINCT, aggregate, and GROUP BY queries.
- * Include AFTER `import storm;`, test_models.h, test_query_dispatch.h, test_query_runner_base.h.
+ * Provides:
+ * - dispatch_field<Model>(name) — via storm::orm::query_builder
+ * - build_where_expr<FieldInfo>(op, value) — ORM expression builder
+ * - QueryRunnerBase<Model, ConnType> — shared base with seed + WHERE/JOIN apply
+ * - SelectRunner, AggregateRunner, ChainAggRunner, DistinctRunner, GroupByRunner
+ *
+ * Include AFTER `import storm;` and test_models.h.
  */
 
-#include "test_query_runner_base.h"
-
 #include <algorithm>
+#include <meta>
+#include <string_view>
+#include <utility>
 #include <vector>
 
+#include "src/orm/query_builder.hpp" // NOLINT(misc-header-include-cycle)
+
 namespace storm::test {
+
+// Re-use the shared field dispatcher — no duplication with bench side.
+using storm::orm::query_builder::dispatch_field;
+
+// ============================================================================
+// WHERE expression builder — dispatches on operator string at compile time
+// ============================================================================
+
+template <std::meta::info FieldInfo, typename ValueType>
+constexpr auto build_where_expr(std::string_view op, ValueType value) {
+    using storm::orm::where::field;
+    if constexpr (requires { field<FieldInfo>() == value; }) {
+        if (op == "==")
+            return field<FieldInfo>() == value;
+        if (op == "!=")
+            return field<FieldInfo>() != value;
+        if (op == ">")
+            return field<FieldInfo>() > value;
+        if (op == ">=")
+            return field<FieldInfo>() >= value;
+        if (op == "<")
+            return field<FieldInfo>() < value;
+        if (op == "<=")
+            return field<FieldInfo>() <= value;
+    }
+    return field<FieldInfo>() == value;
+}
+
+// FK resolver for test models (Message::sender → Person).
+struct TestFkResolver {
+    consteval auto operator()(std::string_view name) const {
+        if (name == "sender")
+            return &Message::sender;
+        std::unreachable();
+    }
+};
+inline constexpr TestFkResolver test_fk{};
+
+// Stateless no-op FK resolver for tests (JOIN is never enabled in test cases).
+struct NoOpFkResolver {
+    consteval auto operator()(std::string_view) const -> std::meta::info { std::unreachable(); }
+};
+inline constexpr NoOpFkResolver no_op_fk{};
+
+// Recursively build a WHERE expression from a compile-time WhereNode tree.
+template <int N, const auto &Tc, typename Model> auto build_where_node_expr() {
+    using storm::orm::where::field;
+    if constexpr (Tc.where_nodes[N].left < 0) {
+        constexpr auto fi = dispatch_field<Model>(Tc.where_nodes[N].field.view());
+        if constexpr (Tc.where_nodes[N].value_dbl != 0.0)
+            return build_where_expr<fi>(Tc.where_nodes[N].op.view(), Tc.where_nodes[N].value_dbl);
+        else
+            return build_where_expr<fi>(Tc.where_nodes[N].op.view(), Tc.where_nodes[N].value_int);
+    } else if constexpr (Tc.where_nodes[N].op == "AND") {
+        return build_where_node_expr<Tc.where_nodes[N].left, Tc, Model>() &&
+               build_where_node_expr<Tc.where_nodes[N].right, Tc, Model>();
+    } else {
+        return build_where_node_expr<Tc.where_nodes[N].left, Tc, Model>() ||
+               build_where_node_expr<Tc.where_nodes[N].right, Tc, Model>();
+    }
+}
+
+template <typename Model, typename ConnType> class QueryRunnerBase {
+  public:
+    storm::QuerySet<Model, ConnType, true> qs_;
+
+    template <const auto &Tc> auto seed_and_insert() -> void {
+        std::vector<Model> initial;
+        initial.reserve(static_cast<size_t>(Tc.bench.dataset_size));
+        for (int i = 0; i < Tc.bench.dataset_size; ++i)
+            initial.push_back(make_record<Model>(i));
+        auto ins = this->qs_.insert(std::span<const Model>(initial)).execute();
+        ASSERT_TRUE(ins.has_value()) << ins.error().message();
+    }
+
+    template <const auto &Tc> auto apply_where_and_join() -> void { // NOSONAR(S3776)
+        if constexpr (Tc.bench.join.enabled) {
+            using QB = storm::orm::query_builder::QueryBuilder<Model, Tc.bench, test_fk, ConnType>;
+            qs_ = QB::build_qs();
+        } else {
+            using QB = storm::orm::query_builder::QueryBuilder<Model, Tc.bench, no_op_fk, ConnType>;
+            qs_ = QB::build_qs();
+        }
+        if constexpr (Tc.where_node_count > 0)
+            qs_ = qs_.where(build_where_node_expr<0, Tc, Model>());
+    }
+
+    template <const auto &Tc> auto qs_with_modifiers() -> decltype(auto) { return (qs_); }
+};
+
+template <typename Model, typename ConnType> class SelectQueryRunnerBase : public QueryRunnerBase<Model, ConnType> {};
 
 // ---------------------------------------------------------------------------
 // Shared group-by result verification helpers
@@ -285,30 +384,22 @@ template <typename Model, typename ConnType> class ChainAggRunner : public Selec
         EXPECT_NEAR(v3, Tc.aggregations[3].res_value, 0.01);
     }
 
-    template <const auto &Tc> auto run_chain5_sum() -> void {
-        constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
+    template <const auto &Tc> auto chain5_tail(auto &&head) -> void {
         constexpr auto fi2 = dispatch_field<Model>(Tc.aggregations[2].field.view());
         constexpr auto fi3 = dispatch_field<Model>(Tc.aggregations[3].field.view());
         constexpr auto fi4 = dispatch_field<Model>(Tc.aggregations[4].field.view());
-        check_chain5<Tc>(this->qs_.template sum<fi0>()
-                             .count()
-                             .template avg<fi2>()
-                             .template min<fi3>()
-                             .template max<fi4>()
-                             .execute());
+        check_chain5<Tc>(
+            std::forward<decltype(head)>(head).template avg<fi2>().template min<fi3>().template max<fi4>().execute());
+    }
+
+    template <const auto &Tc> auto run_chain5_sum() -> void {
+        constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
+        chain5_tail<Tc>(this->qs_.template sum<fi0>().count());
     }
 
     template <const auto &Tc> auto run_chain5_count() -> void {
         constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
-        constexpr auto fi2 = dispatch_field<Model>(Tc.aggregations[2].field.view());
-        constexpr auto fi3 = dispatch_field<Model>(Tc.aggregations[3].field.view());
-        constexpr auto fi4 = dispatch_field<Model>(Tc.aggregations[4].field.view());
-        check_chain5<Tc>(this->qs_.count()
-                             .template sum<fi1>()
-                             .template avg<fi2>()
-                             .template min<fi3>()
-                             .template max<fi4>()
-                             .execute());
+        chain5_tail<Tc>(this->qs_.count().template sum<fi1>());
     }
 
   public:

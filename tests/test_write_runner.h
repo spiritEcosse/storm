@@ -4,12 +4,11 @@
  * @file test_write_runner.h
  * @brief InsertRunner, UpdateRunner, EraseRunner for UnifiedTestCase.
  *
- * Include AFTER `import storm;`, test_models.h, test_seed_helpers.h,
- * test_query_runner_base.h.
+ * Include AFTER `import storm;`, test_models.h, test_seed_helpers.h.
  */
 
-#include "test_query_runner_base.h"
 #include "test_seed_helpers.h"
+#include "test_select_runner.h"
 
 namespace storm::test {
 

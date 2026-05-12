@@ -1,0 +1,278 @@
+#include <gtest/gtest.h>
+#include "test_db_helpers.h"
+
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+
+import storm;
+
+import <expected>;
+import <map>;
+import <string>;
+import <vector>;
+
+using namespace storm;
+
+#include "test_models.h" // NOSONAR cpp:S954
+#include "test_seed_helpers.h"
+#include "test_aggregate_fixture.h"
+
+TYPED_TEST_SUITE(AggregateTest, DatabaseTypes);
+
+// =============================================================================
+// Combined Clause Tests
+// =============================================================================
+
+template <typename ConnType> auto insert_full_chain_14_messages() -> void {
+    ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(std::vector<Person>{
+            {.name = "Alice", .age = 25},
+            {.name = "Bob", .age = 35},
+            {.name = "Charlie", .age = 45},
+            {.name = "Dave", .age = 30},
+            {.name = "Eve", .age = 28},
+    })));
+    ASSERT_TRUE((storm::test::batch_insert<Message, ConnType>(std::vector<Message>{
+            {.content = "A1", .value = 10, .sender = {.id = 1}},
+            {.content = "A2", .value = 15, .sender = {.id = 1}},
+            {.content = "A3", .value = 20, .sender = {.id = 1}},
+            {.content = "B1", .value = 25, .sender = {.id = 2}},
+            {.content = "B2", .value = 30, .sender = {.id = 2}},
+            {.content = "C1", .value = 35, .sender = {.id = 3}},
+            {.content = "C2", .value = 40, .sender = {.id = 3}},
+            {.content = "C3", .value = 45, .sender = {.id = 3}},
+            {.content = "C4", .value = 50, .sender = {.id = 3}},
+            {.content = "D1", .value = 55, .sender = {.id = 4}},
+            {.content = "D2", .value = 60, .sender = {.id = 4}},
+            {.content = "E1", .value = 65, .sender = {.id = 5}},
+            {.content = "E2", .value = 70, .sender = {.id = 5}},
+            {.content = "E3", .value = 75, .sender = {.id = 5}},
+    })));
+}
+
+static auto check_message_values(const auto& result_set, const std::vector<int>& expected) -> void {
+    size_t idx = 0;
+    for (const auto& msg : result_set) {
+        ASSERT_LT(idx, expected.size());
+        EXPECT_EQ(msg.value, expected[idx++]);
+    }
+}
+
+TYPED_TEST(AggregateTest, FullChain_WhereJoinOrderByLimitOffset) {
+    insert_full_chain_14_messages<TypeParam>();
+
+    // WHERE + JOIN + ORDER BY DESC + LIMIT 5 + OFFSET 2
+    // Values >= 20 ordered DESC: 75,70,65,60,55,50,45,40,35,30,25,20
+    // After OFFSET 2: 65,60,55,50,45,...  After LIMIT 5: 65,60,55,50,45
+    auto result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() >= 20)
+                          .template join<&Message::sender>()
+                          .template order_by<^^Message::value, false>()
+                          .limit(5)
+                          .offset(2)
+                          .select()
+                          .execute();
+
+    ASSERT_TRUE(result.has_value()) << "Full chain DESC query failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 5);
+    check_message_values(result.value(), {65, 60, 55, 50, 45});
+}
+
+TYPED_TEST(AggregateTest, FullChain_WhereJoinOrderByAscLimit) {
+    insert_full_chain_14_messages<TypeParam>();
+
+    auto result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() >= 20)
+                          .template join<&Message::sender>()
+                          .template order_by<^^Message::value, true>()
+                          .limit(3)
+                          .offset(0)
+                          .select()
+                          .execute();
+
+    ASSERT_TRUE(result.has_value()) << "Full chain ASC query failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 3);
+    check_message_values(result.value(), {20, 25, 30});
+}
+
+TYPED_TEST(AggregateTest, FullChain_JoinResolvesCorrectSender) {
+    insert_full_chain_14_messages<TypeParam>();
+
+    auto result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() == 75)
+                          .template join<&Message::sender>()
+                          .select()
+                          .execute();
+
+    ASSERT_TRUE(result.has_value()) << "JOIN verification query failed";
+    ASSERT_EQ(result.value().size(), 1);
+    EXPECT_EQ(result.value().begin()->sender.name, "Eve");
+}
+
+template <typename ConnType> auto verify_group_by_counts(QuerySet<Person, ConnType>& qs) -> void {
+    const std::map<int, int64_t> expected_counts = {{5, 10}, {10, 8}, {15, 7}};
+    auto                         result          = qs.template group_by<^^Person::years_experience>().count().execute();
+    ASSERT_TRUE(result.has_value()) << "GROUP BY + COUNT failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 3);
+    for (const auto& [ye, count_val] : result.value()) {
+        auto it = expected_counts.find(ye);
+        ASSERT_NE(it, expected_counts.end()) << "Unexpected years_experience: " << ye;
+        EXPECT_EQ(count_val, it->second);
+    }
+}
+
+template <typename ConnType> auto verify_group_by_sum_avg_min_max(QuerySet<Person, ConnType>& qs) -> void {
+    const std::map<int, int64_t> exp_sum = {{5, 268}, {10, 285}, {15, 276}};
+    const std::map<int, double>  exp_avg = {{5, 26.8}, {10, 35.625}, {15, 39.43}};
+    const std::map<int, double>  exp_min = {{5, 22.0}, {10, 29.0}, {15, 35.0}};
+    const std::map<int, double>  exp_max = {{5, 36.0}, {10, 48.0}, {15, 45.0}};
+
+    qs.reset();
+    auto sum = qs.template group_by<^^Person::years_experience>().template sum<^^Person::age>().execute();
+    ASSERT_TRUE(sum.has_value());
+    for (const auto& [ye, v] : sum.value()) {
+        if (auto it = exp_sum.find(ye); it != exp_sum.end()) {
+            EXPECT_EQ(v, it->second);
+        }
+    }
+
+    qs.reset();
+    auto avg = qs.template group_by<^^Person::years_experience>().template avg<^^Person::age>().execute();
+    ASSERT_TRUE(avg.has_value());
+    for (const auto& [ye, v] : avg.value()) {
+        if (auto it = exp_avg.find(ye); it != exp_avg.end()) {
+            EXPECT_NEAR(v, it->second, 0.01);
+        }
+    }
+
+    qs.reset();
+    auto mn = qs.template group_by<^^Person::years_experience>().template min<^^Person::age>().execute();
+    ASSERT_TRUE(mn.has_value());
+    for (const auto& [ye, v] : mn.value()) {
+        if (auto it = exp_min.find(ye); it != exp_min.end()) {
+            EXPECT_NEAR(v, it->second, 0.01);
+        }
+    }
+
+    qs.reset();
+    auto mx = qs.template group_by<^^Person::years_experience>().template max<^^Person::age>().execute();
+    ASSERT_TRUE(mx.has_value());
+    for (const auto& [ye, v] : mx.value()) {
+        if (auto it = exp_max.find(ye); it != exp_max.end()) {
+            EXPECT_NEAR(v, it->second, 0.01);
+        }
+    }
+}
+
+TYPED_TEST(AggregateTest, GroupByWithAllAggregateTypes) {
+    this->insert_test_data();
+    verify_group_by_counts<TypeParam>(*this->qs);
+    verify_group_by_sum_avg_min_max<TypeParam>(*this->qs);
+
+    this->qs->reset();
+    auto filtered_sum = this->qs->where(storm::orm::where::field<^^Person::years_experience>() == 5)
+                                .template group_by<^^Person::years_experience>()
+                                .template sum<^^Person::age>()
+                                .execute();
+    ASSERT_TRUE(filtered_sum.has_value()) << "WHERE + GROUP BY + SUM failed";
+    EXPECT_EQ(filtered_sum.value().size(), 1);
+    const auto& [years_exp, sum_age] = *filtered_sum.value().begin();
+    EXPECT_EQ(years_exp, 5);
+    EXPECT_EQ(sum_age, 268);
+}
+
+// =============================================================================
+// GROUP BY with ORDER BY, LIMIT, OFFSET Tests
+// =============================================================================
+
+TYPED_TEST(AggregateTest, GroupByWithOrderBy) {
+    this->insert_test_data();
+
+    auto result = this->qs->template order_by<^^Person::years_experience>()
+                          .template group_by<^^Person::years_experience>()
+                          .count()
+                          .execute();
+    ASSERT_TRUE(result.has_value()) << "GROUP BY + ORDER BY failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 3);
+
+    std::vector<int>     expected_order  = {5, 10, 15};
+    std::vector<int64_t> expected_counts = {10, 8, 7};
+    size_t               idx             = 0; // NOLINT(misc-const-correctness) - modified in loop
+    for (const auto& [years, count_val] : result.value()) {
+        EXPECT_EQ(years, expected_order[idx]) << "Unexpected order at index " << idx;
+        EXPECT_EQ(count_val, expected_counts[idx]) << "Unexpected count at index " << idx;
+        idx++;
+    }
+}
+
+TYPED_TEST(AggregateTest, GroupByWithOrderByDesc) {
+    this->insert_test_data();
+
+    auto result = this->qs->template order_by<^^Person::years_experience, false>()
+                          .template group_by<^^Person::years_experience>()
+                          .count()
+                          .execute();
+    ASSERT_TRUE(result.has_value()) << "GROUP BY + ORDER BY DESC failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 3);
+
+    std::vector<int> expected_order = {15, 10, 5};
+    size_t           idx            = 0; // NOLINT(misc-const-correctness) - modified in loop
+    for (const auto& [years, count_val] : result.value()) {
+        EXPECT_EQ(years, expected_order[idx]) << "Unexpected order at index " << idx;
+        idx++;
+    }
+}
+
+TYPED_TEST(AggregateTest, GroupByWithLimitOffset) {
+    this->insert_test_data();
+
+    auto result = this->qs->template order_by<^^Person::years_experience>()
+                          .limit(2)
+                          .offset(1)
+                          .template group_by<^^Person::years_experience>()
+                          .count()
+                          .execute();
+    ASSERT_TRUE(result.has_value()) << "GROUP BY + LIMIT + OFFSET failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 2);
+
+    std::vector<int> expected = {10, 15};
+    size_t           idx      = 0; // NOLINT(misc-const-correctness) - modified in loop
+    for (const auto& [years, count_val] : result.value()) {
+        EXPECT_EQ(years, expected[idx]) << "Expected years_experience=" << expected[idx] << " at index " << idx;
+        idx++;
+    }
+}
+
+TYPED_TEST(AggregateTest, GroupByMultipleFields) {
+    this->insert_test_data();
+
+    auto result = this->qs->template group_by<^^Person::age, ^^Person::years_experience>().count().execute();
+    ASSERT_TRUE(result.has_value()) << "Multi-field GROUP BY failed: " << result.error().message();
+
+    int64_t total = 0; // NOLINT(misc-const-correctness) - modified in loop
+    for (const auto& [age, years_exp, count_val] : result.value()) {
+        total += count_val;
+    }
+    EXPECT_EQ(total, 25);
+
+    for (const auto& [age, years_exp, count_val] : result.value()) {
+        if (age == 25 && years_exp == 5) {
+            EXPECT_EQ(count_val, 3) << "Group (25, 5) should have 3 people";
+        }
+    }
+}
+
+TYPED_TEST(AggregateTest, GroupByMultipleFieldsWithOrderByLimit) {
+    ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
+            {.name = "Alice", .age = 25, .salary = 50000.0, .years_experience = 5},
+            {.name = "Bob", .age = 25, .salary = 60000.0, .years_experience = 5},
+            {.name = "Charlie", .age = 25, .salary = 70000.0, .years_experience = 10},
+            {.name = "Dave", .age = 30, .salary = 80000.0, .years_experience = 5},
+            {.name = "Eve", .age = 30, .salary = 90000.0, .years_experience = 10},
+    })));
+
+    auto result = this->qs->template order_by<^^Person::age>()
+                          .limit(2)
+                          .template group_by<^^Person::age, ^^Person::years_experience>()
+                          .count()
+                          .execute();
+    ASSERT_TRUE(result.has_value()) << "Multi-field GROUP BY + ORDER BY + LIMIT failed";
+    EXPECT_EQ(result.value().size(), 2) << "Should return only 2 groups due to LIMIT";
+}
+
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
