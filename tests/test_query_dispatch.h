@@ -5,38 +5,21 @@
  * @brief Compile-time field dispatch and WHERE clause builder for YAML-driven tests.
  *
  * Provides:
- * - dispatch_field<Model>(name) — resolves a runtime string to a consteval std::meta::info
+ * - dispatch_field<Model>(name) — via storm::orm::query_builder (shared with bench)
  * - build_where_expr<FieldInfo>(op, values...) — builds the ORM expression for a given op string
  *
- * These are adapted from benchmarks/operations/select_query_base.hpp so that the
- * YAML-driven unit test pipeline can reuse the same compile-time dispatch mechanism.
- *
- * Include AFTER `import storm;` (requires storm::orm::where::field to be in scope).
- *
- * Usage:
- *   constexpr auto fi = dispatch_field<Person>("age");
- *   auto expr = build_where_expr<fi>(">=", 30);
- *   qs.where(expr);
+ * Include AFTER `import storm;` and after query_builder.hpp has been included.
  */
 
 #include <meta>
 #include <string_view>
 
+#include "src/orm/query_builder.hpp" // NOLINT(misc-header-include-cycle)
+
 namespace storm::test {
 
-// ============================================================================
-// Field dispatcher — resolves a field name string to its consteval meta::info
-// ============================================================================
-
-template <typename Model> consteval auto dispatch_field(std::string_view field_name) -> std::meta::info {
-    for (std::meta::info member :
-         std::meta::nonstatic_data_members_of(^^Model, std::meta::access_context::unchecked())) {
-        if (std::meta::identifier_of(member) == field_name) {
-            return member;
-        }
-    }
-    throw std::invalid_argument("dispatch_field: field not found");
-}
+// Re-use the shared field dispatcher — no duplication with bench side.
+using storm::orm::query_builder::dispatch_field;
 
 // ============================================================================
 // WHERE expression builder — dispatches on operator string at compile time
