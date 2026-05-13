@@ -383,16 +383,17 @@ namespace storm::orm::query_builder {
                     overlap};
         }
 
-        static auto build_setop(auto& qs) {
-            constexpr auto  thr     = setop_thresholds();
-            auto            qs_left = qs.where(field<^^Model::age>() < thr.left);
-            QuerySet<Model> qs_right_base;
-            auto            qs_right = thr.overlap ? qs_right_base.where(field<^^Model::age>() > thr.right)
-                                                   : qs_right_base.where(field<^^Model::age>() >= thr.right);
-            constexpr auto  method   = resolve_setop();
-            auto            builder  = qs_left.[:method:](qs_right);
-            builder                  = apply_order_by(std::move(builder));
-            builder                  = apply_limit(std::move(builder));
+        static auto build_setop(auto& /*qs*/) {
+            constexpr auto            thr = setop_thresholds();
+            QuerySet<Model, ConnType> qs_left_base;
+            auto                      qs_left = qs_left_base.where(field<^^Model::age>() < thr.left);
+            QuerySet<Model, ConnType> qs_right_base;
+            auto                      qs_right = thr.overlap ? qs_right_base.where(field<^^Model::age>() > thr.right)
+                                                             : qs_right_base.where(field<^^Model::age>() >= thr.right);
+            constexpr auto            method   = resolve_setop();
+            auto                      builder  = qs_left.[:method:](qs_right);
+            builder                            = apply_order_by(std::move(builder));
+            builder                            = apply_limit(std::move(builder));
             return builder;
         }
 
