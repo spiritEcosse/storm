@@ -57,6 +57,11 @@ jobs:
             build_dir: debug
             postgres: 16
 
+          # Release build — catches bench-only release bugs
+          - preset: ninja-release
+            build_dir: release
+            postgres: 17
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4

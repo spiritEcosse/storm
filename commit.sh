@@ -36,26 +36,17 @@ print_header() {
     return 0
 }
 
-run_step() {
+_step_begin() {
     local name="$1"
-    shift
     local step_num=${#STEP_NAMES[@]}
     step_num=$((step_num + 1))
     STEP_NAMES+=("$name")
-
     print_header "$step_num" "$TOTAL_STEPS" "$name"
+}
 
-    local start=$SECONDS
-    local output
-    local exit_code
-
-    # Run command, capture output and exit code
-    output=$("$@" 2>&1)
-    exit_code=$?
-
-    local elapsed=$(( SECONDS - start ))
+_step_finish() {
+    local name="$1" exit_code="$2" elapsed="$3" error_output="$4"
     STEP_TIMES+=("${elapsed}s")
-
     if [[ $exit_code -eq 0 ]]; then
         STEP_RESULTS+=("pass")
         STEP_ERRORS+=("")
@@ -63,48 +54,38 @@ run_step() {
         return 0
     else
         STEP_RESULTS+=("FAIL")
-        STEP_ERRORS+=("$output")
+        STEP_ERRORS+=("$error_output")
         FAILED=true
         echo -e "${RED}✗ $name FAILED${RESET} ${DIM}(${elapsed}s)${RESET}"
         return 1
     fi
 }
 
+run_step() {
+    local name="$1"
+    shift
+    _step_begin "$name"
+    local start=$SECONDS
+    local output
+    output=$("$@" 2>&1)
+    local exit_code=$?
+    _step_finish "$name" "$exit_code" "$(( SECONDS - start ))" "$output"
+}
+
 # Show full output live (for long-running steps like tests/coverage)
 run_step_live() {
     local name="$1"
     shift
-    local step_num=${#STEP_NAMES[@]}
-    step_num=$((step_num + 1))
-    STEP_NAMES+=("$name")
-
-    print_header "$step_num" "$TOTAL_STEPS" "$name"
-
+    _step_begin "$name"
     local start=$SECONDS
     local tmpfile
     tmpfile=$(mktemp)
-
-    # Run command with live output, also capture to file
     "$@" 2>&1 | tee "$tmpfile"
     local exit_code=${PIPESTATUS[0]}
-
-    local elapsed=$(( SECONDS - start ))
-    STEP_TIMES+=("${elapsed}s")
-
-    if [[ $exit_code -eq 0 ]]; then
-        STEP_RESULTS+=("pass")
-        STEP_ERRORS+=("")
-        echo -e "${GREEN}✓ $name passed${RESET} ${DIM}(${elapsed}s)${RESET}"
-        rm -f "$tmpfile"
-        return 0
-    else
-        STEP_RESULTS+=("FAIL")
-        STEP_ERRORS+=("$(cat "$tmpfile")")
-        FAILED=true
-        echo -e "${RED}✗ $name FAILED${RESET} ${DIM}(${elapsed}s)${RESET}"
-        rm -f "$tmpfile"
-        return 1
-    fi
+    local content
+    content=$(cat "$tmpfile")
+    rm -f "$tmpfile"
+    _step_finish "$name" "$exit_code" "$(( SECONDS - start ))" "$content"
 }
 
 print_summary() {
@@ -169,12 +150,14 @@ if [[ -n "$STAGED_FILES" ]]; then
     HAS_TEST_CHANGES=false
     HAS_CPP_CHANGES=false
     HAS_CMAKE_CHANGES=false
+    HAS_BENCH_CHANGES=false
 
     while IFS= read -r file; do
         [[ "$file" == src/* ]] && HAS_SRC_CHANGES=true
         [[ "$file" == tests/* ]] && HAS_TEST_CHANGES=true
         [[ "$file" =~ \.(cpp|cppm|h|hpp)$ ]] && HAS_CPP_CHANGES=true
         [[ "$file" =~ (CMakeLists\.txt|\.cmake)$ ]] && HAS_CMAKE_CHANGES=true
+        [[ "$file" == benchmarks/* ]] && HAS_BENCH_CHANGES=true
     done <<< "$STAGED_FILES"
 
     if [[ "$HAS_CPP_CHANGES" == false && "$HAS_CMAKE_CHANGES" == false ]]; then
@@ -194,11 +177,17 @@ if [[ -n "$STAGED_FILES" ]]; then
     fi
 fi
 
+RUN_BENCH_RELEASE=false
+if [[ "$HAS_BENCH_CHANGES" == true && "$HAS_CPP_CHANGES" == true ]]; then
+    RUN_BENCH_RELEASE=true
+fi
+
 # --- Count total steps ---
 TOTAL_STEPS=0
 [[ "$RUN_FORMAT" == true ]] && ((TOTAL_STEPS++))
 [[ "$RUN_CMAKE_FORMAT" == true ]] && ((TOTAL_STEPS++))
 [[ "$RUN_TIDY" == true ]] && ((TOTAL_STEPS++))
+[[ "$RUN_BENCH_RELEASE" == true ]] && ((TOTAL_STEPS++))
 [[ "$RUN_TESTS" == true ]] && ((TOTAL_STEPS++))
 [[ "$RUN_COVERAGE" == true ]] && ((TOTAL_STEPS++))
 
@@ -233,6 +222,15 @@ fi
 # --- Re-stage files modified by format/tidy ---
 if [[ "$RUN_FORMAT" == true || "$RUN_TIDY" == true ]]; then
     git add -u
+fi
+
+# --- Step 3b: bench release build ---
+if [[ "$RUN_BENCH_RELEASE" == true ]]; then
+    if [[ ! -f "build/release/build.ninja" ]]; then
+        cmake --preset ninja-release > /dev/null 2>&1
+    fi
+    run_step "release build" \
+        cmake --build --preset ninja-release
 fi
 
 # --- Step 4: tests ---
