@@ -22,11 +22,9 @@ export module storm_benchmark_base;
 
 import storm;
 
-import <cstddef>;
 import <format>;
 import <iostream>;
 import <meta>;
-import <string_view>;
 import <vector>;
 
 export namespace storm::benchmark {
@@ -38,53 +36,6 @@ export namespace storm::benchmark {
         auto& conn = storm::QuerySet<Model>::get_default_connection();
         return conn->get();
     }
-
-    // ========================================================================
-    // OperationDispatcher: Compile-time binding of operation to method
-    // ========================================================================
-    enum class OperationType { Insert, UpdatePK, Delete, Select };
-
-    template <OperationType Op> struct OperationDispatcher;
-
-    // INSERT operation specialization
-    template <> struct OperationDispatcher<OperationType::Insert> {
-        static constexpr auto name() -> std::string_view {
-            return "INSERT";
-        }
-
-        template <typename QS, typename Data> static auto call(QS& qs, const Data& data) {
-            return qs.insert(data);
-        }
-    };
-
-    // UPDATE operation specialization
-    template <> struct OperationDispatcher<OperationType::UpdatePK> {
-        static constexpr auto name() -> std::string_view {
-            return "UPDATE by PK";
-        }
-
-        template <typename QS, typename Data> static auto call(QS& qs, const Data& data) {
-            return qs.update(data);
-        }
-    };
-
-    // DELETE operation specialization
-    template <> struct OperationDispatcher<OperationType::Delete> {
-        static constexpr auto name() -> std::string_view {
-            return "DELETE";
-        }
-
-        template <typename QS, typename Data> static auto call(QS& qs, const Data& data) {
-            return qs.erase(data);
-        }
-    };
-
-    // SELECT operation specialization
-    template <> struct OperationDispatcher<OperationType::Select> {
-        static constexpr auto name() -> std::string_view {
-            return "SELECT WHERE";
-        }
-    };
 
     // CRTP base class for data-driven benchmarks (Insert, UpdateByPK)
     // BatchSize is now a runtime parameter for fair comparison with Storm ORM
@@ -124,16 +75,6 @@ export namespace storm::benchmark {
                     .salary    = 30000.0 + (index * 1000.0),
                     .is_active = (index % 2 == 0)
             };
-        }
-
-        // Execute statement, reset, return success count
-        static auto step_and_reset(sqlite3_stmt* stmt, [[maybe_unused]] sqlite3* db, int rows) -> int {
-            if (sqlite3_step(stmt) == SQLITE_DONE) {
-                sqlite3_reset(stmt);
-                return rows;
-            }
-            sqlite3_reset(stmt);
-            return 0;
         }
 
       public:
@@ -180,42 +121,12 @@ export namespace storm::benchmark {
             const auto& selected = select_result.value();
             size_t      i        = 0;
             for (const auto& row : selected) {
-                if (i >= data().size())
+                if (i >= data().size()) {
                     break;
+                }
                 data()[i].id = row.id;
                 i++;
             }
-        }
-
-        // ====================================================================
-        // Unified print_info() with compile-time operation name
-        // ====================================================================
-        template <OperationType Op> auto print_info_unified() const -> void {
-            constexpr std::string_view op_name = OperationDispatcher<Op>::name();
-            if (batch_size_ == 1)
-                std::cout << "Operation: " << op_name << " (single row)\n";
-            else
-                std::cout << "Operation: " << op_name << " (batch, " << batch_size_ << " rows per operation)\n";
-        }
-
-        // ====================================================================
-        // Unified execute() with compile-time operation dispatch
-        // Runtime batch size check (same as Storm ORM for fair comparison)
-        // ====================================================================
-        template <OperationType Op> auto execute_unified(int iterations) -> int {
-            int total = 0;
-            if (batch_size_ == 1) {
-                for (int i = 0; i < iterations; i++) {
-                    OperationDispatcher<Op>::call(qs(), data()[i]).execute();
-                    total++;
-                }
-            } else {
-                for (int i = 0; i < iterations; i++) {
-                    OperationDispatcher<Op>::call(qs(), data()).execute();
-                    total += data().size();
-                }
-            }
-            return total;
         }
     };
 
