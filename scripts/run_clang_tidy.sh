@@ -271,6 +271,13 @@ elif [[ $UNEXPECTED_CRASHES -gt 0 ]]; then
     echo "❌ clang-tidy crashed on unexpected files (update is_cpp26_module_file if valid)"
     exit 1
 elif [[ $WARNINGS -gt 0 ]]; then
+    if [[ -n "$FIX_FLAG" ]]; then
+        # Fixes were applied — re-stage and re-run check-only to verify all warnings are gone.
+        git add -u 2>/dev/null || true
+        echo ""
+        echo "🔄 Re-checking after auto-fix..."
+        exec "$0"
+    fi
     echo "❌ clang-tidy found $WARNINGS warning(s) - fix before committing"
     echo "   Run with --fix to auto-fix some issues, or update .clang-tidy to exclude checks"
     exit 1
