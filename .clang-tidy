@@ -25,11 +25,14 @@
 #   buffer sizes (32, 64), base-10 parsing constants, and ConstexprString capacity tuning.
 # - bugprone-easily-swappable-parameters: noisy on (limit, offset) / (left, right) parameter pairs
 #   where adjacency is the natural API.
+# - bugprone-branch-clone: PG vs SQLite type-dispatch in schema.cppm and utilities.cppm emits identical
+#   SQL fragments for different cases; the duplication is the desired form of the dispatch table.
 
 Checks: >
   -*,
   bugprone-*,
   -bugprone-argument-comment,
+  -bugprone-branch-clone,
   -bugprone-easily-swappable-parameters,
   -bugprone-unchecked-optional-access,
   cert-*,
@@ -73,10 +76,12 @@ CheckOptions:
   # jw=join_wrapper, we=where_expr, lv=limit_value, ov=offset_value, ob=order_by — used as
   # parameters of SelectStatement::query()/query_first()/query_get() (issue #262).
   # ch=char, hi/lo=hex nibble halves (postgresql.cppm hex_digit + blob extract).
+  # p=parameter/pointer, pg=PostgreSQL flag, sv=string_view, s=string,
+  # tp=time_point, dp=day_point, h=hours, v=value (utilities/aggregate/pool helpers).
   - key: readability-identifier-length.IgnoredVariableNames
-    value: '^(rc|db|it|op|id|pk|qs|l|r|c|m|i|j|k|n|s[0-9]+|ch|hi|lo)$'
+    value: '^(rc|db|it|op|id|pk|qs|l|r|c|m|i|j|k|n|s[0-9]+|ch|hi|lo|s|v|h|dp|tp|p|pg)$'
   - key: readability-identifier-length.IgnoredParameterNames
-    value: '^(rc|db|it|op|id|pk|qs|l|r|c|m|i|j|k|n|jw|we|lv|ov|ob|ch)$'
+    value: '^(rc|db|it|op|id|pk|qs|l|r|c|m|i|j|k|n|jw|we|lv|ov|ob|ch|p|pg|sv|s|tp|dp|v|h)$'
   - key: readability-identifier-length.IgnoredLoopCounterNames
     value: '^[ijkn]$'
   - key: readability-identifier-length.MinimumLoopCounterNameLength

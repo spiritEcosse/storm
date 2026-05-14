@@ -1,5 +1,9 @@
 module;
 
+// LINT-EXCLUDE-FILE: file-size, duplicate
+// File-size and duplicate-block exclusions are tracked under storm issue #264
+// (will be removed once the module is split per the #264 refactor plan).
+
 #include <libpq-fe.h>
 
 export module storm_db_postgresql;

@@ -1,5 +1,9 @@
 module;
 
+// LINT-EXCLUDE-FILE: file-size, duplicate, complexity
+// Pre-existing structural debt tracked under storm issue #264.
+// Removed once #264's refactor phases land.
+
 #include <meta>
 
 export module storm_orm_where;
@@ -387,12 +391,12 @@ export namespace storm::orm::where {
             );
         }
 
-        auto operator==(std::nullopt_t) const -> Expr
+        auto operator==(std::nullopt_t /*unused*/) const -> Expr
             requires NullableField<FieldType>
         {
             return is_null();
         }
-        auto operator!=(std::nullopt_t) const -> Expr
+        auto operator!=(std::nullopt_t /*unused*/) const -> Expr
             requires NullableField<FieldType>
         {
             return is_not_null();
@@ -514,12 +518,12 @@ export namespace storm::orm::where {
             );
         }
 
-        auto operator==(std::nullopt_t) const -> Expr
+        auto operator==(std::nullopt_t /*unused*/) const -> Expr
             requires NullableField<FieldType>
         {
             return is_null();
         }
-        auto operator!=(std::nullopt_t) const -> Expr
+        auto operator!=(std::nullopt_t /*unused*/) const -> Expr
             requires NullableField<FieldType>
         {
             return is_not_null();

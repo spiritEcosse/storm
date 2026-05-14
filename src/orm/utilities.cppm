@@ -1,5 +1,8 @@
 module;
 
+// LINT-EXCLUDE-FILE: complexity, length
+// Pre-existing structural debt tracked under storm issue #264.
+
 #include <meta>
 #include <uuid.h>
 
@@ -173,8 +176,8 @@ export namespace storm::orm::utilities {
 
         inline auto parse_int(std::string_view sv) -> int {
             int val = 0;
-            for (char c : sv) {
-                val = val * 10 + (c - '0');
+            for (char const c : sv) {
+                val = (val * 10) + (c - '0');
             }
             return val;
         }
@@ -232,7 +235,12 @@ export namespace storm::orm::utilities {
     } // namespace chrono_conv
 
     // Generic parameter binding - unified implementation for WHERE and CRUD statements
-    // No dependency on entity type T - pure type dispatch based on value type
+    // No dependency on entity type T - pure type dispatch based on value type.
+    // NOLINTBEGIN(bugprone-exception-escape, readability-function-cognitive-complexity)
+    // - exception-escape: chrono conversions / vector::resize can throw bad_alloc on the rare
+    //   path; accepted as terminate-on-OOM in the bind hot path (issue #262).
+    // - cognitive-complexity: parameter binding fans out over every supported field type — the
+    //   wide if-constexpr ladder is the dispatch table.
     template <typename StmtType, typename ErrorType>
     [[nodiscard]] auto bind_parameter_value(StmtType& stmt, int param_index, const auto& value) noexcept // NOSONAR
             -> std::expected<void, ErrorType> {
@@ -348,6 +356,7 @@ export namespace storm::orm::utilities {
             return std::unexpected(ErrorType{});
         }
     }
+    // NOLINTEND(bugprone-exception-escape, readability-function-cognitive-complexity)
 
     // ============================================================================
     // SQL String Building Utilities

@@ -1,5 +1,8 @@
 module;
 
+// LINT-EXCLUDE-FILE: duplicate
+// Pre-existing structural debt tracked under storm issue #264.
+
 #include <meta>
 #include <cassert>
 

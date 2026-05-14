@@ -1,5 +1,8 @@
 module;
 
+// LINT-EXCLUDE-FILE: duplicate
+// Pre-existing structural debt tracked under storm issue #264.
+
 #include <meta>
 #include <utility>
 #include <plf_hive/plf_hive.h>
@@ -115,8 +118,8 @@ export namespace storm::orm::statements {
         // Compile-time field list with "t1." table alias prefix for JOIN queries
         template <size_t... Is>
         static consteval auto build_join_field_list_constexpr(std::index_sequence<Is...> /*unused*/) {
-            constexpr size_t total_size =
-                    calculate_field_list_size(std::make_index_sequence<NumFields>{}) + NumFields * 3; // "t1." per field
+            constexpr size_t total_size = calculate_field_list_size(std::make_index_sequence<NumFields>{}) +
+                                          (NumFields * 3); // "t1." per field
             ConstexprString<total_size + 10> result;
             auto                             append_field = [&result]<size_t I>() {
                 if constexpr (I > 0) {

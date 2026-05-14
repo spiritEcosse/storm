@@ -1,5 +1,9 @@
 module;
 
+// LINT-EXCLUDE-FILE: duplicate, complexity
+// Pre-existing structural debt tracked under storm issue #264.
+// Removed once #264's refactor phases land.
+
 #include <meta>
 
 export module storm_orm_statements_update;

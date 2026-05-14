@@ -1,5 +1,8 @@
 module;
 
+// LINT-EXCLUDE-FILE: duplicate
+// Pre-existing structural debt tracked under storm issue #264.
+
 #include <meta>
 #include <plf_hive/plf_hive.h>
 
@@ -93,7 +96,7 @@ export namespace storm::orm::statements {
         }
 
         [[nodiscard]] auto execute() -> std::expected<plf::hive<T>, Error> {
-            if (!cached_stmt_) {
+            if (cached_stmt_ == nullptr) {
                 auto prepare_result = prepare_statement();
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
@@ -115,7 +118,7 @@ export namespace storm::orm::statements {
         }
 
         [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
-            if (!cached_stmt_) {
+            if (cached_stmt_ == nullptr) {
                 auto prepare_result = prepare_statement();
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
