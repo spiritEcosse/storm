@@ -4,7 +4,6 @@ module;
 
 export module storm_db_postgresql;
 import storm_db_concept;
-import <algorithm>;
 import <array>;
 import <expected>;
 import <string_view>;
@@ -186,8 +185,8 @@ export namespace storm::db::postgresql {
         // rebuild_param_ptrs uses vector ops that can throw bad_alloc — accepted as
         // terminate-on-OOM in hot paths (issue #262 audit).
         template <typename = void>
-        [[nodiscard]] __attribute__((always_inline)) auto execute() noexcept
-                -> std::expected<void, Error> { // NOLINT(bugprone-exception-escape)
+        [[nodiscard]] __attribute__((always_inline)) auto execute() noexcept // NOLINT(bugprone-exception-escape)
+                -> std::expected<void, Error> {
             clear_result();
 
             // Rebuild param_ptrs_ from param_values_ to ensure pointers are valid
@@ -390,8 +389,10 @@ export namespace storm::db::postgresql {
         // blob_buffer_ resize can throw bad_alloc; accepted as terminate-on-OOM
         // during BYTEA hex decode (issue #262 audit).
         template <typename = void>
-        [[nodiscard]] __attribute__((always_inline)) auto extract_blob_ptr(int col_index) noexcept -> const
-                void* { // NOLINT(bugprone-exception-escape) NOSONAR(cpp:S5008) - PostgreSQL BLOB API
+        [[nodiscard]] __attribute__((always_inline)) auto extract_blob_ptr(
+                int col_index
+        ) noexcept // NOLINT(bugprone-exception-escape) NOSONAR(cpp:S5008) - PostgreSQL BLOB API
+                -> const void* {
             // PG text-mode returns BYTEA as hex string: "\xDEADBEEF"
             // Decode hex to raw binary bytes
             blob_decoded_col_ = col_index;
@@ -473,7 +474,10 @@ export namespace storm::db::postgresql {
                 param_lengths_.resize(idx, 0);
                 param_formats_.resize(idx, 0); // Text format by default
             }
-            param_count_ = std::max(param_count_, index);
+            if (index >
+                param_count_) { // NOLINT(readability-use-std-min-max) — avoid <algorithm> import; see issue #262 (clang-scan-deps SIGSEGV on atomic_ref.h via algorithm).
+                param_count_ = index;
+            }
         }
 
         auto update_param_ptrs(int index) noexcept -> void {
