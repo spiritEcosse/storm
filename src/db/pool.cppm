@@ -1,5 +1,8 @@
 module;
 
+// LINT-EXCLUDE-FILE: duplicate, complexity, length
+// Pre-existing structural debt tracked under storm issue #264.
+
 #include <condition_variable>
 #include <mutex>
 
@@ -171,7 +174,10 @@ export namespace storm::db {
                 shutdown_ = true;
                 cv_.notify_all();
 
-                // Wait for all connections to be returned
+                // Wait for all connections to be returned.
+                // NOLINTBEGIN(readability-use-anyofallof) — keep explicit loop to avoid
+                // `import <algorithm>`; clang-p2996 clang-scan-deps SIGSEGVs on atomic_ref.h
+                // via <algorithm> in ninja-release (issue #262).
                 cv_.wait(lock, [this] {
                     for (const auto& entry : entries_) {
                         if (entry.in_use) {
@@ -180,6 +186,7 @@ export namespace storm::db {
                     }
                     return true;
                 });
+                // NOLINTEND(readability-use-anyofallof)
 
                 entries_.clear();
             }

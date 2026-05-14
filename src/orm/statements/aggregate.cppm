@@ -1,5 +1,8 @@
 module;
 
+// LINT-EXCLUDE-FILE: file-size, duplicate
+// Pre-existing structural debt tracked under storm issue #264.
+
 #include <meta>
 #include <plf_hive/plf_hive.h>
 
@@ -559,8 +562,8 @@ export namespace storm::orm::statements {
                 // Persists across AggregateStatement instances to avoid
                 // hash-map lookup in prepare_cached() on every call.
                 // Safe because connections are thread-local (project design invariant).
-                static thread_local Statement* tl_stmt = nullptr;
-                static thread_local void*      tl_conn = nullptr;
+                static thread_local Statement*  tl_stmt = nullptr;
+                static thread_local void const* tl_conn = nullptr;
 
                 if (tl_conn == static_cast<void*>(conn_.get()) && tl_stmt != nullptr) [[likely]] {
                     // Fast path: reuse cached pointer, just reset

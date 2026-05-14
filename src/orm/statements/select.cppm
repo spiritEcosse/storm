@@ -1,5 +1,9 @@
 module;
 
+// LINT-EXCLUDE-FILE: file-size, duplicate, complexity, length
+// Pre-existing structural debt tracked under storm issue #264.
+// Removed once #264's refactor phases land (split + duplicate extraction).
+
 #include <meta>
 #include <plf_hive/plf_hive.h>
 
@@ -315,13 +319,15 @@ export namespace storm::orm::statements {
             });
         }
 
-        // first() with modifiers (WHERE/JOIN/ORDER BY/OFFSET) — applies LIMIT 1
+        // first() with modifiers (WHERE/JOIN/ORDER BY/OFFSET) — applies LIMIT 1.
+        // The `limit` parameter is accepted for API symmetry with execute()/execute_get()
+        // and is intentionally overridden to 1; `[[maybe_unused]]` marks it as such.
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_one(
-                std::optional<JoinStatementWrapper>     join_wrapper     = std::nullopt,
-                const orm::where::ExpressionVariantPtr& where_expr       = nullptr,
-                const std::optional<int>&               limit            = std::nullopt,
-                const std::optional<int>&               offset           = std::nullopt,
-                const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt
+                std::optional<JoinStatementWrapper>        join_wrapper     = std::nullopt,
+                const orm::where::ExpressionVariantPtr&    where_expr       = nullptr,
+                [[maybe_unused]] const std::optional<int>& limit            = std::nullopt,
+                const std::optional<int>&                  offset           = std::nullopt,
+                const std::optional<OrderByWrapper>&       order_by_wrapper = std::nullopt
         ) -> std::expected<std::optional<T>, Error> {
             std::optional<int> const limit_one = 1;
             auto prepare_result = prepare_statement(join_wrapper, where_expr, limit_one, offset, order_by_wrapper);
@@ -352,13 +358,13 @@ export namespace storm::orm::statements {
             });
         }
 
-        // get() with modifiers (WHERE/JOIN/ORDER BY/OFFSET) — applies LIMIT 2
+        // get() with modifiers — applies LIMIT 2 (limit parameter ignored, see execute_one).
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_get(
-                std::optional<JoinStatementWrapper>     join_wrapper     = std::nullopt,
-                const orm::where::ExpressionVariantPtr& where_expr       = nullptr,
-                const std::optional<int>&               limit            = std::nullopt,
-                const std::optional<int>&               offset           = std::nullopt,
-                const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt
+                std::optional<JoinStatementWrapper>        join_wrapper     = std::nullopt,
+                const orm::where::ExpressionVariantPtr&    where_expr       = nullptr,
+                [[maybe_unused]] const std::optional<int>& limit            = std::nullopt,
+                const std::optional<int>&                  offset           = std::nullopt,
+                const std::optional<OrderByWrapper>&       order_by_wrapper = std::nullopt
         ) -> std::expected<T, Error> {
             std::optional<int> const limit_two = 2;
             auto prepare_result = prepare_statement(join_wrapper, where_expr, limit_two, offset, order_by_wrapper);

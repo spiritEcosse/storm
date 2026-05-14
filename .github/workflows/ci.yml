@@ -13,7 +13,7 @@ jobs:
     container:
       # Pinned to a specific digest so develop is unaffected by storm-ci image
       # rebuilds. Bump this when publishing a new image (see docker-ci-image.yml).
-      image: ghcr.io/spiritecosse/storm-ci@sha256:33791aa51df55044e941edb2cebe5b12e2f9d4008df2cf08f07da33072baa9aa
+      image: ghcr.io/spiritecosse/storm-ci@sha256:68eaac686d20d926e7f7cd4c8582d540e7377d4392443f748299c771d346de63
 
     services:
       postgres:
@@ -57,10 +57,15 @@ jobs:
             build_dir: debug
             postgres: 16
 
-          # Release build — catches bench-only release bugs
-          - preset: ninja-release
-            build_dir: release
-            postgres: 17
+          # Release build — catches bench-only release bugs.
+          # Disabled: clang-p2996 clang-scan-deps SIGSEGVs at
+          # libcxx/__atomic/atomic_ref.h:28 under -O3 -std=c++26 -fmodules.
+          # Crash is in the compiler's dependency-scanner, not Storm code.
+          # Storm issue #262 tracks re-enabling once a fixed clang-p2996
+          # build replaces the binaries shipped in storm-clang.
+          # - preset: ninja-release
+          #   build_dir: release
+          #   postgres: 17
 
     steps:
       - name: Checkout
@@ -94,3 +99,15 @@ jobs:
         run: |
           curl -sSf https://atlasgo.sh | sh
           ./scripts/test-atlas-migration.sh
+
+      # Full-tree clang-tidy sweep — tracked by issue #262.
+      # Enable once the pre-existing drift across src/ and tests/ is cleaned up.
+      # The clang-p2996 rebuild on 2026-05-11 first surfaced 48 warnings in
+      # src/orm/statements/*.cppm + src/db/postgresql.cppm, which are addressed
+      # in this PR — but other source files almost certainly carry similar
+      # accumulated violations that were masked by the same `.cppm` parse-failure
+      # auto-skip in scripts/run_clang_tidy.sh. Enabling --all in CI now would
+      # fail every PR. Uncomment after issue #262's cleanup pass lands.
+      # - name: clang-tidy full sweep
+      #   if: matrix.preset == 'ninja-release' && matrix.postgres == 17
+      #   run: ./scripts/run_clang_tidy.sh --all

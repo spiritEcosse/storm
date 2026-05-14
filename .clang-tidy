@@ -16,17 +16,32 @@
 # Note: cppcoreguidelines-init-variables has targeted NOLINT in statement files (constexpr false positives)
 # Note: misc-const-correctness has targeted NOLINT in join.cppm (fold expression false positives)
 # Note: cppcoreguidelines-missing-std-forward has targeted NOLINT in where.cppm (std::forward in braced initializers)
+#
+# ORM-specific Exclusions (issue #262 — added after clang-p2996 rebuild surfaced 48 pre-existing warnings):
+# - cppcoreguidelines-avoid-const-or-ref-data-members: Storm's INSERT/UPDATE/ERASE statement classes
+#   return short-lived dispatcher functors (struct SingleQuery { Stmt& stmt; const T& obj; ...}) that
+#   intentionally hold references. The non-assignability the check warns about is the desired property.
+# - cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers: chronically noisy on legitimate
+#   buffer sizes (32, 64), base-10 parsing constants, and ConstexprString capacity tuning.
+# - bugprone-easily-swappable-parameters: noisy on (limit, offset) / (left, right) parameter pairs
+#   where adjacency is the natural API.
+# - bugprone-branch-clone: PG vs SQLite type-dispatch in schema.cppm and utilities.cppm emits identical
+#   SQL fragments for different cases; the duplication is the desired form of the dispatch table.
 
 Checks: >
   -*,
   bugprone-*,
   -bugprone-argument-comment,
+  -bugprone-branch-clone,
+  -bugprone-easily-swappable-parameters,
   -bugprone-unchecked-optional-access,
   cert-*,
   -cert-err33-c,
   -cert-err58-cpp,
   concurrency-*,
   cppcoreguidelines-*,
+  -cppcoreguidelines-avoid-const-or-ref-data-members,
+  -cppcoreguidelines-avoid-magic-numbers,
   -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
   -cppcoreguidelines-pro-bounds-constant-array-index,
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
@@ -36,7 +51,8 @@ Checks: >
   -misc-include-cleaner,
   performance-*,
   -performance-enum-size,
-  readability-*
+  readability-*,
+  -readability-magic-numbers
 
 # Header filter - apply to project headers, exclude third_party
 HeaderFilterRegex: '^(?!.*third_party).*'
@@ -57,10 +73,15 @@ CheckOptions:
   # Identifier length exceptions for domain-standard abbreviations
   # rc=return code, db=database, it=iterator, op=operator, id=identifier
   # pk=primary key, qs=QuerySet, l/r=left/right, c=char, m=match
+  # jw=join_wrapper, we=where_expr, lv=limit_value, ov=offset_value, ob=order_by — used as
+  # parameters of SelectStatement::query()/query_first()/query_get() (issue #262).
+  # ch=char, hi/lo=hex nibble halves (postgresql.cppm hex_digit + blob extract).
+  # p=parameter/pointer, pg=PostgreSQL flag, sv=string_view, s=string,
+  # tp=time_point, dp=day_point, h=hours, v=value (utilities/aggregate/pool helpers).
   - key: readability-identifier-length.IgnoredVariableNames
-    value: '^(rc|db|it|op|id|pk|qs|l|r|c|m|i|j|k|n|s[0-9]+)$'
+    value: '^(rc|db|it|op|id|pk|qs|l|r|c|m|i|j|k|n|s[0-9]+|ch|hi|lo|s|v|h|dp|tp|p|pg)$'
   - key: readability-identifier-length.IgnoredParameterNames
-    value: '^(rc|db|it|op|id|pk|qs|l|r|c|m|i|j|k|n)$'
+    value: '^(rc|db|it|op|id|pk|qs|l|r|c|m|i|j|k|n|jw|we|lv|ov|ob|ch|p|pg|sv|s|tp|dp|v|h)$'
   - key: readability-identifier-length.IgnoredLoopCounterNames
     value: '^[ijkn]$'
   - key: readability-identifier-length.MinimumLoopCounterNameLength

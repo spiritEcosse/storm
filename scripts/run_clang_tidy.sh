@@ -145,6 +145,25 @@ is_cpp26_module_file() {
 }
 export -f is_cpp26_module_file
 
+# Files clang-tidy must NEVER touch — even when it can parse them cleanly.
+# Used to short-circuit run_tidy() so clang-tidy --fix never mutates the file.
+#
+# src/orm/generator.cppm is the upstream P2168 std::generator reference
+# implementation (Lewis Baker / Corentin Jabot). clang-tidy's
+# readability-identifier-naming rewrites `_T → T` and `__manual_lifetime →
+# _manual_lifetime` on the primary template but misses the reference
+# specialization, producing ill-formed code. Storm does not own this file;
+# treat it as vendored — never lint, never auto-fix.
+is_always_skip_file() {
+    local file="$1"
+    case "$file" in
+        src/orm/generator.cppm) return 0 ;;
+        */src/orm/generator.cppm) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+export -f is_always_skip_file
+
 # Function to run clang-tidy on a single file (called in parallel)
 # Uses .clang-tidy config file automatically (clang-tidy searches parent directories)
 run_tidy() {
@@ -152,6 +171,15 @@ run_tidy() {
     local basename=$(echo "$file" | tr '/' '_')
     local outfile="$TEMP_DIR/$basename.out"
     local statusfile="$TEMP_DIR/$basename.status"
+
+    # Short-circuit for vendored / upstream files we must never touch (e.g.
+    # generator.cppm — see is_always_skip_file rationale).
+    if is_always_skip_file "$file"; then
+        echo "  ⏭  $file (always-skip — vendored upstream)"
+        echo "known" > "$statusfile"
+        echo "" > "$outfile"
+        return 0
+    fi
 
     # Run clang-tidy, capturing output and ignoring crashes
     # clang-tidy automatically reads .clang-tidy from project root
