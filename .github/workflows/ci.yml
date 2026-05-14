@@ -57,10 +57,15 @@ jobs:
             build_dir: debug
             postgres: 16
 
-          # Release build — catches bench-only release bugs
-          - preset: ninja-release
-            build_dir: release
-            postgres: 17
+          # Release build — catches bench-only release bugs.
+          # Disabled: clang-p2996 clang-scan-deps SIGSEGVs at
+          # libcxx/__atomic/atomic_ref.h:28 under -O3 -std=c++26 -fmodules.
+          # Crash is in the compiler's dependency-scanner, not Storm code.
+          # Storm issue #262 tracks re-enabling once a fixed clang-p2996
+          # build replaces the binaries shipped in storm-clang.
+          # - preset: ninja-release
+          #   build_dir: release
+          #   postgres: 17
 
     steps:
       - name: Checkout
