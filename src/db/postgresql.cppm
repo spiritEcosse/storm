@@ -387,12 +387,11 @@ export namespace storm::db::postgresql {
         }
 
         // blob_buffer_ resize can throw bad_alloc; accepted as terminate-on-OOM
-        // during BYTEA hex decode (issue #262 audit).
+        // during BYTEA hex decode (issue #262 audit). PostgreSQL BLOB API uses void*.
+        // NOLINTBEGIN(bugprone-exception-escape)
         template <typename = void>
-        [[nodiscard]] __attribute__((always_inline)) auto extract_blob_ptr(
-                int col_index
-        ) noexcept // NOLINT(bugprone-exception-escape) NOSONAR(cpp:S5008) - PostgreSQL BLOB API
-                -> const void* {
+        [[nodiscard]] __attribute__((always_inline)) auto extract_blob_ptr(int col_index) noexcept -> const
+                void* { // NOSONAR(cpp:S5008) - PostgreSQL BLOB API uses void*
             // PG text-mode returns BYTEA as hex string: "\xDEADBEEF"
             // Decode hex to raw binary bytes
             blob_decoded_col_ = col_index;
@@ -423,6 +422,7 @@ export namespace storm::db::postgresql {
             }
             return blob_buffer_.data();
         }
+        // NOLINTEND(bugprone-exception-escape)
 
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto is_null(int col_index) const noexcept -> bool {
@@ -474,10 +474,12 @@ export namespace storm::db::postgresql {
                 param_lengths_.resize(idx, 0);
                 param_formats_.resize(idx, 0); // Text format by default
             }
-            if (index >
-                param_count_) { // NOLINT(readability-use-std-min-max) — avoid <algorithm> import; see issue #262 (clang-scan-deps SIGSEGV on atomic_ref.h via algorithm).
+            // NOLINTBEGIN(readability-use-std-min-max) — avoid <algorithm> import; clang-scan-deps
+            // SIGSEGVs on atomic_ref.h via <algorithm> under ninja-release. See issue #262.
+            if (index > param_count_) {
                 param_count_ = index;
             }
+            // NOLINTEND(readability-use-std-min-max)
         }
 
         auto update_param_ptrs(int index) noexcept -> void {
