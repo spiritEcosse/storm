@@ -268,31 +268,16 @@ export namespace storm::db::sqlite {
         sqlite3_stmt* raw_; // Cached raw pointer for hot-path performance
     };
 
-    // Transparent hash for string_view lookups without allocation
-    struct string_hash {
-        using is_transparent = void;
-        using hash_type      = std::hash<std::string_view>;
-
-        [[nodiscard]] auto operator()(std::string_view str) const noexcept -> size_t {
-            return hash_type{}(str);
-        }
-
-        [[nodiscard]] auto operator()(const std::string& str) const noexcept -> size_t {
-            return hash_type{}(str);
-        }
-    };
-
-    struct string_equal {
-        using is_transparent = void;
-
-        [[nodiscard]] auto operator()(std::string_view lhs, std::string_view rhs) const noexcept -> bool {
-            return lhs == rhs;
-        }
-    };
-
     class Connection {
-        using SqlitePtr      = std::unique_ptr<sqlite3, SqliteDeleter>;
-        using StatementCache = std::unordered_map<std::string, Statement, string_hash, string_equal>;
+        using SqlitePtr = std::unique_ptr<sqlite3, SqliteDeleter>;
+        // Issue #215: storing `unique_ptr<Statement>` (not `Statement`) keeps the
+        // Statement object pinned in place across map rehashes. Upstream Level 2
+        // caches hold raw `Statement*` pointers obtained from prepare_cached();
+        // with value storage those pointers would dangle after any insert that
+        // triggers a rehash.
+        using StatementValue = std::unique_ptr<Statement>;
+        using StatementCache =
+                std::unordered_map<std::string, StatementValue, storm::db::string_hash, storm::db::string_equal>;
 
       public:
         using Error     = sqlite::Error;
@@ -355,15 +340,7 @@ export namespace storm::db::sqlite {
             if (!is_open()) {
                 return std::unexpected(Error{SQLITE_MISUSE, "Connection not open"});
             }
-
-            sqlite3_stmt* stmt = nullptr;
-            const int     rc   = sqlite3_prepare_v2(db.get(), sql.data(), static_cast<int>(sql.size()), &stmt, nullptr);
-
-            if (rc != SQLITE_OK) {
-                return std::unexpected(Error{rc, sqlite3_errmsg(db.get())});
-            }
-
-            return Statement{stmt};
+            return prepare_raw(sql);
         }
 
         // Prepare statement with caching - reuses statements for identical SQL
@@ -378,28 +355,40 @@ export namespace storm::db::sqlite {
             auto it = statement_cache_.find(sql);
             if (it != statement_cache_.end()) [[likely]] {
                 // Cache hit - reset cached statement for reuse
-                it->second.reset();
-                return &it->second;
+                it->second->reset();
+                return it->second.get();
             }
 
-            // Cache miss - create new statement and cache it
-            sqlite3_stmt* stmt = nullptr;
-            const int     rc   = sqlite3_prepare_v2(db.get(), sql.data(), static_cast<int>(sql.size()), &stmt, nullptr);
-
-            if (rc != SQLITE_OK) {
-                return std::unexpected(Error{rc, sqlite3_errmsg(db.get())});
+            // Cache miss - prepare a fresh statement and cache it
+            auto prepared = prepare_raw(sql);
+            if (!prepared.has_value()) {
+                return std::unexpected(prepared.error());
             }
 
             // Only allocate string for storage in cache (on miss)
             // emplace always succeeds here: find() above confirmed key doesn't exist
-            auto [inserted_it, inserted] = statement_cache_.emplace(std::string(sql), Statement{stmt});
+            auto [inserted_it, inserted] =
+                    statement_cache_.emplace(std::string(sql), std::make_unique<Statement>(std::move(*prepared)));
             (void)inserted; // Always true: find() above confirmed key absence
-            return &inserted_it->second;
+            return inserted_it->second.get();
         }
 
-        // Clear statement cache (useful for memory management)
+        // Clear the entire statement cache (useful for memory management or after
+        // major schema changes). Level 2 callers (Insert/Update/Erase/Select) holding
+        // `Statement*` from a prior prepare_cached() MUST invalidate their own
+        // pointers before calling this — see QuerySet::invalidate_cache().
         auto clear_statement_cache() noexcept -> void {
             statement_cache_.clear();
+        }
+
+        // Issue #215: drop cached entries whose SQL references the given table.
+        // Used after targeted DDL (ALTER TABLE persons …) when other tables'
+        // cached statements should be preserved. Matching is word-boundary aware
+        // so clearing "persons" does NOT touch "person_addresses".
+        auto clear_statement_cache(std::string_view table) -> void {
+            std::erase_if(statement_cache_, [table](const auto& entry) {
+                return storm::db::sql_references_table(entry.first, table);
+            });
         }
 
         // Get cache statistics
@@ -458,9 +447,20 @@ export namespace storm::db::sqlite {
 
       private:
         explicit Connection(SqlitePtr db_ptr) : db(std::move(db_ptr)) {
-            // Reserve capacity to prevent rehashing and dangling pointers in InsertStatement
-            // Typical ORM usage: INSERT, SELECT, UPDATE, DELETE, + a few WHERE variants = ~10-20 statements
+            // Reserve capacity to keep early inserts on the same rehash bucket.
+            // Pointer stability across rehash is now guaranteed by the
+            // `unique_ptr<Statement>` value type (Issue #215).
             statement_cache_.reserve(cache::STMT_CACHE_RESERVE);
+        }
+
+        // Single source of truth for sqlite3_prepare_v2 + error wrapping.
+        [[nodiscard]] auto prepare_raw(std::string_view sql) -> std::expected<Statement, Error> {
+            sqlite3_stmt* stmt = nullptr;
+            const int     rc   = sqlite3_prepare_v2(db.get(), sql.data(), static_cast<int>(sql.size()), &stmt, nullptr);
+            if (rc != SQLITE_OK) {
+                return std::unexpected(Error{rc, sqlite3_errmsg(db.get())});
+            }
+            return Statement{stmt};
         }
 
         SqlitePtr      db;

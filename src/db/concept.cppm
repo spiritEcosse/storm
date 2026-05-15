@@ -3,8 +3,10 @@ module;
 export module storm_db_concept;
 import <expected>;
 import <string_view>;
+import <string>;
 import <concepts>;
 import <cstddef>;
+import <functional>;
 
 export namespace storm::db {
 
@@ -36,8 +38,9 @@ export namespace storm::db {
         // Cached statement preparation
         { conn.prepare_cached(sql) } -> std::same_as<std::expected<typename T::Statement*, typename T::Error>>;
 
-        // Cache management
+        // Cache management — clear-all and per-table (Issue #215)
         { conn.clear_statement_cache() } -> std::same_as<void>;
+        { conn.clear_statement_cache(sql) } -> std::same_as<void>;
         { conn.cached_statement_count() } -> std::same_as<size_t>;
     };
 
@@ -76,5 +79,56 @@ export namespace storm::db {
     template <DatabaseStatement T> struct StatementTraits<T> {
         using Error = typename T::Error;
     };
+
+    // Transparent hash + equal for heterogeneous string_view lookup in caches.
+    // Shared by every backend's StatementCache (sqlite.cppm, postgresql.cppm).
+    struct string_hash {
+        using is_transparent = void;
+        using hash_type      = std::hash<std::string_view>;
+
+        [[nodiscard]] auto operator()(std::string_view str) const noexcept -> size_t {
+            return hash_type{}(str);
+        }
+        [[nodiscard]] auto operator()(const std::string& str) const noexcept -> size_t {
+            return hash_type{}(str);
+        }
+    };
+
+    struct string_equal {
+        using is_transparent = void;
+
+        [[nodiscard]] auto operator()(std::string_view lhs, std::string_view rhs) const noexcept -> bool {
+            return lhs == rhs;
+        }
+    };
+
+    // Identifier-character predicate (SQL word boundary): same set as `\w` in regex
+    // ([A-Za-z0-9_]). Used by per-table cache invalidation to avoid clearing
+    // "persons" entries when invalidating "person".
+    [[nodiscard]] constexpr auto is_sql_ident_char(char c) noexcept -> bool {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+    }
+
+    [[nodiscard]] inline auto is_word_boundary_match(std::string_view sql, std::size_t pos, std::size_t len) noexcept
+            -> bool {
+        const bool left_ok  = pos == 0 || !is_sql_ident_char(sql[pos - 1]);
+        const bool right_ok = pos + len == sql.size() || !is_sql_ident_char(sql[pos + len]);
+        return left_ok && right_ok;
+    }
+
+    // Word-boundary table-name match in a SQL string. Identifier characters on
+    // either side of the match disqualify it, so clearing "persons" does not
+    // touch "person_addresses" or "persons_archive". Issue #215.
+    [[nodiscard]] inline auto sql_references_table(std::string_view sql, std::string_view table) noexcept -> bool {
+        if (table.empty() || sql.size() < table.size()) {
+            return false;
+        }
+        for (std::size_t pos = 0; (pos = sql.find(table, pos)) != std::string_view::npos; pos += table.size()) {
+            if (is_word_boundary_match(sql, pos, table.size())) {
+                return true;
+            }
+        }
+        return false;
+    }
 
 } // namespace storm::db

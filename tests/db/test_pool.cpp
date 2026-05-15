@@ -1,7 +1,11 @@
+// LINT-EXCLUDE-FILE: file-size, duplicate
+// Pre-existing structural debt — large test file with repeated TEST() boilerplate
+// across many backend types. Tracked under issue #264 Phase 1.
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
 // NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes,readability-identifier-length,cppcoreguidelines-special-member-functions,readability-function-cognitive-complexity) // GTest fixtures use protected connstr_; tests use short connection names c1/c2/c3; MockConfigGuard is RAII-only; a few test bodies exceed the cognitive-complexity threshold. Pre-existing; tracked under #262/#264.
 
 import storm;
 import <expected>;
@@ -108,6 +112,7 @@ struct MockPoolConnection {
         return &cached_stmt_;
     }
     auto               clear_statement_cache() -> void {}
+    auto               clear_statement_cache(std::string_view) -> void {}
     [[nodiscard]] auto cached_statement_count() const -> size_t {
         return 0;
     }
@@ -277,13 +282,13 @@ TYPED_TEST(PoolCheckoutTest, Checkout_CachePreserved) {
         raw_ptr   = conn->get();
         auto stmt = raw_ptr->prepare_cached("SELECT 1");
         ASSERT_TRUE(stmt.has_value());
-        EXPECT_GE(raw_ptr->cached_statement_count(), 1u);
+        EXPECT_GE(raw_ptr->cached_statement_count(), 1U);
     }
     // Re-checkout — should get same connection with cache intact
     auto conn2 = pool->checkout();
     ASSERT_TRUE(conn2.has_value());
     EXPECT_EQ(conn2->get(), raw_ptr);
-    EXPECT_GE(conn2->get()->cached_statement_count(), 1u);
+    EXPECT_GE(conn2->get()->cached_statement_count(), 1U);
 }
 
 TYPED_TEST(PoolCheckoutTest, Checkout_GrowsOnDemand) {
@@ -306,7 +311,7 @@ TYPED_TEST(PoolCheckoutTest, Checkout_ReusesReturnedConnection) {
             storm::db::ConnectionPool<TypeParam>::create(this->connstr_, {.min_connections = 1, .max_connections = 1});
     ASSERT_TRUE(pool.has_value()) << pool.error().message();
 
-    TypeParam* first_raw = nullptr;
+    TypeParam const* first_raw = nullptr;
     {
         auto c1 = pool->checkout();
         ASSERT_TRUE(c1.has_value());
@@ -400,7 +405,7 @@ TYPED_TEST(PoolExhaustionTest, Checkout_WaitsAndReusesReturned) {
 
     auto c1 = pool->checkout();
     ASSERT_TRUE(c1.has_value());
-    TypeParam* original_raw = c1->get();
+    TypeParam const* original_raw = c1->get();
 
     std::atomic<TypeParam*> worker_raw{nullptr};
     std::thread             worker([&pool, &worker_raw] {
@@ -506,10 +511,13 @@ TYPED_TEST_SUITE(PoolThreadSafetyTest, DatabaseTypes);
 
 TYPED_TEST(PoolThreadSafetyTest, ConcurrentCheckoutCheckin) {
     // SQLite :memory: creates isolated DBs, use shared cache for pooling test
-    std::string connstr = this->connstr_;
-    if constexpr (storm::test::is_sqlite<TypeParam>()) {
-        connstr = "file::memory:?cache=shared";
-    }
+    std::string const connstr = [this]() -> std::string {
+        if constexpr (storm::test::is_sqlite<TypeParam>()) {
+            return "file::memory:?cache=shared";
+        } else {
+            return this->connstr_;
+        }
+    }();
 
     auto pool = storm::db::ConnectionPool<TypeParam>::create(
             connstr, {.min_connections = 2, .max_connections = 5, .checkout_timeout_ms = 5000}
@@ -661,7 +669,7 @@ TYPED_TEST(PoolLifetimeTest, MaxLifetime_EvictsExpiredOnCheckout) {
         // Populate statement cache to prove this is the "old" connection
         auto stmt = c1->get()->prepare_cached("SELECT 1");
         ASSERT_TRUE(stmt.has_value());
-        EXPECT_GE(c1->get()->cached_statement_count(), 1u);
+        EXPECT_GE(c1->get()->cached_statement_count(), 1U);
     }
     EXPECT_EQ(pool->size(), 1);
 
@@ -672,7 +680,7 @@ TYPED_TEST(PoolLifetimeTest, MaxLifetime_EvictsExpiredOnCheckout) {
     auto c2 = pool->checkout();
     ASSERT_TRUE(c2.has_value());
     // Fresh connection has empty statement cache — proves it's new
-    EXPECT_EQ(c2->get()->cached_statement_count(), 0u);
+    EXPECT_EQ(c2->get()->cached_statement_count(), 0U);
 }
 
 TYPED_TEST(PoolLifetimeTest, IdleTimeout_EvictsIdleOnCheckout) {
@@ -705,7 +713,7 @@ TYPED_TEST(PoolLifetimeTest, NoExpiry_ConnectionsLiveForever) {
     );
     ASSERT_TRUE(pool.has_value()) << pool.error().message();
 
-    TypeParam* first_raw = nullptr;
+    TypeParam const* first_raw = nullptr;
     {
         auto c = pool->checkout();
         ASSERT_TRUE(c.has_value());
@@ -748,7 +756,7 @@ TYPED_TEST(PoolLifetimeTest, MaxLifetime_ClosedAfterReturnAndRecheckout) {
         ASSERT_TRUE(c.has_value());
         auto stmt = c->get()->prepare_cached("SELECT 1");
         ASSERT_TRUE(stmt.has_value());
-        EXPECT_GE(c->get()->cached_statement_count(), 1u);
+        EXPECT_GE(c->get()->cached_statement_count(), 1U);
 
         // Hold connection past its max lifetime
         std::this_thread::sleep_for(std::chrono::milliseconds(150));
@@ -757,7 +765,7 @@ TYPED_TEST(PoolLifetimeTest, MaxLifetime_ClosedAfterReturnAndRecheckout) {
     // Next checkout should evict the expired connection and create a fresh one
     auto c2 = pool->checkout();
     ASSERT_TRUE(c2.has_value());
-    EXPECT_EQ(c2->get()->cached_statement_count(), 0u); // Fresh connection — old was closed
+    EXPECT_EQ(c2->get()->cached_statement_count(), 0U); // Fresh connection — old was closed
     EXPECT_EQ(pool->size(), 1);                         // Pool didn't grow, it replaced
 }
 
@@ -774,7 +782,7 @@ TYPED_TEST(PoolLifetimeTest, BothEnabled_IdleTimeoutFiresFirst) {
         // Populate statement cache to prove this is the "old" connection
         auto stmt = c->get()->prepare_cached("SELECT 1");
         ASSERT_TRUE(stmt.has_value());
-        EXPECT_GE(c->get()->cached_statement_count(), 1u);
+        EXPECT_GE(c->get()->cached_statement_count(), 1U);
     }
 
     // Wait past idle timeout but within max lifetime
@@ -784,7 +792,7 @@ TYPED_TEST(PoolLifetimeTest, BothEnabled_IdleTimeoutFiresFirst) {
     auto c2 = pool->checkout();
     ASSERT_TRUE(c2.has_value());
     // Fresh connection has empty statement cache
-    EXPECT_EQ(c2->get()->cached_statement_count(), 0u);
+    EXPECT_EQ(c2->get()->cached_statement_count(), 0U);
 }
 
 TYPED_TEST(PoolLifetimeTest, InUseConnections_NotEvictedByIdleTimeout) {
@@ -810,7 +818,7 @@ TYPED_TEST(PoolLifetimeTest, ActiveUse_ResetsIdleTimer) {
     );
     ASSERT_TRUE(pool.has_value()) << pool.error().message();
 
-    TypeParam* raw = nullptr;
+    TypeParam const* raw = nullptr;
     {
         auto c = pool->checkout();
         ASSERT_TRUE(c.has_value());
@@ -844,7 +852,7 @@ TYPED_TEST(PoolLifetimeTest, MixedExpiry_OnlyExpiredEvicted) {
     EXPECT_EQ(pool->size(), 2);
 
     // Checkout and return first connection (it starts aging)
-    TypeParam* old_raw = nullptr;
+    TypeParam const* old_raw = nullptr;
     {
         auto c = pool->checkout();
         ASSERT_TRUE(c.has_value());
@@ -1041,4 +1049,5 @@ TEST_F(MockPoolTest, Create_BadConfig_NegativeTimeouts) {
     EXPECT_FALSE(p3.has_value());
 }
 
+// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes,readability-identifier-length,cppcoreguidelines-special-member-functions,readability-function-cognitive-complexity)
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
