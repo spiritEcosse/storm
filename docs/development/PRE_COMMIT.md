@@ -89,10 +89,10 @@ module file, **`run_clang_tidy.sh` will now fail loudly** with:
 The cause is almost always one of:
 
 1. Stale `build/release/` from before a clang-p2996 update — `rm -rf build/release && cmake --preset ninja-release && cmake --build --preset ninja-release`.
-2. A regression in the clang-p2996 binary — file an upstream issue and fall back to `--full` with the affected `.cppm` added back to `is_cpp26_module_file`'s skip list (in `scripts/run_clang_tidy.sh`).
+2. A regression in the clang-p2996 binary — file an upstream issue and fall back to `--full` with the affected `.cppm` added back to `is_known_unparseable`'s skip list (in `scripts/run_clang_tidy.sh`).
 
 **Silent skipping is gone.** The unconditional `*.cppm` skip in
-`is_cpp26_module_file` was the root cause of Issue #262 — clang-tidy could
+`is_known_unparseable` was the root cause of Issue #262 — clang-tidy could
 parse those files for months before anyone noticed, and the accumulated drift
 all surfaced at once when the build state changed.
 

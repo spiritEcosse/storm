@@ -220,7 +220,7 @@ export CLANG_TIDY BUILD_DIR FIX_FLAG TEMP_DIR
 # Files we still accept as unparseable:
 #   - tests/*, benchmarks/*, fuzz/*, shared/* — import storm modules
 #   - src/orm/query_builder.hpp — pseudo-module header that needs `import storm;`
-is_cpp26_module_file() {
+is_known_unparseable() {
     local file="$1"
     case "$file" in
         tests/*|benchmarks/*|fuzz/*|shared/*) return 0 ;;
@@ -228,7 +228,7 @@ is_cpp26_module_file() {
         *) return 1 ;;
     esac
 }
-export -f is_cpp26_module_file
+export -f is_known_unparseable
 
 # Files clang-tidy must NEVER touch — even when it can parse them cleanly.
 # Used to short-circuit run_tidy() so clang-tidy --fix never mutates the file.
@@ -287,7 +287,7 @@ run_tidy() {
     grep -q ": warning:" "$outfile" 2>/dev/null && has_warnings=true
 
     if [[ "$has_compile_error" == true ]]; then
-        if is_cpp26_module_file "$file"; then
+        if is_known_unparseable "$file"; then
             # Known C++26 module file with compile errors - skip entirely
             # Warnings from partial parsing are unreliable (false positives)
             echo "  ✓ $file (C++26 modules - skipped)"
@@ -320,7 +320,7 @@ run_tidy() {
             sed -i '/PLEASE submit a bug report/,$d' "$outfile"
         else
             # Crashed with no warnings
-            if is_cpp26_module_file "$file"; then
+            if is_known_unparseable "$file"; then
                 echo "  ✓ $file (C++26 modules - skipped)"
                 echo "known" > "$statusfile"
             else
