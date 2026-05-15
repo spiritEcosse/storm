@@ -218,8 +218,15 @@ if [[ "$RUN_CMAKE_FORMAT" == true ]]; then
 fi
 
 # --- Step 3: clang-tidy ---
+# Default to --diff mode (issue #262): only block on warnings touching staged
+# lines, so pre-existing drift in unrelated files doesn't block unrelated work.
+# Set STORM_TIDY_FULL=1 to force whole-file staged scan (the pre-#262 behavior).
 if [[ "$RUN_TIDY" == true ]]; then
-    run_step "clang-tidy --fix" ./scripts/run_clang_tidy.sh --fix || true
+    if [[ -n "$STORM_TIDY_FULL" ]]; then
+        run_step "clang-tidy --full --fix" ./scripts/run_clang_tidy.sh --full --fix || true
+    else
+        run_step "clang-tidy --diff --fix" ./scripts/run_clang_tidy.sh --diff --fix || true
+    fi
 fi
 
 # --- Re-stage files modified by format/tidy ---

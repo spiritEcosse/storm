@@ -1,0 +1,75 @@
+name: clang-tidy weekly sweep
+
+# Scheduled full-tree clang-tidy sweep — report-only.
+# See Issue #262 for rationale.
+#
+# Runs ./scripts/run_clang_tidy.sh --all and writes the result to the workflow
+# run's Summary tab. Does NOT gate develop merges (yet) — opt-in gating is
+# deferred. The point is to surface accumulated drift within a week instead
+# of within months, which is what triggered Issue #262 in the first place.
+
+on:
+  schedule:
+    # Mondays 04:00 UTC — chosen to land before the European working day,
+    # giving the team a fresh report at the start of each week.
+    - cron: '0 4 * * 1'
+  workflow_dispatch: {}
+
+jobs:
+  sweep:
+    name: Full-tree clang-tidy
+    runs-on: ubuntu-24.04
+    container:
+      # Same pinned storm-ci image as ci.yml — keep digests in sync when bumping.
+      image: ghcr.io/spiritecosse/storm-ci@sha256:68eaac686d20d926e7f7cd4c8582d540e7377d4392443f748299c771d346de63
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Link clang-p2996 next to source dir
+        run: ln -sfn /opt/clang-p2996 "$(dirname "$GITHUB_WORKSPACE")/clang-p2996"
+
+      - name: Configure (release)
+        run: cmake --preset ninja-release
+
+      - name: Build (release)
+        # Sweep needs compile_commands.json from the release build. We build
+        # the library + tests targets so all TUs end up in compile_commands.json.
+        run: ./scripts/build-with-retry.sh ninja-release
+
+      - name: Run clang-tidy --all (report-only)
+        id: sweep
+        continue-on-error: true
+        run: |
+          set +e
+          ./scripts/run_clang_tidy.sh --all 2>&1 | tee /tmp/sweep.log
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Post summary
+        if: always()
+        run: |
+          {
+            echo "## clang-tidy weekly sweep"
+            echo ""
+            echo "**Mode:** \`--all\` (full-tree, report-only)"
+            echo "**Exit code:** ${{ steps.sweep.outputs.exit_code }}"
+            echo ""
+            # Pull the summary block ("📊 Summary:" through the rule line) and
+            # the first 50 unique issues, if any.
+            if grep -q "📊 Summary" /tmp/sweep.log; then
+              echo '### Summary'
+              echo '```'
+              awk '/📊 Summary/{f=1} f' /tmp/sweep.log | head -20
+              echo '```'
+            fi
+            if grep -q "📋 Issues found" /tmp/sweep.log; then
+              echo ''
+              echo '### Issues (first 50)'
+              echo '```'
+              awk '/📋 Issues found/{f=1; next} f && /━━━━/{exit} f' /tmp/sweep.log | head -50
+              echo '```'
+            fi
+            echo ''
+            echo "_Full log available in the workflow run logs._"
+          } >> "$GITHUB_STEP_SUMMARY"
