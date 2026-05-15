@@ -1,6 +1,15 @@
 #!/bin/bash
-# Run clang-tidy on staged files (git diff --cached)
-# Usage: ./run_clang_tidy.sh [--fix] [--all] [-j N]
+# Run clang-tidy. Three modes — pick one (or none, default is --diff):
+#
+#   --diff   (default)  Diff-mode — only warnings on lines touched by the
+#                       staged commit (git diff --cached) block. Pre-existing
+#                       warnings on other lines are out of scope. This is the
+#                       pre-commit default.
+#   --full              Full-file scan, staged files only. Block on any warning
+#                       in any staged file (including pre-existing drift).
+#                       Used to be the default before Issue #262.
+#   --all               Full-file scan, ALL C++ files. Used by the scheduled
+#                       weekly CI sweep to detect accumulated drift.
 #
 # Prerequisites:
 #   - Release build with compile_commands.json: cmake --preset ninja-release
@@ -8,30 +17,19 @@
 #
 # Options:
 #   --fix   Apply suggested fixes automatically (use with caution)
-#   --all   Check ALL C++ source files (not just staged files)
 #   -j N    Number of parallel jobs (default: all cores)
 
 set -e
 
 CLANG_TIDY="../clang-p2996/build/bin/clang-tidy"
+CLANG_TIDY_DIFF="../clang-p2996/clang-tools-extra/clang-tidy/tool/clang-tidy-diff.py"
 BUILD_DIR="build/release"
 COMPILE_COMMANDS="$BUILD_DIR/compile_commands.json"
 CLANG_TIDY_CONFIG=".clang-tidy"
 
-# Known patterns for files that use C++26 modules/reflection features not supported by clang-tidy
-# These files will show a specific message instead of "crashed"
-# clang-tidy fails on these due to: __has_feature parsing, std::meta::info, ^^ splice operator, import statements
-#
-# Patterns:
-#   - All .cppm files (C++26 modules not supported by clang-tidy)
-#   - All test files (they import Storm modules)
-#   - All benchmark files (they import Storm modules)
-#
-# Only files that DON'T import Storm modules can be checked (currently none in this project)
-
 # Parse arguments
 FIX_FLAG=""
-CHECK_ALL=false
+MODE="diff"   # diff | full | all
 JOBS=$(nproc)
 
 while [[ $# -gt 0 ]]; do
@@ -40,8 +38,16 @@ while [[ $# -gt 0 ]]; do
             FIX_FLAG="-fix"
             shift
             ;;
+        --diff)
+            MODE="diff"
+            shift
+            ;;
+        --full)
+            MODE="full"
+            shift
+            ;;
         --all)
-            CHECK_ALL=true
+            MODE="all"
             shift
             ;;
         -j)
@@ -66,6 +72,12 @@ if [[ ! -x "$CLANG_TIDY" ]]; then
     exit 1
 fi
 
+if [[ "$MODE" == "diff" && ! -f "$CLANG_TIDY_DIFF" ]]; then
+    echo "❌ Error: clang-tidy-diff.py not found at $CLANG_TIDY_DIFF" >&2
+    echo "   Required for --diff mode. Re-run with --full or --all, or fix the path." >&2
+    exit 1
+fi
+
 if [[ ! -f "$CLANG_TIDY_CONFIG" ]]; then
     echo "❌ Error: .clang-tidy config not found at $CLANG_TIDY_CONFIG" >&2
     exit 1
@@ -75,11 +87,11 @@ echo "🔍 Running clang-tidy using .clang-tidy configuration..."
 echo "   Config file: $CLANG_TIDY_CONFIG"
 echo "   Build directory: $BUILD_DIR"
 echo "   Parallel jobs: $JOBS"
-if [[ "$CHECK_ALL" == true ]]; then
-    echo "   Scope: ALL C++ source files"
-else
-    echo "   Scope: staged files (git diff --cached)"
-fi
+case "$MODE" in
+    diff) echo "   Scope: staged lines only (git diff --cached, lines added/changed)" ;;
+    full) echo "   Scope: staged files (whole-file scan)" ;;
+    all)  echo "   Scope: ALL C++ source files (sweep)" ;;
+esac
 if [[ -n "$FIX_FLAG" ]]; then
     echo "   Mode: AUTO-FIX enabled"
 else
@@ -87,8 +99,80 @@ else
 fi
 echo ""
 
-# Collect C++ source files
-if [[ "$CHECK_ALL" == true ]]; then
+# ─── --diff mode short path ─────────────────────────────────────────────────
+# Pipe `git diff -U0 --cached` through clang-tidy-diff.py — it only emits
+# diagnostics on lines the staged commit touches. Pre-existing warnings on
+# other lines are out of scope. See Issue #262 for rationale.
+if [[ "$MODE" == "diff" ]]; then
+    DIFF_OUT=$(mktemp)
+    trap "rm -f $DIFF_OUT" EXIT
+
+    # -p1 strips the a/ b/ prefix that `git diff` prepends to paths.
+    # -iregex limits the scan to C++ sources we actually want clang-tidy on
+    # (note: clang-tidy-diff.py doesn't understand our skip-list, so files
+    # under tests/ etc. will be attempted; we filter the output after).
+    DIFF_FIX=""
+    [[ -n "$FIX_FLAG" ]] && DIFF_FIX="-fix"
+
+    set +e
+    git diff -U0 --cached \
+        | python3 "$CLANG_TIDY_DIFF" \
+            -clang-tidy-binary "$CLANG_TIDY" \
+            -p1 \
+            -path "$BUILD_DIR" \
+            -config-file "$CLANG_TIDY_CONFIG" \
+            -iregex '.*\.(cpp|cppm|h|hpp)' \
+            -j "$JOBS" \
+            -timeout 60 \
+            -quiet \
+            $DIFF_FIX \
+            2>&1 | tee "$DIFF_OUT"
+    DIFF_RC=${PIPESTATUS[1]}
+    set -e
+
+    # Stage any auto-fixes so the re-check sees them
+    [[ -n "$FIX_FLAG" ]] && git add -u 2>/dev/null || true
+
+    # clang-tidy-diff.py prints "No relevant changes found." when nothing in
+    # the diff matches the regex. That's a clean pass.
+    if grep -q "No relevant changes found" "$DIFF_OUT"; then
+        echo ""
+        echo "✅ clang-tidy --diff: no staged C++ lines to check"
+        exit 0
+    fi
+
+    # Count actual diagnostics — clang-tidy-diff.py's exit code is unreliable
+    # across versions (it may return 0 even with warnings).
+    DIFF_WARN=$(grep -c ": warning:" "$DIFF_OUT" || true)
+    DIFF_ERR=$(grep -c ": error:" "$DIFF_OUT" || true)
+    # Strip out errors from C++26 module/reflection parse failures in headers —
+    # they are noise in diff mode, not signal on the staged lines.
+    DIFF_ERR_REAL=$(grep ": error:" "$DIFF_OUT" | grep -v -E "(module|import|reflect|std::meta|consteval)" | wc -l || true)
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "📊 --diff summary:"
+    echo "   Warnings on staged lines: $DIFF_WARN"
+    echo "   Errors on staged lines:   $DIFF_ERR (real: $DIFF_ERR_REAL)"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    if [[ "$DIFF_WARN" -gt 0 || "$DIFF_ERR_REAL" -gt 0 ]]; then
+        if [[ -n "$FIX_FLAG" ]]; then
+            # Auto-fix pass complete — re-run check-only to confirm clean.
+            echo ""
+            echo "🔄 Re-checking after auto-fix..."
+            FIX_FLAG="" exec "$0" --diff
+        fi
+        echo "❌ clang-tidy --diff: new warnings/errors on staged lines"
+        exit 1
+    fi
+
+    echo "✅ clang-tidy --diff: staged lines are clean"
+    exit 0
+fi
+
+# ─── --full and --all modes: file-based scan ────────────────────────────────
+if [[ "$MODE" == "all" ]]; then
     FILES=$(find src tests benchmarks \( -name '*.cpp' -o -name '*.cppm' -o -name '*.h' -o -name '*.hpp' \) 2>/dev/null \
         | grep -v 'third_party' \
         | sort)
@@ -100,7 +184,7 @@ else
 fi
 
 if [[ -z "$FILES" ]]; then
-    if [[ "$CHECK_ALL" == true ]]; then
+    if [[ "$MODE" == "all" ]]; then
         echo "✅ No C++ files found — clang-tidy skipped"
     else
         echo "✅ No staged C++ files — clang-tidy skipped"
@@ -119,24 +203,19 @@ trap "rm -rf $TEMP_DIR" EXIT
 # Export variables for subshells
 export CLANG_TIDY BUILD_DIR FIX_FLAG TEMP_DIR
 
-# Function to check if file uses C++26 modules/reflection (pattern-based)
-# Returns 0 (true) if file is expected to fail clang-tidy
+# Known-skip list: files clang-tidy cannot parse and we accept that.
+#
+# Returns 0 (true) if file is expected to fail clang-tidy parsing.
+#
+# Rationale: src/*.cppm parse cleanly since the 2026-05-11 clang-p2996 rebuild,
+# so they are NOT on this list anymore. A parse failure on a src/*.cppm now
+# means the toolchain or build state is broken — see Issue #262.
+#
+# Files we still accept as unparseable:
+#   - tests/*, benchmarks/*, fuzz/*, shared/* — import storm modules
+#   - src/orm/query_builder.hpp — pseudo-module header that needs `import storm;`
 is_cpp26_module_file() {
     local file="$1"
-
-    # All .cppm files are C++26 modules
-    if [[ "$file" == *.cppm ]]; then
-        return 0
-    fi
-
-    # All files under tests/, benchmarks/, fuzz/ use C++26 modules/reflection
-    # (directly or transitively via includes like <meta>, std::meta::info, etc.)
-    # Exception: mock files that don't use modules are handled by the caller —
-    # they parse successfully and never reach this function's "known skip" path.
-    #
-    # src/orm/query_builder.hpp is a pseudo-module header: it uses ^^, consteval
-    # reflection, and must be #included after `import storm;`. It cannot be
-    # parsed standalone by clang-tidy. Add it to the known-skip list.
     case "$file" in
         tests/*|benchmarks/*|fuzz/*|shared/*) return 0 ;;
         src/orm/query_builder.hpp) return 0 ;;
@@ -215,10 +294,15 @@ run_tidy() {
             sed -i '/: error:/d' "$outfile"
             sed -i '/Found compiler error/d' "$outfile"
         else
-            # Non-module file with only compile errors - unexpected
-            echo "  ⚠ $file (parse error - UNEXPECTED)" >&2
+            # Parse failure on a file we expect to be parseable (e.g. src/*.cppm
+            # since the 2026-05-11 clang-p2996 rebuild). Surface it loudly — it
+            # almost always means the build state is stale or the toolchain
+            # regressed. Silent skipping here was the root cause of Issue #262.
+            echo "  ❌ $file (PARSE FAILURE — toolchain or build state is broken)" >&2
+            echo "     clang-tidy could not parse this file. Re-run cmake --preset" >&2
+            echo "     ninja-release and rebuild before retrying. See Issue #262." >&2
             echo "crashed" > "$statusfile"
-            echo "" > "$outfile"
+            # Keep the original error in the outfile so the summary can print it.
         fi
     elif [[ "$has_crash" == true ]]; then
         # Crashed after processing - may still have useful warnings
@@ -296,7 +380,9 @@ if [[ $ERRORS -gt 0 ]]; then
     echo "❌ clang-tidy found errors"
     exit 1
 elif [[ $UNEXPECTED_CRASHES -gt 0 ]]; then
-    echo "❌ clang-tidy crashed on unexpected files (update is_cpp26_module_file if valid)"
+    echo "❌ clang-tidy could not parse $UNEXPECTED_CRASHES file(s) — toolchain or build state may be stale"
+    echo "   Try: rm -rf build/release && cmake --preset ninja-release && cmake --build --preset ninja-release"
+    echo "   See: https://github.com/spiritEcosse/storm/issues/262"
     exit 1
 elif [[ $WARNINGS -gt 0 ]]; then
     if [[ -n "$FIX_FLAG" ]]; then

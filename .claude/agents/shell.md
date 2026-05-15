@@ -88,11 +88,14 @@ These scripts have project-specific conventions — understand them before modif
 - When re-enabled: detects C++ changes → builds with build-wrapper → runs sonar-scanner → polls CE task → checks quality gate
 - Currently just prints a notice and exits 0
 
-**`scripts/run_clang_tidy.sh`** — Runs clang-tidy on staged files only:
+**`scripts/run_clang_tidy.sh`** — Three modes (default `--diff`):
+- `--diff` (default) — warns only on lines staged in `git diff --cached`. Uses clang-tidy-diff.py.
+- `--full` — whole-file scan, staged files only (pre-#262 default; opt-in via `STORM_TIDY_FULL=1`).
+- `--all` — full-tree sweep, used by the weekly `clang-tidy-sweep` CI workflow (report-only).
 - Options: `--fix` (auto-apply fixes), `-j N` (parallel jobs, default: all cores)
 - Requires release build (`cmake --preset ninja-release`) for `compile_commands.json`
-- C++26 module files (`.cppm`, `tests/*.cpp`, `benchmarks/*.cpp`) are skipped — clang-tidy crashes on them
-- Exits non-zero on warnings or errors (warnings block commits)
+- Skips for parse-failure are limited to `tests/*`, `benchmarks/*`, `fuzz/*`, `shared/*`, `src/orm/query_builder.hpp`. `src/*.cppm` parse cleanly since 2026-05-11 — a parse failure there now fails loudly.
+- Exits non-zero on warnings/errors that affect the current mode's scope.
 
 **`scripts/sonarcloud-check.sh`** — Branch-aware SonarCloud quality gate:
 - Branch mode (develop/master/main): checks full project — all existing issues
