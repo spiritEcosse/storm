@@ -270,13 +270,16 @@ export namespace storm::orm::statements {
             return {*this, jw, we, lv, ov, ob, fast};
         }
 
-        // Invalidate dynamic query cache
-        // Call this when QuerySet::reset() is invoked to ensure fresh query on next execute
+        // Drop every cached Statement pointer and dynamic-SQL marker.
+        // Call before Connection::clear_statement_cache() — without this the
+        // next execute() would step a freed prepared statement. Reached from
+        // QuerySet::reset() and QuerySet::invalidate_cache(). Issue #215.
         auto invalidate_cache() noexcept -> void {
-            cached_stmt_       = nullptr;
-            cached_first_stmt_ = nullptr;
-            cached_get_stmt_   = nullptr;
-            cached_where_addr_ = nullptr;
+            cached_simple_stmt_ = nullptr;
+            cached_first_stmt_  = nullptr;
+            cached_get_stmt_    = nullptr;
+            cached_stmt_        = nullptr;
+            cached_where_addr_  = nullptr;
             cached_sql_.clear();
         }
 

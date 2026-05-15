@@ -150,6 +150,49 @@ for (int i = 0; i < 1000; ++i) {
 }
 ```
 
+## Cache Invalidation
+
+Cached statements pin the *compiled* form of a SQL string to a specific schema.
+If the underlying schema changes (`ALTER TABLE`, `DROP TABLE`, table rename),
+the cached prepared statements become stale. Storm exposes three explicit hooks
+to drop them; Storm does **not** auto-detect DDL (see Issue #215 follow-ups).
+
+| API | Scope | When to call |
+|-----|-------|--------------|
+| `Connection::clear_statement_cache()` | Whole connection | After a broad schema rebuild or to free memory |
+| `Connection::clear_statement_cache(table)` | Entries referencing `table` | After targeted DDL — e.g., `ALTER TABLE persons ADD COLUMN …` |
+| `QuerySet::reset()` | This QuerySet's Level 1 + 2 caches **and** WHERE/JOIN/LIMIT state | When reusing a QuerySet with a fresh filter chain |
+| `QuerySet::invalidate_cache()` | This QuerySet's Level 1 + 2 caches only | After targeted DDL when you want to keep the filter chain |
+
+### Correct invalidation order
+
+```cpp
+// 1. Targeted DDL through the raw connection
+conn->execute("ALTER TABLE persons ADD COLUMN nickname TEXT");
+
+// 2. Drop Level 1+2 caches that hold pointers into Level 3
+qs.invalidate_cache();          // or qs.reset()
+
+// 3. Drop the matching Level 3 entries
+conn->clear_statement_cache("persons");
+
+// 4. Next operation re-prepares against the new schema
+qs.select().execute();
+```
+
+The order matters: clearing Level 3 first would leave Insert/Update/Erase/Select
+holding pointers into freed prepared statements. The Level 2 invalidation must
+happen *before* the connection cache is cleared.
+
+### Pointer stability
+
+Level 3 stores statements as `unordered_map<string, unique_ptr<Statement>>`
+(not `unordered_map<string, Statement>`). The `unique_ptr` keeps the Statement
+pinned in memory across cache growth, so the raw `Statement*` pointers held at
+Level 2 stay valid as long as the underlying entry is not erased. This removes
+the hidden capacity contract that pre-Issue-#215 code relied on (reserve 32
+slots and hope no one grows past that).
+
 ## Thread Safety
 
 **Thread-local caching**: Each thread has separate SQL cache (zero synchronization)

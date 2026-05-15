@@ -6,6 +6,8 @@ module;
 
 #include <libpq-fe.h>
 
+#include <algorithm>
+
 export module storm_db_postgresql;
 import storm_db_concept;
 import <array>;
@@ -557,8 +559,11 @@ export namespace storm::db::postgresql {
     };
 
     class Connection {
-        using PGconnPtr      = std::unique_ptr<PGconn, PGconnDeleter>;
-        using StatementCache = std::unordered_map<std::string, Statement, string_hash, string_equal>;
+        using PGconnPtr = std::unique_ptr<PGconn, PGconnDeleter>;
+        // Issue #215: storing `unique_ptr<Statement>` keeps Statement objects
+        // pinned across map rehashes, so Level 2 callers can hold
+        // `Statement*` from prepare_cached() safely.
+        using StatementCache = std::unordered_map<std::string, std::unique_ptr<Statement>, string_hash, string_equal>;
 
         // Cache size constants
         static constexpr size_t STMT_CACHE_RESERVE = 32;
@@ -645,8 +650,8 @@ export namespace storm::db::postgresql {
             // Heterogeneous lookup using string_view
             auto it = statement_cache_.find(sql);
             if (it != statement_cache_.end()) [[likely]] {
-                it->second.reset();
-                return &it->second;
+                it->second->reset();
+                return it->second.get();
             }
 
             // Cache miss - create new prepared statement
@@ -664,15 +669,27 @@ export namespace storm::db::postgresql {
             }
 
             PQclear(res);
-            Statement new_stmt{conn_.get(), stmt_name};
-            new_stmt.set_original_sql(std::string(sql)); // Store original SQL for expanded_sql()
+            auto new_stmt = std::make_unique<Statement>(conn_.get(), stmt_name);
+            new_stmt->set_original_sql(std::string(sql)); // Store original SQL for expanded_sql()
             auto [inserted_it, inserted] = statement_cache_.emplace(std::string(sql), std::move(new_stmt));
             (void)inserted; // Always true: find() above confirmed key absence
-            return &inserted_it->second;
+            return inserted_it->second.get();
         }
 
+        // Clear the entire statement cache (useful for memory management or after
+        // major schema changes). Level 2 callers must invalidate their own
+        // pointers before calling this — see QuerySet::invalidate_cache().
         auto clear_statement_cache() noexcept -> void {
             statement_cache_.clear();
+        }
+
+        // Issue #215: drop cached entries whose SQL references the given table.
+        // Word-boundary aware so clearing "persons" does NOT touch
+        // "person_addresses" or "persons_archive".
+        auto clear_statement_cache(std::string_view table) -> void {
+            std::erase_if(statement_cache_, [table](const auto& entry) {
+                return sql_references_table(entry.first, table);
+            });
         }
 
         [[nodiscard]] auto cached_statement_count() const noexcept -> size_t {
@@ -710,6 +727,31 @@ export namespace storm::db::postgresql {
       private:
         explicit Connection(PGconnPtr conn_ptr) : conn_(std::move(conn_ptr)) {
             statement_cache_.reserve(STMT_CACHE_RESERVE);
+        }
+
+        // Word-boundary table-name match in a SQL string. Mirrors the SQLite
+        // backend so per-table cache invalidation behaves identically.
+        [[nodiscard]] static auto sql_references_table(std::string_view sql, std::string_view table) noexcept -> bool {
+            if (table.empty() || sql.size() < table.size()) {
+                return false;
+            }
+            for (std::size_t pos = 0; (pos = sql.find(table, pos)) != std::string_view::npos; pos += table.size()) {
+                if (is_word_boundary_match(sql, pos, table.size())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        [[nodiscard]] static constexpr auto is_sql_ident_char(char c) noexcept -> bool {
+            return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+        }
+
+        [[nodiscard]] static auto
+        is_word_boundary_match(std::string_view sql, std::size_t pos, std::size_t len) noexcept -> bool {
+            const bool left_ok  = pos == 0 || !is_sql_ident_char(sql[pos - 1]);
+            const bool right_ok = pos + len == sql.size() || !is_sql_ident_char(sql[pos + len]);
+            return left_ok && right_ok;
         }
 
         // Translate ? placeholders to $1, $2, ... for PostgreSQL

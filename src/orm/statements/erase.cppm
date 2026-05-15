@@ -440,10 +440,20 @@ export namespace storm::orm::statements {
             return Base::template bind_value_by_type<ConnType>(stmt, index, pk_value);
         }
 
+      public:
+        // Drop cached Statement pointers. Call before
+        // Connection::clear_statement_cache(). Issue #215.
+        auto invalidate_cache() noexcept -> void {
+            cached_single_stmt_   = nullptr;
+            cached_max_bulk_stmt_ = nullptr;
+        }
+
       private:
         std::shared_ptr<ConnType> conn_;
-        mutable Statement*        cached_single_stmt_   = nullptr; // Cached statement for single DELETE
-        mutable Statement*        cached_max_bulk_stmt_ = nullptr; // Cached statement for max bulk (799) DELETE
+        // Raw pointers into Connection::statement_cache_ (pointer-stable via
+        // unique_ptr<Statement> value type, Issue #215).
+        mutable Statement* cached_single_stmt_   = nullptr;
+        mutable Statement* cached_max_bulk_stmt_ = nullptr;
     };
 
 } // namespace storm::orm::statements

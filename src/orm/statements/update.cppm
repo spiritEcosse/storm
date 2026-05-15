@@ -309,9 +309,17 @@ export namespace storm::orm::statements {
             return {};
         }
 
+        // Drop the cached Statement pointer. Call this before
+        // Connection::clear_statement_cache(). Issue #215.
+        auto invalidate_cache() noexcept -> void {
+            cached_update_stmt_ = nullptr;
+        }
+
       private:
         std::shared_ptr<ConnType> conn_;
-        mutable Statement*        cached_update_stmt_ = nullptr; // Cached statement for optimized single UPDATE
+        // Raw pointer into Connection::statement_cache_; pointer-stable thanks
+        // to the unique_ptr<Statement> value type (Issue #215).
+        mutable Statement* cached_update_stmt_ = nullptr;
     };
 
 } // namespace storm::orm::statements

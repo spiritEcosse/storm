@@ -609,12 +609,23 @@ export namespace storm::orm::statements {
             return all_ids;
         }
 
+      public:
+        // Drop cached Statement pointers obtained from Connection::prepare_cached().
+        // Call this before Connection::clear_statement_cache() — otherwise the next
+        // execute() would step a freed prepared statement. Reached from QuerySet::reset()
+        // and QuerySet::invalidate_cache(). Issue #215.
+        auto invalidate_cache() noexcept -> void {
+            cached_insert_returning_stmt_ = nullptr;
+            cached_insert_stmt_           = nullptr;
+        }
+
       private:
         std::shared_ptr<ConnType> conn_;
-        mutable Statement*        cached_insert_returning_stmt_ = nullptr;
-        mutable Statement*        cached_insert_stmt_           = nullptr;
-        // SAFETY: Safe to cache raw pointers because Connection reserves capacity (32)
-        // to prevent rehashing. Typical ORM usage won't exceed 32 unique statements.
+        // Raw pointers obtained from Connection::prepare_cached(). Pointer
+        // stability across cache growth is guaranteed by the
+        // `unique_ptr<Statement>` value type in StatementCache (Issue #215).
+        mutable Statement* cached_insert_returning_stmt_ = nullptr;
+        mutable Statement* cached_insert_stmt_           = nullptr;
     };
 
 } // namespace storm::orm::statements

@@ -20,9 +20,13 @@
 
 #include <gtest/gtest.h>
 
+// LINT-EXCLUDE-FILE: file-size, duplicate
+// Pre-existing structural debt — large mock-error test file with repeated TEST/setup
+// boilerplate across many error scenarios. Tracked under issue #264 Phase 1.
 // NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR(cpp:S125)
 // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR(cpp:S125)
 // NOLINTBEGIN(readability-convert-member-functions-to-static,misc-const-correctness) // NOSONAR(cpp:S125)
+// NOLINTBEGIN(readability-identifier-length,bugprone-unused-return-value) // bind-result names r1..r6 + intentional (void)prepare_cached. Pre-existing; tracked under #262/#264.
 
 #include "mock_libpq.h"
 
@@ -518,20 +522,20 @@ namespace {
         auto conn_result = PgConnection::open("host=localhost");
         ASSERT_TRUE(conn_result.has_value());
 
-        EXPECT_EQ(conn_result->cached_statement_count(), 0u);
+        EXPECT_EQ(conn_result->cached_statement_count(), 0U);
 
         auto stmt1 = conn_result->prepare_cached("SELECT 1");
         ASSERT_TRUE(stmt1.has_value());
-        EXPECT_EQ(conn_result->cached_statement_count(), 1u);
+        EXPECT_EQ(conn_result->cached_statement_count(), 1U);
 
         auto stmt2 = conn_result->prepare_cached("SELECT 2");
         ASSERT_TRUE(stmt2.has_value());
-        EXPECT_EQ(conn_result->cached_statement_count(), 2u);
+        EXPECT_EQ(conn_result->cached_statement_count(), 2U);
 
         // Same SQL reuses cached statement
         auto stmt3 = conn_result->prepare_cached("SELECT 1");
         ASSERT_TRUE(stmt3.has_value());
-        EXPECT_EQ(conn_result->cached_statement_count(), 2u);
+        EXPECT_EQ(conn_result->cached_statement_count(), 2U);
     }
 
     TEST_F(PgCacheUtilityTest, ClearStatementCache) {
@@ -540,10 +544,10 @@ namespace {
 
         (void)conn_result->prepare_cached("SELECT 1");
         (void)conn_result->prepare_cached("SELECT 2");
-        EXPECT_EQ(conn_result->cached_statement_count(), 2u);
+        EXPECT_EQ(conn_result->cached_statement_count(), 2U);
 
         conn_result->clear_statement_cache();
-        EXPECT_EQ(conn_result->cached_statement_count(), 0u);
+        EXPECT_EQ(conn_result->cached_statement_count(), 0U);
     }
 
     // ============================================================================
@@ -942,7 +946,7 @@ namespace {
         auto step = stmt_result->step();
         ASSERT_TRUE(step.has_value());
 
-        EXPECT_NEAR(stmt_result->extract_float(0), 2.5f, 0.01f);
+        EXPECT_NEAR(stmt_result->extract_float(0), 2.5F, 0.01F);
     }
 
     TEST_F(PgColumnExtractionTest, ExtractBytes) {
@@ -1272,7 +1276,7 @@ namespace {
         }
 
         template <typename = void> [[nodiscard]] auto extract_float(int /*col_index*/) const noexcept -> float {
-            return 0.0f;
+            return 0.0F;
         }
 
         template <typename = void>
@@ -1299,7 +1303,7 @@ namespace {
       private:
         bool fail_ = false;
 
-        [[nodiscard]] auto check_fail() noexcept -> std::expected<void, Error> {
+        [[nodiscard]] auto check_fail() const noexcept -> std::expected<void, Error> {
             if (fail_) {
                 return std::unexpected(Error{-1, "mock bind failure"});
             }
@@ -1340,6 +1344,10 @@ namespace {
             // Intentionally empty.
         }
 
+        auto clear_statement_cache(std::string_view /*table*/) noexcept -> void {
+            // Intentionally empty.
+        }
+
         [[nodiscard]] auto cached_statement_count() const noexcept -> size_t {
             return 0;
         }
@@ -1375,7 +1383,7 @@ namespace {
         (void)BindFailQuerySet::set_default_connection("mock");
 
         // Get the connection and configure it to fail binds
-        auto conn = BindFailQuerySet::get_default_connection();
+        const auto& conn = BindFailQuerySet::get_default_connection();
         conn->set_fail_binds(true);
 
         BindFailQuerySet   qs;
@@ -1391,7 +1399,7 @@ namespace {
     TEST(PgInsertReturningBindErrorTest, InsertToSqlBindFailureReturnsError) {
         (void)BindFailQuerySet::set_default_connection("mock");
 
-        auto conn = BindFailQuerySet::get_default_connection();
+        const auto& conn = BindFailQuerySet::get_default_connection();
         conn->set_fail_binds(true);
 
         BindFailQuerySet   qs;
@@ -1454,8 +1462,8 @@ namespace {
     TEST_F(PgSchemaDetailTest, CreateTableIfNotExistsPgDialect) {
         (void)PgQuerySet::set_default_connection("host=localhost");
 
-        auto conn   = PgQuerySet::get_default_connection();
-        auto result = storm::orm::schema::SchemaStatement<MockPgPerson>::create_table_if_not_exists(conn);
+        const auto& conn   = PgQuerySet::get_default_connection();
+        auto        result = storm::orm::schema::SchemaStatement<MockPgPerson>::create_table_if_not_exists(conn);
         ASSERT_TRUE(result.has_value());
     }
 

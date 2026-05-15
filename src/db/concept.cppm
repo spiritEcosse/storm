@@ -36,8 +36,9 @@ export namespace storm::db {
         // Cached statement preparation
         { conn.prepare_cached(sql) } -> std::same_as<std::expected<typename T::Statement*, typename T::Error>>;
 
-        // Cache management
+        // Cache management — clear-all and per-table (Issue #215)
         { conn.clear_statement_cache() } -> std::same_as<void>;
+        { conn.clear_statement_cache(sql) } -> std::same_as<void>;
         { conn.cached_statement_count() } -> std::same_as<size_t>;
     };
 

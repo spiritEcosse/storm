@@ -37,7 +37,8 @@
       "Bash(git show:*)",
       "Bash(gh issue:*)",
       "Bash(./build/release/benchmarks/storm_bench --filter=order_by_with_limit_10 --quick)",
-      "Bash(./build/release/benchmarks/storm_bench --benchmark_list_tests)"
+      "Bash(./build/release/benchmarks/storm_bench --benchmark_list_tests)",
+      "Bash(grep -E \"\\\\.\\(cppm|hpp|cpp\\)$\")"
     ],
     "deny": [],
     "ask": []
