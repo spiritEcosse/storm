@@ -1,8 +1,5 @@
 module;
 
-// LINT-EXCLUDE-FILE: duplicate
-// Boilerplate-pattern duplicates accepted (see #264 finding).
-
 #include <meta>
 #include <cassert>
 
@@ -168,6 +165,14 @@ export namespace storm::orm::statements {
             return result;
         }
 
+        // Iterate the FK indices [0, fk_count_) and invoke `body.template operator()<I>()` for each.
+        // Used by the consteval SQL-builder helpers; encapsulates the index-sequence fold.
+        template <typename Body> static consteval void for_each_fk_field(const Body& body) {
+            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) {
+                (body.template operator()<Is>(), ...);
+            }(std::make_index_sequence<fk_count_>{});
+        }
+
         static consteval auto calculate_select_fields_size() -> size_t {
             size_t total = 0;
 
@@ -180,19 +185,14 @@ export namespace storm::orm::statements {
             }
 
             // FK fields
-            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) {
-                (
-                        [&]<size_t I>() {
-                            total += 2; // ", "
-                            [&]<size_t... FieldIs>(std::index_sequence<FieldIs...> /*unused*/) {
-                                ((total += (FieldIs > 0 ? 2 : 0) + 3 + 1 +
-                                           std::meta::identifier_of(FKBase_at<I>::all_members_[FieldIs]).size()),
-                                 ...);
-                            }(std::make_index_sequence<FKBase_at<I>::field_count_>{});
-                        }.template operator()<Is>(),
-                        ...
-                );
-            }(std::make_index_sequence<fk_count_>{});
+            for_each_fk_field([&]<size_t I>() {
+                total += 2; // ", "
+                [&]<size_t... FieldIs>(std::index_sequence<FieldIs...> /*unused*/) {
+                    ((total += (FieldIs > 0 ? 2 : 0) + 3 + 1 +
+                               std::meta::identifier_of(FKBase_at<I>::all_members_[FieldIs]).size()),
+                     ...);
+                }(std::make_index_sequence<FKBase_at<I>::field_count_>{});
+            });
 
             return total + utilities::sql_len::SMALL_BUFFER;
         }
@@ -216,25 +216,20 @@ export namespace storm::orm::statements {
             }
 
             // FK fields
-            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) {
-                (
-                        [&]<size_t I>() {
-                            result.append(", ");
-                            [&]<size_t... FieldIs>(std::index_sequence<FieldIs...> /*unused*/) {
-                                // NOLINTNEXTLINE(misc-const-correctness) - first_in_table IS modified in fold expression
-                                bool first_in_table = true;
-                                (((first_in_table ? (void)0 : result.append(", ")),
-                                  result.append("t"),
-                                  result.append_digit(I + 2),
-                                  result.append("."),
-                                  result.append(std::meta::identifier_of(FKBase_at<I>::all_members_[FieldIs])),
-                                  first_in_table = false),
-                                 ...);
-                            }(std::make_index_sequence<FKBase_at<I>::field_count_>{});
-                        }.template operator()<Is>(),
-                        ...
-                );
-            }(std::make_index_sequence<fk_count_>{});
+            for_each_fk_field([&]<size_t I>() {
+                result.append(", ");
+                [&]<size_t... FieldIs>(std::index_sequence<FieldIs...> /*unused*/) {
+                    // NOLINTNEXTLINE(misc-const-correctness) - first_in_table IS modified in fold expression
+                    bool first_in_table = true;
+                    (((first_in_table ? (void)0 : result.append(", ")),
+                      result.append("t"),
+                      result.append_digit(I + 2),
+                      result.append("."),
+                      result.append(std::meta::identifier_of(FKBase_at<I>::all_members_[FieldIs])),
+                      first_in_table = false),
+                     ...);
+                }(std::make_index_sequence<FKBase_at<I>::field_count_>{});
+            });
 
             return result;
         }
