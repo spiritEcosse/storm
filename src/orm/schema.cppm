@@ -1,7 +1,7 @@
 module;
 
-// LINT-EXCLUDE-FILE: duplicate, complexity, length
-// Boilerplate-pattern duplicates accepted (see #264 finding).
+// LINT-EXCLUDE-FILE: complexity, length
+// `duplicate` removed in #277 Phase 3 (shared append_index_sql helper).
 
 #include <meta>
 
@@ -327,6 +327,27 @@ export namespace storm::orm::schema {
         // Index SQL buffer — generous for "CREATE UNIQUE INDEX IF NOT EXISTS idx_<table>_<field> ON <table>(<field>)"
         static constexpr size_t INDEX_SQL_BUFFER = 256;
 
+        // Append the shared tail of a CREATE INDEX statement:
+        //   <prefix>idx_<table>_<field><suffix> ON <table>(<field><column_suffix>)
+        // The three callers differ only in the leading keyword ("CREATE INDEX" vs
+        // "CREATE UNIQUE INDEX") and in whether FK fields get the "_id" decoration.
+        template <typename SqlT>
+        static consteval void append_index_sql(
+                SqlT& sql, std::string_view prefix, std::string_view field_name, std::string_view column_suffix
+        ) {
+            sql.append(prefix);
+            sql.append(Base::table_name_);
+            sql.append("_");
+            sql.append(field_name);
+            sql.append(column_suffix);
+            sql.append(" ON ");
+            sql.append(Base::table_name_);
+            sql.append("(");
+            sql.append(field_name);
+            sql.append(column_suffix);
+            sql.append(")");
+        }
+
         // Build CREATE INDEX SQL for a single field at compile-time
         template <size_t Index> static consteval auto build_create_index_sql() {
             ConstexprString<INDEX_SQL_BUFFER> sql;
@@ -335,35 +356,11 @@ export namespace storm::orm::schema {
             if constexpr (!Base::needs_index(member)) {
                 return sql;
             } else if constexpr (Base::is_unique_field(member)) {
-                sql.append("CREATE UNIQUE INDEX IF NOT EXISTS idx_");
-                sql.append(Base::table_name_);
-                sql.append("_");
-                sql.append(std::meta::identifier_of(member));
-                sql.append(" ON ");
-                sql.append(Base::table_name_);
-                sql.append("(");
-                sql.append(std::meta::identifier_of(member));
-                sql.append(")");
+                append_index_sql(sql, "CREATE UNIQUE INDEX IF NOT EXISTS idx_", std::meta::identifier_of(member), "");
             } else if constexpr (Base::is_fk_field(member)) {
-                sql.append("CREATE INDEX IF NOT EXISTS idx_");
-                sql.append(Base::table_name_);
-                sql.append("_");
-                sql.append(std::meta::identifier_of(member));
-                sql.append("_id ON ");
-                sql.append(Base::table_name_);
-                sql.append("(");
-                sql.append(std::meta::identifier_of(member));
-                sql.append("_id)");
+                append_index_sql(sql, "CREATE INDEX IF NOT EXISTS idx_", std::meta::identifier_of(member), "_id");
             } else {
-                sql.append("CREATE INDEX IF NOT EXISTS idx_");
-                sql.append(Base::table_name_);
-                sql.append("_");
-                sql.append(std::meta::identifier_of(member));
-                sql.append(" ON ");
-                sql.append(Base::table_name_);
-                sql.append("(");
-                sql.append(std::meta::identifier_of(member));
-                sql.append(")");
+                append_index_sql(sql, "CREATE INDEX IF NOT EXISTS idx_", std::meta::identifier_of(member), "");
             }
             return sql;
         }
