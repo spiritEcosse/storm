@@ -102,4 +102,33 @@ export namespace storm::db {
         }
     };
 
+    // Identifier-character predicate (SQL word boundary): same set as `\w` in regex
+    // ([A-Za-z0-9_]). Used by per-table cache invalidation to avoid clearing
+    // "persons" entries when invalidating "person".
+    [[nodiscard]] constexpr auto is_sql_ident_char(char c) noexcept -> bool {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+    }
+
+    [[nodiscard]] inline auto is_word_boundary_match(std::string_view sql, std::size_t pos, std::size_t len) noexcept
+            -> bool {
+        const bool left_ok  = pos == 0 || !is_sql_ident_char(sql[pos - 1]);
+        const bool right_ok = pos + len == sql.size() || !is_sql_ident_char(sql[pos + len]);
+        return left_ok && right_ok;
+    }
+
+    // Word-boundary table-name match in a SQL string. Identifier characters on
+    // either side of the match disqualify it, so clearing "persons" does not
+    // touch "person_addresses" or "persons_archive". Issue #215.
+    [[nodiscard]] inline auto sql_references_table(std::string_view sql, std::string_view table) noexcept -> bool {
+        if (table.empty() || sql.size() < table.size()) {
+            return false;
+        }
+        for (std::size_t pos = 0; (pos = sql.find(table, pos)) != std::string_view::npos; pos += table.size()) {
+            if (is_word_boundary_match(sql, pos, table.size())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
 } // namespace storm::db
