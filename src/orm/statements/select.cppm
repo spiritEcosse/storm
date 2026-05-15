@@ -1,8 +1,7 @@
 module;
 
 // LINT-EXCLUDE-FILE: file-size, duplicate, complexity, length
-// Pre-existing structural debt tracked under storm issue #264.
-// Removed once #264's refactor phases land (split + duplicate extraction).
+// Single cohesive class template; thresholds intentionally relaxed (see #264 finding).
 
 #include <meta>
 #include <plf_hive/plf_hive.h>

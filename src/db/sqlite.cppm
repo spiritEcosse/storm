@@ -1,7 +1,7 @@
 module;
 
 // LINT-EXCLUDE-FILE: duplicate
-// Pre-existing structural debt tracked under storm issue #264.
+// Boilerplate-pattern duplicates accepted (see #264 finding).
 
 #include <sqlite3.h>
 
