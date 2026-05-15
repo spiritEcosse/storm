@@ -143,7 +143,7 @@ RUN_CMAKE_FORMAT=true
 RUN_TIDY=true
 RUN_TESTS=true
 # Default true; allow opt-out for known hang scenarios (see #268 / #215 coverage instrumentation interaction).
-# Usage: STORM_SKIP_COVERAGE=1 git commit ...   — CI still runs coverage via SonarCloud.
+# Usage: export STORM_SKIP_COVERAGE=1 git commit ...   — CI still runs coverage via SonarCloud.
 RUN_COVERAGE=${STORM_SKIP_COVERAGE:+false}
 RUN_COVERAGE=${RUN_COVERAGE:-true}
 
