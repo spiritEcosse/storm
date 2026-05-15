@@ -1,7 +1,8 @@
 module;
 
-// LINT-EXCLUDE-FILE: file-size, duplicate, complexity, length
+// LINT-EXCLUDE-FILE: file-size, complexity, length
 // Single cohesive class template; thresholds intentionally relaxed (see #264 finding).
+// `duplicate` removed in #277 Phase 3 (shared consteval SQL builder + to_sql_impl).
 
 #include <meta>
 
@@ -94,10 +95,13 @@ export namespace storm::orm::statements {
             return size;
         }
 
-        // Build INSERT ... RETURNING <pk> SQL at compile-time
-        static consteval auto build_insert_returning_sql_array() {
+        // Shared compile-time INSERT SQL builder for the RETURNING and non-RETURNING variants.
+        // The +64 padding on the RETURNING path covers " RETURNING <pk_name>".
+        template <bool WithReturning> static consteval auto build_insert_sql_array_impl() {
             // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
-            constexpr size_t          sql_size = calculate_insert_sql_size() + utilities::sql_len::XL_BUFFER + 64;
+            constexpr size_t extra =
+                    WithReturning ? (utilities::sql_len::XL_BUFFER + 64) : utilities::sql_len::XL_BUFFER;
+            constexpr size_t          sql_size = calculate_insert_sql_size() + extra;
             ConstexprString<sql_size> result;
 
             result.append("INSERT INTO ");
@@ -106,34 +110,22 @@ export namespace storm::orm::statements {
             result.append(Base::build_non_pk_field_names_list());
             result.append(") VALUES (");
             result.append(placeholders_);
-            result.append(") RETURNING ");
-            result.append(Base::pk_name_);
+            if constexpr (WithReturning) {
+                result.append(") RETURNING ");
+                result.append(Base::pk_name_);
+            } else {
+                result.append(")");
+            }
 
             return result;
         }
 
         // Pre-computed INSERT ... RETURNING SQL (both SQLite 3.35+ and PostgreSQL)
-        static constexpr auto           insert_returning_sql_array  = build_insert_returning_sql_array();
+        static constexpr auto           insert_returning_sql_array  = build_insert_sql_array_impl<true>();
         static inline const std::string insert_returning_sql_string = std::string(insert_returning_sql_array);
 
-        // Build INSERT SQL without RETURNING clause (faster path when ID not needed)
-        static consteval auto build_insert_sql_array() {
-            constexpr size_t          sql_size = calculate_insert_sql_size() + utilities::sql_len::XL_BUFFER;
-            ConstexprString<sql_size> result;
-
-            result.append("INSERT INTO ");
-            result.append(Base::table_name_);
-            result.append(" (");
-            result.append(Base::build_non_pk_field_names_list());
-            result.append(") VALUES (");
-            result.append(placeholders_);
-            result.append(")");
-
-            return result;
-        }
-
-        // Pre-computed INSERT SQL without RETURNING
-        static constexpr auto           insert_sql_array  = build_insert_sql_array();
+        // Pre-computed INSERT SQL without RETURNING (faster path when ID not needed)
+        static constexpr auto           insert_sql_array  = build_insert_sql_array_impl<false>();
         static inline const std::string insert_sql_string = std::string(insert_sql_array);
 
       private:
@@ -316,34 +308,12 @@ export namespace storm::orm::statements {
 
         // Returns SQL string with bound parameters inlined for a single INSERT (for debugging)
         [[nodiscard]] auto to_sql(const T& obj) -> std::expected<std::string, Error> {
-            auto stmt_result = conn_->prepare_cached(insert_returning_sql_string);
-            if (!stmt_result) {
-                return std::unexpected(stmt_result.error());
-            }
-            auto* stmt        = *stmt_result;
-            auto  bind_result = Base::template bind_non_pk_fields_impl<ConnType, Statement>(
-                    *stmt, obj, typename Base::field_indices_t()
-            );
-            if (!bind_result) {
-                return std::unexpected(bind_result.error());
-            }
-            return stmt->expanded_sql();
+            return to_sql_impl(insert_returning_sql_string, [&](Statement& s) { return bind_single(s, obj); });
         }
 
         // Returns SQL string for INSERT without RETURNING (for debugging)
         [[nodiscard]] auto to_sql_no_returning(const T& obj) -> std::expected<std::string, Error> {
-            auto stmt_result = conn_->prepare_cached(insert_sql_string);
-            if (!stmt_result) {
-                return std::unexpected(stmt_result.error());
-            }
-            auto* stmt        = *stmt_result;
-            auto  bind_result = Base::template bind_non_pk_fields_impl<ConnType, Statement>(
-                    *stmt, obj, typename Base::field_indices_t()
-            );
-            if (!bind_result) {
-                return std::unexpected(bind_result.error());
-            }
-            return stmt->expanded_sql();
+            return to_sql_impl(insert_sql_string, [&](Statement& s) { return bind_single(s, obj); });
         }
 
         // Returns SQL string with bound parameters inlined for a bulk INSERT (for debugging)
@@ -351,19 +321,9 @@ export namespace storm::orm::statements {
             if (objects.empty()) {
                 return std::string{};
             }
-            const auto& sql      = get_bulk_insert_sql(objects.size());
-            auto        stmt_res = conn_->prepare_cached(sql);
-            if (!stmt_res) {
-                return std::unexpected(stmt_res.error());
-            }
-            auto* stmt        = *stmt_res;
-            auto  bind_result = Base::template bind_non_pk_objects_bulk_impl<ConnType, Statement>(
-                    *stmt, objects, typename Base::field_indices_t()
-            );
-            if (!bind_result) {
-                return std::unexpected(bind_result.error());
-            }
-            return stmt->expanded_sql();
+            return to_sql_impl(get_bulk_insert_sql(objects.size()), [&](Statement& s) {
+                return bind_bulk(s, objects);
+            });
         }
 
         // Returns SQL string with bound parameters inlined for a bulk INSERT ... RETURNING (for debugging)
@@ -371,19 +331,9 @@ export namespace storm::orm::statements {
             if (objects.empty()) {
                 return std::string{};
             }
-            const auto& sql      = get_bulk_insert_returning_sql(objects.size());
-            auto        stmt_res = conn_->prepare_cached(sql);
-            if (!stmt_res) {
-                return std::unexpected(stmt_res.error());
-            }
-            auto* stmt        = *stmt_res;
-            auto  bind_result = Base::template bind_non_pk_objects_bulk_impl<ConnType, Statement>(
-                    *stmt, objects, typename Base::field_indices_t()
-            );
-            if (!bind_result) {
-                return std::unexpected(bind_result.error());
-            }
-            return stmt->expanded_sql();
+            return to_sql_impl(get_bulk_insert_returning_sql(objects.size()), [&](Statement& s) {
+                return bind_bulk(s, objects);
+            });
         }
 
         // Batch insert with RETURNING — returns all inserted IDs
@@ -619,6 +569,35 @@ export namespace storm::orm::statements {
         }
 
       private:
+        // Shared body of the four to_sql* debug helpers: prepare the given SQL,
+        // delegate binding to the caller, then return the expanded SQL string.
+        template <typename BindFn>
+        [[nodiscard]] auto to_sql_impl(const std::string& sql, BindFn&& bind_fn) -> std::expected<std::string, Error> {
+            auto stmt_result = conn_->prepare_cached(sql);
+            if (!stmt_result) {
+                return std::unexpected(stmt_result.error());
+            }
+            auto* stmt        = *stmt_result;
+            auto  bind_result = std::forward<BindFn>(bind_fn)(*stmt);
+            if (!bind_result) {
+                return std::unexpected(bind_result.error());
+            }
+            return stmt->expanded_sql();
+        }
+
+        // Binders shared between the single-row and bulk to_sql variants.
+        [[nodiscard]] static auto bind_single(Statement& stmt, const T& obj) -> std::expected<void, Error> {
+            return Base::template bind_non_pk_fields_impl<ConnType, Statement>(
+                    stmt, obj, typename Base::field_indices_t()
+            );
+        }
+
+        [[nodiscard]] static auto bind_bulk(Statement& stmt, std::span<const T> objects) -> std::expected<void, Error> {
+            return Base::template bind_non_pk_objects_bulk_impl<ConnType, Statement>(
+                    stmt, objects, typename Base::field_indices_t()
+            );
+        }
+
         std::shared_ptr<ConnType> conn_;
         // Raw pointers obtained from Connection::prepare_cached(). Pointer
         // stability across cache growth is guaranteed by the
