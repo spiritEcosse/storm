@@ -21,6 +21,8 @@
 
 set -e
 
+readonly RULE='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+
 CLANG_TIDY="../clang-p2996/build/bin/clang-tidy"
 CLANG_TIDY_DIFF="../clang-p2996/clang-tools-extra/clang-tidy/tool/clang-tidy-diff.py"
 BUILD_DIR="build/release"
@@ -91,6 +93,10 @@ case "$MODE" in
     diff) echo "   Scope: staged lines only (git diff --cached, lines added/changed)" ;;
     full) echo "   Scope: staged files (whole-file scan)" ;;
     all)  echo "   Scope: ALL C++ source files (sweep)" ;;
+    *)
+        echo "❌ Internal error: unknown MODE '$MODE'" >&2
+        exit 2
+        ;;
 esac
 if [[ -n "$FIX_FLAG" ]]; then
     echo "   Mode: AUTO-FIX enabled"
@@ -150,11 +156,11 @@ if [[ "$MODE" == "diff" ]]; then
     DIFF_ERR_REAL=$(grep ": error:" "$DIFF_OUT" | grep -v -E "(module|import|reflect|std::meta|consteval)" | wc -l || true)
 
     echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "$RULE"
     echo "📊 --diff summary:"
     echo "   Warnings on staged lines: $DIFF_WARN"
     echo "   Errors on staged lines:   $DIFF_ERR (real: $DIFF_ERR_REAL)"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "$RULE"
 
     if [[ "$DIFF_WARN" -gt 0 || "$DIFF_ERR_REAL" -gt 0 ]]; then
         if [[ -n "$FIX_FLAG" ]]; then
@@ -339,7 +345,7 @@ echo ""
 echo "$FILES" | xargs -P "$JOBS" -I {} bash -c 'run_tidy "$@"' _ {}
 
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "$RULE"
 
 # Collect and display results (filter out "N warnings generated" noise)
 WARNINGS=$(cat "$TEMP_DIR"/*.out 2>/dev/null | grep -c ": warning:") || WARNINGS=0
@@ -358,7 +364,7 @@ if [[ $ERRORS -gt 0 ]] || [[ $WARNINGS -gt 0 ]]; then
     echo ""
 fi
 
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "$RULE"
 echo "📊 Summary:"
 echo "   Files checked: $FILE_COUNT"
 echo "   Files passed: $FILES_OK"
@@ -368,7 +374,7 @@ if [[ $UNEXPECTED_CRASHES -gt 0 ]]; then
 fi
 echo "   Warnings: $WARNINGS"
 echo "   Errors: $ERRORS"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "$RULE"
 
 # Exit logic:
 # 1. Errors always fail
