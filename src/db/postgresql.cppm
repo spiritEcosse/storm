@@ -527,28 +527,6 @@ export namespace storm::db::postgresql {
         int                        blob_decoded_col_  = -1;
     };
 
-    // Transparent hash for string_view lookups without allocation
-    struct string_hash {
-        using is_transparent = void;
-        using hash_type      = std::hash<std::string_view>;
-
-        [[nodiscard]] auto operator()(std::string_view str) const noexcept -> size_t {
-            return hash_type{}(str);
-        }
-
-        [[nodiscard]] auto operator()(const std::string& str) const noexcept -> size_t {
-            return hash_type{}(str);
-        }
-    };
-
-    struct string_equal {
-        using is_transparent = void;
-
-        [[nodiscard]] auto operator()(std::string_view lhs, std::string_view rhs) const noexcept -> bool {
-            return lhs == rhs;
-        }
-    };
-
     // Custom deleter for PGconn
     struct PGconnDeleter {
         auto operator()(PGconn* conn) const noexcept -> void {
@@ -563,7 +541,8 @@ export namespace storm::db::postgresql {
         // Issue #215: storing `unique_ptr<Statement>` keeps Statement objects
         // pinned across map rehashes, so Level 2 callers can hold
         // `Statement*` from prepare_cached() safely.
-        using StatementCache = std::unordered_map<std::string, std::unique_ptr<Statement>, string_hash, string_equal>;
+        using StatementCache = std::
+                unordered_map<std::string, std::unique_ptr<Statement>, storm::db::string_hash, storm::db::string_equal>;
 
         // Cache size constants
         static constexpr size_t STMT_CACHE_RESERVE = 32;
@@ -620,25 +599,11 @@ export namespace storm::db::postgresql {
 
         // Prepare a statement - translates ? placeholders to $1, $2, ...
         [[nodiscard]] auto prepare(std::string_view sql) -> std::expected<Statement, Error> {
-            if (!is_open()) {
-                return std::unexpected(Error{-1, "Connection not open"});
+            auto stmt_name = prepare_pg_statement(sql);
+            if (!stmt_name) {
+                return std::unexpected(stmt_name.error());
             }
-
-            const std::string pg_sql    = translate_placeholders(sql);
-            const std::string stmt_name = next_stmt_name();
-
-            PGresult* res = PQprepare(conn_.get(), stmt_name.c_str(), pg_sql.c_str(), 0, nullptr);
-
-            if (res == nullptr || PQresultStatus(res) != PGRES_COMMAND_OK) {
-                const std::string msg = PQerrorMessage(conn_.get());
-                if (res != nullptr) {
-                    PQclear(res);
-                }
-                return std::unexpected(Error{-1, msg});
-            }
-
-            PQclear(res);
-            return Statement{conn_.get(), stmt_name};
+            return Statement{conn_.get(), std::move(*stmt_name)};
         }
 
         // Prepare with caching - reuses prepared statements for identical SQL
@@ -654,22 +619,11 @@ export namespace storm::db::postgresql {
                 return it->second.get();
             }
 
-            // Cache miss - create new prepared statement
-            const std::string pg_sql    = translate_placeholders(sql);
-            const std::string stmt_name = next_stmt_name();
-
-            PGresult* res = PQprepare(conn_.get(), stmt_name.c_str(), pg_sql.c_str(), 0, nullptr);
-
-            if (res == nullptr || PQresultStatus(res) != PGRES_COMMAND_OK) {
-                const std::string msg = PQerrorMessage(conn_.get());
-                if (res != nullptr) {
-                    PQclear(res);
-                }
-                return std::unexpected(Error{-1, msg});
+            auto stmt_name = prepare_pg_statement(sql);
+            if (!stmt_name) {
+                return std::unexpected(stmt_name.error());
             }
-
-            PQclear(res);
-            auto new_stmt = std::make_unique<Statement>(conn_.get(), stmt_name);
+            auto new_stmt = std::make_unique<Statement>(conn_.get(), std::move(*stmt_name));
             new_stmt->set_original_sql(std::string(sql)); // Store original SQL for expanded_sql()
             auto [inserted_it, inserted] = statement_cache_.emplace(std::string(sql), std::move(new_stmt));
             (void)inserted; // Always true: find() above confirmed key absence
@@ -788,6 +742,26 @@ export namespace storm::db::postgresql {
         // Generate unique prepared statement names
         [[nodiscard]] auto next_stmt_name() -> std::string {
             return "_storm_" + std::to_string(stmt_counter_++);
+        }
+
+        // Shared body of prepare() and prepare_cached(): translates placeholders,
+        // calls PQprepare, returns the generated statement name on success.
+        [[nodiscard]] auto prepare_pg_statement(std::string_view sql) -> std::expected<std::string, Error> {
+            if (!is_open()) {
+                return std::unexpected(Error{-1, "Connection not open"});
+            }
+            const std::string pg_sql    = translate_placeholders(sql);
+            std::string       stmt_name = next_stmt_name();
+            PGresult*         res       = PQprepare(conn_.get(), stmt_name.c_str(), pg_sql.c_str(), 0, nullptr);
+            if (res == nullptr || PQresultStatus(res) != PGRES_COMMAND_OK) {
+                const std::string msg = PQerrorMessage(conn_.get());
+                if (res != nullptr) {
+                    PQclear(res);
+                }
+                return std::unexpected(Error{-1, msg});
+            }
+            PQclear(res);
+            return stmt_name;
         }
 
         PGconnPtr      conn_;

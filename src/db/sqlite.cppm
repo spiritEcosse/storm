@@ -268,28 +268,6 @@ export namespace storm::db::sqlite {
         sqlite3_stmt* raw_; // Cached raw pointer for hot-path performance
     };
 
-    // Transparent hash for string_view lookups without allocation
-    struct string_hash {
-        using is_transparent = void;
-        using hash_type      = std::hash<std::string_view>;
-
-        [[nodiscard]] auto operator()(std::string_view str) const noexcept -> size_t {
-            return hash_type{}(str);
-        }
-
-        [[nodiscard]] auto operator()(const std::string& str) const noexcept -> size_t {
-            return hash_type{}(str);
-        }
-    };
-
-    struct string_equal {
-        using is_transparent = void;
-
-        [[nodiscard]] auto operator()(std::string_view lhs, std::string_view rhs) const noexcept -> bool {
-            return lhs == rhs;
-        }
-    };
-
     class Connection {
         using SqlitePtr = std::unique_ptr<sqlite3, SqliteDeleter>;
         // Issue #215: storing `unique_ptr<Statement>` (not `Statement`) keeps the
@@ -297,7 +275,8 @@ export namespace storm::db::sqlite {
         // caches hold raw `Statement*` pointers obtained from prepare_cached();
         // with value storage those pointers would dangle after any insert that
         // triggers a rehash.
-        using StatementCache = std::unordered_map<std::string, std::unique_ptr<Statement>, string_hash, string_equal>;
+        using StatementCache = std::
+                unordered_map<std::string, std::unique_ptr<Statement>, storm::db::string_hash, storm::db::string_equal>;
 
       public:
         using Error     = sqlite::Error;

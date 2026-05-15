@@ -3,8 +3,10 @@ module;
 export module storm_db_concept;
 import <expected>;
 import <string_view>;
+import <string>;
 import <concepts>;
 import <cstddef>;
+import <functional>;
 
 export namespace storm::db {
 
@@ -76,6 +78,28 @@ export namespace storm::db {
 
     template <DatabaseStatement T> struct StatementTraits<T> {
         using Error = typename T::Error;
+    };
+
+    // Transparent hash + equal for heterogeneous string_view lookup in caches.
+    // Shared by every backend's StatementCache (sqlite.cppm, postgresql.cppm).
+    struct string_hash {
+        using is_transparent = void;
+        using hash_type      = std::hash<std::string_view>;
+
+        [[nodiscard]] auto operator()(std::string_view str) const noexcept -> size_t {
+            return hash_type{}(str);
+        }
+        [[nodiscard]] auto operator()(const std::string& str) const noexcept -> size_t {
+            return hash_type{}(str);
+        }
+    };
+
+    struct string_equal {
+        using is_transparent = void;
+
+        [[nodiscard]] auto operator()(std::string_view lhs, std::string_view rhs) const noexcept -> bool {
+            return lhs == rhs;
+        }
     };
 
 } // namespace storm::db
