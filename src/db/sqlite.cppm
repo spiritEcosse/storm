@@ -275,8 +275,9 @@ export namespace storm::db::sqlite {
         // caches hold raw `Statement*` pointers obtained from prepare_cached();
         // with value storage those pointers would dangle after any insert that
         // triggers a rehash.
-        using StatementCache = std::
-                unordered_map<std::string, std::unique_ptr<Statement>, storm::db::string_hash, storm::db::string_equal>;
+        using StatementValue = std::unique_ptr<Statement>;
+        using StatementCache =
+                std::unordered_map<std::string, StatementValue, storm::db::string_hash, storm::db::string_equal>;
 
       public:
         using Error     = sqlite::Error;

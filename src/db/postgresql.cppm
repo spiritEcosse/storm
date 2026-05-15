@@ -541,8 +541,9 @@ export namespace storm::db::postgresql {
         // Issue #215: storing `unique_ptr<Statement>` keeps Statement objects
         // pinned across map rehashes, so Level 2 callers can hold
         // `Statement*` from prepare_cached() safely.
-        using StatementCache = std::
-                unordered_map<std::string, std::unique_ptr<Statement>, storm::db::string_hash, storm::db::string_equal>;
+        using StatementValue = std::unique_ptr<Statement>;
+        using StatementCache =
+                std::unordered_map<std::string, StatementValue, storm::db::string_hash, storm::db::string_equal>;
 
         // Cache size constants
         static constexpr size_t STMT_CACHE_RESERVE = 32;
