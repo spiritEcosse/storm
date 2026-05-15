@@ -1,8 +1,7 @@
 module;
 
 // LINT-EXCLUDE-FILE: duplicate, complexity
-// Pre-existing structural debt tracked under storm issue #264.
-// Removed once #264's refactor phases land.
+// Single cohesive class template; thresholds intentionally relaxed (see #264 finding).
 
 #include <meta>
 
