@@ -1,7 +1,7 @@
 module;
 
-// LINT-EXCLUDE-FILE: duplicate
-// Boilerplate-pattern duplicates accepted (see #264 finding).
+// `duplicate` removed in #277 Phase 3 (build_field_list_with_prefix consteval helper shared by JOIN/non-JOIN field-list
+// builders).
 
 #include <meta>
 #include <utility>
@@ -97,14 +97,20 @@ export namespace storm::orm::statements {
             }
         }
 
-        // Compile-time field list generation (returns ConstexprString)
-        template <size_t... Is>
-        static consteval auto build_field_list_constexpr(std::index_sequence<Is...> /*unused*/) {
-            constexpr size_t total_size = calculate_field_list_size(std::make_index_sequence<NumFields>{});
+        // Build a "<prefix>col1, <prefix>col2, ..." field list at compile time.
+        // The non-JOIN list uses no prefix; the JOIN list uses "t1.". The two
+        // builders used to spell the loop out independently.
+        template <size_t Extra, size_t... Is>
+        static consteval auto
+        build_field_list_with_prefix(std::string_view prefix, std::index_sequence<Is...> /*unused*/) {
+            constexpr size_t total_size = calculate_field_list_size(std::make_index_sequence<NumFields>{}) + Extra;
             ConstexprString<total_size + 10> result;
-            auto                             append_field = [&result]<size_t I>() {
+            auto                             append_field = [&result, prefix]<size_t I>() {
                 if constexpr (I > 0) {
                     result.append(", ");
+                }
+                if (!prefix.empty()) {
+                    result.append(prefix);
                 }
                 append_column_name<I>(result);
             };
@@ -112,24 +118,17 @@ export namespace storm::orm::statements {
             return result;
         }
 
+        // Compile-time field list generation (no alias prefix)
+        template <size_t... Is> static consteval auto build_field_list_constexpr(std::index_sequence<Is...> seq) {
+            return build_field_list_with_prefix<0, Is...>("", seq);
+        }
+
         // Pre-computed field list for use in non-JOIN path
         static constexpr auto field_list_constexpr_ = build_field_list_constexpr(std::make_index_sequence<NumFields>{});
 
         // Compile-time field list with "t1." table alias prefix for JOIN queries
-        template <size_t... Is>
-        static consteval auto build_join_field_list_constexpr(std::index_sequence<Is...> /*unused*/) {
-            constexpr size_t total_size = calculate_field_list_size(std::make_index_sequence<NumFields>{}) +
-                                          (NumFields * 3); // "t1." per field
-            ConstexprString<total_size + 10> result;
-            auto                             append_field = [&result]<size_t I>() {
-                if constexpr (I > 0) {
-                    result.append(", ");
-                }
-                result.append("t1.");
-                append_column_name<I>(result);
-            };
-            (append_field.template operator()<Is>(), ...);
-            return result;
+        template <size_t... Is> static consteval auto build_join_field_list_constexpr(std::index_sequence<Is...> seq) {
+            return build_field_list_with_prefix<NumFields * 3, Is...>("t1.", seq);
         }
 
         static constexpr auto join_field_list_constexpr_ =
