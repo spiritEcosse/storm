@@ -1,7 +1,9 @@
 module;
 
-// LINT-EXCLUDE-FILE: file-size, duplicate
+// LINT-EXCLUDE-FILE: file-size
 // Single cohesive class template; thresholds intentionally relaxed (see #264 finding).
+// `duplicate` removed in #277 Phase 3 (append_group_by_tail helper folds the HAVING + ORDER/LIMIT/OFFSET tail repeated
+// across execute_where / execute_join / execute_where_join).
 
 #include <meta>
 #include <plf_hive/plf_hive.h>
@@ -584,26 +586,29 @@ export namespace storm::orm::statements {
             }
         }
 
-        [[nodiscard]] __attribute__((hot)) auto execute_where() -> std::expected<ResultType, Error> {
-            std::string sql = base_sql_;
-            insert_where_clause(sql);
+        // Append HAVING + GROUP BY modifiers (ORDER BY / LIMIT / OFFSET) to the
+        // SQL — but only when this aggregate is parameterised with HasGroupBy.
+        // The three execute_* paths used to spell this `if constexpr / having /
+        // append_modifiers` body out inline.
+        __attribute__((always_inline)) auto append_group_by_tail(std::string& sql) -> void {
             if constexpr (HasGroupBy) {
                 if (having_expr_) {
                     insert_having_clause(sql);
                 }
                 append_modifiers(sql);
             }
+        }
+
+        [[nodiscard]] __attribute__((hot)) auto execute_where() -> std::expected<ResultType, Error> {
+            std::string sql = base_sql_;
+            insert_where_clause(sql);
+            append_group_by_tail(sql);
             return prepare_bind_extract(sql);
         }
 
         [[nodiscard]] __attribute__((hot)) auto execute_join() -> std::expected<ResultType, Error> {
             std::string sql = build_join_sql();
-            if constexpr (HasGroupBy) {
-                if (having_expr_) {
-                    insert_having_clause(sql);
-                }
-                append_modifiers(sql);
-            }
+            append_group_by_tail(sql);
             if (having_expr_) {
                 return prepare_bind_having_extract(sql);
             }
@@ -613,12 +618,7 @@ export namespace storm::orm::statements {
         [[nodiscard]] __attribute__((hot)) auto execute_where_join() -> std::expected<ResultType, Error> {
             std::string sql = build_join_sql();
             insert_where_clause(sql);
-            if constexpr (HasGroupBy) {
-                if (having_expr_) {
-                    insert_having_clause(sql);
-                }
-                append_modifiers(sql);
-            }
+            append_group_by_tail(sql);
             return prepare_bind_extract(sql);
         }
 
