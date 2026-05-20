@@ -74,11 +74,13 @@ gtest_discover_tests(${PROJECT_NAME})
 
 # Add modules and reflection flags to tests (same as Storm library).
 apply_cxx_flags(${PROJECT_NAME})
-# Increase constexpr ops limit — consteval JSON parser for 247 YAML-driven
-# test cases. GCC's -fconstexpr-ops-limit counts individual operations (not
-# steps), so the limit is much higher than Clang's -fconstexpr-steps.
-target_compile_options(${PROJECT_NAME}
-                       PRIVATE -fconstexpr-ops-limit=134217728)
+# Increase constexpr step/ops limit — consteval JSON parser for 247 YAML-driven
+# test cases. Clang uses -fconstexpr-steps; GCC uses -fconstexpr-ops-limit
+# (counts individual operations, not steps — limit is therefore much higher).
+target_compile_options(
+  ${PROJECT_NAME}
+  PRIVATE $<$<CXX_COMPILER_ID:Clang>:-fconstexpr-steps=4194304>
+          $<$<CXX_COMPILER_ID:GNU>:-fconstexpr-ops-limit=134217728>)
 
 add_dependencies(${PROJECT_NAME} generate_test_json)
 

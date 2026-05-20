@@ -12,13 +12,21 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "21")
+    message(
+      FATAL_ERROR "Clang >= 21 required. Got: ${CMAKE_CXX_COMPILER_VERSION}")
+  endif()
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "16")
+    message(
+      FATAL_ERROR "GCC >= 16 required. Got: ${CMAKE_CXX_COMPILER_VERSION}")
+  endif()
+else()
   message(
-    FATAL_ERROR "This project requires GCC. Got: ${CMAKE_CXX_COMPILER_ID}")
-endif()
-if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "16")
-  message(
-    FATAL_ERROR "GCC >= 16 required. Got: ${CMAKE_CXX_COMPILER_VERSION}")
+    FATAL_ERROR
+      "This project requires Clang >= 21 or GCC >= 16. Got: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}"
+  )
 endif()
 
 message(STATUS "Using C++26 (standard build)")
@@ -32,11 +40,26 @@ execute_process(
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
   ERROR_QUIET)
 
-add_compile_options(-fmax-errors=1)
-# GCC writes module BMIs to gcm.cache/ in the build dir automatically — no
-# equivalent of clang's -fmodules-cache-path is needed.
+add_compile_options(
+  $<$<CXX_COMPILER_ID:Clang>:-ferror-limit=1>
+  $<$<CXX_COMPILER_ID:GNU>:-fmax-errors=1>
+  $<$<AND:$<CXX_COMPILER_ID:Clang>,$<CONFIG:Debug>>:-ftemplate-backtrace-limit=0>
+)
 
-include(cmake/gcc_flags.cmake)
+# Pin Clang's module cache to the build dir. Clang hashes compile flags into the
+# module cache path, so two presets with different flags (coverage vs no
+# coverage, sanitizer vs none, etc.) write _Builtin_stddef etc. under different
+# hash subdirs of the shared global cache (~/.cache/clang/ModuleCache/). When a
+# later TU imports a module, Clang sees the same builtin module in both dirs and
+# emits a fatal "module defined in both" error. Keeping the cache local to
+# ${CMAKE_BINARY_DIR} guarantees preset isolation, since every preset already
+# has its own binaryDir. GCC writes BMIs to gcm.cache/ in the build dir
+# automatically — no equivalent flag is needed.
+add_compile_options(
+  $<$<CXX_COMPILER_ID:Clang>:-fmodules-cache-path=${CMAKE_BINARY_DIR}/module-cache>
+)
+
+include(cmake/cxx_flags.cmake)
 
 # ── Core library ──────────────────────────────────────────────────────────────
 
