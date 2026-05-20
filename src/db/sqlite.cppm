@@ -1,8 +1,5 @@
 module;
 
-// LINT-EXCLUDE-FILE: duplicate
-// Boilerplate-pattern duplicates accepted (see #264 finding).
-
 #include <sqlite3.h>
 
 export module storm_db_sqlite;
