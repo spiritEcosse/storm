@@ -1,7 +1,9 @@
 module;
 
-// LINT-EXCLUDE-FILE: file-size, duplicate, complexity, length
+// LINT-EXCLUDE-FILE: file-size, complexity, length
 // Single cohesive class template; thresholds intentionally relaxed (see #264 finding).
+// `duplicate` removed in #277 Phase 3 (build_sql() shared by to_sql/prepare_statement/rows_generator + collapsed
+// coroutine step-loop).
 
 #include <meta>
 #include <plf_hive/plf_hive.h>
@@ -24,6 +26,7 @@ import <type_traits>;
 import <optional>;
 import <memory>;
 import <cstdint>;
+import <utility>;
 
 export namespace storm::orm::statements {
 
@@ -82,8 +85,11 @@ export namespace storm::orm::statements {
 
         explicit SelectStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
-        // Build SQL string without preparing or binding (for testing/debugging)
-        [[nodiscard]] static auto build_sql(
+        // Build SQL string without preparing or binding (for testing/debugging).
+        // Shared by to_sql(), prepare_statement() (dynamic path), and rows_generator().
+        // Marked always_inline so the hot path retains the same codegen as the
+        // previously-inlined builder (see #264 Phase 2 finding on call-overhead).
+        [[nodiscard]] __attribute__((always_inline)) static auto build_sql(
                 const std::optional<JoinStatementWrapper>& join_wrapper,
                 const orm::where::ExpressionVariantPtr&    where_expr,
                 const std::optional<int>&                  limit,
@@ -147,7 +153,10 @@ export namespace storm::orm::statements {
             return to_sql(std::move(join_wrapper), where_expr, limit_two, offset, order_by_wrapper);
         }
 
-        // Proxy types returned by factory methods (used by QuerySet one-liner delegations)
+        // Proxy types returned by factory methods (used by QuerySet one-liner delegations).
+        // QueryBase::forward() funnels the five stored fields into any callable, so the
+        // derived Query/FirstQuery/GetQuery don't each spell the field list out — that
+        // five-line forwarding block used to repeat four times.
         struct QueryBase {
             SelectStatement&                    stmt;
             std::optional<JoinStatementWrapper> join_wrapper;
@@ -155,34 +164,27 @@ export namespace storm::orm::statements {
             std::optional<int>                  limit_value;
             std::optional<int>                  offset_value;
             std::optional<OrderByWrapper>       order_by_wrapper;
+
+            template <typename Fn> __attribute__((always_inline)) auto forward(Fn&& callback) -> decltype(auto) {
+                return std::forward<Fn>(callback)(
+                        this->join_wrapper,
+                        this->where_expr,
+                        this->limit_value,
+                        this->offset_value,
+                        this->order_by_wrapper
+                );
+            }
         };
 
         struct Query : QueryBase {
             [[nodiscard]] auto execute() -> std::expected<plf::hive<T>, Error> {
-                return this->stmt.execute(
-                        this->join_wrapper,
-                        this->where_expr,
-                        this->limit_value,
-                        this->offset_value,
-                        this->order_by_wrapper
-                );
+                return this->forward([&](auto&... args) { return this->stmt.execute(args...); });
             }
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
-                return this->stmt
-                        .to_sql(this->join_wrapper,
-                                this->where_expr,
-                                this->limit_value,
-                                this->offset_value,
-                                this->order_by_wrapper);
+                return this->forward([&](auto&... args) { return this->stmt.to_sql(args...); });
             }
             [[nodiscard]] auto sql() -> std::string {
-                return build_sql(
-                        this->join_wrapper,
-                        this->where_expr,
-                        this->limit_value,
-                        this->offset_value,
-                        this->order_by_wrapper
-                );
+                return this->forward([](auto&... args) { return build_sql(args...); });
             }
         };
 
@@ -192,13 +194,7 @@ export namespace storm::orm::statements {
                 if (fast_path) {
                     return this->stmt.execute_one_fast();
                 }
-                return this->stmt.execute_one(
-                        this->join_wrapper,
-                        this->where_expr,
-                        this->limit_value,
-                        this->offset_value,
-                        this->order_by_wrapper
-                );
+                return this->forward([&](auto&... args) { return this->stmt.execute_one(args...); });
             }
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
                 return this->stmt
@@ -218,13 +214,7 @@ export namespace storm::orm::statements {
                 if (fast_path) {
                     return this->stmt.execute_get_fast();
                 }
-                return this->stmt.execute_get(
-                        this->join_wrapper,
-                        this->where_expr,
-                        this->limit_value,
-                        this->offset_value,
-                        this->order_by_wrapper
-                );
+                return this->forward([&](auto&... args) { return this->stmt.execute_get(args...); });
             }
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
                 return this->stmt
@@ -247,27 +237,25 @@ export namespace storm::orm::statements {
             return {*this, jw, we, lv, ov, ob};
         }
 
-        auto query_first(
+        // Single templated factory used by both query_first / query_get.
+        // The previous wrappers had identical 5-line parameter blocks; this
+        // collapses them into one factory parametrised on Proxy.
+        template <typename Proxy>
+        __attribute__((always_inline)) auto make_first_or_get(
                 std::optional<JoinStatementWrapper>     jw,
                 const orm::where::ExpressionVariantPtr& we,
                 const std::optional<int>&               lv,
                 const std::optional<int>&               ov,
                 const std::optional<OrderByWrapper>&    ob,
                 bool                                    fast
-        ) -> FirstQuery {
-            return {*this, jw, we, lv, ov, ob, fast};
+        ) -> Proxy {
+            return {{*this, std::move(jw), we, lv, ov, ob}, fast};
         }
 
-        auto query_get(
-                std::optional<JoinStatementWrapper>     jw,
-                const orm::where::ExpressionVariantPtr& we,
-                const std::optional<int>&               lv,
-                const std::optional<int>&               ov,
-                const std::optional<OrderByWrapper>&    ob,
-                bool                                    fast
-        ) -> GetQuery {
-            return {*this, jw, we, lv, ov, ob, fast};
-        }
+        // clang-format off
+        auto query_first(std::optional<JoinStatementWrapper> jw, const orm::where::ExpressionVariantPtr& we, const std::optional<int>& lv, const std::optional<int>& ov, const std::optional<OrderByWrapper>& ob, bool fast) -> FirstQuery { return make_first_or_get<FirstQuery>(std::move(jw), we, lv, ov, ob, fast); }
+        auto query_get  (std::optional<JoinStatementWrapper> jw, const orm::where::ExpressionVariantPtr& we, const std::optional<int>& lv, const std::optional<int>& ov, const std::optional<OrderByWrapper>& ob, bool fast) -> GetQuery   { return make_first_or_get<GetQuery>  (std::move(jw), we, lv, ov, ob, fast); }
+        // clang-format on
 
         // Drop every cached Statement pointer and dynamic-SQL marker.
         // Call before Connection::clear_statement_cache() — without this the
@@ -393,13 +381,7 @@ export namespace storm::orm::statements {
                 std::optional<int>                  offset           = std::nullopt,
                 std::optional<OrderByWrapper>       order_by_wrapper = std::nullopt
         ) -> storm::generator<std::expected<T, Error>&&> {
-            std::string sql = join_wrapper ? join_wrapper->get_complete_sql() : std::string(get_select_sql());
-            if (where_expr) {
-                sql += " WHERE ";
-                sql += orm::where::to_sql(*where_expr);
-            }
-            Base::template append_order_by<ConnType>(sql, order_by_wrapper);
-            Base::template append_limit_offset<ConnType>(sql, limit, offset);
+            std::string sql = build_sql(join_wrapper, where_expr, limit, offset, order_by_wrapper);
 
             auto stmt_result = conn->prepare(sql);
             if (!stmt_result) {
@@ -416,26 +398,21 @@ export namespace storm::orm::statements {
                 }
             }
 
-            if (join_wrapper) {
-                int step_result = 0;
-                while ((step_result = stmt.step_raw()) == Statement::ROW_AVAILABLE) {
-                    T obj;
+            // Single step/yield loop — extraction differs only in one line between
+            // the join and non-join cases. co_yield must stay in the coroutine
+            // body (not in a lambda), so we branch only on the per-row extract.
+            int step_result = 0;
+            while ((step_result = stmt.step_raw()) == Statement::ROW_AVAILABLE) {
+                T obj;
+                if (join_wrapper) {
                     join_wrapper->extract_row(&stmt, &obj);
-                    co_yield std::move(obj);
-                }
-                if (step_result != Statement::NO_MORE_ROWS) {
-                    co_yield std::unexpected(Error{step_result, stmt.get_error_message()});
-                }
-            } else {
-                int step_result = 0;
-                while ((step_result = stmt.step_raw()) == Statement::ROW_AVAILABLE) {
-                    T obj;
+                } else {
                     Base::extract_all_columns(&stmt, obj);
-                    co_yield std::move(obj);
                 }
-                if (step_result != Statement::NO_MORE_ROWS) {
-                    co_yield std::unexpected(Error{step_result, stmt.get_error_message()});
-                }
+                co_yield std::move(obj);
+            }
+            if (step_result != Statement::NO_MORE_ROWS) {
+                co_yield std::unexpected(Error{step_result, stmt.get_error_message()});
             }
         }
 
@@ -484,16 +461,12 @@ export namespace storm::orm::statements {
                 return cached_stmt_;
             } // LCOV_EXCL_STOP
 
-            // Dynamic path: build SQL and cache by string comparison
+            // Dynamic path: build SQL and cache by string comparison.
+            // build_sql() is always_inline — keeps the same codegen as the
+            // previously-inlined SQL builder (see #264 Phase 2 finding).
             // NOTE: Do NOT add sql.reserve() here - benchmarks show ~2% regression due to
             // extra function call overhead outweighing reallocation savings for typical SQL sizes
-            std::string sql = join_wrapper ? join_wrapper->get_complete_sql() : std::string(get_select_sql());
-            if (where_expr) {
-                sql += " WHERE ";
-                sql += orm::where::to_sql(*where_expr);
-            }
-            Base::template append_order_by<ConnType>(sql, order_by_wrapper);
-            Base::template append_limit_offset<ConnType>(sql, limit, offset);
+            std::string sql = build_sql(join_wrapper, where_expr, limit, offset, order_by_wrapper);
 
             // Get or prepare cached statement
             if (cached_stmt_ == nullptr || cached_sql_ != sql) {
@@ -552,21 +525,37 @@ export namespace storm::orm::statements {
         // SINGLE-ROW QUERY LOOPS
         // =====================================================================
 
+        // Step once and classify the result.
+        //   true  → ROW_AVAILABLE (caller extracts)
+        //   false → NO_MORE_ROWS (caller decides: nullopt vs "no row found" error)
+        //   error → driver/binding error (statement already reset)
+        // Shared by execute_single_row and execute_exact_one — both used to spell out
+        // the same NO_MORE_ROWS / ROW_AVAILABLE / error triage inline.
+        [[nodiscard]] __attribute__((always_inline)) static auto step_first_row(Statement* stmt) noexcept
+                -> std::expected<bool, Error> {
+            int const step_result = stmt->step_raw();
+            if (step_result == Statement::ROW_AVAILABLE) {
+                return true;
+            }
+            if (step_result == Statement::NO_MORE_ROWS) {
+                stmt->reset();
+                return false;
+            }
+            stmt->reset();
+            return std::unexpected(Error{step_result, stmt->get_error_message()});
+        }
+
         // Single-row query execution - fetches at most one row, returns optional
         // DATABASE-AGNOSTIC: Uses Statement methods with templates for cross-module inlining
         template <typename Extractor>
         [[nodiscard]] __attribute__((hot)) auto execute_single_row(Statement* stmt, const Extractor& extractor) noexcept
                 -> std::expected<std::optional<T>, Error> {
-            int const step_result = stmt->step_raw();
-
-            if (step_result == Statement::NO_MORE_ROWS) {
-                stmt->reset();
-                return std::optional<T>{std::nullopt};
+            auto step = step_first_row(stmt);
+            if (!step) [[unlikely]] {
+                return std::unexpected(step.error());
             }
-
-            if (step_result != Statement::ROW_AVAILABLE) [[unlikely]] {
-                stmt->reset();
-                return std::unexpected(Error{step_result, stmt->get_error_message()});
+            if (!*step) {
+                return std::optional<T>{std::nullopt};
             }
 
             T obj;
@@ -581,16 +570,12 @@ export namespace storm::orm::statements {
         template <typename Extractor>
         [[nodiscard]] __attribute__((hot)) auto execute_exact_one(Statement* stmt, const Extractor& extractor) noexcept
                 -> std::expected<T, Error> {
-            int const step_result = stmt->step_raw();
-
-            if (step_result == Statement::NO_MORE_ROWS) {
-                stmt->reset();
-                return std::unexpected(Error{-1, "No row found matching query"});
+            auto step = step_first_row(stmt);
+            if (!step) [[unlikely]] {
+                return std::unexpected(step.error());
             }
-
-            if (step_result != Statement::ROW_AVAILABLE) [[unlikely]] {
-                stmt->reset();
-                return std::unexpected(Error{step_result, stmt->get_error_message()});
+            if (!*step) {
+                return std::unexpected(Error{-1, "No row found matching query"});
             }
 
             T obj;
