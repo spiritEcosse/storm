@@ -178,10 +178,10 @@ export namespace storm::orm::statements {
 
         struct Query : QueryBase {
             [[nodiscard]] auto execute() -> std::expected<plf::hive<T>, Error> {
-                return this->forward([&](auto&... args) { return this->stmt.execute(args...); });
+                return this->forward([this](auto&... args) { return this->stmt.execute(args...); });
             }
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
-                return this->forward([&](auto&... args) { return this->stmt.to_sql(args...); });
+                return this->forward([this](auto&... args) { return this->stmt.to_sql(args...); });
             }
             [[nodiscard]] auto sql() -> std::string {
                 return this->forward([](auto&... args) { return build_sql(args...); });
@@ -194,7 +194,7 @@ export namespace storm::orm::statements {
                 if (fast_path) {
                     return this->stmt.execute_one_fast();
                 }
-                return this->forward([&](auto&... args) { return this->stmt.execute_one(args...); });
+                return this->forward([this](auto&... args) { return this->stmt.execute_one(args...); });
             }
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
                 return this->stmt
@@ -214,7 +214,7 @@ export namespace storm::orm::statements {
                 if (fast_path) {
                     return this->stmt.execute_get_fast();
                 }
-                return this->forward([&](auto&... args) { return this->stmt.execute_get(args...); });
+                return this->forward([this](auto&... args) { return this->stmt.execute_get(args...); });
             }
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
                 return this->stmt
