@@ -1,7 +1,7 @@
 module;
 
-// LINT-EXCLUDE-FILE: duplicate
-// Boilerplate-pattern duplicates accepted (see #264 finding).
+// `duplicate` removed in #277 Phase 3 (delete_prefix_size + append_delete_prefix helpers shared by single-row and bulk
+// DELETE SQL builders).
 
 #include <meta>
 
@@ -37,18 +37,29 @@ export namespace storm::orm::statements {
         using Error      = typename ConnType::Error;
         using Statement  = typename ConnType::Statement;
 
-        // Compile-time single DELETE SQL size calculation
-        static consteval auto calculate_single_delete_sql_size() -> size_t {
+        // Common prefix size: "DELETE FROM <table> WHERE <pk_name>". Both the
+        // single-row and the bulk DELETE size calculators used to spell this
+        // out; their only difference is the tail (" = ?" vs " IN (").
+        static consteval auto delete_prefix_size() -> size_t {
             using utilities::sql_len::DELETE_FROM;
             using utilities::sql_len::WHERE;
-            size_t size = 0;
-            size += DELETE_FROM; // "DELETE FROM "
-            size += Base::table_name_.size();
-            size += WHERE; // " WHERE "
-            size += Base::pk_name_.size();
-            size += 4; // " = ?"
-            size += 1; // null terminator
-            return size;
+            return DELETE_FROM + Base::table_name_.size() + WHERE + Base::pk_name_.size();
+        }
+
+        // Compile-time single DELETE SQL size calculation
+        static consteval auto calculate_single_delete_sql_size() -> size_t {
+            return delete_prefix_size() + 4 + 1; // " = ?" + null terminator
+        }
+
+        // Append the shared "DELETE FROM <table> WHERE <pk_name>" prefix.
+        // The single-row builder appends "= ?" after; the bulk builder appends
+        // " IN (". Centralising the prefix removes the textual duplicate the
+        // hook flagged.
+        template <typename Buf> static consteval auto append_delete_prefix(Buf& buf) -> void {
+            buf.append("DELETE FROM ");
+            buf.append(Base::table_name_);
+            buf.append(" WHERE ");
+            buf.append(Base::pk_name_);
         }
 
         // Build single DELETE SQL at compile-time using ConstexprString
@@ -56,13 +67,8 @@ export namespace storm::orm::statements {
             // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
             constexpr size_t          sql_size = calculate_single_delete_sql_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<sql_size> result;
-
-            result.append("DELETE FROM ");
-            result.append(Base::table_name_);
-            result.append(" WHERE ");
-            result.append(Base::pk_name_);
+            append_delete_prefix(result);
             result.append(" = ?");
-
             return result;
         }
 
@@ -85,17 +91,7 @@ export namespace storm::orm::statements {
       private:
         // Compile-time bulk DELETE prefix calculation
         static consteval auto calculate_bulk_delete_prefix_size() -> size_t {
-            using utilities::sql_len::DELETE_FROM;
-            using utilities::sql_len::IN_OPEN;
-            using utilities::sql_len::WHERE;
-            size_t size = 0;
-            size += DELETE_FROM; // "DELETE FROM "
-            size += Base::table_name_.size();
-            size += WHERE; // " WHERE "
-            size += Base::pk_name_.size();
-            size += IN_OPEN; // " IN ("
-            size += 1;       // null terminator
-            return size;
+            return delete_prefix_size() + utilities::sql_len::IN_OPEN + 1; // " IN (" + null terminator
         }
 
         // Build bulk DELETE prefix at compile-time using ConstexprString
@@ -103,13 +99,8 @@ export namespace storm::orm::statements {
             // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
             constexpr size_t prefix_size = calculate_bulk_delete_prefix_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<prefix_size> result;
-
-            result.append("DELETE FROM ");
-            result.append(Base::table_name_);
-            result.append(" WHERE ");
-            result.append(Base::pk_name_);
+            append_delete_prefix(result);
             result.append(" IN (");
-
             return result;
         }
 
