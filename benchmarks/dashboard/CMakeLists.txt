@@ -22,7 +22,7 @@ target_sources(
 
 target_link_libraries(storm_bench_dashboard PRIVATE storm pthread)
 link_sqlite(storm_bench_dashboard)
-apply_clang_flags(storm_bench_dashboard)
+apply_cxx_flags(storm_bench_dashboard)
 
 target_include_directories(
   storm_bench_dashboard PRIVATE "${CMAKE_SOURCE_DIR}/src"

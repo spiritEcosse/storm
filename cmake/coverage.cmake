@@ -8,26 +8,16 @@ if(ENABLE_COVERAGE)
     )
   endif()
 
-  # Use CMAKE_CXX_FLAGS (not add_compile_options) — required for correct C++26
-  # module instrumentation. add_compile_options interacts differently with
-  # module compilation, generating more phantom coverage regions that survive
-  # the --filter region,branch_region lcov pass, causing false uncovered lines.
-  set(CMAKE_CXX_FLAGS
-      "${CMAKE_CXX_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
-  set(CMAKE_EXE_LINKER_FLAGS
-      "${CMAKE_EXE_LINKER_FLAGS} -fprofile-instr-generate")
-  set(CMAKE_SHARED_LINKER_FLAGS
-      "${CMAKE_SHARED_LINKER_FLAGS} -fprofile-instr-generate")
+  find_program(GCOV gcov REQUIRED)
+  find_program(LCOV lcov REQUIRED)
+  find_program(GENHTML genhtml REQUIRED)
 
-  set(LLVM_PROFDATA "${LIBCXX_ROOT}/build/bin/llvm-profdata")
-  set(LLVM_COV "${LIBCXX_ROOT}/build/bin/llvm-cov")
-
-  if(NOT (EXISTS "${LLVM_PROFDATA}" AND EXISTS "${LLVM_COV}"))
-    message(
-      FATAL_ERROR
-        "LLVM coverage tools not found. Ensure llvm-profdata and llvm-cov are available."
-    )
-  endif()
+  # GCC's --coverage is shorthand for -fprofile-arcs -ftest-coverage at compile
+  # and -lgcov at link. Use CMAKE_CXX_FLAGS (not add_compile_options) for the
+  # same module-instrumentation reasons documented for the LLVM toolchain.
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --coverage")
 
   set(COVERAGE_OUTPUT_DIR "${CMAKE_BINARY_DIR}/coverage")
   file(MAKE_DIRECTORY ${COVERAGE_OUTPUT_DIR})

@@ -60,7 +60,7 @@ target_link_libraries(storm_bench PRIVATE storm pthread
 add_dependencies(storm_bench benchmark::benchmark)
 link_sqlite(storm_bench)
 link_postgresql(storm_bench)
-apply_clang_flags(storm_bench)
+apply_cxx_flags(storm_bench)
 target_include_directories(
   storm_bench PRIVATE "${CMAKE_SOURCE_DIR}/src"
                       "${CMAKE_SOURCE_DIR}/third_party")
@@ -101,7 +101,7 @@ target_link_libraries(storm_anchors PRIVATE pthread
                                             $<TARGET_FILE:benchmark::benchmark>)
 add_dependencies(storm_anchors benchmark::benchmark)
 link_sqlite(storm_anchors)
-apply_clang_flags(storm_anchors)
+apply_cxx_flags(storm_anchors)
 
 set_property(
   SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/anchors_raw.cpp"

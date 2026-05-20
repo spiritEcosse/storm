@@ -1,10 +1,13 @@
 # Coverage targets — must be included after test targets are defined (after
 # tests.cmake).
 #
-# Combines data from three test binaries: - storm_tests:             main tests
-# (real SQLite/PostgreSQL) - storm_orm_mock_tests:    SQLite mock tests via
-# LD_PRELOAD (error paths) - storm_orm_pg_mock_tests: PG mock tests via
-# LD_PRELOAD (PG error paths)
+# GCC writes .gcda profile data alongside .gcno notes during test execution.
+# lcov walks the build tree, calls gcov per .gcda, and produces a single info
+# file we filter and render.
+#
+# Target names match the pre-migration LLVM contract so commit.sh and CI do
+# not need updates: coverage / coverage-html / coverage-clean.
+
 if(ENABLE_COVERAGE AND ENABLE_TESTS)
 
   add_custom_target(
@@ -12,17 +15,17 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
     COMMAND
       ${CMAKE_COMMAND} -E env
       "STORM_PG_CONNSTR=host=/var/run/postgresql dbname=storm_db user=storm_db"
-      ${CMAKE_SOURCE_DIR}/scripts/coverage-run-batched.sh ${CMAKE_BINARY_DIR}
+      $<TARGET_FILE:storm_tests>
     DEPENDS storm_tests
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    COMMENT "Running main tests with coverage instrumentation (batched)"
+    COMMENT "Running main tests with coverage instrumentation"
     VERBATIM)
 
   add_custom_target(
     coverage-run-mock
     COMMAND
-      ${CMAKE_COMMAND} -E env LLVM_PROFILE_FILE=${CMAKE_BINARY_DIR}/mock.profraw
-      LD_PRELOAD=$<TARGET_FILE:mock_sqlite3> $<TARGET_FILE:storm_orm_mock_tests>
+      ${CMAKE_COMMAND} -E env LD_PRELOAD=$<TARGET_FILE:mock_sqlite3>
+      $<TARGET_FILE:storm_orm_mock_tests>
     DEPENDS storm_orm_mock_tests mock_sqlite3
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     COMMENT "Running mock tests with coverage instrumentation (LD_PRELOAD)"
@@ -31,9 +34,7 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
   add_custom_target(
     coverage-run-pg-mock
     COMMAND
-      ${CMAKE_COMMAND} -E env
-      LLVM_PROFILE_FILE=${CMAKE_BINARY_DIR}/pg_mock.profraw
-      LD_PRELOAD=$<TARGET_FILE:mock_libpq>
+      ${CMAKE_COMMAND} -E env LD_PRELOAD=$<TARGET_FILE:mock_libpq>
       $<TARGET_FILE:storm_orm_pg_mock_tests>
     DEPENDS storm_orm_pg_mock_tests mock_libpq
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
@@ -45,70 +46,34 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
     DEPENDS coverage-run-main coverage-run-mock coverage-run-pg-mock
     COMMENT "All coverage tests completed")
 
+  set(LCOV_C_EXTENSIONS "c,h,i,C,H,I,icc,cpp,cc,cxx,hh,hpp,hxx,cppm")
+
   add_custom_target(
-    coverage-merge
+    coverage-capture
     COMMAND ${CMAKE_COMMAND} -E make_directory ${COVERAGE_OUTPUT_DIR}
     COMMAND
-      bash -c
-      "${LLVM_PROFDATA} merge -sparse ${CMAKE_BINARY_DIR}/batch_*.profraw ${CMAKE_BINARY_DIR}/mock.profraw ${CMAKE_BINARY_DIR}/pg_mock.profraw -o ${COVERAGE_OUTPUT_DIR}/coverage.profdata"
+      ${LCOV} --gcov-tool ${GCOV} --capture --directory ${CMAKE_BINARY_DIR}
+      --rc branch_coverage=1 --rc c_file_extensions=${LCOV_C_EXTENSIONS}
+      --ignore-errors mismatch,inconsistent,unsupported --output-file
+      ${COVERAGE_OUTPUT_DIR}/coverage.lcov
     DEPENDS coverage-run
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    COMMENT
-      "Merging coverage data from batched main tests, mock tests, and PG mock tests"
+    COMMENT "Capturing gcov data into lcov info file"
     VERBATIM)
-
-  add_custom_target(
-    coverage-lcov
-    COMMAND
-      ${LLVM_COV} export $<TARGET_FILE:storm_tests>
-      -object=$<TARGET_FILE:storm_orm_mock_tests>
-      -object=$<TARGET_FILE:storm_orm_pg_mock_tests>
-      -instr-profile=${COVERAGE_OUTPUT_DIR}/coverage.profdata -format=lcov
-      -ignore-filename-regex="third_party|googletest|build|mock_sqlite|mock_libpq"
-      ${CMAKE_SOURCE_DIR}/src > ${COVERAGE_OUTPUT_DIR}/coverage.lcov
-    DEPENDS coverage-merge
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    COMMENT
-      "Exporting coverage data in LCOV format to ${COVERAGE_OUTPUT_DIR}/coverage.lcov"
-    VERBATIM)
-
-  set(LCOV_C_EXTENSIONS "c,h,i,C,H,I,icc,cpp,cc,cxx,hh,hpp,hxx,cppm")
-  find_program(LCOV_TOOL lcov)
-  find_program(GENHTML_TOOL genhtml)
-
-  if(NOT LCOV_TOOL)
-    message(
-      FATAL_ERROR
-        "lcov not found but required for coverage builds.\n"
-        "  Manjaro/Arch: sudo pacman -S lcov\n"
-        "  Ubuntu/Debian: sudo apt install lcov")
-  endif()
-  message(STATUS "lcov found: ${LCOV_TOOL}")
-
-  if(NOT GENHTML_TOOL)
-    message(
-      FATAL_ERROR
-        "genhtml not found but required for coverage builds.\n"
-        "  Manjaro/Arch: sudo pacman -S lcov\n"
-        "  Ubuntu/Debian: sudo apt install lcov")
-  endif()
-  message(STATUS "genhtml found: ${GENHTML_TOOL}")
 
   add_custom_target(
     coverage
     COMMAND
-      ${LCOV_TOOL} --rc branch_coverage=1 --rc
+      ${LCOV} --rc branch_coverage=1 --rc
       c_file_extensions=${LCOV_C_EXTENSIONS} --ignore-errors
-      unused,deprecated,unsupported,inconsistent,range --filter
-      region,branch_region --remove ${COVERAGE_OUTPUT_DIR}/coverage.lcov
-      "*/third_party/*" "*/googletest/*" "*/build/*" "*/tests/*"
-      "*/src/orm/utilities.cppm" --output-file
+      unused,deprecated,unsupported,inconsistent,range --remove
+      ${COVERAGE_OUTPUT_DIR}/coverage.lcov "*/third_party/*" "*/googletest/*"
+      "*/build/*" "*/tests/*" "*/src/orm/utilities.cppm" --output-file
       ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
     COMMAND
-      ${LCOV_TOOL} --rc branch_coverage=1 --ignore-errors
-      deprecated,inconsistent --summary
-      ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
-    DEPENDS coverage-lcov
+      ${LCOV} --rc branch_coverage=1 --ignore-errors deprecated,inconsistent
+      --summary ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
+    DEPENDS coverage-capture
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Filtering coverage with LCOV_EXCL markers"
     VERBATIM)
@@ -116,9 +81,9 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
   add_custom_target(
     coverage-html
     COMMAND
-      ${GENHTML_TOOL} --rc branch_coverage=1 --rc
+      ${GENHTML} --rc branch_coverage=1 --rc
       c_file_extensions=${LCOV_C_EXTENSIONS} --ignore-errors
-      deprecated,range,inconsistent --legend --title
+      deprecated,range,inconsistent,source --legend --title
       "Storm ORM Coverage (filtered)" --output-directory
       ${COVERAGE_OUTPUT_DIR}/html-filtered
       ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
@@ -132,7 +97,7 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
     coverage-clean
     COMMAND
       bash -c
-      "rm -rf ${COVERAGE_OUTPUT_DIR} ${CMAKE_BINARY_DIR}/batch_*.profraw ${CMAKE_BINARY_DIR}/mock.profraw ${CMAKE_BINARY_DIR}/pg_mock.profraw"
+      "find ${CMAKE_BINARY_DIR} -name '*.gcda' -delete && rm -rf ${COVERAGE_OUTPUT_DIR}"
     COMMENT "Cleaning coverage data"
     VERBATIM)
 

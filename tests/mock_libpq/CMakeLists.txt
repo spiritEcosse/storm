@@ -58,7 +58,7 @@ target_include_directories(
           "${CMAKE_SOURCE_DIR}/src")
 
 # Apply Clang flags for modules and reflection
-apply_clang_flags(storm_orm_pg_mock_tests)
+apply_cxx_flags(storm_orm_pg_mock_tests)
 
 # Don't auto-discover these tests - they need LD_PRELOAD to work correctly
 # gtest_discover_tests(storm_orm_pg_mock_tests)
