@@ -1,7 +1,9 @@
 module;
 
-// LINT-EXCLUDE-FILE: file-size, duplicate, complexity
+// LINT-EXCLUDE-FILE: file-size, complexity
 // Single cohesive class template; thresholds intentionally relaxed (see #264 finding).
+// `duplicate` removed in #277 Phase 3 (BindParamsVisitor casts the type-erased pointer once and calls each Expr's
+// bind_impl; make_null_check_expr shared by CollatedField/Field).
 
 #include <meta>
 
@@ -92,9 +94,8 @@ export namespace storm::orm::where {
         }
 
         template <typename StmtType, typename ErrorType>
-        [[nodiscard]] __attribute__((always_inline)) auto
-        bind_params_direct(ErasedStatementPtr stmt_ptr, int& param_index) const -> std::expected<void, ErrorType> {
-            auto* stmt = static_cast<StmtType*>(stmt_ptr);
+        [[nodiscard]] __attribute__((always_inline)) auto bind_impl(StmtType* stmt, int& param_index) const
+                -> std::expected<void, ErrorType> {
             return utilities::bind_parameter_value<StmtType, ErrorType>(*stmt, param_index++, value_);
         }
     };
@@ -109,8 +110,7 @@ export namespace storm::orm::where {
         }
 
         template <typename StmtType, typename ErrorType>
-        [[nodiscard]] __attribute__((always_inline)) auto
-        bind_params_direct(ErasedStatementPtr /*stmt_ptr*/, int& /*param_index*/) const
+        [[nodiscard]] __attribute__((always_inline)) auto bind_impl(StmtType* /*stmt*/, int& /*param_index*/) const
                 -> std::expected<void, ErrorType> {
             return {};
         }
@@ -126,9 +126,8 @@ export namespace storm::orm::where {
         }
 
         template <typename StmtType, typename ErrorType>
-        [[nodiscard]] __attribute__((always_inline)) auto
-        bind_params_direct(ErasedStatementPtr stmt_ptr, int& param_index) const -> std::expected<void, ErrorType> {
-            auto* stmt = static_cast<StmtType*>(stmt_ptr);
+        [[nodiscard]] __attribute__((always_inline)) auto bind_impl(StmtType* stmt, int& param_index) const
+                -> std::expected<void, ErrorType> {
             return stmt->bind_text(param_index++, pattern_);
         }
     };
@@ -144,15 +143,12 @@ export namespace storm::orm::where {
         }
 
         template <typename StmtType, typename ErrorType>
-        [[nodiscard]] __attribute__((hot)) auto bind_params_direct(ErasedStatementPtr stmt_ptr, int& param_index) const
+        [[nodiscard]] __attribute__((hot)) auto bind_impl(StmtType* stmt, int& param_index) const
                 -> std::expected<void, ErrorType> {
-            auto* stmt = static_cast<StmtType*>(stmt_ptr);
-            // Bind min value
             if (auto result = utilities::bind_parameter_value<StmtType, ErrorType>(*stmt, param_index++, min_val_);
                 !result) {
                 return result;
             }
-            // Bind max value
             return utilities::bind_parameter_value<StmtType, ErrorType>(*stmt, param_index++, max_val_);
         }
     };
@@ -172,9 +168,8 @@ export namespace storm::orm::where {
         }
 
         template <typename StmtType, typename ErrorType>
-        [[nodiscard]] __attribute__((hot)) auto bind_params_direct(ErasedStatementPtr stmt_ptr, int& param_index) const
+        [[nodiscard]] __attribute__((hot)) auto bind_impl(StmtType* stmt, int& param_index) const
                 -> std::expected<void, ErrorType> {
-            auto* stmt = static_cast<StmtType*>(stmt_ptr);
             for (const auto& value : values_) {
                 if (auto result = utilities::bind_parameter_value<StmtType, ErrorType>(*stmt, param_index++, value);
                     !result) {
@@ -270,9 +265,11 @@ export namespace storm::orm::where {
             return bind_params_direct<StmtType, ErrorType>(*expr.right, stmt_ptr, *param_index);
         }
 
-        // All other expression types have their own bind_params_direct() method
+        // Every other Expr type exposes a small `bind_impl(StmtType*, int&)`.
+        // The type-erased pointer cast used to be duplicated in each Expr's own
+        // `bind_params_direct` — that's the duplicate this visitor now centralises.
         template <typename T> [[nodiscard]] auto operator()(const T& expr) const -> std::expected<void, ErrorType> {
-            return expr.template bind_params_direct<StmtType, ErrorType>(stmt_ptr, *param_index);
+            return expr.template bind_impl<StmtType, ErrorType>(static_cast<StmtType*>(stmt_ptr), *param_index);
         }
     };
 
@@ -329,6 +326,18 @@ export namespace storm::orm::where {
     template <typename T>
     concept NullableField = requires { typename T::value_type; };
 
+    // Free helpers for null-check expression construction. Both CollatedField
+    // and Field used to spell out the four nullable methods (is_null, is_not_null,
+    // operator==(nullopt_t), operator!=(nullopt_t)) body-for-body identical.
+    // Now both classes route through these one-line helpers.
+    [[nodiscard]] inline auto make_null_check_expr(std::string field_name, bool is_null) -> Expr {
+        return Expr(
+                std::make_shared<ExpressionVariant>(
+                        NullCheckExpr{.field_name_ = std::move(field_name), .is_null_ = is_null}
+                )
+        );
+    }
+
     // CollatedField proxy - wraps field name with COLLATE clause
     // Created via field<^^Person::name>().collate(Collate::NoCase)
     // All comparison operators produce SQL like: "name COLLATE NOCASE = ?"
@@ -374,32 +383,12 @@ export namespace storm::orm::where {
             return make_comparison(CompOp::LessEqual, std::forward<V>(value));
         }
 
-        [[nodiscard]] auto is_null() const -> Expr
-            requires NullableField<FieldType>
-        {
-            return Expr(
-                    std::make_shared<ExpressionVariant>(NullCheckExpr{.field_name_ = collated_name_, .is_null_ = true})
-            );
-        }
-
-        [[nodiscard]] auto is_not_null() const -> Expr
-            requires NullableField<FieldType>
-        {
-            return Expr(
-                    std::make_shared<ExpressionVariant>(NullCheckExpr{.field_name_ = collated_name_, .is_null_ = false})
-            );
-        }
-
-        auto operator==(std::nullopt_t /*unused*/) const -> Expr
-            requires NullableField<FieldType>
-        {
-            return is_null();
-        }
-        auto operator!=(std::nullopt_t /*unused*/) const -> Expr
-            requires NullableField<FieldType>
-        {
-            return is_not_null();
-        }
+        // clang-format off
+        [[nodiscard]] auto is_null()     const -> Expr requires NullableField<FieldType> { return make_null_check_expr(collated_name_, true); }
+        [[nodiscard]] auto is_not_null() const -> Expr requires NullableField<FieldType> { return make_null_check_expr(collated_name_, false); }
+        auto operator==(std::nullopt_t /*unused*/)  const -> Expr requires NullableField<FieldType> { return is_null(); }
+        auto operator!=(std::nullopt_t /*unused*/)  const -> Expr requires NullableField<FieldType> { return is_not_null(); }
+        // clang-format on
 
         [[nodiscard]] auto like(std::string_view pattern) const -> Expr {
             return Expr(
@@ -497,36 +486,12 @@ export namespace storm::orm::where {
         }
 
         // NULL check methods — constrained to std::optional<T> fields only
-        [[nodiscard]] auto is_null() const -> Expr
-            requires NullableField<FieldType>
-        {
-            return Expr(
-                    std::make_shared<ExpressionVariant>(
-                            NullCheckExpr{.field_name_ = std::string(field_name_sv), .is_null_ = true}
-                    )
-            );
-        }
-
-        [[nodiscard]] auto is_not_null() const -> Expr
-            requires NullableField<FieldType>
-        {
-            return Expr(
-                    std::make_shared<ExpressionVariant>(
-                            NullCheckExpr{.field_name_ = std::string(field_name_sv), .is_null_ = false}
-                    )
-            );
-        }
-
-        auto operator==(std::nullopt_t /*unused*/) const -> Expr
-            requires NullableField<FieldType>
-        {
-            return is_null();
-        }
-        auto operator!=(std::nullopt_t /*unused*/) const -> Expr
-            requires NullableField<FieldType>
-        {
-            return is_not_null();
-        }
+        // clang-format off
+        [[nodiscard]] auto is_null()     const -> Expr requires NullableField<FieldType> { return make_null_check_expr(std::string(field_name_sv), true); }
+        [[nodiscard]] auto is_not_null() const -> Expr requires NullableField<FieldType> { return make_null_check_expr(std::string(field_name_sv), false); }
+        auto operator==(std::nullopt_t /*unused*/)  const -> Expr requires NullableField<FieldType> { return is_null(); }
+        auto operator!=(std::nullopt_t /*unused*/)  const -> Expr requires NullableField<FieldType> { return is_not_null(); }
+        // clang-format on
 
         // Special methods - return VARIANT-BASED Expr
         [[nodiscard]] auto like(std::string_view pattern) const -> Expr {
