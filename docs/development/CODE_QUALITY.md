@@ -21,8 +21,8 @@ When a file's `duplicate` tag is removed by extraction, its `LINT-EXCLUDE-FILE` 
 | `src/orm/where.cppm` | extracted (#284) | `BindParamsVisitor` casts the type-erased statement pointer once and calls each Expr's small `bind_impl(StmtType*, int&)`. `make_null_check_expr(name, is_null)` consolidates the `is_null`/`is_not_null` bodies of `CollatedField` and `Field` |
 | `src/orm/statements/update.cppm` | extracted (#285) | `ensure_cached_stmt()` and `reset_bind_execute()` member helpers replace the inline cache-prepare + reset/bind/execute blocks repeated across `execute(span)` / `execute_single_row` / `execute_single_optimized`; `QueryBase::sql()` consolidates the `static auto sql() -> std::string { return update_sql_string; }` body shared by `SingleQuery` and `BulkQuery` proxies |
 | `src/orm/statements/aggregate.cppm` | extracted (#286) | `append_group_by_tail(sql)` folds the `if constexpr (HasGroupBy) { if (having_expr_) insert_having_clause(sql); append_modifiers(sql); }` block that used to repeat across `execute_where` / `execute_join` / `execute_where_join` |
-| `src/db/pool.cppm` | extracted (this PR) | `count_entries(pred)` helper takes the lock and counts entries matching a predicate. `available()` and `in_use()` collapse to one-line predicate calls |
-| `src/orm/statements/erase.cppm` | pending | — |
+| `src/db/pool.cppm` | extracted (#287) | `count_entries(pred)` helper takes the lock and counts entries matching a predicate. `available()` and `in_use()` collapse to one-line predicate calls |
+| `src/orm/statements/erase.cppm` | extracted (this PR) | `delete_prefix_size()` + `append_delete_prefix(buf)` consteval helpers share the `"DELETE FROM <table> WHERE <pk_name>"` prefix between the single-row and bulk DELETE SQL builders — only the tail differs (`" = ?"` vs `" IN ("`) |
 | `src/orm/statements/distinct.cppm` | pending | — |
 | `src/orm/statements/setop.cppm` | pending | — |
 | `src/db/sqlite.cppm` | pending | — |
