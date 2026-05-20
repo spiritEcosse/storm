@@ -38,7 +38,11 @@
       "Bash(gh issue:*)",
       "Bash(./build/release/benchmarks/storm_bench --filter=order_by_with_limit_10 --quick)",
       "Bash(./build/release/benchmarks/storm_bench --benchmark_list_tests)",
-      "Bash(grep -E \"\\\\.\\(cppm|hpp|cpp\\)$\")"
+      "Bash(grep -E \"\\\\.\\(cppm|hpp|cpp\\)$\")",
+      "Bash(echo \"asan=$?\")",
+      "Read(//tmp/**)",
+      "Bash(STORM_PG_CONNSTR= ./build/tsan/tests/storm_tests --gtest_filter=\"-*PG.*:*PgMock*:UnifiedYamlTest/SQLite.*\")",
+      "Bash(echo \"tsan=$?\")"
     ],
     "deny": [],
     "ask": []
