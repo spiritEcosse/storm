@@ -24,8 +24,8 @@ When a file's `duplicate` tag is removed by extraction, its `LINT-EXCLUDE-FILE` 
 | `src/db/pool.cppm` | extracted (#287) | `count_entries(pred)` helper takes the lock and counts entries matching a predicate. `available()` and `in_use()` collapse to one-line predicate calls |
 | `src/orm/statements/erase.cppm` | extracted (#288) | `delete_prefix_size()` + `append_delete_prefix(buf)` consteval helpers share the `"DELETE FROM <table> WHERE <pk_name>"` prefix between the single-row and bulk DELETE SQL builders — only the tail differs (`" = ?"` vs `" IN ("`) |
 | `src/orm/statements/distinct.cppm` | extracted (#289) | `build_field_list_with_prefix<Extra>(prefix, seq)` consteval helper shared by `build_field_list_constexpr` (no prefix) and `build_join_field_list_constexpr` (`"t1."` per field) |
-| `src/orm/statements/setop.cppm` | extracted (this PR) | `add_operand(op, type)` folds the `union_`/`union_all`/`except_`/`intersect_` bodies; `ready_statement()` runs the prepare/reset/bind dance shared by `execute()` and `to_sql()` |
-| `src/db/sqlite.cppm` | pending | — |
+| `src/orm/statements/setop.cppm` | extracted (#290) | `add_operand(op, type)` folds the `union_`/`union_all`/`except_`/`intersect_` bodies; `ready_statement()` shares the prepare/reset/bind dance between `execute()` and `to_sql()` |
+| `src/db/sqlite.cppm` | tag dropped (this PR) | No duplicate blocks today — the directive was carried over from earlier `LINT-EXCLUDE-FILE` rollout but had no current effect. Drop it outright |
 | `src/db/postgresql_statement.cppm` | pending | — |
 
 ## Accepted duplicates
