@@ -1,7 +1,7 @@
 module;
 
-// LINT-EXCLUDE-FILE: duplicate
-// Boilerplate-pattern duplicates accepted (see #264 finding).
+// `duplicate` removed in #277 Phase 3 (add_operand helper folds union_/union_all/except_/intersect_ bodies;
+// ready_statement shared by execute() and to_sql()).
 
 #include <meta>
 #include <plf_hive/plf_hive.h>
@@ -41,41 +41,24 @@ export namespace storm::orm::statements {
         )
             : conn_(std::move(conn)), operands_(std::move(operands)), operators_(std::move(operators)) {}
 
+        // Append a new operand with the given set operator and invalidate the
+        // cached prepared statement. Each public union_/union_all/except_/intersect_
+        // used to spell this body out three lines at a time.
         template <typename U>
             requires std::same_as<U, T>
-        auto union_(SetOpOperand<U> operand) -> SetOpBuilder&& {
+        auto add_operand(SetOpOperand<U> operand, SetOpType op) -> SetOpBuilder&& {
             operands_.push_back(std::move(operand));
-            operators_.push_back(SetOpType::Union);
+            operators_.push_back(op);
             cached_stmt_ = nullptr;
             return std::move(*this);
         }
 
-        template <typename U>
-            requires std::same_as<U, T>
-        auto union_all(SetOpOperand<U> operand) -> SetOpBuilder&& {
-            operands_.push_back(std::move(operand));
-            operators_.push_back(SetOpType::UnionAll);
-            cached_stmt_ = nullptr;
-            return std::move(*this);
-        }
-
-        template <typename U>
-            requires std::same_as<U, T>
-        auto except_(SetOpOperand<U> operand) -> SetOpBuilder&& {
-            operands_.push_back(std::move(operand));
-            operators_.push_back(SetOpType::Except);
-            cached_stmt_ = nullptr;
-            return std::move(*this);
-        }
-
-        template <typename U>
-            requires std::same_as<U, T>
-        auto intersect_(SetOpOperand<U> operand) -> SetOpBuilder&& {
-            operands_.push_back(std::move(operand));
-            operators_.push_back(SetOpType::Intersect);
-            cached_stmt_ = nullptr;
-            return std::move(*this);
-        }
+        // clang-format off
+        template <typename U> requires std::same_as<U, T> auto union_    (SetOpOperand<U> operand) -> SetOpBuilder&& { return add_operand(std::move(operand), SetOpType::Union);     }
+        template <typename U> requires std::same_as<U, T> auto union_all (SetOpOperand<U> operand) -> SetOpBuilder&& { return add_operand(std::move(operand), SetOpType::UnionAll);  }
+        template <typename U> requires std::same_as<U, T> auto except_   (SetOpOperand<U> operand) -> SetOpBuilder&& { return add_operand(std::move(operand), SetOpType::Except);    }
+        template <typename U> requires std::same_as<U, T> auto intersect_(SetOpOperand<U> operand) -> SetOpBuilder&& { return add_operand(std::move(operand), SetOpType::Intersect); }
+        // clang-format on
 
         template <auto... Args> auto order_by() -> SetOpBuilder&& {
             order_by_wrapper_ = make_order_by_wrapper<Args...>();
@@ -95,21 +78,28 @@ export namespace storm::orm::statements {
             return std::move(*this);
         }
 
-        [[nodiscard]] auto execute() -> std::expected<plf::hive<T>, Error> {
+        // Ensure cached_stmt_ is prepared, reset it, rebind all params, and
+        // return the ready-to-use Statement*. Shared by execute() and to_sql()
+        // — previously each method spelled out the prepare/reset/bind dance.
+        [[nodiscard]] auto ready_statement() -> std::expected<Statement*, Error> {
             if (cached_stmt_ == nullptr) {
-                auto prepare_result = prepare_statement();
-                if (!prepare_result) [[unlikely]] {
-                    return std::unexpected(prepare_result.error());
+                if (auto prep = prepare_statement(); !prep) [[unlikely]] {
+                    return std::unexpected(prep.error());
                 }
             }
             cached_stmt_->reset();
-
-            auto bind_result = bind_all_params(cached_stmt_);
-            if (!bind_result) [[unlikely]] {
-                return std::unexpected(bind_result.error());
+            if (auto bind = bind_all_params(cached_stmt_); !bind) [[unlikely]] {
+                return std::unexpected(bind.error());
             }
+            return cached_stmt_;
+        }
 
-            return execute_query_loop(cached_stmt_);
+        [[nodiscard]] auto execute() -> std::expected<plf::hive<T>, Error> {
+            auto stmt = ready_statement();
+            if (!stmt) [[unlikely]] {
+                return std::unexpected(stmt.error());
+            }
+            return execute_query_loop(*stmt);
         }
 
         // Return the SQL template without preparing/binding (for testing/debugging)
@@ -118,20 +108,11 @@ export namespace storm::orm::statements {
         }
 
         [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
-            if (cached_stmt_ == nullptr) {
-                auto prepare_result = prepare_statement();
-                if (!prepare_result) [[unlikely]] {
-                    return std::unexpected(prepare_result.error());
-                }
+            auto stmt = ready_statement();
+            if (!stmt) [[unlikely]] {
+                return std::unexpected(stmt.error());
             }
-            cached_stmt_->reset();
-
-            auto bind_result = bind_all_params(cached_stmt_);
-            if (!bind_result) [[unlikely]] {
-                return std::unexpected(bind_result.error());
-            }
-
-            return cached_stmt_->expanded_sql();
+            return (*stmt)->expanded_sql();
         }
 
       private:
