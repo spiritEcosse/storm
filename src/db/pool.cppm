@@ -1,7 +1,7 @@
 module;
 
-// LINT-EXCLUDE-FILE: duplicate, complexity, length
-// Boilerplate-pattern duplicates accepted (see #264 finding).
+// LINT-EXCLUDE-FILE: complexity, length
+// `duplicate` removed in #277 Phase 3 (count_entries(pred) helper shared by available() / in_use() counters).
 
 #include <condition_variable>
 #include <mutex>
@@ -147,26 +147,30 @@ export namespace storm::db {
                 return static_cast<int>(entries_.size());
             }
 
-            [[nodiscard]] auto available() const -> int {
+            // Count entries matching a predicate. The available() / in_use()
+            // counters used to repeat the lock + loop + count body verbatim;
+            // they now differ only in which entries pass the predicate.
+            //
+            // NOLINTBEGIN(readability-use-anyofallof) — explicit loop to avoid
+            // `import <algorithm>`; clang-p2996 clang-scan-deps SIGSEGVs on atomic_ref.h
+            template <typename Pred> [[nodiscard]] auto count_entries(Pred pred) const -> int {
                 std::lock_guard lock(mutex_);
                 int             count = 0;
                 for (const auto& entry : entries_) {
-                    if (!entry.in_use) {
+                    if (pred(entry)) {
                         ++count;
                     }
                 }
                 return count;
             }
+            // NOLINTEND(readability-use-anyofallof)
+
+            [[nodiscard]] auto available() const -> int {
+                return count_entries([](const auto& entry) { return !entry.in_use; });
+            }
 
             [[nodiscard]] auto in_use() const -> int {
-                std::lock_guard lock(mutex_);
-                int             count = 0;
-                for (const auto& entry : entries_) {
-                    if (entry.in_use) {
-                        ++count;
-                    }
-                }
-                return count;
+                return count_entries([](const auto& entry) { return entry.in_use; });
             }
 
             auto shutdown() -> void {
