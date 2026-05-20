@@ -1,7 +1,9 @@
 module;
 
-// LINT-EXCLUDE-FILE: duplicate, complexity
+// LINT-EXCLUDE-FILE: complexity
 // Single cohesive class template; thresholds intentionally relaxed (see #264 finding).
+// `duplicate` removed in #277 Phase 3 (ensure_cached_stmt + reset_bind_execute helpers; QueryBase::sql() shared by
+// SingleQuery/BulkQuery proxies).
 
 #include <meta>
 
@@ -136,7 +138,16 @@ export namespace storm::orm::statements {
       public:
         explicit UpdateStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
-        struct SingleQuery {
+        // Both proxies' static `sql()` returned `update_sql_string`. Keep it
+        // in one place so SingleQuery / BulkQuery only carry the
+        // execute/to_sql shapes that genuinely differ.
+        struct QueryBase {
+            [[nodiscard]] static auto sql() -> std::string {
+                return update_sql_string;
+            }
+        };
+
+        struct SingleQuery : QueryBase {
             UpdateStatement&   stmt;
             const T&           obj;
             [[nodiscard]] auto execute() -> std::expected<void, Error> {
@@ -145,12 +156,9 @@ export namespace storm::orm::statements {
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
                 return stmt.to_sql(obj);
             }
-            [[nodiscard]] static auto sql() -> std::string {
-                return update_sql_string;
-            }
         };
 
-        struct BulkQuery {
+        struct BulkQuery : QueryBase {
             UpdateStatement&   stmt;
             std::span<const T> objects;
             [[nodiscard]] auto execute() -> std::expected<void, Error> {
@@ -159,16 +167,13 @@ export namespace storm::orm::statements {
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
                 return stmt.to_sql(objects);
             }
-            [[nodiscard]] static auto sql() -> std::string {
-                return update_sql_string;
-            }
         };
 
         auto query(const T& obj) -> SingleQuery {
-            return {*this, obj};
+            return {{}, *this, obj};
         }
         auto query(std::span<const T> objects) -> BulkQuery {
-            return {*this, objects};
+            return {{}, *this, objects};
         }
 
         // Returns SQL string with bound parameters inlined for a single UPDATE (for debugging)
@@ -194,6 +199,35 @@ export namespace storm::orm::statements {
             return to_sql(objects[0]);
         }
 
+        // Lazily prepare and cache the UPDATE statement. Both execute()
+        // and execute_single_optimized() used to spell this out inline.
+        [[nodiscard]] __attribute__((always_inline)) auto ensure_cached_stmt() noexcept -> std::expected<void, Error> {
+            if (cached_update_stmt_ == nullptr) {
+                auto stmt_result = conn_->prepare_cached(get_update_sql());
+                if (!stmt_result) {
+                    return std::unexpected(stmt_result.error());
+                }
+                cached_update_stmt_ = *stmt_result;
+            }
+            return {};
+        }
+
+        // reset → inline-bind → execute on the cached statement. The batch
+        // loop and execute_single_row used to repeat this body verbatim.
+        [[nodiscard]] __attribute__((always_inline)) auto reset_bind_execute(const T& obj) noexcept
+                -> std::expected<void, Error> {
+            cached_update_stmt_->reset();
+            auto bind_result = inline_bind_all_fields(cached_update_stmt_, obj, typename Base::field_indices_t{});
+            if (!bind_result) {
+                return std::unexpected(bind_result.error());
+            }
+            auto exec_result = cached_update_stmt_->execute();
+            if (!exec_result) {
+                return std::unexpected(exec_result.error());
+            }
+            return {};
+        }
+
         // Optimized batch execute - flattened, no nested lambdas
         [[nodiscard]] __attribute__((hot)) auto execute(std::span<const T> objects) noexcept
                 -> std::expected<void, Error> {
@@ -202,12 +236,8 @@ export namespace storm::orm::statements {
             }
 
             // Cache the statement pointer once (avoid hash lookup per row)
-            if (cached_update_stmt_ == nullptr) {
-                auto stmt_result = conn_->prepare_cached(get_update_sql());
-                if (!stmt_result) {
-                    return std::unexpected(stmt_result.error());
-                }
-                cached_update_stmt_ = *stmt_result;
+            if (auto ready = ensure_cached_stmt(); !ready) {
+                return std::unexpected(ready.error());
             }
 
             // Single object - no transaction needed
@@ -221,18 +251,9 @@ export namespace storm::orm::statements {
                 return std::unexpected(txn.error());
             }
 
-            // Execute all updates with cached statement
             for (const auto& obj : objects) {
-                cached_update_stmt_->reset();
-
-                auto bind_result = inline_bind_all_fields(cached_update_stmt_, obj, typename Base::field_indices_t{});
-                if (!bind_result) {
-                    return std::unexpected(bind_result.error());
-                }
-
-                auto exec_result = cached_update_stmt_->execute();
-                if (!exec_result) {
-                    return std::unexpected(exec_result.error());
+                if (auto step = reset_bind_execute(obj); !step) {
+                    return step;
                 }
             }
 
@@ -242,19 +263,7 @@ export namespace storm::orm::statements {
         // Execute single row with cached statement (no transaction)
         [[nodiscard]] __attribute__((always_inline)) auto execute_single_row(const T& obj) noexcept
                 -> std::expected<void, Error> {
-            cached_update_stmt_->reset();
-
-            auto bind_result = inline_bind_all_fields(cached_update_stmt_, obj, typename Base::field_indices_t{});
-            if (!bind_result) {
-                return std::unexpected(bind_result.error());
-            }
-
-            auto exec_result = cached_update_stmt_->execute();
-            if (!exec_result) {
-                return std::unexpected(exec_result.error());
-            }
-
-            return {};
+            return reset_bind_execute(obj);
         }
 
         // Helper to unroll inline binding for all fields (skips PK, then binds PK last)
@@ -279,16 +288,13 @@ export namespace storm::orm::statements {
             return Base::template bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
         }
 
-        // Ultra-optimized single UPDATE - pre-cached statement, fully inlined binding
+        // Ultra-optimized single UPDATE - pre-cached statement, fully inlined binding.
+        // Diverges from execute_single_row in that the reset happens AFTER execute,
+        // not before bind (one less statement reset on the steady-state path).
         [[nodiscard]] __attribute__((hot)) auto execute_single_optimized(const T& obj) noexcept
                 -> std::expected<void, Error> {
-            // Get or cache the prepared statement
-            if (cached_update_stmt_ == nullptr) {
-                auto stmt_result = conn_->prepare_cached(get_update_sql());
-                if (!stmt_result) {
-                    return std::unexpected(stmt_result.error());
-                }
-                cached_update_stmt_ = *stmt_result;
+            if (auto ready = ensure_cached_stmt(); !ready) {
+                return std::unexpected(ready.error());
             }
 
             // FULLY INLINED BINDING - all compile-time dispatched, no function calls
