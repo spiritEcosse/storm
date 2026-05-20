@@ -1,7 +1,8 @@
 module;
 
-// LINT-EXCLUDE-FILE: file-size, duplicate, complexity, length
+// LINT-EXCLUDE-FILE: file-size, complexity, length
 // Single cohesive class template; thresholds intentionally relaxed (see #264 finding).
+// `duplicate` removed in #277 Phase 3 (for_each_field_name + bind_bulk_objects_impl + bind_expr_or_reset helpers).
 
 #include <meta>
 
@@ -144,29 +145,37 @@ export namespace storm::orm::statements {
             return result;
         }
 
-        // Unified field name size calculation at compile-time
-        // Template parameter controls whether to skip primary key (for INSERT vs SELECT)
-        template <bool SkipPrimaryKey> static consteval auto calculate_field_names_size_impl() -> size_t {
-            size_t size  = 0;
-            bool   first = true;
+        // Shared iterator over data members, honouring SkipPrimaryKey, invoking
+        // `body(i, is_fk, name)` per emitted field. The size-calculator and the
+        // list-builder used to spell out this loop independently.
+        template <bool SkipPrimaryKey, typename Body> static consteval auto for_each_field_name(Body body) -> void {
+            bool first = true;
             for (size_t i = 0; i < field_count_; ++i) {
                 if constexpr (SkipPrimaryKey) {
                     if (all_members_[i] == primary_key_) {
                         continue;
                     }
                 }
-                if (!first) {
-                    size += 2; // ", "
-                }
-                // Check if this is a FK field
-                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
-                if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
-                    size += std::meta::identifier_of(all_members_[i]).size() + 3; // +3 for "_id"
-                } else {
-                    size += std::meta::identifier_of(all_members_[i]).size();
-                }
+                auto       field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
+                bool const is_fk      = field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk;
+                body(i, is_fk, !first);
                 first = false;
             }
+        }
+
+        // Unified field name size calculation at compile-time
+        // Template parameter controls whether to skip primary key (for INSERT vs SELECT)
+        template <bool SkipPrimaryKey> static consteval auto calculate_field_names_size_impl() -> size_t {
+            size_t size = 0;
+            for_each_field_name<SkipPrimaryKey>([&](size_t i, bool is_fk, bool needs_comma) {
+                if (needs_comma) {
+                    size += 2; // ", "
+                }
+                size += std::meta::identifier_of(all_members_[i]).size();
+                if (is_fk) {
+                    size += 3; // "_id"
+                }
+            });
             return size;
         }
 
@@ -185,26 +194,15 @@ export namespace storm::orm::statements {
         template <bool SkipPrimaryKey> static consteval auto build_field_names_list_impl() {
             constexpr size_t      size = calculate_field_names_size_impl<SkipPrimaryKey>() + 10;
             ConstexprString<size> result;
-            bool                  first = true;
-            for (size_t i = 0; i < field_count_; ++i) {
-                if constexpr (SkipPrimaryKey) {
-                    if (all_members_[i] == primary_key_) {
-                        continue;
-                    }
-                }
-                if (!first) {
+            for_each_field_name<SkipPrimaryKey>([&](size_t i, bool is_fk, bool needs_comma) {
+                if (needs_comma) {
                     result.append(", ");
                 }
-                // Check if this is a FK field
-                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
-                if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
-                    result.append(std::meta::identifier_of(all_members_[i]));
+                result.append(std::meta::identifier_of(all_members_[i]));
+                if (is_fk) {
                     result.append("_id");
-                } else {
-                    result.append(std::meta::identifier_of(all_members_[i]));
                 }
-                first = false;
-            }
+            });
             return result;
         }
 
@@ -309,16 +307,21 @@ export namespace storm::orm::statements {
             }
         }
 
-        // Helper for bulk binding multiple objects with index sequence
-        template <typename ConnType, typename Statement, typename ContainerType, size_t... Is>
-        [[nodiscard]] static auto bind_all_objects_bulk_impl(
+        // Bulk binding scaffolding: iterate objects, fold the per-field bind over the
+        // index sequence, return on first error. Bound to bind_field_at_index<...>
+        // through the SkipPrimaryKey template parameter so a single body serves
+        // both the all-fields and non-PK variants.
+        template <bool SkipPrimaryKey, typename ConnType, typename Statement, typename ContainerType, size_t... Is>
+        [[nodiscard]] static auto bind_bulk_objects_impl(
                 Statement& stmt, const ContainerType& objects, std::index_sequence<Is...> /*unused*/
         ) noexcept -> std::expected<void, typename ConnType::Error> {
             int param_index = 1;
 
             for (const auto& obj : objects) {
                 std::expected<void, typename ConnType::Error> result{};
-                ((result = bind_field_at_index<ConnType, Is>(&stmt, obj, param_index), result.has_value()) && ...);
+                ((result = bind_field_at_index<ConnType, Is, SkipPrimaryKey>(&stmt, obj, param_index),
+                  result.has_value()) &&
+                 ...);
                 if (!result) {
                     return result;
                 }
@@ -326,22 +329,20 @@ export namespace storm::orm::statements {
             return {};
         }
 
+        // Helper for bulk binding multiple objects with index sequence
+        template <typename ConnType, typename Statement, typename ContainerType, size_t... Is>
+        [[nodiscard]] static auto bind_all_objects_bulk_impl(
+                Statement& stmt, const ContainerType& objects, std::index_sequence<Is...> seq
+        ) noexcept -> std::expected<void, typename ConnType::Error> {
+            return bind_bulk_objects_impl<false, ConnType, Statement, ContainerType, Is...>(stmt, objects, seq);
+        }
+
         // Helper for bulk INSERT binding (skips PK for auto-increment)
         template <typename ConnType, typename Statement, typename ContainerType, size_t... Is>
         [[nodiscard]] static auto bind_non_pk_objects_bulk_impl(
-                Statement& stmt, const ContainerType& objects, std::index_sequence<Is...> /*unused*/
+                Statement& stmt, const ContainerType& objects, std::index_sequence<Is...> seq
         ) noexcept -> std::expected<void, typename ConnType::Error> {
-            int param_index = 1;
-
-            for (const auto& obj : objects) {
-                std::expected<void, typename ConnType::Error> result{};
-                ((result = bind_field_at_index<ConnType, Is, true>(&stmt, obj, param_index), result.has_value()) &&
-                 ...);
-                if (!result) {
-                    return result;
-                }
-            }
-            return {};
+            return bind_bulk_objects_impl<true, ConnType, Statement, ContainerType, Is...>(stmt, objects, seq);
         }
 
         // Common batch operation thresholds
@@ -796,17 +797,28 @@ export namespace storm::orm::statements {
 
         // Helper: Bind WHERE expression parameters to statement
         // Returns std::expected<void, Error> - resets statement on failure
+        // Helper: bind a WHERE-style expression and convert the result. On
+        // failure, reset the statement and propagate as std::unexpected.
+        // Used by both bind_where_params (starts at param_index = 1) and
+        // bind_having_params (continues from WHERE's last index).
         template <typename Statement, typename Error>
         [[nodiscard]] __attribute__((always_inline)) static auto
-        bind_where_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& where_expr)
+        bind_expr_or_reset(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& expr, int& param_index)
                 -> std::expected<void, Error> {
-            int  param_index = 1;
-            auto bind_result = orm::where::bind_params_direct<Statement, Error>(*where_expr, stmt_ptr, param_index);
+            auto bind_result = orm::where::bind_params_direct<Statement, Error>(*expr, stmt_ptr, param_index);
             if (!bind_result) [[unlikely]] {
                 stmt_ptr->reset();
                 return std::unexpected(bind_result.error());
             }
             return {};
+        }
+
+        template <typename Statement, typename Error>
+        [[nodiscard]] __attribute__((always_inline)) static auto
+        bind_where_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& where_expr)
+                -> std::expected<void, Error> {
+            int param_index = 1;
+            return bind_expr_or_reset<Statement, Error>(stmt_ptr, where_expr, param_index);
         }
 
         // Helper: Bind HAVING expression parameters to statement
@@ -815,12 +827,7 @@ export namespace storm::orm::statements {
         [[nodiscard]] __attribute__((always_inline)) static auto
         bind_having_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& having_expr, int& param_index)
                 -> std::expected<void, Error> {
-            auto bind_result = orm::where::bind_params_direct<Statement, Error>(*having_expr, stmt_ptr, param_index);
-            if (!bind_result) [[unlikely]] {
-                stmt_ptr->reset();
-                return std::unexpected(bind_result.error());
-            }
-            return {};
+            return bind_expr_or_reset<Statement, Error>(stmt_ptr, having_expr, param_index);
         }
     };
 

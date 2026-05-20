@@ -16,8 +16,8 @@ When a file's `duplicate` tag is removed by extraction, its `LINT-EXCLUDE-FILE` 
 | `src/orm/statements/insert.cppm` | extracted (#278) | `build_insert_sql_array_impl<bool>`, `to_sql_impl`, single/bulk binder split |
 | `src/orm/schema.cppm` | extracted (#279) | `append_index_sql` helper for the shared `CREATE INDEX` tail |
 | `src/orm/statements/join.cppm` | extracted (#280) | `for_each_fk_field<F>` consteval helper |
-| `src/orm/statements/select.cppm` | extracted (this PR) | `build_sql()` reused by `to_sql`/`prepare_statement`/`rows_generator`; `QueryBase::forward()` collapses the 5-arg forwarder block in `Query`/`FirstQuery`/`GetQuery`; `make_first_or_get<Proxy>` consolidates the `query_first`/`query_get` bodies; coroutine step-loop in `rows_generator` no longer branches before the loop; `step_first_row()` helper de-duplicates the first-step triage in `execute_single_row` / `execute_exact_one` |
-| `src/orm/statements/base.cppm` | pending | — |
+| `src/orm/statements/select.cppm` | extracted (#281) | `build_sql()` reused by `to_sql`/`prepare_statement`/`rows_generator`; `QueryBase::forward()` collapses the 5-arg forwarder block in `Query`/`FirstQuery`/`GetQuery`; `make_first_or_get<Proxy>` consolidates the `query_first`/`query_get` bodies; coroutine step-loop in `rows_generator` no longer branches before the loop; `step_first_row()` helper de-duplicates the first-step triage in `execute_single_row` / `execute_exact_one` |
+| `src/orm/statements/base.cppm` | extracted (this PR) | `for_each_field_name<SkipPK>` consteval iterator drives both the size-calculator and the list-builder; `bind_bulk_objects_impl<SkipPK>` unifies the two bulk binders; `bind_expr_or_reset` shares the bind-or-reset tail of `bind_where_params` / `bind_having_params` |
 | `src/orm/where.cppm` | pending | — |
 | `src/orm/statements/update.cppm` | pending | — |
 | `src/orm/statements/aggregate.cppm` | pending | — |
