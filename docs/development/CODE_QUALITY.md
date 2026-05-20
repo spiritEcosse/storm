@@ -25,8 +25,8 @@ When a file's `duplicate` tag is removed by extraction, its `LINT-EXCLUDE-FILE` 
 | `src/orm/statements/erase.cppm` | extracted (#288) | `delete_prefix_size()` + `append_delete_prefix(buf)` consteval helpers share the `"DELETE FROM <table> WHERE <pk_name>"` prefix between the single-row and bulk DELETE SQL builders — only the tail differs (`" = ?"` vs `" IN ("`) |
 | `src/orm/statements/distinct.cppm` | extracted (#289) | `build_field_list_with_prefix<Extra>(prefix, seq)` consteval helper shared by `build_field_list_constexpr` (no prefix) and `build_join_field_list_constexpr` (`"t1."` per field) |
 | `src/orm/statements/setop.cppm` | extracted (#290) | `add_operand(op, type)` folds the `union_`/`union_all`/`except_`/`intersect_` bodies; `ready_statement()` shares the prepare/reset/bind dance between `execute()` and `to_sql()` |
-| `src/db/sqlite.cppm` | tag dropped (this PR) | No duplicate blocks today — the directive was carried over from earlier `LINT-EXCLUDE-FILE` rollout but had no current effect. Drop it outright |
-| `src/db/postgresql_statement.cppm` | pending | — |
+| `src/db/sqlite.cppm` | tag dropped (#291) | No duplicate blocks today — the directive was carried over from earlier `LINT-EXCLUDE-FILE` rollout but had no current effect |
+| `src/db/postgresql_statement.cppm` | extracted (this PR) | `bind_text_value(idx, std::string)` helper folds the `ensure_param_slot → assign → update_param_ptrs` dance shared by `bind_int` / `bind_int64` / `bind_text` |
 
 ## Accepted duplicates
 

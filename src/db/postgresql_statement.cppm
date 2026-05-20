@@ -1,9 +1,7 @@
 module;
 
-// LINT-EXCLUDE-FILE: duplicate
-// bind_int/bind_int64/bind_text share a 4-line shape; refactor deferred to
-// storm issue #264 Phase 3 (extract bind_typed<T> helper). Move-op duplication
-// already eliminated via the swap idiom above.
+// `duplicate` removed in #277 Phase 3 (bind_text_value(idx, std::string) helper shared by
+// bind_int/bind_int64/bind_text).
 
 #include <libpq-fe.h>
 
@@ -76,31 +74,34 @@ export namespace storm::db::postgresql {
         Statement(const Statement&)                    = delete;
         auto operator=(const Statement&) -> Statement& = delete;
 
-        // Parameter binding - accumulate as text strings for PQexecPrepared
+        // Parameter binding - accumulate as text strings for PQexecPrepared.
+        // bind_text_value(idx, std::string) is the shared core; bind_int /
+        // bind_int64 / bind_text used to spell out the same
+        // `ensure_param_slot → assign → update_param_ptrs` dance.
+        __attribute__((always_inline)) auto bind_text_value(int index, std::string value) noexcept -> void {
+            ensure_param_slot(index);
+            param_values_[index - 1] = std::move(value);
+            update_param_ptrs(index);
+        }
+
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto bind_int(int index, int value) noexcept
                 -> std::expected<void, Error> {
-            ensure_param_slot(index);
-            param_values_[index - 1] = std::to_string(value);
-            update_param_ptrs(index);
+            bind_text_value(index, std::to_string(value));
             return {};
         }
 
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto bind_text(int index, std::string_view value) noexcept
                 -> std::expected<void, Error> {
-            ensure_param_slot(index);
-            param_values_[index - 1] = std::string(value);
-            update_param_ptrs(index);
+            bind_text_value(index, std::string(value));
             return {};
         }
 
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto bind_int64(int index, int64_t value) noexcept
                 -> std::expected<void, Error> {
-            ensure_param_slot(index);
-            param_values_[index - 1] = std::to_string(value);
-            update_param_ptrs(index);
+            bind_text_value(index, std::to_string(value));
             return {};
         }
 
