@@ -1,6 +1,5 @@
 module;
 
-// LINT-EXCLUDE-FILE: complexity, length
 // Boilerplate-pattern duplicates accepted (see #264 finding).
 
 #include <meta>

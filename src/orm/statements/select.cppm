@@ -1,6 +1,5 @@
 module;
 
-// LINT-EXCLUDE-FILE: file-size, complexity, length
 // Single cohesive class template; thresholds intentionally relaxed (see #264 finding).
 // `duplicate` removed in #277 Phase 3 (build_sql() shared by to_sql/prepare_statement/rows_generator + collapsed
 // coroutine step-loop).

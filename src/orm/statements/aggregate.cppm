@@ -1,6 +1,5 @@
 module;
 
-// LINT-EXCLUDE-FILE: file-size
 // Single cohesive class template; thresholds intentionally relaxed (see #264 finding).
 // `duplicate` removed in #277 Phase 3 (append_group_by_tail helper folds the HAVING + ORDER/LIMIT/OFFSET tail repeated
 // across execute_where / execute_join / execute_where_join).

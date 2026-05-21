@@ -1,6 +1,5 @@
 module;
 
-// LINT-EXCLUDE-FILE: complexity, length
 // `duplicate` removed in #277 Phase 3 (count_entries(pred) helper shared by available() / in_use() counters).
 
 #include <condition_variable>

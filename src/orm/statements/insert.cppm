@@ -1,6 +1,5 @@
 module;
 
-// LINT-EXCLUDE-FILE: file-size, complexity, length
 // Single cohesive class template; thresholds intentionally relaxed (see #264 finding).
 // `duplicate` removed in #277 Phase 3 (shared consteval SQL builder + to_sql_impl).
 

@@ -1,6 +1,5 @@
 module;
 
-// LINT-EXCLUDE-FILE: complexity, length
 // `duplicate` removed in #277 Phase 3 (shared append_index_sql helper).
 
 #include <meta>
