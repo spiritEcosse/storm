@@ -424,50 +424,51 @@ export namespace storm::orm::statements {
         // Unified approach: simple SELECT uses dedicated cache, all others use string-based cache
         // OPTIMIZATION: WHERE expression address caching - skips SQL building AND param binding
         // when the same expression is used repeatedly (sqlite3_reset preserves bindings)
-        [[nodiscard]] __attribute__((always_inline)) auto prepare_statement(
-                const std::optional<JoinStatementWrapper>& join_wrapper,
-                const orm::where::ExpressionVariantPtr&    where_expr,
-                const std::optional<int>&                  limit,
-                const std::optional<int>&                  offset,
-                const std::optional<OrderByWrapper>&       order_by_wrapper
-        ) -> std::expected<Statement*, Error> {
-            const bool has_modifiers = order_by_wrapper.has_value() || limit.has_value() || offset.has_value();
-
-            // Fast path: simple SELECT (static SQL, no building needed)
-            if (!where_expr && !join_wrapper && !has_modifiers) {
-                if (cached_simple_stmt_ == nullptr) {
-                    auto prepare_result = conn_->prepare_cached(get_select_sql());
-                    if (!prepare_result) [[unlikely]] {
-                        return std::unexpected(prepare_result.error());
-                    }
-                    cached_simple_stmt_ = *prepare_result;
-                }
-                return cached_simple_stmt_;
+        // Bind WHERE parameters to cached_stmt_ and return any binding error in the
+        // shape callers expect. Shared between rebind_where_only (PG fast path) and
+        // prepare_and_bind (dynamic path).
+        [[nodiscard]] __attribute__((always_inline)) auto
+        bind_where_or_propagate(const orm::where::ExpressionVariantPtr& where_expr) -> std::expected<void, Error> {
+            auto bind_result = Base::template bind_where_params<Statement, Error>(cached_stmt_, where_expr);
+            if (!bind_result) [[unlikely]] {
+                return std::unexpected(bind_result.error());
             }
+            return {};
+        }
 
-            // Fast path: WHERE expression address unchanged — skip SQL building entirely
-            const void* where_addr = where_expr ? static_cast<const void*>(&(*where_expr)) : nullptr;
-            if (cached_stmt_ != nullptr && where_addr == cached_where_addr_ && where_addr != nullptr) {
-                // Rebind only if backend clears params on reset (PostgreSQL does, SQLite doesn't)
-                if constexpr (!Statement::preserves_bindings) { // LCOV_EXCL_START — if constexpr: only instantiated for
-                                                                // PostgreSQL; fast-path return below untested for
-                                                                // execute_one
-                    auto bind_result = Base::template bind_where_params<Statement, Error>(cached_stmt_, where_expr);
-                    if (!bind_result) [[unlikely]] {
-                        return std::unexpected(bind_result.error());
-                    }
+        // Fast path: simple SELECT (no WHERE / JOIN / modifiers). Prepares the static
+        // SQL once and caches the Statement* on the first call.
+        [[nodiscard]] __attribute__((always_inline)) auto prepare_simple_path() -> std::expected<Statement*, Error> {
+            if (cached_simple_stmt_ == nullptr) {
+                auto prepare_result = conn_->prepare_cached(get_select_sql());
+                if (!prepare_result) [[unlikely]] {
+                    return std::unexpected(prepare_result.error());
                 }
-                return cached_stmt_;
-            } // LCOV_EXCL_STOP
+                cached_simple_stmt_ = *prepare_result;
+            }
+            return cached_simple_stmt_;
+        }
 
-            // Dynamic path: build SQL and cache by string comparison.
-            // build_sql() is always_inline — keeps the same codegen as the
-            // previously-inlined SQL builder (see #264 Phase 2 finding).
-            // NOTE: Do NOT add sql.reserve() here - benchmarks show ~2% regression due to
-            // extra function call overhead outweighing reallocation savings for typical SQL sizes
-            std::string sql = build_sql(join_wrapper, where_expr, limit, offset, order_by_wrapper);
+        // Fast path: same WHERE expression as the last call — skip SQL building.
+        // Rebinds parameters only if the backend clears bindings on reset (PostgreSQL).
+        [[nodiscard]] __attribute__((always_inline)) auto
+        rebind_where_only(const orm::where::ExpressionVariantPtr& where_expr) -> std::expected<Statement*, Error> {
+            if constexpr (!Statement::preserves_bindings) { // LCOV_EXCL_START — if constexpr: only instantiated for
+                                                            // PostgreSQL; fast-path return below untested for
+                                                            // execute_one
+                if (auto r = bind_where_or_propagate(where_expr); !r) {
+                    return std::unexpected(r.error());
+                }
+            }
+            return cached_stmt_;
+        } // LCOV_EXCL_STOP
 
-            // Get or prepare cached statement
+        // Dynamic path: prepare-or-reuse statement keyed by SQL string, then bind WHERE
+        // params if any. Always_inline so the call site keeps the same codegen as the
+        // previously-inlined builder (see #264 Phase 2 finding).
+        [[nodiscard]] __attribute__((always_inline)) auto
+        prepare_and_bind(std::string sql, const orm::where::ExpressionVariantPtr& where_expr)
+                -> std::expected<Statement*, Error> {
             if (cached_stmt_ == nullptr || cached_sql_ != sql) {
                 auto prepare_result = conn_->prepare_cached(sql);
                 if (!prepare_result) [[unlikely]] {
@@ -476,19 +477,56 @@ export namespace storm::orm::statements {
                 cached_stmt_ = *prepare_result;
                 cached_sql_  = std::move(sql);
             }
-
-            // Bind WHERE params if needed
             if (where_expr) {
-                auto bind_result = Base::template bind_where_params<Statement, Error>(cached_stmt_, where_expr);
-                if (!bind_result) [[unlikely]] {
-                    return std::unexpected(bind_result.error());
+                if (auto r = bind_where_or_propagate(where_expr); !r) {
+                    return std::unexpected(r.error());
                 }
             }
-
-            // Cache the WHERE expression address for fast-path on next call
-            cached_where_addr_ = where_addr;
-
             return cached_stmt_;
+        }
+
+        // Each of the three stage-selectors lives in its own consteval-friendly
+        // inline helper. Pulling the boolean expressions out of prepare_statement
+        // keeps its cyclomatic complexity to one branch per dispatch arm.
+        [[nodiscard]] __attribute__((always_inline)) static auto is_simple_select(
+                const std::optional<JoinStatementWrapper>& join_wrapper,
+                const orm::where::ExpressionVariantPtr&    where_expr,
+                const std::optional<int>&                  limit,
+                const std::optional<int>&                  offset,
+                const std::optional<OrderByWrapper>&       order_by_wrapper
+        ) -> bool {
+            const bool has_modifiers = order_by_wrapper.has_value() || limit.has_value() || offset.has_value();
+            const bool has_filters   = where_expr || join_wrapper.has_value();
+            return !has_filters && !has_modifiers;
+        }
+
+        [[nodiscard]] __attribute__((always_inline)) auto can_use_addr_fast_path(const void* where_addr) const -> bool {
+            const bool have_cache = cached_stmt_ != nullptr && cached_where_addr_ != nullptr;
+            return have_cache && where_addr == cached_where_addr_;
+        }
+
+        [[nodiscard]] __attribute__((always_inline)) auto prepare_statement(
+                const std::optional<JoinStatementWrapper>& join_wrapper,
+                const orm::where::ExpressionVariantPtr&    where_expr,
+                const std::optional<int>&                  limit,
+                const std::optional<int>&                  offset,
+                const std::optional<OrderByWrapper>&       order_by_wrapper
+        ) -> std::expected<Statement*, Error> {
+            if (is_simple_select(join_wrapper, where_expr, limit, offset, order_by_wrapper)) {
+                return prepare_simple_path();
+            }
+            const void* where_addr = where_expr ? static_cast<const void*>(&(*where_expr)) : nullptr;
+            if (can_use_addr_fast_path(where_addr)) {
+                return rebind_where_only(where_expr);
+            }
+            // NOTE: Do NOT add sql.reserve() here - benchmarks show ~2% regression due to
+            // extra function call overhead outweighing reallocation savings for typical SQL sizes
+            auto stmt =
+                    prepare_and_bind(build_sql(join_wrapper, where_expr, limit, offset, order_by_wrapper), where_expr);
+            if (stmt) {
+                cached_where_addr_ = where_addr;
+            }
+            return stmt;
         }
 
         // =====================================================================
