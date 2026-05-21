@@ -109,6 +109,7 @@ After this sweep, `.lint-skip` shrank from 9 entries (across 9 files) to 7 entri
 |---|---|---|---|---|
 | TBD | `src/db/pool.cppm` | `complexity`, `length` (entire line removed) | `try_grow(lock)` + `wait_for_idle(lock, deadline)` extract grow- and wait-paths out of `checkout` | `checkout`: CCN 13 → 5, length 70 → 19 |
 | TBD | `src/orm/statements/select.cppm` | `complexity`, `length` (kept `file-size`) | `prepare_simple_path()`, `rebind_where_only()`, `prepare_and_bind()`, `bind_where_or_propagate()`, plus `is_simple_select()` / `can_use_addr_fast_path()` predicates lift the three dispatch arms out of the hot `prepare_statement` (all `__attribute__((always_inline))`) | `prepare_statement`: CCN 19 → 5, length 66 → 22 |
+| TBD | `src/orm/statements/base.cppm` | `complexity`, `length` (kept `file-size`) | `is_int_stored_v` / `is_int64_stored_v` / `is_integer_stored_v` / `is_floating_stored_v` / `is_blob_stored_v` / `is_text_stored_v` predicates group source types by storage class; `read_text_view()`, `extract_int_like()`, `extract_floating_like()`, `extract_enum()`, `extract_text_like()`, `extract_blob_like()` helpers handle one storage class each (all `__attribute__((always_inline))`) | `extract_column_value`: CCN 40 → 10, length 130 → 34 |
 
 ### Remaining entries (Phase 5 work plan)
 
@@ -117,8 +118,6 @@ Each row below is a separate sub-PR per the issue's "one PR per file per tag" ru
 | File | Tag | Hook says | Phase 5 sub-PR target |
 |---|---|---|---|
 | `src/orm/statements/select.cppm` | `file-size` | 612 lines | bench-gated `Kept →` candidate (Phase 2 finding) |
-| `src/orm/statements/base.cppm` | `complexity` | 1 function @ CCN 40 | refactor |
-| `src/orm/statements/base.cppm` | `length` | 1 function @ 130 lines | refactor |
 | `src/orm/statements/base.cppm` | `file-size` | 832 lines | bench-gated `Kept →` candidate |
 | `src/orm/statements/aggregate.cppm` | `file-size` | 693 lines | refactor candidate (no Phase 2 finding) |
 | `src/orm/schema.cppm` | `complexity` | 1 function @ CCN 63 | refactor |
