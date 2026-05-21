@@ -9,4 +9,3 @@ src/orm/statements/base.cppm:      file-size, complexity, length
 src/orm/statements/aggregate.cppm: file-size
 src/orm/schema.cppm:                complexity, length
 src/orm/utilities.cppm:             complexity, length
-src/db/pool.cppm:                   complexity, length

@@ -103,6 +103,12 @@ Re-running the hook against the Phase 4 `.lint-skip` showed several entries no l
 
 After this sweep, `.lint-skip` shrank from 9 entries (across 9 files) to 7 entries (across 7 files), and the project's full hook pass is still clean against today's thresholds.
 
+### Real-refactor sub-PRs
+
+| PR | File | Tag(s) dropped | Helper(s) introduced | Before → after |
+|---|---|---|---|---|
+| TBD | `src/db/pool.cppm` | `complexity`, `length` (entire line removed) | `try_grow(lock)` + `wait_for_idle(lock, deadline)` extract grow- and wait-paths out of `checkout` | `checkout`: CCN 13 → 5, length 70 → 19 |
+
 ### Remaining entries (Phase 5 work plan)
 
 Each row below is a separate sub-PR per the issue's "one PR per file per tag" rule.
@@ -120,5 +126,3 @@ Each row below is a separate sub-PR per the issue's "one PR per file per tag" ru
 | `src/orm/schema.cppm` | `length` | 1 function @ 146 lines | refactor |
 | `src/orm/utilities.cppm` | `complexity` | 1 function @ CCN 39 | refactor |
 | `src/orm/utilities.cppm` | `length` | 1 function @ 114 lines | refactor |
-| `src/db/pool.cppm` | `complexity` | 1 function @ CCN 13 | refactor (smallest delta — likely first) |
-| `src/db/pool.cppm` | `length` | 1 function @ 70 lines | refactor (same fn) |
