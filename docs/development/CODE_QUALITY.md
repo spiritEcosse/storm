@@ -84,3 +84,41 @@ For each constant in `~/.claude/hooks/smell_types.py`, the question is: *did Pha
 - **`MAX_PARAMETERS = 6` — keep.** Phase 3 reported zero `parameters` violations on `src/*.cppm`. No exclusions exist. No tuning needed.
 
 **Conclusion:** all 7 constants stay at their current values. The stop-gap `LINT-EXCLUDE-FILE` mechanism in the hook is removed and replaced by `.lint-skip` at the repo root.
+
+## Phase 5 audit (#295) — `.lint-skip` shrink
+
+Phase 4 ended with 9 entries in `.lint-skip` across three tags (`file-size`, `complexity`, `length`). Phase 5's policy: for every `(file, tag)` pair, either remove the tag (refactor lands or threshold no longer fires) or document a `Kept →` reason here.
+
+### Stale-entry sweep — first PR
+
+Re-running the hook against the Phase 4 `.lint-skip` showed several entries no longer fire **at the current threshold values** (`MAX_COMPLEXITY = 10`, `MAX_FUNCTION_LINES = 60`, `MAX_FILE_LINES = 600`). These were dropped without source changes. The headroom column shows how close the file sits to today's threshold — if Phase 4's threshold decisions are ever revisited downward, these files may need their tags back or a real refactor.
+
+| File | Tag | Disposition | Evidence (today's thresholds) | Headroom |
+|---|---|---|---|---|
+| `src/orm/statements/update.cppm` | `complexity` | **dropped (entire line removed)** | Lizard reports max CCN = 7. Phase 3 PR #285 already extracted helpers that reduced complexity; the tag was carried over from before that work landed | 3 CCN points |
+| `src/orm/where.cppm` | `file-size` | **dropped (entire line removed)** | File is 574 lines. Phase 3 PR #284 trimmed it below 600 | 26 lines |
+| `src/orm/where.cppm` | `complexity` | **dropped** | Lizard reports zero functions over CCN 10 | N/A (no offender today) |
+| `src/orm/statements/insert.cppm` | `complexity` | **dropped** | Lizard reports max CCN = 7 (Phase 3 PR #278 already split the big consteval builder) | 3 CCN points |
+| `src/orm/statements/insert.cppm` | `length` | **dropped** | Lizard reports max function = 33 lines | 27 lines |
+
+After this sweep, `.lint-skip` shrank from 9 entries (across 9 files) to 7 entries (across 7 files), and the project's full hook pass is still clean against today's thresholds.
+
+### Remaining entries (Phase 5 work plan)
+
+Each row below is a separate sub-PR per the issue's "one PR per file per tag" rule.
+
+| File | Tag | Hook says | Phase 5 sub-PR target |
+|---|---|---|---|
+| `src/orm/statements/select.cppm` | `complexity` | 1 function @ CCN 19 | refactor |
+| `src/orm/statements/select.cppm` | `length` | 1 function @ 66 lines | refactor (likely same fn as complexity) |
+| `src/orm/statements/select.cppm` | `file-size` | 612 lines | bench-gated `Kept →` candidate (Phase 2 finding) |
+| `src/orm/statements/base.cppm` | `complexity` | 1 function @ CCN 40 | refactor |
+| `src/orm/statements/base.cppm` | `length` | 1 function @ 130 lines | refactor |
+| `src/orm/statements/base.cppm` | `file-size` | 832 lines | bench-gated `Kept →` candidate |
+| `src/orm/statements/aggregate.cppm` | `file-size` | 693 lines | refactor candidate (no Phase 2 finding) |
+| `src/orm/schema.cppm` | `complexity` | 1 function @ CCN 63 | refactor |
+| `src/orm/schema.cppm` | `length` | 1 function @ 146 lines | refactor |
+| `src/orm/utilities.cppm` | `complexity` | 1 function @ CCN 39 | refactor |
+| `src/orm/utilities.cppm` | `length` | 1 function @ 114 lines | refactor |
+| `src/db/pool.cppm` | `complexity` | 1 function @ CCN 13 | refactor (smallest delta — likely first) |
+| `src/db/pool.cppm` | `length` | 1 function @ 70 lines | refactor (same fn) |
