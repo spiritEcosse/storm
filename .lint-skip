@@ -7,5 +7,7 @@ src/orm/statements/insert.cppm:    file-size
 src/orm/statements/select.cppm:    file-size
 src/orm/statements/base.cppm:      file-size
 src/orm/statements/aggregate.cppm: file-size
-src/orm/schema.cppm:                complexity, length
 src/orm/utilities.cppm:             complexity, length
+
+# Pre-existing test fixture; #295 is src/ only. See `tests/` exclusion in issue body.
+tests/db/test_pool.cpp:             file-size, duplicate
