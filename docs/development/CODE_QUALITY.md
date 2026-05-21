@@ -108,6 +108,7 @@ After this sweep, `.lint-skip` shrank from 9 entries (across 9 files) to 7 entri
 | PR | File | Tag(s) dropped | Helper(s) introduced | Before → after |
 |---|---|---|---|---|
 | TBD | `src/db/pool.cppm` | `complexity`, `length` (entire line removed) | `try_grow(lock)` + `wait_for_idle(lock, deadline)` extract grow- and wait-paths out of `checkout` | `checkout`: CCN 13 → 5, length 70 → 19 |
+| TBD | `src/orm/statements/select.cppm` | `complexity`, `length` (kept `file-size`) | `prepare_simple_path()`, `rebind_where_only()`, `prepare_and_bind()`, `bind_where_or_propagate()`, plus `is_simple_select()` / `can_use_addr_fast_path()` predicates lift the three dispatch arms out of the hot `prepare_statement` (all `__attribute__((always_inline))`) | `prepare_statement`: CCN 19 → 5, length 66 → 22 |
 
 ### Remaining entries (Phase 5 work plan)
 
@@ -115,8 +116,6 @@ Each row below is a separate sub-PR per the issue's "one PR per file per tag" ru
 
 | File | Tag | Hook says | Phase 5 sub-PR target |
 |---|---|---|---|
-| `src/orm/statements/select.cppm` | `complexity` | 1 function @ CCN 19 | refactor |
-| `src/orm/statements/select.cppm` | `length` | 1 function @ 66 lines | refactor (likely same fn as complexity) |
 | `src/orm/statements/select.cppm` | `file-size` | 612 lines | bench-gated `Kept →` candidate (Phase 2 finding) |
 | `src/orm/statements/base.cppm` | `complexity` | 1 function @ CCN 40 | refactor |
 | `src/orm/statements/base.cppm` | `length` | 1 function @ 130 lines | refactor |
