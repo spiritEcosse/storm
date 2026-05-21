@@ -8,6 +8,7 @@ module;
 export module storm_db_pool;
 import storm_db_concept;
 import <expected>;
+import <optional>;
 import <string_view>;
 import <string>;
 import <memory>;
@@ -64,69 +65,18 @@ export namespace storm::db {
                 if (shutdown_) {
                     return std::unexpected(Error{-1, "Pool is shut down"});
                 }
-
-                // Evict expired idle connections before searching
                 evict_expired();
-
-                // Try to find an idle connection
-                auto* entry = find_idle();
-                if (entry != nullptr) {
+                if (auto* entry = find_idle(); entry != nullptr) {
                     return entry;
                 }
-
-                // Try to grow the pool
-                if (static_cast<int>(entries_.size()) < config_.max_connections) {
-                    // Release lock during potentially slow open()
-                    lock.unlock();
-                    auto result = ConnType::open(conninfo_);
-                    lock.lock();
-
-                    if (shutdown_) {
-                        return std::unexpected(Error{-1, "Pool is shut down"});
-                    }
-
-                    if (!result) {
-                        return std::unexpected(result.error());
-                    }
-
-                    // Re-check: another thread may have grown the pool while we were unlocked
-                    if (static_cast<int>(entries_.size()) >= config_.max_connections) {
-                        // Pool reached max — discard new connection, try to find an idle one
-                        auto* idle = find_idle();
-                        if (idle != nullptr) {
-                            return idle;
-                        }
-                        // Fall through to wait/fail logic
-                    } else {
-                        auto now = Clock::now();
-                        entries_.emplace_back(std::make_unique<ConnType>(std::move(result.value())), true, now, now);
-                        return entries_.back().conn.get();
-                    }
+                if (auto grown = try_grow(lock); grown.has_value()) {
+                    return *grown;
                 }
-
-                // Pool exhausted — wait or fail
                 if (config_.checkout_timeout_ms == 0) {
                     return std::unexpected(Error{-1, "Pool exhausted (timeout=0)"});
                 }
-
                 auto deadline = Clock::now() + std::chrono::milliseconds(config_.checkout_timeout_ms);
-
-                while (true) {
-                    if (cv_.wait_until(lock, deadline) == std::cv_status::timeout) {
-                        return std::unexpected(Error{-1, "Pool checkout timed out"});
-                    }
-
-                    if (shutdown_) {
-                        return std::unexpected(Error{-1, "Pool is shut down"});
-                    }
-
-                    evict_expired();
-
-                    auto* found = find_idle();
-                    if (found != nullptr) {
-                        return found;
-                    }
-                }
+                return wait_for_idle(lock, deadline);
             }
 
             auto checkin(ConnType* conn) -> void {
@@ -246,6 +196,57 @@ export namespace storm::db {
                     return it->conn.get();
                 }
                 return nullptr;
+            }
+
+            // Try to add a new connection to the pool. Releases `lock` while opening
+            // (which can be slow) and re-acquires it before returning.
+            //
+            // Return value semantics:
+            //   - has_value() == true  → terminal result: success (ConnType*) OR error
+            //   - has_value() == false → caller should fall through to wait/timeout path
+            //                            (pool was already at max when called, or
+            //                             reached max via another thread during open())
+            auto try_grow(std::unique_lock<std::mutex>& lock) -> std::optional<std::expected<ConnType*, Error>> {
+                if (static_cast<int>(entries_.size()) >= config_.max_connections) {
+                    return std::nullopt;
+                }
+                lock.unlock();
+                auto result = ConnType::open(conninfo_);
+                lock.lock();
+
+                if (shutdown_) {
+                    return std::expected<ConnType*, Error>{std::unexpected(Error{-1, "Pool is shut down"})};
+                }
+                if (!result) {
+                    return std::expected<ConnType*, Error>{std::unexpected(result.error())};
+                }
+                // Re-check: another thread may have grown the pool while we were unlocked
+                if (static_cast<int>(entries_.size()) >= config_.max_connections) {
+                    if (auto* idle = find_idle(); idle != nullptr) {
+                        return std::expected<ConnType*, Error>{idle};
+                    }
+                    return std::nullopt; // Fall through to wait
+                }
+                auto now = Clock::now();
+                entries_.emplace_back(std::make_unique<ConnType>(std::move(result.value())), true, now, now);
+                return std::expected<ConnType*, Error>{entries_.back().conn.get()};
+            }
+
+            // Block on cv_ until an idle entry is available, deadline hits, or shutdown.
+            auto wait_for_idle(std::unique_lock<std::mutex>& lock, TimePoint deadline)
+                    -> std::expected<ConnType*, Error> {
+                while (true) {
+                    if (cv_.wait_until(lock, deadline) == std::cv_status::timeout) {
+                        return std::unexpected(Error{-1, "Pool checkout timed out"});
+                    }
+                    if (shutdown_) {
+                        return std::unexpected(Error{-1, "Pool is shut down"});
+                    }
+                    evict_expired();
+                    if (auto* found = find_idle(); found != nullptr) {
+                        return found;
+                    }
+                }
             }
 
             auto create_entry() -> std::expected<void, Error> {
