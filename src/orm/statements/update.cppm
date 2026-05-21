@@ -1,6 +1,5 @@
 module;
 
-// LINT-EXCLUDE-FILE: complexity
 // Single cohesive class template; thresholds intentionally relaxed (see #264 finding).
 // `duplicate` removed in #277 Phase 3 (ensure_cached_stmt + reset_bind_execute helpers; QueryBase::sql() shared by
 // SingleQuery/BulkQuery proxies).

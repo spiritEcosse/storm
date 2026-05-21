@@ -1,6 +1,5 @@
 module;
 
-// LINT-EXCLUDE-FILE: file-size, complexity
 // Single cohesive class template; thresholds intentionally relaxed (see #264 finding).
 // `duplicate` removed in #277 Phase 3 (BindParamsVisitor casts the type-erased pointer once and calls each Expr's
 // bind_impl; make_null_check_expr shared by CollatedField/Field).

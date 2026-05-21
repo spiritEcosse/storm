@@ -1,0 +1,14 @@
+# Storm — files calibrated under #264. Each line is `<glob>: <tag-list>`.
+# Tags: file-size, duplicate, complexity, length, parameters, all.
+# Globs are relative to this file (the repo root) and use Python pathlib.Path.glob semantics.
+# Rationale per file lives in docs/development/CODE_QUALITY.md.
+
+src/orm/statements/insert.cppm:    file-size, complexity, length
+src/orm/statements/select.cppm:    file-size, complexity, length
+src/orm/statements/base.cppm:      file-size, complexity, length
+src/orm/where.cppm:                file-size, complexity
+src/orm/statements/update.cppm:    complexity
+src/orm/statements/aggregate.cppm: file-size
+src/orm/schema.cppm:                complexity, length
+src/orm/utilities.cppm:             complexity, length
+src/db/pool.cppm:                   complexity, length
