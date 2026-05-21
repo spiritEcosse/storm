@@ -36,158 +36,203 @@ export namespace storm::orm::schema {
 
     namespace detail {
 
-        // Map a C++ field type to its SQL column definition string for the given dialect.
-        // Returns the column type portion (after the column name).
-        // NOLINTBEGIN(readability-function-cognitive-complexity) — DDL type-mapping table is
-        // inherently a wide if-constexpr ladder; flattening makes the dialect rules less readable.
-        template <typename FieldType, Dialect D = Dialect::SQLite>
-        consteval auto sql_col_def() -> std::string_view { // NOSONAR(cpp:S3776) if-constexpr type dispatch
-            using utilities::is_chrono_duration_v;
-            using utilities::is_optional_v;
-            using utilities::optional_inner_type_t;
-            constexpr bool pg = (D == Dialect::PostgreSQL);
+        // Storage class — which SQL primitive the C++ inner type maps to. The set is
+        // closed; unknown types fall through to `Fallback` (TEXT, untyped).
+        enum class StorageClass : uint8_t {
+            Bool,
+            Integer,
+            Double,
+            Float,
+            Text,
+            Date,
+            DateTime,
+            Uuid,
+            Blob,
+            Fallback,
+        };
 
-            // === OPTIONAL TYPES (nullable, no NOT NULL) ===
-            if constexpr (std::is_same_v<FieldType, std::optional<bool>>) {
-                if constexpr (pg) {
-                    return "BOOLEAN";
-                } else {
-                    return "INTEGER";
-                }
-            } else if constexpr (std::is_same_v<FieldType, std::optional<int>> ||
-                                 std::is_same_v<FieldType, std::optional<int64_t>>) {
-                if constexpr (pg) {
-                    return "BIGINT";
-                } else {
-                    return "INTEGER";
-                }
-            } else if constexpr (is_optional_v<FieldType> && std::is_enum_v<optional_inner_type_t<FieldType>>) {
-                if constexpr (pg) {
-                    return "BIGINT";
-                } else {
-                    return "INTEGER";
-                }
-            } else if constexpr (is_optional_v<FieldType> && is_chrono_duration_v<optional_inner_type_t<FieldType>>) {
-                if constexpr (pg) {
-                    return "BIGINT";
-                } else {
-                    return "INTEGER";
-                }
-            } else if constexpr (std::is_same_v<FieldType, std::optional<double>>) {
-                if constexpr (pg) {
-                    return "DOUBLE PRECISION";
-                } else {
-                    return "REAL";
-                }
-            } else if constexpr (std::is_same_v<FieldType, std::optional<float>>) {
-                return "REAL";
-            } else if constexpr (std::is_same_v<FieldType, std::optional<std::string>> ||
-                                 std::is_same_v<FieldType, std::optional<std::string_view>>) {
-                return "TEXT";
-            } else if constexpr (is_optional_v<FieldType> &&
-                                 std::is_same_v<optional_inner_type_t<FieldType>, std::chrono::year_month_day>) {
-                if constexpr (pg) {
-                    return "DATE";
-                } else {
-                    return "TEXT";
-                }
-            } else if constexpr (is_optional_v<FieldType> && std::is_same_v<
-                                                                     optional_inner_type_t<FieldType>,
-                                                                     std::chrono::system_clock::time_point>) {
-                if constexpr (pg) {
-                    return "TIMESTAMP";
-                } else {
-                    return "TEXT";
-                }
-            } else if constexpr (is_optional_v<FieldType> &&
-                                 std::is_same_v<optional_inner_type_t<FieldType>, utilities::UUID>) {
-                if constexpr (pg) {
-                    return "UUID";
-                } else {
-                    return "TEXT";
-                }
-            } else if constexpr (is_optional_v<FieldType> &&
-                                 std::is_same_v<optional_inner_type_t<FieldType>, std::filesystem::path>) {
-                return "TEXT";
-            }
-            // === BLOB TYPES ===
-            else if constexpr (std::is_same_v<FieldType, std::vector<uint8_t>> ||
-                               std::is_same_v<FieldType, std::vector<unsigned char>> ||
-                               std::is_same_v<FieldType, std::vector<std::byte>>) {
-                if constexpr (pg) {
-                    return "BYTEA";
-                } else {
-                    return "BLOB";
-                }
-            }
-            // === NON-OPTIONAL TYPES (NOT NULL) ===
-            else if constexpr (std::is_same_v<FieldType, bool>) {
-                if constexpr (pg) {
-                    return "BOOLEAN NOT NULL";
-                } else {
-                    return "INTEGER NOT NULL";
-                }
-            } else if constexpr (std::is_same_v<FieldType, int> || std::is_same_v<FieldType, int64_t> ||
-                                 std::is_same_v<FieldType, short> || std::is_same_v<FieldType, unsigned int> ||
-                                 std::is_same_v<FieldType, unsigned short> || std::is_same_v<FieldType, long> ||
-                                 std::is_same_v<FieldType, unsigned long> || std::is_same_v<FieldType, long long> ||
-                                 std::is_same_v<FieldType, unsigned long long> ||
-                                 std::is_same_v<FieldType, signed char> || std::is_same_v<FieldType, unsigned char> ||
-                                 std::is_same_v<FieldType, char>) {
-                if constexpr (pg) {
-                    return "BIGINT NOT NULL";
-                } else {
-                    return "INTEGER NOT NULL";
-                }
-            } else if constexpr (std::is_enum_v<FieldType>) {
-                if constexpr (pg) {
-                    return "BIGINT NOT NULL";
-                } else {
-                    return "INTEGER NOT NULL";
-                }
-            } else if constexpr (is_chrono_duration_v<FieldType>) {
-                if constexpr (pg) {
-                    return "BIGINT NOT NULL";
-                } else {
-                    return "INTEGER NOT NULL";
-                }
-            } else if constexpr (std::is_same_v<FieldType, double>) {
-                if constexpr (pg) {
-                    return "DOUBLE PRECISION NOT NULL";
-                } else {
-                    return "REAL NOT NULL";
-                }
-            } else if constexpr (std::is_same_v<FieldType, float>) {
-                return "REAL NOT NULL";
-            } else if constexpr (std::is_same_v<FieldType, std::string> ||
-                                 std::is_same_v<FieldType, std::string_view>) {
-                return "TEXT NOT NULL";
-            } else if constexpr (std::is_same_v<FieldType, std::chrono::year_month_day>) {
-                if constexpr (pg) {
-                    return "DATE NOT NULL";
-                } else {
-                    return "TEXT NOT NULL";
-                }
-            } else if constexpr (std::is_same_v<FieldType, std::chrono::system_clock::time_point>) {
-                if constexpr (pg) {
-                    return "TIMESTAMP NOT NULL";
-                } else {
-                    return "TEXT NOT NULL";
-                }
-            } else if constexpr (std::is_same_v<FieldType, utilities::UUID>) {
-                if constexpr (pg) {
-                    return "UUID NOT NULL";
-                } else {
-                    return "TEXT NOT NULL";
-                }
-            } else if constexpr (std::is_same_v<FieldType, std::filesystem::path>) {
-                return "TEXT NOT NULL";
+        // Strip std::optional<T> to T for storage classification. Non-optionals pass
+        // through unchanged.
+        template <typename T>
+        using col_inner_t = std::conditional_t<utilities::is_optional_v<T>, utilities::optional_inner_type_t<T>, T>;
+
+        // Source-type predicates per StorageClass. Combining them as a single named
+        // constexpr bool keeps the dispatcher below to one branch per storage class.
+        template <typename T>
+        constexpr bool is_integer_source_v =
+                std::is_same_v<T, int> || std::is_same_v<T, int64_t> || std::is_same_v<T, short> ||
+                std::is_same_v<T, unsigned int> || std::is_same_v<T, unsigned short> || std::is_same_v<T, long> ||
+                std::is_same_v<T, unsigned long> || std::is_same_v<T, long long> ||
+                std::is_same_v<T, unsigned long long> || std::is_same_v<T, signed char> ||
+                std::is_same_v<T, unsigned char> || std::is_same_v<T, char> || std::is_enum_v<T> ||
+                utilities::is_chrono_duration_v<T>;
+
+        template <typename T>
+        constexpr bool is_text_source_v = std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view> ||
+                                          std::is_same_v<T, std::filesystem::path>;
+
+        template <typename T>
+        constexpr bool is_blob_source_v =
+                std::is_same_v<T, std::vector<uint8_t>> || std::is_same_v<T, std::vector<unsigned char>> ||
+                std::is_same_v<T, std::vector<std::byte>>;
+
+        // Classify a C++ type (already stripped of optional<>) into one StorageClass.
+        // Compile-time only.
+        template <typename T> consteval auto storage_class_of() -> StorageClass {
+            using enum StorageClass;
+            if constexpr (std::is_same_v<T, bool>) {
+                return Bool;
+            } else if constexpr (is_integer_source_v<T>) {
+                return Integer;
+            } else if constexpr (std::is_same_v<T, double>) {
+                return Double;
+            } else if constexpr (std::is_same_v<T, float>) {
+                return Float;
+            } else if constexpr (is_text_source_v<T>) {
+                return Text;
+            } else if constexpr (std::is_same_v<T, std::chrono::year_month_day>) {
+                return Date;
+            } else if constexpr (std::is_same_v<T, std::chrono::system_clock::time_point>) {
+                return DateTime;
+            } else if constexpr (std::is_same_v<T, utilities::UUID>) {
+                return Uuid;
+            } else if constexpr (is_blob_source_v<T>) {
+                return Blob;
             } else {
-                // Fallback for unknown types — treat as TEXT
+                return Fallback;
+            }
+        }
+
+        // Per-storage-class type-name helpers. Each one returns the bare type string
+        // (no NOT NULL) for the given dialect. Splitting these out keeps every helper
+        // at one or two if-constexpr branches.
+        template <Dialect D> consteval auto bool_type() -> std::string_view {
+            return D == Dialect::PostgreSQL ? "BOOLEAN" : "INTEGER";
+        }
+        template <Dialect D> consteval auto integer_type() -> std::string_view {
+            return D == Dialect::PostgreSQL ? "BIGINT" : "INTEGER";
+        }
+        template <Dialect D> consteval auto double_type() -> std::string_view {
+            return D == Dialect::PostgreSQL ? "DOUBLE PRECISION" : "REAL";
+        }
+        template <Dialect D> consteval auto date_type() -> std::string_view {
+            return D == Dialect::PostgreSQL ? "DATE" : "TEXT";
+        }
+        template <Dialect D> consteval auto datetime_type() -> std::string_view {
+            return D == Dialect::PostgreSQL ? "TIMESTAMP" : "TEXT";
+        }
+        template <Dialect D> consteval auto uuid_type() -> std::string_view {
+            return D == Dialect::PostgreSQL ? "UUID" : "TEXT";
+        }
+        template <Dialect D> consteval auto blob_type() -> std::string_view {
+            return D == Dialect::PostgreSQL ? "BYTEA" : "BLOB";
+        }
+
+        // NOT NULL counterparts (same dialect dispatch). Splitting them keeps each helper
+        // at one ternary, so the outer storage-class dispatcher only counts the one branch
+        // per class.
+        template <Dialect D> consteval auto bool_type_nn() -> std::string_view {
+            return D == Dialect::PostgreSQL ? "BOOLEAN NOT NULL" : "INTEGER NOT NULL";
+        }
+        template <Dialect D> consteval auto integer_type_nn() -> std::string_view {
+            return D == Dialect::PostgreSQL ? "BIGINT NOT NULL" : "INTEGER NOT NULL";
+        }
+        template <Dialect D> consteval auto double_type_nn() -> std::string_view {
+            return D == Dialect::PostgreSQL ? "DOUBLE PRECISION NOT NULL" : "REAL NOT NULL";
+        }
+        template <Dialect D> consteval auto date_type_nn() -> std::string_view {
+            return D == Dialect::PostgreSQL ? "DATE NOT NULL" : "TEXT NOT NULL";
+        }
+        template <Dialect D> consteval auto datetime_type_nn() -> std::string_view {
+            return D == Dialect::PostgreSQL ? "TIMESTAMP NOT NULL" : "TEXT NOT NULL";
+        }
+        template <Dialect D> consteval auto uuid_type_nn() -> std::string_view {
+            return D == Dialect::PostgreSQL ? "UUID NOT NULL" : "TEXT NOT NULL";
+        }
+
+        // Pre-baked type strings keyed by StorageClass × Dialect. sql_type_for picks
+        // one of these (or its NOT NULL counterpart) per call.
+        template <StorageClass C, Dialect D> consteval auto bare_type_for() -> std::string_view {
+            using enum StorageClass;
+            if constexpr (C == Bool) {
+                return bool_type<D>();
+            } else if constexpr (C == Integer) {
+                return integer_type<D>();
+            } else if constexpr (C == Double) {
+                return double_type<D>();
+            } else if constexpr (C == Float) {
+                return "REAL";
+            } else if constexpr (C == Text) {
+                return "TEXT";
+            } else if constexpr (C == Date) {
+                return date_type<D>();
+            } else if constexpr (C == DateTime) {
+                return datetime_type<D>();
+            } else if constexpr (C == Uuid) {
+                return uuid_type<D>();
+            } else if constexpr (C == Blob) {
+                return blob_type<D>();
+            } else {
+                static_assert(C == Fallback, "bare_type_for: unhandled StorageClass");
                 return "TEXT";
             }
         }
-        // NOLINTEND(readability-function-cognitive-complexity)
+
+        template <StorageClass C, Dialect D> consteval auto not_null_type_for() -> std::string_view {
+            using enum StorageClass;
+            if constexpr (C == Bool) {
+                return bool_type_nn<D>();
+            } else if constexpr (C == Integer) {
+                return integer_type_nn<D>();
+            } else if constexpr (C == Double) {
+                return double_type_nn<D>();
+            } else if constexpr (C == Float) {
+                return "REAL NOT NULL";
+            } else if constexpr (C == Text) {
+                return "TEXT NOT NULL";
+            } else if constexpr (C == Date) {
+                return date_type_nn<D>();
+            } else if constexpr (C == DateTime) {
+                return datetime_type_nn<D>();
+            } else if constexpr (C == Uuid) {
+                return uuid_type_nn<D>();
+            } else {
+                // Blob and Fallback are always nullable-shaped; no NOT NULL variant needed.
+                static_assert(
+                        C != StorageClass::Blob && C != StorageClass::Fallback,
+                        "not_null_type_for: storage class has no NOT NULL variant"
+                );
+                return {};
+            }
+        }
+
+        // Pick the bare or NOT-NULL variant for (StorageClass, Dialect, Nullable).
+        // Blob and Fallback always use the bare variant (matches the prior catch-all
+        // behaviour for std::vector<...> fields).
+        template <StorageClass C, Dialect D, bool Nullable> consteval auto sql_type_for() -> std::string_view {
+            if constexpr (Nullable) {
+                return bare_type_for<C, D>();
+            } else {
+                return not_null_type_for<C, D>();
+            }
+        }
+
+        // Map a C++ field type to its SQL column definition string for the given dialect.
+        // Returns the column type portion (after the column name).
+        // Two-axis dispatch:
+        //   1. col_inner_t<FieldType>   strips std::optional<> to the inner type
+        //   2. storage_class_of<…>()    classifies the inner type into one of the
+        //                               StorageClass tags
+        //   3. sql_type_for<C, D, N>()  returns the SQL fragment for that
+        //                               (storage class, dialect, nullable) triple
+        // The nullable flag drives the `NOT NULL` suffix; Blob is always nullable-shaped
+        // (matches the prior catch-all behaviour for vector<...> fields).
+        template <typename FieldType, Dialect D = Dialect::SQLite> consteval auto sql_col_def() -> std::string_view {
+            constexpr StorageClass cls = storage_class_of<col_inner_t<FieldType>>();
+            constexpr bool         nullable =
+                    utilities::is_optional_v<FieldType> || cls == StorageClass::Blob || cls == StorageClass::Fallback;
+            return sql_type_for<cls, D, nullable>();
+        }
 
     } // namespace detail
 
