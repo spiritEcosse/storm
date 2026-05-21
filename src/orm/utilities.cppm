@@ -233,117 +233,186 @@ export namespace storm::orm::utilities {
 
     } // namespace chrono_conv
 
-    // Generic parameter binding - unified implementation for WHERE and CRUD statements
-    // No dependency on entity type T - pure type dispatch based on value type.
-    // NOLINTBEGIN(bugprone-exception-escape, readability-function-cognitive-complexity)
-    // - exception-escape: chrono conversions / vector::resize can throw bad_alloc on the rare
-    //   path; accepted as terminate-on-OOM in the bind hot path (issue #262).
-    // - cognitive-complexity: parameter binding fans out over every supported field type — the
-    //   wide if-constexpr ladder is the dispatch table.
-    template <typename StmtType, typename ErrorType>
-    [[nodiscard]] auto bind_parameter_value(StmtType& stmt, int param_index, const auto& value) noexcept // NOSONAR
-            -> std::expected<void, ErrorType> {
-        using ValueType = std::decay_t<decltype(value)>;
+    // ---- Source-type predicates for bind_parameter_value ------------------------------
+    // Group every supported C++ field type by the bind_* backend call it dispatches to.
+    // Collapsing the source-type fan-out into named constexpr bools lets the top-level
+    // dispatcher carry one branch per storage class instead of per source type.
 
-        // Handle std::optional types first
-        if constexpr (is_optional_v<ValueType>) {
-            if (value.has_value()) {
-                // Recursively bind the contained value
-                return bind_parameter_value<StmtType, ErrorType>(stmt, param_index, *value);
-            }
-            // Bind NULL for std::nullopt
-            return stmt.bind_null(param_index);
-        }
-        // Boolean type (stored as INTEGER 0/1)
-        else if constexpr (std::is_same_v<ValueType, bool>) {
-            return stmt.bind_int(param_index, value ? 1 : 0);
-        }
-        // Integer types
-        else if constexpr (std::is_same_v<ValueType, int>) {
-            return stmt.bind_int(param_index, value);
-        } else if constexpr (std::is_same_v<ValueType, int64_t> || std::is_same_v<ValueType, long> ||
-                             std::is_same_v<ValueType, long long> || std::is_same_v<ValueType, uint64_t> ||
-                             std::is_same_v<ValueType, unsigned long> ||
-                             std::is_same_v<ValueType, unsigned long long>) {
-            // All 64-bit types (signed and unsigned) use bind_int64
+    template <typename T>
+    constexpr bool is_int_source_v =
+            std::is_same_v<T, int> || std::is_same_v<T, short> || std::is_same_v<T, unsigned short> ||
+            std::is_same_v<T, unsigned int> || std::is_same_v<T, signed char> || std::is_same_v<T, unsigned char> ||
+            std::is_same_v<T, char>;
+
+    template <typename T>
+    constexpr bool is_int64_source_v =
+            std::is_same_v<T, int64_t> || std::is_same_v<T, long> || std::is_same_v<T, long long> ||
+            std::is_same_v<T, uint64_t> || std::is_same_v<T, unsigned long> || std::is_same_v<T, unsigned long long>;
+
+    template <typename T> constexpr bool is_integer_source_v = is_int_source_v<T> || is_int64_source_v<T>;
+
+    template <typename T>
+    constexpr bool is_blob_source_v =
+            std::is_same_v<T, std::vector<uint8_t>> || std::is_same_v<T, std::vector<unsigned char>> ||
+            std::is_same_v<T, std::vector<std::byte>>;
+
+    // ---- Per-storage-class bind helpers -----------------------------------------------
+    // Each helper handles one storage class. bind_parameter_value dispatches to exactly
+    // one helper per ValueType. Keeping them small + non-template-on-ValueType where
+    // possible lets the compiler fold them back into the call site.
+
+    template <typename T, typename StmtType, typename ErrorType>
+    [[nodiscard]] auto bind_int_like(StmtType& stmt, int param_index, T value) -> std::expected<void, ErrorType> {
+        if constexpr (is_int64_source_v<T>) {
             return stmt.bind_int64(param_index, static_cast<int64_t>(value));
-        } else if constexpr (std::is_same_v<ValueType, short> || std::is_same_v<ValueType, unsigned short> ||
-                             std::is_same_v<ValueType, unsigned int>) {
+        } else {
+            static_assert(is_int_source_v<T>, "bind_int_like: caller must pre-check storage class");
             return stmt.bind_int(param_index, static_cast<int>(value));
         }
-        // Char types (stored as INTEGER)
-        else if constexpr (std::is_same_v<ValueType, signed char> || std::is_same_v<ValueType, unsigned char> ||
-                           std::is_same_v<ValueType, char>) {
-            return stmt.bind_int(param_index, static_cast<int>(value));
+    }
+
+    template <typename T, typename StmtType, typename ErrorType>
+    [[nodiscard]] auto bind_enum(StmtType& stmt, int param_index, T value) -> std::expected<void, ErrorType> {
+        using Underlying = std::underlying_type_t<T>;
+        if constexpr (sizeof(Underlying) <= sizeof(int)) {
+            return stmt.bind_int(param_index, static_cast<int>(static_cast<Underlying>(value)));
+        } else {
+            return stmt.bind_int64(param_index, static_cast<int64_t>(static_cast<Underlying>(value)));
         }
-        // Enum types (stored as INTEGER via underlying type)
-        else if constexpr (std::is_enum_v<ValueType>) {
-            using Underlying = std::underlying_type_t<ValueType>;
-            if constexpr (sizeof(Underlying) <= sizeof(int)) {
-                return stmt.bind_int(param_index, static_cast<int>(static_cast<Underlying>(value)));
-            } else {
-                return stmt.bind_int64(param_index, static_cast<int64_t>(static_cast<Underlying>(value)));
-            }
+    }
+
+    template <typename T, typename StmtType, typename ErrorType> // NOSONAR(cpp:S6024) — already a free function;
+                                                                 // SonarCloud's C++ parser misclassifies
+                                                                 // namespace-scope module templates
+    [[nodiscard]] auto bind_blob_like(StmtType& stmt, int param_index, const T& value)
+            -> std::expected<void, ErrorType> {
+        if (value.empty()) {
+            return stmt.bind_blob(param_index, nullptr, 0);
         }
-        // Floating point types
-        else if constexpr (std::is_same_v<ValueType, double>) {
-            return stmt.bind_double(param_index, value);
-        } else if constexpr (std::is_same_v<ValueType, float>) {
-            return stmt.bind_double(param_index, static_cast<double>(value));
-        }
-        // Chrono date type (stored as TEXT "YYYY-MM-DD")
-        else if constexpr (std::is_same_v<ValueType, std::chrono::year_month_day>) {
-            auto str = chrono_conv::ymd_to_string(value);
-            return stmt.bind_text(param_index, std::string_view{str});
-        }
-        // Chrono datetime type (stored as TEXT "YYYY-MM-DD HH:MM:SS")
-        else if constexpr (std::is_same_v<ValueType, std::chrono::system_clock::time_point>) {
-            auto str = chrono_conv::tp_to_string(value);
-            return stmt.bind_text(param_index, std::string_view{str});
-        }
-        // Chrono duration types (stored as INTEGER — raw count)
-        else if constexpr (is_chrono_duration_v<ValueType>) {
+        return stmt.bind_blob(param_index, value.data(), value.size());
+    }
+
+    template <typename T>
+    constexpr bool is_chrono_text_v =
+            std::is_same_v<T, std::chrono::year_month_day> || std::is_same_v<T, std::chrono::system_clock::time_point>;
+
+    // Bind a chrono value. Date/datetime go through stmt.bind_text with the canonical
+    // serialisation; durations get bound as the raw integer count.
+    template <typename T, typename StmtType, typename ErrorType>
+    [[nodiscard]] auto bind_chrono(StmtType& stmt, int param_index, const T& value) -> std::expected<void, ErrorType> {
+        if constexpr (std::is_same_v<T, std::chrono::year_month_day>) {
+            return stmt.bind_text(param_index, std::string_view{chrono_conv::ymd_to_string(value)});
+        } else if constexpr (std::is_same_v<T, std::chrono::system_clock::time_point>) {
+            return stmt.bind_text(param_index, std::string_view{chrono_conv::tp_to_string(value)});
+        } else {
+            static_assert(is_chrono_duration_v<T>, "bind_chrono: caller must pre-check storage class");
             return stmt.bind_int64(param_index, static_cast<int64_t>(value.count()));
         }
-        // Filesystem path (stored as TEXT)
-        else if constexpr (std::is_same_v<ValueType, std::filesystem::path>) {
-            auto str = value.string();
-            return stmt.bind_text(param_index, std::string_view{str});
-        }
-        // BLOB types (std::vector<uint8_t>)
-        else if constexpr (std::is_same_v<ValueType, std::vector<uint8_t>> ||
-                           std::is_same_v<ValueType, std::vector<unsigned char>>) {
-            if (value.empty()) {
-                return stmt.bind_blob(param_index, nullptr, 0);
-            }
-            return stmt.bind_blob(param_index, value.data(), value.size());
-        }
-        // BLOB type (std::vector<std::byte>)
-        else if constexpr (std::is_same_v<ValueType, std::vector<std::byte>>) {
-            if (value.empty()) {
-                return stmt.bind_blob(param_index, nullptr, 0);
-            }
-            return stmt.bind_blob(param_index, value.data(), value.size());
-        }
-        // UUID type (stored as TEXT) — auto-generate if empty, validate if provided
-        else if constexpr (std::is_same_v<ValueType, UUID>) {
-            if (value.value.empty()) {
-                auto generated = UUID::generate();
-                return stmt.bind_text(param_index, std::string_view{generated.value});
-            }
-            if (!UUID::is_valid(value.value)) {
-                return std::unexpected(ErrorType{-1, std::format("Invalid UUID format: '{}'", value.value)});
-            }
-            return stmt.bind_text(param_index, std::string_view{value.value});
-        }
-        // String types (must be last to avoid matching everything)
-        else if constexpr (std::is_convertible_v<ValueType, std::string_view>) {
-            return stmt.bind_text(param_index, std::string_view{value});
+    }
+
+    template <typename T> constexpr bool is_chrono_source_v = is_chrono_text_v<T> || is_chrono_duration_v<T>;
+
+    template <typename T> constexpr bool is_floating_source_v = std::is_same_v<T, double> || std::is_same_v<T, float>;
+
+    template <typename T, typename StmtType, typename ErrorType>
+    [[nodiscard]] auto bind_floating_like(StmtType& stmt, int param_index, T value) -> std::expected<void, ErrorType> {
+        if constexpr (std::is_same_v<T, double>) {
+            return stmt.bind_double(param_index, value);
         } else {
+            static_assert(std::is_same_v<T, float>, "bind_floating_like: caller must pre-check storage class");
+            return stmt.bind_double(param_index, static_cast<double>(value));
+        }
+    }
+
+    // Bind a boolean as INTEGER 0/1. Pulled out so the dispatcher carries one branch
+    // for "bool" rather than one + one for the ternary.
+    template <typename StmtType, typename ErrorType>
+    [[nodiscard]] auto bind_bool(StmtType& stmt, int param_index, bool value) -> std::expected<void, ErrorType> {
+        return stmt.bind_int(param_index, value ? 1 : 0);
+    }
+
+    template <typename T>
+    constexpr bool is_text_source_v =
+            std::is_same_v<T, std::filesystem::path> || std::is_convertible_v<T, std::string_view>;
+
+    // Bind a text-shaped value via stmt.bind_text. filesystem::path needs an extra
+    // .string() step; everything else converts directly to string_view.
+    template <typename T, typename StmtType, typename ErrorType>
+    [[nodiscard]] auto bind_text_value(StmtType& stmt, int param_index, const T& value)
+            -> std::expected<void, ErrorType> {
+        if constexpr (std::is_same_v<T, std::filesystem::path>) {
+            return stmt.bind_text(param_index, std::string_view{value.string()});
+        } else {
+            return stmt.bind_text(param_index, std::string_view{value});
+        }
+    }
+
+    // UUID bind: auto-generate if empty, validate if provided. Pulled out so the top-level
+    // dispatcher only sees one branch for this slow-path case.
+    template <typename StmtType, typename ErrorType>
+    [[nodiscard]] auto bind_uuid(StmtType& stmt, int param_index, const UUID& value) -> std::expected<void, ErrorType> {
+        if (value.value.empty()) {
+            auto generated = UUID::generate();
+            return stmt.bind_text(param_index, std::string_view{generated.value});
+        }
+        if (!UUID::is_valid(value.value)) {
+            return std::unexpected(ErrorType{-1, std::format("Invalid UUID format: '{}'", value.value)});
+        }
+        return stmt.bind_text(param_index, std::string_view{value.value});
+    }
+
+    // Forward declaration so bind_optional_value can recurse into bind_parameter_value.
+    template <typename StmtType, typename ErrorType>
+    [[nodiscard]] auto bind_parameter_value(StmtType& stmt, int param_index, const auto& value) noexcept
+            -> std::expected<void, ErrorType>;
+
+    // Bind a std::optional<T>: NULL if empty, otherwise recurse on the contained value.
+    // Pulled out so the dispatcher carries one branch for "optional" rather than one + the
+    // inner empty check.
+    template <typename StmtType, typename ErrorType, typename Opt>
+    [[nodiscard]] auto bind_optional_value(StmtType& stmt, int param_index, const Opt& value)
+            -> std::expected<void, ErrorType> {
+        if (!value.has_value()) {
+            return stmt.bind_null(param_index);
+        }
+        return bind_parameter_value<StmtType, ErrorType>(stmt, param_index, *value);
+    }
+
+    // ---- Top-level dispatcher ---------------------------------------------------------
+    // Generic parameter binding — unified implementation for WHERE and CRUD statements.
+    // No dependency on entity type T; pure type dispatch on the value type. One branch
+    // per storage class; each branch either calls a stmt.bind_* directly or delegates to
+    // one of the helpers above.
+    // NOLINTBEGIN(bugprone-exception-escape) — chrono conversions / vector::resize can
+    // throw bad_alloc on the rare path; accepted as terminate-on-OOM in the bind hot
+    // path (issue #262).
+    template <typename StmtType, typename ErrorType>
+    [[nodiscard]] auto bind_parameter_value(StmtType& stmt, int param_index, const auto& value) noexcept
+            -> std::expected<void, ErrorType> {
+        using ValueType = std::decay_t<decltype(value)>;
+        if constexpr (is_optional_v<ValueType>) {
+            return bind_optional_value<StmtType, ErrorType>(stmt, param_index, value);
+        } else if constexpr (std::is_same_v<ValueType, bool>) {
+            return bind_bool<StmtType, ErrorType>(stmt, param_index, value);
+        } else if constexpr (is_integer_source_v<ValueType>) {
+            return bind_int_like<ValueType, StmtType, ErrorType>(stmt, param_index, value);
+        } else if constexpr (std::is_enum_v<ValueType>) {
+            return bind_enum<ValueType, StmtType, ErrorType>(stmt, param_index, value);
+        } else if constexpr (is_floating_source_v<ValueType>) {
+            return bind_floating_like<ValueType, StmtType, ErrorType>(stmt, param_index, value);
+        } else if constexpr (is_chrono_source_v<ValueType>) {
+            return bind_chrono<ValueType, StmtType, ErrorType>(stmt, param_index, value);
+        } else if constexpr (is_blob_source_v<ValueType>) {
+            return bind_blob_like<ValueType, StmtType, ErrorType>(stmt, param_index, value);
+        } else if constexpr (std::is_same_v<ValueType, UUID>) {
+            return bind_uuid<StmtType, ErrorType>(stmt, param_index, value);
+        } else if constexpr (is_text_source_v<ValueType>) {
+            return bind_text_value<ValueType, StmtType, ErrorType>(stmt, param_index, value);
+        } else {
+            // ValueType-dependent false so the assertion only fires when this branch
+            // is actually selected (i.e. no storage group matched).
             static_assert(
-                    std::is_same_v<ValueType, int> || std::is_same_v<ValueType, int64_t> ||
-                            std::is_same_v<ValueType, double> || std::is_same_v<ValueType, bool> ||
-                            std::is_convertible_v<ValueType, std::string_view>,
+                    !std::is_same_v<ValueType, ValueType>,
                     "Unsupported field type for binding. Supported types: "
                     "int, int64_t, long, short, char, unsigned variants, enum, "
                     "double, float, bool, std::string, std::string_view, "
@@ -351,11 +420,10 @@ export namespace storm::orm::utilities {
                     "filesystem::path, UUID, std::optional<T>, "
                     "std::vector<uint8_t>, std::vector<std::byte>"
             );
-            // Unreachable due to static_assert, but needed for return type
             return std::unexpected(ErrorType{});
         }
     }
-    // NOLINTEND(bugprone-exception-escape, readability-function-cognitive-complexity)
+    // NOLINTEND(bugprone-exception-escape)
 
     // ============================================================================
     // SQL String Building Utilities
