@@ -1536,7 +1536,6 @@ TYPED_TEST(UUIDTypesTest, GeneratedUUIDRoundTrip) {
     EXPECT_EQ(selected.value().begin()->uuid_field.value, generated.value);
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(UUIDTypesTest, BatchEmptyUUIDsAutoGenerate) {
     QuerySet<ExtendedTypes, TypeParam> qs;
     std::vector<ExtendedTypes>         batch = {

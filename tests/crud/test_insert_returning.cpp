@@ -49,7 +49,6 @@ TYPED_TEST(BatchInsertReturningTest, BasicBatchReturnsIds) {
 }
 
 // Verify returned IDs match actual inserted rows
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(BatchInsertReturningTest, ReturnedIdsMatchInsertedRows) {
     using ReturnId = storm::orm::statements::ReturnId;
     storm::QuerySet<SimpleRecord, TypeParam> qs;
@@ -232,7 +231,6 @@ template <typename ConnType> class ChunkedBatchInsertReturningTest : public Stor
 TYPED_TEST_SUITE(ChunkedBatchInsertReturningTest, DatabaseTypes);
 
 // Chunked batch via custom batch_size (forces chunking with small record counts — fast in coverage)
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(ChunkedBatchInsertReturningTest, ChunkedBatchReturnsAllIds) {
     using ReturnId = storm::orm::statements::ReturnId;
     storm::QuerySet<SimpleRecord, TypeParam> qs;

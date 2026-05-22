@@ -116,7 +116,6 @@ template <typename ConnType> auto verify_group_by_counts(QuerySet<Person, ConnTy
     }
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 template <typename ConnType> auto verify_group_by_sum_avg_min_max(QuerySet<Person, ConnType>& qs) -> void {
     const std::map<int, int64_t> exp_sum = {{5, 268}, {10, 285}, {15, 276}};
     const std::map<int, double>  exp_avg = {{5, 26.8}, {10, 35.625}, {15, 39.43}};

@@ -375,7 +375,6 @@ TYPED_TEST(DistinctTest, DistinctTwoFieldsWithSingleRow) {
 }
 // Test: Duplicate field specification (same field twice)
 // This should compile and work, but return redundant data
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(DistinctTest, DuplicateFieldSpecification) {
     QuerySet<Person, TypeParam> queryset;
 
@@ -1299,7 +1298,6 @@ TYPED_TEST(DistinctTest, DistinctOptionalIntFieldWithNulls) {
 }
 
 // Test: DISTINCT on optional string field with NULLs
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(DistinctTest, DistinctOptionalStringFieldWithNulls) {
     QuerySet<Person, TypeParam> queryset;
 

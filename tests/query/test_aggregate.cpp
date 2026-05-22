@@ -198,7 +198,6 @@ TYPED_TEST(AggregateTest, StatementCaching_RepeatedQueries) {
     }
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(AggregateTest, StatementCaching_DifferentAggregates) {
     this->insert_test_data();
 
@@ -221,7 +220,6 @@ TYPED_TEST(AggregateTest, StatementCaching_DifferentAggregates) {
 // Integration with Other ORM Features
 // ============================================================================
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(AggregateTest, Integration_AfterInsert) {
     for (int i = 1; i <= 5; ++i) {
         auto insert_result = this->qs->insert(

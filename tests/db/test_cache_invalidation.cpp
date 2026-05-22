@@ -40,7 +40,6 @@ namespace {
     // every Statement* held by upstream callers (Level 2). The fix is
     // `unordered_map<string, unique_ptr<Statement>>` — the unique_ptr stays
     // pinned in place, only the map nodes move.
-    // NOLINTNEXTLINE(readability-function-cognitive-complexity)
     TEST_F(CacheInvalidationLevel3Test, PointersStableAcrossRehash) {
         // Cache an initial statement and stash the pointer.
         auto first = conn_.prepare_cached("SELECT 1");

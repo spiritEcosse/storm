@@ -197,7 +197,6 @@ TYPED_TEST(OrderByTest, BooleanField) {
     EXPECT_TRUE(std::ranges::next(people.begin(), 0)->is_active);
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(OrderByTest, ChainedWithMultipleClauses) {
     QuerySet<Person, TypeParam> qs;
 

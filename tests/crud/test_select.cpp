@@ -103,7 +103,6 @@ TYPED_TEST(SelectTest, SelectDifferentFieldTypes) {
 }
 
 // Test: SELECT after INSERT and DELETE
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(SelectTest, SelectAfterInsertAndDelete) {
     QuerySet<Person, TypeParam> queryset;
 
@@ -147,7 +146,6 @@ TYPED_TEST(SelectTest, SelectAfterInsertAndDelete) {
 }
 
 // Test: SELECT with large dataset
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(SelectTest, SelectLargeDataset) {
     QuerySet<Person, TypeParam> queryset;
 

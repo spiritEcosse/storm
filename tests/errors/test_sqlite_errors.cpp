@@ -686,7 +686,6 @@ TEST_F(EdgeCaseTest, EmptyBlobBinding) {
     EXPECT_TRUE(exec_result.has_value()) << "Empty blob binding should succeed";
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(EdgeCaseTest, MultipleResetAndExecute) {
     auto create_result = conn_.execute("CREATE TABLE multi_exec (id INTEGER PRIMARY KEY, value INTEGER)");
     ASSERT_TRUE(create_result.has_value());
@@ -1015,7 +1014,6 @@ TEST_F(ORMErrorTest, GroupByOnEmptyTable) {
     EXPECT_TRUE(result.value().empty());
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(ORMErrorTest, BatchUpdateWithConstraintViolation) {
     storm::QuerySet<UniqueTestPerson> qs;
 
@@ -1061,7 +1059,6 @@ TEST_F(ORMErrorTest, BatchRemoveFromEmptyTable) {
     ASSERT_TRUE(result.has_value()) << "Batch erase of non-existent should succeed";
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(ORMErrorTest, LargeBatchInsertThenRemove) {
     storm::QuerySet<Person> qs;
 
@@ -1130,7 +1127,6 @@ TEST_F(ORMErrorTest, InsertThenSelectWithOrderBy) {
     }
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(ORMErrorTest, SelectWithLimitOffset) {
     storm::QuerySet<Person> qs;
 

@@ -139,7 +139,6 @@ TYPED_TEST(QuerySetEraseTest, EraseBatchPerformance) {
 }
 
 // Test chunked erase (>799 rows to trigger execute_chunked path)
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(QuerySetEraseTest, EraseBatchChunked) {
     storm::QuerySet<Person, TypeParam> queryset;
 
@@ -177,7 +176,6 @@ TYPED_TEST(QuerySetEraseTest, EraseBatchChunked) {
 }
 
 // Test chunked erase with remainder (tests both full chunks and remainder processing)
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(QuerySetEraseTest, EraseBatchChunkedWithRemainder) {
     storm::QuerySet<Person, TypeParam> queryset;
 
@@ -282,7 +280,6 @@ TYPED_TEST(QuerySetUpdateTest, UpdateMultipleTimes) {
     EXPECT_EQ(check3->age, 33);
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(QuerySetUpdateTest, UpdateCachedStatementReuse) {
     storm::QuerySet<Person, TypeParam> queryset;
 

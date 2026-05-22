@@ -87,7 +87,6 @@ TYPED_TEST(WhereTest, WhereReturnsCopyReusable) {
 // Test fixture for WHERE + JOIN operations — templated on database backend
 template <typename ConnType> class WhereJoinTest : public StormTestFixture<Message, ConnType, Person> {
   protected:
-    // NOLINTNEXTLINE(readability-function-cognitive-complexity)
     auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
         // Insert users (use ID 0 to let AUTOINCREMENT generate IDs)
         QuerySet<Person, ConnType> user_qs;

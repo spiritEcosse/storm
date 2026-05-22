@@ -321,7 +321,6 @@ TYPED_TEST(FKFieldTest, DeleteWithFKField) {
 }
 
 // Test: Multiple FK fields to same type
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(FKFieldTest, MultipleFKFieldsToSameType) {
     QuerySet<Person, TypeParam> user_qs;
     QuerySet<Task, TypeParam>   conv_qs;
@@ -553,7 +552,6 @@ TYPED_TEST(FKFieldTest, LeftJoinMultipleFKFields) {
 
 // Test: RIGHT JOIN behavior
 // Note: RIGHT JOIN is less commonly used but should work symmetrically to LEFT JOIN
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(FKFieldTest, RightJoinBehavior) {
     QuerySet<Person, TypeParam> user_qs;
     QuerySet<Task, TypeParam>   message_qs;
@@ -609,7 +607,6 @@ TYPED_TEST(FKFieldTest, RightJoinBehavior) {
 }
 
 // Test: RIGHT JOIN with multiple FK fields
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(FKFieldTest, RightJoinMultipleFKFields) {
     QuerySet<Person, TypeParam> user_qs;
     QuerySet<Task, TypeParam>   message_qs;
@@ -750,7 +747,6 @@ TYPED_TEST(NullableFKTest, LeftJoinWithNullFKField) {
 }
 
 // Test: LEFT JOIN with mix of NULL and valid FKs
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     QuerySet<Person, TypeParam>            user_qs;
     QuerySet<NullableFKMessage, TypeParam> message_qs;
@@ -804,7 +800,6 @@ template <typename ConnType> class ExtendedTypesJoinTest : public StormTestFixtu
 TYPED_TEST_SUITE(ExtendedTypesJoinTest, DatabaseTypes);
 
 // Test: JOIN with extended types (double, bool, optional)
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
     QuerySet<Person, TypeParam>  employee_qs;
     QuerySet<Project, TypeParam> project_qs;
@@ -909,7 +904,6 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
 }
 
 // Test: Multi-JOIN with extended types
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
     QuerySet<Person, TypeParam> employee_qs;
     QuerySet<Task, TypeParam>   task_qs;
@@ -980,7 +974,6 @@ TYPED_TEST(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
 }
 
 // Test: JOIN with float and long long types (coverage for extract_typed_field)
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
     QuerySet<Measurement, TypeParam> measurement_qs;
     QuerySet<Reading, TypeParam>     reading_qs;
@@ -1045,7 +1038,6 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
 }
 
 // Test: JOIN with long type (tests separate code path from int64_t)
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(ExtendedTypesJoinTest, JoinWithLongType) {
     QuerySet<Counter, TypeParam> counter_qs;
     QuerySet<Summary, TypeParam> summary_qs;

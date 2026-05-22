@@ -199,7 +199,6 @@ TYPED_TEST(RowsTest, RepeatedCallsSameWhere) {
     EXPECT_GT(count1, 0);
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(RowsTest, DifferentQueries) {
     QuerySet<Person, TypeParam> qs1;
     QuerySet<Person, TypeParam> qs2;

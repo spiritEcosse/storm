@@ -18,7 +18,6 @@ TYPED_TEST_SUITE(SelectLargeTest, DatabaseTypes);
 
 // Test: SELECT with result set larger than initial capacity (10K)
 // This tests the exponential growth path
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(SelectLargeTest, SelectMoreThan10KRows) {
     QuerySet<SimpleRecord, TypeParam> queryset;
 
@@ -114,7 +113,6 @@ TYPED_TEST(SelectLargeTest, SelectSlightlyOver10KRows) {
 
 // Test: SELECT with very large result set (100K rows)
 // Tests multiple exponential growth cycles
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(SelectLargeTest, SelectVeryLargeDataset) {
     QuerySet<SimpleRecord, TypeParam> queryset;
 
