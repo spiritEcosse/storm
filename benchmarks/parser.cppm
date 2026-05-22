@@ -71,7 +71,7 @@ export namespace storm::benchmark {
             pos++;
         }
         while (pos < json.size() && json[pos] >= '0' && json[pos] <= '9') {
-            result = result * 10 + (json[pos] - '0'); // NOLINT(readability-math-missing-parentheses)
+            result = (result * 10) + (json[pos] - '0');
             pos++;
         }
         return negative ? -result : result;
@@ -86,7 +86,7 @@ export namespace storm::benchmark {
             pos++;
         }
         while (pos < json.size() && json[pos] >= '0' && json[pos] <= '9') {
-            result = result * 10.0 + (json[pos] - '0'); // NOLINT(readability-math-missing-parentheses)
+            result = (result * 10.0) + (json[pos] - '0');
             pos++;
         }
         if (pos < json.size() && json[pos] == '.') {
