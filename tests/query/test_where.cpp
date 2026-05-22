@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,performance-unnecessary-value-param,performance-unnecessary-copy-initialization)
+// NOLINTBEGIN(misc-const-correctness,performance-unnecessary-value-param,performance-unnecessary-copy-initialization)
 
 import storm;
 import <string>;
@@ -585,4 +585,4 @@ TEST_F(WhereNullCollateTest, IsNull_Collated) {
     EXPECT_EQ(result.value().size(), expected_null_nicknames) << "Collated IS NULL should work same as plain IS NULL";
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,performance-unnecessary-value-param,performance-unnecessary-copy-initialization)
+// NOLINTEND(misc-const-correctness,performance-unnecessary-value-param,performance-unnecessary-copy-initialization)

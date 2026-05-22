@@ -4,7 +4,7 @@
 
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,readability-uppercase-literal-suffix)
+// NOLINTBEGIN(readability-uppercase-literal-suffix)
 
 import storm;
 import <string>;
@@ -437,4 +437,4 @@ TEST(PersonReflection, PrimaryKeyTest) {
     );
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,readability-uppercase-literal-suffix)
+// NOLINTEND(readability-uppercase-literal-suffix)

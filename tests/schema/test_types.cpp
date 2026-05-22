@@ -3,7 +3,7 @@
 
 #include <numbers>
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)
+// NOLINTBEGIN(misc-const-correctness)
 
 import storm;
 import <string>;
@@ -1821,4 +1821,4 @@ TEST(PgDialectTypesSchemaTest, OptionalSpecialTypesSqliteUnchanged) {
 }
 
 // NOLINTEND(readability-identifier-length,readability-uppercase-literal-suffix,modernize-use-std-numbers)
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)
+// NOLINTEND(misc-const-correctness)

@@ -2,8 +2,6 @@
 #include "test_db_helpers.h"
 #include <sqlite3.h>
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
-
 import storm;
 import <expected>;
 import <string>;
@@ -482,5 +480,3 @@ TYPED_TEST(QueryResetTest, AggregatesWithWhere) {
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), 442);
 }
-
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

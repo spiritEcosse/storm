@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)
+// NOLINTBEGIN(misc-const-correctness)
 
 import storm;
 import <string>;
@@ -344,4 +344,4 @@ TYPED_TEST(RowsTest, ViewsFilterWhereTransformCollect) {
     EXPECT_LE(ages.size(), 25);
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)
+// NOLINTEND(misc-const-correctness)

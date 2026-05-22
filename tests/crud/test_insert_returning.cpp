@@ -2,8 +2,6 @@
 #include "test_db_helpers.h"
 #include <sqlite3.h>
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
-
 import storm;
 import <expected>;
 import <string>;
@@ -427,5 +425,3 @@ TYPED_TEST(BatchInsertReturningTest, ExplicitReturnIdNoBatchToSqlNoReturning) {
     EXPECT_TRUE(sql.value().contains("INSERT INTO"));
     EXPECT_FALSE(sql.value().contains("RETURNING")) << "ReturnId::No batch SQL should NOT contain RETURNING";
 }
-
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

@@ -2,7 +2,7 @@
 #include "test_db_helpers.h"
 #include "plf_hive/plf_hive.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)
+// NOLINTBEGIN(misc-const-correctness)
 
 import storm;
 import <string>;
@@ -64,8 +64,8 @@ TYPED_TEST(ValuesTest, SingleFieldAgeWithDuplicates) {
     EXPECT_EQ(ages.size(), 4) << "Expected all 4 rows (duplicates preserved)";
 
     // Count occurrences of each age
-    int count_25 = 0; // NOLINT(misc-const-correctness)
-    int count_30 = 0; // NOLINT(misc-const-correctness)
+    int count_25 = 0;
+    int count_30 = 0;
     for (const auto& age : ages) {
         if (age == 25) {
             count_25++;
@@ -484,7 +484,7 @@ TYPED_TEST(ValuesTest, OptionalIntFieldWithNulls) {
     EXPECT_EQ(ages.size(), 5);
 
     // Count NULLs
-    int null_count = 0; // NOLINT(misc-const-correctness)
+    int null_count = 0;
     for (const auto& age : ages) {
         if (!age.has_value()) {
             null_count++;
@@ -514,8 +514,8 @@ TYPED_TEST(ValuesTest, OptionalStringFieldWithNulls) {
     // Should return ALL 4 rows
     EXPECT_EQ(nicknames.size(), 4);
 
-    int null_count = 0; // NOLINT(misc-const-correctness)
-    int ali_count  = 0; // NOLINT(misc-const-correctness)
+    int null_count = 0;
+    int ali_count  = 0;
     for (const auto& nickname : nicknames) {
         if (!nickname.has_value()) {
             null_count++;
@@ -574,4 +574,4 @@ TYPED_TEST(ValuesTest, DifferentWhereExpressionsWithCaching) {
     EXPECT_EQ(result2.value().size(), 1); // Dave only
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)
+// NOLINTEND(misc-const-correctness)

@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,readability-function-cognitive-complexity)
+// NOLINTBEGIN(misc-const-correctness)
 
 import storm;
 import <string>;
@@ -596,7 +596,7 @@ TYPED_TEST(FKFieldTest, RightJoinBehavior) {
     EXPECT_GE(messages.size(), 1) << "RIGHT JOIN should return at least existing tasks";
 
     // Find the task we inserted
-    bool found = false; // NOLINT(misc-const-correctness) - modified in loop
+    bool found = false;
     for (const auto& m : messages) {
         if (m.description == "Task to Bob") {
             found = true;
@@ -642,7 +642,7 @@ TYPED_TEST(FKFieldTest, RightJoinMultipleFKFields) {
     EXPECT_GE(messages.size(), 1) << "RIGHT JOIN should return at least the inserted task";
 
     // Find and verify our task
-    bool found = false; // NOLINT(misc-const-correctness) - modified in loop
+    bool found = false;
     for (const auto& m : messages) {
         if (m.description == "Hello with RIGHT JOIN") {
             found = true;
@@ -780,8 +780,8 @@ TYPED_TEST(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     const auto& messages = join_result.value();
     ASSERT_EQ(messages.size(), 2) << "LEFT JOIN should return all messages";
 
-    bool found_alice = false; // NOLINT(misc-const-correctness)
-    bool found_null  = false; // NOLINT(misc-const-correctness)
+    bool found_alice = false;
+    bool found_null  = false;
     for (const auto& m : messages) {
         if (m.text == "From Alice") {
             found_alice = true;
@@ -860,8 +860,8 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
     ASSERT_EQ(projects.size(), 2) << "Should retrieve both projects";
 
     // Find Alice's project and verify all extended types
-    bool found_alice_project = false; // NOLINT(misc-const-correctness) - modified in loop
-    bool found_bob_project   = false; // NOLINT(misc-const-correctness) - modified in loop
+    bool found_alice_project = false;
+    bool found_bob_project   = false;
 
     for (const auto& proj : projects) {
         if (proj.title == "Web Redesign") {
@@ -1242,4 +1242,4 @@ TYPED_TEST(JoinTypeExtractionTest, JoinWithOrderBy) {
     }
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,readability-function-cognitive-complexity)
+// NOLINTEND(misc-const-correctness)

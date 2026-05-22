@@ -2,7 +2,7 @@
 #include "plf_hive/plf_hive.h"
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,cppcoreguidelines-rvalue-reference-param-not-moved)
+// NOLINTBEGIN(misc-const-correctness,cppcoreguidelines-rvalue-reference-param-not-moved)
 
 import storm;
 import <string>;
@@ -110,4 +110,4 @@ TYPED_TEST(ExpectedTransformTest, TransformPropagatesErrorWithoutInvokingLambda)
     EXPECT_EQ(result.error().message_, "synthetic failure");
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,cppcoreguidelines-rvalue-reference-param-not-moved)
+// NOLINTEND(misc-const-correctness,cppcoreguidelines-rvalue-reference-param-not-moved)

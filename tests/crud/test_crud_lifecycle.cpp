@@ -2,8 +2,6 @@
 #include "test_db_helpers.h"
 #include <sqlite3.h>
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
-
 import storm;
 import <expected>;
 import <string>;
@@ -278,5 +276,3 @@ TYPED_TEST(QuerySetCrudLifecycleTest, FilteredLifecycle) {
     ASSERT_TRUE(qs.erase(std::span<const Person>(rem_vec)).execute().has_value());
     EXPECT_EQ(this->countPersons(), 0);
 }
-
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

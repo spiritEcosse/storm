@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-use-anonymous-namespace)
+// NOLINTBEGIN(misc-use-anonymous-namespace)
 
 import storm;
 
@@ -276,4 +276,4 @@ TYPED_TEST(AggregateTest, GroupByMultipleFieldsWithOrderByLimit) {
     EXPECT_EQ(result.value().size(), 2) << "Should return only 2 groups due to LIMIT";
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-use-anonymous-namespace)
+// NOLINTEND(misc-use-anonymous-namespace)

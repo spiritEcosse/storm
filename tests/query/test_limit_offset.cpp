@@ -1,8 +1,6 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
-
 import storm;
 import <string>;
 import <vector>;
@@ -224,5 +222,3 @@ TYPED_TEST(LimitOffsetTest, MethodChainingOrder) {
         EXPECT_EQ(it1->name, it2->name);
     }
 }
-
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

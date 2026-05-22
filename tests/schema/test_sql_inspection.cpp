@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,misc-use-anonymous-namespace)
+// NOLINTBEGIN(misc-const-correctness,misc-use-anonymous-namespace)
 
 import storm;
 import <string>;
@@ -475,4 +475,4 @@ TYPED_TEST(SqlInspectionTest, RemoveEmptySpanToSql) {
     EXPECT_TRUE(result.value().empty()) << "Empty span should return empty SQL";
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,misc-use-anonymous-namespace)
+// NOLINTEND(misc-const-correctness,misc-use-anonymous-namespace)

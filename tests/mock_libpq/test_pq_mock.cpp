@@ -14,10 +14,9 @@
 #include <gtest/gtest.h>
 #include "mock_libpq.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR(cpp:S125)
 // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR(cpp:S125)
 // NOLINTBEGIN(cppcoreguidelines-pro-type-cstyle-cast,misc-const-correctness) // NOSONAR(cpp:S125)
-// NOLINTBEGIN(readability-convert-member-functions-to-static,readability-static-accessed-through-instance) // NOSONAR(cpp:S125)
+// NOLINTBEGIN(readability-static-accessed-through-instance) // NOSONAR(cpp:S125)
 
 using namespace storm::test;
 
@@ -511,7 +510,6 @@ TEST_F(PqMockGuardTest, FinishOnNullIsSafe) {
     PQfinish(nullptr); // Should not crash
 }
 
-// NOLINTEND(readability-convert-member-functions-to-static,readability-static-accessed-through-instance) // NOSONAR(cpp:S125)
+// NOLINTEND(readability-static-accessed-through-instance) // NOSONAR(cpp:S125)
 // NOLINTEND(cppcoreguidelines-pro-type-cstyle-cast,misc-const-correctness) // NOSONAR(cpp:S125)
 // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR(cpp:S125)
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR(cpp:S125)

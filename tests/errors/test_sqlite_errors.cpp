@@ -7,10 +7,9 @@
 #include <numbers>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR
 // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR
 // NOLINTBEGIN(misc-const-correctness,misc-unused-alias-decls,modernize-use-std-numbers) // NOSONAR
-// NOLINTBEGIN(readability-convert-member-functions-to-static,readability-uppercase-literal-suffix) // NOSONAR
+// NOLINTBEGIN(readability-uppercase-literal-suffix) // NOSONAR
 // NOLINTBEGIN(readability-identifier-length,cppcoreguidelines-init-variables) // NOSONAR
 // NOLINTBEGIN(bugprone-implicit-widening-of-multiplication-result) // NOSONAR
 
@@ -1185,7 +1184,6 @@ TEST_F(ORMErrorTest, ChunkedInsertRollsBackOnConstraintViolation) {
 
 // NOLINTEND(bugprone-implicit-widening-of-multiplication-result) // NOSONAR
 // NOLINTEND(readability-identifier-length,cppcoreguidelines-init-variables) // NOSONAR
-// NOLINTEND(readability-convert-member-functions-to-static,readability-uppercase-literal-suffix) // NOSONAR
+// NOLINTEND(readability-uppercase-literal-suffix) // NOSONAR
 // NOLINTEND(misc-const-correctness,misc-unused-alias-decls,modernize-use-std-numbers) // NOSONAR
 // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR
