@@ -259,19 +259,14 @@ export namespace storm::orm::schema {
             else if constexpr (Base::is_fk_field(member)) {
                 using FieldType = std::remove_cvref_t<typename[:std::meta::type_of(member):]>;
                 col.append(std::meta::identifier_of(member));
-                if constexpr (storm::orm::utilities::is_optional_v<FieldType>) {
-                    if constexpr (D == Dialect::PostgreSQL) {
-                        col.append("_id BIGINT");
-                    } else {
-                        col.append("_id INTEGER");
-                    }
-                } else {
-                    if constexpr (D == Dialect::PostgreSQL) {
-                        col.append("_id BIGINT NOT NULL");
-                    } else {
-                        col.append("_id INTEGER NOT NULL");
-                    }
-                }
+                // [nullable][pg] → fk column suffix; avoids branch-clone and nested ternary
+                constexpr std::array<std::array<std::string_view, 2>, 2> fk_suffixes = {{
+                        {"_id INTEGER NOT NULL", "_id BIGINT NOT NULL"},
+                        {"_id INTEGER", "_id BIGINT"},
+                }};
+                constexpr auto fk_nullable = static_cast<int>(storm::orm::utilities::is_optional_v<FieldType>);
+                constexpr auto fk_pg       = static_cast<int>(D == Dialect::PostgreSQL);
+                col.append(fk_suffixes[fk_nullable][fk_pg]);
             }
             // Unique field — same as regular but with UNIQUE constraint
             else if constexpr (Base::is_unique_field(member)) {

@@ -29,14 +29,13 @@
 #   buffer sizes (32, 64), base-10 parsing constants, and ConstexprString capacity tuning.
 # - bugprone-easily-swappable-parameters: noisy on (limit, offset) / (left, right) parameter pairs
 #   where adjacency is the natural API.
-# - bugprone-branch-clone: PG vs SQLite type-dispatch in schema.cppm and utilities.cppm emits identical
-#   SQL fragments for different cases; the duplication is the desired form of the dispatch table.
+# - bugprone-branch-clone: re-enabled 2026-05-22; FK dialect dispatch in schema.cppm refactored to
+#   constexpr ternary to eliminate the clone.
 
 Checks: >
   -*,
   bugprone-*,
   -bugprone-argument-comment,
-  -bugprone-branch-clone,
   -bugprone-easily-swappable-parameters,
   -bugprone-unchecked-optional-access,
   cert-*,
