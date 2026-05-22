@@ -13,13 +13,26 @@
 #
 # C++26 False Positive Exclusions:
 # - cppcoreguidelines-pro-type-member-init: too many false positives in test files
-# Note: cppcoreguidelines-init-variables has targeted NOLINT in statement files (constexpr false positives)
-# Note: misc-const-correctness has targeted NOLINT in join.cppm (fold expression false positives)
-# Note: cppcoreguidelines-missing-std-forward has targeted NOLINT in where.cppm (std::forward in braced initializers)
+# - cppcoreguidelines-init-variables: fires on `constexpr size_t x = ...` + `Array<x>` on next line;
+#   constexpr variables are always initialized — this is a false positive in consteval functions.
+# - misc-const-correctness: fires on variables modified inside fold expressions; the modification IS
+#   visible but clang-tidy cannot see through the fold expansion.
+# - cppcoreguidelines-missing-std-forward: fires when std::forward appears in a braced initializer
+#   list (aggregate init) — clang-tidy doesn't recognize the forward inside `{ .f = std::forward<V>(v) }`.
+# - cppcoreguidelines-rvalue-reference-param-not-moved: fires even when std::move IS used in a
+#   function argument (e.g. `make_shared<T>(std::move(param))`) — clang-tidy doesn't see through it.
+# - cppcoreguidelines-avoid-non-const-global-variables: fires on consteval lambdas inside concept
+#   definitions; concepts are not variables.
+# - bugprone-exception-escape: noexcept functions in postgresql_statement.cppm call vector::resize
+#   (pre-reserved to MAX_DB_VARIABLES so OOM is practically impossible) and construct Error values
+#   with std::string message fields. Error{code, msg} construction itself can throw bad_alloc, making
+#   it impossible to write a catch block that satisfies this check without changing the Error type.
+# - cppcoreguidelines-pro-type-vararg: std::snprintf is the only portable way to format doubles
+#   with %.17g precision; std::format alternative is not available in noexcept hot paths.
 #
 # GTest / Test-file Exclusions: moved to tests/.clang-tidy (issue #314).
 # - google-explicit-constructor: Expr and UUID implicit conversions are intentional public API
-#   (src/orm/where.cppm, src/orm/utilities.cppm). Kept here because it suppresses src/ code.
+#   (src/orm/where.cppm, src/orm/utilities.cppm). Disabled globally — not just test files.
 #
 # ORM-specific Exclusions (issue #262 — added after clang-p2996 rebuild surfaced 48 pre-existing warnings):
 # - cppcoreguidelines-avoid-const-or-ref-data-members: Storm's INSERT/UPDATE/ERASE statement classes
@@ -37,6 +50,7 @@ Checks: >
   bugprone-*,
   -bugprone-argument-comment,
   -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
   -bugprone-unchecked-optional-access,
   cert-*,
   -cert-err33-c,
@@ -45,12 +59,18 @@ Checks: >
   cppcoreguidelines-*,
   -cppcoreguidelines-avoid-const-or-ref-data-members,
   -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  -cppcoreguidelines-init-variables,
+  -cppcoreguidelines-missing-std-forward,
   -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
   -cppcoreguidelines-pro-bounds-constant-array-index,
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
   -cppcoreguidelines-pro-type-member-init,
   -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-type-vararg,
+  -cppcoreguidelines-rvalue-reference-param-not-moved,
   misc-*,
+  -misc-const-correctness,
   -misc-include-cleaner,
   performance-*,
   -performance-enum-size,

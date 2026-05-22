@@ -38,7 +38,7 @@ namespace storm::orm::query_builder {
     // Operator/aggregate validation concepts
     // ========================================================================
     template <auto op_str, typename FieldType>
-    concept ValidOperator = []() consteval { // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+    concept ValidOperator = []() consteval {
         constexpr std::string_view op = op_str.view();
         if (op == ">" || op == ">=" || op == "<" || op == "<=" || op == "==" || op == "!=" || op == "LIKE" ||
             op == "BETWEEN" || op == "IN") {
@@ -51,7 +51,7 @@ namespace storm::orm::query_builder {
     }();
 
     template <auto func_str>
-    concept ValidAggregate = []() consteval { // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+    concept ValidAggregate = []() consteval {
         constexpr std::string_view func = func_str.view();
         return func == "count" || func == "count_distinct" || func == "sum" || func == "avg" || func == "min" ||
                func == "max";

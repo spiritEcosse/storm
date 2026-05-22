@@ -38,9 +38,7 @@ export namespace storm::orm::where {
     // This is intentionally type-erased (void*) to allow the WHERE expression system
     // to bind parameters to any database statement type without knowing the concrete
     // type at compile time. The actual Statement* conversion happens in bind_params_direct().
-    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast) - intentional type erasure
     using ErasedStatementPtr = void*; // NOSONAR(cpp:S5008) - type erasure requires void*
-    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
 
     // Mirror of meta::FieldAttr from storm module - must match exactly
     namespace meta {
@@ -293,12 +291,10 @@ export namespace storm::orm::where {
         // Constructor from ExpressionVariantPtr
         explicit Expr(ExpressionVariantPtr expr) noexcept : expr_(std::move(expr)) {}
 
-        // Constructor from ExpressionVariant (wraps in shared_ptr)
-        // NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved) - std::move IS used in initializer list
         explicit Expr(ExpressionVariant&& expr) : expr_(std::make_shared<ExpressionVariant>(std::move(expr))) {}
 
         // Implicit conversion to ExpressionVariantPtr for where() calls
-        operator ExpressionVariantPtr() const noexcept { // NOLINT(google-explicit-constructor)
+        operator ExpressionVariantPtr() const noexcept {
             return expr_;
         }
 
@@ -414,7 +410,6 @@ export namespace storm::orm::where {
             return std::format("{}{}", std::meta::identifier_of(MemberInfo), utilities::collate_to_sql(col));
         }
 
-        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
         template <typename V> auto make_comparison(CompOp op, V&& value) const -> Expr {
             return Expr(
                     std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
@@ -501,7 +496,6 @@ export namespace storm::orm::where {
             );
         }
 
-        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
         template <typename V> auto between(V&& min_val, V&& max_val) const -> Expr {
             using D = std::decay_t<V>;
             if constexpr (std::is_enum_v<D>) {
@@ -526,7 +520,6 @@ export namespace storm::orm::where {
 
       private:
         // Helper: create comparison expression, converting enum values to int
-        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward) - std::forward IS used in braced initializer
         template <typename V> auto make_comp(CompOp op, V&& value) const -> Expr {
             using D = std::decay_t<V>;
             if constexpr (std::is_enum_v<D>) {

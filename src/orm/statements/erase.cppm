@@ -64,7 +64,6 @@ export namespace storm::orm::statements {
 
         // Build single DELETE SQL at compile-time using ConstexprString
         static consteval auto build_single_delete_sql_array() {
-            // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
             constexpr size_t          sql_size = calculate_single_delete_sql_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<sql_size> result;
             append_delete_prefix(result);
@@ -96,7 +95,6 @@ export namespace storm::orm::statements {
 
         // Build bulk DELETE prefix at compile-time using ConstexprString
         static consteval auto build_bulk_delete_prefix() {
-            // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
             constexpr size_t prefix_size = calculate_bulk_delete_prefix_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<prefix_size> result;
             append_delete_prefix(result);
@@ -121,7 +119,6 @@ export namespace storm::orm::statements {
 
         // Build max bulk DELETE SQL at compile-time (799 placeholders)
         static consteval auto build_max_bulk_delete_sql() {
-            // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
             constexpr size_t          sql_size = calculate_max_bulk_delete_sql_size() + 50; // Safety buffer
             ConstexprString<sql_size> result;
 

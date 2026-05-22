@@ -28,7 +28,6 @@ export namespace storm::orm::statements {
     // void* is intentional here: JoinStatementWrapper must work with any model type T
     // without knowing T at compile time. The actual T* conversion happens in the
     // function pointers stored in make_join_wrapper().
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,bugprone-easily-swappable-parameters)
     using ErasedObjectPtr    = void*; // NOSONAR(cpp:S5008) - type erasure requires void*
     using ErasedStatementPtr = void*; // NOSONAR(cpp:S5008) - type erasure requires void*
 
@@ -130,7 +129,6 @@ export namespace storm::orm::statements {
         static consteval auto calculate_join_sql_size() -> size_t {
             using utilities::sql_len::ON_EQUALS;
             using utilities::sql_len::SMALL_BUFFER;
-            // NOLINTNEXTLINE(misc-const-correctness) - total IS modified in fold expression below
             size_t total = 0;
 
             [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) {
@@ -143,7 +141,6 @@ export namespace storm::orm::statements {
         }
 
         static consteval auto build_join_sql_array() {
-            // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
             constexpr size_t          sql_size = calculate_join_sql_size();
             ConstexprString<sql_size> result;
 
@@ -219,7 +216,6 @@ export namespace storm::orm::statements {
             for_each_fk_field([&]<size_t I>() {
                 result.append(", ");
                 [&]<size_t... FieldIs>(std::index_sequence<FieldIs...> /*unused*/) {
-                    // NOLINTNEXTLINE(misc-const-correctness) - first_in_table IS modified in fold expression
                     bool first_in_table = true;
                     (((first_in_table ? (void)0 : result.append(", ")),
                       result.append("t"),
@@ -253,7 +249,6 @@ export namespace storm::orm::statements {
         }
 
         static consteval auto build_complete_sql_array() {
-            // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
             constexpr size_t          sql_size = calculate_complete_sql_size();
             ConstexprString<sql_size> result;
 

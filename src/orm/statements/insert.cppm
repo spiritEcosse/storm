@@ -97,7 +97,6 @@ export namespace storm::orm::statements {
         // Shared compile-time INSERT SQL builder for the RETURNING and non-RETURNING variants.
         // The +64 padding on the RETURNING path covers " RETURNING <pk_name>".
         template <bool WithReturning> static consteval auto build_insert_sql_array_impl() {
-            // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
             constexpr size_t extra =
                     WithReturning ? (utilities::sql_len::XL_BUFFER + 64) : utilities::sql_len::XL_BUFFER;
             constexpr size_t          sql_size = calculate_insert_sql_size() + extra;
@@ -144,7 +143,6 @@ export namespace storm::orm::statements {
 
         // Build bulk INSERT prefix at compile-time using ConstexprString
         static consteval auto build_bulk_insert_prefix() {
-            // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
             constexpr size_t prefix_size = calculate_bulk_insert_prefix_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<prefix_size> result;
 

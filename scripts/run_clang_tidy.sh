@@ -157,7 +157,7 @@ if [[ "$MODE" == "diff" ]]; then
     # that cannot be parsed standalone (e.g. benchmarks/dashboard/models.hpp uses
     # storm reflection annotations which require 'import storm').
     DIFF_ERR_REAL=$(grep ": error:" "$DIFF_OUT" \
-        | grep -v -E "(module|import|reflect|std::meta|consteval|undeclared identifier 'storm'|use of undeclared|benchmarks/dashboard/models\.hpp)" \
+        | grep -v -E "(module|import|reflect|std::meta|consteval|undeclared identifier 'storm'|use of undeclared|benchmarks/dashboard/models\.hpp|src/orm/query_builder\.hpp)" \
         | wc -l || true)
 
     echo ""

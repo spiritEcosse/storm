@@ -325,7 +325,6 @@ export namespace storm::orm::schema {
         // Build the full CREATE TABLE SQL at compile-time using index sequence fold
         template <Dialect D = Dialect::SQLite, size_t... Is>
         static consteval auto build_sql_impl(std::index_sequence<Is...> /*unused*/) {
-            // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
             constexpr size_t          sql_size = calculate_create_table_sql_size<D>() + utilities::sql_len::XL_BUFFER;
             ConstexprString<sql_size> sql;
 

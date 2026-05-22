@@ -155,7 +155,6 @@ export namespace storm::orm::statements {
 
         // Build SELECT or SELECT DISTINCT at compile-time
         static consteval auto build_projection_sql_array() {
-            // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - constexpr IS initialized
             constexpr size_t          sql_size = calculate_select_sql_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<sql_size> result;
 

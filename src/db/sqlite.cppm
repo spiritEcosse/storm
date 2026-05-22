@@ -13,6 +13,7 @@ import <unordered_set>;
 import <vector>;
 import <array>;
 import <cstdint>;
+import <tuple>;
 
 export namespace storm::db::sqlite {
 
@@ -399,9 +400,7 @@ export namespace storm::db::sqlite {
             static const std::array<std::string_view, 3> common_patterns = {"BEGIN TRANSACTION", "COMMIT", "ROLLBACK"};
 
             for (const auto& sql : common_patterns) {
-                // Pre-populate cache (ignore errors for optional optimization)
-                // NOLINTNEXTLINE(bugprone-unused-return-value)
-                (void)prepare_cached(sql);
+                std::ignore = prepare_cached(sql);
             }
         }
 

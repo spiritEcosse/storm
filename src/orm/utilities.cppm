@@ -152,7 +152,7 @@ export namespace storm::orm::utilities {
         auto operator==(const UUID&) const -> bool = default;
              operator std::string_view() const noexcept {
             return value;
-        } // NOLINT(google-explicit-constructor)
+        }
 
         // Validate UUID using stduuid library (checks RFC 4122 compliance)
         [[nodiscard]] static auto is_valid(std::string_view sv) -> bool {
@@ -383,9 +383,8 @@ export namespace storm::orm::utilities {
     // No dependency on entity type T; pure type dispatch on the value type. One branch
     // per storage class; each branch either calls a stmt.bind_* directly or delegates to
     // one of the helpers above.
-    // NOLINTBEGIN(bugprone-exception-escape) — chrono conversions / vector::resize can
-    // throw bad_alloc on the rare path; accepted as terminate-on-OOM in the bind hot
-    // path (issue #262).
+    // chrono conversions / vector::resize can throw bad_alloc on the rare path;
+    // accepted as terminate-on-OOM in the bind hot path (issue #262).
     template <typename StmtType, typename ErrorType>
     [[nodiscard]] auto bind_parameter_value(StmtType& stmt, int param_index, const auto& value) noexcept
             -> std::expected<void, ErrorType> {
@@ -423,7 +422,6 @@ export namespace storm::orm::utilities {
             return std::unexpected(ErrorType{});
         }
     }
-    // NOLINTEND(bugprone-exception-escape)
 
     // ============================================================================
     // SQL String Building Utilities

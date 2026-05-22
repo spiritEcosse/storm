@@ -7,6 +7,7 @@ module;
 
 export module storm_db_postgresql_statement;
 import storm_db_postgresql_error;
+import <algorithm>;
 import <array>;
 import <expected>;
 import <string_view>;
@@ -25,12 +26,17 @@ export namespace storm::db::postgresql {
         using Error = postgresql::Error;
 
         // Constants for step return codes
-        static constexpr int  ROW_AVAILABLE      = 1;
-        static constexpr int  NO_MORE_ROWS       = 0;
-        static constexpr bool preserves_bindings = false; // reset() clears params
+        static constexpr int    ROW_AVAILABLE      = 1;
+        static constexpr int    NO_MORE_ROWS       = 0;
+        static constexpr bool   preserves_bindings = false; // reset() clears params
+        static constexpr size_t MAX_DB_VARIABLES   = 999;   // matches BaseStatement::MAX_DB_VARIABLES
 
-        // Construct from a connection and prepared statement name
-        explicit Statement(PGconn* conn, std::string stmt_name) : conn_(conn), stmt_name_(std::move(stmt_name)) {}
+        explicit Statement(PGconn* conn, std::string stmt_name) : conn_(conn), stmt_name_(std::move(stmt_name)) {
+            param_values_.reserve(MAX_DB_VARIABLES);
+            param_ptrs_.reserve(MAX_DB_VARIABLES);
+            param_lengths_.reserve(MAX_DB_VARIABLES);
+            param_formats_.reserve(MAX_DB_VARIABLES);
+        }
 
         // Destructor - clears any pending result
         ~Statement() {
@@ -74,50 +80,42 @@ export namespace storm::db::postgresql {
         Statement(const Statement&)                    = delete;
         auto operator=(const Statement&) -> Statement& = delete;
 
-        // Parameter binding - accumulate as text strings for PQexecPrepared.
-        // bind_text_value(idx, std::string) is the shared core; bind_int /
-        // bind_int64 / bind_text used to spell out the same
-        // `ensure_param_slot → assign → update_param_ptrs` dance.
-        __attribute__((always_inline)) auto bind_text_value(int index, std::string value) noexcept -> void {
+        // Shared core for all text-based bind paths.
+        __attribute__((always_inline)) auto bind_text_value(int index, std::string_view value) noexcept -> void {
             ensure_param_slot(index);
-            param_values_[index - 1] = std::move(value);
+            param_values_[index - 1].assign(value);
             update_param_ptrs(index);
         }
 
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto bind_int(int index, int value) noexcept
                 -> std::expected<void, Error> {
-            bind_text_value(index, std::to_string(value));
-            return {};
+            return bind_int64(index, static_cast<int64_t>(value));
         }
 
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto bind_text(int index, std::string_view value) noexcept
                 -> std::expected<void, Error> {
-            bind_text_value(index, std::string(value));
+            bind_text_value(index, value);
             return {};
         }
 
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto bind_int64(int index, int64_t value) noexcept
                 -> std::expected<void, Error> {
-            bind_text_value(index, std::to_string(value));
+            std::array<char, 22> buf{}; // max int64: 20 digits + sign + null
+            std::snprintf(buf.data(), buf.size(), "%lld", static_cast<long long>(value));
+            bind_text_value(index, std::string_view{buf.data()});
             return {};
         }
 
-        // ensure_param_slot may throw bad_alloc via vector::resize — in hot bind paths we accept
-        // terminate-on-OOM (issue #262 audit).
         template <typename = void>
-        [[nodiscard]] __attribute__((always_inline)) auto
-        bind_double(int index, double value) noexcept // NOLINT(bugprone-exception-escape)
+        [[nodiscard]] __attribute__((always_inline)) auto bind_double(int index, double value) noexcept
                 -> std::expected<void, Error> {
-            ensure_param_slot(index);
-            // std::to_string uses %f (6 decimal places) — insufficient for double precision.
-            // Use snprintf with %.17g for full double precision (17 significant digits).
+            // snprintf with %.17g for full double precision (17 significant digits)
             std::array<char, 32> buf{};
-            std::snprintf(buf.data(), buf.size(), "%.17g", value); // NOLINT(cppcoreguidelines-pro-type-vararg)
-            param_values_[index - 1] = buf.data();
-            update_param_ptrs(index);
+            std::snprintf(buf.data(), buf.size(), "%.17g", value);
+            bind_text_value(index, std::string_view{buf.data()});
             return {};
         }
 
@@ -150,12 +148,8 @@ export namespace storm::db::postgresql {
             return {};
         }
 
-        // Execute the prepared statement with accumulated parameters.
-        // rebuild_param_ptrs uses vector ops that can throw bad_alloc — accepted as
-        // terminate-on-OOM in hot paths (issue #262 audit).
         template <typename = void>
-        [[nodiscard]] __attribute__((always_inline)) auto execute() noexcept // NOLINT(bugprone-exception-escape)
-                -> std::expected<void, Error> {
+        [[nodiscard]] __attribute__((always_inline)) auto execute() noexcept -> std::expected<void, Error> {
             clear_result();
 
             // Rebuild param_ptrs_ from param_values_ to ensure pointers are valid
@@ -223,11 +217,7 @@ export namespace storm::db::postgresql {
             clear_params();
         }
 
-        // Finalize - deallocate server-side prepared statement.
-        // String concat (DEALLOCATE + stmt_name_) can throw bad_alloc; accepted as
-        // terminate-on-OOM during cleanup (issue #262 audit).
-        template <typename = void>
-        __attribute__((always_inline)) auto finalize() noexcept -> void { // NOLINT(bugprone-exception-escape)
+        template <typename = void> __attribute__((always_inline)) auto finalize() noexcept -> void {
             if (conn_ != nullptr && !stmt_name_.empty()) {
                 const std::string dealloc = "DEALLOCATE " + stmt_name_;
                 PGresult*         res     = PQexec(conn_, dealloc.c_str());
@@ -301,7 +291,7 @@ export namespace storm::db::postgresql {
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto extract_int(int col_index) const noexcept -> int {
             const char* val = PQgetvalue(result_, current_row_, col_index);
-            return std::atoi(val); // NOLINT(cert-err34-c) NOSONAR - performance over strtol for known-valid DB output
+            return static_cast<int>(std::strtol(val, nullptr, 10)); // NOSONAR - known-valid DB integer string
         }
 
         template <typename = void>
@@ -355,14 +345,9 @@ export namespace storm::db::postgresql {
             return std::strtof(val, nullptr);
         }
 
-        // blob_buffer_ resize can throw bad_alloc; accepted as terminate-on-OOM
-        // during BYTEA hex decode (issue #262 audit). PostgreSQL BLOB API uses void*.
-        // NOLINTBEGIN(bugprone-exception-escape)
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto extract_blob_ptr(int col_index) noexcept -> const
                 void* { // NOSONAR(cpp:S5008) - PostgreSQL BLOB API uses void*
-            // PG text-mode returns BYTEA as hex string: "\xDEADBEEF"
-            // Decode hex to raw binary bytes
             blob_decoded_col_ = col_index;
             if (PQgetisnull(result_, current_row_, col_index) != 0) {
                 blob_decoded_size_ = 0;
@@ -370,28 +355,31 @@ export namespace storm::db::postgresql {
             }
             const char* hex_str = PQgetvalue(result_, current_row_, col_index);
             const int   hex_len = PQgetlength(result_, current_row_, col_index);
-
-            // PG hex format starts with "\x" prefix
-            if (hex_len >= 2 && hex_str[0] == '\\' && hex_str[1] == 'x') {
-                const int binary_len = (hex_len - 2) / 2;
-                blob_buffer_.resize(static_cast<size_t>(binary_len));
-                for (int i = 0; i < binary_len;
-                     ++i) { // NOSONAR(cpp:S6022) - unsigned char required for uint8_t blob API compatibility
-                    const char hi = hex_str[2 + (i * 2)];
-                    const char lo = hex_str[2 + (i * 2) + 1];
-                    blob_buffer_[static_cast<size_t>(i)] =
-                            static_cast<unsigned char>((hex_digit(hi) << 4) | hex_digit(lo)); // NOSONAR(cpp:S6022)
+            try {
+                // PG hex format starts with "\x" prefix
+                if (hex_len >= 2 && hex_str[0] == '\\' && hex_str[1] == 'x') {
+                    const int binary_len = (hex_len - 2) / 2;
+                    blob_buffer_.resize(static_cast<size_t>(binary_len));
+                    for (int i = 0; i < binary_len;
+                         ++i) { // NOSONAR(cpp:S6022) - unsigned char required for uint8_t blob API compatibility
+                        const char hi = hex_str[2 + (i * 2)];
+                        const char lo = hex_str[2 + (i * 2) + 1];
+                        blob_buffer_[static_cast<size_t>(i)] =
+                                static_cast<unsigned char>((hex_digit(hi) << 4) | hex_digit(lo)); // NOSONAR(cpp:S6022)
+                    }
+                    blob_decoded_size_ = static_cast<size_t>(binary_len);
+                } else {
+                    blob_buffer_
+                            .assign(reinterpret_cast<const unsigned char*>(hex_str),
+                                    reinterpret_cast<const unsigned char*>(hex_str) + hex_len);
+                    blob_decoded_size_ = static_cast<size_t>(hex_len);
                 }
-                blob_decoded_size_ = static_cast<size_t>(binary_len);
-            } else {
-                blob_buffer_
-                        .assign(reinterpret_cast<const unsigned char*>(hex_str),
-                                reinterpret_cast<const unsigned char*>(hex_str) + hex_len);
-                blob_decoded_size_ = static_cast<size_t>(hex_len);
+            } catch (const std::bad_alloc&) {
+                blob_decoded_size_ = 0;
+                return nullptr;
             }
             return blob_buffer_.data();
         }
-        // NOLINTEND(bugprone-exception-escape)
 
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto is_null(int col_index) const noexcept -> bool {
@@ -434,8 +422,7 @@ export namespace storm::db::postgresql {
             param_count_ = 0;
         }
 
-        // vector::resize can throw bad_alloc; accepted as terminate-on-OOM (issue #262 audit).
-        auto ensure_param_slot(int index) noexcept -> void { // NOLINT(bugprone-exception-escape)
+        auto ensure_param_slot(int index) noexcept -> void {
             const auto idx = static_cast<size_t>(index);
             if (idx > param_values_.size()) {
                 param_values_.resize(idx);
@@ -443,12 +430,7 @@ export namespace storm::db::postgresql {
                 param_lengths_.resize(idx, 0);
                 param_formats_.resize(idx, 0); // Text format by default
             }
-            // NOLINTBEGIN(readability-use-std-min-max) — avoid <algorithm> import; clang-scan-deps
-            // SIGSEGVs on atomic_ref.h via <algorithm> under ninja-release. See issue #262.
-            if (index > param_count_) {
-                param_count_ = index;
-            }
-            // NOLINTEND(readability-use-std-min-max)
+            param_count_ = std::max(param_count_, index);
         }
 
         auto update_param_ptrs(int index) noexcept -> void {
