@@ -15,6 +15,7 @@ import <thread>;
 import <vector>;
 import <atomic>;
 import <chrono>;
+import <latch>;
 
 #include "test_models.h" // NOSONAR cpp:S954
 
@@ -930,32 +931,33 @@ TEST_F(MockPoolTest, Checkout_ShutdownDuringWait) {
     auto c1 = pool->checkout();
     ASSERT_TRUE(c1.has_value());
 
-    // Waiter thread blocks inside cv_.wait_until() because the only connection is held by c1.
+    // Deterministic sequence (no timing races, fixes #300):
+    //   1. Waiter starts and counts down `waiter_started` immediately before calling
+    //      checkout(). Main blocks on that latch — guarantees the waiter is at (or
+    //      microseconds away from) cv_.wait_until before we proceed.
+    //   2. Main spawns shutdown_thread. shutdown() sets shutdown_ = true, notify_all()s,
+    //      then blocks on cv_.wait until in_use == 0 (c1 still holds the only conn).
+    //   3. Whichever thread reaches the mutex first, the waiter's checkout() will see
+    //      shutdown_ == true — either via the early-return at the top of checkout()
+    //      (if shutdown_thread ran first) or via the shutdown_ re-check inside
+    //      wait_for_idle (if the waiter ran first). Either way: got_error == true.
+    //   4. waiter.join() returns once the waiter has set got_error.
+    //   5. Only then we reset c1, which lets shutdown_thread's cv_.wait observe
+    //      in_use == 0 and complete.
     std::atomic<bool> got_error{false};
-    std::thread       waiter([&pool, &got_error] {
+    std::latch        waiter_started{1};
+    std::thread       waiter([&pool, &got_error, &waiter_started] {
+        waiter_started.count_down();
         auto c    = pool->checkout();
         got_error = !c.has_value();
     });
 
-    // Spawn shutdown in a separate thread BEFORE returning c1. shutdown() will:
-    //   1. Set shutdown_ = true and notify_all() — wakes the waiter, which sees shutdown_
-    //      and returns an error.
-    //   2. Block on cv_.wait until c1 is returned (still in_use).
-    // Then we return c1 → shutdown_thread completes. This sequencing makes the test
-    // deterministic regardless of how quickly the waiter reached cv_.wait_until() —
-    // the previous version had a 50ms sleep race (#300).
+    waiter_started.wait();
     std::thread shutdown_thread([&pool] { pool->shutdown(); });
 
-    // Give shutdown a chance to set shutdown_ and notify the waiter. This sleep does
-    // not need to be precise: even if shutdown_ is set after the waiter wakes from
-    // c1's checkin notify, the waiter's loop in wait_for_idle re-checks shutdown_ on
-    // every iteration. The only requirement is that shutdown_thread runs before c1's
-    // reset triggers checkin → notify → waiter retry.
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-    c1->reset(); // Return c1 → shutdown_thread completes its cv_.wait.
-    shutdown_thread.join();
     waiter.join();
+    c1->reset(); // Return c1 → shutdown_thread's cv_.wait predicate becomes true.
+    shutdown_thread.join();
     EXPECT_TRUE(got_error);
 }
 
