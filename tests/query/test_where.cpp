@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,performance-unnecessary-value-param,performance-unnecessary-copy-initialization)
 
 import storm;
 import <string>;
@@ -489,8 +489,9 @@ TYPED_TEST(WhereTest, IsNull_StringField) {
     // Count people with nickname = std::nullopt in PEOPLE_25
     size_t expected_null_nicknames = 0;
     for (const auto& p : storm::test::PEOPLE_25) {
-        if (!p.nickname.has_value())
+        if (!p.nickname.has_value()) {
             expected_null_nicknames++;
+        }
     }
     EXPECT_EQ(result.value().size(), expected_null_nicknames)
             << "Expected " << expected_null_nicknames << " people with NULL nickname";
@@ -505,8 +506,9 @@ TYPED_TEST(WhereTest, IsNull_AndCombination) {
     // NULL score AND age > 30: Charlie(35), Eve(40), Henry(33), Jack(38), Olivia(48), Quinn(30→no), Sam(40) = 6
     size_t expected = 0;
     for (const auto& p : storm::test::PEOPLE_25) {
-        if (!p.score.has_value() && p.age > 30)
+        if (!p.score.has_value() && p.age > 30) {
             expected++;
+        }
     }
     EXPECT_EQ(result.value().size(), expected) << "Expected " << expected << " people with NULL score AND age > 30";
 }
@@ -520,8 +522,9 @@ TYPED_TEST(WhereTest, IsNull_OrCombination) {
     // NULL score (10) OR age < 25 (Paul=22, Yara=22 — but Yara has score=92, Paul has score=40)
     size_t expected = 0;
     for (const auto& p : storm::test::PEOPLE_25) {
-        if (!p.score.has_value() || p.age < 25)
+        if (!p.score.has_value() || p.age < 25) {
             expected++;
+        }
     }
     EXPECT_EQ(result.value().size(), expected) << "Expected " << expected << " people with NULL score OR age < 25";
 }
@@ -575,10 +578,11 @@ TEST_F(WhereNullCollateTest, IsNull_Collated) {
     ASSERT_TRUE(result.has_value()) << "Collated IS NULL failed: " << result.error().message();
     size_t expected_null_nicknames = 0;
     for (const auto& p : storm::test::PEOPLE_25) {
-        if (!p.nickname.has_value())
+        if (!p.nickname.has_value()) {
             expected_null_nicknames++;
+        }
     }
     EXPECT_EQ(result.value().size(), expected_null_nicknames) << "Collated IS NULL should work same as plain IS NULL";
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,performance-unnecessary-value-param,performance-unnecessary-copy-initialization)

@@ -41,6 +41,7 @@ namespace {
     // every Statement* held by upstream callers (Level 2). The fix is
     // `unordered_map<string, unique_ptr<Statement>>` — the unique_ptr stays
     // pinned in place, only the map nodes move.
+    // NOLINTNEXTLINE(readability-function-cognitive-complexity)
     TEST_F(CacheInvalidationLevel3Test, PointersStableAcrossRehash) {
         // Cache an initial statement and stash the pointer.
         auto first = conn_.prepare_cached("SELECT 1");
@@ -80,21 +81,21 @@ namespace {
 
         ASSERT_TRUE(conn_.prepare_cached("SELECT id FROM persons").has_value());
         ASSERT_TRUE(conn_.prepare_cached("SELECT id FROM messages").has_value());
-        ASSERT_EQ(conn_.cached_statement_count(), 2u);
+        ASSERT_EQ(conn_.cached_statement_count(), 2U);
 
         conn_.clear_statement_cache(std::string_view{"persons"});
 
-        EXPECT_EQ(conn_.cached_statement_count(), 1u) << "per-table clear must keep the unrelated `messages` entry";
+        EXPECT_EQ(conn_.cached_statement_count(), 1U) << "per-table clear must keep the unrelated `messages` entry";
 
         // Re-prepare both: persons should be a miss (count back to 2), messages
         // should be a hit (count unchanged after the miss bumped it to 2).
         auto persons_again = conn_.prepare_cached("SELECT id FROM persons");
         ASSERT_TRUE(persons_again.has_value());
-        EXPECT_EQ(conn_.cached_statement_count(), 2u);
+        EXPECT_EQ(conn_.cached_statement_count(), 2U);
 
         auto messages_again = conn_.prepare_cached("SELECT id FROM messages");
         ASSERT_TRUE(messages_again.has_value());
-        EXPECT_EQ(conn_.cached_statement_count(), 2u) << "messages cache hit must not grow the cache";
+        EXPECT_EQ(conn_.cached_statement_count(), 2U) << "messages cache hit must not grow the cache";
     }
 
     // ------------------------------------------------------------------ Test 3
@@ -106,11 +107,11 @@ namespace {
 
         ASSERT_TRUE(conn_.prepare_cached("SELECT id FROM persons").has_value());
         ASSERT_TRUE(conn_.prepare_cached("SELECT id FROM person_addresses").has_value());
-        ASSERT_EQ(conn_.cached_statement_count(), 2u);
+        ASSERT_EQ(conn_.cached_statement_count(), 2U);
 
         conn_.clear_statement_cache(std::string_view{"persons"});
 
-        EXPECT_EQ(conn_.cached_statement_count(), 1u) << "person_addresses must survive a clear targeting `persons`";
+        EXPECT_EQ(conn_.cached_statement_count(), 1U) << "person_addresses must survive a clear targeting `persons`";
     }
 
     // ============================================================================
@@ -135,18 +136,18 @@ namespace {
         ASSERT_TRUE(qs.insert(Person{.name = "Alice", .age = 30}).execute().has_value());
 
         const auto& conn = storm::QuerySet<Person, TypeParam>::get_default_connection();
-        ASSERT_GE(conn->cached_statement_count(), 1u);
+        ASSERT_GE(conn->cached_statement_count(), 1U);
 
         // Invalidate Level 1+2, then clear Level 3 underneath us. If Level 2
         // still holds the old pointer it now dangles; the next insert would
         // crash under ASAN.
         qs.invalidate_cache();
         conn->clear_statement_cache();
-        EXPECT_EQ(conn->cached_statement_count(), 0u);
+        EXPECT_EQ(conn->cached_statement_count(), 0U);
 
         ASSERT_TRUE(qs.insert(Person{.name = "Bob", .age = 25}).execute().has_value())
                 << "insert after invalidate+clear must re-prepare without UB";
-        EXPECT_GE(conn->cached_statement_count(), 1u) << "re-prepared statement must be cached again";
+        EXPECT_GE(conn->cached_statement_count(), 1U) << "re-prepared statement must be cached again";
     }
 
     // ------------------------------------------------------------------ Test 5
@@ -163,13 +164,13 @@ namespace {
         ASSERT_TRUE(sel_before.has_value());
 
         const auto& conn = storm::QuerySet<Person, TypeParam>::get_default_connection();
-        ASSERT_GE(conn->cached_statement_count(), 2u) << "insert + update + select should each cache a statement";
+        ASSERT_GE(conn->cached_statement_count(), 2U) << "insert + update + select should each cache a statement";
 
         // reset() invalidates Level 2 across all four kinds; clearing Level 3
         // afterwards would leave a dangling pointer on the buggy code.
         qs.reset();
         conn->clear_statement_cache();
-        EXPECT_EQ(conn->cached_statement_count(), 0u);
+        EXPECT_EQ(conn->cached_statement_count(), 0U);
 
         // Each operation must re-prepare without UB.
         ASSERT_TRUE(qs.insert(Person{.name = "Bob", .age = 25}).execute().has_value());
@@ -179,7 +180,7 @@ namespace {
         // Erase last so the row count is irrelevant to the assertion above.
         ASSERT_TRUE(qs.erase(Person{.id = 1}).execute().has_value());
 
-        EXPECT_GE(conn->cached_statement_count(), 1u);
+        EXPECT_GE(conn->cached_statement_count(), 1U);
     }
 
 } // namespace

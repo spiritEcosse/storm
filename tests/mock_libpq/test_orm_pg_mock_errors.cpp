@@ -1479,6 +1479,7 @@ namespace {
 
 } // namespace
 
+// NOLINTEND(readability-identifier-length,bugprone-unused-return-value) // bind-result names r1..r6 + intentional (void)prepare_cached. Pre-existing; tracked under #262/#264.
 // NOLINTEND(readability-convert-member-functions-to-static,misc-const-correctness) // NOSONAR(cpp:S125)
 // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR(cpp:S125)
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR(cpp:S125)

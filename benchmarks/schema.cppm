@@ -133,8 +133,9 @@ export namespace storm::benchmark {
         consteval auto field_count() const -> size_t {
             size_t n = 0;
             for (size_t i = 0; i < MAX_FIELDS; ++i) {
-                if (!fields[i].empty())
+                if (!fields[i].empty()) {
                     ++n;
+                }
             }
             return n;
         }
@@ -151,8 +152,9 @@ export namespace storm::benchmark {
         consteval auto field_count() const -> size_t {
             size_t n = 0;
             for (size_t i = 0; i < MAX_FIELDS; ++i) {
-                if (!fields[i].empty())
+                if (!fields[i].empty()) {
                     ++n;
+                }
             }
             return n;
         }

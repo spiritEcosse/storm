@@ -66,8 +66,9 @@ export namespace storm::benchmark {
 
         static auto clear_table() -> void {
             sqlite3* db = get_db<Model>();
-            if (db == nullptr)
+            if (db == nullptr) {
                 return;
+            }
             auto sql = std::format("DELETE FROM {}", std::meta::identifier_of(^^Model));
             sqlite3_exec(db, sql.c_str(), nullptr, nullptr, nullptr);
         }

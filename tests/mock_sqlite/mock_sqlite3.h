@@ -42,6 +42,7 @@
 // SQLITE_OK, SQLITE_ROW, SQLITE_TRANSIENT, etc. behave identically in both
 // the real and mock builds.
 
+// NOLINTBEGIN(cppcoreguidelines-macro-usage)
 #define SQLITE_OK 0 /* Successful result */                                 // NOSONAR(cpp:S5028)
 #define SQLITE_ERROR 1 /* Generic error */                                  // NOSONAR(cpp:S5028)
 #define SQLITE_INTERNAL 2 /* Internal logic error in SQLite */              // NOSONAR(cpp:S5028)
@@ -94,6 +95,7 @@
 // Bind transient flag
 #define SQLITE_TRANSIENT ((void (*)(void *)) - 1) // NOSONAR(cpp:S5028)
 #define SQLITE_STATIC ((void (*)(void *))0)       // NOSONAR(cpp:S5028)
+// NOLINTEND(cppcoreguidelines-macro-usage)
 
 // ============================================================================
 // SQLite3 Types (opaque handles)
@@ -170,7 +172,7 @@ class MockSqlite3Guard {
     ~MockSqlite3Guard() noexcept {
         try {
             MockSqlite3Config::reset();
-        } catch (...) { // NOSONAR(cpp:S2486) - intentionally suppress all exceptions in noexcept destructor
+        } catch (...) { // NOSONAR(cpp:S2486) NOLINT(bugprone-empty-catch)
         }
     }
 

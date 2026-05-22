@@ -34,7 +34,7 @@ template <typename ConnType> class PersonCrudTestBase : public StormTestFixture<
 
     static auto insert_persons_range(storm::QuerySet<Person, ConnType>& qs, int from, int to) -> void {
         std::vector<Person> batch;
-        batch.reserve(static_cast<std::size_t>(to - from + 1));
+        batch.reserve(static_cast<std::size_t>(to) - static_cast<std::size_t>(from) + 1U);
         for (int i = from; i <= to; i++) {
             batch.push_back(Person{.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 60)});
         }
@@ -53,8 +53,8 @@ template <typename ConnType> class PersonCrudTestBase : public StormTestFixture<
 
     static auto personExists(int person_id) -> bool {
         using namespace storm::orm::where;
-        storm::QuerySet<Person, ConnType> qs;
-        auto                              result = qs.where(field<^^Person::id>() == person_id).select().execute();
+        const storm::QuerySet<Person, ConnType> qs;
+        auto result = qs.where(field<^^Person::id>() == person_id).select().execute();
         return result.has_value() && !result.value().empty();
     }
 };
@@ -219,8 +219,8 @@ template <typename ConnType> class QuerySetUpdateTest : public PersonCrudTestBas
     // Helper function to get person by ID using the ORM
     static auto getPerson(int person_id) -> std::optional<Person> {
         using namespace storm::orm::where;
-        storm::QuerySet<Person, ConnType> qs;
-        auto                              result = qs.where(field<^^Person::id>() == person_id).select().execute();
+        const storm::QuerySet<Person, ConnType> qs;
+        auto result = qs.where(field<^^Person::id>() == person_id).select().execute();
         if (!result.has_value() || result.value().empty()) {
             return std::nullopt;
         }
@@ -406,6 +406,7 @@ template <typename ConnType> class QueryResetTest : public StormTestFixture<Pers
         StormTestFixture<Person, ConnType>::TearDown();
     }
 
+  public:
     std::unique_ptr<storm::QuerySet<Person, ConnType>> qs;
 };
 
@@ -445,25 +446,25 @@ TYPED_TEST(QueryResetTest, ResetBetweenDifferentOperations) {
     ASSERT_TRUE(count1.has_value());
     EXPECT_EQ(count1.value(), 25);
 
-    this->qs->reset();
+    (*this->qs).reset();
 
     auto sum1 = this->qs->template sum<^^Person::age>().execute();
     ASSERT_TRUE(sum1.has_value());
     EXPECT_EQ(sum1.value(), 829);
 
-    this->qs->reset();
+    (*this->qs).reset();
 
     auto avg1 = this->qs->template avg<^^Person::age>().execute();
     ASSERT_TRUE(avg1.has_value());
     EXPECT_NEAR(avg1.value(), 33.16, 0.01);
 
-    this->qs->reset();
+    (*this->qs).reset();
 
     auto min1 = this->qs->template min<^^Person::age>().execute();
     ASSERT_TRUE(min1.has_value());
     EXPECT_EQ(min1.value(), 22);
 
-    this->qs->reset();
+    (*this->qs).reset();
 
     auto max1 = this->qs->template max<^^Person::age>().execute();
     ASSERT_TRUE(max1.has_value());
@@ -475,7 +476,7 @@ TYPED_TEST(QueryResetTest, AggregatesWithWhere) {
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 11);
 
-    this->qs->reset();
+    (*this->qs).reset();
 
     auto sum = this->qs->where(storm::orm::where::field<^^Person::age>() >= 35).template sum<^^Person::age>().execute();
     ASSERT_TRUE(sum.has_value());

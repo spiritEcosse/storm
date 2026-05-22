@@ -548,7 +548,7 @@ auto sqlite3_column_type(sqlite3_stmt* pStmt, int iCol) -> int {
 }
 
 auto sqlite3_errmsg(const sqlite3* db) -> const char* {
-    if (auto* fake_db = reinterpret_cast<const FakeSqlite3*>(db); fake_db) { // NOSONAR(cpp:S3630)
+    if (const auto* fake_db = reinterpret_cast<const FakeSqlite3*>(db); fake_db) { // NOSONAR(cpp:S3630)
         return fake_db->error_message.c_str();
     }
     return "unknown error";
@@ -566,7 +566,7 @@ auto sqlite3_free(void* ptr) -> void {
     free(ptr); // NOSONAR(cpp:S1231) - SQLite API contract: memory allocated by sqlite3_exec must be freed with free()
 }
 
-auto sqlite3_expanded_sql(sqlite3_stmt* pStmt) -> char* {
+auto sqlite3_expanded_sql(sqlite3_stmt* /*pStmt*/) -> char* {
     if (g_mock_config.expanded_sql_returns_null) {
         return nullptr;
     }

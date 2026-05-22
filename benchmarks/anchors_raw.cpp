@@ -1,3 +1,4 @@
+// NOLINTBEGIN(cppcoreguidelines-pro-type-vararg)
 /**
  * Storm raw SQLite anchor benchmarks (Issue #235 — Phase 4).
  *
@@ -42,8 +43,14 @@ namespace {
     constexpr int kFullScan10K   = 10'000;
 
     auto die(sqlite3* db, char const* what) -> void {
-        std::fprintf(stderr, "anchors_raw: %s: %s\n", what, sqlite3_errmsg(db));
-        std::exit(1);
+        std::
+                fprintf( // NOLINT(cppcoreguidelines-pro-type-vararg)
+                        stderr,
+                        "anchors_raw: %s: %s\n",
+                        what,
+                        sqlite3_errmsg(db)
+                );
+        std::exit(1); // NOLINT(concurrency-mt-unsafe)
     }
 
     auto open_memory_db() -> sqlite3* {
@@ -57,14 +64,14 @@ namespace {
     auto exec(sqlite3* db, char const* sql) -> void {
         char* err = nullptr;
         if (sqlite3_exec(db, sql, nullptr, nullptr, &err) != SQLITE_OK) {
-            std::fprintf(stderr, "anchors_raw: exec: %s\n", err);
+            std::fprintf(stderr, "anchors_raw: exec: %s\n", err); // NOLINT(cppcoreguidelines-pro-type-vararg)
             sqlite3_free(err);
-            std::exit(1);
+            std::exit(1); // NOLINT(concurrency-mt-unsafe)
         }
     }
 
     auto prepare(sqlite3* db, char const* sql) -> sqlite3_stmt* {
-        sqlite3_stmt* stmt = nullptr;
+        sqlite3_stmt* stmt = nullptr; // NOLINT(misc-const-correctness) — written by sqlite3_prepare_v2
         if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
             die(db, sql);
         }
@@ -75,7 +82,9 @@ namespace {
         exec(db, "BEGIN");
         sqlite3_stmt* ins = prepare(db, "INSERT INTO person(name, age, salary) VALUES(?,?,?)");
         for (int i = 0; i < rows; ++i) {
-            std::string name = "Person" + std::to_string(i);
+            const std::string name =
+                    "Person" +
+                    std::to_string(i); // NOLINT(readability-string-concat) — std::format requires import in this TU
             sqlite3_bind_text(ins, 1, name.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_int(ins, 2, 20 + (i % 50));
             sqlite3_bind_double(ins, 3, 30'000.0 + static_cast<double>(i));
@@ -98,7 +107,7 @@ namespace {
 
         int counter = 0;
         for (auto _ : state) {
-            std::string name = "P" + std::to_string(counter++);
+            const std::string name = "P" + std::to_string(counter++); // NOLINT(readability-string-concat)
             sqlite3_bind_text(ins, 1, name.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_int(ins, 2, 30);
             sqlite3_bind_double(ins, 3, 50'000.0);
@@ -159,7 +168,8 @@ namespace {
         int batch = 0;
         for (auto _ : state) {
             for (int i = 0; i < kBatchSize1000; ++i) {
-                std::string name = "B" + std::to_string(batch) + "_" + std::to_string(i);
+                const std::string name =
+                        "B" + std::to_string(batch) + "_" + std::to_string(i); // NOLINT(readability-string-concat)
                 sqlite3_bind_text(ins, (i * 3) + 1, name.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_int(ins, (i * 3) + 2, 25 + (i % 40));
                 sqlite3_bind_double(ins, (i * 3) + 3, 40'000.0 + static_cast<double>(i));
@@ -209,4 +219,5 @@ namespace {
 
 } // namespace
 
-BENCHMARK_MAIN();
+BENCHMARK_MAIN(); // NOLINT(cppcoreguidelines-avoid-c-arrays,misc-const-correctness)
+// NOLINTEND(cppcoreguidelines-pro-type-vararg)

@@ -2,7 +2,7 @@
 #include "test_db_helpers.h"
 #include "plf_hive/plf_hive.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)
 
 import storm;
 import <string>;
@@ -574,4 +574,4 @@ TYPED_TEST(ValuesTest, DifferentWhereExpressionsWithCaching) {
     EXPECT_EQ(result2.value().size(), 1); // Dave only
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)

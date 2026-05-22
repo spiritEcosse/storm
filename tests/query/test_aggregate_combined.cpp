@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-use-anonymous-namespace)
 
 import storm;
 
@@ -116,6 +116,7 @@ template <typename ConnType> auto verify_group_by_counts(QuerySet<Person, ConnTy
     }
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 template <typename ConnType> auto verify_group_by_sum_avg_min_max(QuerySet<Person, ConnType>& qs) -> void {
     const std::map<int, int64_t> exp_sum = {{5, 268}, {10, 285}, {15, 276}};
     const std::map<int, double>  exp_avg = {{5, 26.8}, {10, 35.625}, {15, 39.43}};
@@ -164,7 +165,7 @@ TYPED_TEST(AggregateTest, GroupByWithAllAggregateTypes) {
     verify_group_by_counts<TypeParam>(*this->qs);
     verify_group_by_sum_avg_min_max<TypeParam>(*this->qs);
 
-    this->qs->reset();
+    (*this->qs).reset();
     auto filtered_sum = this->qs->where(storm::orm::where::field<^^Person::years_experience>() == 5)
                                 .template group_by<^^Person::years_experience>()
                                 .template sum<^^Person::age>()
@@ -275,4 +276,4 @@ TYPED_TEST(AggregateTest, GroupByMultipleFieldsWithOrderByLimit) {
     EXPECT_EQ(result.value().size(), 2) << "Should return only 2 groups due to LIMIT";
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-use-anonymous-namespace)

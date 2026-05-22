@@ -9,4 +9,23 @@ src/orm/statements/base.cppm:      file-size
 src/orm/statements/aggregate.cppm: file-size
 
 # Pre-existing test fixture; #295 is src/ only. See `tests/` exclusion in issue body.
-tests/db/test_pool.cpp:             file-size, duplicate
+tests/db/test_pool.cpp:                          file-size, duplicate
+tests/mock_libpq/test_orm_pg_mock_errors.cpp:    file-size, duplicate
+tests/mock_sqlite/test_orm_mock_errors.cpp:     file-size, duplicate
+tests/mock_sqlite/test_sqlite_mock.cpp:        duplicate
+tests/schema/test_types.cpp:                     file-size, duplicate, length
+tests/crud/test_insert_returning.cpp:            duplicate
+tests/errors/test_sqlite_errors.cpp:            file-size, duplicate
+tests/mock_libpq/mock_libpq.cpp:                parameters
+tests/mock_sqlite/mock_sqlite3.cpp:             duplicate
+benchmarks/schema.cppm:                         duplicate
+benchmarks/parser.cppm:                         file-size, duplicate, complexity
+tests/query/test_collate.cpp:                    duplicate
+tests/query/test_distinct.cpp:                   file-size, duplicate
+tests/query/test_setop.cpp:                      file-size, duplicate
+tests/query/test_rows.cpp:                       duplicate
+tests/query/test_sql_verify.cpp:                  duplicate
+tests/query/test_values.cpp:                     duplicate
+tests/query/test_where.cpp:                      duplicate
+tests/schema/test_fk_fields.cpp:                  file-size, duplicate, length
+tests/schema/test_sql_inspection.cpp:             duplicate

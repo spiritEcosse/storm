@@ -1,3 +1,4 @@
+// NOLINTBEGIN(cppcoreguidelines-pro-type-vararg)
 /**
  * Storm ORM benchmarks — Google Benchmark entry point (Issue #235 — Phase 2).
  *
@@ -32,26 +33,29 @@ namespace {
         // Capture by value — the RegisteredBenchmark vector is owned by
         // register.cpp's static and outlives main(), but copying keeps the
         // closure self-contained.
-        auto* bm = benchmark::RegisterBenchmark(reg.name, [reg](benchmark::State& state) {
-            reg.setup(state.range(0));
-            for (auto _ : state) {
-                reg.run();
-            }
-            state.SetComplexityN(state.range(0));
-            state.SetItemsProcessed(state.iterations() * state.range(0));
-        });
+        auto* bench_reg = benchmark::RegisterBenchmark(
+                reg.name, [reg](benchmark::State& state) { // NOLINT(bugprone-exception-escape)
+                    reg.setup(state.range(0));
+                    for (auto _ : state) {
+                        reg.run();
+                    }
+                    state.SetComplexityN(state.range(0));
+                    state.SetItemsProcessed(state.iterations() * state.range(0));
+                }
+        );
 
         if (reg.sized) {
-            bm->RangeMultiplier(reg.range_multiplier)
+            bench_reg->RangeMultiplier(reg.range_multiplier)
                     ->Range(reg.range_lo, reg.range_hi)
                     ->Complexity(benchmark::oN)
                     ->ArgName("N");
         } else if (!reg.args.empty()) {
-            for (auto n : reg.args)
-                bm->Arg(n);
-            bm->Complexity(benchmark::oN)->ArgName("N");
+            for (auto n : reg.args) {
+                bench_reg->Arg(n);
+            }
+            bench_reg->Complexity(benchmark::oN)->ArgName("N");
         } else {
-            bm->Arg(reg.range_lo)->ArgName("N");
+            bench_reg->Arg(reg.range_lo)->ArgName("N");
         }
     }
 
@@ -68,17 +72,22 @@ namespace {
         constexpr std::string_view prefix = "--benchmark_filter=";
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg{argv[i]};
-            if (arg.starts_with(prefix))
+            if (arg.starts_with(prefix)) {
                 return std::string{arg.substr(prefix.size())};
+            }
         }
         return {};
     }
 
 } // namespace
 
-auto main(int argc, char** argv) -> int {
+auto main(int argc, char** argv) -> int { // NOLINT(bugprone-exception-escape)
     if (!storm::benchmark::initialize_db()) {
-        std::fprintf(stderr, "storm_bench: failed to open :memory: DB / create schema\n");
+        std::
+                fprintf( // NOLINT(cppcoreguidelines-pro-type-vararg)
+                        stderr,
+                        "storm_bench: failed to open :memory: DB / create schema\n"
+                );
         return 1;
     }
 
@@ -92,14 +101,15 @@ auto main(int argc, char** argv) -> int {
     // bookkeeping. Unset → fall through to gbench's default text reporter,
     // zero network calls — what CI wants.
     ::benchmark::BenchmarkReporter* dashboard_reporter = nullptr;
-    if (std::getenv("STORM_BENCH_SOCKET") != nullptr) {
+    if (std::getenv("STORM_BENCH_SOCKET") != nullptr) { // NOLINT(concurrency-mt-unsafe)
         const std::string filter = extract_benchmark_filter(argc, argv);
         dashboard_reporter       = bench_dashboard::install_storm_reporter(/*socket_path=*/"", filter);
     }
 
     benchmark::Initialize(&argc, argv);
-    if (benchmark::ReportUnrecognizedArguments(argc, argv))
+    if (benchmark::ReportUnrecognizedArguments(argc, argv)) {
         return 1;
+    }
     if (dashboard_reporter != nullptr) {
         benchmark::RunSpecifiedBenchmarks(dashboard_reporter);
     } else {
@@ -108,3 +118,4 @@ auto main(int argc, char** argv) -> int {
     benchmark::Shutdown();
     return 0;
 }
+// NOLINTEND(cppcoreguidelines-pro-type-vararg)

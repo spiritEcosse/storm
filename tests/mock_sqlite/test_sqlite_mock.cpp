@@ -13,6 +13,8 @@
 #include <numbers>
 #include "mock_sqlite3.h"
 
+// NOLINTBEGIN(misc-const-correctness,cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr)
+
 using namespace storm::test;
 
 // ============================================================================
@@ -373,3 +375,5 @@ TEST_F(MockResetTest, GuardResetsOnDestruction) {
     sqlite3_finalize(stmt);
     sqlite3_close_v2(db);
 }
+
+// NOLINTEND(misc-const-correctness,cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr)

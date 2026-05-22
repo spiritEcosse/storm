@@ -1,3 +1,4 @@
+// NOLINTBEGIN(cppcoreguidelines-pro-type-vararg,concurrency-mt-unsafe,cppcoreguidelines-special-member-functions)
 // Streaming Google Benchmark reporter that pipes results to the
 // storm_bench_dashboard over an AF_UNIX SOCK_DGRAM socket (Issue #247,
 // Phase 2).
@@ -63,8 +64,9 @@ namespace bench_dashboard {
 
         auto extract_category(std::string_view name) -> std::string {
             constexpr std::string_view prefix = "Storm/";
-            if (!name.starts_with(prefix))
+            if (!name.starts_with(prefix)) {
                 return "?";
+            }
             const auto rest = name.substr(prefix.size());
             const auto end  = rest.find('/');
             return std::string{rest.substr(0, end == std::string_view::npos ? rest.size() : end)};
@@ -123,19 +125,23 @@ namespace bench_dashboard {
         // about (mean/median/stddev). BigO and RMS rows have aggregate_name
         // set but should still flow through.
         auto should_skip_run(benchmark::BenchmarkReporter::Run const& r) -> bool {
-            if (r.skipped != benchmark::internal::NotSkipped)
+            if (r.skipped != benchmark::internal::NotSkipped) {
                 return true;
+            }
             return !r.aggregate_name.empty() && !r.report_big_o && !r.report_rms;
         }
 
-        class StormReporter final : public benchmark::BenchmarkReporter {
+        class StormReporter
+                final // NOLINT(cppcoreguidelines-special-member-functions) — destructor only; move/copy intentionally not needed
+            : public benchmark::BenchmarkReporter {
           public:
-            StormReporter(int fd, std::string filter) : fd_{fd}, filter_{std::move(filter)} {}
+            StormReporter(int file_fd, std::string filter) : fd_{file_fd}, filter_{std::move(filter)} {}
 
             ~StormReporter() override {
                 send_line(wire::build_run_complete());
-                if (fd_ >= 0)
+                if (fd_ >= 0) {
                     ::close(fd_);
+                }
             }
 
             auto ReportContext(Context const& /*ctx*/) -> bool override {
@@ -148,21 +154,24 @@ namespace bench_dashboard {
 
             auto ReportRuns(std::vector<Run> const& runs) -> void override {
                 for (auto const& r : runs) {
-                    if (should_skip_run(r))
+                    if (should_skip_run(r)) {
                         continue;
-                    if (r.report_big_o)
+                    }
+                    if (r.report_big_o) {
                         send_line(wire::build_result(build_bigo_msg(r)));
-                    else if (r.report_rms)
+                    } else if (r.report_rms) {
                         send_line(wire::build_result(build_rms_msg(r)));
-                    else
+                    } else {
                         send_line(wire::build_result(build_measurement_msg(r)));
+                    }
                 }
             }
 
           private:
             auto send_line(std::string const& line) -> void {
-                if (fd_ < 0)
+                if (fd_ < 0) {
                     return;
+                }
                 // MSG_DONTWAIT: never block the bench loop on a slow consumer.
                 // MSG_NOSIGNAL: don't take SIGPIPE if the dashboard exits.
                 const ssize_t n = ::send(fd_, line.data(), line.size(), MSG_DONTWAIT | MSG_NOSIGNAL);
@@ -175,7 +184,7 @@ namespace bench_dashboard {
             }
 
             int         fd_{-1};
-            std::string filter_{};
+            std::string filter_; // NOLINT(readability-redundant-member-init) — explicit default is intentional style
             bool        sent_start_{false};
         };
 
@@ -186,13 +195,22 @@ namespace bench_dashboard {
         const std::string path =
                 socket_path.empty() ? std::string{wire::default_socket_path()} : std::string{socket_path};
         if (path.size() >= sizeof(sockaddr_un{}.sun_path)) {
-            std::fprintf(stderr, "storm_bench: dashboard socket path too long, falling back to text reporter\n");
+            std::
+                    fprintf( // NOLINT(cppcoreguidelines-pro-type-vararg)
+                            stderr,
+                            "storm_bench: dashboard socket path too long, falling back to text reporter\n"
+                    );
             return nullptr;
         }
 
         const int fd = ::socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
         if (fd < 0) {
-            std::fprintf(stderr, "storm_bench: socket(): %s — falling back to text reporter\n", std::strerror(errno));
+            std::
+                    fprintf( // NOLINT(cppcoreguidelines-pro-type-vararg)
+                            stderr,
+                            "storm_bench: socket(): %s — falling back to text reporter\n",
+                            std::strerror(errno) // NOLINT(concurrency-mt-unsafe)
+                    );
             return nullptr;
         }
 
@@ -205,12 +223,13 @@ namespace bench_dashboard {
         // the trailing NUL. Using sizeof(addr) over-counts and trips lints.
         const auto addr_len = static_cast<socklen_t>(offsetof(sockaddr_un, sun_path) + path.size() + 1);
         if (::connect(fd, reinterpret_cast<sockaddr const*>(&addr), addr_len) != 0) {
-            std::fprintf(
-                    stderr,
-                    "storm_bench: dashboard not reachable at %s (%s) — running with default reporter\n",
-                    path.c_str(),
-                    std::strerror(errno)
-            );
+            std::
+                    fprintf( // NOLINT(cppcoreguidelines-pro-type-vararg,concurrency-mt-unsafe)
+                            stderr,
+                            "storm_bench: dashboard not reachable at %s (%s) — running with default reporter\n",
+                            path.c_str(),
+                            std::strerror(errno)
+                    );
             ::close(fd);
             return nullptr;
         }
@@ -225,3 +244,4 @@ namespace bench_dashboard {
     }
 
 } // namespace bench_dashboard
+// NOLINTEND(cppcoreguidelines-pro-type-vararg,concurrency-mt-unsafe,cppcoreguidelines-special-member-functions)

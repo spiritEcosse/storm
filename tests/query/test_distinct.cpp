@@ -2,7 +2,7 @@
 #include "test_db_helpers.h"
 #include "plf_hive/plf_hive.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)
 
 import storm;
 import <string>;
@@ -1299,6 +1299,7 @@ TYPED_TEST(DistinctTest, DistinctOptionalIntFieldWithNulls) {
 }
 
 // Test: DISTINCT on optional string field with NULLs
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(DistinctTest, DistinctOptionalStringFieldWithNulls) {
     QuerySet<Person, TypeParam> queryset;
 
@@ -1729,4 +1730,4 @@ TYPED_TEST(DistinctTest, SqlVerifyDistinctFullCombo) {
     );
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)

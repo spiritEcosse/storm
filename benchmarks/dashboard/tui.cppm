@@ -10,6 +10,7 @@ module;
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -56,7 +57,7 @@ export namespace bench_dashboard::tui {
         std::string complexity_class;
         double      complexity_coef{0.0};
         double      rms_pct{0.0};
-        std::string baseline_class{};
+        std::string baseline_class; // NOLINT(readability-redundant-member-init)
         double      baseline_coef{0.0};
         bool        shape_regression{false};
         bool        coef_regression{false};
@@ -71,8 +72,8 @@ export namespace bench_dashboard::tui {
     };
 
     struct Session {
-        std::string                 filter{};
-        std::string                 timestamp{};
+        std::string                 filter;    // NOLINT(readability-redundant-member-init)
+        std::string                 timestamp; // NOLINT(readability-redundant-member-init)
         bool                        is_full_run{false};
         bool                        expanded{true};
         bool                        complete{false};
@@ -91,7 +92,7 @@ export namespace bench_dashboard::tui {
         std::size_t          spinner_tick{0};
         bool                 order_arrival{false};
         double               regression_threshold{5.0};
-        std::string          baseline_label{};
+        std::string          baseline_label; // NOLINT(readability-redundant-member-init)
         std::int64_t         baseline_run_id{0};
         double               complexity_threshold{5.0};
         int                  scroll_offset{0};
@@ -102,8 +103,9 @@ export namespace bench_dashboard::tui {
     // -----------------------------------------------------------------------
 
     inline auto open_session(DashboardState& s, std::string_view filter, bool is_full_run) -> Session& {
-        for (auto& prev : s.sessions)
+        for (auto& prev : s.sessions) {
             prev.expanded = false;
+        }
         std::size_t expected = 0;
         for (auto const& prev : s.sessions) {
             if (prev.complete && prev.filter == filter) {
@@ -123,8 +125,9 @@ export namespace bench_dashboard::tui {
 
     inline auto strip_complexity_suffix(std::string_view name) -> std::string_view {
         for (auto suffix : {std::string_view{"_BigO"}, std::string_view{"_RMS"}}) {
-            if (name.size() > suffix.size() && name.substr(name.size() - suffix.size()) == suffix)
+            if (name.size() > suffix.size() && name.substr(name.size() - suffix.size()) == suffix) {
                 return name.substr(0, name.size() - suffix.size());
+            }
         }
         return name;
     }
@@ -144,10 +147,11 @@ export namespace bench_dashboard::tui {
     }
 
     inline auto apply_complexity_msg(ComplexityEntry& ce, wire::ResultMsg const& m, double threshold) -> void {
-        if (m.row_kind == wire::kRowKindBigO)
+        if (m.row_kind == wire::kRowKindBigO) {
             fill_complexity_from_bigo(ce, m, threshold);
-        else
+        } else {
             ce.rms_pct = m.rms_pct;
+        }
     }
 
     inline auto add_complexity(CategoryBucket& bucket, wire::ResultMsg const& m, double threshold) -> void {
@@ -166,8 +170,9 @@ export namespace bench_dashboard::tui {
 
     inline auto find_or_create_bucket(Session& sess, std::string_view category) -> CategoryBucket& {
         for (auto& bucket : sess.categories) {
-            if (bucket.name == category)
+            if (bucket.name == category) {
                 return bucket;
+            }
         }
         sess.categories
                 .emplace_back(std::string{category}, std::vector<wire::ResultMsg>{}, std::vector<ComplexityEntry>{});
@@ -175,14 +180,15 @@ export namespace bench_dashboard::tui {
     }
 
     inline auto bump_delta_counters(Session& sess, double delta_pct, double regression_threshold) -> void {
-        if (delta_pct >= regression_threshold * 2.0)
+        if (delta_pct >= regression_threshold * 2.0) {
             ++sess.severe_count;
-        else if (delta_pct >= regression_threshold)
+        } else if (delta_pct >= regression_threshold) {
             ++sess.regression_count;
-        else if (delta_pct <= -regression_threshold)
+        } else if (delta_pct <= -regression_threshold) {
             ++sess.improvement_count;
-        else
+        } else {
             ++sess.ok_count;
+        }
     }
 
     inline auto add_result(Session& sess, wire::ResultMsg const& m, double regression_threshold) -> void {
@@ -191,21 +197,24 @@ export namespace bench_dashboard::tui {
             return;
         }
         ++sess.result_count;
-        if (m.delta_pct.has_value())
+        if (m.delta_pct.has_value()) {
             bump_delta_counters(sess, *m.delta_pct, regression_threshold);
+        }
         auto& bucket = find_or_create_bucket(sess, m.category);
         bucket.results.insert(bucket.results.begin(), m);
     }
 
     inline auto mark_complete(DashboardState& s) -> void {
-        if (!s.sessions.empty())
+        if (!s.sessions.empty()) {
             s.sessions.front().complete = true;
+        }
     }
 
     inline auto toggle_session(DashboardState& s, int ordinal) -> void {
         const auto idx = static_cast<std::size_t>(ordinal - 1);
-        if (idx < s.sessions.size())
+        if (idx < s.sessions.size()) {
             s.sessions[idx].expanded = !s.sessions[idx].expanded;
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -237,8 +246,9 @@ export namespace bench_dashboard::tui {
             std::fwrite(ansi::kCursorShow.data(), 1, ansi::kCursorShow.size(), stdout);
             std::fwrite(ansi::kAltScreenOff.data(), 1, ansi::kAltScreenOff.size(), stdout);
             std::fflush(stdout);
-            if (have_termios_)
+            if (have_termios_) {
                 ::tcsetattr(STDIN_FILENO, TCSANOW, &saved_);
+            }
         }
 
       private:
@@ -254,10 +264,12 @@ export namespace bench_dashboard::tui {
     };
 
     inline auto map_regular_char(char c) -> KeyEvent {
-        if (c >= '1' && c <= '9')
+        if (c >= '1' && c <= '9') {
             return {Key::Digit, c};
-        if (c == 0x03)
+        }
+        if (c == 0x03) {
             return {Key::Quit, '\0'};
+        }
         const char lc = (c >= 'A' && c <= 'Z') ? static_cast<char>(c + ('a' - 'A')) : c;
         switch (lc) {
         case 'q':
@@ -274,13 +286,14 @@ export namespace bench_dashboard::tui {
     }
 
     inline auto read_escape_sequence() -> KeyEvent {
-        KeyEvent ev{};
-        char     seq[2]{};
-        if (::read(STDIN_FILENO, &seq[0], 1) == 1 && seq[0] == '[' && ::read(STDIN_FILENO, &seq[1], 1) == 1) {
-            if (seq[1] == 'A')
+        KeyEvent            ev{};
+        std::array<char, 2> seq{};
+        if (::read(STDIN_FILENO, seq.data(), 1) == 1 && seq[0] == '[' && ::read(STDIN_FILENO, seq.data() + 1, 1) == 1) {
+            if (seq[1] == 'A') {
                 ev = {Key::ScrollUp, '\0'};
-            else if (seq[1] == 'B')
+            } else if (seq[1] == 'B') {
                 ev = {Key::ScrollDown, '\0'};
+            }
         }
         char drain{};
         while (::read(STDIN_FILENO, &drain, 1) == 1) { /* discard */
@@ -290,28 +303,33 @@ export namespace bench_dashboard::tui {
 
     inline auto wait_for_stdin_byte(int timeout_ms) -> std::optional<char> {
         if (::isatty(STDIN_FILENO) == 0) {
-            if (timeout_ms > 0)
+            if (timeout_ms > 0) {
                 ::usleep(static_cast<useconds_t>(timeout_ms) * 1000U);
+            }
             return std::nullopt;
         }
         pollfd pfd{};
         pfd.fd        = STDIN_FILENO;
         pfd.events    = POLLIN;
         const int prc = ::poll(&pfd, 1, timeout_ms);
-        if (prc <= 0 || (pfd.revents & POLLIN) == 0)
+        if (prc <= 0 || (pfd.revents & POLLIN) == 0) {
             return std::nullopt;
+        }
         char c = '\0';
-        if (::read(STDIN_FILENO, &c, 1) != 1)
+        if (::read(STDIN_FILENO, &c, 1) != 1) {
             return std::nullopt;
+        }
         return c;
     }
 
     inline auto read_key(int timeout_ms) -> KeyEvent {
         const auto byte = wait_for_stdin_byte(timeout_ms);
-        if (!byte)
+        if (!byte) {
             return {};
-        if (*byte == 0x1b)
+        }
+        if (*byte == 0x1b) {
             return read_escape_sequence();
+        }
         return map_regular_char(*byte);
     }
 

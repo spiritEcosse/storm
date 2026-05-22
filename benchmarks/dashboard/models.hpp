@@ -36,9 +36,9 @@ namespace bench_dashboard {
         double                                    cpu_time_ns{};
         int                                       iterations{};
         double                                    items_per_second{};
-        std::string                               complexity_class{}; // e.g. "N", "NlgN", "N^2" (bigo rows only)
-        double                                    complexity_coef{};  // leading coefficient (bigo rows only)
-        double                                    rms_pct{};          // fit quality 0-100 (rms rows only)
+        std::string                               complexity_class;  // e.g. "N", "NlgN", "N^2" (bigo rows only)
+        double                                    complexity_coef{}; // leading coefficient (bigo rows only)
+        double                                    rms_pct{};         // fit quality 0-100 (rms rows only)
     };
 
 } // namespace bench_dashboard

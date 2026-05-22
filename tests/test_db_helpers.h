@@ -53,13 +53,14 @@ inline std::string current_test_schema; // NOLINT // NOSONAR(cpp:S5421)
 // SQLite is always available)
 template <typename ConnType> auto backend_available() -> bool {
     if constexpr (std::is_same_v<ConnType, storm::db::postgresql::Connection>) {
-        const char *connstr = std::getenv("STORM_PG_CONNSTR");
-        if (!connstr)
+        const char *connstr = std::getenv("STORM_PG_CONNSTR"); // NOLINT(concurrency-mt-unsafe)
+        if (!connstr) {
             return false;
+        }
         PGconn *conn = PQconnectdb(connstr);
-        bool ok = PQstatus(conn) == CONNECTION_OK;
+        const bool connected = PQstatus(conn) == CONNECTION_OK;
         PQfinish(conn);
-        return ok;
+        return connected;
     }
     return true;
 }
@@ -67,7 +68,7 @@ template <typename ConnType> auto backend_available() -> bool {
 // Get the connection string for the current backend
 template <typename ConnType> auto get_connection_string() -> std::string {
     if constexpr (std::is_same_v<ConnType, storm::db::postgresql::Connection>) {
-        const char *connstr = std::getenv("STORM_PG_CONNSTR");
+        const char *connstr = std::getenv("STORM_PG_CONNSTR"); // NOLINT(concurrency-mt-unsafe)
         return connstr ? std::string(connstr) : "";
     } else {
         return ":memory:";

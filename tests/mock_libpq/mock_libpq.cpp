@@ -19,8 +19,8 @@ namespace {
 
     // Fake handles - store state for opaque PGconn/PGresult pointers
     struct FakePGconn {
-        int         status        = CONNECTION_OK;
-        std::string error_message = "";
+        int         status = CONNECTION_OK;
+        std::string error_message;
     };
 
     struct FakePGresult {
@@ -30,15 +30,15 @@ namespace {
 
     // Cell key for column data lookups: row * 10000 + col
     auto cell_key(int row, int col) -> int64_t {
-        return static_cast<int64_t>(row) * 10000 + col;
+        return (static_cast<int64_t>(row) * 10000) + col;
     }
 
     // Global mock configuration
     struct PqMockConfig { // NOSONAR(cpp:S1820) - mock config needs all fields for full libpq API coverage
         // Connection
-        bool        connectdb_null     = false;
-        int         conn_status        = CONNECTION_OK;
-        std::string conn_error_message = "";
+        bool        connectdb_null = false;
+        int         conn_status    = CONNECTION_OK;
+        std::string conn_error_message;
 
         // Prepare
         bool prepare_null          = false;
@@ -232,7 +232,7 @@ auto PQconnectdb(const char* conninfo) -> PGconn* {
 }
 
 auto PQstatus(const PGconn* conn) -> ConnStatusType {
-    if (auto* fake = reinterpret_cast<const FakePGconn*>(conn); fake) // NOSONAR(cpp:S3630)
+    if (const auto* fake = reinterpret_cast<const FakePGconn*>(conn); fake) // NOSONAR(cpp:S3630)
         return fake->status;
     return CONNECTION_BAD;
 }
@@ -243,9 +243,9 @@ auto PQfinish(const PGconn* conn) -> void {
 }
 
 auto PQerrorMessage(const PGconn* conn) -> char* {
-    if (auto* fake = reinterpret_cast<const FakePGconn*>(conn); fake) // NOSONAR(cpp:S3630)
-        return const_cast<char*>(fake->error_message.c_str()); // NOSONAR - mock returns mutable ptr per libpq API
-    return const_cast<char*>("");                              // NOSONAR
+    if (const auto* fake = reinterpret_cast<const FakePGconn*>(conn); fake) // NOSONAR(cpp:S3630)
+        return const_cast<char*>(fake->error_message.c_str()); // NOSONAR NOLINT(cppcoreguidelines-pro-type-const-cast)
+    return const_cast<char*>("");                              // NOSONAR NOLINT(cppcoreguidelines-pro-type-const-cast)
 }
 
 auto PQprepare(const PGconn* conn, const char* stmtName, const char* query, int nParams, const Oid* paramTypes)
@@ -326,7 +326,7 @@ auto PQexec(const PGconn* conn, const char* query) -> PGresult* {
 }
 
 auto PQresultStatus(const PGresult* res) -> ExecStatusType {
-    if (auto* fake = reinterpret_cast<const FakePGresult*>(res); fake) // NOSONAR(cpp:S3630)
+    if (const auto* fake = reinterpret_cast<const FakePGresult*>(res); fake) // NOSONAR(cpp:S3630)
         return fake->status;
     return PGRES_FATAL_ERROR;
 }
@@ -337,7 +337,7 @@ auto PQclear(const PGresult* res) -> void {
 }
 
 auto PQntuples(const PGresult* res) -> int {
-    if (auto* fake = reinterpret_cast<const FakePGresult*>(res); fake) // NOSONAR(cpp:S3630)
+    if (const auto* fake = reinterpret_cast<const FakePGresult*>(res); fake) // NOSONAR(cpp:S3630)
         return fake->ntuples;
     return 0;
 }
@@ -346,9 +346,9 @@ auto PQgetvalue(const PGresult* res, int tup_num, int field_num) -> char* {
     (void)res;
     const auto key = cell_key(tup_num, field_num);
     if (auto it = g_mock_config.column_values.find(key); it != g_mock_config.column_values.end())
-        return const_cast<char*>(it->second.c_str()); // NOSONAR - libpq API returns non-const char*
+        return const_cast<char*>(it->second.c_str()); // NOSONAR NOLINT(cppcoreguidelines-pro-type-const-cast)
     g_empty_string = "";
-    return const_cast<char*>(g_empty_string.c_str()); // NOSONAR
+    return const_cast<char*>(g_empty_string.c_str()); // NOSONAR NOLINT(cppcoreguidelines-pro-type-const-cast)
 }
 
 auto PQgetlength(const PGresult* res, int tup_num, int field_num) -> int {

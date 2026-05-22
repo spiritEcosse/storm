@@ -45,7 +45,6 @@ namespace detail {
 export namespace storm::orm::statements {
 
     namespace buffer_size = storm::orm::utilities::buffer_size;
-    using storm::orm::utilities::Collate;
     using storm::orm::utilities::collate_to_sql;
     using storm::orm::utilities::ConstexprString;
 

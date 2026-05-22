@@ -35,6 +35,7 @@
 // Production code uses #include <libpq-fe.h> while tests include this mock
 // header instead; the two must be value-compatible.
 
+// NOLINTBEGIN(cppcoreguidelines-macro-usage)
 #define CONNECTION_OK 0  // NOSONAR(cpp:S5028)
 #define CONNECTION_BAD 1 // NOSONAR(cpp:S5028)
 
@@ -42,6 +43,7 @@
 #define PGRES_COMMAND_OK 1  // NOSONAR(cpp:S5028)
 #define PGRES_TUPLES_OK 2   // NOSONAR(cpp:S5028)
 #define PGRES_FATAL_ERROR 7 // NOSONAR(cpp:S5028)
+// NOLINTEND(cppcoreguidelines-macro-usage)
 
 // ============================================================================
 // libpq Types (opaque handles)

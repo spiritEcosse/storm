@@ -78,10 +78,13 @@ CheckOptions:
   # ch=char, hi/lo=hex nibble halves (postgresql.cppm hex_digit + blob extract).
   # p=parameter/pointer, pg=PostgreSQL flag, sv=string_view, s=string,
   # tp=time_point, dp=day_point, h=hours, v=value (utilities/aggregate/pool helpers).
+  # _=Google Benchmark loop variable (for (auto _ : state)), ec=error_code, sa=sigaction,
+  # fd=file descriptor (POSIX APIs), ns=nanoseconds, ce=console event, lc=line count,
+  # ev=event (terminal input).
   - key: readability-identifier-length.IgnoredVariableNames
-    value: '^(rc|db|it|op|id|pk|qs|l|r|c|m|i|j|k|n|s[0-9]+|ch|hi|lo|s|v|h|dp|tp|p|pg)$'
+    value: '^(_|rc|db|it|op|id|pk|qs|l|r|c|m|i|j|k|n|t|s[0-9]+|ch|hi|lo|s|v|h|dp|tp|p|pg|ec|sa|fd|ns|ce|lc|ev|sp|bm|p1|p2|r1|r2|r3|tv|qc|ye|mn|mx|q[0-9]+|tc|cp|cs|cm|cm|qt)$'
   - key: readability-identifier-length.IgnoredParameterNames
-    value: '^(rc|db|it|op|id|pk|qs|l|r|c|m|i|j|k|n|jw|we|lv|ov|ob|ch|p|pg|sv|s|tp|dp|v|h)$'
+    value: '^(rc|db|it|op|id|pk|qs|l|r|c|m|i|j|k|n|jw|we|lv|ov|ob|ch|p|pg|sv|s|tp|dp|v|h|fd|ec|sa|ns|ce|lc|ev|fn|to|jn|w|o|g|d|a|t)$'
   - key: readability-identifier-length.IgnoredLoopCounterNames
     value: '^[ijkn]$'
   - key: readability-identifier-length.MinimumLoopCounterNameLength
