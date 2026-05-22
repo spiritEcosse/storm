@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,readability-function-cognitive-complexity)
 
 import storm;
 import <string>;
@@ -1242,4 +1242,4 @@ TYPED_TEST(JoinTypeExtractionTest, JoinWithOrderBy) {
     }
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,readability-function-cognitive-complexity)

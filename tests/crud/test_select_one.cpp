@@ -58,7 +58,7 @@ TYPED_TEST(SelectOneTest, GetFromEmptyTable) {
 TYPED_TEST(SelectOneTest, GetMultipleRowsReturnsError) {
     QuerySet<Person, TypeParam> queryset;
 
-    std::vector<Person> people = {{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}};
+    const std::vector<Person> people = {{0, "Alice", 30}, {0, "Bob", 25}, {0, "Charlie", 35}};
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(people)));
 
     auto result = queryset.get().execute();
@@ -69,9 +69,9 @@ TYPED_TEST(SelectOneTest, GetMultipleRowsReturnsError) {
 
 // Test: get() with WHERE matching multiple rows returns error
 TYPED_TEST(SelectOneTest, GetWhereMultipleMatch) {
-    QuerySet<Person, TypeParam> queryset;
+    const QuerySet<Person, TypeParam> queryset;
 
-    std::vector<Person> people = {{0, "Alice", 30}, {0, "Bob", 30}, {0, "Charlie", 25}};
+    const std::vector<Person> people = {{0, "Alice", 30}, {0, "Bob", 30}, {0, "Charlie", 25}};
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(people)));
 
     // Two people have age 30

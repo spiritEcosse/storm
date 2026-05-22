@@ -46,7 +46,7 @@ TYPED_TEST(BatchInsertReturningTest, BasicBatchReturnsIds) {
     }
 
     // All IDs should be unique
-    std::set<int64_t> unique_ids(result.value().begin(), result.value().end());
+    const std::set<int64_t> unique_ids(result.value().begin(), result.value().end());
     EXPECT_EQ(unique_ids.size(), 3) << "All returned IDs should be unique";
 }
 
@@ -255,7 +255,7 @@ TYPED_TEST(ChunkedBatchInsertReturningTest, ChunkedBatchReturnsAllIds) {
             << "Should return IDs for all " << num_records << " records";
 
     // All IDs should be positive and unique
-    std::set<int64_t> unique_ids(result.value().begin(), result.value().end());
+    const std::set<int64_t> unique_ids(result.value().begin(), result.value().end());
     EXPECT_EQ(unique_ids.size(), static_cast<size_t>(num_records)) << "All IDs should be unique";
 
     for (const auto id : result.value()) {
@@ -313,7 +313,7 @@ TYPED_TEST(ChunkedBatchInsertReturningTest, JustOverBoundaryBatch) {
     ASSERT_EQ(result.value().size(), static_cast<size_t>(num_records));
 
     // All unique
-    std::set<int64_t> unique_ids(result.value().begin(), result.value().end());
+    const std::set<int64_t> unique_ids(result.value().begin(), result.value().end());
     EXPECT_EQ(unique_ids.size(), static_cast<size_t>(num_records));
 }
 
@@ -361,7 +361,7 @@ TYPED_TEST(ChunkedBatchInsertReturningTest, CustomBatchSizeSmall) {
     ASSERT_TRUE(result.has_value()) << "Small batch size insert returning should succeed";
     ASSERT_EQ(result.value().size(), static_cast<size_t>(num_records));
 
-    std::set<int64_t> unique_ids(result.value().begin(), result.value().end());
+    const std::set<int64_t> unique_ids(result.value().begin(), result.value().end());
     EXPECT_EQ(unique_ids.size(), static_cast<size_t>(num_records));
 }
 

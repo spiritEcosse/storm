@@ -1,3 +1,4 @@
+// NOLINTBEGIN(cppcoreguidelines-pro-type-vararg,concurrency-mt-unsafe)
 // storm_bench_dashboard — Phase 3 (Issue #247).
 //
 // Phase 1 verified the SQLite schema is current. Phase 2 added the live socket
@@ -46,7 +47,7 @@ namespace {
     // SIGINT / SIGTERM → flip the flag the main loop already checks for `q`.
     // Keeps the alt-screen + termios teardown on the normal exit path so a
     // Ctrl-C doesn't leave the user with a wrecked terminal.
-    std::atomic<bool> g_should_quit{false};
+    std::atomic<bool> g_should_quit{false}; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
     extern "C" auto handle_quit_signal(int /*sig*/) -> void {
         g_should_quit.store(true);
@@ -81,15 +82,16 @@ namespace {
     // Print an error of the form "<prefix> '<arg>': <reason>" and return rc.
     // Single source of truth for the path/connection/io error pattern.
     auto fail_with(int rc, char const* prefix, std::string_view arg, std::string_view reason) -> int {
-        std::fprintf(
-                stderr,
-                "storm_bench_dashboard: %s '%.*s': %.*s\n",
-                prefix,
-                static_cast<int>(arg.size()),
-                arg.data(),
-                static_cast<int>(reason.size()),
-                reason.data()
-        );
+        std::
+                fprintf( // NOLINT(cppcoreguidelines-pro-type-vararg)
+                        stderr,
+                        "storm_bench_dashboard: %s '%.*s': %.*s\n",
+                        prefix,
+                        static_cast<int>(arg.size()),
+                        arg.data(),
+                        static_cast<int>(reason.size()),
+                        reason.data()
+                );
         return rc;
     }
 
@@ -97,33 +99,38 @@ namespace {
     // ENOENT on first run. Returns 0 on success, 1 on filesystem error.
     auto ensure_db_parent_dir(std::string_view db_path) -> int {
         const auto parent = std::filesystem::path{db_path}.parent_path();
-        if (parent.empty())
+        if (parent.empty()) {
             return 0;
+        }
         std::error_code ec;
         std::filesystem::create_directories(parent, ec);
-        if (ec)
+        if (ec) {
             return fail_with(1, "cannot create", parent.string(), ec.message());
+        }
         return 0;
     }
 
     // Open the SQLite store. Returns 0 on success, 1 on connection failure.
     auto open_db_connection(Options const& opts) -> int {
         auto rc = storm::QuerySet<bench_dashboard::BenchRun>::set_default_connection(opts.db_path);
-        if (!rc)
+        if (!rc) {
             return fail_with(1, "cannot open", opts.db_path, std::string{rc.error().message()});
+        }
         return 0;
     }
 
     // Verify a single table by issuing `count()`. Returns 0 on success or 2
     // on missing schema (already printed).
     auto check_table_exists(auto&& count_result, std::string_view db_path) -> int {
-        if (count_result)
+        if (count_result) {
             return 0;
-        std::fprintf(
-                stderr,
-                "storm_bench_dashboard: schema check failed: %s\n",
-                std::string{count_result.error().message()}.c_str()
-        );
+        }
+        std::
+                fprintf( // NOLINT(cppcoreguidelines-pro-type-vararg)
+                        stderr,
+                        "storm_bench_dashboard: schema check failed: %s\n",
+                        std::string{count_result.error().message()}.c_str()
+                );
         print_missing_schema_hint(db_path);
         return 2;
     }
@@ -131,8 +138,9 @@ namespace {
     auto check_schema(Options const& opts) -> int {
         if (const int rc =
                     check_table_exists(storm::QuerySet<bench_dashboard::BenchRun>().count().execute(), opts.db_path);
-            rc != 0)
+            rc != 0) {
             return rc;
+        }
         return check_table_exists(storm::QuerySet<bench_dashboard::BenchResult>().count().execute(), opts.db_path);
     }
 
@@ -141,7 +149,12 @@ namespace {
         const std::string_view socket_path = opts.socket_path.empty() ? bench_dashboard::wire::default_socket_path()
                                                                       : std::string_view{opts.socket_path};
         if (auto err = server.open(socket_path); !err.empty()) {
-            std::fprintf(stderr, "storm_bench_dashboard: %s\n", err.c_str());
+            std::
+                    fprintf( // NOLINT(cppcoreguidelines-pro-type-vararg)
+                            stderr,
+                            "storm_bench_dashboard: %s\n",
+                            err.c_str()
+                    );
             return 3;
         }
         return 0;
@@ -156,13 +169,14 @@ namespace {
         state.baseline_run_id            = bid;
         state.baseline_label             = std::move(blabel);
         if (bid == 0 && std::holds_alternative<BaselineAuto>(opts.baseline)) {
-            std::fprintf(
-                    stderr,
-                    "storm_bench_dashboard: no baseline found for branch '%s' on host '%s' — running without "
-                    "comparison\n",
-                    current_branch.c_str(),
-                    current_host.c_str()
-            );
+            std::
+                    fprintf( // NOLINT(cppcoreguidelines-pro-type-vararg)
+                            stderr,
+                            "storm_bench_dashboard: no baseline found for branch '%s' on host '%s' — running without "
+                            "comparison\n",
+                            current_branch.c_str(),
+                            current_host.c_str()
+                    );
         }
     }
 
@@ -193,8 +207,9 @@ namespace {
             dirty = true;
             return false;
         case Key::ScrollUp:
-            if (state.scroll_offset > 0)
+            if (state.scroll_offset > 0) {
                 --state.scroll_offset;
+            }
             dirty = true;
             return false;
         case Key::None:
@@ -214,17 +229,22 @@ namespace {
     ) -> bool {
         while (true) {
             auto datagram = server.recv_one(/*timeout_ms=*/0);
-            if (!datagram)
+            if (!datagram) {
                 return true;
+            }
             auto msg = bench_dashboard::wire::parse(*datagram);
             if (!msg) {
-                std::fprintf(
-                        stderr, "\nstorm_bench_dashboard: skipped unparseable datagram (%zu bytes)\n", datagram->size()
-                );
+                std::
+                        fprintf( // NOLINT(cppcoreguidelines-pro-type-vararg)
+                                stderr,
+                                "\nstorm_bench_dashboard: skipped unparseable datagram (%zu bytes)\n",
+                                datagram->size()
+                        );
                 continue;
             }
-            if (!apply_event(*msg, state, db, active_run_id))
+            if (!apply_event(*msg, state, db, active_run_id)) {
                 return false;
+            }
             dirty = true;
         }
     }
@@ -250,17 +270,21 @@ namespace {
         std::int64_t active_run_id     = 0;
         std::size_t  since_last_redraw = 0;
         while (true) {
-            if (g_should_quit.load())
+            if (g_should_quit.load()) {
                 return;
+            }
             const auto key   = bench_dashboard::tui::read_key(/*timeout_ms=*/100);
             bool       dirty = false;
-            if (handle_key_event(key, state, active_run_id, dirty))
+            if (handle_key_event(key, state, active_run_id, dirty)) {
                 return;
-            if (!drain_socket_datagrams(server, state, db, active_run_id, dirty))
+            }
+            if (!drain_socket_datagrams(server, state, db, active_run_id, dirty)) {
                 return;
+            }
             tick_spinner(state, since_last_redraw, dirty);
-            if (dirty)
+            if (dirty) {
                 bench_dashboard::tui::write_full_frame(bench_dashboard::tui::render(state));
+            }
         }
     }
 
@@ -268,36 +292,43 @@ namespace {
     // exit code. Returns nullopt when no subcommand was selected and the
     // normal interactive flow should run.
     auto try_run_subcommand(Options const& opts) -> std::optional<int> {
-        if (opts.upload_backup)
+        if (opts.upload_backup) {
             return upload_backup(opts);
-        if (opts.restore_backup)
+        }
+        if (opts.restore_backup) {
             return restore_backup(opts);
+        }
         return std::nullopt;
     }
 
 } // namespace
 
-auto main(int argc, char** argv) -> int {
+auto main(int argc, char** argv) -> int { // NOLINT(bugprone-exception-escape)
     const auto opts = parse_args(argc, argv);
 
     // One-shot backup actions short-circuit before any TUI / DB-connection
     // setup. They must NOT install signal handlers (Ctrl-C should propagate
     // straight to gh) and must NOT call set_default_connection.
-    if (auto code = try_run_subcommand(opts); code.has_value())
+    if (auto code = try_run_subcommand(opts); code.has_value()) {
         return *code;
+    }
 
     install_signal_handlers();
 
-    if (const int rc = ensure_db_parent_dir(opts.db_path); rc != 0)
+    if (const int rc = ensure_db_parent_dir(opts.db_path); rc != 0) {
         return rc;
-    if (const int rc = open_db_connection(opts); rc != 0)
+    }
+    if (const int rc = open_db_connection(opts); rc != 0) {
         return rc;
-    if (const int rc = check_schema(opts); rc != 0)
+    }
+    if (const int rc = check_schema(opts); rc != 0) {
         return rc;
+    }
 
     bench_dashboard::SocketServer server;
-    if (const int rc = setup_socket(opts, server); rc != 0)
+    if (const int rc = setup_socket(opts, server); rc != 0) {
         return rc;
+    }
 
     DashboardDB                          db;
     bench_dashboard::tui::DashboardState state;
@@ -311,9 +342,10 @@ auto main(int argc, char** argv) -> int {
     // bench process connects.
     rebuild_state_from_db(state);
 
-    bench_dashboard::tui::TerminalGuard guard;
+    const bench_dashboard::tui::TerminalGuard guard;
     bench_dashboard::tui::write_full_frame(bench_dashboard::tui::render(state));
 
     run_event_loop(state, db, server);
     return 0;
 }
+// NOLINTEND(cppcoreguidelines-pro-type-vararg,concurrency-mt-unsafe)

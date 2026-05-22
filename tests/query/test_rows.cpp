@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)
 
 import storm;
 import <string>;
@@ -137,8 +137,9 @@ TYPED_TEST(RowsTest, EarlyBreak) {
     int                         count = 0;
     for (auto&& result : qs.rows()) {
         ASSERT_TRUE(result.has_value());
-        if (++count == 3)
+        if (++count == 3) {
             break;
+        }
     }
     EXPECT_EQ(count, 3);
 
@@ -198,6 +199,7 @@ TYPED_TEST(RowsTest, RepeatedCallsSameWhere) {
     EXPECT_GT(count1, 0);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(RowsTest, DifferentQueries) {
     QuerySet<Person, TypeParam> qs1;
     QuerySet<Person, TypeParam> qs2;
@@ -246,14 +248,15 @@ template <typename ConnType> class RowsJoinTest : public StormTestFixture<Messag
         ASSERT_TRUE(people_result.has_value());
         std::array<int, 4> sender_ids{};
         for (const auto& p : people_result.value()) {
-            if (p.name == "Alice")
+            if (p.name == "Alice") {
                 sender_ids[0] = p.id;
-            else if (p.name == "Bob")
+            } else if (p.name == "Bob") {
                 sender_ids[1] = p.id;
-            else if (p.name == "Charlie")
+            } else if (p.name == "Charlie") {
                 sender_ids[2] = p.id;
-            else if (p.name == "Diana")
+            } else if (p.name == "Diana") {
                 sender_ids[3] = p.id;
+            }
         }
         std::vector<Message> const msgs = {
                 {.content = "Hello", .value = 10, .sender = {.id = sender_ids[0]}},
@@ -341,4 +344,4 @@ TYPED_TEST(RowsTest, ViewsFilterWhereTransformCollect) {
     EXPECT_LE(ages.size(), 25);
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)

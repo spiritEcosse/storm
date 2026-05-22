@@ -56,15 +56,19 @@ namespace storm::benchmark {
 
     auto initialize_db() -> bool {
         auto open = QuerySet<Person>::set_default_connection(":memory:");
-        if (!open.has_value())
+        if (!open.has_value()) {
             return false;
+        }
         const auto& conn = QuerySet<Person>::get_default_connection();
-        if (!storm::orm::schema::SchemaStatement<Person>::create_table_if_not_exists(conn).has_value())
+        if (!storm::orm::schema::SchemaStatement<Person>::create_table_if_not_exists(conn).has_value()) {
             return false;
-        if (!storm::orm::schema::SchemaStatement<User>::create_table_if_not_exists(conn).has_value())
+        }
+        if (!storm::orm::schema::SchemaStatement<User>::create_table_if_not_exists(conn).has_value()) {
             return false;
-        if (!storm::orm::schema::SchemaStatement<FKMessage>::create_table_if_not_exists(conn).has_value())
+        }
+        if (!storm::orm::schema::SchemaStatement<FKMessage>::create_table_if_not_exists(conn).has_value()) {
             return false;
+        }
         return true;
     }
 
@@ -78,10 +82,11 @@ namespace {
     using storm::benchmark::RegisteredBenchmark;
 
     consteval auto is_crud(BenchmarkTest const& t) -> bool {
-        constexpr std::string_view crud[] = {"insert", "insert_no_return", "update_pk", "delete_pk"};
-        for (auto op : crud) {
-            if (t.operation.view() == op)
+        constexpr std::array<std::string_view, 4> crud = {"insert", "insert_no_return", "update_pk", "delete_pk"};
+        for (auto op : crud) { // NOLINT(readability-use-anyofallof)
+            if (t.operation.view() == op) {
                 return true;
+            }
         }
         return false;
     }
@@ -111,13 +116,16 @@ namespace {
     // Returns a runtime span pointing into the inline-constexpr arrays in
     // storm_benchmark_sizes (program-lifetime storage).
     inline auto args_for(BenchmarkTest const& t) -> std::span<const int> {
-        std::string_view sp = t.size_profile.view();
-        if (sp == "batch_standard")
+        const std::string_view sp = t.size_profile.view();
+        if (sp == "batch_standard") {
             return {storm::benchmark::sizes::BATCH_STANDARD};
-        if (sp == "batch_insert_edge")
+        }
+        if (sp == "batch_insert_edge") {
             return {storm::benchmark::sizes::BATCH_INSERT_EDGE};
-        if (sp == "batch_update_edge")
+        }
+        if (sp == "batch_update_edge") {
             return {storm::benchmark::sizes::BATCH_UPDATE_EDGE};
+        }
         return {};
     }
 
@@ -152,8 +160,9 @@ namespace {
         );
         std::vector<int64_t> args_vec;
         args_vec.reserve(args.size());
-        for (auto n : args)
+        for (auto n : args) {
             args_vec.push_back(n);
+        }
 
         storm::benchmark::registered_benchmarks().push_back(
                 RegisteredBenchmark{

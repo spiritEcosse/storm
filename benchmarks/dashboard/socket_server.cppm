@@ -26,6 +26,7 @@ module;
 
 export module storm.bench_dashboard.socket_server;
 
+// NOLINTBEGIN(cppcoreguidelines-pro-type-vararg,concurrency-mt-unsafe)
 export namespace bench_dashboard {
 
     // RAII wrapper around an AF_UNIX SOCK_DGRAM listener. The socket file is
@@ -62,12 +63,14 @@ export namespace bench_dashboard {
         // (stale socket recovery; the dashboard owns the file on this run).
         auto open(std::string_view path) -> std::string {
             shutdown();
-            if (path.size() >= sizeof(sockaddr_un{}.sun_path))
+            if (path.size() >= sizeof(sockaddr_un{}.sun_path)) {
                 return "socket path too long";
+            }
 
             fd_ = ::socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-            if (fd_ < 0)
-                return std::string{"socket(): "} + std::strerror(errno);
+            if (fd_ < 0) {
+                return std::string{"socket(): "} + std::strerror(errno); // NOLINT(concurrency-mt-unsafe)
+            }
 
             ::unlink(std::string{path}.c_str()); // best-effort stale cleanup
 
@@ -81,7 +84,8 @@ export namespace bench_dashboard {
             // and trips lints elsewhere.
             const auto addr_len = static_cast<socklen_t>(offsetof(sockaddr_un, sun_path) + path.size() + 1);
             if (::bind(fd_, reinterpret_cast<sockaddr const*>(&addr), addr_len) != 0) {
-                std::string err = std::string{"bind("} + std::string{path} + "): " + std::strerror(errno);
+                std::string err = std::string{"bind("} + std::string{path} +
+                                  "): " + std::strerror(errno); // NOLINT(concurrency-mt-unsafe)
                 ::close(fd_);
                 fd_ = -1;
                 return err;
@@ -95,7 +99,12 @@ export namespace bench_dashboard {
                 // Non-fatal: kernel default rcvbuf is enough for normal
                 // bench loads. Surface the error so a sandboxed env doesn't
                 // hide it silently.
-                std::fprintf(stderr, "storm_bench_dashboard: setsockopt(SO_RCVBUF) failed: %s\n", std::strerror(errno));
+                std::
+                        fprintf( // NOLINT(cppcoreguidelines-pro-type-vararg)
+                                stderr,
+                                "storm_bench_dashboard: setsockopt(SO_RCVBUF) failed: %s\n",
+                                std::strerror(errno) // NOLINT(concurrency-mt-unsafe)
+                        );
             }
 
             path_.assign(path);
@@ -105,9 +114,11 @@ export namespace bench_dashboard {
         // Block up to `timeout_ms` for a datagram (-1 = forever). Retries on
         // EINTR transparently — caller never sees a spurious wakeup. Returns
         // the payload on success, std::nullopt on timeout or socket error.
-        auto recv_one(int timeout_ms) -> std::optional<std::string> {
-            if (fd_ < 0)
+        auto recv_one(int timeout_ms) const -> std::optional<
+                std::string> { // NOLINT(readability-make-member-function-const) — reads from fd_ which is mutable state
+            if (fd_ < 0) {
                 return std::nullopt;
+            }
 
             for (;;) {
                 pollfd pfd{};
@@ -116,24 +127,30 @@ export namespace bench_dashboard {
 
                 const int prc = ::poll(&pfd, 1, timeout_ms);
                 if (prc < 0) {
-                    if (errno == EINTR)
+                    if (errno == EINTR) {
                         continue;
+                    }
                     return std::nullopt;
                 }
-                if (prc == 0)
+                if (prc == 0) {
                     return std::nullopt; // timeout
+                }
 
                 // 64 KiB — well above any realistic gbench result line.
                 std::string buf;
-                buf.resize(64 * 1024);
+                buf.resize(
+                        static_cast<std::size_t>(64) * 1024
+                ); // NOLINT(bugprone-implicit-widening-of-multiplication-result)
                 const ssize_t n = ::recv(fd_, buf.data(), buf.size(), 0);
                 if (n < 0) {
-                    if (errno == EINTR)
+                    if (errno == EINTR) {
                         continue;
+                    }
                     return std::nullopt;
                 }
-                if (n == 0)
+                if (n == 0) {
                     return std::nullopt;
+                }
                 buf.resize(static_cast<std::size_t>(n));
                 return buf;
             }
@@ -159,7 +176,8 @@ export namespace bench_dashboard {
 
       private:
         int         fd_{-1};
-        std::string path_{};
+        std::string path_; // NOLINT(readability-redundant-member-init) — explicit default is intentional style
     };
 
 } // namespace bench_dashboard
+// NOLINTEND(cppcoreguidelines-pro-type-vararg,concurrency-mt-unsafe)

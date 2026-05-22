@@ -81,10 +81,11 @@ TEST_F(ConnectionErrorTest, ConnectionNotOpenPrepare) {
     auto moved_conn = std::move(conn);
 
     // Original conn is now in moved-from state
-    EXPECT_FALSE(conn.is_open()) << "Moved-from connection should not be open";
+    EXPECT_FALSE(conn.is_open()) << "Moved-from connection should not be open"; // NOLINT(bugprone-use-after-move)
 
     // prepare() on closed connection should return error
-    auto prep_result = conn.prepare("SELECT 1");
+    auto prep_result =
+            conn.prepare("SELECT 1"); // NOLINT(bugprone-use-after-move) -- intentional: testing moved-from behavior
     ASSERT_FALSE(prep_result.has_value()) << "prepare() on closed connection should fail";
     EXPECT_EQ(prep_result.error().code(), SQLITE_MISUSE);
 }
@@ -97,7 +98,7 @@ TEST_F(ConnectionErrorTest, ConnectionNotOpenPrepareCached) {
     auto moved_conn = std::move(conn);
 
     // prepare_cached() on closed connection should return error
-    auto prep_result = conn.prepare_cached("SELECT 1");
+    auto prep_result = conn.prepare_cached("SELECT 1"); // NOLINT(bugprone-use-after-move)
     ASSERT_FALSE(prep_result.has_value()) << "prepare_cached() on closed connection should fail";
     EXPECT_EQ(prep_result.error().code(), SQLITE_MISUSE);
 }
@@ -110,7 +111,7 @@ TEST_F(ConnectionErrorTest, ConnectionNotOpenExecute) {
     auto moved_conn = std::move(conn);
 
     // execute() on closed connection should return error
-    auto exec_result = conn.execute("SELECT 1");
+    auto exec_result = conn.execute("SELECT 1"); // NOLINT(bugprone-use-after-move)
     ASSERT_FALSE(exec_result.has_value()) << "execute() on closed connection should fail";
     EXPECT_EQ(exec_result.error().code(), SQLITE_MISUSE);
 }
@@ -686,6 +687,7 @@ TEST_F(EdgeCaseTest, EmptyBlobBinding) {
     EXPECT_TRUE(exec_result.has_value()) << "Empty blob binding should succeed";
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(EdgeCaseTest, MultipleResetAndExecute) {
     auto create_result = conn_.execute("CREATE TABLE multi_exec (id INTEGER PRIMARY KEY, value INTEGER)");
     ASSERT_TRUE(create_result.has_value());
@@ -1014,6 +1016,7 @@ TEST_F(ORMErrorTest, GroupByOnEmptyTable) {
     EXPECT_TRUE(result.value().empty());
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(ORMErrorTest, BatchUpdateWithConstraintViolation) {
     storm::QuerySet<UniqueTestPerson> qs;
 
@@ -1059,6 +1062,7 @@ TEST_F(ORMErrorTest, BatchRemoveFromEmptyTable) {
     ASSERT_TRUE(result.has_value()) << "Batch erase of non-existent should succeed";
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(ORMErrorTest, LargeBatchInsertThenRemove) {
     storm::QuerySet<Person> qs;
 
@@ -1116,9 +1120,9 @@ TEST_F(ORMErrorTest, InsertThenSelectWithOrderBy) {
     ASSERT_EQ(result.value().size(), 5);
 
     // Verify order
-    auto        it        = result.value().begin();
-    int         prev_age  = 0;
-    std::string prev_name = "";
+    auto        it       = result.value().begin();
+    int         prev_age = 0;
+    std::string prev_name;
     while (it != result.value().end()) {
         EXPECT_GE(it->age, prev_age) << "Results should be ordered by age";
         prev_age  = it->age;
@@ -1127,6 +1131,7 @@ TEST_F(ORMErrorTest, InsertThenSelectWithOrderBy) {
     }
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(ORMErrorTest, SelectWithLimitOffset) {
     storm::QuerySet<Person> qs;
 

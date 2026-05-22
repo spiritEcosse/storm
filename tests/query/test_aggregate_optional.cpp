@@ -128,6 +128,7 @@ TYPED_TEST(OptionalAggregateTest, GroupByWithAllNullValuesInGroupColumn) {
     EXPECT_EQ(count_val, 3) << "Expected count of 3 in NULL group";
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(OptionalAggregateTest, GroupByWithMixedNullAndNonNullValues) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
             {.name = "Alice", .salary = 50000.0, .score = 25},

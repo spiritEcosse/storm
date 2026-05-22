@@ -71,7 +71,7 @@ export namespace storm::benchmark {
             pos++;
         }
         while (pos < json.size() && json[pos] >= '0' && json[pos] <= '9') {
-            result = result * 10 + (json[pos] - '0');
+            result = result * 10 + (json[pos] - '0'); // NOLINT(readability-math-missing-parentheses)
             pos++;
         }
         return negative ? -result : result;
@@ -86,7 +86,7 @@ export namespace storm::benchmark {
             pos++;
         }
         while (pos < json.size() && json[pos] >= '0' && json[pos] <= '9') {
-            result = result * 10.0 + (json[pos] - '0');
+            result = result * 10.0 + (json[pos] - '0'); // NOLINT(readability-math-missing-parentheses)
             pos++;
         }
         if (pos < json.size() && json[pos] == '.') {
@@ -141,6 +141,7 @@ export namespace storm::benchmark {
     // ========================================================================
     // Value skipping (for unknown keys and recursive object/array skip)
     // ========================================================================
+    // NOLINTNEXTLINE(readability-function-cognitive-complexity)
     constexpr auto skip_value(std::string_view json, size_t& pos) -> void { // NOSONAR(cpp:S3776)
         skip_whitespace(json, pos);
         if (pos >= json.size()) {
@@ -162,9 +163,9 @@ export namespace storm::benchmark {
         }
 
         if (json[pos] == '{' || json[pos] == '[') {
-            char open  = json[pos];
-            char close = (open == '{') ? '}' : ']';
-            int  depth = 0;
+            const char open  = json[pos];
+            const char close = (open == '{') ? '}' : ']';
+            int        depth = 0;
             while (pos < json.size()) {
                 if (json[pos] == '"') {
                     pos++;
@@ -212,7 +213,7 @@ export namespace storm::benchmark {
             return tv;
         }
 
-        char c = json[pos];
+        const char c = json[pos];
 
         if (c == '"') {
             tv.kind      = TypedValue::Kind::String;
@@ -227,7 +228,7 @@ export namespace storm::benchmark {
         // Number — peek ahead for '.' to decide int vs double
         bool has_dot = false;
         for (size_t q = pos; q < json.size(); q++) {
-            char qc = json[q];
+            const char qc = json[q];
             if (qc == '.') {
                 has_dot = true;
                 break;
@@ -347,6 +348,7 @@ export namespace storm::benchmark {
     }
 
     // --- parse_where_into (conditions array + optional combine) ---
+    // NOLINTNEXTLINE(readability-function-cognitive-complexity)
     constexpr auto parse_where_into(WhereSpec& w, std::string_view json, size_t& pos) -> void {
         w.enabled = true;
         parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, size_t& p) {

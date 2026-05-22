@@ -20,7 +20,7 @@
 
 // NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR(cpp:S125)
 // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR(cpp:S125)
-// NOLINTBEGIN(readability-convert-member-functions-to-static,misc-const-correctness) // NOSONAR(cpp:S125)
+// NOLINTBEGIN(readability-convert-member-functions-to-static,misc-const-correctness,bugprone-unused-return-value,performance-inefficient-vector-operation) // NOSONAR(cpp:S125)
 
 #include "mock_sqlite3.h"
 
@@ -2979,6 +2979,6 @@ namespace {
 
 } // namespace
 
-// NOLINTEND(readability-convert-member-functions-to-static,misc-const-correctness) // NOSONAR(cpp:S125)
+// NOLINTEND(readability-convert-member-functions-to-static,misc-const-correctness,bugprone-unused-return-value,performance-inefficient-vector-operation) // NOSONAR(cpp:S125)
 // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR(cpp:S125)
 // NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR(cpp:S125)

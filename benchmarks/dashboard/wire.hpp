@@ -42,11 +42,11 @@ namespace bench_dashboard::wire {
     struct ResultMsg {
         MessageKind kind{MessageKind::Result};
 
-        std::string filter{};
+        std::string filter; // NOLINT(readability-redundant-member-init)
         bool        is_full_run{false};
 
-        std::string  test_name{};
-        std::string  category{};
+        std::string  test_name; // NOLINT(readability-redundant-member-init)
+        std::string  category;  // NOLINT(readability-redundant-member-init)
         std::int64_t dataset_size{0};
         std::string  row_kind{kRowKindMeasurement}; // Phase 7: "measurement" | "bigo" | "rms"
         double       real_ns{0.0};
@@ -55,19 +55,19 @@ namespace bench_dashboard::wire {
         double       items_per_second{0.0};
 
         // Phase 7: complexity fields (bigo/rms rows only).
-        std::string complexity_class{}; // "N", "NlgN", "N^2", ...
+        std::string complexity_class; // "N", "NlgN", "N^2", ... // NOLINT(readability-redundant-member-init)
         double      complexity_coef{0.0};
         double      rms_pct{0.0};
 
         // Set by the dashboard when a baseline run is active (Phase 6).
         // nullopt = no matching baseline row; baseline_looked_up distinguishes
         // "no baseline active" (false) from "active but no match" (true+nullopt).
-        std::optional<double> delta_pct{};
+        std::optional<double> delta_pct; // NOLINT(readability-redundant-member-init)
         bool                  baseline_looked_up{false};
 
         // Phase 7: baseline complexity data (set by dashboard when baseline is active).
         bool        shape_regression{false}; // complexity_class differs from baseline
-        std::string baseline_class{};        // baseline complexity_class
+        std::string baseline_class;          // baseline complexity_class // NOLINT(readability-redundant-member-init)
         double      baseline_coef{0.0};      // baseline complexity_coef
     };
 
@@ -76,11 +76,14 @@ namespace bench_dashboard::wire {
     // singleton — thread-safe per C++11 magic-statics, evaluated once.
     inline auto default_socket_path() -> std::string_view {
         static const std::string p = []() -> std::string {
-            if (const char* xdg = std::getenv("XDG_RUNTIME_DIR"); xdg != nullptr && *xdg != '\0')
+            if (const char* xdg = std::getenv("XDG_RUNTIME_DIR"); // NOLINT(concurrency-mt-unsafe)
+                xdg != nullptr && *xdg != '\0') {
                 return std::format("{}/storm-bench.sock", xdg);
-            const char* user = std::getenv("USER");
-            if (user == nullptr || *user == '\0')
+            }
+            const char* user = std::getenv("USER"); // NOLINT(concurrency-mt-unsafe)
+            if (user == nullptr || *user == '\0') {
                 user = "unknown";
+            }
             return std::format("/tmp/storm-bench-{}.sock", user);
         }();
         return p;
@@ -88,7 +91,7 @@ namespace bench_dashboard::wire {
 
     inline auto append_escaped(std::string& out, std::string_view s) -> void {
         out.reserve(out.size() + s.size() + 2);
-        for (char c : s) {
+        for (const char c : s) {
             if (c == '"' || c == '\\') {
                 out.push_back('\\');
                 out.push_back(c);
@@ -177,19 +180,22 @@ namespace bench_dashboard::wire {
         // `in_string` flag at the closing quote.
         inline auto step_in_string(std::string_view json, std::size_t i, bool& in_string) -> std::size_t {
             const char c = json[i];
-            if (c == '\\' && i + 1 < json.size())
+            if (c == '\\' && i + 1 < json.size()) {
                 return i + 2;
-            if (c == '"')
+            }
+            if (c == '"') {
                 in_string = false;
+            }
             return i + 1;
         }
 
         // Update bracket depth for `{` `[` `}` `]`. No-op for any other byte.
         inline auto update_depth(char c, int& depth) -> void {
-            if (c == '{' || c == '[')
+            if (c == '{' || c == '[') {
                 ++depth;
-            else if (c == '}' || c == ']')
+            } else if (c == '}' || c == ']') {
                 --depth;
+            }
         }
 
         // Walk top-level (depth-1) keys, tracking whether we're inside a
@@ -211,8 +217,9 @@ namespace bench_dashboard::wire {
                 }
                 const char c = json[i];
                 if (c == '"') {
-                    if (depth == 1 && matches_key(json, i, key))
+                    if (depth == 1 && matches_key(json, i, key)) {
                         return i + 1 + key.size() + 2; // position right after ':'
+                    }
                     in_string = true;
                     ++i;
                     continue;
@@ -228,24 +235,28 @@ namespace bench_dashboard::wire {
         // is rejected (returns false), matching the closed wire-format
         // contract documented at the top of this file.
         inline auto read_string(std::string_view json, std::size_t pos, std::string& out) -> bool {
-            if (pos >= json.size() || json[pos] != '"')
+            if (pos >= json.size() || json[pos] != '"') {
                 return false;
+            }
             ++pos;
             out.clear();
             while (pos < json.size()) {
                 const char c = json[pos];
                 if (c == '\\') {
-                    if (pos + 1 >= json.size())
+                    if (pos + 1 >= json.size()) {
                         return false;
+                    }
                     const char esc = json[pos + 1];
-                    if (esc != '\\' && esc != '"')
+                    if (esc != '\\' && esc != '"') {
                         return false;
+                    }
                     out.push_back(esc);
                     pos += 2;
                     continue;
                 }
-                if (c == '"')
+                if (c == '"') {
                     return true;
+                }
                 out.push_back(c);
                 ++pos;
             }
@@ -256,8 +267,9 @@ namespace bench_dashboard::wire {
             const std::size_t start = pos;
             while (pos < json.size()) {
                 const char c = json[pos];
-                if (c == ',' || c == '}' || c == ']' || c == ' ' || c == '\t' || c == '\n' || c == '\r')
+                if (c == ',' || c == '}' || c == ']' || c == ' ' || c == '\t' || c == '\n' || c == '\r') {
                     break;
+                }
                 ++pos;
             }
             return json.substr(start, pos - start);
@@ -268,8 +280,9 @@ namespace bench_dashboard::wire {
         // "empty span → fail; otherwise from_chars" pipeline.
         template <typename T> auto read_number(std::string_view json, std::size_t pos, T& out) -> bool {
             const auto v = read_number_view(json, pos);
-            if (v.empty())
+            if (v.empty()) {
                 return false;
+            }
             const auto r = std::from_chars(v.data(), v.data() + v.size(), out);
             return r.ec == std::errc{};
         }
@@ -301,16 +314,18 @@ namespace bench_dashboard::wire {
 
             template <typename T> auto read_field(std::string_view key, T& out) const -> void {
                 const auto p = find_top_level_key(json, key);
-                if (p == std::string_view::npos)
+                if (p == std::string_view::npos) {
                     return;
-                if constexpr (std::is_same_v<T, std::string>)
+                }
+                if constexpr (std::is_same_v<T, std::string>) {
                     read_string(json, p, out);
-                else if constexpr (std::is_same_v<T, double>)
+                } else if constexpr (std::is_same_v<T, double>) {
                     read_double(json, p, out);
-                else if constexpr (std::is_same_v<T, std::int64_t>)
+                } else if constexpr (std::is_same_v<T, std::int64_t>) {
                     read_int64(json, p, out);
-                else if constexpr (std::is_same_v<T, bool>)
+                } else if constexpr (std::is_same_v<T, bool>) {
                     read_bool(json, p, out);
+                }
             }
         };
 
@@ -322,8 +337,9 @@ namespace bench_dashboard::wire {
 
         if (const auto p = detail::find_top_level_key(json, "type"); p != std::string_view::npos) {
             std::string type_v;
-            if (!detail::read_string(json, p, type_v))
+            if (!detail::read_string(json, p, type_v)) {
                 return std::nullopt;
+            }
             if (type_v == "run_complete") {
                 m.kind = MessageKind::RunComplete;
                 return m;
@@ -342,8 +358,9 @@ namespace bench_dashboard::wire {
         rdr.read_field("category", m.category);
         rdr.read_field("dataset_size", m.dataset_size);
         rdr.read_field("row_kind", m.row_kind);
-        if (m.row_kind.empty())
+        if (m.row_kind.empty()) {
             m.row_kind = std::string{kRowKindMeasurement};
+        }
         rdr.read_field("real_ns", m.real_ns);
         rdr.read_field("cpu_ns", m.cpu_ns);
         rdr.read_field("iterations", m.iterations);

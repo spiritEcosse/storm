@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-use-anonymous-namespace)
 
 import storm;
 
@@ -207,7 +207,7 @@ TYPED_TEST(AggregateTest, HavingWithLike) {
                           .execute();
     ASSERT_TRUE(result.has_value()) << "HAVING LIKE failed: " << result.error().message();
     for (const auto& [name, count] : result.value()) {
-        EXPECT_TRUE(name.find("A") == 0) << "HAVING LIKE 'A%': unexpected name " << name;
+        EXPECT_TRUE(name.starts_with('A')) << "HAVING LIKE 'A%': unexpected name " << name;
     }
 }
 
@@ -450,4 +450,4 @@ TYPED_TEST(AggregateTest, HavingWithOffsetOnly) {
     ASSERT_TRUE(result.has_value()) << "HAVING + OFFSET failed: " << result.error().message();
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-use-anonymous-namespace)

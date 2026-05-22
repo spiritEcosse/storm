@@ -30,6 +30,7 @@ template <typename ConnType> class QuerySetCrudLifecycleTest : public StormTestF
         return qs.select().execute();
     }
 
+    // NOLINTNEXTLINE(readability-function-cognitive-complexity)
     static auto verifyFullPersonInserted(const Person& row) -> void {
         EXPECT_EQ(row.name, "FullPerson");
         EXPECT_EQ(row.age, 42);
@@ -43,6 +44,7 @@ template <typename ConnType> class QuerySetCrudLifecycleTest : public StormTestF
         EXPECT_EQ(row.avatar, (std::vector<uint8_t>{0x01, 0x02, 0x03}));
     }
 
+    // NOLINTNEXTLINE(readability-function-cognitive-complexity)
     static auto verifyFullPersonUpdated(const Person& row) -> void {
         EXPECT_EQ(row.age, 43);
         EXPECT_DOUBLE_EQ(row.salary, 12345.67);
@@ -88,8 +90,8 @@ TYPED_TEST(QuerySetCrudLifecycleTest, FullLifecycle) {
     EXPECT_EQ(static_cast<int>(all.value().size()), 3) << "Select should return 3 rows";
 
     // 4. Update data
-    Person updated_alice{.id = static_cast<int>(id_alice.value()), .name = "Alice Updated", .age = 31};
-    auto   update_result = qs.update(updated_alice).execute();
+    const Person updated_alice{.id = static_cast<int>(id_alice.value()), .name = "Alice Updated", .age = 31};
+    auto         update_result = qs.update(updated_alice).execute();
     ASSERT_TRUE(update_result.has_value()) << "Update should succeed";
 
     auto alice_result = qs.where(field<^^Person::id>() == static_cast<int>(id_alice.value())).select().execute();
@@ -115,6 +117,7 @@ TYPED_TEST(QuerySetCrudLifecycleTest, FullLifecycle) {
     EXPECT_TRUE(final_select.value().empty()) << "Select should return empty result after all erases";
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(QuerySetCrudLifecycleTest, BatchLifecycle) {
     storm::QuerySet<Person, TypeParam> qs;
 
@@ -173,11 +176,11 @@ TYPED_TEST(QuerySetCrudLifecycleTest, AllFieldTypesLifecycle) {
     // 2. Verify all fields round-trip correctly
     auto rows = qs.where(field<^^Person::id>() == static_cast<int>(id.value())).select().execute();
     ASSERT_TRUE(rows.has_value());
-    ASSERT_EQ(rows.value().size(), 1u);
+    ASSERT_EQ(rows.value().size(), 1U);
     this->verifyFullPersonInserted(*rows.value().begin());
 
     // 3. Update all fields
-    Person updated{
+    const Person updated{
             .id         = static_cast<int>(id.value()),
             .name       = "FullPerson",
             .age        = 43,
@@ -192,7 +195,7 @@ TYPED_TEST(QuerySetCrudLifecycleTest, AllFieldTypesLifecycle) {
 
     auto updated_rows = qs.where(field<^^Person::id>() == static_cast<int>(id.value())).select().execute();
     ASSERT_TRUE(updated_rows.has_value());
-    ASSERT_EQ(updated_rows.value().size(), 1u);
+    ASSERT_EQ(updated_rows.value().size(), 1U);
     this->verifyFullPersonUpdated(*updated_rows.value().begin());
 
     // 4. Erase and verify gone
@@ -201,6 +204,7 @@ TYPED_TEST(QuerySetCrudLifecycleTest, AllFieldTypesLifecycle) {
 }
 
 // Batch at the 999-param SQLite boundary: Person has 9 fields → floor(999/9) = 111 rows per chunk
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(QuerySetCrudLifecycleTest, BoundaryBatchLifecycle) {
     storm::QuerySet<Person, TypeParam> qs;
 
@@ -234,6 +238,7 @@ TYPED_TEST(QuerySetCrudLifecycleTest, BoundaryBatchLifecycle) {
 }
 
 // Insert, selectively update and erase via WHERE, verify unaffected rows unchanged
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(QuerySetCrudLifecycleTest, FilteredLifecycle) {
     using namespace storm::orm::where;
     storm::QuerySet<Person, TypeParam> qs;
@@ -257,7 +262,7 @@ TYPED_TEST(QuerySetCrudLifecycleTest, FilteredLifecycle) {
     auto young = qs.where(field<^^Person::age>() < 21).select().execute();
     ASSERT_TRUE(young.has_value());
     std::vector<Person> young_vec(young.value().begin(), young.value().end());
-    ASSERT_EQ(young_vec.size(), 2u) << "Bob and Dave should be under 21";
+    ASSERT_EQ(young_vec.size(), 2U) << "Bob and Dave should be under 21";
     ASSERT_TRUE(qs.erase(std::span<const Person>(young_vec)).execute().has_value());
     EXPECT_EQ(this->countPersons(), 2) << "Alice and Charlie should remain";
 

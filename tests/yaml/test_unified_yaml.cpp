@@ -21,8 +21,7 @@ using namespace storm;
 
 inline constexpr auto UNIFIED_TESTS = storm::test::load_unified_tests();
 
-using storm::test::MESSAGES_8;
-using storm::test::PEOPLE_25;
+using storm::test::PEOPLE_25; // NOLINT(misc-unused-using-decls) - used in seed helpers via #include
 
 // Fixture for unified YAML tests
 template <typename ConnType>
@@ -54,19 +53,20 @@ class storm::test::YamlTestInstance<I, UnifiedYamlTest<ConnType>, ConnType> : pu
         storm::QuerySet<Person, ConnType> pqs;
         auto                              people_result = pqs.template order_by<^^Person::name>().select().execute();
         ASSERT_TRUE(people_result.has_value()) << people_result.error().message();
-        ASSERT_EQ(people_result.value().size(), 25u);
+        ASSERT_EQ(people_result.value().size(), 25U);
         std::array<int, 4> sender_ids{};
         for (const auto& p : people_result.value()) {
-            if (p.name == "Alice")
+            if (p.name == "Alice") {
                 sender_ids[0] = p.id;
-            else if (p.name == "Bob")
+            } else if (p.name == "Bob") {
                 sender_ids[1] = p.id;
-            else if (p.name == "Charlie")
+            } else if (p.name == "Charlie") {
                 sender_ids[2] = p.id;
-            else if (p.name == "Diana")
+            } else if (p.name == "Diana") {
                 sender_ids[3] = p.id;
+            }
         }
-        std::vector<Message> msgs = {
+        const std::vector<Message> msgs = {
                 {.content = "Hello", .value = 10, .sender = {.id = sender_ids[0]}},
                 {.content = "World", .value = 20, .sender = {.id = sender_ids[0]}},
                 {.content = "Hi there", .value = 30, .sender = {.id = sender_ids[0]}},
@@ -89,8 +89,9 @@ class storm::test::YamlTestInstance<I, UnifiedYamlTest<ConnType>, ConnType> : pu
         } else if constexpr (tc.bench.dataset_size > 0 && tc.dataset.empty()) {
             std::vector<Person> seed;
             seed.reserve(static_cast<size_t>(tc.bench.dataset_size));
-            for (int i = 1; i <= tc.bench.dataset_size; ++i)
+            for (int i = 1; i <= tc.bench.dataset_size; ++i) {
                 seed.emplace_back(Person{.id = 0, .name = std::format("P{}", i), .age = 20 + i});
+            }
             ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(seed)));
         }
     }
@@ -170,12 +171,13 @@ class storm::test::YamlTestInstance<I, UnifiedYamlTest<ConnType>, ConnType> : pu
     }
 
     auto dispatch_grouped_family() -> void {
-        if constexpr (tc.query_type == "chain")
+        if constexpr (tc.query_type == "chain") {
             dispatch_chain();
-        else if constexpr (tc.query_type == "distinct")
+        } else if constexpr (tc.query_type == "distinct") {
             dispatch_distinct();
-        else
+        } else {
             dispatch_group_by();
+        }
     }
 
     static consteval auto is_grouped_op() -> bool {
@@ -185,21 +187,23 @@ class storm::test::YamlTestInstance<I, UnifiedYamlTest<ConnType>, ConnType> : pu
     }
 
     auto dispatch_select_family() -> void {
-        if constexpr (tc.query_type == "select" || tc.query_type == "first" || tc.query_type == "one")
+        if constexpr (tc.query_type == "select" || tc.query_type == "first" || tc.query_type == "one") {
             dispatch_select();
-        else if constexpr (is_grouped_op())
+        } else if constexpr (is_grouped_op()) {
             dispatch_grouped_family();
-        else
+        } else {
             dispatch_aggregate();
+        }
     }
 
     auto dispatch_write_family() -> void {
-        if constexpr (tc.query_type == "insert_one" || tc.query_type == "insert_batch")
+        if constexpr (tc.query_type == "insert_one" || tc.query_type == "insert_batch") {
             dispatch_insert();
-        else if constexpr (tc.query_type == "update_batch")
+        } else if constexpr (tc.query_type == "update_batch") {
             dispatch_update();
-        else if constexpr (tc.query_type == "erase_all" || tc.query_type == "erase_batch")
+        } else if constexpr (tc.query_type == "erase_all" || tc.query_type == "erase_batch") {
             dispatch_erase();
+        }
     }
 
     static consteval auto is_write_op() -> bool {
@@ -211,10 +215,11 @@ class storm::test::YamlTestInstance<I, UnifiedYamlTest<ConnType>, ConnType> : pu
     void TestBody() override {
         reset_tables();
         seed_dataset();
-        if constexpr (is_write_op())
+        if constexpr (is_write_op()) {
             dispatch_write_family();
-        else
+        } else {
             dispatch_select_family();
+        }
     }
 };
 

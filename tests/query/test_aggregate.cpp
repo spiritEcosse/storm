@@ -80,7 +80,7 @@ TYPED_TEST(AggregateTest, SingleAggregates_WithWhereAndJoin) {
     ASSERT_TRUE(sum_result.has_value()) << "SUM with WHERE+JOIN failed: " << sum_result.error().message();
     EXPECT_EQ(sum_result.value(), 180);
 
-    this->msg_qs->reset();
+    (*this->msg_qs).reset();
 
     auto count_result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() > 25)
                                 .template join<&Message::sender>()
@@ -89,7 +89,7 @@ TYPED_TEST(AggregateTest, SingleAggregates_WithWhereAndJoin) {
     ASSERT_TRUE(count_result.has_value()) << "COUNT with WHERE+JOIN failed: " << count_result.error().message();
     EXPECT_EQ(count_result.value(), 4);
 
-    this->msg_qs->reset();
+    (*this->msg_qs).reset();
 
     auto min_result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() > 25)
                               .template join<&Message::sender>()

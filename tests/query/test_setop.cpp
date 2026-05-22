@@ -2,7 +2,7 @@
 #include "test_db_helpers.h"
 #include "plf_hive/plf_hive.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)
 
 import storm;
 import <string>;
@@ -798,4 +798,4 @@ static_assert(CanExcept<NormalQS, NormalQS>);
 static_assert(CanIntersect<NormalQS, NormalQS>);
 static_assert(CanCaptureOperand<NormalQS>);
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)

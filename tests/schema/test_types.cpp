@@ -3,7 +3,7 @@
 
 #include <numbers>
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)
 
 import storm;
 import <string>;
@@ -1536,6 +1536,7 @@ TYPED_TEST(UUIDTypesTest, GeneratedUUIDRoundTrip) {
     EXPECT_EQ(selected.value().begin()->uuid_field.value, generated.value);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(UUIDTypesTest, BatchEmptyUUIDsAutoGenerate) {
     QuerySet<ExtendedTypes, TypeParam> qs;
     std::vector<ExtendedTypes>         batch = {
@@ -1819,4 +1820,5 @@ TEST(PgDialectTypesSchemaTest, OptionalSpecialTypesSqliteUnchanged) {
     EXPECT_NE(sql.find("opt_bool INTEGER"), std::string::npos) << "SQLite should use INTEGER for opt bool: " << sql;
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
+// NOLINTEND(readability-identifier-length,readability-uppercase-literal-suffix,modernize-use-std-numbers)
+// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)
