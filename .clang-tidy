@@ -9,7 +9,7 @@
 # - Keep checks that catch real bugs
 # - Exclude stylistic checks that are subjective or would require massive refactoring
 # - Exclude checks that crash on C++26 modules (bugprone-argument-comment)
-# - Exclude false positives in tests (bugprone-unchecked-optional-access doesn't understand ASSERT_TRUE)
+# - Exclude false positives in tests: see tests/.clang-tidy (bugprone-unchecked-optional-access)
 #
 # C++26 False Positive Exclusions:
 # - cppcoreguidelines-pro-type-member-init: too many false positives in test files
@@ -51,7 +51,6 @@ Checks: >
   -bugprone-argument-comment,
   -bugprone-easily-swappable-parameters,
   -bugprone-exception-escape,
-  -bugprone-unchecked-optional-access,
   cert-*,
   -cert-err33-c,
   -cert-err58-cpp,

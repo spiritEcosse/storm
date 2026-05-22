@@ -9,8 +9,11 @@
 # - readability-function-cognitive-complexity: large test bodies are intentional coverage.
 # - readability-redundant-member-init: explicit {} init on std::string/optional is intentional style.
 # - cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers: test data uses literals.
+# - bugprone-unchecked-optional-access: ASSERT_TRUE guards optional access but clang-tidy
+#   cannot see through GTest macros — false positives on valid checked access patterns.
 InheritParentConfig: true
 Checks: >
+  -bugprone-unchecked-optional-access,
   -cppcoreguidelines-avoid-magic-numbers,
   -readability-magic-numbers,
   -misc-use-internal-linkage,
