@@ -2,8 +2,6 @@
 #include "test_db_helpers.h"
 #include <sqlite3.h>
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
-
 import storm;
 import <expected>;
 import <string>;
@@ -30,7 +28,6 @@ template <typename ConnType> class QuerySetCrudLifecycleTest : public StormTestF
         return qs.select().execute();
     }
 
-    // NOLINTNEXTLINE(readability-function-cognitive-complexity)
     static auto verifyFullPersonInserted(const Person& row) -> void {
         EXPECT_EQ(row.name, "FullPerson");
         EXPECT_EQ(row.age, 42);
@@ -44,7 +41,6 @@ template <typename ConnType> class QuerySetCrudLifecycleTest : public StormTestF
         EXPECT_EQ(row.avatar, (std::vector<uint8_t>{0x01, 0x02, 0x03}));
     }
 
-    // NOLINTNEXTLINE(readability-function-cognitive-complexity)
     static auto verifyFullPersonUpdated(const Person& row) -> void {
         EXPECT_EQ(row.age, 43);
         EXPECT_DOUBLE_EQ(row.salary, 12345.67);
@@ -117,7 +113,6 @@ TYPED_TEST(QuerySetCrudLifecycleTest, FullLifecycle) {
     EXPECT_TRUE(final_select.value().empty()) << "Select should return empty result after all erases";
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(QuerySetCrudLifecycleTest, BatchLifecycle) {
     storm::QuerySet<Person, TypeParam> qs;
 
@@ -204,7 +199,6 @@ TYPED_TEST(QuerySetCrudLifecycleTest, AllFieldTypesLifecycle) {
 }
 
 // Batch at the 999-param SQLite boundary: Person has 9 fields → floor(999/9) = 111 rows per chunk
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(QuerySetCrudLifecycleTest, BoundaryBatchLifecycle) {
     storm::QuerySet<Person, TypeParam> qs;
 
@@ -238,7 +232,6 @@ TYPED_TEST(QuerySetCrudLifecycleTest, BoundaryBatchLifecycle) {
 }
 
 // Insert, selectively update and erase via WHERE, verify unaffected rows unchanged
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(QuerySetCrudLifecycleTest, FilteredLifecycle) {
     using namespace storm::orm::where;
     storm::QuerySet<Person, TypeParam> qs;
@@ -278,5 +271,3 @@ TYPED_TEST(QuerySetCrudLifecycleTest, FilteredLifecycle) {
     ASSERT_TRUE(qs.erase(std::span<const Person>(rem_vec)).execute().has_value());
     EXPECT_EQ(this->countPersons(), 0);
 }
-
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

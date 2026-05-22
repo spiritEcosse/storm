@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,readability-function-cognitive-complexity)
+// NOLINTBEGIN(misc-const-correctness)
 
 import storm;
 import <string>;
@@ -321,7 +321,6 @@ TYPED_TEST(FKFieldTest, DeleteWithFKField) {
 }
 
 // Test: Multiple FK fields to same type
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(FKFieldTest, MultipleFKFieldsToSameType) {
     QuerySet<Person, TypeParam> user_qs;
     QuerySet<Task, TypeParam>   conv_qs;
@@ -553,7 +552,6 @@ TYPED_TEST(FKFieldTest, LeftJoinMultipleFKFields) {
 
 // Test: RIGHT JOIN behavior
 // Note: RIGHT JOIN is less commonly used but should work symmetrically to LEFT JOIN
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(FKFieldTest, RightJoinBehavior) {
     QuerySet<Person, TypeParam> user_qs;
     QuerySet<Task, TypeParam>   message_qs;
@@ -596,7 +594,7 @@ TYPED_TEST(FKFieldTest, RightJoinBehavior) {
     EXPECT_GE(messages.size(), 1) << "RIGHT JOIN should return at least existing tasks";
 
     // Find the task we inserted
-    bool found = false; // NOLINT(misc-const-correctness) - modified in loop
+    bool found = false;
     for (const auto& m : messages) {
         if (m.description == "Task to Bob") {
             found = true;
@@ -609,7 +607,6 @@ TYPED_TEST(FKFieldTest, RightJoinBehavior) {
 }
 
 // Test: RIGHT JOIN with multiple FK fields
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(FKFieldTest, RightJoinMultipleFKFields) {
     QuerySet<Person, TypeParam> user_qs;
     QuerySet<Task, TypeParam>   message_qs;
@@ -642,7 +639,7 @@ TYPED_TEST(FKFieldTest, RightJoinMultipleFKFields) {
     EXPECT_GE(messages.size(), 1) << "RIGHT JOIN should return at least the inserted task";
 
     // Find and verify our task
-    bool found = false; // NOLINT(misc-const-correctness) - modified in loop
+    bool found = false;
     for (const auto& m : messages) {
         if (m.description == "Hello with RIGHT JOIN") {
             found = true;
@@ -750,7 +747,6 @@ TYPED_TEST(NullableFKTest, LeftJoinWithNullFKField) {
 }
 
 // Test: LEFT JOIN with mix of NULL and valid FKs
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     QuerySet<Person, TypeParam>            user_qs;
     QuerySet<NullableFKMessage, TypeParam> message_qs;
@@ -780,8 +776,8 @@ TYPED_TEST(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     const auto& messages = join_result.value();
     ASSERT_EQ(messages.size(), 2) << "LEFT JOIN should return all messages";
 
-    bool found_alice = false; // NOLINT(misc-const-correctness)
-    bool found_null  = false; // NOLINT(misc-const-correctness)
+    bool found_alice = false;
+    bool found_null  = false;
     for (const auto& m : messages) {
         if (m.text == "From Alice") {
             found_alice = true;
@@ -804,7 +800,6 @@ template <typename ConnType> class ExtendedTypesJoinTest : public StormTestFixtu
 TYPED_TEST_SUITE(ExtendedTypesJoinTest, DatabaseTypes);
 
 // Test: JOIN with extended types (double, bool, optional)
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
     QuerySet<Person, TypeParam>  employee_qs;
     QuerySet<Project, TypeParam> project_qs;
@@ -860,8 +855,8 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
     ASSERT_EQ(projects.size(), 2) << "Should retrieve both projects";
 
     // Find Alice's project and verify all extended types
-    bool found_alice_project = false; // NOLINT(misc-const-correctness) - modified in loop
-    bool found_bob_project   = false; // NOLINT(misc-const-correctness) - modified in loop
+    bool found_alice_project = false;
+    bool found_bob_project   = false;
 
     for (const auto& proj : projects) {
         if (proj.title == "Web Redesign") {
@@ -909,7 +904,6 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
 }
 
 // Test: Multi-JOIN with extended types
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
     QuerySet<Person, TypeParam> employee_qs;
     QuerySet<Task, TypeParam>   task_qs;
@@ -980,7 +974,6 @@ TYPED_TEST(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
 }
 
 // Test: JOIN with float and long long types (coverage for extract_typed_field)
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
     QuerySet<Measurement, TypeParam> measurement_qs;
     QuerySet<Reading, TypeParam>     reading_qs;
@@ -1045,7 +1038,6 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
 }
 
 // Test: JOIN with long type (tests separate code path from int64_t)
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(ExtendedTypesJoinTest, JoinWithLongType) {
     QuerySet<Counter, TypeParam> counter_qs;
     QuerySet<Summary, TypeParam> summary_qs;
@@ -1242,4 +1234,4 @@ TYPED_TEST(JoinTypeExtractionTest, JoinWithOrderBy) {
     }
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,readability-function-cognitive-complexity)
+// NOLINTEND(misc-const-correctness)

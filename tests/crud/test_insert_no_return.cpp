@@ -2,8 +2,6 @@
 #include "test_db_helpers.h"
 #include <sqlite3.h>
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
-
 import storm;
 import <expected>;
 import <string>;
@@ -148,5 +146,3 @@ TYPED_TEST(InsertNoReturnTest, MixedInsertModes) {
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 2);
 }
-
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

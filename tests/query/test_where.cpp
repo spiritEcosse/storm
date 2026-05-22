@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,performance-unnecessary-value-param,performance-unnecessary-copy-initialization)
+// NOLINTBEGIN(misc-const-correctness,performance-unnecessary-value-param,performance-unnecessary-copy-initialization)
 
 import storm;
 import <string>;
@@ -87,7 +87,6 @@ TYPED_TEST(WhereTest, WhereReturnsCopyReusable) {
 // Test fixture for WHERE + JOIN operations — templated on database backend
 template <typename ConnType> class WhereJoinTest : public StormTestFixture<Message, ConnType, Person> {
   protected:
-    // NOLINTNEXTLINE(readability-function-cognitive-complexity)
     auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
         // Insert users (use ID 0 to let AUTOINCREMENT generate IDs)
         QuerySet<Person, ConnType> user_qs;
@@ -585,4 +584,4 @@ TEST_F(WhereNullCollateTest, IsNull_Collated) {
     EXPECT_EQ(result.value().size(), expected_null_nicknames) << "Collated IS NULL should work same as plain IS NULL";
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,performance-unnecessary-value-param,performance-unnecessary-copy-initialization)
+// NOLINTEND(misc-const-correctness,performance-unnecessary-value-param,performance-unnecessary-copy-initialization)

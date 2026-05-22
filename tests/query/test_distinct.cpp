@@ -2,7 +2,7 @@
 #include "test_db_helpers.h"
 #include "plf_hive/plf_hive.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)
+// NOLINTBEGIN(misc-const-correctness)
 
 import storm;
 import <string>;
@@ -375,7 +375,6 @@ TYPED_TEST(DistinctTest, DistinctTwoFieldsWithSingleRow) {
 }
 // Test: Duplicate field specification (same field twice)
 // This should compile and work, but return redundant data
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(DistinctTest, DuplicateFieldSpecification) {
     QuerySet<Person, TypeParam> queryset;
 
@@ -1284,8 +1283,8 @@ TYPED_TEST(DistinctTest, DistinctOptionalIntFieldWithNulls) {
     EXPECT_EQ(ages.size(), 3) << "Expected 3 distinct ages (25, 30, NULL)";
 
     // Count NULLs and non-NULLs
-    int null_count     = 0; // NOLINT(misc-const-correctness) - modified in loop
-    int non_null_count = 0; // NOLINT(misc-const-correctness) - modified in loop
+    int null_count     = 0;
+    int non_null_count = 0;
     for (const auto& age : ages) {
         if (age.has_value()) {
             non_null_count++;
@@ -1299,7 +1298,6 @@ TYPED_TEST(DistinctTest, DistinctOptionalIntFieldWithNulls) {
 }
 
 // Test: DISTINCT on optional string field with NULLs
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(DistinctTest, DistinctOptionalStringFieldWithNulls) {
     QuerySet<Person, TypeParam> queryset;
 
@@ -1325,8 +1323,8 @@ TYPED_TEST(DistinctTest, DistinctOptionalStringFieldWithNulls) {
     EXPECT_EQ(nicknames.size(), 3) << "Expected 3 distinct nicknames (Ali, Evie, NULL)";
 
     // Count NULLs and non-NULLs, verify values
-    int                                null_count     = 0; // NOLINT(misc-const-correctness) - modified in loop
-    int                                non_null_count = 0; // NOLINT(misc-const-correctness) - modified in loop
+    int                                null_count     = 0;
+    int                                non_null_count = 0;
     std::set<std::string, std::less<>> seen_values;
     for (const auto& nickname : nicknames) {
         if (nickname.has_value()) {
@@ -1730,4 +1728,4 @@ TYPED_TEST(DistinctTest, SqlVerifyDistinctFullCombo) {
     );
 }
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness)
+// NOLINTEND(misc-const-correctness)

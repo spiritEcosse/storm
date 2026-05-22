@@ -1,8 +1,6 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
-
 import storm;
 
 import <expected>;
@@ -128,7 +126,6 @@ TYPED_TEST(OptionalAggregateTest, GroupByWithAllNullValuesInGroupColumn) {
     EXPECT_EQ(count_val, 3) << "Expected count of 3 in NULL group";
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(OptionalAggregateTest, GroupByWithMixedNullAndNonNullValues) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
             {.name = "Alice", .salary = 50000.0, .score = 25},
@@ -242,5 +239,3 @@ TYPED_TEST(AggregateTest, NegativeNumbersInWhere) {
     ASSERT_TRUE(sum_neg.has_value());
     EXPECT_EQ(sum_neg.value(), -15);
 }
-
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

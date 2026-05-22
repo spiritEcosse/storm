@@ -23,9 +23,8 @@
 // LINT-EXCLUDE-FILE: file-size, duplicate
 // Pre-existing structural debt — large mock-error test file with repeated TEST/setup
 // boilerplate across many error scenarios. Tracked under issue #264 Phase 1.
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR(cpp:S125)
 // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR(cpp:S125)
-// NOLINTBEGIN(readability-convert-member-functions-to-static,misc-const-correctness) // NOSONAR(cpp:S125)
+// NOLINTBEGIN(misc-const-correctness) // NOSONAR(cpp:S125)
 // NOLINTBEGIN(readability-identifier-length,bugprone-unused-return-value) // bind-result names r1..r6 + intentional (void)prepare_cached. Pre-existing; tracked under #262/#264.
 
 #include "mock_libpq.h"
@@ -1480,6 +1479,5 @@ namespace {
 } // namespace
 
 // NOLINTEND(readability-identifier-length,bugprone-unused-return-value) // bind-result names r1..r6 + intentional (void)prepare_cached. Pre-existing; tracked under #262/#264.
-// NOLINTEND(readability-convert-member-functions-to-static,misc-const-correctness) // NOSONAR(cpp:S125)
+// NOLINTEND(misc-const-correctness) // NOSONAR(cpp:S125)
 // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR(cpp:S125)
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR(cpp:S125)

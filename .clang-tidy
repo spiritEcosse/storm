@@ -17,6 +17,10 @@
 # Note: misc-const-correctness has targeted NOLINT in join.cppm (fold expression false positives)
 # Note: cppcoreguidelines-missing-std-forward has targeted NOLINT in where.cppm (std::forward in braced initializers)
 #
+# GTest / Test-file Exclusions: moved to tests/.clang-tidy (issue #314).
+# - google-explicit-constructor: Expr and UUID implicit conversions are intentional public API
+#   (src/orm/where.cppm, src/orm/utilities.cppm). Kept here because it suppresses src/ code.
+#
 # ORM-specific Exclusions (issue #262 — added after clang-p2996 rebuild surfaced 48 pre-existing warnings):
 # - cppcoreguidelines-avoid-const-or-ref-data-members: Storm's INSERT/UPDATE/ERASE statement classes
 #   return short-lived dispatcher functors (struct SingleQuery { Stmt& stmt; const T& obj; ...}) that
@@ -52,7 +56,8 @@ Checks: >
   performance-*,
   -performance-enum-size,
   readability-*,
-  -readability-magic-numbers
+  -readability-magic-numbers,
+  -google-explicit-constructor
 
 # Header filter - apply to project headers, exclude third_party
 HeaderFilterRegex: '^(?!.*third_party).*'

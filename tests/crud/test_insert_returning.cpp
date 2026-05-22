@@ -2,8 +2,6 @@
 #include "test_db_helpers.h"
 #include <sqlite3.h>
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
-
 import storm;
 import <expected>;
 import <string>;
@@ -51,7 +49,6 @@ TYPED_TEST(BatchInsertReturningTest, BasicBatchReturnsIds) {
 }
 
 // Verify returned IDs match actual inserted rows
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(BatchInsertReturningTest, ReturnedIdsMatchInsertedRows) {
     using ReturnId = storm::orm::statements::ReturnId;
     storm::QuerySet<SimpleRecord, TypeParam> qs;
@@ -234,7 +231,6 @@ template <typename ConnType> class ChunkedBatchInsertReturningTest : public Stor
 TYPED_TEST_SUITE(ChunkedBatchInsertReturningTest, DatabaseTypes);
 
 // Chunked batch via custom batch_size (forces chunking with small record counts — fast in coverage)
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(ChunkedBatchInsertReturningTest, ChunkedBatchReturnsAllIds) {
     using ReturnId = storm::orm::statements::ReturnId;
     storm::QuerySet<SimpleRecord, TypeParam> qs;
@@ -427,5 +423,3 @@ TYPED_TEST(BatchInsertReturningTest, ExplicitReturnIdNoBatchToSqlNoReturning) {
     EXPECT_TRUE(sql.value().contains("INSERT INTO"));
     EXPECT_FALSE(sql.value().contains("RETURNING")) << "ReturnId::No batch SQL should NOT contain RETURNING";
 }
-
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

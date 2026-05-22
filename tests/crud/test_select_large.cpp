@@ -1,8 +1,6 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
-
 import storm;
 import <string>;
 import <vector>;
@@ -20,7 +18,6 @@ TYPED_TEST_SUITE(SelectLargeTest, DatabaseTypes);
 
 // Test: SELECT with result set larger than initial capacity (10K)
 // This tests the exponential growth path
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(SelectLargeTest, SelectMoreThan10KRows) {
     QuerySet<SimpleRecord, TypeParam> queryset;
 
@@ -116,7 +113,6 @@ TYPED_TEST(SelectLargeTest, SelectSlightlyOver10KRows) {
 
 // Test: SELECT with very large result set (100K rows)
 // Tests multiple exponential growth cycles
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(SelectLargeTest, SelectVeryLargeDataset) {
     QuerySet<SimpleRecord, TypeParam> queryset;
 
@@ -156,5 +152,3 @@ TYPED_TEST(SelectLargeTest, SelectVeryLargeDataset) {
     auto last_it = std::ranges::next(retrieved.begin(), RECORD_COUNT - 1);
     EXPECT_EQ(last_it->value, RECORD_COUNT);
 }
-
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

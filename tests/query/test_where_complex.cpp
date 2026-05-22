@@ -1,8 +1,6 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
-
 import storm;
 import <expected>;
 
@@ -35,5 +33,3 @@ TYPED_TEST(ComplexWhereTest, NestedAndOr) {
     ASSERT_TRUE(result.has_value());
     EXPECT_GE(result.value().size(), 1);
 }
-
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

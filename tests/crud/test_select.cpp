@@ -1,8 +1,6 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
-
 import storm;
 import <string>;
 import <vector>;
@@ -105,7 +103,6 @@ TYPED_TEST(SelectTest, SelectDifferentFieldTypes) {
 }
 
 // Test: SELECT after INSERT and DELETE
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(SelectTest, SelectAfterInsertAndDelete) {
     QuerySet<Person, TypeParam> queryset;
 
@@ -149,7 +146,6 @@ TYPED_TEST(SelectTest, SelectAfterInsertAndDelete) {
 }
 
 // Test: SELECT with large dataset
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(SelectTest, SelectLargeDataset) {
     QuerySet<Person, TypeParam> queryset;
 
@@ -250,5 +246,3 @@ TYPED_TEST(SelectTest, SelectPreservesRowOrder) {
         EXPECT_EQ(it->age, static_cast<int>(i + 1)) << "Row order not preserved at index " << i;
     }
 }
-
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

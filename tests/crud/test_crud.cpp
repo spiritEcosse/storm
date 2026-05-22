@@ -2,8 +2,6 @@
 #include "test_db_helpers.h"
 #include <sqlite3.h>
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
-
 import storm;
 import <expected>;
 import <string>;
@@ -141,7 +139,6 @@ TYPED_TEST(QuerySetEraseTest, EraseBatchPerformance) {
 }
 
 // Test chunked erase (>799 rows to trigger execute_chunked path)
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(QuerySetEraseTest, EraseBatchChunked) {
     storm::QuerySet<Person, TypeParam> queryset;
 
@@ -179,7 +176,6 @@ TYPED_TEST(QuerySetEraseTest, EraseBatchChunked) {
 }
 
 // Test chunked erase with remainder (tests both full chunks and remainder processing)
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(QuerySetEraseTest, EraseBatchChunkedWithRemainder) {
     storm::QuerySet<Person, TypeParam> queryset;
 
@@ -284,7 +280,6 @@ TYPED_TEST(QuerySetUpdateTest, UpdateMultipleTimes) {
     EXPECT_EQ(check3->age, 33);
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(QuerySetUpdateTest, UpdateCachedStatementReuse) {
     storm::QuerySet<Person, TypeParam> queryset;
 
@@ -482,5 +477,3 @@ TYPED_TEST(QueryResetTest, AggregatesWithWhere) {
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), 442);
 }
-
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

@@ -1,8 +1,6 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
-
 import storm;
 import <string>;
 import <vector>;
@@ -109,5 +107,3 @@ TYPED_TEST(SelectOneTest, FirstWithWhereNoMatch) {
     ASSERT_TRUE(result.has_value()) << "first() should succeed even with no match";
     EXPECT_FALSE(result.value().has_value()) << "Expected nullopt when no rows match";
 }
-
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

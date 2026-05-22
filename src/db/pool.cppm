@@ -13,6 +13,7 @@ import <string_view>;
 import <string>;
 import <memory>;
 import <vector>;
+import <algorithm>;
 import <chrono>;
 
 export namespace storm::db {
@@ -99,20 +100,10 @@ export namespace storm::db {
             // Count entries matching a predicate. The available() / in_use()
             // counters used to repeat the lock + loop + count body verbatim;
             // they now differ only in which entries pass the predicate.
-            //
-            // NOLINTBEGIN(readability-use-anyofallof) — explicit loop to avoid
-            // `import <algorithm>`; clang-p2996 clang-scan-deps SIGSEGVs on atomic_ref.h
             template <typename Pred> [[nodiscard]] auto count_entries(Pred pred) const -> int {
                 std::lock_guard lock(mutex_);
-                int             count = 0;
-                for (const auto& entry : entries_) {
-                    if (pred(entry)) {
-                        ++count;
-                    }
-                }
-                return count;
+                return static_cast<int>(std::ranges::count_if(entries_, pred));
             }
-            // NOLINTEND(readability-use-anyofallof)
 
             [[nodiscard]] auto available() const -> int {
                 return count_entries([](const auto& entry) { return !entry.in_use; });
@@ -128,18 +119,9 @@ export namespace storm::db {
                 cv_.notify_all();
 
                 // Wait for all connections to be returned.
-                // NOLINTBEGIN(readability-use-anyofallof) — keep explicit loop to avoid
-                // `import <algorithm>`; clang-p2996 clang-scan-deps SIGSEGVs on atomic_ref.h
-                // via <algorithm> in ninja-release (issue #262).
                 cv_.wait(lock, [this] {
-                    for (const auto& entry : entries_) {
-                        if (entry.in_use) {
-                            return false;
-                        }
-                    }
-                    return true;
+                    return std::ranges::none_of(entries_, [](const auto& entry) { return entry.in_use; });
                 });
-                // NOLINTEND(readability-use-anyofallof)
 
                 entries_.clear();
             }

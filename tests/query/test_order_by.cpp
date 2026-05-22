@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,performance-unnecessary-copy-initialization)
+// NOLINTBEGIN(misc-const-correctness,performance-unnecessary-copy-initialization)
 
 import storm;
 import <string>;
@@ -197,7 +197,6 @@ TYPED_TEST(OrderByTest, BooleanField) {
     EXPECT_TRUE(std::ranges::next(people.begin(), 0)->is_active);
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(OrderByTest, ChainedWithMultipleClauses) {
     QuerySet<Person, TypeParam> qs;
 
@@ -544,4 +543,4 @@ TYPED_TEST(OrderByTest, EmptyResultWithMultipleOrderBy) {
 
 // EmptyTableOrderBy: migrated to unified_cases.yaml (order_by_empty_table)
 
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static,misc-const-correctness,performance-unnecessary-copy-initialization)
+// NOLINTEND(misc-const-correctness,performance-unnecessary-copy-initialization)

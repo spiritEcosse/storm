@@ -1,6 +1,21 @@
 # Clang-Tidy configuration for tests
-# Inherits from root but disables magic numbers check (test data is expected)
+# Inherits root config and adds GTest-specific relaxations (issue #314).
+#
+# GTest / Test-file Exclusions:
+# - misc-use-internal-linkage: GTest fixtures cannot be placed in anonymous namespaces.
+# - modernize-use-trailing-return-type: TEST_F macros are incompatible with trailing returns.
+# - readability-named-parameter: GTest test body parameters are intentionally unnamed.
+# - readability-convert-member-functions-to-static: GTest fixture methods cannot be static.
+# - readability-function-cognitive-complexity: large test bodies are intentional coverage.
+# - readability-redundant-member-init: explicit {} init on std::string/optional is intentional style.
+# - cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers: test data uses literals.
 InheritParentConfig: true
 Checks: >
   -cppcoreguidelines-avoid-magic-numbers,
-  -readability-magic-numbers
+  -readability-magic-numbers,
+  -misc-use-internal-linkage,
+  -modernize-use-trailing-return-type,
+  -readability-named-parameter,
+  -readability-convert-member-functions-to-static,
+  -readability-function-cognitive-complexity,
+  -readability-redundant-member-init

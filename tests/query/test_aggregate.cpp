@@ -1,8 +1,6 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)
-
 import storm;
 
 import <expected>;
@@ -200,7 +198,6 @@ TYPED_TEST(AggregateTest, StatementCaching_RepeatedQueries) {
     }
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(AggregateTest, StatementCaching_DifferentAggregates) {
     this->insert_test_data();
 
@@ -223,7 +220,6 @@ TYPED_TEST(AggregateTest, StatementCaching_DifferentAggregates) {
 // Integration with Other ORM Features
 // ============================================================================
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TYPED_TEST(AggregateTest, Integration_AfterInsert) {
     for (int i = 1; i <= 5; ++i) {
         auto insert_result = this->qs->insert(
@@ -341,5 +337,3 @@ TYPED_TEST(AggregateTest, WhereJoinRepeatedQueries) {
         EXPECT_EQ(result.value(), 4);
     }
 }
-
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter,readability-convert-member-functions-to-static)

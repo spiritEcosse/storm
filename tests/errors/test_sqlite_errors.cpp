@@ -7,10 +7,9 @@
 #include <numbers>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR
 // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR
 // NOLINTBEGIN(misc-const-correctness,misc-unused-alias-decls,modernize-use-std-numbers) // NOSONAR
-// NOLINTBEGIN(readability-convert-member-functions-to-static,readability-uppercase-literal-suffix) // NOSONAR
+// NOLINTBEGIN(readability-uppercase-literal-suffix) // NOSONAR
 // NOLINTBEGIN(readability-identifier-length,cppcoreguidelines-init-variables) // NOSONAR
 // NOLINTBEGIN(bugprone-implicit-widening-of-multiplication-result) // NOSONAR
 
@@ -687,7 +686,6 @@ TEST_F(EdgeCaseTest, EmptyBlobBinding) {
     EXPECT_TRUE(exec_result.has_value()) << "Empty blob binding should succeed";
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(EdgeCaseTest, MultipleResetAndExecute) {
     auto create_result = conn_.execute("CREATE TABLE multi_exec (id INTEGER PRIMARY KEY, value INTEGER)");
     ASSERT_TRUE(create_result.has_value());
@@ -1016,7 +1014,6 @@ TEST_F(ORMErrorTest, GroupByOnEmptyTable) {
     EXPECT_TRUE(result.value().empty());
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(ORMErrorTest, BatchUpdateWithConstraintViolation) {
     storm::QuerySet<UniqueTestPerson> qs;
 
@@ -1062,7 +1059,6 @@ TEST_F(ORMErrorTest, BatchRemoveFromEmptyTable) {
     ASSERT_TRUE(result.has_value()) << "Batch erase of non-existent should succeed";
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(ORMErrorTest, LargeBatchInsertThenRemove) {
     storm::QuerySet<Person> qs;
 
@@ -1131,7 +1127,6 @@ TEST_F(ORMErrorTest, InsertThenSelectWithOrderBy) {
     }
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_F(ORMErrorTest, SelectWithLimitOffset) {
     storm::QuerySet<Person> qs;
 
@@ -1185,7 +1180,6 @@ TEST_F(ORMErrorTest, ChunkedInsertRollsBackOnConstraintViolation) {
 
 // NOLINTEND(bugprone-implicit-widening-of-multiplication-result) // NOSONAR
 // NOLINTEND(readability-identifier-length,cppcoreguidelines-init-variables) // NOSONAR
-// NOLINTEND(readability-convert-member-functions-to-static,readability-uppercase-literal-suffix) // NOSONAR
+// NOLINTEND(readability-uppercase-literal-suffix) // NOSONAR
 // NOLINTEND(misc-const-correctness,misc-unused-alias-decls,modernize-use-std-numbers) // NOSONAR
 // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR
-// NOLINTEND(misc-use-internal-linkage,modernize-use-trailing-return-type,readability-named-parameter) // NOSONAR
