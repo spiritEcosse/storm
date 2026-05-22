@@ -27,6 +27,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <format>
 #include <string>
 
 namespace {
@@ -82,9 +83,7 @@ namespace {
         exec(db, "BEGIN");
         sqlite3_stmt* ins = prepare(db, "INSERT INTO person(name, age, salary) VALUES(?,?,?)");
         for (int i = 0; i < rows; ++i) {
-            const std::string name =
-                    "Person" +
-                    std::to_string(i); // NOLINT(readability-string-concat) — std::format requires import in this TU
+            const std::string name = std::format("Person{}", i);
             sqlite3_bind_text(ins, 1, name.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_int(ins, 2, 20 + (i % 50));
             sqlite3_bind_double(ins, 3, 30'000.0 + static_cast<double>(i));
@@ -107,7 +106,7 @@ namespace {
 
         int counter = 0;
         for (auto _ : state) {
-            const std::string name = "P" + std::to_string(counter++); // NOLINT(readability-string-concat)
+            const std::string name = std::format("P{}", counter++);
             sqlite3_bind_text(ins, 1, name.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_int(ins, 2, 30);
             sqlite3_bind_double(ins, 3, 50'000.0);
@@ -168,8 +167,7 @@ namespace {
         int batch = 0;
         for (auto _ : state) {
             for (int i = 0; i < kBatchSize1000; ++i) {
-                const std::string name =
-                        "B" + std::to_string(batch) + "_" + std::to_string(i); // NOLINT(readability-string-concat)
+                const std::string name = std::format("B{}_{}", batch, i);
                 sqlite3_bind_text(ins, (i * 3) + 1, name.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_int(ins, (i * 3) + 2, 25 + (i % 40));
                 sqlite3_bind_double(ins, (i * 3) + 3, 40'000.0 + static_cast<double>(i));
