@@ -17,6 +17,15 @@
 # Note: misc-const-correctness has targeted NOLINT in join.cppm (fold expression false positives)
 # Note: cppcoreguidelines-missing-std-forward has targeted NOLINT in where.cppm (std::forward in braced initializers)
 #
+# GTest / Test-file Exclusions (issue #314):
+# - misc-use-internal-linkage: GTest fixtures cannot be placed in anonymous namespaces.
+# - modernize-use-trailing-return-type: contradicts project style; TEST_F macros incompatible.
+# - readability-named-parameter: GTest test bodies intentionally omit parameter names.
+# - readability-convert-member-functions-to-static: GTest fixture methods.
+# - readability-function-cognitive-complexity: large test functions are intentional coverage.
+# - readability-redundant-member-init: explicit {} init on std::string/optional is intentional style.
+# - google-explicit-constructor: Expr and UUID implicit conversions are intentional public API.
+#
 # ORM-specific Exclusions (issue #262 — added after clang-p2996 rebuild surfaced 48 pre-existing warnings):
 # - cppcoreguidelines-avoid-const-or-ref-data-members: Storm's INSERT/UPDATE/ERASE statement classes
 #   return short-lived dispatcher functors (struct SingleQuery { Stmt& stmt; const T& obj; ...}) that
@@ -52,7 +61,14 @@ Checks: >
   performance-*,
   -performance-enum-size,
   readability-*,
-  -readability-magic-numbers
+  -readability-magic-numbers,
+  -misc-use-internal-linkage,
+  -modernize-use-trailing-return-type,
+  -readability-named-parameter,
+  -readability-convert-member-functions-to-static,
+  -readability-function-cognitive-complexity,
+  -readability-redundant-member-init,
+  -google-explicit-constructor
 
 # Header filter - apply to project headers, exclude third_party
 HeaderFilterRegex: '^(?!.*third_party).*'
