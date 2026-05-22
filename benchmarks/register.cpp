@@ -83,12 +83,7 @@ namespace {
 
     consteval auto is_crud(BenchmarkTest const& t) -> bool {
         constexpr std::array<std::string_view, 4> crud = {"insert", "insert_no_return", "update_pk", "delete_pk"};
-        for (auto op : crud) { // NOLINT(readability-use-anyofallof)
-            if (t.operation.view() == op) {
-                return true;
-            }
-        }
-        return false;
+        return std::ranges::any_of(crud, [&](std::string_view op) { return t.operation.view() == op; });
     }
 
     struct RangeSpec {
