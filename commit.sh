@@ -24,9 +24,17 @@ RESET='\033[0m'
 declare -a STEP_NAMES=()
 declare -a STEP_RESULTS=()
 declare -a STEP_TIMES=()
-declare -a STEP_ERRORS=()
+declare -a STEP_LOGFILES=()
 FAILED=false
 TOTAL_START=$SECONDS
+
+# Fixed log files — one per step, stable paths for easy inspection after failure
+LOG_FORMAT=/tmp/storm_format.log
+LOG_CMAKE_FORMAT=/tmp/storm_cmake_format.log
+LOG_TIDY=/tmp/storm_tidy.log
+LOG_RELEASE=/tmp/storm_release.log
+LOG_TESTS=/tmp/storm_tests.log
+LOG_COVERAGE=/tmp/storm_coverage.log
 
 print_header() {
     local step_num=$1 total=$2 name=$3
@@ -45,47 +53,41 @@ _step_begin() {
 }
 
 _step_finish() {
-    local name="$1" exit_code="$2" elapsed="$3" error_output="$4"
+    local name="$1" exit_code="$2" elapsed="$3" logfile="$4"
     STEP_TIMES+=("${elapsed}s")
+    STEP_LOGFILES+=("$logfile")
     if [[ $exit_code -eq 0 ]]; then
         STEP_RESULTS+=("pass")
-        STEP_ERRORS+=("")
         echo -e "${GREEN}✓ $name passed${RESET} ${DIM}(${elapsed}s)${RESET}"
         return 0
     else
         STEP_RESULTS+=("FAIL")
-        STEP_ERRORS+=("$error_output")
         FAILED=true
         echo -e "${RED}✗ $name FAILED${RESET} ${DIM}(${elapsed}s)${RESET}"
+        echo -e "${DIM}  → full output: $logfile${RESET}"
         return 1
     fi
 }
 
 run_step() {
-    local name="$1"
-    shift
+    local name="$1" logfile="$2"
+    shift 2
     _step_begin "$name"
     local start=$SECONDS
-    local output
-    output=$("$@" 2>&1)
+    "$@" > "$logfile" 2>&1
     local exit_code=$?
-    _step_finish "$name" "$exit_code" "$(( SECONDS - start ))" "$output"
+    _step_finish "$name" "$exit_code" "$(( SECONDS - start ))" "$logfile"
 }
 
 # Show full output live (for long-running steps like tests/coverage)
 run_step_live() {
-    local name="$1"
-    shift
+    local name="$1" logfile="$2"
+    shift 2
     _step_begin "$name"
     local start=$SECONDS
-    local tmpfile
-    tmpfile=$(mktemp)
-    "$@" 2>&1 | tee "$tmpfile"
+    "$@" 2>&1 | tee "$logfile"
     local exit_code=${PIPESTATUS[0]}
-    local content
-    content=$(cat "$tmpfile")
-    rm -f "$tmpfile"
-    _step_finish "$name" "$exit_code" "$(( SECONDS - start ))" "$content"
+    _step_finish "$name" "$exit_code" "$(( SECONDS - start ))" "$logfile"
 }
 
 print_summary() {
@@ -116,21 +118,16 @@ print_summary() {
     echo ""
     echo -e "  ${DIM}Total: ${total_elapsed}s${RESET}"
 
-    # Show failure details
+    # Show failure log paths
     if [[ "$FAILED" == true ]]; then
+        echo -e "${RED}${BOLD}Failed step logs:${RESET}"
         for i in "${!STEP_NAMES[@]}"; do
             if [[ "${STEP_RESULTS[$i]}" == "FAIL" ]]; then
-                echo ""
-                echo -e "${RED}${BOLD}─── ${STEP_NAMES[$i]} — error details ───${RESET}" >&2
-                echo ""
-                # Show last 30 lines to avoid noise, full output was shown live or can be re-run
-                echo "${STEP_ERRORS[$i]}" | tail -30
-                echo ""
+                echo -e "  ${RED}✗${RESET} ${STEP_NAMES[$i]}: ${DIM}${STEP_LOGFILES[$i]}${RESET}"
             fi
         done
-
+        echo ""
         echo -e "${YELLOW}${BOLD}Tip:${RESET} Fix the issue above and run ${BOLD}git commit${RESET} again."
-        echo -e "     Steps that already passed will re-run (they're fast)."
     fi
 
     echo ""
@@ -209,12 +206,12 @@ fi
 
 # --- Step 1: clang-format ---
 if [[ "$RUN_FORMAT" == true ]]; then
-    run_step "clang-format" cmake --build --preset ninja-debug --target format || true
+    run_step "clang-format" "$LOG_FORMAT" cmake --build --preset ninja-debug --target format || true
 fi
 
 # --- Step 2: cmake-format ---
 if [[ "$RUN_CMAKE_FORMAT" == true ]]; then
-    run_step "cmake-format" cmake --build --preset ninja-debug --target cmake-format || true
+    run_step "cmake-format" "$LOG_CMAKE_FORMAT" cmake --build --preset ninja-debug --target cmake-format || true
 fi
 
 # --- Step 3: clang-tidy ---
@@ -223,9 +220,9 @@ fi
 # Set STORM_TIDY_FULL=1 to force whole-file staged scan (the pre-#262 behavior).
 if [[ "$RUN_TIDY" == true ]]; then
     if [[ -n "$STORM_TIDY_FULL" ]]; then
-        run_step "clang-tidy --full --fix" ./scripts/run_clang_tidy.sh --full --fix || true
+        run_step "clang-tidy --full --fix" "$LOG_TIDY" ./scripts/run_clang_tidy.sh --full --fix || true
     else
-        run_step "clang-tidy --diff --fix" ./scripts/run_clang_tidy.sh --diff --fix || true
+        run_step "clang-tidy --diff --fix" "$LOG_TIDY" ./scripts/run_clang_tidy.sh --diff --fix || true
     fi
 fi
 
@@ -239,13 +236,13 @@ if [[ "$RUN_BENCH_RELEASE" == true ]]; then
     if [[ ! -f "build/release/build.ninja" ]]; then
         cmake --preset ninja-release > /dev/null 2>&1
     fi
-    run_step "release build" \
+    run_step "release build" "$LOG_RELEASE" \
         cmake --build --preset ninja-release
 fi
 
 # --- Step 4: tests ---
 if [[ "$RUN_TESTS" == true ]]; then
-    run_step_live "tests (SQLite + PostgreSQL)" ctest --preset ninja-debug || true
+    run_step_live "tests (SQLite + PostgreSQL)" "$LOG_TESTS" ctest --preset ninja-debug || true
 fi
 
 # --- Step 5: coverage ---
@@ -371,7 +368,7 @@ if [[ "$RUN_COVERAGE" == true ]]; then
         return 0
     }
 
-    run_step_live "coverage (100% required)" run_coverage_check || true
+    run_step_live "coverage (100% required)" "$LOG_COVERAGE" run_coverage_check || true
 fi
 
 # --- Final summary ---
