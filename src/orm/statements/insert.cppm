@@ -285,17 +285,21 @@ export namespace storm::orm::statements {
             }
         };
 
-        template <ReturnId R = ReturnId::Yes> auto query(const T& obj) {
+        template <ReturnId R = ReturnId::Yes> auto query(const T& obj [[clang::lifetimebound]]) {
             if constexpr (R == ReturnId::Yes) {
                 return SingleQuery{*this, obj};
             } else {
                 return VoidQuery{*this, obj};
             }
         }
-        auto query(std::span<const T> objects, std::optional<InsertOptions> opts = std::nullopt) -> BulkQuery {
+        auto
+        query(std::span<const T> objects [[clang::lifetimebound]], std::optional<InsertOptions> opts = std::nullopt)
+                -> BulkQuery {
             return {*this, objects, opts};
         }
-        template <ReturnId R> auto query(std::span<const T> objects, std::optional<InsertOptions> opts = std::nullopt) {
+        template <ReturnId R>
+        auto
+        query(std::span<const T> objects [[clang::lifetimebound]], std::optional<InsertOptions> opts = std::nullopt) {
             if constexpr (R == ReturnId::Yes) {
                 return BulkReturningQuery{*this, objects, opts};
             } else {

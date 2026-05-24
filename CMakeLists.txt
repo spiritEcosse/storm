@@ -52,6 +52,8 @@ file(GLOB_RECURSE STORM_MODULE_UNITS CONFIGURE_DEPENDS
 target_sources(${PROJECT_NAME} PUBLIC FILE_SET cxx_modules TYPE CXX_MODULES
                                       FILES ${STORM_MODULE_UNITS})
 
+target_compile_options(${PROJECT_NAME} PRIVATE -Werror)
+
 apply_clang_flags(${PROJECT_NAME})
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)

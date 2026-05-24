@@ -67,12 +67,12 @@ export namespace storm {
         // LCOV_EXCL_STOP
 
         // Erase single object - returns proxy with .execute() and .to_sql()
-        auto erase(const T& obj) {
+        auto erase(const T& obj [[clang::lifetimebound]]) {
             return get_erase_statement().query(obj);
         }
 
         // Bulk erase - returns proxy with .execute() and .to_sql()
-        auto erase(std::span<const T> objects) {
+        auto erase(std::span<const T> objects [[clang::lifetimebound]]) {
             return get_erase_statement().query(objects);
         }
 
@@ -87,18 +87,22 @@ export namespace storm {
         // (SFINAE: only accept T, not span/container)
         template <orm::statements::ReturnId R = orm::statements::ReturnId::Yes, typename U = T>
             requires std::same_as<std::remove_cvref_t<U>, T>
-        auto insert(const U& obj) {
+        auto insert(const U& obj [[clang::lifetimebound]]) {
             return get_insert_statement().template query<R>(obj);
         }
 
         // Bulk insert - returns proxy with .execute() and .to_sql()
         // Default (no template arg): .execute() returns std::expected<void, Error>
         // ReturnId::Yes: .execute() returns std::expected<std::vector<int64_t>, Error>
-        auto insert(std::span<const T> objects, std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
+        auto
+        insert(std::span<const T>                            objects [[clang::lifetimebound]],
+               std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
             return get_insert_statement().query(objects, opts);
         }
         template <orm::statements::ReturnId R>
-        auto insert(std::span<const T> objects, std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
+        auto
+        insert(std::span<const T>                            objects [[clang::lifetimebound]],
+               std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
             return get_insert_statement().template query<R>(objects, opts);
         }
 
@@ -280,12 +284,12 @@ export namespace storm {
         // (SFINAE: only accept T, not span/container)
         template <typename U = T>
             requires std::same_as<std::remove_cvref_t<U>, T>
-        auto update(const U& obj) {
+        auto update(const U& obj [[clang::lifetimebound]]) {
             return get_update_statement().query(obj);
         }
 
         // Bulk update - returns proxy with .execute() and .to_sql()
-        auto update(std::span<const T> objects) {
+        auto update(std::span<const T> objects [[clang::lifetimebound]]) {
             return get_update_statement().query(objects);
         }
 

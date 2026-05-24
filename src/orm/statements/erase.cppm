@@ -224,10 +224,10 @@ export namespace storm::orm::statements {
             }
         };
 
-        auto query(const T& obj) -> SingleQuery {
+        auto query(const T& obj [[clang::lifetimebound]]) -> SingleQuery {
             return {*this, obj};
         }
-        auto query(std::span<const T> objects) -> BulkQuery {
+        auto query(std::span<const T> objects [[clang::lifetimebound]]) -> BulkQuery {
             return {*this, objects};
         }
         auto query_all() -> DeleteAllQuery {
