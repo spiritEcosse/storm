@@ -72,14 +72,15 @@ target_include_directories(
 # Use gtest_discover_tests instead of gtest_add_tests
 gtest_discover_tests(${PROJECT_NAME})
 
-# Add Clang-specific flags (modules and reflection) to tests (same as Storm
-# library)
-apply_clang_flags(${PROJECT_NAME})
-# Increase constexpr steps limit — consteval JSON parser for 247 YAML-driven
-# test cases
-target_compile_options(${PROJECT_NAME} PRIVATE -fconstexpr-steps=4194304)
-# Note: Custom libc++ linking now handled by global add_link_options() in main
-# CMakeLists.txt
+# Add modules and reflection flags to tests (same as Storm library).
+apply_cxx_flags(${PROJECT_NAME})
+# Increase constexpr step/ops limit — consteval JSON parser for 247 YAML-driven
+# test cases. Clang uses -fconstexpr-steps; GCC uses -fconstexpr-ops-limit
+# (counts individual operations, not steps — limit is therefore much higher).
+target_compile_options(
+  ${PROJECT_NAME}
+  PRIVATE $<$<CXX_COMPILER_ID:Clang>:-fconstexpr-steps=4194304>
+          $<$<CXX_COMPILER_ID:GNU>:-fconstexpr-ops-limit=134217728>)
 
 add_dependencies(${PROJECT_NAME} generate_test_json)
 

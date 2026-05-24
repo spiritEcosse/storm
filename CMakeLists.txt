@@ -1,4 +1,9 @@
 cmake_minimum_required(VERSION 3.30)
+
+# CMake's experimental `import std;` support gate. Token re-rolls as the feature
+# evolves; current value valid for CMake 3.30–4.x. Must be set before project().
+set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b")
+
 project(storm)
 
 set(CMAKE_CXX_STANDARD 26)
@@ -7,13 +12,21 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "21")
+    message(
+      FATAL_ERROR "Clang >= 21 required. Got: ${CMAKE_CXX_COMPILER_VERSION}")
+  endif()
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "16")
+    message(
+      FATAL_ERROR "GCC >= 16 required. Got: ${CMAKE_CXX_COMPILER_VERSION}")
+  endif()
+else()
   message(
-    FATAL_ERROR "This project requires Clang. Got: ${CMAKE_CXX_COMPILER_ID}")
-endif()
-if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "21")
-  message(
-    FATAL_ERROR "Clang >= 21 required. Got: ${CMAKE_CXX_COMPILER_VERSION}")
+    FATAL_ERROR
+      "This project requires Clang >= 21 or GCC >= 16. Got: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}"
+  )
 endif()
 
 message(STATUS "Using C++26 (standard build)")
@@ -27,8 +40,11 @@ execute_process(
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
   ERROR_QUIET)
 
-add_compile_options(-ferror-limit=1
-                    $<$<CONFIG:Debug>:-ftemplate-backtrace-limit=0>)
+add_compile_options(
+  $<$<CXX_COMPILER_ID:Clang>:-ferror-limit=1>
+  $<$<CXX_COMPILER_ID:GNU>:-fmax-errors=1>
+  $<$<AND:$<CXX_COMPILER_ID:Clang>,$<CONFIG:Debug>>:-ftemplate-backtrace-limit=0>
+)
 
 # Pin Clang's module cache to the build dir. Clang hashes compile flags into the
 # module cache path, so two presets with different flags (coverage vs no
@@ -37,10 +53,13 @@ add_compile_options(-ferror-limit=1
 # later TU imports a module, Clang sees the same builtin module in both dirs and
 # emits a fatal "module defined in both" error. Keeping the cache local to
 # ${CMAKE_BINARY_DIR} guarantees preset isolation, since every preset already
-# has its own binaryDir.
-add_compile_options("-fmodules-cache-path=${CMAKE_BINARY_DIR}/module-cache")
+# has its own binaryDir. GCC writes BMIs to gcm.cache/ in the build dir
+# automatically — no equivalent flag is needed.
+add_compile_options(
+  $<$<CXX_COMPILER_ID:Clang>:-fmodules-cache-path=${CMAKE_BINARY_DIR}/module-cache>
+)
 
-include(cmake/libcxx.cmake)
+include(cmake/cxx_flags.cmake)
 
 # ── Core library ──────────────────────────────────────────────────────────────
 
@@ -52,7 +71,7 @@ file(GLOB_RECURSE STORM_MODULE_UNITS CONFIGURE_DEPENDS
 target_sources(${PROJECT_NAME} PUBLIC FILE_SET cxx_modules TYPE CXX_MODULES
                                       FILES ${STORM_MODULE_UNITS})
 
-apply_clang_flags(${PROJECT_NAME})
+apply_cxx_flags(${PROJECT_NAME})
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" FILES ${STORM_MODULE_UNITS})
