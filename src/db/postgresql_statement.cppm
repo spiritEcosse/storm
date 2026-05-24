@@ -80,11 +80,20 @@ export namespace storm::db::postgresql {
         Statement(const Statement&)                    = delete;
         auto operator=(const Statement&) -> Statement& = delete;
 
-        // Shared core for all text-based bind paths.
-        __attribute__((always_inline)) auto bind_text_value(int index, std::string_view value) noexcept -> void {
-            ensure_param_slot(index);
-            param_values_[index - 1].assign(value);
-            update_param_ptrs(index);
+        // Shared core for all text-based bind paths. Propagates OOM as Error rather than
+        // throwing through noexcept — see issue #316.
+        [[nodiscard]] __attribute__((always_inline)) auto bind_text_value(int index, std::string_view value) noexcept
+                -> std::expected<void, Error> {
+            try {
+                if (auto slot = ensure_param_slot(index); !slot) {
+                    return std::unexpected(slot.error());
+                }
+                param_values_[index - 1].assign(value);
+                update_param_ptrs(index);
+                return {};
+            } catch (...) {
+                return std::unexpected(Error{-1, "out of memory binding parameter"});
+            }
         }
 
         template <typename = void>
@@ -96,8 +105,7 @@ export namespace storm::db::postgresql {
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto bind_text(int index, std::string_view value) noexcept
                 -> std::expected<void, Error> {
-            bind_text_value(index, value);
-            return {};
+            return bind_text_value(index, value);
         }
 
         template <typename = void>
@@ -105,8 +113,7 @@ export namespace storm::db::postgresql {
                 -> std::expected<void, Error> {
             std::array<char, 22> buf{}; // max int64: 20 digits + sign + null
             std::snprintf(buf.data(), buf.size(), "%lld", static_cast<long long>(value));
-            bind_text_value(index, std::string_view{buf.data()});
-            return {};
+            return bind_text_value(index, std::string_view{buf.data()});
         }
 
         template <typename = void>
@@ -115,13 +122,14 @@ export namespace storm::db::postgresql {
             // snprintf with %.17g for full double precision (17 significant digits)
             std::array<char, 32> buf{};
             std::snprintf(buf.data(), buf.size(), "%.17g", value);
-            bind_text_value(index, std::string_view{buf.data()});
-            return {};
+            return bind_text_value(index, std::string_view{buf.data()});
         }
 
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto bind_null(int index) noexcept -> std::expected<void, Error> {
-            ensure_param_slot(index);
+            if (auto slot = ensure_param_slot(index); !slot) {
+                return std::unexpected(slot.error());
+            }
             param_values_[index - 1].clear();
             param_ptrs_[index - 1]    = nullptr; // NULL parameter
             param_lengths_[index - 1] = 0;
@@ -133,14 +141,20 @@ export namespace storm::db::postgresql {
         [[nodiscard]] __attribute__((always_inline)) auto
         bind_blob(int index, const void* data, size_t size) noexcept // NOSONAR(cpp:S5008) - PostgreSQL BLOB API
                 -> std::expected<void, Error> {
-            ensure_param_slot(index);
-            if (data != nullptr && size > 0) {
-                // Store binary data as-is, use binary format
-                param_values_[index - 1] =
-                        std::string(static_cast<const char*>(data), size); // NOSONAR(cpp:S5008) - Binary data
-            } else {
-                // Empty blob - use empty string (non-NULL, zero-length)
-                param_values_[index - 1].clear();
+            if (auto slot = ensure_param_slot(index); !slot) {
+                return std::unexpected(slot.error());
+            }
+            try {
+                if (data != nullptr && size > 0) {
+                    // Store binary data as-is, use binary format
+                    param_values_[index - 1]
+                            .assign(static_cast<const char*>(data), size); // NOSONAR(cpp:S5008) - Binary data
+                } else {
+                    // Empty blob - use empty string (non-NULL, zero-length)
+                    param_values_[index - 1].clear();
+                }
+            } catch (...) {
+                return std::unexpected(Error{-1, "out of memory binding blob"});
             }
             param_ptrs_[index - 1]    = param_values_[index - 1].c_str();
             param_lengths_[index - 1] = static_cast<int>(size);
@@ -167,7 +181,7 @@ export namespace storm::db::postgresql {
 
             const ExecStatusType status = PQresultStatus(result_);
             if (status != PGRES_COMMAND_OK && status != PGRES_TUPLES_OK) [[unlikely]] {
-                const std::string msg = PQerrorMessage(conn_);
+                const char* msg = PQerrorMessage(conn_);
                 clear_result();
                 return std::unexpected(Error{static_cast<int>(status), msg});
             }
@@ -219,12 +233,15 @@ export namespace storm::db::postgresql {
 
         template <typename = void> __attribute__((always_inline)) auto finalize() noexcept -> void {
             if (conn_ != nullptr && !stmt_name_.empty()) {
-                const std::string dealloc = "DEALLOCATE " + stmt_name_;
-                PGresult*         res     = PQexec(conn_, dealloc.c_str());
+                // PostgreSQL identifiers are bounded by NAMEDATALEN (63 chars + NUL by spec),
+                // so a stack buffer for "DEALLOCATE <name>" can never overflow and never throws.
+                std::array<char, 11 + 64 + 1> buf{};
+                std::snprintf(buf.data(), buf.size(), "DEALLOCATE %s", stmt_name_.c_str());
+                PGresult* res = PQexec(conn_, buf.data());
                 if (res != nullptr) {
                     PQclear(res);
                 }
-                stmt_name_.clear();
+                stmt_name_.clear(); // std::string::clear is noexcept
             }
             clear_result();
         }
@@ -374,7 +391,7 @@ export namespace storm::db::postgresql {
                                     reinterpret_cast<const unsigned char*>(hex_str) + hex_len);
                     blob_decoded_size_ = static_cast<size_t>(hex_len);
                 }
-            } catch (const std::bad_alloc&) {
+            } catch (...) {
                 blob_decoded_size_ = 0;
                 return nullptr;
             }
@@ -422,15 +439,23 @@ export namespace storm::db::postgresql {
             param_count_ = 0;
         }
 
-        auto ensure_param_slot(int index) noexcept -> void {
-            const auto idx = static_cast<size_t>(index);
-            if (idx > param_values_.size()) {
-                param_values_.resize(idx);
-                param_ptrs_.resize(idx, nullptr);
-                param_lengths_.resize(idx, 0);
-                param_formats_.resize(idx, 0); // Text format by default
+        // Grows the param slot vectors to cover `index`. The constructor reserve()'s capacity
+        // to MAX_DB_VARIABLES, so resize never reallocates in practice; the try/catch covers the
+        // theoretically-possible bad_alloc and propagates it through std::expected — issue #316.
+        [[nodiscard]] auto ensure_param_slot(int index) noexcept -> std::expected<void, Error> {
+            try {
+                const auto idx = static_cast<size_t>(index);
+                if (idx > param_values_.size()) {
+                    param_values_.resize(idx);
+                    param_ptrs_.resize(idx, nullptr);
+                    param_lengths_.resize(idx, 0);
+                    param_formats_.resize(idx, 0); // Text format by default
+                }
+                param_count_ = std::max(param_count_, index);
+                return {};
+            } catch (...) {
+                return std::unexpected(Error{-1, "out of memory growing param slots"});
             }
-            param_count_ = std::max(param_count_, index);
         }
 
         auto update_param_ptrs(int index) noexcept -> void {

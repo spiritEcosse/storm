@@ -21,10 +21,6 @@
 #   function argument (e.g. `make_shared<T>(std::move(param))`) — clang-tidy doesn't see through it.
 # - cppcoreguidelines-avoid-non-const-global-variables: fires on consteval lambdas inside concept
 #   definitions; concepts are not variables.
-# - bugprone-exception-escape: noexcept functions in postgresql_statement.cppm call vector::resize
-#   (pre-reserved to MAX_DB_VARIABLES so OOM is practically impossible) and construct Error values
-#   with std::string message fields. Error{code, msg} construction itself can throw bad_alloc, making
-#   it impossible to write a catch block that satisfies this check without changing the Error type.
 # - cppcoreguidelines-pro-type-vararg: std::snprintf is the only portable way to format doubles
 #   with %.17g precision; std::format alternative is not available in noexcept hot paths.
 #
@@ -48,7 +44,6 @@ Checks: >
   bugprone-*,
   -bugprone-argument-comment,
   -bugprone-easily-swappable-parameters,
-  -bugprone-exception-escape,
   cert-*,
   -cert-err33-c,
   -cert-err58-cpp,

@@ -47,7 +47,7 @@ TYPED_TEST(ExpectedTransformTest, HiveToVectorViaTransformMoves) {
         return std::forward<decltype(hive)>(hive) | std::views::as_rvalue | std::ranges::to<std::vector<Person>>();
     });
 
-    ASSERT_TRUE(vec_result.has_value()) << "Query failed: " << vec_result.error().message_;
+    ASSERT_TRUE(vec_result.has_value()) << "Query failed: " << vec_result.error().message();
     EXPECT_EQ(vec_result.value().size(), 25U);
 }
 
@@ -58,7 +58,7 @@ TYPED_TEST(ExpectedTransformTest, EmptyResultTransformYieldsEmptyVector) {
         return std::forward<decltype(hive)>(hive) | std::views::as_rvalue | std::ranges::to<std::vector<Person>>();
     });
 
-    ASSERT_TRUE(vec_result.has_value()) << "Query failed: " << vec_result.error().message_;
+    ASSERT_TRUE(vec_result.has_value()) << "Query failed: " << vec_result.error().message();
     EXPECT_TRUE(vec_result.value().empty());
 }
 
@@ -71,7 +71,7 @@ TYPED_TEST(ExpectedTransformTest, ChainViewsInsideTransformMoves) {
                std::ranges::to<std::vector<std::string>>();
     });
 
-    ASSERT_TRUE(names_result.has_value()) << "Query failed: " << names_result.error().message_;
+    ASSERT_TRUE(names_result.has_value()) << "Query failed: " << names_result.error().message();
     EXPECT_EQ(names_result.value().size(), 25U);
     for (const auto& name : names_result.value()) {
         EXPECT_FALSE(name.empty());
@@ -85,7 +85,7 @@ TYPED_TEST(ExpectedTransformTest, TransformPreservesWhereFilter) {
         return std::forward<decltype(hive)>(hive) | std::views::as_rvalue | std::ranges::to<std::vector<Person>>();
     });
 
-    ASSERT_TRUE(vec_result.has_value()) << "Query failed: " << vec_result.error().message_;
+    ASSERT_TRUE(vec_result.has_value()) << "Query failed: " << vec_result.error().message();
     EXPECT_GT(vec_result.value().size(), 0U);
     for (const auto& p : vec_result.value()) {
         EXPECT_GT(p.age, 35);
@@ -96,7 +96,7 @@ TYPED_TEST(ExpectedTransformTest, TransformPreservesWhereFilter) {
 TYPED_TEST(ExpectedTransformTest, TransformPropagatesErrorWithoutInvokingLambda) {
     using Error = typename TypeParam::Error;
 
-    std::expected<plf::hive<Person>, Error> failed{std::unexpect, Error{.code_ = 42, .message_ = "synthetic failure"}};
+    std::expected<plf::hive<Person>, Error> failed{std::unexpect, Error{42, "synthetic failure"}};
 
     bool lambda_invoked = false;
     auto result         = std::move(failed).transform([&lambda_invoked](auto&& hive) {
@@ -106,8 +106,8 @@ TYPED_TEST(ExpectedTransformTest, TransformPropagatesErrorWithoutInvokingLambda)
 
     EXPECT_FALSE(lambda_invoked);
     ASSERT_FALSE(result.has_value());
-    EXPECT_EQ(result.error().code_, 42);
-    EXPECT_EQ(result.error().message_, "synthetic failure");
+    EXPECT_EQ(result.error().code(), 42);
+    EXPECT_EQ(result.error().message(), "synthetic failure");
 }
 
 // NOLINTEND(misc-const-correctness,cppcoreguidelines-rvalue-reference-param-not-moved)
