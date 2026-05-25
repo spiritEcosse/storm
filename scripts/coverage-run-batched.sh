@@ -1,15 +1,21 @@
 #!/bin/bash
-# Run coverage tests in batches to work around Clang C++26 coverage instrumentation
-# segfault that occurs when running too many tests in a single process.
+# Run coverage tests in batches, one process per gtest suite, each producing
+# a .profraw file that llvm-profdata merges later.
 #
-# Runs each test suite as a separate process (one batch per suite).
-# Each produces a .profraw file, later merged by llvm-profdata.
+# Historical note: this script was originally a workaround for what looked like
+# a clang coverage-instrumentation segfault / hang. Issue #269 traced the hang
+# to a Storm bug — a use-after-free of a thread-local `Statement*` cache in
+# `AggregateStatement::execute_simple` — which manifested as an infinite loop
+# under coverage instrumentation. The fix landed; this batched layout is kept
+# because per-suite isolation is still the right shape (and #176 / #268 still
+# matter for cross-module template coverage).
 #
 # IMPORTANT: Suites must NOT be split into individual test runs.
 # Per-test profraw files lose cross-module template coverage data because
 # the profiling counters for template instantiations across module boundaries
 # require enough test volume within a single process to be properly recorded.
 # See: https://github.com/spiritEcosse/storm/issues/176
+# See: https://github.com/spiritEcosse/storm/issues/269
 
 set -e
 

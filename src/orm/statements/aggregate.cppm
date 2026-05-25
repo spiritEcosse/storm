@@ -559,29 +559,19 @@ export namespace storm::orm::statements {
                 }
                 return prepare_and_extract(base_sql_);
             } else {
-                // OPTIMIZATION: Thread-local statement pointer cache.
-                // Persists across AggregateStatement instances to avoid
-                // hash-map lookup in prepare_cached() on every call.
-                // Safe because connections are thread-local (project design invariant).
-                static thread_local Statement*  tl_stmt = nullptr;
-                static thread_local void const* tl_conn = nullptr;
-
-                if (tl_conn == static_cast<void*>(conn_.get()) && tl_stmt != nullptr) [[likely]] {
-                    // Fast path: reuse cached pointer, just reset
-                    tl_stmt->reset();
-                } else {
-                    // Slow path: first call or connection changed
-                    auto prepare_result = conn_->prepare_cached(base_sql_);
-                    if (!prepare_result) [[unlikely]] {
-                        return std::unexpected(prepare_result.error());
-                    }
-                    tl_stmt = *prepare_result;
-                    tl_conn = static_cast<void*>(conn_.get());
-                    // prepare_cached already called reset()
+                // Issue #269: an earlier thread-local Statement* cache here was
+                // a use-after-free waiting to happen — when the default Connection
+                // was torn down, the cached pointer dangled, and the next
+                // Connection allocated at the same address let the identity check
+                // pass and reset() be called on freed memory. Routing through
+                // prepare_cached() matches every other statement class and keeps
+                // the per-connection cache as the single source of truth.
+                auto prepare_result = conn_->prepare_cached(base_sql_);
+                if (!prepare_result) [[unlikely]] {
+                    return std::unexpected(prepare_result.error());
                 }
-
-                // Extract without trailing reset (next call resets at the top)
-                return extract_simple_no_reset(tl_stmt, std::make_index_sequence<NumOps>{});
+                // prepare_cached already reset the statement on cache hit.
+                return extract_simple_no_reset(*prepare_result, std::make_index_sequence<NumOps>{});
             }
         }
 

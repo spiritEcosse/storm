@@ -139,10 +139,7 @@ RUN_FORMAT=true
 RUN_CMAKE_FORMAT=true
 RUN_TIDY=true
 RUN_TESTS=true
-# Default true; allow opt-out for known hang scenarios (see #268 / #215 coverage instrumentation interaction).
-# Usage: export STORM_SKIP_COVERAGE=1 git commit ...   — CI still runs coverage via SonarCloud.
-RUN_COVERAGE=${STORM_SKIP_COVERAGE:+false}
-RUN_COVERAGE=${RUN_COVERAGE:-true}
+RUN_COVERAGE=true
 
 STAGED_FILES=$(git diff --cached --name-only 2>/dev/null || true)
 if [[ -n "$STAGED_FILES" ]]; then
