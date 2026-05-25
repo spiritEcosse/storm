@@ -337,3 +337,54 @@ TYPED_TEST(AggregateTest, WhereJoinRepeatedQueries) {
         EXPECT_EQ(result.value(), 4);
     }
 }
+
+// Issue #269: regression for the use-after-free of the per-aggregate-type
+// thread-local Statement* cache in AggregateStatement::execute_simple().
+// Tearing down the default connection invalidated all cached Statement
+// pointers; when a fresh connection was allocated at the same address, the
+// fast-path identity check passed and reset() was called on freed memory.
+// Surfaced as an infinite loop under coverage instrumentation and ASan
+// (the freed vector bookkeeping survived just intact enough to enter
+// clear() with __end_ < __begin_).
+//
+// Loops many recycle cycles so the system allocator eventually reuses
+// the connection address; on broken code the suite hangs around iteration
+// 1-2 instead of completing in <1s.
+namespace {
+    template <typename ConnType, typename PersonQs, typename MessageQs>
+    auto recycle_default_connection(PersonQs& person_qs, MessageQs& message_qs) -> bool {
+        person_qs  = nullptr;
+        message_qs = nullptr;
+        if constexpr (storm::test::is_postgresql<ConnType>()) {
+            storm::test::rollback_test_txn<ConnType>(storm::QuerySet<Person, ConnType>::get_default_connection());
+        }
+        storm::QuerySet<Person, ConnType>::clear_default_connection();
+        auto result = storm::QuerySet<Person, ConnType>::set_default_connection(
+                storm::test::get_connection_string<ConnType>()
+        );
+        if (!result.has_value()) {
+            return false;
+        }
+        const auto& conn = storm::QuerySet<Person, ConnType>::get_default_connection();
+        storm::test::pg_schema_init<ConnType>(conn);
+        if (!storm::test::ensure_tables<ConnType, Person, Message>(conn)) {
+            return false;
+        }
+        person_qs  = std::make_unique<storm::QuerySet<Person, ConnType>>();
+        message_qs = std::make_unique<storm::QuerySet<Message, ConnType>>();
+        return true;
+    }
+} // namespace
+
+TYPED_TEST(AggregateTest, CountSurvivesConnectionRecycling) {
+    for (int cycle = 0; cycle < 12; ++cycle) {
+        if (cycle > 0) {
+            ASSERT_TRUE((recycle_default_connection<TypeParam>(this->qs, this->msg_qs)))
+                    << "cycle " << cycle << ": recycle failed";
+        }
+        this->insert_test_data();
+        auto count = this->qs->count().execute();
+        ASSERT_TRUE(count.has_value()) << "cycle " << cycle << " count failed: " << count.error().message();
+        EXPECT_EQ(count.value(), 25) << "cycle " << cycle;
+    }
+}
