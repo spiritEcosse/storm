@@ -29,9 +29,11 @@
 #   (src/orm/where.cppm, src/orm/utilities.cppm). Disabled globally — not just test files.
 #
 # ORM-specific Exclusions (issue #262 — added after clang-p2996 rebuild surfaced 48 pre-existing warnings):
-# - cppcoreguidelines-avoid-const-or-ref-data-members: Storm's INSERT/UPDATE/ERASE statement classes
-#   return short-lived dispatcher functors (struct SingleQuery { Stmt& stmt; const T& obj; ...}) that
-#   intentionally hold references. The non-assignability the check warns about is the desired property.
+# - cppcoreguidelines-avoid-const-or-ref-data-members: Storm's INSERT/UPDATE/ERASE/SELECT statement
+#   classes return short-lived dispatcher functors (struct SingleQuery { Stmt& stmt; const T& obj; ...})
+#   that intentionally hold references. The non-assignability the check warns about is the desired
+#   property; the factory methods use [[clang::lifetimebound]] for dangling protection. Re-enabling the
+#   check would force a refactor of insert/update/erase/select dispatcher proxies (~13 sites).
 # - cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers: chronically noisy on legitimate
 #   buffer sizes (32, 64), base-10 parsing constants, and ConstexprString capacity tuning.
 # - bugprone-easily-swappable-parameters: noisy on (limit, offset) / (left, right) parameter pairs

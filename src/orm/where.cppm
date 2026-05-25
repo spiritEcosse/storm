@@ -249,38 +249,35 @@ export namespace storm::orm::where {
         }
     };
 
-    // Visitor for bind_params_direct() - called via std::visit
-    template <typename StmtType, typename ErrorType> struct BindParamsVisitor {
-        ErasedStatementPtr stmt_ptr;
-        int* param_index; // Pointer instead of reference (cppcoreguidelines-avoid-const-or-ref-data-members)
-
-        [[nodiscard]] auto operator()(const LogicalExpr& expr) const -> std::expected<void, ErrorType> {
-            // Recursive case: bind left then right
-            if (auto result = bind_params_direct<StmtType, ErrorType>(*expr.left, stmt_ptr, *param_index); !result) {
-                return result;
-            }
-            return bind_params_direct<StmtType, ErrorType>(*expr.right, stmt_ptr, *param_index);
-        }
-
-        // Every other Expr type exposes a small `bind_impl(StmtType*, int&)`.
-        // The type-erased pointer cast used to be duplicated in each Expr's own
-        // `bind_params_direct` — that's the duplicate this visitor now centralises.
-        template <typename T> [[nodiscard]] auto operator()(const T& expr) const -> std::expected<void, ErrorType> {
-            return expr.template bind_impl<StmtType, ErrorType>(static_cast<StmtType*>(stmt_ptr), *param_index);
-        }
-    };
-
     // Main visitor entry points (called by users and recursively by LogicalExpr)
     [[nodiscard]] inline auto to_sql(const ExpressionVariant& expr) -> std::string {
         return std::visit(ToSqlVisitor{}, expr);
     }
 
+    // bind_params_direct uses a lambda visitor that captures param_index by reference,
+    // so no raw pointer/reference data members are required.
+    // Every Expr type exposes a small `bind_impl(StmtType*, int&)`. The type-erased
+    // pointer cast used to be duplicated in each Expr's own `bind_params_direct` — that's
+    // the duplicate this visitor now centralises.
     template <typename StmtType, typename ErrorType>
     [[nodiscard]] inline auto
     bind_params_direct(const ExpressionVariant& expr, ErasedStatementPtr stmt_ptr, int& param_index)
             -> std::expected<void, ErrorType> {
         return std::visit(
-                BindParamsVisitor<StmtType, ErrorType>{.stmt_ptr = stmt_ptr, .param_index = &param_index}, expr
+                [stmt_ptr, &param_index](const auto& node) -> std::expected<void, ErrorType> {
+                    using NodeT = std::remove_cvref_t<decltype(node)>;
+                    if constexpr (std::is_same_v<NodeT, LogicalExpr>) {
+                        if (auto result = bind_params_direct<StmtType, ErrorType>(*node.left, stmt_ptr, param_index);
+                            !result) {
+                            return result;
+                        }
+                        return bind_params_direct<StmtType, ErrorType>(*node.right, stmt_ptr, param_index);
+                    } else {
+                        return node
+                                .template bind_impl<StmtType, ErrorType>(static_cast<StmtType*>(stmt_ptr), param_index);
+                    }
+                },
+                expr
         );
     }
 
