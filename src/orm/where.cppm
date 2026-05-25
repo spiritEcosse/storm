@@ -8,6 +8,7 @@ module;
 
 export module storm_orm_where;
 
+import <cstdint>;
 import <string>;
 import <vector>;
 import <memory>;
@@ -42,11 +43,11 @@ export namespace storm::orm::where {
 
     // Mirror of meta::FieldAttr from storm module - must match exactly
     namespace meta {
-        enum class FieldAttr { primary, indexed, unique, fk };
+        enum class FieldAttr : std::uint8_t { primary, indexed, unique, fk };
     }
 
     // Comparison operators
-    enum class CompOp { Equal, NotEqual, Greater, GreaterEqual, Less, LessEqual };
+    enum class CompOp : std::uint8_t { Equal, NotEqual, Greater, GreaterEqual, Less, LessEqual };
 
     constexpr auto comp_op_to_sql(CompOp op) noexcept -> std::string_view {
         using enum CompOp;
@@ -68,7 +69,7 @@ export namespace storm::orm::where {
     }
 
     // Logical operators
-    enum class LogicalOp { And, Or };
+    enum class LogicalOp : std::uint8_t { And, Or };
 
     constexpr auto logical_op_to_sql(LogicalOp op) noexcept -> std::string_view {
         switch (op) {

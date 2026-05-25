@@ -9,6 +9,7 @@ import storm_orm_statements_base;
 import storm_orm_utilities;
 import storm_db_concept;
 
+import <cstdint>;
 import <expected>;
 import <string>;
 import <vector>;
@@ -22,7 +23,7 @@ export namespace storm::orm::statements {
 
     using storm::orm::utilities::ConstexprString;
 
-    enum class JoinType { Inner, Left, Right };
+    enum class JoinType : std::uint8_t { Inner, Left, Right };
 
     // Type alias for type-erased pointers used in polymorphic JOIN wrapper.
     // void* is intentional here: JoinStatementWrapper must work with any model type T
