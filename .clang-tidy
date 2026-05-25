@@ -40,6 +40,8 @@
 #   where adjacency is the natural API.
 # - bugprone-branch-clone: re-enabled 2026-05-22; FK dialect dispatch in schema.cppm refactored to
 #   constexpr ternary to eliminate the clone.
+# - performance-enum-size: re-enabled 2026-05-25 (issue #313); enums in src/ given explicit small
+#   underlying types (std::uint8_t) since none exceed 256 enumerators.
 
 Checks: >
   -*,
@@ -66,7 +68,6 @@ Checks: >
   -misc-const-correctness,
   -misc-include-cleaner,
   performance-*,
-  -performance-enum-size,
   readability-*,
   -readability-magic-numbers,
   -google-explicit-constructor

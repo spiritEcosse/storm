@@ -5,7 +5,7 @@
 
 src/orm/statements/insert.cppm:    file-size
 src/orm/statements/select.cppm:    file-size
-src/orm/statements/base.cppm:      file-size
+src/orm/statements/base.cppm:      file-size, duplicate
 src/orm/statements/aggregate.cppm: file-size
 src/orm/queryset.cppm:             file-size
 

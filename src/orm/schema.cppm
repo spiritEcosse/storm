@@ -25,11 +25,12 @@ import <type_traits>;
 import <chrono>;
 import <filesystem>;
 import <cstddef>;
+import <cstdint>;
 
 export namespace storm::orm::schema {
 
     // SQL dialect for compile-time schema generation
-    enum class Dialect { SQLite, PostgreSQL };
+    enum class Dialect : std::uint8_t { SQLite, PostgreSQL };
 
     // Import utilities for compile-time string building
     using storm::orm::utilities::ConstexprString;
@@ -38,7 +39,7 @@ export namespace storm::orm::schema {
 
         // Storage class — which SQL primitive the C++ inner type maps to. The set is
         // closed; unknown types fall through to `Fallback` (TEXT, untyped).
-        enum class StorageClass : uint8_t {
+        enum class StorageClass : std::uint8_t {
             Bool,
             Integer,
             Double,

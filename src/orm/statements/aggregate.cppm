@@ -31,7 +31,7 @@ export namespace storm::orm::statements {
     using storm::orm::utilities::ConstexprString;
 
     // Aggregate function types
-    enum class AggregateType { SUM, COUNT, AVG, MIN, MAX, COUNT_DISTINCT };
+    enum class AggregateType : std::uint8_t { SUM, COUNT, AVG, MIN, MAX, COUNT_DISTINCT };
 
     // LCOV_EXCL_START - compile-time only
     constexpr auto get_agg_function_name(AggregateType type) -> std::string_view {

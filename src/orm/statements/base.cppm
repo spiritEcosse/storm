@@ -36,7 +36,7 @@ export namespace storm::orm::statements {
 
     // Mirror of meta::FieldAttr from storm module - must match exactly
     namespace meta {
-        enum class FieldAttr { primary, indexed, unique, fk };
+        enum class FieldAttr : std::uint8_t { primary, indexed, unique, fk };
     }
 
     // Concept: T must have at least one field annotated with FieldAttr::primary

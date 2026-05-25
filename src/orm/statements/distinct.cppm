@@ -16,6 +16,7 @@ import storm_orm_statements_orderby;
 import storm_orm_utilities;
 import storm_orm_where;
 
+import <cstdint>;
 import <expected>;
 import <string>;
 import <vector>;
@@ -32,7 +33,7 @@ export namespace storm::orm::statements {
     using storm::orm::utilities::ConstexprString;
 
     // ProjectionMode controls whether DISTINCT keyword is included in SQL
-    enum class ProjectionMode { Values, Distinct };
+    enum class ProjectionMode : std::uint8_t { Values, Distinct };
 
     // ProjectionStatement - executes SELECT or SELECT DISTINCT on specified field(s) and returns tuple data
     // Supports 1+ fields with compile-time type safety

@@ -99,7 +99,7 @@ export namespace storm::orm::utilities {
     // Collation Support
     // ============================================================================
 
-    enum class Collate { None, Binary, NoCase, RTrim };
+    enum class Collate : std::uint8_t { None, Binary, NoCase, RTrim };
 
     constexpr auto collate_to_sql(Collate col) noexcept -> std::string_view {
         using enum Collate;

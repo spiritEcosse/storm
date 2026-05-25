@@ -15,6 +15,7 @@ import storm_orm_where;
 import storm_db_concept;
 
 import <concepts>;
+import <cstdint>;
 import <expected>;
 import <string>;
 import <vector>;
@@ -23,7 +24,7 @@ import <memory>;
 
 export namespace storm::orm::statements {
 
-    enum class SetOpType { Union, UnionAll, Except, Intersect };
+    enum class SetOpType : std::uint8_t { Union, UnionAll, Except, Intersect };
 
     template <typename T> struct SetOpOperand {
         std::string                      sql;
