@@ -12,9 +12,7 @@ import <unordered_map>;
 import <unordered_set>;
 import <vector>;
 import <array>;
-import <cstddef>;
 import <cstdint>;
-import <cstring>;
 import <tuple>;
 
 export namespace storm::db::sqlite {
@@ -33,34 +31,8 @@ export namespace storm::db::sqlite {
         }
     };
 
-    // Error type for database operations.
-    // Non-allocating: stores the message inline so construction is noexcept and Error can
-    // be returned from noexcept catch blocks without risking bad_alloc (issue #316).
-    struct Error {
-        static constexpr std::size_t kMaxMessageLen = 255;
-
-        int                                  code_{0};
-        std::array<char, kMaxMessageLen + 1> message_buf_{};
-        std::size_t                          message_len_{0};
-
-        Error() noexcept = default;
-
-        Error(int code, std::string_view msg) noexcept : code_{code} {
-            const std::size_t n = msg.size() < kMaxMessageLen ? msg.size() : kMaxMessageLen;
-            if (n > 0) {
-                std::memcpy(message_buf_.data(), msg.data(), n);
-            }
-            message_buf_[n] = '\0';
-            message_len_    = n;
-        }
-
-        [[nodiscard]] constexpr auto code() const noexcept -> int {
-            return code_;
-        }
-        [[nodiscard]] constexpr auto message() const noexcept -> std::string_view {
-            return std::string_view{message_buf_.data(), message_len_};
-        }
-    };
+    // Error type — shared across backends, defined in storm_db_concept (issue #316).
+    using Error = storm::db::Error;
 
     // Forward declaration
     class Connection;
