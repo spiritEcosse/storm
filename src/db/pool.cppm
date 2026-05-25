@@ -207,7 +207,8 @@ export namespace storm::db {
                     if (auto* idle = find_idle(); idle != nullptr) {
                         return std::expected<ConnType*, Error>{idle};
                     }
-                    return std::nullopt; // Fall through to wait
+                    return std::nullopt; // LCOV_EXCL_LINE — race-only fall-through: pool hit max during unlock + all
+                                         // slots in use
                 }
                 auto now = Clock::now();
                 entries_.emplace_back(std::make_unique<ConnType>(std::move(result.value())), true, now, now);

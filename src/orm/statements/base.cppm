@@ -479,24 +479,32 @@ export namespace storm::orm::statements {
         extract_text_like(Statement* stmt, int col_idx) noexcept -> FieldType {
             const std::string_view view = read_text_view(stmt, col_idx);
             if constexpr (std::is_same_v<FieldType, std::chrono::year_month_day>) {
+                // LCOV_EXCL_START — NOT NULL column, defensive fallback for empty text
                 if (view.empty()) {
-                    return FieldType{}; // LCOV_EXCL_LINE — NOT NULL column, defensive fallback
+                    return FieldType{};
                 }
+                // LCOV_EXCL_STOP
                 return utilities::chrono_conv::string_to_ymd(view);
             } else if constexpr (std::is_same_v<FieldType, std::chrono::system_clock::time_point>) {
+                // LCOV_EXCL_START — NOT NULL column, defensive fallback for empty text
                 if (view.empty()) {
-                    return FieldType{}; // LCOV_EXCL_LINE — NOT NULL column, defensive fallback
+                    return FieldType{};
                 }
+                // LCOV_EXCL_STOP
                 return utilities::chrono_conv::string_to_tp(view);
             } else if constexpr (std::is_same_v<FieldType, std::filesystem::path>) {
+                // LCOV_EXCL_START — NOT NULL column, defensive fallback for empty text
                 if (view.empty()) {
-                    return FieldType{}; // LCOV_EXCL_LINE — NOT NULL column, defensive fallback
+                    return FieldType{};
                 }
+                // LCOV_EXCL_STOP
                 return std::filesystem::path(std::string(view));
             } else if constexpr (std::is_same_v<FieldType, utilities::UUID>) {
+                // LCOV_EXCL_START — NOT NULL column, defensive fallback for empty text
                 if (view.empty()) {
-                    return FieldType{}; // LCOV_EXCL_LINE — NOT NULL column, defensive fallback
+                    return FieldType{};
                 }
+                // LCOV_EXCL_STOP
                 return utilities::UUID{std::string(view)};
             } else {
                 static_assert(std::is_same_v<FieldType, std::string>, "extract_text_like: unhandled text storage type");
