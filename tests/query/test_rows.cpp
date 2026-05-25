@@ -32,7 +32,7 @@ TYPED_TEST(RowsTest, BasicIteration) {
     QuerySet<Person, TypeParam> qs;
     int                         count = 0;
     for (auto&& result : qs.rows()) {
-        ASSERT_TRUE(result.has_value()) << "Row error: " << result.error().message_;
+        ASSERT_TRUE(result.has_value()) << "Row error: " << result.error().message();
         ++count;
     }
     EXPECT_EQ(count, 25);

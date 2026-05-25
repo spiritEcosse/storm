@@ -1,22 +1,11 @@
 module;
 
 export module storm_db_postgresql_error;
-import <string>;
-import <string_view>;
+import storm_db_concept;
 
 export namespace storm::db::postgresql {
 
-    // Error type for database operations
-    struct Error {
-        int         code_;
-        std::string message_;
-
-        [[nodiscard]] constexpr auto code() const noexcept -> int {
-            return code_;
-        }
-        [[nodiscard]] constexpr auto message() const noexcept -> std::string_view {
-            return message_;
-        }
-    };
+    // Error type — shared across backends, defined in storm_db_concept (issue #316).
+    using Error = storm::db::Error;
 
 } // namespace storm::db::postgresql
