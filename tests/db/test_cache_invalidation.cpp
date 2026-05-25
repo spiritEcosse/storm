@@ -96,6 +96,17 @@ namespace {
         EXPECT_EQ(conn_.cached_statement_count(), 2U) << "messages cache hit must not grow the cache";
     }
 
+    // sql_references_table fast-out: empty table name or SQL shorter than the
+    // table name must short-circuit to false without scanning. Exercises the
+    // early-return branch in concept.cppm.
+    TEST(SqlReferencesTableFastOut, EmptyOrTooShortReturnsFalse) {
+        EXPECT_FALSE(storm::db::sql_references_table("SELECT 1", ""));
+        EXPECT_FALSE(storm::db::sql_references_table("ab", "persons"));
+        EXPECT_FALSE(storm::db::sql_references_table("", "persons"));
+        // Sanity: a real match still works.
+        EXPECT_TRUE(storm::db::sql_references_table("SELECT id FROM persons", "persons"));
+    }
+
     // ------------------------------------------------------------------ Test 3
     // Per-table clear must respect word boundaries: clearing "persons" must
     // NOT drop "person_addresses". A naive substring match would.
@@ -146,6 +157,33 @@ namespace {
         ASSERT_TRUE(qs.insert(Person{.name = "Bob", .age = 25}).execute().has_value())
                 << "insert after invalidate+clear must re-prepare without UB";
         EXPECT_GE(conn->cached_statement_count(), 1U) << "re-prepared statement must be cached again";
+    }
+
+    // ------------------------------------------------------------------ Test 4b
+    // invalidate_cache() must reach EraseStatement when the QuerySet has
+    // touched the erase path. Without this, an erase issued before targeted
+    // DDL would leave the Level 2 erase cache dangling against Level 3.
+    TYPED_TEST(CacheInvalidationLevel1Test, InvalidateCacheReachesEraseStatement) {
+        storm::QuerySet<Person, TypeParam> qs;
+
+        // Warm the erase Level 2 cache: insert a row so the erase path has
+        // something to operate on, then run erase to populate erase_stmt_.
+        ASSERT_TRUE(qs.insert(Person{.name = "Alice", .age = 30}).execute().has_value());
+        ASSERT_TRUE(qs.erase(Person{.id = 1}).execute().has_value());
+
+        const auto& conn = storm::QuerySet<Person, TypeParam>::get_default_connection();
+        ASSERT_GE(conn->cached_statement_count(), 1U);
+
+        // invalidate_cache() must visit erase_stmt_; clearing Level 3 right
+        // after would otherwise leave the EraseStatement holding a dangling
+        // pointer that ASAN would flag on the next erase.
+        qs.invalidate_cache();
+        conn->clear_statement_cache();
+        EXPECT_EQ(conn->cached_statement_count(), 0U);
+
+        ASSERT_TRUE(qs.insert(Person{.name = "Bob", .age = 25}).execute().has_value());
+        ASSERT_TRUE(qs.erase(Person{.id = 2}).execute().has_value())
+                << "erase after invalidate+clear must re-prepare without UB";
     }
 
     // ------------------------------------------------------------------ Test 5

@@ -549,6 +549,23 @@ namespace {
         EXPECT_EQ(conn_result->cached_statement_count(), 0U);
     }
 
+    // Per-table clear (issue #215): drop entries that reference the given
+    // table, leave the rest. Word-boundary aware so clearing "persons" does
+    // not touch "person_addresses".
+    TEST_F(PgCacheUtilityTest, ClearStatementCachePerTable) {
+        auto conn_result = PgConnection::open("host=localhost");
+        ASSERT_TRUE(conn_result.has_value());
+
+        (void)conn_result->prepare_cached("SELECT id FROM persons");
+        (void)conn_result->prepare_cached("SELECT id FROM messages");
+        (void)conn_result->prepare_cached("SELECT id FROM person_addresses");
+        EXPECT_EQ(conn_result->cached_statement_count(), 3U);
+
+        conn_result->clear_statement_cache(std::string_view{"persons"});
+        EXPECT_EQ(conn_result->cached_statement_count(), 2U)
+                << "only the persons entry must be dropped — messages and person_addresses survive";
+    }
+
     // ============================================================================
     // Connection Accessor Tests (L656-668)
     // ============================================================================
