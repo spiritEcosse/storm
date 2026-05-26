@@ -156,6 +156,29 @@ functions like `having()` and `first()`, but running the full suite correctly re
 
 See [#176](https://github.com/spiritEcosse/storm/issues/176) for the investigation details.
 
+### Parallel Batches (`COVERAGE_JOBS`)
+
+Batches run in parallel by default — each suite emits an independent
+`batch_${name}.profraw` file, so concurrent processes do not contend on output.
+
+| Setting | Behaviour |
+|---|---|
+| (unset, default) | `nproc --ignore=2` parallel workers |
+| `COVERAGE_JOBS=N` | cap concurrency at N |
+| `COVERAGE_JOBS=1` | strictly serial (opt-out for shared hardware or flaky-suite debugging) |
+
+Example: run the coverage stage with at most 4 parallel batches:
+
+```bash
+COVERAGE_JOBS=4 cmake --build --preset ninja-debug-coverage --target coverage
+```
+
+The env var is passed through to the script by the `coverage-run-main` CMake target, the
+pre-commit hook (`commit.sh`), and CI workflows — no further wiring needed.
+
+See [#268](https://github.com/spiritEcosse/storm/issues/268) for the motivation (30-minute
+serial pre-commit on dev machines with PostgreSQL enabled).
+
 ## Troubleshooting
 
 ### Coverage Not Updating
