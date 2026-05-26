@@ -15,8 +15,20 @@ PASS=0
 FAIL=0
 FAILED_TESTS=()
 
-fail() { echo "  FAIL: $1"; FAIL=$((FAIL+1)); FAILED_TESTS+=("$2"); }
-pass() { echo "  PASS: $1"; PASS=$((PASS+1)); }
+fail() {
+    local msg="$1" tag="$2"
+    echo "  FAIL: $msg"
+    FAIL=$((FAIL+1))
+    FAILED_TESTS+=("$tag")
+    return 0
+}
+
+pass() {
+    local msg="$1"
+    echo "  PASS: $msg"
+    PASS=$((PASS+1))
+    return 0
+}
 
 # Build a fake build dir with a fake gtest binary.
 make_fake_build_dir() {
@@ -53,6 +65,7 @@ echo "\$filter \$\$ \$start \$end" >> "\$LOG_DIR/runs.log"
 exit 0
 EOF
     chmod +x "$bin"
+    return 0
 }
 
 # Returns 0 if the recorded runs in $1/runs.log show overlap (parallel).
@@ -64,12 +77,14 @@ has_overlap() {
         { if ($1 < prev_end) { found=1 } ; if ($2 > prev_end) prev_end=$2 }
         END { exit !found }
     '
+    return $?
 }
 
 # Returns the wall-clock duration (ns) covering all runs in $1/runs.log.
 wall_ns() {
     local log="$1"
     awk '{print $3; print $4}' "$log" | sort -n | awk 'NR==1{min=$1} {max=$1} END{print max-min}'
+    return 0
 }
 
 echo "=== test_coverage_parallel.sh ==="
