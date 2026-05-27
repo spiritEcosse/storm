@@ -1,4 +1,24 @@
 cmake_minimum_required(VERSION 3.30)
+
+# Gate for CMake's experimental `import std;` support. Must be set BEFORE
+# project(). The UUID is CMake-version-specific — see issue #326. Verified for
+# CMake 4.3.3. Bump UUID if the minimum-supported CMake changes.
+set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b")
+
+# Pin the import-std descriptor to clang-p2996's libc++.modules.json before
+# project(). Without this, CMake's auto-detection picks up the host GCC's
+# /usr/lib64/libstdc++.modules.json and tries to build bits/std.cc against our
+# libc++ include paths — which fails. See issue #326.
+#
+# LIBCXX_ROOT is passed via preset/-D, so we resolve the JSON path the same way
+# cmake/libcxx.cmake does, but without including it (project() must run first
+# for that). Falls back to letting CMake auto-detect when LIBCXX_ROOT is unset
+# (e.g. plain library configures, where import-std is not used).
+if(DEFINED LIBCXX_ROOT)
+  set(CMAKE_CXX_STDLIB_MODULES_JSON
+      "${LIBCXX_ROOT}/build/lib/x86_64-unknown-linux-gnu/libc++.modules.json")
+endif()
+
 project(storm)
 
 set(CMAKE_CXX_STANDARD 26)
@@ -80,6 +100,8 @@ option(ENABLE_TESTS "Enable testing support" OFF)
 option(ENABLE_BENCH "Enable benchmarking with sqlite_orm" OFF)
 option(ENABLE_COVERAGE "Enable code coverage (requires LLVM tools)" OFF)
 option(ENABLE_TOOLS "Build CLI tools (storm-schema, etc.)" OFF)
+option(ENABLE_IMPORT_STD_PROBE
+       "Build the import-std probe (issue #326 phase 2)" OFF)
 
 # coverage flags must be set before test targets are compiled
 include(cmake/coverage.cmake)
@@ -91,6 +113,7 @@ include(cmake/sanitizers.cmake)
 include(cmake/fuzz.cmake)
 include(cmake/format.cmake)
 include(cmake/tools.cmake)
+include(cmake/import_std_probe.cmake)
 
 # ── Build summary ─────────────────────────────────────────────────────────────
 
