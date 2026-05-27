@@ -92,6 +92,16 @@ Each result line shows a delta column next to the latency:
 
 The `—` marker appears for benchmarks not present in the baseline run (e.g. new benchmarks, or filtered runs with a different `--benchmark_filter`).
 
+### Session header
+
+A completed session renders one line in this form:
+
+```
+▼ [1] filter='…' · 18 results · complete 08:30:04 UTC
+```
+
+The `N results` counter is the number of **per-iteration measurement rows** in that run. Big-O and RMS aggregate rows are not counted there; they fold into the per-category `Complexity:` footer instead. So a run that records, say, 18 measurement rows plus 2 BigO + 2 RMS aggregate rows shows `18 results`, even though the `BenchResult` table holds 22 rows for that `run_id`.
+
 ### Summary line
 
 Each session header shows a running tally:

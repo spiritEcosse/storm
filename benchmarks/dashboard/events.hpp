@@ -174,8 +174,6 @@ namespace {
         for (auto& r : rows) {
             auto m = build_result_msg_from_row(r);
             enrich_with_baseline(m, baseline_run_id);
-            if (m.row_kind == bench_dashboard::wire::kRowKindMeasurement || m.row_kind.empty())
-                ++sess.result_count;
             bench_dashboard::tui::add_result(sess, m, regression_threshold);
         }
     }

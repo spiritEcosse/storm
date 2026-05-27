@@ -40,7 +40,8 @@ file(
   "${CMAKE_CURRENT_SOURCE_DIR}/schema/*.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/db/*.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/errors/*.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/yaml/*.cpp")
+  "${CMAKE_CURRENT_SOURCE_DIR}/yaml/*.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/bench_dashboard/*.cpp")
 
 add_executable(${PROJECT_NAME} ${TEST_SOURCES})
 
@@ -54,7 +55,9 @@ target_sources(
           ${CMAKE_SOURCE_DIR}/benchmarks
           FILES
           ${CMAKE_SOURCE_DIR}/benchmarks/schema.cppm
-          ${CMAKE_SOURCE_DIR}/benchmarks/parser.cppm)
+          ${CMAKE_SOURCE_DIR}/benchmarks/parser.cppm
+          ${CMAKE_SOURCE_DIR}/benchmarks/dashboard/wire.cppm
+          ${CMAKE_SOURCE_DIR}/benchmarks/dashboard/tui.cppm)
 
 include(GoogleTest)
 
