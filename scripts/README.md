@@ -49,49 +49,36 @@ Run clang-tidy with modernize checks on the Storm codebase, excluding third_part
 
 ---
 
-## SonarCloud Check Script
+## SonarCloud Quality Checks
 
-Check SonarCloud quality gate status, issues, and **code duplications** for Pull Requests.
+Use the `sonar` CLI to inspect code quality. Auth is stored in the OS keychain via `sonar auth login`.
 
 ### Prerequisites
 
-1. **GitHub CLI (`gh`)** - Required for auto-detecting PR from current branch
+1. **`sonar` CLI** - Install and authenticate once:
    ```bash
-   # Install (see https://cli.github.com/)
-   # Then authenticate:
-   gh auth login
-   ```
-
-2. **SonarCloud Token**:
-   - Go to https://sonarcloud.io/account/security
-   - Generate a new token
-   - Set the environment variable:
-   ```bash
-   export SONAR_TOKEN=your_token_here
-   ```
-
-   To make it permanent, add to your `~/.bashrc` or `~/.zshrc`:
-   ```bash
-   echo 'export SONAR_TOKEN=your_token_here' >> ~/.zshrc
-   source ~/.zshrc
+   sonar auth login
    ```
 
 ### Usage
 
 ```bash
-# Auto-detect PR from current branch (recommended)
-./scripts/sonarcloud-check.sh
+# List issues on develop branch
+sonar list issues --project spiritEcosse_storm --branch develop --format table
 
-# Override with specific PR number
-./scripts/sonarcloud-check.sh 48
+# List issues on a PR (new code only)
+sonar list issues --project spiritEcosse_storm --pull-request 48 --format table
 
-# Explicit PR number
-./scripts/sonarcloud-check.sh --pr 48
+# Quality gate status
+sonar api get "/api/qualitygates/project_status?projectKey=spiritEcosse_storm&branch=develop"
+
+# Quality gate status for a PR
+sonar api get "/api/qualitygates/project_status?projectKey=spiritEcosse_storm&pullRequest=48"
 ```
 
 ### Using with Claude Code Slash Commands
 
-Inside Claude Code, you can use slash commands that call this script:
+Inside Claude Code, you can use slash commands:
 
 ```
 /sonarcloud-status              # Auto-detect PR from current branch
@@ -99,19 +86,10 @@ Inside Claude Code, you can use slash commands that call this script:
 /sonarcloud-branch              # Alias for sonarcloud-status
 ```
 
-### Output
-
-The script displays:
-- 📊 Quality Gate status (PASSED/FAILED)
-- 📈 Metrics (coverage, bugs, code smells, duplication density, etc.)
-- 🐛 Top 10 issues with severity, file, line number, and effort
-- 📋 Code duplications with exact line locations
-- 🔗 Direct links to SonarCloud dashboard
-
 ### Example
 
 ```bash
-$ ./scripts/sonarcloud-check.sh
+$ sonar list issues --project spiritEcosse_storm --pull-request 48 --format table
 
 Detecting PR for branch: claude/my-feature-branch
 Found PR #48

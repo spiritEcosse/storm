@@ -159,7 +159,7 @@ cmake/
 
 ### SonarCloud Gate (MANDATORY before merge)
 
-The `/sonarcloud-status` skill (and `./scripts/sonarcloud-check.sh`) is **branch-aware**:
+The `/sonarcloud-status` skill (uses `sonar` CLI) is **branch-aware**:
 
 | Context | Mode | What it checks |
 |---|---|---|

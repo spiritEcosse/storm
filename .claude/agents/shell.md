@@ -97,10 +97,11 @@ These scripts have project-specific conventions — understand them before modif
 - Skips for parse-failure are limited to `tests/*`, `benchmarks/*`, `fuzz/*`, `shared/*`, `src/orm/query_builder.hpp`. `src/*.cppm` parse cleanly since 2026-05-11 — a parse failure there now fails loudly.
 - Exits non-zero on warnings/errors that affect the current mode's scope.
 
-**`scripts/sonarcloud-check.sh`** — Branch-aware SonarCloud quality gate:
-- Branch mode (develop/master/main): checks full project — all existing issues
-- PR mode (feature branches): new code only — waits for analysis to finish, then checks changed lines
-- Requires `SONAR_TOKEN` env var
+**`sonar` CLI** — Branch-aware SonarCloud quality gate:
+- Branch mode (develop/master/main): `sonar list issues --project spiritEcosse_storm --branch develop --format table`
+- PR mode (feature branches): `sonar list issues --project spiritEcosse_storm --pull-request <N> --format table`
+- Quality gate status: `sonar api get "/api/qualitygates/project_status?projectKey=spiritEcosse_storm&branch=develop"`
+- Auth stored in OS keychain via `sonar auth login`
 - Used by the `/sonarcloud-status` skill
 
 **`scripts/coverage-run-batched.sh`** — Batched coverage report generation
