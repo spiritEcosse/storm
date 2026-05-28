@@ -31,17 +31,22 @@ fail() {
     echo "  FAIL: $msg"
     FAIL=$((FAIL+1))
     FAILED_TESTS+=("$CURRENT_TAG")
+    return 0
 }
 
 pass() {
     local msg="$1"
     echo "  PASS: $msg"
     PASS=$((PASS+1))
+    return 0
 }
 
 mtime_of() {
     local path="$1"
-    stat -c '%Y' "$path" 2>/dev/null || stat -f '%m' "$path"
+    local mtime
+    mtime="$(stat -c '%Y' "$path" 2>/dev/null || stat -f '%m' "$path")"
+    echo "$mtime"
+    return 0
 }
 
 make_fake_libcxx_root() {
