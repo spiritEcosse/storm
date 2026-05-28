@@ -94,6 +94,27 @@ std::string str{cs.data.data(), cs.len};
 sqlite3_column_count(stmt->handle())
 ```
 
+### 7. clang-p2996 libc++ Modules Layout Mismatch
+
+**Symptom** (when enabling CMake's `import std;` support):
+```
+CMake Error: Cannot find source file:
+  <LIBCXX_ROOT>/build/share/libc++/v1/std.compat.cppm
+```
+
+**Cause**: `<LIBCXX_ROOT>/build/lib/x86_64-…/libc++.modules.json` declares the
+sources at `share/libc++/v1/std.cppm`, but the build places them under
+`build/modules/c++/v1/`. Plain libc++ installs expose them via `share/`; the
+clang-p2996 build directory does not.
+
+**Workaround**: `cmake/libcxx.cmake` creates a symlink
+`build/share/libc++/v1 -> build/modules/c++/v1` at configure time. The logic
+is idempotent and won't overwrite a real directory if one exists.
+
+**Related**: Issue [#326](https://github.com/spiritEcosse/storm/issues/326)
+tracks the staged migration from per-header `import std.<sub>;` to a single
+`import std;`.
+
 ## Debugging Tips
 
 1. **Clean build**: `rm -rf build/ && cmake --preset ninja-debug`
