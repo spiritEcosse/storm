@@ -40,7 +40,8 @@ pass() {
 }
 
 mtime_of() {
-    stat -c '%Y' "$1" 2>/dev/null || stat -f '%m' "$1"
+    local path="$1"
+    stat -c '%Y' "$path" 2>/dev/null || stat -f '%m' "$path"
 }
 
 make_fake_libcxx_root() {
@@ -51,6 +52,7 @@ make_fake_libcxx_root() {
              "$root/build/lib/x86_64-unknown-linux-gnu"
     : > "$root/build/modules/c++/v1/std.cppm"
     : > "$root/build/modules/c++/v1/std.compat.cppm"
+    return 0
 }
 
 run_harness() {
@@ -62,7 +64,9 @@ project(libcxx_symlink_harness NONE)
 set(LIBCXX_ROOT "$libcxx_root")
 include("$LIBCXX_CMAKE")
 EOF
-    (cd "$workdir" && cmake -B build . > cmake.log 2>&1)
+    local rc=0
+    (cd "$workdir" && cmake -B build . > cmake.log 2>&1) || rc=$?
+    return "$rc"
 }
 
 # Dispatcher: prepares tmpdir + fake root, calls hook_pre (optional setup
@@ -89,6 +93,7 @@ run_scenario() {
     "scenario_$tag"
 
     rm -rf "$TMP"
+    return 0
 }
 
 # ---- scenarios ------------------------------------------------------------
@@ -115,6 +120,7 @@ pre_idempotent_when_symlink_exists() {
     mkdir -p "$LIBCXX/build/share/libc++"
     ln -sfn "$LINK_TARGET" "$LINK_PATH"
     SAVED_MTIME="$(mtime_of "$LINK_PATH")"
+    return 0
 }
 
 scenario_idempotent_when_symlink_exists() {
@@ -132,6 +138,7 @@ scenario_idempotent_when_symlink_exists() {
 pre_refuses_when_share_is_real_dir() {
     mkdir -p "$LINK_PATH"
     : > "$LINK_PATH/keep.txt"
+    return 0
 }
 
 scenario_refuses_when_share_is_real_dir() {
