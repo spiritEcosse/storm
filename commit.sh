@@ -32,6 +32,7 @@ TOTAL_START=$SECONDS
 LOG_FORMAT=/tmp/storm_format.log
 LOG_CMAKE_FORMAT=/tmp/storm_cmake_format.log
 LOG_TIDY=/tmp/storm_tidy.log
+LOG_TIDY_BMI=/tmp/storm_tidy_bmi.log
 LOG_RELEASE=/tmp/storm_release.log
 LOG_TESTS=/tmp/storm_tests.log
 LOG_COVERAGE=/tmp/storm_coverage.log
@@ -184,6 +185,15 @@ TOTAL_STEPS=0
 [[ "$RUN_FORMAT" == true ]] && ((TOTAL_STEPS++))
 [[ "$RUN_CMAKE_FORMAT" == true ]] && ((TOTAL_STEPS++))
 [[ "$RUN_TIDY" == true ]] && ((TOTAL_STEPS++))
+# clang-tidy needs module BMIs built first when the tree consumes `import std;`
+# (issue #330). Only counts as a step when build/release actually references the
+# std module — keeps the count accurate on pre-#326 trees that skip it.
+RUN_TIDY_BMI=false
+if [[ "$RUN_TIDY" == true && -f "build/release/compile_commands.json" ]] \
+   && grep -q -- '-fmodule-file=std=' "build/release/compile_commands.json" 2>/dev/null; then
+    RUN_TIDY_BMI=true
+    ((TOTAL_STEPS++))
+fi
 [[ "$RUN_BENCH_RELEASE" == true ]] && ((TOTAL_STEPS++))
 [[ "$RUN_TESTS" == true ]] && ((TOTAL_STEPS++))
 [[ "$RUN_COVERAGE" == true ]] && ((TOTAL_STEPS++))
@@ -216,6 +226,23 @@ fi
 # lines, so pre-existing drift in unrelated files doesn't block unrelated work.
 # Set STORM_TIDY_FULL=1 to force whole-file staged scan (the pre-#262 behavior).
 if [[ "$RUN_TIDY" == true ]]; then
+    # clang-tidy parses each TU using build/release/compile_commands.json. A TU
+    # that does `import std;` (or `import storm;`, which transitively imports
+    # std) needs the std/storm module BMIs (.pcm) to exist, and clang-tidy will
+    # NOT build them itself — it fails with "module file '…std.pcm' not found".
+    # Those BMIs are produced by the release build, which runs AFTER tidy
+    # (Step 3b), so on a fresh/stale build/release the tidy step fails. Build the
+    # module BMIs first — but only when the project actually consumes the std
+    # module (post-#326). On a tree without `import std;`, TUs parse standalone
+    # and this build is pure overhead, so we skip it. See issue #330.
+    if [[ "$RUN_TIDY_BMI" == true ]]; then
+        if [[ ! -f "build/release/build.ninja" ]]; then
+            cmake --preset ninja-release > /dev/null 2>&1
+        fi
+        run_step "module BMIs (for clang-tidy)" "$LOG_TIDY_BMI" \
+            cmake --build --preset ninja-release --target storm
+    fi
+
     if [[ -n "$STORM_TIDY_FULL" ]]; then
         run_step "clang-tidy --full --fix" "$LOG_TIDY" ./scripts/run_clang_tidy.sh --full --fix || true
     else
