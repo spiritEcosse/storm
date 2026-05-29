@@ -28,7 +28,7 @@ target_include_directories(
   storm_mock_tests PRIVATE ${GTEST_INCLUDE_DIRS} "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # Discover mock infrastructure tests
-gtest_discover_tests(storm_mock_tests)
+gtest_discover_tests(storm_mock_tests DISCOVERY_MODE PRE_TEST)
 
 # ============================================================================
 # Storm ORM Mock Tests - Tests Storm ORM error paths using LD_PRELOAD These

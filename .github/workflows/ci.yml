@@ -114,15 +114,6 @@ jobs:
         run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
-        # For msan: gtest_discover_tests runs the test binary during cmake --build
-        # to list tests (before ctest). With import std; the std module is MSAN-
-        # instrumented (issue #326 Finding D), making MSAN stricter about std::string
-        # SSO buffer initialization in GTest's CodeLocation static initializers.
-        # halt_on_error=0 lets the binary warn-and-continue so test discovery succeeds;
-        # real MSAN errors in tests are still caught by ctest (which uses abort_on_error=1
-        # via CMakePresets.json MSAN_OPTIONS).
-        env:
-          MSAN_OPTIONS: "halt_on_error=0"
         run: ./scripts/build-with-retry.sh ${{ matrix.preset }}
 
       - name: Test

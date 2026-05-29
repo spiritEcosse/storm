@@ -29,7 +29,7 @@ target_include_directories(
                               "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # Discover mock infrastructure tests (no LD_PRELOAD needed)
-gtest_discover_tests(storm_pq_mock_tests)
+gtest_discover_tests(storm_pq_mock_tests DISCOVERY_MODE PRE_TEST)
 
 # ============================================================================
 # Storm ORM PG Mock Tests - Tests PostgreSQL error paths using LD_PRELOAD These
