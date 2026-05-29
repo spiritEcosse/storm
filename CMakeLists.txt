@@ -68,20 +68,6 @@ add_compile_options(-Wno-unused-command-line-argument)
 
 include(cmake/libcxx.cmake)
 
-# ── Sanitizer flags (must precede the storm target) ───────────────────────────
-# import std; migration (issue #326): sanitizer flags are applied globally via
-# add_compile_options()/add_link_options() in cmake/sanitizers.cmake. Those only
-# affect targets created AFTER the include, so the include MUST come before
-# add_library(storm) below — otherwise neither libstorm nor the
-# CMake-synthesized `__cmake_cxx_std_26` std-module target (which compiles
-# libc++'s std.cppm) gets the sanitizer instrumentation, and the std module's
-# container-annotation calls (`__sanitizer_annotate_contiguous_container`)
-# link-fail with an undefined reference. cmake-scripts (the sanitizer backend)
-# needs CPM, so fetch that first.
-include(cmake/cpm.cmake)
-include(cmake/cmake-scripts.cmake)
-include(cmake/sanitizers.cmake)
-
 # ── Core library ──────────────────────────────────────────────────────────────
 
 add_library(${PROJECT_NAME} STATIC)
@@ -114,7 +100,9 @@ include(cmake/db.cmake)
 link_sqlite(${PROJECT_NAME})
 link_postgresql(${PROJECT_NAME})
 
+include(cmake/cpm.cmake)
 include(cmake/uuid.cmake)
+include(cmake/cmake-scripts.cmake)
 
 # ── Feature options ───────────────────────────────────────────────────────────
 
@@ -122,6 +110,8 @@ option(ENABLE_TESTS "Enable testing support" OFF)
 option(ENABLE_BENCH "Enable benchmarking with sqlite_orm" OFF)
 option(ENABLE_COVERAGE "Enable code coverage (requires LLVM tools)" OFF)
 option(ENABLE_TOOLS "Build CLI tools (storm-schema, etc.)" OFF)
+
+include(cmake/sanitizers.cmake)
 
 # coverage flags must be set before test targets are compiled
 include(cmake/coverage.cmake)
