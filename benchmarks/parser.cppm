@@ -49,20 +49,20 @@ export namespace storm::benchmark {
     // ========================================================================
     // Primitive parsers
     // ========================================================================
-    constexpr auto skip_whitespace(std::string_view json, size_t& pos) -> void {
+    constexpr auto skip_whitespace(std::string_view json, std::size_t& pos) -> void {
         while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\n' || json[pos] == '\r' || json[pos] == '\t')) {
             pos++;
         }
     }
 
-    constexpr auto skip_char(std::string_view json, size_t& pos, char c) -> void {
+    constexpr auto skip_char(std::string_view json, std::size_t& pos, char c) -> void {
         skip_whitespace(json, pos);
         if (pos < json.size() && json[pos] == c) {
             pos++;
         }
     }
 
-    constexpr auto parse_int(std::string_view json, size_t& pos) -> int {
+    constexpr auto parse_int(std::string_view json, std::size_t& pos) -> int {
         skip_whitespace(json, pos);
         int  result   = 0;
         bool negative = false;
@@ -77,7 +77,7 @@ export namespace storm::benchmark {
         return negative ? -result : result;
     }
 
-    constexpr auto parse_double(std::string_view json, size_t& pos) -> double {
+    constexpr auto parse_double(std::string_view json, std::size_t& pos) -> double {
         skip_whitespace(json, pos);
         double result   = 0.0;
         bool   negative = false;
@@ -101,7 +101,7 @@ export namespace storm::benchmark {
         return negative ? -result : result;
     }
 
-    constexpr auto parse_bool(std::string_view json, size_t& pos) -> bool {
+    constexpr auto parse_bool(std::string_view json, std::size_t& pos) -> bool {
         skip_whitespace(json, pos);
         if (pos + 4 <= json.size() && json.substr(pos, 4) == "true") {
             pos += 4;
@@ -114,12 +114,13 @@ export namespace storm::benchmark {
         return false;
     }
 
-    template <size_t N> constexpr auto parse_string(std::string_view json, size_t& pos) -> ConstexprString<N> {
+    template <std::size_t N>
+    constexpr auto parse_string(std::string_view json, std::size_t& pos) -> ConstexprString<N> {
         skip_whitespace(json, pos);
         ConstexprString<N> result;
         if (pos < json.size() && json[pos] == '"') {
             pos++; // opening quote
-            size_t i = 0;
+            std::size_t i = 0;
             while (pos < json.size() && json[pos] != '"' && i < N - 1) {
                 result.data[i] = json[pos];
                 i++;
@@ -134,7 +135,7 @@ export namespace storm::benchmark {
         return result;
     }
 
-    constexpr auto parse_key(std::string_view json, size_t& pos) -> ConstexprString<64> {
+    constexpr auto parse_key(std::string_view json, std::size_t& pos) -> ConstexprString<64> {
         return parse_string<64>(json, pos);
     }
 
@@ -142,7 +143,7 @@ export namespace storm::benchmark {
     // Value skipping (for unknown keys and recursive object/array skip)
     // ========================================================================
     // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-    constexpr auto skip_value(std::string_view json, size_t& pos) -> void { // NOSONAR(cpp:S3776)
+    constexpr auto skip_value(std::string_view json, std::size_t& pos) -> void { // NOSONAR(cpp:S3776)
         skip_whitespace(json, pos);
         if (pos >= json.size()) {
             return;
@@ -206,7 +207,7 @@ export namespace storm::benchmark {
     //
     // Lookahead: " → string, t/f → bool, digit/-  → scan ahead for '.' → double else int.
     // ========================================================================
-    constexpr auto parse_typed_value(std::string_view json, size_t& pos) -> TypedValue {
+    constexpr auto parse_typed_value(std::string_view json, std::size_t& pos) -> TypedValue {
         skip_whitespace(json, pos);
         TypedValue tv;
         if (pos >= json.size()) {
@@ -227,7 +228,7 @@ export namespace storm::benchmark {
         }
         // Number — peek ahead for '.' to decide int vs double
         bool has_dot = false;
-        for (size_t q = pos; q < json.size(); q++) {
+        for (std::size_t q = pos; q < json.size(); q++) {
             const char qc = json[q];
             if (qc == '.') {
                 has_dot = true;
@@ -251,13 +252,13 @@ export namespace storm::benchmark {
     // Array of integers — used by where.in_values
     // ========================================================================
     // Parse a "values" array of TypedValues into a WhereCondition
-    constexpr auto parse_values_array(WhereCondition& cond, std::string_view json, size_t& pos) -> void {
+    constexpr auto parse_values_array(WhereCondition& cond, std::string_view json, std::size_t& pos) -> void {
         skip_whitespace(json, pos);
         if (pos >= json.size() || json[pos] != '[') {
             return;
         }
         pos++; // '['
-        size_t count = 0;
+        std::size_t count = 0;
         while (pos < json.size() && count < WhereCondition::MAX_VALUES) {
             skip_whitespace(json, pos);
             if (json[pos] == ']') {
@@ -277,14 +278,14 @@ export namespace storm::benchmark {
     // ========================================================================
     // Array of short strings — used by group_by.fields, distinct.fields, join.fks
     // ========================================================================
-    template <size_t MaxItems, typename AssignFn>
-    constexpr auto parse_string_array(std::string_view json, size_t& pos, AssignFn assign) -> size_t {
+    template <std::size_t MaxItems, typename AssignFn>
+    constexpr auto parse_string_array(std::string_view json, std::size_t& pos, AssignFn assign) -> std::size_t {
         skip_whitespace(json, pos);
         if (pos >= json.size() || json[pos] != '[') {
             return 0;
         }
         pos++; // '['
-        size_t count = 0;
+        std::size_t count = 0;
         while (pos < json.size() && count < MaxItems) {
             skip_whitespace(json, pos);
             if (json[pos] == ']') {
@@ -314,7 +315,7 @@ export namespace storm::benchmark {
     // Generic object-walker: iterate key/value pairs and dispatch via callback.
     // Callback receives (key_view, json, pos) and consumes exactly one value.
     template <typename Dispatch>
-    constexpr auto parse_object_keys(std::string_view json, size_t& pos, Dispatch dispatch) -> void {
+    constexpr auto parse_object_keys(std::string_view json, std::size_t& pos, Dispatch dispatch) -> void {
         skip_char(json, pos, '{');
         while (pos < json.size()) {
             skip_whitespace(json, pos);
@@ -333,8 +334,8 @@ export namespace storm::benchmark {
     }
 
     // --- parse_where_condition_into (one condition: {field, op, values: [...]}) ---
-    constexpr auto parse_where_condition_into(WhereCondition& cond, std::string_view json, size_t& pos) -> void {
-        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, size_t& p) {
+    constexpr auto parse_where_condition_into(WhereCondition& cond, std::string_view json, std::size_t& pos) -> void {
+        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, std::size_t& p) {
             if (key == "field") {
                 cond.field = parse_string<32>(j, p);
             } else if (key == "op") {
@@ -349,15 +350,15 @@ export namespace storm::benchmark {
 
     // --- parse_where_into (conditions array + optional combine) ---
     // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-    constexpr auto parse_where_into(WhereSpec& w, std::string_view json, size_t& pos) -> void {
+    constexpr auto parse_where_into(WhereSpec& w, std::string_view json, std::size_t& pos) -> void {
         w.enabled = true;
-        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, size_t& p) {
+        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, std::size_t& p) {
             if (key == "conditions") {
                 // Parse array of WhereCondition objects
                 skip_whitespace(j, p);
                 if (p < j.size() && j[p] == '[') {
                     p++; // '['
-                    size_t idx = 0;
+                    std::size_t idx = 0;
                     while (p < j.size()) {
                         skip_whitespace(j, p);
                         if (j[p] == ']') {
@@ -391,9 +392,9 @@ export namespace storm::benchmark {
     }
 
     // --- parse_order_by_entry_into (one OrderBySpec) ---
-    constexpr auto parse_order_by_entry_into(OrderBySpec& o, std::string_view json, size_t& pos) -> void {
+    constexpr auto parse_order_by_entry_into(OrderBySpec& o, std::string_view json, std::size_t& pos) -> void {
         o.enabled = true;
-        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, size_t& p) {
+        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, std::size_t& p) {
             if (key == "field") {
                 o.field = parse_string<32>(j, p);
             } else if (key == "direction") {
@@ -407,13 +408,13 @@ export namespace storm::benchmark {
     }
 
     // --- parse_order_by_into (array of entries) ---
-    constexpr auto parse_order_by_array_into(BenchmarkTest& test, std::string_view json, size_t& pos) -> void {
+    constexpr auto parse_order_by_array_into(BenchmarkTest& test, std::string_view json, std::size_t& pos) -> void {
         skip_whitespace(json, pos);
         if (pos >= json.size() || json[pos] != '[') {
             return;
         }
         pos++; // '['
-        size_t count = 0;
+        std::size_t count = 0;
         while (pos < json.size() && count < BenchmarkTest::MAX_ORDER_BY) {
             skip_whitespace(json, pos);
             if (json[pos] == ']') {
@@ -435,9 +436,9 @@ export namespace storm::benchmark {
     }
 
     // --- parse_having_into ---
-    constexpr auto parse_having_into(HavingSpec& h, std::string_view json, size_t& pos) -> void {
+    constexpr auto parse_having_into(HavingSpec& h, std::string_view json, std::size_t& pos) -> void {
         h.enabled = true;
-        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, size_t& p) {
+        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, std::size_t& p) {
             if (key == "field") {
                 h.field = parse_string<32>(j, p);
             } else if (key == "op") {
@@ -451,11 +452,11 @@ export namespace storm::benchmark {
     }
 
     // --- parse_group_by_into ---
-    constexpr auto parse_group_by_into(GroupBySpec& g, std::string_view json, size_t& pos) -> void {
+    constexpr auto parse_group_by_into(GroupBySpec& g, std::string_view json, std::size_t& pos) -> void {
         g.enabled = true;
-        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, size_t& p) {
+        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, std::size_t& p) {
             if (key == "fields") {
-                parse_string_array<GroupBySpec::MAX_FIELDS>(j, p, [&](size_t i, const ConstexprString<32>& s) {
+                parse_string_array<GroupBySpec::MAX_FIELDS>(j, p, [&](std::size_t i, const ConstexprString<32>& s) {
                     g.fields[i] = s;
                 });
             } else if (key == "having") {
@@ -467,11 +468,11 @@ export namespace storm::benchmark {
     }
 
     // --- parse_distinct_into ---
-    constexpr auto parse_distinct_into(DistinctSpec& d, std::string_view json, size_t& pos) -> void {
+    constexpr auto parse_distinct_into(DistinctSpec& d, std::string_view json, std::size_t& pos) -> void {
         d.enabled = true;
-        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, size_t& p) {
+        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, std::size_t& p) {
             if (key == "fields") {
-                parse_string_array<DistinctSpec::MAX_FIELDS>(j, p, [&](size_t i, const ConstexprString<32>& s) {
+                parse_string_array<DistinctSpec::MAX_FIELDS>(j, p, [&](std::size_t i, const ConstexprString<32>& s) {
                     d.fields[i] = s;
                 });
             } else {
@@ -481,9 +482,9 @@ export namespace storm::benchmark {
     }
 
     // --- parse_limit_into ---
-    constexpr auto parse_limit_into(LimitSpec& l, std::string_view json, size_t& pos) -> void {
+    constexpr auto parse_limit_into(LimitSpec& l, std::string_view json, std::size_t& pos) -> void {
         l.enabled = true;
-        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, size_t& p) {
+        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, std::size_t& p) {
             if (key == "value") {
                 l.value = parse_int(j, p);
             } else if (key == "offset") {
@@ -495,9 +496,9 @@ export namespace storm::benchmark {
     }
 
     // --- parse_aggregate_into ---
-    constexpr auto parse_aggregate_into(AggregateSpec& a, std::string_view json, size_t& pos) -> void {
+    constexpr auto parse_aggregate_into(AggregateSpec& a, std::string_view json, std::size_t& pos) -> void {
         a.enabled = true;
-        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, size_t& p) {
+        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, std::size_t& p) {
             if (key == "func") {
                 a.func = parse_string<16>(j, p);
             } else if (key == "field") {
@@ -509,9 +510,9 @@ export namespace storm::benchmark {
     }
 
     // --- parse_join_into ---
-    constexpr auto parse_join_into(JoinSpec& jn, std::string_view json, size_t& pos) -> void {
+    constexpr auto parse_join_into(JoinSpec& jn, std::string_view json, std::size_t& pos) -> void {
         jn.enabled = true;
-        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, size_t& p) {
+        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, std::size_t& p) {
             if (key == "type") {
                 jn.type = parse_string<8>(j, p);
             } else if (key == "related") {
@@ -519,9 +520,10 @@ export namespace storm::benchmark {
             } else if (key == "fk") {
                 jn.fk = parse_string<32>(j, p);
             } else if (key == "fks") {
-                jn.fk_count = parse_string_array<JoinSpec::MAX_FKS>(j, p, [&](size_t i, const ConstexprString<32>& s) {
-                    jn.fks[i] = s;
-                });
+                jn.fk_count =
+                        parse_string_array<JoinSpec::MAX_FKS>(j, p, [&](std::size_t i, const ConstexprString<32>& s) {
+                            jn.fks[i] = s;
+                        });
             } else {
                 skip_value(j, p);
             }
@@ -529,9 +531,9 @@ export namespace storm::benchmark {
     }
 
     // --- parse_setop_into ---
-    constexpr auto parse_setop_into(SetOpSpec& s, std::string_view json, size_t& pos) -> void {
+    constexpr auto parse_setop_into(SetOpSpec& s, std::string_view json, std::size_t& pos) -> void {
         s.enabled = true;
-        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, size_t& p) {
+        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, std::size_t& p) {
             if (key == "type") {
                 s.type = parse_string<16>(j, p);
             } else {
@@ -544,7 +546,7 @@ export namespace storm::benchmark {
     // Top-level BenchmarkTest field dispatcher
     // ========================================================================
     constexpr auto parse_test_field( // NOSONAR(cpp:S3776)
-            BenchmarkTest& test, std::string_view key, std::string_view json, size_t& pos
+            BenchmarkTest& test, std::string_view key, std::string_view json, std::size_t& pos
     ) -> void {
         if (key == "test_name") {
             test.test_name = parse_string<64>(json, pos);
@@ -585,9 +587,9 @@ export namespace storm::benchmark {
         }
     }
 
-    constexpr auto parse_test_object(std::string_view json, size_t& pos) -> BenchmarkTest {
+    constexpr auto parse_test_object(std::string_view json, std::size_t& pos) -> BenchmarkTest {
         BenchmarkTest test;
-        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, size_t& p) {
+        parse_object_keys(json, pos, [&](std::string_view key, std::string_view j, std::size_t& p) {
             parse_test_field(test, key, j, p);
         });
         return test;
@@ -596,7 +598,7 @@ export namespace storm::benchmark {
     // ========================================================================
     // Test array parsing
     // ========================================================================
-    constexpr auto skip_json_object(std::string_view json, size_t& pos) -> void {
+    constexpr auto skip_json_object(std::string_view json, std::size_t& pos) -> void {
         int brace_depth = 0;
         while (pos < json.size()) {
             if (json[pos] == '"') {
@@ -626,9 +628,9 @@ export namespace storm::benchmark {
         }
     }
 
-    constexpr auto count_tests(std::string_view json) -> size_t {
-        size_t count = 0;
-        size_t pos   = 0;
+    constexpr auto count_tests(std::string_view json) -> std::size_t {
+        std::size_t count = 0;
+        std::size_t pos   = 0;
         skip_char(json, pos, '[');
         while (pos < json.size()) {
             skip_whitespace(json, pos);
@@ -647,11 +649,11 @@ export namespace storm::benchmark {
         return count;
     }
 
-    template <size_t N> constexpr auto parse_tests(std::string_view json) -> std::array<BenchmarkTest, N> {
+    template <std::size_t N> constexpr auto parse_tests(std::string_view json) -> std::array<BenchmarkTest, N> {
         std::array<BenchmarkTest, N> tests{};
-        size_t                       pos = 0;
+        std::size_t                  pos = 0;
         skip_char(json, pos, '[');
-        for (size_t i = 0; i < N; i++) {
+        for (std::size_t i = 0; i < N; i++) {
             skip_whitespace(json, pos);
             if (pos >= json.size() || json[pos] == ']') {
                 break;

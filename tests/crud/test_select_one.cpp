@@ -2,10 +2,7 @@
 #include "test_db_helpers.h"
 
 import storm;
-import <string>;
-import <vector>;
-import <expected>;
-import <optional>;
+import std;
 
 using namespace storm;
 using namespace storm::orm::where;

@@ -36,13 +36,16 @@ module;
 
 #include "models.hpp"
 
+// std::meta:: is used in this module's purview; import std; does not export it
+// (issue #326 Finding A), so the reflection header must be textually included.
+#include <meta>
+
 export module storm_benchmark_crud;
+
+import std;
 
 import storm;
 import storm_benchmark_base;
-
-import <format>;
-import <meta>;
 
 export namespace storm::benchmark {
 
@@ -102,7 +105,7 @@ export namespace storm::benchmark {
             } else if constexpr (is_update_op()) {
                 Base::prepare_with_insert(n);
                 // Mutate field values so each UPDATE actually rewrites rows.
-                for (size_t i = 0; i < Base::data().size(); ++i) {
+                for (std::size_t i = 0; i < Base::data().size(); ++i) {
                     auto& obj = Base::data()[i];
                     if constexpr (std::is_same_v<Model, Person>) {
                         obj.name      = std::format("Updated{}", i);

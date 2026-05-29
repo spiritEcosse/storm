@@ -8,19 +8,8 @@ module;
 
 export module storm_orm_where;
 
-import <cstdint>;
-import <string>;
-import <vector>;
-import <memory>;
-import <concepts>;
-import <sstream>;
-import <tuple>;
-import <expected>;
-import <variant>;
-import <format>;
-import <ranges>;
-import <type_traits>;
-import <utility>;
+import std;
+
 import storm_orm_utilities; // For ConstexprString
 
 export namespace storm::orm::where {
@@ -199,7 +188,7 @@ export namespace storm::orm::where {
     // Common types (int, std::string) are stored inline, eliminating heap allocation
     struct ExpressionVariant : std::variant<
                                        ComparisonExpr<int>,
-                                       ComparisonExpr<int64_t>,
+                                       ComparisonExpr<std::int64_t>,
                                        ComparisonExpr<double>,
                                        ComparisonExpr<float>,
                                        ComparisonExpr<std::string>,
@@ -209,12 +198,12 @@ export namespace storm::orm::where {
                                        NullCheckExpr,
                                        LikeExpr,
                                        BetweenExpr<int>,
-                                       BetweenExpr<int64_t>,
+                                       BetweenExpr<std::int64_t>,
                                        BetweenExpr<double>,
                                        BetweenExpr<float>,
                                        BetweenExpr<std::string>,
                                        InExpression<int>,
-                                       InExpression<int64_t>,
+                                       InExpression<std::int64_t>,
                                        InExpression<double>,
                                        InExpression<float>,
                                        InExpression<std::string>,

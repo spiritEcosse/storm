@@ -3,14 +3,7 @@
 #include <sqlite3.h>
 
 import storm;
-import <expected>;
-import <string>;
-import <optional>;
-import <span>;
-import <vector>;
-import <format>;
-import <algorithm>;
-import <set>;
+import std;
 
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
@@ -44,7 +37,7 @@ TYPED_TEST(BatchInsertReturningTest, BasicBatchReturnsIds) {
     }
 
     // All IDs should be unique
-    const std::set<int64_t> unique_ids(result.value().begin(), result.value().end());
+    const std::set<std::int64_t> unique_ids(result.value().begin(), result.value().end());
     EXPECT_EQ(unique_ids.size(), 3) << "All returned IDs should be unique";
 }
 
@@ -63,7 +56,7 @@ TYPED_TEST(BatchInsertReturningTest, ReturnedIdsMatchInsertedRows) {
     ASSERT_TRUE(result.has_value());
 
     // SELECT back each row by ID and verify data
-    for (size_t i = 0; i < records.size(); ++i) {
+    for (std::size_t i = 0; i < records.size(); ++i) {
         auto row = qs.where(storm::orm::where::field<^^SimpleRecord::id>() == static_cast<int>(result.value()[i]))
                            .select()
                            .execute();
@@ -131,7 +124,7 @@ TYPED_TEST(BatchInsertReturningTest, ReturnTypeIsVectorOfInt64) {
     auto result = qs.template insert<ReturnId::Yes>(std::span<const SimpleRecord>(records)).execute();
 
     static_assert(
-            std::is_same_v<decltype(result), std::expected<std::vector<int64_t>, typename TypeParam::Error>>,
+            std::is_same_v<decltype(result), std::expected<std::vector<std::int64_t>, typename TypeParam::Error>>,
             "Batch insert<ReturnId::Yes> should return std::expected<std::vector<int64_t>, Error>"
     );
     ASSERT_TRUE(result.has_value());
@@ -187,7 +180,7 @@ TYPED_TEST(BatchInsertReturningTest, IdsAreInInsertionOrder) {
     ASSERT_EQ(result.value().size(), 5);
 
     // IDs should be strictly increasing (insertion order)
-    for (size_t i = 1; i < result.value().size(); ++i) {
+    for (std::size_t i = 1; i < result.value().size(); ++i) {
         EXPECT_GT(result.value()[i], result.value()[i - 1]) << "IDs should be strictly increasing (insertion order)";
     }
 }
@@ -247,19 +240,19 @@ TYPED_TEST(ChunkedBatchInsertReturningTest, ChunkedBatchReturnsAllIds) {
 
     auto result = qs.template insert<ReturnId::Yes>(std::span<const SimpleRecord>(records), opts).execute();
     ASSERT_TRUE(result.has_value()) << "Chunked batch insert returning should succeed";
-    ASSERT_EQ(result.value().size(), static_cast<size_t>(num_records))
+    ASSERT_EQ(result.value().size(), static_cast<std::size_t>(num_records))
             << "Should return IDs for all " << num_records << " records";
 
     // All IDs should be positive and unique
-    const std::set<int64_t> unique_ids(result.value().begin(), result.value().end());
-    EXPECT_EQ(unique_ids.size(), static_cast<size_t>(num_records)) << "All IDs should be unique";
+    const std::set<std::int64_t> unique_ids(result.value().begin(), result.value().end());
+    EXPECT_EQ(unique_ids.size(), static_cast<std::size_t>(num_records)) << "All IDs should be unique";
 
     for (const auto id : result.value()) {
         EXPECT_GT(id, 0);
     }
 
     // IDs should be strictly increasing
-    for (size_t i = 1; i < result.value().size(); ++i) {
+    for (std::size_t i = 1; i < result.value().size(); ++i) {
         EXPECT_GT(result.value()[i], result.value()[i - 1]);
     }
 
@@ -286,7 +279,7 @@ TYPED_TEST(ChunkedBatchInsertReturningTest, ExactBoundaryBatch) {
 
     auto result = qs.template insert<ReturnId::Yes>(std::span<const SimpleRecord>(records), opts).execute();
     ASSERT_TRUE(result.has_value()) << "Boundary batch insert returning should succeed";
-    ASSERT_EQ(result.value().size(), static_cast<size_t>(num_records));
+    ASSERT_EQ(result.value().size(), static_cast<std::size_t>(num_records));
 }
 
 // Just over boundary: batch_size + 1 records (forces 2 chunks: full + remainder of 1)
@@ -306,11 +299,11 @@ TYPED_TEST(ChunkedBatchInsertReturningTest, JustOverBoundaryBatch) {
 
     auto result = qs.template insert<ReturnId::Yes>(std::span<const SimpleRecord>(records), opts).execute();
     ASSERT_TRUE(result.has_value()) << "Just-over-boundary batch insert returning should succeed";
-    ASSERT_EQ(result.value().size(), static_cast<size_t>(num_records));
+    ASSERT_EQ(result.value().size(), static_cast<std::size_t>(num_records));
 
     // All unique
-    const std::set<int64_t> unique_ids(result.value().begin(), result.value().end());
-    EXPECT_EQ(unique_ids.size(), static_cast<size_t>(num_records));
+    const std::set<std::int64_t> unique_ids(result.value().begin(), result.value().end());
+    EXPECT_EQ(unique_ids.size(), static_cast<std::size_t>(num_records));
 }
 
 // Multiple chunks with remainder
@@ -330,7 +323,7 @@ TYPED_TEST(ChunkedBatchInsertReturningTest, MultipleChunksWithRemainder) {
 
     auto result = qs.template insert<ReturnId::Yes>(std::span<const SimpleRecord>(records), opts).execute();
     ASSERT_TRUE(result.has_value()) << "Multi-chunk batch insert returning should succeed";
-    ASSERT_EQ(result.value().size(), static_cast<size_t>(num_records));
+    ASSERT_EQ(result.value().size(), static_cast<std::size_t>(num_records));
 
     // Verify count
     auto count = qs.count().execute();
@@ -355,10 +348,10 @@ TYPED_TEST(ChunkedBatchInsertReturningTest, CustomBatchSizeSmall) {
 
     auto result = qs.template insert<ReturnId::Yes>(std::span<const SimpleRecord>(records), opts).execute();
     ASSERT_TRUE(result.has_value()) << "Small batch size insert returning should succeed";
-    ASSERT_EQ(result.value().size(), static_cast<size_t>(num_records));
+    ASSERT_EQ(result.value().size(), static_cast<std::size_t>(num_records));
 
-    const std::set<int64_t> unique_ids(result.value().begin(), result.value().end());
-    EXPECT_EQ(unique_ids.size(), static_cast<size_t>(num_records));
+    const std::set<std::int64_t> unique_ids(result.value().begin(), result.value().end());
+    EXPECT_EQ(unique_ids.size(), static_cast<std::size_t>(num_records));
 }
 
 // Verify batch RETURNING + void batch produce same data

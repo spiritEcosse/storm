@@ -4,10 +4,7 @@
 // NOLINTBEGIN(misc-const-correctness)
 
 import storm;
-import <string>;
-import <vector>;
-import <expected>;
-import <optional>;
+import std;
 
 #include "test_models.h"
 #include "test_seed_helpers.h"
@@ -68,8 +65,8 @@ TYPED_TEST(FKFieldTest, InsertWithFKField) {
     ASSERT_TRUE(alice_result.has_value()) << "Alice INSERT failed: " << alice_result.error().message();
     ASSERT_TRUE(bob_result.has_value()) << "Bob INSERT failed: " << bob_result.error().message();
 
-    int64_t const alice_id = alice_result.value();
-    int64_t const bob_id   = bob_result.value();
+    std::int64_t const alice_id = alice_result.value();
+    std::int64_t const bob_id   = bob_result.value();
 
     // Insert a task with FK to Alice (assignee) and Bob (reviewer)
     // Only assignee.id and reviewer.id are used, other fields are ignored
@@ -83,7 +80,7 @@ TYPED_TEST(FKFieldTest, InsertWithFKField) {
     auto msg_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(msg_result.has_value()) << "Task INSERT failed: " << msg_result.error().message();
 
-    int64_t const msg_id = msg_result.value();
+    std::int64_t const msg_id = msg_result.value();
     EXPECT_GT(msg_id, 0) << "Expected valid message ID";
 
     // Verify FKs were stored correctly by querying database directly
@@ -97,8 +94,8 @@ TYPED_TEST(FKFieldTest, InsertWithFKField) {
     int const step_result = stmt.step_raw();
     ASSERT_EQ(step_result, decltype(stmt)::ROW_AVAILABLE);
 
-    int64_t const stored_assignee_id = stmt.extract_int64(0);
-    int64_t const stored_reviewer_id = stmt.extract_int64(1);
+    std::int64_t const stored_assignee_id = stmt.extract_int64(0);
+    std::int64_t const stored_reviewer_id = stmt.extract_int64(1);
     EXPECT_EQ(stored_assignee_id, alice_id) << "Assignee FK value should match Alice ID";
     EXPECT_EQ(stored_reviewer_id, bob_id) << "Reviewer FK value should match Bob ID";
 }
@@ -115,8 +112,8 @@ TYPED_TEST(FKFieldTest, SelectWithFKFieldPartialPopulation) {
     auto         charlie_result = user_qs.insert(charlie).execute();
     ASSERT_TRUE(bob_result.has_value());
     ASSERT_TRUE(charlie_result.has_value());
-    int64_t const bob_id     = bob_result.value();
-    int64_t const charlie_id = charlie_result.value();
+    std::int64_t const bob_id     = bob_result.value();
+    std::int64_t const charlie_id = charlie_result.value();
 
     // Insert a task from Bob to Charlie
     Task const msg{
@@ -220,10 +217,10 @@ TYPED_TEST(FKFieldTest, UpdateWithFKField) {
     ASSERT_TRUE(charlie_result.has_value());
     ASSERT_TRUE(dave_result.has_value());
 
-    int64_t const alice_id   = alice_result.value();
-    int64_t const bob_id     = bob_result.value();
-    int64_t const charlie_id = charlie_result.value();
-    int64_t const dave_id    = dave_result.value();
+    std::int64_t const alice_id   = alice_result.value();
+    std::int64_t const bob_id     = bob_result.value();
+    std::int64_t const charlie_id = charlie_result.value();
+    std::int64_t const dave_id    = dave_result.value();
 
     // Insert task assigned to Alice, reviewed by Bob
     Task const msg{
@@ -235,7 +232,7 @@ TYPED_TEST(FKFieldTest, UpdateWithFKField) {
     auto msg_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(msg_result.has_value());
 
-    int64_t const msg_id = msg_result.value();
+    std::int64_t const msg_id = msg_result.value();
 
     // Update task: change assignee to Charlie, reviewer to Dave, and description
     Task const updated_msg{
@@ -273,8 +270,8 @@ TYPED_TEST(FKFieldTest, DeleteWithFKField) {
     auto         bob_result   = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
-    int64_t const alice_id = alice_result.value();
-    int64_t const bob_id   = bob_result.value();
+    std::int64_t const alice_id = alice_result.value();
+    std::int64_t const bob_id   = bob_result.value();
 
     // Insert tasks assigned to Alice, reviewed by Bob
     std::vector<Task> tasks =
@@ -340,8 +337,8 @@ TYPED_TEST(FKFieldTest, MultipleFKFieldsToSameType) {
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
 
-    int64_t const alice_id = alice_result.value();
-    int64_t const bob_id   = bob_result.value();
+    std::int64_t const alice_id = alice_result.value();
+    std::int64_t const bob_id   = bob_result.value();
 
     // Insert task assigned to Alice, reviewed by Bob
     Task const conv{
@@ -378,8 +375,8 @@ TYPED_TEST(FKFieldTest, JoinFullyPopulatesFKObject) {
     auto         bob_result   = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
-    int64_t const alice_id = alice_result.value();
-    int64_t const bob_id   = bob_result.value();
+    std::int64_t const alice_id = alice_result.value();
+    std::int64_t const bob_id   = bob_result.value();
 
     // Insert task assigned to Alice, reviewed by Bob
     Task const msg{
@@ -425,8 +422,8 @@ TYPED_TEST(FKFieldTest, JoinMultipleFKFields) {
     auto         bob_result   = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
-    int64_t const alice_id = alice_result.value();
-    int64_t const bob_id   = bob_result.value();
+    std::int64_t const alice_id = alice_result.value();
+    std::int64_t const bob_id   = bob_result.value();
 
     // Insert task assigned to Alice, reviewed by Bob
     Task const msg{
@@ -469,7 +466,7 @@ TYPED_TEST(FKFieldTest, LeftJoinReturnsAllMessages) {
     Person const alice{.id = 0, .name = "Alice", .age = 30};
     auto         alice_result = user_qs.insert(alice).execute();
     ASSERT_TRUE(alice_result.has_value());
-    int64_t const alice_id = alice_result.value();
+    std::int64_t const alice_id = alice_result.value();
 
     // Insert a task with a non-existent reviewer ID (999)
     // This simulates an orphaned FK reference
@@ -517,8 +514,8 @@ TYPED_TEST(FKFieldTest, LeftJoinMultipleFKFields) {
     auto         bob_result   = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
-    int64_t const alice_id = alice_result.value();
-    int64_t const bob_id   = bob_result.value();
+    std::int64_t const alice_id = alice_result.value();
+    std::int64_t const bob_id   = bob_result.value();
 
     // Insert task assigned to Alice, reviewed by Bob
     Task const msg{
@@ -566,9 +563,9 @@ TYPED_TEST(FKFieldTest, RightJoinBehavior) {
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     ASSERT_TRUE(charlie_result.has_value());
-    int64_t const alice_id   = alice_result.value();
-    int64_t const bob_id     = bob_result.value();
-    int64_t const charlie_id = charlie_result.value();
+    std::int64_t const alice_id   = alice_result.value();
+    std::int64_t const bob_id     = bob_result.value();
+    std::int64_t const charlie_id = charlie_result.value();
 
     // Insert task assigned to Alice, reviewed by Bob (Charlie is not referenced)
     Task const msg{
@@ -618,8 +615,8 @@ TYPED_TEST(FKFieldTest, RightJoinMultipleFKFields) {
     auto         bob_result   = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
-    int64_t const alice_id = alice_result.value();
-    int64_t const bob_id   = bob_result.value();
+    std::int64_t const alice_id = alice_result.value();
+    std::int64_t const bob_id   = bob_result.value();
 
     // Insert task assigned to Alice, reviewed by Bob
     Task const msg{
@@ -814,8 +811,8 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
     ASSERT_TRUE(alice_result.has_value()) << "Failed to insert Alice: " << alice_result.error().message();
     ASSERT_TRUE(bob_result.has_value()) << "Failed to insert Bob: " << bob_result.error().message();
 
-    int64_t const alice_id = alice_result.value();
-    int64_t const bob_id   = bob_result.value();
+    std::int64_t const alice_id = alice_result.value();
+    std::int64_t const bob_id   = bob_result.value();
 
     // Insert projects managed by Alice and Bob
     Project const proj1{
@@ -923,8 +920,8 @@ TYPED_TEST(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
 
-    int64_t const alice_id = alice_result.value();
-    int64_t const bob_id   = bob_result.value();
+    std::int64_t const alice_id = alice_result.value();
+    std::int64_t const bob_id   = bob_result.value();
 
     // Insert task: Alice assigned, Bob reviewing
     Task const task{
@@ -1000,7 +997,7 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
     auto meas_result = measurement_qs.insert(meas).execute();
     ASSERT_TRUE(meas_result.has_value()) << "Failed to insert measurement: " << meas_result.error().message();
 
-    int64_t const meas_id = meas_result.value();
+    std::int64_t const meas_id = meas_result.value();
 
     // Insert reading referencing the measurement
     Reading const reading{
@@ -1059,7 +1056,7 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithLongType) {
     auto cnt_result = counter_qs.insert(cnt).execute();
     ASSERT_TRUE(cnt_result.has_value()) << "Failed to insert counter: " << cnt_result.error().message();
 
-    int64_t const cnt_id = cnt_result.value();
+    std::int64_t const cnt_id = cnt_result.value();
 
     // Insert summary referencing the counter
     Summary const sum{

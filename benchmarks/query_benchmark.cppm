@@ -26,24 +26,18 @@ module;
 
 #include "models.hpp"
 
+// std::meta:: is used in this module's purview; import std; does not export it
+// (issue #326 Finding A), so the reflection header must be textually included.
+#include <meta>
+
 export module storm_benchmark_query;
+
+import std;
 
 import storm;
 import storm_benchmark_base;
 import storm_benchmark_registry;
 import storm_benchmark_schema;
-
-import <expected>;
-import <format>;
-import <iostream>;
-import <meta>;
-import <optional>;
-import <ranges>;
-import <string>;
-import <string_view>;
-import <tuple>;
-import <utility>;
-import <vector>;
 
 // Must follow all imports — storm types must be in scope for the templates.
 // TODO: replace with `import storm_orm_query_builder;` once clang-p2996 no
@@ -66,7 +60,7 @@ export namespace storm::benchmark {
             if constexpr (!test.where.enabled || !test.join.enabled) {
                 return ^^Model;
             } else {
-                for (size_t i = 0; i < test.where.condition_count; ++i) {
+                for (std::size_t i = 0; i < test.where.condition_count; ++i) {
                     bool found = false;
                     for (std::meta::info const m :
                          std::meta::nonstatic_data_members_of(^^Model, std::meta::access_context::unchecked())) {
@@ -164,7 +158,7 @@ export namespace storm::benchmark {
                 return;
             }
 
-            std::vector<int64_t> user_ids;
+            std::vector<std::int64_t> user_ids;
             user_ids.reserve(user_select.value().size());
             for (const auto& user : user_select.value()) {
                 user_ids.push_back(user.id);

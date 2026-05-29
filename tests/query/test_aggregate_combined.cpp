@@ -4,11 +4,7 @@
 // NOLINTBEGIN(misc-use-anonymous-namespace)
 
 import storm;
-
-import <expected>;
-import <map>;
-import <string>;
-import <vector>;
+import std;
 
 using namespace storm;
 
@@ -49,7 +45,7 @@ template <typename ConnType> auto insert_full_chain_14_messages() -> void {
 }
 
 static auto check_message_values(const auto& result_set, const std::vector<int>& expected) -> void {
-    size_t idx = 0;
+    std::size_t idx = 0;
     for (const auto& msg : result_set) {
         ASSERT_LT(idx, expected.size());
         EXPECT_EQ(msg.value, expected[idx++]);
@@ -105,8 +101,8 @@ TYPED_TEST(AggregateTest, FullChain_JoinResolvesCorrectSender) {
 }
 
 template <typename ConnType> auto verify_group_by_counts(QuerySet<Person, ConnType>& qs) -> void {
-    const std::map<int, int64_t> expected_counts = {{5, 10}, {10, 8}, {15, 7}};
-    auto                         result          = qs.template group_by<^^Person::years_experience>().count().execute();
+    const std::map<int, std::int64_t> expected_counts = {{5, 10}, {10, 8}, {15, 7}};
+    auto                              result = qs.template group_by<^^Person::years_experience>().count().execute();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + COUNT failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 3);
     for (const auto& [ye, count_val] : result.value()) {
@@ -117,10 +113,10 @@ template <typename ConnType> auto verify_group_by_counts(QuerySet<Person, ConnTy
 }
 
 template <typename ConnType> auto verify_group_by_sum_avg_min_max(QuerySet<Person, ConnType>& qs) -> void {
-    const std::map<int, int64_t> exp_sum = {{5, 268}, {10, 285}, {15, 276}};
-    const std::map<int, double>  exp_avg = {{5, 26.8}, {10, 35.625}, {15, 39.43}};
-    const std::map<int, double>  exp_min = {{5, 22.0}, {10, 29.0}, {15, 35.0}};
-    const std::map<int, double>  exp_max = {{5, 36.0}, {10, 48.0}, {15, 45.0}};
+    const std::map<int, std::int64_t> exp_sum = {{5, 268}, {10, 285}, {15, 276}};
+    const std::map<int, double>       exp_avg = {{5, 26.8}, {10, 35.625}, {15, 39.43}};
+    const std::map<int, double>       exp_min = {{5, 22.0}, {10, 29.0}, {15, 35.0}};
+    const std::map<int, double>       exp_max = {{5, 36.0}, {10, 48.0}, {15, 45.0}};
 
     qs.reset();
     auto sum = qs.template group_by<^^Person::years_experience>().template sum<^^Person::age>().execute();
@@ -190,9 +186,9 @@ TYPED_TEST(AggregateTest, GroupByWithOrderBy) {
     ASSERT_TRUE(result.has_value()) << "GROUP BY + ORDER BY failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 3);
 
-    std::vector<int>     expected_order  = {5, 10, 15};
-    std::vector<int64_t> expected_counts = {10, 8, 7};
-    size_t               idx             = 0; // NOLINT(misc-const-correctness) - modified in loop
+    std::vector<int>          expected_order  = {5, 10, 15};
+    std::vector<std::int64_t> expected_counts = {10, 8, 7};
+    std::size_t               idx             = 0; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& [years, count_val] : result.value()) {
         EXPECT_EQ(years, expected_order[idx]) << "Unexpected order at index " << idx;
         EXPECT_EQ(count_val, expected_counts[idx]) << "Unexpected count at index " << idx;
@@ -211,7 +207,7 @@ TYPED_TEST(AggregateTest, GroupByWithOrderByDesc) {
     EXPECT_EQ(result.value().size(), 3);
 
     std::vector<int> expected_order = {15, 10, 5};
-    size_t           idx            = 0; // NOLINT(misc-const-correctness) - modified in loop
+    std::size_t      idx            = 0; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& [years, count_val] : result.value()) {
         EXPECT_EQ(years, expected_order[idx]) << "Unexpected order at index " << idx;
         idx++;
@@ -231,7 +227,7 @@ TYPED_TEST(AggregateTest, GroupByWithLimitOffset) {
     EXPECT_EQ(result.value().size(), 2);
 
     std::vector<int> expected = {10, 15};
-    size_t           idx      = 0; // NOLINT(misc-const-correctness) - modified in loop
+    std::size_t      idx      = 0; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& [years, count_val] : result.value()) {
         EXPECT_EQ(years, expected[idx]) << "Expected years_experience=" << expected[idx] << " at index " << idx;
         idx++;
@@ -244,7 +240,7 @@ TYPED_TEST(AggregateTest, GroupByMultipleFields) {
     auto result = this->qs->template group_by<^^Person::age, ^^Person::years_experience>().count().execute();
     ASSERT_TRUE(result.has_value()) << "Multi-field GROUP BY failed: " << result.error().message();
 
-    int64_t total = 0; // NOLINT(misc-const-correctness) - modified in loop
+    std::int64_t total = 0; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& [age, years_exp, count_val] : result.value()) {
         total += count_val;
     }

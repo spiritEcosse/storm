@@ -15,9 +15,6 @@
 
 import storm_db_sqlite;
 import storm_orm_statements_insert;
-import <expected>;
-import <string>;
-import <string_view>;
 
 namespace fs = std::filesystem;
 using namespace storm::db::sqlite;
@@ -262,8 +259,8 @@ TEST_F(StatementBindErrorTest, BindBlobOutOfRange) {
     auto stmt = std::move(stmt_result.value());
 
     // Bind blob to out-of-range index
-    const std::vector<uint8_t> blob_data   = {0x01, 0x02, 0x03, 0x04};
-    auto                       bind_result = stmt.bind_blob(999, blob_data.data(), blob_data.size());
+    const std::vector<std::uint8_t> blob_data   = {0x01, 0x02, 0x03, 0x04};
+    auto                            bind_result = stmt.bind_blob(999, blob_data.data(), blob_data.size());
 
     ASSERT_FALSE(bind_result.has_value()) << "Binding blob to out-of-range index should fail";
     EXPECT_EQ(bind_result.error().code(), SQLITE_RANGE);
@@ -549,7 +546,7 @@ TEST_F(StatementCacheTest, CacheCount) {
 }
 
 TEST_F(StatementCacheTest, PrepareCachedInvalidSQLDoesNotCache) {
-    size_t initial_count = conn_.cached_statement_count();
+    std::size_t initial_count = conn_.cached_statement_count();
 
     // Try to cache invalid SQL
     auto result = conn_.prepare_cached("INVALID SQL SYNTAX !!!");
@@ -641,7 +638,7 @@ TEST_F(EdgeCaseTest, LargeBlobBinding) {
     auto stmt = std::move(stmt_result.value());
 
     // Create a large blob (1MB)
-    std::vector<uint8_t> large_blob(1024 * 1024, 0xAB);
+    std::vector<std::uint8_t> large_blob(1024 * 1024, 0xAB);
 
     auto bind1 = stmt.bind_int(1, 1);
     ASSERT_TRUE(bind1.has_value());
@@ -841,7 +838,7 @@ TEST_F(ColumnExtractionTest, ExtractNullText) {
 // SQLite errors through the ORM layer (QuerySet, statements, etc.)
 
 import storm;
-import <format>;
+import std;
 
 #include "test_models.h" // NOSONAR
 

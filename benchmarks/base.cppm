@@ -18,14 +18,16 @@ module;
 #include <sqlite3.h>
 #include <plf_hive/plf_hive.h>
 
+// std::meta::identifier_of is used in this module's purview; import std; does not
+// export std::meta:: (issue #326 Finding A), so the reflection header must be
+// textually included in the global module fragment.
+#include <meta>
+
 export module storm_benchmark_base;
 
-import storm;
+import std;
 
-import <format>;
-import <iostream>;
-import <meta>;
-import <vector>;
+import storm;
 
 export namespace storm::benchmark {
 
@@ -119,7 +121,7 @@ export namespace storm::benchmark {
 
             // 5. Store retrieved IDs back into data
             const auto& selected = select_result.value();
-            size_t      i        = 0;
+            std::size_t i        = 0;
             for (const auto& row : selected) {
                 if (i >= data().size()) {
                     break;

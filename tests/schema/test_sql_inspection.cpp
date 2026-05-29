@@ -4,12 +4,7 @@
 // NOLINTBEGIN(misc-const-correctness,misc-use-anonymous-namespace)
 
 import storm;
-import <string>;
-import <string_view>;
-import <vector>;
-import <expected>;
-import <span>;
-import <optional>;
+import std;
 
 #include "test_models.h"
 

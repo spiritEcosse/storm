@@ -19,7 +19,7 @@ namespace storm::benchmark {
 struct RegisteredBenchmark {
     std::string name;
     // setup(N): build dataset + Storm terminal for this Range step
-    void (*setup)(int64_t n);
+    void (*setup)(std::int64_t n);
     // run(): single-iteration call inside `for (auto _ : state)`
     void (*run)();
 
@@ -31,10 +31,10 @@ struct RegisteredBenchmark {
     //                            like batch_standard {1,10,100,500,1000,...}
     //   sized=false, args={}  → single ->Arg(range_lo)
     bool sized;
-    int64_t range_lo;
-    int64_t range_hi;
+    std::int64_t range_lo;
+    std::int64_t range_hi;
     int range_multiplier;
-    std::vector<int64_t> args;
+    std::vector<std::int64_t> args;
 };
 
 // Populated by register.cpp (called once before BENCHMARK_MAIN).

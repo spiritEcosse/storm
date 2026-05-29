@@ -9,22 +9,14 @@ module;
 
 export module storm_orm_statements_aggregate;
 
+import std;
+
 import storm_db_concept;
 import storm_orm_statements_base;
 import storm_orm_statements_join;
 import storm_orm_statements_orderby;
 import storm_orm_utilities;
 import storm_orm_where;
-
-import <expected>;
-import <string>;
-import <vector>;
-import <tuple>;
-import <array>;
-import <meta>;
-import <cstdint>;
-import <optional>;
-import <memory>;
 
 export namespace storm::orm::statements {
 
@@ -57,7 +49,7 @@ export namespace storm::orm::statements {
     // Aggregate operation descriptor
     template <AggregateType Type, std::meta::info... FieldInfos> struct AggregateOp {
         static constexpr AggregateType agg_type    = Type;
-        static constexpr size_t        field_count = sizeof...(FieldInfos);
+        static constexpr std::size_t   field_count = sizeof...(FieldInfos);
         // LCOV_EXCL_START - compile-time only
         static constexpr auto get_field_infos() -> std::array<std::meta::info, sizeof...(FieldInfos)> {
             if constexpr (sizeof...(FieldInfos) > 0) {
@@ -72,16 +64,16 @@ export namespace storm::orm::statements {
 
     // Empty marker for no GROUP BY
     struct NoGroupBy {
-        static constexpr size_t size = 0;
+        static constexpr std::size_t size = 0;
     };
 
     // GROUP BY fields holder
     template <std::meta::info... Infos> struct GroupByFields {
-        static constexpr size_t                                        size = sizeof...(Infos);
+        static constexpr std::size_t                                   size = sizeof...(Infos);
         static constexpr std::array<std::meta::info, sizeof...(Infos)> values{Infos...};
 
         // LCOV_EXCL_START - compile-time only
-        template <size_t I> static consteval auto at() -> std::meta::info {
+        template <std::size_t I> static consteval auto at() -> std::meta::info {
             static_assert(I < size, "Index out of bounds");
             return values[I];
         }
@@ -118,7 +110,7 @@ export namespace storm::orm::statements {
         } else if constexpr (Op::field_count == 0) {
             result.append("*");
         } else {
-            for (size_t i = 0; i < Op::field_count; ++i) {
+            for (std::size_t i = 0; i < Op::field_count; ++i) {
                 if (i > 0) {
                     result.append(" + ");
                 }
@@ -130,7 +122,7 @@ export namespace storm::orm::statements {
         return result;
     }
 
-    template <typename... Ops, size_t... Is> consteval auto build_ops_list(std::index_sequence<Is...> /*unused*/) {
+    template <typename... Ops, std::size_t... Is> consteval auto build_ops_list(std::index_sequence<Is...> /*unused*/) {
         ConstexprString<utilities::buffer_size::SQL_MEDIUM> result;
         (([&result]() {
              if constexpr (Is > 0) {
@@ -143,7 +135,7 @@ export namespace storm::orm::statements {
         return result;
     }
 
-    template <typename GroupFields, size_t... Is>
+    template <typename GroupFields, std::size_t... Is>
     consteval auto build_group_fields_sql(std::index_sequence<Is...> /*unused*/) {
         ConstexprString<utilities::buffer_size::SQL_SMALL> result;
         (([&result]() {
@@ -159,8 +151,10 @@ export namespace storm::orm::statements {
 
     // Result type: SUM/COUNT -> int64_t, AVG/MIN/MAX -> double
     template <typename Op>
-    using OpResult = std::
-            conditional_t<Op::agg_type == AggregateType::SUM || Op::agg_type == AggregateType::COUNT, int64_t, double>;
+    using OpResult = std::conditional_t<
+            Op::agg_type == AggregateType::SUM || Op::agg_type == AggregateType::COUNT,
+            std::int64_t,
+            double>;
 
     // ============================================================================
     // AggregateStatement - Single class for all aggregate queries
@@ -171,18 +165,18 @@ export namespace storm::orm::statements {
         using Error     = typename ConnType::Error;
         using Statement = typename ConnType::Statement;
 
-        static constexpr bool   HasGroupBy     = !std::is_same_v<GroupFields, NoGroupBy>;
-        static constexpr size_t NumGroupFields = GroupFields::size;
-        static constexpr size_t NumOps         = sizeof...(Ops);
+        static constexpr bool        HasGroupBy     = !std::is_same_v<GroupFields, NoGroupBy>;
+        static constexpr std::size_t NumGroupFields = GroupFields::size;
+        static constexpr std::size_t NumOps         = sizeof...(Ops);
 
         // ---- Result Type Deduction ----
-        template <size_t Idx> struct GroupFieldType {
+        template <std::size_t Idx> struct GroupFieldType {
             static constexpr auto field_info = GroupFields::template at<Idx>();
             using type                       = std::remove_cvref_t<decltype(std::declval<T>().[:field_info:])>;
         };
 
         // LCOV_EXCL_START - compile-time only
-        template <size_t... GIs, size_t... AIs>
+        template <std::size_t... GIs, std::size_t... AIs>
         static consteval auto
         deduce_grouped_type(std::index_sequence<GIs...> /*unused*/, std::index_sequence<AIs...> /*unused*/) {
             return std::tuple<
@@ -194,7 +188,7 @@ export namespace storm::orm::statements {
             if constexpr (NumOps == 1) {
                 return OpResult<std::tuple_element_t<0, std::tuple<Ops...>>>{};
             } else {
-                return []<size_t... Is>(std::index_sequence<Is...> /*unused*/)
+                return []<std::size_t... Is>(std::index_sequence<Is...> /*unused*/)
                                -> std::tuple<OpResult<std::tuple_element_t<Is, std::tuple<Ops...>>>...> {
                     return std::tuple<OpResult<std::tuple_element_t<Is, std::tuple<Ops...>>>...>{};
                 }(std::make_index_sequence<NumOps>{});
@@ -344,7 +338,7 @@ export namespace storm::orm::statements {
         static inline const std::string group_clause_{group_fields_arr_.data.data(), group_fields_arr_.len};
 
         // Simple aggregate extraction (single row)
-        template <size_t... Is>
+        template <std::size_t... Is>
         [[nodiscard]] auto extract_simple_result(Statement* stmt, std::index_sequence<Is...> /*unused*/)
                 -> std::expected<ResultType, Error> {
             int step_result = stmt->step_raw();
@@ -384,7 +378,7 @@ export namespace storm::orm::statements {
         }
 
         // GROUP BY extraction (multiple rows)
-        template <size_t... GIs, size_t... AIs>
+        template <std::size_t... GIs, std::size_t... AIs>
         static auto extract_grouped_row(
                 Statement* stmt, std::index_sequence<GIs...> /*unused*/, std::index_sequence<AIs...> /*unused*/
         ) -> GroupedTuple {
@@ -427,8 +421,8 @@ export namespace storm::orm::statements {
         // ---- Inline Helpers ----
         void insert_where_clause(std::string& sql) const {
             if constexpr (HasGroupBy) {
-                size_t const group_pos    = sql.find(" GROUP BY ");
-                std::string  where_clause = " WHERE ";
+                std::size_t const group_pos    = sql.find(" GROUP BY ");
+                std::string       where_clause = " WHERE ";
                 where_clause += orm::where::to_sql(*where_expr_);
                 sql.insert(group_pos, where_clause);
             } else {
@@ -496,7 +490,7 @@ export namespace storm::orm::statements {
             const std::string& join_sql = join_stmt_->get_complete_sql();
             // join_sql always contains " FROM " — built at compile time by
             // JoinStatement::build_complete_sql_array() which unconditionally appends it.
-            const size_t from_pos = join_sql.find(" FROM ");
+            const std::size_t from_pos = join_sql.find(" FROM ");
 
             std::string result;
             result.reserve(select_clause_.size() + join_sql.size() + utilities::sql_len::MEDIUM_BUFFER);
@@ -515,7 +509,7 @@ export namespace storm::orm::statements {
         // ---- Inline extraction for simple aggregate (no trailing reset) ----
         // OPTIMIZATION: Step + extract single result row without trailing reset.
         // The next call will reset at the top, eliminating double-reset overhead.
-        template <size_t... Is>
+        template <std::size_t... Is>
         [[nodiscard]] __attribute__((always_inline)) static auto
         extract_simple_no_reset(Statement* stmt, std::index_sequence<Is...> /*unused*/)
                 -> std::expected<ResultType, Error> {

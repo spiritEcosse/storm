@@ -2,10 +2,7 @@
 #include "test_db_helpers.h"
 
 import storm;
-import <string>;
-import <vector>;
-import <expected>;
-import <format>;
+import std;
 
 using namespace storm;
 
@@ -27,7 +24,7 @@ TYPED_TEST(SelectTest, SelectSingleRow) {
     auto         insert_result = queryset.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
-    int64_t const inserted_id = insert_result.value();
+    std::int64_t const inserted_id = insert_result.value();
 
     // Select all rows
     auto result = queryset.select().execute();
@@ -241,7 +238,7 @@ TYPED_TEST(SelectTest, SelectPreservesRowOrder) {
     const auto& people = result.value();
     ASSERT_EQ(people.size(), 5);
 
-    size_t i = 0;
+    std::size_t i = 0;
     for (auto it = people.begin(); it != people.end(); ++it, ++i) {
         EXPECT_EQ(it->age, static_cast<int>(i + 1)) << "Row order not preserved at index " << i;
     }

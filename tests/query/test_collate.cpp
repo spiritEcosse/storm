@@ -5,11 +5,7 @@
 // NOLINTBEGIN(misc-const-correctness,performance-unnecessary-copy-initialization)
 
 import storm;
-import <string>;
-import <vector>;
-import <expected>;
-import <optional>;
-import <cstdint>;
+import std;
 
 #include "test_models.h" // NOSONAR cpp:S954
 using namespace storm;

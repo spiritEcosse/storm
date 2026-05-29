@@ -7,27 +7,12 @@ module;
 
 export module storm_orm_statements_base;
 
+import std;
+
 import storm_db_concept;
 import storm_orm_utilities;
 import storm_orm_statements_orderby;
 import storm_orm_where;
-
-import <expected>;
-import <string>;
-import <string_view>;
-import <concepts>;
-import <format>;
-import <meta>;
-import <array>;
-import <utility>;
-import <optional>;
-import <vector>;
-import <cstdint>;
-import <memory>;
-import <type_traits>;
-import <chrono>;
-import <filesystem>;
-import <cstddef>;
 
 export namespace storm::orm::statements {
 
@@ -129,16 +114,16 @@ export namespace storm::orm::statements {
         }
 
         // Helper to get the number of fields
-        static consteval auto get_field_count() -> size_t {
+        static consteval auto get_field_count() -> std::size_t {
             return std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()).size();
         }
 
         // Pre-compute all field members at compile-time
-        template <size_t N> static consteval auto get_all_field_members() -> std::array<std::meta::info, N> {
+        template <std::size_t N> static consteval auto get_all_field_members() -> std::array<std::meta::info, N> {
             std::array<std::meta::info, N> result{};
             auto members = std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked());
 
-            for (size_t i = 0; i < N && i < members.size(); ++i) {
+            for (std::size_t i = 0; i < N && i < members.size(); ++i) {
                 result[i] = members[i];
             }
             return result;
@@ -149,7 +134,7 @@ export namespace storm::orm::statements {
         // list-builder used to spell out this loop independently.
         template <bool SkipPrimaryKey, typename Body> static consteval auto for_each_field_name(Body body) -> void {
             bool first = true;
-            for (size_t i = 0; i < field_count_; ++i) {
+            for (std::size_t i = 0; i < field_count_; ++i) {
                 if constexpr (SkipPrimaryKey) {
                     if (all_members_[i] == primary_key_) {
                         continue;
@@ -164,9 +149,9 @@ export namespace storm::orm::statements {
 
         // Unified field name size calculation at compile-time
         // Template parameter controls whether to skip primary key (for INSERT vs SELECT)
-        template <bool SkipPrimaryKey> static consteval auto calculate_field_names_size_impl() -> size_t {
-            size_t size = 0;
-            for_each_field_name<SkipPrimaryKey>([&](size_t i, bool is_fk, bool needs_comma) {
+        template <bool SkipPrimaryKey> static consteval auto calculate_field_names_size_impl() -> std::size_t {
+            std::size_t size = 0;
+            for_each_field_name<SkipPrimaryKey>([&](std::size_t i, bool is_fk, bool needs_comma) {
                 if (needs_comma) {
                     size += 2; // ", "
                 }
@@ -179,21 +164,21 @@ export namespace storm::orm::statements {
         }
 
         // Calculate size of all field names string at compile-time
-        static consteval auto calculate_field_names_size() -> size_t {
+        static consteval auto calculate_field_names_size() -> std::size_t {
             return calculate_field_names_size_impl<false>();
         }
 
         // Calculate size of non-PK field names string at compile-time
-        static consteval auto calculate_non_pk_field_names_size() -> size_t {
+        static consteval auto calculate_non_pk_field_names_size() -> std::size_t {
             return calculate_field_names_size_impl<true>();
         }
 
         // Unified field name list builder at compile-time
         // Template parameter controls whether to skip primary key (for INSERT vs SELECT)
         template <bool SkipPrimaryKey> static consteval auto build_field_names_list_impl() {
-            constexpr size_t      size = calculate_field_names_size_impl<SkipPrimaryKey>() + 10;
+            constexpr std::size_t size = calculate_field_names_size_impl<SkipPrimaryKey>() + 10;
             ConstexprString<size> result;
-            for_each_field_name<SkipPrimaryKey>([&](size_t i, bool is_fk, bool needs_comma) {
+            for_each_field_name<SkipPrimaryKey>([&](std::size_t i, bool is_fk, bool needs_comma) {
                 if (needs_comma) {
                     result.append(", ");
                 }
@@ -234,7 +219,7 @@ export namespace storm::orm::statements {
         using field_indices_t = std::make_index_sequence<field_count_>;
 
         // Helper template for compile-time field binding with index sequence
-        template <typename ConnType, typename Statement, size_t... Is>
+        template <typename ConnType, typename Statement, std::size_t... Is>
         [[nodiscard]] static auto
         bind_all_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...> /*unused*/) noexcept
                 -> std::expected<void, typename ConnType::Error> {
@@ -245,7 +230,7 @@ export namespace storm::orm::statements {
         }
 
         // Helper template for INSERT binding (skips primary key for auto-increment)
-        template <typename ConnType, typename Statement, size_t... Is>
+        template <typename ConnType, typename Statement, std::size_t... Is>
         [[nodiscard]] static auto
         bind_non_pk_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...> /*unused*/) noexcept
                 -> std::expected<void, typename ConnType::Error> {
@@ -258,7 +243,7 @@ export namespace storm::orm::statements {
         // Unified field binder: binds a single field at compile-time index
         // SkipPK=true skips primary key fields (for INSERT/UPDATE non-PK binding)
         // Auto-increments param_index on successful bind
-        template <typename ConnType, size_t Index, bool SkipPK = false>
+        template <typename ConnType, std::size_t Index, bool SkipPK = false>
         [[nodiscard]] __attribute__((always_inline)) static constexpr auto
         bind_field_at_index(typename ConnType::Statement* stmt, const T& obj, int& param_index) noexcept
                 -> std::expected<void, typename ConnType::Error> {
@@ -310,7 +295,7 @@ export namespace storm::orm::statements {
         // index sequence, return on first error. Bound to bind_field_at_index<...>
         // through the SkipPrimaryKey template parameter so a single body serves
         // both the all-fields and non-PK variants.
-        template <bool SkipPrimaryKey, typename ConnType, typename Statement, typename ContainerType, size_t... Is>
+        template <bool SkipPrimaryKey, typename ConnType, typename Statement, typename ContainerType, std::size_t... Is>
         [[nodiscard]] static auto bind_bulk_objects_impl(
                 Statement& stmt, const ContainerType& objects, std::index_sequence<Is...> /*unused*/
         ) noexcept -> std::expected<void, typename ConnType::Error> {
@@ -329,7 +314,7 @@ export namespace storm::orm::statements {
         }
 
         // Helper for bulk binding multiple objects with index sequence
-        template <typename ConnType, typename Statement, typename ContainerType, size_t... Is>
+        template <typename ConnType, typename Statement, typename ContainerType, std::size_t... Is>
         [[nodiscard]] static auto bind_all_objects_bulk_impl(
                 Statement& stmt, const ContainerType& objects, std::index_sequence<Is...> seq
         ) noexcept -> std::expected<void, typename ConnType::Error> {
@@ -337,7 +322,7 @@ export namespace storm::orm::statements {
         }
 
         // Helper for bulk INSERT binding (skips PK for auto-increment)
-        template <typename ConnType, typename Statement, typename ContainerType, size_t... Is>
+        template <typename ConnType, typename Statement, typename ContainerType, std::size_t... Is>
         [[nodiscard]] static auto bind_non_pk_objects_bulk_impl(
                 Statement& stmt, const ContainerType& objects, std::index_sequence<Is...> seq
         ) noexcept -> std::expected<void, typename ConnType::Error> {
@@ -345,11 +330,12 @@ export namespace storm::orm::statements {
         }
 
         // Common batch operation thresholds
-        static constexpr size_t MAX_DB_VARIABLES = 999;
+        static constexpr std::size_t MAX_DB_VARIABLES = 999;
 
         // Adaptive threshold calculation based on batch size and field count
         // Returns the optimal threshold for deciding between bulk SQL and individual inserts
-        static constexpr auto calculate_adaptive_threshold(size_t batch_size, size_t max_bulk_size) -> size_t {
+        static constexpr auto calculate_adaptive_threshold(std::size_t batch_size, std::size_t max_bulk_size)
+                -> std::size_t {
             using utilities::batch::FALLBACK_BATCH_SIZE;
             using utilities::batch::SMALL_THRESHOLD;
 
@@ -363,14 +349,14 @@ export namespace storm::orm::statements {
 
             // For small-medium batches, use bulk SQL if safe
             // Use 50% of max_bulk_size as the sweet spot for bulk operations
-            const size_t bulk_sweet_spot = std::max(FALLBACK_BATCH_SIZE, max_bulk_size / 2);
+            const std::size_t bulk_sweet_spot = std::max(FALLBACK_BATCH_SIZE, max_bulk_size / 2);
 
             if (batch_size <= bulk_sweet_spot) {
                 return bulk_sweet_spot; // Use bulk SQL - most efficient
             }
 
             // For medium batches, try to use bulk if within 80% of SQLite limit
-            const size_t bulk_max_safe = (max_bulk_size * 4) / 5; // 80% of max
+            const std::size_t bulk_max_safe = (max_bulk_size * 4) / 5; // 80% of max
 
             if (batch_size <= bulk_max_safe) {
                 return bulk_max_safe; // Push bulk SQL to near SQLite limit
@@ -404,8 +390,8 @@ export namespace storm::orm::statements {
 
         template <typename FT>
         static constexpr bool is_int64_stored_v =
-                std::is_same_v<FT, int64_t> || std::is_same_v<FT, long> || std::is_same_v<FT, long long> ||
-                std::is_same_v<FT, uint64_t> || std::is_same_v<FT, unsigned long> ||
+                std::is_same_v<FT, std::int64_t> || std::is_same_v<FT, long> || std::is_same_v<FT, long long> ||
+                std::is_same_v<FT, std::uint64_t> || std::is_same_v<FT, unsigned long> ||
                 std::is_same_v<FT, unsigned long long>;
 
         template <typename FT> static constexpr bool is_integer_stored_v = is_int_stored_v<FT> || is_int64_stored_v<FT>;
@@ -415,7 +401,7 @@ export namespace storm::orm::statements {
 
         template <typename FT>
         static constexpr bool is_blob_stored_v =
-                std::is_same_v<FT, std::vector<uint8_t>> || std::is_same_v<FT, std::vector<unsigned char>> ||
+                std::is_same_v<FT, std::vector<std::uint8_t>> || std::is_same_v<FT, std::vector<unsigned char>> ||
                 std::is_same_v<FT, std::vector<std::byte>>;
 
         template <typename FT>
@@ -573,7 +559,7 @@ export namespace storm::orm::statements {
         // =====================================================================
 
         // Extract optional FK column: set nullopt when NULL, otherwise extract inner PK
-        template <size_t Index, typename Statement, typename FieldType>
+        template <std::size_t Index, typename Statement, typename FieldType>
         __attribute__((always_inline)) static void extract_optional_fk_column(Statement* stmt, T& obj) noexcept {
             constexpr auto member       = all_members_[Index];
             using InnerFKType           = utilities::optional_inner_type_t<FieldType>;
@@ -590,7 +576,7 @@ export namespace storm::orm::statements {
 
         // Extract single column into obj at compile-time index
         // Statement is deduced from stmt pointer; all_members_[Index] is valid here
-        template <size_t Index, typename Statement>
+        template <std::size_t Index, typename Statement>
         __attribute__((always_inline)) static void extract_column_fast(Statement* stmt, T& obj) noexcept {
             if constexpr (Index < field_count_) {
                 constexpr auto member = all_members_[Index];
@@ -611,7 +597,7 @@ export namespace storm::orm::statements {
         }
 
         // Expand index sequence and extract each column
-        template <typename Statement, size_t... Is>
+        template <typename Statement, std::size_t... Is>
         __attribute__((always_inline)) static void
         extract_all_columns_impl(Statement* stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
             ((extract_column_fast<Is>(stmt, obj)), ...);
@@ -765,9 +751,9 @@ export namespace storm::orm::statements {
         // Helper: Adapt ORDER BY SQL for PostgreSQL NULL ordering semantics
         // Adds NULLS FIRST after ASC and NULLS LAST after DESC to match SQLite behavior
         static void adapt_order_by_for_pg(std::string& adapted) {
-            size_t pos = 0;
+            std::size_t pos = 0;
             while ((pos = adapted.find(" ASC", pos)) != std::string::npos) {
-                size_t const after = pos + 4;
+                std::size_t const after = pos + 4;
                 if (adapted.substr(after, 6) != " NULLS") {
                     adapted.insert(after, " NULLS FIRST");
                 }
@@ -775,7 +761,7 @@ export namespace storm::orm::statements {
             }
             pos = 0;
             while ((pos = adapted.find(" DESC", pos)) != std::string::npos) {
-                size_t const after = pos + 5;
+                std::size_t const after = pos + 5;
                 if (adapted.substr(after, 6) != " NULLS") {
                     adapted.insert(after, " NULLS LAST");
                 }

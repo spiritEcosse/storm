@@ -5,11 +5,8 @@
 // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
 
 import storm;
+import std;
 import storm_db_sqlite;
-import <expected>;
-import <string>;
-import <string_view>;
-import <vector>;
 
 #include "test_models.h" // NOSONAR cpp:S954
 

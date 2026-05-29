@@ -7,20 +7,12 @@ module;
 
 export module storm_orm_statements_erase;
 
+import std;
+
 import storm_orm_statements_base;
 import storm_orm_utilities;
 import storm_orm_transaction;
 import storm_db_concept;
-
-import <expected>;
-import <string>;
-import <string_view>;
-import <span>;
-import <concepts>;
-import <format>;
-import <meta>;
-import <type_traits>;
-import <memory>;
 
 export namespace storm::orm::statements {
 
@@ -40,14 +32,14 @@ export namespace storm::orm::statements {
         // Common prefix size: "DELETE FROM <table> WHERE <pk_name>". Both the
         // single-row and the bulk DELETE size calculators used to spell this
         // out; their only difference is the tail (" = ?" vs " IN (").
-        static consteval auto delete_prefix_size() -> size_t {
+        static consteval auto delete_prefix_size() -> std::size_t {
             using utilities::sql_len::DELETE_FROM;
             using utilities::sql_len::WHERE;
             return DELETE_FROM + Base::table_name_.size() + WHERE + Base::pk_name_.size();
         }
 
         // Compile-time single DELETE SQL size calculation
-        static consteval auto calculate_single_delete_sql_size() -> size_t {
+        static consteval auto calculate_single_delete_sql_size() -> std::size_t {
             return delete_prefix_size() + 4 + 1; // " = ?" + null terminator
         }
 
@@ -64,7 +56,7 @@ export namespace storm::orm::statements {
 
         // Build single DELETE SQL at compile-time using ConstexprString
         static consteval auto build_single_delete_sql_array() {
-            constexpr size_t          sql_size = calculate_single_delete_sql_size() + utilities::sql_len::LARGE_BUFFER;
+            constexpr std::size_t     sql_size = calculate_single_delete_sql_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<sql_size> result;
             append_delete_prefix(result);
             result.append(" = ?");
@@ -77,7 +69,7 @@ export namespace storm::orm::statements {
         // Compile-time all-rows DELETE SQL (no WHERE clause)
         static consteval auto build_delete_all_sql_array() {
             using utilities::sql_len::DELETE_FROM;
-            constexpr size_t sql_size = DELETE_FROM + Base::table_name_.size() + utilities::sql_len::LARGE_BUFFER;
+            constexpr std::size_t sql_size = DELETE_FROM + Base::table_name_.size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<sql_size> result;
             result.append("DELETE FROM ");
             result.append(Base::table_name_);
@@ -89,13 +81,13 @@ export namespace storm::orm::statements {
 
       private:
         // Compile-time bulk DELETE prefix calculation
-        static consteval auto calculate_bulk_delete_prefix_size() -> size_t {
+        static consteval auto calculate_bulk_delete_prefix_size() -> std::size_t {
             return delete_prefix_size() + utilities::sql_len::IN_OPEN + 1; // " IN (" + null terminator
         }
 
         // Build bulk DELETE prefix at compile-time using ConstexprString
         static consteval auto build_bulk_delete_prefix() {
-            constexpr size_t prefix_size = calculate_bulk_delete_prefix_size() + utilities::sql_len::LARGE_BUFFER;
+            constexpr std::size_t prefix_size = calculate_bulk_delete_prefix_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<prefix_size> result;
             append_delete_prefix(result);
             result.append(" IN (");
@@ -104,29 +96,29 @@ export namespace storm::orm::statements {
 
         // Pre-computed bulk DELETE prefix generated at compile-time
         static inline const std::string bulk_delete_prefix = std::string(build_bulk_delete_prefix());
-        static constexpr size_t         bulk_delete_prefix_size =
+        static constexpr std::size_t    bulk_delete_prefix_size =
                 calculate_bulk_delete_prefix_size() - 1; // Exclude null terminator
 
         // Maximum chunk size for IN clause (80% of SQLite limit for safety)
         // Defined here so it can be used in compile-time SQL generation
-        static constexpr size_t MAX_CHUNK_SIZE = (Base::MAX_DB_VARIABLES * 4) / 5; // 799
+        static constexpr std::size_t MAX_CHUNK_SIZE = (Base::MAX_DB_VARIABLES * 4) / 5; // 799
 
         // Compile-time max bulk DELETE SQL size calculation
-        static consteval auto calculate_max_bulk_delete_sql_size() -> size_t {
+        static consteval auto calculate_max_bulk_delete_sql_size() -> std::size_t {
             // prefix + (MAX_CHUNK_SIZE placeholders) + (MAX_CHUNK_SIZE-1 commas) + closing paren + null
             return bulk_delete_prefix_size + MAX_CHUNK_SIZE + (MAX_CHUNK_SIZE - 1) + 1 + 1;
         }
 
         // Build max bulk DELETE SQL at compile-time (799 placeholders)
         static consteval auto build_max_bulk_delete_sql() {
-            constexpr size_t          sql_size = calculate_max_bulk_delete_sql_size() + 50; // Safety buffer
+            constexpr std::size_t     sql_size = calculate_max_bulk_delete_sql_size() + 50; // Safety buffer
             ConstexprString<sql_size> result;
 
             // Reuse bulk delete prefix
             result.append(build_bulk_delete_prefix());
 
             // Append 799 placeholders with commas
-            for (size_t i = 0; i < MAX_CHUNK_SIZE; ++i) {
+            for (std::size_t i = 0; i < MAX_CHUNK_SIZE; ++i) {
                 if (i > 0) {
                     result.append(",");
                 }
@@ -147,7 +139,7 @@ export namespace storm::orm::statements {
 
         // Generate bulk DELETE SQL string for IN clause (with thread-local caching)
         // Returns const reference to avoid expensive string copy
-        static auto get_bulk_delete_sql(size_t count) -> const std::string& {
+        static auto get_bulk_delete_sql(std::size_t count) -> const std::string& {
             if (count == 1) {
                 return get_single_delete_sql();
             }
@@ -161,13 +153,14 @@ export namespace storm::orm::statements {
             }
 
             // Calculate exact size needed
-            const size_t total_size = bulk_delete_prefix_size + count + (count - 1) + 1; // prefix + ?s + commas + )
+            const std::size_t total_size =
+                    bulk_delete_prefix_size + count + (count - 1) + 1; // prefix + ?s + commas + )
 
             std::string sql;
             sql.reserve(total_size);
             sql = bulk_delete_prefix;
 
-            for (size_t i = 0; i < count; ++i) {
+            for (std::size_t i = 0; i < count; ++i) {
                 if (i > 0) {
                     sql += ",";
                 }
@@ -360,8 +353,8 @@ export namespace storm::orm::statements {
             }
 
             // Calculate remainder size upfront
-            const size_t remainder_size = objects.size() % MAX_CHUNK_SIZE;
-            Statement*   remainder_stmt = nullptr;
+            const std::size_t remainder_size = objects.size() % MAX_CHUNK_SIZE;
+            Statement*        remainder_stmt = nullptr;
 
             // Cache remainder statement if needed (only one hash lookup per batch)
             if (remainder_size > 0) {
@@ -374,7 +367,7 @@ export namespace storm::orm::statements {
             }
 
             // Process full chunks using cached pointer (no hash lookups in loop)
-            size_t offset = 0;
+            std::size_t offset = 0;
             while (offset + MAX_CHUNK_SIZE <= objects.size()) {
                 auto chunk = objects.subspan(offset, MAX_CHUNK_SIZE);
                 if (auto result = bind_pks_and_execute(*cached_max_bulk_stmt_, chunk); !result) {

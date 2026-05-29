@@ -7,21 +7,7 @@ module;
 
 export module storm_orm_utilities;
 
-import <array>;
-import <string>;
-import <string_view>;
-import <utility>;
-import <expected>;
-import <optional>;
-import <vector>;
-import <cstdint>;
-import <type_traits>;
-import <chrono>;
-import <filesystem>;
-import <cstddef>;
-import <format>;
-import <random>;
-import <meta>;
+import std;
 
 export namespace storm::orm::utilities {
 
@@ -31,41 +17,41 @@ export namespace storm::orm::utilities {
 
     namespace sql_len {
         // SELECT-related lengths
-        constexpr size_t SELECT          = 7;  // "SELECT "
-        constexpr size_t SELECT_DISTINCT = 16; // "SELECT DISTINCT "
-        constexpr size_t DISTINCT        = 9;  // "DISTINCT "
-        constexpr size_t FROM            = 6;  // " FROM "
+        constexpr std::size_t SELECT          = 7;  // "SELECT "
+        constexpr std::size_t SELECT_DISTINCT = 16; // "SELECT DISTINCT "
+        constexpr std::size_t DISTINCT        = 9;  // "DISTINCT "
+        constexpr std::size_t FROM            = 6;  // " FROM "
 
         // INSERT-related lengths
-        constexpr size_t INSERT_INTO = 12; // "INSERT INTO "
-        constexpr size_t VALUES_OPEN = 10; // ") VALUES ("
+        constexpr std::size_t INSERT_INTO = 12; // "INSERT INTO "
+        constexpr std::size_t VALUES_OPEN = 10; // ") VALUES ("
 
         // UPDATE-related lengths
-        constexpr size_t UPDATE = 7; // "UPDATE "
-        constexpr size_t SET    = 5; // " SET "
+        constexpr std::size_t UPDATE = 7; // "UPDATE "
+        constexpr std::size_t SET    = 5; // " SET "
 
         // DELETE-related lengths
-        constexpr size_t DELETE_FROM = 12; // "DELETE FROM "
+        constexpr std::size_t DELETE_FROM = 12; // "DELETE FROM "
 
         // WHERE-related lengths
-        constexpr size_t WHERE             = 7;  // " WHERE "
-        constexpr size_t IN_OPEN           = 5;  // " IN ("
-        constexpr size_t IN_CLAUSE         = 10; // " IN (" + buffer for placeholders base
-        constexpr size_t AND               = 5;  // " AND "
-        constexpr size_t EQ_PARAM_AND      = 8;  // " = ? AND "
-        constexpr size_t LIKE_PATTERN      = 8;  // " LIKE ?"
-        constexpr size_t BETWEEN_PATTERN   = 17; // " BETWEEN ? AND ?"
-        constexpr size_t IS_NOT_NULL_AND   = 17; // " IS NOT NULL AND "
-        constexpr size_t LOGICAL_OP_PARENS = 8;  // "(" + " AND " or " OR " + ")"
+        constexpr std::size_t WHERE             = 7;  // " WHERE "
+        constexpr std::size_t IN_OPEN           = 5;  // " IN ("
+        constexpr std::size_t IN_CLAUSE         = 10; // " IN (" + buffer for placeholders base
+        constexpr std::size_t AND               = 5;  // " AND "
+        constexpr std::size_t EQ_PARAM_AND      = 8;  // " = ? AND "
+        constexpr std::size_t LIKE_PATTERN      = 8;  // " LIKE ?"
+        constexpr std::size_t BETWEEN_PATTERN   = 17; // " BETWEEN ? AND ?"
+        constexpr std::size_t IS_NOT_NULL_AND   = 17; // " IS NOT NULL AND "
+        constexpr std::size_t LOGICAL_OP_PARENS = 8;  // "(" + " AND " or " OR " + ")"
 
         // JOIN-related lengths
-        constexpr size_t ON_EQUALS = 5; // " ON " + " = " partial
+        constexpr std::size_t ON_EQUALS = 5; // " ON " + " = " partial
 
         // Misc lengths
-        constexpr size_t SMALL_BUFFER  = 10;  // Small buffer/padding
-        constexpr size_t MEDIUM_BUFFER = 30;  // Medium reserve hint
-        constexpr size_t LARGE_BUFFER  = 50;  // Large reserve hint
-        constexpr size_t XL_BUFFER     = 100; // Extra large reserve hint
+        constexpr std::size_t SMALL_BUFFER  = 10;  // Small buffer/padding
+        constexpr std::size_t MEDIUM_BUFFER = 30;  // Medium reserve hint
+        constexpr std::size_t LARGE_BUFFER  = 50;  // Large reserve hint
+        constexpr std::size_t XL_BUFFER     = 100; // Extra large reserve hint
     } // namespace sql_len
 
     // ============================================================================
@@ -73,12 +59,12 @@ export namespace storm::orm::utilities {
     // ============================================================================
 
     namespace buffer_size {
-        constexpr size_t SQL_SMALL  = 512;  // Small SQL buffer
-        constexpr size_t SQL_MEDIUM = 1024; // Medium SQL buffer (default)
-        constexpr size_t SQL_LARGE  = 4096; // Large SQL buffer (for complex queries)
+        constexpr std::size_t SQL_SMALL  = 512;  // Small SQL buffer
+        constexpr std::size_t SQL_MEDIUM = 1024; // Medium SQL buffer (default)
+        constexpr std::size_t SQL_LARGE  = 4096; // Large SQL buffer (for complex queries)
 
-        constexpr size_t CACHE_DEFAULT = 8;  // Default SQL cache size
-        constexpr size_t STMT_CACHE    = 32; // Statement cache reserve size
+        constexpr std::size_t CACHE_DEFAULT = 8;  // Default SQL cache size
+        constexpr std::size_t STMT_CACHE    = 32; // Statement cache reserve size
     } // namespace buffer_size
 
     // ============================================================================
@@ -86,13 +72,13 @@ export namespace storm::orm::utilities {
     // ============================================================================
 
     namespace batch {
-        constexpr size_t SMALL_THRESHOLD     = 10; // Batch size considered "small"
-        constexpr size_t FALLBACK_BATCH_SIZE = 50; // Safe fallback for any field count
+        constexpr std::size_t SMALL_THRESHOLD     = 10; // Batch size considered "small"
+        constexpr std::size_t FALLBACK_BATCH_SIZE = 50; // Safe fallback for any field count
     } // namespace batch
 
     // Numeric constants
     namespace numeric {
-        constexpr size_t MAX_SINGLE_DIGIT = 9; // Maximum single digit value (0-9)
+        constexpr std::size_t MAX_SINGLE_DIGIT = 9; // Maximum single digit value (0-9)
     } // namespace numeric
 
     // ============================================================================
@@ -245,15 +231,15 @@ export namespace storm::orm::utilities {
             std::is_same_v<T, char>;
 
     template <typename T>
-    constexpr bool is_int64_source_v =
-            std::is_same_v<T, int64_t> || std::is_same_v<T, long> || std::is_same_v<T, long long> ||
-            std::is_same_v<T, uint64_t> || std::is_same_v<T, unsigned long> || std::is_same_v<T, unsigned long long>;
+    constexpr bool is_int64_source_v = std::is_same_v<T, std::int64_t> || std::is_same_v<T, long> ||
+                                       std::is_same_v<T, long long> || std::is_same_v<T, std::uint64_t> ||
+                                       std::is_same_v<T, unsigned long> || std::is_same_v<T, unsigned long long>;
 
     template <typename T> constexpr bool is_integer_source_v = is_int_source_v<T> || is_int64_source_v<T>;
 
     template <typename T>
     constexpr bool is_blob_source_v =
-            std::is_same_v<T, std::vector<uint8_t>> || std::is_same_v<T, std::vector<unsigned char>> ||
+            std::is_same_v<T, std::vector<std::uint8_t>> || std::is_same_v<T, std::vector<unsigned char>> ||
             std::is_same_v<T, std::vector<std::byte>>;
 
     // ---- Per-storage-class bind helpers -----------------------------------------------
@@ -264,7 +250,7 @@ export namespace storm::orm::utilities {
     template <typename T, typename StmtType, typename ErrorType>
     [[nodiscard]] auto bind_int_like(StmtType& stmt, int param_index, T value) -> std::expected<void, ErrorType> {
         if constexpr (is_int64_source_v<T>) {
-            return stmt.bind_int64(param_index, static_cast<int64_t>(value));
+            return stmt.bind_int64(param_index, static_cast<std::int64_t>(value));
         } else {
             static_assert(is_int_source_v<T>, "bind_int_like: caller must pre-check storage class");
             return stmt.bind_int(param_index, static_cast<int>(value));
@@ -277,7 +263,7 @@ export namespace storm::orm::utilities {
         if constexpr (sizeof(Underlying) <= sizeof(int)) {
             return stmt.bind_int(param_index, static_cast<int>(static_cast<Underlying>(value)));
         } else {
-            return stmt.bind_int64(param_index, static_cast<int64_t>(static_cast<Underlying>(value)));
+            return stmt.bind_int64(param_index, static_cast<std::int64_t>(static_cast<Underlying>(value)));
         }
     }
 
@@ -306,7 +292,7 @@ export namespace storm::orm::utilities {
             return stmt.bind_text(param_index, std::string_view{chrono_conv::tp_to_string(value)});
         } else {
             static_assert(is_chrono_duration_v<T>, "bind_chrono: caller must pre-check storage class");
-            return stmt.bind_int64(param_index, static_cast<int64_t>(value.count()));
+            return stmt.bind_int64(param_index, static_cast<std::int64_t>(value.count()));
         }
     }
 
@@ -428,14 +414,14 @@ export namespace storm::orm::utilities {
     // ============================================================================
 
     // Compile-time string utility for SQL generation and constexpr parsing
-    template <size_t N> struct ConstexprString {
+    template <std::size_t N> struct ConstexprString {
         std::array<char, N> data{};
-        size_t              len = 0;
+        std::size_t         len = 0;
 
         constexpr ConstexprString() = default;
 
         explicit constexpr ConstexprString(const char* str) {
-            size_t i = 0;
+            std::size_t i = 0;
             while (str[i] != '\0' && i < N - 1) {
                 data[i] = str[i];
                 ++i;
@@ -464,7 +450,7 @@ export namespace storm::orm::utilities {
         }
 
         constexpr auto append(const char* str) -> void {
-            size_t i = 0;
+            std::size_t i = 0;
             while (str[i] != '\0' && len < N - 1) {
                 data[len] = str[i];
                 ++len;
@@ -484,8 +470,8 @@ export namespace storm::orm::utilities {
         }
 
         // Append another ConstexprString
-        template <size_t M> constexpr auto append(const ConstexprString<M>& other) -> void {
-            for (size_t i = 0; i < other.len && len < N - 1; ++i) {
+        template <std::size_t M> constexpr auto append(const ConstexprString<M>& other) -> void {
+            for (std::size_t i = 0; i < other.len && len < N - 1; ++i) {
                 data[len] = other.data[i];
                 ++len;
             }
@@ -503,13 +489,13 @@ export namespace storm::orm::utilities {
             return *this;
         }
 
-        template <size_t M> constexpr auto operator+=(const ConstexprString<M>& other) -> ConstexprString& {
+        template <std::size_t M> constexpr auto operator+=(const ConstexprString<M>& other) -> ConstexprString& {
             append(other);
             return *this;
         }
 
         // Append a single digit (0-9) for compile-time number formatting
-        constexpr auto append_digit(size_t digit) -> void {
+        constexpr auto append_digit(std::size_t digit) -> void {
             if (digit <= numeric::MAX_SINGLE_DIGIT && len < N - 1) {
                 data[len] = '0' + static_cast<char>(digit);
                 ++len;
@@ -525,14 +511,14 @@ export namespace storm::orm::utilities {
     };
 
     // Generic thread-local SQL cache template
-    template <typename KeyType = size_t, size_t CACHE_SIZE = buffer_size::CACHE_DEFAULT> struct SQLCache {
+    template <typename KeyType = std::size_t, std::size_t CACHE_SIZE = buffer_size::CACHE_DEFAULT> struct SQLCache {
         struct Entry {
             KeyType     key{};
             std::string sql;
         };
 
         std::array<Entry, CACHE_SIZE> entries{};
-        size_t                        next_slot = 0; // For round-robin replacement
+        std::size_t                   next_slot = 0; // For round-robin replacement
 
         auto find(const KeyType& key) const -> const std::string* {
             for (const auto& entry : entries) {
@@ -567,6 +553,6 @@ export namespace storm::orm::utilities {
     };
 
     // Specialized type aliases for common use cases
-    using BulkSQLCache = SQLCache<size_t, buffer_size::CACHE_DEFAULT>;
+    using BulkSQLCache = SQLCache<std::size_t, buffer_size::CACHE_DEFAULT>;
 
 } // namespace storm::orm::utilities

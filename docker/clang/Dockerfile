@@ -26,3 +26,10 @@ COPY build/lib/x86_64-unknown-linux-gnu/ /opt/clang-p2996/build/lib/x86_64-unkno
 
 # C++26 standard library headers
 COPY build/include/ /opt/clang-p2996/build/include/
+
+# libc++ named module sources (std.cppm / std.compat.cppm) — required for
+# `import std;` support (issue #326). CMake's CXX_MODULE_STD locates these
+# via libc++.modules.json (which declares path ../../share/libc++/v1/).
+# cmake/libcxx.cmake creates a symlink build/share/libc++/v1 -> build/modules/c++/v1
+# at configure time; include the source dir so the symlink target resolves.
+COPY build/modules/ /opt/clang-p2996/build/modules/

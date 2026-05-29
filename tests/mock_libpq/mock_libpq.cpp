@@ -29,8 +29,8 @@ namespace {
     };
 
     // Cell key for column data lookups: row * 10000 + col
-    auto cell_key(int row, int col) -> int64_t {
-        return (static_cast<int64_t>(row) * 10000) + col;
+    auto cell_key(int row, int col) -> std::int64_t {
+        return (static_cast<std::int64_t>(row) * 10000) + col;
     }
 
     // Global mock configuration
@@ -55,9 +55,9 @@ namespace {
         int  exec_fail_on_call  = -1;
 
         // Column data
-        std::unordered_map<int64_t, std::string> column_values;
-        std::unordered_map<int64_t, bool>        column_nulls;
-        std::unordered_map<int64_t, int>         column_lengths;
+        std::unordered_map<std::int64_t, std::string> column_values;
+        std::unordered_map<std::int64_t, bool>        column_nulls;
+        std::unordered_map<std::int64_t, int>         column_lengths;
 
         // Call counters
         int connectdb_calls     = 0;

@@ -4,10 +4,7 @@
 // NOLINTBEGIN(misc-const-correctness,performance-unnecessary-value-param,performance-unnecessary-copy-initialization)
 
 import storm;
-import <string>;
-import <vector>;
-import <expected>;
-import <optional>;
+import std;
 
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
@@ -25,7 +22,7 @@ template <typename ConnType> class WhereTest : public StormTestFixture<Person, C
         )));
     }
 
-    static auto check_where_count(auto expr, size_t expected_count) -> void {
+    static auto check_where_count(auto expr, std::size_t expected_count) -> void {
         QuerySet<Person, ConnType> qs;
         auto                       result = qs.where(expr).select().execute();
         ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
@@ -486,7 +483,7 @@ TYPED_TEST(WhereTest, IsNull_StringField) {
     auto result = queryset.where(field<^^Person::nickname>().is_null()).select().execute();
     ASSERT_TRUE(result.has_value()) << "IS NULL on nickname failed: " << result.error().message();
     // Count people with nickname = std::nullopt in PEOPLE_25
-    size_t expected_null_nicknames = 0;
+    std::size_t expected_null_nicknames = 0;
     for (const auto& p : storm::test::PEOPLE_25) {
         if (!p.nickname.has_value()) {
             expected_null_nicknames++;
@@ -503,7 +500,7 @@ TYPED_TEST(WhereTest, IsNull_AndCombination) {
     auto result = queryset.where(field<^^Person::score>().is_null() && field<^^Person::age>() > 30).select().execute();
     ASSERT_TRUE(result.has_value()) << "IS NULL AND failed: " << result.error().message();
     // NULL score AND age > 30: Charlie(35), Eve(40), Henry(33), Jack(38), Olivia(48), Quinn(30→no), Sam(40) = 6
-    size_t expected = 0;
+    std::size_t expected = 0;
     for (const auto& p : storm::test::PEOPLE_25) {
         if (!p.score.has_value() && p.age > 30) {
             expected++;
@@ -519,7 +516,7 @@ TYPED_TEST(WhereTest, IsNull_OrCombination) {
     auto result = queryset.where(field<^^Person::score>().is_null() || field<^^Person::age>() < 25).select().execute();
     ASSERT_TRUE(result.has_value()) << "IS NULL OR failed: " << result.error().message();
     // NULL score (10) OR age < 25 (Paul=22, Yara=22 — but Yara has score=92, Paul has score=40)
-    size_t expected = 0;
+    std::size_t expected = 0;
     for (const auto& p : storm::test::PEOPLE_25) {
         if (!p.score.has_value() || p.age < 25) {
             expected++;
@@ -575,7 +572,7 @@ TEST_F(WhereNullCollateTest, IsNull_Collated) {
                           .select()
                           .execute();
     ASSERT_TRUE(result.has_value()) << "Collated IS NULL failed: " << result.error().message();
-    size_t expected_null_nicknames = 0;
+    std::size_t expected_null_nicknames = 0;
     for (const auto& p : storm::test::PEOPLE_25) {
         if (!p.nickname.has_value()) {
             expected_null_nicknames++;

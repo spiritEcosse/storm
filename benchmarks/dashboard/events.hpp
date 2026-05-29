@@ -5,11 +5,11 @@
 // Textual header — #included after db.hpp from main.cpp's anonymous
 // namespace. Depends on: DashboardDB, baseline helpers (db.hpp),
 // wire::ResultMsg, tui::DashboardState. Do NOT include from any other TU.
-
-#include <cstdint>
-#include <cstdio>
-#include <string>
-#include <vector>
+//
+// import std; migration (issue #326): no std #includes here — std types come
+// from main.cpp's `import std;` (this header is pulled in after it). A textual
+// std #include after the module import breaks the build (Finding B). std::meta::
+// usage is served by the textual <meta> main.cpp includes before its imports.
 
 namespace {
 

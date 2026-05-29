@@ -5,12 +5,7 @@
 // NOLINTBEGIN(misc-const-correctness,cppcoreguidelines-rvalue-reference-param-not-moved)
 
 import storm;
-import <string>;
-import <vector>;
-import <expected>;
-import <ranges>;
-import <algorithm>;
-import <utility>;
+import std;
 
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"

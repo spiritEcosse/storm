@@ -21,7 +21,7 @@ namespace storm::test {
 
 // Primary template -- TestBody is provided by partial specializations in each
 // test file.  The fallback body fires a failure if no specialization exists.
-template <size_t I, typename Fixture, typename ConnType> class YamlTestInstance : public Fixture {
+template <std::size_t I, typename Fixture, typename ConnType> class YamlTestInstance : public Fixture {
     void TestBody() override { ADD_FAILURE() << "YamlTestInstance: no TestBody specialization for index " << I; }
 };
 
@@ -31,7 +31,7 @@ template <size_t I, typename Fixture, typename ConnType> class YamlTestInstance 
 template <const auto &Tests, typename Fixture, typename ConnType>
 auto register_for_backend(const char *suite, const char *backend) -> void {
     static const std::string suite_name = std::string(suite) + "/" + backend;
-    [suite_ptr = suite_name.c_str()]<size_t... I>(std::index_sequence<I...>) {
+    [suite_ptr = suite_name.c_str()]<std::size_t... I>(std::index_sequence<I...>) {
         (..., ::testing::RegisterTest(
                   suite_ptr,
                   Tests[I].bench.test_name.c_str(),     // ConstexprString::c_str() -> static storage

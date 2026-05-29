@@ -7,14 +7,7 @@
 // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes,readability-identifier-length,cppcoreguidelines-special-member-functions) // GTest fixtures use protected connstr_; tests use short connection names c1/c2/c3; MockConfigGuard is RAII-only. Pre-existing; tracked under #262/#264.
 
 import storm;
-import <expected>;
-import <string>;
-import <memory>;
-import <thread>;
-import <vector>;
-import <atomic>;
-import <chrono>;
-import <latch>;
+import std;
 
 #include "test_models.h" // NOSONAR cpp:S954
 
@@ -53,16 +46,16 @@ struct MockStatement {
         }
     };
 
-    auto bind_int(int, int) -> std::expected<void, Error> {
+    static auto bind_int(int /*unused*/, int /*unused*/) -> std::expected<void, Error> {
         return {};
     }
-    auto bind_text(int, std::string_view) -> std::expected<void, Error> {
+    static auto bind_text(int /*unused*/, std::string_view /*unused*/) -> std::expected<void, Error> {
         return {};
     }
-    auto execute() -> std::expected<void, Error> {
+    static auto execute() -> std::expected<void, Error> {
         return {};
     }
-    auto step() -> std::expected<bool, Error> {
+    static auto step() -> std::expected<bool, Error> {
         return false;
     }
     auto reset() -> void {}
@@ -83,7 +76,7 @@ struct MockPoolConnection {
     };
     using Statement = MockStatement;
 
-    [[nodiscard]] static auto open(std::string_view) -> std::expected<MockPoolConnection, Error> {
+    [[nodiscard]] static auto open(std::string_view /*unused*/) -> std::expected<MockPoolConnection, Error> {
         auto& cfg = mock_config();
         ++cfg.open_call_count;
         if (cfg.open_delay_ms > 0) {
@@ -102,18 +95,18 @@ struct MockPoolConnection {
         return is_open_;
     }
 
-    auto prepare(std::string_view) -> std::expected<Statement, Error> {
+    static auto prepare(std::string_view /*unused*/) -> std::expected<Statement, Error> {
         return Statement{};
     }
-    auto execute(std::string_view) -> std::expected<void, Error> {
+    static auto execute(std::string_view /*unused*/) -> std::expected<void, Error> {
         return {};
     }
-    auto prepare_cached(std::string_view) -> std::expected<Statement*, Error> {
+    auto prepare_cached(std::string_view /*unused*/) -> std::expected<Statement*, Error> {
         return &cached_stmt_;
     }
-    auto               clear_statement_cache() -> void {}
-    auto               clear_statement_cache(std::string_view) -> void {}
-    [[nodiscard]] auto cached_statement_count() const -> size_t {
+    auto                      clear_statement_cache() -> void {}
+    auto                      clear_statement_cache(std::string_view /*unused*/) -> void {}
+    [[nodiscard]] static auto cached_statement_count() -> std::size_t {
         return 0;
     }
 

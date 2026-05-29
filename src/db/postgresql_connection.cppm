@@ -3,14 +3,11 @@ module;
 #include <libpq-fe.h>
 
 export module storm_db_postgresql_connection;
+
+import std;
 import storm_db_concept;
 import storm_db_postgresql_error;
 import storm_db_postgresql_statement;
-import <expected>;
-import <string_view>;
-import <string>;
-import <memory>;
-import <unordered_map>;
 
 export namespace storm::db::postgresql {
 
@@ -33,7 +30,7 @@ export namespace storm::db::postgresql {
                 std::unordered_map<std::string, StatementValue, storm::db::string_hash, storm::db::string_equal>;
 
         // Cache size constants
-        static constexpr size_t STMT_CACHE_RESERVE = 32;
+        static constexpr std::size_t STMT_CACHE_RESERVE = 32;
 
       public:
         using Error     = postgresql::Error;
@@ -134,7 +131,7 @@ export namespace storm::db::postgresql {
             });
         }
 
-        [[nodiscard]] auto cached_statement_count() const noexcept -> size_t {
+        [[nodiscard]] auto cached_statement_count() const noexcept -> std::size_t {
             return statement_cache_.size();
         }
 
@@ -180,7 +177,7 @@ export namespace storm::db::postgresql {
             bool in_single_quote = false;
             bool in_double_quote = false;
 
-            for (size_t i = 0; i < sql.size(); ++i) {
+            for (std::size_t i = 0; i < sql.size(); ++i) {
                 const char ch = sql[i];
 
                 // Track quoted strings to avoid translating ? inside them

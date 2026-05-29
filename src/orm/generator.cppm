@@ -18,15 +18,7 @@ module;
 
 export module storm_orm_generator;
 
-import <coroutine>;
-import <exception>;
-import <iterator>;
-import <new>;
-import <type_traits>;
-import <utility>;
-import <concepts>;
-import <ranges>;
-import <memory>;
+import std;
 
 export namespace storm {
 

@@ -2,12 +2,7 @@
 #include "test_db_helpers.h"
 
 import storm;
-
-import <expected>;
-import <format>;
-import <span>;
-import <string>;
-import <vector>;
+import std;
 
 using namespace storm;
 
@@ -63,7 +58,7 @@ TYPED_TEST(AggregateTest, DirectChain_TypeSafety) {
     auto result = this->qs->template sum<^^Person::age>().count().execute();
     ASSERT_TRUE(result.has_value());
     static_assert(
-            std::is_same_v<std::remove_reference_t<decltype(result.value())>, std::tuple<int64_t, int64_t>>,
+            std::is_same_v<std::remove_reference_t<decltype(result.value())>, std::tuple<std::int64_t, std::int64_t>>,
             "Multiple aggregates should return tuple"
     );
 }
@@ -170,7 +165,7 @@ TYPED_TEST(AggregateTest, TypeSafety_IntegerResult) {
     auto result = this->qs->template sum<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value());
     static_assert(
-            std::is_same_v<std::remove_reference_t<decltype(result.value())>, int64_t>, "SUM should return int64_t"
+            std::is_same_v<std::remove_reference_t<decltype(result.value())>, std::int64_t>, "SUM should return int64_t"
     );
 }
 

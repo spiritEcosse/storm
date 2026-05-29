@@ -5,13 +5,7 @@
 // NOLINTBEGIN(misc-const-correctness)
 
 import storm;
-import <string>;
-import <vector>;
-import <expected>;
-import <algorithm>;
-import <set>;
-import <format>;
-import <optional>;
+import std;
 
 using namespace storm;
 using namespace storm::orm::where;

@@ -1,14 +1,8 @@
 module;
 
 export module storm_db_concept;
-import <array>;
-import <cstring>;
-import <expected>;
-import <string_view>;
-import <string>;
-import <concepts>;
-import <cstddef>;
-import <functional>;
+
+import std;
 
 export namespace storm::db {
 
@@ -72,7 +66,7 @@ export namespace storm::db {
         // Cache management — clear-all and per-table (Issue #215)
         { conn.clear_statement_cache() } -> std::same_as<void>;
         { conn.clear_statement_cache(sql) } -> std::same_as<void>;
-        { conn.cached_statement_count() } -> std::same_as<size_t>;
+        { conn.cached_statement_count() } -> std::same_as<std::size_t>;
     };
 
     // Database statement concept
@@ -117,10 +111,10 @@ export namespace storm::db {
         using is_transparent = void;
         using hash_type      = std::hash<std::string_view>;
 
-        [[nodiscard]] auto operator()(std::string_view str) const noexcept -> size_t {
+        [[nodiscard]] auto operator()(std::string_view str) const noexcept -> std::size_t {
             return hash_type{}(str);
         }
-        [[nodiscard]] auto operator()(const std::string& str) const noexcept -> size_t {
+        [[nodiscard]] auto operator()(const std::string& str) const noexcept -> std::size_t {
             return hash_type{}(str);
         }
     };

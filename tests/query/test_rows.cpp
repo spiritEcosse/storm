@@ -4,12 +4,7 @@
 // NOLINTBEGIN(misc-const-correctness)
 
 import storm;
-import <string>;
-import <vector>;
-import <expected>;
-import <optional>;
-import <ranges>;
-import <algorithm>;
+import std;
 
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
@@ -228,7 +223,7 @@ TYPED_TEST(RowsTest, CollectToVector) {
         people.push_back(std::move(result.value()));
     }
     EXPECT_EQ(people.size(), 25);
-    for (size_t i = 1; i < people.size(); ++i) {
+    for (std::size_t i = 1; i < people.size(); ++i) {
         EXPECT_LE(people[i - 1].name, people[i].name);
     }
 }

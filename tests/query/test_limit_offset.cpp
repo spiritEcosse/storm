@@ -2,9 +2,7 @@
 #include "test_db_helpers.h"
 
 import storm;
-import <string>;
-import <vector>;
-import <expected>;
+import std;
 
 using namespace storm;
 using namespace storm::orm::where;
@@ -37,7 +35,7 @@ TYPED_TEST(LimitOffsetTest, LimitOnly) {
 
     // Verify we got the first 5 by name order: Alice, Bob, Charlie, Diana, Eve
     std::vector<std::string> expected = {"Alice", "Bob", "Charlie", "Diana", "Eve"};
-    size_t                   i        = 0;
+    std::size_t              i        = 0;
     for (auto it = people.begin(); it != people.end(); ++it, ++i) {
         EXPECT_EQ(it->name, expected[i]);
     }
@@ -71,7 +69,7 @@ TYPED_TEST(LimitOffsetTest, LimitAndOffset) {
 
     // Verify we got names 6-10 alphabetically: Frank, Grace, Henry, Ivy, Jack
     std::vector<std::string> expected = {"Frank", "Grace", "Henry", "Ivy", "Jack"};
-    size_t                   i        = 0;
+    std::size_t              i        = 0;
     for (auto it = people.begin(); it != people.end(); ++it, ++i) {
         EXPECT_EQ(it->name, expected[i]);
     }

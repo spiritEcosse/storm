@@ -109,8 +109,7 @@ constexpr T square(T value) {
 
 ### Modern Error Handling and Debugging
 ```cpp
-import <stacktrace>;
-import <expected>;
+import std;
 
 class ErrorHandler {
 public:
@@ -142,8 +141,7 @@ constexpr std::string_view state_to_string(State s) {
 
 ### Advanced Template and Concept Usage
 ```cpp
-import <concepts>;
-import <type_traits>;
+import std;
 
 // More sophisticated concepts
 template<typename T>
@@ -170,8 +168,7 @@ void process_container(Container& container) {
 
 ### Performance-Critical Code Patterns
 ```cpp
-import <memory>;
-import <bit>;
+import std;
 
 class PerformanceOptimized {
 private:
@@ -203,9 +200,7 @@ public:
 
 ### Advanced Ranges Usage Patterns
 ```cpp
-import <ranges>;
-import <algorithm>;
-import <vector>;
+import std;
 
 void demonstrate_advanced_ranges() {
     std::vector<int> numbers = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
@@ -240,8 +235,7 @@ void demonstrate_advanced_ranges() {
 
 ### Error Handling with std::expected
 ```cpp
-import <expected>;
-import <string>;
+import std;
 
 std::expected<int, std::string> parse_number(std::string_view input) {
     if (input.empty()) {
@@ -254,8 +248,7 @@ std::expected<int, std::string> parse_number(std::string_view input) {
 
 ### Ranges and Views
 ```cpp
-import <ranges>;
-import <print>;
+import std;
 
 void demonstrate_ranges() {
     auto even_squares = std::views::iota(0, 10)
@@ -281,7 +274,7 @@ constexpr auto fact_5 = factorial(5); // Computed at compile time
 ```cpp
 // math_utils.cppm
 export module math_utils;
-import <cmath>;
+import std;
 
 export namespace math {
     template <typename T>
@@ -295,7 +288,7 @@ export namespace math {
 
 // main.cpp
 import math_utils;
-import <print>;
+import std;
 
 int main() {
     std::println("2^10 = {}", math::power(2, 10));
@@ -320,7 +313,7 @@ public:
 
 ### std::mdspan
 ```cpp
-import <mdspan>;
+import std;
 
 class Matrix {
 private:
@@ -340,7 +333,7 @@ public:
 
 ### std::generator for Lazy Evaluation
 ```cpp
-import <generator>;
+import std;
 
 std::generator<int> fibonacci() {
     int a = 0, b = 1;

@@ -3,12 +3,7 @@
 #include <sqlite3.h>
 
 import storm;
-import <expected>;
-import <string>;
-import <optional>;
-import <span>;
-import <vector>;
-import <format>;
+import std;
 
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
@@ -48,7 +43,7 @@ TYPED_TEST(InsertNoReturnTest, SingleInsertYesReturnsId) {
     auto         result = qs.template insert<ReturnId::Yes>(alice).execute();
 
     static_assert(
-            std::is_same_v<decltype(result), std::expected<int64_t, typename TypeParam::Error>>,
+            std::is_same_v<decltype(result), std::expected<std::int64_t, typename TypeParam::Error>>,
             "ReturnId::Yes should return std::expected<int64_t, Error>"
     );
     ASSERT_TRUE(result.has_value());
@@ -62,7 +57,7 @@ TYPED_TEST(InsertNoReturnTest, DefaultInsertReturnsId) {
     auto         result = qs.insert(alice).execute();
 
     static_assert(
-            std::is_same_v<decltype(result), std::expected<int64_t, typename TypeParam::Error>>,
+            std::is_same_v<decltype(result), std::expected<std::int64_t, typename TypeParam::Error>>,
             "Default insert should return std::expected<int64_t, Error>"
     );
     ASSERT_TRUE(result.has_value());

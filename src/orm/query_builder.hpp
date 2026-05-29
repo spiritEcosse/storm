@@ -170,7 +170,7 @@ namespace storm::orm::query_builder {
         // ----------------------------------------------------------------
         // WHERE
         // ----------------------------------------------------------------
-        template <typename WhereModel, size_t I> static auto build_condition_expr() {
+        template <typename WhereModel, std::size_t I> static auto build_condition_expr() {
             constexpr auto& cond = spec.where.conditions[I];
             static_assert(has_field<WhereModel>(cond.field.view()), "WHERE condition field not found on model");
             constexpr auto             fi = dispatch_field<WhereModel>(cond.field.view());
@@ -184,7 +184,7 @@ namespace storm::orm::query_builder {
                         typed_value_as<FieldType, cond.values[0]>(), typed_value_as<FieldType, cond.values[1]>()
                 );
             } else if constexpr (op == "IN") {
-                return []<size_t... Is>(std::index_sequence<Is...>) {
+                return []<std::size_t... Is>(std::index_sequence<Is...>) {
                     constexpr auto& c = spec.where.conditions[I];
                     return build_compare_expr<fi, c.op>(typed_value_as<FieldType, c.values[Is]>()...);
                 }(std::make_index_sequence<cond.value_count>{});
@@ -199,7 +199,7 @@ namespace storm::orm::query_builder {
 
         template <typename WhereModel> static auto apply_where(QuerySet<Model, ConnType>& qs) -> void {
             if constexpr (spec.where.enabled) {
-                [&]<size_t... Is>(std::index_sequence<Is...>) {
+                [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                     if constexpr (spec.where.combine_and)
                         qs = qs.where((build_condition_expr<WhereModel, Is>() && ...));
                     else
@@ -211,7 +211,7 @@ namespace storm::orm::query_builder {
         // ----------------------------------------------------------------
         // JOIN
         // ----------------------------------------------------------------
-        static consteval auto join_fk_name(size_t i) -> std::string_view {
+        static consteval auto join_fk_name(std::size_t i) -> std::string_view {
             if (spec.join.fk_count >= 2)
                 return spec.join.fks[i].view();
             return spec.join.fk.view();
@@ -233,8 +233,8 @@ namespace storm::orm::query_builder {
 
         static auto apply_join(auto& qs) -> void {
             if constexpr (spec.join.enabled) {
-                constexpr size_t N = spec.join.fk_count >= 2 ? spec.join.fk_count : size_t{1};
-                [&]<size_t... Is>(std::index_sequence<Is...>) {
+                constexpr std::size_t N = spec.join.fk_count >= 2 ? spec.join.fk_count : std::size_t{1};
+                [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                     dispatch_join_type<fk_resolver(join_fk_name(Is))...>(qs);
                 }(std::make_index_sequence<N>{});
             }
@@ -251,16 +251,16 @@ namespace storm::orm::query_builder {
             return storm::orm::utilities::Collate::NoCase;
         }
 
-        static consteval auto enabled_order_by_count() -> size_t {
-            size_t n = 0;
-            for (size_t i = 0; i < std::remove_cvref_t<decltype(spec)>::MAX_ORDER_BY; ++i)
+        static consteval auto enabled_order_by_count() -> std::size_t {
+            std::size_t n = 0;
+            for (std::size_t i = 0; i < std::remove_cvref_t<decltype(spec)>::MAX_ORDER_BY; ++i)
                 if (spec.order_by[i].enabled)
                     ++n;
             return n;
         }
 
-        template <size_t I> static auto apply_order_by_impl(auto qs) {
-            constexpr size_t MAX_OB = std::remove_cvref_t<decltype(spec)>::MAX_ORDER_BY;
+        template <std::size_t I> static auto apply_order_by_impl(auto qs) {
+            constexpr std::size_t MAX_OB = std::remove_cvref_t<decltype(spec)>::MAX_ORDER_BY;
             if constexpr (I >= MAX_OB) {
                 return qs;
             } else if constexpr (!spec.order_by[I].enabled) {
@@ -335,13 +335,13 @@ namespace storm::orm::query_builder {
         }
 
         static auto build_distinct_stmt(auto& qs) {
-            return [&]<size_t... Is>(std::index_sequence<Is...>) {
+            return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                 return qs.template distinct<dispatch_field<Model>(spec.distinct.fields[Is].view())...>();
             }(std::make_index_sequence<spec.distinct.field_count()>{});
         }
 
         static auto build_group_by_query(auto& qs) {
-            auto gb = [&]<size_t... Is>(std::index_sequence<Is...>) {
+            auto gb = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                 return qs.template group_by<dispatch_field<Model>(spec.group_by.fields[Is].view())...>();
             }(std::make_index_sequence<spec.group_by.field_count()>{});
 

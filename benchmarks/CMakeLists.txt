@@ -43,6 +43,9 @@ add_executable(
   "${CMAKE_CURRENT_SOURCE_DIR}/dashboard/reporter.cpp")
 target_sources(storm_bench PRIVATE FILE_SET cxx_modules TYPE CXX_MODULES FILES
                                    ${STORM_BENCH_MODULE_UNITS})
+# import std; migration (issue #326): the bench .cppm module units do `import
+# std;` directly, so this target must consume the std named module too.
+set_target_properties(storm_bench PROPERTIES CXX_MODULE_STD ON)
 # Bypass benchmark::benchmark's INTERFACE_* properties (we link the static
 # archive directly) so the bench-only flags stay confined to main.cpp via
 # per-source properties below.

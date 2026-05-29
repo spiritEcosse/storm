@@ -2,11 +2,7 @@
 #include "test_db_helpers.h"
 
 import storm;
-import <string>;
-import <vector>;
-import <expected>;
-import <span>;
-import <format>;
+import std;
 
 using namespace storm;
 
@@ -26,7 +22,7 @@ template <typename ConnType>
 class UnifiedYamlTest : public StormTestFixture<Person, ConnType, SimpleRecord, Message> {};
 
 // Partial specialization of YamlTestInstance for UnifiedYamlTest
-template <size_t I, typename ConnType>
+template <std::size_t I, typename ConnType>
 class storm::test::YamlTestInstance<I, UnifiedYamlTest<ConnType>, ConnType> : public UnifiedYamlTest<ConnType> {
     static constexpr auto& tc = UNIFIED_TESTS[I];
 
@@ -86,7 +82,7 @@ class storm::test::YamlTestInstance<I, UnifiedYamlTest<ConnType>, ConnType> : pu
             seed_main_msg();
         } else if constexpr (tc.bench.dataset_size > 0 && tc.dataset.empty()) {
             std::vector<Person> seed;
-            seed.reserve(static_cast<size_t>(tc.bench.dataset_size));
+            seed.reserve(static_cast<std::size_t>(tc.bench.dataset_size));
             for (int i = 1; i <= tc.bench.dataset_size; ++i) {
                 seed.emplace_back(Person{.id = 0, .name = std::format("P{}", i), .age = 20 + i});
             }

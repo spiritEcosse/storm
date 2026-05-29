@@ -24,13 +24,9 @@
 #include "mock_sqlite3.h"
 
 import storm;
+import std;
 import storm_orm_utilities;
 import storm_orm_transaction;
-import <expected>;
-import <string>;
-import <vector>;
-import <optional>;
-import <span>;
 
 using namespace storm;
 using storm::test::MockSqlite3Config;
@@ -50,16 +46,16 @@ namespace {
 
     // Test model for ORM operations
     struct MockPerson {
-        [[= storm::meta::FieldAttr::primary]] int64_t id{};
-        std::string                                   name;
-        int                                           age{};
+        [[= storm::meta::FieldAttr::primary]] std::int64_t id{};
+        std::string                                        name;
+        int                                                age{};
     };
 
     // Test model with optional fields
     struct MockPersonOptional {
-        [[= storm::meta::FieldAttr::primary]] int64_t id{};
-        std::optional<std::string>                    name;
-        std::optional<int>                            age;
+        [[= storm::meta::FieldAttr::primary]] std::int64_t id{};
+        std::optional<std::string>                         name;
+        std::optional<int>                                 age;
     };
 
     /**
@@ -395,9 +391,9 @@ namespace {
 
     // Test model with double field for bind_double coverage
     struct MockPersonWithDouble {
-        [[= storm::meta::FieldAttr::primary]] int64_t id{};
-        std::string                                   name;
-        double                                        salary{};
+        [[= storm::meta::FieldAttr::primary]] std::int64_t id{};
+        std::string                                        name;
+        double                                             salary{};
     };
 
     TEST_F(ORMMockErrorTest, InsertFailsOnBindDoubleNomem) {
@@ -418,9 +414,9 @@ namespace {
 
     // Test model with blob field for bind_blob coverage
     struct MockPersonWithBlob {
-        [[= storm::meta::FieldAttr::primary]] int64_t id{};
-        std::string                                   name;
-        std::vector<uint8_t>                          data;
+        [[= storm::meta::FieldAttr::primary]] std::int64_t id{};
+        std::string                                        name;
+        std::vector<std::uint8_t>                          data;
     };
 
     TEST_F(ORMMockErrorTest, InsertFailsOnBindBlobNomem) {
@@ -2911,7 +2907,7 @@ namespace {
 
     TEST_F(ORMMockErrorTest, SQLCacheRoundRobinEviction) {
         // CACHE_DEFAULT = 8 — fill all slots, then insert more to trigger eviction
-        storm::orm::utilities::SQLCache<size_t, 4> cache;
+        storm::orm::utilities::SQLCache<std::size_t, 4> cache;
 
         // Fill all 4 slots
         cache.insert(1, "SELECT 1");

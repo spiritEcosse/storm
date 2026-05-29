@@ -2,10 +2,7 @@
 #include "test_db_helpers.h"
 
 import storm;
-import <string>;
-import <vector>;
-import <expected>;
-import <format>;
+import std;
 
 #include "test_models.h"
 

@@ -4,12 +4,7 @@
 // NOLINTBEGIN(misc-const-correctness)
 
 import storm;
-import <string>;
-import <vector>;
-import <expected>;
-import <format>;
-import <optional>;
-import <span>;
+import std;
 
 using namespace storm;
 using namespace storm::orm::where;

@@ -32,7 +32,21 @@ CLANG_TIDY_CONFIG=".clang-tidy"
 # Parse arguments
 FIX_FLAG=""
 MODE="diff"   # diff | full | all
-JOBS=$(nproc)
+
+# Memory-aware default job count (issue #326). Since the `import std;` migration,
+# every clang-tidy process loads the full std-module BMI (~1.5-2 GB resident),
+# so `-j $(nproc)` on a many-core / modest-RAM box OOM-kills the run. Default to
+# min(nproc, MemAvailable_GB / 2) with a floor of 1; an explicit `-j N` overrides.
+# ~2 GB/job is the headroom budget per import-std clang-tidy invocation.
+_nproc=$(nproc)
+_mem_avail_kb=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo 2>/dev/null)
+if [[ -n "$_mem_avail_kb" ]]; then
+    _mem_jobs=$((_mem_avail_kb / 1024 / 1024 / 2))   # MemAvailable(GB) / 2
+    [[ "$_mem_jobs" -lt 1 ]] && _mem_jobs=1
+    JOBS=$(( _nproc < _mem_jobs ? _nproc : _mem_jobs ))
+else
+    JOBS="$_nproc"
+fi
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -105,6 +119,61 @@ else
 fi
 echo ""
 
+# Known-skip list: files clang-tidy cannot parse and we accept that.
+#
+# Returns 0 (true) if a file is expected to fail clang-tidy parsing.
+#
+# These are precise file paths, not directory wildcards. The former broad
+# "tests/*|benchmarks/*" wildcard was replaced in Issue #308 because 39 test
+# files and most bench files parse fine — the wildcard was silently masking
+# parse failures in files that should be clean.
+#
+# Files genuinely unparseable:
+#   src/orm/query_builder.hpp — pseudo-module header; must be included after
+#       `import storm;` so clang-tidy sees it without the BMI and fails.
+#
+#   Test headers that must come after `import storm;` — clang-tidy parses
+#   them standalone and hits missing storm symbols:
+#   tests/test_models.h, tests/test_seed_helpers.h, tests/test_select_runner.h,
+#   tests/test_write_runner.h, tests/test_yaml_register.h,
+#   tests/query/test_aggregate_fixture.h, tests/test_parser.hpp,
+#   tests/tools/storm_schema/models.h
+#
+#   benchmarks/bench_register.h — includes benchmark/benchmark.h which
+#   clang-tidy cannot parse (gbench macro / linkage issue).
+#
+#   Benchmark textual headers — #included inside anonymous namespaces of main
+#   TUs; cannot be parsed standalone (need import storm or benchmark BMI):
+#   benchmarks/models.hpp, benchmarks/benchmark_tests.hpp,
+#   benchmarks/dashboard/args.hpp, benchmarks/dashboard/backup.hpp,
+#   benchmarks/dashboard/db.hpp, benchmarks/dashboard/events.hpp,
+#   benchmarks/dashboard/tui_render.hpp, benchmarks/dashboard/models.hpp
+is_known_unparseable() {
+    local file="$1"
+    case "$file" in
+        src/orm/query_builder.hpp) return 0 ;;
+        tests/test_models.h) return 0 ;;
+        tests/test_seed_helpers.h) return 0 ;;
+        tests/test_select_runner.h) return 0 ;;
+        tests/test_write_runner.h) return 0 ;;
+        tests/test_yaml_register.h) return 0 ;;
+        tests/query/test_aggregate_fixture.h) return 0 ;;
+        tests/test_parser.hpp) return 0 ;;
+        tests/tools/storm_schema/models.h) return 0 ;;
+        benchmarks/bench_register.h) return 0 ;;
+        benchmarks/models.hpp) return 0 ;;
+        benchmarks/benchmark_tests.hpp) return 0 ;;
+        benchmarks/dashboard/args.hpp) return 0 ;;
+        benchmarks/dashboard/backup.hpp) return 0 ;;
+        benchmarks/dashboard/db.hpp) return 0 ;;
+        benchmarks/dashboard/events.hpp) return 0 ;;
+        benchmarks/dashboard/tui_render.hpp) return 0 ;;
+        benchmarks/dashboard/models.hpp) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+export -f is_known_unparseable
+
 # ─── --diff mode short path ─────────────────────────────────────────────────
 # Pipe `git diff -U0 --cached` through clang-tidy-diff.py — it only emits
 # diagnostics on lines the staged commit touches. Pre-existing warnings on
@@ -120,16 +189,51 @@ if [[ "$MODE" == "diff" ]]; then
     DIFF_FIX=""
     [[ -n "$FIX_FLAG" ]] && DIFF_FIX="-fix"
 
+    # Drop diff sections for known-unparseable files BEFORE clang-tidy-diff.py
+    # sees them. clang-tidy-diff.py has no concept of our skip-list, so it would
+    # otherwise run clang-tidy on textual headers that cannot parse standalone
+    # (they need `import storm;` / a benchmark BMI / are reflection-annotated) and
+    # attribute their header-origin diagnostics to the staged lines. Since the
+    # `import std;` migration these standalone parses fail hard enough to emit
+    # dozens of spurious warnings/errors (e.g. tests/test_parser.hpp,
+    # benchmarks/dashboard/*.hpp), which is pure noise on the diff. Filtering at
+    # the source (vs. post-hoc output grepping) keeps the summary counts honest
+    # and reuses the single is_known_unparseable() source of truth. See issue #326.
+    filter_skiplist_from_diff() {
+        local keep=1 path
+        while IFS= read -r line; do
+            if [[ "$line" == "diff --git "* ]]; then
+                # path is the b-side: "diff --git a/<p> b/<p>"
+                path="${line##* b/}"
+                if is_known_unparseable "$path"; then keep=0; else keep=1; fi
+            fi
+            [[ "$keep" == 1 ]] && printf '%s\n' "$line"
+        done
+    }
+
+    # -timeout 240 (issue #326): tests/yaml/test_unified_yaml.cpp runs an #embed +
+    # consteval JSON parse under import std; (~78s, 2.4 GB RSS) — the old 60s
+    # timed it out (Terminated by signal 9 / timeout) and failed the gate.
+    # NOTE: deliberately NOT passing -config-file here. Forcing the root
+    # .clang-tidy overrides clang-tidy's normal directory-hierarchy config lookup,
+    # which defeats per-directory overrides like tests/.clang-tidy (it sets
+    # InheritParentConfig: true and disables readability-function-cognitive-
+    # complexity — "large test bodies are intentional coverage"). With the root
+    # config forced, that disable was ignored and pre-existing complex TEST bodies
+    # fired the moment an unrelated import-std edit touched a line inside them
+    # (issue #326). Letting clang-tidy walk the tree picks up root .clang-tidy for
+    # src/ and the merged tests/.clang-tidy for tests/, matching the --full path
+    # (which already omits -config-file).
     set +e
     git diff -U0 --cached \
+        | filter_skiplist_from_diff \
         | python3 "$CLANG_TIDY_DIFF" \
             -clang-tidy-binary "$CLANG_TIDY" \
             -p1 \
             -path "$BUILD_DIR" \
-            -config-file "$CLANG_TIDY_CONFIG" \
             -iregex '.*\.(cpp|cppm|h|hpp)' \
             -j "$JOBS" \
-            -timeout 60 \
+            -timeout 240 \
             -quiet \
             $DIFF_FIX \
             2>&1 | tee "$DIFF_OUT"
@@ -214,60 +318,6 @@ trap "rm -rf $TEMP_DIR" EXIT
 # Export variables for subshells
 export CLANG_TIDY BUILD_DIR FIX_FLAG TEMP_DIR
 
-# Known-skip list: files clang-tidy cannot parse and we accept that.
-#
-# Returns 0 (true) if a file is expected to fail clang-tidy parsing.
-#
-# These are precise file paths, not directory wildcards. The former broad
-# "tests/*|benchmarks/*" wildcard was replaced in Issue #308 because 39 test
-# files and most bench files parse fine — the wildcard was silently masking
-# parse failures in files that should be clean.
-#
-# Files genuinely unparseable:
-#   src/orm/query_builder.hpp — pseudo-module header; must be included after
-#       `import storm;` so clang-tidy sees it without the BMI and fails.
-#
-#   Test headers that must come after `import storm;` — clang-tidy parses
-#   them standalone and hits missing storm symbols:
-#   tests/test_models.h, tests/test_seed_helpers.h, tests/test_select_runner.h,
-#   tests/test_write_runner.h, tests/test_yaml_register.h,
-#   tests/query/test_aggregate_fixture.h, tests/test_parser.hpp,
-#   tests/tools/storm_schema/models.h
-#
-#   benchmarks/bench_register.h — includes benchmark/benchmark.h which
-#   clang-tidy cannot parse (gbench macro / linkage issue).
-#
-#   Benchmark textual headers — #included inside anonymous namespaces of main
-#   TUs; cannot be parsed standalone (need import storm or benchmark BMI):
-#   benchmarks/models.hpp, benchmarks/benchmark_tests.hpp,
-#   benchmarks/dashboard/args.hpp, benchmarks/dashboard/backup.hpp,
-#   benchmarks/dashboard/db.hpp, benchmarks/dashboard/events.hpp,
-#   benchmarks/dashboard/tui_render.hpp, benchmarks/dashboard/models.hpp
-is_known_unparseable() {
-    local file="$1"
-    case "$file" in
-        src/orm/query_builder.hpp) return 0 ;;
-        tests/test_models.h) return 0 ;;
-        tests/test_seed_helpers.h) return 0 ;;
-        tests/test_select_runner.h) return 0 ;;
-        tests/test_write_runner.h) return 0 ;;
-        tests/test_yaml_register.h) return 0 ;;
-        tests/query/test_aggregate_fixture.h) return 0 ;;
-        tests/test_parser.hpp) return 0 ;;
-        tests/tools/storm_schema/models.h) return 0 ;;
-        benchmarks/bench_register.h) return 0 ;;
-        benchmarks/models.hpp) return 0 ;;
-        benchmarks/benchmark_tests.hpp) return 0 ;;
-        benchmarks/dashboard/args.hpp) return 0 ;;
-        benchmarks/dashboard/backup.hpp) return 0 ;;
-        benchmarks/dashboard/db.hpp) return 0 ;;
-        benchmarks/dashboard/events.hpp) return 0 ;;
-        benchmarks/dashboard/tui_render.hpp) return 0 ;;
-        benchmarks/dashboard/models.hpp) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-export -f is_known_unparseable
 
 # Files clang-tidy must NEVER touch — even when it can parse them cleanly.
 # Used to short-circuit run_tidy() so clang-tidy --fix never mutates the file.
@@ -308,7 +358,10 @@ run_tidy() {
     # Run clang-tidy, capturing output and ignoring crashes
     # clang-tidy automatically reads .clang-tidy from project root
     # Filter out noisy clang-tidy meta-messages (but keep actual warnings/errors)
-    timeout 60 "$CLANG_TIDY" \
+    # Timeout 240s (issue #326): some TUs run a heavy consteval pass under
+    # `import std;` — e.g. tests/yaml/test_unified_yaml.cpp #embeds + consteval-
+    # parses the unified test-case JSON (~78s, 2.4 GB RSS). 60s was too short.
+    timeout 240 "$CLANG_TIDY" \
         -p "$BUILD_DIR" \
         $FIX_FLAG \
         "$file" 2>&1 | grep -v -E "^[0-9]+ warnings? (generated|and)|^Suppressed [0-9]+|^Use -header-filter|^Use -system-headers" > "$outfile" || true

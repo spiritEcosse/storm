@@ -31,7 +31,7 @@ namespace storm::benchmark {
                 , '\0'
         };
         constexpr std::string_view json_str(json_data);
-        constexpr size_t           test_count = count_tests(json_str);
+        constexpr std::size_t      test_count = count_tests(json_str);
         return parse_tests<test_count>(json_str);
     }
 
