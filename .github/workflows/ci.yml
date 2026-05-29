@@ -13,7 +13,7 @@ jobs:
     container:
       # Pinned to a specific digest so develop is unaffected by storm-ci image
       # rebuilds. Bump this when publishing a new image (see docker-ci-image.yml).
-      image: ghcr.io/spiritecosse/storm-ci@sha256:68eaac686d20d926e7f7cd4c8582d540e7377d4392443f748299c771d346de63
+      image: ghcr.io/spiritecosse/storm-ci@sha256:3a5a0f5db4011de96c0f178d8a6c75ae8af10f55d7e526e10c30076ddfbf8678
 
     services:
       postgres:
