@@ -4,8 +4,7 @@ module;
 
 export module storm_orm_indexes;
 
-import <tuple>;
-import <array>;
+import std;
 
 export namespace storm {
 

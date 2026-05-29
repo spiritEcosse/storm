@@ -19,6 +19,9 @@ file(GLOB STORM_DASHBOARD_MODULE_UNITS CONFIGURE_DEPENDS
 target_sources(
   storm_bench_dashboard PRIVATE FILE_SET cxx_modules TYPE CXX_MODULES FILES
                                 ${STORM_DASHBOARD_MODULE_UNITS})
+# import std; migration (issue #326): main.cpp and the dashboard .cppm units do
+# `import std;`, so this target must consume the std named module too.
+set_target_properties(storm_bench_dashboard PROPERTIES CXX_MODULE_STD ON)
 
 target_link_libraries(storm_bench_dashboard PRIVATE storm pthread)
 link_sqlite(storm_bench_dashboard)

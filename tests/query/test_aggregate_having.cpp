@@ -4,10 +4,7 @@
 // NOLINTBEGIN(misc-use-anonymous-namespace)
 
 import storm;
-
-import <expected>;
-import <string>;
-import <vector>;
+import std;
 
 using namespace storm;
 

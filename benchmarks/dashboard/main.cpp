@@ -23,24 +23,35 @@
 // does not transport reflection annotations across BMI boundaries
 // (memory feedback_cpp26_module_reflection_annotations).
 
+// import std; migration (issue #326): <meta> MUST precede the imports. The
+// textual dashboard headers below (db.hpp/events.hpp/models.hpp) use the `^^`
+// splice operator and storm reflection annotations; import std; does not export
+// std::meta:: (Finding A), and a textual <meta> after `import std;`/`import
+// storm;` would redefine std-module entities (Finding B). Putting it first
+// satisfies both. import std; supplies all other std headers for this TU and the
+// textual headers it includes.
+#include <meta>
+
+// POSIX signal API (`struct sigaction`, `sigaction()`, `sigemptyset`, SIGINT/
+// SIGTERM) is NOT part of import std; — those are POSIX extensions, not standard
+// C++. Keep <csignal> textual, and before the imports so it does not re-pull
+// libc++ headers after the std module (Finding B).
+#include <csignal>
+
 import storm;
+import std;
 import storm.bench_dashboard.socket_server;
 import storm.bench_dashboard.tui;
 import storm.bench_dashboard.wire;
-import <expected>;
-import <filesystem>;
-import <optional>;
 
 #include "models.hpp" // textual — must follow `import storm;`
 
-#include <atomic>
-#include <csignal>
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <string>
-#include <string_view>
-#include <system_error>
+// import std; migration (issue #326): std headers (<atomic>, <string>, <csignal>,
+// …) are no longer #included here — they come from `import std;` above. Keeping
+// them as textual includes after the imports would re-pull libc++ headers the std
+// module already owns, causing "requires clause differs in template
+// redeclaration" (issue #326 Finding B). <csignal>'s `sigaction`/`SIGINT` come
+// from import std; (it re-exports the C compatibility names).
 
 namespace {
 

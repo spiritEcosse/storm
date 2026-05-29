@@ -6,16 +6,9 @@ module;
 #include <libpq-fe.h>
 
 export module storm_db_postgresql_statement;
+
+import std;
 import storm_db_postgresql_error;
-import <algorithm>;
-import <array>;
-import <expected>;
-import <string_view>;
-import <string>;
-import <vector>;
-import <cstdint>;
-import <cstdio>;
-import <cstdlib>;
 
 export namespace storm::db::postgresql {
 
@@ -26,10 +19,10 @@ export namespace storm::db::postgresql {
         using Error = postgresql::Error;
 
         // Constants for step return codes
-        static constexpr int    ROW_AVAILABLE      = 1;
-        static constexpr int    NO_MORE_ROWS       = 0;
-        static constexpr bool   preserves_bindings = false; // reset() clears params
-        static constexpr size_t MAX_DB_VARIABLES   = 999;   // matches BaseStatement::MAX_DB_VARIABLES
+        static constexpr int         ROW_AVAILABLE      = 1;
+        static constexpr int         NO_MORE_ROWS       = 0;
+        static constexpr bool        preserves_bindings = false; // reset() clears params
+        static constexpr std::size_t MAX_DB_VARIABLES   = 999;   // matches BaseStatement::MAX_DB_VARIABLES
 
         explicit Statement(PGconn* conn, std::string stmt_name) : conn_(conn), stmt_name_(std::move(stmt_name)) {
             param_values_.reserve(MAX_DB_VARIABLES);
@@ -99,7 +92,7 @@ export namespace storm::db::postgresql {
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto bind_int(int index, int value) noexcept
                 -> std::expected<void, Error> {
-            return bind_int64(index, static_cast<int64_t>(value));
+            return bind_int64(index, static_cast<std::int64_t>(value));
         }
 
         template <typename = void>
@@ -109,7 +102,7 @@ export namespace storm::db::postgresql {
         }
 
         template <typename = void>
-        [[nodiscard]] __attribute__((always_inline)) auto bind_int64(int index, int64_t value) noexcept
+        [[nodiscard]] __attribute__((always_inline)) auto bind_int64(int index, std::int64_t value) noexcept
                 -> std::expected<void, Error> {
             std::array<char, 22> buf{}; // max int64: 20 digits + sign + null
             std::snprintf(buf.data(), buf.size(), "%lld", static_cast<long long>(value));
@@ -141,7 +134,7 @@ export namespace storm::db::postgresql {
 
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto
-        bind_blob(int index, const void* data, size_t size) noexcept // NOSONAR(cpp:S5008) - PostgreSQL BLOB API
+        bind_blob(int index, const void* data, std::size_t size) noexcept // NOSONAR(cpp:S5008) - PostgreSQL BLOB API
                 -> std::expected<void, Error> {
             // LCOV_EXCL_START — defensive OOM path; param_values_ is reserved to MAX_DB_VARIABLES
             if (auto slot = ensure_param_slot(index); !slot) {
@@ -257,7 +250,7 @@ export namespace storm::db::postgresql {
         }
 
         // Append a quoted parameter value to result, escaping single quotes
-        auto append_quoted_param(std::string& result, size_t idx) const -> void {
+        auto append_quoted_param(std::string& result, std::size_t idx) const -> void {
             if (param_ptrs_[idx] == nullptr) {
                 result += "NULL";
                 return;
@@ -277,11 +270,11 @@ export namespace storm::db::postgresql {
         // Substitutes ? placeholders with quoted param_values_ strings
         template <typename = void> [[nodiscard]] auto expanded_sql() const -> std::string {
             std::string result;
-            result.reserve(original_sql_.size() + (static_cast<size_t>(param_count_) * 8));
+            result.reserve(original_sql_.size() + (static_cast<std::size_t>(param_count_) * 8));
             int  param_idx       = 0;
             bool in_single_quote = false;
             bool in_double_quote = false;
-            for (size_t i = 0; i < original_sql_.size(); ++i) {
+            for (std::size_t i = 0; i < original_sql_.size(); ++i) {
                 const char ch = original_sql_[i];
                 if (ch == '\'' && !in_double_quote) {
                     in_single_quote = !in_single_quote;
@@ -291,7 +284,7 @@ export namespace storm::db::postgresql {
                     result += ch;
                 } else if (ch == '?' && !in_single_quote && !in_double_quote) {
                     if (param_idx < param_count_) {
-                        append_quoted_param(result, static_cast<size_t>(param_idx));
+                        append_quoted_param(result, static_cast<std::size_t>(param_idx));
                         ++param_idx;
                     } else {
                         result += ch;
@@ -316,7 +309,7 @@ export namespace storm::db::postgresql {
         }
 
         template <typename = void>
-        [[nodiscard]] __attribute__((always_inline)) auto extract_int64(int col_index) const noexcept -> int64_t {
+        [[nodiscard]] __attribute__((always_inline)) auto extract_int64(int col_index) const noexcept -> std::int64_t {
             const char* val = PQgetvalue(result_, current_row_, col_index);
             return std::strtoll(val, nullptr, 10);
         }
@@ -349,7 +342,7 @@ export namespace storm::db::postgresql {
                 return {};
             }
             const char* text = PQgetvalue(result_, current_row_, col_index);
-            const auto  len  = static_cast<size_t>(PQgetlength(result_, current_row_, col_index));
+            const auto  len  = static_cast<std::size_t>(PQgetlength(result_, current_row_, col_index));
             return {text, len};
         }
 
@@ -380,20 +373,20 @@ export namespace storm::db::postgresql {
                 // PG hex format starts with "\x" prefix
                 if (hex_len >= 2 && hex_str[0] == '\\' && hex_str[1] == 'x') {
                     const int binary_len = (hex_len - 2) / 2;
-                    blob_buffer_.resize(static_cast<size_t>(binary_len));
+                    blob_buffer_.resize(static_cast<std::size_t>(binary_len));
                     for (int i = 0; i < binary_len;
                          ++i) { // NOSONAR(cpp:S6022) - unsigned char required for uint8_t blob API compatibility
                         const char hi = hex_str[2 + (i * 2)];
                         const char lo = hex_str[2 + (i * 2) + 1];
-                        blob_buffer_[static_cast<size_t>(i)] =
+                        blob_buffer_[static_cast<std::size_t>(i)] =
                                 static_cast<unsigned char>((hex_digit(hi) << 4) | hex_digit(lo)); // NOSONAR(cpp:S6022)
                     }
-                    blob_decoded_size_ = static_cast<size_t>(binary_len);
+                    blob_decoded_size_ = static_cast<std::size_t>(binary_len);
                 } else {
                     blob_buffer_
                             .assign(reinterpret_cast<const unsigned char*>(hex_str),
                                     reinterpret_cast<const unsigned char*>(hex_str) + hex_len);
-                    blob_decoded_size_ = static_cast<size_t>(hex_len);
+                    blob_decoded_size_ = static_cast<std::size_t>(hex_len);
                 }
             } catch (...) {             // LCOV_EXCL_LINE — defensive: hex decode bad_alloc, blob_buffer_ resize/assign
                 blob_decoded_size_ = 0; // LCOV_EXCL_LINE
@@ -448,7 +441,7 @@ export namespace storm::db::postgresql {
         // theoretically-possible bad_alloc and propagates it through std::expected — issue #316.
         [[nodiscard]] auto ensure_param_slot(int index) noexcept -> std::expected<void, Error> {
             try {
-                const auto idx = static_cast<size_t>(index);
+                const auto idx = static_cast<std::size_t>(index);
                 if (idx > param_values_.size()) {
                     param_values_.resize(idx);
                     param_ptrs_.resize(idx, nullptr);
@@ -463,7 +456,7 @@ export namespace storm::db::postgresql {
         }
 
         auto update_param_ptrs(int index) noexcept -> void {
-            const auto idx      = static_cast<size_t>(index - 1);
+            const auto idx      = static_cast<std::size_t>(index - 1);
             param_ptrs_[idx]    = param_values_[idx].c_str();
             param_lengths_[idx] = static_cast<int>(param_values_[idx].size());
             param_formats_[idx] = 0; // Text format
@@ -471,7 +464,7 @@ export namespace storm::db::postgresql {
 
         auto rebuild_param_ptrs() noexcept -> void {
             for (int i = 0; i < param_count_; ++i) {
-                const auto idx = static_cast<size_t>(i);
+                const auto idx = static_cast<std::size_t>(i);
                 if (param_ptrs_[idx] != nullptr) {
                     // Non-NULL param (text or binary) - update pointer
                     // (may have been invalidated by param_values_ vector resize)
@@ -497,7 +490,7 @@ export namespace storm::db::postgresql {
 
         // BYTEA decode buffer (reused across extract_blob_ptr calls)
         std::vector<unsigned char> blob_buffer_;
-        size_t                     blob_decoded_size_ = 0;
+        std::size_t                blob_decoded_size_ = 0;
         int                        blob_decoded_col_  = -1;
     };
 

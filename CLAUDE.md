@@ -316,9 +316,10 @@ See [docs/reference/FIELD_TYPES.md](docs/reference/FIELD_TYPES.md).
 ## Known Compiler Issues
 
 - **Module cache corruption**: Run build twice
-- **std::mutex segfaults**: Use per-thread connections
+- **`import std;` not header units**: the tree uses a single `import std;` (issue #326), NOT per-header `import <header>;`. Reflection code still needs textual `#include <meta>` (`import std;` doesn't export `std::meta::`), placed BEFORE the imports in non-module TUs. See [COMPILER_ISSUES.md §9](docs/development/COMPILER_ISSUES.md) Findings A–D.
+- **std::mutex in modules**: works via `import std;` (validated under TSAN). Per-thread connections are still the recommended concurrency model for QuerySet/Connection.
 - **std::function errors**: Use abstract base classes
-- **C headers**: Must `#include`, not `import`
+- **C headers / macros**: `<cassert>` (the `assert` macro) and POSIX headers (`<csignal>`, `<sys/*.h>`) must stay textual `#include` — `import std;` cannot deliver macros or POSIX extensions
 - **Template alias can't be specialized**: `template<T> using X = Y<T>;` doesn't allow `template<> struct X<Foo>`. Use a real class template in a dedicated module to avoid circular deps.
 - **`if constexpr` in consteval loops**: `if constexpr(f(arr[i]))` fails even in `consteval` — loop variable `i` isn't a core constant expression. Use plain `if` (both branches must compile, but that's fine in consteval).
 - **Compile-time errors: use `requires`, not `throw`**: `throw "msg"` in `consteval` produces a poor error message. Instead define a concept and constrain the template — the error fires at the call site with a clear constraint violation:

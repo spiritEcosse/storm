@@ -2,11 +2,7 @@
 #include "test_db_helpers.h"
 
 import storm;
-
-import <expected>;
-import <optional>;
-import <string>;
-import <vector>;
+import std;
 
 using namespace storm;
 
@@ -139,9 +135,9 @@ TYPED_TEST(OptionalAggregateTest, GroupByWithMixedNullAndNonNullValues) {
     ASSERT_TRUE(result.has_value()) << "GROUP BY with mixed NULL values failed";
     EXPECT_EQ(result.value().size(), 3) << "Expected 3 groups (NULL, 25, 30)";
 
-    int64_t null_count   = 0; // NOLINT(misc-const-correctness) - modified in loop
-    int64_t age_25_count = 0; // NOLINT(misc-const-correctness) - modified in loop
-    int64_t age_30_count = 0; // NOLINT(misc-const-correctness) - modified in loop
+    std::int64_t null_count   = 0; // NOLINT(misc-const-correctness) - modified in loop
+    std::int64_t age_25_count = 0; // NOLINT(misc-const-correctness) - modified in loop
+    std::int64_t age_30_count = 0; // NOLINT(misc-const-correctness) - modified in loop
 
     for (const auto& [score_key, count_val] : result.value()) {
         if (!score_key.has_value()) {

@@ -4,13 +4,9 @@ module;
 
 export module storm_orm_statements_orderby;
 
-import storm_orm_utilities;
+import std;
 
-import <array>;
-import <concepts>;
-import <string>;
-import <meta>;
-import <utility>;
+import storm_orm_utilities;
 
 namespace detail {
 
@@ -23,8 +19,8 @@ namespace detail {
     };
 
     // Free consteval helper — avoids generic-lambda-in-consteval compiler bug
-    template <size_t N, auto Arg>
-    consteval void process_order_by_arg(std::array<OrderByField, N>& result, size_t& idx) {
+    template <std::size_t N, auto Arg>
+    consteval void process_order_by_arg(std::array<OrderByField, N>& result, std::size_t& idx) {
         if constexpr (std::same_as<decltype(Arg), bool>) {
             result[idx - 1].asc = Arg;
         } else if constexpr (std::same_as<decltype(Arg), Collate>) {
@@ -54,12 +50,12 @@ export namespace storm::orm::statements {
 
     template <auto... Args> struct OrderByClause {
         // Count field args (skip bool and Collate modifiers)
-        static constexpr size_t count = ((detail::is_field_arg<Args>() ? 1 : 0) + ... + 0);
+        static constexpr std::size_t count = ((detail::is_field_arg<Args>() ? 1 : 0) + ... + 0);
 
         static constexpr auto fields = [] consteval // NOSONAR(cpp:S1659)
                 -> std::array<detail::OrderByField, count> {
             std::array<detail::OrderByField, count> result{};
-            size_t                                  idx = 0;
+            std::size_t                             idx = 0;
             (detail::process_order_by_arg<count, Args>(result, idx), ...);
             return result;
         }();
@@ -69,7 +65,7 @@ export namespace storm::orm::statements {
         }
 
         // Generate ORDER BY SQL fragment at compile-time
-        template <size_t BufferSize = buffer_size::SQL_MEDIUM>
+        template <std::size_t BufferSize = buffer_size::SQL_MEDIUM>
         static consteval auto to_sql() -> ConstexprString<BufferSize> {
             ConstexprString<BufferSize> result;
 
@@ -79,7 +75,7 @@ export namespace storm::orm::statements {
 
             result.append(" ORDER BY ");
 
-            for (size_t i = 0; i < count; ++i) {
+            for (std::size_t i = 0; i < count; ++i) {
                 if (i > 0) {
                     result.append(", ");
                 }
@@ -110,7 +106,7 @@ export namespace storm::orm::statements {
 
             std::string result = " ORDER BY ";
 
-            [&]<size_t... Is>(std::index_sequence<Is...>) {
+            [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                 ((append_field<Is>(result, Is > 0)), ...);
             }(std::make_index_sequence<count>{});
 
@@ -118,7 +114,7 @@ export namespace storm::orm::statements {
         }
 
       private:
-        template <size_t I> static auto append_field(std::string& result, bool add_comma) -> void {
+        template <std::size_t I> static auto append_field(std::string& result, bool add_comma) -> void {
             if (add_comma) {
                 result += ", ";
             }

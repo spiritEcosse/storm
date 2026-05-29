@@ -7,12 +7,7 @@
 // NOLINTBEGIN(readability-uppercase-literal-suffix)
 
 import storm;
-import <string>;
-import <string_view>;
-import <expected>;
-import <optional>;
-import <vector>;
-import <cstdint>;
+import std;
 
 using namespace storm;
 
@@ -98,7 +93,7 @@ TEST(SchemaUnitTest, PersonYearsExperienceFieldIsIntegerNotNull) {
 TEST(SchemaUnitTest, PersonScoreFieldIsNullableInteger) {
     const std::string& sql = storm::create_table_sql<Person>();
     EXPECT_NE(sql.find("score INTEGER,"), std::string::npos) << "Expected 'score INTEGER,' (nullable) in: " << sql;
-    const size_t score_pos = sql.find("score INTEGER");
+    const std::size_t score_pos = sql.find("score INTEGER");
     ASSERT_NE(score_pos, std::string::npos);
     const std::string after_score = sql.substr(score_pos, 20);
     EXPECT_EQ(after_score.find("NOT NULL"), std::string::npos)
@@ -109,7 +104,7 @@ TEST(SchemaUnitTest, PersonScoreFieldIsNullableInteger) {
 TEST(SchemaUnitTest, PersonNicknameFieldIsNullableText) {
     const std::string& sql = storm::create_table_sql<Person>();
     EXPECT_NE(sql.find("nickname TEXT,"), std::string::npos) << "Expected 'nickname TEXT,' (nullable) in: " << sql;
-    const size_t nick_pos = sql.find("nickname TEXT");
+    const std::size_t nick_pos = sql.find("nickname TEXT");
     ASSERT_NE(nick_pos, std::string::npos);
     const std::string after_nick = sql.substr(nick_pos, 20);
     EXPECT_EQ(after_nick.find("NOT NULL"), std::string::npos)
@@ -120,7 +115,7 @@ TEST(SchemaUnitTest, PersonNicknameFieldIsNullableText) {
 TEST(SchemaUnitTest, PersonAvatarFieldIsBlob) {
     const std::string& sql = storm::create_table_sql<Person>();
     EXPECT_NE(sql.find("avatar BLOB"), std::string::npos) << "Expected 'avatar BLOB' in: " << sql;
-    const size_t avatar_pos = sql.find("avatar BLOB");
+    const std::size_t avatar_pos = sql.find("avatar BLOB");
     ASSERT_NE(avatar_pos, std::string::npos);
     const std::string after_avatar = sql.substr(avatar_pos, 20);
     EXPECT_EQ(after_avatar.find("NOT NULL"), std::string::npos)

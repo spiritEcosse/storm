@@ -60,11 +60,35 @@ add_compile_options(-ferror-limit=1
 # has its own binaryDir.
 add_compile_options("-fmodules-cache-path=${CMAKE_BINARY_DIR}/module-cache")
 
+# import std; migration (issue #326): with -fmodules dropped (see
+# apply_clang_flags() in cmake/libcxx.cmake), the -fmodules-cache-path flag
+# above is no longer consumed; -Werror would otherwise promote the resulting
+# -Wunused-command-line-argument to a hard error.
+add_compile_options(-Wno-unused-command-line-argument)
+
 include(cmake/libcxx.cmake)
+
+# ── Sanitizer flags (must precede the storm target) ───────────────────────────
+# import std; migration (issue #326): sanitizer flags are applied globally via
+# add_compile_options()/add_link_options() in cmake/sanitizers.cmake. Those only
+# affect targets created AFTER the include, so the include MUST come before
+# add_library(storm) below — otherwise neither libstorm nor the
+# CMake-synthesized `__cmake_cxx_std_26` std-module target (which compiles
+# libc++'s std.cppm) gets the sanitizer instrumentation, and the std module's
+# container-annotation calls (`__sanitizer_annotate_contiguous_container`)
+# link-fail with an undefined reference. cmake-scripts (the sanitizer backend)
+# needs CPM, so fetch that first.
+include(cmake/cpm.cmake)
+include(cmake/cmake-scripts.cmake)
+include(cmake/sanitizers.cmake)
 
 # ── Core library ──────────────────────────────────────────────────────────────
 
 add_library(${PROJECT_NAME} STATIC)
+
+# import std; migration (issue #326): consume the std named module on this
+# target.
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_MODULE_STD ON)
 
 file(GLOB_RECURSE STORM_MODULE_UNITS CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm")
@@ -90,9 +114,7 @@ include(cmake/db.cmake)
 link_sqlite(${PROJECT_NAME})
 link_postgresql(${PROJECT_NAME})
 
-include(cmake/cpm.cmake)
 include(cmake/uuid.cmake)
-include(cmake/cmake-scripts.cmake)
 
 # ── Feature options ───────────────────────────────────────────────────────────
 
@@ -100,8 +122,6 @@ option(ENABLE_TESTS "Enable testing support" OFF)
 option(ENABLE_BENCH "Enable benchmarking with sqlite_orm" OFF)
 option(ENABLE_COVERAGE "Enable code coverage (requires LLVM tools)" OFF)
 option(ENABLE_TOOLS "Build CLI tools (storm-schema, etc.)" OFF)
-option(ENABLE_IMPORT_STD_PROBE
-       "Build the import-std probe (issue #326 phase 2)" OFF)
 
 # coverage flags must be set before test targets are compiled
 include(cmake/coverage.cmake)
@@ -109,11 +129,9 @@ include(cmake/tests.cmake)
 # coverage targets reference test targets — must come after tests.cmake
 include(cmake/coverage-targets.cmake)
 include(cmake/bench.cmake)
-include(cmake/sanitizers.cmake)
 include(cmake/fuzz.cmake)
 include(cmake/format.cmake)
 include(cmake/tools.cmake)
-include(cmake/import_std_probe.cmake)
 
 # ── Build summary ─────────────────────────────────────────────────────────────
 

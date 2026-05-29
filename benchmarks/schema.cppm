@@ -22,16 +22,14 @@ module;
 
 export module storm_benchmark_schema;
 
+import std;
+
 // Pull ConstexprString via the umbrella `storm` module rather than reaching
 // directly into `storm_orm_utilities`. Importing the leaf submodule alone
 // produced a `clang-scan-deps` crash inside ModuleMap::addHeader (PCM-cache
 // hash divergence vs the path main.cpp uses to see the same symbols). The
 // raw/base/registry modules that already work all use `import storm;`.
 import storm;
-
-import <array>;
-import <cstddef>;
-import <string_view>;
 
 export namespace storm::benchmark {
 
@@ -79,9 +77,9 @@ export namespace storm::benchmark {
         ConstexprString<32> field;
         ConstexprString<16> op;
 
-        static constexpr size_t            MAX_VALUES = 10;
+        static constexpr std::size_t       MAX_VALUES = 10;
         std::array<TypedValue, MAX_VALUES> values{};
-        size_t                             value_count = 0;
+        std::size_t                        value_count = 0;
     };
 
     // ========================================================================
@@ -93,9 +91,9 @@ export namespace storm::benchmark {
     struct WhereSpec {
         bool enabled = false;
 
-        static constexpr size_t                    MAX_CONDITIONS = 2;
+        static constexpr std::size_t               MAX_CONDITIONS = 2;
         std::array<WhereCondition, MAX_CONDITIONS> conditions{};
-        size_t                                     condition_count = 0;
+        std::size_t                                condition_count = 0;
 
         bool combine_and = false;
         bool combine_or  = false;
@@ -126,13 +124,13 @@ export namespace storm::benchmark {
     // ========================================================================
     struct GroupBySpec {
         bool                                        enabled    = false;
-        static constexpr size_t                     MAX_FIELDS = 2;
+        static constexpr std::size_t                MAX_FIELDS = 2;
         std::array<ConstexprString<32>, MAX_FIELDS> fields{};
         HavingSpec                                  having;
 
-        consteval auto field_count() const -> size_t {
-            size_t n = 0;
-            for (size_t i = 0; i < MAX_FIELDS; ++i) {
+        consteval auto field_count() const -> std::size_t {
+            std::size_t n = 0;
+            for (std::size_t i = 0; i < MAX_FIELDS; ++i) {
                 if (!fields[i].empty()) {
                     ++n;
                 }
@@ -146,12 +144,12 @@ export namespace storm::benchmark {
     // ========================================================================
     struct DistinctSpec {
         bool                                        enabled    = false;
-        static constexpr size_t                     MAX_FIELDS = 3;
+        static constexpr std::size_t                MAX_FIELDS = 3;
         std::array<ConstexprString<32>, MAX_FIELDS> fields{};
 
-        consteval auto field_count() const -> size_t {
-            size_t n = 0;
-            for (size_t i = 0; i < MAX_FIELDS; ++i) {
+        consteval auto field_count() const -> std::size_t {
+            std::size_t n = 0;
+            for (std::size_t i = 0; i < MAX_FIELDS; ++i) {
                 if (!fields[i].empty()) {
                     ++n;
                 }
@@ -190,9 +188,9 @@ export namespace storm::benchmark {
         ConstexprString<32> related; // related model name ("User")
         ConstexprString<32> fk;      // FK field name ("sender")
         // Multi-FK support (up to 2 for now)
-        static constexpr size_t                  MAX_FKS = 2;
+        static constexpr std::size_t             MAX_FKS = 2;
         std::array<ConstexprString<32>, MAX_FKS> fks{};
-        size_t                                   fk_count = 0;
+        std::size_t                              fk_count = 0;
     };
 
     // ========================================================================
@@ -215,9 +213,9 @@ export namespace storm::benchmark {
 
         // Nested specs
         WhereSpec                             where;
-        static constexpr size_t               MAX_ORDER_BY = 2;
+        static constexpr std::size_t          MAX_ORDER_BY = 2;
         std::array<OrderBySpec, MAX_ORDER_BY> order_by{};
-        size_t                                order_by_count = 0;
+        std::size_t                           order_by_count = 0;
         GroupBySpec                           group_by;
         DistinctSpec                          distinct;
         LimitSpec                             limit;

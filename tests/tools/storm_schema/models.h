@@ -2,15 +2,9 @@
 // Test model definitions for storm-schema — mirrors tests/test_models.h
 // but without gtest dependency (avoids C++26 module conflicts).
 // Models are in namespace `schema` for auto-discovery via reflection.
-
-#include <chrono>
-#include <cstddef>
-#include <cstdint>
-#include <filesystem>
-#include <optional>
-#include <string>
-#include <tuple>
-#include <vector>
+// import std; migration (issue #326): no std #includes here — std types come
+// from the importing TU's `import storm; import std;`. A textual std #include in
+// this header would clash with the std module already active in the consuming TU.
 
 namespace schema {
 
@@ -24,7 +18,7 @@ struct Person {
     [[= storm::meta::FieldAttr::indexed]] std::string department;
     std::optional<int> score;
     std::optional<std::string> nickname;
-    std::vector<uint8_t> avatar;
+    std::vector<std::uint8_t> avatar;
 };
 
 struct SimpleRecord {
@@ -44,13 +38,13 @@ enum class Color : int { Red = 0, Green = 1, Blue = 2 };
 
 struct ExtendedTypes {
     [[= storm::meta::FieldAttr::primary]] int id{};
-    int64_t big_num{};
+    std::int64_t big_num{};
     double precise{};
     float approx{};
     unsigned int u_int{};
     long long ll_signed{};
     std::optional<double> opt_double;
-    std::optional<int64_t> opt_int64;
+    std::optional<std::int64_t> opt_int64;
     std::string label;
     signed char tiny_signed{};
     unsigned char tiny_unsigned{};

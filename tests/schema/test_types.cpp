@@ -6,16 +6,7 @@
 // NOLINTBEGIN(misc-const-correctness)
 
 import storm;
-import <string>;
-import <vector>;
-import <expected>;
-import <optional>;
-import <cstdint>;
-import <span>;
-import <chrono>;
-import <filesystem>;
-import <cstddef>;
-import <set>;
+import std;
 
 #include "test_models.h"
 
@@ -66,7 +57,7 @@ TYPED_TEST(IntTypesInsertUpdateTest, UpdateSingleIntTypes) {
 
     auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
-    int64_t const id = insert_result.value();
+    std::int64_t const id = insert_result.value();
 
     // Verify INSERT worked
     auto check1 = qs.select().execute();
@@ -142,7 +133,7 @@ TYPED_TEST(FloatTypesInsertUpdateTest, UpdateSingleFloatTypes) {
 
     auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
-    int64_t const id = insert_result.value();
+    std::int64_t const id = insert_result.value();
 
     ExtendedTypes const updated{
             .id = static_cast<int>(id), .precise = std::numbers::e, .approx = std::numbers::pi_v<float>
@@ -194,7 +185,7 @@ TYPED_TEST(MixedTypesInsertUpdateTest, UpdateBooleanAndString) {
 
     auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
-    int64_t const id = insert_result.value();
+    std::int64_t const id = insert_result.value();
 
     Person const updated{.id = static_cast<int>(id), .name = "new_name", .is_active = true};
     auto         update_result = qs.update(updated).execute();
@@ -267,7 +258,7 @@ TYPED_TEST(OptTypesInsertUpdateTest, UpdateFromValueToNull) {
 
     auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
-    int64_t const id = insert_result.value();
+    std::int64_t const id = insert_result.value();
 
     // Update to NULL
     Person const updated{.id = static_cast<int>(id), .name = "updated_to_null", .score = std::nullopt};
@@ -286,7 +277,7 @@ TYPED_TEST(OptTypesInsertUpdateTest, UpdateFromNullToValue) {
 
     auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
-    int64_t const id = insert_result.value();
+    std::int64_t const id = insert_result.value();
 
     // Update from NULL to value
     Person const updated{.id = static_cast<int>(id), .name = "updated_to_value", .score = std::optional<int>(999)};
@@ -344,16 +335,16 @@ TYPED_TEST(DataTypesInsertUpdateTest, InsertSmallBlob) {
 
     auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_EQ(selected.value().begin()->avatar, (std::vector<uint8_t>{0xDE, 0xAD, 0xBE, 0xEF}));
+    EXPECT_EQ(selected.value().begin()->avatar, (std::vector<std::uint8_t>{0xDE, 0xAD, 0xBE, 0xEF}));
     EXPECT_EQ(selected.value().begin()->name, "test_blob");
 }
 
 TYPED_TEST(DataTypesInsertUpdateTest, InsertLargeBlob) {
     QuerySet<Person, TypeParam> qs;
 
-    std::vector<uint8_t> large_data(1024);
-    for (size_t i = 0; i < large_data.size(); ++i) {
-        large_data[i] = static_cast<uint8_t>(i % 256);
+    std::vector<std::uint8_t> large_data(1024);
+    for (std::size_t i = 0; i < large_data.size(); ++i) {
+        large_data[i] = static_cast<std::uint8_t>(i % 256);
     }
 
     Person const obj{.id = 0, .name = "large", .avatar = large_data};
@@ -365,8 +356,8 @@ TYPED_TEST(DataTypesInsertUpdateTest, InsertLargeBlob) {
     auto it = selected.value().begin();
     ASSERT_EQ(it->avatar.size(), 1024);
 
-    for (size_t i = 0; i < 1024; ++i) {
-        EXPECT_EQ(it->avatar[i], static_cast<uint8_t>(i % 256));
+    for (std::size_t i = 0; i < 1024; ++i) {
+        EXPECT_EQ(it->avatar[i], static_cast<std::uint8_t>(i % 256));
     }
 }
 
@@ -388,7 +379,7 @@ TYPED_TEST(DataTypesInsertUpdateTest, UpdateBlob) {
 
     auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
-    int64_t const id = insert_result.value();
+    std::int64_t const id = insert_result.value();
 
     // Update with different blob
     Person const updated{.id = static_cast<int>(id), .name = "updated", .avatar = {0xFF, 0xEE, 0xDD}};
@@ -397,7 +388,7 @@ TYPED_TEST(DataTypesInsertUpdateTest, UpdateBlob) {
 
     auto selected = qs.select().execute();
     ASSERT_TRUE(selected.has_value());
-    EXPECT_EQ(selected.value().begin()->avatar, (std::vector<uint8_t>{0xFF, 0xEE, 0xDD}));
+    EXPECT_EQ(selected.value().begin()->avatar, (std::vector<std::uint8_t>{0xFF, 0xEE, 0xDD}));
     EXPECT_EQ(selected.value().begin()->name, "updated");
 }
 
@@ -484,7 +475,9 @@ TYPED_TEST(InsertOptionsTest, InsertWithCustomBatchSize) {
     batch.reserve(100);
     for (int i = 0; i < 100; ++i) {
         batch.emplace_back(
-                ExtendedTypes{.id = 0, .big_num = static_cast<int64_t>(i) * 10, .ll_signed = static_cast<long long>(i)}
+                ExtendedTypes{
+                        .id = 0, .big_num = static_cast<std::int64_t>(i) * 10, .ll_signed = static_cast<long long>(i)
+                }
         );
     }
 
@@ -537,7 +530,9 @@ TYPED_TEST(InsertOptionsTest, LargeBatchWithCustomChunkSize) {
     batch.reserve(1000);
     for (int i = 0; i < 1000; ++i) {
         batch.emplace_back(
-                ExtendedTypes{.id = 0, .big_num = static_cast<int64_t>(i), .ll_signed = static_cast<long long>(i % 100)}
+                ExtendedTypes{
+                        .id = 0, .big_num = static_cast<std::int64_t>(i), .ll_signed = static_cast<long long>(i % 100)
+                }
         );
     }
 
@@ -607,7 +602,7 @@ TYPED_TEST(UnsignedTypesInsertUpdateTest, UpdateUnsignedValues) {
 
     auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
-    int64_t const id = insert_result.value();
+    std::int64_t const id = insert_result.value();
 
     ExtendedTypes const updated{.id = static_cast<int>(id), .u_int = 999U};
     auto                update_result = qs.update(updated).execute();
@@ -655,7 +650,7 @@ TYPED_TEST(LongLongTypesInsertUpdateTest, UpdateLongLongValues) {
 
     auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
-    int64_t const id = insert_result.value();
+    std::int64_t const id = insert_result.value();
 
     ExtendedTypes const updated{.id = static_cast<int>(id), .ll_signed = -999LL};
     auto                update_result = qs.update(updated).execute();
@@ -803,7 +798,7 @@ TYPED_TEST(OptionalTypesTest, UpdateOptionalDoubleToNull) {
 
     auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
-    int64_t const id = insert_result.value();
+    std::int64_t const id = insert_result.value();
 
     ExtendedTypes const updated{.id = static_cast<int>(id), .opt_double = std::nullopt, .label = "now_null"};
     auto                update_result = qs.update(updated).execute();
@@ -820,7 +815,7 @@ TYPED_TEST(OptionalTypesTest, UpdateOptionalInt64FromNull) {
 
     auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
-    int64_t const id = insert_result.value();
+    std::int64_t const id = insert_result.value();
 
     ExtendedTypes const updated{.id = static_cast<int>(id), .opt_int64 = 42LL, .label = "now_has_value"};
     auto                update_result = qs.update(updated).execute();
@@ -871,7 +866,7 @@ TYPED_TEST(OptionalStringTest, UpdateFromValueToNull) {
 
     auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
-    int64_t const id = insert_result.value();
+    std::int64_t const id = insert_result.value();
 
     Person const updated{.id = static_cast<int>(id), .name = "charlie", .nickname = std::nullopt};
     auto         update_result = qs.update(updated).execute();
@@ -888,7 +883,7 @@ TYPED_TEST(OptionalStringTest, UpdateFromNullToValue) {
 
     auto insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
-    int64_t const id = insert_result.value();
+    std::int64_t const id = insert_result.value();
 
     Person const updated{.id = static_cast<int>(id), .name = "diana", .nickname = "Di"};
     auto         update_result = qs.update(updated).execute();
@@ -1006,7 +1001,7 @@ TYPED_TEST(UnsignedTypesTest, UpdateUnsignedTypes) {
 
     auto insert_result = this->qs->insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
-    int64_t const id = insert_result.value();
+    std::int64_t const id = insert_result.value();
 
     ExtendedTypes const updated{.id = static_cast<int>(id), .u_int = 999};
     auto                update_result = this->qs->update(updated).execute();
@@ -1120,7 +1115,7 @@ TYPED_TEST(CharTypesTest, UpdateCharTypes) {
     ExtendedTypes                      obj{.label = "upd", .tiny_signed = 10, .tiny_unsigned = 20, .single_char = 'A'};
     auto                               insert_result = qs.insert(obj).execute();
     ASSERT_TRUE(insert_result.has_value());
-    int64_t id = insert_result.value();
+    std::int64_t id = insert_result.value();
 
     ExtendedTypes updated{
             .id = static_cast<int>(id), .label = "upd", .tiny_signed = -10, .tiny_unsigned = 30, .single_char = 'B'
@@ -1728,7 +1723,7 @@ TEST(PgDialectTypesSchemaTest, OptionalTimestampIsTimestamp) {
     const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
     EXPECT_NE(sql.find("opt_timestamp TIMESTAMP"), std::string::npos)
             << "Expected 'opt_timestamp TIMESTAMP' (nullable) in PG SQL: " << sql;
-    const size_t pos = sql.find("opt_timestamp TIMESTAMP");
+    const std::size_t pos = sql.find("opt_timestamp TIMESTAMP");
     ASSERT_NE(pos, std::string::npos);
     const std::string after = sql.substr(pos, 30);
     EXPECT_EQ(after.find("NOT NULL"), std::string::npos) << "opt_timestamp should be nullable, got: " << after;
@@ -1791,7 +1786,7 @@ struct PgOptionalSpecialTypes {
 TEST(PgDialectTypesSchemaTest, OptionalDateIsPgDate) {
     const std::string& sql = SchemaStatement<PgOptionalSpecialTypes>::create_table_sql<Dialect::PostgreSQL>();
     EXPECT_NE(sql.find("opt_date DATE"), std::string::npos) << "Expected 'opt_date DATE' in PG SQL: " << sql;
-    const size_t pos = sql.find("opt_date DATE");
+    const std::size_t pos = sql.find("opt_date DATE");
     ASSERT_NE(pos, std::string::npos);
     EXPECT_EQ(sql.substr(pos, 20).find("NOT NULL"), std::string::npos) << "opt_date should be nullable";
 }
@@ -1799,7 +1794,7 @@ TEST(PgDialectTypesSchemaTest, OptionalDateIsPgDate) {
 TEST(PgDialectTypesSchemaTest, OptionalUuidIsPgUuid) {
     const std::string& sql = SchemaStatement<PgOptionalSpecialTypes>::create_table_sql<Dialect::PostgreSQL>();
     EXPECT_NE(sql.find("opt_uuid UUID"), std::string::npos) << "Expected 'opt_uuid UUID' in PG SQL: " << sql;
-    const size_t pos = sql.find("opt_uuid UUID");
+    const std::size_t pos = sql.find("opt_uuid UUID");
     ASSERT_NE(pos, std::string::npos);
     EXPECT_EQ(sql.substr(pos, 20).find("NOT NULL"), std::string::npos) << "opt_uuid should be nullable";
 }
@@ -1807,7 +1802,7 @@ TEST(PgDialectTypesSchemaTest, OptionalUuidIsPgUuid) {
 TEST(PgDialectTypesSchemaTest, OptionalBoolIsBoolean) {
     const std::string& sql = SchemaStatement<PgOptionalSpecialTypes>::create_table_sql<Dialect::PostgreSQL>();
     EXPECT_NE(sql.find("opt_bool BOOLEAN"), std::string::npos) << "Expected 'opt_bool BOOLEAN' in PG SQL: " << sql;
-    const size_t pos = sql.find("opt_bool BOOLEAN");
+    const std::size_t pos = sql.find("opt_bool BOOLEAN");
     ASSERT_NE(pos, std::string::npos);
     EXPECT_EQ(sql.substr(pos, 23).find("NOT NULL"), std::string::npos) << "opt_bool should be nullable";
 }

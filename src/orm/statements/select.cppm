@@ -9,6 +9,8 @@ module;
 
 export module storm_orm_statements_select;
 
+import std;
+
 import storm_orm_generator;
 import storm_orm_statements_base;
 import storm_orm_statements_join;
@@ -16,16 +18,6 @@ import storm_orm_statements_orderby;
 import storm_orm_utilities;
 import storm_orm_where;
 import storm_db_concept;
-
-import <coroutine>;
-import <expected>;
-import <string>;
-import <vector>;
-import <type_traits>;
-import <optional>;
-import <memory>;
-import <cstdint>;
-import <utility>;
 
 export namespace storm::orm::statements {
 
@@ -40,10 +32,10 @@ export namespace storm::orm::statements {
         using Statement = typename ConnType::Statement;
 
         // Compile-time SQL size calculation for SELECT statement
-        static consteval auto calculate_select_sql_size() -> size_t {
+        static consteval auto calculate_select_sql_size() -> std::size_t {
             using utilities::sql_len::FROM;
             using utilities::sql_len::SELECT;
-            size_t size = 0;
+            std::size_t size = 0;
             size += SELECT; // "SELECT "
             size += Base::calculate_field_names_size();
             size += FROM; // " FROM "
@@ -54,7 +46,7 @@ export namespace storm::orm::statements {
 
         // Build SELECT SQL at compile-time using ConstexprString
         static consteval auto build_select_sql_array() {
-            constexpr size_t          sql_size = calculate_select_sql_size() + utilities::sql_len::LARGE_BUFFER;
+            constexpr std::size_t     sql_size = calculate_select_sql_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<sql_size> result;
 
             result.append("SELECT ");

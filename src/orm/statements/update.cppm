@@ -8,21 +8,12 @@ module;
 
 export module storm_orm_statements_update;
 
+import std;
+
 import storm_orm_statements_base;
 import storm_orm_utilities;
 import storm_orm_transaction;
 import storm_db_concept;
-
-import <expected>;
-import <string>;
-import <string_view>;
-import <span>;
-import <concepts>;
-import <format>;
-import <meta>;
-import <type_traits>;
-import <array>;
-import <utility>;
 
 export namespace storm::orm::statements {
 
@@ -39,8 +30,8 @@ export namespace storm::orm::statements {
         using Statement  = typename ConnType::Statement;
 
         // Helper to get non-primary-key field count
-        static consteval auto get_updatable_field_count() -> size_t {
-            size_t count = 0;
+        static consteval auto get_updatable_field_count() -> std::size_t {
+            std::size_t count = 0;
             for (const auto& member : Base::all_members_) {
                 if (member != Base::primary_key_) {
                     ++count;
@@ -49,7 +40,7 @@ export namespace storm::orm::statements {
             return count;
         }
 
-        static constexpr size_t updatable_field_count_ = get_updatable_field_count();
+        static constexpr std::size_t updatable_field_count_ = get_updatable_field_count();
 
         // Helper to build field assignments string for UPDATE SQL
         static consteval auto build_field_assignments() {
@@ -85,11 +76,11 @@ export namespace storm::orm::statements {
         static constexpr auto field_assignments_ = build_field_assignments();
 
         // Compile-time UPDATE SQL size calculation
-        static consteval auto calculate_update_sql_size() -> size_t {
+        static consteval auto calculate_update_sql_size() -> std::size_t {
             using utilities::sql_len::SET;
             using utilities::sql_len::UPDATE;
             using utilities::sql_len::WHERE;
-            size_t size = 0;
+            std::size_t size = 0;
             size += UPDATE; // "UPDATE "
             size += Base::table_name_.size();
             size += SET; // " SET "
@@ -103,7 +94,7 @@ export namespace storm::orm::statements {
 
         // Build UPDATE SQL at compile-time using ConstexprString
         static consteval auto build_update_sql_array() {
-            constexpr size_t          sql_size = calculate_update_sql_size() + utilities::sql_len::LARGE_BUFFER;
+            constexpr std::size_t     sql_size = calculate_update_sql_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<sql_size> result;
 
             result.append("UPDATE ");
@@ -265,7 +256,7 @@ export namespace storm::orm::statements {
         }
 
         // Helper to unroll inline binding for all fields (skips PK, then binds PK last)
-        template <size_t... Is>
+        template <std::size_t... Is>
         [[nodiscard]] __attribute__((always_inline)) static auto
         inline_bind_all_fields(Statement* stmt, const T& obj, std::index_sequence<Is...> /*unused*/) noexcept
                 -> std::expected<void, Error> {

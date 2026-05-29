@@ -186,11 +186,21 @@ TOTAL_STEPS=0
 [[ "$RUN_CMAKE_FORMAT" == true ]] && ((TOTAL_STEPS++))
 [[ "$RUN_TIDY" == true ]] && ((TOTAL_STEPS++))
 # clang-tidy needs module BMIs built first when the tree consumes `import std;`
-# (issue #330). Only counts as a step when build/release actually references the
-# std module — keeps the count accurate on pre-#326 trees that skip it.
+# (issues #330, #326). Only counts as a step when build/release actually uses the
+# std named module — keeps the count accurate on pre-#326 trees that skip it.
+#
+# Detection: CMake synthesizes a `__cmake_cxx_std_26` target (the std module's
+# BMI producer) into build.ninja whenever any target sets CXX_MODULE_STD ON.
+# This appears at configure time, before any build. We key on it rather than a
+# compile-flag string: CMake's import-std support does NOT emit `-fmodule-file=std=`
+# into compile_commands.json (the std module and the per-TU `@….modmap` are wired
+# via ninja dyndep, invisible to compile_commands). clang-tidy replays
+# compile_commands and so cannot find `module 'std'` (or the `.modmap`) until the
+# release build has produced both — hence the prebuild below. See issue #326
+# Finding C.
 RUN_TIDY_BMI=false
-if [[ "$RUN_TIDY" == true && -f "build/release/compile_commands.json" ]] \
-   && grep -q -- '-fmodule-file=std=' "build/release/compile_commands.json" 2>/dev/null; then
+if [[ "$RUN_TIDY" == true && -f "build/release/build.ninja" ]] \
+   && grep -q '__cmake_cxx_std_26' "build/release/build.ninja" 2>/dev/null; then
     RUN_TIDY_BMI=true
     ((TOTAL_STEPS++))
 fi

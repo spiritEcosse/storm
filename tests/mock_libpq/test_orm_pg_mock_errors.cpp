@@ -30,10 +30,7 @@
 #include "mock_libpq.h"
 
 import storm;
-import <expected>;
-import <numbers>;
-import <string>;
-import <vector>;
+import std;
 
 using PgConnection = storm::db::postgresql::Connection;
 using PgStatement  = storm::db::postgresql::Statement;
@@ -706,8 +703,8 @@ namespace {
         auto r5 = stmt_result->bind_null(5);
         EXPECT_TRUE(r5.has_value());
 
-        std::vector<uint8_t> blob_data = {0xDE, 0xAD};
-        auto                 r6        = stmt_result->bind_blob(6, blob_data.data(), blob_data.size());
+        std::vector<std::uint8_t> blob_data = {0xDE, 0xAD};
+        auto                      r6        = stmt_result->bind_blob(6, blob_data.data(), blob_data.size());
         EXPECT_TRUE(r6.has_value());
     }
 
@@ -1085,9 +1082,9 @@ namespace {
     // ============================================================================
 
     struct MockPgPerson {
-        [[= storm::meta::FieldAttr::primary]] int64_t id{};
-        std::string                                   name;
-        int                                           age{};
+        [[= storm::meta::FieldAttr::primary]] std::int64_t id{};
+        std::string                                        name;
+        int                                                age{};
     };
 
     using PgQuerySet = storm::QuerySet<MockPgPerson, PgConnection>;
@@ -1217,7 +1214,7 @@ namespace {
         }
 
         template <typename = void>
-        [[nodiscard]] auto bind_int64(int /*index*/, int64_t /*value*/) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] auto bind_int64(int /*index*/, std::int64_t /*value*/) noexcept -> std::expected<void, Error> {
             return check_fail();
         }
 
@@ -1232,7 +1229,7 @@ namespace {
 
         template <typename = void>
         [[nodiscard]] auto
-        bind_blob(int /*index*/, const void* /*data*/, size_t /*size*/) noexcept // NOSONAR(cpp:S5008)
+        bind_blob(int /*index*/, const void* /*data*/, std::size_t /*size*/) noexcept // NOSONAR(cpp:S5008)
                 -> std::expected<void, Error> {
             return check_fail();
         }
@@ -1265,7 +1262,7 @@ namespace {
             return 0;
         }
 
-        template <typename = void> [[nodiscard]] auto extract_int64(int /*col_index*/) const noexcept -> int64_t {
+        template <typename = void> [[nodiscard]] auto extract_int64(int /*col_index*/) const noexcept -> std::int64_t {
             return 0;
         }
 
@@ -1364,7 +1361,7 @@ namespace {
             // Intentionally empty.
         }
 
-        [[nodiscard]] auto cached_statement_count() const noexcept -> size_t {
+        [[nodiscard]] static auto cached_statement_count() noexcept -> std::size_t {
             return 0;
         }
 

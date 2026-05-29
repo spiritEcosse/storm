@@ -5,19 +5,11 @@ module;
 
 export module storm_orm_statements_join;
 
+import std;
+
 import storm_orm_statements_base;
 import storm_orm_utilities;
 import storm_db_concept;
-
-import <cstdint>;
-import <expected>;
-import <string>;
-import <vector>;
-import <utility>;
-import <meta>;
-import <type_traits>;
-import <array>;
-import <optional>;
 
 export namespace storm::orm::statements {
 
@@ -54,15 +46,15 @@ export namespace storm::orm::statements {
         using Error     = typename ConnType::Error;
         using Statement = typename ConnType::Statement;
 
-        static constexpr size_t fk_count_ = sizeof...(FKFieldPtrs);
+        static constexpr std::size_t fk_count_ = sizeof...(FKFieldPtrs);
 
         // C++26: Direct pack indexing
         // FK_type unwraps std::optional<FKModel> → FKModel so FKBase_at works correctly
-        template <size_t Idx>
+        template <std::size_t Idx>
         using FK_type =
                 utilities::optional_inner_type_t<std::remove_cvref_t<decltype(std::declval<T>().*FKFieldPtrs...[Idx])>>;
 
-        template <size_t Idx> using FKBase_at = BaseStatement<FK_type<Idx>>;
+        template <std::size_t Idx> using FKBase_at = BaseStatement<FK_type<Idx>>;
 
         // Compile-time validation
         static_assert(
@@ -70,9 +62,9 @@ export namespace storm::orm::statements {
                 "FK pointers must be member object pointers"
         );
 
-        static consteval auto count_non_fk_fields() -> size_t {
-            size_t count = 0;
-            for (size_t i = 0; i < Base::field_count_; ++i) {
+        static consteval auto count_non_fk_fields() -> std::size_t {
+            std::size_t count = 0;
+            for (std::size_t i = 0; i < Base::field_count_; ++i) {
                 if (!Base::is_fk_field(Base::all_members_[i])) {
                     count++;
                 }
@@ -80,16 +72,16 @@ export namespace storm::orm::statements {
             return count;
         }
 
-        static constexpr size_t non_fk_field_count_ = count_non_fk_fields();
+        static constexpr std::size_t non_fk_field_count_ = count_non_fk_fields();
 
         // LCOV_EXCL_START - compile-time only (initializes constexpr column_offsets_)
         // Constexpr storage for column offsets
         static constexpr auto calculate_column_offsets() {
-            std::array<size_t, fk_count_> offsets{};
-            size_t                        current_offset = non_fk_field_count_;
-            size_t                        idx            = 0;
+            std::array<std::size_t, fk_count_> offsets{};
+            std::size_t                        current_offset = non_fk_field_count_;
+            std::size_t                        idx            = 0;
 
-            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) {
+            [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
                 ((offsets[idx++] = current_offset, current_offset += FKBase_at<Is>::field_count_), ...);
             }(std::make_index_sequence<fk_count_>{});
 
@@ -101,9 +93,9 @@ export namespace storm::orm::statements {
 
         static consteval auto build_fk_field_names() {
             std::array<std::string_view, fk_count_> names{};
-            size_t                                  fk_idx = 0;
+            std::size_t                             fk_idx = 0;
 
-            for (size_t member_idx = 0; member_idx < Base::field_count_ && fk_idx < fk_count_; ++member_idx) {
+            for (std::size_t member_idx = 0; member_idx < Base::field_count_ && fk_idx < fk_count_; ++member_idx) {
                 auto member = Base::all_members_[member_idx];
                 if (Base::is_fk_field(member)) {
                     names[fk_idx++] = std::meta::identifier_of(member);
@@ -127,12 +119,12 @@ export namespace storm::orm::statements {
         // LCOV_EXCL_STOP
 
         // Compile-time SQL generation with ConstexprString
-        static consteval auto calculate_join_sql_size() -> size_t {
+        static consteval auto calculate_join_sql_size() -> std::size_t {
             using utilities::sql_len::ON_EQUALS;
             using utilities::sql_len::SMALL_BUFFER;
-            size_t total = 0;
+            std::size_t total = 0;
 
-            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) {
+            [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
                 ((total += get_join_keyword().size() + FKBase_at<Is>::table_name_.size() + 2 + 1 + 4 + 1 + 1 + 1 +
                            FKBase_at<Is>::pk_name_.size() + ON_EQUALS + fk_field_names_[Is].size() + 3),
                  ...);
@@ -142,10 +134,10 @@ export namespace storm::orm::statements {
         }
 
         static consteval auto build_join_sql_array() {
-            constexpr size_t          sql_size = calculate_join_sql_size();
+            constexpr std::size_t     sql_size = calculate_join_sql_size();
             ConstexprString<sql_size> result;
 
-            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) {
+            [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
                 ((result.append(get_join_keyword()),
                   result.append(FKBase_at<Is>::table_name_),
                   result.append(" t"),
@@ -166,16 +158,16 @@ export namespace storm::orm::statements {
         // Iterate the FK indices [0, fk_count_) and invoke `body.template operator()<I>()` for each.
         // Used by the consteval SQL-builder helpers; encapsulates the index-sequence fold.
         template <typename Body> static consteval void for_each_fk_field(const Body& body) {
-            [&]<size_t... Is>(std::index_sequence<Is...> /*unused*/) {
+            [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
                 (body.template operator()<Is>(), ...);
             }(std::make_index_sequence<fk_count_>{});
         }
 
-        static consteval auto calculate_select_fields_size() -> size_t {
-            size_t total = 0;
+        static consteval auto calculate_select_fields_size() -> std::size_t {
+            std::size_t total = 0;
 
             // Base fields
-            for (size_t i = 0; i < Base::field_count_; ++i) {
+            for (std::size_t i = 0; i < Base::field_count_; ++i) {
                 auto member = Base::all_members_[i];
                 if (!Base::is_fk_field(member)) {
                     total += (total > 0 ? 2 : 0) + 3 + std::meta::identifier_of(member).size();
@@ -183,9 +175,9 @@ export namespace storm::orm::statements {
             }
 
             // FK fields
-            for_each_fk_field([&]<size_t I>() {
+            for_each_fk_field([&]<std::size_t I>() {
                 total += 2; // ", "
-                [&]<size_t... FieldIs>(std::index_sequence<FieldIs...> /*unused*/) {
+                [&]<std::size_t... FieldIs>(std::index_sequence<FieldIs...> /*unused*/) {
                     ((total += (FieldIs > 0 ? 2 : 0) + 3 + 1 +
                                std::meta::identifier_of(FKBase_at<I>::all_members_[FieldIs]).size()),
                      ...);
@@ -196,12 +188,12 @@ export namespace storm::orm::statements {
         }
 
         static consteval auto build_select_fields_array() {
-            constexpr size_t             fields_size = calculate_select_fields_size();
+            constexpr std::size_t        fields_size = calculate_select_fields_size();
             ConstexprString<fields_size> result;
 
             // Base fields
             bool first = true;
-            for (size_t i = 0; i < Base::field_count_; ++i) {
+            for (std::size_t i = 0; i < Base::field_count_; ++i) {
                 auto member = Base::all_members_[i];
                 if (!Base::is_fk_field(member)) {
                     if (!first) {
@@ -214,9 +206,9 @@ export namespace storm::orm::statements {
             }
 
             // FK fields
-            for_each_fk_field([&]<size_t I>() {
+            for_each_fk_field([&]<std::size_t I>() {
                 result.append(", ");
-                [&]<size_t... FieldIs>(std::index_sequence<FieldIs...> /*unused*/) {
+                [&]<std::size_t... FieldIs>(std::index_sequence<FieldIs...> /*unused*/) {
                     bool first_in_table = true;
                     (((first_in_table ? (void)0 : result.append(", ")),
                       result.append("t"),
@@ -235,11 +227,11 @@ export namespace storm::orm::statements {
         static constexpr auto select_fields_array = build_select_fields_array();
 
         // NEW: Compile-time complete SQL generation
-        static consteval auto calculate_complete_sql_size() -> size_t {
+        static consteval auto calculate_complete_sql_size() -> std::size_t {
             using utilities::sql_len::FROM;
             using utilities::sql_len::SELECT;
             using utilities::sql_len::SMALL_BUFFER;
-            size_t total = 0;
+            std::size_t total = 0;
             total += SELECT; // "SELECT "
             total += calculate_select_fields_size();
             total += FROM; // " FROM "
@@ -250,7 +242,7 @@ export namespace storm::orm::statements {
         }
 
         static consteval auto build_complete_sql_array() {
-            constexpr size_t          sql_size = calculate_complete_sql_size();
+            constexpr std::size_t     sql_size = calculate_complete_sql_size();
             ConstexprString<sql_size> result;
 
             result.append("SELECT ");
@@ -277,14 +269,14 @@ export namespace storm::orm::statements {
         // DATABASE-AGNOSTIC EXTRACTION - Uses Statement template methods
         // =====================================================================
 
-        template <size_t... Is>
+        template <std::size_t... Is>
         __attribute__((always_inline)) static void
         extract_t_fields(Statement* stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
             int col_idx = 0;
             ((extract_column_at<Is>(stmt, obj, col_idx)), ...);
         }
 
-        template <size_t MemberIdx>
+        template <std::size_t MemberIdx>
         __attribute__((always_inline)) static void extract_column_at(Statement* stmt, T& obj, int& col_idx) noexcept {
             if constexpr (MemberIdx < Base::field_count_) {
                 constexpr auto member = Base::all_members_[MemberIdx];
@@ -299,15 +291,18 @@ export namespace storm::orm::statements {
             }
         }
 
-        template <size_t FKIdx, size_t... FieldIs>
+        template <std::size_t FKIdx, std::size_t... FieldIs>
         __attribute__((always_inline)) static void extract_fk_fields_impl(
-                Statement* stmt, FK_type<FKIdx>& fk_obj, size_t col_offset, std::index_sequence<FieldIs...> /*unused*/
+                Statement*      stmt,
+                FK_type<FKIdx>& fk_obj,
+                std::size_t     col_offset,
+                std::index_sequence<FieldIs...> /*unused*/
         ) noexcept {
             using FKBase = FKBase_at<FKIdx>;
             ((extract_fk_field_at<FKBase, FieldIs>(stmt, fk_obj, col_offset + FieldIs)), ...);
         }
 
-        template <typename FKBase, size_t FieldIdx>
+        template <typename FKBase, std::size_t FieldIdx>
         __attribute__((always_inline)) static void
         extract_fk_field_at(Statement* stmt, auto& fk_obj, int col_idx) noexcept {
             if constexpr (FieldIdx < FKBase::field_count_) {
@@ -317,11 +312,11 @@ export namespace storm::orm::statements {
             }
         }
 
-        template <size_t Idx>
+        template <std::size_t Idx>
         __attribute__((always_inline)) static void extract_fk_at(Statement* stmt, T& obj) noexcept {
-            constexpr auto FKPtr         = FKFieldPtrs...[Idx]; // C++26 pack indexing
-            using RawFKFieldType         = std::remove_cvref_t<decltype(obj.*FKPtr)>;
-            constexpr size_t field_count = FKBase_at<Idx>::field_count_;
+            constexpr auto FKPtr              = FKFieldPtrs...[Idx]; // C++26 pack indexing
+            using RawFKFieldType              = std::remove_cvref_t<decltype(obj.*FKPtr)>;
+            constexpr std::size_t field_count = FKBase_at<Idx>::field_count_;
 
             if constexpr (utilities::is_optional_v<RawFKFieldType>) {
                 // Optional FK: NULL first joined column means no match → set nullopt
@@ -343,7 +338,7 @@ export namespace storm::orm::statements {
             }
         }
 
-        template <size_t... Is>
+        template <std::size_t... Is>
         __attribute__((always_inline)) static void
         extract_all_fks(Statement* stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
             (extract_fk_at<Is>(stmt, obj), ...);
@@ -351,7 +346,7 @@ export namespace storm::orm::statements {
 
         // FIX: Initialize all FK fields to default values before extraction
         // This ensures non-JOINed FK fields have proper default values instead of garbage
-        template <size_t MemberIdx> __attribute__((always_inline)) static void init_fk_field_at(T& obj) noexcept {
+        template <std::size_t MemberIdx> __attribute__((always_inline)) static void init_fk_field_at(T& obj) noexcept {
             if constexpr (MemberIdx < Base::field_count_) {
                 constexpr auto member = Base::all_members_[MemberIdx];
                 if constexpr (Base::is_fk_field(member)) {
@@ -361,7 +356,7 @@ export namespace storm::orm::statements {
             }
         }
 
-        template <size_t... Is>
+        template <std::size_t... Is>
         __attribute__((always_inline)) static void
         init_all_fk_fields(T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
             (init_fk_field_at<Is>(obj), ...);

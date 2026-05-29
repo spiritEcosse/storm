@@ -4,8 +4,7 @@ module;
 
 export module storm_orm_transaction;
 
-import <expected>;
-import <memory>;
+import std;
 
 export namespace storm::orm::utilities {
 

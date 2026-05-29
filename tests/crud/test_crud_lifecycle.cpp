@@ -3,12 +3,7 @@
 #include <sqlite3.h>
 
 import storm;
-import <expected>;
-import <string>;
-import <optional>;
-import <span>;
-import <vector>;
-import <format>;
+import std;
 
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
@@ -38,7 +33,7 @@ template <typename ConnType> class QuerySetCrudLifecycleTest : public StormTestF
         EXPECT_EQ(row.score.value(), 95);
         ASSERT_TRUE(row.nickname.has_value());
         EXPECT_EQ(row.nickname.value(), "fp");
-        EXPECT_EQ(row.avatar, (std::vector<uint8_t>{0x01, 0x02, 0x03}));
+        EXPECT_EQ(row.avatar, (std::vector<std::uint8_t>{0x01, 0x02, 0x03}));
     }
 
     static auto verifyFullPersonUpdated(const Person& row) -> void {
@@ -48,7 +43,7 @@ template <typename ConnType> class QuerySetCrudLifecycleTest : public StormTestF
         EXPECT_EQ(row.department, "Marketing");
         EXPECT_FALSE(row.score.has_value());
         EXPECT_FALSE(row.nickname.has_value());
-        EXPECT_EQ(row.avatar, (std::vector<uint8_t>{0xFF}));
+        EXPECT_EQ(row.avatar, (std::vector<std::uint8_t>{0xFF}));
     }
 };
 

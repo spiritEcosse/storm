@@ -3,23 +3,15 @@ module;
 #include <sqlite3.h>
 
 export module storm_db_sqlite;
+
+import std;
 import storm_db_concept;
-import <expected>;
-import <string_view>;
-import <string>;
-import <memory>;
-import <unordered_map>;
-import <unordered_set>;
-import <vector>;
-import <array>;
-import <cstdint>;
-import <tuple>;
 
 export namespace storm::db::sqlite {
 
     // Cache size constants
     namespace cache {
-        constexpr size_t STMT_CACHE_RESERVE = 32; // Initial statement cache capacity
+        constexpr std::size_t STMT_CACHE_RESERVE = 32; // Initial statement cache capacity
     } // namespace cache
 
     // Custom deleter for sqlite3
@@ -82,7 +74,7 @@ export namespace storm::db::sqlite {
         }
 
         template <typename = void>
-        [[nodiscard]] __attribute__((always_inline)) auto bind_int64(int index, int64_t value) noexcept
+        [[nodiscard]] __attribute__((always_inline)) auto bind_int64(int index, std::int64_t value) noexcept
                 -> std::expected<void, Error> {
             const int rc = sqlite3_bind_int64(raw_, index, value);
             if (rc != SQLITE_OK) [[unlikely]] {
@@ -112,7 +104,7 @@ export namespace storm::db::sqlite {
 
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto
-        bind_blob(int index, const void* data, size_t size) noexcept // NOSONAR(cpp:S5008) - SQLite BLOB API
+        bind_blob(int index, const void* data, std::size_t size) noexcept // NOSONAR(cpp:S5008) - SQLite BLOB API
                 -> std::expected<void, Error> {
             const int rc = sqlite3_bind_blob(raw_, index, data, static_cast<int>(size), SQLITE_TRANSIENT);
             if (rc != SQLITE_OK) [[unlikely]] {
@@ -176,7 +168,7 @@ export namespace storm::db::sqlite {
         }
 
         template <typename = void>
-        [[nodiscard]] __attribute__((always_inline)) auto extract_int64(int col_index) const noexcept -> int64_t {
+        [[nodiscard]] __attribute__((always_inline)) auto extract_int64(int col_index) const noexcept -> std::int64_t {
             return sqlite3_column_int64(raw_, col_index);
         }
 
@@ -201,7 +193,7 @@ export namespace storm::db::sqlite {
                 -> std::string_view {
             const unsigned char* text = sqlite3_column_text(raw_, col_index);
             if (text != nullptr) {
-                const auto len = static_cast<size_t>(sqlite3_column_bytes(raw_, col_index));
+                const auto len = static_cast<std::size_t>(sqlite3_column_bytes(raw_, col_index));
                 return {reinterpret_cast<const char*>(text), len};
             }
             return {};
@@ -380,7 +372,7 @@ export namespace storm::db::sqlite {
         }
 
         // Get cache statistics
-        [[nodiscard]] auto cached_statement_count() const noexcept -> size_t {
+        [[nodiscard]] auto cached_statement_count() const noexcept -> std::size_t {
             return statement_cache_.size();
         }
 

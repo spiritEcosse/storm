@@ -28,22 +28,12 @@
 #include "benchmark_tests.hpp" // BENCHMARK_TESTS — must stay textual
 
 import storm;
+import std;
 import storm_benchmark_crud;
 import storm_benchmark_query;
 import storm_benchmark_registry;
 import storm_benchmark_schema;
 import storm_benchmark_sizes;
-
-import <algorithm>;
-import <expected>;
-import <format>;
-import <memory>;
-import <optional>;
-import <ranges>;
-import <span>;
-import <string>;
-import <string_view>;
-import <vector>;
 
 using namespace storm;
 
@@ -90,10 +80,10 @@ namespace {
         // Range mode (sized=true) → RangeMultiplier+Range
         // Args mode (sized=false, !args.empty()) → explicit Arg() per element
         // Single mode (sized=false, args.empty()) → single Arg(lo)
-        bool    sized;
-        int64_t lo;
-        int64_t hi;
-        int     multiplier;
+        bool         sized;
+        std::int64_t lo;
+        std::int64_t hi;
+        int          multiplier;
     };
 
     consteval auto range_for(BenchmarkTest const& t) -> RangeSpec {
@@ -136,7 +126,7 @@ namespace {
             static std::optional<Fixture<Model, test>> opt;
             return opt;
         }
-        static auto setup(int64_t n) -> void {
+        static auto setup(std::int64_t n) -> void {
             auto& opt = storage();
             opt.emplace(static_cast<int>(n));
             opt->prepare(static_cast<int>(n));
@@ -153,7 +143,7 @@ namespace {
         std::string    name = std::format(
                 "Storm/{}/{}", std::string_view(test.test_category.view()), std::string_view(test.test_name.view())
         );
-        std::vector<int64_t> args_vec;
+        std::vector<std::int64_t> args_vec;
         args_vec.reserve(args.size());
         for (auto n : args) {
             args_vec.push_back(n);
@@ -173,7 +163,7 @@ namespace {
         );
     }
 
-    template <size_t I = 0> auto register_all() -> void {
+    template <std::size_t I = 0> auto register_all() -> void {
         if constexpr (I < storm::benchmark::BENCHMARK_TESTS.size()) {
             constexpr auto const& t = storm::benchmark::BENCHMARK_TESTS[I];
             if constexpr (is_crud(t)) {

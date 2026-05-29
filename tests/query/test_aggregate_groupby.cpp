@@ -2,10 +2,7 @@
 #include "test_db_helpers.h"
 
 import storm;
-
-import <expected>;
-import <string>;
-import <vector>;
+import std;
 
 using namespace storm;
 
@@ -28,7 +25,7 @@ TYPED_TEST(AggregateTest, GroupByWithCount) {
     auto& results = result.value();
     EXPECT_EQ(results.size(), 3);
 
-    int64_t total_count = 0; // NOLINT(misc-const-correctness) - modified in loop
+    std::int64_t total_count = 0; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& row : results) {
         total_count += std::get<1>(row);
     }
@@ -42,7 +39,7 @@ TYPED_TEST(AggregateTest, GroupByWithSum) {
     ASSERT_TRUE(result.has_value()) << "GROUP BY + SUM failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 3);
 
-    int64_t total_sum = 0; // NOLINT(misc-const-correctness) - modified in loop
+    std::int64_t total_sum = 0; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& [years, age_sum] : result.value()) {
         total_sum += age_sum;
     }
@@ -110,7 +107,7 @@ TYPED_TEST(AggregateTest, GroupByWithJoinAndSum) {
     ASSERT_TRUE(result.has_value()) << "JOIN + GROUP BY + SUM failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 6);
 
-    int64_t total_sum = 0; // NOLINT(misc-const-correctness) - modified in loop
+    std::int64_t total_sum = 0; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& [content, value_sum] : result.value()) {
         total_sum += value_sum;
     }

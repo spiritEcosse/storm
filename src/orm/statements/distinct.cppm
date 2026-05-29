@@ -4,10 +4,11 @@ module;
 // builders).
 
 #include <meta>
-#include <utility>
 #include <plf_hive/plf_hive.h>
 
 export module storm_orm_statements_projection;
+
+import std;
 
 import storm_db_concept;
 import storm_orm_statements_base;
@@ -15,17 +16,6 @@ import storm_orm_statements_join;
 import storm_orm_statements_orderby;
 import storm_orm_utilities;
 import storm_orm_where;
-
-import <cstdint>;
-import <expected>;
-import <string>;
-import <vector>;
-import <tuple>;
-import <array>;
-import <meta>;
-import <optional>;
-import <memory>;
-import <functional>;
 
 export namespace storm::orm::statements {
 
@@ -56,7 +46,7 @@ export namespace storm::orm::statements {
         using Error     = typename ConnType::Error;
         using Statement = typename ConnType::Statement;
 
-        static constexpr size_t NumFields = sizeof...(FieldInfos);
+        static constexpr std::size_t NumFields = sizeof...(FieldInfos);
 
       private:
         // Field information is already std::meta::info - no conversion needed!
@@ -64,15 +54,16 @@ export namespace storm::orm::statements {
         static constexpr auto member_infos_ = std::array{FieldInfos...};
 
         // Deduce field types from member_info array
-        template <size_t... Is> static consteval auto get_field_types_helper(std::index_sequence<Is...> /*unused*/) {
+        template <std::size_t... Is>
+        static consteval auto get_field_types_helper(std::index_sequence<Is...> /*unused*/) {
             return std::tuple<std::remove_cvref_t<decltype(std::declval<T>().[:member_infos_[Is]:])>...>{};
         }
 
         using FieldTypesTuple = decltype(get_field_types_helper(std::make_index_sequence<NumFields>{}));
 
         // Calculate field size at compile-time
-        template <size_t I> static consteval auto get_field_size() -> size_t {
-            size_t         size       = std::meta::identifier_of(member_infos_[I]).size();
+        template <std::size_t I> static consteval auto get_field_size() -> std::size_t {
+            std::size_t    size       = std::meta::identifier_of(member_infos_[I]).size();
             constexpr auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member_infos_[I]);
             if constexpr (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
                 size += 3; // "_id"
@@ -84,13 +75,13 @@ export namespace storm::orm::statements {
         }
 
         // Calculate total size of all fields
-        template <size_t... Is>
-        static consteval auto calculate_field_list_size(std::index_sequence<Is...> /*unused*/) -> size_t {
+        template <std::size_t... Is>
+        static consteval auto calculate_field_list_size(std::index_sequence<Is...> /*unused*/) -> std::size_t {
             return (get_field_size<Is>() + ...);
         }
 
         // Append column name for field I (with FK _id suffix if needed)
-        template <size_t I, size_t N> static consteval void append_column_name(ConstexprString<N>& result) {
+        template <std::size_t I, std::size_t N> static consteval void append_column_name(ConstexprString<N>& result) {
             constexpr auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member_infos_[I]);
             result.append(std::meta::identifier_of(member_infos_[I]));
             if constexpr (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
@@ -101,12 +92,12 @@ export namespace storm::orm::statements {
         // Build a "<prefix>col1, <prefix>col2, ..." field list at compile time.
         // The non-JOIN list uses no prefix; the JOIN list uses "t1.". The two
         // builders used to spell the loop out independently.
-        template <size_t Extra, size_t... Is>
+        template <std::size_t Extra, std::size_t... Is>
         static consteval auto
         build_field_list_with_prefix(std::string_view prefix, std::index_sequence<Is...> /*unused*/) {
-            constexpr size_t total_size = calculate_field_list_size(std::make_index_sequence<NumFields>{}) + Extra;
+            constexpr std::size_t total_size = calculate_field_list_size(std::make_index_sequence<NumFields>{}) + Extra;
             ConstexprString<total_size + 10> result;
-            auto                             append_field = [&result, prefix]<size_t I>() {
+            auto                             append_field = [&result, prefix]<std::size_t I>() {
                 if constexpr (I > 0) {
                     result.append(", ");
                 }
@@ -120,7 +111,7 @@ export namespace storm::orm::statements {
         }
 
         // Compile-time field list generation (no alias prefix)
-        template <size_t... Is> static consteval auto build_field_list_constexpr(std::index_sequence<Is...> seq) {
+        template <std::size_t... Is> static consteval auto build_field_list_constexpr(std::index_sequence<Is...> seq) {
             return build_field_list_with_prefix<0, Is...>("", seq);
         }
 
@@ -128,7 +119,8 @@ export namespace storm::orm::statements {
         static constexpr auto field_list_constexpr_ = build_field_list_constexpr(std::make_index_sequence<NumFields>{});
 
         // Compile-time field list with "t1." table alias prefix for JOIN queries
-        template <size_t... Is> static consteval auto build_join_field_list_constexpr(std::index_sequence<Is...> seq) {
+        template <std::size_t... Is>
+        static consteval auto build_join_field_list_constexpr(std::index_sequence<Is...> seq) {
             return build_field_list_with_prefix<NumFields * 3, Is...>("t1.", seq);
         }
 
@@ -136,12 +128,12 @@ export namespace storm::orm::statements {
                 build_join_field_list_constexpr(std::make_index_sequence<NumFields>{});
 
         // Calculate SQL size at compile-time
-        static consteval auto calculate_select_sql_size() -> size_t {
+        static consteval auto calculate_select_sql_size() -> std::size_t {
             using utilities::sql_len::FROM;
             using utilities::sql_len::SELECT;
             using utilities::sql_len::SELECT_DISTINCT;
             constexpr auto field_list = build_field_list_constexpr(std::make_index_sequence<NumFields>{});
-            size_t         size       = 0;
+            std::size_t    size       = 0;
             if constexpr (Mode == ProjectionMode::Distinct) {
                 size += SELECT_DISTINCT; // "SELECT DISTINCT "
             } else {
@@ -156,7 +148,7 @@ export namespace storm::orm::statements {
 
         // Build SELECT or SELECT DISTINCT at compile-time
         static consteval auto build_projection_sql_array() {
-            constexpr size_t          sql_size = calculate_select_sql_size() + utilities::sql_len::LARGE_BUFFER;
+            constexpr std::size_t     sql_size = calculate_select_sql_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<sql_size> result;
 
             if constexpr (Mode == ProjectionMode::Distinct) {
@@ -269,7 +261,7 @@ export namespace storm::orm::statements {
                     using FieldType = std::tuple_element_t<0, FieldTypesTuple>;
                     results.insert(Base::template extract_column_value<FieldType>(stmt, 0));
                 } else {
-                    [&]<size_t... Is>(std::index_sequence<Is...>) {
+                    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                         results.insert(
                                 std::make_tuple(
                                         Base::template extract_column_value<std::tuple_element_t<Is, FieldTypesTuple>>(

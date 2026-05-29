@@ -8,21 +8,12 @@
 // transport reflection annotations across BMI boundaries — memory
 // feedback_cpp26_module_reflection_annotations). Do NOT include from any
 // other TU.
-
-#include <chrono>
-#include <cstdint>
-#include <cstdio>
-#include <ctime>
-#include <expected>
-#include <format>
-#include <memory>
-#include <optional>
-#include <ranges>
-#include <string>
-#include <string_view>
-#include <utility>
-#include <variant>
-#include <vector>
+//
+// import std; migration (issue #326): no std #includes here — std types come
+// from main.cpp's `import std;` (this header is pulled in after it). A textual
+// std #include after the module import re-pulls libc++ headers the std module
+// owns and breaks the build (Finding B). std::meta:: usage here is served by the
+// textual <meta> main.cpp includes before its imports (Finding A).
 
 namespace {
 

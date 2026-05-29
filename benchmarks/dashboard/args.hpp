@@ -6,17 +6,11 @@
 // every helper here lives at internal linkage in that TU. Split out of
 // main.cpp purely to keep each TU under the 600-line code-quality cap.
 // Do NOT include this from any other TU.
-
-#include <charconv>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <filesystem>
-#include <format>
-#include <memory>
-#include <string>
-#include <string_view>
-#include <variant>
+//
+// import std; migration (issue #326): no std #includes here. This header is
+// pulled into main.cpp *after* `import std;`, so std types come from the std
+// module; a textual std #include after the module import re-pulls libc++ headers
+// the module already owns and breaks the build (Finding B).
 
 namespace {
 

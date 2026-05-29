@@ -49,10 +49,12 @@ add_link_options(
   -lunwind)
 
 function(apply_clang_flags target_name)
-  # Clang-modules (header-unit) support — required for any TU containing `import
-  # <header>;` lines. Kept per-target rather than global because a future
-  # migration may want to turn the Clang-modules path off for individual targets
-  # without touching the whole tree. The reflection flags this helper used to
-  # also add are now global (see above).
-  target_compile_options(${target_name} PRIVATE -fmodules -fbuiltin-module-map)
+  # import std; migration (issue #326): the Clang-modules header-unit flags
+  # (-fmodules -fbuiltin-module-map) were removed. They enable the Clang
+  # header-unit path, which collides with `import std;` ("export declaration can
+  # only be used within a module purview"). Now that the whole tree consumes the
+  # std named module instead of `import <header>;` header units, these flags are
+  # gone. The function is kept as a no-op so its call sites and the CMake
+  # structure stay intact (and a future per-target flag can slot back in here).
+  # Reflection flags are already global (see add_compile_options above).
 endfunction()

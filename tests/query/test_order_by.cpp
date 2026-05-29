@@ -5,11 +5,7 @@
 // NOLINTBEGIN(misc-const-correctness,performance-unnecessary-copy-initialization)
 
 import storm;
-import <string>;
-import <vector>;
-import <expected>;
-import <optional>;
-import <cstdint>;
+import std;
 
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
@@ -30,7 +26,7 @@ template <typename ConnType> class OrderByTest : public StormTestFixture<Person,
     static void
     verify_order(const auto& people, const std::vector<std::pair<int, std::string>>& entries) { // NOSONAR(S6024)
         auto it = people.begin();
-        for (size_t i = 0; i < entries.size(); ++i) {
+        for (std::size_t i = 0; i < entries.size(); ++i) {
             EXPECT_EQ(std::ranges::next(people.begin(), static_cast<std::ptrdiff_t>(i))->age, entries[i].first)
                     << "Wrong age at index " << i;
             EXPECT_EQ(std::ranges::next(people.begin(), static_cast<std::ptrdiff_t>(i))->name, entries[i].second)
@@ -436,19 +432,19 @@ TYPED_TEST(OrderByBlobTest, BlobFieldAsc) {
     EXPECT_TRUE(it->avatar.empty());
     ++it;
     EXPECT_EQ(it->name, "A_short");
-    EXPECT_EQ(it->avatar, (std::vector<uint8_t>{0x01}));
+    EXPECT_EQ(it->avatar, (std::vector<std::uint8_t>{0x01}));
     ++it;
     EXPECT_EQ(it->name, "A");
-    EXPECT_EQ(it->avatar, (std::vector<uint8_t>{0x01, 0x00}));
+    EXPECT_EQ(it->avatar, (std::vector<std::uint8_t>{0x01, 0x00}));
     ++it;
     EXPECT_EQ(it->name, "A2");
-    EXPECT_EQ(it->avatar, (std::vector<uint8_t>{0x01, 0x01}));
+    EXPECT_EQ(it->avatar, (std::vector<std::uint8_t>{0x01, 0x01}));
     ++it;
     EXPECT_EQ(it->name, "B");
-    EXPECT_EQ(it->avatar, (std::vector<uint8_t>{0x02, 0x00}));
+    EXPECT_EQ(it->avatar, (std::vector<std::uint8_t>{0x02, 0x00}));
     ++it;
     EXPECT_EQ(it->name, "C");
-    EXPECT_EQ(it->avatar, (std::vector<uint8_t>{0x03, 0x00}));
+    EXPECT_EQ(it->avatar, (std::vector<std::uint8_t>{0x03, 0x00}));
 }
 
 TYPED_TEST(OrderByBlobTest, BlobFieldDesc) {

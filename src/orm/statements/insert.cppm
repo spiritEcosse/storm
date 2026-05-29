@@ -7,22 +7,12 @@ module;
 
 export module storm_orm_statements_insert;
 
+import std;
+
 import storm_orm_statements_base;
 import storm_orm_utilities;
 import storm_orm_transaction;
 import storm_db_concept;
-
-import <expected>;
-import <string>;
-import <string_view>;
-import <concepts>;
-import <format>;
-import <meta>;
-import <array>;
-import <span>;
-import <type_traits>;
-import <memory>;
-import <vector>;
 
 export namespace storm::orm::statements {
 
@@ -36,7 +26,7 @@ export namespace storm::orm::statements {
 
     // Configuration options for batch INSERT operations
     struct InsertOptions {
-        std::optional<size_t> batch_size = std::nullopt; // nullopt = automatic (999/field_count)
+        std::optional<std::size_t> batch_size = std::nullopt; // nullopt = automatic (999/field_count)
     };
 
     // Statement class for ORM insert operations
@@ -51,7 +41,7 @@ export namespace storm::orm::statements {
         static consteval auto build_placeholders() {
             ConstexprString<utilities::buffer_size::SQL_SMALL> result;
             bool                                               first = true;
-            for (size_t i = 0; i < Base::field_count_; ++i) {
+            for (std::size_t i = 0; i < Base::field_count_; ++i) {
                 // Skip primary key
                 if (Base::all_members_[i] == Base::primary_key_) {
                     continue;
@@ -69,10 +59,10 @@ export namespace storm::orm::statements {
         static constexpr auto placeholders_ = build_placeholders();
 
         // Compile-time SQL size calculation
-        static consteval auto calculate_insert_sql_size() -> size_t {
+        static consteval auto calculate_insert_sql_size() -> std::size_t {
             using utilities::sql_len::INSERT_INTO;
             using utilities::sql_len::VALUES_OPEN;
-            size_t size = 0;
+            std::size_t size = 0;
             size += INSERT_INTO; // "INSERT INTO "
 
             // Table name length
@@ -97,9 +87,9 @@ export namespace storm::orm::statements {
         // Shared compile-time INSERT SQL builder for the RETURNING and non-RETURNING variants.
         // The +64 padding on the RETURNING path covers " RETURNING <pk_name>".
         template <bool WithReturning> static consteval auto build_insert_sql_array_impl() {
-            constexpr size_t extra =
+            constexpr std::size_t extra =
                     WithReturning ? (utilities::sql_len::XL_BUFFER + 64) : utilities::sql_len::XL_BUFFER;
-            constexpr size_t          sql_size = calculate_insert_sql_size() + extra;
+            constexpr std::size_t     sql_size = calculate_insert_sql_size() + extra;
             ConstexprString<sql_size> result;
 
             result.append("INSERT INTO ");
@@ -128,10 +118,10 @@ export namespace storm::orm::statements {
 
       private:
         // Compile-time bulk INSERT prefix calculation
-        static consteval auto calculate_bulk_insert_prefix_size() -> size_t {
+        static consteval auto calculate_bulk_insert_prefix_size() -> std::size_t {
             using utilities::sql_len::INSERT_INTO;
             using utilities::sql_len::VALUES_OPEN;
-            size_t size = 0;
+            std::size_t size = 0;
             size += INSERT_INTO; // "INSERT INTO "
             size += Base::table_name_.size();
             size += 2; // " ("
@@ -143,7 +133,7 @@ export namespace storm::orm::statements {
 
         // Build bulk INSERT prefix at compile-time using ConstexprString
         static consteval auto build_bulk_insert_prefix() {
-            constexpr size_t prefix_size = calculate_bulk_insert_prefix_size() + utilities::sql_len::LARGE_BUFFER;
+            constexpr std::size_t prefix_size = calculate_bulk_insert_prefix_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<prefix_size> result;
 
             result.append("INSERT INTO ");
@@ -158,7 +148,7 @@ export namespace storm::orm::statements {
         // Pre-computed bulk INSERT prefix generated at compile-time
         static constexpr auto           bulk_insert_prefix_array = build_bulk_insert_prefix();
         static inline const std::string bulk_insert_prefix       = std::string(bulk_insert_prefix_array);
-        static constexpr size_t         bulk_insert_prefix_size =
+        static constexpr std::size_t    bulk_insert_prefix_size =
                 calculate_bulk_insert_prefix_size() - 1; // Exclude null terminator
 
         // Pre-computed RETURNING suffix: " RETURNING <pk_name>"
@@ -171,20 +161,21 @@ export namespace storm::orm::statements {
         static inline const std::string returning_suffix = std::string(returning_suffix_array);
 
         // Build bulk INSERT SQL body (shared by both returning and non-returning variants)
-        static auto build_bulk_insert_body(size_t count) -> std::string {
+        static auto build_bulk_insert_body(std::size_t count) -> std::string {
             std::string value_template = "(";
             value_template += placeholders_;
             value_template += ")";
 
-            const size_t value_size     = value_template.size();
-            const size_t separator_size = 2; // ", "
-            const size_t total_size = bulk_insert_prefix_size + (value_size * count) + (separator_size * (count - 1));
+            const std::size_t value_size     = value_template.size();
+            const std::size_t separator_size = 2; // ", "
+            const std::size_t total_size =
+                    bulk_insert_prefix_size + (value_size * count) + (separator_size * (count - 1));
 
             std::string sql;
             sql.reserve(total_size);
 
             sql = bulk_insert_prefix;
-            for (size_t i = 0; i < count; ++i) {
+            for (std::size_t i = 0; i < count; ++i) {
                 if (i > 0) {
                     sql += ", ";
                 }
@@ -195,7 +186,7 @@ export namespace storm::orm::statements {
 
         // Generate bulk INSERT SQL with multiple value sets (with caching)
         // Returns const reference to avoid expensive string copy
-        static auto get_bulk_insert_sql(size_t count) -> const std::string& {
+        static auto get_bulk_insert_sql(std::size_t count) -> const std::string& {
             // Thread-local cache for common batch sizes
             static thread_local BulkSQLCache cache;
 
@@ -209,7 +200,7 @@ export namespace storm::orm::statements {
         }
 
         // Generate bulk INSERT ... RETURNING <pk> SQL (with separate cache)
-        static auto get_bulk_insert_returning_sql(size_t count) -> const std::string& {
+        static auto get_bulk_insert_returning_sql(std::size_t count) -> const std::string& {
             static thread_local BulkSQLCache cache;
 
             if (const auto* cached = cache.find(count)) {
@@ -229,7 +220,7 @@ export namespace storm::orm::statements {
         struct SingleQuery {
             InsertStatement&   stmt;
             const T&           obj;
-            [[nodiscard]] auto execute() -> std::expected<int64_t, Error> {
+            [[nodiscard]] auto execute() -> std::expected<std::int64_t, Error> {
                 return stmt.execute_single_optimized(obj, true);
             }
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
@@ -274,7 +265,7 @@ export namespace storm::orm::statements {
             std::span<const T>           objects;
             std::optional<InsertOptions> opts;
 
-            [[nodiscard]] auto execute() -> std::expected<std::vector<int64_t>, Error> { // NOSONAR(cpp:S1659)
+            [[nodiscard]] auto execute() -> std::expected<std::vector<std::int64_t>, Error> { // NOSONAR(cpp:S1659)
                 return stmt.execute_returning(objects, opts);
             }
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> { // NOSONAR(cpp:S1659)
@@ -340,16 +331,16 @@ export namespace storm::orm::statements {
         // Batch insert with RETURNING — returns all inserted IDs
         [[nodiscard]] auto // NOSONAR(cpp:S1659)
         execute_returning(std::span<const T> objects, std::optional<InsertOptions> opts = std::nullopt)
-                -> std::expected<std::vector<int64_t>, Error> {
+                -> std::expected<std::vector<std::int64_t>, Error> {
             if (objects.empty()) {
-                return std::vector<int64_t>{};
+                return std::vector<std::int64_t>{};
             }
 
             InsertOptions const options = opts.value_or(InsertOptions{});
 
-            constexpr size_t max_allowed          = Base::MAX_DB_VARIABLES / Base::field_count_;
-            size_t           effective_batch_size = options.batch_size.value_or(max_allowed);
-            effective_batch_size                  = std::min(effective_batch_size, max_allowed);
+            constexpr std::size_t max_allowed          = Base::MAX_DB_VARIABLES / Base::field_count_;
+            std::size_t           effective_batch_size = options.batch_size.value_or(max_allowed);
+            effective_batch_size                       = std::min(effective_batch_size, max_allowed);
 
             if (objects.size() <= effective_batch_size) {
                 return execute_bulk_returning(objects);
@@ -369,9 +360,9 @@ export namespace storm::orm::statements {
             InsertOptions const options = opts.value_or(InsertOptions{});
 
             // Calculate effective batch size
-            constexpr size_t max_allowed          = Base::MAX_DB_VARIABLES / Base::field_count_;
-            size_t           effective_batch_size = options.batch_size.value_or(max_allowed);
-            effective_batch_size                  = std::min(effective_batch_size, max_allowed); // Cap at SQLite max
+            constexpr std::size_t max_allowed          = Base::MAX_DB_VARIABLES / Base::field_count_;
+            std::size_t           effective_batch_size = options.batch_size.value_or(max_allowed);
+            effective_batch_size = std::min(effective_batch_size, max_allowed); // Cap at SQLite max
 
             // Batch path with custom batch size
             if (objects.size() <= effective_batch_size) {
@@ -384,7 +375,7 @@ export namespace storm::orm::statements {
 
         // Ultra-optimized single INSERT ... RETURNING <pk>
         [[nodiscard]] __attribute__((hot)) auto execute_single_optimized(const T& obj, bool return_id = true) noexcept
-                -> std::expected<int64_t, Error> {
+                -> std::expected<std::int64_t, Error> {
             // Both SQLite 3.35+ and PostgreSQL support RETURNING
             if (cached_insert_returning_stmt_ == nullptr) [[unlikely]] {
                 auto stmt_result = conn_->prepare_cached(insert_returning_sql_string);
@@ -406,7 +397,7 @@ export namespace storm::orm::statements {
             const int rc = cached_insert_returning_stmt_->step_raw();
             if (rc == Statement::ROW_AVAILABLE) [[likely]] {
                 // RETURNING produced a row — extract the ID
-                int64_t id = return_id ? cached_insert_returning_stmt_->extract_int64(0) : 0;
+                std::int64_t id = return_id ? cached_insert_returning_stmt_->extract_int64(0) : 0;
                 cached_insert_returning_stmt_->reset();
                 return id;
             }
@@ -467,7 +458,7 @@ export namespace storm::orm::statements {
 
         // Execute CHUNKED bulk inserts with custom batch size
         // NOTE: Transaction wrapper required - multiple INSERT statements need atomicity
-        [[nodiscard]] auto execute_chunked_bulk_custom(std::span<const T> objects, size_t custom_bulk_size)
+        [[nodiscard]] auto execute_chunked_bulk_custom(std::span<const T> objects, std::size_t custom_bulk_size)
                 -> std::expected<void, Error> {
             auto txn = TransactionGuard<ConnType>::begin(conn_);
             if (!txn) {
@@ -475,9 +466,9 @@ export namespace storm::orm::statements {
             }
 
             // Process in chunks of custom_bulk_size
-            for (size_t offset = 0; offset < objects.size(); offset += custom_bulk_size) {
-                size_t chunk_size = std::min(custom_bulk_size, objects.size() - offset);
-                auto   chunk      = objects.subspan(offset, chunk_size);
+            for (std::size_t offset = 0; offset < objects.size(); offset += custom_bulk_size) {
+                std::size_t chunk_size = std::min(custom_bulk_size, objects.size() - offset);
+                auto        chunk      = objects.subspan(offset, chunk_size);
 
                 const auto& sql = get_bulk_insert_sql(chunk.size());
 
@@ -500,7 +491,7 @@ export namespace storm::orm::statements {
 
         // Execute bulk INSERT ... RETURNING — single chunk, returns all IDs
         [[nodiscard]] auto execute_bulk_returning(std::span<const T> objects)
-                -> std::expected<std::vector<int64_t>, Error> {
+                -> std::expected<std::vector<std::int64_t>, Error> {
             const auto& sql      = get_bulk_insert_returning_sql(objects.size());
             auto        stmt_res = conn_->prepare_cached(sql);
             if (!stmt_res) {
@@ -515,7 +506,7 @@ export namespace storm::orm::statements {
                 return std::unexpected(bind_result.error());
             }
 
-            std::vector<int64_t> ids;
+            std::vector<std::int64_t> ids;
             ids.reserve(objects.size());
 
             int rc = 0;
@@ -531,19 +522,19 @@ export namespace storm::orm::statements {
         }
 
         // Execute chunked bulk INSERT ... RETURNING — multiple chunks with transaction
-        [[nodiscard]] auto execute_chunked_bulk_returning(std::span<const T> objects, size_t custom_bulk_size)
-                -> std::expected<std::vector<int64_t>, Error> {
+        [[nodiscard]] auto execute_chunked_bulk_returning(std::span<const T> objects, std::size_t custom_bulk_size)
+                -> std::expected<std::vector<std::int64_t>, Error> {
             auto txn = TransactionGuard<ConnType>::begin(conn_);
             if (!txn) {
                 return std::unexpected(txn.error());
             }
 
-            std::vector<int64_t> all_ids;
+            std::vector<std::int64_t> all_ids;
             all_ids.reserve(objects.size());
 
-            for (size_t offset = 0; offset < objects.size(); offset += custom_bulk_size) {
-                size_t chunk_size = std::min(custom_bulk_size, objects.size() - offset);
-                auto   chunk      = objects.subspan(offset, chunk_size);
+            for (std::size_t offset = 0; offset < objects.size(); offset += custom_bulk_size) {
+                std::size_t chunk_size = std::min(custom_bulk_size, objects.size() - offset);
+                auto        chunk      = objects.subspan(offset, chunk_size);
 
                 auto chunk_result = execute_bulk_returning(chunk);
                 if (!chunk_result) {

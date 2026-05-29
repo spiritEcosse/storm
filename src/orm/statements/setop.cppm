@@ -8,19 +8,13 @@ module;
 
 export module storm_orm_statements_setop;
 
+import std;
+
 import storm_orm_statements_base;
 import storm_orm_statements_join;
 import storm_orm_statements_orderby;
 import storm_orm_where;
 import storm_db_concept;
-
-import <concepts>;
-import <cstdint>;
-import <expected>;
-import <string>;
-import <vector>;
-import <optional>;
-import <memory>;
 
 export namespace storm::orm::statements {
 
@@ -130,7 +124,7 @@ export namespace storm::orm::statements {
         [[nodiscard]] auto build_combined_sql() const -> std::string {
             std::string sql;
 
-            for (size_t i = 0; i < operands_.size(); ++i) {
+            for (std::size_t i = 0; i < operands_.size(); ++i) {
                 if (i > 0) {
                     sql += op_to_sql(operators_[i - 1]);
                 }

@@ -2,7 +2,7 @@
 #include "test_db_helpers.h"
 
 import storm;
-import <expected>;
+import std;
 
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"

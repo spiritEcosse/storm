@@ -31,11 +31,20 @@ rm -rf ~/.cache/clang/ModuleCache
 ninja storm_tests
 ```
 
-### 2. std::mutex Segfaults
+### 2. std::mutex in Modules
 
-**Symptom**: Compiler crashes when using `std::mutex` in modules
+**Status (since #326 `import std;` migration)**: `std::mutex` /
+`std::condition_variable` work in a module purview when supplied by `import std;`.
+`src/db/pool.cppm` uses both directly and is validated under TSAN (1924/1924, zero
+data races) and ASAN/UBSAN. The earlier textual `#include <mutex>` /
+`#include <condition_variable>` in the global module fragment were dropped — the
+types now come from the std module.
 
-**Workaround**: Avoid mutex in module code, use external synchronization
+**Historical symptom** (pre-#326, header-unit world): the compiler could crash
+when `std::mutex` was pulled in via a header-unit `import <mutex>;`. If you hit a
+mutex-related compiler crash, prefer `import std;` over a header-unit import, and
+keep mutex-using code in a module purview rather than a textual header included
+after `import std;` (see Finding B in §9).
 
 ### 3. std::inplace_vector Not Available
 
@@ -117,8 +126,7 @@ tracks the staged migration from per-header `import std.<sub>;` to a single
 
 ### 8. CMake Picks libstdc++ Instead of libc++ for `import std`
 
-**Symptom** (when `ENABLE_IMPORT_STD_PROBE=ON` or any target with
-`CXX_MODULE_STD ON`):
+**Symptom** (on any target with `CXX_MODULE_STD ON`):
 
 ```
 [2/11] Scanning /usr/include/c++/16.1.1/bits/std.compat.cc for CXX dependencies
@@ -145,6 +153,84 @@ the direct override.
 guarded by `if(DEFINED LIBCXX_ROOT)`.
 
 **Related**: Issue [#326](https://github.com/spiritEcosse/storm/issues/326).
+
+### 9. `import std;` Migration — Findings & Header Rules
+
+The tree consumes the C++26 named module via a single `import std;` (issues
+[#326](https://github.com/spiritEcosse/storm/issues/326) /
+[#332](https://github.com/spiritEcosse/storm/issues/332)) instead of per-header
+`import <header>;` header units. Four findings govern how std headers interact
+with the module.
+
+**Finding A — `import std;` does NOT export `std::meta::`.**
+libc++'s `std.cppm` `#include`s `<meta>` internally, but the reflection symbols
+(`std::meta::info`, `std::meta::identifier_of`, the `^^` splice, …) are NOT
+re-exported across the module boundary (clang-p2996 limitation, same family as
+the annotations-lost-across-BMI issue). **Any TU using `std::meta::` MUST still
+textually `#include <meta>`.** `import std;` alone is insufficient for reflection
+code.
+
+**Finding B — `#include <meta>` (and any textual std header) must come BEFORE the
+imports in a non-module TU.** `<meta>` transitively pulls textual libc++ headers
+(`<optional>` → `<compare>` → … → `promote.h`). If `import std;` (or `import
+storm;`, which transitively imports std) is processed first, the later textual
+headers redefine entities the std module already owns
+(`error: redefinition of '__promote_t'`). In **module units** this is a non-issue
+— the global module fragment is a separate context. In **textual headers /
+plain TUs**, put textual std `#include`s before the imports, or drop them and let
+`import std;` supply the types.
+
+**Finding C — clang-tidy needs the module BMIs built first.** clang-tidy replays
+`build/release/compile_commands.json` but does NOT reconstruct CMake's
+`CXX_MODULE_STD` plumbing. An `import std;` TU fails with
+`module 'std' not found` (and `@…modmap` not found) unless the release build has
+already produced `std.pcm` + the per-TU `.modmap`. `commit.sh` builds the module
+BMIs before clang-tidy, detected via the synthesized `__cmake_cxx_std_26` target
+in `build/release/build.ninja` (NOT a `-fmodule-file=std=` flag — CMake's
+import-std support wires the std module via ninja dyndep, which never appears in
+`compile_commands.json`).
+
+**Finding D — sanitizer/instrumentation flags must precede `add_library(storm)`.**
+`cmake/sanitizers.cmake` applies `-fsanitize=…` globally via
+`add_compile_options()` / `add_link_options()`, which only affect targets created
+AFTER the include. The CMake-synthesized `__cmake_cxx_std_26` std-module target
+compiles libc++'s `std.cppm`; if it misses the sanitizer flag, its
+container-annotation calls (`__sanitizer_annotate_contiguous_container`)
+link-fail with an undefined reference. `CMakeLists.txt` therefore includes the
+sanitizer plumbing **before** `add_library(${PROJECT_NAME})`. Also: a build dir
+configured before the import-std gate landed must be **wiped**, not
+reconfigured — `CMAKE_EXPERIMENTAL_CXX_IMPORT_STD` is a before-`project()` gate.
+
+#### Which std `#include`s can be folded into `import std;`
+
+| Header class | Rule |
+|---|---|
+| `<cassert>` | **KEEP** — `assert` is a macro; modules cannot export macros |
+| `<meta>` | **KEEP** — `std::meta::` not re-exported (Finding A) |
+| POSIX (`<csignal>`, `<sys/*.h>`, `<unistd.h>`, `<termios.h>`, `<poll.h>`) | **KEEP** — not part of `import std;` |
+| third-party (`<sqlite3.h>`, `<plf_hive/…>`, `<libpq-fe.h>`, `<uuid.h>`) | **KEEP** — not std |
+| pure-library (`<vector>`, `<string>`, `<format>`, `<utility>`, …) | **FOLD where context allows** (see below) |
+
+Folding a pure-library header is only safe per location:
+
+- **GMF of a `.cppm` that already has `import std;` in its purview** → redundant,
+  drop it (e.g. `distinct.cppm` dropped `<utility>`; `pool.cppm` dropped
+  `<mutex>` / `<condition_variable>`).
+- **A `.cppm` GMF whose textual model header needs the type before the imports**
+  → **KEEP** (e.g. `crud_benchmark.cppm` / `query_benchmark.cppm` keep `<tuple>`
+  because `models.hpp`'s `Indexes<T>::type` is parsed in the GMF, before the
+  purview's `import std;`; dropping it triggers the Finding B `__promote_t`
+  redefinition).
+- **A `.cppm` with NO `import std;`** (`parser`, `registry`, `wire`,
+  `socket_server`, `tui` bench modules) → **KEEP textual**. Adding `import std;`
+  would force `CXX_MODULE_STD ON` onto the `storm_tests` target (which compiles
+  some of these as its own FILE_SET units); these modules deliberately stay
+  header-free to avoid that.
+- **A textual header `#include`d AFTER `import std;`** (dashboard
+  `args/backup/db/events.hpp`) → **MUST drop** the std `#include`s (keeping them
+  re-pulls libc++ headers after the module → Finding B). The single consumer
+  (`main.cpp`) supplies them via `import std;`, with textual `<meta>` and
+  `<csignal>` placed before its imports.
 
 ## Debugging Tips
 

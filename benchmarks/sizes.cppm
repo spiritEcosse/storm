@@ -7,7 +7,7 @@ module;
 
 export module storm_benchmark_sizes;
 
-import <array>;
+import std;
 
 export namespace storm::benchmark::sizes {
 

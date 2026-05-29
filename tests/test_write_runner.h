@@ -27,7 +27,7 @@ template <typename Model, typename ConnType> class InsertRunner : public QueryRu
 
         } else if constexpr (Tc.query_type == "insert_batch") {
             std::vector<Model> batch;
-            batch.reserve(static_cast<size_t>(Tc.insert_count));
+            batch.reserve(static_cast<std::size_t>(Tc.insert_count));
             for (int i = 0; i < Tc.insert_count; ++i)
                 batch.push_back(make_record<Model>(i));
             auto r = this->qs_.insert(std::span<const Model>(batch)).execute();
@@ -53,10 +53,10 @@ template <typename Model, typename ConnType> class UpdateRunner : public QueryRu
 
         // Update first update_count records
         std::vector<Model> to_update;
-        to_update.reserve(static_cast<size_t>(Tc.update_count));
-        size_t n = 0;
+        to_update.reserve(static_cast<std::size_t>(Tc.update_count));
+        std::size_t n = 0;
         for (const auto &r : sel.value()) {
-            if (n++ >= static_cast<size_t>(Tc.update_count))
+            if (n++ >= static_cast<std::size_t>(Tc.update_count))
                 break;
             to_update.push_back(make_updated_record<Model>(r));
         }
@@ -101,10 +101,10 @@ template <typename Model, typename ConnType> class EraseRunner : public QueryRun
 
             // Erase first erase_count records
             std::vector<Model> to_erase;
-            to_erase.reserve(static_cast<size_t>(Tc.erase_count));
-            size_t n = 0;
+            to_erase.reserve(static_cast<std::size_t>(Tc.erase_count));
+            std::size_t n = 0;
             for (const auto &r : sel.value()) {
-                if (n++ >= static_cast<size_t>(Tc.erase_count))
+                if (n++ >= static_cast<std::size_t>(Tc.erase_count))
                     break;
                 to_erase.push_back(r);
             }

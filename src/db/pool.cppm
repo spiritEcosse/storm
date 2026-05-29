@@ -2,19 +2,10 @@ module;
 
 // `duplicate` removed in #277 Phase 3 (count_entries(pred) helper shared by available() / in_use() counters).
 
-#include <condition_variable>
-#include <mutex>
-
 export module storm_db_pool;
+
+import std;
 import storm_db_concept;
-import <expected>;
-import <optional>;
-import <string_view>;
-import <string>;
-import <memory>;
-import <vector>;
-import <algorithm>;
-import <chrono>;
 
 export namespace storm::db {
 
@@ -47,7 +38,7 @@ export namespace storm::db {
             using Error = typename ConnType::Error;
 
             PoolCore(std::string conninfo, PoolConfig config) : conninfo_(std::move(conninfo)), config_(config) {
-                entries_.reserve(static_cast<size_t>(config_.max_connections));
+                entries_.reserve(static_cast<std::size_t>(config_.max_connections));
             }
 
             [[nodiscard]] auto init() -> std::expected<void, Error> {

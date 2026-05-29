@@ -3,15 +3,7 @@
 #include <sqlite3.h>
 
 import storm;
-import <expected>;
-import <string>;
-import <optional>;
-import <span>;
-import <vector>;
-import <chrono>;
-import <format>;
-import <iostream>;
-import <iomanip>;
+import std;
 
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
@@ -364,7 +356,7 @@ TYPED_TEST(TransactionTest, SingleRowOperations) {
     auto               insert_result = this->qs->insert(p1).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    int64_t const id = insert_result.value();
+    std::int64_t const id = insert_result.value();
 
     SimpleRecord const updated{static_cast<int>(id), "Updated", 99};
     auto               update_result = this->qs->update(updated).execute();

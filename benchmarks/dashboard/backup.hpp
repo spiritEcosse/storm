@@ -7,17 +7,10 @@
 // main.cpp purely to keep each TU under the 600-line code-quality cap.
 // Do NOT include this from any other TU; depends on `Options` from
 // args.hpp being in scope.
-
-#include <cerrno>
-#include <cstdio>
-#include <cstring>
-#include <expected>
-#include <filesystem>
-#include <format>
-#include <memory>
-#include <string>
-#include <string_view>
-#include <system_error>
+//
+// import std; migration (issue #326): no std #includes here — std types come
+// from main.cpp's `import std;` (this header is pulled in after it). A textual
+// std #include after the module import breaks the build (Finding B).
 
 namespace {
 
