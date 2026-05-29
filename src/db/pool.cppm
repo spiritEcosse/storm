@@ -264,7 +264,10 @@ export namespace storm::db {
             return ConnectionPool{std::move(core)};
         }
 
-        [[nodiscard]] auto checkout() -> std::expected<std::shared_ptr<ConnType>, Error> {
+        [[nodiscard]] auto checkout()
+                -> std::expected<std::shared_ptr<ConnType>, Error> { // NOSONAR(cpp:S1659) — false positive: single
+                                                                     // function declaration, template arg comma is not
+                                                                     // multi-identifier
             auto result = core_->checkout();
             if (!result) {
                 return std::unexpected(result.error());

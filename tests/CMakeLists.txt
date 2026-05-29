@@ -72,10 +72,10 @@ target_include_directories(
   PRIVATE ${GTEST_INCLUDE_DIRS} ${GMOCK_INCLUDE_DIRS}
           "${CMAKE_CURRENT_SOURCE_DIR}/../src" "${CMAKE_CURRENT_SOURCE_DIR}")
 
-# Use gtest_discover_tests instead of gtest_add_tests
-# DISCOVERY_MODE PRE_TEST: defer test listing to ctest time (not build time)
-# so MSAN_OPTIONS from CMakePresets.json applies when the binary runs.
-# Without this, cmake --build runs the binary with no MSAN env → abort.
+# Use gtest_discover_tests instead of gtest_add_tests DISCOVERY_MODE PRE_TEST:
+# defer test listing to ctest time (not build time) so MSAN_OPTIONS from
+# CMakePresets.json applies when the binary runs. Without this, cmake --build
+# runs the binary with no MSAN env → abort.
 gtest_discover_tests(${PROJECT_NAME} DISCOVERY_MODE PRE_TEST)
 
 # Add Clang-specific flags (modules and reflection) to tests (same as Storm

@@ -198,9 +198,10 @@ TOTAL_STEPS=0
 # compile_commands and so cannot find `module 'std'` (or the `.modmap`) until the
 # release build has produced both — hence the prebuild below. See issue #326
 # Finding C.
+RELEASE_BUILD_NINJA="build/release/build.ninja"
 RUN_TIDY_BMI=false
-if [[ "$RUN_TIDY" == true && -f "build/release/build.ninja" ]] \
-   && grep -q '__cmake_cxx_std_26' "build/release/build.ninja" 2>/dev/null; then
+if [[ "$RUN_TIDY" == true && -f "$RELEASE_BUILD_NINJA" ]] \
+   && grep -q '__cmake_cxx_std_26' "$RELEASE_BUILD_NINJA" 2>/dev/null; then
     RUN_TIDY_BMI=true
     ((TOTAL_STEPS++))
 fi
@@ -246,7 +247,7 @@ if [[ "$RUN_TIDY" == true ]]; then
     # module (post-#326). On a tree without `import std;`, TUs parse standalone
     # and this build is pure overhead, so we skip it. See issue #330.
     if [[ "$RUN_TIDY_BMI" == true ]]; then
-        if [[ ! -f "build/release/build.ninja" ]]; then
+        if [[ ! -f "$RELEASE_BUILD_NINJA" ]]; then
             cmake --preset ninja-release > /dev/null 2>&1
         fi
         run_step "module BMIs (for clang-tidy)" "$LOG_TIDY_BMI" \
@@ -267,7 +268,7 @@ fi
 
 # --- Step 3b: bench release build ---
 if [[ "$RUN_BENCH_RELEASE" == true ]]; then
-    if [[ ! -f "build/release/build.ninja" ]]; then
+    if [[ ! -f "$RELEASE_BUILD_NINJA" ]]; then
         cmake --preset ninja-release > /dev/null 2>&1
     fi
     run_step "release build" "$LOG_RELEASE" \
