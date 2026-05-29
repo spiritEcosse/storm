@@ -94,6 +94,58 @@ std::string str{cs.data.data(), cs.len};
 sqlite3_column_count(stmt->handle())
 ```
 
+### 7. clang-p2996 libc++ Modules Layout Mismatch
+
+**Symptom** (when enabling CMake's `import std;` support):
+```
+CMake Error: Cannot find source file:
+  <LIBCXX_ROOT>/build/share/libc++/v1/std.compat.cppm
+```
+
+**Cause**: `<LIBCXX_ROOT>/build/lib/x86_64-…/libc++.modules.json` declares the
+sources at `share/libc++/v1/std.cppm`, but the build places them under
+`build/modules/c++/v1/`. Plain libc++ installs expose them via `share/`; the
+clang-p2996 build directory does not.
+
+**Workaround**: `cmake/libcxx.cmake` creates a symlink
+`build/share/libc++/v1 -> build/modules/c++/v1` at configure time. The logic
+is idempotent and won't overwrite a real directory if one exists.
+
+**Related**: Issue [#326](https://github.com/spiritEcosse/storm/issues/326)
+tracks the staged migration from per-header `import std.<sub>;` to a single
+`import std;`.
+
+### 8. CMake Picks libstdc++ Instead of libc++ for `import std`
+
+**Symptom** (when `ENABLE_IMPORT_STD_PROBE=ON` or any target with
+`CXX_MODULE_STD ON`):
+
+```
+[2/11] Scanning /usr/include/c++/16.1.1/bits/std.compat.cc for CXX dependencies
+[3/11] Scanning /usr/include/c++/16.1.1/bits/std.cc for CXX dependencies
+FAILED: CMakeFiles/__cmake_cxx_std_26.dir/usr/include/c++/16.1.1/bits/std.cc.o.ddi
+…
+/usr/include/c++/16.1.1/bits/std.cc:26:10: fatal error: 'bits/stdc++.h' file not found
+```
+
+**Cause**: CMake's `Clang-CXX-CXXImportStd.cmake` runs `clang++
+-print-file-name=libstdc++.modules.json` when `CMAKE_CXX_STANDARD_LIBRARY`
+isn't explicitly `libc++`. Clang resolves that against the host GCC's
+`/usr/lib64/libstdc++.modules.json` and CMake then tries to compile GCC's
+`bits/std.cc` with `-nostdinc++` and our libc++ include paths, which breaks
+on `bits/stdc++.h`.
+
+Pinning `CMAKE_CXX_STANDARD_LIBRARY` alone is not enough — the variable
+isn't always consulted, and `CMAKE_CXX_STDLIB_MODULES_JSON` (CMake 4.2+) is
+the direct override.
+
+**Workaround**: top-level `CMakeLists.txt` sets
+`CMAKE_CXX_STDLIB_MODULES_JSON` to clang-p2996's
+`build/lib/x86_64-unknown-linux-gnu/libc++.modules.json` before `project()`,
+guarded by `if(DEFINED LIBCXX_ROOT)`.
+
+**Related**: Issue [#326](https://github.com/spiritEcosse/storm/issues/326).
+
 ## Debugging Tips
 
 1. **Clean build**: `rm -rf build/ && cmake --preset ninja-debug`
