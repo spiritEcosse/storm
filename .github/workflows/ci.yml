@@ -79,12 +79,19 @@ jobs:
         # std.cppm / std.compat.cppm at build/share/libc++/v1/ (declared in
         # libc++.modules.json) but clang-p2996 places them under
         # build/modules/c++/v1/. cmake/libcxx.cmake creates this symlink at
-        # configure time when LIBCXX_ROOT is writable, but /opt/clang-p2996 is
-        # read-only in CI — create it here before cmake --preset runs.
+        # configure time when LIBCXX_ROOT is writable, but the clang-p2996
+        # dir is read-only in CI — create it here before cmake --preset runs.
+        # IMPORTANT: use the same path the previous step symlinked
+        # ($(dirname GITHUB_WORKSPACE)/clang-p2996), not /opt/clang-p2996,
+        # because that is what LIBCXX_ROOT resolves to during configure.
         run: |
-          share_dir=/opt/clang-p2996/build/share/libc++
-          link=$share_dir/v1
-          target=/opt/clang-p2996/build/modules/c++/v1
+          clang_root="$(dirname "$GITHUB_WORKSPACE")/clang-p2996"
+          share_dir="$clang_root/build/share/libc++"
+          link="$share_dir/v1"
+          target="$clang_root/build/modules/c++/v1"
+          echo "clang_root=$clang_root"
+          echo "target=$target  exists=$([ -d "$target" ] && echo yes || echo no)"
+          echo "link=$link  exists=$([ -e "$link" ] && echo yes || echo no)"
           if [ -d "$target" ] && [ ! -e "$link" ]; then
             mkdir -p "$share_dir"
             ln -sfn "$target" "$link"
