@@ -12,12 +12,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <meta> // BEFORE import std; — import std; does not export std::meta::
 
 import storm;
-
-import <expected>;
-import <memory>;
-import <meta>;
+import std;
 
 #include "fuzz_models.h" // AFTER import storm;
 

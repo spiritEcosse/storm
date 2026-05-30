@@ -27,6 +27,9 @@ target_link_libraries(storm_mock_tests PRIVATE mock_sqlite3 gtest gtest_main
 target_include_directories(
   storm_mock_tests PRIVATE ${GTEST_INCLUDE_DIRS} "${CMAKE_CURRENT_SOURCE_DIR}")
 
+# Treat warnings as errors on Storm-owned test code (issue #317).
+target_compile_options(storm_mock_tests PRIVATE -Werror)
+
 # Discover mock infrastructure tests
 gtest_discover_tests(storm_mock_tests DISCOVERY_MODE PRE_TEST)
 
@@ -58,6 +61,9 @@ target_include_directories(
 
 # Apply Clang flags for modules and reflection
 apply_clang_flags(storm_orm_mock_tests)
+
+# Treat warnings as errors on Storm-owned test code (issue #317).
+target_compile_options(storm_orm_mock_tests PRIVATE -Werror)
 
 # Don't auto-discover these tests - they need LD_PRELOAD to work correctly They
 # will be run manually or via a custom target

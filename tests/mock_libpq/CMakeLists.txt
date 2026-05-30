@@ -28,6 +28,9 @@ target_include_directories(
   storm_pq_mock_tests PRIVATE ${GTEST_INCLUDE_DIRS}
                               "${CMAKE_CURRENT_SOURCE_DIR}")
 
+# Treat warnings as errors on Storm-owned test code (issue #317).
+target_compile_options(storm_pq_mock_tests PRIVATE -Werror)
+
 # Discover mock infrastructure tests (no LD_PRELOAD needed)
 gtest_discover_tests(storm_pq_mock_tests DISCOVERY_MODE PRE_TEST)
 
@@ -59,6 +62,9 @@ target_include_directories(
 
 # Apply Clang flags for modules and reflection
 apply_clang_flags(storm_orm_pg_mock_tests)
+
+# Treat warnings as errors on Storm-owned test code (issue #317).
+target_compile_options(storm_orm_pg_mock_tests PRIVATE -Werror)
 
 # Don't auto-discover these tests - they need LD_PRELOAD to work correctly
 # gtest_discover_tests(storm_orm_pg_mock_tests)

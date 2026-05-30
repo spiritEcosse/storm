@@ -1,10 +1,10 @@
 #pragma once
 
-// IMPORTANT: Include this file AFTER `import storm;`
+// IMPORTANT: Include this file AFTER `import storm;` and `import std;`.
 // The [[= storm::meta::FieldAttr::primary]] attribute requires the storm module
-// to be imported before this struct is compiled.
-
-#include <string>
+// to be imported before this struct is compiled. std::string is supplied by the
+// preceding `import std;` — a textual <string> here would be re-pulled after the
+// module and trip a redeclaration error (COMPILER_ISSUES §9, Finding B).
 
 struct FuzzModel {
     [[= storm::meta::FieldAttr::primary]] int id{};

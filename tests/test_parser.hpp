@@ -826,7 +826,13 @@ namespace storm::test {
 
     consteval auto load_unified_tests() {
         static constexpr const char raw[] = {
+// #embed is a C23 feature Clang offers as an extension in C++26 mode; this is
+// the only portable way to embed the JSON test corpus at compile time. Suppress
+// -Wc23-extensions here so the -Werror policy (issue #317) stays clean.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc23-extensions"
 #embed "test_cases/unified_cases.json"
+#pragma clang diagnostic pop
                 , '\0'
         };
         constexpr std::string_view json(raw, sizeof(raw) - 1);

@@ -17,8 +17,12 @@ set(FUZZ_LINK_FLAGS -fsanitize=address,fuzzer -g -fno-omit-frame-pointer)
 
 function(add_fuzz_harness name)
   add_executable(${name} ${name}.cpp)
+  # import std; migration (issue #326): the harness TUs now `import std;`, so
+  # this target must consume the std named module.
+  set_target_properties(${name} PROPERTIES CXX_MODULE_STD ON)
   apply_clang_flags(${name})
-  target_compile_options(${name} PRIVATE ${FUZZ_COMPILE_FLAGS})
+  # Treat warnings as errors on Storm-owned fuzz code (issue #317).
+  target_compile_options(${name} PRIVATE ${FUZZ_COMPILE_FLAGS} -Werror)
   target_link_options(${name} PRIVATE ${FUZZ_LINK_FLAGS})
   target_link_libraries(${name} PRIVATE storm)
   link_sqlite(${name})
