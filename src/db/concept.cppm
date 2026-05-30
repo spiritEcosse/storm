@@ -246,7 +246,7 @@ export namespace storm::db {
     template <typename Cache, typename Mutex>
     [[nodiscard]] auto cache_count(const Cache& cache, Mutex& mutex) noexcept -> std::size_t {
         std::shared_lock read_lock(mutex);
-        return cache.size();
+        return std::ranges::size(cache);
     }
 
 } // namespace storm::db
