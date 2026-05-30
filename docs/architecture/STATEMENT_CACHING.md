@@ -34,9 +34,9 @@ Statement caches the prepared SQLite statement:
 
 ```cpp
 template <typename T> class SelectStatement {
-    mutable Statement* cached_stmt_ = nullptr;
+    Statement* cached_stmt_ = nullptr;  // plain field — no `mutable`
 
-    auto execute_optimized() {
+    auto execute_optimized() {          // non-const: it mutates the cache
         if (!cached_stmt_) {
             cached_stmt_ = *conn_.prepare_cached(get_sql());
         }
@@ -50,6 +50,11 @@ template <typename T> class SelectStatement {
     }
 };
 ```
+
+The `cached_*_stmt_` pointers are **plain (non-`mutable`) fields**. Every method
+that writes them is non-`const`, so const-correctness is preserved at the
+Statement level — a `const SelectStatement&` cannot mutate the cache. See
+[Const-correctness — why no `mutable` at Level 2](#const-correctness--why-no-mutable-at-level-2).
 
 **Benefits**:
 - Avoids SQL parsing
@@ -115,8 +120,8 @@ SelectStatement uses separate caches for simple SELECT vs JOIN queries:
 
 ```cpp
 template <typename T> class SelectStatement {
-    mutable Statement* cached_stmt_ = nullptr;       // Simple SELECT
-    mutable Statement* cached_join_stmt_ = nullptr;  // JOIN SELECT
+    Statement* cached_stmt_ = nullptr;       // Simple SELECT
+    Statement* cached_join_stmt_ = nullptr;  // JOIN SELECT
 
     template <typename JoinStmt = void>
     auto execute_optimized(JoinStmt* join_stmt = nullptr) {
@@ -192,6 +197,49 @@ pinned in memory across cache growth, so the raw `Statement*` pointers held at
 Level 2 stay valid as long as the underlying entry is not erased. This removes
 the hidden capacity contract that pre-Issue-#215 code relied on (reserve 32
 slots and hope no one grows past that).
+
+## Const-correctness — why no `mutable` at Level 2
+
+**Decision (Issue #272):** The Level 2 cache pointers in
+`InsertStatement`, `UpdateStatement`, `EraseStatement`, and `SelectStatement`
+are **plain fields, not `mutable`**.
+
+### Background
+
+Issue #272 was opened to address a const-correctness concern inherited from
+#215: the four Statement classes carried `mutable Statement*` cache pointers so
+that `const` methods could mutate the cache. The issue proposed three structural
+fixes (opt-in caching, a thread-local side-table, or a non-const wrapper).
+
+### What we found
+
+By the time #272 was picked up, that premise no longer held. Every method that
+writes a `cached_*_stmt_` field — `ensure_cached_stmt`, `prepare_simple_path`,
+`prepare_and_bind`, `prepare_statement`, `execute_one`, `execute_get_fast`,
+`reset`, `invalidate_cache`, and the `execute*` paths — is already **non-`const`**.
+The Statement objects are reached from `QuerySet` through `*unique_ptr`, which
+yields a non-const `Statement&` even from a `const` getter, so callers never need
+a `const` method to mutate the cache. The `mutable` keyword on all 11 cache
+fields (2 in insert, 1 in update, 2 in erase, 6 in select) was therefore **dead
+state** — a leftover from the pre-#215 `execute_optimized() const` design.
+
+### What we did
+
+Removed `mutable` from all 11 fields. This makes const-correctness real at the
+Statement level (`const SelectStatement&` can no longer mutate its cache) at zero
+cost: removing `mutable` from a field that no `const` method writes is a no-op at
+codegen. Verified by clean Debug/ASAN+UBSAN/TSAN builds (1929 tests) and an
+unchanged Core benchmark profile.
+
+None of the three structural options were needed — they all existed to absorb a
+const-mutation that does not occur. The remaining intentional const-boundary is at
+**Level 1**: `QuerySet` holds `mutable std::unique_ptr<…Statement>` and lazily
+constructs each Statement from a `const` getter. That `mutable` is load-bearing
+(lazy init from `const` query methods) and is out of scope for #272.
+
+> **Cache statistics/metrics** (parent #215 acceptance criterion #6) remain a
+> separate, unimplemented feature tracked under #214/#215 — not part of this
+> change.
 
 ## Thread Safety
 

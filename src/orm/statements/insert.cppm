@@ -594,8 +594,8 @@ export namespace storm::orm::statements {
         // Raw pointers obtained from Connection::prepare_cached(). Pointer
         // stability across cache growth is guaranteed by the
         // `unique_ptr<Statement>` value type in StatementCache (Issue #215).
-        mutable Statement* cached_insert_returning_stmt_ = nullptr;
-        mutable Statement* cached_insert_stmt_           = nullptr;
+        Statement* cached_insert_returning_stmt_ = nullptr;
+        Statement* cached_insert_stmt_           = nullptr;
     };
 
 } // namespace storm::orm::statements

@@ -433,8 +433,8 @@ export namespace storm::orm::statements {
         std::shared_ptr<ConnType> conn_;
         // Raw pointers into Connection::statement_cache_ (pointer-stable via
         // unique_ptr<Statement> value type, Issue #215).
-        mutable Statement* cached_single_stmt_   = nullptr;
-        mutable Statement* cached_max_bulk_stmt_ = nullptr;
+        Statement* cached_single_stmt_   = nullptr;
+        Statement* cached_max_bulk_stmt_ = nullptr;
     };
 
 } // namespace storm::orm::statements

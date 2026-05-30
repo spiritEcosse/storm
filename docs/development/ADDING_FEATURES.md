@@ -64,7 +64,7 @@ If the operation will be repeated, add caching:
 ```cpp
 template <typename T>
 class YourOperationStatement : private BaseStatement<T> {
-    mutable Statement* cached_stmt_ = nullptr;
+    Statement* cached_stmt_ = nullptr;
 
     auto execute_single_optimized(const T& obj) {
         if (!cached_stmt_) {

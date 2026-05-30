@@ -95,7 +95,7 @@ template <class T> class QuerySet {
 
 // Level 2: Statement caches prepared statement
 template <typename T> class SelectStatement {
-    mutable Statement* cached_stmt_ = nullptr;
+    Statement* cached_stmt_ = nullptr;
 
     auto execute_optimized() {
         if (!cached_stmt_) {
