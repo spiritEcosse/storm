@@ -25,6 +25,8 @@ separate `ninja-release` binary and run with `--benchmark_repetitions=10`
 
 ## Results (median real_time, ns)
 
+Multi-row scenarios — 10 repetitions:
+
 | Scenario    |    all-3 |    no-L2 |    no-L1 |  L3-only | L3-only Δ vs all-3 | all-3 stddev |
 |-------------|---------:|---------:|---------:|---------:|-------------------:|-------------:|
 | Reuse       |  160 518 |  154 745 |  157 488 |  155 695 |          **−3.00%** |  2 983 (1.86%) |
@@ -32,9 +34,16 @@ separate `ninja-release` binary and run with `--benchmark_repetitions=10`
 | MixedWhere  |  106 483 |  106 022 |  106 376 |  106 381 |          **−0.10%** |    496 (0.47%) |
 | BulkUpdate  |  849 209 |  856 313 |  844 366 |  851 551 |          **+0.28%** |  3 784 (0.45%) |
 
-Negative Δ means L3-only is *faster* than all-3. Every delta is at or below the
-measurement noise floor (the largest, Reuse −3.00%, is barely above its 1.86% stddev
-and is a *speedup*, not a regression).
+Single-row tight-loop scenario — 20 repetitions (added after the first pass to close the
+statement-setup-cost gap below):
+
+| Scenario    |    all-3 |    no-L2 |    no-L1 |  L3-only | L3-only Δ vs all-3 | all-3 stddev |
+|-------------|---------:|---------:|---------:|---------:|-------------------:|-------------:|
+| GetByPk     |    707.4 |    693.8 |    701.8 |    699.3 |          **−1.15%** |   15.0 (2.12%) |
+
+Negative Δ means L3-only is *faster* than all-3. **Every delta in every scenario is at or below
+the measurement noise floor** — the largest (Reuse −3.00%, a *speedup*) is barely above its 1.86%
+stddev. On the single-row path all four configs sit within 707±14 ns of each other.
 
 ## Interpretation
 
@@ -51,38 +60,37 @@ and is a *speedup*, not a regression).
 Per the #214 decision matrix, this points to **Option C — collapse to a single L3 cache** (remove
 L1 and L2).
 
-## Honest limitation (READ BEFORE ACTING)
+## The single-row path was the real test — and it agrees
 
-These four scenarios are **multi-row** selects plus a bulk update. Per-query time
-(~106–160µs for selects) is dominated by **row materialization** — stepping result rows into
-`plf::hive<Person>` — not by statement setup. L1/L2 only save *statement setup* cost, which is a
-small fraction of a multi-row query. So this bench is **under-sensitive to the exact workload
-L1/L2 were built to optimize.**
+The four multi-row scenarios are dominated by **row materialization** (stepping result rows into
+`plf::hive<Person>`, ~106–160µs), not statement setup — so they are under-sensitive to exactly what
+L1/L2 optimize. Storm's own performance docs attribute "~23% to statement-pointer caching"
+specifically to **single-row operations in tight loops**. To avoid a premature conclusion, a
+**`CacheProbe/GetByPk`** scenario was added: `qs.where(id == pk).get()` in a tight loop, one row per
+call (~700 ns), where statement setup *is* a large fraction of total time.
 
-The project's own performance docs attribute "~23% to statement-pointer caching" specifically to
-**single-row operations in tight loops** (e.g. `get()`/`first()` by primary key returning one row),
-where statement setup *is* a large fraction of total time. **No such scenario is in this Phase 1
-bench.** Note also that the L2 guards in this investigation *do* cover the `execute_one_fast` /
-`execute_get_fast` single-row paths (`cached_first_stmt_` / `cached_get_stmt_`), so the
-instrumentation is ready — but no benchmark exercises them yet.
+**The documented ~23% did not reproduce.** On GetByPk, all four configs land within 707±14 ns
+(L3-only −1.15% vs all-3, inside the 2.12% noise floor). The likely reason: L3 `prepare_cached()`
+already returns a ready-to-use prepared statement after one short-string hash lookup, and that
+lookup is cheap next to bind + step + one-row extract. L1/L2 were saving a cost that L3 plus the
+optimizer already absorb.
 
-**Conclusion is therefore conditional:** Option C is correct *for multi-row query and bulk-write
-workloads*. Before deleting L1/L2 we should add a **single-row tight-loop scenario** (PK `get()` /
-`first()` returning one row, thousands of iterations) and confirm L3-only stays within 5% there
-too. If L2 shows its documented ~23% on that path, the decision shifts to **Option B** (keep L2 for
-single-row, drop L1) or **Option A** (keep both, document the single-row case).
+**Conclusion is therefore unconditional.** Across multi-row queries, bulk writes, *and* single-row
+tight loops, L1 and L2 provide no measurable benefit. This is a clean **Option C**.
 
 ## Recommendation
 
-1. **Do not delete L1/L2 yet.** The multi-row evidence favors Option C, but the single-row path —
-   the one the docs say L2 matters for — is untested.
-2. **Add a single-row tight-loop scenario** (`CacheProbe/GetByPk`: `qs.get(pk)` / `first()` in the
-   loop) to `cache_probe.cpp` and re-run all four configs. That one scenario decides between
-   Option C (collapse) and Option B/A (keep L2).
-3. **Then, and only then, rewrite #273.** If the final decision is Option C, #273's "automatic L2
-   pointer invalidation on eviction" requirement disappears and it reduces to "LRU + stats on the
-   single L3 map." If Option B, #273 stays largely as written. **#273 should not be edited or
-   implemented until this single-row data exists.**
+1. **Option C — collapse to a single L3 cache.** Remove the L1 (`QuerySet` `unique_ptr` statement
+   members + `get_*_statement()` lazy-init) and L2 (`cached_*_stmt_` pointers + `cached_sql_` +
+   `cached_where_addr_`) machinery. L3 carries the workload alone with no regression.
+2. **Re-benchmark the Core 8 filter after the collapse** (Release, the project's standard
+   regression gate) to confirm the real deletion — not just the `#ifdef` bypass — stays within ±5%.
+   The `#ifdef` bypass leaves the now-dead member variables in place; deleting them could shift
+   struct layout/inlining slightly, so the post-collapse build must be re-measured, not assumed.
+3. **Rewrite #273.** With L2 gone, #273's hardest requirement — "L2 pointer invalidation on eviction
+   is automatic, not manual" — disappears entirely. #273 reduces to **LRU eviction + hit/miss/eviction
+   stats on the single L3 `unordered_map`**. The dangling-pointer class it worried about no longer
+   exists once no L2 raw pointers are held.
 
 ## Flag lifecycle (decided with the user)
 
@@ -100,8 +108,14 @@ for cfg in "all3:" "noL2:-DSTORM_DISABLE_L2" "noL1:-DSTORM_DISABLE_L1" "l3only:-
   name=${cfg%%:*}; flags=${cfg#*:}
   cmake --preset ninja-release -B build/cache-$name -DCMAKE_CXX_FLAGS="$flags"
   cmake --build build/cache-$name --target storm_cache_probe -j1   # -j1 once: scan-deps race
+  # multi-row scenarios (10 reps)
   ./build/cache-$name/benchmarks/storm_cache_probe \
     --benchmark_repetitions=10 --benchmark_report_aggregates_only=true \
     --benchmark_format=json > /tmp/cache_$name.json
+  # single-row scenario (20 reps, sub-µs needs more samples)
+  ./build/cache-$name/benchmarks/storm_cache_probe \
+    --benchmark_filter='CacheProbe/GetByPk' \
+    --benchmark_repetitions=20 --benchmark_report_aggregates_only=true \
+    --benchmark_format=json > /tmp/getbypk_$name.json
 done
 ```
