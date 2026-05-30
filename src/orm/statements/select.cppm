@@ -430,7 +430,11 @@ export namespace storm::orm::statements {
         // Fast path: simple SELECT (no WHERE / JOIN / modifiers). Prepares the static
         // SQL once and caches the Statement* on the first call.
         [[nodiscard]] __attribute__((always_inline)) auto prepare_simple_path() -> std::expected<Statement*, Error> {
+#ifdef STORM_DISABLE_L2
+            if (true) { // L2 disabled: always re-fetch from Connection pool (#214 investigation)
+#else
             if (cached_simple_stmt_ == nullptr) {
+#endif
                 auto prepare_result = conn_->prepare_cached(get_select_sql());
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
@@ -460,7 +464,11 @@ export namespace storm::orm::statements {
         [[nodiscard]] __attribute__((always_inline)) auto
         prepare_and_bind(std::string sql, const orm::where::ExpressionVariantPtr& where_expr)
                 -> std::expected<Statement*, Error> {
+#ifdef STORM_DISABLE_L2
+            if (true) { // L2 disabled (#214 investigation)
+#else
             if (cached_stmt_ == nullptr || cached_sql_ != sql) {
+#endif
                 auto prepare_result = conn_->prepare_cached(sql);
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(Error{-1, "Failed to prepare statement"});
@@ -492,8 +500,13 @@ export namespace storm::orm::statements {
         }
 
         [[nodiscard]] __attribute__((always_inline)) auto can_use_addr_fast_path(const void* where_addr) const -> bool {
+#ifdef STORM_DISABLE_L2
+            (void)where_addr;
+            return false; // L2 disabled: never reuse via WHERE-address cache (#214 investigation)
+#else
             const bool have_cache = cached_stmt_ != nullptr && cached_where_addr_ != nullptr;
             return have_cache && where_addr == cached_where_addr_;
+#endif
         }
 
         [[nodiscard]] __attribute__((always_inline)) auto prepare_statement(
