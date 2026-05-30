@@ -19,11 +19,13 @@ namespace {
 
     // Controls MockPoolConnection behavior (global, not thread-safe — tests are sequential)
     struct MockConfig {
-        bool open_should_fail = false;
-        bool is_open_returns  = true;
-        int  open_fail_after  = -1; // fail after N successful opens (-1 = never)
-        int  open_call_count  = 0;
-        int  open_delay_ms    = 0; // artificial delay in open() to test race conditions
+        bool        open_should_fail = false;
+        bool        is_open_returns  = true;
+        int         open_fail_after  = -1; // fail after N successful opens (-1 = never)
+        int         open_call_count  = 0;
+        int         open_delay_ms    = 0;       // artificial delay in open() to test race conditions
+        std::latch* open_entered     = nullptr; // counted down on entry to open() (lock already released)
+        std::latch* open_release     = nullptr; // if set, open() blocks on it before returning
     };
 
     inline auto mock_config() -> MockConfig& {
@@ -79,6 +81,17 @@ struct MockPoolConnection {
     [[nodiscard]] static auto open(std::string_view /*unused*/) -> std::expected<MockPoolConnection, Error> {
         auto& cfg = mock_config();
         ++cfg.open_call_count;
+        // Signal that open() was entered — the caller has already released the pool
+        // lock at this point, so a waiter can deterministically acquire it (e.g. to
+        // call shutdown() before this open() returns). See Checkout_ShutdownDuringGrow.
+        if (cfg.open_entered != nullptr) {
+            cfg.open_entered->count_down();
+        }
+        // Optional handshake: block until the test releases us (e.g. after it has run
+        // shutdown() while we hold no lock). Deterministic alternative to open_delay_ms.
+        if (cfg.open_release != nullptr) {
+            cfg.open_release->wait();
+        }
         if (cfg.open_delay_ms > 0) {
             std::this_thread::sleep_for(std::chrono::milliseconds(cfg.open_delay_ms));
         }
@@ -354,13 +367,17 @@ TYPED_TEST(PoolExhaustionTest, Checkout_WaitsForReturn) {
     ASSERT_TRUE(c1.has_value());
 
     std::atomic<bool> got_connection{false};
-    std::thread       worker([&pool, &got_connection] {
+    std::latch        worker_started{1};
+    std::thread       worker([&pool, &got_connection, &worker_started] {
+        worker_started.count_down();
         auto c         = pool->checkout();
         got_connection = c.has_value();
     });
 
-    // Release after 100ms — worker should succeed
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // Deterministic: wait until the worker is at checkout(), then release c1. The
+    // worker either finds the freed conn via find_idle() or is woken by checkin's
+    // notify_one() — both yield success (#307, replaces a 100ms sync sleep).
+    worker_started.wait();
     c1->reset(); // Releases the shared_ptr, triggering checkin
     worker.join();
     EXPECT_TRUE(got_connection);
@@ -401,15 +418,19 @@ TYPED_TEST(PoolExhaustionTest, Checkout_WaitsAndReusesReturned) {
     TypeParam const* original_raw = c1->get();
 
     std::atomic<TypeParam*> worker_raw{nullptr};
-    std::thread             worker([&pool, &worker_raw] {
+    std::latch              worker_started{1};
+    std::thread             worker([&pool, &worker_raw, &worker_started] {
+        worker_started.count_down();
         auto c = pool->checkout();
         if (c.has_value()) {
             worker_raw = c->get();
         }
     });
 
-    // Release after 100ms — worker gets the SAME connection back (reuse, not new)
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // Deterministic: wait until the worker is at checkout(), then release c1. With
+    // max=1 only one connection ever exists, so the worker gets the SAME one back
+    // (reuse, not new) under every interleaving (#307, replaces a 100ms sync sleep).
+    worker_started.wait();
     c1->reset();
     worker.join();
 
@@ -471,13 +492,18 @@ TYPED_TEST(PoolShutdownTest, Shutdown_WaitsForReturns) {
     ASSERT_TRUE(conn.has_value());
 
     std::atomic<bool> shutdown_done{false};
-    std::thread       shutdown_thread([&pool, &shutdown_done] {
+    std::latch        shutdown_started{1};
+    std::thread       shutdown_thread([&pool, &shutdown_done, &shutdown_started] {
+        shutdown_started.count_down();
         pool->shutdown();
         shutdown_done = true;
     });
 
-    // Shutdown should block until connection is returned
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // Deterministic: shutdown() blocks in cv_.wait until in_use == 0, so shutdown_done
+    // cannot become true while `conn` is held — regardless of how far the thread has
+    // progressed. The latch only confirms the thread is running before we assert
+    // (#307, replaces a 50ms sync sleep).
+    shutdown_started.wait();
     EXPECT_FALSE(shutdown_done);
 
     conn->reset(); // Return connection
@@ -978,23 +1004,35 @@ TEST_F(MockPoolTest, Checkout_EvictsStaleConnection) {
 
 // Lines 83-84: shutdown detected after relocking in checkout grow path
 TEST_F(MockPoolTest, Checkout_ShutdownDuringGrow) {
-    // open() takes 100ms — gives time for shutdown() to run while lock is released
-    mock_config().open_delay_ms = 100;
-    auto pool                   = storm::db::ConnectionPool<MockPoolConnection>::create(
+    // Two latches make the relock-then-see-shutdown branch deterministic without any
+    // timing guess: open() signals `in_open` on entry (lock already released), then
+    // blocks on `open_release` until the test has run shutdown().
+    std::latch in_open{1};
+    std::latch open_release{1};
+    auto&      cfg   = mock_config();
+    cfg.open_entered = &in_open;
+    cfg.open_release = &open_release;
+    auto pool        = storm::db::ConnectionPool<MockPoolConnection>::create(
             "mock://db", {.min_connections = 0, .max_connections = 3}
     );
     ASSERT_TRUE(pool.has_value());
 
-    // Thread does checkout → releases lock → open() sleeps 100ms
+    // grower: checkout → try_grow releases lock → open() signals in_open, then blocks
     std::atomic<bool> checkout_failed{false};
     std::thread       grower([&pool, &checkout_failed] {
         auto c          = pool->checkout();
         checkout_failed = !c.has_value();
     });
 
-    // Shutdown while grower is in open() (lock released)
-    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    // Deterministic ordering (no sleeps):
+    //   1. in_open.wait() blocks until the grower is INSIDE open() — try_grow has
+    //      already released the pool lock, so shutdown() can take it immediately.
+    //   2. shutdown() sets shutdown_ = true and (min=0, nothing in use) returns.
+    //   3. open_release lets open() return; the grower re-locks, sees shutdown_ ==
+    //      true, and checkout fails (covers pool.cppm try_grow shutdown branch, #307).
+    in_open.wait();
     pool->shutdown();
+    open_release.count_down();
     grower.join();
     EXPECT_TRUE(checkout_failed);
 }
