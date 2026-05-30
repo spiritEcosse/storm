@@ -197,6 +197,31 @@ auto bench_bulk_update(gbench::State& state) -> void {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Scenario 5: CacheProbe/GetByPk
+//
+// Single-row primary-key lookup in a tight loop, returning exactly one row.
+// Row materialization is ~1 row, so statement setup is a large fraction of
+// total time — this is the workload Storm's docs attribute the ~23% L2
+// statement-pointer-cache benefit to. The four scenarios above are all
+// multi-row and under-sensitive to that cost; this one isolates it.
+// ---------------------------------------------------------------------------
+auto bench_get_by_pk(gbench::State& state) -> void {
+    std::vector<Person> people;
+    setup_db(people);
+
+    QuerySet<Person> qs;
+    std::size_t      idx = 0;
+
+    for (auto _ : state) {
+        // Rotate over real seeded PKs so every iteration fetches one existing row.
+        const int pk = people[idx].id;
+        idx          = (idx + 1) % people.size();
+        auto result  = qs.where(field<^^Person::id>() == pk).get().execute();
+        gbench::DoNotOptimize(result);
+    }
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -207,6 +232,7 @@ auto main(int argc, char** argv) -> int { // NOLINT(bugprone-exception-escape)
     gbench::RegisterBenchmark("CacheProbe/NewPerOp", bench_new_per_op);
     gbench::RegisterBenchmark("CacheProbe/MixedWhere", bench_mixed_where);
     gbench::RegisterBenchmark("CacheProbe/BulkUpdate", bench_bulk_update);
+    gbench::RegisterBenchmark("CacheProbe/GetByPk", bench_get_by_pk);
 
     gbench::Initialize(&argc, argv);
     if (gbench::ReportUnrecognizedArguments(argc, argv)) {
