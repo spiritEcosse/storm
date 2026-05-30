@@ -525,33 +525,49 @@ export namespace storm {
       private:
         // Lazy-initialize and return cached InsertStatement for optimal performance
         auto get_insert_statement() const -> orm::statements::InsertStatement<T, ConnType>& {
+#ifdef STORM_DISABLE_L1
+            insert_stmt_ = std::make_unique<orm::statements::InsertStatement<T, ConnType>>(conn_); // L1 disabled (#214)
+#else
             if (!insert_stmt_) [[unlikely]] {
                 insert_stmt_ = std::make_unique<orm::statements::InsertStatement<T, ConnType>>(conn_);
             }
+#endif
             return *insert_stmt_;
         }
 
         // Lazy-initialize and return cached EraseStatement for optimal performance
         auto get_erase_statement() const -> orm::statements::EraseStatement<T, ConnType>& {
+#ifdef STORM_DISABLE_L1
+            erase_stmt_ = std::make_unique<orm::statements::EraseStatement<T, ConnType>>(conn_); // L1 disabled (#214)
+#else
             if (!erase_stmt_) [[unlikely]] {
                 erase_stmt_ = std::make_unique<orm::statements::EraseStatement<T, ConnType>>(conn_);
             }
+#endif
             return *erase_stmt_;
         }
 
         // Lazy-initialize and return cached UpdateStatement for optimal performance
         auto get_update_statement() const -> orm::statements::UpdateStatement<T, ConnType>& {
+#ifdef STORM_DISABLE_L1
+            update_stmt_ = std::make_unique<orm::statements::UpdateStatement<T, ConnType>>(conn_); // L1 disabled (#214)
+#else
             if (!update_stmt_) [[unlikely]] {
                 update_stmt_ = std::make_unique<orm::statements::UpdateStatement<T, ConnType>>(conn_);
             }
+#endif
             return *update_stmt_;
         }
 
         // Lazy-initialize and return cached SelectStatement for optimal performance
         auto get_select_statement() const -> orm::statements::SelectStatement<T, ConnType>& {
+#ifdef STORM_DISABLE_L1
+            select_stmt_ = std::make_unique<orm::statements::SelectStatement<T, ConnType>>(conn_); // L1 disabled (#214)
+#else
             if (!select_stmt_) [[unlikely]] {
                 select_stmt_ = std::make_unique<orm::statements::SelectStatement<T, ConnType>>(conn_);
             }
+#endif
             return *select_stmt_;
         }
 
