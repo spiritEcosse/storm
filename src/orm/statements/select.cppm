@@ -287,7 +287,11 @@ export namespace storm::orm::statements {
         // Called by QuerySet::first() when no WHERE/JOIN/ORDER BY/OFFSET modifiers are set
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_one_fast()
                 -> std::expected<std::optional<T>, Error> {
+#ifdef STORM_DISABLE_L2
+            if (true) { // L2 disabled (#214 investigation)
+#else
             if (cached_first_stmt_ == nullptr) {
+#endif
                 auto prepare_result = conn_->prepare_cached(select_limit1_sql_string);
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
@@ -326,7 +330,11 @@ export namespace storm::orm::statements {
         // Zero-parameter fast path for get() — no checks, no parameter passing overhead
         // Called by QuerySet::get() when no WHERE/JOIN/ORDER BY/OFFSET modifiers are set
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_get_fast() -> std::expected<T, Error> {
+#ifdef STORM_DISABLE_L2
+            if (true) { // L2 disabled (#214 investigation)
+#else
             if (cached_get_stmt_ == nullptr) {
+#endif
                 auto prepare_result = conn_->prepare_cached(select_limit2_sql_string);
                 if (!prepare_result) [[unlikely]] {
                     return std::unexpected(prepare_result.error());
@@ -527,9 +535,11 @@ export namespace storm::orm::statements {
             // extra function call overhead outweighing reallocation savings for typical SQL sizes
             auto stmt =
                     prepare_and_bind(build_sql(join_wrapper, where_expr, limit, offset, order_by_wrapper), where_expr);
+#ifndef STORM_DISABLE_L2
             if (stmt) {
                 cached_where_addr_ = where_addr;
             }
+#endif
             return stmt;
         }
 
