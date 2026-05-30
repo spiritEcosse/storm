@@ -958,16 +958,19 @@ TEST_F(MockPoolTest, Checkout_ShutdownDuringWait) {
     //   3. Whichever thread reaches the mutex first, the waiter's checkout() will see
     //      shutdown_ == true — either via the early-return at the top of checkout()
     //      (if shutdown_thread ran first) or via the shutdown_ re-check inside
-    //      wait_for_idle (if the waiter ran first). Either way: got_error == true.
-    //   4. waiter.join() returns once the waiter has set got_error.
+    //      wait_for_idle (if the waiter ran first). Either way: the shutdown error.
+    //   4. waiter.join() returns once the waiter has set got_shutdown_error.
     //   5. Only then we reset c1, which lets shutdown_thread's cv_.wait observe
     //      in_use == 0 and complete.
-    std::atomic<bool> got_error{false};
+    // Assert the *shutdown* error specifically, not just any error (#306): a
+    // checkout_timeout_ms expiry would also return an error, silently turning
+    // this test into a no-op if shutdown_thread is starved past the timeout.
+    std::atomic<bool> got_shutdown_error{false};
     std::latch        waiter_started{1};
-    std::thread       waiter([&pool, &got_error, &waiter_started] {
+    std::thread       waiter([&pool, &got_shutdown_error, &waiter_started] {
         waiter_started.count_down();
-        auto c    = pool->checkout();
-        got_error = !c.has_value();
+        auto c             = pool->checkout();
+        got_shutdown_error = !c.has_value() && c.error().message().contains("shut down");
     });
 
     waiter_started.wait();
@@ -976,7 +979,7 @@ TEST_F(MockPoolTest, Checkout_ShutdownDuringWait) {
     waiter.join();
     c1->reset(); // Return c1 → shutdown_thread's cv_.wait predicate becomes true.
     shutdown_thread.join();
-    EXPECT_TRUE(got_error);
+    EXPECT_TRUE(got_shutdown_error);
 }
 
 // Lines 232-234: find_idle() erases stale connection (is_open() == false)
