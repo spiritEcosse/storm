@@ -127,6 +127,43 @@ export namespace storm::db {
         }
     };
 
+    // Issue #271: std::shared_mutex is neither movable nor copyable. Wrapping it
+    // lets a Connection holding one keep its defaulted move operations: moving a
+    // Connection just leaves each object with its own freshly-constructed mutex
+    // (a Connection is only moved during construction, before any thread shares
+    // it, so the source mutex is never contended at move time). The lock methods
+    // delegate to the wrapped mutex.
+    class MovableSharedMutex {
+      public:
+        MovableSharedMutex()  = default;
+        ~MovableSharedMutex() = default;
+
+        // Move = no-op: a moved-into Connection starts with a fresh, unlocked mutex.
+        MovableSharedMutex(MovableSharedMutex&& /*other*/) noexcept {}
+        auto operator=(MovableSharedMutex&& /*other*/) noexcept -> MovableSharedMutex& {
+            return *this;
+        }
+
+        MovableSharedMutex(const MovableSharedMutex&)                    = delete;
+        auto operator=(const MovableSharedMutex&) -> MovableSharedMutex& = delete;
+
+        auto lock() -> void {
+            mutex_.lock();
+        }
+        auto unlock() -> void {
+            mutex_.unlock();
+        }
+        auto lock_shared() -> void {
+            mutex_.lock_shared();
+        }
+        auto unlock_shared() -> void {
+            mutex_.unlock_shared();
+        }
+
+      private:
+        std::shared_mutex mutex_;
+    };
+
     // Identifier-character predicate (SQL word boundary): same set as `\w` in regex
     // ([A-Za-z0-9_]). Used by per-table cache invalidation to avoid clearing
     // "persons" entries when invalidating "person".
@@ -154,6 +191,62 @@ export namespace storm::db {
             }
         }
         return false;
+    }
+
+    // Issue #271: shared L3-cache locking helpers. The cache map type
+    // (unordered_map<string, unique_ptr<Statement>, string_hash, string_equal>)
+    // and the lock discipline are identical across backends; only the prepare
+    // step differs, so each backend's prepare_cached() calls cache_find_hit()
+    // then cache_try_insert() around its own prepare call. Statement is the
+    // cache's mapped pointee, deduced from the map.
+    //
+    // Hot path: shared_lock find + reset. Returns the cached Statement* on a hit,
+    // nullptr on a miss (caller then prepares + inserts).
+    template <typename Cache, typename Mutex>
+    [[nodiscard]] auto cache_find_hit(Cache& cache, Mutex& mutex, std::string_view sql) ->
+            typename Cache::mapped_type::pointer {
+        std::shared_lock read_lock(mutex);
+        auto             it = cache.find(sql);
+        if (it != cache.end()) [[likely]] {
+            it->second->reset();
+            return it->second.get();
+        }
+        return nullptr;
+    }
+
+    // Insert a freshly-prepared statement under a unique_lock. try_emplace keeps
+    // any entry another thread inserted while we were preparing (the lock was
+    // dropped during prepare); the passed-in statement is then dropped by the
+    // caller. Returns the live Statement* for the key.
+    template <typename Cache, typename Mutex>
+    [[nodiscard]] auto
+    cache_try_insert(Cache& cache, Mutex& mutex, std::string_view sql, typename Cache::mapped_type stmt) ->
+            typename Cache::mapped_type::pointer {
+        std::unique_lock write_lock(mutex);
+        auto [it, inserted] = cache.try_emplace(std::string(sql), std::move(stmt));
+        (void)inserted; // false only if another thread won the prepare race
+        return it->second.get();
+    }
+
+    // Drop every cached entry (unique_lock).
+    template <typename Cache, typename Mutex> auto cache_clear_all(Cache& cache, Mutex& mutex) noexcept -> void {
+        std::unique_lock write_lock(mutex);
+        cache.clear();
+    }
+
+    // Drop cached entries whose SQL references `table`, word-boundary aware
+    // (unique_lock). Issue #215.
+    template <typename Cache, typename Mutex>
+    auto cache_clear_table(Cache& cache, Mutex& mutex, std::string_view table) -> void {
+        std::unique_lock write_lock(mutex);
+        std::erase_if(cache, [table](const auto& entry) { return sql_references_table(entry.first, table); });
+    }
+
+    // Entry count (shared_lock).
+    template <typename Cache, typename Mutex>
+    [[nodiscard]] auto cache_count(const Cache& cache, Mutex& mutex) noexcept -> std::size_t {
+        std::shared_lock read_lock(mutex);
+        return std::ranges::size(cache);
     }
 
 } // namespace storm::db

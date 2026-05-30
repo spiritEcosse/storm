@@ -90,10 +90,10 @@ When tests fail, systematically check:
 - Module import hierarchy problems
 
 ### 4. Thread Safety Problems
-- Connection management is NOT thread-safe (known limitation)
+- The Level 3 statement cache is thread-safe via `std::shared_mutex` (issue #271); `std::mutex`/`std::shared_mutex` work in modules via `import std;` (validated under TSAN)
+- Sharing a single `Connection`/QuerySet across threads is still unsupported — use per-thread connections or a `ConnectionPool` (exclusive checkout)
 - SQLite uses `SQLITE_OPEN_FULLMUTEX` for serialized mode
-- std::mutex in modules causes compiler segfaults (current Clang limitation)
-- Check for race conditions in multi-threaded tests
+- TSAN tests for cache concurrency live in `tests/db/test_statement_cache_threading.cpp`; check for race conditions in multi-threaded tests
 
 ### 5. Common Storm-Specific Issues
 - Batch operation adaptive thresholds (999/field_count for bulk SQL; FALLBACK_BATCH_SIZE=50 is a minimum constant, not the primary cutoff)
