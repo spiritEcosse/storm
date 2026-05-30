@@ -325,45 +325,27 @@ export namespace storm::db::sqlite {
             return prepare_raw(sql);
         }
 
-        // Prepare statement with caching - reuses statements for identical SQL
-        // OPTIMIZATION: Uses heterogeneous lookup to avoid string allocation on cache hit
-        //
-        // Issue #271: thread-safe via cache_mutex_. The hot path (cache hit) takes
-        // a shared_lock so concurrent readers don't serialize. On a miss we drop
-        // the lock, prepare outside any lock (the expensive syscall), then take a
-        // unique_lock and try_emplace — another thread may have inserted the same
-        // SQL meanwhile, so we hand back the existing entry and discard ours.
+        // Prepare statement with caching - reuses statements for identical SQL.
+        // Hot path (cache hit) + insert lock discipline live in storm_db_concept's
+        // cache_* helpers (Issue #271, shared with the PostgreSQL backend); only the
+        // backend-specific prepare_raw() call differs. On a miss the lock is dropped
+        // before prepare_raw() so the expensive syscall runs uncontended.
         [[nodiscard]] auto prepare_cached(std::string_view sql) -> std::expected<Statement*, Error> {
             if (!is_open()) {
                 return std::unexpected(Error{SQLITE_MISUSE, "Connection not open"});
             }
 
-            {
-                // Hot path: shared_lock allows concurrent cache-hit lookups.
-                // OPTIMIZATION: heterogeneous lookup with string_view (no allocation!)
-                std::shared_lock read_lock(cache_mutex_);
-                auto             it = statement_cache_.find(sql);
-                if (it != statement_cache_.end()) [[likely]] {
-                    it->second->reset();
-                    return it->second.get();
-                }
+            if (auto* hit = storm::db::cache_find_hit(statement_cache_, cache_mutex_, sql)) [[likely]] {
+                return hit;
             }
 
-            // Cache miss - prepare a fresh statement WITHOUT holding the lock.
             auto prepared = prepare_raw(sql);
             if (!prepared.has_value()) {
                 return std::unexpected(prepared.error());
             }
-
-            // Insert under a unique_lock. try_emplace resolves the race where
-            // another thread inserted the same SQL while we were preparing: it
-            // keeps the existing entry and our freshly-prepared statement is
-            // dropped when `prepared` goes out of scope.
-            std::unique_lock write_lock(cache_mutex_);
-            auto [it, inserted] =
-                    statement_cache_.try_emplace(std::string(sql), std::make_unique<Statement>(std::move(*prepared)));
-            (void)inserted; // false only if another thread won the prepare race
-            return it->second.get();
+            return storm::db::cache_try_insert(
+                    statement_cache_, cache_mutex_, sql, std::make_unique<Statement>(std::move(*prepared))
+            );
         }
 
         // Clear the entire statement cache (useful for memory management or after
@@ -371,8 +353,7 @@ export namespace storm::db::sqlite {
         // `Statement*` from a prior prepare_cached() MUST invalidate their own
         // pointers before calling this — see QuerySet::invalidate_cache().
         auto clear_statement_cache() noexcept -> void {
-            std::unique_lock write_lock(cache_mutex_); // Issue #271
-            statement_cache_.clear();
+            storm::db::cache_clear_all(statement_cache_, cache_mutex_); // Issue #271
         }
 
         // Issue #215: drop cached entries whose SQL references the given table.
@@ -380,16 +361,12 @@ export namespace storm::db::sqlite {
         // cached statements should be preserved. Matching is word-boundary aware
         // so clearing "persons" does NOT touch "person_addresses".
         auto clear_statement_cache(std::string_view table) -> void {
-            std::unique_lock write_lock(cache_mutex_); // Issue #271
-            std::erase_if(statement_cache_, [table](const auto& entry) {
-                return storm::db::sql_references_table(entry.first, table);
-            });
+            storm::db::cache_clear_table(statement_cache_, cache_mutex_, table); // Issue #271
         }
 
         // Get cache statistics
         [[nodiscard]] auto cached_statement_count() const noexcept -> std::size_t {
-            std::shared_lock read_lock(cache_mutex_); // Issue #271
-            return statement_cache_.size();
+            return storm::db::cache_count(statement_cache_, cache_mutex_); // Issue #271
         }
 
         // Pre-populate statement cache with common operations

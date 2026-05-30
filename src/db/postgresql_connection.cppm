@@ -92,64 +92,45 @@ export namespace storm::db::postgresql {
             return Statement{conn_.get(), std::move(*stmt_name)};
         }
 
-        // Prepare with caching - reuses prepared statements for identical SQL
-        //
-        // Issue #271: thread-safe via cache_mutex_. shared_lock on the cache-hit
-        // hot path; on a miss we drop the lock, prepare outside any lock, then
-        // take a unique_lock and try_emplace — another thread may have inserted
-        // the same SQL meanwhile, so we keep the existing entry and discard ours.
+        // Prepare with caching - reuses prepared statements for identical SQL.
+        // Lock discipline lives in storm_db_concept's cache_* helpers (Issue #271,
+        // shared with the SQLite backend); only the backend-specific prepare step
+        // (prepare_pg_statement + set_original_sql) differs. On a miss the lock is
+        // dropped before PQprepare so the expensive syscall runs uncontended.
         [[nodiscard]] auto prepare_cached(std::string_view sql) -> std::expected<Statement*, Error> {
             if (!is_open()) {
                 return std::unexpected(Error{-1, "Connection not open"});
             }
 
-            {
-                // Hot path: shared_lock allows concurrent cache-hit lookups.
-                std::shared_lock read_lock(cache_mutex_);
-                auto             it = statement_cache_.find(sql);
-                if (it != statement_cache_.end()) [[likely]] {
-                    it->second->reset();
-                    return it->second.get();
-                }
+            if (auto* hit = storm::db::cache_find_hit(statement_cache_, cache_mutex_, sql)) [[likely]] {
+                return hit;
             }
 
-            // Cache miss - prepare WITHOUT holding the lock (expensive PQprepare).
             auto stmt_name = prepare_pg_statement(sql);
             if (!stmt_name) {
                 return std::unexpected(stmt_name.error());
             }
             auto new_stmt = std::make_unique<Statement>(conn_.get(), std::move(*stmt_name));
             new_stmt->set_original_sql(std::string(sql)); // Store original SQL for expanded_sql()
-
-            // Insert under a unique_lock. try_emplace keeps any entry another
-            // thread inserted while we were preparing; ours is dropped on return.
-            std::unique_lock write_lock(cache_mutex_);
-            auto [it, inserted] = statement_cache_.try_emplace(std::string(sql), std::move(new_stmt));
-            (void)inserted; // false only if another thread won the prepare race
-            return it->second.get();
+            return storm::db::cache_try_insert(statement_cache_, cache_mutex_, sql, std::move(new_stmt));
         }
 
         // Clear the entire statement cache (useful for memory management or after
         // major schema changes). Level 2 callers must invalidate their own
         // pointers before calling this — see QuerySet::invalidate_cache().
         auto clear_statement_cache() noexcept -> void {
-            std::unique_lock write_lock(cache_mutex_); // Issue #271
-            statement_cache_.clear();
+            storm::db::cache_clear_all(statement_cache_, cache_mutex_); // Issue #271
         }
 
         // Issue #215: drop cached entries whose SQL references the given table.
         // Word-boundary aware so clearing "persons" does NOT touch
         // "person_addresses" or "persons_archive".
         auto clear_statement_cache(std::string_view table) -> void {
-            std::unique_lock write_lock(cache_mutex_); // Issue #271
-            std::erase_if(statement_cache_, [table](const auto& entry) {
-                return storm::db::sql_references_table(entry.first, table);
-            });
+            storm::db::cache_clear_table(statement_cache_, cache_mutex_, table); // Issue #271
         }
 
         [[nodiscard]] auto cached_statement_count() const noexcept -> std::size_t {
-            std::shared_lock read_lock(cache_mutex_); // Issue #271
-            return statement_cache_.size();
+            return storm::db::cache_count(statement_cache_, cache_mutex_); // Issue #271
         }
 
         // Execute SQL directly (simple queries without parameters)

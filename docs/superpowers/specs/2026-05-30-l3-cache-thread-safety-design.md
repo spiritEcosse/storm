@@ -39,6 +39,17 @@ hash-functor struct declarations, dropping local coverage below 100%.
 - **Writes (insert on miss, both `clear_statement_cache` overloads)** →
   `std::unique_lock`.
 
+### Shared lock helpers (de-duplication)
+
+The lock discipline is identical across backends, so it lives in
+`storm_db_concept` as inlined function templates — `cache_find_hit`,
+`cache_try_insert`, `cache_clear_all`, `cache_clear_table`, `cache_count` —
+parameterized over the cache map + mutex. Each backend's methods call these;
+only the backend-specific prepare step (`prepare_raw` vs
+`prepare_pg_statement` + `set_original_sql`) stays in the backend. This keeps
+the two backends from carrying duplicated lock code (SonarCloud "0 new
+duplicated lines" gate).
+
 ### `prepare_cached(sql)` — shared-lock hot path
 
 ```
