@@ -2,6 +2,8 @@ module;
 
 // `duplicate` removed in #277 Phase 3 (count_entries(pred) helper shared by available() / in_use() counters).
 
+#include <cassert> // Issue #271: assert() macro — import std; cannot deliver macros
+
 export module storm_db_pool;
 
 import std;
@@ -31,7 +33,33 @@ export namespace storm::db {
             bool                      in_use       = false;
             TimePoint                 created_at   = Clock::now();
             TimePoint                 last_used_at = Clock::now();
+#ifndef NDEBUG
+            // Issue #271: debug-only single-owner tracking. Records which thread
+            // currently holds this connection between checkout and checkin so a
+            // concurrent double-checkout (which would let two threads share one
+            // Connection's L3 cache) trips an assertion. Release builds pay
+            // nothing — the field and its checks compile out.
+            std::thread::id owner{};
+#endif
         };
+
+        // Issue #271: debug-only single-owner assertions on checkout/checkin.
+        // No-ops in Release (NDEBUG). Called under the pool mutex_, so reading
+        // and stamping `owner` needs no extra synchronization.
+        template <typename Entry> auto debug_claim_owner([[maybe_unused]] Entry& entry) -> void {
+#ifndef NDEBUG
+            assert(entry.owner == std::thread::id{} && "Connection checked out by two threads at once (#271)");
+            entry.owner = std::this_thread::get_id();
+#endif
+        }
+
+        template <typename Entry> auto debug_release_owner([[maybe_unused]] Entry& entry) -> void {
+#ifndef NDEBUG
+            assert(entry.owner == std::this_thread::get_id() &&
+                   "Connection checked in by a thread that did not own it (#271)");
+            entry.owner = std::thread::id{};
+#endif
+        }
 
         template <CachedDatabaseConnection ConnType> class PoolCore {
           public:
@@ -75,6 +103,7 @@ export namespace storm::db {
                 std::lock_guard lock(mutex_);
                 for (auto& entry : entries_) {
                     if (entry.conn.get() == conn) {
+                        debug_release_owner(entry); // Issue #271
                         entry.in_use       = false;
                         entry.last_used_at = Clock::now();
                         cv_.notify_one();
@@ -166,6 +195,7 @@ export namespace storm::db {
                         continue;
                     }
                     it->in_use = true;
+                    debug_claim_owner(*it); // Issue #271
                     return it->conn.get();
                 }
                 return nullptr;
@@ -203,6 +233,7 @@ export namespace storm::db {
                 }
                 auto now = Clock::now();
                 entries_.emplace_back(std::make_unique<ConnType>(std::move(result.value())), true, now, now);
+                debug_claim_owner(entries_.back()); // Issue #271
                 return std::expected<ConnType*, Error>{entries_.back().conn.get()};
             }
 

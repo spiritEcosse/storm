@@ -69,7 +69,8 @@ export namespace storm::db::postgresql {
         // Destructor - unique_ptr handles cleanup via PGconnDeleter
         ~Connection() = default;
 
-        // Move semantics
+        // Move semantics. cache_mutex_ is a MovableSharedMutex (Issue #271) so
+        // these can stay defaulted: a moved Connection gets a fresh mutex.
         Connection(Connection&&)                    = default;
         auto operator=(Connection&&) -> Connection& = default;
 
@@ -92,33 +93,47 @@ export namespace storm::db::postgresql {
         }
 
         // Prepare with caching - reuses prepared statements for identical SQL
+        //
+        // Issue #271: thread-safe via cache_mutex_. shared_lock on the cache-hit
+        // hot path; on a miss we drop the lock, prepare outside any lock, then
+        // take a unique_lock and try_emplace — another thread may have inserted
+        // the same SQL meanwhile, so we keep the existing entry and discard ours.
         [[nodiscard]] auto prepare_cached(std::string_view sql) -> std::expected<Statement*, Error> {
             if (!is_open()) {
                 return std::unexpected(Error{-1, "Connection not open"});
             }
 
-            // Heterogeneous lookup using string_view
-            auto it = statement_cache_.find(sql);
-            if (it != statement_cache_.end()) [[likely]] {
-                it->second->reset();
-                return it->second.get();
+            {
+                // Hot path: shared_lock allows concurrent cache-hit lookups.
+                std::shared_lock read_lock(cache_mutex_);
+                auto             it = statement_cache_.find(sql);
+                if (it != statement_cache_.end()) [[likely]] {
+                    it->second->reset();
+                    return it->second.get();
+                }
             }
 
+            // Cache miss - prepare WITHOUT holding the lock (expensive PQprepare).
             auto stmt_name = prepare_pg_statement(sql);
             if (!stmt_name) {
                 return std::unexpected(stmt_name.error());
             }
             auto new_stmt = std::make_unique<Statement>(conn_.get(), std::move(*stmt_name));
             new_stmt->set_original_sql(std::string(sql)); // Store original SQL for expanded_sql()
-            auto [inserted_it, inserted] = statement_cache_.emplace(std::string(sql), std::move(new_stmt));
-            (void)inserted; // Always true: find() above confirmed key absence
-            return inserted_it->second.get();
+
+            // Insert under a unique_lock. try_emplace keeps any entry another
+            // thread inserted while we were preparing; ours is dropped on return.
+            std::unique_lock write_lock(cache_mutex_);
+            auto [it, inserted] = statement_cache_.try_emplace(std::string(sql), std::move(new_stmt));
+            (void)inserted; // false only if another thread won the prepare race
+            return it->second.get();
         }
 
         // Clear the entire statement cache (useful for memory management or after
         // major schema changes). Level 2 callers must invalidate their own
         // pointers before calling this — see QuerySet::invalidate_cache().
         auto clear_statement_cache() noexcept -> void {
+            std::unique_lock write_lock(cache_mutex_); // Issue #271
             statement_cache_.clear();
         }
 
@@ -126,12 +141,14 @@ export namespace storm::db::postgresql {
         // Word-boundary aware so clearing "persons" does NOT touch
         // "person_addresses" or "persons_archive".
         auto clear_statement_cache(std::string_view table) -> void {
+            std::unique_lock write_lock(cache_mutex_); // Issue #271
             std::erase_if(statement_cache_, [table](const auto& entry) {
                 return storm::db::sql_references_table(entry.first, table);
             });
         }
 
         [[nodiscard]] auto cached_statement_count() const noexcept -> std::size_t {
+            std::shared_lock read_lock(cache_mutex_); // Issue #271
             return statement_cache_.size();
         }
 
@@ -226,7 +243,12 @@ export namespace storm::db::postgresql {
 
         PGconnPtr      conn_;
         StatementCache statement_cache_;
-        int            stmt_counter_ = 0;
+        // Issue #271: guards statement_cache_. shared_lock on the cache-hit hot
+        // path, unique_lock for insert + clear. mutable so const accessors
+        // (cached_statement_count) can take a shared_lock. MovableSharedMutex
+        // keeps Connection's move operations defaulted.
+        mutable storm::db::MovableSharedMutex cache_mutex_;
+        int                                   stmt_counter_ = 0;
     };
 
     // Verify concepts are satisfied

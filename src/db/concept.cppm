@@ -127,6 +127,43 @@ export namespace storm::db {
         }
     };
 
+    // Issue #271: std::shared_mutex is neither movable nor copyable. Wrapping it
+    // lets a Connection holding one keep its defaulted move operations: moving a
+    // Connection just leaves each object with its own freshly-constructed mutex
+    // (a Connection is only moved during construction, before any thread shares
+    // it, so the source mutex is never contended at move time). The lock methods
+    // delegate to the wrapped mutex.
+    class MovableSharedMutex {
+      public:
+        MovableSharedMutex()  = default;
+        ~MovableSharedMutex() = default;
+
+        // Move = no-op: a moved-into Connection starts with a fresh, unlocked mutex.
+        MovableSharedMutex(MovableSharedMutex&& /*other*/) noexcept {}
+        auto operator=(MovableSharedMutex&& /*other*/) noexcept -> MovableSharedMutex& {
+            return *this;
+        }
+
+        MovableSharedMutex(const MovableSharedMutex&)                    = delete;
+        auto operator=(const MovableSharedMutex&) -> MovableSharedMutex& = delete;
+
+        auto lock() -> void {
+            mutex_.lock();
+        }
+        auto unlock() -> void {
+            mutex_.unlock();
+        }
+        auto lock_shared() -> void {
+            mutex_.lock_shared();
+        }
+        auto unlock_shared() -> void {
+            mutex_.unlock_shared();
+        }
+
+      private:
+        std::shared_mutex mutex_;
+    };
+
     // Identifier-character predicate (SQL word boundary): same set as `\w` in regex
     // ([A-Za-z0-9_]). Used by per-table cache invalidation to avoid clearing
     // "persons" entries when invalidating "person".

@@ -27,8 +27,13 @@ is still explicitly **not thread-safe**.
 
 ### Mutex placement
 
-Add `mutable std::shared_mutex cache_mutex_;` to `Connection` in both backends,
-guarding every access to `statement_cache_`.
+Add `mutable storm::db::MovableSharedMutex cache_mutex_;` to `Connection` in both
+backends, guarding every access to `statement_cache_`. `MovableSharedMutex`
+(in `concept.cppm`) wraps a `std::shared_mutex` and gives it no-op move
+operations (a moved Connection gets a fresh, unlocked mutex). This keeps
+`Connection`'s move ctor/assignment **defaulted** — a bare `std::shared_mutex`
+would delete them and also shift llvm-cov line attribution off the deleter /
+hash-functor struct declarations, dropping local coverage below 100%.
 
 - **Reads (cache hit)** → `std::shared_lock` — allows concurrent readers.
 - **Writes (insert on miss, both `clear_statement_cache` overloads)** →

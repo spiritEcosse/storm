@@ -113,6 +113,20 @@ namespace {
         EXPECT_EQ(result.error().message(), "Connection not open");
     }
 
+    // Issue #271 replaced PG Connection's defaulted move ops with explicit ones
+    // (std::shared_mutex is not movable). Exercise move assignment: the target
+    // takes over the source's open handle and the source becomes closed.
+    TEST_F(PgPrepareErrorTest, MoveAssignmentTransfersHandle) {
+        auto src = PgConnection::open("host=localhost");
+        ASSERT_TRUE(src.has_value());
+        auto dst = PgConnection::open("host=localhost");
+        ASSERT_TRUE(dst.has_value());
+
+        *dst = std::move(*src);
+        EXPECT_TRUE(dst->is_open());
+        EXPECT_FALSE(src->is_open()); // NOLINT(bugprone-use-after-move) -- intentional moved-from check
+    }
+
     TEST_F(PgPrepareErrorTest, PrepareReturnsNull) {
         auto conn_result = PgConnection::open("host=localhost");
         ASSERT_TRUE(conn_result.has_value());

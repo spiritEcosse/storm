@@ -197,9 +197,34 @@ slots and hope no one grows past that).
 
 **Thread-local caching**: Each thread has separate SQL cache (zero synchronization)
 
-**Connection-level caching**: NOT thread-safe (use per-thread connections)
+**Connection-level caching (Level 3)**: thread-safe via `shared_mutex` (Phase 2,
+issue #271). `statement_cache_` on each `Connection` is guarded by a
+`std::shared_mutex`:
 
-**Recommendation**: Per-thread QuerySet + Connection instances
+- **Cache hit (hot path)** → `std::shared_lock`, so concurrent readers don't
+  serialize.
+- **Insert on miss + `clear_statement_cache()` / `clear_statement_cache(table)`**
+  → `std::unique_lock`. On a miss the statement is prepared *outside* the lock
+  (the expensive `sqlite3_prepare_v2` / `PQprepare` call); the lock is then taken
+  only for the `try_emplace`, which also resolves the race where two threads
+  prepare the same SQL at once. Both SQLite and PostgreSQL backends are covered;
+  TSAN-clean under concurrent `prepare_cached` + clear traffic
+  (`tests/db/test_statement_cache_threading.cpp`).
+
+> **Important — pointer lifetime caveat.** The mutex makes the cache *map*
+> operations race-free; it does **not** make a `Statement*` returned by
+> `prepare_cached()` safe against a concurrent `clear_statement_cache()` that
+> would destroy the pointed-to `Statement`. What guarantees that pointer's
+> lifetime is the **exclusive-checkout invariant**: `ConnectionPool` hands each
+> thread its own `Connection` between `checkout()` and `checkin()`, so no two
+> threads ever touch one `Connection`'s Level 2/3 state at the same time. A
+> debug-only assertion in `PoolCore` (gated behind `NDEBUG`) trips if a
+> connection is checked out by two threads at once.
+
+**Thread-local caching**: Each thread has separate SQL cache (zero synchronization)
+
+**Recommendation**: Per-thread QuerySet + Connection instances (or a
+`ConnectionPool`, which enforces exclusive checkout)
 
 ## See Also
 
