@@ -27,7 +27,13 @@ namespace storm::benchmark {
 
     consteval auto load_benchmark_tests() {
         static constexpr const char json_data[] = {
+// #embed is a C23 feature Clang offers as an extension in C++26 mode; it is the
+// only portable way to embed the JSON test corpus at compile time. Suppress
+// -Wc23-extensions here so the -Werror policy (issue #317) stays clean.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc23-extensions"
 #embed "tests/benchmark_tests.json"
+#pragma clang diagnostic pop
                 , '\0'
         };
         constexpr std::string_view json_str(json_data);

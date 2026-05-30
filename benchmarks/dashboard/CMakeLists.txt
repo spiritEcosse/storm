@@ -26,6 +26,8 @@ set_target_properties(storm_bench_dashboard PROPERTIES CXX_MODULE_STD ON)
 target_link_libraries(storm_bench_dashboard PRIVATE storm pthread)
 link_sqlite(storm_bench_dashboard)
 apply_clang_flags(storm_bench_dashboard)
+# Treat warnings as errors on Storm-owned dashboard code (issue #317).
+target_compile_options(storm_bench_dashboard PRIVATE -Werror)
 
 target_include_directories(
   storm_bench_dashboard PRIVATE "${CMAKE_SOURCE_DIR}/src"

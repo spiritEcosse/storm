@@ -84,6 +84,9 @@ apply_clang_flags(${PROJECT_NAME})
 # Increase constexpr steps limit — consteval JSON parser for 247 YAML-driven
 # test cases
 target_compile_options(${PROJECT_NAME} PRIVATE -fconstexpr-steps=4194304)
+# Treat warnings as errors on Storm-owned test code (issue #317). Third-party
+# gtest/gmock headers are silenced via SYSTEM includes in cmake/tests.cmake.
+target_compile_options(${PROJECT_NAME} PRIVATE -Werror)
 # Note: Custom libc++ linking now handled by global add_link_options() in main
 # CMakeLists.txt
 

@@ -79,6 +79,8 @@ function(storm_enable_migrations)
   # Build schema binary
   add_executable(${ARG_TARGET_NAME} "${_generated_main}")
   apply_clang_flags(${ARG_TARGET_NAME})
+  # Treat warnings as errors on the Storm-owned schema CLI binary (issue #317).
+  target_compile_options(${ARG_TARGET_NAME} PRIVATE -Werror)
   target_link_libraries(${ARG_TARGET_NAME} PRIVATE storm)
   link_sqlite(${ARG_TARGET_NAME})
   link_postgresql(${ARG_TARGET_NAME})

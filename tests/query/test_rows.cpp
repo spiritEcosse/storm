@@ -35,7 +35,7 @@ TYPED_TEST(RowsTest, BasicIteration) {
 
 TYPED_TEST(RowsTest, EmptyTable) {
     QuerySet<Person, TypeParam> qs;
-    qs.erase_all().execute();
+    (void)qs.erase_all().execute();
 
     int count = 0;
     for (auto&& result : qs.rows()) {
@@ -47,8 +47,8 @@ TYPED_TEST(RowsTest, EmptyTable) {
 
 TYPED_TEST(RowsTest, SingleRow) {
     QuerySet<Person, TypeParam> qs;
-    qs.erase_all().execute();
-    qs.insert(storm::test::PEOPLE_25[0]).execute();
+    (void)qs.erase_all().execute();
+    (void)qs.insert(storm::test::PEOPLE_25[0]).execute();
 
     int count = 0;
     for (auto&& result : qs.rows()) {

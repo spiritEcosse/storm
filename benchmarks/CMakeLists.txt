@@ -64,6 +64,10 @@ add_dependencies(storm_bench benchmark::benchmark)
 link_sqlite(storm_bench)
 link_postgresql(storm_bench)
 apply_clang_flags(storm_bench)
+# Treat warnings as errors on Storm-owned benchmark code (issue #317). The
+# Google Benchmark headers reach only main.cpp/reporter.cpp and arrive via
+# -isystem (see _benchmark_includes below), so their warnings are not promoted.
+target_compile_options(storm_bench PRIVATE -Werror)
 target_include_directories(
   storm_bench PRIVATE "${CMAKE_SOURCE_DIR}/src"
                       "${CMAKE_SOURCE_DIR}/third_party")
@@ -105,6 +109,8 @@ target_link_libraries(storm_anchors PRIVATE pthread
 add_dependencies(storm_anchors benchmark::benchmark)
 link_sqlite(storm_anchors)
 apply_clang_flags(storm_anchors)
+# Treat warnings as errors on Storm-owned benchmark code (issue #317).
+target_compile_options(storm_anchors PRIVATE -Werror)
 
 set_property(
   SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/anchors_raw.cpp"

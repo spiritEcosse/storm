@@ -30,3 +30,4 @@ tests/query/test_values.cpp:                     duplicate
 tests/query/test_where.cpp:                      duplicate
 tests/schema/test_fk_fields.cpp:                  file-size, duplicate, length
 tests/schema/test_sql_inspection.cpp:             duplicate
+tests/test_parser.hpp:                            file-size, duplicate

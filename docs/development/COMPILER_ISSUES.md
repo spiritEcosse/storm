@@ -227,10 +227,12 @@ Folding a pure-library header is only safe per location:
   some of these as its own FILE_SET units); these modules deliberately stay
   header-free to avoid that.
 - **A textual header `#include`d AFTER `import std;`** (dashboard
-  `args/backup/db/events.hpp`) → **MUST drop** the std `#include`s (keeping them
-  re-pulls libc++ headers after the module → Finding B). The single consumer
-  (`main.cpp`) supplies them via `import std;`, with textual `<meta>` and
-  `<csignal>` placed before its imports.
+  `args/backup/db/events.hpp`, `fuzz/fuzz_models.h`) → **MUST drop** the std
+  `#include`s (keeping them re-pulls libc++ headers after the module → Finding
+  B). The single consumer (`main.cpp` / the fuzz harness) supplies them via
+  `import std;`, with textual `<meta>` placed before its imports where the TU
+  uses reflection. `fuzz_models.h` dropped its `<string>`; the harness TUs that
+  use `std::meta::` keep textual `<meta>` before `import storm; import std;`.
 
 ## Debugging Tips
 

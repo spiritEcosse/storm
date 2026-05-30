@@ -13,9 +13,7 @@
 #include <cstdint>
 
 import storm;
-
-import <expected>;
-import <string>;
+import std;
 
 #include "fuzz_models.h" // AFTER import storm;
 
