@@ -48,6 +48,7 @@ import std;
 
 using namespace storm;
 using namespace storm::orm::where;
+namespace gbench = ::benchmark; // disambiguate ::benchmark from storm::benchmark
 
 // ---------------------------------------------------------------------------
 // DB setup helpers
@@ -104,7 +105,7 @@ namespace {
     // Execute a WHERE query and prevent the result from being optimised away.
     auto run_select(QuerySet<Person>& qs, storm::orm::where::ExpressionVariantPtr expr) -> void {
         auto result = qs.where(expr).select().execute();
-        benchmark::DoNotOptimize(result);
+        gbench::DoNotOptimize(result);
     }
 
 } // namespace
@@ -118,7 +119,7 @@ namespace {
 // is built once (age > 30, constant value) and the prepared statement is
 // reused from the L1 cache on every call.  Maximum L1 benefit.
 // ---------------------------------------------------------------------------
-auto bench_reuse(benchmark::State& state) -> void {
+auto bench_reuse(gbench::State& state) -> void {
     std::vector<Person> people;
     setup_db(people);
 
@@ -137,7 +138,7 @@ auto bench_reuse(benchmark::State& state) -> void {
 // Statement-pointer cache on the QuerySet is brand-new every time; the
 // connection-level L3 cache still applies, but the per-QS L2 is cold.
 // ---------------------------------------------------------------------------
-auto bench_new_per_op(benchmark::State& state) -> void {
+auto bench_new_per_op(gbench::State& state) -> void {
     std::vector<Person> people;
     setup_db(people);
 
@@ -157,7 +158,7 @@ auto bench_new_per_op(benchmark::State& state) -> void {
 // prepare_cached() hit is the same, but the bind value differs every call.
 // Isolates the bind-value-change overhead from statement recompilation cost.
 // ---------------------------------------------------------------------------
-auto bench_mixed_where(benchmark::State& state) -> void {
+auto bench_mixed_where(gbench::State& state) -> void {
     std::vector<Person> people;
     setup_db(people);
 
@@ -180,7 +181,7 @@ auto bench_mixed_where(benchmark::State& state) -> void {
 // Uses update(std::span<const Person>) — the hot update path.  Exercises L2
 // caching on the UpdateStatement across repeated identical-schema calls.
 // ---------------------------------------------------------------------------
-auto bench_bulk_update(benchmark::State& state) -> void {
+auto bench_bulk_update(gbench::State& state) -> void {
     std::vector<Person> people;
     setup_db(people);
 
@@ -192,7 +193,7 @@ auto bench_bulk_update(benchmark::State& state) -> void {
             p.salary += 1.0;
         }
         auto result = qs.update(std::span<const Person>(people)).execute();
-        benchmark::DoNotOptimize(result);
+        gbench::DoNotOptimize(result);
     }
 }
 
@@ -202,17 +203,17 @@ auto bench_bulk_update(benchmark::State& state) -> void {
 // main — register + run
 // ---------------------------------------------------------------------------
 auto main(int argc, char** argv) -> int { // NOLINT(bugprone-exception-escape)
-    benchmark::RegisterBenchmark("CacheProbe/Reuse", bench_reuse);
-    benchmark::RegisterBenchmark("CacheProbe/NewPerOp", bench_new_per_op);
-    benchmark::RegisterBenchmark("CacheProbe/MixedWhere", bench_mixed_where);
-    benchmark::RegisterBenchmark("CacheProbe/BulkUpdate", bench_bulk_update);
+    gbench::RegisterBenchmark("CacheProbe/Reuse", bench_reuse);
+    gbench::RegisterBenchmark("CacheProbe/NewPerOp", bench_new_per_op);
+    gbench::RegisterBenchmark("CacheProbe/MixedWhere", bench_mixed_where);
+    gbench::RegisterBenchmark("CacheProbe/BulkUpdate", bench_bulk_update);
 
-    benchmark::Initialize(&argc, argv);
-    if (benchmark::ReportUnrecognizedArguments(argc, argv)) {
+    gbench::Initialize(&argc, argv);
+    if (gbench::ReportUnrecognizedArguments(argc, argv)) {
         return 1;
     }
-    benchmark::RunSpecifiedBenchmarks();
-    benchmark::Shutdown();
+    gbench::RunSpecifiedBenchmarks();
+    gbench::Shutdown();
     return 0;
 }
 // NOLINTEND(cppcoreguidelines-pro-type-vararg)
