@@ -185,7 +185,7 @@ auto execute_one(const T& obj) {
 ```cpp
 class SomeStatement {
     // Member to cache statement pointer
-    mutable Statement* cached_stmt_ = nullptr;
+    Statement* cached_stmt_ = nullptr;
 
     auto execute_one(const T& obj) {
         if (!cached_stmt_) {

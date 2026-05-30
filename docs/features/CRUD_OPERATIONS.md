@@ -137,7 +137,7 @@ UpdateStatement uses the 3-level caching pattern:
 
 ```cpp
 template <typename T> class UpdateStatement {
-    mutable Statement* cached_stmt_ = nullptr;
+    Statement* cached_stmt_ = nullptr;
 
     auto execute_single_optimized(const T& obj) {
         if (!cached_stmt_) {

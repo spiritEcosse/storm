@@ -625,18 +625,18 @@ export namespace storm::orm::statements {
         std::shared_ptr<ConnType> conn_;
 
         // Cache for simple SELECT (static SQL, compile-time constant)
-        mutable Statement* cached_simple_stmt_ = nullptr;
+        Statement* cached_simple_stmt_ = nullptr;
 
         // Cache for first() fast path (SELECT ... LIMIT 1, pre-built static SQL)
-        mutable Statement* cached_first_stmt_ = nullptr;
+        Statement* cached_first_stmt_ = nullptr;
 
         // Cache for get() fast path (SELECT ... LIMIT 2, pre-built static SQL)
-        mutable Statement* cached_get_stmt_ = nullptr;
+        Statement* cached_get_stmt_ = nullptr;
 
         // Cache for dynamic queries (WHERE, JOIN, modifiers) - validated by SQL comparison
-        mutable Statement*  cached_stmt_       = nullptr;
-        mutable const void* cached_where_addr_ = nullptr; // WHERE expression address cache
-        mutable std::string cached_sql_;
+        Statement*  cached_stmt_       = nullptr;
+        const void* cached_where_addr_ = nullptr; // WHERE expression address cache
+        std::string cached_sql_;
     };
 
 } // namespace storm::orm::statements

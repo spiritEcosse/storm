@@ -145,7 +145,7 @@ Unified caching across UPDATE/DELETE/SELECT:
 
 ```cpp
 template <typename T> class XStatement {
-    mutable Statement* cached_stmt_ = nullptr;
+    Statement* cached_stmt_ = nullptr;
 
     auto execute_optimized(const T& obj) {
         if (!cached_stmt_) {

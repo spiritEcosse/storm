@@ -195,8 +195,8 @@ while (sqlite3_step(raw_stmt) == SQLITE_ROW) {
 
 ```cpp
 // Inside statement class
-mutable const void* cached_expr_addr_ = nullptr;
-mutable Statement* cached_stmt_ = nullptr;
+const void* cached_expr_addr_ = nullptr;
+Statement* cached_stmt_ = nullptr;
 
 auto execute(const WhereExpr& expr) {
     const void* expr_addr = static_cast<const void*>(expr.get());
