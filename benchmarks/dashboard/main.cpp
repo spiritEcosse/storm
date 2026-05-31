@@ -155,6 +155,24 @@ namespace {
         return check_table_exists(storm::QuerySet<bench_dashboard::BenchResult>().count().execute(), opts.db_path);
     }
 
+    // Each BenchRun re-reads git_hash/branch from the working tree at insert
+    // time (Issue #267), so the daemon's CWD MUST be inside the storm git work
+    // tree. Fail loudly at startup otherwise — a daemon outside the repo would
+    // silently stamp every run with empty git metadata.
+    auto check_inside_git_worktree() -> int {
+        if (run_capture("git rev-parse --is-inside-work-tree 2>/dev/null") == "true") {
+            return 0;
+        }
+        std::
+                fprintf( // NOLINT(cppcoreguidelines-pro-type-vararg)
+                        stderr,
+                        "storm_bench_dashboard: current directory is not inside the storm git work tree.\n"
+                        "  Each bench run records the live git branch/hash, which needs a git working tree.\n"
+                        "  Start the dashboard from within the storm repository checkout.\n"
+                );
+        return 4;
+    }
+
     // Open the AF_UNIX listener. Returns 0 on success, 3 on bind failure.
     auto setup_socket(Options const& opts, bench_dashboard::SocketServer& server) -> int {
         const std::string_view socket_path = opts.socket_path.empty() ? bench_dashboard::wire::default_socket_path()
@@ -326,6 +344,9 @@ auto main(int argc, char** argv) -> int { // NOLINT(bugprone-exception-escape)
 
     install_signal_handlers();
 
+    if (const int rc = check_inside_git_worktree(); rc != 0) {
+        return rc;
+    }
     if (const int rc = ensure_db_parent_dir(opts.db_path); rc != 0) {
         return rc;
     }
