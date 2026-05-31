@@ -274,12 +274,12 @@ export namespace storm {
         template <typename U = T>
             requires std::same_as<std::remove_cvref_t<U>, T>
         auto update(const U& obj [[clang::lifetimebound]]) {
-            return get_update_statement().query(obj);
+            return orm::statements::UpdateStatement<T, ConnType>(conn_).query(obj);
         }
 
         // Bulk update - returns proxy with .execute() and .to_sql()
         auto update(std::span<const T> objects [[clang::lifetimebound]]) {
-            return get_update_statement().query(objects);
+            return orm::statements::UpdateStatement<T, ConnType>(conn_).query(objects);
         }
 
         // Reset WHERE, JOIN, LIMIT, and OFFSET state
@@ -312,9 +312,6 @@ export namespace storm {
         auto invalidate_cache() noexcept -> void {
             if (insert_stmt_) {
                 insert_stmt_->invalidate_cache();
-            }
-            if (update_stmt_) {
-                update_stmt_->invalidate_cache();
             }
             if (erase_stmt_) {
                 erase_stmt_->invalidate_cache();
@@ -544,18 +541,6 @@ export namespace storm {
             return *erase_stmt_;
         }
 
-        // Lazy-initialize and return cached UpdateStatement for optimal performance
-        auto get_update_statement() const -> orm::statements::UpdateStatement<T, ConnType>& {
-#ifdef STORM_DISABLE_L1
-            update_stmt_ = std::make_unique<orm::statements::UpdateStatement<T, ConnType>>(conn_); // L1 disabled (#214)
-#else
-            if (!update_stmt_) [[unlikely]] {
-                update_stmt_ = std::make_unique<orm::statements::UpdateStatement<T, ConnType>>(conn_);
-            }
-#endif
-            return *update_stmt_;
-        }
-
         explicit QuerySet(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
         template <bool F2> auto copy_state_into(QuerySet<T, ConnType, F2>& dst) const -> void {
@@ -587,7 +572,6 @@ export namespace storm {
         std::shared_ptr<ConnType>                                              conn_;
         mutable std::unique_ptr<orm::statements::InsertStatement<T, ConnType>> insert_stmt_;
         mutable std::unique_ptr<orm::statements::EraseStatement<T, ConnType>>  erase_stmt_;
-        mutable std::unique_ptr<orm::statements::UpdateStatement<T, ConnType>> update_stmt_;
 
         mutable std::optional<orm::statements::JoinStatementWrapper> join_stmt_;
         mutable orm::where::ExpressionVariantPtr                     where_expr_;

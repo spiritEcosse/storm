@@ -1,7 +1,7 @@
 module;
 
 // Single cohesive class template; thresholds intentionally relaxed (see #264 finding).
-// `duplicate` removed in #277 Phase 3 (ensure_cached_stmt + reset_bind_execute helpers; QueryBase::sql() shared by
+// `duplicate` removed in #277 Phase 3 (prepare_stmt + reset_bind_execute helpers; QueryBase::sql() shared by
 // SingleQuery/BulkQuery proxies).
 
 #include <meta>
@@ -137,7 +137,7 @@ export namespace storm::orm::statements {
         };
 
         struct SingleQuery : QueryBase {
-            UpdateStatement&   stmt;
+            UpdateStatement    stmt;
             const T&           obj;
             [[nodiscard]] auto execute() -> std::expected<void, Error> {
                 return stmt.execute_single_optimized(obj);
@@ -148,7 +148,7 @@ export namespace storm::orm::statements {
         };
 
         struct BulkQuery : QueryBase {
-            UpdateStatement&   stmt;
+            UpdateStatement    stmt;
             std::span<const T> objects;
             [[nodiscard]] auto execute() -> std::expected<void, Error> {
                 return stmt.execute(objects);
@@ -159,10 +159,10 @@ export namespace storm::orm::statements {
         };
 
         auto query(const T& obj [[clang::lifetimebound]]) -> SingleQuery {
-            return {{}, *this, obj};
+            return {{}, std::move(*this), obj};
         }
         auto query(std::span<const T> objects [[clang::lifetimebound]]) -> BulkQuery {
-            return {{}, *this, objects};
+            return {{}, std::move(*this), objects};
         }
 
         // Returns SQL string with bound parameters inlined for a single UPDATE (for debugging)
@@ -188,29 +188,26 @@ export namespace storm::orm::statements {
             return to_sql(objects[0]);
         }
 
-        // Lazily prepare and cache the UPDATE statement. Both execute()
-        // and execute_single_optimized() used to spell this out inline.
-        [[nodiscard]] __attribute__((always_inline)) auto ensure_cached_stmt() noexcept -> std::expected<void, Error> {
-            if (cached_update_stmt_ == nullptr) {
-                auto stmt_result = conn_->prepare_cached(get_update_sql());
-                if (!stmt_result) {
-                    return std::unexpected(stmt_result.error());
-                }
-                cached_update_stmt_ = *stmt_result;
+        // Prepare (L3-cached) the UPDATE statement. Both execute paths share
+        // this so the prepare + error-check sequence lives in one place.
+        [[nodiscard]] __attribute__((always_inline)) auto prepare_stmt() noexcept -> std::expected<Statement*, Error> {
+            auto prepare_result = conn_->prepare_cached(get_update_sql());
+            if (!prepare_result) [[unlikely]] {
+                return std::unexpected(prepare_result.error());
             }
-            return {};
+            return *prepare_result;
         }
 
-        // reset → inline-bind → execute on the cached statement. The batch
+        // reset → inline-bind → execute on the given statement. The batch
         // loop and execute_single_row used to repeat this body verbatim.
-        [[nodiscard]] __attribute__((always_inline)) auto reset_bind_execute(const T& obj) noexcept
+        [[nodiscard]] __attribute__((always_inline)) auto reset_bind_execute(Statement* stmt, const T& obj) noexcept
                 -> std::expected<void, Error> {
-            cached_update_stmt_->reset();
-            auto bind_result = inline_bind_all_fields(cached_update_stmt_, obj, typename Base::field_indices_t{});
+            stmt->reset();
+            auto bind_result = inline_bind_all_fields(stmt, obj, typename Base::field_indices_t{});
             if (!bind_result) {
                 return std::unexpected(bind_result.error());
             }
-            auto exec_result = cached_update_stmt_->execute();
+            auto exec_result = stmt->execute();
             if (!exec_result) {
                 return std::unexpected(exec_result.error());
             }
@@ -224,14 +221,16 @@ export namespace storm::orm::statements {
                 return {};
             }
 
-            // Cache the statement pointer once (avoid hash lookup per row)
-            if (auto ready = ensure_cached_stmt(); !ready) {
-                return std::unexpected(ready.error());
+            // Prepare the statement pointer once (avoid hash lookup per row)
+            auto prepared = prepare_stmt();
+            if (!prepared) [[unlikely]] {
+                return std::unexpected(prepared.error());
             }
+            Statement* stmt = *prepared;
 
             // Single object - no transaction needed
             if (objects.size() == 1) {
-                return execute_single_row(objects[0]);
+                return execute_single_row(stmt, objects[0]);
             }
 
             // Multiple objects - use RAII transaction guard
@@ -241,7 +240,7 @@ export namespace storm::orm::statements {
             }
 
             for (const auto& obj : objects) {
-                if (auto step = reset_bind_execute(obj); !step) {
+                if (auto step = reset_bind_execute(stmt, obj); !step) {
                     return step;
                 }
             }
@@ -249,10 +248,10 @@ export namespace storm::orm::statements {
             return txn->commit();
         }
 
-        // Execute single row with cached statement (no transaction)
-        [[nodiscard]] __attribute__((always_inline)) auto execute_single_row(const T& obj) noexcept
+        // Execute single row with the given statement (no transaction)
+        [[nodiscard]] __attribute__((always_inline)) auto execute_single_row(Statement* stmt, const T& obj) noexcept
                 -> std::expected<void, Error> {
-            return reset_bind_execute(obj);
+            return reset_bind_execute(stmt, obj);
         }
 
         // Helper to unroll inline binding for all fields (skips PK, then binds PK last)
@@ -282,38 +281,30 @@ export namespace storm::orm::statements {
         // not before bind (one less statement reset on the steady-state path).
         [[nodiscard]] __attribute__((hot)) auto execute_single_optimized(const T& obj) noexcept
                 -> std::expected<void, Error> {
-            if (auto ready = ensure_cached_stmt(); !ready) {
-                return std::unexpected(ready.error());
+            auto prepared = prepare_stmt();
+            if (!prepared) [[unlikely]] {
+                return std::unexpected(prepared.error());
             }
-
+            Statement* stmt = *prepared;
             // FULLY INLINED BINDING - all compile-time dispatched, no function calls
-            auto bind_result = inline_bind_all_fields(cached_update_stmt_, obj, typename Base::field_indices_t{});
+            auto bind_result = inline_bind_all_fields(stmt, obj, typename Base::field_indices_t{});
             if (!bind_result) {
                 return std::unexpected(bind_result.error());
             }
 
             // Execute and reset for next use
-            auto exec_result = cached_update_stmt_->execute();
+            auto exec_result = stmt->execute();
             if (!exec_result) {
-                cached_update_stmt_->reset();
+                stmt->reset();
                 return std::unexpected(exec_result.error());
             }
 
-            cached_update_stmt_->reset();
+            stmt->reset();
             return {};
-        }
-
-        // Drop the cached Statement pointer. Call this before
-        // Connection::clear_statement_cache(). Issue #215.
-        auto invalidate_cache() noexcept -> void {
-            cached_update_stmt_ = nullptr;
         }
 
       private:
         std::shared_ptr<ConnType> conn_;
-        // Raw pointer into Connection::statement_cache_; pointer-stable thanks
-        // to the unique_ptr<Statement> value type (Issue #215).
-        Statement* cached_update_stmt_ = nullptr;
     };
 
 } // namespace storm::orm::statements
