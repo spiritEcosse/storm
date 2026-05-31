@@ -36,15 +36,14 @@ export namespace storm::orm::statements {
         )
             : conn_(std::move(conn)), operands_(std::move(operands)), operators_(std::move(operators)) {}
 
-        // Append a new operand with the given set operator and invalidate the
-        // cached prepared statement. Each public union_/union_all/except_/intersect_
-        // used to spell this body out three lines at a time.
+        // Append a new operand with the given set operator. Each public
+        // union_/union_all/except_/intersect_ used to spell this body out
+        // three lines at a time.
         template <typename U>
             requires std::same_as<U, T>
         auto add_operand(SetOpOperand<U> operand, SetOpType op) -> SetOpBuilder&& {
             operands_.push_back(std::move(operand));
             operators_.push_back(op);
-            cached_stmt_ = nullptr;
             return std::move(*this);
         }
 
@@ -57,36 +56,34 @@ export namespace storm::orm::statements {
 
         template <auto... Args> auto order_by() -> SetOpBuilder&& {
             order_by_wrapper_ = make_order_by_wrapper<Args...>();
-            cached_stmt_      = nullptr;
             return std::move(*this);
         }
 
         auto limit(int n) -> SetOpBuilder&& {
             limit_value_ = n;
-            cached_stmt_ = nullptr;
             return std::move(*this);
         }
 
         auto offset(int n) -> SetOpBuilder&& {
             offset_value_ = n;
-            cached_stmt_  = nullptr;
             return std::move(*this);
         }
 
-        // Ensure cached_stmt_ is prepared, reset it, rebind all params, and
+        // Prepare via the L3 connection cache, reset it, rebind all params, and
         // return the ready-to-use Statement*. Shared by execute() and to_sql()
         // — previously each method spelled out the prepare/reset/bind dance.
         [[nodiscard]] auto ready_statement() -> std::expected<Statement*, Error> {
-            if (cached_stmt_ == nullptr) {
-                if (auto prep = prepare_statement(); !prep) [[unlikely]] {
-                    return std::unexpected(prep.error());
-                }
+            std::string sql         = build_combined_sql();
+            auto        stmt_result = conn_->prepare_cached(sql);
+            if (!stmt_result) [[unlikely]] {
+                return std::unexpected(stmt_result.error());
             }
-            cached_stmt_->reset();
-            if (auto bind = bind_all_params(cached_stmt_); !bind) [[unlikely]] {
+            Statement* stmt = *stmt_result;
+            stmt->reset();
+            if (auto bind = bind_all_params(stmt); !bind) [[unlikely]] {
                 return std::unexpected(bind.error());
             }
-            return cached_stmt_;
+            return stmt;
         }
 
         [[nodiscard]] auto execute() -> std::expected<plf::hive<T>, Error> {
@@ -111,16 +108,6 @@ export namespace storm::orm::statements {
         }
 
       private:
-        [[nodiscard]] auto prepare_statement() -> std::expected<void, Error> {
-            std::string sql         = build_combined_sql();
-            auto        stmt_result = conn_->prepare_cached(sql);
-            if (!stmt_result) [[unlikely]] {
-                return std::unexpected(stmt_result.error());
-            }
-            cached_stmt_ = *stmt_result;
-            return {};
-        }
-
         [[nodiscard]] auto build_combined_sql() const -> std::string {
             std::string sql;
 
@@ -195,7 +182,6 @@ export namespace storm::orm::statements {
         std::optional<OrderByWrapper> order_by_wrapper_;
         std::optional<int>            limit_value_;
         std::optional<int>            offset_value_;
-        Statement*                    cached_stmt_ = nullptr;
     };
 
 } // namespace storm::orm::statements
