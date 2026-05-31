@@ -441,7 +441,16 @@ cd /home/ihor/projects/storm/storm_develop && git add src/orm/statements/erase.c
 
 ---
 
-### Task 6: Verify distinct.cppm and aggregate.cppm
+### Task 6: Verify distinct/aggregate AND collapse L2 in setop.cppm
+
+> **SCOPE EXPANSION (2026-05-31):** After Task 5, a grep found a FIFTH statement class with L2 that
+> the spec/plan missed: `src/orm/statements/setop.cppm` (UNION/INTERSECT/EXCEPT `SetOpBuilder`) has a
+> `cached_stmt_` member (~line 198) + an `ensure_cached`-style helper (~80). Unlike the others,
+> SetOpBuilder is NOT an L1-cached QuerySet member — `make_setop_builder()` already constructs it
+> per-call and returns it by value, so there is no L1 to remove. But its `cached_stmt_` is an L2 cache
+> holding an L3 pointer that would dangle after `clear_statement_cache()` (same latent risk INSERT
+> had). It must be collapsed for consistency and safety: drop `cached_stmt_`, make the prepare path a
+> per-call `conn_->prepare_cached(...)`. `test_setop.cpp` covers the behavior.
 
 **Files:**
 - Modify (if needed): `src/orm/statements/distinct.cppm`, `src/orm/statements/aggregate.cppm`
