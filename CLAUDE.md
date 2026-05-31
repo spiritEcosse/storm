@@ -285,16 +285,15 @@ See [docs/architecture/](docs/architecture/) for design decisions.
 | Optimization | Improvement | When to Use |
 |--------------|-------------|-------------|
 | Flat code over nested lambdas | ~3-4% | Hot paths, inner loops |
-| Statement pointer caching | ~23% | Single-row ops in loops |
 | Raw pointer caching in loops | ~5-6% | Query extraction loops |
-| Expression address caching | Skip SQL build | Repeated WHERE queries |
 | Template methods for modules | ~1-3% | Cross-module hot paths |
 
-```cpp
-// Cache statement pointer (23% faster)
-if (!cached_stmt_) cached_stmt_ = conn_->prepare_cached(sql);
-cached_stmt_->reset();
+> Statement preparation is cached once, at the Connection level (`prepare_cached`,
+> see [STATEMENT_CACHING.md](docs/architecture/STATEMENT_CACHING.md)). The former
+> per-QuerySet (L1) and per-Statement (L2) pointer caches were removed in #214
+> after benchmarks showed no measurable benefit — do not reintroduce them.
 
+```cpp
 // Cache raw pointer in loops (5-6% faster)
 sqlite3_stmt* raw = stmt->handle();
 while (sqlite3_step(raw) == SQLITE_ROW) { ... }
