@@ -25,6 +25,44 @@
 
 ---
 
+## ⚠️ PLAN REVISION (2026-05-31) — L1 and L2 must collapse together per statement type
+
+During Task 2 execution we discovered the original "all L2 first, then all L1" ordering is **unsound**.
+Approach A's `std::move(*this)` in a `query()` factory moves the statement into the proxy. While L1
+still exists, `get_select_statement()` returns a reference to the *cached* `select_stmt_` member, so
+`std::move(*this)` moves **out of the cached object**, corrupting it for the QuerySet's next reuse →
+48 segfaults in reuse tests. Neither order works alone: L2-by-value needs the source to be a per-call
+temporary (L1 gone), and L1-construct-inline alone leaves the proxy holding a `Statement&` to a dead
+temporary.
+
+**Resolution:** collapse L1 + L2 **together, per statement type, in one commit.** Each task below now
+also rewrites that type's QuerySet call sites (from `get_X_statement().method(...)` to
+`XStatement<T, ConnType>(conn_).method(...)`) AND deletes that type's L1 accessor + `unique_ptr`
+member, in the SAME commit as the L2 proxy/member changes. This keeps every commit green.
+
+The per-type call sites and L1 members (from `queryset.cppm`):
+- **SELECT** (Task 2): call sites `select()` ~157, `rows()` ~166, `first()` ~174, `get()` ~186;
+  accessor `get_select_statement()` ~562; member `select_stmt_` ~605.
+- **UPDATE** (Task 3): call sites `update(obj)` ~277, `update(objects)` ~282; accessor
+  `get_update_statement()` ~550; member `update_stmt_` ~606.
+- **INSERT** (Task 4): call sites `insert(obj)` ~80, `insert(objects,opts)` ~89, templated `insert<R>`
+  ~95; accessor `get_insert_statement()` ~526; member `insert_stmt_` ~603.
+- **ERASE** (Task 5): call sites `erase(obj)` ~60, `erase(objects)` ~65, `erase_all()` ~70; accessor
+  `get_erase_statement()` ~538; member `erase_stmt_` ~604.
+
+After all four types are collapsed, **Task 7 shrinks** to: delete the now-dead
+`QuerySet::invalidate_cache()` + `CacheInvalidationLevel1Test` + the `reset()` call to it, delete the
+empty statement-level `invalidate_cache()` stubs, and confirm no `_stmt_` members or `get_*_statement()`
+accessors remain. (The per-member deletions happen in Tasks 2-5.)
+
+Each task's "convert proxies to own-by-value + delete cached members" steps stay as written below; ADD
+to each: rewrite that type's call sites + delete its accessor + member, and do NOT leave an
+`invalidate_cache()` stub if that type's QuerySet caller is removed in the same commit (SELECT/ERASE
+stubs can still be deferred to Task 7 since `reset()` calls the shared `invalidate_cache()` — simplest
+is to keep stubs through Tasks 2-5 and delete them all in Task 7).
+
+---
+
 ### Task 1: Branch setup
 
 **Files:** none (git)
