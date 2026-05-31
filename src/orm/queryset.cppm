@@ -57,17 +57,17 @@ export namespace storm {
 
         // Erase single object - returns proxy with .execute() and .to_sql()
         auto erase(const T& obj [[clang::lifetimebound]]) {
-            return get_erase_statement().query(obj);
+            return orm::statements::EraseStatement<T, ConnType>(conn_).query(obj);
         }
 
         // Bulk erase - returns proxy with .execute() and .to_sql()
         auto erase(std::span<const T> objects [[clang::lifetimebound]]) {
-            return get_erase_statement().query(objects);
+            return orm::statements::EraseStatement<T, ConnType>(conn_).query(objects);
         }
 
         // Erase all rows — executes DELETE FROM <table> with no WHERE clause
         [[nodiscard]] auto erase_all() {
-            return get_erase_statement().query_all();
+            return orm::statements::EraseStatement<T, ConnType>(conn_).query_all();
         }
 
         // Insert single object - returns proxy with .execute() and .to_sql()
@@ -309,11 +309,7 @@ export namespace storm {
         // this after a targeted DDL on the underlying table — pair with
         // Connection::clear_statement_cache(table) on the same connection.
         // Issue #215.
-        auto invalidate_cache() noexcept -> void {
-            if (erase_stmt_) {
-                erase_stmt_->invalidate_cache();
-            }
-        }
+        auto invalidate_cache() noexcept -> void {}
 
         // GROUP BY - returns GroupByBuilder for fluent aggregate chaining
         // Usage:
@@ -514,18 +510,6 @@ export namespace storm {
         }
 
       private:
-        // Lazy-initialize and return cached EraseStatement for optimal performance
-        auto get_erase_statement() const -> orm::statements::EraseStatement<T, ConnType>& {
-#ifdef STORM_DISABLE_L1
-            erase_stmt_ = std::make_unique<orm::statements::EraseStatement<T, ConnType>>(conn_); // L1 disabled (#214)
-#else
-            if (!erase_stmt_) [[unlikely]] {
-                erase_stmt_ = std::make_unique<orm::statements::EraseStatement<T, ConnType>>(conn_);
-            }
-#endif
-            return *erase_stmt_;
-        }
-
         explicit QuerySet(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
         template <bool F2> auto copy_state_into(QuerySet<T, ConnType, F2>& dst) const -> void {
@@ -554,8 +538,7 @@ export namespace storm {
             return {conn_, std::move(operands), std::move(operators)};
         }
 
-        std::shared_ptr<ConnType>                                             conn_;
-        mutable std::unique_ptr<orm::statements::EraseStatement<T, ConnType>> erase_stmt_;
+        std::shared_ptr<ConnType> conn_;
 
         mutable std::optional<orm::statements::JoinStatementWrapper> join_stmt_;
         mutable orm::where::ExpressionVariantPtr                     where_expr_;

@@ -177,7 +177,7 @@ export namespace storm::orm::statements {
         explicit EraseStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
         struct SingleQuery {
-            EraseStatement&    stmt;
+            EraseStatement     stmt;
             const T&           obj;
             [[nodiscard]] auto execute() -> std::expected<void, Error> {
                 return stmt.execute_one(obj);
@@ -191,7 +191,7 @@ export namespace storm::orm::statements {
         };
 
         struct BulkQuery {
-            EraseStatement&    stmt;
+            EraseStatement     stmt;
             std::span<const T> objects;
             [[nodiscard]] auto execute() -> std::expected<void, Error> {
                 return stmt.execute(objects);
@@ -205,7 +205,7 @@ export namespace storm::orm::statements {
         };
 
         struct DeleteAllQuery {
-            EraseStatement&    stmt;
+            EraseStatement     stmt;
             [[nodiscard]] auto execute() -> std::expected<void, Error> {
                 return stmt.execute_all();
             }
@@ -218,13 +218,13 @@ export namespace storm::orm::statements {
         };
 
         auto query(const T& obj [[clang::lifetimebound]]) -> SingleQuery {
-            return {*this, obj};
+            return {std::move(*this), obj};
         }
         auto query(std::span<const T> objects [[clang::lifetimebound]]) -> BulkQuery {
-            return {*this, objects};
+            return {std::move(*this), objects};
         }
         auto query_all() -> DeleteAllQuery {
-            return {*this};
+            return {std::move(*this)};
         }
 
         // Returns SQL string with bound parameters inlined for a single DELETE (for debugging)
@@ -297,25 +297,23 @@ export namespace storm::orm::statements {
             return conn_->execute(delete_all_sql_string);
         }
 
-        // Single DELETE - pre-cached statement, inlined execution
+        // Single DELETE - prepare from L3 cache per call, inlined execution
         [[nodiscard]] __attribute__((hot)) auto execute_one(const T& obj) noexcept -> std::expected<void, Error> {
-            // Get or cache the prepared statement
-            if (cached_single_stmt_ == nullptr) {
-                auto stmt_result = conn_->prepare_cached(get_single_delete_sql());
-                if (!stmt_result) {
-                    return std::unexpected(stmt_result.error());
-                }
-                cached_single_stmt_ = *stmt_result;
+            // Prepare statement (cached internally by connection)
+            auto stmt_result = conn_->prepare_cached(get_single_delete_sql());
+            if (!stmt_result) {
+                return std::unexpected(stmt_result.error());
             }
+            auto* stmt = *stmt_result;
 
             // Reset, bind PK, and execute
-            cached_single_stmt_->reset();
+            stmt->reset();
 
-            if (auto bind_result = bind_pk_at(*cached_single_stmt_, obj, 1); !bind_result) {
+            if (auto bind_result = bind_pk_at(*stmt, obj, 1); !bind_result) {
                 return std::unexpected(bind_result.error());
             }
 
-            auto exec_result = cached_single_stmt_->execute();
+            auto exec_result = stmt->execute();
             if (!exec_result) {
                 return std::unexpected(exec_result.error());
             }
@@ -343,14 +341,12 @@ export namespace storm::orm::statements {
         // Optimized: pre-cache max bulk statement, only lookup remainder once
         [[nodiscard]] __attribute__((hot)) auto execute_chunked(std::span<const T> objects)
                 -> std::expected<void, Error> {
-            // Cache max bulk statement pointer (compile-time SQL, no hash lookup after first call)
-            if (cached_max_bulk_stmt_ == nullptr) {
-                auto stmt_result = conn_->prepare_cached(max_bulk_delete_sql);
-                if (!stmt_result) {
-                    return std::unexpected(stmt_result.error());
-                }
-                cached_max_bulk_stmt_ = *stmt_result;
+            // Prepare max bulk statement once per call (compile-time SQL, reused across full chunks)
+            auto max_bulk_result = conn_->prepare_cached(max_bulk_delete_sql);
+            if (!max_bulk_result) {
+                return std::unexpected(max_bulk_result.error());
             }
+            Statement* max_bulk_stmt = *max_bulk_result;
 
             // Calculate remainder size upfront
             const std::size_t remainder_size = objects.size() % MAX_CHUNK_SIZE;
@@ -366,11 +362,11 @@ export namespace storm::orm::statements {
                 remainder_stmt = *stmt_result;
             }
 
-            // Process full chunks using cached pointer (no hash lookups in loop)
+            // Process full chunks using local pointer (no hash lookups in loop)
             std::size_t offset = 0;
             while (offset + MAX_CHUNK_SIZE <= objects.size()) {
                 auto chunk = objects.subspan(offset, MAX_CHUNK_SIZE);
-                if (auto result = bind_pks_and_execute(*cached_max_bulk_stmt_, chunk); !result) {
+                if (auto result = bind_pks_and_execute(*max_bulk_stmt, chunk); !result) {
                     return std::unexpected(result.error());
                 }
                 offset += MAX_CHUNK_SIZE;
@@ -421,20 +417,8 @@ export namespace storm::orm::statements {
             return Base::template bind_value_by_type<ConnType>(stmt, index, pk_value);
         }
 
-      public:
-        // Drop cached Statement pointers. Call before
-        // Connection::clear_statement_cache(). Issue #215.
-        auto invalidate_cache() noexcept -> void {
-            cached_single_stmt_   = nullptr;
-            cached_max_bulk_stmt_ = nullptr;
-        }
-
       private:
         std::shared_ptr<ConnType> conn_;
-        // Raw pointers into Connection::statement_cache_ (pointer-stable via
-        // unique_ptr<Statement> value type, Issue #215).
-        Statement* cached_single_stmt_   = nullptr;
-        Statement* cached_max_bulk_stmt_ = nullptr;
     };
 
 } // namespace storm::orm::statements
