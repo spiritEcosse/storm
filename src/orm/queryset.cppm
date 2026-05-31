@@ -289,27 +289,13 @@ export namespace storm {
         //   qs.where(age > 25).limit(10).select();  // WHERE age > 25 LIMIT 10
         //   qs.reset();                              // Clear state
         //   qs.select();                             // No WHERE, no LIMIT
-        //
-        // Issue #215: reset() also drops every Level 2 Statement-pointer cache so
-        // that schema changes followed by Connection::clear_statement_cache() do not
-        // leave Insert/Update/Erase holding pointers to freed statements.
-        // For schema-only invalidation that preserves WHERE/LIMIT state, use
-        // invalidate_cache() below.
         auto reset() noexcept -> void {
             join_stmt_.reset();
             where_expr_.reset();
             limit_value_.reset();
             offset_value_.reset();
             order_by_wrapper_.reset();
-            invalidate_cache();
         }
-
-        // Drop every cached Statement pointer held by this QuerySet's Level 2
-        // statements without touching the WHERE/LIMIT/OFFSET/JOIN chain. Use
-        // this after a targeted DDL on the underlying table — pair with
-        // Connection::clear_statement_cache(table) on the same connection.
-        // Issue #215.
-        auto invalidate_cache() noexcept -> void {}
 
         // GROUP BY - returns GroupByBuilder for fluent aggregate chaining
         // Usage:

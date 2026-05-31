@@ -1,6 +1,4 @@
 #include <gtest/gtest.h>
-#include <sqlite3.h>
-#include "test_db_helpers.h"
 
 // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
 
@@ -8,19 +6,18 @@ import storm;
 import std;
 import storm_db_sqlite;
 
-#include "test_models.h" // NOSONAR cpp:S954
-
 using storm::db::sqlite::Connection;
 using storm::db::sqlite::Statement;
 
 // ============================================================================
-// Issue #215 — Phase 1: Cache invalidation
+// Single-level Connection statement cache (formerly "Level 3")
 //
-// These tests pin the contract for the new per-table clear API, the Level 2
-// invalidate_cache() methods on Insert/Update/Erase statements, and Level 1
-// propagation via QuerySet::reset() / QuerySet::invalidate_cache(). Test 1
-// also locks down the dangling-pointer fix that moves Level 3 storage from
-// `unordered_map<string, Statement>` to `unordered_map<string, unique_ptr<...>>`.
+// These tests pin the contract for the Connection statement cache: cached
+// Statement* pointers stay stable across map rehash, and the per-table
+// clear_statement_cache(table) overload drops only entries that reference the
+// named table (word-boundary aware). They also lock down the dangling-pointer
+// fix that stores statements as `unordered_map<string, unique_ptr<Statement>>`
+// so the pinned pointers survive growth of the map.
 // ============================================================================
 
 namespace {
@@ -118,102 +115,6 @@ namespace {
         conn_.clear_statement_cache(std::string_view{"persons"});
 
         EXPECT_EQ(conn_.cached_statement_count(), 1U) << "person_addresses must survive a clear targeting `persons`";
-    }
-
-    // ============================================================================
-    // Level 1 + 2 — invalidation propagation through QuerySet
-    // ============================================================================
-
-    template <typename ConnType> class CacheInvalidationLevel1Test : public StormTestFixture<Person, ConnType> {};
-
-    TYPED_TEST_SUITE(CacheInvalidationLevel1Test, DatabaseTypes);
-
-    // ------------------------------------------------------------------ Test 4
-    // QuerySet::invalidate_cache() must reach the InsertStatement instance and
-    // null its cached Statement* member. The observable consequence: clearing
-    // Level 3 immediately after Level 1 invalidation must not leave the insert
-    // path holding a dangling pointer. The next .insert().execute() must
-    // re-prepare cleanly (cache miss → new entry → count == 1).
-    TYPED_TEST(CacheInvalidationLevel1Test, InvalidateCachePropagatesToLevel2) {
-        storm::QuerySet<Person, TypeParam> qs;
-
-        // First insert: warms both Level 2 (InsertStatement::cached_*) and
-        // Level 3 (Connection::statement_cache_).
-        ASSERT_TRUE(qs.insert(Person{.name = "Alice", .age = 30}).execute().has_value());
-
-        const auto& conn = storm::QuerySet<Person, TypeParam>::get_default_connection();
-        ASSERT_GE(conn->cached_statement_count(), 1U);
-
-        // Invalidate Level 1+2, then clear Level 3 underneath us. If Level 2
-        // still holds the old pointer it now dangles; the next insert would
-        // crash under ASAN.
-        qs.invalidate_cache();
-        conn->clear_statement_cache();
-        EXPECT_EQ(conn->cached_statement_count(), 0U);
-
-        ASSERT_TRUE(qs.insert(Person{.name = "Bob", .age = 25}).execute().has_value())
-                << "insert after invalidate+clear must re-prepare without UB";
-        EXPECT_GE(conn->cached_statement_count(), 1U) << "re-prepared statement must be cached again";
-    }
-
-    // ------------------------------------------------------------------ Test 4b
-    // invalidate_cache() must reach EraseStatement when the QuerySet has
-    // touched the erase path. Without this, an erase issued before targeted
-    // DDL would leave the Level 2 erase cache dangling against Level 3.
-    TYPED_TEST(CacheInvalidationLevel1Test, InvalidateCacheReachesEraseStatement) {
-        storm::QuerySet<Person, TypeParam> qs;
-
-        // Warm the erase Level 2 cache: insert a row so the erase path has
-        // something to operate on, then run erase to populate erase_stmt_.
-        ASSERT_TRUE(qs.insert(Person{.name = "Alice", .age = 30}).execute().has_value());
-        ASSERT_TRUE(qs.erase(Person{.id = 1}).execute().has_value());
-
-        const auto& conn = storm::QuerySet<Person, TypeParam>::get_default_connection();
-        ASSERT_GE(conn->cached_statement_count(), 1U);
-
-        // invalidate_cache() must visit erase_stmt_; clearing Level 3 right
-        // after would otherwise leave the EraseStatement holding a dangling
-        // pointer that ASAN would flag on the next erase.
-        qs.invalidate_cache();
-        conn->clear_statement_cache();
-        EXPECT_EQ(conn->cached_statement_count(), 0U);
-
-        ASSERT_TRUE(qs.insert(Person{.name = "Bob", .age = 25}).execute().has_value());
-        ASSERT_TRUE(qs.erase(Person{.id = 2}).execute().has_value())
-                << "erase after invalidate+clear must re-prepare without UB";
-    }
-
-    // ------------------------------------------------------------------ Test 5
-    // QuerySet::reset() must invalidate Level 2 caches for every statement type
-    // the QuerySet has touched (insert, update, erase, select). Same shape as
-    // test 4 but covers all four statement kinds in one shot.
-    TYPED_TEST(CacheInvalidationLevel1Test, ResetClearsAllLevel2Caches) {
-        storm::QuerySet<Person, TypeParam> qs;
-
-        // Warm every statement type.
-        ASSERT_TRUE(qs.insert(Person{.name = "Alice", .age = 30}).execute().has_value());
-        ASSERT_TRUE(qs.update(Person{.id = 1, .name = "Alice2", .age = 31}).execute().has_value());
-        auto sel_before = qs.select().execute();
-        ASSERT_TRUE(sel_before.has_value());
-
-        const auto& conn = storm::QuerySet<Person, TypeParam>::get_default_connection();
-        ASSERT_GE(conn->cached_statement_count(), 2U) << "insert + update + select should each cache a statement";
-
-        // reset() invalidates Level 2 across all four kinds; clearing Level 3
-        // afterwards would leave a dangling pointer on the buggy code.
-        qs.reset();
-        conn->clear_statement_cache();
-        EXPECT_EQ(conn->cached_statement_count(), 0U);
-
-        // Each operation must re-prepare without UB.
-        ASSERT_TRUE(qs.insert(Person{.name = "Bob", .age = 25}).execute().has_value());
-        ASSERT_TRUE(qs.update(Person{.id = 1, .name = "Alice3", .age = 32}).execute().has_value());
-        auto sel_after = qs.select().execute();
-        ASSERT_TRUE(sel_after.has_value());
-        // Erase last so the row count is irrelevant to the assertion above.
-        ASSERT_TRUE(qs.erase(Person{.id = 1}).execute().has_value());
-
-        EXPECT_GE(conn->cached_statement_count(), 1U);
     }
 
 } // namespace

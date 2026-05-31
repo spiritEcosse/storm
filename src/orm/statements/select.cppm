@@ -247,11 +247,6 @@ export namespace storm::orm::statements {
         auto query_get  (std::optional<JoinStatementWrapper> jw, const orm::where::ExpressionVariantPtr& we, const std::optional<int>& lv, const std::optional<int>& ov, const std::optional<OrderByWrapper>& ob, bool fast) -> GetQuery   { return make_first_or_get<GetQuery>  (std::move(jw), we, lv, ov, ob, fast); }
         // clang-format on
 
-        // No-op: per-call SelectStatements own no cached prepared-statement
-        // pointers (L2 removed, #214). Kept for interface symmetry with the
-        // Insert/Update/Erase statements until their L1/L2 collapse lands.
-        auto invalidate_cache() noexcept -> void {}
-
         // Unified SELECT execution - handles all combinations of JOIN and WHERE
         // NOTE: The if/else branch is OUTSIDE the loop intentionally - checking inside would
         // add overhead per row (10k checks vs 1 check). Keep separate execute_query_loop calls.

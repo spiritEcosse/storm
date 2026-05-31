@@ -116,8 +116,8 @@ export namespace storm::db::postgresql {
         }
 
         // Clear the entire statement cache (useful for memory management or after
-        // major schema changes). Level 2 callers must invalidate their own
-        // pointers before calling this — see QuerySet::invalidate_cache().
+        // major schema changes). Callers must not retain `Statement*` obtained from
+        // a prior prepare_cached() across this call — the entries are destroyed.
         auto clear_statement_cache() noexcept -> void {
             storm::db::cache_clear_all(statement_cache_, cache_mutex_); // Issue #271
         }
