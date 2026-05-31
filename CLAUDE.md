@@ -10,7 +10,7 @@ Storm is a C++26 ORM library for SQLite using compile-time reflection to automat
 
 **Performance**: 96-108% efficiency vs raw SQLite (Release builds). See [benchmarks/README.md](benchmarks/README.md).
 
-**Key Features**: Compile-time SQL generation, 3-level statement caching, thread-local caching, type-erased JOINs, pure C++26 reflection for WHERE clauses.
+**Key Features**: Compile-time SQL generation, single-level (Connection-level) statement caching, thread-local caching, type-erased JOINs, pure C++26 reflection for WHERE clauses.
 
 ## Behavioral Guidelines
 
@@ -272,7 +272,7 @@ See [docs/architecture/](docs/architecture/) for design decisions.
 1. C++26 reflection for automatic field mapping
 2. Concept-based DB abstraction (PostgreSQL/MySQL ready)
 3. Compile-time SQL generation (zero runtime overhead)
-4. Statement + thread-local caching (20x+ speedup)
+4. Single Connection-level statement cache + thread-local SQL caching (20x+ speedup). Statements are per-call temporaries owned by the result proxy; the L1/L2 caches were removed in #214 as they gave no measurable benefit.
 5. Batch operations with smart thresholds (SQLite limit = 999)
 6. Type-erased JOINs via abstract base class
 

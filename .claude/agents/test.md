@@ -90,7 +90,7 @@ When tests fail, systematically check:
 - Module import hierarchy problems
 
 ### 4. Thread Safety Problems
-- The Level 3 statement cache is thread-safe via `std::shared_mutex` (issue #271); `std::mutex`/`std::shared_mutex` work in modules via `import std;` (validated under TSAN)
+- The Connection-level statement cache (the only statement cache; L1/L2 removed in #214) is thread-safe via `std::shared_mutex` (issue #271); `std::mutex`/`std::shared_mutex` work in modules via `import std;` (validated under TSAN)
 - Sharing a single `Connection`/QuerySet across threads is still unsupported — use per-thread connections or a `ConnectionPool` (exclusive checkout)
 - SQLite uses `SQLITE_OPEN_FULLMUTEX` for serialized mode
 - TSAN tests for cache concurrency live in `tests/db/test_statement_cache_threading.cpp`; check for race conditions in multi-threaded tests
