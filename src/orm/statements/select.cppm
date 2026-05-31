@@ -148,7 +148,7 @@ export namespace storm::orm::statements {
         // derived Query/FirstQuery/GetQuery don't each spell the field list out — that
         // five-line forwarding block used to repeat four times.
         struct QueryBase {
-            SelectStatement&                    stmt;
+            SelectStatement                     stmt;
             std::optional<JoinStatementWrapper> join_wrapper;
             orm::where::ExpressionVariantPtr    where_expr;
             std::optional<int>                  limit_value;
@@ -224,7 +224,7 @@ export namespace storm::orm::statements {
               const std::optional<int>&               lv,
               const std::optional<int>&               ov,
               const std::optional<OrderByWrapper>&    ob) -> Query {
-            return {*this, jw, we, lv, ov, ob};
+            return {std::move(*this), jw, we, lv, ov, ob};
         }
 
         // Single templated factory used by both query_first / query_get.
@@ -239,7 +239,7 @@ export namespace storm::orm::statements {
                 const std::optional<OrderByWrapper>&    ob,
                 bool                                    fast
         ) -> Proxy {
-            return {{*this, std::move(jw), we, lv, ov, ob}, fast};
+            return {{std::move(*this), std::move(jw), we, lv, ov, ob}, fast};
         }
 
         // clang-format off
@@ -251,14 +251,7 @@ export namespace storm::orm::statements {
         // Call before Connection::clear_statement_cache() — without this the
         // next execute() would step a freed prepared statement. Reached from
         // QuerySet::reset() and QuerySet::invalidate_cache(). Issue #215.
-        auto invalidate_cache() noexcept -> void {
-            cached_simple_stmt_ = nullptr;
-            cached_first_stmt_  = nullptr;
-            cached_get_stmt_    = nullptr;
-            cached_stmt_        = nullptr;
-            cached_where_addr_  = nullptr;
-            cached_sql_.clear();
-        }
+        auto invalidate_cache() noexcept -> void {}
 
         // Unified SELECT execution - handles all combinations of JOIN and WHERE
         // NOTE: The if/else branch is OUTSIDE the loop intentionally - checking inside would
@@ -287,18 +280,11 @@ export namespace storm::orm::statements {
         // Called by QuerySet::first() when no WHERE/JOIN/ORDER BY/OFFSET modifiers are set
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_one_fast()
                 -> std::expected<std::optional<T>, Error> {
-#ifdef STORM_DISABLE_L2
-            if (true) { // L2 disabled (#214 investigation)
-#else
-            if (cached_first_stmt_ == nullptr) {
-#endif
-                auto prepare_result = conn_->prepare_cached(select_limit1_sql_string);
-                if (!prepare_result) [[unlikely]] {
-                    return std::unexpected(prepare_result.error());
-                }
-                cached_first_stmt_ = *prepare_result;
+            auto prepare_result = conn_->prepare_cached(select_limit1_sql_string);
+            if (!prepare_result) [[unlikely]] {
+                return std::unexpected(prepare_result.error());
             }
-            return execute_single_row(cached_first_stmt_, [](Statement* stmt, T& obj) {
+            return execute_single_row(*prepare_result, [](Statement* stmt, T& obj) {
                 Base::extract_all_columns(stmt, obj);
             });
         }
@@ -330,18 +316,11 @@ export namespace storm::orm::statements {
         // Zero-parameter fast path for get() — no checks, no parameter passing overhead
         // Called by QuerySet::get() when no WHERE/JOIN/ORDER BY/OFFSET modifiers are set
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_get_fast() -> std::expected<T, Error> {
-#ifdef STORM_DISABLE_L2
-            if (true) { // L2 disabled (#214 investigation)
-#else
-            if (cached_get_stmt_ == nullptr) {
-#endif
-                auto prepare_result = conn_->prepare_cached(select_limit2_sql_string);
-                if (!prepare_result) [[unlikely]] {
-                    return std::unexpected(prepare_result.error());
-                }
-                cached_get_stmt_ = *prepare_result;
+            auto prepare_result = conn_->prepare_cached(select_limit2_sql_string);
+            if (!prepare_result) [[unlikely]] {
+                return std::unexpected(prepare_result.error());
             }
-            return execute_exact_one(cached_get_stmt_, [](Statement* stmt, T& obj) {
+            return execute_exact_one(*prepare_result, [](Statement* stmt, T& obj) {
                 Base::extract_all_columns(stmt, obj);
             });
         }
@@ -423,73 +402,40 @@ export namespace storm::orm::statements {
         // Unified approach: simple SELECT uses dedicated cache, all others use string-based cache
         // OPTIMIZATION: WHERE expression address caching - skips SQL building AND param binding
         // when the same expression is used repeatedly (sqlite3_reset preserves bindings)
-        // Bind WHERE parameters to cached_stmt_ and return any binding error in the
-        // shape callers expect. Shared between rebind_where_only (PG fast path) and
-        // prepare_and_bind (dynamic path).
+        // Bind WHERE parameters to the given statement and return any binding error in
+        // the shape callers expect.
         [[nodiscard]] __attribute__((always_inline)) auto
-        bind_where_or_propagate(const orm::where::ExpressionVariantPtr& where_expr) -> std::expected<void, Error> {
-            auto bind_result = Base::template bind_where_params<Statement, Error>(cached_stmt_, where_expr);
+        bind_where_or_propagate(Statement* stmt, const orm::where::ExpressionVariantPtr& where_expr)
+                -> std::expected<void, Error> {
+            auto bind_result = Base::template bind_where_params<Statement, Error>(stmt, where_expr);
             if (!bind_result) [[unlikely]] {
                 return std::unexpected(bind_result.error());
             }
             return {};
         }
 
-        // Fast path: simple SELECT (no WHERE / JOIN / modifiers). Prepares the static
-        // SQL once and caches the Statement* on the first call.
+        // Fast path: simple SELECT (no WHERE / JOIN / modifiers). Prepares the static SQL.
         [[nodiscard]] __attribute__((always_inline)) auto prepare_simple_path() -> std::expected<Statement*, Error> {
-#ifdef STORM_DISABLE_L2
-            if (true) { // L2 disabled: always re-fetch from Connection pool (#214 investigation)
-#else
-            if (cached_simple_stmt_ == nullptr) {
-#endif
-                auto prepare_result = conn_->prepare_cached(get_select_sql());
-                if (!prepare_result) [[unlikely]] {
-                    return std::unexpected(prepare_result.error());
-                }
-                cached_simple_stmt_ = *prepare_result;
-            }
-            return cached_simple_stmt_;
+            return conn_->prepare_cached(get_select_sql());
         }
 
-        // Fast path: same WHERE expression as the last call — skip SQL building.
-        // Rebinds parameters only if the backend clears bindings on reset (PostgreSQL).
-        [[nodiscard]] __attribute__((always_inline)) auto
-        rebind_where_only(const orm::where::ExpressionVariantPtr& where_expr) -> std::expected<Statement*, Error> {
-            if constexpr (!Statement::preserves_bindings) { // LCOV_EXCL_START — if constexpr: only instantiated for
-                                                            // PostgreSQL; fast-path return below untested for
-                                                            // execute_one
-                if (auto r = bind_where_or_propagate(where_expr); !r) {
-                    return std::unexpected(r.error());
-                }
-            }
-            return cached_stmt_;
-        } // LCOV_EXCL_STOP
-
-        // Dynamic path: prepare-or-reuse statement keyed by SQL string, then bind WHERE
+        // Dynamic path: prepare statement keyed by SQL string, then bind WHERE
         // params if any. Always_inline so the call site keeps the same codegen as the
         // previously-inlined builder (see #264 Phase 2 finding).
         [[nodiscard]] __attribute__((always_inline)) auto
         prepare_and_bind(std::string sql, const orm::where::ExpressionVariantPtr& where_expr)
                 -> std::expected<Statement*, Error> {
-#ifdef STORM_DISABLE_L2
-            if (true) { // L2 disabled (#214 investigation)
-#else
-            if (cached_stmt_ == nullptr || cached_sql_ != sql) {
-#endif
-                auto prepare_result = conn_->prepare_cached(sql);
-                if (!prepare_result) [[unlikely]] {
-                    return std::unexpected(Error{-1, "Failed to prepare statement"});
-                }
-                cached_stmt_ = *prepare_result;
-                cached_sql_  = std::move(sql);
+            auto prepare_result = conn_->prepare_cached(sql);
+            if (!prepare_result) [[unlikely]] {
+                return std::unexpected(Error{-1, "Failed to prepare statement"});
             }
+            Statement* stmt = *prepare_result;
             if (where_expr) {
-                if (auto r = bind_where_or_propagate(where_expr); !r) {
+                if (auto r = bind_where_or_propagate(stmt, where_expr); !r) {
                     return std::unexpected(r.error());
                 }
             }
-            return cached_stmt_;
+            return stmt;
         }
 
         // Each of the three stage-selectors lives in its own consteval-friendly
@@ -507,16 +453,6 @@ export namespace storm::orm::statements {
             return !has_filters && !has_modifiers;
         }
 
-        [[nodiscard]] __attribute__((always_inline)) auto can_use_addr_fast_path(const void* where_addr) const -> bool {
-#ifdef STORM_DISABLE_L2
-            (void)where_addr;
-            return false; // L2 disabled: never reuse via WHERE-address cache (#214 investigation)
-#else
-            const bool have_cache = cached_stmt_ != nullptr && cached_where_addr_ != nullptr;
-            return have_cache && where_addr == cached_where_addr_;
-#endif
-        }
-
         [[nodiscard]] __attribute__((always_inline)) auto prepare_statement(
                 const std::optional<JoinStatementWrapper>& join_wrapper,
                 const orm::where::ExpressionVariantPtr&    where_expr,
@@ -527,20 +463,9 @@ export namespace storm::orm::statements {
             if (is_simple_select(join_wrapper, where_expr, limit, offset, order_by_wrapper)) {
                 return prepare_simple_path();
             }
-            const void* where_addr = where_expr ? static_cast<const void*>(&(*where_expr)) : nullptr;
-            if (can_use_addr_fast_path(where_addr)) {
-                return rebind_where_only(where_expr);
-            }
             // NOTE: Do NOT add sql.reserve() here - benchmarks show ~2% regression due to
             // extra function call overhead outweighing reallocation savings for typical SQL sizes
-            auto stmt =
-                    prepare_and_bind(build_sql(join_wrapper, where_expr, limit, offset, order_by_wrapper), where_expr);
-#ifndef STORM_DISABLE_L2
-            if (stmt) {
-                cached_where_addr_ = where_addr;
-            }
-#endif
-            return stmt;
+            return prepare_and_bind(build_sql(join_wrapper, where_expr, limit, offset, order_by_wrapper), where_expr);
         }
 
         // =====================================================================
@@ -646,20 +571,6 @@ export namespace storm::orm::statements {
         // SQL clause helpers are inherited from BaseStatement (append_order_by, append_limit_offset, bind_where_params)
 
         std::shared_ptr<ConnType> conn_;
-
-        // Cache for simple SELECT (static SQL, compile-time constant)
-        Statement* cached_simple_stmt_ = nullptr;
-
-        // Cache for first() fast path (SELECT ... LIMIT 1, pre-built static SQL)
-        Statement* cached_first_stmt_ = nullptr;
-
-        // Cache for get() fast path (SELECT ... LIMIT 2, pre-built static SQL)
-        Statement* cached_get_stmt_ = nullptr;
-
-        // Cache for dynamic queries (WHERE, JOIN, modifiers) - validated by SQL comparison
-        Statement*  cached_stmt_       = nullptr;
-        const void* cached_where_addr_ = nullptr; // WHERE expression address cache
-        std::string cached_sql_;
     };
 
 } // namespace storm::orm::statements

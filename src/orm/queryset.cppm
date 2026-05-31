@@ -155,7 +155,7 @@ export namespace storm {
         // NOTE: WHERE and JOIN state is preserved after select() for query reusability.
         // Call reset() to clear state when needed.
         [[nodiscard]] __attribute__((hot)) auto select() {
-            return get_select_statement()
+            return orm::statements::SelectStatement<T, ConnType>(conn_)
                     .query(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_);
         }
 
@@ -164,7 +164,7 @@ export namespace storm {
         // Uses a dedicated (non-cached) prepared statement per generator instance
         // Usage: for (auto&& result : qs.where(age > 30).rows()) { ... }
         [[nodiscard]] auto rows() {
-            return get_select_statement()
+            return orm::statements::SelectStatement<T, ConnType>(conn_)
                     .rows_generator(conn_, join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_);
         }
 
@@ -174,7 +174,7 @@ export namespace storm {
         [[nodiscard]] __attribute__((hot)) auto first() {
             const bool fast = !where_expr_ && !join_stmt_.has_value() && !order_by_wrapper_.has_value() &&
                               !offset_value_.has_value();
-            return get_select_statement()
+            return orm::statements::SelectStatement<T, ConnType>(conn_)
                     .query_first(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_, fast);
         }
 
@@ -186,7 +186,7 @@ export namespace storm {
         [[nodiscard]] __attribute__((hot)) auto get() {
             const bool fast = !where_expr_ && !join_stmt_.has_value() && !order_by_wrapper_.has_value() &&
                               !offset_value_.has_value();
-            return get_select_statement()
+            return orm::statements::SelectStatement<T, ConnType>(conn_)
                     .query_get(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_, fast);
         }
 
@@ -318,9 +318,6 @@ export namespace storm {
             }
             if (erase_stmt_) {
                 erase_stmt_->invalidate_cache();
-            }
-            if (select_stmt_) {
-                select_stmt_->invalidate_cache();
             }
         }
 
@@ -559,18 +556,6 @@ export namespace storm {
             return *update_stmt_;
         }
 
-        // Lazy-initialize and return cached SelectStatement for optimal performance
-        auto get_select_statement() const -> orm::statements::SelectStatement<T, ConnType>& {
-#ifdef STORM_DISABLE_L1
-            select_stmt_ = std::make_unique<orm::statements::SelectStatement<T, ConnType>>(conn_); // L1 disabled (#214)
-#else
-            if (!select_stmt_) [[unlikely]] {
-                select_stmt_ = std::make_unique<orm::statements::SelectStatement<T, ConnType>>(conn_);
-            }
-#endif
-            return *select_stmt_;
-        }
-
         explicit QuerySet(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
         template <bool F2> auto copy_state_into(QuerySet<T, ConnType, F2>& dst) const -> void {
@@ -602,7 +587,6 @@ export namespace storm {
         std::shared_ptr<ConnType>                                              conn_;
         mutable std::unique_ptr<orm::statements::InsertStatement<T, ConnType>> insert_stmt_;
         mutable std::unique_ptr<orm::statements::EraseStatement<T, ConnType>>  erase_stmt_;
-        mutable std::unique_ptr<orm::statements::SelectStatement<T, ConnType>> select_stmt_;
         mutable std::unique_ptr<orm::statements::UpdateStatement<T, ConnType>> update_stmt_;
 
         mutable std::optional<orm::statements::JoinStatementWrapper> join_stmt_;

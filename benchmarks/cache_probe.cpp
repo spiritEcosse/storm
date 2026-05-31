@@ -76,14 +76,16 @@ namespace {
         people.clear();
         people.reserve(kSeedRows);
         for (int i = 0; i < kSeedRows; ++i) {
-            people.push_back(Person{
-                    .name             = std::format("Person{}", i + 1),
-                    .age              = 20 + (i % 50),
-                    .salary           = 30000.0 + (i * 100.0),
-                    .is_active        = (i % 2 == 0),
-                    .years_experience = i % 20,
-                    .department       = "Engineering",
-            });
+            people.push_back(
+                    Person{
+                            .name             = std::format("Person{}", i + 1),
+                            .age              = 20 + (i % 50),
+                            .salary           = 30000.0 + (i * 100.0),
+                            .is_active        = (i % 2 == 0),
+                            .years_experience = i % 20,
+                            .department       = "Engineering",
+                    }
+            );
         }
 
         (void)qs.insert(std::span<const Person>(people)).execute();
@@ -112,115 +114,115 @@ namespace {
 
 namespace {
 
-// ---------------------------------------------------------------------------
-// Scenario 1: CacheProbe/Reuse
-//
-// One QuerySet<Person> reused across all iterations.  The WHERE expression
-// is built once (age > 30, constant value) and the prepared statement is
-// reused from the L1 cache on every call.  Maximum L1 benefit.
-// ---------------------------------------------------------------------------
-auto bench_reuse(gbench::State& state) -> void {
-    std::vector<Person> people;
-    setup_db(people);
+    // ---------------------------------------------------------------------------
+    // Scenario 1: CacheProbe/Reuse
+    //
+    // One QuerySet<Person> reused across all iterations.  The WHERE expression
+    // is built once (age > 30, constant value) and the prepared statement is
+    // reused from the L1 cache on every call.  Maximum L1 benefit.
+    // ---------------------------------------------------------------------------
+    auto bench_reuse(gbench::State& state) -> void {
+        std::vector<Person> people;
+        setup_db(people);
 
-    QuerySet<Person> qs;
-    auto             expr = field<^^Person::age>() > 30;
-
-    for (auto _ : state) {
-        run_select(qs, expr);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Scenario 2: CacheProbe/NewPerOp
-//
-// Fresh QuerySet<Person> constructed inside the loop each iteration.  The L1
-// Statement-pointer cache on the QuerySet is brand-new every time; the
-// connection-level L3 cache still applies, but the per-QS L2 is cold.
-// ---------------------------------------------------------------------------
-auto bench_new_per_op(gbench::State& state) -> void {
-    std::vector<Person> people;
-    setup_db(people);
-
-    auto expr = field<^^Person::age>() > 30;
-
-    for (auto _ : state) {
         QuerySet<Person> qs;
-        run_select(qs, expr);
-    }
-}
+        auto             expr = field<^^Person::age>() > 30;
 
-// ---------------------------------------------------------------------------
-// Scenario 3: CacheProbe/MixedWhere
-//
-// One QuerySet, but the comparison value rotates each iteration (ages 20–69).
-// The SQL string is structurally identical ("WHERE age > ?") so the L3
-// prepare_cached() hit is the same, but the bind value differs every call.
-// Isolates the bind-value-change overhead from statement recompilation cost.
-// ---------------------------------------------------------------------------
-auto bench_mixed_where(gbench::State& state) -> void {
-    std::vector<Person> people;
-    setup_db(people);
-
-    QuerySet<Person> qs;
-    int              age_val = 20;
-
-    for (auto _ : state) {
-        // Rotate the comparison value to prevent the compiler from
-        // constant-folding this into a single cached path.
-        auto expr = field<^^Person::age>() > age_val;
-        age_val   = 20 + ((age_val - 19) % 50); // cycles 20..69
-        run_select(qs, expr);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Scenario 4: CacheProbe/BulkUpdate
-//
-// One QuerySet, batch UPDATE over the seeded dataset each iteration.
-// Uses update(std::span<const Person>) — the hot update path.  Exercises L2
-// caching on the UpdateStatement across repeated identical-schema calls.
-// ---------------------------------------------------------------------------
-auto bench_bulk_update(gbench::State& state) -> void {
-    std::vector<Person> people;
-    setup_db(people);
-
-    QuerySet<Person> qs;
-
-    for (auto _ : state) {
-        // Mutate salary so the UPDATE actually writes different values.
-        for (auto& p : people) {
-            p.salary += 1.0;
+        for (auto _ : state) {
+            run_select(qs, expr);
         }
-        auto result = qs.update(std::span<const Person>(people)).execute();
-        gbench::DoNotOptimize(result);
     }
-}
 
-// ---------------------------------------------------------------------------
-// Scenario 5: CacheProbe/GetByPk
-//
-// Single-row primary-key lookup in a tight loop, returning exactly one row.
-// Row materialization is ~1 row, so statement setup is a large fraction of
-// total time — this is the workload Storm's docs attribute the ~23% L2
-// statement-pointer-cache benefit to. The four scenarios above are all
-// multi-row and under-sensitive to that cost; this one isolates it.
-// ---------------------------------------------------------------------------
-auto bench_get_by_pk(gbench::State& state) -> void {
-    std::vector<Person> people;
-    setup_db(people);
+    // ---------------------------------------------------------------------------
+    // Scenario 2: CacheProbe/NewPerOp
+    //
+    // Fresh QuerySet<Person> constructed inside the loop each iteration.  The L1
+    // Statement-pointer cache on the QuerySet is brand-new every time; the
+    // connection-level L3 cache still applies, but the per-QS L2 is cold.
+    // ---------------------------------------------------------------------------
+    auto bench_new_per_op(gbench::State& state) -> void {
+        std::vector<Person> people;
+        setup_db(people);
 
-    QuerySet<Person> qs;
-    std::size_t      idx = 0;
+        auto expr = field<^^Person::age>() > 30;
 
-    for (auto _ : state) {
-        // Rotate over real seeded PKs so every iteration fetches one existing row.
-        const int pk = people[idx].id;
-        idx          = (idx + 1) % people.size();
-        auto result  = qs.where(field<^^Person::id>() == pk).get().execute();
-        gbench::DoNotOptimize(result);
+        for (auto _ : state) {
+            QuerySet<Person> qs;
+            run_select(qs, expr);
+        }
     }
-}
+
+    // ---------------------------------------------------------------------------
+    // Scenario 3: CacheProbe/MixedWhere
+    //
+    // One QuerySet, but the comparison value rotates each iteration (ages 20–69).
+    // The SQL string is structurally identical ("WHERE age > ?") so the L3
+    // prepare_cached() hit is the same, but the bind value differs every call.
+    // Isolates the bind-value-change overhead from statement recompilation cost.
+    // ---------------------------------------------------------------------------
+    auto bench_mixed_where(gbench::State& state) -> void {
+        std::vector<Person> people;
+        setup_db(people);
+
+        QuerySet<Person> qs;
+        int              age_val = 20;
+
+        for (auto _ : state) {
+            // Rotate the comparison value to prevent the compiler from
+            // constant-folding this into a single cached path.
+            auto expr = field<^^Person::age>() > age_val;
+            age_val   = 20 + ((age_val - 19) % 50); // cycles 20..69
+            run_select(qs, expr);
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Scenario 4: CacheProbe/BulkUpdate
+    //
+    // One QuerySet, batch UPDATE over the seeded dataset each iteration.
+    // Uses update(std::span<const Person>) — the hot update path.  Exercises L2
+    // caching on the UpdateStatement across repeated identical-schema calls.
+    // ---------------------------------------------------------------------------
+    auto bench_bulk_update(gbench::State& state) -> void {
+        std::vector<Person> people;
+        setup_db(people);
+
+        QuerySet<Person> qs;
+
+        for (auto _ : state) {
+            // Mutate salary so the UPDATE actually writes different values.
+            for (auto& p : people) {
+                p.salary += 1.0;
+            }
+            auto result = qs.update(std::span<const Person>(people)).execute();
+            gbench::DoNotOptimize(result);
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Scenario 5: CacheProbe/GetByPk
+    //
+    // Single-row primary-key lookup in a tight loop, returning exactly one row.
+    // Row materialization is ~1 row, so statement setup is a large fraction of
+    // total time — this is the workload Storm's docs attribute the ~23% L2
+    // statement-pointer-cache benefit to. The four scenarios above are all
+    // multi-row and under-sensitive to that cost; this one isolates it.
+    // ---------------------------------------------------------------------------
+    auto bench_get_by_pk(gbench::State& state) -> void {
+        std::vector<Person> people;
+        setup_db(people);
+
+        QuerySet<Person> qs;
+        std::size_t      idx = 0;
+
+        for (auto _ : state) {
+            // Rotate over real seeded PKs so every iteration fetches one existing row.
+            const int pk = people[idx].id;
+            idx          = (idx + 1) % people.size();
+            auto result  = qs.where(field<^^Person::id>() == pk).get().execute();
+            gbench::DoNotOptimize(result);
+        }
+    }
 
 } // namespace
 
