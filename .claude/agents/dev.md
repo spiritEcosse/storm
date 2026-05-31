@@ -98,7 +98,8 @@ cmake --preset ninja-release && cmake --build --preset ninja-release
 ## Thread Safety
 
 - SQLite is opened with `SQLITE_OPEN_FULLMUTEX`
-- The Connection-level statement cache (`statement_cache_` on each `Connection`) is the only statement cache — the per-QuerySet (L1) and per-Statement (L2) caches were removed in #214. It is thread-safe via `std::shared_mutex` (issue #271): `shared_lock` on the cache-hit hot path, `unique_lock` on insert/clear, on both SQLite and PostgreSQL backends
+- The Connection-level statement cache (a `storm::db::StatementCacheState<Statement> cache_` member on each `Connection`) is the only statement cache — the per-QuerySet (L1) and per-Statement (L2) caches were removed in #214. It is thread-safe via `std::shared_mutex` (issue #271): `shared_lock` on the cache-hit hot path, `unique_lock` on insert/clear/evict, on both SQLite and PostgreSQL backends. The shared `cache_*` helpers + the `StatementCacheState` bundle live in `storm_db_concept`
+- The cache is bounded (#273): a configurable capacity (`Connection::open(path, {.statement_cache_capacity = N})`, default 512, `0` = unbounded, threaded through `PoolConfig`) with CLOCK/second-chance eviction. A hit only flips an atomic ref bit under the `shared_lock`; eviction sweeps under the insert `unique_lock`. `cache_stats()` returns a `CacheStats` snapshot (hits/misses/evictions/current_size; lifetime counters not reset by clear)
 - Statements are per-call temporaries owned by the returned result proxy by value; no raw `Statement*` is held across calls. The `Statement*` from `prepare_cached()` is valid for the operation's scope and relies on the exclusive-checkout invariant (`ConnectionPool` hands each thread its own `Connection`); sharing a single `Connection`/QuerySet across threads is still unsupported
 - Use per-thread connections (`thread_local`) or a `ConnectionPool` (enforces exclusive checkout)
 

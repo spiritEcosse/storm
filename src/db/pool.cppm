@@ -12,12 +12,13 @@ import storm_db_concept;
 export namespace storm::db {
 
     struct PoolConfig {
-        int  min_connections      = 1;       // Pre-created on init
-        int  max_connections      = 10;      // Hard upper bound
-        int  checkout_timeout_ms  = 5000;    // 0 = fail immediately
-        int  max_lifetime_ms      = 1800000; // 30 min (0 = never recycle)
-        int  idle_timeout_ms      = 600000;  // 10 min (0 = never expire idle)
-        bool validate_on_checkout = true;    // is_open() check before handing out
+        int         min_connections          = 1;       // Pre-created on init
+        int         max_connections          = 10;      // Hard upper bound
+        int         checkout_timeout_ms      = 5000;    // 0 = fail immediately
+        int         max_lifetime_ms          = 1800000; // 30 min (0 = never recycle)
+        int         idle_timeout_ms          = 600000;  // 10 min (0 = never expire idle)
+        bool        validate_on_checkout     = true;    // is_open() check before handing out
+        std::size_t statement_cache_capacity = 512;     // Issue #273: 0 = unbounded
     };
 
     // Forward declaration
@@ -214,7 +215,7 @@ export namespace storm::db {
                     return std::nullopt;
                 }
                 lock.unlock();
-                auto result = ConnType::open(conninfo_);
+                auto result = ConnType::open(conninfo_, {.statement_cache_capacity = config_.statement_cache_capacity});
                 lock.lock();
 
                 if (shutdown_) {
@@ -255,7 +256,7 @@ export namespace storm::db {
             }
 
             auto create_entry() -> std::expected<void, Error> {
-                auto result = ConnType::open(conninfo_);
+                auto result = ConnType::open(conninfo_, {.statement_cache_capacity = config_.statement_cache_capacity});
                 if (!result) {
                     return std::unexpected(result.error());
                 }

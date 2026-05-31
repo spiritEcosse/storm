@@ -548,6 +548,23 @@ namespace {
         EXPECT_EQ(conn_result->cached_statement_count(), 2U);
     }
 
+    // Issue #273: cache_stats() snapshot on the real PostgreSQL Connection —
+    // hits/misses/size track the same way as SQLite (shared cache_* helpers).
+    TEST_F(PgCacheUtilityTest, CacheStatsSnapshot) {
+        auto conn_result = PgConnection::open("host=localhost");
+        ASSERT_TRUE(conn_result.has_value());
+
+        ASSERT_TRUE(conn_result->prepare_cached("SELECT 1").has_value()); // miss
+        ASSERT_TRUE(conn_result->prepare_cached("SELECT 2").has_value()); // miss
+        ASSERT_TRUE(conn_result->prepare_cached("SELECT 1").has_value()); // hit
+
+        const auto stats = conn_result->cache_stats();
+        EXPECT_EQ(stats.misses, 2U);
+        EXPECT_EQ(stats.hits, 1U);
+        EXPECT_EQ(stats.evictions, 0U);
+        EXPECT_EQ(stats.current_size, 2U);
+    }
+
     TEST_F(PgCacheUtilityTest, ClearStatementCache) {
         auto conn_result = PgConnection::open("host=localhost");
         ASSERT_TRUE(conn_result.has_value());
@@ -1377,6 +1394,10 @@ namespace {
 
         [[nodiscard]] static auto cached_statement_count() noexcept -> std::size_t {
             return 0;
+        }
+
+        [[nodiscard]] static auto cache_stats() noexcept -> storm::db::CacheStats { // Issue #273
+            return {};
         }
 
         [[nodiscard]] auto execute(std::string_view /*sql*/) -> std::expected<void, Error> {

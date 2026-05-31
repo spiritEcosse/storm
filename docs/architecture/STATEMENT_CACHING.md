@@ -36,7 +36,52 @@ The cache type is `unordered_map<string, unique_ptr<Statement>>`.
 - Shared across all QuerySets on that Connection
 - Avoids SQL parsing and re-planning
 - `reset()` instead of `finalize()` on reuse
-- LRU eviction (future enhancement — see #273)
+- Bounded by a configurable capacity with CLOCK/second-chance eviction (#273)
+
+## Bounded growth: CLOCK eviction + statistics (#273)
+
+Before #273 the cache had no eviction — it grew by one entry per distinct SQL
+string ever prepared, for the life of the connection. That only matters for a
+long-lived connection preparing a genuinely unbounded set of distinct SQL
+(dynamic literal-varying SQL, ad-hoc reporting); Storm parameterises WHERE
+values, so the common ORM case plateaus on its own. #273 makes growth bounded.
+
+**Capacity.** `Connection::open()` takes an optional config; the connection
+pool propagates it via `PoolConfig`:
+
+```cpp
+auto conn = Connection::open(":memory:", {.statement_cache_capacity = 512});
+// 0 = unbounded (the pre-#273 behavior). Default is 512.
+
+auto pool = ConnectionPool<Connection>::create(
+        conninfo, {.statement_cache_capacity = 512});
+```
+
+**Policy — CLOCK / second-chance (approximate LRU).** Each cache entry carries
+an atomic *reference bit*. A cache **hit** sets that bit under the existing
+`shared_lock` — a single relaxed atomic store, no structural mutation — so the
+read-parallel hot path added in #271 is preserved (a strict list-LRU would turn
+every hit into a write-locked list splice). When an insert would exceed
+capacity, the **eviction sweep** (run under the `unique_lock` the insert already
+holds) walks the entries: an entry whose bit is set gets it cleared and is
+skipped (its "second chance"); the first entry with a clear bit is evicted. If a
+full pass clears every bit without finding a victim, the next entry is evicted to
+guarantee progress. Frequently-reused statements keep getting their bit re-set
+and survive; cold one-off statements are evicted.
+
+**Statistics.** `cache_stats()` returns a snapshot:
+
+```cpp
+struct CacheStats {
+    std::uint64_t hits;          // lifetime cache hits
+    std::uint64_t misses;        // lifetime misses (prepared + inserted)
+    std::uint64_t evictions;     // lifetime evictions
+    std::size_t   current_size;  // live entry count
+};
+```
+
+Counters are lifetime totals — `clear_statement_cache()` empties the map but
+does **not** reset them.
 
 ## Statement lifetime (per-call, owned by proxy)
 

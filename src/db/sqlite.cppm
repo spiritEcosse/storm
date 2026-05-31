@@ -250,14 +250,6 @@ export namespace storm::db::sqlite {
 
     class Connection {
         using SqlitePtr = std::unique_ptr<sqlite3, SqliteDeleter>;
-        // Issue #215: storing `unique_ptr<Statement>` (not `Statement`) keeps the
-        // Statement object pinned in place across map rehashes. Upstream Level 2
-        // caches hold raw `Statement*` pointers obtained from prepare_cached();
-        // with value storage those pointers would dangle after any insert that
-        // triggers a rehash.
-        using StatementValue = std::unique_ptr<Statement>;
-        using StatementCache =
-                std::unordered_map<std::string, StatementValue, storm::db::string_hash, storm::db::string_equal>;
 
       public:
         using Error     = sqlite::Error;
@@ -277,8 +269,12 @@ export namespace storm::db::sqlite {
         static constexpr bool supports_right_join = false;
 #endif
 
+        // Issue #273: per-Connection cache configuration (capacity 0 = unbounded).
+        using Config = storm::db::StatementCacheConfig;
+
         // Factory method with error handling and thread-safe flags
-        [[nodiscard]] static auto open(std::string_view db_path) -> std::expected<Connection, Error> {
+        [[nodiscard]] static auto open(std::string_view db_path, Config config = {})
+                -> std::expected<Connection, Error> {
             sqlite3*          raw_db = nullptr;
             const std::string db_path_str(db_path); // Ensure null-termination
             // Add SQLITE_OPEN_FULLMUTEX for serialized mode (thread-safe)
@@ -297,7 +293,7 @@ export namespace storm::db::sqlite {
                 return std::unexpected(error);
             }
 
-            return Connection{SqlitePtr{raw_db}};
+            return Connection{SqlitePtr{raw_db}, config};
         }
 
         // Destructor - unique_ptr handles cleanup via SqliteDeleter
@@ -335,7 +331,7 @@ export namespace storm::db::sqlite {
                 return std::unexpected(Error{SQLITE_MISUSE, "Connection not open"});
             }
 
-            if (auto* hit = storm::db::cache_find_hit(statement_cache_, cache_mutex_, sql)) [[likely]] {
+            if (auto* hit = storm::db::cache_find_hit(cache_, sql)) [[likely]] {
                 return hit;
             }
 
@@ -343,16 +339,14 @@ export namespace storm::db::sqlite {
             if (!prepared.has_value()) {
                 return std::unexpected(prepared.error());
             }
-            return storm::db::cache_try_insert(
-                    statement_cache_, cache_mutex_, sql, std::make_unique<Statement>(std::move(*prepared))
-            );
+            return storm::db::cache_try_insert(cache_, sql, std::make_unique<Statement>(std::move(*prepared)));
         }
 
         // Clear the entire statement cache (useful for memory management or after
         // major schema changes). Callers must not retain `Statement*` obtained from
         // a prior prepare_cached() across this call — the entries are destroyed.
         auto clear_statement_cache() noexcept -> void {
-            storm::db::cache_clear_all(statement_cache_, cache_mutex_); // Issue #271
+            storm::db::cache_clear_all(cache_); // Issue #271
         }
 
         // Issue #215: drop cached entries whose SQL references the given table.
@@ -360,12 +354,17 @@ export namespace storm::db::sqlite {
         // cached statements should be preserved. Matching is word-boundary aware
         // so clearing "persons" does NOT touch "person_addresses".
         auto clear_statement_cache(std::string_view table) -> void {
-            storm::db::cache_clear_table(statement_cache_, cache_mutex_, table); // Issue #271
+            storm::db::cache_clear_table(cache_, table); // Issue #271
         }
 
         // Get cache statistics
         [[nodiscard]] auto cached_statement_count() const noexcept -> std::size_t {
-            return storm::db::cache_count(statement_cache_, cache_mutex_); // Issue #271
+            return storm::db::cache_count(cache_); // Issue #271
+        }
+
+        // Issue #273: snapshot of hit/miss/eviction counters + current size.
+        [[nodiscard]] auto cache_stats() const noexcept -> storm::db::CacheStats {
+            return storm::db::cache_stats(cache_);
         }
 
         // Pre-populate statement cache with common operations
@@ -416,11 +415,12 @@ export namespace storm::db::sqlite {
         }
 
       private:
-        explicit Connection(SqlitePtr db_ptr) : db(std::move(db_ptr)) {
-            // Reserve capacity to keep early inserts on the same rehash bucket.
-            // Pointer stability across rehash is now guaranteed by the
-            // `unique_ptr<Statement>` value type (Issue #215).
-            statement_cache_.reserve(cache::STMT_CACHE_RESERVE);
+        explicit Connection(SqlitePtr db_ptr, Config config) : db(std::move(db_ptr)) {
+            cache_.capacity = config.statement_cache_capacity; // Issue #273
+            // Reserve to keep early inserts on the same rehash bucket. Pointer
+            // stability across rehash is guaranteed by the unique_ptr in CacheEntry
+            // (Issue #215).
+            cache_.map.reserve(cache::STMT_CACHE_RESERVE);
         }
 
         // Single source of truth for sqlite3_prepare_v2 + error wrapping.
@@ -433,13 +433,12 @@ export namespace storm::db::sqlite {
             return Statement{stmt};
         }
 
-        SqlitePtr      db;
-        StatementCache statement_cache_;
-        // Issue #271: guards statement_cache_. shared_lock on the cache-hit hot
-        // path, unique_lock for insert + clear. mutable so const accessors
-        // (cached_statement_count) can take a shared_lock. MovableSharedMutex
-        // keeps Connection's move operations defaulted.
-        mutable storm::db::MovableSharedMutex cache_mutex_;
+        SqlitePtr db;
+        // Issue #271/#273: the L3 cache, its shared_mutex, stat counters, and
+        // capacity in one movable bundle. shared_lock on the hit path, unique_lock
+        // for insert/clear/evict. mutable so const accessors (cached_statement_count,
+        // cache_stats) can take a shared_lock.
+        mutable storm::db::StatementCacheState<Statement> cache_;
     };
 
     // Verify concepts are satisfied

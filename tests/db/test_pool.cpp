@@ -78,7 +78,8 @@ struct MockPoolConnection {
     };
     using Statement = MockStatement;
 
-    [[nodiscard]] static auto open(std::string_view /*unused*/) -> std::expected<MockPoolConnection, Error> {
+    [[nodiscard]] static auto open(std::string_view /*unused*/, storm::db::StatementCacheConfig /*unused*/ = {})
+            -> std::expected<MockPoolConnection, Error> {
         auto& cfg = mock_config();
         ++cfg.open_call_count;
         // Signal that open() was entered — the caller has already released the pool
@@ -121,6 +122,9 @@ struct MockPoolConnection {
     auto                      clear_statement_cache(std::string_view /*unused*/) -> void {}
     [[nodiscard]] static auto cached_statement_count() -> std::size_t {
         return 0;
+    }
+    [[nodiscard]] static auto cache_stats() -> storm::db::CacheStats { // Issue #273
+        return {};
     }
 
     bool is_open_ = true;
