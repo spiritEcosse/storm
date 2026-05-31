@@ -39,7 +39,8 @@ namespace {
     }
 
     auto enrich_with_baseline(bench_dashboard::wire::ResultMsg& msg, std::int64_t baseline_run_id) -> void {
-        if (msg.row_kind == bench_dashboard::wire::kRowKindMeasurement || msg.row_kind.empty())
+        if (msg.row_kind == bench_dashboard::wire::kRowKindMeasurement ||
+            msg.row_kind == bench_dashboard::wire::kRowKindAggregate || msg.row_kind.empty())
             enrich_measurement(msg, baseline_run_id);
         else if (msg.row_kind == bench_dashboard::wire::kRowKindBigO)
             enrich_bigo(msg, baseline_run_id);

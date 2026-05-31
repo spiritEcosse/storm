@@ -70,7 +70,8 @@ link_postgresql(${PROJECT_NAME})
 target_include_directories(
   ${PROJECT_NAME}
   PRIVATE ${GTEST_INCLUDE_DIRS} ${GMOCK_INCLUDE_DIRS}
-          "${CMAKE_CURRENT_SOURCE_DIR}/../src" "${CMAKE_CURRENT_SOURCE_DIR}")
+          "${CMAKE_CURRENT_SOURCE_DIR}/../src" "${CMAKE_CURRENT_SOURCE_DIR}"
+          "${CMAKE_SOURCE_DIR}/benchmarks/dashboard")
 
 # Use gtest_discover_tests instead of gtest_add_tests DISCOVERY_MODE PRE_TEST:
 # defer test listing to ctest time (not build time) so MSAN_OPTIONS from

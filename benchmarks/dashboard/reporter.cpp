@@ -17,6 +17,7 @@
 // docs/development/BENCHMARK_DASHBOARD.md once the docs land in Phase 5.
 
 #include "reporter.h"
+#include "row_classify.hpp"
 #include "wire.hpp"
 
 #include <benchmark/benchmark.h>
@@ -99,9 +100,24 @@ namespace bench_dashboard {
             return m;
         }
 
+        // Adapt a gbench Run into the gbench-free RowFlags used by the pure
+        // classifier in row_classify.hpp.
+        auto flags_of(benchmark::BenchmarkReporter::Run const& r) -> RowFlags {
+            return RowFlags{
+                    .skipped        = r.skipped != benchmark::internal::NotSkipped,
+                    .aggregate_name = r.aggregate_name,
+                    .report_big_o   = r.report_big_o,
+                    .report_rms     = r.report_rms,
+            };
+        }
+
+        // Raw per-repetition rows classify as "measurement"; mean/median/stddev
+        // summary rows (the only rows emitted under
+        // --benchmark_report_aggregates_only=true) classify as "aggregate". Both
+        // carry real timing data and share the same message shape (Issue #265).
         auto build_measurement_msg(benchmark::BenchmarkReporter::Run const& r) -> wire::ResultMsg {
             auto m         = base_msg_for_run(r);
-            m.row_kind     = std::string{wire::kRowKindMeasurement};
+            m.row_kind     = std::string{classify_row_kind(flags_of(r))};
             m.dataset_size = static_cast<std::int64_t>(r.complexity_n);
             m.iterations   = static_cast<std::int64_t>(r.iterations);
 
@@ -121,14 +137,13 @@ namespace bench_dashboard {
             return m;
         }
 
-        // Pre-filter: discard skipped runs and aggregate rows we don't care
-        // about (mean/median/stddev). BigO and RMS rows have aggregate_name
-        // set but should still flow through.
+        // Pre-filter: discard only genuinely-skipped runs. Aggregate rows
+        // (mean/median/stddev) flow through — dropping them silently discarded
+        // every timing under --benchmark_report_aggregates_only=true (Issue
+        // #265). Classification into measurement/aggregate/bigo/rms is delegated
+        // to row_classify.hpp.
         auto should_skip_run(benchmark::BenchmarkReporter::Run const& r) -> bool {
-            if (r.skipped != benchmark::internal::NotSkipped) {
-                return true;
-            }
-            return !r.aggregate_name.empty() && !r.report_big_o && !r.report_rms;
+            return should_skip_row(flags_of(r));
         }
 
         class StormReporter

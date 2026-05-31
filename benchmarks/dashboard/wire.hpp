@@ -36,6 +36,7 @@ namespace bench_dashboard::wire {
 
     // row_kind values for ResultMsg (Phase 7).
     inline constexpr std::string_view kRowKindMeasurement = "measurement";
+    inline constexpr std::string_view kRowKindAggregate   = "aggregate";
     inline constexpr std::string_view kRowKindBigO        = "bigo";
     inline constexpr std::string_view kRowKindRms         = "rms";
 

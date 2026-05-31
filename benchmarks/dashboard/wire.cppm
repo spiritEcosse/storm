@@ -28,6 +28,7 @@ export namespace bench_dashboard::wire {
     enum class MessageKind : std::uint8_t { Result, RunStart, RunComplete };
 
     inline constexpr std::string_view kRowKindMeasurement = "measurement";
+    inline constexpr std::string_view kRowKindAggregate   = "aggregate";
     inline constexpr std::string_view kRowKindBigO        = "bigo";
     inline constexpr std::string_view kRowKindRms         = "rms";
 

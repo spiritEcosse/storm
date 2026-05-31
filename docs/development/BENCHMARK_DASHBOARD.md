@@ -102,7 +102,11 @@ A completed session renders one line in this form:
 ▼ [1] filter='…' · 18 results · complete 08:30:04 UTC
 ```
 
-The `N results` counter is the number of **per-iteration measurement rows** in that run. Big-O and RMS aggregate rows are not counted there; they fold into the per-category `Complexity:` footer instead. So a run that records, say, 18 measurement rows plus 2 BigO + 2 RMS aggregate rows shows `18 results`, even though the `BenchResult` table holds 22 rows for that `run_id`.
+The `N results` counter is the number of **timing rows** in that run — both raw per-repetition `measurement` rows and `mean`/`median`/`stddev`/`cv` `aggregate` rows count. Big-O and RMS rows are not counted there; they fold into the per-category `Complexity:` footer instead. So a run that records, say, 18 timing rows plus 2 BigO + 2 RMS rows shows `18 results`, even though the `BenchResult` table holds 22 rows for that `run_id`.
+
+#### Row kinds and `--benchmark_report_aggregates_only`
+
+Each `BenchResult` carries a `row_kind`: `measurement` (one raw per-repetition row), `aggregate` (a `mean`/`median`/`stddev`/`cv` summary row), `bigo`, or `rms`. Under `--benchmark_repetitions=N` Google Benchmark emits both the raw rows and the aggregate rows; under `--benchmark_report_aggregates_only=true` it emits **only** the aggregate rows. The dashboard streams every timing row regardless of style — both `measurement` and `aggregate` rows render and count (Issue #265). Earlier the reporter silently dropped every `aggregate` row, so the aggregates-only invocation recorded no timings at all.
 
 ### Summary line
 
