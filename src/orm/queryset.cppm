@@ -292,7 +292,7 @@ export namespace storm {
         //
         // Issue #215: reset() also drops every Level 2 Statement-pointer cache so
         // that schema changes followed by Connection::clear_statement_cache() do not
-        // leave Insert/Update/Erase/Select holding pointers to freed statements.
+        // leave Insert/Update/Erase holding pointers to freed statements.
         // For schema-only invalidation that preserves WHERE/LIMIT state, use
         // invalidate_cache() below.
         auto reset() noexcept -> void {
