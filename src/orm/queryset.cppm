@@ -77,7 +77,7 @@ export namespace storm {
         template <orm::statements::ReturnId R = orm::statements::ReturnId::Yes, typename U = T>
             requires std::same_as<std::remove_cvref_t<U>, T>
         auto insert(const U& obj [[clang::lifetimebound]]) {
-            return get_insert_statement().template query<R>(obj);
+            return orm::statements::InsertStatement<T, ConnType>(conn_).template query<R>(obj);
         }
 
         // Bulk insert - returns proxy with .execute() and .to_sql()
@@ -86,13 +86,13 @@ export namespace storm {
         auto
         insert(std::span<const T>                            objects [[clang::lifetimebound]],
                std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
-            return get_insert_statement().query(objects, opts);
+            return orm::statements::InsertStatement<T, ConnType>(conn_).query(objects, opts);
         }
         template <orm::statements::ReturnId R>
         auto
         insert(std::span<const T>                            objects [[clang::lifetimebound]],
                std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
-            return get_insert_statement().template query<R>(objects, opts);
+            return orm::statements::InsertStatement<T, ConnType>(conn_).template query<R>(objects, opts);
         }
 
         // WHERE clause support - builder pattern with method chaining using type-safe expressions
@@ -310,9 +310,6 @@ export namespace storm {
         // Connection::clear_statement_cache(table) on the same connection.
         // Issue #215.
         auto invalidate_cache() noexcept -> void {
-            if (insert_stmt_) {
-                insert_stmt_->invalidate_cache();
-            }
             if (erase_stmt_) {
                 erase_stmt_->invalidate_cache();
             }
@@ -517,18 +514,6 @@ export namespace storm {
         }
 
       private:
-        // Lazy-initialize and return cached InsertStatement for optimal performance
-        auto get_insert_statement() const -> orm::statements::InsertStatement<T, ConnType>& {
-#ifdef STORM_DISABLE_L1
-            insert_stmt_ = std::make_unique<orm::statements::InsertStatement<T, ConnType>>(conn_); // L1 disabled (#214)
-#else
-            if (!insert_stmt_) [[unlikely]] {
-                insert_stmt_ = std::make_unique<orm::statements::InsertStatement<T, ConnType>>(conn_);
-            }
-#endif
-            return *insert_stmt_;
-        }
-
         // Lazy-initialize and return cached EraseStatement for optimal performance
         auto get_erase_statement() const -> orm::statements::EraseStatement<T, ConnType>& {
 #ifdef STORM_DISABLE_L1
@@ -569,9 +554,8 @@ export namespace storm {
             return {conn_, std::move(operands), std::move(operators)};
         }
 
-        std::shared_ptr<ConnType>                                              conn_;
-        mutable std::unique_ptr<orm::statements::InsertStatement<T, ConnType>> insert_stmt_;
-        mutable std::unique_ptr<orm::statements::EraseStatement<T, ConnType>>  erase_stmt_;
+        std::shared_ptr<ConnType>                                             conn_;
+        mutable std::unique_ptr<orm::statements::EraseStatement<T, ConnType>> erase_stmt_;
 
         mutable std::optional<orm::statements::JoinStatementWrapper> join_stmt_;
         mutable orm::where::ExpressionVariantPtr                     where_expr_;
