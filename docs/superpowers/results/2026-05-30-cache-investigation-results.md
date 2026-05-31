@@ -92,6 +92,25 @@ tight loops, L1 and L2 provide no measurable benefit. This is a clean **Option C
    stats on the single L3 `unordered_map`**. The dangling-pointer class it worried about no longer
    exists once no L2 raw pointers are held.
 
+## Post-collapse addendum (2026-05-31) — one accepted regression
+
+After implementing the collapse (branch `feature/214-collapse-l1-l2`), the Core 8 Release benchmark
+was re-run against develop (both `-O3`, 20–30 reps) — because the `#ifdef` bypass left the cached
+members in place, whereas the real deletion shifts struct layout/inlining. Result: all categories
+within ±5% noise EXCEPT **single-row `UPDATE_PK/N:1` in a QuerySet-reuse loop: +7.5% (855 ns vs
+develop's 795 ns), reproducible.** `INSERT/N:1` (+3.2%) and `DELETE_PK/N:1` (+2.1%) trend the same but
+stay under 5%.
+
+This was NOT caught by the investigation because its single-row probe (`CacheProbe/GetByPk`) was a
+SELECT, not an UPDATE. The cause: each op now constructs a fresh statement (a `shared_ptr` refcount
+bump) and does one L3 hash lookup that the old L1+L2 reuse-loop path skipped. On a ~0.8 µs op that is
+~60 ns.
+
+**Accepted as a known tradeoff** (decided with the maintainer): ~60 ns on a sub-microsecond operation,
+visible only in a tight single-row reuse loop (uncommon in real ORM use); every bulk/multi-row path is
+clean. The simplicity of a single cache level outweighs it. Gate evidence for the collapse:
+ASAN+UBSAN 1923/1923 clean, TSAN 1923/1923 clean, coverage 100.0% (5922/5922).
+
 ## Flag lifecycle (decided with the user)
 
 The `STORM_DISABLE_L1` / `STORM_DISABLE_L2` flags are **investigation scaffolding**, kept on
