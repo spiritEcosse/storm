@@ -57,6 +57,23 @@ export namespace storm::db {
         { conn.execute(sql) } -> std::same_as<std::expected<void, typename T::Error>>;
     };
 
+    // Issue #273: per-Connection statement-cache configuration, shared by every
+    // backend's open(). capacity 0 = unbounded (preserves pre-#273 behavior).
+    struct StatementCacheConfig {
+        std::size_t statement_cache_capacity = 512;
+    };
+
+    // Snapshot of per-Connection cache statistics (Issue #273). Counters are
+    // lifetime totals (not reset by clear_statement_cache); current_size is the
+    // live entry count. Declared before CachedDatabaseConnection, which requires
+    // cache_stats() to return it.
+    struct CacheStats {
+        std::uint64_t hits         = 0;
+        std::uint64_t misses       = 0;
+        std::uint64_t evictions    = 0;
+        std::size_t   current_size = 0;
+    };
+
     // Extended database connection concept with caching support
     template <typename T>
     concept CachedDatabaseConnection = DatabaseConnection<T> && requires(T& conn, std::string_view sql) {
@@ -67,6 +84,9 @@ export namespace storm::db {
         { conn.clear_statement_cache() } -> std::same_as<void>;
         { conn.clear_statement_cache(sql) } -> std::same_as<void>;
         { conn.cached_statement_count() } -> std::same_as<std::size_t>;
+
+        // Cache statistics snapshot (Issue #273)
+        { conn.cache_stats() } -> std::same_as<CacheStats>;
     };
 
     // Database statement concept
@@ -164,6 +184,51 @@ export namespace storm::db {
         std::shared_mutex mutex_;
     };
 
+    // Issue #273: CLOCK/second-chance LRU eviction + statistics on the single L3
+    // statement cache. Each entry carries a reference bit set on a cache hit;
+    // eviction sweeps the entries, clearing set bits (second chance) and evicting
+    // the first unreferenced one. The hit path only flips an atomic bit under the
+    // shared_lock — no structural mutation, so the #271 parallel-read hot path is
+    // preserved.
+    template <typename Stmt> struct CacheEntry {
+        std::unique_ptr<Stmt> stmt;
+        std::atomic<bool>     referenced{false}; // CLOCK second-chance bit
+    };
+
+    // Bundles the L3 cache map, its mutex, the stat counters, and the capacity.
+    // Each Connection embeds one; both backends share the cache_* helpers that
+    // operate on it. std::atomic is non-movable, so the move ops are explicit:
+    // the map moves, the atomics reset to zero, capacity is copied — equivalent
+    // to MovableSharedMutex's "fresh on move" contract (a Connection is only moved
+    // during construction, before any thread shares it). Issue #273.
+    template <typename Stmt> struct StatementCacheState {
+        std::unordered_map<std::string, CacheEntry<Stmt>, string_hash, string_equal> map;
+        mutable MovableSharedMutex                                                   mutex;
+        std::atomic<std::uint64_t>                                                   hits{0};
+        std::atomic<std::uint64_t>                                                   misses{0};
+        std::atomic<std::uint64_t>                                                   evictions{0};
+        std::size_t                                                                  capacity = 0; // 0 = unbounded
+
+        StatementCacheState()  = default;
+        ~StatementCacheState() = default;
+
+        StatementCacheState(StatementCacheState&& other) noexcept
+            : map(std::move(other.map)), mutex(std::move(other.mutex)), capacity(other.capacity) {}
+        auto operator=(StatementCacheState&& other) noexcept -> StatementCacheState& {
+            if (this != &other) {
+                map      = std::move(other.map);
+                mutex    = std::move(other.mutex);
+                capacity = other.capacity;
+                hits.store(0, std::memory_order_relaxed);
+                misses.store(0, std::memory_order_relaxed);
+                evictions.store(0, std::memory_order_relaxed);
+            }
+            return *this;
+        }
+        StatementCacheState(const StatementCacheState&)                    = delete;
+        auto operator=(const StatementCacheState&) -> StatementCacheState& = delete;
+    };
+
     // Identifier-character predicate (SQL word boundary): same set as `\w` in regex
     // ([A-Za-z0-9_]). Used by per-table cache invalidation to avoid clearing
     // "persons" entries when invalidating "person".
@@ -193,60 +258,99 @@ export namespace storm::db {
         return false;
     }
 
-    // Issue #271: shared L3-cache locking helpers. The cache map type
-    // (unordered_map<string, unique_ptr<Statement>, string_hash, string_equal>)
-    // and the lock discipline are identical across backends; only the prepare
-    // step differs, so each backend's prepare_cached() calls cache_find_hit()
-    // then cache_try_insert() around its own prepare call. Statement is the
-    // cache's mapped pointee, deduced from the map.
-    //
-    // Hot path: shared_lock find + reset. Returns the cached Statement* on a hit,
-    // nullptr on a miss (caller then prepares + inserts).
-    template <typename Cache, typename Mutex>
-    [[nodiscard]] auto cache_find_hit(Cache& cache, Mutex& mutex, std::string_view sql) ->
-            typename Cache::mapped_type::pointer {
-        std::shared_lock read_lock(mutex);
-        auto             it = cache.find(sql);
-        if (it != cache.end()) [[likely]] {
-            it->second->reset();
-            return it->second.get();
+    // Issue #271/#273: shared L3-cache helpers. Both backends call cache_find_hit()
+    // then cache_try_insert() around their own prepare step; the lock discipline,
+    // CLOCK eviction, and statistics are identical across backends and live here.
+
+    // Hot path: shared_lock find + reset. On a hit, sets the entry's CLOCK ref bit
+    // and bumps `hits`; on a miss, bumps `misses`. Returns the cached Statement* on
+    // a hit, nullptr on a miss (caller then prepares + inserts).
+    template <typename Stmt>
+    [[nodiscard]] auto cache_find_hit(StatementCacheState<Stmt>& state, std::string_view sql) -> Stmt* {
+        std::shared_lock read_lock(state.mutex);
+        auto             it = state.map.find(sql);
+        if (it != state.map.end()) [[likely]] {
+            it->second.referenced.store(true, std::memory_order_relaxed);
+            state.hits.fetch_add(1, std::memory_order_relaxed);
+            it->second.stmt->reset();
+            return it->second.stmt.get();
         }
+        state.misses.fetch_add(1, std::memory_order_relaxed);
         return nullptr;
     }
 
-    // Insert a freshly-prepared statement under a unique_lock. try_emplace keeps
-    // any entry another thread inserted while we were preparing (the lock was
-    // dropped during prepare); the passed-in statement is then dropped by the
-    // caller. Returns the live Statement* for the key.
-    template <typename Cache, typename Mutex>
-    [[nodiscard]] auto
-    cache_try_insert(Cache& cache, Mutex& mutex, std::string_view sql, typename Cache::mapped_type stmt) ->
-            typename Cache::mapped_type::pointer {
-        std::unique_lock write_lock(mutex);
-        auto [it, inserted] = cache.try_emplace(std::string(sql), std::move(stmt));
-        (void)inserted; // false only if another thread won the prepare race
-        return it->second.get();
+    // CLOCK/second-chance eviction. Caller holds the unique_lock. Sweeps entries:
+    // an entry whose ref bit is set gets it cleared (second chance) and is skipped;
+    // the first entry with a clear bit is evicted. If a full pass clears every bit
+    // without finding a victim, the next entry is evicted to guarantee progress.
+    // Bumps `evictions`. Bounded to ~2 passes over a map of size <= capacity.
+    template <typename Stmt> auto cache_evict_one(StatementCacheState<Stmt>& state) -> void {
+        for (auto it = state.map.begin(); it != state.map.end(); ++it) {
+            if (it->second.referenced.load(std::memory_order_relaxed)) {
+                it->second.referenced.store(false, std::memory_order_relaxed);
+                continue;
+            }
+            state.map.erase(it);
+            state.evictions.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        // Every bit was set; all are now cleared. Evict the first entry.
+        if (!state.map.empty()) {
+            state.map.erase(state.map.begin());
+            state.evictions.fetch_add(1, std::memory_order_relaxed);
+        }
     }
 
-    // Drop every cached entry (unique_lock).
-    template <typename Cache, typename Mutex> auto cache_clear_all(Cache& cache, Mutex& mutex) noexcept -> void {
-        std::unique_lock write_lock(mutex);
-        cache.clear();
+    // Insert a freshly-prepared statement under a unique_lock. Evicts first if the
+    // cache is at capacity (capacity 0 = unbounded). try_emplace keeps any entry a
+    // racing thread inserted while we prepared (the lock was dropped during
+    // prepare); the passed-in statement is then dropped by the caller. Returns the
+    // live Statement* for the key.
+    template <typename Stmt>
+    [[nodiscard]] auto
+    cache_try_insert(StatementCacheState<Stmt>& state, std::string_view sql, std::unique_ptr<Stmt> stmt) -> Stmt* {
+        std::unique_lock write_lock(state.mutex);
+        if (state.capacity != 0 && state.map.size() >= state.capacity && !state.map.contains(sql)) {
+            cache_evict_one(state);
+        }
+        auto [it, inserted] = state.map.try_emplace(std::string(sql));
+        if (inserted) {
+            it->second.stmt = std::move(stmt);
+        }
+        return it->second.stmt.get();
+    }
+
+    // Drop every cached entry (unique_lock). Counters are lifetime totals and are
+    // NOT reset here.
+    template <typename Stmt> auto cache_clear_all(StatementCacheState<Stmt>& state) noexcept -> void {
+        std::unique_lock write_lock(state.mutex);
+        state.map.clear();
     }
 
     // Drop cached entries whose SQL references `table`, word-boundary aware
     // (unique_lock). Issue #215.
-    template <typename Cache, typename Mutex>
-    auto cache_clear_table(Cache& cache, Mutex& mutex, std::string_view table) -> void {
-        std::unique_lock write_lock(mutex);
-        std::erase_if(cache, [table](const auto& entry) { return sql_references_table(entry.first, table); });
+    template <typename Stmt> auto cache_clear_table(StatementCacheState<Stmt>& state, std::string_view table) -> void {
+        std::unique_lock write_lock(state.mutex);
+        std::erase_if(state.map, [table](const auto& entry) { return sql_references_table(entry.first, table); });
     }
 
     // Entry count (shared_lock).
-    template <typename Cache, typename Mutex>
-    [[nodiscard]] auto cache_count(const Cache& cache, Mutex& mutex) noexcept -> std::size_t {
-        std::shared_lock read_lock(mutex);
-        return std::ranges::size(cache);
+    template <typename Stmt>
+    [[nodiscard]] auto cache_count(const StatementCacheState<Stmt>& state) noexcept -> std::size_t {
+        std::shared_lock read_lock(state.mutex);
+        return state.map.size();
+    }
+
+    // Stats snapshot (shared_lock). Relaxed loads — the snapshot is advisory.
+    template <typename Stmt>
+    [[nodiscard]] auto cache_stats(const StatementCacheState<Stmt>& state) noexcept -> CacheStats {
+        std::shared_lock read_lock(state.mutex);
+        return CacheStats{
+                state.hits.load(std::memory_order_relaxed),
+                state.misses.load(std::memory_order_relaxed),
+                state.evictions.load(std::memory_order_relaxed),
+                state.map.size(),
+        };
     }
 
 } // namespace storm::db

@@ -105,9 +105,10 @@ namespace {
     // ------------------------------------------------------------------ Test 2
     // N threads prepare DISTINCT SQL concurrently → exercises the miss/insert
     // path (release shared_lock, prepare, unique_lock try_emplace). All unique
-    // statements must end up cached exactly once; TSAN-clean.
+    // statements must end up cached exactly once; TSAN-clean. Opened unbounded
+    // (capacity 0) so this race-freedom check is not perturbed by #273 eviction.
     TEST(StatementCacheThreadingTest, ConcurrentDistinctInsertsAreRaceFree) {
-        Connection conn = Connection::open(":memory:").value();
+        Connection conn = Connection::open(":memory:", {.statement_cache_capacity = 0}).value();
 
         const int failures = run_concurrently(kThreads, [&conn](int t) {
             int f = 0;

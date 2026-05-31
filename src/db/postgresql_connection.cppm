@@ -22,12 +22,6 @@ export namespace storm::db::postgresql {
 
     class Connection {
         using PGconnPtr = std::unique_ptr<PGconn, PGconnDeleter>;
-        // Issue #215: storing `unique_ptr<Statement>` keeps Statement objects
-        // pinned across map rehashes, so Level 2 callers can hold
-        // `Statement*` from prepare_cached() safely.
-        using StatementValue = std::unique_ptr<Statement>;
-        using StatementCache =
-                std::unordered_map<std::string, StatementValue, storm::db::string_hash, storm::db::string_equal>;
 
         // Cache size constants
         static constexpr std::size_t STMT_CACHE_RESERVE = 32;
@@ -42,6 +36,9 @@ export namespace storm::db::postgresql {
         static constexpr bool supports_right_join = true;
         static constexpr bool uses_pg_dialect     = true;
 
+        // Issue #273: per-Connection cache configuration (capacity 0 = unbounded).
+        using Config = storm::db::StatementCacheConfig;
+
         // Pre-populate statement cache with common operations (stub for PostgreSQL)
         auto prepare_common_statements() -> void {
             // PostgreSQL doesn't need pre-populated common statements
@@ -49,7 +46,8 @@ export namespace storm::db::postgresql {
         }
 
         // Factory method with error handling
-        [[nodiscard]] static auto open(std::string_view conninfo) -> std::expected<Connection, Error> {
+        [[nodiscard]] static auto open(std::string_view conninfo, Config config = {})
+                -> std::expected<Connection, Error> {
             const std::string conninfo_str(conninfo); // Ensure null-termination
             PGconn*           raw_conn = PQconnectdb(conninfo_str.c_str());
 
@@ -63,7 +61,7 @@ export namespace storm::db::postgresql {
                 return std::unexpected(Error{static_cast<int>(PQstatus(raw_conn)), msg});
             }
 
-            return Connection{PGconnPtr{raw_conn}};
+            return Connection{PGconnPtr{raw_conn}, config};
         }
 
         // Destructor - unique_ptr handles cleanup via PGconnDeleter
@@ -102,7 +100,7 @@ export namespace storm::db::postgresql {
                 return std::unexpected(Error{-1, "Connection not open"});
             }
 
-            if (auto* hit = storm::db::cache_find_hit(statement_cache_, cache_mutex_, sql)) [[likely]] {
+            if (auto* hit = storm::db::cache_find_hit(cache_, sql)) [[likely]] {
                 return hit;
             }
 
@@ -112,25 +110,30 @@ export namespace storm::db::postgresql {
             }
             auto new_stmt = std::make_unique<Statement>(conn_.get(), std::move(*stmt_name));
             new_stmt->set_original_sql(std::string(sql)); // Store original SQL for expanded_sql()
-            return storm::db::cache_try_insert(statement_cache_, cache_mutex_, sql, std::move(new_stmt));
+            return storm::db::cache_try_insert(cache_, sql, std::move(new_stmt));
         }
 
         // Clear the entire statement cache (useful for memory management or after
         // major schema changes). Callers must not retain `Statement*` obtained from
         // a prior prepare_cached() across this call — the entries are destroyed.
         auto clear_statement_cache() noexcept -> void {
-            storm::db::cache_clear_all(statement_cache_, cache_mutex_); // Issue #271
+            storm::db::cache_clear_all(cache_); // Issue #271
         }
 
         // Issue #215: drop cached entries whose SQL references the given table.
         // Word-boundary aware so clearing "persons" does NOT touch
         // "person_addresses" or "persons_archive".
         auto clear_statement_cache(std::string_view table) -> void {
-            storm::db::cache_clear_table(statement_cache_, cache_mutex_, table); // Issue #271
+            storm::db::cache_clear_table(cache_, table); // Issue #271
         }
 
         [[nodiscard]] auto cached_statement_count() const noexcept -> std::size_t {
-            return storm::db::cache_count(statement_cache_, cache_mutex_); // Issue #271
+            return storm::db::cache_count(cache_); // Issue #271
+        }
+
+        // Issue #273: snapshot of hit/miss/eviction counters + current size.
+        [[nodiscard]] auto cache_stats() const noexcept -> storm::db::CacheStats {
+            return storm::db::cache_stats(cache_);
         }
 
         // Execute SQL directly (simple queries without parameters)
@@ -162,8 +165,9 @@ export namespace storm::db::postgresql {
         }
 
       private:
-        explicit Connection(PGconnPtr conn_ptr) : conn_(std::move(conn_ptr)) {
-            statement_cache_.reserve(STMT_CACHE_RESERVE);
+        explicit Connection(PGconnPtr conn_ptr, Config config) : conn_(std::move(conn_ptr)) {
+            cache_.capacity = config.statement_cache_capacity; // Issue #273
+            cache_.map.reserve(STMT_CACHE_RESERVE);
         }
 
         // Translate ? placeholders to $1, $2, ... for PostgreSQL
@@ -222,14 +226,11 @@ export namespace storm::db::postgresql {
             return stmt_name;
         }
 
-        PGconnPtr      conn_;
-        StatementCache statement_cache_;
-        // Issue #271: guards statement_cache_. shared_lock on the cache-hit hot
-        // path, unique_lock for insert + clear. mutable so const accessors
-        // (cached_statement_count) can take a shared_lock. MovableSharedMutex
-        // keeps Connection's move operations defaulted.
-        mutable storm::db::MovableSharedMutex cache_mutex_;
-        int                                   stmt_counter_ = 0;
+        PGconnPtr conn_;
+        // Issue #271/#273: L3 cache + mutex + stat counters + capacity in one
+        // movable bundle. mutable so const accessors take a shared_lock.
+        mutable storm::db::StatementCacheState<Statement> cache_;
+        int                                               stmt_counter_ = 0;
     };
 
     // Verify concepts are satisfied
