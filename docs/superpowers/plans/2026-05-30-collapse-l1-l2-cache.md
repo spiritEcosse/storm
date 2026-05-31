@@ -490,25 +490,30 @@ Delete `get_insert_statement()`, `get_erase_statement()`, `get_update_statement(
 `mutable std::unique_ptr<…Statement> *_stmt_;` members (~603-606). Leave `join_stmt_` (~608) — it is
 query state, not a statement cache.
 
-- [ ] **Step 4: Remove the dead invalidate_cache chain**
+- [ ] **Step 4: Remove the dead invalidate_cache chain (DECIDED: delete the L1 API + its tests)**
 
 `QuerySet::reset()` (~297) calls `invalidate_cache()` (~304) which forwarded to the statement-level
-`invalidate_cache()`. With no cached statements on the QuerySet, there is nothing to invalidate.
-Read `QuerySet::invalidate_cache()` and `reset()`:
-- `reset()` keeps the query-state clears (`join_stmt_.reset()`, `where_expr_.reset()`, etc.) and drops
-  its `invalidate_cache()` call.
-- Delete `QuerySet::invalidate_cache()` entirely **only if** it is not part of the public API contract
-  used elsewhere. Grep first:
+`invalidate_cache()`. With no cached statements on the QuerySet, there is nothing to invalidate. The
+user has decided: **delete the QuerySet→L2 invalidation API entirely.**
+
+- `reset()` keeps ONLY the query-state clears (`join_stmt_.reset()`, `where_expr_.reset()`,
+  `limit_value_.reset()`, `offset_value_.reset()`, `order_by_wrapper_.reset()`) and drops its
+  `invalidate_cache()` call.
+- Delete `QuerySet::invalidate_cache()` entirely.
+- **`Connection::clear_statement_cache()` and `clear_statement_cache(table)` STAY** — they clear L3,
+  which is still valid and still has its own tests (`CacheInvalidationLevel3Test`). Do NOT touch them.
+- **Delete the `CacheInvalidationLevel1Test` suite** in `tests/db/test_cache_invalidation.cpp` — it
+  asserts L1/L2 pointer invalidation (`qs.invalidate_cache()` propagation, `reset()` clearing Level 2
+  caches), behavior that no longer exists. Remove only the `CacheInvalidationLevel1Test` TYPED_TEST
+  suite and its fixture; **keep `CacheInvalidationLevel3Test`** (PointersStableAcrossRehash,
+  PerTableClearKeepsUnrelatedEntries, PerTableClearRespectsWordBoundaries) and the
+  `SqlReferencesTableFastOut` test — those test L3 and stay.
+- Also grep for any OTHER caller of `qs.invalidate_cache()`:
   ```bash
-  cd /home/ihor/projects/storm/storm_develop && grep -rn "invalidate_cache\|clear_statement_cache" src/ tests/ docs/
+  cd /home/ihor/projects/storm/storm_develop && grep -rn "\.invalidate_cache()\|->invalidate_cache()" src/ tests/ benchmarks/
   ```
-  If `invalidate_cache()` / `clear_statement_cache()` are public and tested (they were added in #215
-  for the schema-change-then-clear scenario), they may need to stay as Connection-level operations.
-  **The L3 `Connection::clear_statement_cache()` stays** (it clears L3, still valid). Only the
-  *QuerySet→Statement* `invalidate_cache()` forwarding is dead. If a test exercises
-  `QuerySet::invalidate_cache()` directly, keep the method but make its body a no-op that just calls
-  `Connection::clear_statement_cache()` if that was its original effect — read the original to decide.
-  Report exactly what you found and what you kept.
+  Every hit outside the deleted Level1 suite must be removed (there should be none in src/ once the
+  method is gone). Report what you found.
 
 - [ ] **Step 5: Delete the statement-level invalidate_cache stubs**
 
