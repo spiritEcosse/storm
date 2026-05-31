@@ -78,6 +78,8 @@ When a baseline run exists in the database, each streamed result is compared in 
 
 `--baseline auto` skips partial/filtered runs (`is_full_run = false`) so percentage deltas are always against a comparable full run. If no matching baseline is found, the dashboard prints a notice and runs without comparison.
 
+> **Git branch/hash are read per run, not at startup.** Each `BenchRun` row records the working-tree `branch` and `git_hash` at the moment the bench process connects, not when the daemon started (Issue #267). This means a long-lived daemon stays correct across `git checkout`/commits — `--baseline auto` always matches the branch the bench was actually run from. Because the labels come from `git rev-parse`, **the dashboard must be started from inside the storm git work tree**; if it is not, it fails loudly at startup (exit code 4) instead of stamping every run with empty git metadata.
+
 ### Delta column
 
 Each result line shows a delta column next to the latency:

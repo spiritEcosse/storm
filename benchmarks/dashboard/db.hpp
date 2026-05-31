@@ -182,13 +182,31 @@ namespace {
 
     class DashboardDB {
       public:
+        // git_hash + branch are volatile: they change whenever the developer
+        // checks out a branch or commits while the daemon keeps running. They
+        // MUST be re-read per BenchRun, not cached at startup (Issue #267).
+        struct GitContext {
+            std::string git_hash;
+            std::string branch;
+        };
+
+        using GitCapture = std::function<GitContext()>;
+
+        // Default: read the working tree via git. Injectable for tests.
+        DashboardDB() : git_capture_{&capture_git_context} {}
+        explicit DashboardDB(GitCapture git_capture) : git_capture_{std::move(git_capture)} {}
+
         [[nodiscard]] auto insert_run(std::string_view filter, bool is_full_run)
                 -> std::expected<std::int64_t, std::string> {
             ensure_host_context();
 
+            // Re-read git on every run — the working tree may have moved since
+            // the daemon started or since the previous run (Issue #267).
+            const GitContext git = git_capture_();
+
             bench_dashboard::BenchRun row{};
-            row.git_hash    = host_.git_hash;
-            row.branch      = host_.branch;
+            row.git_hash    = git.git_hash;
+            row.branch      = git.branch;
             row.timestamp   = current_iso8601();
             row.hostname    = host_.hostname;
             row.compiler    = host_.compiler;
@@ -224,10 +242,17 @@ namespace {
             return {};
         }
 
+        // Read the current working-tree git state. Default GitCapture impl.
+        static auto capture_git_context() -> GitContext {
+            return {.git_hash = run_capture("git rev-parse --short HEAD 2>/dev/null"),
+                    .branch   = run_capture("git rev-parse --abbrev-ref HEAD 2>/dev/null")};
+        }
+
       private:
+        // Host-level metadata that is stable for the daemon's whole lifetime —
+        // unlike git state, hostname and compiler never change mid-run, so they
+        // stay cached.
         struct HostContext {
-            std::string git_hash;
-            std::string branch;
             std::string hostname;
             std::string compiler;
         };
@@ -236,12 +261,11 @@ namespace {
             if (host_initialised_)
                 return;
             host_initialised_ = true;
-            host_.git_hash    = run_capture("git rev-parse --short HEAD 2>/dev/null");
-            host_.branch      = run_capture("git rev-parse --abbrev-ref HEAD 2>/dev/null");
             host_.hostname    = run_capture("hostname -s 2>/dev/null");
             host_.compiler    = std::format("Clang {}.{}", __clang_major__, __clang_minor__);
         }
 
+        GitCapture  git_capture_;
         HostContext host_{};
         bool        host_initialised_{false};
     };
