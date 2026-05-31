@@ -9,13 +9,13 @@ on:
 jobs:
   test:
     name: "${{ matrix.preset }} / PG ${{ matrix.postgres }}"
-    # ninja-msan is a known degraded preset under import std; (issue #326):
-    # GTest's static TEST() macro registration move-constructs std::string
-    # through the MSAN-instrumented std module, and MSAN reports the SSO buffer
-    # as uninitialized — aborting the binary before any test body runs. This is
-    # a false positive in clang-p2996's MSAN + import std; combination.
-    # Marked continue-on-error so other jobs are not blocked. Track fix at #326.
-    continue-on-error: ${{ matrix.preset == 'ninja-msan' }}
+    # ninja-msan is skipped in CI: under import std; (issue #326) GTest's static
+    # TEST() macro registration move-constructs std::string through the
+    # MSAN-instrumented std module, and MSAN reports the SSO buffer as
+    # uninitialized — aborting the binary before any test body runs. This is a
+    # false positive in clang-p2996's MSAN + import std; combination, so the
+    # preset produces no signal. Re-add the matrix entry once a fixed
+    # clang-p2996 build lands (track at #326).
     runs-on: ubuntu-24.04
     container:
       # Pinned to a specific digest so develop is unaffected by storm-ci image
@@ -48,9 +48,6 @@ jobs:
             postgres: 17
           - preset: ninja-tsan
             build_dir: tsan
-            postgres: 17
-          - preset: ninja-msan
-            build_dir: msan
             postgres: 17
 
           # PG compat — same build, different PG service
